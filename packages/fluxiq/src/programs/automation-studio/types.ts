@@ -1,4 +1,4 @@
-import type { JsonObject } from "../core";
+import type { JsonObject } from "../../core";
 
 export type ApprovalStatus = "draft" | "proposed" | "approved" | "rejected";
 

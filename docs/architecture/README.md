@@ -52,18 +52,17 @@ keeps clear folders rather than many tiny workspace packages.
 | --- | --- | --- |
 | `src/core` | shared primitives and result types | domain concepts |
 | `src/domains` | domain manifest and registry contracts | built-in domain packages |
-| `src/programs` | global framework program catalog, scope model, and global program API registry | domain program implementations |
+| `src/programs` | global framework programs, program catalog, scope model, and global program API registry | domain program implementations |
 | `src/api-contracts` | shared API schemas | private domain payloads |
 | `src/flows` | flow graph model and validation | runtime side effects |
 | `src/framework` | host-project bootstrap and top-level FluxIQ class | domain implementation code |
 | `src/components` | component metadata and neutral node packs | domain actions |
 | `src/engine` | session lifecycle and node dispatch | domain decision logic |
-| `src/automation-studio` | task, routine, recording, policy contracts | generated downstream artifacts |
-| `src/auth` | identity and access contracts | project-specific users |
-| `src/data` | repository and migration contracts | domain-owned database models |
-| `src/compute` | compute node, command, and lease contracts | local automation adapters |
 | `src/io` | input/output adapter contracts, streams, dispatch, and validation | domain implementation details |
 | `src/ui` | reusable React UI primitives | domain-specific screens |
+
+Global program internals use the layout described in
+[`program-layout.md`](./program-layout.md).
 
 ## Loading Model
 

@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { JsonObject } from "../core";
+import type { JsonObject } from "../../core";
 
 export type RepositoryScope = {
   domainId?: string | null;

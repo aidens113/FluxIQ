@@ -6,6 +6,28 @@ import {
 } from "./index";
 
 describe("global programs", () => {
+  it("catalogs audited global programs and excludes domain/account programs", () => {
+    const ids = defaultGlobalProgramCatalog().map((program) => program.id);
+
+    expect(ids).toEqual([
+      "automation-studio",
+      "flow-editor",
+      "identity-access",
+      "database-manager",
+      "background-tasks",
+      "compute-control",
+      "deployment-sync",
+      "docs",
+      "production-runner"
+    ]);
+    expect(ids).not.toContain("accounts-manager");
+    expect(ids).not.toContain("account-manager");
+    expect(ids).not.toContain("ge-pricing");
+    expect(ids).not.toContain("ge-signals");
+    expect(ids).not.toContain("merchanting");
+    expect(ids).not.toContain("profitable-crafting-recipes");
+  });
+
   it("returns only global framework programs even when scoped to a domain", () => {
     const programs = defaultGlobalProgramCatalog({ domainId: "example" });
 
@@ -17,12 +39,12 @@ describe("global programs", () => {
 
   it("exposes the host domain program root without including domain programs", () => {
     const directory = buildProgramDirectory({
-      domainProgramRoot: "domains/_programs",
+      domainProgramRoot: "domains/programs",
       domains: [],
       domain: null
     });
 
-    expect(directory.domainProgramRoot).toBe("domains/_programs");
+    expect(directory.domainProgramRoot).toBe("domains/programs");
     expect(directory.programs.every((program) => program.globalProgram)).toBe(true);
   });
 

@@ -1,4 +1,4 @@
-import type { JsonObject } from "../core";
+import type { JsonObject } from "../../core";
 
 export type ComputeStatus = "offline" | "connecting" | "online" | "busy" | "paused" | "error";
 

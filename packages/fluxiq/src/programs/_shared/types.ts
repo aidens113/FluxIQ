@@ -1,0 +1,36 @@
+import type { DomainSummary } from "../../domains";
+
+export type ProgramScope = {
+  domainId?: string | null;
+};
+
+export type ProgramStatus = "available" | "preview";
+
+export type ProgramSummary = {
+  id: string;
+  title: string;
+  category: string;
+  description: string;
+  route: string;
+  icon: string;
+  status: ProgramStatus;
+  scope: "global" | "domain";
+  globalProgram: boolean;
+};
+
+export type GlobalProgramDefinition = {
+  id: string;
+  title: string;
+  category: string;
+  description: string;
+  icon: string;
+  status: ProgramStatus;
+};
+
+export type ProgramDirectory = {
+  scope: ProgramScope;
+  domains: DomainSummary[];
+  domain: DomainSummary | null;
+  programs: ProgramSummary[];
+  domainProgramRoot?: string;
+};
