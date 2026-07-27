@@ -1,0 +1,44 @@
+{
+  "name": "fluxiq",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./api-contracts": "./src/api-contracts/index.ts",
+    "./auth": "./src/auth/index.ts",
+    "./automation-studio": "./src/automation-studio/index.ts",
+    "./components": "./src/components/index.ts",
+    "./compute": "./src/compute/index.ts",
+    "./core": "./src/core/index.ts",
+    "./data": "./src/data/index.ts",
+    "./domains": "./src/domains/index.ts",
+    "./engine": "./src/engine/index.ts",
+    "./flows": "./src/flows/index.ts",
+    "./framework": "./src/framework/index.ts",
+    "./io": "./src/io/index.ts",
+    "./programs": "./src/programs/index.ts",
+    "./ui": "./src/ui/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "check": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  }
+}
