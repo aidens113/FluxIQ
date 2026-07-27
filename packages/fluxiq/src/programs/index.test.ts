@@ -11,7 +11,6 @@ describe("global programs", () => {
 
     expect(ids).toEqual([
       "automation-studio",
-      "flow-editor",
       "identity-access",
       "database-manager",
       "background-tasks",

@@ -1,4 +1,5 @@
 import type { DomainSummary } from "../../domains";
+import type { FluxIQIconName } from "../../ui";
 
 export type ProgramScope = {
   domainId?: string | null;
@@ -12,7 +13,7 @@ export type ProgramSummary = {
   category: string;
   description: string;
   route: string;
-  icon: string;
+  icon: FluxIQIconName;
   status: ProgramStatus;
   scope: "global" | "domain";
   globalProgram: boolean;
@@ -23,7 +24,7 @@ export type GlobalProgramDefinition = {
   title: string;
   category: string;
   description: string;
-  icon: string;
+  icon: FluxIQIconName;
   status: ProgramStatus;
 };
 

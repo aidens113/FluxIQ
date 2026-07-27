@@ -11,7 +11,7 @@ import {
   validateDomainIo,
   validateIoRequirements
 } from "../io";
-import { buildProgramDirectory, type ProgramDirectory } from "../programs";
+import { buildProgramDirectory, createGlobalProgramRuntime, type GlobalProgramRuntime, type ProgramDirectory } from "../programs";
 
 export type FluxIQHostPaths = {
   root: string;
@@ -106,6 +106,7 @@ export class FluxIQ {
   readonly paths: FluxIQHostPaths;
   readonly domains = new DomainRegistry();
   readonly io = new IoRegistry();
+  readonly programs: GlobalProgramRuntime;
 
   constructor(options: FluxIQOptions = {}) {
     const cwd = process.cwd();
@@ -140,6 +141,7 @@ export class FluxIQ {
       logs: resolveInside(root, options.logsDir ?? cleanEnv(env.FLUXIQ_LOGS_DIR) ?? path.join(fluxiqDir, "logs")),
       temp: resolveInside(root, options.tempDir ?? cleanEnv(env.FLUXIQ_TEMP_DIR) ?? path.join(fluxiqDir, "tmp"))
     };
+    this.programs = createGlobalProgramRuntime(this.paths);
 
     for (const domain of options.domains ?? []) {
       this.domains.register(domain);

@@ -32,7 +32,7 @@ The migration starts by preserving concepts, not source files.
 - Port the old React UI into Next.js in smaller modules.
 - Split Automation Studio into focused panels, hooks, graph helpers, and API
   clients.
-- Split the Flow Editor graph into reusable UI plus framework-specific state.
+- Keep graph editing as part of Automation Studio rather than a separate Flow Editor program.
 
 ## Phase 5: Identity, Data, Compute
 

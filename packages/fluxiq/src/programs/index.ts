@@ -1,5 +1,6 @@
 export * from "./_shared/api";
 export * from "./_shared/catalog";
+export * from "./_shared/runtime";
 export * from "./_shared/types";
 export * from "./automation-studio";
 export * from "./background-tasks";
@@ -7,6 +8,5 @@ export * from "./compute-control";
 export * from "./database-manager";
 export * from "./deployment-sync";
 export * from "./docs";
-export * from "./flow-editor";
 export * from "./identity-access";
 export * from "./production-runner";

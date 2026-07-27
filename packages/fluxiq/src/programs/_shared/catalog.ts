@@ -4,14 +4,12 @@ import { COMPUTE_CONTROL_PROGRAM } from "../compute-control/metadata";
 import { DATABASE_MANAGER_PROGRAM } from "../database-manager/metadata";
 import { DEPLOYMENT_SYNC_PROGRAM } from "../deployment-sync/metadata";
 import { DOCS_PROGRAM } from "../docs/metadata";
-import { FLOW_EDITOR_PROGRAM } from "../flow-editor/metadata";
 import { IDENTITY_ACCESS_PROGRAM } from "../identity-access/metadata";
 import { PRODUCTION_RUNNER_PROGRAM } from "../production-runner/metadata";
 import type { GlobalProgramDefinition, ProgramDirectory, ProgramScope, ProgramSummary } from "./types";
 
 export const GLOBAL_PROGRAMS: GlobalProgramDefinition[] = [
   AUTOMATION_STUDIO_PROGRAM,
-  FLOW_EDITOR_PROGRAM,
   IDENTITY_ACCESS_PROGRAM,
   DATABASE_MANAGER_PROGRAM,
   BACKGROUND_TASKS_PROGRAM,

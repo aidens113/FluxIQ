@@ -1,53 +1,110 @@
-import { Blocks, Database, GitBranch, ShieldCheck, Workflow } from "lucide-react";
-import { defaultGlobalProgramCatalog } from "fluxiq";
+import {
+  Blocks,
+  BookOpen,
+  CalendarClock,
+  CloudUpload,
+  Database,
+  GitBranch,
+  PlayCircle,
+  ShieldCheck
+} from "lucide-react";
+import { defaultGlobalProgramCatalog, type FluxIQIconName, type ProgramSummary } from "fluxiq";
 
 const icons = {
-  "automation-studio": Blocks,
-  "flow-editor": Workflow,
-  data: Database,
-  "identity-access": ShieldCheck,
-  compute: GitBranch
-};
+  blocks: Blocks,
+  "book-open": BookOpen,
+  "calendar-clock": CalendarClock,
+  "cloud-upload": CloudUpload,
+  database: Database,
+  "git-branch": GitBranch,
+  "play-circle": PlayCircle,
+  "shield-check": ShieldCheck
+} satisfies Record<FluxIQIconName, typeof Blocks>;
+
+const categoryOrder = new Map<string, number>([
+  ["Authoring", 0],
+  ["Framework Control", 1],
+  ["Runtime Control", 2],
+  ["Domain Control", 3]
+]);
 
 export default function HomePage() {
   const programs = defaultGlobalProgramCatalog();
+  const groups = groupPrograms(programs);
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">FluxIQ</div>
-        <nav className="nav-list" aria-label="Programs">
-          {programs.map((program) => {
-            const Icon = icons[program.id as keyof typeof icons] ?? Blocks;
-            return (
-              <a className="nav-item active" href={program.route} key={program.id}>
-                <Icon size={18} aria-hidden />
-                <span>{program.title}</span>
-              </a>
-            );
-          })}
-        </nav>
-      </aside>
-      <main className="main">
-        <header className="page-header">
-          <div>
-            <h1 className="page-title">Framework Control Panel</h1>
-            <p className="page-copy">
-              Domain-neutral foundation for automation studios, flow authoring,
-              identity, data management, and compute orchestration.
-            </p>
-          </div>
-          <span className="badge">Public framework</span>
-        </header>
-        <section className="grid" aria-label="Program directory">
-          {programs.map((program) => (
-            <article className="card" key={program.id}>
-              <h2 className="card-title">{program.title}</h2>
-              <p className="card-copy">{program.description}</p>
-            </article>
+    <main className="directory-page">
+      <header className="directory-topbar">
+        <div className="brand-lockup">
+          <span className="brand-mark">
+            <Blocks size={17} aria-hidden />
+          </span>
+          <span>FluxIQ</span>
+        </div>
+      </header>
+
+      <div className="directory-container">
+        <section className="directory-heading">
+          <p className="page-kicker">Framework console</p>
+          <h1 className="page-title">Global Programs</h1>
+          <p className="page-copy">
+            Open shared framework programs for automation authoring, identity, data,
+            compute, deployments, documentation, scheduling, and production runs.
+          </p>
+        </section>
+
+        <section className="program-category-list" aria-label="Global program directory">
+          {groups.map((group) => (
+            <section className="program-category-section" key={group.category}>
+              <div className="program-category-heading">
+                <h2>{group.category}</h2>
+                <span>
+                  {group.programs.length} program{group.programs.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              <div className="program-grid">
+                {group.programs.map((program) => (
+                  <ProgramCard key={program.id} program={program} />
+                ))}
+              </div>
+            </section>
           ))}
         </section>
-      </main>
-    </div>
+      </div>
+    </main>
   );
+}
+
+function ProgramCard({ program }: { program: ProgramSummary }) {
+  const Icon = icons[program.icon];
+
+  return (
+    <a className="program-card" href={program.route}>
+      <span className="program-icon">
+        <Icon size={18} aria-hidden />
+      </span>
+      <span className="program-card-copy">
+        <strong>{program.title}</strong>
+        <span>{program.category}</span>
+        <p>{program.description}</p>
+      </span>
+    </a>
+  );
+}
+
+function groupPrograms(programs: ProgramSummary[]): Array<{ category: string; programs: ProgramSummary[] }> {
+  const groups = new Map<string, ProgramSummary[]>();
+  for (const program of programs) {
+    groups.set(program.category, [...(groups.get(program.category) ?? []), program]);
+  }
+  return [...groups.entries()]
+    .sort(([left], [right]) => categoryRank(left) - categoryRank(right) || left.localeCompare(right))
+    .map(([category, categoryPrograms]) => ({
+      category,
+      programs: categoryPrograms.sort((left, right) => left.title.localeCompare(right.title))
+    }));
+}
+
+function categoryRank(category: string): number {
+  return categoryOrder.get(category) ?? 99;
 }

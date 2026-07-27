@@ -29,10 +29,13 @@ programs/<program-id>/
 Folders should be added when they have real ownership. `metadata.ts` and
 `index.ts` are the minimum for every global program.
 
+All global program UI must use the shared theme described in
+[`ui-theme.md`](./ui-theme.md). Program folders can own view state and local
+panel composition, but not private color systems.
+
 ## Current Global Programs
 
 - `automation-studio`
-- `flow-editor`
 - `identity-access`
 - `database-manager`
 - `background-tasks`
