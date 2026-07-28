@@ -105,7 +105,8 @@ export default async function ProgramPage(context: ProgramPageParams) {
       id: auth.user.id,
       displayName: auth.user.displayName,
       roleId: auth.user.roleId,
-      totpEnabled: auth.user.totpEnabled
+      totpEnabled: auth.user.totpEnabled,
+      pinConfigured: auth.user.pinConfigured
     }}
   />;
 }

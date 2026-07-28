@@ -25,6 +25,7 @@ type ProgramWorkspaceProps = {
     displayName: string;
     roleId: string;
     totpEnabled: boolean;
+    pinConfigured: boolean | undefined;
   };
   capabilities: {
     api: readonly string[];

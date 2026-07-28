@@ -1,7 +1,7 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Copy, Info, QrCode, ShieldCheck, XCircle } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Copy, FileText, FolderOpen, Info, QrCode, ShieldCheck, XCircle } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 
 type ApiResponse<T = unknown> = { ok: boolean; payload?: T; error?: string };
 type JsonObject = Record<string, unknown>;
@@ -12,12 +12,13 @@ type CurrentUser = {
   displayName: string;
   roleId: string;
   totpEnabled: boolean;
+  pinConfigured: boolean | undefined;
 };
 
 export function LiveProgramMain({ programId, user }: { programId: string; user: CurrentUser }) {
   switch (programId) {
     case "identity-access": return <IdentityAccessLive currentUser={user} />;
-    case "database-manager": return <DatabaseManagerLive />;
+    case "database-manager": return <DatabaseManagerLive currentUser={user} />;
     case "background-tasks": return <BackgroundTasksLive />;
     case "compute-control": return <ComputeControlLive />;
     case "deployment-sync": return <DeploymentSyncLive />;
@@ -45,6 +46,8 @@ function IdentityAccessLive({ currentUser }: { currentUser: CurrentUser }) {
   const users = snapshot?.payload?.users ?? [];
   const roles = snapshot?.payload?.roles ?? [];
   const selectedUser = users.find((user: any) => user.id === selectedUserId) ?? users[0];
+  const actorUser = users.find((user: any) => user.id === currentUser.id);
+  const actorPinConfigured = Boolean(actorUser?.pinConfigured);
 
   async function createUser() {
     const result = await api.post("create-user", newUser);
@@ -123,16 +126,16 @@ function IdentityAccessLive({ currentUser }: { currentUser: CurrentUser }) {
   return (
     <section className="program-workspace-grid">
       <Panel title="Authentication">
-        <KeyValue rows={[["Required", "Yes"], ["First setup user", "admin"], ["First setup password", "admin"], ["Default PIN", "1234"], ["2FA", "Per-user TOTP setup"]]} />
+        <KeyValue rows={[["Required", "Yes"], ["First setup user", "admin"], ["First setup password", "admin"], ["PIN", "Created after login"], ["2FA", "Per-user TOTP setup"]]} />
         <p className="muted-text">FluxIQ authentication is global. The first-run admin account is created automatically and can be rotated here.</p>
       </Panel>
-      <Panel title="Create User" action={<button className="button button-primary" disabled={!newUser.username || !newUser.displayName || !newUser.password || newUser.pin.length < 4} onClick={createUser} type="button">Create</button>}>
+      <Panel title="Create User" action={<button className="button button-primary" disabled={!newUser.username || !newUser.displayName || !newUser.password || (newUser.pin.length > 0 && newUser.pin.length < 4)} onClick={createUser} type="button">Create</button>}>
         <div className="field-row dense-fields">
           <Field label="Username"><input value={newUser.username} onChange={(event) => setNewUser({ ...newUser, username: event.target.value })} /></Field>
           <Field label="Display name"><input value={newUser.displayName} onChange={(event) => setNewUser({ ...newUser, displayName: event.target.value })} /></Field>
           <Field label="Role"><select value={newUser.roleId} onChange={(event) => setNewUser({ ...newUser, roleId: event.target.value })}>{roles.map((role: any) => <option key={role.id} value={role.id}>{role.id}</option>)}</select></Field>
           <Field label="Temporary password"><input type="password" value={newUser.password} onChange={(event) => setNewUser({ ...newUser, password: event.target.value })} /></Field>
-          <Field label="PIN"><input value={newUser.pin} onChange={(event) => setNewUser({ ...newUser, pin: digits(event.target.value) })} /></Field>
+          <Field label="PIN (optional)"><input value={newUser.pin} onChange={(event) => setNewUser({ ...newUser, pin: digits(event.target.value) })} /></Field>
           <label className="check-row"><input checked={newUser.enabled} onChange={(event) => setNewUser({ ...newUser, enabled: event.target.checked })} type="checkbox" />Enabled</label>
         </div>
       </Panel>
@@ -202,26 +205,26 @@ function IdentityAccessLive({ currentUser }: { currentUser: CurrentUser }) {
         {credentialAlert ? <VisualAlert tone={credentialAlert.tone} title="Credential update" message={credentialAlert.message} /> : null}
         <Field label="New value"><input type={credentialEdit.kind === "password" ? "password" : "text"} value={credentialEdit.value} onChange={(event) => setCredentialEdit({ ...credentialEdit, value: credentialEdit.kind === "pin" ? digits(event.target.value) : event.target.value })} /></Field>
         <Field label="Confirm value"><input type={credentialEdit.kind === "password" ? "password" : "text"} value={credentialEdit.confirm} onChange={(event) => setCredentialEdit({ ...credentialEdit, confirm: credentialEdit.kind === "pin" ? digits(event.target.value) : event.target.value })} /></Field>
-        <VisualAlert tone="warning" title="Authorization required" message={currentUser.totpEnabled ? "Enter your current password, PIN, and 2FA code before changing credentials." : "Enter your current password and PIN before changing credentials."} />
+        <VisualAlert tone="warning" title="Authorization required" message={`${actorPinConfigured ? "Enter your current password and PIN" : "Enter your current password"}${currentUser.totpEnabled ? ", plus your 2FA code" : ""} before changing credentials.`} />
         <Field label="Your current password"><input type="password" value={credentialEdit.authorizationPassword} onChange={(event) => setCredentialEdit({ ...credentialEdit, authorizationPassword: event.target.value })} /></Field>
-        <Field label="Your current PIN"><input value={credentialEdit.authorizationPin} onChange={(event) => setCredentialEdit({ ...credentialEdit, authorizationPin: digits(event.target.value) })} /></Field>
+        {actorPinConfigured ? <Field label="Your current PIN"><input value={credentialEdit.authorizationPin} onChange={(event) => setCredentialEdit({ ...credentialEdit, authorizationPin: digits(event.target.value) })} /></Field> : null}
         {currentUser.totpEnabled ? <Field label="Your 2FA code"><input value={credentialEdit.authorizationTotp} onChange={(event) => setCredentialEdit({ ...credentialEdit, authorizationTotp: digits(event.target.value) })} /></Field> : null}
-        <div className="modal-actions"><button className="button" onClick={() => setCredentialEdit(null)} type="button">Cancel</button><button className="button button-primary" disabled={!credentialEdit.value || credentialEdit.value !== credentialEdit.confirm || !credentialEdit.authorizationPassword || credentialEdit.authorizationPin.length < 4 || (currentUser.totpEnabled && credentialEdit.authorizationTotp.length !== 6)} onClick={saveCredential} type="button">Save</button></div>
+        <div className="modal-actions"><button className="button" onClick={() => setCredentialEdit(null)} type="button">Cancel</button><button className="button button-primary" disabled={!credentialEdit.value || credentialEdit.value !== credentialEdit.confirm || !credentialEdit.authorizationPassword || (actorPinConfigured && credentialEdit.authorizationPin.length < 4) || (currentUser.totpEnabled && credentialEdit.authorizationTotp.length !== 6)} onClick={saveCredential} type="button">Save</button></div>
       </Modal> : null}
 
       {roleEdit ? <Modal title="Edit Role" onClose={() => setRoleEdit(null)}>
         {roleAlert ? <VisualAlert tone={roleAlert.tone} title="Role update" message={roleAlert.message} /> : null}
         <Field label="Role"><select value={roleEdit.roleId} onChange={(event) => setRoleEdit({ ...roleEdit, roleId: event.target.value })}>{roles.map((role: any) => <option key={role.id} value={role.id}>{role.id}</option>)}</select></Field>
         <Field label="Your password"><input type="password" value={roleEdit.password} onChange={(event) => setRoleEdit({ ...roleEdit, password: event.target.value })} /></Field>
-        <Field label="Your PIN"><input value={roleEdit.pin} onChange={(event) => setRoleEdit({ ...roleEdit, pin: digits(event.target.value) })} /></Field>
+        {actorPinConfigured ? <Field label="Your PIN"><input value={roleEdit.pin} onChange={(event) => setRoleEdit({ ...roleEdit, pin: digits(event.target.value) })} /></Field> : null}
         {currentUser.totpEnabled ? <Field label="Your 2FA code"><input value={roleEdit.totp} onChange={(event) => setRoleEdit({ ...roleEdit, totp: digits(event.target.value) })} /></Field> : null}
-        <div className="modal-actions"><button className="button" onClick={() => setRoleEdit(null)} type="button">Cancel</button><button className="button button-primary" disabled={!roleEdit.password || roleEdit.pin.length < 4 || (currentUser.totpEnabled && roleEdit.totp.length !== 6)} onClick={saveRoleEdit} type="button">Save Role</button></div>
+        <div className="modal-actions"><button className="button" onClick={() => setRoleEdit(null)} type="button">Cancel</button><button className="button button-primary" disabled={!roleEdit.password || (actorPinConfigured && roleEdit.pin.length < 4) || (currentUser.totpEnabled && roleEdit.totp.length !== 6)} onClick={saveRoleEdit} type="button">Save Role</button></div>
       </Modal> : null}
     </section>
   );
 }
 
-function DatabaseManagerLive() {
+function DatabaseManagerLive({ currentUser }: { currentUser: CurrentUser }) {
   const api = useProgramApi("database-manager");
   const [snapshot, setSnapshot] = useState<any>(null);
   const [records, setRecords] = useState<any[]>([]);
@@ -231,6 +234,9 @@ function DatabaseManagerLive() {
   const [search, setSearch] = useState("");
   const [columnFilter, setColumnFilter] = useState("");
   const [status, setStatus] = useState("");
+  const [credentialRecheck, setCredentialRecheck] = useState({ password: "", pin: "", totp: "" });
+  const [authorizedStores, setAuthorizedStores] = useState<string[]>([]);
+  const [recheckOpen, setRecheckOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     const next = await api.get("snapshot");
@@ -238,19 +244,95 @@ function DatabaseManagerLive() {
     const firstKind = (next.payload as any)?.stores?.[0]?.kind ?? "";
     setKind((current) => current || firstKind);
   }, [api]);
-  const loadRecords = useCallback(async (storeKind = kind) => {
+  const loadRecords = useCallback(async (storeKind = kind, authorization?: typeof credentialRecheck) => {
     if (!storeKind) return;
+    const sensitive = isSensitiveDatabaseStore(storeKind);
+    if (sensitive) {
+      const authorized = authorizedStores.includes(sensitiveStoreKey(storeKind, selectedDatabase));
+      if (!authorized) {
+        setRecords([]);
+        setSelectedRecord(null);
+        setStatus("");
+        setRecheckOpen(true);
+        return;
+      }
+      if (!authorization) return;
+    }
     const scope = selectedDatabase === "global" ? {} : { domainId: selectedDatabase };
-    const result = await api.post("list-records", { kind: storeKind, scope });
+    const result = await api.post("list-records", {
+      kind: storeKind,
+      scope,
+      ...(sensitive && authorization ? {
+        authorizationPassword: authorization.password,
+        authorizationPin: authorization.pin,
+        authorizationTotp: authorization.totp
+      } : {})
+    });
+    if (!result.ok) {
+      setRecords([]);
+      setSelectedRecord(null);
+      setStatus(result.error ?? "Unable to load records.");
+      return;
+    }
+    setStatus("");
     setRecords((result.payload as any[]) ?? []);
-  }, [api, kind, selectedDatabase]);
+  }, [api, kind, selectedDatabase, authorizedStores]);
   useEffect(() => void refresh(), [refresh]);
   useEffect(() => void loadRecords(), [loadRecords]);
 
   async function inspectRecord(id: string) {
+    if (isSensitiveDatabaseStore(kind)) {
+      setSelectedRecord(records.find((record) => record.id === id) ?? null);
+      return;
+    }
     const scope = selectedDatabase === "global" ? {} : { domainId: selectedDatabase };
-    const result = await api.post("get-record", { kind, id, scope });
+    const result = await api.post("get-record", {
+      kind,
+      id,
+      scope
+    });
+    if (!result.ok) {
+      setStatus(result.error ?? "Unable to inspect record.");
+      setSelectedRecord(null);
+      return;
+    }
     setSelectedRecord(result.payload);
+  }
+
+  async function authorizeSensitiveStore() {
+    const scope = selectedDatabase === "global" ? {} : { domainId: selectedDatabase };
+    const result = await api.post("list-records", {
+      kind,
+      scope,
+      authorizationPassword: credentialRecheck.password,
+      authorizationPin: credentialRecheck.pin,
+      authorizationTotp: credentialRecheck.totp
+    });
+    if (!result.ok) {
+      setStatus(result.error ?? "Recheck failed.");
+      return;
+    }
+    setAuthorizedStores((items) => [...new Set([...items, sensitiveStoreKey(kind, selectedDatabase)])]);
+    setRecheckOpen(false);
+    setCredentialRecheck({ password: "", pin: "", totp: "" });
+    setStatus("");
+    setRecords((result.payload as any[]) ?? []);
+  }
+
+  function requestSensitiveRecheck() {
+    setCredentialRecheck({ password: "", pin: "", totp: "" });
+    setRecheckOpen(true);
+  }
+
+  function selectStore(database: string, storeKind: string) {
+    setSelectedDatabase(database);
+    setKind(storeKind);
+    setSelectedRecord(null);
+    setRecords([]);
+    setStatus("");
+    if (isSensitiveDatabaseStore(storeKind)) {
+      setRecheckOpen(true);
+    }
   }
 
   const stores = snapshot?.payload?.stores ?? [];
@@ -267,6 +349,7 @@ function DatabaseManagerLive() {
     return !search || haystack.includes(search.toLowerCase());
   });
   const selectedData = selectedRecord?.data ?? null;
+  const sensitiveLocked = isSensitiveDatabaseStore(kind) && !authorizedStores.includes(sensitiveStoreKey(kind, selectedDatabase));
 
   return (
     <section className="db-explorer-shell">
@@ -278,7 +361,7 @@ function DatabaseManagerLive() {
               <button className={selectedDatabase === database ? "db-node selected" : "db-node"} onClick={() => setSelectedDatabase(database)} type="button"><span className="db-icon">DB</span><strong>{database === "global" ? "Global" : database}</strong></button>
               <div className="db-table-list">
                 {stores.map((store: any) => (
-                  <button className={kind === store.kind && selectedDatabase === database ? "db-table-node selected" : "db-table-node"} key={`${database}:${store.kind}`} onClick={() => { setSelectedDatabase(database); setKind(store.kind); setSelectedRecord(null); }} type="button"><span className="db-icon table">T</span>{store.kind}<small>{store.recordCount}</small></button>
+                  <button className={kind === store.kind && selectedDatabase === database ? "db-table-node selected" : "db-table-node"} key={`${database}:${store.kind}`} onClick={() => selectStore(database, store.kind)} type="button"><span className="db-icon table">T</span>{store.kind}<small>{isSensitiveDatabaseStore(store.kind) ? "Locked" : store.recordCount}</small></button>
                 ))}
               </div>
             </div>
@@ -289,9 +372,12 @@ function DatabaseManagerLive() {
         <div className="db-toolbar">
           <Field label="Search rows"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search IDs and values" /></Field>
           <Field label="Filter columns"><input value={columnFilter} onChange={(event) => setColumnFilter(event.target.value)} placeholder="Column name" /></Field>
-          <button className="button" onClick={() => void loadRecords()} type="button">Refresh</button>
+          <button className="button" onClick={() => sensitiveLocked || isSensitiveDatabaseStore(kind) ? requestSensitiveRecheck() : void loadRecords()} type="button">Refresh</button>
         </div>
-        <div className="db-grid-wrap">
+        {sensitiveLocked ? <section className="db-locked-state">
+          <VisualAlert tone="warning" title="Credential store locked" message="This table contains identity credential records and requires a fresh security check." />
+          <button className="button button-primary" onClick={requestSensitiveRecheck} type="button">Authorize View</button>
+        </section> : <div className="db-grid-wrap">
           <table className="db-grid">
             <thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
             <tbody>
@@ -303,7 +389,7 @@ function DatabaseManagerLive() {
               {!visibleRows.length ? <tr><td className="empty-cell" colSpan={Math.max(1, columns.length)}>No rows found.</td></tr> : null}
             </tbody>
           </table>
-        </div>
+        </div>}
       </main>
       <aside className="db-inspector">
         <div className="db-sidebar-heading"><strong>Inspector</strong><span>{selectedRecord?.id ?? "none"}</span></div>
@@ -311,6 +397,13 @@ function DatabaseManagerLive() {
         {selectedData ? <div className="kv-explorer">{Object.entries(selectedData).map(([key, value]) => <div key={key}><span className="db-icon key">K</span><strong>{key}</strong><code>{formatDbCell(value)}</code></div>)}</div> : null}
         <StatusText value={status} />
       </aside>
+      {recheckOpen ? <Modal title="Authorize Credential Store" onClose={() => setRecheckOpen(false)}>
+        <VisualAlert tone="warning" title="Fresh recheck required" message="Enter your active security factors before viewing identity credential records." />
+        <Field label="Password"><input autoFocus type="password" value={credentialRecheck.password} onChange={(event) => setCredentialRecheck({ ...credentialRecheck, password: event.target.value })} /></Field>
+        {currentUser.pinConfigured ? <Field label="PIN"><input value={credentialRecheck.pin} onChange={(event) => setCredentialRecheck({ ...credentialRecheck, pin: digits(event.target.value) })} /></Field> : null}
+        {currentUser.totpEnabled ? <Field label="2FA code"><input value={credentialRecheck.totp} onChange={(event) => setCredentialRecheck({ ...credentialRecheck, totp: digits(event.target.value).slice(0, 6) })} /></Field> : null}
+        <div className="modal-actions"><button className="button" onClick={() => setRecheckOpen(false)} type="button">Cancel</button><button className="button button-primary" disabled={!credentialRecheck.password || (currentUser.pinConfigured && credentialRecheck.pin.length < 4) || (currentUser.totpEnabled && credentialRecheck.totp.length !== 6)} onClick={() => void authorizeSensitiveStore()} type="button">Authorize View</button></div>
+      </Modal> : null}
     </section>
   );
 }
@@ -507,6 +600,7 @@ function DocsLive() {
   useEffect(() => void refresh(), [refresh]);
 
   const pages = snapshot?.payload?.pages ?? [];
+  const docsTree = useMemo(() => buildDocumentationTree(pages), [pages]);
   const activePage = pages.find((item: any) => item.id === activePageId) ?? pages[0];
   useEffect(() => {
     if (!activePage?.id) return;
@@ -519,21 +613,80 @@ function DocsLive() {
     await refresh();
   }
 
+  function selectLinkedPage(href: string): boolean {
+    const target = resolveDocsLink(activePage, href);
+    if (!target) return false;
+    const candidates = docsLinkCandidates(target);
+    const match = pages.find((item: any) => candidates.includes(docRouteKey(item)));
+    if (!match) return false;
+    setActivePageId(match.id);
+    return true;
+  }
+
+  function handleViewerClick(event: MouseEvent<HTMLElement>) {
+    const target = event.target instanceof HTMLElement ? event.target.closest("a") : null;
+    if (!target) return;
+    const href = target.getAttribute("href");
+    if (!href) return;
+    if (selectLinkedPage(href)) {
+      event.preventDefault();
+    }
+  }
+
   return (
     <section className="docs-program-layout">
-      <Panel title="Docs" action={<div className="inline-actions"><button className="button" onClick={refresh} type="button">Refresh</button><button className="button button-primary" onClick={rebuild} type="button">Rebuild Docs</button></div>}>
-        <div className="docs-sidebar-summary"><strong>{pages.length}</strong><span>docs pages</span></div>
-        <DataTable columns={["Source", "Scope", "Root"]} rows={(snapshot?.payload?.sources ?? []).map((item: any) => [item.title, item.scope, item.rootDir])} />
-      </Panel>
-      <Panel title="Pages">
-        <div className="docs-page-list">{pages.map((item: any) => <button className={activePage?.id === item.id ? "docs-page-button selected" : "docs-page-button"} key={item.id} onClick={() => setActivePageId(item.id)} type="button"><strong>{item.title}</strong><small>{item.routePath ?? item.path}</small></button>)}</div>
-      </Panel>
-      <Panel title={page?.title ?? "Viewer"}>
-        <SummaryStrip items={[["Pages", pages.length], ["Warnings", snapshot?.payload?.warnings?.length ?? 0], ["Generated", formatTime(snapshot?.payload?.generatedAtMs)]]} />
+      <aside className="docs-explorer-panel">
+        <div className="docs-explorer-header">
+          <div><h2 className="panel-title">Docs</h2><p className="panel-kicker">Repository documentation</p></div>
+          <div className="inline-actions"><button className="button" onClick={refresh} type="button">Refresh</button><button className="button button-primary" onClick={rebuild} type="button">Rebuild</button></div>
+        </div>
+        <div className="docs-sidebar-summary"><strong>{pages.length}</strong><span>docs files</span></div>
+        <SummaryStrip items={[["Generated", snapshot?.payload?.generatedPages ?? 0], ["Sources", snapshot?.payload?.sources?.length ?? 0], ["Warnings", snapshot?.payload?.warnings?.length ?? 0]]} />
+        <div className="docs-file-tree">{docsTree.children.map((node) => <DocsTreeNodeView activePageId={activePage?.id} key={node.path} node={node} onSelect={setActivePageId} />)}</div>
+      </aside>
+      <main className="docs-viewer-panel">
+        <div className="panel-heading">
+          <div><h2 className="panel-title">{page?.title ?? "Viewer"}</h2><p className="panel-kicker">{page?.routePath ?? "Select a documentation file"}</p></div>
+          <span className="program-chip">{formatTime(snapshot?.payload?.generatedAtMs)}</span>
+        </div>
         {snapshot?.payload?.warnings?.length ? <details className="json-details"><summary>Warnings</summary><pre>{snapshot.payload.warnings.join("\n")}</pre></details> : null}
-        {page ? <article className="docs-rendered" dangerouslySetInnerHTML={{ __html: page.html }} /> : <p className="muted-text">Select a page to view rendered documentation.</p>}
+        {page ? <article className="docs-rendered" onClick={handleViewerClick} dangerouslySetInnerHTML={{ __html: page.html }} /> : <p className="muted-text">Select a page to view rendered documentation.</p>}
         <StatusText value={status} />
-      </Panel>
+      </main>
+    </section>
+  );
+}
+
+type DocsTreeNode = {
+  name: string;
+  path: string;
+  children: DocsTreeNode[];
+  page?: any;
+};
+
+function DocsTreeNodeView(props: { node: DocsTreeNode; activePageId: string | undefined; onSelect(pageId: string): void }) {
+  const [open, setOpen] = useState(() => !shouldCollapseDocsFolder(props.node));
+  const hasChildren = props.node.children.length > 0;
+  const selected = props.node.page?.id === props.activePageId;
+  if (props.node.page && !hasChildren) {
+    return (
+      <button className={selected ? "docs-tree-file selected" : "docs-tree-file"} onClick={() => props.onSelect(props.node.page.id)} type="button">
+        <FileText size={14} aria-hidden />
+        <span>{props.node.name}</span>
+      </button>
+    );
+  }
+  return (
+    <section className="docs-tree-folder">
+      <button className="docs-tree-folder-label" onClick={() => setOpen((value) => !value)} type="button">
+        {open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
+        <FolderOpen size={15} aria-hidden />
+        <span>{props.node.name}</span>
+      </button>
+      {open ? <div className="docs-tree-children">
+        {props.node.page ? <button className={selected ? "docs-tree-file selected" : "docs-tree-file"} onClick={() => props.onSelect(props.node.page.id)} type="button"><FileText size={14} aria-hidden /><span>{props.node.page.title}</span></button> : null}
+        {props.node.children.map((child) => <DocsTreeNodeView activePageId={props.activePageId} key={child.path} node={child} onSelect={props.onSelect} />)}
+      </div> : null}
     </section>
   );
 }
@@ -701,6 +854,116 @@ function yesNo(value: unknown): string {
 
 function formatTime(value: unknown): string {
   return typeof value === "number" && value > 0 ? new Date(value).toLocaleString() : "-";
+}
+
+function isSensitiveDatabaseStore(kind: string): boolean {
+  return kind.trim().toLowerCase() === "identity.users";
+}
+
+function sensitiveStoreKey(kind: string, database: string): string {
+  return `${database}:${kind.trim().toLowerCase()}`;
+}
+
+function buildDocumentationTree(pages: any[]): DocsTreeNode {
+  const root: DocsTreeNode = { name: "docs", path: "", children: [] };
+  for (const page of [...pages].sort((left, right) => docRouteKey(left).localeCompare(docRouteKey(right)))) {
+    const route = docRouteKey(page);
+    const parts = route.split("/").filter(Boolean);
+    const fileName = parts.pop() ?? page.title ?? "index";
+    let current = root;
+    for (const part of parts) {
+      const path = current.path ? `${current.path}/${part}` : part;
+      let child = current.children.find((node) => node.path === path && !node.page);
+      if (!child) {
+        child = { name: titleFromRouteSegment(part), path, children: [] };
+        current.children.push(child);
+      }
+      current = child;
+    }
+    current.children.push({
+      name: titleFromRouteSegment(fileName),
+      path: `file:${route}:${page.id}`,
+      children: [],
+      page
+    });
+  }
+  sortDocsTree(root);
+  return root;
+}
+
+function sortDocsTree(node: DocsTreeNode): void {
+  node.children.sort((left, right) => {
+    if (Boolean(left.page) !== Boolean(right.page)) return left.page ? 1 : -1;
+    return left.name.localeCompare(right.name);
+  });
+  for (const child of node.children) sortDocsTree(child);
+}
+
+function shouldCollapseDocsFolder(node: DocsTreeNode): boolean {
+  const path = node.path.toLowerCase();
+  const name = node.name.toLowerCase();
+  if (!path) return false;
+  if (path.startsWith("generated/reference/typedoc/assets")) return true;
+  if (path.startsWith("generated/reference/typedoc/classes")) return true;
+  if (path.startsWith("generated/reference/typedoc/types")) return true;
+  if (["classes", "types", "functions", "variables", "assets"].includes(name) && path.startsWith("generated/")) return true;
+  return node.children.length > 30 && path.startsWith("generated/");
+}
+
+function docRouteKey(page: any): string {
+  return normalizeDocPath(String(page?.routePath ?? page?.path ?? page?.id ?? ""));
+}
+
+function normalizeDocPath(value: string): string {
+  const withoutHash = value.split("#")[0] ?? "";
+  const withoutQuery = withoutHash.split("?")[0] ?? "";
+  const normalized = withoutQuery
+    .replaceAll("\\", "/")
+    .replace(/^\/+/, "")
+    .replace(/\.(md|mdx|html|json)$/i, "");
+  const parts: string[] = [];
+  for (const part of normalized.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") parts.pop();
+    else parts.push(part);
+  }
+  return parts.join("/");
+}
+
+function resolveDocsLink(activePage: any, href: string): string | null {
+  const clean = href.trim();
+  if (!clean || clean.startsWith("#") || /^(https?:|mailto:|javascript:)/i.test(clean)) return null;
+  const current = docRouteKey(activePage);
+  if (clean.startsWith("/")) return normalizeDocPath(clean);
+  const currentDir = current.includes("/") ? current.slice(0, current.lastIndexOf("/")) : "";
+  return normalizeDocPath(currentDir ? `${currentDir}/${clean}` : clean);
+}
+
+function docsLinkCandidates(target: string): string[] {
+  const normalized = normalizeDocPath(target);
+  const values = new Set<string>([normalized]);
+  if (normalized.endsWith("/index")) values.add(normalized.replace(/\/index$/, ""));
+  if (normalized.endsWith("/README")) values.add(normalized.replace(/\/README$/, ""));
+  if (normalized && !normalized.endsWith("/index") && !normalized.endsWith("/README")) {
+    values.add(`${normalized}/index`);
+    values.add(`${normalized}/README`);
+  }
+  if (!normalized) {
+    values.add("index");
+    values.add("README");
+  }
+  return [...values];
+}
+
+function titleFromRouteSegment(value: string): string {
+  if (/^README$/i.test(value.replace(/\.(md|mdx|html|json)$/i, ""))) return "README";
+  return value
+    .replace(/\.(md|mdx|html|json)$/i, "")
+    .replace(/^index$/i, "Index")
+    .split(/[-_.\s]+/g)
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
 }
 
 function formatDuration(value: unknown): string {

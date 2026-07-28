@@ -37,7 +37,7 @@ export async function POST(request: Request, context: RouteParams) {
     programId,
     endpoint,
     scope: { domainId: url.searchParams.get("domainId") },
-    payload: programId === "identity-access" && payload && typeof payload === "object"
+    payload: (programId === "identity-access" || programId === "database-manager") && payload && typeof payload === "object"
       ? { ...payload, authSessionId: sessionId }
       : payload
   });

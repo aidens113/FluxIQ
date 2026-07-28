@@ -19,6 +19,8 @@ export type User = {
   roleId: string;
   enabled: boolean;
   totpEnabled: boolean;
+  passwordConfigured?: boolean;
+  pinConfigured?: boolean;
   createdAtMs: number;
   updatedAtMs: number;
 };

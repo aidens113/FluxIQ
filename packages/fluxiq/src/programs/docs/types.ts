@@ -20,9 +20,27 @@ export type DocumentationPageContent = DocumentationPage & {
   html: string;
 };
 
+export type GeneratedDocumentationPage = {
+  relativePath: string;
+  markdown: string;
+};
+
+export type DocumentationGeneratorContext = {
+  nowMs: number;
+  docsRootDir: string;
+  generatedRootDir: string;
+};
+
+export type DocumentationGenerator = {
+  id: string;
+  title: string;
+  generate(context: DocumentationGeneratorContext): Promise<GeneratedDocumentationPage[]> | GeneratedDocumentationPage[];
+};
+
 export type DocsSnapshot = {
   sources: DocumentationSource[];
   pages: DocumentationPage[];
   generatedAtMs: number;
   warnings: string[];
+  generatedPages: number;
 };

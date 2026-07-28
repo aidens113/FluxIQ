@@ -64,6 +64,15 @@ keeps clear folders rather than many tiny workspace packages.
 Global program internals use the layout described in
 [`program-layout.md`](./program-layout.md).
 
+## Authored Architecture Docs
+
+- [Current System](current-system.md)
+- [Documentation System](docs-system.md)
+- [Program Layout](program-layout.md)
+- [UI Theme](ui-theme.md)
+- [Migration Plan](migration-plan.md)
+- [Roadmap](roadmap.md)
+
 ## Loading Model
 
 The framework should discover domains from downstream registrations supplied by

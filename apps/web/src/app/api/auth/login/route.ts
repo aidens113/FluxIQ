@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { FLUXIQ_SESSION_COOKIE } from "../../../../lib/auth";
 import { getFluxIQ } from "../../../../lib/fluxiq";
-import { TotpRequiredError } from "fluxiq";
+import { DEFAULT_SESSION_TTL_MS, TotpRequiredError } from "fluxiq";
 
-const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const LOCKOUT_MS = 60 * 1000;
 const MAX_ATTEMPTS = 5;
@@ -45,7 +44,7 @@ export async function POST(request: Request) {
       username: payload.username,
       password: payload.password,
       ...(payload.totp ? { totp: payload.totp } : {}),
-      ttlMs: SESSION_TTL_MS
+      ttlMs: DEFAULT_SESSION_TTL_MS
     });
     attempts.delete(attemptKey);
     const response = NextResponse.json({
@@ -61,7 +60,7 @@ export async function POST(request: Request) {
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
       path: "/",
-      maxAge: Math.floor(SESSION_TTL_MS / 1000)
+      maxAge: Math.floor(DEFAULT_SESSION_TTL_MS / 1000)
     });
     return response;
   } catch (error) {

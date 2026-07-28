@@ -11,7 +11,7 @@ import {
   validateDomainIo,
   validateIoRequirements
 } from "../io";
-import { buildProgramDirectory, createGlobalProgramRuntime, type GlobalProgramRuntime, type ProgramDirectory } from "../programs";
+import { buildProgramDirectory, createGlobalProgramRuntime, registerHostDocumentationGenerators, type GlobalProgramRuntime, type ProgramDirectory } from "../programs";
 
 export type FluxIQHostPaths = {
   root: string;
@@ -149,6 +149,13 @@ export class FluxIQ {
     for (const registration of options.io ?? []) {
       this.io.register(registration);
     }
+    registerHostDocumentationGenerators({
+      docs: this.programs.docs,
+      providers: {
+        domains: () => this.domains.all(),
+        io: () => this.io.snapshot()
+      }
+    });
   }
 
   static create(options: FluxIQOptions = {}): FluxIQ {

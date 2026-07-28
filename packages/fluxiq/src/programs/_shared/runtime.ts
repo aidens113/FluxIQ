@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { FluxIQHostPaths } from "../../framework";
 import { BackgroundTasksService, registerBackgroundTasksApi } from "../background-tasks";
 import { ComputeControlService, registerComputeControlApi } from "../compute-control";
@@ -7,6 +8,7 @@ import { DocsService, registerDocsApi } from "../docs";
 import { IdentityAccessService, registerIdentityAccessApi } from "../identity-access";
 import { ProductionRunnerService, registerProductionRunnerApi } from "../production-runner";
 import { GlobalProgramApiRegistry } from "./api";
+import { registerGlobalDocumentationGenerators } from "./docs-generators";
 
 export type GlobalProgramRuntime = {
   api: GlobalProgramApiRegistry;
@@ -23,17 +25,18 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
   const api = new GlobalProgramApiRegistry();
   const storageOptions = paths ? { dataDir: paths.data } : {};
   const backgroundTasksRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "background.tasks" }) : undefined;
+  const identityUsersRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "identity.users" }) : undefined;
   const backgroundTasks = new BackgroundTasksService(backgroundTasksRepository ? { repository: backgroundTasksRepository } : {});
   const computeControl = new ComputeControlService(storageOptions);
   const databaseManager = new DatabaseManagerService(storageOptions);
   const deploymentSync = new DeploymentSyncService(undefined, paths ? { ...storageOptions, rootDir: paths.root } : storageOptions);
-  const docs = new DocsService(storageOptions);
-  const identityAccess = new IdentityAccessService(storageOptions);
+  const docs = new DocsService(paths ? { ...storageOptions, docsRootDir: path.join(paths.root, "docs"), generatedRootDir: path.join(paths.root, "docs", "generated") } : storageOptions);
+  const identityAccess = new IdentityAccessService(identityUsersRepository ? { repository: identityUsersRepository } : {});
   const productionRunner = new ProductionRunnerService(undefined, storageOptions);
 
   if (paths) {
     databaseManager
-      .registerRepository("identity.users", new SQLiteRepository({ rootDir: paths.databases, kind: "identity.users" }))
+      .registerRepository("identity.users", identityUsersRepository!)
       .registerRepository("background.tasks", backgroundTasksRepository!)
       .registerRepository("compute.nodes", new SQLiteRepository({ rootDir: paths.databases, kind: "compute.nodes" }))
       .registerRepository("deployment.targets", new SQLiteRepository({ rootDir: paths.databases, kind: "deployment.targets" }))
@@ -42,7 +45,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
     docs.registerSource({
       id: "framework-docs",
       title: "Framework Docs",
-      rootDir: paths.root,
+      rootDir: path.join(paths.root, "docs"),
       scope: "framework"
     });
 
@@ -64,11 +67,22 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
 
   registerBackgroundTasksApi(api, backgroundTasks);
   registerComputeControlApi(api, computeControl);
-  registerDatabaseManagerApi(api, databaseManager);
+  registerDatabaseManagerApi(api, databaseManager, identityAccess);
   registerDeploymentSyncApi(api, deploymentSync);
   registerDocsApi(api, docs);
   registerIdentityAccessApi(api, identityAccess);
   registerProductionRunnerApi(api, productionRunner);
+
+  if (paths) {
+    registerGlobalDocumentationGenerators({
+      docs,
+      api,
+      backgroundTasks,
+      databaseManager,
+      deploymentSync,
+      rootDir: paths.root
+    });
+  }
 
   return {
     api,

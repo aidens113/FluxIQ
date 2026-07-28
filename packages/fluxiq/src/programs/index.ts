@@ -1,5 +1,6 @@
 export * from "./_shared/api";
 export * from "./_shared/catalog";
+export * from "./_shared/docs-generators";
 export * from "./_shared/runtime";
 export * from "./_shared/types";
 export * from "./automation-studio";

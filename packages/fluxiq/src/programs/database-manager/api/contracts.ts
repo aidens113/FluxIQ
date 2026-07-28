@@ -19,6 +19,10 @@ export type DatabaseManagerSnapshotResponse = DatabaseManagerSnapshot;
 export type DatabaseManagerStoreRequest = {
   kind: string;
   scope?: RepositoryScope;
+  authSessionId?: string;
+  authorizationPassword?: string;
+  authorizationPin?: string;
+  authorizationTotp?: string;
 };
 
 export type DatabaseManagerRecordRequest = DatabaseManagerStoreRequest & {

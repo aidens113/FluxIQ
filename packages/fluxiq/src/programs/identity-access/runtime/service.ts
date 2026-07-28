@@ -1,6 +1,7 @@
-import { createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import QRCode from "qrcode";
-import { ProgramJsonStore, programDataFile } from "../../_shared/storage";
+import type { JsonObject } from "../../../core";
+import type { RecordEnvelope, Repository } from "../../database-manager";
 import { defaultRoles } from "./roles";
 import type { IdentityAccessSnapshot, Role, Session, User, UserCredential, VaultRecord, VaultStatus } from "../types";
 
@@ -8,9 +9,35 @@ type IdentityAccessState = {
   users: User[];
   roles: Role[];
   credentials: UserCredential[];
+  credentialMetadata: CredentialMetadata[];
+  encryptedCredentials: Array<{ userId: string; encrypted: EncryptedCredentialRecord }>;
   sessions: Session[];
   vault: VaultStatus;
   vaultRecords: VaultRecord[];
+};
+
+type CredentialMetadata = {
+  userId: string;
+  passwordConfigured: boolean;
+  pinConfigured: boolean;
+  totpConfigured: boolean;
+  pendingTotpConfigured: boolean;
+  updatedAtMs: number;
+};
+
+type CredentialKey = {
+  salt: string;
+  key: Buffer;
+};
+
+type EncryptedCredentialRecord = {
+  version: 1;
+  algorithm: "aes-256-gcm";
+  kdf: "scrypt";
+  salt: string;
+  iv: string;
+  tag: string;
+  ciphertext: string;
 };
 
 export class TotpRequiredError extends Error {
@@ -20,30 +47,26 @@ export class TotpRequiredError extends Error {
   }
 }
 
+export const DEFAULT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+
 export class IdentityAccessService {
   private readonly users = new Map<string, User>();
   private readonly roles = new Map<string, Role>();
   private readonly credentials = new Map<string, UserCredential>();
+  private readonly credentialMetadata = new Map<string, CredentialMetadata>();
+  private readonly credentialKeys = new Map<string, CredentialKey>();
+  private readonly encryptedCredentials = new Map<string, EncryptedCredentialRecord>();
   private readonly sessions = new Map<string, Session>();
   private vault: VaultStatus = { initialized: false, unlocked: false };
-  private readonly store?: ProgramJsonStore<IdentityAccessState>;
+  private readonly repository: Repository | undefined;
   private loaded = false;
 
-  constructor(options: { dataDir?: string; roles?: Role[] } = {}) {
+  constructor(options: { repository?: Repository; roles?: Role[] } = {}) {
     const roles = options.roles ?? defaultRoles;
     for (const role of roles) {
       this.roles.set(role.id, role);
     }
-    if (options.dataDir) {
-      this.store = new ProgramJsonStore(programDataFile(options.dataDir, "identity-access", "state.json"), () => ({
-        users: [],
-        roles,
-        credentials: [],
-        sessions: [],
-        vault: { initialized: false, unlocked: false },
-        vaultRecords: []
-      }));
-    }
+    this.repository = options.repository;
   }
 
   async upsertRole(role: Role): Promise<Role> {
@@ -128,13 +151,24 @@ export class IdentityAccessService {
     authorizationPin: string | undefined;
     authorizationTotp: string | undefined;
   }): Promise<UserCredential> {
-    await this.authorizeCredentialRotation({
+    const actor = await this.authorizeCredentialRotation({
       targetUserId: params.userId,
       sessionId: params.sessionId,
       password: params.authorizationPassword,
       pin: params.authorizationPin,
       totp: params.authorizationTotp
     });
+    try {
+      this.requireCredential(params.userId);
+    } catch (error) {
+      if (actor.id !== params.userId && error instanceof Error && error.message === "Credential recheck required") {
+        this.credentials.set(params.userId, { userId: params.userId, updatedAtMs: Date.now() });
+        const user = this.users.get(params.userId);
+        if (user?.totpEnabled) this.users.set(user.id, { ...user, totpEnabled: false, updatedAtMs: Date.now() });
+      } else {
+        throw error;
+      }
+    }
     return this.setPassword(params.userId, params.password);
   }
 
@@ -223,7 +257,7 @@ export class IdentityAccessService {
     await this.load();
     const user = [...this.users.values()].find((item) => item.username.toLowerCase() === params.username.trim().toLowerCase());
     if (!user || !user.enabled) throw new Error("Invalid username or credentials");
-    const credential = this.requireCredential(user.id);
+    const credential = this.unlockCredentialWithPassword(user.id, params.password);
     const passwordOk = verifySecret(params.password, credential.passwordHash);
     if (!passwordOk) throw new Error("Invalid username or credentials");
     if (credential.totpSecret && !verifyTotp(credential.totpSecret, params.totp ?? "")) {
@@ -232,10 +266,10 @@ export class IdentityAccessService {
     const session = await this.createSession(user.id, params.ttlMs, params.nowMs);
     const role = this.roles.get(user.roleId);
     if (!role) throw new Error(`Unknown role: ${user.roleId}`);
-    return { session, user, role };
+    return { session, user: this.userWithCredentialStatus(user), role };
   }
 
-  async createSession(userId: string, ttlMs = 3_600_000, nowMs = Date.now()): Promise<Session> {
+  async createSession(userId: string, ttlMs = DEFAULT_SESSION_TTL_MS, nowMs = Date.now()): Promise<Session> {
     await this.load();
     const user = this.users.get(userId);
     if (!user || !user.enabled) {
@@ -255,7 +289,7 @@ export class IdentityAccessService {
     await this.load();
     if (!sessionId) return null;
     let session = this.sessions.get(sessionId);
-    if (!session && this.store) {
+    if (!session && this.repository) {
       await this.reloadFromStore();
       session = this.sessions.get(sessionId);
     }
@@ -264,7 +298,7 @@ export class IdentityAccessService {
     if (!user || !user.enabled) return null;
     const role = this.roles.get(user.roleId);
     if (!role) return null;
-    return { session, user, role };
+    return { session, user: this.userWithCredentialStatus(user), role };
   }
 
   async authorizeSessionCredentials(params: { sessionId: string | undefined; password: string | undefined; pin: string | undefined; totp: string | undefined }): Promise<User> {
@@ -335,7 +369,7 @@ export class IdentityAccessService {
     await this.load();
     const sessions = [...this.sessions.values()].filter((session) => session.expiresAtMs > nowMs);
     return {
-      users: [...this.users.values()].sort((left, right) => left.username.localeCompare(right.username)),
+      users: [...this.users.values()].map((user) => this.userWithCredentialStatus(user)).sort((left, right) => left.username.localeCompare(right.username)),
       roles: [...this.roles.values()].sort((left, right) => left.id.localeCompare(right.id)),
       sessions,
       vault: this.vault
@@ -345,11 +379,11 @@ export class IdentityAccessService {
   private async load(): Promise<void> {
     if (this.loaded) return;
     this.loaded = true;
-    if (!this.store) {
+    if (!this.repository) {
       this.ensureDefaultAdmin();
       return;
     }
-    const state = await this.store.read();
+    const state = await this.readStoredState();
     this.applyState(state);
     if (this.ensureDefaultAdmin()) {
       await this.persist();
@@ -357,8 +391,8 @@ export class IdentityAccessService {
   }
 
   private async reloadFromStore(): Promise<void> {
-    if (!this.store) return;
-    this.applyState(await this.store.read());
+    if (!this.repository) return;
+    this.applyState(await this.readStoredState());
     if (this.ensureDefaultAdmin()) {
       await this.persist();
     }
@@ -368,24 +402,77 @@ export class IdentityAccessService {
     this.users.clear();
     this.roles.clear();
     this.credentials.clear();
+    this.credentialMetadata.clear();
+    this.credentialKeys.clear();
+    this.encryptedCredentials.clear();
     this.sessions.clear();
     for (const role of state.roles.length ? state.roles : defaultRoles) this.roles.set(role.id, role);
     for (const user of state.users) this.users.set(user.id, user);
     for (const credential of state.credentials) this.credentials.set(credential.userId, credential);
+    for (const metadata of state.credentialMetadata) this.credentialMetadata.set(metadata.userId, metadata);
+    for (const encrypted of state.encryptedCredentials) this.encryptedCredentials.set(encrypted.userId, encrypted.encrypted);
     for (const session of state.sessions) this.sessions.set(session.id, session);
     this.vault = state.vault ?? { initialized: false, unlocked: false };
   }
 
   private async persist(): Promise<void> {
-    if (!this.store) return;
-    await this.store.write({
-      users: [...this.users.values()],
-      roles: [...this.roles.values()],
-      credentials: [...this.credentials.values()],
-      sessions: [...this.sessions.values()],
-      vault: this.vault,
+    if (!this.repository) return;
+    const now = Date.now();
+    for (const user of this.users.values()) {
+      await this.repository.put(identityRecord(`user:${user.id}`, "user", { recordType: "user", user: user as unknown as JsonObject }, now));
+    }
+    for (const role of this.roles.values()) {
+      await this.repository.put(identityRecord(`role:${role.id}`, "role", { recordType: "role", role: role as unknown as JsonObject }, now));
+    }
+    for (const credential of this.credentials.values()) {
+      const encrypted = this.tryEncryptCredential(credential);
+      if (!encrypted) continue;
+      await this.repository.put(identityRecord(`credential:${credential.userId}`, "credential", {
+        recordType: "credential",
+        encrypted: true,
+        metadata: credentialMetadata(credential) as unknown as JsonObject,
+        sealed: encrypted as unknown as JsonObject
+      }, now));
+      this.credentialMetadata.set(credential.userId, credentialMetadata(credential));
+      this.encryptedCredentials.set(credential.userId, encrypted);
+    }
+    for (const session of this.sessions.values()) {
+      await this.repository.put(identityRecord(`session:${session.id}`, "session", { recordType: "session", session: session as unknown as JsonObject }, now));
+    }
+    await this.repository.put(identityRecord("vault", "vault", { recordType: "vault", vault: this.vault as unknown as JsonObject }, now));
+  }
+
+  private async readStoredState(): Promise<IdentityAccessState> {
+    if (!this.repository) return { users: [], roles: [], credentials: [], credentialMetadata: [], encryptedCredentials: [], sessions: [], vault: { initialized: false, unlocked: false }, vaultRecords: [] };
+    const records = await this.repository.list({});
+    const state: IdentityAccessState = {
+      users: [],
+      roles: [],
+      credentials: [],
+      credentialMetadata: [],
+      encryptedCredentials: [],
+      sessions: [],
+      vault: { initialized: false, unlocked: false },
       vaultRecords: []
-    });
+    };
+    for (const item of records) {
+      if (item.data.recordType === "user" && isObject(item.data.user)) {
+        state.users.push(item.data.user as unknown as User);
+      } else if (item.data.recordType === "role" && isObject(item.data.role)) {
+        state.roles.push(item.data.role as unknown as Role);
+      } else if (item.data.recordType === "credential" && item.data.encrypted === true && isObject(item.data.metadata) && isEncryptedCredentialRecord(item.data.sealed)) {
+        state.credentialMetadata.push(item.data.metadata as unknown as CredentialMetadata);
+        state.encryptedCredentials.push({ userId: String(item.data.metadata.userId), encrypted: item.data.sealed });
+      } else if (item.data.recordType === "credential" && isObject(item.data.credential)) {
+        state.credentials.push(item.data.credential as unknown as UserCredential);
+        state.credentialMetadata.push(credentialMetadata(item.data.credential as unknown as UserCredential));
+      } else if (item.data.recordType === "session" && isObject(item.data.session)) {
+        state.sessions.push(item.data.session as unknown as Session);
+      } else if (item.data.recordType === "vault" && isObject(item.data.vault)) {
+        state.vault = item.data.vault as unknown as VaultStatus;
+      }
+    }
+    return state;
   }
 
   private requireUser(userId: string): User {
@@ -394,9 +481,22 @@ export class IdentityAccessService {
     return user;
   }
 
+  private userWithCredentialStatus(user: User): User {
+    const credential = this.credentials.get(user.id);
+    const metadata = this.credentialMetadata.get(user.id);
+    return {
+      ...user,
+      passwordConfigured: Boolean(credential?.passwordHash) || Boolean(metadata?.passwordConfigured),
+      pinConfigured: Boolean(credential?.pinHash) || Boolean(metadata?.pinConfigured)
+    };
+  }
+
   private requireCredential(userId: string): UserCredential {
     this.requireUser(userId);
-    return this.credentials.get(userId) ?? { userId, updatedAtMs: Date.now() };
+    const credential = this.credentials.get(userId);
+    if (credential) return credential;
+    if (this.encryptedCredentials.has(userId)) throw new Error("Credential recheck required");
+    return { userId, updatedAtMs: Date.now() };
   }
 
   private setCredentialHash(userId: string, key: "passwordHash" | "pinHash", value: string): UserCredential {
@@ -404,15 +504,53 @@ export class IdentityAccessService {
     credential[key] = hashSecret(value);
     credential.updatedAtMs = Date.now();
     this.credentials.set(userId, credential);
+    if (key === "passwordHash") {
+      this.credentialKeys.set(userId, deriveCredentialKey(value));
+    }
+    this.credentialMetadata.set(userId, credentialMetadata(credential));
     return credential;
   }
 
   private verifyCredentialGate(userId: string, params: { password: string; pin: string; totp: string | undefined }): void {
-    const credential = this.requireCredential(userId);
+    const credential = this.unlockCredentialWithPassword(userId, params.password);
     const passwordOk = verifySecret(params.password, credential.passwordHash);
-    const pinOk = verifySecret(params.pin, credential.pinHash);
+    const pinOk = credential.pinHash ? verifySecret(params.pin, credential.pinHash) : true;
     const totpOk = credential.totpSecret ? verifyTotp(credential.totpSecret, params.totp ?? "") : true;
     if (!passwordOk || !pinOk || !totpOk) throw new Error("Invalid username or credentials");
+  }
+
+  private unlockCredentialWithPassword(userId: string, password: string): UserCredential {
+    const existing = this.credentials.get(userId);
+    if (existing && verifySecret(password, existing.passwordHash)) {
+      if (!this.credentialKeys.has(userId)) this.credentialKeys.set(userId, deriveCredentialKey(password));
+      return existing;
+    }
+    const sealed = this.encryptedCredentials.get(userId);
+    if (!sealed) return this.requireCredential(userId);
+    try {
+      const credential = decryptCredential(sealed, password);
+      if (credential.userId !== userId || !verifySecret(password, credential.passwordHash)) {
+        throw new Error("Invalid credential payload");
+      }
+      this.credentials.set(userId, credential);
+      this.credentialMetadata.set(userId, credentialMetadata(credential));
+      this.credentialKeys.set(userId, { salt: sealed.salt, key: deriveCredentialKey(password, sealed.salt).key });
+      return credential;
+    } catch {
+      throw new Error("Invalid username or credentials");
+    }
+  }
+
+  private tryEncryptCredential(credential: UserCredential): EncryptedCredentialRecord | null {
+    let key = this.credentialKeys.get(credential.userId);
+    if (!key) {
+      const existing = this.encryptedCredentials.get(credential.userId);
+      if (existing) return existing;
+      return null;
+    }
+    const encrypted = encryptCredential(credential, key);
+    this.credentialKeys.set(credential.userId, { salt: encrypted.salt, key: key.key });
+    return encrypted;
   }
 
   private ensureDefaultAdmin(): boolean {
@@ -430,9 +568,26 @@ export class IdentityAccessService {
     };
     this.users.set(user.id, user);
     this.setCredentialHash(user.id, "passwordHash", "admin");
-    this.setCredentialHash(user.id, "pinHash", "1234");
     return true;
   }
+}
+
+function identityRecord(id: string, stateKind: string, data: JsonObject, nowMs: number): RecordEnvelope {
+  return {
+    id,
+    kind: "identity.users",
+    scope: {},
+    data: {
+      stateKind,
+      ...data
+    },
+    createdAtMs: nowMs,
+    updatedAtMs: nowMs
+  };
+}
+
+function isObject(value: unknown): value is JsonObject {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function hashSecret(value: string): string {
@@ -448,6 +603,68 @@ function verifySecret(value: string, encoded: string | undefined): boolean {
   const actual = Buffer.from(scryptSync(value, salt, 32).toString("base64url"));
   const expected = Buffer.from(hash);
   return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+function credentialMetadata(credential: UserCredential): CredentialMetadata {
+  return {
+    userId: credential.userId,
+    passwordConfigured: Boolean(credential.passwordHash),
+    pinConfigured: Boolean(credential.pinHash),
+    totpConfigured: Boolean(credential.totpSecret),
+    pendingTotpConfigured: Boolean(credential.pendingTotpSecret),
+    updatedAtMs: credential.updatedAtMs
+  };
+}
+
+function deriveCredentialKey(password: string, salt = randomBytes(16).toString("base64url")): CredentialKey {
+  return {
+    salt,
+    key: scryptSync(password, salt, 32)
+  };
+}
+
+function encryptCredential(credential: UserCredential, credentialKey: CredentialKey): EncryptedCredentialRecord {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", credentialKey.key, iv);
+  const ciphertext = Buffer.concat([
+    cipher.update(JSON.stringify(credential), "utf8"),
+    cipher.final()
+  ]);
+  return {
+    version: 1,
+    algorithm: "aes-256-gcm",
+    kdf: "scrypt",
+    salt: credentialKey.salt,
+    iv: iv.toString("base64url"),
+    tag: cipher.getAuthTag().toString("base64url"),
+    ciphertext: ciphertext.toString("base64url")
+  };
+}
+
+function decryptCredential(sealed: EncryptedCredentialRecord, password: string): UserCredential {
+  const credentialKey = deriveCredentialKey(password, sealed.salt);
+  const decipher = createDecipheriv("aes-256-gcm", credentialKey.key, Buffer.from(sealed.iv, "base64url"));
+  decipher.setAuthTag(Buffer.from(sealed.tag, "base64url"));
+  const plaintext = Buffer.concat([
+    decipher.update(Buffer.from(sealed.ciphertext, "base64url")),
+    decipher.final()
+  ]).toString("utf8");
+  const parsed = JSON.parse(plaintext) as unknown;
+  if (!isObject(parsed) || typeof parsed.userId !== "string" || typeof parsed.updatedAtMs !== "number") {
+    throw new Error("Invalid encrypted credential payload");
+  }
+  return parsed as unknown as UserCredential;
+}
+
+function isEncryptedCredentialRecord(value: unknown): value is EncryptedCredentialRecord {
+  if (!isObject(value)) return false;
+  return value.version === 1
+    && value.algorithm === "aes-256-gcm"
+    && value.kdf === "scrypt"
+    && typeof value.salt === "string"
+    && typeof value.iv === "string"
+    && typeof value.tag === "string"
+    && typeof value.ciphertext === "string";
 }
 
 function base32(buffer: Buffer): string {

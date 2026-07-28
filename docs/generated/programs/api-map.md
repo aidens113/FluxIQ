@@ -1,0 +1,54 @@
+# Program API Map
+
+This page is generated from the global program API registry.
+
+| Program | Endpoint |
+| --- | --- |
+| `background-tasks` | `control` |
+| `background-tasks` | `detail` |
+| `background-tasks` | `run` |
+| `background-tasks` | `save-schedule` |
+| `background-tasks` | `set-enabled` |
+| `background-tasks` | `snapshot` |
+| `compute-control` | `acquire-lease` |
+| `compute-control` | `command` |
+| `compute-control` | `complete-command` |
+| `compute-control` | `heartbeat` |
+| `compute-control` | `poll-commands` |
+| `compute-control` | `register-node` |
+| `compute-control` | `release-lease` |
+| `compute-control` | `snapshot` |
+| `database-manager` | `delete-record` |
+| `database-manager` | `get-record` |
+| `database-manager` | `list-records` |
+| `database-manager` | `put-record` |
+| `database-manager` | `run-migration` |
+| `database-manager` | `snapshot` |
+| `deployment-sync` | `dry-run` |
+| `deployment-sync` | `rollback` |
+| `deployment-sync` | `snapshot` |
+| `deployment-sync` | `sync` |
+| `deployment-sync` | `upsert-artifact` |
+| `deployment-sync` | `upsert-target` |
+| `docs` | `get-page` |
+| `docs` | `rebuild` |
+| `docs` | `register-source` |
+| `docs` | `snapshot` |
+| `identity-access` | `begin-totp` |
+| `identity-access` | `confirm-totp` |
+| `identity-access` | `create-session` |
+| `identity-access` | `create-user` |
+| `identity-access` | `disable-totp` |
+| `identity-access` | `lock-vault` |
+| `identity-access` | `revoke-session` |
+| `identity-access` | `set-password` |
+| `identity-access` | `set-pin` |
+| `identity-access` | `snapshot` |
+| `identity-access` | `unlock-vault` |
+| `identity-access` | `update-user` |
+| `production-runner` | `advance` |
+| `production-runner` | `cancel` |
+| `production-runner` | `register-target` |
+| `production-runner` | `snapshot` |
+| `production-runner` | `start` |
+| `production-runner` | `stop` |
