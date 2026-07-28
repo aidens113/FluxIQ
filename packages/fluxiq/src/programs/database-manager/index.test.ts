@@ -2,13 +2,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { createRecord, FileRepository } from "./index";
+import { createRecord, SQLiteRepository } from "./index";
 
-describe("FileRepository", () => {
+describe("SQLiteRepository", () => {
   it("stores and lists global records", async () => {
     const root = await tempRoot();
     try {
-      const repo = new FileRepository({ rootDir: root, kind: "widgets" });
+      const repo = new SQLiteRepository({ rootDir: root, kind: "widgets" });
       await repo.put(createRecord({ id: "alpha", kind: "widgets", data: { title: "Alpha" }, nowMs: 1000 }));
 
       const rows = await repo.list();
@@ -24,7 +24,7 @@ describe("FileRepository", () => {
   it("keeps domain-scoped records isolated", async () => {
     const root = await tempRoot();
     try {
-      const repo = new FileRepository({ rootDir: root, kind: "widgets" });
+      const repo = new SQLiteRepository({ rootDir: root, kind: "widgets" });
       await repo.put(createRecord({ id: "shared", kind: "widgets", data: { title: "Global" } }));
       await repo.put(createRecord({ id: "shared", kind: "widgets", scope: { domainId: "Example" }, data: { title: "Domain" } }));
 
@@ -38,7 +38,7 @@ describe("FileRepository", () => {
   it("preserves created time when updating records", async () => {
     const root = await tempRoot();
     try {
-      const repo = new FileRepository({ rootDir: root, kind: "widgets" });
+      const repo = new SQLiteRepository({ rootDir: root, kind: "widgets" });
       await repo.put(createRecord({ id: "alpha", kind: "widgets", data: { count: 1 }, nowMs: 1000 }));
       const updated = await repo.put(createRecord({ id: "alpha", kind: "widgets", data: { count: 2 }, nowMs: 2000 }));
 
@@ -53,12 +53,25 @@ describe("FileRepository", () => {
   it("deletes records", async () => {
     const root = await tempRoot();
     try {
-      const repo = new FileRepository({ rootDir: root, kind: "widgets" });
+      const repo = new SQLiteRepository({ rootDir: root, kind: "widgets" });
       await repo.put(createRecord({ id: "alpha", kind: "widgets", data: { title: "Alpha" } }));
 
       expect(await repo.delete("alpha")).toBe(true);
       expect(await repo.delete("alpha")).toBe(false);
       expect(await repo.get("alpha")).toBeNull();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("creates global and domain sqlite database files", async () => {
+    const root = await tempRoot();
+    try {
+      const repo = new SQLiteRepository({ rootDir: root, kind: "widgets" });
+      await repo.put(createRecord({ id: "global", kind: "widgets", data: { title: "Global" } }));
+      await repo.put(createRecord({ id: "domain", kind: "widgets", scope: { domainId: "example" }, data: { title: "Domain" } }));
+
+      expect(repo.databases()).toEqual(["example", "global"]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -27,6 +27,16 @@ export type Migration = {
   down?(): Promise<void>;
 };
 
+export type MigrationRun = {
+  id: string;
+  migrationId: string;
+  direction: "up" | "down";
+  status: "succeeded" | "failed";
+  startedAtMs: number;
+  finishedAtMs: number;
+  error?: string;
+};
+
 export type DatabaseManagerStoreSummary = {
   kind: string;
   scope: RepositoryScope;
@@ -34,6 +44,8 @@ export type DatabaseManagerStoreSummary = {
 };
 
 export type DatabaseManagerSnapshot = {
+  databases: string[];
   stores: DatabaseManagerStoreSummary[];
   migrations: Array<Pick<Migration, "id" | "description">>;
+  migrationRuns: MigrationRun[];
 };

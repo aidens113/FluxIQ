@@ -43,7 +43,11 @@ export class GlobalProgramApiRegistry {
     if (!handler) {
       return { ok: false, error: `Global program API handler not found: ${request.programId}/${request.endpoint}` };
     }
-    return handler(request) as Promise<ProgramApiResponse<TResponse>>;
+    try {
+      return await handler(request) as ProgramApiResponse<TResponse>;
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   endpoints(): Array<{ programId: string; endpoint: string }> {

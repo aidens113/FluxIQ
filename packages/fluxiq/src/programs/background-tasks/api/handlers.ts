@@ -1,12 +1,28 @@
 import type { GlobalProgramApiRegistry } from "../../_shared/api";
-import { BACKGROUND_TASKS_ENDPOINTS, type RunBackgroundTaskRequest, type SetBackgroundTaskEnabledRequest } from "./contracts";
+import {
+  BACKGROUND_TASKS_ENDPOINTS,
+  type BackgroundTaskDetailRequest,
+  type ControlBackgroundTaskRequest,
+  type RunBackgroundTaskRequest,
+  type SaveBackgroundTaskScheduleRequest,
+  type SetBackgroundTaskEnabledRequest
+} from "./contracts";
 import type { BackgroundTasksService } from "../runtime/service";
 
 export function registerBackgroundTasksApi(registry: GlobalProgramApiRegistry, service: BackgroundTasksService): void {
   registry.register({
     programId: "background-tasks",
     endpoint: BACKGROUND_TASKS_ENDPOINTS.snapshot,
-    handler: () => ({ ok: true, payload: service.snapshot() })
+    handler: async () => ({ ok: true, payload: await service.snapshot() })
+  });
+  registry.register({
+    programId: "background-tasks",
+    endpoint: BACKGROUND_TASKS_ENDPOINTS.detail,
+    handler: async (request) => {
+      const payload = request.payload as BackgroundTaskDetailRequest | undefined;
+      if (!payload?.taskId) return { ok: false, error: "taskId is required" };
+      return { ok: true, payload: await service.detail(payload.taskId, payload.limit) };
+    }
   });
   registry.register({
     programId: "background-tasks",
@@ -20,10 +36,29 @@ export function registerBackgroundTasksApi(registry: GlobalProgramApiRegistry, s
   registry.register({
     programId: "background-tasks",
     endpoint: BACKGROUND_TASKS_ENDPOINTS.setEnabled,
-    handler: (request) => {
+    handler: async (request) => {
       const payload = request.payload as SetBackgroundTaskEnabledRequest | undefined;
       if (!payload?.taskId) return { ok: false, error: "taskId is required" };
-      return { ok: true, payload: service.setEnabled(payload.taskId, Boolean(payload.enabled)) };
+      return { ok: true, payload: await service.setEnabled(payload.taskId, Boolean(payload.enabled)) };
+    }
+  });
+  registry.register({
+    programId: "background-tasks",
+    endpoint: BACKGROUND_TASKS_ENDPOINTS.saveSchedule,
+    handler: async (request) => {
+      const payload = request.payload as SaveBackgroundTaskScheduleRequest | undefined;
+      if (!payload?.taskId) return { ok: false, error: "taskId is required" };
+      return { ok: true, payload: await service.saveSchedule(payload) };
+    }
+  });
+  registry.register({
+    programId: "background-tasks",
+    endpoint: BACKGROUND_TASKS_ENDPOINTS.control,
+    handler: async (request) => {
+      const payload = request.payload as ControlBackgroundTaskRequest | undefined;
+      if (payload?.action === "start") return { ok: true, payload: await service.start() };
+      if (payload?.action === "stop") return { ok: true, payload: await service.stop() };
+      return { ok: false, error: "action must be start or stop" };
     }
   });
 }

@@ -6,6 +6,9 @@ export type BackgroundTaskDefinition = {
   id: string;
   name: string;
   schedule?: string;
+  intervalMs?: number;
+  nextRunAtMs?: number | null;
+  lastRunAtMs?: number;
   queue: string;
   enabled: boolean;
   metadata?: JsonObject;
@@ -25,4 +28,9 @@ export type BackgroundTaskRun = {
 export type BackgroundTasksSnapshot = {
   tasks: BackgroundTaskDefinition[];
   runs: BackgroundTaskRun[];
+  scheduler: {
+    running: boolean;
+    pollIntervalMs: number;
+    startedAtMs?: number;
+  };
 };

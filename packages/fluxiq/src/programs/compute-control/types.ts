@@ -17,8 +17,13 @@ export type ComputeCommand = {
   id: string;
   targetComputeId: string;
   kind: "start_flow" | "stop_flow" | "pause" | "resume" | "custom";
+  status?: "queued" | "claimed" | "succeeded" | "failed";
   payload?: JsonObject;
   createdAtMs: number;
+  claimedAtMs?: number;
+  completedAtMs?: number;
+  result?: JsonObject;
+  error?: string;
 };
 
 export type ComputeLease = {

@@ -10,6 +10,9 @@ import {
   ShieldCheck
 } from "lucide-react";
 import { defaultGlobalProgramCatalog, type FluxIQIconName, type ProgramSummary } from "fluxiq";
+import { redirect } from "next/navigation";
+import { AuthStatus } from "../../AuthShell";
+import { currentFluxIQUser } from "../../../lib/auth";
 import { ProgramWorkspace } from "./ProgramWorkspace";
 
 const icons = {
@@ -68,6 +71,9 @@ type ProgramPageParams = {
 };
 
 export default async function ProgramPage(context: ProgramPageParams) {
+  const auth = await currentFluxIQUser();
+  if (!auth) redirect("/");
+
   const { programId } = await context.params;
   const programs = defaultGlobalProgramCatalog();
   const program = programs.find((item) => item.id === programId);
@@ -95,6 +101,12 @@ export default async function ProgramPage(context: ProgramPageParams) {
       runtime: ["Program service"]
     }}
     program={program}
+    user={{
+      id: auth.user.id,
+      displayName: auth.user.displayName,
+      roleId: auth.user.roleId,
+      totpEnabled: auth.user.totpEnabled
+    }}
   />;
 }
 
@@ -129,10 +141,16 @@ function ProgramShell(props: { title: string; children: React.ReactNode }) {
           <span>/</span>
           <strong>{props.title}</strong>
         </div>
+        <AuthShellSlot />
       </header>
       <div className="console-content program-content">{props.children}</div>
     </main>
   );
+}
+
+async function AuthShellSlot() {
+  const auth = await currentFluxIQUser();
+  return auth ? <AuthStatus displayName={auth.user.displayName} roleId={auth.user.roleId} /> : null;
 }
 
 function ProgramNotFound(props: { programId: string }) {

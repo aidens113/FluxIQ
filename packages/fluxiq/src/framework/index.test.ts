@@ -60,10 +60,10 @@ describe("FluxIQ", () => {
       expect(result.paths.databases).toBe(path.join(root, ".fluxiq", "databases"));
       expect(result.paths.inputs).toBe(path.join(root, ".fluxiq", "inputs"));
       expect(result.paths.outputs).toBe(path.join(root, ".fluxiq", "outputs"));
-      expect(result.paths.domains).toBe(path.join(root, "domains"));
-      expect(result.paths.domainPrograms).toBe(path.join(root, "domains", "programs"));
-      expect(result.paths.domainInputs).toBe(path.join(root, "domains", "inputs"));
-      expect(result.paths.domainOutputs).toBe(path.join(root, "domains", "outputs"));
+      expect(result.paths.domains).toBe(path.join(root, ".fluxiq", "domains"));
+      expect(result.paths.domainPrograms).toBe(path.join(root, ".fluxiq", "domains", "programs"));
+      expect(result.paths.domainInputs).toBe(path.join(root, ".fluxiq", "domains", "inputs"));
+      expect(result.paths.domainOutputs).toBe(path.join(root, ".fluxiq", "domains", "outputs"));
       await expect(stat(path.join(result.paths.domainPrograms, "README.md"))).resolves.toBeTruthy();
       await expect(stat(path.join(result.paths.inputs, "README.md"))).resolves.toBeTruthy();
 

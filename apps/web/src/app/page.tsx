@@ -9,6 +9,8 @@ import {
   ShieldCheck
 } from "lucide-react";
 import { defaultGlobalProgramCatalog, type FluxIQIconName, type ProgramSummary } from "fluxiq";
+import { AuthStatus, LoginPanel } from "./AuthShell";
+import { currentFluxIQUser } from "../lib/auth";
 
 const icons = {
   blocks: Blocks,
@@ -28,7 +30,10 @@ const categoryOrder = new Map<string, number>([
   ["Domain Control", 3]
 ]);
 
-export default function HomePage() {
+export default async function HomePage() {
+  const auth = await currentFluxIQUser();
+  if (!auth) return <LoginPanel />;
+
   const programs = defaultGlobalProgramCatalog();
   const groups = groupPrograms(programs);
 
@@ -41,6 +46,7 @@ export default function HomePage() {
           </span>
           <span>FluxIQ</span>
         </div>
+        <AuthStatus displayName={auth.user.displayName} roleId={auth.user.roleId} />
       </header>
 
       <div className="directory-container">

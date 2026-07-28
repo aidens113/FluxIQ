@@ -23,6 +23,15 @@ export type User = {
   updatedAtMs: number;
 };
 
+export type UserCredential = {
+  userId: string;
+  passwordHash?: string;
+  pinHash?: string;
+  totpSecret?: string;
+  pendingTotpSecret?: string;
+  updatedAtMs: number;
+};
+
 export type Session = {
   id: string;
   userId: string;
@@ -34,6 +43,7 @@ export type VaultStatus = {
   unlocked: boolean;
   unlockedBy?: string;
   unlockedAtMs?: number;
+  encryptedFieldCount?: number;
 };
 
 export type IdentityAccessSnapshot = {
@@ -41,4 +51,11 @@ export type IdentityAccessSnapshot = {
   roles: Role[];
   sessions: Session[];
   vault: VaultStatus;
+};
+
+export type VaultRecord = {
+  id: string;
+  label: string;
+  encryptedValue: string;
+  updatedAtMs: number;
 };

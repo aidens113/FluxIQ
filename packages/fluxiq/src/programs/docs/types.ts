@@ -11,11 +11,18 @@ export type DocumentationPage = {
   sourceId: string;
   title: string;
   path: string;
+  routePath?: string;
   updatedAtMs?: number;
+};
+
+export type DocumentationPageContent = DocumentationPage & {
+  markdown: string;
+  html: string;
 };
 
 export type DocsSnapshot = {
   sources: DocumentationSource[];
   pages: DocumentationPage[];
   generatedAtMs: number;
+  warnings: string[];
 };
