@@ -1,4 +1,5 @@
 export * from "./_shared/api";
+export * from "./_shared/authorization";
 export * from "./_shared/catalog";
 export * from "./_shared/docs-generators";
 export * from "./_shared/runtime";

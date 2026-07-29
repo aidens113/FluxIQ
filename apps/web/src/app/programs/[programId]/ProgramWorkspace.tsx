@@ -5,13 +5,22 @@ import {
   Blocks,
   BookOpen,
   CalendarClock,
+  ChevronDown,
   CloudUpload,
   Database,
   GitBranch,
+  Pause,
   PlayCircle,
-  ShieldCheck
+  Redo2,
+  Save,
+  ShieldCheck,
+  Square,
+  StepForward,
+  Circle,
+  Bug,
+  Undo2
 } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { FluxIQIconName, ProgramSummary } from "fluxiq";
 import { AuthStatus } from "../../AuthShell";
 import { LiveProgramMain } from "./ProgramLiveViews";
@@ -54,7 +63,56 @@ const icons = {
 
 export function ProgramWorkspace({ program, capabilities, user }: ProgramWorkspaceProps) {
   const [tab, setTab] = useState<WorkspaceTab>("main");
+  const [automationStatus, setAutomationStatus] = useState<{ state: string; detail: string; running: boolean; dirty: boolean }>({
+    state: "Idle",
+    detail: "No active run",
+    running: false,
+    dirty: false
+  });
   const Icon = icons[program.icon];
+  const fullscreen = program.id === "automation-studio";
+  const setCommandState = (state: string, detail: string, running = false, dirty = automationStatus.dirty) => {
+    setAutomationStatus({ state, detail, running, dirty });
+  };
+
+  if (fullscreen) {
+    return (
+      <main className="console-main single-program program-fullscreen-shell">
+        <header className="console-topbar program-global-topbar">
+          <div className="program-topbar-title">
+            <a className="back-link" href="/" aria-label="Back to programs">
+              <ArrowLeft size={16} aria-hidden />
+              <span>Programs</span>
+            </a>
+            <span className="breadcrumb-separator">/</span>
+            <span className="program-topbar-icon">
+              <Icon size={16} aria-hidden />
+            </span>
+            <strong>{program.title}</strong>
+          </div>
+          <div className="automation-command-center" aria-label="Automation Studio runtime state">
+            <span className={automationStatus.running ? "running" : ""}>{automationStatus.state}</span>
+            <strong>{automationStatus.detail}{automationStatus.dirty ? " - unsaved" : ""}</strong>
+          </div>
+          <div className="automation-main-command-bar" aria-label="Automation Studio commands">
+            <IconCommand label="Undo" onClick={() => setCommandState("Edited", "Undo applied", false, true)}><Undo2 size={15} aria-hidden /></IconCommand>
+            <IconCommand label="Redo" onClick={() => setCommandState("Edited", "Redo applied", false, true)}><Redo2 size={15} aria-hidden /></IconCommand>
+            <IconCommand label="Save" onClick={() => setCommandState("Saved", "Workspace layout and policy snapshot saved", false, false)}><Save size={15} aria-hidden /></IconCommand>
+            <span className="command-divider" />
+            <button className="button automation-command-menu" onClick={() => setCommandState("Recording", "Capturing operator timeline", true, true)} type="button" title="Record options"><Circle size={13} aria-hidden />Record<ChevronDown size={13} aria-hidden /></button>
+            <button className="button button-primary automation-command-menu" onClick={() => setCommandState("Running", "Running selected task from start", true)} type="button" title="Run options"><PlayCircle size={14} aria-hidden />Run<ChevronDown size={13} aria-hidden /></button>
+            <IconCommand disabled={!automationStatus.running} label="Pause" onClick={() => setCommandState("Paused", "Execution paused at current node", false)}><Pause size={15} aria-hidden /></IconCommand>
+            <IconCommand disabled={!automationStatus.running && automationStatus.state !== "Paused"} label="Stop" onClick={() => setCommandState("Stopped", "Run stopped by user", false)}><Square size={14} aria-hidden /></IconCommand>
+            <IconCommand label="Step" onClick={() => setCommandState("Debug Step", "Advanced one policy action", false)}><StepForward size={15} aria-hidden /></IconCommand>
+            <IconCommand label="Debug" onClick={() => setCommandState("Debugging", "Debugger armed for selected node", false)}><Bug size={15} aria-hidden /></IconCommand>
+            <span className="command-divider" />
+            <AuthStatus displayName={user.displayName} roleId={user.roleId} />
+          </div>
+        </header>
+        <LiveProgramMain programId={program.id} user={user} />
+      </main>
+    );
+  }
 
   return (
     <main className="console-main single-program">
@@ -109,6 +167,10 @@ export function ProgramWorkspace({ program, capabilities, user }: ProgramWorkspa
       </div>
     </main>
   );
+}
+
+function IconCommand(props: { label: string; children: ReactNode; disabled?: boolean; onClick(): void }) {
+  return <button className="icon-button" disabled={props.disabled} onClick={props.onClick} type="button" title={props.label} aria-label={props.label}>{props.children}</button>;
 }
 
 function MainProgramUi({ programId, user }: { programId: string; user: ProgramWorkspaceProps["user"] }) {

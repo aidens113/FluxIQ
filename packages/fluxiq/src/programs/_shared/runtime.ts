@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { FluxIQHostPaths } from "../../framework";
+import { AutomationStudioService, registerAutomationStudioApi } from "../automation-studio";
 import { BackgroundTasksService, registerBackgroundTasksApi } from "../background-tasks";
 import { ComputeControlService, registerComputeControlApi } from "../compute-control";
 import { DatabaseManagerService, registerDatabaseManagerApi, SQLiteRepository } from "../database-manager";
@@ -12,6 +13,7 @@ import { registerGlobalDocumentationGenerators } from "./docs-generators";
 
 export type GlobalProgramRuntime = {
   api: GlobalProgramApiRegistry;
+  automationStudio: AutomationStudioService;
   backgroundTasks: BackgroundTasksService;
   computeControl: ComputeControlService;
   databaseManager: DatabaseManagerService;
@@ -24,6 +26,7 @@ export type GlobalProgramRuntime = {
 export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgramRuntime {
   const api = new GlobalProgramApiRegistry();
   const storageOptions = paths ? { dataDir: paths.data } : {};
+  const automationStudio = new AutomationStudioService(storageOptions);
   const backgroundTasksRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "background.tasks" }) : undefined;
   const identityUsersRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "identity.users" }) : undefined;
   const backgroundTasks = new BackgroundTasksService(backgroundTasksRepository ? { repository: backgroundTasksRepository } : {});
@@ -65,6 +68,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
 
   }
 
+  registerAutomationStudioApi(api, automationStudio, identityAccess);
   registerBackgroundTasksApi(api, backgroundTasks);
   registerComputeControlApi(api, computeControl);
   registerDatabaseManagerApi(api, databaseManager, identityAccess);
@@ -86,6 +90,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
 
   return {
     api,
+    automationStudio,
     backgroundTasks,
     computeControl,
     databaseManager,

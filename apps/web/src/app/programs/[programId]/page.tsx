@@ -27,6 +27,11 @@ const icons = {
 } satisfies Record<FluxIQIconName, typeof Blocks>;
 
 const programCapabilities = {
+  "automation-studio": {
+    api: ["snapshot"],
+    storage: ["Recording sessions", "Normalized timelines", "Signal registries", "Learned task models", "Policy graphs"],
+    runtime: ["Canonical repositories", "Fixture snapshot", "Policy inspection"]
+  },
   "background-tasks": {
     api: ["snapshot", "run", "set-enabled"],
     storage: ["Task definitions", "Run history"],
@@ -80,18 +85,6 @@ export default async function ProgramPage(context: ProgramPageParams) {
 
   if (!program) {
     return <ProgramNotFound programId={programId} />;
-  }
-
-  if (program.id === "automation-studio") {
-    return (
-      <ProgramShell title="Automation Studio">
-        <ProgramHeader program={program} />
-        <section className="panel">
-          <h2 className="panel-title">Automation Studio</h2>
-          <p className="program-copy">Automation Studio will be ported separately after the supporting global programs settle.</p>
-        </section>
-      </ProgramShell>
-    );
   }
 
   return <ProgramWorkspace

@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckCircle2, LogOut, ShieldCheck, XCircle } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type KeyboardEvent } from "react";
 
 export function AuthStatus(props: { displayName: string; roleId: string }) {
   async function logout() {
@@ -75,6 +75,14 @@ export function LoginPanel() {
     setBusy(false);
   }
 
+  function submitLoginOnEnter(event: KeyboardEvent<HTMLFormElement>) {
+    if (event.key !== "Enter" || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return;
+    const submitButton = event.currentTarget.querySelector<HTMLButtonElement>('button[type="submit"]:not(:disabled)');
+    if (!submitButton) return;
+    event.preventDefault();
+    submitButton.click();
+  }
+
   return (
     <main className="auth-page">
       <section className="auth-card auth-panel-v1">
@@ -88,7 +96,7 @@ export function LoginPanel() {
           </span>
         </div>
         <AuthFeedback feedback={feedback} />
-        <form onSubmit={login} className="auth-form">
+        <form onSubmit={login} className="auth-form" onKeyDown={submitLoginOnEnter}>
           <label><span>Username</span><input name="username" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} /></label>
           <label>
             <span>Password</span>

@@ -20,6 +20,7 @@ type CredentialMetadata = {
   userId: string;
   passwordConfigured: boolean;
   pinConfigured: boolean;
+  pinVerifierHash?: string;
   totpConfigured: boolean;
   pendingTotpConfigured: boolean;
   updatedAtMs: number;
@@ -263,6 +264,7 @@ export class IdentityAccessService {
     if (credential.totpSecret && !verifyTotp(credential.totpSecret, params.totp ?? "")) {
       throw new TotpRequiredError(params.totp ? "Authenticator code failed" : "Authenticator code required");
     }
+    await this.ensurePinVerifierMetadata(credential);
     const session = await this.createSession(user.id, params.ttlMs, params.nowMs);
     const role = this.roles.get(user.roleId);
     if (!role) throw new Error(`Unknown role: ${user.roleId}`);
@@ -309,6 +311,18 @@ export class IdentityAccessService {
       pin: params.pin ?? "",
       totp: params.totp
     });
+    return context.user;
+  }
+
+  async authorizeSessionPin(params: { sessionId: string | undefined; pin: string | undefined }): Promise<User> {
+    const context = await this.validateSession(params.sessionId);
+    if (!context) throw new Error("Authentication required");
+    const credential = this.credentials.get(context.user.id);
+    const metadata = this.credentialMetadata.get(context.user.id);
+    const pinHash = credential?.pinHash ?? metadata?.pinVerifierHash;
+    if (!pinHash && metadata?.pinConfigured) throw new Error("PIN verifier upgrade required. Sign out and sign back in, then try again.");
+    if (!pinHash) throw new Error("PIN is required for this action");
+    if (!verifySecret(params.pin ?? "", pinHash)) throw new Error("Invalid PIN");
     return context.user;
   }
 
@@ -440,6 +454,14 @@ export class IdentityAccessService {
       await this.repository.put(identityRecord(`session:${session.id}`, "session", { recordType: "session", session: session as unknown as JsonObject }, now));
     }
     await this.repository.put(identityRecord("vault", "vault", { recordType: "vault", vault: this.vault as unknown as JsonObject }, now));
+  }
+
+  private async ensurePinVerifierMetadata(credential: UserCredential): Promise<void> {
+    if (!credential.pinHash) return;
+    const metadata = this.credentialMetadata.get(credential.userId);
+    if (metadata?.pinVerifierHash === credential.pinHash) return;
+    this.credentialMetadata.set(credential.userId, credentialMetadata(credential));
+    await this.persist();
   }
 
   private async readStoredState(): Promise<IdentityAccessState> {
@@ -610,6 +632,7 @@ function credentialMetadata(credential: UserCredential): CredentialMetadata {
     userId: credential.userId,
     passwordConfigured: Boolean(credential.passwordHash),
     pinConfigured: Boolean(credential.pinHash),
+    ...(credential.pinHash ? { pinVerifierHash: credential.pinHash } : {}),
     totpConfigured: Boolean(credential.totpSecret),
     pendingTotpConfigured: Boolean(credential.pendingTotpSecret),
     updatedAtMs: credential.updatedAtMs
