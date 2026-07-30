@@ -143,6 +143,16 @@ while keeping their scopes distinct: policy maps include evidence-backed task
 policy nodes, and routine editors include orchestration nodes without recording
 or state layers.
 
+The visual node language is backed by the same node registry definitions used
+by execution. Palette-created nodes store their definition ID plus the full
+input and output port arrays. Node cards render named port rows and matching
+React Flow handles for each port rather than a generic single input and single
+output. Manual edges attach to the exact source and target port handles, label
+the edge from the selected output port, and reject incompatible source/target
+value types at connection time. Generated policy nodes that do not yet come
+from a source node definition receive derived visual ports from the generated
+policy graph so they still participate in the same connection language.
+
 Policy and routine editors must not carry their own properties inspector. The
 right-side global inspector is the single properties viewer for selected nodes,
 edges, signals, timeline entries, policies, recordings, and transient
@@ -170,19 +180,30 @@ Built-in Automation Studio nodes live in FluxIQ source under:
 
 ```text
 packages/fluxiq/src/programs/automation-studio/nodes/
-  contracts.ts        Shared node definition, port, parameter, class, scope, and origin contracts.
-  registry.ts         Built-in registry, class groups, and scope-filtered palette helpers.
-  layout.ts           Documented source and .fluxiq custom-node folder roots.
-  builtins/
-    control-flow.ts   Start, end, branch, switch, parallel, merge, loop.
-    policy.ts         Action, expectation, recovery.
-    routine.ts        Task policy, subroutine, approval.
-    logic.ts          Compare, and, or, not.
-    math.ts           Add, subtract, multiply, divide, clamp, round.
-    random.ts         Random number, random choice, weighted choice, jitter.
-    data.ts           Constant, get/set variable, object/list transforms.
-    timing.ts         Wait, timeout, retry, debounce.
+  contracts.ts          Shared node definition, execution, port, parameter, class, scope, and origin contracts.
+  registry.ts           Built-in registry, class groups, and scope-filtered palette helpers.
+  layout.ts             Documented source and .fluxiq custom-node folder roots.
+  shared/               Global helpers usable by every node category.
+  control-flow/         Start, end, branch, switch, parallel, merge, loop.
+  policy/               Action, expectation, recovery.
+  routine/              Task policy, subroutine, approval.
+  logic/                Compare, and, or, not.
+  math/                 Add, subtract, multiply, divide, clamp, round.
+  random/               Random number, random choice, weighted choice, jitter.
+  data/                 Constant, get/set variable, object/list transforms.
+  database/             Query, insert, and update request nodes.
+  timing/               Wait, timeout, retry, debounce.
 ```
+
+Each subfolder directly under `nodes/` is a node category. Each concrete node
+function lives in its own file inside that category, and category-specific
+shared logic lives in that category's `shared.ts`. For example,
+`control-flow/loop.ts` owns the loop node definition and executor, while
+`control-flow/shared.ts` owns helpers shared by branch-like control-flow nodes.
+The global `shared/` folder is reserved for helpers used across categories.
+This mirrors the FluxBot v1 component-catalog direction while moving the new
+framework to source-owned TypeScript node functions instead of one category file
+or a YAML-only metadata shell.
 
 Custom node definitions belong in the importing repository's `.fluxiq` folder,
 not in FluxIQ source. The global custom-node library is reserved at:
@@ -197,6 +218,7 @@ not in FluxIQ source. The global custom-node library is reserved at:
     math/
     random/
     data/
+    database/
     timing/
     runtime/
     custom/

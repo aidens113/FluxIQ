@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { automationNodeClassGroups, automationNodeClasses, builtinAutomationNodeDefinitions, getAutomationNodeDefinitions } from "./registry";
+import { automationNodeClassGroups, automationNodeClasses, builtinAutomationNodeDefinitions, getAutomationNodeDefinition, getAutomationNodeDefinitions } from "./registry";
 
 describe("automation node registry", () => {
   it("groups built-in node definitions by stable domain-neutral classes", () => {
     expect(automationNodeClasses).toContain("control-flow");
     expect(automationNodeClasses).toContain("math");
     expect(automationNodeClasses).toContain("random");
+    expect(automationNodeClasses).toContain("database");
     expect(automationNodeClasses).toContain("custom");
     expect(automationNodeClassGroups.every((group) => group.label.length > 0)).toBe(true);
   });
@@ -19,5 +20,21 @@ describe("automation node registry", () => {
     expect(routineNodes.some((node) => node.id === "builtin.routine.task-policy")).toBe(true);
     expect(routineNodes.some((node) => node.id === "builtin.control.start")).toBe(true);
     expect(builtinAutomationNodeDefinitions.every((node) => node.origin === "builtin")).toBe(true);
+  });
+
+  it("keeps each built-in backed by a stable implementation key", async () => {
+    const nodeIds = new Set<string>();
+    for (const definition of builtinAutomationNodeDefinitions) {
+      expect(nodeIds.has(definition.id)).toBe(false);
+      nodeIds.add(definition.id);
+      expect(definition.implementationKey).toBe(definition.id);
+      expect(typeof definition.execute).toBe("function");
+    }
+
+    const add = getAutomationNodeDefinition("builtin.math.add");
+    await expect(Promise.resolve(add?.execute?.({ inputs: { left: 2, right: 3 }, parameters: {} }))).resolves.toMatchObject({
+      status: "success",
+      outputs: { result: 5 }
+    });
   });
 });

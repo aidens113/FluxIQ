@@ -16,6 +16,7 @@ import {
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
+  type Connection,
   type Edge,
   type EdgeChange,
   type EdgeProps,
@@ -24,6 +25,7 @@ import {
   type NodeProps,
   type ReactFlowInstance
 } from "@xyflow/react";
+import { automationNodeClassGroups, getAutomationNodeDefinitions, type AutomationNodeDefinition, type AutomationNodePort } from "fluxiq/automation-studio/nodes";
 
 type ApiResponse<T = unknown> = { ok: boolean; payload?: T; error?: string };
 type JsonObject = Record<string, unknown>;
@@ -114,8 +116,8 @@ type AutomationEditorNodeSpec = {
   family: string;
   scope: "policy" | "routine" | "both";
   nodeType: "base" | "custom" | "generated";
-  inputs: number;
-  outputs: number;
+  inputs: AutomationNodePort[];
+  outputs: AutomationNodePort[];
   privileged?: boolean;
   actionTypes?: string[];
 };
@@ -139,92 +141,30 @@ const automationLayoutPresetOptions: AutomationLayoutPresetOption[] = [
   { id: "three-columns", label: "Thirds", title: "Three equal columns", cells: [{ x: 0, y: 0, w: 1 / 3, h: 1 }, { x: 1 / 3, y: 0, w: 1 / 3, h: 1 }, { x: 2 / 3, y: 0, w: 1 / 3, h: 1 }] },
   { id: "quad", label: "Grid", title: "Four quadrant grid", cells: [{ x: 0, y: 0, w: 0.5, h: 0.5 }, { x: 0.5, y: 0, w: 0.5, h: 0.5 }, { x: 0, y: 0.5, w: 0.5, h: 0.5 }, { x: 0.5, y: 0.5, w: 0.5, h: 0.5 }] }
 ];
-const automationEditorPalette: AutomationEditorPaletteGroup[] = [
-  {
-    title: "Control Flow",
-    nodes: [
-      { id: "control-start", label: "Start", description: "Entry point for a graph.", family: "control-flow", scope: "both", nodeType: "base", inputs: 0, outputs: 1 },
-      { id: "control-end", label: "End", description: "Terminal point for a graph.", family: "control-flow", scope: "both", nodeType: "base", inputs: 1, outputs: 0 },
-      { id: "control-branch", label: "Branch", description: "Route through true/false paths.", family: "control-flow", scope: "both", nodeType: "base", inputs: 1, outputs: 2 },
-      { id: "control-switch", label: "Switch", description: "Route by matching a value to cases.", family: "control-flow", scope: "both", nodeType: "base", inputs: 1, outputs: 2 },
-      { id: "control-loop", label: "Loop", description: "Repeat a branch with an exit condition.", family: "control-flow", scope: "routine", nodeType: "base", inputs: 1, outputs: 2 },
-      { id: "control-parallel", label: "Parallel", description: "Fan out routine branches.", family: "control-flow", scope: "routine", nodeType: "base", inputs: 1, outputs: 2 },
-      { id: "control-merge", label: "Merge", description: "Join incoming routine branches.", family: "control-flow", scope: "routine", nodeType: "base", inputs: 2, outputs: 1 }
-    ]
-  },
-  {
-    title: "Policy",
-    nodes: [
-      { id: "policy-action", label: "Action", description: "Dispatch a task policy action.", family: "policy", scope: "policy", nodeType: "base", inputs: 1, outputs: 2, privileged: true, actionTypes: ["action"] },
-      { id: "policy-expectation", label: "Expectation", description: "Check success, failure, or invariant conditions.", family: "policy", scope: "policy", nodeType: "base", inputs: 1, outputs: 2 },
-      { id: "policy-recovery", label: "Recovery", description: "Handle failed policy branches.", family: "policy", scope: "policy", nodeType: "base", inputs: 1, outputs: 2 }
-    ]
-  },
-  {
-    title: "Routine",
-    nodes: [
-      { id: "routine-task-policy", label: "Task Policy", description: "Run a task policy from this routine.", family: "routine", scope: "routine", nodeType: "base", inputs: 1, outputs: 2 },
-      { id: "routine-subroutine", label: "Subroutine", description: "Run another routine as a reusable step.", family: "routine", scope: "routine", nodeType: "base", inputs: 1, outputs: 2 },
-      { id: "routine-approval", label: "Approval", description: "Pause for operator approval.", family: "routine", scope: "routine", nodeType: "base", inputs: 1, outputs: 2, privileged: true }
-    ]
-  },
-  {
-    title: "Logic",
-    nodes: [
-      { id: "logic-compare", label: "Compare", description: "Compare two values.", family: "logic", scope: "both", nodeType: "base", inputs: 2, outputs: 1 },
-      { id: "logic-and", label: "And", description: "Require every condition to be true.", family: "logic", scope: "both", nodeType: "base", inputs: 2, outputs: 1 },
-      { id: "logic-or", label: "Or", description: "Require any condition to be true.", family: "logic", scope: "both", nodeType: "base", inputs: 2, outputs: 1 },
-      { id: "logic-not", label: "Not", description: "Invert a condition.", family: "logic", scope: "both", nodeType: "base", inputs: 1, outputs: 1 }
-    ]
-  },
-  {
-    title: "Math",
-    nodes: [
-      { id: "math-add", label: "Add", description: "Add numeric values.", family: "math", scope: "both", nodeType: "base", inputs: 2, outputs: 1 },
-      { id: "math-subtract", label: "Subtract", description: "Subtract numeric values.", family: "math", scope: "both", nodeType: "base", inputs: 2, outputs: 1 },
-      { id: "math-multiply", label: "Multiply", description: "Multiply numeric values.", family: "math", scope: "both", nodeType: "base", inputs: 2, outputs: 1 },
-      { id: "math-divide", label: "Divide", description: "Divide numeric values.", family: "math", scope: "both", nodeType: "base", inputs: 2, outputs: 1 },
-      { id: "math-clamp", label: "Clamp", description: "Clamp a number to a range.", family: "math", scope: "both", nodeType: "base", inputs: 1, outputs: 1 },
-      { id: "math-round", label: "Round", description: "Round a numeric value.", family: "math", scope: "both", nodeType: "base", inputs: 1, outputs: 1 }
-    ]
-  },
-  {
-    title: "Random",
-    nodes: [
-      { id: "random-number", label: "Random Number", description: "Generate a bounded random number.", family: "random", scope: "both", nodeType: "base", inputs: 0, outputs: 1 },
-      { id: "random-choice", label: "Random Choice", description: "Choose one value from a list.", family: "random", scope: "both", nodeType: "base", inputs: 1, outputs: 1 },
-      { id: "random-weighted-choice", label: "Weighted Choice", description: "Choose one weighted option.", family: "random", scope: "both", nodeType: "base", inputs: 1, outputs: 1 },
-      { id: "random-jitter", label: "Jitter", description: "Add bounded randomness to a number.", family: "random", scope: "both", nodeType: "base", inputs: 1, outputs: 1 }
-    ]
-  },
-  {
-    title: "Data",
-    nodes: [
-      { id: "data-constant", label: "Constant", description: "Provide a fixed value.", family: "data", scope: "both", nodeType: "base", inputs: 0, outputs: 1 },
-      { id: "data-get-variable", label: "Get Variable", description: "Read a runtime variable.", family: "data", scope: "both", nodeType: "base", inputs: 0, outputs: 1 },
-      { id: "data-set-variable", label: "Set Variable", description: "Write a runtime variable.", family: "data", scope: "both", nodeType: "base", inputs: 1, outputs: 1 },
-      { id: "data-map-object", label: "Map Object", description: "Transform object fields.", family: "data", scope: "both", nodeType: "base", inputs: 1, outputs: 1 },
-      { id: "data-filter-list", label: "Filter List", description: "Filter an array.", family: "data", scope: "both", nodeType: "base", inputs: 1, outputs: 1 }
-    ]
-  },
-  {
-    title: "Timing",
-    nodes: [
-      { id: "timing-wait", label: "Wait", description: "Pause execution.", family: "timing", scope: "both", nodeType: "base", inputs: 1, outputs: 1 },
-      { id: "timing-timeout", label: "Timeout", description: "Route when a branch takes too long.", family: "timing", scope: "both", nodeType: "base", inputs: 1, outputs: 2 },
-      { id: "timing-retry", label: "Retry", description: "Retry with bounded attempts.", family: "timing", scope: "both", nodeType: "base", inputs: 1, outputs: 2 },
-      { id: "timing-debounce", label: "Debounce", description: "Wait for a stable signal.", family: "timing", scope: "both", nodeType: "base", inputs: 1, outputs: 1 }
-    ]
-  },
-  {
-    title: "Custom",
-    nodes: [
-      { id: "custom-action", label: "Custom Action", description: "Project or library custom action node.", family: "custom", scope: "both", nodeType: "custom", inputs: 1, outputs: 1 },
-      { id: "custom-condition", label: "Custom Condition", description: "Project or library custom condition node.", family: "custom", scope: "both", nodeType: "custom", inputs: 1, outputs: 1 },
-      { id: "custom-adapter", label: "Custom Adapter", description: "Project or library custom adapter node.", family: "custom", scope: "both", nodeType: "custom", inputs: 1, outputs: 1 }
-    ]
-  }
-];
+const automationEditorPalette: AutomationEditorPaletteGroup[] = automationNodeClassGroups
+  .map((group) => ({
+    title: group.label,
+    nodes: getAutomationNodeDefinitions()
+      .filter((node) => node.class === group.id)
+      .map(automationNodeDefinitionToEditorSpec)
+  }))
+  .filter((group) => group.nodes.length > 0);
+
+function automationNodeDefinitionToEditorSpec(definition: AutomationNodeDefinition): AutomationEditorNodeSpec {
+  return {
+    id: definition.id,
+    label: definition.label,
+    description: definition.description,
+    family: definition.class,
+    scope: definition.scope,
+    nodeType: definition.origin === "custom" ? "custom" : "base",
+    inputs: definition.inputs,
+    outputs: definition.outputs,
+    ...(definition.privileged !== undefined ? { privileged: definition.privileged } : {}),
+    ...(definition.class === "policy" && definition.id === "builtin.policy.action" ? { actionTypes: ["action"] } : {})
+  };
+}
+
 type AutomationHierarchyNode = {
   id: string;
   label: string;
@@ -259,29 +199,33 @@ type AutomationProjectModal = "create" | "rename" | "delete" | "move" | "create-
 type AutomationSelection =
   | { kind: "policy"; id: string }
   | { kind: "node"; id: string }
-  | { kind: "editor-node"; id: string; node: { label: string; nodeType: string; family: string; description: string; inputs: number; outputs: number; privileged?: boolean; actionTypes?: string[] } }
+  | { kind: "editor-node"; id: string; node: { label: string; nodeType: string; family: string; description: string; inputs: AutomationNodePort[]; outputs: AutomationNodePort[]; privileged?: boolean; actionTypes?: string[] } }
   | { kind: "recording"; id: string }
   | { kind: "timeline"; id: string }
   | { kind: "signal"; id: string };
 
 type AutomationPolicyNodeData = {
+  nodeDefinitionId?: string;
   label: string;
   actionTypes: string[];
   recovery: string;
   evidenceCount: number;
   readinessCount: number;
   successCount: number;
+  inputs: AutomationNodePort[];
+  outputs: AutomationNodePort[];
   isStart: boolean;
   confidence?: number;
   timeoutMs?: number;
 };
 type AutomationRoutineNodeData = {
+  nodeDefinitionId?: string;
   label: string;
   nodeType: "base" | "custom";
   family: string;
   description: string;
-  inputs: number;
-  outputs: number;
+  inputs: AutomationNodePort[];
+  outputs: AutomationNodePort[];
   privileged?: boolean;
 };
 
@@ -2286,6 +2230,7 @@ function automationPaletteIcon(family: string): typeof Blocks {
     case "math": return Braces;
     case "random": return Radio;
     case "data": return Network;
+    case "database": return Network;
     case "timing": return History;
     case "custom": return Blocks;
     default: return Blocks;
@@ -2354,8 +2299,8 @@ function policyEditorSelection(id: string, data: AutomationPolicyNodeData): Auto
       nodeType: data.isStart ? "start" : "policy",
       family: data.recovery,
       description: data.actionTypes.length ? data.actionTypes.join(", ") : "Policy editor node",
-      inputs: data.readinessCount,
-      outputs: data.successCount,
+      inputs: data.inputs,
+      outputs: data.outputs,
       actionTypes: data.actionTypes
     }
   };
@@ -2382,11 +2327,12 @@ function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelec
   const addRoutineNode = (spec: AutomationEditorNodeSpec) => {
     const id = `routine-${spec.id}-${Date.now().toString(36)}`;
     const data: AutomationRoutineNodeData = {
+      nodeDefinitionId: spec.id,
       label: spec.label,
       nodeType: spec.nodeType === "custom" ? "custom" : "base",
       family: spec.family,
       description: spec.description,
-      inputs: spec.inputs,
+      inputs: automationVisualInputPorts(spec.inputs, spec.id),
       outputs: spec.outputs,
       ...(spec.privileged !== undefined ? { privileged: spec.privileged } : {})
     };
@@ -2452,7 +2398,8 @@ function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelec
             elementsSelectable
             deleteKeyCode={["Backspace", "Delete"]}
             onInit={setRoutineFlow}
-            onConnect={(connection) => setRoutineEdges((edges) => addEdge(createAutomationConnectionEdge(connection, edges, "routine-edge"), edges))}
+            isValidConnection={(connection) => automationConnectionIsValid(connection, routineNodes)}
+            onConnect={(connection) => setRoutineEdges((edges) => addEdge(createAutomationConnectionEdge(connection, edges, "routine-edge", routineNodes), edges))}
             onEdgesChange={(changes: EdgeChange[]) => setRoutineEdges((edges) => applyEdgeChanges(changes, edges))}
             onEdgesDelete={(deletedEdges) => setSelectedRoutineEdgeIds((ids) => ids.filter((id) => !deletedEdges.some((edge) => edge.id === id)))}
             onNodesDelete={(deletedNodes) => {
@@ -2588,13 +2535,16 @@ function AutomationPolicyCanvas(props: { policy: any; selectedNode: any; setSele
   const addPolicyNode = (spec: AutomationEditorNodeSpec) => {
     const id = `policy-${spec.id}-${Date.now().toString(36)}`;
     const data: AutomationPolicyNodeData = {
+      nodeDefinitionId: spec.id,
       label: spec.label,
       actionTypes: spec.actionTypes ?? [],
       recovery: spec.family,
       evidenceCount: 0,
-      readinessCount: Math.max(0, spec.inputs),
-      successCount: Math.max(0, spec.outputs),
-      isStart: spec.id === "control-start"
+      readinessCount: spec.inputs.length,
+      successCount: spec.outputs.length,
+      inputs: automationVisualInputPorts(spec.inputs, spec.id),
+      outputs: spec.outputs,
+      isStart: spec.id === "builtin.control.start"
     };
     const node: Node<AutomationPolicyNodeData> = {
       id,
@@ -2658,7 +2608,8 @@ function AutomationPolicyCanvas(props: { policy: any; selectedNode: any; setSele
             elementsSelectable
             deleteKeyCode={["Backspace", "Delete"]}
             onInit={setPolicyFlow}
-            onConnect={(connection) => setPolicyEdges((edges) => addEdge(createAutomationConnectionEdge(connection, edges, "policy-edge"), edges))}
+            isValidConnection={(connection) => automationConnectionIsValid(connection, policyNodes)}
+            onConnect={(connection) => setPolicyEdges((edges) => addEdge(createAutomationConnectionEdge(connection, edges, "policy-edge", policyNodes), edges))}
             onEdgesChange={(changes: EdgeChange[]) => setPolicyEdges((edges) => applyEdgeChanges(changes, edges))}
             onEdgesDelete={(deletedEdges) => setSelectedPolicyEdgeIds((ids) => ids.filter((id) => !deletedEdges.some((edge) => edge.id === id)))}
             onNodesDelete={(deletedNodes) => {
@@ -2706,10 +2657,11 @@ function AutomationPolicyNode({ id, data, selected }: NodeProps) {
   return (
     <div className={selected ? "automation-flow-node selected" : "automation-flow-node"}>
       {selected ? <SelectedNodeDeleteButton nodeId={id} /> : null}
-      <Handle type="target" position={Position.Left} className="automation-flow-handle input" />
+      <AutomationNodePortHandles ports={node.inputs} type="target" />
+      <AutomationNodePortHandles ports={node.outputs} type="source" />
       <div className="node-badges">
         {node.isStart ? <span className="node-badge start">Start</span> : null}
-        <span className="node-badge category">Generated</span>
+        <span className="node-badge category">{node.nodeDefinitionId ? "Base" : "Generated"}</span>
         <span className="node-badge category">{node.recovery.replace(/_/g, " ")}</span>
         {node.confidence !== undefined ? <span className="node-badge confidence">{Math.round(node.confidence * 100)}%</span> : null}
       </div>
@@ -2727,13 +2679,13 @@ function AutomationPolicyNode({ id, data, selected }: NodeProps) {
         <span>Success: {node.successCount || 0} expectations</span>
         <span>Timeout: {node.timeoutMs ? `${(node.timeoutMs / 1000).toFixed(1)}s` : "default"}</span>
       </div>
+      <AutomationNodePortList inputs={node.inputs} outputs={node.outputs} />
       <div className="node-state-indicators">
         <span className={node.readinessCount ? "node-state-chip has-state" : "node-state-chip empty-state"}>Ready {node.readinessCount}</span>
         <span className={node.successCount ? "node-state-chip has-state" : "node-state-chip empty-state"}>Success {node.successCount}</span>
         <span className="node-state-chip has-state">Evidence {node.evidenceCount}</span>
       </div>
       <footer className="node-runtime-line">12 successes - 1 retry</footer>
-      <Handle type="source" position={Position.Right} id="next" className="automation-flow-handle output" />
     </div>
   );
 }
@@ -2743,7 +2695,8 @@ function AutomationRoutineNode({ id, data, selected }: NodeProps) {
   return (
     <div className={selected ? `automation-flow-node routine-node selected ${node.nodeType}` : `automation-flow-node routine-node ${node.nodeType}`}>
       {selected ? <SelectedNodeDeleteButton nodeId={id} /> : null}
-      <Handle type="target" position={Position.Left} className="automation-flow-handle input" />
+      <AutomationNodePortHandles ports={node.inputs} type="target" />
+      <AutomationNodePortHandles ports={node.outputs} type="source" />
       <div className="node-badges">
         <span className={node.nodeType === "custom" ? "node-badge custom" : "node-badge category"}>{node.nodeType}</span>
         <span className="node-badge category">{node.family}</span>
@@ -2759,13 +2712,57 @@ function AutomationRoutineNode({ id, data, selected }: NodeProps) {
         </div>
       </div>
       <div className="node-definition-lines">
-        <span>Inputs: {node.inputs}</span>
-        <span>Outputs: {node.outputs}</span>
+        <span>Inputs: {node.inputs.length}</span>
+        <span>Outputs: {node.outputs.length}</span>
         <span>Scope: routine orchestration</span>
       </div>
+      <AutomationNodePortList inputs={node.inputs} outputs={node.outputs} />
       <footer className="node-runtime-line">No recordings or state bindings</footer>
-      <Handle type="source" position={Position.Right} id="next" className="automation-flow-handle output" />
     </div>
+  );
+}
+
+function AutomationNodePortHandles(props: { ports: AutomationNodePort[]; type: "source" | "target" }) {
+  return props.ports.map((port, index) => (
+    <Handle
+      key={`${props.type}-${port.id}`}
+      type={props.type}
+      position={props.type === "source" ? Position.Right : Position.Left}
+      id={port.id}
+      className={`${props.type === "source" ? "automation-flow-handle output" : "automation-flow-handle input"} tone-${automationPortTone(port, props.type)}`}
+      style={{ top: automationPortHandleTop(index, props.ports.length) }}
+      title={automationPortTitle(port, props.type)}
+    />
+  ));
+}
+
+function automationVisualInputPorts(inputs: AutomationNodePort[], nodeDefinitionId: string): AutomationNodePort[] {
+  if (inputs.length || nodeDefinitionId === "builtin.control.start") return inputs;
+  return [{ id: "in", label: "In", valueType: "any" }];
+}
+
+function AutomationNodePortList(props: { inputs: AutomationNodePort[]; outputs: AutomationNodePort[] }) {
+  return (
+    <div className="automation-node-port-list">
+      <div className="automation-node-port-column input">
+        {props.inputs.length ? props.inputs.map((port) => <AutomationNodePortRow key={port.id} port={port} direction="target" />) : <span className="empty">No inputs</span>}
+      </div>
+      <div className="automation-node-port-column output">
+        {props.outputs.length ? props.outputs.map((port) => <AutomationNodePortRow key={port.id} port={port} direction="source" />) : <span className="empty">No outputs</span>}
+      </div>
+    </div>
+  );
+}
+
+function AutomationNodePortRow(props: { port: AutomationNodePort; direction: "source" | "target" }) {
+  const tone = automationPortTone(props.port, props.direction);
+  const caption = automationPortCaption(props.port, props.direction);
+  return (
+    <span className={`tone-${tone}`} title={automationPortTitle(props.port, props.direction)}>
+      <i aria-hidden />
+      <strong>{automationPortDisplayLabel(props.port)}</strong>
+      {caption ? <small>{caption}</small> : null}
+    </span>
   );
 }
 
@@ -2917,7 +2914,7 @@ function AutomationInspector(props: { selection: AutomationSelection | null; pol
       </> : null}
       {props.selection?.kind === "editor-node" && props.node ? <>
         <InspectorSection title="General" rows={[["Node", props.node.label], ["ID", props.node.id], ["Type", props.node.nodeType ?? "-"], ["Family", props.node.family ?? "-"], ["Description", props.node.description ?? "-"]]} />
-        <InspectorSection title="Ports" rows={[["Inputs", String(props.node.inputs ?? 0)], ["Outputs", String(props.node.outputs ?? 0)], ["Privileged", props.node.privileged ? "Yes" : "No"], ["Actions", (props.node.actionTypes ?? []).join(", ") || "-"]]} />
+        <InspectorSection title="Ports" rows={[["Inputs", formatAutomationPorts(props.node.inputs)], ["Outputs", formatAutomationPorts(props.node.outputs)], ["Privileged", props.node.privileged ? "Yes" : "No"], ["Actions", (props.node.actionTypes ?? []).join(", ") || "-"]]} />
         <details className="json-details"><summary><Braces size={13} aria-hidden />Raw definition</summary><pre>{shortJson(props.node)}</pre></details>
       </> : null}
       {(!props.selection || props.selection.kind === "node") && props.node ? <>
@@ -4014,20 +4011,18 @@ function sameStringList(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((item, index) => item === right[index]);
 }
 
-function spawnAutomationNodePosition<T extends Record<string, unknown>>(selectedNodeId: string, nodes: Array<Node<T>>, edges: Edge[], flow: Pick<ReactFlowInstance<Node<T>, Edge>, "screenToFlowPosition"> | null, canvasElement: HTMLElement | null): { x: number; y: number } {
-  const selectedNode = nodes.find((node) => node.id === selectedNodeId);
-  if (selectedNode && !edges.some((edge) => edge.source === selectedNode.id)) {
-    return { x: selectedNode.position.x + 320, y: selectedNode.position.y };
-  }
+function spawnAutomationNodePosition<T extends Record<string, unknown>>(_selectedNodeId: string, nodes: Array<Node<T>>, _edges: Edge[], flow: Pick<ReactFlowInstance<Node<T>, Edge>, "screenToFlowPosition"> | null, canvasElement: HTMLElement | null): { x: number; y: number } {
   const bounds = canvasElement?.getBoundingClientRect();
   if (flow?.screenToFlowPosition && bounds) {
-    return flow.screenToFlowPosition({
-      x: bounds.left + bounds.width / 2 - 120,
-      y: bounds.top + bounds.height / 2 - 48
+    const center = flow.screenToFlowPosition({
+      x: bounds.left + bounds.width / 2,
+      y: bounds.top + bounds.height / 2
     });
+    return { x: center.x - 140, y: center.y - 98 };
   }
   if (flow?.screenToFlowPosition) {
-    return flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+    const center = flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+    return { x: center.x - 140, y: center.y - 98 };
   }
   return { x: 80 + (nodes.length % 4) * 300, y: 80 + Math.floor(nodes.length / 4) * 190 };
 }
@@ -4036,23 +4031,159 @@ function roundedAutomationPosition(position: { x: number; y: number }): { x: num
   return { x: Math.round(position.x), y: Math.round(position.y) };
 }
 
-function createAutomationConnectionEdge(connection: { source: string | null; target: string | null; sourceHandle?: string | null; targetHandle?: string | null }, existingEdges: Edge[], prefix: string): Edge {
+function createAutomationConnectionEdge<T extends AutomationPolicyNodeData | AutomationRoutineNodeData>(connection: { source: string | null; target: string | null; sourceHandle?: string | null; targetHandle?: string | null }, existingEdges: Edge[], prefix: string, nodes: Array<Node<T>>): Edge {
   const source = connection.source ?? "";
   const target = connection.target ?? "";
   const outgoingIndex = existingEdges.filter((edge) => edge.source === source).length;
   const lane = automationEdgeLane(`${prefix}-${source}-${target}-${outgoingIndex}`, outgoingIndex);
+  const sourcePort = nodes.find((node) => node.id === source)?.data.outputs.find((port) => port.id === connection.sourceHandle);
+  const label = sourcePort ? automationPortDisplayLabel(sourcePort) : automationPortLabelFromId(connection.sourceHandle) ?? (outgoingIndex === 0 ? "Next" : `Branch ${outgoingIndex + 1}`);
+  const color = automationPortColor(automationPortTone(sourcePort ?? { id: connection.sourceHandle ?? "next", label, valueType: "any" }, "source"));
   return {
     id: `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
     source,
     target,
     sourceHandle: connection.sourceHandle ?? "next",
-    targetHandle: connection.targetHandle ?? null,
+    targetHandle: connection.targetHandle ?? "in",
     type: "automationEdge",
-    label: outgoingIndex === 0 ? "Next" : `Branch ${outgoingIndex + 1}`,
-    data: { label: outgoingIndex === 0 ? "Next" : `Branch ${outgoingIndex + 1}`, lane },
-    markerEnd: { type: MarkerType.ArrowClosed, color: "#0972d3", width: 18, height: 18 },
-    style: { stroke: "#0972d3", strokeWidth: 3 }
+    label,
+    data: { label, lane, sourcePort: connection.sourceHandle ?? "next", targetPort: connection.targetHandle ?? "in" },
+    markerEnd: { type: MarkerType.ArrowClosed, color, width: 18, height: 18 },
+    style: { stroke: color, strokeWidth: 3 }
   };
+}
+
+function automationConnectionIsValid<T extends AutomationPolicyNodeData | AutomationRoutineNodeData>(connection: Connection | Edge, nodes: Array<Node<T>>): boolean {
+  if (!connection.source || !connection.target || connection.source === connection.target) return false;
+  const source = nodes.find((node) => node.id === connection.source);
+  const target = nodes.find((node) => node.id === connection.target);
+  const sourcePort = source?.data.outputs.find((port) => port.id === connection.sourceHandle);
+  const targetPort = target?.data.inputs.find((port) => port.id === connection.targetHandle);
+  if (!sourcePort || !targetPort) return false;
+  return automationPortTypesCompatible(sourcePort.valueType, targetPort.valueType);
+}
+
+function automationPortTypesCompatible(sourceType: AutomationNodePort["valueType"], targetType: AutomationNodePort["valueType"]): boolean {
+  if (sourceType === "any" || targetType === "any") return true;
+  if (sourceType === targetType) return true;
+  if (sourceType === "signal" && targetType === "boolean") return true;
+  return false;
+}
+
+type AutomationPortTone = "flow" | "success" | "warning" | "danger" | "boolean" | "number" | "text" | "object" | "signal" | "routine" | "neutral";
+
+function automationPortTone(port: AutomationNodePort, direction: "source" | "target"): AutomationPortTone {
+  const semantic = `${port.id} ${port.label}`.toLowerCase();
+  if (/\b(success|passed|approved|recovered|stable|done|next)\b/.test(semantic)) return "success";
+  if (/\b(fail|failure|failed|rejected|timeout|error)\b/.test(semantic)) return "danger";
+  if (/\b(branch|body|case|default|retry|recover|branches)\b/.test(semantic)) return "warning";
+  if (/\b(value|result|choice|record|records|items|object|patch)\b/.test(semantic)) return "object";
+  switch (port.valueType) {
+    case "boolean": return "boolean";
+    case "number": return "number";
+    case "string": return "text";
+    case "object":
+    case "array": return "object";
+    case "signal": return "signal";
+    case "policy":
+    case "routine": return "routine";
+    case "any": return direction === "source" && automationPortIsRoute(port) ? "flow" : "neutral";
+    default: return "neutral";
+  }
+}
+
+function automationPortColor(tone: AutomationPortTone): string {
+  switch (tone) {
+    case "success": return "#188038";
+    case "warning": return "#b35c00";
+    case "danger": return "#c5221f";
+    case "boolean": return "#00897b";
+    case "number": return "#5e35b1";
+    case "text": return "#ad1457";
+    case "object": return "#1565c0";
+    case "signal": return "#ef6c00";
+    case "routine": return "#6a1b9a";
+    case "flow": return "#0972d3";
+    default: return "#6b7785";
+  }
+}
+
+function automationPortCaption(port: AutomationNodePort, direction: "source" | "target"): string {
+  const tone = automationPortTone(port, direction);
+  if (port.valueType === "any") {
+    return automationPortIsRoute(port) || tone === "success" || tone === "warning" || tone === "danger" ? "route" : "";
+  }
+  const suffix = port.multiple ? "[]" : "";
+  switch (port.valueType) {
+    case "boolean": return `condition${suffix}`;
+    case "number": return `number${suffix}`;
+    case "string": return `text${suffix}`;
+    case "object": return `object${suffix}`;
+    case "array": return `list${suffix}`;
+    case "signal": return `signal${suffix}`;
+    case "policy": return `policy${suffix}`;
+    case "routine": return `routine${suffix}`;
+    default: return `${port.valueType}${suffix}`;
+  }
+}
+
+function automationPortIsRoute(port: AutomationNodePort): boolean {
+  return /\b(next|success|failure|failed|passed|approved|rejected|timeout|body|done|case|default|branch|branches|recovered)\b/.test(`${port.id} ${port.label}`.toLowerCase());
+}
+
+function automationPortTitle(port: AutomationNodePort, direction: "source" | "target"): string {
+  const caption = automationPortCaption(port, direction);
+  const label = automationPortDisplayLabel(port);
+  return caption ? `${label} - ${caption}` : label;
+}
+
+function automationPortDisplayLabel(port: AutomationNodePort): string {
+  if (port.id === "body" || port.label.toLowerCase() === "body") return "Repeat";
+  return port.label;
+}
+
+function automationPortHandleTop(index: number, total: number): string {
+  if (total <= 1) return "50%";
+  const start = 30;
+  const end = 78;
+  return `${start + (index / Math.max(1, total - 1)) * (end - start)}%`;
+}
+
+function automationPortIdFromLabel(label: unknown): string {
+  const normalized = String(label ?? "next")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || "next";
+}
+
+function automationPortLabelFromId(portId: string | null | undefined): string | null {
+  if (!portId) return null;
+  if (portId === "body") return "Repeat";
+  return portId
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ") || null;
+}
+
+function uniqueAutomationPorts(ports: AutomationNodePort[]): AutomationNodePort[] {
+  const counts = new Map<string, number>();
+  return ports.map((port) => {
+    const count = counts.get(port.id) ?? 0;
+    counts.set(port.id, count + 1);
+    return count === 0 ? port : { ...port, id: `${port.id}-${count + 1}` };
+  });
+}
+
+function formatAutomationPorts(ports: AutomationNodePort[] | undefined): string {
+  if (!ports?.length) return "None";
+  return ports.map((port) => {
+    const caption = automationPortCaption(port, "source");
+    const label = automationPortDisplayLabel(port);
+    return caption ? `${label}: ${caption}` : label;
+  }).join(", ");
 }
 
 function automationEdgeRoute(id: string, sourceX: number, sourceY: number, targetX: number, targetY: number, data: Record<string, unknown> | undefined): { kind: "step" | "loop"; lane: number } {
@@ -4115,6 +4246,8 @@ function policyToReactFlowGraph(policy: any, selectedNodeId = ""): { nodes: Node
       evidenceCount: node.sourceEvidence?.length ?? 0,
       readinessCount: countConditionLeaves(node.readinessConditions),
       successCount: countConditionLeaves(node.successConditions),
+      inputs: generatedPolicyInputPorts(node, index),
+      outputs: generatedPolicyOutputPorts(node, policyEdges),
       isStart: index === 0,
       confidence: node.generatedMetadata?.confidence,
       timeoutMs: node.timeout?.timeoutMs ?? node.timeoutMs
@@ -4132,7 +4265,8 @@ function policyToReactFlowGraph(policy: any, selectedNodeId = ""): { nodes: Node
       id,
       source: edge.fromNodeId,
       target: edge.toNodeId,
-      sourceHandle: "next",
+      sourceHandle: automationPortIdFromLabel(label),
+      targetHandle: "in",
       type: "automationEdge",
       animated: false,
       data: { label, lane: automationEdgeLane(id, count) },
@@ -4147,6 +4281,20 @@ function policyToReactFlowGraph(policy: any, selectedNodeId = ""): { nodes: Node
     };
   });
   return { nodes, edges };
+}
+
+function generatedPolicyInputPorts(node: any, index: number): AutomationNodePort[] {
+  if (index === 0 || node.isStart) return [];
+  return [{ id: "in", label: "In", valueType: "any" }];
+}
+
+function generatedPolicyOutputPorts(node: any, policyEdges: any[]): AutomationNodePort[] {
+  const outgoing = policyEdges.filter((edge) => String(edge.fromNodeId ?? edge.source ?? "") === String(node.id));
+  const ports = outgoing.map((edge, index) => {
+    const label = edge.label ?? edge.kind ?? edge.type ?? (edge.probability !== undefined ? `${Math.round(Number(edge.probability) * 100)}%` : index === 0 ? "Next" : `Branch ${index + 1}`);
+    return { id: automationPortIdFromLabel(label), label: String(label), valueType: "any" as const };
+  });
+  return ports.length ? uniqueAutomationPorts(ports) : [{ id: "next", label: "Next", valueType: "any" }];
 }
 
 function layoutAutomationPolicyNodes(policyNodes: any[], policyEdges: any[]): Map<string, { x: number; y: number }> {

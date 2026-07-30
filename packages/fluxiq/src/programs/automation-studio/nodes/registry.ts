@@ -1,5 +1,13 @@
 import type { AutomationNodeClass, AutomationNodeClassGroup, AutomationNodeDefinition, AutomationNodeScope } from "./contracts";
-import { controlFlowNodes, dataNodes, logicNodes, mathNodes, policyNodes, randomNodes, routineNodes, timingNodes } from "./builtins";
+import { controlFlowNodes } from "./control-flow";
+import { dataNodes } from "./data";
+import { databaseNodes } from "./database";
+import { logicNodes } from "./logic";
+import { mathNodes } from "./math";
+import { policyNodes } from "./policy";
+import { randomNodes } from "./random";
+import { routineNodes } from "./routine";
+import { timingNodes } from "./timing";
 
 export const automationNodeClassGroups: AutomationNodeClassGroup[] = [
   { id: "control-flow", label: "Control Flow", description: "Graph routing, branching, joining, and lifecycle nodes." },
@@ -9,6 +17,7 @@ export const automationNodeClassGroups: AutomationNodeClassGroup[] = [
   { id: "math", label: "Math", description: "Numeric transform nodes." },
   { id: "random", label: "Random", description: "Random number, choice, and jitter nodes." },
   { id: "data", label: "Data", description: "Variable, constant, object, and list transform nodes." },
+  { id: "database", label: "Database", description: "Database request nodes delegated to host adapters." },
   { id: "timing", label: "Timing", description: "Wait, timeout, retry, and debounce nodes." },
   { id: "runtime", label: "Runtime", description: "Future runtime/debug-specific nodes." },
   { id: "custom", label: "Custom", description: "Host-added node definitions loaded from .fluxiq." }
@@ -22,6 +31,7 @@ export const builtinAutomationNodeDefinitions: AutomationNodeDefinition[] = [
   ...mathNodes,
   ...randomNodes,
   ...dataNodes,
+  ...databaseNodes,
   ...timingNodes
 ];
 
@@ -38,4 +48,8 @@ export function getAutomationNodeDefinitionsByClass(scope?: AutomationNodeScope)
     grouped.set(node.class, [...(grouped.get(node.class) ?? []), node]);
   }
   return grouped;
+}
+
+export function getAutomationNodeDefinition(nodeId: string): AutomationNodeDefinition | undefined {
+  return builtinAutomationNodeDefinitions.find((node) => node.id === nodeId);
 }

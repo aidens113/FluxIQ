@@ -9,6 +9,7 @@ export type AutomationNodeClass =
   | "math"
   | "random"
   | "data"
+  | "database"
   | "timing"
   | "policy"
   | "routine"
@@ -43,6 +44,24 @@ export type AutomationNodeParameter = {
   required?: boolean;
 };
 
+export type AutomationNodeExecutionContext = {
+  inputs: Record<string, JsonValue>;
+  parameters: Record<string, JsonValue>;
+  variables?: Map<string, JsonValue>;
+  random?: () => number;
+  now?: () => number;
+  signal?: AbortSignal;
+};
+
+export type AutomationNodeExecutionResult = {
+  outputs?: Record<string, JsonValue>;
+  route?: string;
+  status?: "success" | "failed" | "waiting" | "skipped";
+  effects?: Array<{ type: string; payload?: JsonValue }>;
+};
+
+export type AutomationNodeExecutor = (context: AutomationNodeExecutionContext) => AutomationNodeExecutionResult | Promise<AutomationNodeExecutionResult>;
+
 export type AutomationNodeDefinition = {
   id: string;
   label: string;
@@ -56,6 +75,8 @@ export type AutomationNodeDefinition = {
   icon?: string;
   tags?: string[];
   privileged?: boolean;
+  implementationKey: string;
+  execute?: AutomationNodeExecutor;
 };
 
 export type AutomationNodeClassGroup = {
