@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { mkdir, rm } from "node:fs/promises";
+import path from "node:path";
 import type { AutomationStudioSnapshot } from "../api";
 import type { AutomationStudioProject, AutomationStudioProjectCategory, AutomationStudioProjectHierarchy } from "../api/contracts";
 import { createAutomationStudioFixture } from "../model";
-import { ProgramJsonStore, programDataFile } from "../../_shared/storage";
+import { automationNodeClasses } from "../nodes";
+import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage";
 import {
   type CanonicalAutomationStudioRepositories,
   createCanonicalAutomationStudioMemoryRepositories
@@ -16,20 +19,28 @@ export type AutomationStudioServiceOptions = {
 
 type AutomationStudioProjectRecord = AutomationStudioProject & AutomationStudioProjectHierarchy;
 
-type AutomationStudioProjectState = {
+type AutomationStudioProjectIndex = {
   categories: AutomationStudioProjectCategory[];
-  projects: AutomationStudioProjectRecord[];
+  projects: AutomationStudioProject[];
 };
 
 export class AutomationStudioService {
   private readonly repositories: CanonicalAutomationStudioRepositories;
-  private readonly projectStore?: ProgramJsonStore<AutomationStudioProjectState>;
+  private readonly projectIndexStore?: ProgramJsonStore<AutomationStudioProjectIndex>;
+  private readonly legacyProjectStore?: ProgramJsonStore<{ categories: AutomationStudioProjectCategory[]; projects: AutomationStudioProjectRecord[] }>;
+  private readonly projectRootDir?: string;
+  private readonly nodeRootDir?: string;
   private readonly ready: Promise<void>;
+  private storageReady?: Promise<void>;
 
   constructor(options: AutomationStudioServiceOptions = {}) {
     this.repositories = options.repositories ?? createCanonicalAutomationStudioMemoryRepositories();
     if (options.dataDir) {
-      this.projectStore = new ProgramJsonStore(programDataFile(options.dataDir, "automation-studio", "projects.json"), () => ({ categories: [], projects: [] }));
+      const automationDataDir = path.join(options.dataDir, "programs", "automation-studio");
+      this.projectRootDir = path.join(automationDataDir, "projects");
+      this.nodeRootDir = path.join(automationDataDir, "nodes");
+      this.projectIndexStore = new ProgramJsonStore(path.join(this.projectRootDir, "index.json"), () => ({ categories: [], projects: [] }));
+      this.legacyProjectStore = new ProgramJsonStore(programDataFile(options.dataDir, "automation-studio", "projects.json"), () => ({ categories: [], projects: [] }));
     }
     this.ready = options.seedFixture === false ? Promise.resolve() : this.seedFixture();
   }
@@ -58,11 +69,10 @@ export class AutomationStudioService {
   }
 
   async listProjects(): Promise<{ categories: AutomationStudioProjectCategory[]; projects: AutomationStudioProject[] }> {
-    const state = await this.readProjectState();
+    const state = await this.readProjectIndex();
     return {
       categories: this.sortCategories(state.categories ?? []),
       projects: state.projects
-        .map(({ customHierarchyNodes: _customHierarchyNodes, deletedHierarchyIds: _deletedHierarchyIds, workspacePrefs: _workspacePrefs, ...project }) => project)
         .sort((left, right) => right.updatedAt - left.updatedAt)
     };
   }
@@ -72,28 +82,25 @@ export class AutomationStudioService {
     if (!name) throw new Error("Project name is required.");
     const now = Date.now();
     const categoryId = typeof input.categoryId === "string" && input.categoryId.trim() ? input.categoryId.trim() : null;
-    const project: AutomationStudioProjectRecord = {
+    const project: AutomationStudioProject = {
       id: randomUUID(),
       name,
       description: typeof input.description === "string" ? input.description.trim() : "",
       categoryId,
       createdAt: now,
-      updatedAt: now,
-      customHierarchyNodes: [],
-      deletedHierarchyIds: [],
-      workspacePrefs: {}
+      updatedAt: now
     };
-    await this.writeProjectState((state) => ({ ...state, projects: [project, ...state.projects] }));
-    const { customHierarchyNodes: _customHierarchyNodes, deletedHierarchyIds: _deletedHierarchyIds, workspacePrefs: _workspacePrefs, ...summary } = project;
-    return summary;
+    await this.writeProjectIndex((state) => ({ ...state, projects: [project, ...state.projects] }));
+    await this.writeProjectRecord({ ...project, customHierarchyNodes: [], deletedHierarchyIds: [], workspacePrefs: {} });
+    return project;
   }
 
   async updateProject(input: { projectId?: unknown; name?: unknown; description?: unknown; categoryId?: unknown }): Promise<AutomationStudioProject> {
     const projectId = String(input.projectId ?? "");
     const name = typeof input.name === "string" ? input.name.trim() : undefined;
     if (name !== undefined && !name) throw new Error("Project name is required.");
-    let updated: AutomationStudioProjectRecord | undefined;
-    await this.writeProjectState((state) => ({
+    let updated: AutomationStudioProject | undefined;
+    await this.writeProjectIndex((state) => ({
       ...state,
       projects: state.projects.map((project) => {
         if (project.id !== projectId) return project;
@@ -108,16 +115,18 @@ export class AutomationStudioService {
       })
     }));
     if (!updated) throw new Error(`Unknown Automation Studio project: ${projectId}`);
-    const { customHierarchyNodes: _customHierarchyNodes, deletedHierarchyIds: _deletedHierarchyIds, workspacePrefs: _workspacePrefs, ...summary } = updated;
-    return summary;
+    const existing = await this.findProject(projectId);
+    await this.writeProjectRecord({ ...existing, ...updated });
+    return updated;
   }
 
   async deleteProject(projectId: string): Promise<{ deletedProjectId: string }> {
     await this.findProject(projectId);
-    await this.writeProjectState((state) => ({
+    await this.writeProjectIndex((state) => ({
       ...state,
       projects: state.projects.filter((project) => project.id !== projectId)
     }));
+    if (this.projectRootDir) await rm(this.projectDirectory(projectId), { recursive: true, force: true });
     return { deletedProjectId: projectId };
   }
 
@@ -125,9 +134,9 @@ export class AutomationStudioService {
     const name = typeof input.name === "string" ? input.name.trim() : "";
     if (!name) throw new Error("Category name is required.");
     const now = Date.now();
-    const state = await this.readProjectState();
+    const state = await this.readProjectIndex();
     const category = { id: randomUUID(), name, order: nextCategoryOrder(state.categories), createdAt: now, updatedAt: now };
-    await this.writeProjectState((state) => ({ ...state, categories: [category, ...(state.categories ?? [])] }));
+    await this.writeProjectIndex((state) => ({ ...state, categories: [category, ...(state.categories ?? [])] }));
     return category;
   }
 
@@ -136,7 +145,7 @@ export class AutomationStudioService {
     const name = typeof input.name === "string" ? input.name.trim() : "";
     if (!name) throw new Error("Category name is required.");
     let updated: AutomationStudioProjectCategory | undefined;
-    await this.writeProjectState((state) => ({
+    await this.writeProjectIndex((state) => ({
       ...state,
       categories: (state.categories ?? []).map((category) => {
         if (category.id !== categoryId) return category;
@@ -149,18 +158,28 @@ export class AutomationStudioService {
   }
 
   async deleteProjectCategory(categoryId: string): Promise<{ deletedCategoryId: string }> {
-    await this.writeProjectState((state) => ({
+    const affectedProjects: AutomationStudioProject[] = [];
+    await this.writeProjectIndex((state) => ({
       ...state,
       categories: (state.categories ?? []).filter((category) => category.id !== categoryId),
-      projects: state.projects.map((project) => project.categoryId === categoryId ? { ...project, categoryId: null, updatedAt: Date.now() } : project)
+      projects: state.projects.map((project) => {
+        if (project.categoryId !== categoryId) return project;
+        const updated = { ...project, categoryId: null, updatedAt: Date.now() };
+        affectedProjects.push(updated);
+        return updated;
+      })
     }));
+    for (const project of affectedProjects) {
+      const existing = await this.findProject(project.id);
+      await this.writeProjectRecord({ ...existing, ...project });
+    }
     return { deletedCategoryId: categoryId };
   }
 
   async reorderProjectCategories(categoryIds: string[]): Promise<{ categories: AutomationStudioProjectCategory[] }> {
     const requestedIds = categoryIds.filter((id) => typeof id === "string" && id.trim()).map((id) => id.trim());
     let categories: AutomationStudioProjectCategory[] = [];
-    await this.writeProjectState((state) => {
+    await this.writeProjectIndex((state) => {
       const requested = new Set(requestedIds);
       const known = new Set((state.categories ?? []).map((category) => category.id));
       if (requestedIds.some((id) => !known.has(id))) throw new Error("Unknown Automation Studio project category in reorder request.");
@@ -187,25 +206,30 @@ export class AutomationStudioService {
       deletedHierarchyIds: Array.isArray(hierarchy.deletedHierarchyIds) ? hierarchy.deletedHierarchyIds : [],
       workspacePrefs: hierarchy.workspacePrefs && typeof hierarchy.workspacePrefs === "object" && !Array.isArray(hierarchy.workspacePrefs) ? hierarchy.workspacePrefs : {}
     };
-    await this.writeProjectState((state) => ({
+    let updatedProject: AutomationStudioProject | undefined;
+    await this.writeProjectIndex((state) => ({
       ...state,
-      projects: state.projects.map((project) => project.id === projectId ? {
-        ...project,
-        ...nextHierarchy,
-        updatedAt: Date.now()
-      } : project)
+      projects: state.projects.map((project) => {
+        if (project.id !== projectId) return project;
+        updatedProject = { ...project, updatedAt: Date.now() };
+        return updatedProject;
+      })
     }));
+    if (!updatedProject) throw new Error(`Unknown Automation Studio project: ${projectId}`);
+    await this.writeProjectRecord({ ...updatedProject, ...nextHierarchy });
     return nextHierarchy;
   }
 
-  private async readProjectState(): Promise<AutomationStudioProjectState> {
-    const state = this.projectStore ? await this.projectStore.read() : { categories: [], projects: [] };
+  private async readProjectIndex(): Promise<AutomationStudioProjectIndex> {
+    await this.ensureStorageReady();
+    const state = this.projectIndexStore ? await this.projectIndexStore.read() : { categories: [], projects: [] };
     return { categories: normalizeProjectCategories(state.categories ?? []), projects: state.projects ?? [] };
   }
 
-  private async writeProjectState(mutator: (state: AutomationStudioProjectState) => AutomationStudioProjectState): Promise<AutomationStudioProjectState> {
-    if (!this.projectStore) return mutator({ categories: [], projects: [] });
-    return await this.projectStore.update((state) => mutator({ categories: state.categories ?? [], projects: state.projects ?? [] }));
+  private async writeProjectIndex(mutator: (state: AutomationStudioProjectIndex) => AutomationStudioProjectIndex): Promise<AutomationStudioProjectIndex> {
+    await this.ensureStorageReady();
+    if (!this.projectIndexStore) return mutator({ categories: [], projects: [] });
+    return await this.projectIndexStore.update((state) => mutator({ categories: normalizeProjectCategories(state.categories ?? []), projects: state.projects ?? [] }));
   }
 
   private sortCategories(categories: AutomationStudioProjectCategory[]): AutomationStudioProjectCategory[] {
@@ -213,10 +237,93 @@ export class AutomationStudioService {
   }
 
   private async findProject(projectId: string): Promise<AutomationStudioProjectRecord> {
-    const state = await this.readProjectState();
+    const state = await this.readProjectIndex();
     const project = state.projects.find((item) => item.id === projectId);
     if (!project) throw new Error(`Unknown Automation Studio project: ${projectId}`);
-    return project;
+    return await this.readProjectRecord(project);
+  }
+
+  private async readProjectRecord(project: AutomationStudioProject): Promise<AutomationStudioProjectRecord> {
+    if (!this.projectRootDir) return { ...project, customHierarchyNodes: [], deletedHierarchyIds: [], workspacePrefs: {} };
+    await this.ensureProjectStructure(project.id);
+    const legacyHierarchy = await new ProgramJsonStore<AutomationStudioProjectHierarchy>(this.projectFile(project.id, "hierarchy", "index.json"), () => ({ customHierarchyNodes: [], deletedHierarchyIds: [], workspacePrefs: {} })).read();
+    const nodes = await new ProgramJsonStore<{ customHierarchyNodes: AutomationStudioProjectHierarchy["customHierarchyNodes"] }>(this.projectFile(project.id, "hierarchy", "nodes.json"), () => ({ customHierarchyNodes: legacyHierarchy.customHierarchyNodes ?? [] })).read();
+    const deleted = await new ProgramJsonStore<{ deletedHierarchyIds: string[] }>(this.projectFile(project.id, "hierarchy", "deleted.json"), () => ({ deletedHierarchyIds: legacyHierarchy.deletedHierarchyIds ?? [] })).read();
+    const workspace = await new ProgramJsonStore<{ workspacePrefs: AutomationStudioProjectHierarchy["workspacePrefs"] }>(this.projectFile(project.id, "workspace", "preferences.json"), () => ({ workspacePrefs: legacyHierarchy.workspacePrefs ?? {} })).read();
+    return {
+      ...project,
+      customHierarchyNodes: Array.isArray(nodes.customHierarchyNodes) ? nodes.customHierarchyNodes : [],
+      deletedHierarchyIds: Array.isArray(deleted.deletedHierarchyIds) ? deleted.deletedHierarchyIds : [],
+      workspacePrefs: workspace.workspacePrefs && typeof workspace.workspacePrefs === "object" && !Array.isArray(workspace.workspacePrefs) ? workspace.workspacePrefs : {}
+    };
+  }
+
+  private async writeProjectRecord(project: AutomationStudioProjectRecord): Promise<void> {
+    if (!this.projectRootDir) return;
+    await this.ensureProjectStructure(project.id);
+    const { customHierarchyNodes, deletedHierarchyIds, workspacePrefs, ...manifest } = project;
+    await new ProgramJsonStore(this.projectFile(project.id, "manifest.json"), () => ({})).write(manifest);
+    await new ProgramJsonStore<{ customHierarchyNodes: AutomationStudioProjectHierarchy["customHierarchyNodes"] }>(this.projectFile(project.id, "hierarchy", "nodes.json"), () => ({ customHierarchyNodes: [] })).write({ customHierarchyNodes });
+    await new ProgramJsonStore<{ deletedHierarchyIds: string[] }>(this.projectFile(project.id, "hierarchy", "deleted.json"), () => ({ deletedHierarchyIds: [] })).write({ deletedHierarchyIds });
+    await new ProgramJsonStore<{ workspacePrefs: AutomationStudioProjectHierarchy["workspacePrefs"] }>(this.projectFile(project.id, "workspace", "preferences.json"), () => ({ workspacePrefs: {} })).write({ workspacePrefs });
+  }
+
+  private async migrateLegacyProjectStore(): Promise<void> {
+    if (!this.projectIndexStore || !this.legacyProjectStore) return;
+    const index = await this.projectIndexStore.read();
+    if (index.projects.length > 0 || index.categories.length > 0) return;
+    const legacy = await this.legacyProjectStore.read();
+    if (!legacy.projects.length && !legacy.categories.length) return;
+    await this.projectIndexStore.write({
+      categories: normalizeProjectCategories(legacy.categories ?? []),
+      projects: legacy.projects.map(({ customHierarchyNodes: _customHierarchyNodes, deletedHierarchyIds: _deletedHierarchyIds, workspacePrefs: _workspacePrefs, ...project }) => project)
+    });
+    for (const project of legacy.projects) await this.writeProjectRecord(project);
+  }
+
+  private async prepareStorage(): Promise<void> {
+    await this.ensureNodeLibraryStructure();
+    await this.migrateLegacyProjectStore();
+  }
+
+  private async ensureStorageReady(): Promise<void> {
+    this.storageReady ??= this.prepareStorage();
+    await this.storageReady;
+  }
+
+  private async ensureNodeLibraryStructure(): Promise<void> {
+    if (!this.nodeRootDir) return;
+    await Promise.all([
+      mkdir(path.join(this.nodeRootDir, "custom"), { recursive: true }),
+      mkdir(path.join(this.nodeRootDir, "packages"), { recursive: true }),
+      ...automationNodeClasses.map((nodeClass) => mkdir(path.join(this.nodeRootDir!, "custom", nodeClass), { recursive: true }))
+    ]);
+  }
+
+  private async ensureProjectStructure(projectId: string): Promise<void> {
+    if (!this.projectRootDir) return;
+    const root = this.projectDirectory(projectId);
+    await Promise.all([
+      mkdir(root, { recursive: true }),
+      mkdir(path.join(root, "hierarchy"), { recursive: true }),
+      mkdir(path.join(root, "workspace"), { recursive: true }),
+      mkdir(path.join(root, "tasks"), { recursive: true }),
+      mkdir(path.join(root, "routines"), { recursive: true }),
+      mkdir(path.join(root, "configs"), { recursive: true }),
+      mkdir(path.join(root, "recordings"), { recursive: true }),
+      mkdir(path.join(root, "policies"), { recursive: true }),
+      mkdir(path.join(root, "custom-nodes"), { recursive: true }),
+      mkdir(path.join(root, "artifacts"), { recursive: true })
+    ]);
+  }
+
+  private projectDirectory(projectId: string): string {
+    if (!this.projectRootDir) return "";
+    return path.join(this.projectRootDir, safeSegment(projectId));
+  }
+
+  private projectFile(projectId: string, ...parts: string[]): string {
+    return path.join(this.projectDirectory(projectId), ...parts);
   }
 
   private async seedFixture(): Promise<void> {

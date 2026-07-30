@@ -1,18 +1,28 @@
 "use client";
 
-import { AlertTriangle, Blocks, Braces, Bug, CheckCircle2, ChevronDown, ChevronRight, Columns3, Copy, FileText, FolderOpen, FolderPlus, GitBranch, GripVertical, History, Info, ListChecks, Lock, Maximize2, MoreHorizontal, Network, PanelLeftClose, Pin, Plus, QrCode, Radio, Search, ShieldCheck, SlidersHorizontal, Sparkles, Trash2, Workflow, XCircle } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { AlertTriangle, Blocks, Braces, Bug, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns3, Copy, FileText, FolderOpen, FolderPlus, GitBranch, GripVertical, History, Info, ListChecks, Network, Plus, QrCode, Radio, RefreshCcw, Search, ShieldCheck, SlidersHorizontal, Sparkles, Trash2, Workflow, XCircle } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import {
   Background,
+  BaseEdge,
   Controls,
+  EdgeLabelRenderer,
   Handle,
   MarkerType,
   MiniMap,
   Position,
   ReactFlow,
+  addEdge,
+  applyEdgeChanges,
+  applyNodeChanges,
   type Edge,
+  type EdgeChange,
+  type EdgeProps,
   type Node,
-  type NodeProps
+  type NodeChange,
+  type NodeProps,
+  type ReactFlowInstance
 } from "@xyflow/react";
 
 type ApiResponse<T = unknown> = { ok: boolean; payload?: T; error?: string };
@@ -42,21 +52,49 @@ export function LiveProgramMain({ programId, user }: { programId: string; user: 
 }
 
 type AutomationStudioView = "design" | "recordings" | "signals" | "runtime" | "problems";
-type AutomationViewType = AutomationStudioView | "node-detail" | "assistant" | "config" | "routine" | "state";
+type AutomationViewType = AutomationStudioView | "node-detail" | "assistant" | "config" | "routine" | "state" | "inspector" | "dock";
 type AutomationDockTab = "assistant" | "problems" | "history" | "state";
 type AutomationViewInstance = {
   id: string;
   label: string;
   type: AutomationViewType;
   icon: typeof Blocks;
-  state?: "dirty" | "live" | "warning" | "pinned";
+  state?: "dirty" | "live" | "warning";
 };
 type AutomationWorkspaceWindow = {
   id: string;
   activeViewId: string;
   tabs: string[];
-  widthWeight: number;
+  area: AutomationWorkspaceArea;
+  x: number;
+  y: number;
+  widthPx: number;
   heightPx: number;
+  zIndex: number;
+};
+type AutomationWorkspaceArea = "main" | "right" | "bottom";
+type AutomationWindowAdderState = {
+  area: AutomationWorkspaceArea;
+  targetWindowId?: string;
+  anchor: { top: number; right: number; bottom: number; left: number };
+};
+type AutomationLayoutPickerState = {
+  area: AutomationWorkspaceArea;
+  anchor: { top: number; right: number; bottom: number; left: number };
+};
+type AutomationWindowResizeEdge = "north" | "east" | "south" | "west" | "north-east" | "north-west" | "south-east" | "south-west";
+type AutomationSharedResizePartner = {
+  id: string;
+  side: "north" | "east" | "south" | "west";
+  start: AutomationWorkspaceWindow;
+};
+type AutomationSnapRegion = "left" | "right" | "top" | "bottom";
+type AutomationLayoutPreset = "single" | "two-columns" | "two-rows" | "main-sidebar" | "three-columns" | "quad";
+type AutomationLayoutPresetOption = {
+  id: AutomationLayoutPreset;
+  label: string;
+  title: string;
+  cells: Array<{ x: number; y: number; w: number; h: number }>;
 };
 type AutomationWorkspacePrefs = {
   windows: AutomationWorkspaceWindow[];
@@ -65,7 +103,25 @@ type AutomationWorkspacePrefs = {
   sidebarWidth: number;
   inspectorWidth: number;
   bottomDockHeight: number;
-  windowsPerRow: number;
+  utilityWindowsMigrated: boolean;
+  rightSidebarCollapsed: boolean;
+  bottomBarCollapsed: boolean;
+};
+type AutomationEditorNodeSpec = {
+  id: string;
+  label: string;
+  description: string;
+  family: string;
+  scope: "policy" | "routine" | "both";
+  nodeType: "base" | "custom" | "generated";
+  inputs: number;
+  outputs: number;
+  privileged?: boolean;
+  actionTypes?: string[];
+};
+type AutomationEditorPaletteGroup = {
+  title: string;
+  nodes: AutomationEditorNodeSpec[];
 };
 type AutomationHierarchyKind = "folder" | "task" | "routine" | "config";
 type AutomationCreatableHierarchyKind = "folder" | "task" | "routine";
@@ -74,6 +130,100 @@ const automationHierarchyCategories: Array<{ id: AutomationHierarchyCategory; la
   { id: "task", label: "Tasks", description: "Task folders and task workspaces" },
   { id: "routine", label: "Routines", description: "Routine folders and orchestration workspaces" },
   { id: "config", label: "Configurations", description: "Configuration folders and defaults" }
+];
+const automationLayoutPresetOptions: AutomationLayoutPresetOption[] = [
+  { id: "single", label: "Full", title: "Full stack", cells: [{ x: 0, y: 0, w: 1, h: 1 }] },
+  { id: "two-columns", label: "Halves", title: "Two equal columns", cells: [{ x: 0, y: 0, w: 0.5, h: 1 }, { x: 0.5, y: 0, w: 0.5, h: 1 }] },
+  { id: "two-rows", label: "1:1", title: "Two equal rows", cells: [{ x: 0, y: 0, w: 1, h: 0.5 }, { x: 0, y: 0.5, w: 1, h: 0.5 }] },
+  { id: "main-sidebar", label: "2/3", title: "Main plus side stack", cells: [{ x: 0, y: 0, w: 0.67, h: 1 }, { x: 0.67, y: 0, w: 0.33, h: 1 }] },
+  { id: "three-columns", label: "Thirds", title: "Three equal columns", cells: [{ x: 0, y: 0, w: 1 / 3, h: 1 }, { x: 1 / 3, y: 0, w: 1 / 3, h: 1 }, { x: 2 / 3, y: 0, w: 1 / 3, h: 1 }] },
+  { id: "quad", label: "Grid", title: "Four quadrant grid", cells: [{ x: 0, y: 0, w: 0.5, h: 0.5 }, { x: 0.5, y: 0, w: 0.5, h: 0.5 }, { x: 0, y: 0.5, w: 0.5, h: 0.5 }, { x: 0.5, y: 0.5, w: 0.5, h: 0.5 }] }
+];
+const automationEditorPalette: AutomationEditorPaletteGroup[] = [
+  {
+    title: "Control Flow",
+    nodes: [
+      { id: "control-start", label: "Start", description: "Entry point for a graph.", family: "control-flow", scope: "both", nodeType: "base", inputs: 0, outputs: 1 },
+      { id: "control-end", label: "End", description: "Terminal point for a graph.", family: "control-flow", scope: "both", nodeType: "base", inputs: 1, outputs: 0 },
+      { id: "control-branch", label: "Branch", description: "Route through true/false paths.", family: "control-flow", scope: "both", nodeType: "base", inputs: 1, outputs: 2 },
+      { id: "control-switch", label: "Switch", description: "Route by matching a value to cases.", family: "control-flow", scope: "both", nodeType: "base", inputs: 1, outputs: 2 },
+      { id: "control-loop", label: "Loop", description: "Repeat a branch with an exit condition.", family: "control-flow", scope: "routine", nodeType: "base", inputs: 1, outputs: 2 },
+      { id: "control-parallel", label: "Parallel", description: "Fan out routine branches.", family: "control-flow", scope: "routine", nodeType: "base", inputs: 1, outputs: 2 },
+      { id: "control-merge", label: "Merge", description: "Join incoming routine branches.", family: "control-flow", scope: "routine", nodeType: "base", inputs: 2, outputs: 1 }
+    ]
+  },
+  {
+    title: "Policy",
+    nodes: [
+      { id: "policy-action", label: "Action", description: "Dispatch a task policy action.", family: "policy", scope: "policy", nodeType: "base", inputs: 1, outputs: 2, privileged: true, actionTypes: ["action"] },
+      { id: "policy-expectation", label: "Expectation", description: "Check success, failure, or invariant conditions.", family: "policy", scope: "policy", nodeType: "base", inputs: 1, outputs: 2 },
+      { id: "policy-recovery", label: "Recovery", description: "Handle failed policy branches.", family: "policy", scope: "policy", nodeType: "base", inputs: 1, outputs: 2 }
+    ]
+  },
+  {
+    title: "Routine",
+    nodes: [
+      { id: "routine-task-policy", label: "Task Policy", description: "Run a task policy from this routine.", family: "routine", scope: "routine", nodeType: "base", inputs: 1, outputs: 2 },
+      { id: "routine-subroutine", label: "Subroutine", description: "Run another routine as a reusable step.", family: "routine", scope: "routine", nodeType: "base", inputs: 1, outputs: 2 },
+      { id: "routine-approval", label: "Approval", description: "Pause for operator approval.", family: "routine", scope: "routine", nodeType: "base", inputs: 1, outputs: 2, privileged: true }
+    ]
+  },
+  {
+    title: "Logic",
+    nodes: [
+      { id: "logic-compare", label: "Compare", description: "Compare two values.", family: "logic", scope: "both", nodeType: "base", inputs: 2, outputs: 1 },
+      { id: "logic-and", label: "And", description: "Require every condition to be true.", family: "logic", scope: "both", nodeType: "base", inputs: 2, outputs: 1 },
+      { id: "logic-or", label: "Or", description: "Require any condition to be true.", family: "logic", scope: "both", nodeType: "base", inputs: 2, outputs: 1 },
+      { id: "logic-not", label: "Not", description: "Invert a condition.", family: "logic", scope: "both", nodeType: "base", inputs: 1, outputs: 1 }
+    ]
+  },
+  {
+    title: "Math",
+    nodes: [
+      { id: "math-add", label: "Add", description: "Add numeric values.", family: "math", scope: "both", nodeType: "base", inputs: 2, outputs: 1 },
+      { id: "math-subtract", label: "Subtract", description: "Subtract numeric values.", family: "math", scope: "both", nodeType: "base", inputs: 2, outputs: 1 },
+      { id: "math-multiply", label: "Multiply", description: "Multiply numeric values.", family: "math", scope: "both", nodeType: "base", inputs: 2, outputs: 1 },
+      { id: "math-divide", label: "Divide", description: "Divide numeric values.", family: "math", scope: "both", nodeType: "base", inputs: 2, outputs: 1 },
+      { id: "math-clamp", label: "Clamp", description: "Clamp a number to a range.", family: "math", scope: "both", nodeType: "base", inputs: 1, outputs: 1 },
+      { id: "math-round", label: "Round", description: "Round a numeric value.", family: "math", scope: "both", nodeType: "base", inputs: 1, outputs: 1 }
+    ]
+  },
+  {
+    title: "Random",
+    nodes: [
+      { id: "random-number", label: "Random Number", description: "Generate a bounded random number.", family: "random", scope: "both", nodeType: "base", inputs: 0, outputs: 1 },
+      { id: "random-choice", label: "Random Choice", description: "Choose one value from a list.", family: "random", scope: "both", nodeType: "base", inputs: 1, outputs: 1 },
+      { id: "random-weighted-choice", label: "Weighted Choice", description: "Choose one weighted option.", family: "random", scope: "both", nodeType: "base", inputs: 1, outputs: 1 },
+      { id: "random-jitter", label: "Jitter", description: "Add bounded randomness to a number.", family: "random", scope: "both", nodeType: "base", inputs: 1, outputs: 1 }
+    ]
+  },
+  {
+    title: "Data",
+    nodes: [
+      { id: "data-constant", label: "Constant", description: "Provide a fixed value.", family: "data", scope: "both", nodeType: "base", inputs: 0, outputs: 1 },
+      { id: "data-get-variable", label: "Get Variable", description: "Read a runtime variable.", family: "data", scope: "both", nodeType: "base", inputs: 0, outputs: 1 },
+      { id: "data-set-variable", label: "Set Variable", description: "Write a runtime variable.", family: "data", scope: "both", nodeType: "base", inputs: 1, outputs: 1 },
+      { id: "data-map-object", label: "Map Object", description: "Transform object fields.", family: "data", scope: "both", nodeType: "base", inputs: 1, outputs: 1 },
+      { id: "data-filter-list", label: "Filter List", description: "Filter an array.", family: "data", scope: "both", nodeType: "base", inputs: 1, outputs: 1 }
+    ]
+  },
+  {
+    title: "Timing",
+    nodes: [
+      { id: "timing-wait", label: "Wait", description: "Pause execution.", family: "timing", scope: "both", nodeType: "base", inputs: 1, outputs: 1 },
+      { id: "timing-timeout", label: "Timeout", description: "Route when a branch takes too long.", family: "timing", scope: "both", nodeType: "base", inputs: 1, outputs: 2 },
+      { id: "timing-retry", label: "Retry", description: "Retry with bounded attempts.", family: "timing", scope: "both", nodeType: "base", inputs: 1, outputs: 2 },
+      { id: "timing-debounce", label: "Debounce", description: "Wait for a stable signal.", family: "timing", scope: "both", nodeType: "base", inputs: 1, outputs: 1 }
+    ]
+  },
+  {
+    title: "Custom",
+    nodes: [
+      { id: "custom-action", label: "Custom Action", description: "Project or library custom action node.", family: "custom", scope: "both", nodeType: "custom", inputs: 1, outputs: 1 },
+      { id: "custom-condition", label: "Custom Condition", description: "Project or library custom condition node.", family: "custom", scope: "both", nodeType: "custom", inputs: 1, outputs: 1 },
+      { id: "custom-adapter", label: "Custom Adapter", description: "Project or library custom adapter node.", family: "custom", scope: "both", nodeType: "custom", inputs: 1, outputs: 1 }
+    ]
+  }
 ];
 type AutomationHierarchyNode = {
   id: string;
@@ -109,6 +259,7 @@ type AutomationProjectModal = "create" | "rename" | "delete" | "move" | "create-
 type AutomationSelection =
   | { kind: "policy"; id: string }
   | { kind: "node"; id: string }
+  | { kind: "editor-node"; id: string; node: { label: string; nodeType: string; family: string; description: string; inputs: number; outputs: number; privileged?: boolean; actionTypes?: string[] } }
   | { kind: "recording"; id: string }
   | { kind: "timeline"; id: string }
   | { kind: "signal"; id: string };
@@ -138,12 +289,20 @@ const automationNodeTypes = {
   policyNode: AutomationPolicyNode,
   routineNode: AutomationRoutineNode
 };
+const automationEdgeTypes = {
+  automationEdge: AutomationFlowEdge
+};
 
 function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const api = useProgramApi("automation-studio");
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlProjectId = searchParams.get("project");
   const [snapshot, setSnapshot] = useState<any>(null);
   const [projects, setProjects] = useState<AutomationStudioProject[]>([]);
   const [projectCategories, setProjectCategories] = useState<AutomationStudioProjectCategory[]>([]);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [projectModal, setProjectModal] = useState<AutomationProjectModal>(null);
   const [projectTarget, setProjectTarget] = useState<AutomationStudioProject | null>(null);
@@ -158,22 +317,25 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const [dragOverCategoryId, setDragOverCategoryId] = useState<string | null>(null);
   const [loadedProjectHierarchyId, setLoadedProjectHierarchyId] = useState<string | null>(null);
   const [workspacePrefs, setWorkspacePrefs] = useState<AutomationWorkspacePrefs>({
-    windows: [{ id: "window-policy", activeViewId: "policy-primary", tabs: ["policy-primary"], widthWeight: 100, heightPx: 520 }],
+    windows: defaultAutomationWorkspaceWindows(),
     activeWindowId: "window-policy",
     maximizedWindowId: null,
     sidebarWidth: 280,
     inspectorWidth: 320,
     bottomDockHeight: 206,
-    windowsPerRow: 2
+    utilityWindowsMigrated: true,
+    rightSidebarCollapsed: false,
+    bottomBarCollapsed: false
   });
-  const [lockedWindows, setLockedWindows] = useState<string[]>([]);
-  const [pinnedViews, setPinnedViews] = useState<string[]>(["policy-primary"]);
   const [dockTab, setDockTab] = useState<AutomationDockTab>("assistant");
   const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [windowAdderOpen, setWindowAdderOpen] = useState<AutomationWindowAdderState | null>(null);
+  const [layoutPickerOpen, setLayoutPickerOpen] = useState<AutomationLayoutPickerState | null>(null);
+  const [snapPreview, setSnapPreview] = useState<(NonNullable<ReturnType<typeof automationSnapGeometry>> & { area: AutomationWorkspaceArea }) | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
   const [projectTypeFilter, setProjectTypeFilter] = useState<"all" | "folder" | "task" | "routine" | "config">("all");
   const [selection, setSelection] = useState<AutomationSelection | null>(null);
-  const [followSelection, setFollowSelection] = useState(true);
   const [hierarchyAction, setHierarchyAction] = useState<AutomationHierarchyAction>(null);
   const [hierarchyCreateStep, setHierarchyCreateStep] = useState<"type" | "details">("type");
   const [hierarchyPin, setHierarchyPin] = useState("");
@@ -184,17 +346,37 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const [hierarchyStatus, setHierarchyStatus] = useState("");
   const [customHierarchyNodes, setCustomHierarchyNodes] = useState<AutomationHierarchyNode[]>([]);
   const [deletedHierarchyIds, setDeletedHierarchyIds] = useState<string[]>([]);
+  const urlProjectOpenAttemptRef = useRef<string | null>(null);
+  const mainWorkspaceCanvasRef = useRef<HTMLDivElement>(null);
+  const rightWorkspaceCanvasRef = useRef<HTMLDivElement>(null);
+  const bottomWorkspaceCanvasRef = useRef<HTMLDivElement>(null);
+  const lastSavedHierarchySignatureRef = useRef("");
 
   const refresh = useCallback(async () => setSnapshot(await api.get("snapshot")), [api]);
   const refreshProjects = useCallback(async () => {
+    setProjectStatus("");
     const result = await api.get<{ categories: AutomationStudioProjectCategory[]; projects: AutomationStudioProject[] }>("projects");
     if (result.ok) {
       setProjects(result.payload?.projects ?? []);
       setProjectCategories(result.payload?.categories ?? []);
+    } else {
+      setProjectStatus(result.error ?? "Projects could not be loaded.");
     }
+    setProjectsLoaded(true);
   }, [api]);
   useEffect(() => void refresh(), [refresh]);
   useEffect(() => void refreshProjects(), [refreshProjects]);
+  useEffect(() => {
+    function refreshProjectChooser() {
+      if (document.visibilityState === "visible" && !activeProjectId) void refreshProjects();
+    }
+    window.addEventListener("focus", refreshProjectChooser);
+    document.addEventListener("visibilitychange", refreshProjectChooser);
+    return () => {
+      window.removeEventListener("focus", refreshProjectChooser);
+      document.removeEventListener("visibilitychange", refreshProjectChooser);
+    };
+  }, [activeProjectId, refreshProjects]);
 
   const canonical = snapshot?.payload?.canonical ?? {};
   const recordings = canonical.recordingSessions ?? [];
@@ -207,19 +389,24 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const selectedPolicy = policies.find((policy: any) => selection?.kind === "policy" && policy.policyId === selection.id) ?? policies[0];
   const selectedRecording = recordings.find((recording: any) => selection?.kind === "recording" && recording.recordingId === selection.id) ?? recordings[0];
   const selectedTimeline = timelines.find((timeline: any) => timeline.recordingId === selectedRecording?.recordingId) ?? timelines[0];
-  const selectedNode = selectedPolicy?.nodes?.find((node: any) => selection?.kind === "node" && selection.id === node.id) ?? selectedPolicy?.nodes?.[0];
+  const selectedNode = selection?.kind === "editor-node"
+    ? { id: selection.id, ...selection.node, actions: (selection.node.actionTypes ?? []).map((actionType) => ({ actionType })), recovery: { strategy: selection.node.family } }
+    : selectedPolicy?.nodes?.find((node: any) => selection?.kind === "node" && selection.id === node.id) ?? selectedPolicy?.nodes?.[0];
   const selectedEntry = selectedTimeline?.timeline?.find((entry: any) => selection?.kind === "timeline" && selection.id === entry.id);
   const selectedSignal = signals.find((signal: any) => selection?.kind === "signal" && selection.id === signal.path);
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
+  const restoringUrlProject = Boolean(urlProjectId && !activeProject && !projectStatus && (!projectsLoaded || activeProjectId === urlProjectId || urlProjectOpenAttemptRef.current === urlProjectId));
 
   const viewInstances: AutomationViewInstance[] = [
-    { id: "policy-primary", label: `Policy: ${selectedPolicy?.taskId ?? "Task"}`, type: "design", icon: GitBranch, state: "pinned" },
+    { id: "policy-primary", label: `Policy: ${selectedPolicy?.taskId ?? "Task"}`, type: "design", icon: GitBranch },
     { id: "timeline-recording", label: `Timeline: ${selectedRecording?.name ?? selectedRecording?.recordingId ?? "Recording"}`, type: "recordings", icon: Radio, state: "live" },
     { id: "node-detail", label: `Node: ${selectedNode?.label ?? "Detail"}`, type: "node-detail", icon: SlidersHorizontal },
     { id: "signals-web", label: "Signals: Relationship Web", type: "signals", icon: Network, state: "warning" },
     { id: "runtime-debug", label: "Runtime Debug", type: "runtime", icon: Bug },
     { id: "problems-view", label: "Problems", type: "problems", icon: AlertTriangle },
     { id: "ai-assistant", label: "AI Assistant", type: "assistant", icon: Sparkles },
+    { id: "global-inspector", label: "Inspector", type: "inspector", icon: SlidersHorizontal },
+    { id: "workspace-dock", label: "Dock: Assistant / Problems / State", type: "dock", icon: ListChecks },
     { id: "routine-editor", label: "Routine Editor", type: "routine", icon: Workflow },
     { id: "config-default", label: "Config: Default", type: "config", icon: SlidersHorizontal }
   ];
@@ -246,12 +433,12 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const folderOptions = hierarchyNodes.filter((node) => node.kind === "folder" && node.category === hierarchyCategory);
   const viewById = new Map(viewInstances.map((view) => [view.id, view]));
   const visibleWindows = workspacePrefs.maximizedWindowId ? workspacePrefs.windows.filter((item) => item.id === workspacePrefs.maximizedWindowId) : workspacePrefs.windows;
-  const visibleWindowRows = chunkAutomationWindows(visibleWindows, workspacePrefs.maximizedWindowId ? 1 : workspacePrefs.windowsPerRow);
   const activeWindow = workspacePrefs.windows.find((item) => item.id === workspacePrefs.activeWindowId) ?? workspacePrefs.windows[0];
   const activeViewId = activeWindow?.activeViewId ?? "policy-primary";
+  const windowsByArea = (area: AutomationWorkspaceArea) => visibleWindows.filter((item) => (item.area ?? "main") === area);
+  const canvasForArea = (area: AutomationWorkspaceArea) => area === "right" ? rightWorkspaceCanvasRef.current : area === "bottom" ? bottomWorkspaceCanvasRef.current : mainWorkspaceCanvasRef.current;
   const setSelectionAndFollow = (next: AutomationSelection) => {
     setSelection(next);
-    if (!followSelection) return;
     if (next.kind === "recording" || next.kind === "timeline") openView("timeline-recording", "preview");
     if (next.kind === "signal") openView("signals-web", "preview");
     if (next.kind === "node") openView("node-detail", "preview");
@@ -259,12 +446,53 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   };
 
   useEffect(() => {
+    document.title = activeProject ? `${activeProject.name} - Automation Studio` : "Automation Studio";
+  }, [activeProject]);
+
+  useEffect(() => {
+    if (!urlProjectId || activeProjectId === urlProjectId || urlProjectOpenAttemptRef.current === urlProjectId) return;
+    urlProjectOpenAttemptRef.current = urlProjectId;
+    void openProject(urlProjectId, { updateUrl: false });
+  }, [activeProjectId, urlProjectId]);
+
+  useEffect(() => {
     if (!activeProjectId || loadedProjectHierarchyId !== activeProjectId) return;
-    void api.post("save-project-hierarchy", {
+    const signature = automationHierarchySignature(customHierarchyNodes, deletedHierarchyIds, workspacePrefs);
+    if (signature === lastSavedHierarchySignatureRef.current) return;
+    const timeout = window.setTimeout(() => {
+      if (signature === lastSavedHierarchySignatureRef.current) return;
+      lastSavedHierarchySignatureRef.current = signature;
+      void api.post("save-project-hierarchy", {
       projectId: activeProjectId,
       hierarchy: { customHierarchyNodes, deletedHierarchyIds, workspacePrefs }
+      });
+    }, 800);
+    return () => window.clearTimeout(timeout);
+  }, [activeProjectId, loadedProjectHierarchyId, customHierarchyNodes, deletedHierarchyIds, workspacePrefs]);
+
+  useEffect(() => {
+    if (!activeProjectId) return;
+    const clampWindows = () => {
+      setWorkspacePrefs((current) => {
+        const windows = current.windows.map((item) => {
+          const area = item.area ?? "main";
+          if ((area === "right" && current.rightSidebarCollapsed) || (area === "bottom" && current.bottomBarCollapsed)) return item;
+          const canvas = canvasForArea(item.area ?? "main");
+          if (!canvas) return item;
+          const bounds = canvas.getBoundingClientRect();
+          if (bounds.width < 24 || bounds.height < 24) return item;
+          return clampAutomationWindowGeometry(item, Math.max(1, Math.floor(bounds.width)), Math.max(1, Math.floor(bounds.height)), 240, 210);
+        });
+        return automationWindowGeometrySignature(windows) === automationWindowGeometrySignature(current.windows) ? current : { ...current, windows };
+      });
+    };
+    clampWindows();
+    const observer = new ResizeObserver(clampWindows);
+    [mainWorkspaceCanvasRef.current, rightWorkspaceCanvasRef.current, bottomWorkspaceCanvasRef.current].forEach((canvas) => {
+      if (canvas) observer.observe(canvas);
     });
-  }, [api, activeProjectId, loadedProjectHierarchyId, customHierarchyNodes, deletedHierarchyIds, workspacePrefs]);
+    return () => observer.disconnect();
+  }, [activeProjectId, loadedProjectHierarchyId]);
 
   async function createProject() {
     const name = projectName.trim();
@@ -291,6 +519,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     setCategoryName("");
     setProjectPin("");
     setProjectStatus("");
+    setProjectUrl(project.id);
   }
 
   async function renameProject() {
@@ -458,19 +687,32 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     if (draggedCategoryId && categoryId) requestCategoryDrop(draggedCategoryId, categoryId);
   }
 
-  async function openProject(projectId: string) {
+  function setProjectUrl(projectId: string | null) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (projectId) params.set("project", projectId);
+    else params.delete("project");
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }
+
+  async function openProject(projectId: string, options: { updateUrl?: boolean } = {}) {
     const result = await api.post<{ hierarchy: { customHierarchyNodes: AutomationHierarchyNode[]; deletedHierarchyIds: string[]; workspacePrefs?: AutomationWorkspacePrefs } }>("get-project-hierarchy", { projectId });
     if (!result.ok || !result.payload?.hierarchy) {
       setProjectStatus(result.error ?? "Project could not be opened.");
+      if (urlProjectOpenAttemptRef.current === projectId) urlProjectOpenAttemptRef.current = null;
       return;
     }
+    const loadedPrefs = normalizeAutomationWorkspacePrefs(result.payload.hierarchy.workspacePrefs ?? defaultAutomationWorkspacePrefs());
     setActiveProjectId(projectId);
     setCustomHierarchyNodes(result.payload.hierarchy.customHierarchyNodes);
     setDeletedHierarchyIds(result.payload.hierarchy.deletedHierarchyIds);
-    setWorkspacePrefs(normalizeAutomationWorkspacePrefs(result.payload.hierarchy.workspacePrefs ?? defaultAutomationWorkspacePrefs()));
+    setWorkspacePrefs(loadedPrefs);
+    lastSavedHierarchySignatureRef.current = automationHierarchySignature(result.payload.hierarchy.customHierarchyNodes, result.payload.hierarchy.deletedHierarchyIds, loadedPrefs);
     setLoadedProjectHierarchyId(projectId);
     setProjectModal(null);
     setProjectStatus("");
+    if (options.updateUrl !== false) setProjectUrl(projectId);
+    void refreshProjects();
   }
 
   function closeProject() {
@@ -479,37 +721,77 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     setCustomHierarchyNodes([]);
     setDeletedHierarchyIds([]);
     setWorkspacePrefs(defaultAutomationWorkspacePrefs());
+    lastSavedHierarchySignatureRef.current = "";
     setSelection(null);
+    setProjectUrl(null);
   }
 
   function updateWorkspacePrefs(updater: (current: AutomationWorkspacePrefs) => AutomationWorkspacePrefs) {
     setWorkspacePrefs((current) => normalizeAutomationWorkspacePrefs(updater(current)));
   }
-  function openView(viewId: string, mode: "preview" | "new-window" = "preview") {
+  function openView(viewId: string, mode: "preview" | "new-window" = "preview", area: AutomationWorkspaceArea = "main") {
     updateWorkspacePrefs((current) => {
       if (mode === "new-window") {
         const id = `window-${viewId}-${Date.now()}`;
+        const bounds = canvasForArea(area)?.getBoundingClientRect();
+        const geometry = area === "main"
+          ? placeAutomationWindow(current.windows.filter((item) => (item.area ?? "main") === area), bounds)
+          : fullAutomationWindowGeometry(bounds);
         return {
           ...current,
           activeWindowId: id,
           maximizedWindowId: null,
-          windows: [...current.windows, { id, activeViewId: viewId, tabs: [viewId], widthWeight: 100, heightPx: 520 }]
+          windows: [...current.windows, { id, activeViewId: viewId, tabs: [viewId], area, ...geometry, zIndex: nextAutomationZIndex(current.windows) }]
         };
       }
-      const activeId = current.activeWindowId || current.windows[0]?.id || "window-policy";
+      const activeWindowInArea = current.windows.find((item) => item.id === current.activeWindowId && (item.area ?? "main") === area);
+      const targetWindow = activeWindowInArea ?? current.windows.find((item) => (item.area ?? "main") === area);
+      if (!targetWindow) {
+        const id = `window-${viewId}-${Date.now()}`;
+        const bounds = canvasForArea(area)?.getBoundingClientRect();
+        const geometry = placeAutomationWindow([], bounds);
+        return {
+          ...current,
+          activeWindowId: id,
+          maximizedWindowId: null,
+          windows: [...current.windows, { id, activeViewId: viewId, tabs: [viewId], area, ...geometry, zIndex: nextAutomationZIndex(current.windows) }]
+        };
+      }
       return {
         ...current,
-        activeWindowId: activeId,
-        windows: current.windows.map((item, index) => item.id === activeId || (!current.windows.some((candidate) => candidate.id === activeId) && index === 0)
+        activeWindowId: targetWindow.id,
+        windows: current.windows.map((item) => item.id === targetWindow.id
           ? { ...item, activeViewId: viewId, tabs: item.tabs.includes(viewId) ? item.tabs : [...item.tabs, viewId] }
           : item)
       };
     });
   }
+  function addWorkspaceWindow(viewId: string, area: AutomationWorkspaceArea, targetWindowId?: string) {
+    if (targetWindowId) {
+      updateWorkspacePrefs((current) => ({
+        ...current,
+        activeWindowId: targetWindowId,
+        windows: current.windows.map((item) => item.id === targetWindowId
+          ? { ...item, activeViewId: viewId, tabs: item.tabs.includes(viewId) ? item.tabs : [...item.tabs, viewId] }
+          : item)
+      }));
+    } else {
+      openView(viewId, "new-window", area);
+    }
+    setWindowAdderOpen(null);
+  }
+  function toggleWindowAdder(area: AutomationWorkspaceArea, event: MouseEvent<HTMLButtonElement>, targetWindowId?: string) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setWindowAdderOpen((current) => current?.area === area && current.targetWindowId === targetWindowId ? null : {
+      area,
+      ...(targetWindowId ? { targetWindowId } : {}),
+      anchor: { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left }
+    });
+  }
   function closeWindow(windowId: string) {
     updateWorkspacePrefs((current) => {
       const windows = current.windows.filter((item) => item.id !== windowId);
-      return { ...current, activeWindowId: windows[0]?.id ?? "window-policy", maximizedWindowId: current.maximizedWindowId === windowId ? null : current.maximizedWindowId, windows };
+      return { ...current, activeWindowId: windows[0]?.id ?? "", maximizedWindowId: current.maximizedWindowId === windowId ? null : current.maximizedWindowId, windows };
     });
   }
   function closeWindowTab(windowId: string, viewId: string) {
@@ -519,31 +801,97 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
         const tabs = item.tabs.filter((tab) => tab !== viewId);
         return { ...item, tabs, activeViewId: item.activeViewId === viewId ? tabs[0] ?? "" : item.activeViewId };
       }).filter((item) => item.tabs.length > 0);
-      return { ...current, activeWindowId: windows[0]?.id ?? "window-policy", windows };
+      return { ...current, activeWindowId: windows[0]?.id ?? "", windows };
     });
   }
   function setWindowTab(windowId: string, viewId: string) {
     updateWorkspacePrefs((current) => ({ ...current, activeWindowId: windowId, windows: current.windows.map((item) => item.id === windowId ? { ...item, activeViewId: viewId } : item) }));
   }
-  function resizeWindow(windowId: string, widthWeight: number, heightPx: number) {
+  function activateWindow(windowId: string) {
+    updateWorkspacePrefs((current) => ({ ...current, activeWindowId: windowId, windows: current.windows.map((item) => item.id === windowId ? { ...item, zIndex: nextAutomationZIndex(current.windows) } : item) }));
+  }
+  function setWindowGeometry(windowId: string, geometry: Partial<Pick<AutomationWorkspaceWindow, "x" | "y" | "widthPx" | "heightPx">>) {
     updateWorkspacePrefs((current) => ({
       ...current,
-      windows: current.windows.map((item) => item.id === windowId ? {
-        ...item,
-        widthWeight: clampNumber(widthWeight, 45, 220, item.widthWeight),
-        heightPx: clampNumber(heightPx, 320, 900, item.heightPx)
-      } : item)
+      windows: current.windows.map((item) => {
+        if (item.id !== windowId) return item;
+        const bounds = canvasForArea(item.area ?? "main")?.getBoundingClientRect();
+        return clampAutomationWindowGeometry({
+          ...item,
+          ...geometry
+        }, Math.max(1, Math.floor(bounds?.width ?? 1120)), Math.max(1, Math.floor(bounds?.height ?? 680)));
+      })
     }));
   }
-  function startWindowResize(windowItem: AutomationWorkspaceWindow, event: ReactPointerEvent<HTMLButtonElement>) {
+  function startWindowResize(windowItem: AutomationWorkspaceWindow, edge: AutomationWindowResizeEdge, event: ReactPointerEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
     const startX = event.clientX;
     const startY = event.clientY;
-    const startWidth = windowItem.widthWeight;
+    const startLeft = windowItem.x;
+    const startTop = windowItem.y;
+    const startWidth = windowItem.widthPx;
     const startHeight = windowItem.heightPx;
+    const bounds = canvasForArea(windowItem.area ?? "main")?.getBoundingClientRect();
+    const canvasWidth = Math.max(1, Math.floor(bounds?.width ?? 1120));
+    const canvasHeight = Math.max(1, Math.floor(bounds?.height ?? 680));
+    const sharedPartners = findAutomationSharedResizePartners(windowItem, edge, workspacePrefs.windows.filter((item) => (item.area ?? "main") === (windowItem.area ?? "main")));
     const onMove = (moveEvent: PointerEvent) => {
-      resizeWindow(windowItem.id, startWidth + ((moveEvent.clientX - startX) / 6), startHeight + (moveEvent.clientY - startY));
+      const west = edge.includes("west");
+      const east = edge.includes("east");
+      const north = edge.includes("north");
+      const south = edge.includes("south");
+      const deltaX = constrainAutomationResizeDelta(
+        moveEvent.clientX - startX,
+        "x",
+        edge,
+        windowItem,
+        sharedPartners,
+        canvasWidth
+      );
+      const deltaY = constrainAutomationResizeDelta(
+        moveEvent.clientY - startY,
+        "y",
+        edge,
+        windowItem,
+        sharedPartners,
+        canvasHeight
+      );
+      const nextX = west ? startLeft + deltaX : startLeft;
+      const nextY = north ? startTop + deltaY : startTop;
+      const nextWidth = west ? startWidth - deltaX : east ? startWidth + deltaX : startWidth;
+      const nextHeight = north ? startHeight - deltaY : south ? startHeight + deltaY : startHeight;
+      const partnerGeometry = new Map<string, Partial<Pick<AutomationWorkspaceWindow, "x" | "y" | "widthPx" | "heightPx">>>();
+      for (const partner of sharedPartners) {
+        const geometry = partnerGeometry.get(partner.id) ?? {};
+        if (partner.side === "west") {
+          geometry.x = partner.start.x + deltaX;
+          geometry.widthPx = partner.start.widthPx - deltaX;
+        }
+        if (partner.side === "east") geometry.widthPx = partner.start.widthPx + deltaX;
+        if (partner.side === "north") {
+          geometry.y = partner.start.y + deltaY;
+          geometry.heightPx = partner.start.heightPx - deltaY;
+        }
+        if (partner.side === "south") geometry.heightPx = partner.start.heightPx + deltaY;
+        partnerGeometry.set(partner.id, geometry);
+      }
+      updateWorkspacePrefs((current) => ({
+        ...current,
+        windows: current.windows.map((item) => {
+          if (item.id === windowItem.id) {
+            return clampAutomationWindowGeometry({
+              ...item,
+              x: nextX,
+              y: nextY,
+              widthPx: nextWidth,
+              heightPx: nextHeight
+            }, canvasWidth, canvasHeight, 240, 210);
+          }
+          const geometry = partnerGeometry.get(item.id);
+          return geometry ? clampAutomationWindowGeometry({ ...item, ...geometry }, canvasWidth, canvasHeight, 240, 210) : item;
+        })
+      }));
     };
     const onUp = () => {
       window.removeEventListener("pointermove", onMove);
@@ -552,11 +900,102 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp, { once: true });
   }
-  function toggleLockedWindow(windowId: string) {
-    setLockedWindows((current) => current.includes(windowId) ? current.filter((item) => item !== windowId) : [...current, windowId]);
+  function startWindowMove(windowItem: AutomationWorkspaceWindow, event: ReactPointerEvent<HTMLElement>) {
+    const target = event.target as HTMLElement;
+    if (target.closest("button, input, select, textarea, a")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    activateWindow(windowItem.id);
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const canvas = canvasForArea(windowItem.area ?? "main");
+    const bounds = canvas?.getBoundingClientRect();
+    const canvasWidth = Math.max(1, Math.floor(bounds?.width ?? 1120));
+    const canvasHeight = Math.max(1, Math.floor(bounds?.height ?? 680));
+    const restored = automationWindowFillsCanvas(windowItem, canvasWidth, canvasHeight)
+      ? restoreAutomationWindowFromFullscreen(windowItem, startX - (bounds?.left ?? 0), startY - (bounds?.top ?? 0), canvasWidth, canvasHeight)
+      : windowItem;
+    if (restored !== windowItem) setWindowGeometry(windowItem.id, {
+      x: restored.x,
+      y: restored.y,
+      widthPx: restored.widthPx,
+      heightPx: restored.heightPx
+    });
+    const startLeft = restored.x;
+    const startTop = restored.y;
+    let latestSnap: ReturnType<typeof automationSnapGeometry> | null = null;
+    const onMove = (moveEvent: PointerEvent) => {
+      setWindowGeometry(windowItem.id, { x: startLeft + moveEvent.clientX - startX, y: startTop + moveEvent.clientY - startY });
+      latestSnap = automationSnapGeometry(canvasForArea(windowItem.area ?? "main"), moveEvent.clientX, moveEvent.clientY);
+      setSnapPreview(latestSnap ? { ...latestSnap, area: windowItem.area ?? "main" } : null);
+    };
+    const onUp = () => {
+      if (latestSnap) setWindowGeometry(windowItem.id, latestSnap);
+      setSnapPreview(null);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp, { once: true });
   }
-  function togglePinnedView(viewId: string) {
-    setPinnedViews((current) => current.includes(viewId) ? current.filter((item) => item !== viewId) : [...current, viewId]);
+  function resetWindowSize(windowId: string) {
+    updateWorkspacePrefs((current) => ({
+      ...current,
+      maximizedWindowId: current.maximizedWindowId === windowId ? null : current.maximizedWindowId,
+      windows: current.windows.map((item) => {
+        if (item.id !== windowId) return item;
+        const bounds = canvasForArea(item.area ?? "main")?.getBoundingClientRect();
+        const width = Math.max(1, Math.floor(bounds?.width ?? 1120));
+        const height = Math.max(1, Math.floor(bounds?.height ?? 680));
+        return clampAutomationWindowGeometry({
+          ...item,
+          x: 0,
+          y: 0,
+          widthPx: width,
+          heightPx: height,
+          zIndex: nextAutomationZIndex(current.windows)
+        }, width, height);
+      })
+    }));
+  }
+  function arrangeWindows(preset: AutomationLayoutPreset, area: AutomationWorkspaceArea = "main") {
+    const option = automationLayoutPresetOptions.find((item) => item.id === preset) ?? automationLayoutPresetOptions[0]!;
+    updateWorkspacePrefs((current) => {
+      const bounds = canvasForArea(area)?.getBoundingClientRect();
+      const width = Math.max(1, Math.floor(bounds?.width ?? 1120));
+      const height = Math.max(1, Math.floor(bounds?.height ?? 680));
+      const targetWindows = current.windows.filter((item) => (item.area ?? "main") === area).sort((left, right) => left.zIndex - right.zIndex);
+      const arranged = new Map(layoutAutomationWindowsInPreset(targetWindows, option, width, height).map((item) => [item.id, item]));
+      const windows = current.windows.map((item) => arranged.get(item.id) ?? item);
+      return { ...current, maximizedWindowId: null, activeWindowId: windows.at(-1)?.id ?? current.activeWindowId, windows };
+    });
+    setLayoutPickerOpen(null);
+  }
+  function toggleLayoutPicker(area: AutomationWorkspaceArea, event: MouseEvent<HTMLButtonElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setLayoutPickerOpen((current) => current?.area === area ? null : {
+      area,
+      anchor: { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left }
+    });
+  }
+  function startWorkspaceSectionResize(area: "right" | "bottom", event: ReactPointerEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startWidth = workspacePrefs.inspectorWidth;
+    const startHeight = workspacePrefs.bottomDockHeight;
+    const onMove = (moveEvent: PointerEvent) => {
+      updateWorkspacePrefs((current) => area === "right"
+        ? { ...current, inspectorWidth: clampNumber(startWidth + startX - moveEvent.clientX, 260, 620, startWidth), rightSidebarCollapsed: false }
+        : { ...current, bottomDockHeight: clampNumber(startHeight + startY - moveEvent.clientY, 140, 460, startHeight), bottomBarCollapsed: false });
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp, { once: true });
   }
   function requestHierarchyAction(action: NonNullable<AutomationHierarchyAction>) {
     setHierarchyAction(action);
@@ -611,6 +1050,128 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     setHierarchyName("");
   }
 
+  const renderWorkspaceArea = (area: AutomationWorkspaceArea, label: string, ref: RefObject<HTMLDivElement | null>) => {
+    const areaWindows = windowsByArea(area);
+    return (
+      <section className={`automation-workspace-section ${area}`}>
+        {area === "right" ? <button className="automation-section-resize-handle right" onPointerDown={(event) => startWorkspaceSectionResize("right", event)} title="Resize right area" aria-label="Resize right area" type="button" /> : null}
+        {area === "bottom" ? <button className="automation-section-resize-handle bottom" onPointerDown={(event) => startWorkspaceSectionResize("bottom", event)} title="Resize bottom area" aria-label="Resize bottom area" type="button" /> : null}
+        <header className="automation-workspace-section-header">
+          <div className="automation-workspace-section-actions">
+            {area === "right" ? <button
+              className="icon-button"
+              onClick={() => updateWorkspacePrefs((current) => ({ ...current, rightSidebarCollapsed: !current.rightSidebarCollapsed }))}
+              title={workspacePrefs.rightSidebarCollapsed ? "Expand right area" : "Collapse right area"}
+              aria-label={workspacePrefs.rightSidebarCollapsed ? "Expand right area" : "Collapse right area"}
+              type="button"
+            >{workspacePrefs.rightSidebarCollapsed ? <ChevronLeft size={13} aria-hidden /> : <ChevronRight size={13} aria-hidden />}</button> : null}
+            <button className="icon-button" onClick={(event) => toggleLayoutPicker(area, event)} title={`Arrange ${label}`} aria-label={`Arrange ${label}`} type="button"><Columns3 size={13} aria-hidden /></button>
+            <div className={`automation-window-adder-anchor area-${area}`}>
+              <button className="icon-button" onClick={(event) => toggleWindowAdder(area, event)} title={`Add window to ${label}`} aria-label={`Add window to ${label}`} type="button"><Plus size={13} aria-hidden /></button>
+            </div>
+            {area === "bottom" ? <button
+              className="icon-button"
+              onClick={() => updateWorkspacePrefs((current) => ({ ...current, bottomBarCollapsed: !current.bottomBarCollapsed }))}
+              title={workspacePrefs.bottomBarCollapsed ? "Expand bottom area" : "Collapse bottom area"}
+              aria-label={workspacePrefs.bottomBarCollapsed ? "Expand bottom area" : "Collapse bottom area"}
+              type="button"
+            >{workspacePrefs.bottomBarCollapsed ? <ChevronUp size={13} aria-hidden /> : <ChevronDown size={13} aria-hidden />}</button> : null}
+          </div>
+        </header>
+        <div
+          className={workspacePrefs.maximizedWindowId ? "automation-dock-layout maximized" : "automation-dock-layout"}
+          ref={ref}
+        >
+          <div className="automation-window-canvas">
+            {areaWindows.map((windowItem, windowIndex) => {
+              const view = viewById.get(windowItem.activeViewId) ?? viewById.get("policy-primary");
+              if (!view) return null;
+              const bounds = canvasForArea(area)?.getBoundingClientRect();
+              const renderedWindow = clampAutomationWindowGeometry(
+                windowItem,
+                Math.max(1, Math.floor(bounds?.width ?? windowItem.widthPx)),
+                Math.max(1, Math.floor(bounds?.height ?? windowItem.heightPx)),
+                1,
+                1
+              );
+              return (
+                <div
+                  className="automation-window-shell"
+                  key={windowItem.id}
+                  style={workspacePrefs.maximizedWindowId ? { inset: 0, zIndex: windowItem.zIndex } : { left: renderedWindow.x, top: renderedWindow.y, width: renderedWindow.widthPx, height: renderedWindow.heightPx, zIndex: windowItem.zIndex }}
+                >
+                  <AutomationViewContainer
+                    active={workspacePrefs.activeWindowId === windowItem.id}
+                    icon={view.icon}
+                    tabs={windowItem.tabs.map((tabId) => viewById.get(tabId)).filter(Boolean) as AutomationViewInstance[]}
+                    windowId={windowItem.id}
+                    windowIndex={windowIndex}
+                    subtitle={view.label}
+                    title={viewTitle(view)}
+                    onActivate={() => activateWindow(windowItem.id)}
+                    onClose={() => closeWindow(windowItem.id)}
+                    onCloseTab={(viewId) => closeWindowTab(windowItem.id, viewId)}
+                    onAddTab={(event) => toggleWindowAdder(windowItem.area ?? "main", event, windowItem.id)}
+                    onMoveStart={(event) => startWindowMove(windowItem, event)}
+                    onResetSize={() => resetWindowSize(windowItem.id)}
+                    onResizeStart={(edge, event) => startWindowResize(windowItem, edge, event)}
+                    onTabSelect={(viewId) => setWindowTab(windowItem.id, viewId)}
+                  >
+                    <AutomationViewRenderer
+                      entries={selectedTimeline?.timeline ?? selectedRecording?.timeline ?? []}
+                      models={models}
+                      notes={selectedRecording?.notes ?? []}
+                      policies={policies}
+                      policy={selectedPolicy}
+                      problems={problems}
+                      recordings={recordings}
+                      dockTab={dockTab}
+                      selectedEntry={selectedEntry}
+                      selectedNode={selectedNode}
+                      selectedRecording={selectedRecording}
+                      selectedSignal={selectedSignal}
+                      selectedTimeline={selectedTimeline}
+                      selection={selection}
+                      signals={signals}
+                      view={view}
+                      setDockTab={setDockTab}
+                      setSelection={setSelectionAndFollow}
+                    />
+                  </AutomationViewContainer>
+                </div>
+              );
+            })}
+            {snapPreview && area === snapPreview.area ? <div className="automation-window-snap-preview" style={{ left: snapPreview.x, top: snapPreview.y, width: snapPreview.widthPx, height: snapPreview.heightPx }} /> : null}
+          </div>
+        </div>
+      </section>
+    );
+  };
+
+  if (restoringUrlProject) {
+    return (
+      <section className="automation-studio-shell project-required">
+        <div className="automation-project-required">
+          <header className="automation-studio-workbar">
+            <div className="automation-workspace-actions">
+              <strong>Automation Studio</strong>
+              <span>Opening project</span>
+            </div>
+          </header>
+          <main className="automation-project-gate">
+            <section className="automation-project-browser">
+              <FolderOpen size={34} aria-hidden />
+              <div>
+                <strong>Opening project...</strong>
+                <span>Restoring the project from the current URL.</span>
+              </div>
+            </section>
+          </main>
+        </div>
+      </section>
+    );
+  }
+
   if (!activeProject) {
     return (
       <section className="automation-studio-shell project-required">
@@ -621,6 +1182,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
               <span>No project open</span>
             </div>
             <div className="automation-studio-context">
+              <button className="button" onClick={() => { setProjectsLoaded(false); void refreshProjects(); }} type="button">Refresh</button>
               <button className="button" onClick={() => beginProjectModal("create-category")} type="button">New Category</button>
               <button className="button button-primary" onClick={() => beginProjectModal("create")} type="button">New Project</button>
             </div>
@@ -632,8 +1194,9 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
                 <strong>Projects</strong>
                 <span>Automation Studio projects save hierarchy, editor layout, routines, tasks, and configurations together.</span>
               </div>
+              <StatusText value={projectStatus} />
               <div className="automation-project-grid">
-                {projectGridSections(projects, projectCategories).map((section) => (
+                {projectsLoaded ? projectGridSections(projects, projectCategories).map((section) => (
                   <section
                     className={dragOverCategoryId === section.id ? "automation-project-category-section drag-over" : "automation-project-category-section"}
                     key={section.id}
@@ -685,8 +1248,9 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
                       {!section.projects.length ? <div className="automation-project-empty compact"><span>No projects in this category.</span></div> : null}
                     </div>
                   </section>
-                ))}
-                {!projects.length && !projectCategories.length ? <div className="automation-project-empty"><strong>No saved projects yet.</strong><span>Create a project to start building tasks, routines, and configurations.</span></div> : null}
+                )) : null}
+                {!projectsLoaded ? <div className="automation-project-empty"><strong>Loading projects...</strong><span>Reading Automation Studio projects from .fluxiq.</span></div> : null}
+                {projectsLoaded && !projects.length && !projectCategories.length ? <div className="automation-project-empty"><strong>No saved projects yet.</strong><span>Create a project to start building tasks, routines, and configurations.</span></div> : null}
               </div>
             </section>
           </main>
@@ -697,16 +1261,16 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   }
 
   return (
-    <section className="automation-studio-shell" style={{ gridTemplateColumns: `${workspacePrefs.sidebarWidth}px minmax(0, 1fr)` }}>
+    <section className={sidebarCollapsed ? "automation-studio-shell sidebar-collapsed" : "automation-studio-shell"} style={{ gridTemplateColumns: `${sidebarCollapsed ? 48 : workspacePrefs.sidebarWidth}px minmax(0, 1fr)` }}>
       <aside className="automation-studio-sidebar">
         <div className="automation-studio-sidebar-heading">
-          <strong>Project</strong>
+          {!sidebarCollapsed ? <strong>{activeProject.name}</strong> : null}
           <div className="inline-actions">
-            <button className="icon-button" onClick={() => requestHierarchyAction({ action: "create", parentId: null })} title="Create" aria-label="Create" type="button"><Plus size={14} aria-hidden /></button>
-            <button className="icon-button" title="Collapse sidebar" aria-label="Collapse sidebar" type="button"><PanelLeftClose size={14} aria-hidden /></button>
+            {!sidebarCollapsed ? <button className="icon-button" onClick={() => requestHierarchyAction({ action: "create", parentId: null })} title="Create" aria-label="Create" type="button"><Plus size={14} aria-hidden /></button> : null}
+            <button className="icon-button" onClick={() => setSidebarCollapsed((value) => !value)} title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} type="button">{sidebarCollapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronLeft size={14} aria-hidden />}</button>
           </div>
         </div>
-        <div className="automation-tree-search">
+        {!sidebarCollapsed ? <div className="automation-tree-search">
           <Search size={14} aria-hidden />
           <input aria-label="Search project" onChange={(event) => setProjectSearch(event.target.value)} placeholder="Search project" value={projectSearch} />
           <select aria-label="Filter project type" onChange={(event) => setProjectTypeFilter(event.target.value as typeof projectTypeFilter)} value={projectTypeFilter}>
@@ -716,8 +1280,8 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
             <option value="routine">Routines</option>
             <option value="config">Configs</option>
           </select>
-        </div>
-        <AutomationProjectTree
+        </div> : null}
+        {!sidebarCollapsed ? <AutomationProjectTree
           nodes={hierarchyNodes}
           selection={selection}
           search={projectSearch}
@@ -725,95 +1289,33 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
           setSelection={setSelection}
           openView={openView}
           requestAction={requestHierarchyAction}
-        />
+        /> : null}
       </aside>
 
       <div className="automation-studio-main">
         <header className="automation-studio-workbar">
           <div className="automation-workspace-actions">
             <button className="button" onClick={closeProject} type="button"><FolderOpen size={14} aria-hidden />Back to Projects</button>
-            <button className="button" onClick={() => openView(activeViewId, "new-window")} type="button"><Columns3 size={14} aria-hidden />Open Beside</button>
-            <button className="button" onClick={() => setPreferencesOpen(!preferencesOpen)} type="button"><SlidersHorizontal size={14} aria-hidden />Preferences</button>
             <span>{workspacePrefs.windows.length} window{workspacePrefs.windows.length === 1 ? "" : "s"}</span>
           </div>
           <div className="automation-studio-context">
-            <label className="automation-follow-toggle"><input checked={followSelection} onChange={(event) => setFollowSelection(event.target.checked)} type="checkbox" />Follow selection</label>
-            <strong>{activeProject.name}</strong>
+            <div className="automation-preferences-anchor">
+              <button className="button" onClick={() => setPreferencesOpen(!preferencesOpen)} type="button"><SlidersHorizontal size={14} aria-hidden />Preferences</button>
+              {preferencesOpen ? <AutomationWorkspacePreferences prefs={workspacePrefs} setPrefs={updateWorkspacePrefs} /> : null}
+            </div>
           </div>
         </header>
-        {preferencesOpen ? <AutomationWorkspacePreferences prefs={workspacePrefs} setPrefs={updateWorkspacePrefs} /> : null}
 
-        <section className="automation-studio-workspace" style={{ gridTemplateColumns: `minmax(0, 1fr) ${workspacePrefs.inspectorWidth}px`, gridTemplateRows: `minmax(0, 1fr) ${workspacePrefs.bottomDockHeight}px` }}>
-          <div
-            className={workspacePrefs.maximizedWindowId ? "automation-dock-layout maximized" : "automation-dock-layout"}
-          >
-            {visibleWindowRows.map((row, rowIndex) => (
-              <div
-                className="automation-window-row"
-                key={row.map((item) => item.id).join("-")}
-                style={{ gridTemplateColumns: row.length === 1 ? "minmax(0, 1fr)" : row.map((item) => `minmax(260px, ${item.widthWeight}fr)`).join(" ") }}
-              >
-                {row.map((windowItem, columnIndex) => {
-                  const windowIndex = rowIndex * workspacePrefs.windowsPerRow + columnIndex;
-                  const view = viewById.get(windowItem.activeViewId) ?? viewById.get("policy-primary");
-                  if (!view) return null;
-                  return (
-                    <AutomationViewContainer
-                      active={workspacePrefs.activeWindowId === windowItem.id}
-                      heightPx={workspacePrefs.maximizedWindowId ? undefined : windowItem.heightPx}
-                      icon={view.icon}
-                      key={windowItem.id}
-                      locked={lockedWindows.includes(windowItem.id)}
-                      pinned={pinnedViews.includes(view.id)}
-                      tabs={windowItem.tabs.map((tabId) => viewById.get(tabId)).filter(Boolean) as AutomationViewInstance[]}
-                      windowId={windowItem.id}
-                      windowIndex={windowIndex}
-                      subtitle={view.label}
-                      title={viewTitle(view)}
-                      onActivate={() => {
-                        updateWorkspacePrefs((current) => ({ ...current, activeWindowId: windowItem.id }));
-                      }}
-                      onClose={() => closeWindow(windowItem.id)}
-                      onCloseTab={(viewId) => closeWindowTab(windowItem.id, viewId)}
-                      onLock={() => toggleLockedWindow(windowItem.id)}
-                      onMaximize={() => updateWorkspacePrefs((current) => ({ ...current, maximizedWindowId: current.maximizedWindowId === windowItem.id ? null : windowItem.id }))}
-                      onPin={() => togglePinnedView(view.id)}
-                      onResizeStart={(event) => startWindowResize(windowItem, event)}
-                      onTabSelect={(viewId) => setWindowTab(windowItem.id, viewId)}
-                    >
-                      <AutomationViewRenderer
-                        entries={selectedTimeline?.timeline ?? selectedRecording?.timeline ?? []}
-                        models={models}
-                        notes={selectedRecording?.notes ?? []}
-                        policies={policies}
-                        policy={selectedPolicy}
-                        problems={problems}
-                        recordings={recordings}
-                        selectedEntry={selectedEntry}
-                        selectedNode={selectedNode}
-                        selectedRecording={selectedRecording}
-                        selectedTimeline={selectedTimeline}
-                        signals={signals}
-                        view={view}
-                        setSelection={setSelectionAndFollow}
-                      />
-                    </AutomationViewContainer>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-          <AutomationInspector
-            selection={selection}
-            policy={selectedPolicy}
-            node={selectedNode}
-            recording={selectedRecording}
-            entry={selectedEntry}
-            signal={selectedSignal}
-            followSelection={followSelection}
-            setFollowSelection={setFollowSelection}
-          />
-          <AutomationWorkspaceDock activeTab={dockTab} problems={problems} signals={signals} models={models} selectedNode={selectedNode} setActiveTab={setDockTab} />
+        <section
+          className={`automation-studio-workspace${workspacePrefs.rightSidebarCollapsed ? " right-collapsed" : ""}${workspacePrefs.bottomBarCollapsed ? " bottom-collapsed" : ""}`}
+          style={{
+            gridTemplateColumns: `minmax(0, 1fr) ${workspacePrefs.rightSidebarCollapsed ? 38 : workspacePrefs.inspectorWidth}px`,
+            gridTemplateRows: `minmax(0, 1fr) ${workspacePrefs.bottomBarCollapsed ? 38 : workspacePrefs.bottomDockHeight}px`
+          }}
+        >
+          {renderWorkspaceArea("main", "Main", mainWorkspaceCanvasRef)}
+          {renderWorkspaceArea("right", "Right Sidebar", rightWorkspaceCanvasRef)}
+          {renderWorkspaceArea("bottom", "Bottom Bar", bottomWorkspaceCanvasRef)}
         </section>
       </div>
       {hierarchyAction ? <Modal title={hierarchyAction.action === "create" && hierarchyCreateStep === "type" ? "Add To Hierarchy" : "Authorize Hierarchy Change"} onClose={() => setHierarchyAction(null)}>
@@ -860,6 +1362,8 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
         </>}
       </Modal> : null}
       {projectModal ? <AutomationProjectModalView categoryName={categoryName} categoryTarget={categoryTarget} currentUser={currentUser} description={projectDescription} mode={projectModal} name={projectName} pin={projectPin} projectTarget={projectTarget} status={projectStatus} onCategoryNameChange={setCategoryName} onClose={() => setProjectModal(null)} onCreate={() => void createProject()} onCreateCategory={() => void createCategory()} onDelete={() => void deleteProject()} onDeleteCategory={() => void deleteCategory()} onDescriptionChange={setProjectDescription} onMove={() => void moveProject()} onMoveCategory={() => void moveCategory()} onNameChange={setProjectName} onPinChange={(value) => setProjectPin(digits(value))} onRename={() => void renameProject()} onRenameCategory={() => void renameCategory()} /> : null}
+      {windowAdderOpen ? <AutomationWindowAdderPalette area={windowAdderOpen.area} anchor={windowAdderOpen.anchor} {...(windowAdderOpen.targetWindowId ? { targetWindowId: windowAdderOpen.targetWindowId } : {})} views={viewInstances} onAdd={addWorkspaceWindow} /> : null}
+      {layoutPickerOpen ? <AutomationLayoutPicker area={layoutPickerOpen.area} anchor={layoutPickerOpen.anchor} onArrange={arrangeWindows} /> : null}
     </section>
   );
 }
@@ -872,6 +1376,8 @@ function viewTitle(view: AutomationViewInstance): string {
   if (view.type === "problems") return "Problems";
   if (view.type === "node-detail") return "Node Detail";
   if (view.type === "assistant") return "AI Assistant";
+  if (view.type === "inspector") return "Inspector";
+  if (view.type === "dock") return "Workspace Dock";
   if (view.type === "routine") return "Routine Editor";
   if (view.type === "config") return "Configuration";
   return "State Explorer";
@@ -1000,6 +1506,112 @@ function moveCategoryId(categoryIds: string[], categoryId: string, targetCategor
   return [...withoutDragged.slice(0, targetIndex), categoryId, ...withoutDragged.slice(targetIndex)];
 }
 
+function AutomationWindowAdderPalette(props: { area: AutomationWorkspaceArea; anchor: AutomationWindowAdderState["anchor"]; targetWindowId?: string; views: AutomationViewInstance[]; onAdd(viewId: string, area: AutomationWorkspaceArea, targetWindowId?: string): void }) {
+  const groups = [
+    { title: "Editors", ids: ["policy-primary", "routine-editor", "config-default"] },
+    { title: "Evidence", ids: ["timeline-recording", "signals-web", "runtime-debug", "problems-view"] },
+    { title: "Tools", ids: ["global-inspector", "workspace-dock", "node-detail", "ai-assistant"] }
+  ];
+  const byId = new Map(props.views.map((view) => [view.id, view]));
+  return (
+    <section className="automation-window-adder-panel" style={automationWindowAdderPanelStyle(props.area, props.anchor)}>
+      <header><strong>{props.targetWindowId ? "Add Tab" : "Add Window"}</strong><span>{props.targetWindowId ? "Open a new tab in this inner window" : "Open a new inner window in the workspace"}</span></header>
+      {groups.map((group) => (
+        <section key={group.title}>
+          <strong>{group.title}</strong>
+          <div>
+            {group.ids.map((id) => {
+              const view = byId.get(id);
+              if (!view) return null;
+              const Icon = view.icon;
+              return (
+                <button key={view.id} onClick={() => props.onAdd(view.id, props.area, props.targetWindowId)} type="button">
+                  <Icon size={16} aria-hidden />
+                  <span><strong>{viewTitle(view)}</strong><small>{automationWindowDescription(view)}</small></span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </section>
+  );
+}
+
+function automationWindowAdderPanelStyle(area: AutomationWorkspaceArea, anchor: AutomationWindowAdderState["anchor"]) {
+  const gap = 8;
+  const margin = 12;
+  const width = Math.min(420, window.innerWidth - 48);
+  const height = Math.min(620, window.innerHeight - 126);
+  const left = area === "right" || area === "bottom"
+    ? Math.max(margin, Math.min(window.innerWidth - width - margin, anchor.right - width))
+    : Math.max(margin, Math.min(window.innerWidth - width - margin, anchor.left));
+  const top = area === "bottom"
+    ? Math.max(margin, anchor.top - height - gap)
+    : Math.max(margin, Math.min(window.innerHeight - height - margin, anchor.bottom + gap));
+  return { left, top, width };
+}
+
+function AutomationLayoutPicker(props: { area: AutomationWorkspaceArea; anchor: AutomationLayoutPickerState["anchor"]; onArrange(preset: AutomationLayoutPreset, area: AutomationWorkspaceArea): void }) {
+  const options = automationLayoutOptionsForArea(props.area);
+  return (
+    <section className="automation-layout-picker-panel" style={automationFloatingPanelStyle(props.area, props.anchor, 320, 280)}>
+      <header><strong>Arrange Windows</strong><span>{automationAreaLabel(props.area)}</span></header>
+      <div className="automation-layout-picker-grid">
+        {options.map((preset) => (
+          <button key={preset.id} onClick={() => props.onArrange(preset.id, props.area)} title={preset.title} type="button">
+            <span className="automation-layout-icon" aria-hidden>
+              {preset.cells.map((cell, index) => <i key={index} style={{ left: `${cell.x * 100}%`, top: `${cell.y * 100}%`, width: `${cell.w * 100}%`, height: `${cell.h * 100}%` }} />)}
+            </span>
+            <span><strong>{preset.label}</strong><small>{preset.title}</small></span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function automationLayoutOptionsForArea(area: AutomationWorkspaceArea): AutomationLayoutPresetOption[] {
+  if (area === "right") return automationLayoutPresetOptions.filter((item) => item.id === "single" || item.id === "two-rows");
+  if (area === "bottom") return automationLayoutPresetOptions.filter((item) => item.id === "single" || item.id === "two-columns");
+  return automationLayoutPresetOptions.filter((item) => item.id !== "two-rows");
+}
+
+function automationAreaLabel(area: AutomationWorkspaceArea): string {
+  if (area === "right") return "Right Sidebar";
+  if (area === "bottom") return "Bottom Bar";
+  return "Main";
+}
+
+function automationFloatingPanelStyle(area: AutomationWorkspaceArea, anchor: AutomationWindowAdderState["anchor"], maxWidth: number, maxHeight: number) {
+  const gap = 8;
+  const margin = 12;
+  const width = Math.min(maxWidth, window.innerWidth - 48);
+  const height = Math.min(maxHeight, window.innerHeight - 126);
+  const left = area === "right" || area === "bottom"
+    ? Math.max(margin, Math.min(window.innerWidth - width - margin, anchor.right - width))
+    : Math.max(margin, Math.min(window.innerWidth - width - margin, anchor.left));
+  const top = area === "bottom"
+    ? Math.max(margin, anchor.top - height - gap)
+    : Math.max(margin, Math.min(window.innerHeight - height - margin, anchor.bottom + gap));
+  return { left, top, width };
+}
+
+function automationWindowDescription(view: AutomationViewInstance): string {
+  if (view.type === "design") return "Edit task policy nodes and edges.";
+  if (view.type === "routine") return "Build routine orchestration graphs.";
+  if (view.type === "config") return "Edit project configuration values.";
+  if (view.type === "recordings") return "Review timeline evidence and notes.";
+  if (view.type === "signals") return "Browse mined state signals.";
+  if (view.type === "runtime") return "Inspect live/debug execution state.";
+  if (view.type === "problems") return "Review validation and authoring issues.";
+  if (view.type === "inspector") return "Inspect the current global selection.";
+  if (view.type === "dock") return "Assistant, problems, history, and state panels.";
+  if (view.type === "node-detail") return "Open a focused node detail view.";
+  if (view.type === "assistant") return "Work with AI proposals and context.";
+  return "Open this workspace view.";
+}
+
 function AutomationViewRenderer(props: {
   entries: any[];
   models: any[];
@@ -1008,12 +1620,16 @@ function AutomationViewRenderer(props: {
   policy: any;
   problems: any[];
   recordings: any[];
+  dockTab: AutomationDockTab;
   selectedEntry: any;
   selectedNode: any;
   selectedRecording: any;
+  selectedSignal: any;
   selectedTimeline: any;
+  selection: AutomationSelection | null;
   signals: any[];
   view: AutomationViewInstance;
+  setDockTab(tab: AutomationDockTab): void;
   setSelection(selection: AutomationSelection): void;
 }) {
   if (props.view.type === "design") return <AutomationPolicyCanvas policy={props.policy} selectedNode={props.selectedNode} setSelection={props.setSelection} />;
@@ -1023,14 +1639,15 @@ function AutomationViewRenderer(props: {
   if (props.view.type === "problems") return <AutomationProblemsWorkspace problems={props.problems} />;
   if (props.view.type === "node-detail") return <AutomationNodeDetailView node={props.selectedNode} entries={props.entries} />;
   if (props.view.type === "assistant") return <AutomationAssistantView node={props.selectedNode} recording={props.selectedRecording} signals={props.signals} />;
-  if (props.view.type === "routine") return <AutomationRoutineView models={props.models} policies={props.policies} />;
+  if (props.view.type === "inspector") return <AutomationInspector selection={props.selection} policy={props.policy} node={props.selectedNode} recording={props.selectedRecording} entry={props.selectedEntry} signal={props.selectedSignal} />;
+  if (props.view.type === "dock") return <AutomationWorkspaceDock activeTab={props.dockTab} problems={props.problems} signals={props.signals} models={props.models} selectedNode={props.selectedNode} setActiveTab={props.setDockTab} />;
+  if (props.view.type === "routine") return <AutomationRoutineView models={props.models} policies={props.policies} setSelection={props.setSelection} />;
   if (props.view.type === "config") return <AutomationConfigView policy={props.policy} />;
   return <AutomationStateExplorerView signals={props.signals} entries={props.entries} setSelection={props.setSelection} />;
 }
 
 function AutomationWorkspacePreferences(props: { prefs: AutomationWorkspacePrefs; setPrefs(updater: (current: AutomationWorkspacePrefs) => AutomationWorkspacePrefs): void }) {
-  const setNumber = (key: "sidebarWidth" | "inspectorWidth" | "bottomDockHeight" | "windowsPerRow", value: number) => props.setPrefs((current) => ({ ...current, [key]: value }));
-  const setWindowSize = (windowId: string, key: "widthWeight" | "heightPx", value: number) => props.setPrefs((current) => ({ ...current, windows: current.windows.map((item) => item.id === windowId ? { ...item, [key]: value } : item) }));
+  const setNumber = (key: "sidebarWidth" | "inspectorWidth" | "bottomDockHeight", value: number) => props.setPrefs((current) => ({ ...current, [key]: value }));
   const resetLayout = () => props.setPrefs(() => defaultAutomationWorkspacePrefs());
   return (
     <section className="automation-preferences-panel">
@@ -1041,87 +1658,295 @@ function AutomationWorkspacePreferences(props: { prefs: AutomationWorkspacePrefs
       <div className="automation-preference-group">
         <strong>Frame</strong>
         <PreferenceSlider label="Sidebar" max={420} min={220} unit="px" value={props.prefs.sidebarWidth} onChange={(value) => setNumber("sidebarWidth", value)} />
-        <PreferenceSlider label="Inspector" max={520} min={260} unit="px" value={props.prefs.inspectorWidth} onChange={(value) => setNumber("inspectorWidth", value)} />
-        <PreferenceSlider label="Bottom dock" max={360} min={140} unit="px" value={props.prefs.bottomDockHeight} onChange={(value) => setNumber("bottomDockHeight", value)} />
+        <PreferenceSlider label="Right area" max={620} min={260} unit="px" value={props.prefs.inspectorWidth} onChange={(value) => setNumber("inspectorWidth", value)} />
+        <PreferenceSlider label="Bottom area" max={460} min={140} unit="px" value={props.prefs.bottomDockHeight} onChange={(value) => setNumber("bottomDockHeight", value)} />
       </div>
       <div className="automation-preference-group">
-        <strong>Windows</strong>
-        <PreferenceStepper label="Per row" max={4} min={1} value={props.prefs.windowsPerRow} onChange={(value) => setNumber("windowsPerRow", value)} />
-        {props.prefs.windows.map((windowItem, index) => (
-          <div className="automation-window-size-prefs" key={windowItem.id}>
-            <strong>Window {index + 1}</strong>
-            <PreferenceSlider label="Width" max={220} min={45} unit="fr" value={windowItem.widthWeight} onChange={(value) => setWindowSize(windowItem.id, "widthWeight", value)} />
-            <PreferenceSlider label="Height" max={900} min={320} unit="px" value={windowItem.heightPx} onChange={(value) => setWindowSize(windowItem.id, "heightPx", value)} />
-          </div>
-        ))}
+        <strong>Window Canvas</strong>
+        <p className="muted-text">Drag window title bars to move panes. Drag edges or corners to resize them. Reset restores the default single-window layout.</p>
       </div>
     </section>
   );
 }
 
-function PreferenceSlider(props: { label: string; min: number; max: number; unit: string; value: number; onChange(value: number): void }) {
+function PreferenceSlider(props: { label: string; min: number; max: number; unit: string; value: number; note?: string; onChange(value: number): void }) {
   return (
     <label className="automation-preference-row">
       <span>{props.label}</span>
       <input max={props.max} min={props.min} onChange={(event) => props.onChange(Number(event.target.value))} type="range" value={props.value} />
-      <output>{props.value}{props.unit}</output>
+      <output>{props.note ?? `${props.value}${props.unit}`}</output>
     </label>
   );
 }
 
-function PreferenceStepper(props: { label: string; min: number; max: number; value: number; onChange(value: number): void }) {
-  return (
-    <label className="automation-preference-row stepper">
-      <span>{props.label}</span>
-      <div>
-        <button disabled={props.value <= props.min} onClick={() => props.onChange(props.value - 1)} type="button">-</button>
-        <output>{props.value}</output>
-        <button disabled={props.value >= props.max} onClick={() => props.onChange(props.value + 1)} type="button">+</button>
-      </div>
-    </label>
-  );
+function defaultAutomationWorkspaceWindows(): AutomationWorkspaceWindow[] {
+  return [
+    { id: "window-policy", activeViewId: "policy-primary", tabs: ["policy-primary"], area: "main", x: 0, y: 0, widthPx: 1040, heightPx: 640, zIndex: 1 },
+    { id: "window-inspector", activeViewId: "global-inspector", tabs: ["global-inspector"], area: "right", x: 0, y: 0, widthPx: 320, heightPx: 520, zIndex: 2 },
+    { id: "window-dock", activeViewId: "workspace-dock", tabs: ["workspace-dock"], area: "bottom", x: 0, y: 0, widthPx: 960, heightPx: 206, zIndex: 3 }
+  ];
 }
 
 function defaultAutomationWorkspacePrefs(): AutomationWorkspacePrefs {
   return {
-    windows: [{ id: "window-policy", activeViewId: "policy-primary", tabs: ["policy-primary"], widthWeight: 100, heightPx: 520 }],
+    windows: defaultAutomationWorkspaceWindows(),
     activeWindowId: "window-policy",
     maximizedWindowId: null,
     sidebarWidth: 280,
     inspectorWidth: 320,
     bottomDockHeight: 206,
-    windowsPerRow: 2
+    utilityWindowsMigrated: true,
+    rightSidebarCollapsed: false,
+    bottomBarCollapsed: false
   };
 }
 
 function normalizeAutomationWorkspacePrefs(value: AutomationWorkspacePrefs): AutomationWorkspacePrefs {
   const fallback = defaultAutomationWorkspacePrefs();
   const legacyColumnWidths = (value as AutomationWorkspacePrefs & { columnWidths?: number[] }).columnWidths;
-  const windows = value.windows?.length ? value.windows
+  const sourceWindows = Array.isArray(value.windows) ? value.windows : fallback.windows;
+  const normalizedWindows = sourceWindows
     .filter((item) => item.tabs?.length && item.activeViewId)
     .map((item, index) => ({
       ...item,
-      widthWeight: clampNumber(item.widthWeight ?? legacyColumnWidths?.[index], 45, 220, 100),
-      heightPx: clampNumber(item.heightPx, 320, 900, 520)
-    })) : fallback.windows;
+      area: (["main", "right", "bottom"] as const).includes((item as AutomationWorkspaceWindow).area) ? (item as AutomationWorkspaceWindow).area : "main",
+      x: clampNumber(item.x, 0, 6000, 10 + index * 32),
+      y: clampNumber(item.y, 0, 6000, 10 + index * 32),
+      widthPx: clampNumber(item.widthPx ?? ((item as AutomationWorkspaceWindow & { widthWeight?: number }).widthWeight ? Number((item as AutomationWorkspaceWindow & { widthWeight?: number }).widthWeight) * 8 : legacyColumnWidths?.[index]), 360, 1800, 1040),
+      heightPx: clampNumber(item.heightPx, 320, 1400, 640),
+      zIndex: clampNumber(item.zIndex, 1, 9999, index + 1)
+    }));
+  const utilityWindowsMigrated = Boolean(value.utilityWindowsMigrated);
+  const hasInspectorWindow = normalizedWindows.some((item) => item.tabs.includes("global-inspector") || item.activeViewId === "global-inspector");
+  const hasDockWindow = normalizedWindows.some((item) => item.tabs.includes("workspace-dock") || item.activeViewId === "workspace-dock");
+  const utilityMigrationWindows = !utilityWindowsMigrated
+    ? defaultAutomationWorkspaceWindows().filter((item) => (item.activeViewId === "global-inspector" && !hasInspectorWindow) || (item.activeViewId === "workspace-dock" && !hasDockWindow))
+    : [];
+  const windows = utilityMigrationWindows.length
+    ? [
+      ...normalizedWindows,
+      ...utilityMigrationWindows.map((item, index) => ({ ...item, zIndex: nextAutomationZIndex(normalizedWindows) + index }))
+    ]
+    : normalizedWindows;
   return {
     ...fallback,
     ...value,
     windows,
-    activeWindowId: windows.some((item) => item.id === value.activeWindowId) ? value.activeWindowId : windows[0]?.id ?? fallback.activeWindowId,
+    activeWindowId: windows.some((item) => item.id === value.activeWindowId) ? value.activeWindowId : windows[0]?.id ?? "",
     maximizedWindowId: value.maximizedWindowId && windows.some((item) => item.id === value.maximizedWindowId) ? value.maximizedWindowId : null,
     sidebarWidth: clampNumber(value.sidebarWidth, 220, 420, fallback.sidebarWidth),
-    inspectorWidth: clampNumber(value.inspectorWidth, 260, 520, fallback.inspectorWidth),
-    bottomDockHeight: clampNumber(value.bottomDockHeight, 140, 360, fallback.bottomDockHeight),
-    windowsPerRow: clampNumber(value.windowsPerRow, 1, 4, fallback.windowsPerRow)
+    inspectorWidth: clampNumber(value.inspectorWidth, 260, 620, fallback.inspectorWidth),
+    bottomDockHeight: clampNumber(value.bottomDockHeight, 140, 460, fallback.bottomDockHeight),
+    utilityWindowsMigrated: true,
+    rightSidebarCollapsed: Boolean(value.rightSidebarCollapsed),
+    bottomBarCollapsed: Boolean(value.bottomBarCollapsed)
   };
 }
 
-function chunkAutomationWindows(windows: AutomationWorkspaceWindow[], windowsPerRow: number): AutomationWorkspaceWindow[][] {
-  const size = clampNumber(windowsPerRow, 1, 4, 2);
-  const rows: AutomationWorkspaceWindow[][] = [];
-  for (let index = 0; index < windows.length; index += size) rows.push(windows.slice(index, index + size));
-  return rows;
+function nextAutomationZIndex(windows: AutomationWorkspaceWindow[]): number {
+  return Math.max(0, ...windows.map((item) => item.zIndex ?? 0)) + 1;
+}
+
+function automationWindowGeometrySignature(windows: AutomationWorkspaceWindow[]): string {
+  return windows.map((item) => `${item.id}:${item.area}:${item.x},${item.y},${item.widthPx},${item.heightPx}`).join("|");
+}
+
+function automationWindowFillsCanvas(windowItem: AutomationWorkspaceWindow, canvasWidth: number, canvasHeight: number): boolean {
+  return windowItem.x <= 2
+    && windowItem.y <= 2
+    && Math.abs(windowItem.widthPx - canvasWidth) <= 3
+    && Math.abs(windowItem.heightPx - canvasHeight) <= 3;
+}
+
+function restoreAutomationWindowFromFullscreen(
+  windowItem: AutomationWorkspaceWindow,
+  pointerX: number,
+  pointerY: number,
+  canvasWidth: number,
+  canvasHeight: number
+): AutomationWorkspaceWindow {
+  const widthPx = Math.min(Math.max(360, Math.round(canvasWidth * 0.62)), Math.min(860, canvasWidth));
+  const heightPx = Math.min(Math.max(260, Math.round(canvasHeight * 0.62)), Math.min(560, canvasHeight));
+  const ratioX = clampNumber(pointerX / Math.max(1, canvasWidth), 0.15, 0.85, 0.5);
+  const x = pointerX - widthPx * ratioX;
+  const y = Math.max(0, pointerY - 24);
+  return clampAutomationWindowGeometry({ ...windowItem, x, y, widthPx, heightPx }, canvasWidth, canvasHeight, 240, 210);
+}
+
+function clampAutomationWindowGeometry(
+  windowItem: AutomationWorkspaceWindow,
+  maxWidth: number,
+  maxHeight: number,
+  minWidth = 360,
+  minHeight = 320
+): AutomationWorkspaceWindow {
+  const effectiveMinWidth = Math.min(minWidth, maxWidth);
+  const effectiveMinHeight = Math.min(minHeight, maxHeight);
+  const widthPx = clampNumber(windowItem.widthPx, effectiveMinWidth, maxWidth, Math.min(1040, maxWidth));
+  const heightPx = clampNumber(windowItem.heightPx, effectiveMinHeight, maxHeight, Math.min(640, maxHeight));
+  return {
+    ...windowItem,
+    widthPx,
+    heightPx,
+    x: clampNumber(windowItem.x, 0, Math.max(0, maxWidth - widthPx), 0),
+    y: clampNumber(windowItem.y, 0, Math.max(0, maxHeight - heightPx), 0)
+  };
+}
+
+function layoutAutomationWindowsInPreset(
+  windows: AutomationWorkspaceWindow[],
+  preset: AutomationLayoutPresetOption,
+  canvasWidth: number,
+  canvasHeight: number
+): AutomationWorkspaceWindow[] {
+  const assignments = new Map<number, AutomationWorkspaceWindow[]>();
+  windows.forEach((windowItem, index) => {
+    const cellIndex = preset.id === "main-sidebar" && index > 0 ? 1 : index % preset.cells.length;
+    const bucket = assignments.get(cellIndex) ?? [];
+    bucket.push(windowItem);
+    assignments.set(cellIndex, bucket);
+  });
+
+  return windows.map((windowItem, index) => {
+    const cellIndex = preset.id === "main-sidebar" && index > 0 ? 1 : index % preset.cells.length;
+    const cell = preset.cells[cellIndex] ?? preset.cells[0]!;
+    const bucket = assignments.get(cellIndex) ?? [windowItem];
+    const bucketIndex = bucket.findIndex((item) => item.id === windowItem.id);
+    const splitCount = Math.max(1, bucket.length);
+    const cellWidth = Math.max(240, Math.round(cell.w * canvasWidth));
+    const cellHeight = Math.max(210, Math.floor((cell.h * canvasHeight) / splitCount));
+    return clampAutomationWindowGeometry({
+      ...windowItem,
+      x: Math.round(cell.x * canvasWidth),
+      y: Math.round(cell.y * canvasHeight) + bucketIndex * cellHeight,
+      widthPx: cellWidth,
+      heightPx: cellHeight,
+      zIndex: index + 1
+    }, canvasWidth, canvasHeight, Math.min(360, cellWidth), Math.min(320, cellHeight));
+  });
+}
+
+function findAutomationSharedResizePartners(
+  windowItem: AutomationWorkspaceWindow,
+  edge: AutomationWindowResizeEdge,
+  windows: AutomationWorkspaceWindow[]
+): AutomationSharedResizePartner[] {
+  const threshold = 14;
+  const partners = new Map<string, AutomationSharedResizePartner>();
+  const left = windowItem.x;
+  const right = windowItem.x + windowItem.widthPx;
+  const top = windowItem.y;
+  const bottom = windowItem.y + windowItem.heightPx;
+  for (const item of windows) {
+    if (item.id === windowItem.id) continue;
+    const itemRight = item.x + item.widthPx;
+    const itemBottom = item.y + item.heightPx;
+    if (edge.includes("east") && Math.abs(item.x - right) <= threshold && automationRangesOverlap(top, bottom, item.y, itemBottom)) {
+      partners.set(`${item.id}:west`, { id: item.id, side: "west", start: item });
+    }
+    if (edge.includes("west") && Math.abs(itemRight - left) <= threshold && automationRangesOverlap(top, bottom, item.y, itemBottom)) {
+      partners.set(`${item.id}:east`, { id: item.id, side: "east", start: item });
+    }
+    if (edge.includes("south") && Math.abs(item.y - bottom) <= threshold && automationRangesOverlap(left, right, item.x, itemRight)) {
+      partners.set(`${item.id}:north`, { id: item.id, side: "north", start: item });
+    }
+    if (edge.includes("north") && Math.abs(itemBottom - top) <= threshold && automationRangesOverlap(left, right, item.x, itemRight)) {
+      partners.set(`${item.id}:south`, { id: item.id, side: "south", start: item });
+    }
+  }
+  return [...partners.values()];
+}
+
+function constrainAutomationResizeDelta(
+  value: number,
+  axis: "x" | "y",
+  edge: AutomationWindowResizeEdge,
+  windowItem: AutomationWorkspaceWindow,
+  partners: AutomationSharedResizePartner[],
+  canvasSize: number
+): number {
+  const minSize = axis === "x" ? 240 : 210;
+  const startPosition = axis === "x" ? windowItem.x : windowItem.y;
+  const startSize = axis === "x" ? windowItem.widthPx : windowItem.heightPx;
+  let minDelta = Number.NEGATIVE_INFINITY;
+  let maxDelta = Number.POSITIVE_INFINITY;
+
+  if ((axis === "x" && edge.includes("east")) || (axis === "y" && edge.includes("south"))) {
+    minDelta = Math.max(minDelta, minSize - startSize);
+    maxDelta = Math.min(maxDelta, canvasSize - (startPosition + startSize));
+  }
+  if ((axis === "x" && edge.includes("west")) || (axis === "y" && edge.includes("north"))) {
+    minDelta = Math.max(minDelta, -startPosition);
+    maxDelta = Math.min(maxDelta, startSize - minSize);
+  }
+
+  for (const partner of partners) {
+    const partnerStart = axis === "x" ? partner.start.x : partner.start.y;
+    const partnerSize = axis === "x" ? partner.start.widthPx : partner.start.heightPx;
+    if ((axis === "x" && partner.side === "west") || (axis === "y" && partner.side === "north")) {
+      minDelta = Math.max(minDelta, -partnerStart);
+      maxDelta = Math.min(maxDelta, partnerSize - minSize);
+    }
+    if ((axis === "x" && partner.side === "east") || (axis === "y" && partner.side === "south")) {
+      minDelta = Math.max(minDelta, minSize - partnerSize);
+      maxDelta = Math.min(maxDelta, canvasSize - (partnerStart + partnerSize));
+    }
+  }
+
+  if (!Number.isFinite(minDelta)) minDelta = value;
+  if (!Number.isFinite(maxDelta)) maxDelta = value;
+  return Math.min(maxDelta, Math.max(minDelta, value));
+}
+
+function automationRangesOverlap(startA: number, endA: number, startB: number, endB: number): boolean {
+  return Math.min(endA, endB) - Math.max(startA, startB) > 24;
+}
+
+function fullAutomationWindowGeometry(bounds: DOMRect | undefined): Pick<AutomationWorkspaceWindow, "x" | "y" | "widthPx" | "heightPx"> {
+  return {
+    x: 0,
+    y: 0,
+    widthPx: Math.max(1, Math.floor(bounds?.width ?? 420)),
+    heightPx: Math.max(1, Math.floor(bounds?.height ?? 320))
+  };
+}
+
+function placeAutomationWindow(windows: AutomationWorkspaceWindow[], bounds: DOMRect | undefined): Pick<AutomationWorkspaceWindow, "x" | "y" | "widthPx" | "heightPx"> {
+  const canvasWidth = Math.max(1, Math.floor(bounds?.width ?? 1120));
+  const canvasHeight = Math.max(1, Math.floor(bounds?.height ?? 680));
+  const gap = 8;
+  const active = windows.reduce<AutomationWorkspaceWindow | null>((latest, item) => !latest || item.zIndex > latest.zIndex ? item : latest, null);
+  if (active) {
+    const rightX = active.x + active.widthPx + gap;
+    const rightSpace = canvasWidth - rightX;
+    if (rightSpace >= 420) return { x: rightX, y: active.y, widthPx: rightSpace, heightPx: Math.min(active.heightPx, canvasHeight - active.y) };
+    const belowY = active.y + active.heightPx + gap;
+    const belowSpace = canvasHeight - belowY;
+    if (belowSpace >= 340) return { x: active.x, y: belowY, widthPx: Math.min(active.widthPx, canvasWidth - active.x), heightPx: belowSpace };
+  }
+  const offset = windows.length * 34;
+  const placed = { id: "", activeViewId: "", tabs: [""], area: "main" as const, x: offset, y: offset, widthPx: Math.min(1040, canvasWidth), heightPx: Math.min(640, canvasHeight), zIndex: 1 };
+  const clamped = clampAutomationWindowGeometry(placed, canvasWidth, canvasHeight);
+  return { x: clamped.x, y: clamped.y, widthPx: clamped.widthPx, heightPx: clamped.heightPx };
+}
+
+function automationSnapGeometry(canvasElement: HTMLDivElement | null, clientX: number, clientY: number): Pick<AutomationWorkspaceWindow, "x" | "y" | "widthPx" | "heightPx"> | null {
+  if (!canvasElement) return null;
+  const bounds = canvasElement.getBoundingClientRect();
+  const threshold = 64;
+  if (clientX < bounds.left || clientX > bounds.right || clientY < bounds.top || clientY > bounds.bottom) return null;
+  const width = Math.max(1, bounds.width);
+  const height = Math.max(1, bounds.height);
+  const left = clientX - bounds.left <= threshold;
+  const right = bounds.right - clientX <= threshold;
+  const top = clientY - bounds.top <= threshold;
+  const bottom = bounds.bottom - clientY <= threshold;
+  if ((left || right) && (top || bottom)) return { x: 0, y: 0, widthPx: width, heightPx: height };
+  if (left) return { x: 0, y: 0, widthPx: Math.floor(width / 2), heightPx: height };
+  if (right) return { x: Math.floor(width / 2), y: 0, widthPx: Math.ceil(width / 2), heightPx: height };
+  if (top) return { x: 0, y: 0, widthPx: width, heightPx: Math.floor(height / 2) };
+  if (bottom) return { x: 0, y: Math.floor(height / 2), widthPx: width, heightPx: Math.ceil(height / 2) };
+  return null;
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
@@ -1276,44 +2101,35 @@ function collectHierarchyDescendantIds(parentId: string, nodes: AutomationHierar
 function AutomationViewContainer(props: {
   active: boolean;
   children: ReactNode;
-  heightPx: number | undefined;
   icon: typeof Blocks;
-  locked: boolean;
-  pinned: boolean;
   tabs: AutomationViewInstance[];
   windowId: string;
   windowIndex: number;
   subtitle: string;
   title: string;
   onActivate(): void;
+  onAddTab(event: MouseEvent<HTMLButtonElement>): void;
   onClose(): void;
   onCloseTab(viewId: string): void;
-  onLock(): void;
-  onMaximize(): void;
-  onPin(): void;
-  onResizeStart(event: ReactPointerEvent<HTMLButtonElement>): void;
+  onMoveStart(event: ReactPointerEvent<HTMLElement>): void;
+  onResetSize(): void;
+  onResizeStart(edge: AutomationWindowResizeEdge, event: ReactPointerEvent<HTMLButtonElement>): void;
   onTabSelect(viewId: string): void;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
   const Icon = props.icon;
   return (
-    <section className={props.active ? "automation-view-container active" : "automation-view-container"} onMouseDown={props.onActivate} style={props.heightPx ? { height: props.heightPx } : undefined}>
-      <header>
+    <section className={props.active ? "automation-view-container active" : "automation-view-container"} onMouseDown={props.onActivate}>
+      <header onPointerDown={props.onMoveStart}>
         <div>
           <Icon size={15} aria-hidden />
           <span><strong>{props.title}</strong><small>Window {props.windowIndex + 1} - {props.subtitle}</small></span>
         </div>
         <div className="automation-pane-actions">
-          {props.locked ? <span>Locked</span> : null}
-          {props.pinned ? <span>Pinned</span> : null}
-          <button className={props.locked ? "icon-button selected" : "icon-button"} onClick={(event) => { event.stopPropagation(); props.onLock(); }} title="Lock selection" aria-label="Lock selection" type="button"><Lock size={13} aria-hidden /></button>
-          <button className={props.pinned ? "icon-button selected" : "icon-button"} onClick={(event) => { event.stopPropagation(); props.onPin(); }} title="Pin view" aria-label="Pin view" type="button"><Pin size={13} aria-hidden /></button>
-          <button className="icon-button" onClick={(event) => { event.stopPropagation(); props.onMaximize(); }} title="Maximize view" aria-label="Maximize view" type="button"><Maximize2 size={13} aria-hidden /></button>
+          <button className="icon-button" onClick={(event) => { event.stopPropagation(); props.onAddTab(event); }} title="Add tab" aria-label="Add tab" type="button"><Plus size={13} aria-hidden /></button>
+          <button className="icon-button" onClick={(event) => { event.stopPropagation(); props.onResetSize(); }} title="Reset window size" aria-label="Reset window size" type="button"><RefreshCcw size={13} aria-hidden /></button>
           <button className="icon-button" onClick={(event) => { event.stopPropagation(); props.onClose(); }} title="Close window" aria-label="Close window" type="button"><XCircle size={13} aria-hidden /></button>
-          <button className={menuOpen ? "icon-button selected" : "icon-button"} onClick={(event) => { event.stopPropagation(); setMenuOpen(!menuOpen); }} title="View menu" aria-label="View menu" type="button"><MoreHorizontal size={13} aria-hidden /></button>
         </div>
       </header>
-      {menuOpen ? <div className="automation-view-menu"><button onClick={props.onPin} type="button">{props.pinned ? "Unpin view" : "Pin view"}</button><button onClick={props.onLock} type="button">{props.locked ? "Unlock pane" : "Lock pane"}</button><button onClick={props.onMaximize} type="button">Toggle maximize</button></div> : null}
       <div className="automation-window-tabs" role="tablist" aria-label={`Window ${props.windowIndex + 1} tabs`}>
         {props.tabs.map((tab) => {
           const TabIcon = tab.icon;
@@ -1327,7 +2143,14 @@ function AutomationViewContainer(props: {
         })}
       </div>
       <div className="automation-view-body">{props.children}</div>
-      <button className="automation-window-resize-handle" onPointerDown={props.onResizeStart} title="Resize window" aria-label="Resize window" type="button" />
+      <button className="automation-window-resize-edge top" onPointerDown={(event) => props.onResizeStart("north", event)} title="Resize height" aria-label="Resize height from top" type="button" />
+      <button className="automation-window-resize-edge right" onPointerDown={(event) => props.onResizeStart("east", event)} title="Resize width" aria-label="Resize width from right" type="button" />
+      <button className="automation-window-resize-edge bottom" onPointerDown={(event) => props.onResizeStart("south", event)} title="Resize height" aria-label="Resize height from bottom" type="button" />
+      <button className="automation-window-resize-edge left" onPointerDown={(event) => props.onResizeStart("west", event)} title="Resize width" aria-label="Resize width from left" type="button" />
+      <button className="automation-window-resize-corner top-left" onPointerDown={(event) => props.onResizeStart("north-west", event)} title="Resize window" aria-label="Resize window from top left" type="button" />
+      <button className="automation-window-resize-corner top-right" onPointerDown={(event) => props.onResizeStart("north-east", event)} title="Resize window" aria-label="Resize window from top right" type="button" />
+      <button className="automation-window-resize-corner bottom-left" onPointerDown={(event) => props.onResizeStart("south-west", event)} title="Resize window" aria-label="Resize window from bottom left" type="button" />
+      <button className="automation-window-resize-corner bottom-right" onPointerDown={(event) => props.onResizeStart("south-east", event)} title="Resize window" aria-label="Resize window from bottom right" type="button" />
     </section>
   );
 }
@@ -1454,15 +2277,160 @@ function AutomationConfigView(props: { policy: any }) {
   );
 }
 
-function AutomationRoutineView(props: { models: any[]; policies: any[] }) {
-  const [selectedRoutineNodeId, setSelectedRoutineNodeId] = useState("routine-start");
+function automationPaletteIcon(family: string): typeof Blocks {
+  switch (family) {
+    case "control-flow": return GitBranch;
+    case "policy": return ShieldCheck;
+    case "routine": return Workflow;
+    case "logic": return ListChecks;
+    case "math": return Braces;
+    case "random": return Radio;
+    case "data": return Network;
+    case "timing": return History;
+    case "custom": return Blocks;
+    default: return Blocks;
+  }
+}
+
+function AutomationNodePalette(props: {
+  collapsed: boolean;
+  groups: AutomationEditorPaletteGroup[];
+  title: string;
+  onAddNode(spec: AutomationEditorNodeSpec): void;
+  onCollapsedChange(value: boolean): void;
+}) {
+  return (
+    <aside className={props.collapsed ? "automation-node-palette collapsed" : "automation-node-palette"} aria-label={props.title}>
+      <header>
+        <strong>{props.title}</strong>
+        <button className="icon-button" onClick={() => props.onCollapsedChange(!props.collapsed)} title={props.collapsed ? "Expand palette" : "Collapse palette"} aria-label={props.collapsed ? "Expand palette" : "Collapse palette"} type="button">
+          {props.collapsed ? <ChevronLeftIcon /> : <ChevronRight size={13} aria-hidden />}
+        </button>
+      </header>
+      {!props.collapsed ? props.groups.map((group) => (
+        <section key={group.title}>
+          <strong>{group.title}</strong>
+          {group.nodes.map((item) => {
+            const Icon = automationPaletteIcon(item.family);
+            return (
+              <button key={item.id} onClick={() => props.onAddNode(item)} title={item.description} type="button">
+                <Icon size={15} aria-hidden />
+                <span><strong>{item.label}</strong><small>{item.description}</small></span>
+              </button>
+            );
+          })}
+        </section>
+      )) : null}
+    </aside>
+  );
+}
+
+function ChevronLeftIcon() {
+  return <ChevronRight size={13} aria-hidden style={{ transform: "rotate(180deg)" }} />;
+}
+
+function routineEditorSelection(id: string, data: AutomationRoutineNodeData): AutomationSelection {
+  return {
+    kind: "editor-node",
+    id,
+    node: {
+      label: data.label,
+      nodeType: data.nodeType,
+      family: data.family,
+      description: data.description,
+      inputs: data.inputs,
+      outputs: data.outputs,
+      ...(data.privileged !== undefined ? { privileged: data.privileged } : {})
+    }
+  };
+}
+
+function policyEditorSelection(id: string, data: AutomationPolicyNodeData): AutomationSelection {
+  return {
+    kind: "editor-node",
+    id,
+    node: {
+      label: data.label,
+      nodeType: data.isStart ? "start" : "policy",
+      family: data.recovery,
+      description: data.actionTypes.length ? data.actionTypes.join(", ") : "Policy editor node",
+      inputs: data.readinessCount,
+      outputs: data.successCount,
+      actionTypes: data.actionTypes
+    }
+  };
+}
+
+function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelection(selection: AutomationSelection): void }) {
+  const [selectedRoutineNodeId, setSelectedRoutineNodeId] = useState("");
+  const [selectedRoutineEdgeIds, setSelectedRoutineEdgeIds] = useState<string[]>([]);
   const [layer, setLayer] = useState("Routine flow");
-  const graph = useMemo(() => routineToReactFlowGraph(props.policies, selectedRoutineNodeId), [props.policies, selectedRoutineNodeId]);
-  const selectedNode = graph.nodes.find((node) => node.id === selectedRoutineNodeId)?.data;
-  const palette = [
-    ["Base", "Start", "Task Policy", "Decision", "Wait", "Parallel", "Approval", "Recovery", "End"],
-    ["Custom", "Custom Action", "Custom Condition", "Custom Adapter", "Subroutine"]
-  ];
+  const [paletteCollapsed, setPaletteCollapsed] = useState(false);
+  const routineFrameRef = useRef<HTMLDivElement>(null);
+  const routineSelectionRef = useRef("");
+  const [routineFlow, setRoutineFlow] = useState<ReactFlowInstance<Node<AutomationRoutineNodeData>, Edge> | null>(null);
+  const graph = useMemo(() => routineToReactFlowGraph(), []);
+  const [routineNodes, setRoutineNodes] = useState(graph.nodes);
+  const [routineEdges, setRoutineEdges] = useState(graph.edges);
+  useEffect(() => {
+    setRoutineNodes((current) => syncGraphNodes(current, graph.nodes));
+    setRoutineEdges(graph.edges);
+  }, [graph.edges, graph.nodes]);
+  const palette = automationEditorPalette
+    .map((group) => ({ ...group, nodes: group.nodes.filter((node) => node.scope === "routine" || node.scope === "both") }))
+    .filter((group) => group.nodes.length > 0);
+  const addRoutineNode = (spec: AutomationEditorNodeSpec) => {
+    const id = `routine-${spec.id}-${Date.now().toString(36)}`;
+    const data: AutomationRoutineNodeData = {
+      label: spec.label,
+      nodeType: spec.nodeType === "custom" ? "custom" : "base",
+      family: spec.family,
+      description: spec.description,
+      inputs: spec.inputs,
+      outputs: spec.outputs,
+      ...(spec.privileged !== undefined ? { privileged: spec.privileged } : {})
+    };
+    const node: Node<AutomationRoutineNodeData> = {
+      id,
+      type: "routineNode",
+      position: roundedAutomationPosition(spawnAutomationNodePosition(selectedRoutineNodeId, routineNodes, routineEdges, routineFlow, routineFrameRef.current)),
+      data
+    };
+    setRoutineNodes((nodes) => [...nodes, node]);
+    setSelectedRoutineNodeId(id);
+    setSelectedRoutineEdgeIds([]);
+    props.setSelection(routineEditorSelection(id, data));
+    routineSelectionRef.current = `node:${id}`;
+  };
+  const deleteRoutineSelection = () => {
+    const nodeIds = new Set(selectedRoutineNodeId ? [selectedRoutineNodeId] : []);
+    const edgeIds = new Set(selectedRoutineEdgeIds);
+    setRoutineNodes((nodes) => nodes.filter((node) => !nodeIds.has(node.id)));
+    setRoutineEdges((edges) => edges.filter((edge) => !edgeIds.has(edge.id) && !nodeIds.has(edge.source) && !nodeIds.has(edge.target)));
+    setSelectedRoutineNodeId("");
+    setSelectedRoutineEdgeIds([]);
+  };
+  useEffect(() => {
+    function handleDeleteNode(event: Event) {
+      const nodeId = (event as CustomEvent<{ nodeId?: string }>).detail?.nodeId;
+      if (!nodeId) return;
+      setRoutineNodes((nodes) => nodes.filter((node) => node.id !== nodeId));
+      setRoutineEdges((edges) => edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+      setSelectedRoutineNodeId((current) => current === nodeId ? "" : current);
+    }
+    function handleDeleteEdge(event: Event) {
+      const edgeId = (event as CustomEvent<{ edgeId?: string }>).detail?.edgeId;
+      if (!edgeId) return;
+      setRoutineEdges((edges) => edges.filter((edge) => edge.id !== edgeId));
+      setSelectedRoutineEdgeIds((ids) => ids.filter((id) => id !== edgeId));
+    }
+    window.addEventListener("automation-studio:delete-node", handleDeleteNode);
+    window.addEventListener("automation-studio:delete-edge", handleDeleteEdge);
+    return () => {
+      window.removeEventListener("automation-studio:delete-node", handleDeleteNode);
+      window.removeEventListener("automation-studio:delete-edge", handleDeleteEdge);
+    };
+  }, []);
   return (
     <section className="automation-policy-canvas routine-canvas">
       <div className="automation-layer-tabs" role="tablist" aria-label="Routine graph layers">
@@ -1470,49 +2438,57 @@ function AutomationRoutineView(props: { models: any[]; policies: any[] }) {
           <button className={layer === item ? "selected" : ""} key={item} onClick={() => setLayer(item)} type="button">{item}</button>
         ))}
       </div>
-      <div className="automation-routine-editor-grid">
-        <aside className="automation-node-palette" aria-label="Routine node palette">
-          {palette.map(([title, ...items]) => (
-            <section key={title}>
-              <strong>{title}</strong>
-              {items.map((item) => <button key={item} type="button"><Plus size={12} aria-hidden />{item}</button>)}
-            </section>
-          ))}
-        </aside>
-        <div className="automation-react-flow-frame">
-          <ReactFlow
+      <div className={paletteCollapsed ? "automation-routine-editor-grid palette-collapsed" : "automation-routine-editor-grid"}>
+        <div className="automation-react-flow-frame" ref={routineFrameRef}>
+          <ReactFlow<Node<AutomationRoutineNodeData>, Edge>
             fitView
             fitViewOptions={{ padding: 0.25 }}
-            nodes={graph.nodes}
-            edges={graph.edges}
+            nodes={routineNodes}
+            edges={routineEdges}
+            edgeTypes={automationEdgeTypes}
             nodeTypes={automationNodeTypes}
-            nodesDraggable={false}
-            nodesConnectable={false}
+            nodesDraggable
+            nodesConnectable
             elementsSelectable
-            onNodeClick={(_event, node) => setSelectedRoutineNodeId(node.id)}
+            deleteKeyCode={["Backspace", "Delete"]}
+            onInit={setRoutineFlow}
+            onConnect={(connection) => setRoutineEdges((edges) => addEdge(createAutomationConnectionEdge(connection, edges, "routine-edge"), edges))}
+            onEdgesChange={(changes: EdgeChange[]) => setRoutineEdges((edges) => applyEdgeChanges(changes, edges))}
+            onEdgesDelete={(deletedEdges) => setSelectedRoutineEdgeIds((ids) => ids.filter((id) => !deletedEdges.some((edge) => edge.id === id)))}
+            onNodesDelete={(deletedNodes) => {
+              const deletedIds = new Set(deletedNodes.map((node) => node.id));
+              setRoutineEdges((edges) => edges.filter((edge) => !deletedIds.has(edge.source) && !deletedIds.has(edge.target)));
+              if (deletedIds.has(selectedRoutineNodeId)) setSelectedRoutineNodeId("");
+            }}
+            onNodesChange={(changes: NodeChange<Node<AutomationRoutineNodeData>>[]) => setRoutineNodes((nodes) => applyNodeChanges(changes, nodes))}
+            onNodeClick={(_event, node) => {
+              setSelectedRoutineNodeId((current) => current === node.id ? current : node.id);
+              const key = `node:${node.id}`;
+              if (routineSelectionRef.current !== key) {
+                routineSelectionRef.current = key;
+                props.setSelection(routineEditorSelection(node.id, node.data));
+              }
+            }}
+            onSelectionChange={({ nodes, edges }) => {
+              const selectedNode = nodes[0];
+              const edgeIds = edges.map((edge) => edge.id);
+              setSelectedRoutineNodeId((current) => current === (selectedNode?.id ?? "") ? current : selectedNode?.id ?? "");
+              setSelectedRoutineEdgeIds((current) => sameStringList(current, edgeIds) ? current : edgeIds);
+              const key = selectedNode ? `node:${selectedNode.id}` : edgeIds.length ? `edges:${edgeIds.join(",")}` : "";
+              if (selectedNode && routineSelectionRef.current !== key) {
+                routineSelectionRef.current = key;
+                props.setSelection(routineEditorSelection(selectedNode.id, selectedNode.data));
+              } else if (!selectedNode) {
+                routineSelectionRef.current = key;
+              }
+            }}
           >
             <Background gap={24} size={1} />
             <MiniMap pannable zoomable />
             <Controls showInteractive={false} />
           </ReactFlow>
         </div>
-        <aside className="automation-routine-node-inspector">
-          <strong>{selectedNode?.label ?? "Routine node"}</strong>
-          <span>{selectedNode?.description ?? "Select a routine node."}</span>
-          <KeyValue rows={[
-            ["Type", selectedNode?.nodeType ?? "-"],
-            ["Family", selectedNode?.family ?? "-"],
-            ["Inputs", String(selectedNode?.inputs ?? 0)],
-            ["Outputs", String(selectedNode?.outputs ?? 0)],
-            ["Privileged", selectedNode?.privileged ? "Yes" : "No"]
-          ]} />
-        </aside>
-      </div>
-      <div className="automation-canvas-legend">
-        <span><strong>Layer</strong> {layer}</span>
-        <span><strong>Base</strong> built-in routine node</span>
-        <span><strong>Custom</strong> user-defined routine node</span>
-        <span><strong>No evidence/state</strong> routine-only graph</span>
+        <AutomationNodePalette collapsed={paletteCollapsed} groups={palette} title="Routine Nodes" onAddNode={addRoutineNode} onCollapsedChange={setPaletteCollapsed} />
       </div>
     </section>
   );
@@ -1589,7 +2565,78 @@ function AutomationWorkspaceDock(props: { activeTab: AutomationDockTab; problems
 
 function AutomationPolicyCanvas(props: { policy: any; selectedNode: any; setSelection(selection: AutomationSelection): void }) {
   const [layer, setLayer] = useState("Logical flow");
-  const graph = useMemo(() => policyToReactFlowGraph(props.policy, props.selectedNode?.id), [props.policy, props.selectedNode?.id]);
+  const [selectedPolicyNodeId, setSelectedPolicyNodeId] = useState(props.selectedNode?.id ?? "");
+  const [selectedPolicyEdgeIds, setSelectedPolicyEdgeIds] = useState<string[]>([]);
+  const [paletteCollapsed, setPaletteCollapsed] = useState(false);
+  const policyFrameRef = useRef<HTMLDivElement>(null);
+  const policySelectionRef = useRef("");
+  const [policyFlow, setPolicyFlow] = useState<ReactFlowInstance<Node<AutomationPolicyNodeData>, Edge> | null>(null);
+  const graph = useMemo(() => policyToReactFlowGraph(props.policy, ""), [props.policy]);
+  const [policyNodes, setPolicyNodes] = useState(graph.nodes);
+  const [policyEdges, setPolicyEdges] = useState(graph.edges);
+  useEffect(() => {
+    setPolicyNodes((current) => syncGraphNodes(current, graph.nodes));
+    setPolicyEdges(graph.edges);
+    setSelectedPolicyEdgeIds([]);
+  }, [graph.edges, graph.nodes]);
+  useEffect(() => {
+    setSelectedPolicyNodeId(props.selectedNode?.id ?? "");
+  }, [props.selectedNode?.id]);
+  const palette = automationEditorPalette
+    .map((group) => ({ ...group, nodes: group.nodes.filter((node) => node.scope === "policy" || node.scope === "both") }))
+    .filter((group) => group.nodes.length > 0);
+  const addPolicyNode = (spec: AutomationEditorNodeSpec) => {
+    const id = `policy-${spec.id}-${Date.now().toString(36)}`;
+    const data: AutomationPolicyNodeData = {
+      label: spec.label,
+      actionTypes: spec.actionTypes ?? [],
+      recovery: spec.family,
+      evidenceCount: 0,
+      readinessCount: Math.max(0, spec.inputs),
+      successCount: Math.max(0, spec.outputs),
+      isStart: spec.id === "control-start"
+    };
+    const node: Node<AutomationPolicyNodeData> = {
+      id,
+      type: "policyNode",
+      position: roundedAutomationPosition(spawnAutomationNodePosition(selectedPolicyNodeId, policyNodes, policyEdges, policyFlow, policyFrameRef.current)),
+      data
+    };
+    setPolicyNodes((nodes) => [...nodes, node]);
+    setSelectedPolicyNodeId(id);
+    setSelectedPolicyEdgeIds([]);
+    props.setSelection(policyEditorSelection(id, data));
+    policySelectionRef.current = `node:${id}`;
+  };
+  const deletePolicySelection = () => {
+    const nodeIds = new Set(selectedPolicyNodeId ? [selectedPolicyNodeId] : []);
+    const edgeIds = new Set(selectedPolicyEdgeIds);
+    setPolicyNodes((nodes) => nodes.filter((node) => !nodeIds.has(node.id)));
+    setPolicyEdges((edges) => edges.filter((edge) => !edgeIds.has(edge.id) && !nodeIds.has(edge.source) && !nodeIds.has(edge.target)));
+    setSelectedPolicyNodeId("");
+    setSelectedPolicyEdgeIds([]);
+  };
+  useEffect(() => {
+    function handleDeleteNode(event: Event) {
+      const nodeId = (event as CustomEvent<{ nodeId?: string }>).detail?.nodeId;
+      if (!nodeId) return;
+      setPolicyNodes((nodes) => nodes.filter((node) => node.id !== nodeId));
+      setPolicyEdges((edges) => edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+      setSelectedPolicyNodeId((current: string) => current === nodeId ? "" : current);
+    }
+    function handleDeleteEdge(event: Event) {
+      const edgeId = (event as CustomEvent<{ edgeId?: string }>).detail?.edgeId;
+      if (!edgeId) return;
+      setPolicyEdges((edges) => edges.filter((edge) => edge.id !== edgeId));
+      setSelectedPolicyEdgeIds((ids) => ids.filter((id) => id !== edgeId));
+    }
+    window.addEventListener("automation-studio:delete-node", handleDeleteNode);
+    window.addEventListener("automation-studio:delete-edge", handleDeleteEdge);
+    return () => {
+      window.removeEventListener("automation-studio:delete-node", handleDeleteNode);
+      window.removeEventListener("automation-studio:delete-edge", handleDeleteEdge);
+    };
+  }, []);
   return (
     <section className="automation-policy-canvas">
       <div className="automation-layer-tabs" role="tablist" aria-label="Policy graph layers">
@@ -1597,38 +2644,68 @@ function AutomationPolicyCanvas(props: { policy: any; selectedNode: any; setSele
           <button className={layer === item ? "selected" : ""} key={item} onClick={() => setLayer(item)} type="button">{item}</button>
         ))}
       </div>
-      <div className="automation-react-flow-frame">
-        <ReactFlow
-          fitView
-          fitViewOptions={{ padding: 0.25 }}
-          nodes={graph.nodes}
-          edges={graph.edges}
-          nodeTypes={automationNodeTypes}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          elementsSelectable
-          onNodeClick={(_event, node) => props.setSelection({ kind: "node", id: node.id })}
-        >
-          <Background gap={24} size={1} />
-          <MiniMap pannable zoomable />
-          <Controls showInteractive={false} />
-        </ReactFlow>
-      </div>
-      <div className="automation-canvas-legend">
-        <span><strong>Layer</strong> {layer}</span>
-        <span><strong>Blue</strong> normal transition</span>
-        <span><strong>Orange</strong> retry/recovery</span>
-        <span><strong>Red</strong> failure path</span>
-        <span><strong>Width</strong> confidence/probability</span>
+      <div className={paletteCollapsed ? "automation-policy-editor-grid palette-collapsed" : "automation-policy-editor-grid"}>
+        <div className="automation-react-flow-frame" ref={policyFrameRef}>
+          <ReactFlow<Node<AutomationPolicyNodeData>, Edge>
+            fitView
+            fitViewOptions={{ padding: 0.25 }}
+            nodes={policyNodes}
+            edges={policyEdges}
+            edgeTypes={automationEdgeTypes}
+            nodeTypes={automationNodeTypes}
+            nodesDraggable
+            nodesConnectable
+            elementsSelectable
+            deleteKeyCode={["Backspace", "Delete"]}
+            onInit={setPolicyFlow}
+            onConnect={(connection) => setPolicyEdges((edges) => addEdge(createAutomationConnectionEdge(connection, edges, "policy-edge"), edges))}
+            onEdgesChange={(changes: EdgeChange[]) => setPolicyEdges((edges) => applyEdgeChanges(changes, edges))}
+            onEdgesDelete={(deletedEdges) => setSelectedPolicyEdgeIds((ids) => ids.filter((id) => !deletedEdges.some((edge) => edge.id === id)))}
+            onNodesDelete={(deletedNodes) => {
+              const deletedIds = new Set(deletedNodes.map((node) => node.id));
+              setPolicyEdges((edges) => edges.filter((edge) => !deletedIds.has(edge.source) && !deletedIds.has(edge.target)));
+              if (deletedIds.has(selectedPolicyNodeId)) setSelectedPolicyNodeId("");
+            }}
+            onNodesChange={(changes: NodeChange<Node<AutomationPolicyNodeData>>[]) => setPolicyNodes((nodes) => applyNodeChanges(changes, nodes))}
+            onNodeClick={(_event, node) => {
+              setSelectedPolicyNodeId((current: string) => current === node.id ? current : node.id);
+              const key = `node:${node.id}`;
+              if (policySelectionRef.current !== key) {
+                policySelectionRef.current = key;
+                props.setSelection(props.policy?.nodes?.some((policyNode: any) => policyNode.id === node.id) ? { kind: "node", id: node.id } : policyEditorSelection(node.id, node.data));
+              }
+            }}
+            onSelectionChange={({ nodes, edges }) => {
+              const selectedNode = nodes[0];
+              const nodeId = selectedNode?.id ?? "";
+              const edgeIds = edges.map((edge) => edge.id);
+              setSelectedPolicyNodeId((current: string) => current === nodeId ? current : nodeId);
+              setSelectedPolicyEdgeIds((current) => sameStringList(current, edgeIds) ? current : edgeIds);
+              const key = selectedNode ? `node:${selectedNode.id}` : edgeIds.length ? `edges:${edgeIds.join(",")}` : "";
+              if (selectedNode && policySelectionRef.current !== key) {
+                policySelectionRef.current = key;
+                props.setSelection(props.policy?.nodes?.some((policyNode: any) => policyNode.id === selectedNode.id) ? { kind: "node", id: selectedNode.id } : policyEditorSelection(selectedNode.id, selectedNode.data));
+              } else if (!selectedNode) {
+                policySelectionRef.current = key;
+              }
+            }}
+          >
+            <Background gap={24} size={1} />
+            <MiniMap pannable zoomable />
+            <Controls showInteractive={false} />
+          </ReactFlow>
+        </div>
+        <AutomationNodePalette collapsed={paletteCollapsed} groups={palette} title="Policy Nodes" onAddNode={addPolicyNode} onCollapsedChange={setPaletteCollapsed} />
       </div>
     </section>
   );
 }
 
-function AutomationPolicyNode({ data, selected }: NodeProps) {
+function AutomationPolicyNode({ id, data, selected }: NodeProps) {
   const node = data as AutomationPolicyNodeData;
   return (
     <div className={selected ? "automation-flow-node selected" : "automation-flow-node"}>
+      {selected ? <SelectedNodeDeleteButton nodeId={id} /> : null}
       <Handle type="target" position={Position.Left} className="automation-flow-handle input" />
       <div className="node-badges">
         {node.isStart ? <span className="node-badge start">Start</span> : null}
@@ -1661,10 +2738,11 @@ function AutomationPolicyNode({ data, selected }: NodeProps) {
   );
 }
 
-function AutomationRoutineNode({ data, selected }: NodeProps) {
+function AutomationRoutineNode({ id, data, selected }: NodeProps) {
   const node = data as AutomationRoutineNodeData;
   return (
     <div className={selected ? `automation-flow-node routine-node selected ${node.nodeType}` : `automation-flow-node routine-node ${node.nodeType}`}>
+      {selected ? <SelectedNodeDeleteButton nodeId={id} /> : null}
       <Handle type="target" position={Position.Left} className="automation-flow-handle input" />
       <div className="node-badges">
         <span className={node.nodeType === "custom" ? "node-badge custom" : "node-badge category"}>{node.nodeType}</span>
@@ -1688,6 +2766,66 @@ function AutomationRoutineNode({ data, selected }: NodeProps) {
       <footer className="node-runtime-line">No recordings or state bindings</footer>
       <Handle type="source" position={Position.Right} id="next" className="automation-flow-handle output" />
     </div>
+  );
+}
+
+function SelectedNodeDeleteButton(props: { nodeId: string }) {
+  return (
+    <button
+      className="automation-node-delete-button nodrag nopan"
+      onClick={(event) => {
+        event.stopPropagation();
+        window.dispatchEvent(new CustomEvent("automation-studio:delete-node", { detail: { nodeId: props.nodeId } }));
+      }}
+      title="Delete node"
+      aria-label="Delete node"
+      type="button"
+    >
+      <Trash2 size={13} aria-hidden />
+    </button>
+  );
+}
+
+function AutomationFlowEdge(props: EdgeProps) {
+  const route = automationEdgeRoute(props.id, props.sourceX, props.sourceY, props.targetX, props.targetY, props.data as Record<string, unknown> | undefined);
+  const [edgePath, labelX, labelY] = route.kind === "loop"
+    ? automationLoopEdgePath(props.sourceX, props.sourceY, props.targetX, props.targetY, route.lane)
+    : automationLaneEdgePath(props.sourceX, props.sourceY, props.targetX, props.targetY, route.lane);
+  const label = String(props.label ?? props.data?.label ?? "");
+  return (
+    <>
+      <BaseEdge
+        id={props.id}
+        path={edgePath}
+        style={{
+          ...props.style,
+          strokeWidth: props.selected ? 4 : props.style?.strokeWidth
+        }}
+        {...(props.markerEnd ? { markerEnd: props.markerEnd } : {})}
+      />
+      {label ? (
+        <EdgeLabelRenderer>
+          <span className={props.selected ? "automation-edge-label selected nodrag nopan" : "automation-edge-label nodrag nopan"} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}>{label}</span>
+        </EdgeLabelRenderer>
+      ) : null}
+      {props.selected ? (
+        <EdgeLabelRenderer>
+          <button
+            className="automation-edge-delete-button nodrag nopan"
+            onClick={(event) => {
+              event.stopPropagation();
+              window.dispatchEvent(new CustomEvent("automation-studio:delete-edge", { detail: { edgeId: props.id } }));
+            }}
+            style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY - 28}px)` }}
+            title="Delete edge"
+            aria-label="Delete edge"
+            type="button"
+          >
+            <Trash2 size={13} aria-hidden />
+          </button>
+        </EdgeLabelRenderer>
+      ) : null}
+    </>
   );
 }
 
@@ -1752,17 +2890,13 @@ function AutomationProblemsWorkspace(props: { problems: any[] }) {
   return <DataTable columns={["Severity", "Artifact", "Message"]} rows={props.problems.map((problem) => [<StatusBadge key={problem.id} value={problem.severity} />, problem.artifactId ?? problem.artifactKind ?? "-", problem.message])} empty="No validation, runtime, or fixture problems are currently reported." />;
 }
 
-function AutomationInspector(props: { selection: AutomationSelection | null; policy: any; node: any; recording: any; entry: any; signal: any; followSelection: boolean; setFollowSelection(value: boolean): void }) {
-  const title = props.selection?.kind === "signal" ? "Signal" : props.selection?.kind === "timeline" ? "Timeline Entry" : props.selection?.kind === "recording" ? "Recording" : props.selection?.kind === "policy" ? "Policy Graph" : "Node Inspector";
+function AutomationInspector(props: { selection: AutomationSelection | null; policy: any; node: any; recording: any; entry: any; signal: any }) {
+  const title = props.selection?.kind === "signal" ? "Signal" : props.selection?.kind === "timeline" ? "Timeline Entry" : props.selection?.kind === "recording" ? "Recording" : props.selection?.kind === "policy" ? "Policy Graph" : props.selection?.kind === "editor-node" ? "Editor Node" : "Node Inspector";
   return (
     <aside className="automation-inspector">
       <header>
         <span>Inspector</span>
         <strong>{title}</strong>
-        <div className="automation-inspector-tools">
-          <button className={props.followSelection ? "button selected" : "button"} onClick={() => props.setFollowSelection(!props.followSelection)} type="button">Follow</button>
-          <button className={!props.followSelection ? "button selected" : "button"} onClick={() => props.setFollowSelection(false)} type="button">Lock</button>
-        </div>
       </header>
       <div className="automation-inspector-search">
         <Search size={14} aria-hidden />
@@ -1780,6 +2914,11 @@ function AutomationInspector(props: { selection: AutomationSelection | null; pol
       {props.selection?.kind === "recording" && props.recording ? <>
         <InspectorSection title="Recording Metadata" rows={[["Recording", props.recording.recordingId], ["Task", props.recording.taskId ?? "-"], ["Environment", props.recording.environment?.label ?? "-"], ["Entries", String(props.recording.timeline?.length ?? 0)], ["Notes", String(props.recording.notes?.length ?? 0)]]} />
         <InspectorSection title="Dataset Actions" rows={[["Status", "Raw, normalized, mined"], ["Compare", "Align by semantic actions"], ["Reprocess", "Run normalization and mining"]]} />
+      </> : null}
+      {props.selection?.kind === "editor-node" && props.node ? <>
+        <InspectorSection title="General" rows={[["Node", props.node.label], ["ID", props.node.id], ["Type", props.node.nodeType ?? "-"], ["Family", props.node.family ?? "-"], ["Description", props.node.description ?? "-"]]} />
+        <InspectorSection title="Ports" rows={[["Inputs", String(props.node.inputs ?? 0)], ["Outputs", String(props.node.outputs ?? 0)], ["Privileged", props.node.privileged ? "Yes" : "No"], ["Actions", (props.node.actionTypes ?? []).join(", ") || "-"]]} />
+        <details className="json-details"><summary><Braces size={13} aria-hidden />Raw definition</summary><pre>{shortJson(props.node)}</pre></details>
       </> : null}
       {(!props.selection || props.selection.kind === "node") && props.node ? <>
         <InspectorSection title="General" rows={[["Node", props.node.label], ["ID", props.node.id], ["Actions", (props.node.actions ?? []).map((action: any) => action.actionType).join(", ")], ["Recovery", props.node.recovery?.strategy ?? "-"]]} />
@@ -2841,6 +3980,10 @@ function shortJson(value: unknown): string {
   return text.length > 90 ? `${text.slice(0, 90)}...` : text;
 }
 
+function automationHierarchySignature(customHierarchyNodes: AutomationHierarchyNode[], deletedHierarchyIds: string[], workspacePrefs: AutomationWorkspacePrefs): string {
+  return JSON.stringify({ customHierarchyNodes, deletedHierarchyIds, workspacePrefs });
+}
+
 function timelineEntrySummary(entry: any): string {
   if (entry.type === "action") return `${entry.actionType} ${entry.target?.label ?? entry.target?.id ?? ""}`.trim();
   if (entry.type === "state_delta") return (entry.deltas ?? []).map((delta: any) => `${delta.path} ${delta.change}`).join(", ");
@@ -2859,16 +4002,111 @@ function conditionSummary(group: any): string {
   return `${group.type}: ${conditions.map((condition: any) => condition.signalPath ? `${condition.signalPath} ${condition.operator}` : conditionSummary(condition)).join("; ")}`;
 }
 
+function syncGraphNodes<T extends Record<string, unknown>>(currentNodes: Array<Node<T>>, nextNodes: Array<Node<T>>): Array<Node<T>> {
+  const currentById = new Map(currentNodes.map((node) => [node.id, node]));
+  return nextNodes.map((node) => {
+    const current = currentById.get(node.id);
+    return current ? { ...node, position: current.position } : node;
+  });
+}
+
+function sameStringList(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((item, index) => item === right[index]);
+}
+
+function spawnAutomationNodePosition<T extends Record<string, unknown>>(selectedNodeId: string, nodes: Array<Node<T>>, edges: Edge[], flow: Pick<ReactFlowInstance<Node<T>, Edge>, "screenToFlowPosition"> | null, canvasElement: HTMLElement | null): { x: number; y: number } {
+  const selectedNode = nodes.find((node) => node.id === selectedNodeId);
+  if (selectedNode && !edges.some((edge) => edge.source === selectedNode.id)) {
+    return { x: selectedNode.position.x + 320, y: selectedNode.position.y };
+  }
+  const bounds = canvasElement?.getBoundingClientRect();
+  if (flow?.screenToFlowPosition && bounds) {
+    return flow.screenToFlowPosition({
+      x: bounds.left + bounds.width / 2 - 120,
+      y: bounds.top + bounds.height / 2 - 48
+    });
+  }
+  if (flow?.screenToFlowPosition) {
+    return flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  }
+  return { x: 80 + (nodes.length % 4) * 300, y: 80 + Math.floor(nodes.length / 4) * 190 };
+}
+
+function roundedAutomationPosition(position: { x: number; y: number }): { x: number; y: number } {
+  return { x: Math.round(position.x), y: Math.round(position.y) };
+}
+
+function createAutomationConnectionEdge(connection: { source: string | null; target: string | null; sourceHandle?: string | null; targetHandle?: string | null }, existingEdges: Edge[], prefix: string): Edge {
+  const source = connection.source ?? "";
+  const target = connection.target ?? "";
+  const outgoingIndex = existingEdges.filter((edge) => edge.source === source).length;
+  const lane = automationEdgeLane(`${prefix}-${source}-${target}-${outgoingIndex}`, outgoingIndex);
+  return {
+    id: `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+    source,
+    target,
+    sourceHandle: connection.sourceHandle ?? "next",
+    targetHandle: connection.targetHandle ?? null,
+    type: "automationEdge",
+    label: outgoingIndex === 0 ? "Next" : `Branch ${outgoingIndex + 1}`,
+    data: { label: outgoingIndex === 0 ? "Next" : `Branch ${outgoingIndex + 1}`, lane },
+    markerEnd: { type: MarkerType.ArrowClosed, color: "#0972d3", width: 18, height: 18 },
+    style: { stroke: "#0972d3", strokeWidth: 3 }
+  };
+}
+
+function automationEdgeRoute(id: string, sourceX: number, sourceY: number, targetX: number, targetY: number, data: Record<string, unknown> | undefined): { kind: "step" | "loop"; lane: number } {
+  const dx = targetX - sourceX;
+  const lane = Number(data?.lane ?? automationEdgeLane(id));
+  if (dx < -40) return { kind: "loop", lane };
+  return { kind: "step", lane };
+}
+
+function automationEdgeLane(id: string, index?: number): number {
+  const lanes = [-72, -42, 42, 72, -104, 104, -136, 136];
+  return lanes[(index ?? stableHash(id)) % lanes.length] ?? 42;
+}
+
+function automationLoopEdgePath(sourceX: number, sourceY: number, targetX: number, targetY: number, lane: number): [string, number, number] {
+  const direction = lane < 0 ? -1 : 1;
+  const distance = Math.abs(targetX - sourceX);
+  const lift = direction * (96 + Math.min(220, distance * 0.35) + Math.abs(lane) * 0.35);
+  const spread = Math.max(96, Math.min(220, distance * 0.42));
+  const control1X = sourceX + spread;
+  const control2X = targetX - spread;
+  const control1Y = sourceY + lift;
+  const control2Y = targetY + lift;
+  return [`M ${sourceX},${sourceY} C ${control1X},${control1Y} ${control2X},${control2Y} ${targetX},${targetY}`, (sourceX + targetX) / 2, (sourceY + targetY) / 2 + lift * 0.72];
+}
+
+function automationLaneEdgePath(sourceX: number, sourceY: number, targetX: number, targetY: number, lane: number): [string, number, number] {
+  const dx = targetX - sourceX;
+  const distance = Math.max(140, Math.abs(dx));
+  const horizontal = Math.min(260, Math.max(120, distance * 0.45));
+  const lift = Math.sign(lane || 1) * Math.min(90, Math.max(28, Math.abs(lane) * 0.72));
+  const control1X = sourceX + horizontal;
+  const control2X = targetX - horizontal;
+  const control1Y = sourceY + lift;
+  const control2Y = targetY + lift;
+  const labelX = (sourceX + targetX) / 2;
+  const labelY = (sourceY + targetY) / 2 + lift * 0.74;
+  return [`M ${sourceX},${sourceY} C ${control1X},${control1Y} ${control2X},${control2Y} ${targetX},${targetY}`, labelX, labelY];
+}
+
+function stableHash(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  return hash;
+}
+
 function policyToReactFlowGraph(policy: any, selectedNodeId = ""): { nodes: Node<AutomationPolicyNodeData>[]; edges: Edge[] } {
   const policyNodes = policy?.nodes ?? [];
   const policyEdges = policy?.edges ?? [];
+  const positions = layoutAutomationPolicyNodes(policyNodes, policyEdges);
   const nodes: Node<AutomationPolicyNodeData>[] = policyNodes.map((node: any, index: number) => ({
     id: node.id,
     type: "policyNode",
-    position: {
-      x: index * 330,
-      y: index % 2 === 0 ? 40 : 220
-    },
+    position: positions.get(node.id) ?? { x: index * 340, y: 160 },
     selected: node.id === selectedNodeId,
     data: {
       label: node.label ?? node.id,
@@ -2882,61 +4120,84 @@ function policyToReactFlowGraph(policy: any, selectedNodeId = ""): { nodes: Node
       timeoutMs: node.timeout?.timeoutMs ?? node.timeoutMs
     }
   }));
-  const edges: Edge[] = policyEdges.map((edge: any, index: number) => ({
-    id: edge.id ?? `${edge.fromNodeId}-${edge.toNodeId}-${index}`,
-    source: edge.fromNodeId,
-    target: edge.toNodeId,
-    sourceHandle: "next",
-    animated: false,
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-      color: edgeVisuals(edge).color,
-      width: 18,
-      height: 18
-    },
-    style: edgeVisuals(edge).style,
-    label: edge.label ?? (edge.probability !== undefined ? `${Math.round(Number(edge.probability) * 100)}%` : undefined)
-  }));
-  return { nodes, edges };
-}
-
-function routineToReactFlowGraph(policies: any[], selectedNodeId = ""): { nodes: Node<AutomationRoutineNodeData>[]; edges: Edge[] } {
-  const firstPolicy = policies[0]?.taskId ?? policies[0]?.policyId ?? "task policy";
-  const routineNodes: Array<{ id: string; x: number; y: number; data: AutomationRoutineNodeData }> = [
-    { id: "routine-start", x: 0, y: 130, data: { label: "Start", nodeType: "base", family: "entry", description: "Routine entry point", inputs: 0, outputs: 1 } },
-    { id: "routine-task", x: 330, y: 60, data: { label: "Run Task Policy", nodeType: "base", family: "task", description: `Execute ${firstPolicy}`, inputs: 1, outputs: 2 } },
-    { id: "routine-branch", x: 660, y: 60, data: { label: "Decision", nodeType: "base", family: "branch", description: "Choose the next routine path", inputs: 1, outputs: 2 } },
-    { id: "routine-approval", x: 990, y: 0, data: { label: "Approval Gate", nodeType: "base", family: "permission", description: "Require operator or PIN approval", inputs: 1, outputs: 1, privileged: true } },
-    { id: "routine-custom", x: 990, y: 190, data: { label: "Custom Action", nodeType: "custom", family: "extension", description: "User-defined routine step", inputs: 1, outputs: 1 } },
-    { id: "routine-recovery", x: 1320, y: 190, data: { label: "Recovery Handler", nodeType: "base", family: "recovery", description: "Handle failed routine branch", inputs: 1, outputs: 1 } },
-    { id: "routine-end", x: 1320, y: 0, data: { label: "End", nodeType: "base", family: "exit", description: "Routine completion", inputs: 2, outputs: 0 } }
-  ];
-  const nodes: Node<AutomationRoutineNodeData>[] = routineNodes.map((node) => ({
-    id: node.id,
-    type: "routineNode",
-    position: { x: node.x, y: node.y },
-    selected: node.id === selectedNodeId,
-    data: node.data
-  }));
-  const edges: Edge[] = [
-    { id: "start-task", source: "routine-start", target: "routine-task", label: "begin" },
-    { id: "task-branch", source: "routine-task", target: "routine-branch", label: "complete", probability: 0.9 },
-    { id: "task-recovery", source: "routine-task", target: "routine-recovery", label: "retry", probability: 0.55 },
-    { id: "branch-approval", source: "routine-branch", target: "routine-approval", label: "privileged", probability: 0.75 },
-    { id: "branch-custom", source: "routine-branch", target: "routine-custom", label: "custom", probability: 0.65 },
-    { id: "approval-end", source: "routine-approval", target: "routine-end", label: "success", probability: 0.9 },
-    { id: "custom-recovery", source: "routine-custom", target: "routine-recovery", label: "fallback", probability: 0.6 },
-    { id: "recovery-end", source: "routine-recovery", target: "routine-end", label: "recover", probability: 0.7 }
-  ].map((edge) => {
+  const outgoingCounts = new Map<string, number>();
+  const edges: Edge[] = policyEdges.map((edge: any, index: number) => {
+    const source = String(edge.fromNodeId ?? edge.source ?? "");
+    const count = outgoingCounts.get(source) ?? 0;
+    outgoingCounts.set(source, count + 1);
     const visuals = edgeVisuals(edge);
+    const label = edge.label ?? edge.kind ?? edge.type ?? (edge.probability !== undefined ? `${Math.round(Number(edge.probability) * 100)}%` : "Next");
+    const id = edge.id ?? `${edge.fromNodeId}-${edge.toNodeId}-${index}`;
     return {
-      ...edge,
+      id,
+      source: edge.fromNodeId,
+      target: edge.toNodeId,
       sourceHandle: "next",
-      markerEnd: { type: MarkerType.ArrowClosed, color: visuals.color, width: 18, height: 18 },
-      ...(visuals.style ? { style: visuals.style } : {})
+      type: "automationEdge",
+      animated: false,
+      data: { label, lane: automationEdgeLane(id, count) },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: visuals.color,
+        width: 18,
+        height: 18
+      },
+      style: visuals.style,
+      label
     };
   });
   return { nodes, edges };
+}
+
+function layoutAutomationPolicyNodes(policyNodes: any[], policyEdges: any[]): Map<string, { x: number; y: number }> {
+  const positions = new Map<string, { x: number; y: number }>();
+  const ids = policyNodes.map((node) => String(node.id));
+  const knownIds = new Set(ids);
+  const outgoing = new Map<string, string[]>();
+  const incomingCount = new Map<string, number>();
+  for (const id of ids) incomingCount.set(id, 0);
+  for (const edge of policyEdges) {
+    const source = String(edge.fromNodeId ?? edge.source ?? "");
+    const target = String(edge.toNodeId ?? edge.target ?? "");
+    if (!knownIds.has(source) || !knownIds.has(target)) continue;
+    outgoing.set(source, [...(outgoing.get(source) ?? []), target]);
+    incomingCount.set(target, (incomingCount.get(target) ?? 0) + 1);
+  }
+
+  const roots = ids.filter((id) => (incomingCount.get(id) ?? 0) === 0);
+  const queue = roots.length ? roots.map((id) => ({ id, level: 0 })) : ids.slice(0, 1).map((id) => ({ id, level: 0 }));
+  const levelById = new Map<string, number>();
+  while (queue.length) {
+    const current = queue.shift();
+    if (!current) continue;
+    const previousLevel = levelById.get(current.id);
+    if (previousLevel !== undefined) continue;
+    levelById.set(current.id, current.level);
+    for (const target of outgoing.get(current.id) ?? []) queue.push({ id: target, level: current.level + 1 });
+  }
+  for (const id of ids) {
+    if (!levelById.has(id)) levelById.set(id, Math.max(0, ...levelById.values()) + 1);
+  }
+
+  const lanesByLevel = new Map<number, string[]>();
+  for (const id of ids) {
+    const level = levelById.get(id) ?? 0;
+    lanesByLevel.set(level, [...(lanesByLevel.get(level) ?? []), id]);
+  }
+  for (const [level, levelIds] of lanesByLevel) {
+    const centerOffset = (levelIds.length - 1) / 2;
+    levelIds.forEach((id, index) => {
+      positions.set(id, {
+        x: level * 360,
+        y: 220 + (index - centerOffset) * 190
+      });
+    });
+  }
+  return positions;
+}
+
+function routineToReactFlowGraph(): { nodes: Node<AutomationRoutineNodeData>[]; edges: Edge[] } {
+  return { nodes: [], edges: [] };
 }
 
 function edgeVisuals(edge: any): { color: string; style: Edge["style"] } {

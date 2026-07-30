@@ -10,6 +10,7 @@ import {
   Database,
   GitBranch,
   Pause,
+  Play,
   PlayCircle,
   Redo2,
   Save,
@@ -100,7 +101,7 @@ export function ProgramWorkspace({ program, capabilities, user }: ProgramWorkspa
             <IconCommand label="Save" onClick={() => setCommandState("Saved", "Workspace layout and policy snapshot saved", false, false)}><Save size={15} aria-hidden /></IconCommand>
             <span className="command-divider" />
             <button className="button automation-command-menu" onClick={() => setCommandState("Recording", "Capturing operator timeline", true, true)} type="button" title="Record options"><Circle size={13} aria-hidden />Record<ChevronDown size={13} aria-hidden /></button>
-            <button className="button button-primary automation-command-menu" onClick={() => setCommandState("Running", "Running selected task from start", true)} type="button" title="Run options"><PlayCircle size={14} aria-hidden />Run<ChevronDown size={13} aria-hidden /></button>
+            <IconCommand className="run-command" label="Run" onClick={() => setCommandState("Running", "Running selected task from start", true)}><Play size={15} aria-hidden /></IconCommand>
             <IconCommand disabled={!automationStatus.running} label="Pause" onClick={() => setCommandState("Paused", "Execution paused at current node", false)}><Pause size={15} aria-hidden /></IconCommand>
             <IconCommand disabled={!automationStatus.running && automationStatus.state !== "Paused"} label="Stop" onClick={() => setCommandState("Stopped", "Run stopped by user", false)}><Square size={14} aria-hidden /></IconCommand>
             <IconCommand label="Step" onClick={() => setCommandState("Debug Step", "Advanced one policy action", false)}><StepForward size={15} aria-hidden /></IconCommand>
@@ -169,8 +170,8 @@ export function ProgramWorkspace({ program, capabilities, user }: ProgramWorkspa
   );
 }
 
-function IconCommand(props: { label: string; children: ReactNode; disabled?: boolean; onClick(): void }) {
-  return <button className="icon-button" disabled={props.disabled} onClick={props.onClick} type="button" title={props.label} aria-label={props.label}>{props.children}</button>;
+function IconCommand(props: { label: string; children: ReactNode; className?: string; disabled?: boolean; onClick(): void }) {
+  return <button className={props.className ? `icon-button ${props.className}` : "icon-button"} disabled={props.disabled} onClick={props.onClick} type="button" title={props.label} aria-label={props.label}>{props.children}</button>;
 }
 
 function MainProgramUi({ programId, user }: { programId: string; user: ProgramWorkspaceProps["user"] }) {

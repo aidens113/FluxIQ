@@ -4,6 +4,7 @@ export * from "./learning";
 export * from "./metadata";
 export * from "./mining";
 export * from "./model";
+export * from "./nodes";
 export * from "./normalization";
 export * from "./runtime";
 export * from "./storage";
