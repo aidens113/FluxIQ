@@ -1,5 +1,7 @@
 import type { JsonObject } from "../../../core";
 import type { EvidenceReference } from "./evidence";
+import type { AutomationStudioFlowDocument } from "./artifacts";
+import type { AutomationStudioGraphExecutionTrace } from "../runtime/executor";
 
 export type RuntimeActionAttempt = {
   attemptId: string;
@@ -12,5 +14,29 @@ export type RuntimeActionAttempt = {
   postStateFingerprint?: string;
   status: "proposed" | "dispatched" | "succeeded" | "failed" | "timed_out" | "cancelled";
   evidence: EvidenceReference[];
+  metadata?: JsonObject;
+};
+
+export type AutomationStudioRuntimeSessionStatus =
+  | "queued"
+  | "running"
+  | "waiting"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
+
+export type AutomationStudioRuntimeSession = {
+  schemaVersion: "0.1";
+  runId: string;
+  projectId?: string | null;
+  targetKind: "task" | "routine" | "flow";
+  targetId: string;
+  flowId: string;
+  status: AutomationStudioRuntimeSessionStatus;
+  queuedAt: number;
+  startedAt?: number;
+  finishedAt?: number;
+  flow: AutomationStudioFlowDocument;
+  trace?: AutomationStudioGraphExecutionTrace;
   metadata?: JsonObject;
 };

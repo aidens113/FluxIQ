@@ -25,11 +25,18 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   getProjectHierarchy: "get-project-hierarchy",
   saveProjectHierarchy: "save-project-hierarchy",
   listRecordings: "list-recordings",
+  listProjectArtifacts: "list-project-artifacts",
+  getProjectArtifact: "get-project-artifact",
+  saveProjectArtifact: "save-project-artifact",
   getRecording: "get-recording",
   createRecording: "create-recording",
   appendRecordingEntry: "append-recording-entry",
   finalizeRecording: "finalize-recording",
   normalizeRecording: "normalize-recording",
+  listNormalizedTimelines: "list-normalized-timelines",
+  listRuntimeSessions: "list-runtime-sessions",
+  startRuntimeSession: "start-runtime-session",
+  runRuntimeSession: "run-runtime-session",
   inspectStateDiff: "inspect-state-diff",
   listSignalRegistries: "list-signal-registries"
 } as const;

@@ -4154,6 +4154,7 @@ select {
 .automation-edge-delete-button {
   position: absolute;
   z-index: 10;
+  pointer-events: all;
 }
 
 .automation-node-delete-button {
@@ -4294,16 +4295,20 @@ select {
 }
 
 .automation-flow-handle {
+  top: 50%;
   width: 12px;
   height: 12px;
   border: 2px solid var(--color-surface);
+  transform: translateY(-50%);
 }
 
 .automation-flow-handle.input {
+  left: -14px;
   background: var(--color-text-muted);
 }
 
 .automation-flow-handle.output {
+  right: -14px;
   background: var(--color-primary);
 }
 
@@ -4339,6 +4344,7 @@ select {
 .automation-node-port-column > span {
   --port-color: #6b7785;
   --port-bg: #f4f6f8;
+  position: relative;
   display: grid;
   grid-template-columns: 7px minmax(0, 1fr);
   align-items: center;

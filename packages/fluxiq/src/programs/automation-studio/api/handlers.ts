@@ -9,6 +9,7 @@ import {
   type NormalizeRecordingRequest,
   type RecordingProjectRequest
 } from "./contracts";
+import type { AutomationStudioFlowDocument, AutomationStudioProjectArtifactKind } from "../model";
 import type { AutomationStudioService } from "../runtime/service";
 import type { IdentityAccessService } from "../../identity-access";
 
@@ -130,6 +131,31 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   });
   registry.register({
     programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectArtifacts,
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown } : {};
+      return { ok: true, payload: { artifacts: await service.listProjectArtifacts(String(payload.projectId ?? "")) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProjectArtifact,
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; kind?: unknown; artifactId?: unknown } : {};
+      return { ok: true, payload: { artifact: await service.getProjectArtifact(String(payload.projectId ?? ""), String(payload.kind ?? "") as AutomationStudioProjectArtifactKind, String(payload.artifactId ?? "")) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveProjectArtifact,
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; kind?: unknown; artifact?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: { artifact: await service.saveProjectArtifact({ projectId: String(payload.projectId ?? ""), kind: String(payload.kind ?? "") as AutomationStudioProjectArtifactKind, artifact: payload.artifact }) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRecording,
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as RecordingProjectRequest & { recordingId?: unknown } : {};
@@ -170,6 +196,38 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as NormalizeRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
       return { ok: true, payload: { normalizedTimeline: await service.normalizeRecording(payload) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listNormalizedTimelines,
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as RecordingProjectRequest : {};
+      return { ok: true, payload: { normalizedTimelines: payload.projectId ? await service.listProjectNormalizedTimelines(payload.projectId) : [] } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRuntimeSessions,
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown } : {};
+      return { ok: true, payload: { runtimeSessions: await service.listRuntimeSessions(String(payload.projectId ?? "")) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.startRuntimeSession,
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; flow?: AutomationStudioFlowDocument; flowId?: string; targetKind?: any; targetId?: string; inputs?: any } : {};
+      return { ok: true, payload: { runtimeSession: await service.startRuntimeSession(payload) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession,
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number } : {};
+      return { ok: true, payload: { runtimeSession: await service.runRuntimeSession(payload) } };
     }
   });
   registry.register({

@@ -1,14 +1,22 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import type { AutomationStudioSnapshot } from "../api";
 import type { AutomationStudioProject, AutomationStudioProjectCategory, AutomationStudioProjectHierarchy } from "../api/contracts";
 import {
   appendRecordingEntry,
   createAutomationStudioFixture,
+  createBlankAutomationStudioFlow,
   createRecordingSession,
   diffStateSnapshots,
   finalizeRecordingSession,
+  type AutomationStudioConfigArtifact,
+  type AutomationStudioFlowDocument,
+  type AutomationStudioProjectArtifacts,
+  type AutomationStudioProjectArtifactKind,
+  type AutomationStudioRoutineArtifact,
+  type AutomationStudioRuntimeSession,
+  type AutomationStudioTaskArtifact,
   type AppendRecordingEntryInput,
   type CreateRecordingSessionInput,
   type RecordingSession,
@@ -17,6 +25,7 @@ import {
 } from "../model";
 import { normalizeRecordingTimeline, type NormalizationOptions, type NormalizedTimeline } from "../normalization";
 import { automationNodeClasses } from "../nodes";
+import { runAutomationStudioGraph } from "./executor";
 import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage";
 import type { JsonObject } from "../../../core";
 import {
@@ -40,6 +49,10 @@ type AutomationStudioProjectIndex = {
 type RecordingIndex = {
   recordings: { recordingId: string; taskId?: string; startedAt: number; endedAt?: number; updatedAt: number }[];
   normalizedTimelines: { normalizedTimelineId: string; recordingId: string; generatedAt: number }[];
+};
+
+type RuntimeIndex = {
+  sessions: { runId: string; targetKind: AutomationStudioRuntimeSession["targetKind"]; targetId: string; status: AutomationStudioRuntimeSession["status"]; updatedAt: number }[];
 };
 
 export class AutomationStudioService {
@@ -139,6 +152,138 @@ export class AutomationStudioService {
   async listSignalRegistries(): Promise<SignalRegistry[]> {
     await this.ready;
     return await this.repositories.signalRegistries.list();
+  }
+
+  async listProjectArtifacts(projectId: string): Promise<AutomationStudioProjectArtifacts> {
+    await this.findProject(projectId);
+    return {
+      tasks: await this.readProjectArtifactList<AutomationStudioTaskArtifact>(projectId, "tasks"),
+      routines: await this.readProjectArtifactList<AutomationStudioRoutineArtifact>(projectId, "routines"),
+      configs: await this.readProjectArtifactList<AutomationStudioConfigArtifact>(projectId, "configs"),
+      flows: await this.readProjectArtifactList<AutomationStudioFlowDocument>(projectId, "flows")
+    };
+  }
+
+  async saveProjectArtifact(input: { projectId: string; kind: AutomationStudioProjectArtifactKind; artifact: unknown }): Promise<unknown> {
+    await this.findProject(input.projectId);
+    if (!input.artifact || typeof input.artifact !== "object" || Array.isArray(input.artifact)) throw new Error("Artifact object is required.");
+    const artifact = input.artifact as Record<string, unknown>;
+    const id = this.projectArtifactId(input.kind, artifact);
+    const now = Date.now();
+    const withTimestamps = {
+      ...artifact,
+      schemaVersion: typeof artifact.schemaVersion === "string" ? artifact.schemaVersion : "0.1",
+      createdAt: typeof artifact.createdAt === "number" ? artifact.createdAt : now,
+      updatedAt: now
+    } as unknown as JsonObject;
+    await new ProgramJsonStore<JsonObject>(this.projectArtifactFile(input.projectId, input.kind, id), () => ({})).write(withTimestamps);
+    return withTimestamps;
+  }
+
+  async getProjectArtifact(projectId: string, kind: AutomationStudioProjectArtifactKind, artifactId: string): Promise<unknown> {
+    await this.findProject(projectId);
+    const artifact = await new ProgramJsonStore<JsonObject>(this.projectArtifactFile(projectId, kind, artifactId), () => ({})).read();
+    if (!Object.keys(artifact).length) throw new Error(`Unknown Automation Studio ${kind}: ${artifactId}`);
+    return artifact;
+  }
+
+  async createDefaultFlow(input: { projectId: string; ownerKind: "task" | "routine"; ownerId: string; name: string; description?: string }): Promise<AutomationStudioFlowDocument> {
+    const flow = createBlankAutomationStudioFlow({
+      flowId: `${input.ownerKind}.${safeSegment(input.ownerId)}.flow`,
+      ownerKind: input.ownerKind,
+      ownerId: input.ownerId,
+      name: input.name,
+      ...(input.description ? { description: input.description } : {})
+    });
+    await this.saveProjectArtifact({ projectId: input.projectId, kind: "flow", artifact: flow });
+    return flow;
+  }
+
+  async listProjectNormalizedTimelines(projectId: string): Promise<NormalizedTimeline[]> {
+    await this.loadProjectRecordings(projectId);
+    const index = await this.readRecordingIndex(projectId);
+    const timelines: NormalizedTimeline[] = [];
+    for (const item of index.normalizedTimelines ?? []) {
+      const timeline = await this.repositories.normalizedTimelines.get(item.normalizedTimelineId);
+      if (timeline) timelines.push(timeline);
+    }
+    return timelines;
+  }
+
+  async startRuntimeSession(input: {
+    projectId?: string | null;
+    targetKind?: AutomationStudioRuntimeSession["targetKind"];
+    targetId?: string;
+    flow?: AutomationStudioFlowDocument;
+    flowId?: string;
+    inputs?: JsonObject;
+    metadata?: JsonObject;
+  }): Promise<AutomationStudioRuntimeSession> {
+    const flow = input.flow ?? (input.projectId && input.flowId ? await this.getProjectArtifact(input.projectId, "flow", input.flowId) as AutomationStudioFlowDocument : undefined);
+    if (!flow) throw new Error("A flow document or project flow ID is required.");
+    const now = Date.now();
+    const session: AutomationStudioRuntimeSession = {
+      schemaVersion: "0.1",
+      runId: randomUUID(),
+      ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
+      targetKind: input.targetKind ?? (flow.ownerKind === "policy" ? "flow" : flow.ownerKind),
+      targetId: input.targetId ?? flow.ownerId,
+      flowId: flow.flowId,
+      status: "queued",
+      queuedAt: now,
+      flow,
+      metadata: { ...(input.metadata ?? {}), inputs: input.inputs ?? {} }
+    };
+    if (input.projectId) await this.writeRuntimeSession(input.projectId, session);
+    return session;
+  }
+
+  async runRuntimeSession(input: {
+    projectId?: string | null;
+    runId?: string;
+    flow?: AutomationStudioFlowDocument;
+    flowId?: string;
+    inputs?: JsonObject;
+    maxSteps?: number;
+  }): Promise<AutomationStudioRuntimeSession> {
+    const existing = input.projectId && input.runId ? await this.getRuntimeSession(input.projectId, input.runId) : null;
+    const startInput: Parameters<AutomationStudioService["startRuntimeSession"]>[0] = {};
+    if (input.projectId !== undefined) startInput.projectId = input.projectId;
+    if (input.flow !== undefined) startInput.flow = input.flow;
+    if (input.flowId !== undefined) startInput.flowId = input.flowId;
+    if (input.inputs !== undefined) startInput.inputs = input.inputs;
+    const session = existing ?? await this.startRuntimeSession(startInput);
+    const startedAt = Date.now();
+    const graphOptions: Parameters<typeof runAutomationStudioGraph>[1] = {
+      inputs: (input.inputs ?? session.metadata?.inputs ?? {}) as Record<string, any>
+    };
+    if (input.maxSteps !== undefined) graphOptions.maxSteps = input.maxSteps;
+    const trace = await runAutomationStudioGraph(session.flow, graphOptions);
+    const next: AutomationStudioRuntimeSession = {
+      ...session,
+      status: trace.status,
+      startedAt: session.startedAt ?? startedAt,
+      ...(trace.finishedAt !== undefined ? { finishedAt: trace.finishedAt } : {}),
+      trace
+    };
+    if (input.projectId) await this.writeRuntimeSession(input.projectId, next);
+    return next;
+  }
+
+  async getRuntimeSession(projectId: string, runId: string): Promise<AutomationStudioRuntimeSession | null> {
+    await this.findProject(projectId);
+    const stored = await new ProgramJsonStore<JsonObject>(this.projectFile(projectId, "runtime", "sessions", `${safeSegment(runId)}.json`), () => ({})).read();
+    return stored.session as unknown as AutomationStudioRuntimeSession | undefined ?? null;
+  }
+
+  async listRuntimeSessions(projectId: string): Promise<AutomationStudioRuntimeSession[]> {
+    const index = await this.readRuntimeIndex(projectId);
+    const sessions: AutomationStudioRuntimeSession[] = [];
+    for (const item of index.sessions ?? []) {
+      const session = await this.getRuntimeSession(projectId, item.runId);
+      if (session) sessions.push(session);
+    }
+    return sessions.sort((left, right) => (right.startedAt ?? right.queuedAt) - (left.startedAt ?? left.queuedAt));
   }
 
   async listProjects(): Promise<{ categories: AutomationStudioProjectCategory[]; projects: AutomationStudioProject[] }> {
@@ -383,12 +528,17 @@ export class AutomationStudioService {
       mkdir(path.join(root, "tasks"), { recursive: true }),
       mkdir(path.join(root, "routines"), { recursive: true }),
       mkdir(path.join(root, "configs"), { recursive: true }),
+      mkdir(path.join(root, "flows"), { recursive: true }),
       mkdir(path.join(root, "recordings"), { recursive: true }),
       mkdir(path.join(root, "recordings", "sessions"), { recursive: true }),
       mkdir(path.join(root, "recordings", "normalized"), { recursive: true }),
       mkdir(path.join(root, "recordings", "snapshots"), { recursive: true }),
       mkdir(path.join(root, "recordings", "indexes"), { recursive: true }),
       mkdir(path.join(root, "policies"), { recursive: true }),
+      mkdir(path.join(root, "runtime"), { recursive: true }),
+      mkdir(path.join(root, "runtime", "sessions"), { recursive: true }),
+      mkdir(path.join(root, "runtime", "indexes"), { recursive: true }),
+      mkdir(path.join(root, "state"), { recursive: true }),
       mkdir(path.join(root, "custom-nodes"), { recursive: true }),
       mkdir(path.join(root, "artifacts"), { recursive: true })
     ]);
@@ -406,6 +556,60 @@ export class AutomationStudioService {
   private async readRecordingIndex(projectId: string): Promise<RecordingIndex> {
     await this.findProject(projectId);
     return await new ProgramJsonStore<RecordingIndex>(this.projectFile(projectId, "recordings", "indexes", "recordings.json"), () => ({ recordings: [], normalizedTimelines: [] })).read();
+  }
+
+  private async readRuntimeIndex(projectId: string): Promise<RuntimeIndex> {
+    await this.findProject(projectId);
+    return await new ProgramJsonStore<RuntimeIndex>(this.projectFile(projectId, "runtime", "indexes", "sessions.json"), () => ({ sessions: [] })).read();
+  }
+
+  private async writeRuntimeSession(projectId: string, session: AutomationStudioRuntimeSession): Promise<void> {
+    await this.ensureProjectStructure(projectId);
+    await new ProgramJsonStore<JsonObject>(this.projectFile(projectId, "runtime", "sessions", `${safeSegment(session.runId)}.json`), () => ({})).write({ session: session as unknown as JsonObject });
+    await new ProgramJsonStore<RuntimeIndex>(this.projectFile(projectId, "runtime", "indexes", "sessions.json"), () => ({ sessions: [] })).update((index) => ({
+      sessions: upsertBy(index.sessions ?? [], "runId", {
+        runId: session.runId,
+        targetKind: session.targetKind,
+        targetId: session.targetId,
+        status: session.status,
+        updatedAt: Date.now()
+      })
+    }));
+  }
+
+  private async readProjectArtifactList<TArtifact>(projectId: string, folder: "tasks" | "routines" | "configs" | "flows"): Promise<TArtifact[]> {
+    await this.ensureProjectStructure(projectId);
+    if (!this.projectRootDir) return [];
+    const dir = path.join(this.projectDirectory(projectId), folder);
+    let files: string[] = [];
+    try {
+      files = await readdir(dir);
+    } catch {
+      return [];
+    }
+    const artifacts: TArtifact[] = [];
+    for (const file of files.filter((item) => item.endsWith(".json"))) {
+      const data = await new ProgramJsonStore<JsonObject>(path.join(dir, file), () => ({})).read();
+      if (Object.keys(data).length) artifacts.push(data as unknown as TArtifact);
+    }
+    return artifacts;
+  }
+
+  private projectArtifactFile(projectId: string, kind: AutomationStudioProjectArtifactKind, artifactId: string): string {
+    return this.projectFile(projectId, this.projectArtifactFolder(kind), `${safeSegment(artifactId)}.json`);
+  }
+
+  private projectArtifactFolder(kind: AutomationStudioProjectArtifactKind): "tasks" | "routines" | "configs" | "flows" {
+    if (kind === "task") return "tasks";
+    if (kind === "routine") return "routines";
+    if (kind === "config") return "configs";
+    return "flows";
+  }
+
+  private projectArtifactId(kind: AutomationStudioProjectArtifactKind, artifact: Record<string, unknown>): string {
+    const id = kind === "task" ? artifact.taskId : kind === "routine" ? artifact.routineId : kind === "config" ? artifact.configId : artifact.flowId;
+    if (typeof id !== "string" || !id.trim()) throw new Error(`${kind} ID is required.`);
+    return id;
   }
 
   private async writeRecordingIndex(projectId: string, mutator: (index: RecordingIndex) => RecordingIndex): Promise<RecordingIndex> {

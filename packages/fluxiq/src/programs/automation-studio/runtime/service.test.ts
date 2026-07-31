@@ -58,4 +58,36 @@ describe("AutomationStudioService recording persistence", () => {
     await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.service-test", "recording.json"), "utf8")).resolves.toContain("\"recordingId\": \"recording.service-test\"");
     await expect(readFile(path.join(projectRoot, "recordings", "indexes", "recordings.json"), "utf8")).resolves.toContain("\"normalizedTimelineId\"");
   });
+
+  it("stores project artifacts and runtime sessions in project folders", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Runtime Project" });
+    const flow = await service.createDefaultFlow({ projectId: project.id, ownerKind: "routine", ownerId: "routine.runtime", name: "Runtime Flow" });
+    const runnableFlow = {
+      ...flow,
+      nodes: [
+        { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
+        { id: "constant", definitionId: "builtin.data.constant", parameterValues: { value: "ok" } },
+        { id: "end", definitionId: "builtin.control.end", parameterValues: { status: "success" } }
+      ],
+      edges: [
+        { id: "start.constant", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "constant", targetPortId: "in" },
+        { id: "constant.end", sourceNodeId: "constant", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }
+      ]
+    };
+    await service.saveProjectArtifact({ projectId: project.id, kind: "flow", artifact: runnableFlow });
+
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
+    const reloaded = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const artifacts = await reloaded.listProjectArtifacts(project.id);
+    const runs = await reloaded.listRuntimeSessions(project.id);
+
+    expect(artifacts.flows).toHaveLength(1);
+    expect(run.status).toBe("succeeded");
+    expect(runs[0]).toMatchObject({ runId: run.runId, status: "succeeded" });
+
+    const projectRoot = path.join(tempRoot, "programs", "automation-studio", "projects", project.id);
+    await expect(readFile(path.join(projectRoot, "flows", `${flow.flowId}.json`), "utf8")).resolves.toContain("\"flowId\"");
+    await expect(readFile(path.join(projectRoot, "runtime", "indexes", "sessions.json"), "utf8")).resolves.toContain(run.runId);
+  });
 });

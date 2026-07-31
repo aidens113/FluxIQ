@@ -1,4 +1,5 @@
 export * from "./actions";
+export * from "./artifacts";
 export * from "./conditions";
 export * from "./descriptors";
 export * from "./evidence";

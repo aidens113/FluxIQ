@@ -489,6 +489,55 @@ and snapshot files are deliberate helper artifacts for later inspectors,
 recording scrubbers, diff viewers, and export tooling; they do not replace the
 canonical recording document.
 
+Project-owned authoring artifacts are now explicit documents instead of only
+hierarchy rows. Each project reserves:
+
+```text
+.fluxiq/data/programs/automation-studio/projects/{projectId}/
+  tasks/{taskId}.json
+  routines/{routineId}.json
+  configs/{configId}.json
+  flows/{flowId}.json
+  runtime/sessions/{runId}.json
+  runtime/indexes/sessions.json
+  state/
+```
+
+Task, routine, config, and flow files are the canonical project edit targets.
+Hierarchy rows are navigation and organization; they should point at these
+documents rather than becoming the only source of task/routine identity. Flow
+documents use Automation Studio node definition IDs, per-node parameter values,
+named source/target ports, positions, labels, descriptions, and metadata so the
+visual graph and executor speak the same language.
+
+Automation Studio now has a neutral graph executor for these flow documents.
+The executor starts at the `builtin.control.start` node when present, runs
+built-in node executors, carries typed data outputs into later node inputs,
+follows named route ports such as `success`, `failed`, `true`, `false`, and
+records an execution trace with attempts, outputs, effects, status, and a final
+message. This executor is intentionally separate from host-specific automation:
+browser, scraping, lead-generation, desktop, or game adapters plug in later
+through the adapter contract rather than living in FluxIQ core.
+
+Runtime sessions persist per project. A session stores the target kind, target
+ID, flow ID, status, queued/started/finished timestamps, the flow snapshot used
+for the run, and the execution trace. The API exposes project artifact
+read/write, normalized timeline listing, runtime session listing, session
+start, and session run endpoints. Recording mutation endpoints remain
+privileged through the shared PIN authorization path.
+
+The runtime adapter contract is the boundary for importer repositories. An
+adapter advertises capabilities, optional state schemas, optional action
+definitions, observation capture, and action execution. A future web automation
+repository should provide DOM/browser/session implementations of that contract;
+FluxIQ core should stay domain-neutral.
+
+The recording/state bridge includes a controller that can subscribe to an
+`AutomationStateStore` and append state checkpoints or deltas into a
+`RecordingSession`. This is the core pattern for live recording: host adapters
+observe external systems, write normalized state, and the controller turns those
+changes into durable evidence.
+
 Routine editors open as blank canvases until a user adds nodes from the palette.
 They must not seed fake routine nodes just because a routine tab opens. Policy
 editors may display generated policy nodes from the selected task policy, but

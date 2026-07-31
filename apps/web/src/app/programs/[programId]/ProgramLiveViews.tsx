@@ -271,6 +271,9 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const urlProjectId = searchParams.get("project");
   const [snapshot, setSnapshot] = useState<any>(null);
   const [projectRecordings, setProjectRecordings] = useState<any[]>([]);
+  const [projectTimelines, setProjectTimelines] = useState<any[]>([]);
+  const [runtimeSessions, setRuntimeSessions] = useState<any[]>([]);
+  const [automationActionStatus, setAutomationActionStatus] = useState("");
   const [projects, setProjects] = useState<AutomationStudioProject[]>([]);
   const [projectCategories, setProjectCategories] = useState<AutomationStudioProjectCategory[]>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
@@ -341,10 +344,18 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     let cancelled = false;
     if (!activeProjectId) {
       setProjectRecordings([]);
+      setProjectTimelines([]);
+      setRuntimeSessions([]);
       return;
     }
     void api.post<{ recordings: any[] }>("list-recordings", { projectId: activeProjectId }).then((result) => {
       if (!cancelled && result.ok) setProjectRecordings(result.payload?.recordings ?? []);
+    });
+    void api.post<{ normalizedTimelines: any[] }>("list-normalized-timelines", { projectId: activeProjectId }).then((result) => {
+      if (!cancelled && result.ok) setProjectTimelines(result.payload?.normalizedTimelines ?? []);
+    });
+    void api.post<{ runtimeSessions: any[] }>("list-runtime-sessions", { projectId: activeProjectId }).then((result) => {
+      if (!cancelled && result.ok) setRuntimeSessions(result.payload?.runtimeSessions ?? []);
     });
     return () => {
       cancelled = true;
@@ -364,7 +375,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
 
   const canonical = snapshot?.payload?.canonical ?? {};
   const recordings = mergeById(projectRecordings, canonical.recordingSessions ?? [], "recordingId");
-  const timelines = canonical.normalizedTimelines ?? [];
+  const timelines = mergeById(projectTimelines, canonical.normalizedTimelines ?? [], "normalizedTimelineId");
   const registries = canonical.signalRegistries ?? [];
   const models = canonical.learnedTaskModels ?? [];
   const policies = canonical.policyGraphs ?? [];
@@ -697,11 +708,72 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     void refreshProjects();
   }
 
+  async function refreshProjectRuntimeState(projectId = activeProjectId) {
+    if (!projectId) return;
+    const [recordingResult, timelineResult, runtimeResult] = await Promise.all([
+      api.post<{ recordings: any[] }>("list-recordings", { projectId }),
+      api.post<{ normalizedTimelines: any[] }>("list-normalized-timelines", { projectId }),
+      api.post<{ runtimeSessions: any[] }>("list-runtime-sessions", { projectId })
+    ]);
+    if (recordingResult.ok) setProjectRecordings(recordingResult.payload?.recordings ?? []);
+    if (timelineResult.ok) setProjectTimelines(timelineResult.payload?.normalizedTimelines ?? []);
+    if (runtimeResult.ok) setRuntimeSessions(runtimeResult.payload?.runtimeSessions ?? []);
+  }
+
+  async function runCurrentAutomationFlow() {
+    if (!activeProjectId || !activeProject) return;
+    const project = activeProject;
+    setAutomationActionStatus("Running flow...");
+    const result = await api.post<{ runtimeSession: any }>("run-runtime-session", {
+      projectId: activeProjectId,
+      flow: createStudioSmokeFlow(activeProjectId, project.name)
+    });
+    if (!result.ok || !result.payload?.runtimeSession) {
+      setAutomationActionStatus(result.error ?? "Run failed.");
+      return;
+    }
+    setRuntimeSessions((current) => [result.payload!.runtimeSession, ...current.filter((session) => session.runId !== result.payload!.runtimeSession.runId)]);
+    setAutomationActionStatus(`Run ${result.payload.runtimeSession.status}.`);
+    openView("runtime-debug", "preview", "main");
+  }
+
+  async function createProjectRecording() {
+    if (!activeProjectId || !activeProject) return;
+    const project = activeProject;
+    const authorizationPin = window.prompt("Enter PIN to create a recording") ?? "";
+    if (authorizationPin.length < 4) {
+      setAutomationActionStatus("PIN is required to create a recording.");
+      return;
+    }
+    const recordingId = `recording.${Date.now()}`;
+    const result = await api.post<{ recording: any }>("create-recording", {
+      projectId: activeProjectId,
+      recordingId,
+      taskId: selectedPolicy?.taskId ?? "task.unspecified",
+      authorizationPin,
+      environment: { id: "automation-studio.local", label: project.name, kind: "studio", domainId: null },
+      initialState: { timestamp: Date.now(), namespaces: {} },
+      metadata: { createdFrom: "automation-studio-ui" }
+    });
+    if (!result.ok || !result.payload?.recording) {
+      setAutomationActionStatus(result.error ?? "Recording could not be created.");
+      return;
+    }
+    setProjectRecordings((current) => [result.payload!.recording, ...current.filter((recording) => recording.recordingId !== recordingId)]);
+    setSelectionAndFollow({ kind: "recording", id: recordingId });
+    setAutomationActionStatus("Recording session created.");
+    await refreshProjectRuntimeState(activeProjectId);
+  }
+
   function closeProject() {
     setActiveProjectId(null);
     setLoadedProjectHierarchyId(null);
     setCustomHierarchyNodes([]);
     setDeletedHierarchyIds([]);
+    setProjectRecordings([]);
+    setProjectTimelines([]);
+    setRuntimeSessions([]);
+    setAutomationActionStatus("");
     setWorkspacePrefs(defaultAutomationWorkspacePrefs());
     lastSavedHierarchySignatureRef.current = "";
     setSelection(null);
@@ -1107,6 +1179,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
                       policy={selectedPolicy}
                       problems={problems}
                       recordings={recordings}
+                      runtimeSessions={runtimeSessions}
                       dockTab={dockTab}
                       selectedEntry={selectedEntry}
                       selectedNode={selectedNode}
@@ -1279,6 +1352,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
           <div className="automation-workspace-actions">
             <button className="button" onClick={closeProject} type="button"><FolderOpen size={14} aria-hidden />Back to Projects</button>
             <span>{workspacePrefs.windows.length} window{workspacePrefs.windows.length === 1 ? "" : "s"}</span>
+            {automationActionStatus ? <span>{automationActionStatus}</span> : null}
           </div>
           <div className="automation-studio-context">
             <div className="automation-preferences-anchor">
@@ -1600,6 +1674,7 @@ function AutomationViewRenderer(props: {
   policy: any;
   problems: any[];
   recordings: any[];
+  runtimeSessions: any[];
   dockTab: AutomationDockTab;
   selectedEntry: any;
   selectedNode: any;
@@ -1615,7 +1690,7 @@ function AutomationViewRenderer(props: {
   if (props.view.type === "design") return <AutomationPolicyCanvas entries={props.entries} policy={props.policy} recordings={props.recordings} selectedNode={props.selectedNode} selectedTimeline={props.selectedTimeline} signals={props.signals} setSelection={props.setSelection} />;
   if (props.view.type === "recordings") return <AutomationTimelineView entries={props.entries} notes={props.notes} selectedEntry={props.selectedEntry} setSelection={props.setSelection} />;
   if (props.view.type === "signals") return <AutomationSignalWorkspace signals={props.signals} setSelection={props.setSelection} />;
-  if (props.view.type === "runtime") return <AutomationRuntimeWorkspace timelines={props.selectedTimeline ? [props.selectedTimeline] : []} models={props.models} policies={props.policies} />;
+  if (props.view.type === "runtime") return <AutomationRuntimeWorkspace timelines={props.selectedTimeline ? [props.selectedTimeline] : []} models={props.models} policies={props.policies} runtimeSessions={props.runtimeSessions} />;
   if (props.view.type === "problems") return <AutomationProblemsWorkspace problems={props.problems} />;
   if (props.view.type === "assistant") return <AutomationAssistantView node={props.selectedNode} recording={props.selectedRecording} signals={props.signals} />;
   if (props.view.type === "inspector") return <AutomationInspector selection={props.selection} policy={props.policy} node={props.selectedNode} recording={props.selectedRecording} entry={props.selectedEntry} signal={props.selectedSignal} setSelection={props.setSelection} />;
@@ -2209,6 +2284,29 @@ function timelineEventWidth(entry: any): string {
   return "130px";
 }
 
+function createStudioSmokeFlow(projectId: string, projectName: string): JsonObject {
+  const now = Date.now();
+  return {
+    schemaVersion: "0.1",
+    flowId: `flow.${projectId}.manual-run`,
+    ownerKind: "routine",
+    ownerId: projectId,
+    name: `${projectName} Manual Run`,
+    nodes: [
+      { id: "start", definitionId: "builtin.control.start", label: "Start", parameterValues: {} },
+      { id: "status", definitionId: "builtin.data.constant", label: "Project Status", parameterValues: { value: "Automation Studio runtime is connected." } },
+      { id: "end", definitionId: "builtin.control.end", label: "End", parameterValues: { status: "success" } }
+    ],
+    edges: [
+      { id: "edge.start.status", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "status", targetPortId: "in", label: "Next" },
+      { id: "edge.status.end", sourceNodeId: "status", sourcePortId: "success", targetNodeId: "end", targetPortId: "in", label: "Done" }
+    ],
+    createdAt: now,
+    updatedAt: now,
+    metadata: { createdFrom: "automation-studio-ui" }
+  };
+}
+
 function AutomationAssistantView(props: { node: any; recording: any; signals: any[] }) {
   const [assistantText, setAssistantText] = useState("");
   const [proposal, setProposal] = useState("No proposal selected.");
@@ -2389,7 +2487,7 @@ function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelec
   const [routineEdges, setRoutineEdges] = useState(graph.edges);
   useEffect(() => {
     setRoutineNodes((current) => syncGraphNodes(current, graph.nodes));
-    setRoutineEdges(graph.edges);
+    setRoutineEdges(rebalanceAutomationEdgeLanes(graph.edges, graph.nodes));
   }, [graph.edges, graph.nodes]);
   const palette = automationEditorPalette
     .map((group) => ({ ...group, nodes: group.nodes.filter((node) => node.scope === "routine" || node.scope === "both") }))
@@ -2432,7 +2530,7 @@ function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelec
     const nodeIds = new Set(selectedRoutineNodeId ? [selectedRoutineNodeId] : []);
     const edgeIds = new Set(selectedRoutineEdgeIds);
     setRoutineNodes((nodes) => nodes.filter((node) => !nodeIds.has(node.id)));
-    setRoutineEdges((edges) => edges.filter((edge) => !edgeIds.has(edge.id) && !nodeIds.has(edge.source) && !nodeIds.has(edge.target)));
+    setRoutineEdges((edges) => rebalanceAutomationEdgeLanes(edges.filter((edge) => !edgeIds.has(edge.id) && !nodeIds.has(edge.source) && !nodeIds.has(edge.target)), routineNodes));
     setSelectedRoutineNodeId("");
     setSelectedRoutineEdgeIds([]);
   };
@@ -2442,14 +2540,14 @@ function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelec
       const nodeId = (event as CustomEvent<{ nodeId?: string }>).detail?.nodeId;
       if (!nodeId) return;
       setRoutineNodes((nodes) => nodes.filter((node) => node.id !== nodeId));
-      setRoutineEdges((edges) => edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+      setRoutineEdges((edges) => rebalanceAutomationEdgeLanes(edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId), routineNodes));
       setSelectedRoutineNodeId((current) => current === nodeId ? "" : current);
     }
     function handleDeleteEdge(event: Event) {
       if (!isFlowMode) return;
       const edgeId = (event as CustomEvent<{ edgeId?: string }>).detail?.edgeId;
       if (!edgeId) return;
-      setRoutineEdges((edges) => edges.filter((edge) => edge.id !== edgeId));
+      setRoutineEdges((edges) => rebalanceAutomationEdgeLanes(edges.filter((edge) => edge.id !== edgeId), routineNodes));
       setSelectedRoutineEdgeIds((ids) => ids.filter((id) => id !== edgeId));
     }
     function handleUpdateParameters(event: Event) {
@@ -2491,15 +2589,19 @@ function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelec
             deleteKeyCode={isFlowMode ? ["Backspace", "Delete"] : null}
             onInit={setRoutineFlow}
             isValidConnection={(connection) => automationConnectionIsValid(connection, routineNodes)}
-            onConnect={(connection) => isFlowMode ? setRoutineEdges((edges) => addEdge(createAutomationConnectionEdge(connection, edges, "routine-edge", routineNodes), edges)) : undefined}
-            onEdgesChange={(changes: EdgeChange[]) => isFlowMode ? setRoutineEdges((edges) => applyEdgeChanges(changes, edges)) : undefined}
+            onConnect={(connection) => isFlowMode ? setRoutineEdges((edges) => rebalanceAutomationEdgeLanes(addEdge(createAutomationConnectionEdge(connection, edges, "routine-edge", routineNodes), edges), routineNodes)) : undefined}
+            onEdgesChange={(changes: EdgeChange[]) => isFlowMode ? setRoutineEdges((edges) => rebalanceAutomationEdgeLanes(applyEdgeChanges(changes, edges), routineNodes)) : undefined}
             onEdgesDelete={(deletedEdges) => setSelectedRoutineEdgeIds((ids) => ids.filter((id) => !deletedEdges.some((edge) => edge.id === id)))}
             onNodesDelete={(deletedNodes) => {
               const deletedIds = new Set(deletedNodes.map((node) => node.id));
-              setRoutineEdges((edges) => edges.filter((edge) => !deletedIds.has(edge.source) && !deletedIds.has(edge.target)));
+              setRoutineEdges((edges) => rebalanceAutomationEdgeLanes(edges.filter((edge) => !deletedIds.has(edge.source) && !deletedIds.has(edge.target)), routineNodes));
               if (deletedIds.has(selectedRoutineNodeId)) setSelectedRoutineNodeId("");
             }}
-            onNodesChange={(changes: NodeChange<Node<AutomationRoutineNodeData>>[]) => isFlowMode ? setRoutineNodes((nodes) => applyNodeChanges(changes, nodes)) : undefined}
+            onNodesChange={(changes: NodeChange<Node<AutomationRoutineNodeData>>[]) => isFlowMode ? setRoutineNodes((nodes) => {
+              const nextNodes = applyNodeChanges(changes, nodes);
+              setRoutineEdges((edges) => rebalanceAutomationEdgeLanes(edges, nextNodes));
+              return nextNodes;
+            }) : undefined}
             onNodeClick={(_event, node) => {
               setSelectedRoutineNodeId((current) => current === node.id ? current : node.id);
               const key = `node:${node.id}`;
@@ -2750,7 +2852,7 @@ function AutomationPolicyCanvas(props: { entries: any[]; policy: any; recordings
   const [policyEdges, setPolicyEdges] = useState(graph.edges);
   useEffect(() => {
     setPolicyNodes((current) => syncGraphNodes(current, graph.nodes));
-    setPolicyEdges(graph.edges);
+    setPolicyEdges(rebalanceAutomationEdgeLanes(graph.edges, graph.nodes));
     setSelectedPolicyEdgeIds([]);
   }, [graph.edges, graph.nodes]);
   useEffect(() => {
@@ -2800,7 +2902,7 @@ function AutomationPolicyCanvas(props: { entries: any[]; policy: any; recordings
     const nodeIds = new Set(selectedPolicyNodeId ? [selectedPolicyNodeId] : []);
     const edgeIds = new Set(selectedPolicyEdgeIds);
     setPolicyNodes((nodes) => nodes.filter((node) => !nodeIds.has(node.id)));
-    setPolicyEdges((edges) => edges.filter((edge) => !edgeIds.has(edge.id) && !nodeIds.has(edge.source) && !nodeIds.has(edge.target)));
+    setPolicyEdges((edges) => rebalanceAutomationEdgeLanes(edges.filter((edge) => !edgeIds.has(edge.id) && !nodeIds.has(edge.source) && !nodeIds.has(edge.target)), policyNodes));
     setSelectedPolicyNodeId("");
     setSelectedPolicyEdgeIds([]);
   };
@@ -2810,14 +2912,14 @@ function AutomationPolicyCanvas(props: { entries: any[]; policy: any; recordings
       const nodeId = (event as CustomEvent<{ nodeId?: string }>).detail?.nodeId;
       if (!nodeId) return;
       setPolicyNodes((nodes) => nodes.filter((node) => node.id !== nodeId));
-      setPolicyEdges((edges) => edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+      setPolicyEdges((edges) => rebalanceAutomationEdgeLanes(edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId), policyNodes));
       setSelectedPolicyNodeId((current: string) => current === nodeId ? "" : current);
     }
     function handleDeleteEdge(event: Event) {
       if (!isFlowMode) return;
       const edgeId = (event as CustomEvent<{ edgeId?: string }>).detail?.edgeId;
       if (!edgeId) return;
-      setPolicyEdges((edges) => edges.filter((edge) => edge.id !== edgeId));
+      setPolicyEdges((edges) => rebalanceAutomationEdgeLanes(edges.filter((edge) => edge.id !== edgeId), policyNodes));
       setSelectedPolicyEdgeIds((ids) => ids.filter((id) => id !== edgeId));
     }
     function handleUpdateParameters(event: Event) {
@@ -2859,15 +2961,19 @@ function AutomationPolicyCanvas(props: { entries: any[]; policy: any; recordings
             deleteKeyCode={isFlowMode ? ["Backspace", "Delete"] : null}
             onInit={setPolicyFlow}
             isValidConnection={(connection) => automationConnectionIsValid(connection, policyNodes)}
-            onConnect={(connection) => isFlowMode ? setPolicyEdges((edges) => addEdge(createAutomationConnectionEdge(connection, edges, "policy-edge", policyNodes), edges)) : undefined}
-            onEdgesChange={(changes: EdgeChange[]) => isFlowMode ? setPolicyEdges((edges) => applyEdgeChanges(changes, edges)) : undefined}
+            onConnect={(connection) => isFlowMode ? setPolicyEdges((edges) => rebalanceAutomationEdgeLanes(addEdge(createAutomationConnectionEdge(connection, edges, "policy-edge", policyNodes), edges), policyNodes)) : undefined}
+            onEdgesChange={(changes: EdgeChange[]) => isFlowMode ? setPolicyEdges((edges) => rebalanceAutomationEdgeLanes(applyEdgeChanges(changes, edges), policyNodes)) : undefined}
             onEdgesDelete={(deletedEdges) => setSelectedPolicyEdgeIds((ids) => ids.filter((id) => !deletedEdges.some((edge) => edge.id === id)))}
             onNodesDelete={(deletedNodes) => {
               const deletedIds = new Set(deletedNodes.map((node) => node.id));
-              setPolicyEdges((edges) => edges.filter((edge) => !deletedIds.has(edge.source) && !deletedIds.has(edge.target)));
+              setPolicyEdges((edges) => rebalanceAutomationEdgeLanes(edges.filter((edge) => !deletedIds.has(edge.source) && !deletedIds.has(edge.target)), policyNodes));
               if (deletedIds.has(selectedPolicyNodeId)) setSelectedPolicyNodeId("");
             }}
-            onNodesChange={(changes: NodeChange<Node<AutomationPolicyNodeData>>[]) => isFlowMode ? setPolicyNodes((nodes) => applyNodeChanges(changes, nodes)) : undefined}
+            onNodesChange={(changes: NodeChange<Node<AutomationPolicyNodeData>>[]) => isFlowMode ? setPolicyNodes((nodes) => {
+              const nextNodes = applyNodeChanges(changes, nodes);
+              setPolicyEdges((edges) => rebalanceAutomationEdgeLanes(edges, nextNodes));
+              return nextNodes;
+            }) : undefined}
             onNodeClick={(_event, node) => {
               setSelectedPolicyNodeId((current: string) => current === node.id ? current : node.id);
               const key = `node:${node.id}`;
@@ -2909,8 +3015,6 @@ function AutomationPolicyNode({ id, data, selected }: NodeProps) {
   return (
     <div className={selected ? "automation-flow-node selected" : "automation-flow-node"}>
       {selected ? <SelectedNodeDeleteButton nodeId={id} /> : null}
-      <AutomationNodePortHandles ports={node.inputs} type="target" />
-      <AutomationNodePortHandles ports={node.outputs} type="source" />
       <div className="node-badges">
         {node.isStart ? <span className="node-badge start">Start</span> : null}
         <span className="node-badge category">{node.nodeDefinitionId ? "Base" : "Generated"}</span>
@@ -2949,8 +3053,6 @@ function AutomationRoutineNode({ id, data, selected }: NodeProps) {
   return (
     <div className={selected ? `automation-flow-node routine-node selected ${node.nodeType}` : `automation-flow-node routine-node ${node.nodeType}`}>
       {selected ? <SelectedNodeDeleteButton nodeId={id} /> : null}
-      <AutomationNodePortHandles ports={node.inputs} type="target" />
-      <AutomationNodePortHandles ports={node.outputs} type="source" />
       <div className="node-badges">
         <span className={node.nodeType === "custom" ? "node-badge custom" : "node-badge category"}>{node.nodeType}</span>
         <span className="node-badge category">{node.family}</span>
@@ -2974,20 +3076,6 @@ function AutomationRoutineNode({ id, data, selected }: NodeProps) {
       <footer className="node-runtime-line">No recordings or state bindings</footer>
     </div>
   );
-}
-
-function AutomationNodePortHandles(props: { ports: AutomationNodePort[]; type: "source" | "target" }) {
-  return props.ports.map((port, index) => (
-    <Handle
-      key={`${props.type}-${port.id}`}
-      type={props.type}
-      position={props.type === "source" ? Position.Right : Position.Left}
-      id={port.id}
-      className={`${props.type === "source" ? "automation-flow-handle output" : "automation-flow-handle input"} tone-${automationPortTone(port, props.type)}`}
-      style={{ top: automationPortHandleTop(index, props.ports.length) }}
-      title={automationPortTitle(port, props.type)}
-    />
-  ));
 }
 
 function automationVisualInputPorts(inputs: AutomationNodePort[], nodeDefinitionId: string): AutomationNodePort[] {
@@ -3025,6 +3113,13 @@ function AutomationNodePortRow(props: { port: AutomationNodePort; direction: "so
   const caption = automationPortCaption(props.port, props.direction);
   return (
     <span className={`tone-${tone}`} title={automationPortTitle(props.port, props.direction)}>
+      <Handle
+        type={props.direction}
+        position={props.direction === "source" ? Position.Right : Position.Left}
+        id={props.port.id}
+        className={`${props.direction === "source" ? "automation-flow-handle output" : "automation-flow-handle input"} tone-${tone}`}
+        title={automationPortTitle(props.port, props.direction)}
+      />
       <i aria-hidden />
       <strong>{automationPortDisplayLabel(props.port)}</strong>
       {caption ? <small>{caption}</small> : null}
@@ -3055,6 +3150,7 @@ function AutomationFlowEdge(props: EdgeProps) {
     ? automationLoopEdgePath(props.sourceX, props.sourceY, props.targetX, props.targetY, route.lane)
     : automationLaneEdgePath(props.sourceX, props.sourceY, props.targetX, props.targetY, route.lane);
   const label = String(props.label ?? props.data?.label ?? "");
+  const deleteEdge = () => window.dispatchEvent(new CustomEvent("automation-studio:delete-edge", { detail: { edgeId: props.id } }));
   return (
     <>
       <BaseEdge
@@ -3075,9 +3171,18 @@ function AutomationFlowEdge(props: EdgeProps) {
         <EdgeLabelRenderer>
           <button
             className="automation-edge-delete-button nodrag nopan"
-            onClick={(event) => {
+            onPointerDown={(event) => {
+              event.preventDefault();
               event.stopPropagation();
-              window.dispatchEvent(new CustomEvent("automation-studio:delete-edge", { detail: { edgeId: props.id } }));
+              deleteEdge();
+            }}
+            onPointerUp={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
             }}
             style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY - 28}px)` }}
             title="Delete edge"
@@ -3151,15 +3256,22 @@ function AutomationSignalWorkspace(props: { signals: any[]; setSelection(selecti
   );
 }
 
-function AutomationRuntimeWorkspace(props: { timelines: any[]; models: any[]; policies: any[] }) {
+function AutomationRuntimeWorkspace(props: { timelines: any[]; models: any[]; policies: any[]; runtimeSessions: any[] }) {
   return (
     <section className="automation-runtime-stage">
       <SummaryStrip items={[
+        ["Runs", props.runtimeSessions.length],
         ["Timelines", props.timelines.length],
         ["Models", props.models.length],
-        ["Policies", props.policies.length],
         ["Runnable Nodes", props.policies.reduce((total, policy) => total + (policy.nodes?.length ?? 0), 0)]
       ]} />
+      <DataTable columns={["Run", "Target", "Status", "Attempts", "Effects"]} rows={props.runtimeSessions.map((session) => [
+        session.runId?.slice(0, 8) ?? "-",
+        `${session.targetKind ?? "flow"}:${session.targetId ?? session.flowId ?? "-"}`,
+        <StatusBadge key={session.runId} value={session.status ?? "queued"} />,
+        session.trace?.attempts?.length ?? 0,
+        session.trace?.effects?.length ?? 0
+      ])} empty="No runtime sessions have been started for this project." />
       <DataTable columns={["Model", "Task", "Clusters", "Transitions", "Questions"]} rows={props.models.map((model) => [
         model.learnedTaskModelId,
         model.taskId,
@@ -4621,10 +4733,11 @@ function roundedAutomationPosition(position: { x: number; y: number }): { x: num
 function createAutomationConnectionEdge<T extends AutomationPolicyNodeData | AutomationRoutineNodeData>(connection: { source: string | null; target: string | null; sourceHandle?: string | null; targetHandle?: string | null }, existingEdges: Edge[], prefix: string, nodes: Array<Node<T>>): Edge {
   const source = connection.source ?? "";
   const target = connection.target ?? "";
-  const outgoingIndex = existingEdges.filter((edge) => edge.source === source).length;
-  const lane = automationEdgeLane(`${prefix}-${source}-${target}-${outgoingIndex}`, outgoingIndex);
+  const siblingIndex = existingEdges.filter((edge) => edge.source === source && edge.target === target).length;
+  const routeIndex = existingEdges.filter((edge) => edge.source === source).length;
+  const lane = chooseAutomationEdgeLane(source, target, existingEdges, nodes, `${prefix}-${source}-${target}-${siblingIndex}`, siblingIndex);
   const sourcePort = nodes.find((node) => node.id === source)?.data.outputs.find((port) => port.id === connection.sourceHandle);
-  const label = sourcePort ? automationPortDisplayLabel(sourcePort) : automationPortLabelFromId(connection.sourceHandle) ?? (outgoingIndex === 0 ? "Next" : `Branch ${outgoingIndex + 1}`);
+  const label = sourcePort ? automationPortDisplayLabel(sourcePort) : automationPortLabelFromId(connection.sourceHandle) ?? (routeIndex === 0 ? "Next" : `Branch ${routeIndex + 1}`);
   const color = automationPortColor(automationPortTone(sourcePort ?? { id: connection.sourceHandle ?? "next", label, valueType: "any" }, "source"));
   return {
     id: `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
@@ -4634,7 +4747,7 @@ function createAutomationConnectionEdge<T extends AutomationPolicyNodeData | Aut
     targetHandle: connection.targetHandle ?? "in",
     type: "automationEdge",
     label,
-    data: { label, lane, sourcePort: connection.sourceHandle ?? "next", targetPort: connection.targetHandle ?? "in" },
+    data: { label, lane, siblingIndex, routeIndex, sourcePort: connection.sourceHandle ?? "next", targetPort: connection.targetHandle ?? "in" },
     markerEnd: { type: MarkerType.ArrowClosed, color, width: 18, height: 18 },
     style: { stroke: color, strokeWidth: 3 }
   };
@@ -4739,13 +4852,6 @@ function automationPortDisplayLabel(port: AutomationNodePort): string {
   return port.label;
 }
 
-function automationPortHandleTop(index: number, total: number): string {
-  if (total <= 1) return "50%";
-  const start = 30;
-  const end = 78;
-  return `${start + (index / Math.max(1, total - 1)) * (end - start)}%`;
-}
-
 function automationPortIdFromLabel(label: unknown): string {
   const normalized = String(label ?? "next")
     .trim()
@@ -4791,34 +4897,258 @@ function automationEdgeRoute(id: string, sourceX: number, sourceY: number, targe
 }
 
 function automationEdgeLane(id: string, index?: number): number {
-  const lanes = [-72, -42, 42, 72, -104, 104, -136, 136];
+  const lanes = [0, -44, 44, -82, 82, -120, 120, -158, 158];
   return lanes[(index ?? stableHash(id)) % lanes.length] ?? 42;
 }
 
-function automationLoopEdgePath(sourceX: number, sourceY: number, targetX: number, targetY: number, lane: number): [string, number, number] {
-  const direction = lane < 0 ? -1 : 1;
-  const distance = Math.abs(targetX - sourceX);
-  const lift = direction * (96 + Math.min(220, distance * 0.35) + Math.abs(lane) * 0.35);
-  const spread = Math.max(96, Math.min(220, distance * 0.42));
-  const control1X = sourceX + spread;
-  const control2X = targetX - spread;
-  const control1Y = sourceY + lift;
-  const control2Y = targetY + lift;
-  return [`M ${sourceX},${sourceY} C ${control1X},${control1Y} ${control2X},${control2Y} ${targetX},${targetY}`, (sourceX + targetX) / 2, (sourceY + targetY) / 2 + lift * 0.72];
+function chooseAutomationEdgeLane<T extends Record<string, unknown>>(sourceId: string, targetId: string, existingEdges: Edge[], nodes: Array<Node<T>>, id: string, preferredIndex = 0): number {
+  const source = automationNodeEdgePoint(nodes, sourceId, "source");
+  const target = automationNodeEdgePoint(nodes, targetId, "target");
+  const candidates = automationEdgeLaneCandidates(source && target ? target.y - source.y : 0, automationEdgeLane(id, preferredIndex));
+  const scored = candidates.map((lane) => ({
+    lane,
+    score: automationEdgeLaneScore(sourceId, targetId, lane, existingEdges, nodes)
+  })).sort((left, right) => left.score - right.score || Math.abs(left.lane) - Math.abs(right.lane));
+  return scored[0]?.lane ?? 0;
 }
 
-function automationLaneEdgePath(sourceX: number, sourceY: number, targetX: number, targetY: number, lane: number): [string, number, number] {
+function rebalanceAutomationEdgeLanes<T extends Record<string, unknown>>(edges: Edge[], nodes: Array<Node<T>>): Edge[] {
+  const placed: Edge[] = [];
+  const sourceCounts = new Map<string, number>();
+  const pairCounts = new Map<string, number>();
+  const edgesByPair = new Map<string, Edge[]>();
+  for (const edge of edges) {
+    const pairKey = `${edge.source}->${edge.target}`;
+    edgesByPair.set(pairKey, [...(edgesByPair.get(pairKey) ?? []), edge]);
+  }
+  const ordered = [...edges].sort((left, right) => {
+    const leftDistance = automationEdgeNodeDistance(left, nodes);
+    const rightDistance = automationEdgeNodeDistance(right, nodes);
+    return leftDistance - rightDistance || left.id.localeCompare(right.id);
+  });
+  const rebalancedById = new Map<string, Edge>();
+  const processedIds = new Set<string>();
+  for (const edge of ordered) {
+    if (processedIds.has(edge.id)) continue;
+    const sourceCount = sourceCounts.get(edge.source) ?? 0;
+    const pairKey = `${edge.source}->${edge.target}`;
+    const pairEdges = edgesByPair.get(pairKey) ?? [edge];
+    if (pairEdges.length > 1) {
+      const sortedPairEdges = [...pairEdges].sort((left, right) => {
+        const leftOrder = automationSourceHandleOrder(nodes, left.source, left.sourceHandle ?? String((left.data as Record<string, unknown> | undefined)?.sourcePort ?? ""));
+        const rightOrder = automationSourceHandleOrder(nodes, right.source, right.sourceHandle ?? String((right.data as Record<string, unknown> | undefined)?.sourcePort ?? ""));
+        return leftOrder - rightOrder || left.id.localeCompare(right.id);
+      });
+      sortedPairEdges.forEach((pairEdge, pairIndex) => {
+        const nextSourceCount = sourceCounts.get(pairEdge.source) ?? 0;
+        const lane = automationOrderedEdgeLane(pairIndex, sortedPairEdges.length);
+        const data = { ...(pairEdge.data as Record<string, unknown> | undefined), lane, siblingIndex: pairIndex, routeIndex: nextSourceCount };
+        const nextEdge = { ...pairEdge, data };
+        sourceCounts.set(pairEdge.source, nextSourceCount + 1);
+        pairCounts.set(pairKey, pairIndex + 1);
+        processedIds.add(pairEdge.id);
+        placed.push(nextEdge);
+        rebalancedById.set(pairEdge.id, nextEdge);
+      });
+      continue;
+    }
+    const pairCount = pairCounts.get(pairKey) ?? 0;
+    sourceCounts.set(edge.source, sourceCount + 1);
+    pairCounts.set(pairKey, pairCount + 1);
+    const lane = chooseAutomationEdgeLane(edge.source, edge.target, placed, nodes, edge.id, pairCount);
+    const data = { ...(edge.data as Record<string, unknown> | undefined), lane, siblingIndex: pairCount, routeIndex: sourceCount };
+    const nextEdge = { ...edge, data };
+    processedIds.add(edge.id);
+    placed.push(nextEdge);
+    rebalancedById.set(edge.id, nextEdge);
+  }
+  return edges.map((edge) => rebalancedById.get(edge.id) ?? edge);
+}
+
+function automationOrderedEdgeLane(index: number, total: number): number {
+  if (total <= 1) return 0;
+  const centered = index - (total - 1) / 2;
+  const evenNudge = total % 2 === 0 ? Math.sign(centered) * 22 : 0;
+  return Math.round(centered * 44 + evenNudge);
+}
+
+function automationSourceHandleOrder<T extends Record<string, unknown>>(nodes: Array<Node<T>>, sourceId: string, sourceHandle: string | null | undefined): number {
+  const outputs = (nodes.find((node) => node.id === sourceId)?.data as { outputs?: AutomationNodePort[] } | undefined)?.outputs ?? [];
+  const index = outputs.findIndex((port) => port.id === sourceHandle);
+  return index >= 0 ? index : Number.MAX_SAFE_INTEGER;
+}
+
+function automationEdgeNodeDistance<T extends Record<string, unknown>>(edge: Edge, nodes: Array<Node<T>>): number {
+  const source = automationNodeEdgePoint(nodes, edge.source, "source");
+  const target = automationNodeEdgePoint(nodes, edge.target, "target");
+  if (!source || !target) return Number.MAX_SAFE_INTEGER;
+  return Math.hypot(target.x - source.x, target.y - source.y);
+}
+
+function automationEdgeLaneScore<T extends Record<string, unknown>>(sourceId: string, targetId: string, lane: number, existingEdges: Edge[], nodes: Array<Node<T>>): number {
+  const source = automationNodeEdgePoint(nodes, sourceId, "source");
+  const target = automationNodeEdgePoint(nodes, targetId, "target");
+  if (!source || !target) return Math.abs(lane) * 0.3;
+  const candidateBand = automationEdgeBand(source, target, lane);
+  const dy = target.y - source.y;
+  let score = Math.abs(lane) * 0.16 + automationDirectionalLanePenalty(dy, lane);
+  for (const edge of existingEdges) {
+    const existingSource = automationNodeEdgePoint(nodes, edge.source, "source");
+    const existingTarget = automationNodeEdgePoint(nodes, edge.target, "target");
+    if (!existingSource || !existingTarget) continue;
+    const existingLane = Number((edge.data as Record<string, unknown> | undefined)?.lane ?? 0);
+    const existingBand = automationEdgeBand(existingSource, existingTarget, existingLane);
+    const samePair = edge.source === sourceId && edge.target === targetId;
+    const sameSourceOrTarget = edge.source === sourceId || edge.target === targetId || edge.source === targetId || edge.target === sourceId;
+    const bandCloseness = automationEdgeBandCloseness(candidateBand, existingBand);
+    if (samePair && Math.abs(lane - existingLane) < 16) score += 500;
+    if (samePair) score += Math.max(0, 52 - bandCloseness.minDistance) * 10;
+    if (automationEdgeBandsOverlap(candidateBand, existingBand)) {
+      score += Math.max(0, 42 - bandCloseness.minDistance) * (sameSourceOrTarget ? 8 : 5);
+      score += Math.max(0, 34 - bandCloseness.averageDistance) * (sameSourceOrTarget ? 4 : 2);
+    }
+    if (automationSegmentsIntersect(source, target, existingSource, existingTarget)) {
+      score += Math.max(0, 44 - Math.abs(lane - existingLane)) * 4;
+    }
+    if (Math.abs(lane - existingLane) < 8 && automationEdgeBandsOverlap(candidateBand, existingBand)) score += 120;
+  }
+  return score;
+}
+
+function automationEdgeLaneCandidates(dy: number, preferredLane: number): number[] {
+  const downward = [0, 44, 82, 120, 158, -44, -82, -120, -158];
+  const upward = [0, -44, -82, -120, -158, 44, 82, 120, 158];
+  const horizontal = [0, preferredLane, -44, 44, -82, 82, -120, 120, -158, 158];
+  const base = dy > 24 ? downward : dy < -24 ? upward : horizontal;
+  return uniqueNumbers([preferredLane, ...base]);
+}
+
+function automationDirectionalLanePenalty(dy: number, lane: number): number {
+  if (Math.abs(dy) < 24 || Math.abs(lane) < 1) return 0;
+  const sameDirection = Math.sign(dy) === Math.sign(lane);
+  return sameDirection ? 0 : 140 + Math.abs(lane) * 1.8;
+}
+
+function automationNodeEdgePoint<T extends Record<string, unknown>>(nodes: Array<Node<T>>, nodeId: string, side: "source" | "target"): { x: number; y: number } | null {
+  const node = nodes.find((item) => item.id === nodeId);
+  if (!node) return null;
+  const width = typeof node.measured?.width === "number" ? node.measured.width : 280;
+  const height = typeof node.measured?.height === "number" ? node.measured.height : 196;
+  return {
+    x: node.position.x + (side === "source" ? width : 0),
+    y: node.position.y + height / 2
+  };
+}
+
+type AutomationEdgeBand = {
+  xMin: number;
+  xMax: number;
+  yMin: number;
+  yMax: number;
+  samples: Array<{ x: number; y: number }>;
+};
+
+function automationEdgeBand(source: { x: number; y: number }, target: { x: number; y: number }, lane: number): AutomationEdgeBand {
+  const controls = automationLaneEdgeControls(source.x, source.y, target.x, target.y, lane);
+  const samples = [0.18, 0.34, 0.5, 0.66, 0.82].map((t) => automationCubicPoint(source, controls.control1, controls.control2, target, t));
+  return {
+    xMin: Math.min(source.x, target.x, ...samples.map((point) => point.x)),
+    xMax: Math.max(source.x, target.x, ...samples.map((point) => point.x)),
+    yMin: Math.min(source.y, target.y, ...samples.map((point) => point.y)) - 18,
+    yMax: Math.max(source.y, target.y, ...samples.map((point) => point.y)) + 18,
+    samples
+  };
+}
+
+function automationEdgeBandCloseness(left: AutomationEdgeBand, right: AutomationEdgeBand): { minDistance: number; averageDistance: number } {
+  const distances = left.samples.map((point, index) => Math.abs(point.y - (right.samples[index]?.y ?? point.y)));
+  return {
+    minDistance: Math.min(...distances),
+    averageDistance: distances.reduce((total, distance) => total + distance, 0) / Math.max(1, distances.length)
+  };
+}
+
+function automationEdgeBandsOverlap(left: AutomationEdgeBand, right: AutomationEdgeBand): boolean {
+  const xOverlap = Math.min(left.xMax, right.xMax) - Math.max(left.xMin, right.xMin);
+  const yOverlap = Math.min(left.yMax, right.yMax) - Math.max(left.yMin, right.yMin);
+  return xOverlap > 16 && yOverlap > 0;
+}
+
+function automationSegmentsLikelyOverlap(a1: { x: number; y: number }, a2: { x: number; y: number }, b1: { x: number; y: number }, b2: { x: number; y: number }): boolean {
+  const xOverlap = Math.min(Math.max(a1.x, a2.x), Math.max(b1.x, b2.x)) - Math.max(Math.min(a1.x, a2.x), Math.min(b1.x, b2.x));
+  const yOverlap = Math.min(Math.max(a1.y, a2.y), Math.max(b1.y, b2.y)) - Math.max(Math.min(a1.y, a2.y), Math.min(b1.y, b2.y));
+  return xOverlap > -80 && yOverlap > -80;
+}
+
+function automationSegmentsIntersect(a1: { x: number; y: number }, a2: { x: number; y: number }, b1: { x: number; y: number }, b2: { x: number; y: number }): boolean {
+  const d1 = automationPointDirection(b1, b2, a1);
+  const d2 = automationPointDirection(b1, b2, a2);
+  const d3 = automationPointDirection(a1, a2, b1);
+  const d4 = automationPointDirection(a1, a2, b2);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+
+function automationPointDirection(a: { x: number; y: number }, b: { x: number; y: number }, c: { x: number; y: number }): number {
+  return (c.x - a.x) * (b.y - a.y) - (b.x - a.x) * (c.y - a.y);
+}
+
+function uniqueNumbers(values: number[]): number[] {
+  return [...new Set(values)];
+}
+
+function automationLoopEdgePath(sourceX: number, sourceY: number, targetX: number, targetY: number, lane: number): [string, number, number] {
+  const source = { x: sourceX, y: sourceY };
+  const target = { x: targetX, y: targetY };
+  const direction = lane < 0 ? -1 : 1;
+  const distance = Math.abs(targetX - sourceX);
+  const lift = direction * (44 + Math.min(96, distance * 0.14) + Math.abs(lane) * 0.34);
+  const spread = Math.max(82, Math.min(190, distance * 0.34));
+  const control1 = { x: sourceX + spread, y: sourceY + lift };
+  const control2 = { x: targetX - spread, y: targetY + lift };
+  const label = automationCubicPoint(source, control1, control2, target, 0.5);
+  return [`M ${sourceX},${sourceY} C ${control1.x},${control1.y} ${control2.x},${control2.y} ${targetX},${targetY}`, label.x, label.y];
+}
+
+function automationLaneEdgePath(sourceX: number, sourceY: number, targetX: number, targetY: number, lane: number, labelBias = 0.5): [string, number, number] {
+  const controls = automationLaneEdgeControls(sourceX, sourceY, targetX, targetY, lane, labelBias);
+  return [
+    `M ${sourceX},${sourceY} C ${controls.control1.x},${controls.control1.y} ${controls.control2.x},${controls.control2.y} ${targetX},${targetY}`,
+    controls.labelX,
+    controls.labelY
+  ];
+}
+
+function automationLaneEdgeControls(sourceX: number, sourceY: number, targetX: number, targetY: number, lane: number, labelBias = 0.5): { control1: { x: number; y: number }; control2: { x: number; y: number }; labelX: number; labelY: number } {
   const dx = targetX - sourceX;
-  const distance = Math.max(140, Math.abs(dx));
-  const horizontal = Math.min(260, Math.max(120, distance * 0.45));
-  const lift = Math.sign(lane || 1) * Math.min(90, Math.max(28, Math.abs(lane) * 0.72));
+  const distance = Math.max(1, Math.abs(dx));
+  const forwardDistance = Math.max(1, dx);
+  const horizontal = dx > 0
+    ? Math.min(210, Math.max(44, forwardDistance * 0.42), Math.max(36, forwardDistance * 0.52))
+    : Math.min(160, Math.max(72, distance * 0.28));
   const control1X = sourceX + horizontal;
   const control2X = targetX - horizontal;
-  const control1Y = sourceY + lift;
-  const control2Y = targetY + lift;
-  const labelX = (sourceX + targetX) / 2;
-  const labelY = (sourceY + targetY) / 2 + lift * 0.74;
-  return [`M ${sourceX},${sourceY} C ${control1X},${control1Y} ${control2X},${control2Y} ${targetX},${targetY}`, labelX, labelY];
+  const lift = Math.abs(lane) < 1 ? 0 : lane;
+  const curveLift = lift * 0.62;
+  const control1Y = sourceY + curveLift;
+  const control2Y = targetY + curveLift;
+  const label = automationCubicPoint(
+    { x: sourceX, y: sourceY },
+    { x: control1X, y: control1Y },
+    { x: control2X, y: control2Y },
+    { x: targetX, y: targetY },
+    labelBias
+  );
+  const labelX = label.x;
+  const labelY = label.y;
+  return { control1: { x: control1X, y: control1Y }, control2: { x: control2X, y: control2Y }, labelX, labelY };
+}
+
+function automationCubicPoint(source: { x: number; y: number }, control1: { x: number; y: number }, control2: { x: number; y: number }, target: { x: number; y: number }, t: number): { x: number; y: number } {
+  const u = 1 - t;
+  return {
+    x: u ** 3 * source.x + 3 * u ** 2 * t * control1.x + 3 * u * t ** 2 * control2.x + t ** 3 * target.x,
+    y: u ** 3 * source.y + 3 * u ** 2 * t * control1.y + 3 * u * t ** 2 * control2.y + t ** 3 * target.y
+  };
 }
 
 function stableHash(value: string): number {
@@ -4855,32 +5185,35 @@ function policyToReactFlowGraph(policy: any, selectedNodeId = ""): { nodes: Node
     }
   }));
   const outgoingCounts = new Map<string, number>();
-  const edges: Edge[] = policyEdges.map((edge: any, index: number) => {
+  const edges: Edge[] = [];
+  for (const [index, edge] of policyEdges.entries()) {
     const source = String(edge.fromNodeId ?? edge.source ?? "");
+    const target = String(edge.toNodeId ?? edge.target ?? "");
     const count = outgoingCounts.get(source) ?? 0;
     outgoingCounts.set(source, count + 1);
     const visuals = edgeVisuals(edge);
     const label = edge.label ?? edge.kind ?? edge.type ?? (edge.probability !== undefined ? `${Math.round(Number(edge.probability) * 100)}%` : "Next");
     const id = edge.id ?? `${edge.fromNodeId}-${edge.toNodeId}-${index}`;
-    return {
+    const nextEdge: Edge = {
       id,
-      source: edge.fromNodeId,
-      target: edge.toNodeId,
+      source,
+      target,
       sourceHandle: automationPortIdFromLabel(label),
       targetHandle: "in",
       type: "automationEdge",
       animated: false,
-      data: { label, lane: automationEdgeLane(id, count) },
+      data: { label, lane: chooseAutomationEdgeLane(source, target, edges, nodes, id, count), siblingIndex: count, routeIndex: count },
       markerEnd: {
         type: MarkerType.ArrowClosed,
         color: visuals.color,
         width: 18,
         height: 18
       },
-      style: visuals.style,
       label
     };
-  });
+    if (visuals.style) nextEdge.style = visuals.style;
+    edges.push(nextEdge);
+  }
   return { nodes, edges };
 }
 
