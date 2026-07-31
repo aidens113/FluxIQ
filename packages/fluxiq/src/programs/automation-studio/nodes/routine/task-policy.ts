@@ -10,11 +10,11 @@ export const taskPolicyNode = defineBuiltinNode({
   inputs: [{ id: "in", label: "In", valueType: "any" }],
   outputs: [
     { id: "success", label: "Success", valueType: "any" },
-    { id: "failure", label: "Failure", valueType: "any" }
+    { id: "failed", label: "Failed", valueType: "any" }
   ],
   parameters: [
-    { id: "taskId", label: "Task", valueType: "string", required: true },
-    { id: "policyId", label: "Policy override", valueType: "string", defaultValue: "" },
+    { id: "taskId", label: "Task", valueType: "string", required: true, ui: { control: "reference", referenceType: "task", placeholder: "task.id" } },
+    { id: "policyId", label: "Policy override", valueType: "string", defaultValue: "", ui: { control: "reference", referenceType: "policy", placeholder: "policy.id" } },
     { id: "inputs", label: "Task inputs", valueType: "object", defaultValue: {} },
     { id: "waitForCompletion", label: "Wait for completion", valueType: "boolean", defaultValue: true }
   ],

@@ -9,7 +9,7 @@ export const filterListNode = defineBuiltinNode({
   inputs: [{ id: "items", label: "Items", valueType: "array", required: true }],
   outputs: [{ id: "items", label: "Items", valueType: "array" }],
   parameters: [
-    { id: "path", label: "Item path", valueType: "string", defaultValue: "" },
+    { id: "path", label: "Item path", valueType: "string", defaultValue: "", ui: { control: "path", placeholder: "field.path" } },
     {
       id: "operator",
       label: "Operator",
@@ -17,7 +17,7 @@ export const filterListNode = defineBuiltinNode({
       defaultValue: "exists",
       options: ["exists", "equals", "not-equals", "greater-than", "less-than", "contains"].map((value) => ({ label: value, value }))
     },
-    { id: "value", label: "Compare value", valueType: "any", defaultValue: null },
+    { id: "value", label: "Compare value", valueType: "any", defaultValue: null, ui: { control: "value" } },
     {
       id: "onInvalid",
       label: "Invalid items",

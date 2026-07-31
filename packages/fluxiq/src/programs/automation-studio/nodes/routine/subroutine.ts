@@ -10,10 +10,10 @@ export const subroutineNode = defineBuiltinNode({
   inputs: [{ id: "in", label: "In", valueType: "any" }],
   outputs: [
     { id: "success", label: "Success", valueType: "any" },
-    { id: "failure", label: "Failure", valueType: "any" }
+    { id: "failed", label: "Failed", valueType: "any" }
   ],
   parameters: [
-    { id: "routineId", label: "Routine", valueType: "string", required: true },
+    { id: "routineId", label: "Routine", valueType: "string", required: true, ui: { control: "reference", referenceType: "routine", placeholder: "routine.id" } },
     { id: "inputs", label: "Routine inputs", valueType: "object", defaultValue: {} },
     {
       id: "isolation",

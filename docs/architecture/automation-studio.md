@@ -169,17 +169,38 @@ integer vs float mode, precision, and inclusive maximum are part of the live
 graph state. Generated policy nodes still show their evidence, condition,
 timing, runtime, and training detail sections in the same inspector.
 
+Node parameters must never fall back to unexplained raw text controls. Any
+fixed set of choices must be declared with options so the inspector renders a
+dropdown. Free-form strings must declare their UI intent: identifier,
+reference, object path, field, short text, or long text. References such as
+task, policy, routine, action, variable, and database collection IDs render as
+reference controls and can later be backed by real project pickers. Parameters
+with `any` values render as typed value controls where users choose text,
+number, boolean, or empty before entering the value.
+
 Built-in nodes should not be thin palette placeholders. Each source-owned
-built-in exposes editable parameters and concrete domain-neutral executor
-behavior. Control-flow nodes own route names, case matching, branch inversion,
-loop limits, fan-out, merge, and terminal status metadata. Logic nodes own
-comparison operators, case sensitivity, and empty/missing input behavior. Math
-nodes own precision, offsets, rounding modes, clamps, and divide-by-zero
-handling. Random nodes own range, mode, precision, fallback, weighted choice,
-and jitter controls. Data nodes own variable defaults/write modes, object
-mapping modes, and list predicates. Timing nodes own duration units, jitter,
-timeout, retry, backoff, and debounce modes. Policy, routine, and database
-nodes emit configurable adapter/effect requests while staying domain-neutral.
+built-in exposes editable parameters, concrete domain-neutral executor
+behavior, and a standardized visual port contract. Visual ports are part of the
+programming language, not decoration. Every non-start built-in has a control
+input named `in`. Operation-style nodes expose standardized `success` and
+`failed` route outputs. Conditional or routing nodes expose their meaningful
+visual branch outputs instead, such as `true`, `false`, `case`, `default`,
+`body`, `done`, `approved`, `rejected`, and `timeout`, without also adding
+generic success/failure exits. Nodes also expose typed data outputs such as
+`result`, `value`, `records`, `object`, or `items` when they transfer data to
+later nodes. Executor `route` values must match declared route outputs, while
+computed values travel through declared data outputs.
+Control-flow nodes own route names, case matching, branch inversion, loop
+limits, fan-out, merge, and terminal status metadata. Logic nodes own
+comparison operators, case sensitivity, and empty/missing input behavior, and
+route through `true` or `false` while exposing a boolean `result` data output.
+Math nodes own precision, offsets, rounding modes, clamps, and
+divide-by-zero handling while exposing `result` data and success/failure
+routes. Random nodes own range, mode, precision, fallback, weighted choice, and
+jitter controls. Data nodes own variable defaults/write modes, object mapping
+modes, and list predicates. Timing nodes own duration units, jitter, timeout,
+retry, backoff, and debounce modes. Policy, routine, and database nodes emit
+configurable adapter/effect requests while staying domain-neutral.
 
 Policy and routine editors must not carry their own properties inspector. The
 right-side global inspector is the single properties viewer for selected nodes,

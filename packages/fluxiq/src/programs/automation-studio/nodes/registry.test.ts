@@ -66,7 +66,57 @@ describe("automation node registry", () => {
       for (const parameter of definition.parameters) {
         expect(parameter.id.length, `${definition.id}:${parameter.id}`).toBeGreaterThan(0);
         expect(parameter.label.length, `${definition.id}:${parameter.id}`).toBeGreaterThan(0);
+        if (parameter.valueType === "string" && !parameter.options?.length) {
+          expect(parameter.ui?.control, `${definition.id}:${parameter.id}:string editor`).toBeTruthy();
+        }
+        if (parameter.valueType === "any") {
+          expect(parameter.ui?.control, `${definition.id}:${parameter.id}:typed value editor`).toBe("value");
+        }
       }
+    }
+  });
+
+  it("standardizes visual control, success, failed, and data ports", () => {
+    for (const definition of builtinAutomationNodeDefinitions) {
+      const inputIds = definition.inputs.map((port) => port.id);
+      const outputIds = definition.outputs.map((port) => port.id);
+
+      if (definition.id !== "builtin.control.start") {
+        expect(definition.inputs.some((port) => port.id === "in" && port.role === "control"), `${definition.id}:control input`).toBe(true);
+      }
+      if (definition.id !== "builtin.control.end") {
+        const hasExplicitBranches = definition.outputs.some((port) => port.role === "branch");
+        if (hasExplicitBranches) {
+          expect(definition.outputs.some((port) => port.role === "branch"), `${definition.id}:branch output`).toBe(true);
+        } else {
+          expect(definition.outputs.some((port) => port.id === "success" && port.role === "success"), `${definition.id}:success output`).toBe(true);
+          expect(definition.outputs.some((port) => port.id === "failed" && port.role === "failure"), `${definition.id}:failed output`).toBe(true);
+        }
+        expect(new Set(outputIds).size, `${definition.id}:unique outputs`).toBe(outputIds.length);
+      }
+      expect(new Set(inputIds).size, `${definition.id}:unique inputs`).toBe(inputIds.length);
+      for (const port of [...definition.inputs, ...definition.outputs]) {
+        expect(port.label.length, `${definition.id}:${port.id}:label`).toBeGreaterThan(0);
+        expect(port.role || port.valueType, `${definition.id}:${port.id}:visual meaning`).toBeTruthy();
+      }
+    }
+  });
+
+  it("keeps representative executor routes aligned with declared visual outputs", async () => {
+    const cases = [
+      { id: "builtin.logic.and", inputs: { conditions: [true, true] }, parameters: {} },
+      { id: "builtin.logic.and", inputs: { conditions: [true, false] }, parameters: {} },
+      { id: "builtin.control.branch", inputs: { condition: true }, parameters: {} },
+      { id: "builtin.math.divide", inputs: { left: 2, right: 0 }, parameters: { divideByZero: "fail" } },
+      { id: "builtin.control.switch", inputs: { value: "ready" }, parameters: { cases: [{ value: "ready" }] } },
+      { id: "builtin.database.query", inputs: {}, parameters: { collection: "runs" } }
+    ];
+
+    for (const item of cases) {
+      const definition = getAutomationNodeDefinition(item.id);
+      const result = await Promise.resolve(definition?.execute?.({ inputs: item.inputs, parameters: item.parameters }));
+      const outputIds = new Set(definition?.outputs.map((port) => port.id));
+      expect(outputIds.has(result?.route ?? ""), `${item.id}:${result?.route}`).toBe(true);
     }
   });
 
@@ -84,7 +134,7 @@ describe("automation node registry", () => {
     await expect(Promise.resolve(getAutomationNodeDefinition("builtin.control.switch")?.execute?.({
       inputs: { value: "ready" },
       parameters: { cases: [{ value: "ready", route: "go" }], defaultRoute: "fallback" }
-    }))).resolves.toMatchObject({ route: "go" });
+    }))).resolves.toMatchObject({ route: "case" });
 
     await expect(Promise.resolve(getAutomationNodeDefinition("builtin.timing.wait")?.execute?.({
       inputs: { in: "signal" },
@@ -105,6 +155,6 @@ describe("automation node registry", () => {
     await expect(Promise.resolve(getAutomationNodeDefinition("builtin.database.query")?.execute?.({
       inputs: {},
       parameters: { collection: "runs", where: { status: "ok" }, limit: 10 }
-    }))).resolves.toMatchObject({ route: "records", effects: [{ type: "database.query.requested" }] });
+    }))).resolves.toMatchObject({ route: "success", effects: [{ type: "database.query.requested" }] });
   });
 });

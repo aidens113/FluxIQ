@@ -9,7 +9,7 @@ export const startNode = defineBuiltinNode({
   inputs: [],
   outputs: [{ id: "next", label: "Next", valueType: "any" }],
   parameters: [
-    { id: "label", label: "Run label", valueType: "string", defaultValue: "Start" },
+    { id: "label", label: "Run label", valueType: "string", defaultValue: "Start", ui: { control: "text", placeholder: "Run label" } },
     { id: "emitTimestamp", label: "Emit timestamp", valueType: "boolean", defaultValue: true }
   ],
   icon: "play",

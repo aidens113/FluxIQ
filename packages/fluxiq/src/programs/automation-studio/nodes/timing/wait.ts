@@ -8,7 +8,7 @@ export const waitNode = defineBuiltinNode({
   class: "timing",
   scope: "both",
   inputs: [{ id: "in", label: "In", valueType: "any" }],
-  outputs: [{ id: "next", label: "Next", valueType: "any" }],
+  outputs: [{ id: "data", label: "Data", valueType: "any" }],
   parameters: [
     { id: "duration", label: "Duration", valueType: "number", defaultValue: 1000 },
     {
@@ -29,6 +29,6 @@ export const waitNode = defineBuiltinNode({
     const base = durationFromUnit(context.parameters.duration, context.parameters.unit, 1000);
     const jitter = Math.max(0, Number(context.parameters.jitterMs ?? 0));
     const random = context.random ? context.random() : 0.5;
-    return { status: "waiting", route: "next", outputs: { next: context.inputs.in ?? null, durationMs: Math.max(0, Math.round(base + (random * 2 - 1) * jitter)) } };
+    return { status: "waiting", route: "success", outputs: { data: context.inputs.in ?? null, durationMs: Math.max(0, Math.round(base + (random * 2 - 1) * jitter)) } };
   }
 });

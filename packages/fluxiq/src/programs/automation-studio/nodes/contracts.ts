@@ -31,6 +31,7 @@ export type AutomationNodePort = {
   id: string;
   label: string;
   valueType: AutomationNodeValueType;
+  role?: "control" | "success" | "failure" | "data" | "error" | "branch";
   required?: boolean;
   multiple?: boolean;
 };
@@ -41,6 +42,11 @@ export type AutomationNodeParameter = {
   valueType: AutomationNodeValueType | "expression" | "json";
   defaultValue?: JsonValue;
   options?: Array<{ label: string; value: string }>;
+  ui?: {
+    control: "text" | "textarea" | "identifier" | "path" | "field" | "reference" | "value";
+    referenceType?: "action" | "task" | "policy" | "routine" | "database-collection" | "variable";
+    placeholder?: string;
+  };
   required?: boolean;
 };
 

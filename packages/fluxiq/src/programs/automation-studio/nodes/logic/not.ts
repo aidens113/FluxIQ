@@ -7,7 +7,11 @@ export const notNode = defineBuiltinNode({
   class: "logic",
   scope: "both",
   inputs: [{ id: "condition", label: "Condition", valueType: "boolean", required: true }],
-  outputs: [{ id: "result", label: "Result", valueType: "boolean" }],
+  outputs: [
+    { id: "true", label: "True", valueType: "any" },
+    { id: "false", label: "False", valueType: "any" },
+    { id: "result", label: "Result", valueType: "boolean" }
+  ],
   parameters: [{ id: "missingValue", label: "Missing value", valueType: "boolean", defaultValue: false }],
   icon: "badge-x",
   execute: (context) => {

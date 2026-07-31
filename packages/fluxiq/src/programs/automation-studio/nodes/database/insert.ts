@@ -10,16 +10,16 @@ export const databaseInsertNode = defineBuiltinNode({
   inputs: [{ id: "record", label: "Record", valueType: "object", required: true }],
   outputs: [{ id: "record", label: "Record", valueType: "object" }],
   parameters: [
-    { id: "collection", label: "Collection", valueType: "string", required: true },
+    { id: "collection", label: "Collection", valueType: "string", required: true, ui: { control: "reference", referenceType: "database-collection", placeholder: "collection" } },
     { id: "upsert", label: "Upsert", valueType: "boolean", defaultValue: false },
-    { id: "conflictKey", label: "Conflict key", valueType: "string", defaultValue: "" },
+    { id: "conflictKey", label: "Conflict key", valueType: "string", defaultValue: "", ui: { control: "field", placeholder: "uniqueField" } },
     { id: "returnRecord", label: "Return record", valueType: "boolean", defaultValue: true }
   ],
   icon: "file-input",
   privileged: true,
   execute: (context) => ({
     status: "success",
-    route: "record",
+    route: "success",
     outputs: { record: context.inputs.record ?? {} },
     effects: [{ type: "database.insert.requested", payload: { collection: collectionName(context.parameters.collection), record: context.inputs.record ?? {}, upsert: context.parameters.upsert === true, conflictKey: context.parameters.conflictKey ?? "", returnRecord: context.parameters.returnRecord !== false } }]
   })

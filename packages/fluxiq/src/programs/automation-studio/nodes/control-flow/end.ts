@@ -20,7 +20,7 @@ export const endNode = defineBuiltinNode({
         { label: "Skipped", value: "skipped" }
       ]
     },
-    { id: "message", label: "Message", valueType: "string", defaultValue: "" }
+    { id: "message", label: "Message", valueType: "string", defaultValue: "", ui: { control: "textarea", placeholder: "Optional end message" } }
   ],
   icon: "circle-stop",
   execute: (context) => ({ status: context.parameters.resultStatus === "failed" ? "failed" : context.parameters.resultStatus === "skipped" ? "skipped" : "success", route: "end", outputs: { message: context.parameters.message ?? "" } })

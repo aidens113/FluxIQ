@@ -10,15 +10,15 @@ export const getVariableNode = defineBuiltinNode({
   inputs: [],
   outputs: [{ id: "value", label: "Value", valueType: "any" }],
   parameters: [
-    { id: "name", label: "Name", valueType: "string", required: true },
-    { id: "defaultValue", label: "Default value", valueType: "any", defaultValue: null },
+    { id: "name", label: "Name", valueType: "string", required: true, ui: { control: "reference", referenceType: "variable", placeholder: "variableName" } },
+    { id: "defaultValue", label: "Default value", valueType: "any", defaultValue: null, ui: { control: "value" } },
     { id: "required", label: "Required", valueType: "boolean", defaultValue: false }
   ],
   icon: "database",
   execute: (context) => {
     const name = variableName(context.parameters.name);
     const value = readVariable(context.variables, name);
-    if (value === null && context.parameters.required === true) return { status: "failed", route: "missing", outputs: { value: context.parameters.defaultValue ?? null } };
+    if (value === null && context.parameters.required === true) return { status: "failed", route: "failed", outputs: { value: context.parameters.defaultValue ?? null } };
     return emptyResult({ value: value ?? context.parameters.defaultValue ?? null });
   }
 });

@@ -11,7 +11,11 @@ export const compareNode = defineBuiltinNode({
     { id: "left", label: "Left", valueType: "any", required: true },
     { id: "right", label: "Right", valueType: "any", required: true }
   ],
-  outputs: [{ id: "result", label: "Result", valueType: "boolean" }],
+  outputs: [
+    { id: "true", label: "True", valueType: "any" },
+    { id: "false", label: "False", valueType: "any" },
+    { id: "result", label: "Result", valueType: "boolean" }
+  ],
   parameters: [
     {
       id: "operator",
@@ -32,7 +36,7 @@ export const compareNode = defineBuiltinNode({
       ]
     }
     ,
-    { id: "rightDefault", label: "Right default", valueType: "any", defaultValue: null },
+    { id: "rightDefault", label: "Right default", valueType: "any", defaultValue: null, ui: { control: "value" } },
     { id: "caseSensitive", label: "Case sensitive", valueType: "boolean", defaultValue: true }
   ],
   icon: "equal",

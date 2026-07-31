@@ -9,7 +9,8 @@ export const switchNode = defineBuiltinNode({
   inputs: [{ id: "value", label: "Value", valueType: "any", required: true }],
   outputs: [
     { id: "case", label: "Cases", valueType: "any", multiple: true },
-    { id: "default", label: "Default", valueType: "any" }
+    { id: "default", label: "Default", valueType: "any" },
+    { id: "value", label: "Matched value", valueType: "any" }
   ],
   parameters: [
     { id: "cases", label: "Cases", valueType: "array", defaultValue: [] },
@@ -23,8 +24,7 @@ export const switchNode = defineBuiltinNode({
         { label: "Equals", value: "equals" },
         { label: "Contains", value: "contains" }
       ]
-    },
-    { id: "defaultRoute", label: "Default route", valueType: "string", defaultValue: "default", options: [{ label: "Default", value: "default" }, { label: "Case", value: "case" }] }
+    }
   ],
   icon: "split",
   execute: (context) => {
@@ -35,6 +35,6 @@ export const switchNode = defineBuiltinNode({
       const candidate = context.parameters.caseSensitive === false ? String(item.value ?? "").toLowerCase() : item.value;
       return context.parameters.matchMode === "contains" ? String(value ?? "").includes(String(candidate ?? "")) : candidate === value;
     });
-    return { status: "success", route: typeof match === "object" && match && "route" in match ? String(match.route) : String(context.parameters.defaultRoute ?? "default"), outputs: { value: context.inputs.value ?? null } };
+    return { status: "success", route: match ? "case" : "default", outputs: { value: context.inputs.value ?? null, matched: match ?? null } };
   }
 });

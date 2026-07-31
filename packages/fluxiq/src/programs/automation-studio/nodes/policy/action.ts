@@ -10,10 +10,10 @@ export const actionNode = defineBuiltinNode({
   inputs: [{ id: "ready", label: "Ready", valueType: "boolean" }],
   outputs: [
     { id: "success", label: "Success", valueType: "any" },
-    { id: "failure", label: "Failure", valueType: "any" }
+    { id: "failed", label: "Failed", valueType: "any" }
   ],
   parameters: [
-    { id: "actionDefinitionId", label: "Action definition", valueType: "string", required: true },
+    { id: "actionDefinitionId", label: "Action definition", valueType: "string", required: true, ui: { control: "reference", referenceType: "action", placeholder: "action.id" } },
     { id: "parameters", label: "Action parameters", valueType: "object", defaultValue: {} },
     { id: "timeoutMs", label: "Timeout ms", valueType: "number", defaultValue: 5000 },
     { id: "requiresApproval", label: "Requires approval", valueType: "boolean", defaultValue: false },
@@ -21,9 +21,9 @@ export const actionNode = defineBuiltinNode({
       id: "failureRoute",
       label: "Failure route",
       valueType: "string",
-      defaultValue: "failure",
+      defaultValue: "failed",
       options: [
-        { label: "Failure", value: "failure" },
+        { label: "Failed", value: "failed" },
         { label: "Success", value: "success" }
       ]
     }
@@ -34,6 +34,6 @@ export const actionNode = defineBuiltinNode({
     status: "success",
     route: "success",
     outputs: { success: true },
-    effects: [{ type: "policy.action.requested", payload: { actionDefinitionId: context.parameters.actionDefinitionId ?? "", parameters: jsonParameter(context.parameters.parameters, {}), timeoutMs: context.parameters.timeoutMs ?? 5000, requiresApproval: context.parameters.requiresApproval === true, failureRoute: context.parameters.failureRoute ?? "failure" } }]
+    effects: [{ type: "policy.action.requested", payload: { actionDefinitionId: context.parameters.actionDefinitionId ?? "", parameters: jsonParameter(context.parameters.parameters, {}), timeoutMs: context.parameters.timeoutMs ?? 5000, requiresApproval: context.parameters.requiresApproval === true, failureRoute: context.parameters.failureRoute ?? "failed" } }]
   })
 });

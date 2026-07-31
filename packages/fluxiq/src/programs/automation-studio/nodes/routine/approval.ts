@@ -12,7 +12,7 @@ export const approvalNode = defineBuiltinNode({
     { id: "rejected", label: "Rejected", valueType: "any" }
   ],
   parameters: [
-    { id: "prompt", label: "Prompt", valueType: "string", defaultValue: "Approve this routine step?" },
+    { id: "prompt", label: "Prompt", valueType: "string", defaultValue: "Approve this routine step?", ui: { control: "textarea", placeholder: "Approval prompt" } },
     { id: "timeoutMs", label: "Timeout ms", valueType: "number", defaultValue: 0 },
     {
       id: "defaultRoute",

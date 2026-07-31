@@ -24,7 +24,7 @@ export const recoveryNode = defineBuiltinNode({
       ]
     },
     { id: "maxAttempts", label: "Max attempts", valueType: "number", defaultValue: 2 },
-    { id: "fallbackActionDefinitionId", label: "Fallback action", valueType: "string", defaultValue: "" }
+    { id: "fallbackActionDefinitionId", label: "Fallback action", valueType: "string", defaultValue: "", ui: { control: "reference", referenceType: "action", placeholder: "action.id" } }
   ],
   icon: "shield-check",
   execute: (context) => ({ status: "success", route: context.parameters.strategy === "abort" ? "failed" : "recovered", outputs: { recovered: context.inputs.failure ?? null, strategy: context.parameters.strategy ?? "retry", maxAttempts: context.parameters.maxAttempts ?? 2, fallbackActionDefinitionId: context.parameters.fallbackActionDefinitionId ?? "" } })

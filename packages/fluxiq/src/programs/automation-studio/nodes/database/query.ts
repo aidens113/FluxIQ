@@ -10,10 +10,10 @@ export const databaseQueryNode = defineBuiltinNode({
   inputs: [],
   outputs: [{ id: "records", label: "Records", valueType: "array" }],
   parameters: [
-    { id: "collection", label: "Collection", valueType: "string", required: true },
+    { id: "collection", label: "Collection", valueType: "string", required: true, ui: { control: "reference", referenceType: "database-collection", placeholder: "collection" } },
     { id: "where", label: "Filters", valueType: "object", defaultValue: {} },
     { id: "limit", label: "Limit", valueType: "number", defaultValue: 100 },
-    { id: "orderBy", label: "Order by", valueType: "string", defaultValue: "" },
+    { id: "orderBy", label: "Order by", valueType: "string", defaultValue: "", ui: { control: "field", placeholder: "fieldName" } },
     {
       id: "orderDirection",
       label: "Order direction",
@@ -28,7 +28,7 @@ export const databaseQueryNode = defineBuiltinNode({
   icon: "database",
   execute: (context) => ({
     status: "success",
-    route: "records",
+    route: "success",
     outputs: { records: [] },
     effects: [{ type: "database.query.requested", payload: { collection: collectionName(context.parameters.collection), where: context.parameters.where ?? {}, limit: context.parameters.limit ?? 100, orderBy: context.parameters.orderBy ?? "", orderDirection: context.parameters.orderDirection ?? "asc" } }]
   })

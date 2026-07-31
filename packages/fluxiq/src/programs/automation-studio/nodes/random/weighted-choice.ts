@@ -13,7 +13,7 @@ export const weightedChoiceNode = defineBuiltinNode({
   outputs: [{ id: "choice", label: "Choice", valueType: "any" }],
   parameters: [
     { id: "defaultWeight", label: "Default weight", valueType: "number", defaultValue: 1 },
-    { id: "fallback", label: "Fallback", valueType: "any", defaultValue: null },
+    { id: "fallback", label: "Fallback", valueType: "any", defaultValue: null, ui: { control: "value" } },
     { id: "normalizeWeights", label: "Normalize weights", valueType: "boolean", defaultValue: true }
   ],
   icon: "scale",

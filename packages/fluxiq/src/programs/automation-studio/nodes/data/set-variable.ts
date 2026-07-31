@@ -10,7 +10,7 @@ export const setVariableNode = defineBuiltinNode({
   inputs: [{ id: "value", label: "Value", valueType: "any", required: true }],
   outputs: [{ id: "next", label: "Next", valueType: "any" }],
   parameters: [
-    { id: "name", label: "Name", valueType: "string", required: true },
+    { id: "name", label: "Name", valueType: "string", required: true, ui: { control: "reference", referenceType: "variable", placeholder: "variableName" } },
     {
       id: "writeMode",
       label: "Write mode",

@@ -10,7 +10,7 @@ export const databaseUpdateNode = defineBuiltinNode({
   inputs: [{ id: "patch", label: "Patch", valueType: "object", required: true }],
   outputs: [{ id: "result", label: "Result", valueType: "object" }],
   parameters: [
-    { id: "collection", label: "Collection", valueType: "string", required: true },
+    { id: "collection", label: "Collection", valueType: "string", required: true, ui: { control: "reference", referenceType: "database-collection", placeholder: "collection" } },
     { id: "where", label: "Filters", valueType: "object", defaultValue: {} },
     { id: "limit", label: "Limit", valueType: "number", defaultValue: 1 },
     { id: "dryRun", label: "Dry run", valueType: "boolean", defaultValue: false },
@@ -20,7 +20,7 @@ export const databaseUpdateNode = defineBuiltinNode({
   privileged: true,
   execute: (context) => ({
     status: "success",
-    route: "result",
+    route: "success",
     outputs: { result: {} },
     effects: [{ type: "database.update.requested", payload: { collection: collectionName(context.parameters.collection), where: context.parameters.where ?? {}, patch: context.inputs.patch ?? {}, limit: context.parameters.limit ?? 1, dryRun: context.parameters.dryRun === true, returnUpdated: context.parameters.returnUpdated !== false } }]
   })

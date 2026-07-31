@@ -2788,7 +2788,7 @@ function AutomationNodePortHandles(props: { ports: AutomationNodePort[]; type: "
 
 function automationVisualInputPorts(inputs: AutomationNodePort[], nodeDefinitionId: string): AutomationNodePort[] {
   if (inputs.length || nodeDefinitionId === "builtin.control.start") return inputs;
-  return [{ id: "in", label: "In", valueType: "any" }];
+  return [{ id: "in", label: "In", valueType: "any", role: "control" }];
 }
 
 function defaultAutomationParameterValues(parameters: AutomationNodeParameter[]): JsonObject {
@@ -3128,11 +3128,71 @@ function AutomationNodeParameterField(props: { parameter: AutomationNodeParamete
       </div>
     );
   }
+  if (parameter.valueType === "any" || parameter.ui?.control === "value") {
+    return (
+      <div className="automation-parameter-field">
+        <span>{parameter.label}{parameter.required ? " *" : ""}</span>
+        <AutomationTypedValueParameterEditor value={value} onChange={props.onChange} />
+      </div>
+    );
+  }
+  if (parameter.ui?.control === "textarea") {
+    return (
+      <label className="automation-parameter-field">
+        <span>{parameter.label}{parameter.required ? " *" : ""}</span>
+        <textarea value={String(value ?? "")} placeholder={parameter.ui.placeholder} onChange={(event) => props.onChange(event.target.value)} />
+      </label>
+    );
+  }
   return (
-    <label className="automation-parameter-field">
-      <span>{parameter.label}{parameter.required ? " *" : ""}</span>
-      <input value={automationParameterPrimitiveText(value)} onChange={(event) => props.onChange(parameter.valueType === "any" ? automationCoercedParameterValue(event.target.value) : event.target.value)} />
+    <AutomationStringParameterField parameter={parameter} value={value} onChange={props.onChange} />
+  );
+}
+
+function AutomationStringParameterField(props: { parameter: AutomationNodeParameter; value: unknown; onChange(value: string): void }) {
+  const ui = props.parameter.ui;
+  const controlLabel = automationParameterControlLabel(props.parameter);
+  return (
+    <label className={`automation-parameter-field automation-string-control ${ui?.control ?? "text"}`}>
+      <span>{props.parameter.label}{props.parameter.required ? " *" : ""}</span>
+      <div className="automation-string-input-wrap">
+        <input value={String(props.value ?? "")} placeholder={ui?.placeholder ?? controlLabel} onChange={(event) => props.onChange(event.target.value)} />
+        <small>{controlLabel}</small>
+      </div>
     </label>
+  );
+}
+
+function AutomationTypedValueParameterEditor(props: { value: unknown; onChange(value: unknown): void }) {
+  const kind = automationTypedValueKind(props.value);
+  return (
+    <div className="automation-typed-value-editor">
+      <select
+        aria-label="Value type"
+        value={kind}
+        onChange={(event) => props.onChange(defaultAutomationTypedValue(event.target.value))}
+      >
+        <option value="text">Text</option>
+        <option value="number">Number</option>
+        <option value="boolean">Boolean</option>
+        <option value="empty">Empty</option>
+      </select>
+      {kind === "boolean" ? (
+        <select aria-label="Boolean value" value={String(Boolean(props.value))} onChange={(event) => props.onChange(event.target.value === "true")}>
+          <option value="true">True</option>
+          <option value="false">False</option>
+        </select>
+      ) : kind === "empty" ? (
+        <input aria-label="Empty value" value="No value" disabled />
+      ) : (
+        <input
+          aria-label="Value"
+          type={kind === "number" ? "number" : "text"}
+          value={String(props.value ?? "")}
+          onChange={(event) => props.onChange(kind === "number" ? Number(event.target.value) : event.target.value)}
+        />
+      )}
+    </div>
   );
 }
 
@@ -3187,6 +3247,43 @@ function AutomationArrayParameterEditor(props: { value: unknown; onChange(value:
 
 function automationObjectParameterValue(value: unknown): JsonObject {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : {};
+}
+
+function automationParameterControlLabel(parameter: AutomationNodeParameter): string {
+  switch (parameter.ui?.control) {
+    case "reference":
+      switch (parameter.ui.referenceType) {
+        case "action": return "Action picker";
+        case "task": return "Task picker";
+        case "policy": return "Policy picker";
+        case "routine": return "Routine picker";
+        case "database-collection": return "Collection picker";
+        case "variable": return "Variable picker";
+        default: return "Reference picker";
+      }
+    case "identifier": return "Identifier";
+    case "path": return "Object path";
+    case "field": return "Field";
+    case "textarea": return "Long text";
+    case "value": return "Typed value";
+    default: return "Text";
+  }
+}
+
+function automationTypedValueKind(value: unknown): "text" | "number" | "boolean" | "empty" {
+  if (value === null || value === undefined) return "empty";
+  if (typeof value === "number") return "number";
+  if (typeof value === "boolean") return "boolean";
+  return "text";
+}
+
+function defaultAutomationTypedValue(kind: string): unknown {
+  switch (kind) {
+    case "number": return 0;
+    case "boolean": return false;
+    case "empty": return null;
+    default: return "";
+  }
 }
 
 function automationParameterPrimitiveText(value: unknown): string {
@@ -4348,6 +4445,11 @@ function automationPortTypesCompatible(sourceType: AutomationNodePort["valueType
 type AutomationPortTone = "flow" | "success" | "warning" | "danger" | "boolean" | "number" | "text" | "object" | "signal" | "routine" | "neutral";
 
 function automationPortTone(port: AutomationNodePort, direction: "source" | "target"): AutomationPortTone {
+  if (port.role === "success") return "success";
+  if (port.role === "failure" || port.role === "error") return "danger";
+  if (port.role === "branch") return "warning";
+  if (port.role === "data") return "object";
+  if (port.role === "control") return "flow";
   const semantic = `${port.id} ${port.label}`.toLowerCase();
   if (/\b(success|passed|approved|recovered|stable|done|next)\b/.test(semantic)) return "success";
   if (/\b(fail|failure|failed|rejected|timeout|error)\b/.test(semantic)) return "danger";
@@ -4385,6 +4487,10 @@ function automationPortColor(tone: AutomationPortTone): string {
 
 function automationPortCaption(port: AutomationNodePort, direction: "source" | "target"): string {
   const tone = automationPortTone(port, direction);
+  if (port.role === "control") return "control";
+  if (port.role === "success" || port.role === "failure" || port.role === "branch") return "route";
+  if (port.role === "error") return "error";
+  if (port.role === "data" && port.valueType === "any") return "data";
   if (port.valueType === "any") {
     return automationPortIsRoute(port) || tone === "success" || tone === "warning" || tone === "danger" ? "route" : "";
   }
@@ -4403,6 +4509,7 @@ function automationPortCaption(port: AutomationNodePort, direction: "source" | "
 }
 
 function automationPortIsRoute(port: AutomationNodePort): boolean {
+  if (port.role === "control" || port.role === "success" || port.role === "failure" || port.role === "branch") return true;
   return /\b(next|success|failure|failed|passed|approved|rejected|timeout|body|done|case|default|branch|branches|recovered)\b/.test(`${port.id} ${port.label}`.toLowerCase());
 }
 
@@ -4564,7 +4671,7 @@ function policyToReactFlowGraph(policy: any, selectedNodeId = ""): { nodes: Node
 
 function generatedPolicyInputPorts(node: any, index: number): AutomationNodePort[] {
   if (index === 0 || node.isStart) return [];
-  return [{ id: "in", label: "In", valueType: "any" }];
+  return [{ id: "in", label: "In", valueType: "any", role: "control" }];
 }
 
 function generatedPolicyNodeDescription(node: any): string {
@@ -4589,9 +4696,17 @@ function generatedPolicyOutputPorts(node: any, policyEdges: any[]): AutomationNo
   const outgoing = policyEdges.filter((edge) => String(edge.fromNodeId ?? edge.source ?? "") === String(node.id));
   const ports = outgoing.map((edge, index) => {
     const label = edge.label ?? edge.kind ?? edge.type ?? (edge.probability !== undefined ? `${Math.round(Number(edge.probability) * 100)}%` : index === 0 ? "Next" : `Branch ${index + 1}`);
-    return { id: automationPortIdFromLabel(label), label: String(label), valueType: "any" as const };
+    const id = automationPortIdFromLabel(label);
+    return { id, label: String(label), valueType: "any" as const, role: generatedPolicyOutputRole(id, label) };
   });
-  return ports.length ? uniqueAutomationPorts(ports) : [{ id: "next", label: "Next", valueType: "any" }];
+  return ports.length ? uniqueAutomationPorts(ports) : [{ id: "success", label: "Success", valueType: "any", role: "success" }];
+}
+
+function generatedPolicyOutputRole(id: string, label: unknown): NonNullable<AutomationNodePort["role"]> {
+  const semantic = `${id} ${String(label ?? "")}`.toLowerCase();
+  if (semantic.includes("success") || semantic.includes("pass") || semantic.includes("approved")) return "success";
+  if (semantic.includes("fail") || semantic.includes("error") || semantic.includes("timeout") || semantic.includes("reject")) return "failure";
+  return "branch";
 }
 
 function layoutAutomationPolicyNodes(policyNodes: any[], policyEdges: any[]): Map<string, { x: number; y: number }> {
