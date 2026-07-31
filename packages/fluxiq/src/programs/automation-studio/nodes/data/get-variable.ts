@@ -10,9 +10,9 @@ export const getVariableNode = defineBuiltinNode({
   inputs: [],
   outputs: [{ id: "value", label: "Value", valueType: "any" }],
   parameters: [
-    { id: "name", label: "Name", valueType: "string", required: true, ui: { control: "reference", referenceType: "variable", placeholder: "variableName" } },
-    { id: "defaultValue", label: "Default value", valueType: "any", defaultValue: null, ui: { control: "value" } },
-    { id: "required", label: "Required", valueType: "boolean", defaultValue: false }
+    { id: "name", label: "Variable name", description: "The saved workflow value to read.", valueType: "string", required: true, ui: { control: "reference", referenceType: "variable", placeholder: "variableName" } },
+    { id: "defaultValue", label: "If variable is missing", description: "Value to use when the variable has not been set yet.", valueType: "any", defaultValue: null, ui: { control: "value" } },
+    { id: "required", label: "Fail when missing", description: "When enabled, a missing variable sends execution to the failed path.", valueType: "boolean", defaultValue: false }
   ],
   icon: "database",
   execute: (context) => {

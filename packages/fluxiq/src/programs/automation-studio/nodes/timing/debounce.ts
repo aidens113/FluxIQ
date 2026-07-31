@@ -4,22 +4,23 @@ import { defineBuiltinNode, emptyResult } from "../shared/definition";
 export const debounceNode = defineBuiltinNode({
   id: "builtin.timing.debounce",
   label: "Debounce",
-  description: "Allow a branch only after input has been stable.",
+  description: "Continue only after a signal stops changing for a short time.",
   class: "timing",
   scope: "both",
   inputs: [{ id: "signal", label: "Signal", valueType: "signal", required: true }],
   outputs: [{ id: "stable", label: "Stable", valueType: "boolean" }],
   parameters: [
-    { id: "windowMs", label: "Window ms", valueType: "number", defaultValue: 250 },
+    { id: "windowMs", label: "Stable for milliseconds", description: "How long the signal must remain unchanged.", valueType: "number", defaultValue: 250 },
     {
       id: "edge",
-      label: "Edge",
+      label: "When to continue",
+      description: "Choose whether to continue at the start, end, or both sides of the stable window.",
       valueType: "string",
       defaultValue: "trailing",
       options: [
-        { label: "Trailing", value: "trailing" },
-        { label: "Leading", value: "leading" },
-        { label: "Both", value: "both" }
+        { label: "After it stays stable", value: "trailing" },
+        { label: "Immediately, then wait", value: "leading" },
+        { label: "Both immediate and stable", value: "both" }
       ]
     }
   ],

@@ -9,13 +9,14 @@ export const constantNode = defineBuiltinNode({
   inputs: [],
   outputs: [{ id: "value", label: "Value", valueType: "any" }],
   parameters: [
-    { id: "value", label: "Value", valueType: "any", defaultValue: null, ui: { control: "value" } },
+    { id: "value", label: "Value to send", description: "The fixed value this node outputs every time it runs.", valueType: "any", defaultValue: null, ui: { control: "value" } },
     {
       id: "valueLabel",
-      label: "Value label",
+      label: "Display name",
+      description: "Friendly label shown on the node for this constant.",
       valueType: "string",
       defaultValue: "Constant",
-      ui: { control: "text", placeholder: "Value label" }
+      ui: { control: "text", placeholder: "Display name" }
     }
   ],
   icon: "braces",

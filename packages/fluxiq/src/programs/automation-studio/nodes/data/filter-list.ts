@@ -3,29 +3,38 @@ import { arrayValue, compareBasic, defineBuiltinNode, emptyResult, getPathValue 
 export const filterListNode = defineBuiltinNode({
   id: "builtin.data.filter-list",
   label: "Filter List",
-  description: "Filter an array using a boolean expression.",
+  description: "Keep only list items that match a simple rule.",
   class: "data",
   scope: "both",
   inputs: [{ id: "items", label: "Items", valueType: "array", required: true }],
   outputs: [{ id: "items", label: "Items", valueType: "array" }],
   parameters: [
-    { id: "path", label: "Item path", valueType: "string", defaultValue: "", ui: { control: "path", placeholder: "field.path" } },
+    { id: "path", label: "Field to check", description: "Optional field inside each item, such as status or user.name. Leave blank to check the whole item.", valueType: "string", defaultValue: "", ui: { control: "path", placeholder: "field.path" } },
     {
       id: "operator",
-      label: "Operator",
+      label: "Match rule",
+      description: "How each item is compared with the value below.",
       valueType: "string",
       defaultValue: "exists",
-      options: ["exists", "equals", "not-equals", "greater-than", "less-than", "contains"].map((value) => ({ label: value, value }))
+      options: [
+        { label: "Field exists", value: "exists" },
+        { label: "Equals", value: "equals" },
+        { label: "Does not equal", value: "not-equals" },
+        { label: "Greater than", value: "greater-than" },
+        { label: "Less than", value: "less-than" },
+        { label: "Contains", value: "contains" }
+      ]
     },
-    { id: "value", label: "Compare value", valueType: "any", defaultValue: null, ui: { control: "value" } },
+    { id: "value", label: "Value to compare", description: "The value each item is checked against.", valueType: "any", defaultValue: null, ui: { control: "value" } },
     {
       id: "onInvalid",
-      label: "Invalid items",
+      label: "If the field is missing",
+      description: "Choose whether items with no matching field should stay in the list.",
       valueType: "string",
       defaultValue: "exclude",
       options: [
-        { label: "Exclude", value: "exclude" },
-        { label: "Include", value: "include" }
+        { label: "Remove item", value: "exclude" },
+        { label: "Keep item", value: "include" }
       ]
     }
   ],

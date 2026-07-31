@@ -3,9 +3,22 @@ import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import type { AutomationStudioSnapshot } from "../api";
 import type { AutomationStudioProject, AutomationStudioProjectCategory, AutomationStudioProjectHierarchy } from "../api/contracts";
-import { createAutomationStudioFixture } from "../model";
+import {
+  appendRecordingEntry,
+  createAutomationStudioFixture,
+  createRecordingSession,
+  diffStateSnapshots,
+  finalizeRecordingSession,
+  type AppendRecordingEntryInput,
+  type CreateRecordingSessionInput,
+  type RecordingSession,
+  type SignalRegistry,
+  type StateSnapshot
+} from "../model";
+import { normalizeRecordingTimeline, type NormalizationOptions, type NormalizedTimeline } from "../normalization";
 import { automationNodeClasses } from "../nodes";
 import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage";
+import type { JsonObject } from "../../../core";
 import {
   type CanonicalAutomationStudioRepositories,
   createCanonicalAutomationStudioMemoryRepositories
@@ -22,6 +35,11 @@ type AutomationStudioProjectRecord = AutomationStudioProject & AutomationStudioP
 type AutomationStudioProjectIndex = {
   categories: AutomationStudioProjectCategory[];
   projects: AutomationStudioProject[];
+};
+
+type RecordingIndex = {
+  recordings: { recordingId: string; taskId?: string; startedAt: number; endedAt?: number; updatedAt: number }[];
+  normalizedTimelines: { normalizedTimelineId: string; recordingId: string; generatedAt: number }[];
 };
 
 export class AutomationStudioService {
@@ -66,6 +84,61 @@ export class AutomationStudioService {
         }
       ]
     };
+  }
+
+  async listRecordingSessions(projectId?: string | null): Promise<RecordingSession[]> {
+    await this.ready;
+    if (projectId) await this.loadProjectRecordings(projectId);
+    return await this.repositories.recordingSessions.list();
+  }
+
+  async getRecordingSession(recordingId: string, projectId?: string | null): Promise<RecordingSession> {
+    await this.ready;
+    if (projectId) await this.loadProjectRecordings(projectId);
+    const recording = await this.repositories.recordingSessions.get(recordingId);
+    if (!recording) throw new Error(`Unknown Automation Studio recording: ${recordingId}`);
+    return recording;
+  }
+
+  async createRecording(input: CreateRecordingSessionInput & { projectId?: string | null }): Promise<RecordingSession> {
+    await this.ready;
+    const recording = createRecordingSession(input);
+    await this.repositories.recordingSessions.put(recording);
+    if (input.projectId) await this.writeProjectRecordingSession(input.projectId, recording);
+    return recording;
+  }
+
+  async appendRecordingEvent(input: { projectId?: string | null; recordingId: string; entry: AppendRecordingEntryInput }): Promise<RecordingSession> {
+    const recording = await this.getRecordingSession(input.recordingId, input.projectId);
+    const next = appendRecordingEntry(recording, input.entry);
+    await this.repositories.recordingSessions.put(next);
+    if (input.projectId) await this.writeProjectRecordingSession(input.projectId, next);
+    return next;
+  }
+
+  async finalizeRecording(input: { projectId?: string | null; recordingId: string; endedAt?: number }): Promise<RecordingSession> {
+    const recording = await this.getRecordingSession(input.recordingId, input.projectId);
+    const finalized = finalizeRecordingSession(recording, input.endedAt);
+    await this.repositories.recordingSessions.put(finalized);
+    if (input.projectId) await this.writeProjectRecordingSession(input.projectId, finalized);
+    return finalized;
+  }
+
+  async normalizeRecording(input: { projectId?: string | null; recordingId: string; options?: NormalizationOptions }): Promise<NormalizedTimeline> {
+    const recording = await this.getRecordingSession(input.recordingId, input.projectId);
+    const normalized = normalizeRecordingTimeline(recording, input.options);
+    await this.repositories.normalizedTimelines.put(normalized);
+    if (input.projectId) await this.writeProjectNormalizedTimeline(input.projectId, normalized);
+    return normalized;
+  }
+
+  async inspectStateDiff(input: { previous: StateSnapshot; current: StateSnapshot; includeStable?: boolean }) {
+    return { deltas: diffStateSnapshots(input.previous, input.current, input.includeStable !== undefined ? { includeStable: input.includeStable } : {}) };
+  }
+
+  async listSignalRegistries(): Promise<SignalRegistry[]> {
+    await this.ready;
+    return await this.repositories.signalRegistries.list();
   }
 
   async listProjects(): Promise<{ categories: AutomationStudioProjectCategory[]; projects: AutomationStudioProject[] }> {
@@ -311,6 +384,10 @@ export class AutomationStudioService {
       mkdir(path.join(root, "routines"), { recursive: true }),
       mkdir(path.join(root, "configs"), { recursive: true }),
       mkdir(path.join(root, "recordings"), { recursive: true }),
+      mkdir(path.join(root, "recordings", "sessions"), { recursive: true }),
+      mkdir(path.join(root, "recordings", "normalized"), { recursive: true }),
+      mkdir(path.join(root, "recordings", "snapshots"), { recursive: true }),
+      mkdir(path.join(root, "recordings", "indexes"), { recursive: true }),
       mkdir(path.join(root, "policies"), { recursive: true }),
       mkdir(path.join(root, "custom-nodes"), { recursive: true }),
       mkdir(path.join(root, "artifacts"), { recursive: true })
@@ -324,6 +401,72 @@ export class AutomationStudioService {
 
   private projectFile(projectId: string, ...parts: string[]): string {
     return path.join(this.projectDirectory(projectId), ...parts);
+  }
+
+  private async readRecordingIndex(projectId: string): Promise<RecordingIndex> {
+    await this.findProject(projectId);
+    return await new ProgramJsonStore<RecordingIndex>(this.projectFile(projectId, "recordings", "indexes", "recordings.json"), () => ({ recordings: [], normalizedTimelines: [] })).read();
+  }
+
+  private async writeRecordingIndex(projectId: string, mutator: (index: RecordingIndex) => RecordingIndex): Promise<RecordingIndex> {
+    await this.findProject(projectId);
+    return await new ProgramJsonStore<RecordingIndex>(this.projectFile(projectId, "recordings", "indexes", "recordings.json"), () => ({ recordings: [], normalizedTimelines: [] })).update(mutator);
+  }
+
+  private async writeProjectRecordingSession(projectId: string, recording: RecordingSession): Promise<void> {
+    await this.ensureProjectStructure(projectId);
+    const recordingId = safeSegment(recording.recordingId);
+    const sessionDir = path.join(this.projectDirectory(projectId), "recordings", "sessions", recordingId);
+    await mkdir(path.join(sessionDir, "events"), { recursive: true });
+    await mkdir(path.join(sessionDir, "snapshots"), { recursive: true });
+    await new ProgramJsonStore<JsonObject>(path.join(sessionDir, "recording.json"), () => ({ recording: recording as unknown as JsonObject })).write({ recording: recording as unknown as JsonObject });
+    await new ProgramJsonStore<JsonObject>(path.join(sessionDir, "events", "timeline.json"), () => ({ timeline: [] })).write({ timeline: recording.timeline as unknown as JsonObject[] });
+    await new ProgramJsonStore<JsonObject>(path.join(sessionDir, "snapshots", "initial-state.json"), () => ({ initialState: recording.initialState as unknown as JsonObject })).write({ initialState: recording.initialState as unknown as JsonObject });
+    await this.writeRecordingIndex(projectId, (index) => ({
+      recordings: upsertBy(index.recordings ?? [], "recordingId", {
+        recordingId: recording.recordingId,
+        ...(recording.taskId !== undefined ? { taskId: recording.taskId } : {}),
+        startedAt: recording.startedAt,
+        ...(recording.endedAt !== undefined ? { endedAt: recording.endedAt } : {}),
+        updatedAt: Date.now()
+      }),
+      normalizedTimelines: index.normalizedTimelines ?? []
+    }));
+  }
+
+  private async writeProjectNormalizedTimeline(projectId: string, normalized: NormalizedTimeline): Promise<void> {
+    await this.ensureProjectStructure(projectId);
+    const fileName = `${safeSegment(normalized.normalizedTimelineId)}.json`;
+    await new ProgramJsonStore<JsonObject>(this.projectFile(projectId, "recordings", "normalized", fileName), () => ({ normalizedTimeline: normalized as unknown as JsonObject })).write({ normalizedTimeline: normalized as unknown as JsonObject });
+    await this.writeRecordingIndex(projectId, (index) => ({
+      recordings: index.recordings ?? [],
+      normalizedTimelines: upsertBy(index.normalizedTimelines ?? [], "normalizedTimelineId", {
+        normalizedTimelineId: normalized.normalizedTimelineId,
+        recordingId: normalized.recordingId,
+        generatedAt: normalized.generatedAt
+      })
+    }));
+  }
+
+  private async loadProjectRecordings(projectId: string): Promise<void> {
+    if (!this.projectRootDir) return;
+    const index = await this.readRecordingIndex(projectId);
+    for (const item of index.recordings ?? []) {
+      const stored = await new ProgramJsonStore<JsonObject>(
+        this.projectFile(projectId, "recordings", "sessions", safeSegment(item.recordingId), "recording.json"),
+        () => ({})
+      ).read();
+      const recording = stored.recording as unknown as RecordingSession | undefined;
+      if (recording?.recordingId) await this.repositories.recordingSessions.put(recording);
+    }
+    for (const item of index.normalizedTimelines ?? []) {
+      const stored = await new ProgramJsonStore<JsonObject>(
+        this.projectFile(projectId, "recordings", "normalized", `${safeSegment(item.normalizedTimelineId)}.json`),
+        () => ({})
+      ).read();
+      const normalized = stored.normalizedTimeline as unknown as NormalizedTimeline | undefined;
+      if (normalized?.normalizedTimelineId) await this.repositories.normalizedTimelines.put(normalized);
+    }
   }
 
   private async seedFixture(): Promise<void> {
@@ -346,4 +489,10 @@ function normalizeProjectCategories(categories: AutomationStudioProjectCategory[
 function nextCategoryOrder(categories: AutomationStudioProjectCategory[]): number {
   if (!categories.length) return 0;
   return Math.max(...normalizeProjectCategories(categories).map((category) => category.order)) + 1;
+}
+
+function upsertBy<TItem, TKey extends keyof TItem>(items: TItem[], key: TKey, item: TItem): TItem[] {
+  const index = items.findIndex((candidate) => candidate[key] === item[key]);
+  if (index < 0) return [item, ...items];
+  return items.map((candidate, candidateIndex) => candidateIndex === index ? item : candidate);
 }

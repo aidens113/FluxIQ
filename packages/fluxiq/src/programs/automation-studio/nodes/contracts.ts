@@ -39,6 +39,7 @@ export type AutomationNodePort = {
 export type AutomationNodeParameter = {
   id: string;
   label: string;
+  description?: string;
   valueType: AutomationNodeValueType | "expression" | "json";
   defaultValue?: JsonValue;
   options?: Array<{ label: string; value: string }>;

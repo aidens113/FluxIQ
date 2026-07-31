@@ -13,20 +13,21 @@ export const retryNode = defineBuiltinNode({
     { id: "failed", label: "Failed", valueType: "any" }
   ],
   parameters: [
-    { id: "attempts", label: "Attempts", valueType: "number", defaultValue: 3 },
-    { id: "delayMs", label: "Delay ms", valueType: "number", defaultValue: 500 },
+    { id: "attempts", label: "Maximum tries", description: "How many times this branch may be attempted.", valueType: "number", defaultValue: 3 },
+    { id: "delayMs", label: "Wait between tries", description: "Base delay in milliseconds before another attempt.", valueType: "number", defaultValue: 500 },
     {
       id: "backoff",
-      label: "Backoff",
+      label: "Delay pattern",
+      description: "How the wait time changes after repeated failures.",
       valueType: "string",
       defaultValue: "fixed",
       options: [
-        { label: "Fixed", value: "fixed" },
-        { label: "Linear", value: "linear" },
-        { label: "Exponential", value: "exponential" }
+        { label: "Same wait every time", value: "fixed" },
+        { label: "Increase steadily", value: "linear" },
+        { label: "Increase quickly", value: "exponential" }
       ]
     },
-    { id: "jitterMs", label: "Jitter ms", valueType: "number", defaultValue: 0 }
+    { id: "jitterMs", label: "Random extra wait", description: "Maximum random milliseconds added or subtracted from each delay.", valueType: "number", defaultValue: 0 }
   ],
   icon: "refresh-cw",
   execute: (context) => emptyResult({ success: context.inputs.in ?? null, attempts: durationMs(context.parameters.attempts, 3), delayMs: durationMs(context.parameters.delayMs, 500), backoff: context.parameters.backoff ?? "fixed", jitterMs: durationMs(context.parameters.jitterMs, 0) })

@@ -13,8 +13,8 @@ export const addNode = defineBuiltinNode({
   ],
   outputs: [{ id: "result", label: "Result", valueType: "number" }],
   parameters: [
-    { id: "offset", label: "Offset", valueType: "number", defaultValue: 0 },
-    { id: "precision", label: "Decimal places", valueType: "string", defaultValue: "none", options: optionalPrecisionOptions }
+    { id: "offset", label: "Add after total", description: "Extra amount added after the two inputs are combined.", valueType: "number", defaultValue: 0 },
+    { id: "precision", label: "Round result to", description: "Optional rounding applied after the calculation.", valueType: "string", defaultValue: "none", options: optionalPrecisionOptions }
   ],
   icon: "calculator",
   execute: (context) => {

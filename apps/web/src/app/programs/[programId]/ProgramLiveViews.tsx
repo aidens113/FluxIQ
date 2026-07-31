@@ -25,7 +25,7 @@ import {
   type NodeProps,
   type ReactFlowInstance
 } from "@xyflow/react";
-import { automationNodeClassGroups, getAutomationNodeDefinition, getAutomationNodeDefinitions, type AutomationNodeDefinition, type AutomationNodeParameter, type AutomationNodePort } from "fluxiq/automation-studio/nodes";
+import { automationNodeClassGroups, getAutomationNodeDefinitions, type AutomationNodeDefinition, type AutomationNodeParameter, type AutomationNodePort } from "fluxiq/automation-studio/nodes";
 
 type ApiResponse<T = unknown> = { ok: boolean; payload?: T; error?: string };
 type JsonObject = Record<string, unknown>;
@@ -204,6 +204,7 @@ type AutomationSelection =
   | { kind: "policy"; id: string }
   | { kind: "node"; id: string }
   | { kind: "editor-node"; id: string; node: { label: string; nodeType: string; family: string; description: string; customDescription?: string; nodeDefinitionId?: string; icon?: string; inputs: AutomationNodePort[]; outputs: AutomationNodePort[]; parameters: AutomationNodeParameter[]; parameterValues: JsonObject; privileged?: boolean; actionTypes?: string[] } }
+  | { kind: "editor-mode"; id: string; editor: "task" | "routine"; label: string; description: string; sections: Array<{ title: string; rows: Array<[string, string]> }> }
   | { kind: "recording"; id: string }
   | { kind: "timeline"; id: string }
   | { kind: "signal"; id: string };
@@ -250,6 +251,18 @@ const automationEdgeTypes = {
   automationEdge: AutomationFlowEdge
 };
 
+function mergeById<TItem extends Record<string, any>>(primary: TItem[], secondary: TItem[], idKey: keyof TItem): TItem[] {
+  const seen = new Set<string>();
+  const merged: TItem[] = [];
+  for (const item of [...primary, ...secondary]) {
+    const id = String(item[idKey] ?? "");
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    merged.push(item);
+  }
+  return merged;
+}
+
 function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const api = useProgramApi("automation-studio");
   const pathname = usePathname();
@@ -257,6 +270,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const searchParams = useSearchParams();
   const urlProjectId = searchParams.get("project");
   const [snapshot, setSnapshot] = useState<any>(null);
+  const [projectRecordings, setProjectRecordings] = useState<any[]>([]);
   const [projects, setProjects] = useState<AutomationStudioProject[]>([]);
   const [projectCategories, setProjectCategories] = useState<AutomationStudioProjectCategory[]>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
@@ -324,6 +338,19 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   useEffect(() => void refresh(), [refresh]);
   useEffect(() => void refreshProjects(), [refreshProjects]);
   useEffect(() => {
+    let cancelled = false;
+    if (!activeProjectId) {
+      setProjectRecordings([]);
+      return;
+    }
+    void api.post<{ recordings: any[] }>("list-recordings", { projectId: activeProjectId }).then((result) => {
+      if (!cancelled && result.ok) setProjectRecordings(result.payload?.recordings ?? []);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProjectId, api]);
+  useEffect(() => {
     function refreshProjectChooser() {
       if (document.visibilityState === "visible" && !activeProjectId) void refreshProjects();
     }
@@ -336,7 +363,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   }, [activeProjectId, refreshProjects]);
 
   const canonical = snapshot?.payload?.canonical ?? {};
-  const recordings = canonical.recordingSessions ?? [];
+  const recordings = mergeById(projectRecordings, canonical.recordingSessions ?? [], "recordingId");
   const timelines = canonical.normalizedTimelines ?? [];
   const registries = canonical.signalRegistries ?? [];
   const models = canonical.learnedTaskModels ?? [];
@@ -1585,7 +1612,7 @@ function AutomationViewRenderer(props: {
   setDockTab(tab: AutomationDockTab): void;
   setSelection(selection: AutomationSelection): void;
 }) {
-  if (props.view.type === "design") return <AutomationPolicyCanvas policy={props.policy} selectedNode={props.selectedNode} setSelection={props.setSelection} />;
+  if (props.view.type === "design") return <AutomationPolicyCanvas entries={props.entries} policy={props.policy} recordings={props.recordings} selectedNode={props.selectedNode} selectedTimeline={props.selectedTimeline} signals={props.signals} setSelection={props.setSelection} />;
   if (props.view.type === "recordings") return <AutomationTimelineView entries={props.entries} notes={props.notes} selectedEntry={props.selectedEntry} setSelection={props.setSelection} />;
   if (props.view.type === "signals") return <AutomationSignalWorkspace signals={props.signals} setSelection={props.setSelection} />;
   if (props.view.type === "runtime") return <AutomationRuntimeWorkspace timelines={props.selectedTimeline ? [props.selectedTimeline] : []} models={props.models} policies={props.policies} />;
@@ -2254,6 +2281,7 @@ function automationNodeIcon(icon: string | undefined, family: string | undefined
 
 function AutomationNodePalette(props: {
   collapsed: boolean;
+  disabled?: boolean;
   groups: AutomationEditorPaletteGroup[];
   title: string;
   onAddNode(spec: AutomationEditorNodeSpec): void;
@@ -2273,7 +2301,7 @@ function AutomationNodePalette(props: {
           {group.nodes.map((item) => {
             const Icon = automationNodeIcon(item.icon, item.family);
             return (
-              <button key={item.id} onClick={() => props.onAddNode(item)} title={item.description} type="button">
+              <button disabled={props.disabled} key={item.id} onClick={() => props.onAddNode(item)} title={props.disabled ? "Switch to Flow mode to add nodes." : item.description} type="button">
                 <Icon size={15} aria-hidden />
                 <span><strong>{item.label}</strong><small>{item.description}</small></span>
               </button>
@@ -2331,10 +2359,27 @@ function policyEditorSelection(id: string, data: AutomationPolicyNodeData): Auto
   };
 }
 
+type AutomationTaskEditorMode = "flow" | "state" | "evidence" | "test";
+type AutomationRoutineEditorMode = "flow" | "data" | "plan" | "test";
+
+const automationTaskEditorModes: Array<{ id: AutomationTaskEditorMode; label: string; description: string }> = [
+  { id: "flow", label: "Flow", description: "Edit policy nodes, routes, conditions, actions, retries, and recovery." },
+  { id: "state", label: "State", description: "Inspect task signals, observed state changes, volatility, and expectations." },
+  { id: "evidence", label: "Evidence", description: "Review recordings, notes, checkpoints, normalized timeline entries, and raw evidence links." },
+  { id: "test", label: "Test Run", description: "Preview policy execution against the selected recording and state timeline." }
+];
+
+const automationRoutineEditorModes: Array<{ id: AutomationRoutineEditorMode; label: string; description: string }> = [
+  { id: "flow", label: "Flow", description: "Edit routine orchestration nodes, routes, branches, waits, approvals, and recovery." },
+  { id: "data", label: "Data", description: "Inspect routine inputs, outputs, variables, handoffs, and configuration values." },
+  { id: "plan", label: "Run Plan", description: "Review execution order, dependencies, parallel paths, and validation warnings." },
+  { id: "test", label: "Test Run", description: "Preview routine execution, skipped branches, approval pauses, retries, and final status." }
+];
+
 function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelection(selection: AutomationSelection): void }) {
   const [selectedRoutineNodeId, setSelectedRoutineNodeId] = useState("");
   const [selectedRoutineEdgeIds, setSelectedRoutineEdgeIds] = useState<string[]>([]);
-  const [layer, setLayer] = useState("Routine flow");
+  const [mode, setMode] = useState<AutomationRoutineEditorMode>("flow");
   const [paletteCollapsed, setPaletteCollapsed] = useState(false);
   const routineFrameRef = useRef<HTMLDivElement>(null);
   const routineSelectionRef = useRef("");
@@ -2349,7 +2394,14 @@ function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelec
   const palette = automationEditorPalette
     .map((group) => ({ ...group, nodes: group.nodes.filter((node) => node.scope === "routine" || node.scope === "both") }))
     .filter((group) => group.nodes.length > 0);
+  const activeMode = automationRoutineEditorModes.find((item) => item.id === mode) ?? { id: "flow", label: "Flow", description: "Edit routine orchestration nodes, routes, branches, waits, approvals, and recovery." };
+  const isFlowMode = mode === "flow";
+  const selectRoutineMode = (nextMode: AutomationRoutineEditorMode) => {
+    setMode(nextMode);
+    if (nextMode !== "flow") props.setSelection(routineEditorModeSelection({ mode: nextMode, nodes: routineNodes, edges: routineEdges, models: props.models, policies: props.policies }));
+  };
   const addRoutineNode = (spec: AutomationEditorNodeSpec) => {
+    if (!isFlowMode) return;
     const id = `routine-${spec.id}-${Date.now().toString(36)}`;
     const data: AutomationRoutineNodeData = {
       nodeDefinitionId: spec.id,
@@ -2386,6 +2438,7 @@ function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelec
   };
   useEffect(() => {
     function handleDeleteNode(event: Event) {
+      if (!isFlowMode) return;
       const nodeId = (event as CustomEvent<{ nodeId?: string }>).detail?.nodeId;
       if (!nodeId) return;
       setRoutineNodes((nodes) => nodes.filter((node) => node.id !== nodeId));
@@ -2393,6 +2446,7 @@ function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelec
       setSelectedRoutineNodeId((current) => current === nodeId ? "" : current);
     }
     function handleDeleteEdge(event: Event) {
+      if (!isFlowMode) return;
       const edgeId = (event as CustomEvent<{ edgeId?: string }>).detail?.edgeId;
       if (!edgeId) return;
       setRoutineEdges((edges) => edges.filter((edge) => edge.id !== edgeId));
@@ -2411,13 +2465,16 @@ function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelec
       window.removeEventListener("automation-studio:delete-edge", handleDeleteEdge);
       window.removeEventListener("automation-studio:update-node-parameters", handleUpdateParameters);
     };
-  }, []);
+  }, [isFlowMode]);
   return (
     <section className="automation-policy-canvas routine-canvas">
-      <div className="automation-layer-tabs" role="tablist" aria-label="Routine graph layers">
-        {["Routine flow", "Tasks", "Branches", "Recovery", "Permissions", "Custom nodes"].map((item) => (
-          <button className={layer === item ? "selected" : ""} key={item} onClick={() => setLayer(item)} type="button">{item}</button>
+      <div className="automation-editor-mode-bar">
+        <div className="automation-layer-tabs" role="tablist" aria-label="Routine editor modes">
+          {automationRoutineEditorModes.map((item) => (
+          <button className={mode === item.id ? "selected" : ""} key={item.id} onClick={() => selectRoutineMode(item.id)} title={item.description} type="button">{item.label}</button>
         ))}
+        </div>
+        <span>{activeMode.description}</span>
       </div>
       <div className={paletteCollapsed ? "automation-routine-editor-grid palette-collapsed" : "automation-routine-editor-grid"}>
         <div className="automation-react-flow-frame" ref={routineFrameRef}>
@@ -2428,21 +2485,21 @@ function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelec
             edges={routineEdges}
             edgeTypes={automationEdgeTypes}
             nodeTypes={automationNodeTypes}
-            nodesDraggable
-            nodesConnectable
+            nodesDraggable={isFlowMode}
+            nodesConnectable={isFlowMode}
             elementsSelectable
-            deleteKeyCode={["Backspace", "Delete"]}
+            deleteKeyCode={isFlowMode ? ["Backspace", "Delete"] : null}
             onInit={setRoutineFlow}
             isValidConnection={(connection) => automationConnectionIsValid(connection, routineNodes)}
-            onConnect={(connection) => setRoutineEdges((edges) => addEdge(createAutomationConnectionEdge(connection, edges, "routine-edge", routineNodes), edges))}
-            onEdgesChange={(changes: EdgeChange[]) => setRoutineEdges((edges) => applyEdgeChanges(changes, edges))}
+            onConnect={(connection) => isFlowMode ? setRoutineEdges((edges) => addEdge(createAutomationConnectionEdge(connection, edges, "routine-edge", routineNodes), edges)) : undefined}
+            onEdgesChange={(changes: EdgeChange[]) => isFlowMode ? setRoutineEdges((edges) => applyEdgeChanges(changes, edges)) : undefined}
             onEdgesDelete={(deletedEdges) => setSelectedRoutineEdgeIds((ids) => ids.filter((id) => !deletedEdges.some((edge) => edge.id === id)))}
             onNodesDelete={(deletedNodes) => {
               const deletedIds = new Set(deletedNodes.map((node) => node.id));
               setRoutineEdges((edges) => edges.filter((edge) => !deletedIds.has(edge.source) && !deletedIds.has(edge.target)));
               if (deletedIds.has(selectedRoutineNodeId)) setSelectedRoutineNodeId("");
             }}
-            onNodesChange={(changes: NodeChange<Node<AutomationRoutineNodeData>>[]) => setRoutineNodes((nodes) => applyNodeChanges(changes, nodes))}
+            onNodesChange={(changes: NodeChange<Node<AutomationRoutineNodeData>>[]) => isFlowMode ? setRoutineNodes((nodes) => applyNodeChanges(changes, nodes)) : undefined}
             onNodeClick={(_event, node) => {
               setSelectedRoutineNodeId((current) => current === node.id ? current : node.id);
               const key = `node:${node.id}`;
@@ -2470,29 +2527,164 @@ function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelec
             <Controls showInteractive={false} />
           </ReactFlow>
         </div>
-        <AutomationNodePalette collapsed={paletteCollapsed} groups={palette} title="Routine Nodes" onAddNode={addRoutineNode} onCollapsedChange={setPaletteCollapsed} />
+        <AutomationNodePalette collapsed={paletteCollapsed} disabled={!isFlowMode} groups={palette} title="Routine Nodes" onAddNode={addRoutineNode} onCollapsedChange={setPaletteCollapsed} />
       </div>
     </section>
   );
 }
 
+function taskEditorModeSelection(props: { entries: any[]; mode: AutomationTaskEditorMode; policy: any; recordings: any[]; selectedTimeline: any; signals: any[] }): AutomationSelection {
+  const modeDefinition = automationTaskEditorModes.find((item) => item.id === props.mode) ?? automationTaskEditorModes[0]!;
+  const stateEntries = props.entries.filter((entry) => entry.type === "state_delta" || entry.type === "state_checkpoint");
+  const actionEntries = props.entries.filter((entry) => entry.type === "action");
+  const noteEntries = props.entries.filter((entry) => entry.type === "note");
+  const stateDeltas = stateEntries.reduce((total, entry) => total + (entry.deltas?.length ?? 0), 0);
+  const policyConditions = props.policy?.nodes?.reduce((total: number, node: any) => total + (node.readiness?.length ?? 0) + (node.successConditions?.length ?? 0), 0) ?? 0;
+  if (props.mode === "state") {
+    return {
+      kind: "editor-mode",
+      id: "task:state",
+      editor: "task",
+      label: modeDefinition.label,
+      description: modeDefinition.description,
+      sections: [
+        { title: "State Summary", rows: [["Signals", String(props.signals.length)], ["State timeline entries", String(stateEntries.length)], ["State deltas", String(stateDeltas)], ["Policy conditions", String(policyConditions)]] },
+        { title: "Visible Signals", rows: topSignalRows(props.signals) }
+      ]
+    };
+  }
+  if (props.mode === "evidence") {
+    return {
+      kind: "editor-mode",
+      id: "task:evidence",
+      editor: "task",
+      label: modeDefinition.label,
+      description: modeDefinition.description,
+      sections: [
+        { title: "Evidence Summary", rows: [["Recordings", String(props.recordings.length)], ["Timeline entries", String(props.selectedTimeline?.timeline?.length ?? props.entries.length)], ["Actions", String(actionEntries.length)], ["Notes", String(noteEntries.length)]] },
+        { title: "Recent Evidence", rows: topTimelineRows(props.entries) }
+      ]
+    };
+  }
+  return {
+    kind: "editor-mode",
+    id: "task:test",
+    editor: "task",
+    label: modeDefinition.label,
+    description: modeDefinition.description,
+    sections: [
+      { title: "Test Run Summary", rows: [["Runnable nodes", String(props.policy?.nodes?.length ?? 0)], ["Routes", String(props.policy?.edges?.length ?? 0)], ["Replay entries", String(props.entries.length)], ["Signals", String(props.signals.length)]] },
+      { title: "Current Behavior", rows: [["Simulation", "Uses selected recording/state data once runtime simulation is connected."], ["Canvas editing", "Disabled in Test Run mode."]] }
+    ]
+  };
+}
+
+function routineEditorModeSelection(props: { mode: AutomationRoutineEditorMode; nodes: Array<Node<AutomationRoutineNodeData>>; edges: Edge[]; models: any[]; policies: any[] }): AutomationSelection {
+  const modeDefinition = automationRoutineEditorModes.find((item) => item.id === props.mode) ?? automationRoutineEditorModes[0]!;
+  if (props.mode === "data") {
+    return {
+      kind: "editor-mode",
+      id: "routine:data",
+      editor: "routine",
+      label: modeDefinition.label,
+      description: modeDefinition.description,
+      sections: [
+        { title: "Data Summary", rows: [["Routine nodes", String(props.nodes.length)], ["Task policies", String(props.policies.length)], ["Learned models", String(props.models.length)], ["Handoffs", String(props.edges.length)]] },
+        { title: "Node Data Shape", rows: topRoutineNodeRows(props.nodes) }
+      ]
+    };
+  }
+  if (props.mode === "plan") {
+    return {
+      kind: "editor-mode",
+      id: "routine:plan",
+      editor: "routine",
+      label: modeDefinition.label,
+      description: modeDefinition.description,
+      sections: [
+        { title: "Run Plan Summary", rows: [["Steps", String(props.nodes.length)], ["Routes", String(props.edges.length)], ["Parallel paths", String(props.nodes.filter((node) => node.data.family === "control-flow" && node.data.outputs.length > 2).length)], ["Approvals", String(props.nodes.filter((node) => node.data.privileged).length)]] },
+        { title: "Current Behavior", rows: [["Execution order", "Derived from graph connections in a later runtime slice."], ["Canvas editing", "Disabled in Run Plan mode."]] }
+      ]
+    };
+  }
+  return {
+    kind: "editor-mode",
+    id: "routine:test",
+    editor: "routine",
+    label: modeDefinition.label,
+    description: modeDefinition.description,
+    sections: [
+      { title: "Test Run Summary", rows: [["Steps", String(props.nodes.length)], ["Routes", String(props.edges.length)], ["Retries", String(props.nodes.filter((node) => node.data.label.toLowerCase().includes("retry")).length)], ["Terminal nodes", String(props.nodes.filter((node) => node.data.outputs.length === 0).length)]] },
+      { title: "Current Behavior", rows: [["Simulation", "Will show skipped branches, approval pauses, retries, and final routine status."], ["Canvas editing", "Disabled in Test Run mode."]] }
+    ]
+  };
+}
+
+function topSignalRows(signals: any[]): Array<[string, string]> {
+  if (!signals.length) return [["Signals", "No state signals loaded yet."]];
+  return signals.slice(0, 6).map((signal) => [signal.path ?? "Signal", `${signal.type ?? "unknown"} | ${signal.volatility ?? "normal"}`]);
+}
+
+function topTimelineRows(entries: any[]): Array<[string, string]> {
+  if (!entries.length) return [["Evidence", "No recording evidence loaded for this task."]];
+  return entries.slice(0, 5).map((entry, index) => [`${index + 1}. ${entry.type ?? "Entry"}`, timelineEntrySummary(entry)]);
+}
+
+function topRoutineNodeRows(nodes: Array<Node<AutomationRoutineNodeData>>): Array<[string, string]> {
+  if (!nodes.length) return [["Routine graph", "Add routine nodes in Flow mode to define data handoffs."]];
+  return nodes.slice(0, 6).map((node) => [node.data.label, `${node.data.inputs.length} inputs | ${node.data.outputs.length} outputs`]);
+}
+
 function AutomationStateExplorerView(props: { signals: any[]; entries: any[]; setSelection(selection: AutomationSelection): void }) {
   const [mode, setMode] = useState<"Tree" | "Table" | "Diff" | "Graph" | "Raw">("Tree");
+  const stateEntries = props.entries.filter((entry) => entry.type === "state_delta" || entry.type === "state_checkpoint");
+  const stateDeltas = stateEntries.flatMap((entry) => entry.deltas ?? []);
+  const namespaces = groupByNamespace(props.signals);
   return (
     <section className="automation-state-explorer-view">
       <div className="segmented-control">{(["Tree", "Table", "Diff", "Graph", "Raw"] as const).map((item) => <button className={mode === item ? "selected" : ""} key={item} onClick={() => setMode(item)} type="button">{item}</button>)}</div>
       <div className="automation-state-list">
-        {props.signals.map((signal) => (
-          <button key={signal.path} onClick={() => props.setSelection({ kind: "signal", id: signal.path })} type="button">
-            <strong>{signal.path}</strong>
-            <span>{mode}: {signal.type} - weight {signal.defaultWeight}</span>
+        {mode === "Diff" ? stateDeltas.map((delta, index) => (
+          <button key={`${delta.path?.namespace ?? "state"}:${delta.path?.path ?? index}:${index}`} type="button">
+            <strong>{statePathLabel(delta.path)}</strong>
+            <span>{delta.change} | {stateValueLabel(delta.previous)} {"->"} {stateValueLabel(delta.current)}</span>
           </button>
+        )) : Object.entries(namespaces).map(([namespace, namespaceSignals]) => (
+          <div className="automation-state-namespace" key={namespace}>
+            <strong>{namespace}</strong>
+            {namespaceSignals.map((signal) => (
+              <button key={signal.path} onClick={() => props.setSelection({ kind: "signal", id: signal.path })} type="button">
+                <strong>{signal.path}</strong>
+                <span>{mode}: {signal.type} | {signal.comparator?.kind ?? "exact"} | weight {signal.defaultWeight}</span>
+              </button>
+            ))}
+          </div>
         ))}
         {!props.signals.length ? <span>No state signals available.</span> : null}
       </div>
-      <div className="automation-range-summary"><strong>Timeline events</strong><span>{props.entries.length}</span><span>Pin signals and create conditions from selected values in later slices.</span></div>
+      <div className="automation-range-summary"><strong>State Framework</strong><span>Signals {props.signals.length}</span><span>State entries {stateEntries.length}</span><span>Deltas {stateDeltas.length}</span></div>
     </section>
   );
+}
+
+function groupByNamespace(signals: any[]): Record<string, any[]> {
+  return signals.reduce<Record<string, any[]>>((groups, signal) => {
+    const namespace = signal.namespace ?? "state";
+    groups[namespace] = [...(groups[namespace] ?? []), signal];
+    return groups;
+  }, {});
+}
+
+function statePathLabel(pathValue: any): string {
+  if (!pathValue) return "state";
+  return `${pathValue.namespace ?? "state"}.${pathValue.path ?? ""}`;
+}
+
+function stateValueLabel(value: any): string {
+  if (!value) return "unset";
+  if (value.value === undefined) return "unset";
+  if (typeof value.value === "object") return value.type ?? "object";
+  return String(value.value);
 }
 
 function EmptyAutomationView(props: { title: string; message: string }) {
@@ -2545,8 +2737,8 @@ function AutomationWorkspaceDock(props: { activeTab: AutomationDockTab; problems
   );
 }
 
-function AutomationPolicyCanvas(props: { policy: any; selectedNode: any; setSelection(selection: AutomationSelection): void }) {
-  const [layer, setLayer] = useState("Logical flow");
+function AutomationPolicyCanvas(props: { entries: any[]; policy: any; recordings: any[]; selectedNode: any; selectedTimeline: any; signals: any[]; setSelection(selection: AutomationSelection): void }) {
+  const [mode, setMode] = useState<AutomationTaskEditorMode>("flow");
   const [selectedPolicyNodeId, setSelectedPolicyNodeId] = useState(props.selectedNode?.id ?? "");
   const [selectedPolicyEdgeIds, setSelectedPolicyEdgeIds] = useState<string[]>([]);
   const [paletteCollapsed, setPaletteCollapsed] = useState(false);
@@ -2567,7 +2759,14 @@ function AutomationPolicyCanvas(props: { policy: any; selectedNode: any; setSele
   const palette = automationEditorPalette
     .map((group) => ({ ...group, nodes: group.nodes.filter((node) => node.scope === "policy" || node.scope === "both") }))
     .filter((group) => group.nodes.length > 0);
+  const activeMode = automationTaskEditorModes.find((item) => item.id === mode) ?? { id: "flow", label: "Flow", description: "Edit policy nodes, routes, conditions, actions, retries, and recovery." };
+  const isFlowMode = mode === "flow";
+  const selectTaskMode = (nextMode: AutomationTaskEditorMode) => {
+    setMode(nextMode);
+    if (nextMode !== "flow") props.setSelection(taskEditorModeSelection({ entries: props.entries, mode: nextMode, policy: props.policy, recordings: props.recordings, selectedTimeline: props.selectedTimeline, signals: props.signals }));
+  };
   const addPolicyNode = (spec: AutomationEditorNodeSpec) => {
+    if (!isFlowMode) return;
     const id = `policy-${spec.id}-${Date.now().toString(36)}`;
     const data: AutomationPolicyNodeData = {
       nodeDefinitionId: spec.id,
@@ -2607,6 +2806,7 @@ function AutomationPolicyCanvas(props: { policy: any; selectedNode: any; setSele
   };
   useEffect(() => {
     function handleDeleteNode(event: Event) {
+      if (!isFlowMode) return;
       const nodeId = (event as CustomEvent<{ nodeId?: string }>).detail?.nodeId;
       if (!nodeId) return;
       setPolicyNodes((nodes) => nodes.filter((node) => node.id !== nodeId));
@@ -2614,6 +2814,7 @@ function AutomationPolicyCanvas(props: { policy: any; selectedNode: any; setSele
       setSelectedPolicyNodeId((current: string) => current === nodeId ? "" : current);
     }
     function handleDeleteEdge(event: Event) {
+      if (!isFlowMode) return;
       const edgeId = (event as CustomEvent<{ edgeId?: string }>).detail?.edgeId;
       if (!edgeId) return;
       setPolicyEdges((edges) => edges.filter((edge) => edge.id !== edgeId));
@@ -2632,13 +2833,16 @@ function AutomationPolicyCanvas(props: { policy: any; selectedNode: any; setSele
       window.removeEventListener("automation-studio:delete-edge", handleDeleteEdge);
       window.removeEventListener("automation-studio:update-node-parameters", handleUpdateParameters);
     };
-  }, []);
+  }, [isFlowMode]);
   return (
     <section className="automation-policy-canvas">
-      <div className="automation-layer-tabs" role="tablist" aria-label="Policy graph layers">
-        {["Logical flow", "State eligibility", "Actions", "Expectations", "Recovery", "Evidence", "Runtime"].map((item) => (
-          <button className={layer === item ? "selected" : ""} key={item} onClick={() => setLayer(item)} type="button">{item}</button>
-        ))}
+      <div className="automation-editor-mode-bar">
+        <div className="automation-layer-tabs" role="tablist" aria-label="Task editor modes">
+          {automationTaskEditorModes.map((item) => (
+            <button className={mode === item.id ? "selected" : ""} key={item.id} onClick={() => selectTaskMode(item.id)} title={item.description} type="button">{item.label}</button>
+          ))}
+        </div>
+        <span>{activeMode.description}</span>
       </div>
       <div className={paletteCollapsed ? "automation-policy-editor-grid palette-collapsed" : "automation-policy-editor-grid"}>
         <div className="automation-react-flow-frame" ref={policyFrameRef}>
@@ -2649,21 +2853,21 @@ function AutomationPolicyCanvas(props: { policy: any; selectedNode: any; setSele
             edges={policyEdges}
             edgeTypes={automationEdgeTypes}
             nodeTypes={automationNodeTypes}
-            nodesDraggable
-            nodesConnectable
+            nodesDraggable={isFlowMode}
+            nodesConnectable={isFlowMode}
             elementsSelectable
-            deleteKeyCode={["Backspace", "Delete"]}
+            deleteKeyCode={isFlowMode ? ["Backspace", "Delete"] : null}
             onInit={setPolicyFlow}
             isValidConnection={(connection) => automationConnectionIsValid(connection, policyNodes)}
-            onConnect={(connection) => setPolicyEdges((edges) => addEdge(createAutomationConnectionEdge(connection, edges, "policy-edge", policyNodes), edges))}
-            onEdgesChange={(changes: EdgeChange[]) => setPolicyEdges((edges) => applyEdgeChanges(changes, edges))}
+            onConnect={(connection) => isFlowMode ? setPolicyEdges((edges) => addEdge(createAutomationConnectionEdge(connection, edges, "policy-edge", policyNodes), edges)) : undefined}
+            onEdgesChange={(changes: EdgeChange[]) => isFlowMode ? setPolicyEdges((edges) => applyEdgeChanges(changes, edges)) : undefined}
             onEdgesDelete={(deletedEdges) => setSelectedPolicyEdgeIds((ids) => ids.filter((id) => !deletedEdges.some((edge) => edge.id === id)))}
             onNodesDelete={(deletedNodes) => {
               const deletedIds = new Set(deletedNodes.map((node) => node.id));
               setPolicyEdges((edges) => edges.filter((edge) => !deletedIds.has(edge.source) && !deletedIds.has(edge.target)));
               if (deletedIds.has(selectedPolicyNodeId)) setSelectedPolicyNodeId("");
             }}
-            onNodesChange={(changes: NodeChange<Node<AutomationPolicyNodeData>>[]) => setPolicyNodes((nodes) => applyNodeChanges(changes, nodes))}
+            onNodesChange={(changes: NodeChange<Node<AutomationPolicyNodeData>>[]) => isFlowMode ? setPolicyNodes((nodes) => applyNodeChanges(changes, nodes)) : undefined}
             onNodeClick={(_event, node) => {
               setSelectedPolicyNodeId((current: string) => current === node.id ? current : node.id);
               const key = `node:${node.id}`;
@@ -2692,7 +2896,7 @@ function AutomationPolicyCanvas(props: { policy: any; selectedNode: any; setSele
             <Controls showInteractive={false} />
           </ReactFlow>
         </div>
-        <AutomationNodePalette collapsed={paletteCollapsed} groups={palette} title="Policy Nodes" onAddNode={addPolicyNode} onCollapsedChange={setPaletteCollapsed} />
+        <AutomationNodePalette collapsed={paletteCollapsed} disabled={!isFlowMode} groups={palette} title="Policy Nodes" onAddNode={addPolicyNode} onCollapsedChange={setPaletteCollapsed} />
       </div>
     </section>
   );
@@ -2803,22 +3007,6 @@ function defaultAutomationParameterValue(parameter: AutomationNodeParameter): un
   return "";
 }
 
-function automationNodeExecutionPreview(definition: AutomationNodeDefinition | undefined, parameterValues: JsonObject): string {
-  if (!definition?.execute) return "No built-in executor available.";
-  try {
-    const result = definition.execute({
-      inputs: {},
-      parameters: parameterValues as Record<string, any>,
-      random: () => 0.42,
-      now: () => 0
-    });
-    if (result instanceof Promise) return "Async executor preview pending runtime integration.";
-    return shortJson(result);
-  } catch (error) {
-    return error instanceof Error ? error.message : String(error);
-  }
-}
-
 function AutomationNodePortList(props: { inputs: AutomationNodePort[]; outputs: AutomationNodePort[] }) {
   return (
     <div className="automation-node-port-list">
@@ -2906,9 +3094,24 @@ function AutomationFlowEdge(props: EdgeProps) {
 
 function AutomationRecordingWorkspace(props: { recordings: any[]; selectedRecording: any; selectedTimeline: any; setSelection(selection: AutomationSelection): void }) {
   const entries = props.selectedTimeline?.timeline ?? props.selectedRecording?.timeline ?? [];
+  const checkpoints = entries.filter((entry: any) => entry.type === "state_checkpoint").length;
+  const deltas = entries.filter((entry: any) => entry.type === "state_delta").reduce((total: number, entry: any) => total + (entry.deltas?.length ?? 0), 0);
   return (
     <section className="automation-recording-stage">
-      <header><strong>{props.selectedRecording?.recordingId ?? "No recording"}</strong><span>{entries.length} timeline entries</span></header>
+      <header><strong>{props.selectedRecording?.recordingId ?? "No recording"}</strong><span>{entries.length} entries | {checkpoints} checkpoints | {deltas} deltas</span></header>
+      <div className="context-chip-row">
+        <span>Environment {props.selectedRecording?.environment?.label ?? "-"}</span>
+        <span>Notes {props.selectedRecording?.notes?.length ?? 0}</span>
+        <span>Started {props.selectedRecording?.startedAt ? new Date(props.selectedRecording.startedAt).toLocaleTimeString() : "-"}</span>
+      </div>
+      <div className="automation-state-list">
+        {props.recordings.map((recording) => (
+          <button className={recording.recordingId === props.selectedRecording?.recordingId ? "selected" : ""} key={recording.recordingId} onClick={() => props.setSelection({ kind: "recording", id: recording.recordingId })} type="button">
+            <strong>{recording.recordingId}</strong>
+            <span>{recording.environment?.label ?? "Environment"} | {recording.timeline?.length ?? 0} raw entries</span>
+          </button>
+        ))}
+      </div>
       <div className="automation-track-stack">
         {["note", "action", "state_delta", "state_checkpoint"].map((type) => (
           <div className="automation-track" key={type}>
@@ -2928,15 +3131,22 @@ function AutomationRecordingWorkspace(props: { recordings: any[]; selectedRecord
 }
 
 function AutomationSignalWorkspace(props: { signals: any[]; setSelection(selection: AutomationSelection): void }) {
+  const namespaces = groupByNamespace(props.signals);
   return (
     <section className="automation-signal-board">
-      {props.signals.map((signal) => (
-        <button key={signal.path} onClick={() => props.setSelection({ kind: "signal", id: signal.path })} type="button">
-          <span>{signal.namespace}</span>
-          <strong>{signal.path}</strong>
-          <small>{signal.type} | weight {signal.defaultWeight} | {signal.volatility}</small>
-        </button>
+      {Object.entries(namespaces).map(([namespace, namespaceSignals]) => (
+        <div className="automation-state-namespace" key={namespace}>
+          <strong>{namespace}</strong>
+          {namespaceSignals.map((signal) => (
+            <button key={signal.path} onClick={() => props.setSelection({ kind: "signal", id: signal.path })} type="button">
+              <span>{signal.registryId}</span>
+              <strong>{signal.path}</strong>
+              <small>{signal.type} | {signal.comparator?.kind ?? "exact"} | {signal.volatility}</small>
+            </button>
+          ))}
+        </div>
       ))}
+      {!props.signals.length ? <span>No signal registries loaded.</span> : null}
     </section>
   );
 }
@@ -2966,7 +3176,7 @@ function AutomationProblemsWorkspace(props: { problems: any[] }) {
 }
 
 function AutomationInspector(props: { selection: AutomationSelection | null; policy: any; node: any; recording: any; entry: any; signal: any; setSelection(selection: AutomationSelection): void }) {
-  const title = props.selection?.kind === "signal" ? "Signal" : props.selection?.kind === "timeline" ? "Timeline Entry" : props.selection?.kind === "recording" ? "Recording" : props.selection?.kind === "policy" ? "Policy Graph" : props.selection?.kind === "editor-node" ? "Editor Node" : "Node Inspector";
+  const title = props.selection?.kind === "signal" ? "Signal" : props.selection?.kind === "timeline" ? "Timeline Entry" : props.selection?.kind === "recording" ? "Recording" : props.selection?.kind === "policy" ? "Policy Graph" : props.selection?.kind === "editor-node" ? "Editor Node" : props.selection?.kind === "editor-mode" ? `${props.selection.label} Mode` : "Node Inspector";
   const updateEditorNodeParameters = (parameterValues: JsonObject) => {
     if (props.selection?.kind !== "editor-node") return;
     const nextSelection: AutomationSelection = {
@@ -3001,6 +3211,10 @@ function AutomationInspector(props: { selection: AutomationSelection | null; pol
         <Search size={14} aria-hidden />
         <input aria-label="Search inspector fields" placeholder="Search fields" />
       </div>
+      {props.selection?.kind === "editor-mode" ? <>
+        <InspectorSection title="Mode" rows={[["Editor", props.selection.editor === "task" ? "Task editor" : "Routine editor"], ["Mode", props.selection.label], ["Purpose", props.selection.description]]} />
+        {props.selection.sections.map((section, sectionIndex) => <InspectorSection key={`${section.title}:${sectionIndex}`} title={section.title} rows={section.rows} />)}
+      </> : null}
       {props.selection?.kind === "signal" && props.signal ? <>
         <InspectorSection title="General" rows={[["Path", props.signal.path], ["Type", props.signal.type], ["Weight", String(props.signal.defaultWeight)], ["Volatility", props.signal.volatility], ["Registry", props.signal.registryId]]} />
         <InspectorSection title="Connections" rows={[["Used by nodes", "Linked through eligibility and success conditions"], ["Relationship view", "Open in signal web"]]} />
@@ -3048,8 +3262,6 @@ function AutomationNodeParameterEditor(props: {
 }) {
   const parameters = props.node.parameters ?? [];
   const values = props.node.parameterValues ?? {};
-  const definition = props.node.nodeDefinitionId ? getAutomationNodeDefinition(props.node.nodeDefinitionId) : undefined;
-  const preview = automationNodeExecutionPreview(definition, values);
   const setValue = (parameter: AutomationNodeParameter, value: unknown) => {
     props.onChange({ ...values, [parameter.id]: value });
   };
@@ -3075,10 +3287,6 @@ function AutomationNodeParameterEditor(props: {
           />
         )) : <span className="muted-text">This node has no editable parameters.</span>}
       </div>
-      <div className="automation-node-preview">
-        <strong>Preview</strong>
-        <pre>{preview}</pre>
-      </div>
     </details>
   );
 }
@@ -3093,6 +3301,7 @@ function AutomationNodeParameterField(props: { parameter: AutomationNodeParamete
         <select value={String(value ?? "")} onChange={(event) => props.onChange(event.target.value)}>
           {parameter.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
+        {parameter.description ? <small className="automation-parameter-help">{parameter.description}</small> : null}
       </label>
     );
   }
@@ -3100,7 +3309,7 @@ function AutomationNodeParameterField(props: { parameter: AutomationNodeParamete
     return (
       <label className="automation-parameter-field checkbox">
         <input type="checkbox" checked={Boolean(value)} onChange={(event) => props.onChange(event.target.checked)} />
-        <span>{parameter.label}{parameter.required ? " *" : ""}</span>
+        <span>{parameter.label}{parameter.required ? " *" : ""}{parameter.description ? <small className="automation-parameter-help">{parameter.description}</small> : null}</span>
       </label>
     );
   }
@@ -3109,6 +3318,7 @@ function AutomationNodeParameterField(props: { parameter: AutomationNodeParamete
       <label className="automation-parameter-field">
         <span>{parameter.label}{parameter.required ? " *" : ""}</span>
         <input type="number" value={String(value ?? 0)} onChange={(event) => props.onChange(Number(event.target.value))} />
+        {parameter.description ? <small className="automation-parameter-help">{parameter.description}</small> : null}
       </label>
     );
   }
@@ -3117,6 +3327,7 @@ function AutomationNodeParameterField(props: { parameter: AutomationNodeParamete
       <div className="automation-parameter-field">
         <span>{parameter.label}{parameter.required ? " *" : ""}</span>
         <AutomationObjectParameterEditor value={value} onChange={props.onChange} />
+        {parameter.description ? <small className="automation-parameter-help">{parameter.description}</small> : null}
       </div>
     );
   }
@@ -3125,6 +3336,7 @@ function AutomationNodeParameterField(props: { parameter: AutomationNodeParamete
       <div className="automation-parameter-field">
         <span>{parameter.label}{parameter.required ? " *" : ""}</span>
         <AutomationArrayParameterEditor value={value} onChange={props.onChange} />
+        {parameter.description ? <small className="automation-parameter-help">{parameter.description}</small> : null}
       </div>
     );
   }
@@ -3133,6 +3345,7 @@ function AutomationNodeParameterField(props: { parameter: AutomationNodeParamete
       <div className="automation-parameter-field">
         <span>{parameter.label}{parameter.required ? " *" : ""}</span>
         <AutomationTypedValueParameterEditor value={value} onChange={props.onChange} />
+        {parameter.description ? <small className="automation-parameter-help">{parameter.description}</small> : null}
       </div>
     );
   }
@@ -3141,6 +3354,7 @@ function AutomationNodeParameterField(props: { parameter: AutomationNodeParamete
       <label className="automation-parameter-field">
         <span>{parameter.label}{parameter.required ? " *" : ""}</span>
         <textarea value={String(value ?? "")} placeholder={parameter.ui.placeholder} onChange={(event) => props.onChange(event.target.value)} />
+        {parameter.description ? <small className="automation-parameter-help">{parameter.description}</small> : null}
       </label>
     );
   }
@@ -3159,6 +3373,7 @@ function AutomationStringParameterField(props: { parameter: AutomationNodeParame
         <input value={String(props.value ?? "")} placeholder={ui?.placeholder ?? controlLabel} onChange={(event) => props.onChange(event.target.value)} />
         <small>{controlLabel}</small>
       </div>
+      {props.parameter.description ? <small className="automation-parameter-help">{props.parameter.description}</small> : null}
     </label>
   );
 }
@@ -4105,11 +4320,11 @@ function DataTable(props: { columns: string[]; rows?: Array<Array<ReactNode>>; e
 }
 
 function KeyValue(props: { rows: Array<[string, string]> }) {
-  return <dl className="key-value-list">{props.rows.map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>;
+  return <dl className="key-value-list">{props.rows.map(([key, value], index) => <div key={`${key}:${index}`}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>;
 }
 
 function SummaryStrip(props: { items: Array<[string, string | number]> }) {
-  return <div className="summary-strip">{props.items.map(([label, value]) => <div key={label}><strong>{value}</strong><span>{label}</span></div>)}</div>;
+  return <div className="summary-strip">{props.items.map(([label, value], index) => <div key={`${label}:${index}`}><strong>{value}</strong><span>{label}</span></div>)}</div>;
 }
 
 function StatusBadge(props: { value: string }) {

@@ -66,11 +66,17 @@ describe("automation node registry", () => {
       for (const parameter of definition.parameters) {
         expect(parameter.id.length, `${definition.id}:${parameter.id}`).toBeGreaterThan(0);
         expect(parameter.label.length, `${definition.id}:${parameter.id}`).toBeGreaterThan(0);
+        expect(Boolean(parameter.description?.trim()), `${definition.id}:${parameter.id}:description`).toBe(true);
         if (parameter.valueType === "string" && !parameter.options?.length) {
           expect(parameter.ui?.control, `${definition.id}:${parameter.id}:string editor`).toBeTruthy();
         }
         if (parameter.valueType === "any") {
           expect(parameter.ui?.control, `${definition.id}:${parameter.id}:typed value editor`).toBe("value");
+        }
+        if (parameter.options?.length) {
+          for (const option of parameter.options) {
+            expect(option.label, `${definition.id}:${parameter.id}:${option.value}:friendly option label`).not.toBe(option.value);
+          }
         }
       }
     }

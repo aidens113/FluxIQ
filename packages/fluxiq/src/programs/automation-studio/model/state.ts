@@ -43,6 +43,38 @@ export type StateSnapshot = {
   metadata?: JsonObject;
 };
 
+export type StateNamespaceId =
+  | "app"
+  | "runtime"
+  | "user"
+  | "environment"
+  | "recording"
+  | "custom"
+  | (string & {});
+
+export type StatePath = {
+  namespace: StateNamespaceId;
+  path: string;
+};
+
+export type StatePathPermissions = {
+  readable?: boolean;
+  writable?: boolean;
+  privileged?: boolean;
+};
+
+export type StatePathSchema = {
+  namespace: StateNamespaceId;
+  path: string;
+  type: StateValueType;
+  label?: string;
+  description?: string;
+  persistence?: "snapshot" | "session" | "task" | "environment";
+  volatility?: StateVolatility;
+  permissions?: StatePathPermissions;
+  metadata?: JsonObject;
+};
+
 export type StateDelta = {
   namespace: string;
   path: string;

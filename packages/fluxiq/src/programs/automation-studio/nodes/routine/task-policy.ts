@@ -3,8 +3,8 @@ import { defineBuiltinNode } from "../shared/definition";
 
 export const taskPolicyNode = defineBuiltinNode({
   id: "builtin.routine.task-policy",
-  label: "Task Policy",
-  description: "Run a task policy from a routine graph.",
+  label: "Run Task",
+  description: "Run a saved task policy from this routine.",
   class: "routine",
   scope: "routine",
   inputs: [{ id: "in", label: "In", valueType: "any" }],
@@ -13,10 +13,10 @@ export const taskPolicyNode = defineBuiltinNode({
     { id: "failed", label: "Failed", valueType: "any" }
   ],
   parameters: [
-    { id: "taskId", label: "Task", valueType: "string", required: true, ui: { control: "reference", referenceType: "task", placeholder: "task.id" } },
-    { id: "policyId", label: "Policy override", valueType: "string", defaultValue: "", ui: { control: "reference", referenceType: "policy", placeholder: "policy.id" } },
-    { id: "inputs", label: "Task inputs", valueType: "object", defaultValue: {} },
-    { id: "waitForCompletion", label: "Wait for completion", valueType: "boolean", defaultValue: true }
+    { id: "taskId", label: "Task to run", description: "Choose the saved task this routine step should start.", valueType: "string", required: true, ui: { control: "reference", referenceType: "task", placeholder: "Choose a task" } },
+    { id: "policyId", label: "Specific policy version", description: "Optional override. Leave blank to use the task's default policy.", valueType: "string", defaultValue: "", ui: { control: "reference", referenceType: "policy", placeholder: "Default policy" } },
+    { id: "inputs", label: "Values to pass in", description: "Input values made available to the task.", valueType: "object", defaultValue: {} },
+    { id: "waitForCompletion", label: "Wait until task finishes", description: "When enabled, the routine pauses until this task reports success or failure.", valueType: "boolean", defaultValue: true }
   ],
   icon: "network",
   execute: (context) => ({

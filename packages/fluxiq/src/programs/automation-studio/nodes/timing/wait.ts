@@ -10,10 +10,11 @@ export const waitNode = defineBuiltinNode({
   inputs: [{ id: "in", label: "In", valueType: "any" }],
   outputs: [{ id: "data", label: "Data", valueType: "any" }],
   parameters: [
-    { id: "duration", label: "Duration", valueType: "number", defaultValue: 1000 },
+    { id: "duration", label: "Wait amount", description: "How long this node should pause before continuing.", valueType: "number", defaultValue: 1000 },
     {
       id: "unit",
-      label: "Unit",
+      label: "Time unit",
+      description: "Unit used for the wait amount.",
       valueType: "string",
       defaultValue: "milliseconds",
       options: [
@@ -22,7 +23,7 @@ export const waitNode = defineBuiltinNode({
         { label: "Minutes", value: "minutes" }
       ]
     },
-    { id: "jitterMs", label: "Jitter ms", valueType: "number", defaultValue: 0 }
+    { id: "jitterMs", label: "Random extra wait", description: "Maximum random milliseconds added or subtracted from the wait.", valueType: "number", defaultValue: 0 }
   ],
   icon: "timer",
   execute: (context) => {

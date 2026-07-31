@@ -9,8 +9,8 @@ export const startNode = defineBuiltinNode({
   inputs: [],
   outputs: [{ id: "next", label: "Next", valueType: "any" }],
   parameters: [
-    { id: "label", label: "Run label", valueType: "string", defaultValue: "Start", ui: { control: "text", placeholder: "Run label" } },
-    { id: "emitTimestamp", label: "Emit timestamp", valueType: "boolean", defaultValue: true }
+    { id: "label", label: "Start label", description: "Friendly name shown for this run entry.", valueType: "string", defaultValue: "Start", ui: { control: "text", placeholder: "Start label" } },
+    { id: "emitTimestamp", label: "Include start time", description: "Attach the current time to the value sent from this node.", valueType: "boolean", defaultValue: true }
   ],
   icon: "play",
   execute: (context) => emptyResult({ next: true, label: context.parameters.label ?? "Start", startedAt: context.parameters.emitTimestamp === false ? null : context.now?.() ?? Date.now() })

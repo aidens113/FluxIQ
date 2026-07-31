@@ -1,6 +1,14 @@
 import type { GlobalProgramApiRegistry } from "../../_shared/api";
 import { authorizeProgramPin } from "../../_shared/authorization";
-import { AUTOMATION_STUDIO_ENDPOINTS } from "./contracts";
+import {
+  AUTOMATION_STUDIO_ENDPOINTS,
+  type AppendRecordingEntryRequest,
+  type CreateRecordingRequest,
+  type FinalizeRecordingRequest,
+  type InspectStateDiffRequest,
+  type NormalizeRecordingRequest,
+  type RecordingProjectRequest
+} from "./contracts";
 import type { AutomationStudioService } from "../runtime/service";
 import type { IdentityAccessService } from "../../identity-access";
 
@@ -111,5 +119,73 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
         }
       };
     }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRecordings,
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as RecordingProjectRequest : {};
+      return { ok: true, payload: { recordings: await service.listRecordingSessions(payload.projectId) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRecording,
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as RecordingProjectRequest & { recordingId?: unknown } : {};
+      return { ok: true, payload: { recording: await service.getRecordingSession(String(payload.recordingId ?? ""), payload.projectId) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.createRecording,
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as CreateRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: { recording: await service.createRecording(payload) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendRecordingEntry,
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as AppendRecordingEntryRequest & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: { recording: await service.appendRecordingEvent(payload) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.finalizeRecording,
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as FinalizeRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: { recording: await service.finalizeRecording(payload) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.normalizeRecording,
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as NormalizeRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: { normalizedTimeline: await service.normalizeRecording(payload) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.inspectStateDiff,
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as InspectStateDiffRequest;
+      return { ok: true, payload: await service.inspectStateDiff(payload) };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listSignalRegistries,
+    handler: async () => ({
+      ok: true,
+      payload: { signalRegistries: await service.listSignalRegistries() }
+    })
   });
 }

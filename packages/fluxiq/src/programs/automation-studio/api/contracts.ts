@@ -1,7 +1,15 @@
 import type { AutomationRecording, AutomationTask, DynamicPolicyArtifact } from "../types";
 import type { LearnedTaskModel } from "../learning";
 import type { NormalizedTimeline } from "../normalization";
-import type { PolicyGraph, RecordingSession, SignalRegistry } from "../model";
+import type {
+  AppendRecordingEntryInput,
+  CreateRecordingSessionInput,
+  PolicyGraph,
+  RecordingSession,
+  SignalRegistry,
+  StateSnapshot
+} from "../model";
+import type { NormalizationOptions } from "../normalization";
 import type { JsonObject } from "../../../core";
 
 export const AUTOMATION_STUDIO_ENDPOINTS = {
@@ -15,7 +23,15 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   deleteProjectCategory: "delete-project-category",
   reorderProjectCategories: "reorder-project-categories",
   getProjectHierarchy: "get-project-hierarchy",
-  saveProjectHierarchy: "save-project-hierarchy"
+  saveProjectHierarchy: "save-project-hierarchy",
+  listRecordings: "list-recordings",
+  getRecording: "get-recording",
+  createRecording: "create-recording",
+  appendRecordingEntry: "append-recording-entry",
+  finalizeRecording: "finalize-recording",
+  normalizeRecording: "normalize-recording",
+  inspectStateDiff: "inspect-state-diff",
+  listSignalRegistries: "list-signal-registries"
 } as const;
 
 export type AutomationStudioProject = {
@@ -82,4 +98,31 @@ export type GeneratePolicyRequest = {
 export type GeneratePolicyResponse = {
   policy: DynamicPolicyArtifact;
   warnings: string[];
+};
+
+export type RecordingProjectRequest = {
+  projectId?: string | null;
+};
+
+export type CreateRecordingRequest = RecordingProjectRequest & CreateRecordingSessionInput;
+
+export type AppendRecordingEntryRequest = RecordingProjectRequest & {
+  recordingId: string;
+  entry: AppendRecordingEntryInput;
+};
+
+export type FinalizeRecordingRequest = RecordingProjectRequest & {
+  recordingId: string;
+  endedAt?: number;
+};
+
+export type NormalizeRecordingRequest = RecordingProjectRequest & {
+  recordingId: string;
+  options?: NormalizationOptions;
+};
+
+export type InspectStateDiffRequest = {
+  previous: StateSnapshot;
+  current: StateSnapshot;
+  includeStable?: boolean;
 };

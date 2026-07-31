@@ -11,7 +11,8 @@ export const endNode = defineBuiltinNode({
   parameters: [
     {
       id: "resultStatus",
-      label: "Result status",
+      label: "Final result",
+      description: "How this policy or routine should be marked when execution reaches this End node.",
       valueType: "string",
       defaultValue: "success",
       options: [
@@ -20,7 +21,7 @@ export const endNode = defineBuiltinNode({
         { label: "Skipped", value: "skipped" }
       ]
     },
-    { id: "message", label: "Message", valueType: "string", defaultValue: "", ui: { control: "textarea", placeholder: "Optional end message" } }
+    { id: "message", label: "End note", description: "Optional text saved with the final result.", valueType: "string", defaultValue: "", ui: { control: "textarea", placeholder: "Optional note for this ending" } }
   ],
   icon: "circle-stop",
   execute: (context) => ({ status: context.parameters.resultStatus === "failed" ? "failed" : context.parameters.resultStatus === "skipped" ? "skipped" : "success", route: "end", outputs: { message: context.parameters.message ?? "" } })

@@ -3,7 +3,7 @@ import { defineBuiltinNode } from "../shared/definition";
 export const switchNode = defineBuiltinNode({
   id: "builtin.control.switch",
   label: "Switch",
-  description: "Route execution by matching one value against named cases.",
+  description: "Choose a path by matching one value against a list of cases.",
   class: "control-flow",
   scope: "both",
   inputs: [{ id: "value", label: "Value", valueType: "any", required: true }],
@@ -13,11 +13,12 @@ export const switchNode = defineBuiltinNode({
     { id: "value", label: "Matched value", valueType: "any" }
   ],
   parameters: [
-    { id: "cases", label: "Cases", valueType: "array", defaultValue: [] },
-    { id: "caseSensitive", label: "Case sensitive", valueType: "boolean", defaultValue: true },
+    { id: "cases", label: "Case list", description: "Values to match. Each item can include a value and optional route name.", valueType: "array", defaultValue: [] },
+    { id: "caseSensitive", label: "Match capitalization exactly", description: "When disabled, text like Ready and ready are treated the same.", valueType: "boolean", defaultValue: true },
     {
       id: "matchMode",
-      label: "Match mode",
+      label: "How to match",
+      description: "Equals requires an exact match. Contains matches when the input text includes the case text.",
       valueType: "string",
       defaultValue: "equals",
       options: [

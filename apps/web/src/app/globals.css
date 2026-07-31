@@ -3371,6 +3371,18 @@ select {
   font-weight: 800;
 }
 
+.automation-parameter-help {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.automation-parameter-field.checkbox .automation-parameter-help {
+  margin-top: 2px;
+}
+
 .automation-parameter-field input,
 .automation-parameter-field select,
 .automation-parameter-field textarea {
@@ -3466,30 +3478,6 @@ select {
 .secondary-button.compact.danger {
   color: var(--color-danger);
   border-color: color-mix(in srgb, var(--color-danger) 34%, var(--color-border));
-}
-
-.automation-node-preview {
-  display: grid;
-  gap: 6px;
-  border-top: 1px solid var(--color-border);
-  background: var(--color-surface-subtle);
-  padding: 10px;
-}
-
-.automation-node-preview strong {
-  font-size: 12px;
-}
-
-.automation-node-preview pre {
-  max-height: 180px;
-  overflow: auto;
-  margin: 0;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--color-surface);
-  padding: 8px;
-  color: var(--color-text-muted);
-  font-size: 12px;
 }
 
 .automation-provenance-card {
@@ -3944,6 +3932,23 @@ select {
   color: var(--color-primary);
 }
 
+.automation-editor-mode-bar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.automation-editor-mode-bar > span {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .automation-react-flow-frame {
   position: relative;
   min-width: 0;
@@ -4078,6 +4083,18 @@ select {
   border-color: var(--color-primary);
   background: #f1f8ff;
   color: var(--color-primary);
+}
+
+.automation-node-palette button:disabled {
+  border-color: var(--color-border);
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.automation-node-palette button:disabled > svg {
+  color: var(--color-text-muted);
 }
 
 .automation-react-flow-frame .react-flow {

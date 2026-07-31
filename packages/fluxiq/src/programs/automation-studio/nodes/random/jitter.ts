@@ -11,10 +11,10 @@ export const jitterNode = defineBuiltinNode({
   inputs: [{ id: "value", label: "Value", valueType: "number", required: true }],
   outputs: [{ id: "value", label: "Value", valueType: "number" }],
   parameters: [
-    { id: "amount", label: "Amount", valueType: "number", defaultValue: 0.1 },
-    { id: "precision", label: "Decimal places", valueType: "string", defaultValue: "none", options: optionalPrecisionOptions },
-    { id: "min", label: "Minimum clamp", valueType: "number", defaultValue: -999999 },
-    { id: "max", label: "Maximum clamp", valueType: "number", defaultValue: 999999 }
+    { id: "amount", label: "Maximum change", description: "Largest amount that can be randomly added or subtracted.", valueType: "number", defaultValue: 0.1 },
+    { id: "precision", label: "Round result to", description: "Optional rounding after jitter is applied.", valueType: "string", defaultValue: "none", options: optionalPrecisionOptions },
+    { id: "min", label: "Lowest allowed value", description: "Final value will not go below this number.", valueType: "number", defaultValue: -999999 },
+    { id: "max", label: "Highest allowed value", description: "Final value will not go above this number.", valueType: "number", defaultValue: 999999 }
   ],
   icon: "waves",
   execute: (context) => {

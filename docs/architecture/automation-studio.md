@@ -134,6 +134,41 @@ map. Routine nodes are static base/custom node types such as start, task policy,
 decision, approval, recovery, end, and custom extension nodes. Routine views do
 not expose recording, evidence, or state-signal layers.
 
+Task and routine editors use concise editor modes instead of broad abstract
+layers. A mode changes what the canvas is doing; supporting views such as
+timeline, signals, recordings, runtime, problems, assistant, state explorer, and
+inspector remain ordinary addable windows. The node palette is the exception:
+it stays embedded as the collapsible right rail inside the policy/routine node
+editor because it is part of direct node editing, not a separate workspace
+window.
+
+Task editor modes are:
+
+- `Flow`: the default editable policy graph for adding, moving, connecting, and
+  deleting nodes and edges.
+- `State`: read/inspect mode for task signals, state entries, deltas,
+  volatility, and condition coverage.
+- `Evidence`: read/inspect mode for recordings, timeline entries, notes,
+  checkpoints, and raw/normalized evidence links.
+- `Test Run`: read/inspect preview for replaying or simulating the policy
+  against selected recording/state data.
+
+Routine editor modes are:
+
+- `Flow`: the default editable orchestration graph for routine nodes, routes,
+  waits, approvals, recovery, and handoffs.
+- `Data`: read/inspect mode for routine inputs, outputs, variables, and data
+  passed between task/routine nodes.
+- `Run Plan`: read/inspect mode for execution order, dependencies, parallel
+  paths, approvals, and validation warnings.
+- `Test Run`: read/inspect preview for skipped branches, approval pauses,
+  retries, and final routine status.
+
+Only `Flow` mode is directly editable in the current implementation. Other
+modes keep the same canvas visible for context but disable graph edits and show
+their mode-specific details through the global inspector selection model until
+deeper inspectors/simulators are connected.
+
 Automation Studio node editors follow the FluxBot v1 flow editor direction:
 metadata-first node definitions, grouped palettes, explicit input/output ports,
 custom React Flow cards, minimap/controls, draggable node placement, palette
@@ -161,10 +196,10 @@ tabs migrate to the global inspector. Selecting an editor-created built-in node
 opens with editable parameters first, including a per-instance description that
 only affects that node placement in the current flow. Metadata and ports follow
 the editable fields, and raw node-definition dumps are intentionally omitted
-from the user-facing inspector. Fixed-choice settings use dropdowns, object and
-array settings use structured row editors, and deterministic executor previews
-show the result of the current parameter values. Parameter edits update the
-selected React Flow node instance so options such as random-number min/max,
+from the user-facing inspector. Fixed-choice settings use dropdowns, and object
+and array settings use structured row editors rather than raw JSON or executor
+preview panels. Parameter edits update the selected React Flow node instance so
+options such as random-number min/max,
 integer vs float mode, precision, and inclusive maximum are part of the live
 graph state. Generated policy nodes still show their evidence, condition,
 timing, runtime, and training detail sections in the same inspector.
@@ -177,6 +212,15 @@ task, policy, routine, action, variable, and database collection IDs render as
 reference controls and can later be backed by real project pickers. Parameters
 with `any` values render as typed value controls where users choose text,
 number, boolean, or empty before entering the value.
+
+Built-in parameter labels and descriptions are user-facing product language,
+not implementation terms. Internal executor IDs may remain stable, but the
+inspector should say things like `Data table`, `Maximum records`, `Values to
+pass in`, or `If the action fails` rather than requiring users to understand
+terms such as collection, patch, upsert, timeout route, or raw identifier
+fields. Every built-in parameter must include concise help text, and fixed
+choice labels should describe the user-visible outcome rather than simply echo
+the stored enum value.
 
 Built-in nodes should not be thin palette placeholders. Each source-owned
 built-in exposes editable parameters, concrete domain-neutral executor
@@ -428,6 +472,23 @@ the last-saved hierarchy signature, and `save-project-hierarchy` should only be
 sent after real hierarchy or workspace changes, not continuously for equivalent
 state.
 
+Project recordings now use the same folder-backed ownership model as project
+workspace state. Each project reserves:
+
+```text
+.fluxiq/data/programs/automation-studio/projects/{projectId}/recordings/
+  sessions/{recordingId}/recording.json
+  sessions/{recordingId}/events/timeline.json
+  sessions/{recordingId}/snapshots/initial-state.json
+  normalized/{normalizedTimelineId}.json
+  indexes/recordings.json
+```
+
+`recording.json` is the canonical `RecordingSession` envelope. The timeline
+and snapshot files are deliberate helper artifacts for later inspectors,
+recording scrubbers, diff viewers, and export tooling; they do not replace the
+canonical recording document.
+
 Routine editors open as blank canvases until a user adds nodes from the palette.
 They must not seed fake routine nodes just because a routine tab opens. Policy
 editors may display generated policy nodes from the selected task policy, but
@@ -464,6 +525,27 @@ loading it, creating the next version or edited artifact, and writing it back
 explicitly. This matters because recordings are evidence, while normalized
 timelines, learned models, policies, and runtime training data are derived
 artifacts.
+
+The state and recording framework now includes:
+
+- `AutomationInMemoryStateStore` for reads, writes, snapshots, restore, diff,
+  schema registration, and subscriptions.
+- `diffStateSnapshots` and `applyStateDeltas` for consistent change detection
+  and replay.
+- `buildSignalRegistryFromSchemas` and `discoverSignalDefinitions` so state
+  schemas and observed snapshots become visual signal definitions.
+- recording helpers for create, append timeline entry, append checkpoint,
+  append delta, append note, and finalize.
+- `ConservativeTimelineNormalizer`, which preserves raw timeline entries while
+  deriving state deltas from checkpoints and linking normalized entries back to
+  raw evidence.
+
+The Automation Studio API exposes these as first-class framework endpoints:
+`list-recordings`, `get-recording`, `create-recording`,
+`append-recording-entry`, `finalize-recording`, `normalize-recording`,
+`inspect-state-diff`, and `list-signal-registries`. Mutating endpoints are
+privileged and should use the same shared PIN authorization path as project and
+category edits.
 
 Domain scope is part of the document identity. Raw recordings read it from the
 recording environment; derived artifacts carry it in metadata until richer

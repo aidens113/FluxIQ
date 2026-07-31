@@ -10,16 +10,17 @@ export const setVariableNode = defineBuiltinNode({
   inputs: [{ id: "value", label: "Value", valueType: "any", required: true }],
   outputs: [{ id: "next", label: "Next", valueType: "any" }],
   parameters: [
-    { id: "name", label: "Name", valueType: "string", required: true, ui: { control: "reference", referenceType: "variable", placeholder: "variableName" } },
+    { id: "name", label: "Variable name", description: "The saved workflow value to create or update.", valueType: "string", required: true, ui: { control: "reference", referenceType: "variable", placeholder: "variableName" } },
     {
       id: "writeMode",
-      label: "Write mode",
+      label: "How to save the value",
+      description: "Choose whether to replace the old value, merge object fields, or append to a list.",
       valueType: "string",
       defaultValue: "replace",
       options: [
-        { label: "Replace", value: "replace" },
-        { label: "Merge object", value: "merge-object" },
-        { label: "Append to list", value: "append-list" }
+        { label: "Replace existing value", value: "replace" },
+        { label: "Merge into object", value: "merge-object" },
+        { label: "Add to list", value: "append-list" }
       ]
     }
   ],

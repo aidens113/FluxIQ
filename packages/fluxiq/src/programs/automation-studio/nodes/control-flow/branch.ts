@@ -4,7 +4,7 @@ import { defineBuiltinNode } from "../shared/definition";
 export const branchNode = defineBuiltinNode({
   id: "builtin.control.branch",
   label: "Branch",
-  description: "Route execution through yes/no paths.",
+  description: "Choose one of two paths from a yes/no condition.",
   class: "control-flow",
   scope: "both",
   inputs: [{ id: "condition", label: "Condition", valueType: "boolean", required: true }],
@@ -13,7 +13,7 @@ export const branchNode = defineBuiltinNode({
     { id: "false", label: "False", valueType: "any" }
   ],
   parameters: [
-    { id: "invert", label: "Invert condition", valueType: "boolean", defaultValue: false }
+    { id: "invert", label: "Swap Yes and No paths", description: "When enabled, true goes to No and false goes to Yes.", valueType: "boolean", defaultValue: false }
   ],
   icon: "git-branch",
   execute: (context) => {

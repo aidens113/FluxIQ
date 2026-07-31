@@ -3,22 +3,23 @@ import { defineBuiltinNode, emptyResult, getPathValue, objectValue, setPathValue
 export const mapObjectNode = defineBuiltinNode({
   id: "builtin.data.map-object",
   label: "Map Object",
-  description: "Transform object fields through an expression map.",
+  description: "Create or reshape fields on an object.",
   class: "data",
   scope: "both",
   inputs: [{ id: "object", label: "Object", valueType: "object", required: true }],
   outputs: [{ id: "object", label: "Object", valueType: "object" }],
   parameters: [
-    { id: "mapping", label: "Mapping", valueType: "object", defaultValue: {} },
+    { id: "mapping", label: "Field changes", description: "Fields to add, pick, or rename depending on the selected mode.", valueType: "object", defaultValue: {} },
     {
       id: "mode",
-      label: "Mode",
+      label: "How to change the object",
+      description: "Choose whether to add fields, keep selected fields, or copy values into new field paths.",
       valueType: "string",
       defaultValue: "merge",
       options: [
-        { label: "Merge fields", value: "merge" },
-        { label: "Pick fields", value: "pick" },
-        { label: "Rename paths", value: "rename" }
+        { label: "Add or replace fields", value: "merge" },
+        { label: "Keep only selected fields", value: "pick" },
+        { label: "Copy fields to new names", value: "rename" }
       ]
     }
   ],

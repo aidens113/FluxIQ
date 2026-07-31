@@ -12,7 +12,7 @@ export const notNode = defineBuiltinNode({
     { id: "false", label: "False", valueType: "any" },
     { id: "result", label: "Result", valueType: "boolean" }
   ],
-  parameters: [{ id: "missingValue", label: "Missing value", valueType: "boolean", defaultValue: false }],
+  parameters: [{ id: "missingValue", label: "If condition is missing", description: "Boolean value to assume before this node flips it.", valueType: "boolean", defaultValue: false }],
   icon: "badge-x",
   execute: (context) => {
     const value = context.inputs.condition === undefined ? context.parameters.missingValue : context.inputs.condition;

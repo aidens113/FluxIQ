@@ -20,6 +20,7 @@ export const compareNode = defineBuiltinNode({
     {
       id: "operator",
       label: "Operator",
+      description: "Choose how the left input should be checked against the right input or fallback value.",
       valueType: "string",
       defaultValue: "equals",
       options: [
@@ -36,8 +37,8 @@ export const compareNode = defineBuiltinNode({
       ]
     }
     ,
-    { id: "rightDefault", label: "Right default", valueType: "any", defaultValue: null, ui: { control: "value" } },
-    { id: "caseSensitive", label: "Case sensitive", valueType: "boolean", defaultValue: true }
+    { id: "rightDefault", label: "Fallback comparison value", description: "Used when nothing is connected to the Right input.", valueType: "any", defaultValue: null, ui: { control: "value" } },
+    { id: "caseSensitive", label: "Match capitalization exactly", description: "When disabled, text comparisons ignore capitalization.", valueType: "boolean", defaultValue: true }
   ],
   icon: "equal",
   execute: (context) => {

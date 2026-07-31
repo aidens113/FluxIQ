@@ -11,20 +11,21 @@ export const randomNumberNode = defineBuiltinNode({
   inputs: [],
   outputs: [{ id: "value", label: "Value", valueType: "number" }],
   parameters: [
-    { id: "min", label: "Minimum", valueType: "number", defaultValue: 0 },
-    { id: "max", label: "Maximum", valueType: "number", defaultValue: 1 },
+    { id: "min", label: "Lowest possible number", description: "Start of the random range.", valueType: "number", defaultValue: 0 },
+    { id: "max", label: "Highest possible number", description: "End of the random range.", valueType: "number", defaultValue: 1 },
     {
       id: "mode",
-      label: "Mode",
+      label: "Number type",
+      description: "Choose whether to produce a decimal number or a whole number.",
       valueType: "string",
       defaultValue: "float",
       options: [
-        { label: "Float", value: "float" },
-        { label: "Integer", value: "integer" }
+        { label: "Decimal number", value: "float" },
+        { label: "Whole number", value: "integer" }
       ]
     },
-    { id: "precision", label: "Decimal places", valueType: "string", defaultValue: "2", options: precisionOptions },
-    { id: "includeMax", label: "Allow maximum", valueType: "boolean", defaultValue: false }
+    { id: "precision", label: "Decimal places to keep", description: "Only used for decimal numbers.", valueType: "string", defaultValue: "2", options: precisionOptions },
+    { id: "includeMax", label: "Include highest number", description: "Allow the random result to equal the highest possible number.", valueType: "boolean", defaultValue: false }
   ],
   icon: "dice-5",
   execute: (context) => {

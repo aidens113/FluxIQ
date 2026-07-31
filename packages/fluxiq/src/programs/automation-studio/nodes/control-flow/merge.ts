@@ -3,7 +3,7 @@ import { defineBuiltinNode, emptyResult } from "../shared/definition";
 export const mergeNode = defineBuiltinNode({
   id: "builtin.control.merge",
   label: "Merge",
-  description: "Join multiple incoming branches into one path.",
+  description: "Join several branches back into one path.",
   class: "control-flow",
   scope: "routine",
   inputs: [{ id: "branches", label: "Branches", valueType: "any", multiple: true }],
@@ -11,13 +11,14 @@ export const mergeNode = defineBuiltinNode({
   parameters: [
     {
       id: "mergeMode",
-      label: "Merge mode",
+      label: "When to continue",
+      description: "Choose whether this node continues after the first branch finishes, after all branches finish, or only with successful branch results.",
       valueType: "string",
       defaultValue: "first",
       options: [
-        { label: "First completed", value: "first" },
-        { label: "All results", value: "all" },
-        { label: "Successful only", value: "successful" }
+        { label: "As soon as one branch finishes", value: "first" },
+        { label: "After every branch finishes", value: "all" },
+        { label: "After successful branches only", value: "successful" }
       ]
     }
   ],

@@ -13,19 +13,20 @@ export const divideNode = defineBuiltinNode({
   ],
   outputs: [{ id: "result", label: "Result", valueType: "number" }],
   parameters: [
-    { id: "precision", label: "Decimal places", valueType: "string", defaultValue: "none", options: optionalPrecisionOptions },
+    { id: "precision", label: "Round result to", description: "Optional rounding applied after division.", valueType: "string", defaultValue: "none", options: optionalPrecisionOptions },
     {
       id: "divideByZero",
-      label: "Divide by zero",
+      label: "If dividing by zero",
+      description: "Choose what happens when the right input is zero.",
       valueType: "string",
       defaultValue: "fail",
       options: [
-        { label: "Fail", value: "fail" },
-        { label: "Return fallback", value: "fallback" },
-        { label: "Return null", value: "null" }
+        { label: "Fail this path", value: "fail" },
+        { label: "Use fallback value", value: "fallback" },
+        { label: "Return empty value", value: "null" }
       ]
     },
-    { id: "fallback", label: "Fallback", valueType: "number", defaultValue: 0 }
+    { id: "fallback", label: "Fallback value", description: "Number to return when dividing by zero and fallback is selected.", valueType: "number", defaultValue: 0 }
   ],
   icon: "calculator",
   execute: (context) => {

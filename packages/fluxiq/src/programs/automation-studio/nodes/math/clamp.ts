@@ -9,8 +9,8 @@ export const clampNode = defineBuiltinNode({
   inputs: [{ id: "value", label: "Value", valueType: "number", required: true }],
   outputs: [{ id: "result", label: "Result", valueType: "number" }],
   parameters: [
-    { id: "min", label: "Minimum", valueType: "number", defaultValue: 0 },
-    { id: "max", label: "Maximum", valueType: "number", defaultValue: 1 }
+    { id: "min", label: "Lowest allowed value", description: "Numbers below this are raised to this value.", valueType: "number", defaultValue: 0 },
+    { id: "max", label: "Highest allowed value", description: "Numbers above this are lowered to this value.", valueType: "number", defaultValue: 1 }
   ],
   icon: "between-horizontal-start",
   execute: (context) => {

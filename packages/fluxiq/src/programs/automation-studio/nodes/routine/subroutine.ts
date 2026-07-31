@@ -13,16 +13,17 @@ export const subroutineNode = defineBuiltinNode({
     { id: "failed", label: "Failed", valueType: "any" }
   ],
   parameters: [
-    { id: "routineId", label: "Routine", valueType: "string", required: true, ui: { control: "reference", referenceType: "routine", placeholder: "routine.id" } },
-    { id: "inputs", label: "Routine inputs", valueType: "object", defaultValue: {} },
+    { id: "routineId", label: "Routine to run", description: "Choose the saved routine this node should call.", valueType: "string", required: true, ui: { control: "reference", referenceType: "routine", placeholder: "Choose a routine" } },
+    { id: "inputs", label: "Values to pass in", description: "Input values made available to the called routine.", valueType: "object", defaultValue: {} },
     {
       id: "isolation",
-      label: "Isolation",
+      label: "Context sharing",
+      description: "Choose whether the called routine can see the current routine's variables.",
       valueType: "string",
       defaultValue: "shared",
       options: [
-        { label: "Shared context", value: "shared" },
-        { label: "Isolated context", value: "isolated" }
+        { label: "Share current variables", value: "shared" },
+        { label: "Use isolated variables", value: "isolated" }
       ]
     }
   ],

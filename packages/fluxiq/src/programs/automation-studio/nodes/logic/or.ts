@@ -16,12 +16,13 @@ export const orNode = defineBuiltinNode({
   parameters: [
     {
       id: "emptyBehavior",
-      label: "When empty",
+      label: "If no conditions arrive",
+      description: "Fallback result when this node receives no boolean inputs.",
       valueType: "string",
       defaultValue: "false",
       options: [
-        { label: "Return false", value: "false" },
-        { label: "Return true", value: "true" }
+        { label: "Treat as false", value: "false" },
+        { label: "Treat as true", value: "true" }
       ]
     }
   ],

@@ -12,9 +12,9 @@ export const weightedChoiceNode = defineBuiltinNode({
   inputs: [{ id: "choices", label: "Weighted choices", valueType: "array", required: true }],
   outputs: [{ id: "choice", label: "Choice", valueType: "any" }],
   parameters: [
-    { id: "defaultWeight", label: "Default weight", valueType: "number", defaultValue: 1 },
-    { id: "fallback", label: "Fallback", valueType: "any", defaultValue: null, ui: { control: "value" } },
-    { id: "normalizeWeights", label: "Normalize weights", valueType: "boolean", defaultValue: true }
+    { id: "defaultWeight", label: "Default chance weight", description: "Used for choices that do not provide their own weight.", valueType: "number", defaultValue: 1 },
+    { id: "fallback", label: "If no choice can be picked", description: "Value to return when the list is empty or all weights are zero.", valueType: "any", defaultValue: null, ui: { control: "value" } },
+    { id: "normalizeWeights", label: "Balance weights automatically", description: "Treat weights as relative chances instead of requiring them to add up to a specific total.", valueType: "boolean", defaultValue: true }
   ],
   icon: "scale",
   execute: (context) => {

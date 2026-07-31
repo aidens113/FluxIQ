@@ -16,12 +16,13 @@ export const andNode = defineBuiltinNode({
   parameters: [
     {
       id: "emptyBehavior",
-      label: "When empty",
+      label: "If no conditions arrive",
+      description: "Fallback result when this node receives no boolean inputs.",
       valueType: "string",
       defaultValue: "true",
       options: [
-        { label: "Return true", value: "true" },
-        { label: "Return false", value: "false" }
+        { label: "Treat as true", value: "true" },
+        { label: "Treat as false", value: "false" }
       ]
     }
   ],

@@ -12,16 +12,17 @@ export const approvalNode = defineBuiltinNode({
     { id: "rejected", label: "Rejected", valueType: "any" }
   ],
   parameters: [
-    { id: "prompt", label: "Prompt", valueType: "string", defaultValue: "Approve this routine step?", ui: { control: "textarea", placeholder: "Approval prompt" } },
-    { id: "timeoutMs", label: "Timeout ms", valueType: "number", defaultValue: 0 },
+    { id: "prompt", label: "Approval message", description: "Message shown to the operator who approves or rejects this step.", valueType: "string", defaultValue: "Approve this routine step?", ui: { control: "textarea", placeholder: "Approval message" } },
+    { id: "timeoutMs", label: "Auto-decide after milliseconds", description: "Use 0 to wait indefinitely.", valueType: "number", defaultValue: 0 },
     {
       id: "defaultRoute",
-      label: "Timeout/default route",
+      label: "If nobody responds",
+      description: "Route to use when the approval times out.",
       valueType: "string",
       defaultValue: "rejected",
       options: [
-        { label: "Rejected", value: "rejected" },
-        { label: "Approved", value: "approved" }
+        { label: "Treat as rejected", value: "rejected" },
+        { label: "Treat as approved", value: "approved" }
       ]
     }
   ],

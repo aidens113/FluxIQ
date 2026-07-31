@@ -12,7 +12,7 @@ export const multiplyNode = defineBuiltinNode({
     { id: "right", label: "Right", valueType: "number", required: true }
   ],
   outputs: [{ id: "result", label: "Result", valueType: "number" }],
-  parameters: [{ id: "precision", label: "Decimal places", valueType: "string", defaultValue: "none", options: optionalPrecisionOptions }],
+  parameters: [{ id: "precision", label: "Round result to", description: "Optional rounding applied after multiplication.", valueType: "string", defaultValue: "none", options: optionalPrecisionOptions }],
   icon: "calculator",
   execute: (context) => {
     const [left, right] = binaryNumbers(context);

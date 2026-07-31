@@ -10,16 +10,17 @@ export const roundNode = defineBuiltinNode({
   inputs: [{ id: "value", label: "Value", valueType: "number", required: true }],
   outputs: [{ id: "result", label: "Result", valueType: "number" }],
   parameters: [
-    { id: "precision", label: "Decimal places", valueType: "string", defaultValue: "0", options: precisionOptions },
+    { id: "precision", label: "Decimal places to keep", description: "How many digits should remain after the decimal point.", valueType: "string", defaultValue: "0", options: precisionOptions },
     {
       id: "mode",
-      label: "Mode",
+      label: "Rounding method",
+      description: "Choose whether to round normally, always down, or always up.",
       valueType: "string",
       defaultValue: "nearest",
       options: [
-        { label: "Nearest", value: "nearest" },
-        { label: "Floor", value: "floor" },
-        { label: "Ceiling", value: "ceil" }
+        { label: "Nearest number", value: "nearest" },
+        { label: "Always down", value: "floor" },
+        { label: "Always up", value: "ceil" }
       ]
     }
   ],
