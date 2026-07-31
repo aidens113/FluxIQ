@@ -14,7 +14,19 @@ export const actionNode = defineBuiltinNode({
   ],
   parameters: [
     { id: "actionDefinitionId", label: "Action definition", valueType: "string", required: true },
-    { id: "parameters", label: "Parameters", valueType: "json", defaultValue: {} }
+    { id: "parameters", label: "Action parameters", valueType: "object", defaultValue: {} },
+    { id: "timeoutMs", label: "Timeout ms", valueType: "number", defaultValue: 5000 },
+    { id: "requiresApproval", label: "Requires approval", valueType: "boolean", defaultValue: false },
+    {
+      id: "failureRoute",
+      label: "Failure route",
+      valueType: "string",
+      defaultValue: "failure",
+      options: [
+        { label: "Failure", value: "failure" },
+        { label: "Success", value: "success" }
+      ]
+    }
   ],
   icon: "zap",
   privileged: true,
@@ -22,6 +34,6 @@ export const actionNode = defineBuiltinNode({
     status: "success",
     route: "success",
     outputs: { success: true },
-    effects: [{ type: "policy.action.requested", payload: { actionDefinitionId: context.parameters.actionDefinitionId ?? "", parameters: jsonParameter(context.parameters.parameters, {}) } }]
+    effects: [{ type: "policy.action.requested", payload: { actionDefinitionId: context.parameters.actionDefinitionId ?? "", parameters: jsonParameter(context.parameters.parameters, {}), timeoutMs: context.parameters.timeoutMs ?? 5000, requiresApproval: context.parameters.requiresApproval === true, failureRoute: context.parameters.failureRoute ?? "failure" } }]
   })
 });

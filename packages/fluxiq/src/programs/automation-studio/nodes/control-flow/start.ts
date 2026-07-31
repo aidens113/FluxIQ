@@ -8,7 +8,10 @@ export const startNode = defineBuiltinNode({
   scope: "both",
   inputs: [],
   outputs: [{ id: "next", label: "Next", valueType: "any" }],
-  parameters: [],
+  parameters: [
+    { id: "label", label: "Run label", valueType: "string", defaultValue: "Start" },
+    { id: "emitTimestamp", label: "Emit timestamp", valueType: "boolean", defaultValue: true }
+  ],
   icon: "play",
-  execute: () => emptyResult({ next: true })
+  execute: (context) => emptyResult({ next: true, label: context.parameters.label ?? "Start", startedAt: context.parameters.emitTimestamp === false ? null : context.now?.() ?? Date.now() })
 });

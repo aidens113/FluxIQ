@@ -11,7 +11,10 @@ export const databaseUpdateNode = defineBuiltinNode({
   outputs: [{ id: "result", label: "Result", valueType: "object" }],
   parameters: [
     { id: "collection", label: "Collection", valueType: "string", required: true },
-    { id: "where", label: "Where", valueType: "json", defaultValue: {} }
+    { id: "where", label: "Filters", valueType: "object", defaultValue: {} },
+    { id: "limit", label: "Limit", valueType: "number", defaultValue: 1 },
+    { id: "dryRun", label: "Dry run", valueType: "boolean", defaultValue: false },
+    { id: "returnUpdated", label: "Return updated records", valueType: "boolean", defaultValue: true }
   ],
   icon: "database",
   privileged: true,
@@ -19,6 +22,6 @@ export const databaseUpdateNode = defineBuiltinNode({
     status: "success",
     route: "result",
     outputs: { result: {} },
-    effects: [{ type: "database.update.requested", payload: { collection: collectionName(context.parameters.collection), where: context.parameters.where ?? {}, patch: context.inputs.patch ?? {} } }]
+    effects: [{ type: "database.update.requested", payload: { collection: collectionName(context.parameters.collection), where: context.parameters.where ?? {}, patch: context.inputs.patch ?? {}, limit: context.parameters.limit ?? 1, dryRun: context.parameters.dryRun === true, returnUpdated: context.parameters.returnUpdated !== false } }]
   })
 });

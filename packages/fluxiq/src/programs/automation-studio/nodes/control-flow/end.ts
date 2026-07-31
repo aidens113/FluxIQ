@@ -8,7 +8,20 @@ export const endNode = defineBuiltinNode({
   scope: "both",
   inputs: [{ id: "in", label: "In", valueType: "any" }],
   outputs: [],
-  parameters: [],
+  parameters: [
+    {
+      id: "resultStatus",
+      label: "Result status",
+      valueType: "string",
+      defaultValue: "success",
+      options: [
+        { label: "Success", value: "success" },
+        { label: "Failed", value: "failed" },
+        { label: "Skipped", value: "skipped" }
+      ]
+    },
+    { id: "message", label: "Message", valueType: "string", defaultValue: "" }
+  ],
   icon: "circle-stop",
-  execute: () => ({ status: "success", route: "end", outputs: {} })
+  execute: (context) => ({ status: context.parameters.resultStatus === "failed" ? "failed" : context.parameters.resultStatus === "skipped" ? "skipped" : "success", route: "end", outputs: { message: context.parameters.message ?? "" } })
 });

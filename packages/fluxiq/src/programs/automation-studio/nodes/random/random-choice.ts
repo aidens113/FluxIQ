@@ -9,10 +9,17 @@ export const randomChoiceNode = defineBuiltinNode({
   scope: "both",
   inputs: [{ id: "choices", label: "Choices", valueType: "array", required: true }],
   outputs: [{ id: "choice", label: "Choice", valueType: "any" }],
-  parameters: [],
+  parameters: [
+    { id: "fallback", label: "Fallback", valueType: "any", defaultValue: null },
+    { id: "allowEmpty", label: "Allow empty list", valueType: "boolean", defaultValue: true }
+  ],
   icon: "shuffle",
   execute: (context) => {
     const choices = arrayValue(context.inputs.choices);
-    return emptyResult({ choice: choices[Math.floor(randomFloat(context) * choices.length)] ?? null });
+    if (!choices.length) {
+      if (context.parameters.allowEmpty === false) return { status: "failed", route: "failed", outputs: { choice: context.parameters.fallback ?? null } };
+      return emptyResult({ choice: context.parameters.fallback ?? null });
+    }
+    return emptyResult({ choice: choices[Math.floor(randomFloat(context) * choices.length)] ?? context.parameters.fallback ?? null });
   }
 });

@@ -11,16 +11,22 @@ export const weightedChoiceNode = defineBuiltinNode({
   scope: "both",
   inputs: [{ id: "choices", label: "Weighted choices", valueType: "array", required: true }],
   outputs: [{ id: "choice", label: "Choice", valueType: "any" }],
-  parameters: [],
+  parameters: [
+    { id: "defaultWeight", label: "Default weight", valueType: "number", defaultValue: 1 },
+    { id: "fallback", label: "Fallback", valueType: "any", defaultValue: null },
+    { id: "normalizeWeights", label: "Normalize weights", valueType: "boolean", defaultValue: true }
+  ],
   icon: "scale",
   execute: (context) => {
     const choices = arrayValue(context.inputs.choices) as WeightedChoice[];
-    const total = choices.reduce((sum, choice) => sum + Math.max(0, numberValue(choice.weight, 1)), 0);
+    const defaultWeight = numberValue(context.parameters.defaultWeight, 1);
+    const total = choices.reduce((sum, choice) => sum + Math.max(0, numberValue(choice.weight, defaultWeight)), 0);
+    if (!choices.length || total <= 0) return emptyResult({ choice: context.parameters.fallback ?? null });
     let cursor = randomFloat(context) * total;
     for (const choice of choices) {
-      cursor -= Math.max(0, numberValue(choice.weight, 1));
+      cursor -= Math.max(0, numberValue(choice.weight, defaultWeight));
       if (cursor <= 0) return emptyResult({ choice: choice.value ?? null });
     }
-    return emptyResult({ choice: choices[0]?.value ?? null });
+    return emptyResult({ choice: choices[0]?.value ?? context.parameters.fallback ?? null });
   }
 });

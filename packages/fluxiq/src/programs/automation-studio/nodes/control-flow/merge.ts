@@ -8,7 +8,19 @@ export const mergeNode = defineBuiltinNode({
   scope: "routine",
   inputs: [{ id: "branches", label: "Branches", valueType: "any", multiple: true }],
   outputs: [{ id: "next", label: "Next", valueType: "any" }],
-  parameters: [],
+  parameters: [
+    {
+      id: "mergeMode",
+      label: "Merge mode",
+      valueType: "string",
+      defaultValue: "first",
+      options: [
+        { label: "First completed", value: "first" },
+        { label: "All results", value: "all" },
+        { label: "Successful only", value: "successful" }
+      ]
+    }
+  ],
   icon: "merge",
-  execute: (context) => emptyResult({ next: context.inputs.branches ?? null })
+  execute: (context) => emptyResult({ next: context.inputs.branches ?? null, mergeMode: context.parameters.mergeMode ?? "first" })
 });

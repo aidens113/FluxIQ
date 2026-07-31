@@ -1,4 +1,4 @@
-import { booleanValue, defineBuiltinNode, emptyResult } from "../shared/definition";
+import { booleanValue, defineBuiltinNode } from "../shared/definition";
 
 export const notNode = defineBuiltinNode({
   id: "builtin.logic.not",
@@ -8,7 +8,11 @@ export const notNode = defineBuiltinNode({
   scope: "both",
   inputs: [{ id: "condition", label: "Condition", valueType: "boolean", required: true }],
   outputs: [{ id: "result", label: "Result", valueType: "boolean" }],
-  parameters: [],
+  parameters: [{ id: "missingValue", label: "Missing value", valueType: "boolean", defaultValue: false }],
   icon: "badge-x",
-  execute: (context) => emptyResult({ result: !booleanValue(context.inputs.condition) })
+  execute: (context) => {
+    const value = context.inputs.condition === undefined ? context.parameters.missingValue : context.inputs.condition;
+    const result = !booleanValue(value);
+    return { status: "success", route: result ? "true" : "false", outputs: { result } };
+  }
 });

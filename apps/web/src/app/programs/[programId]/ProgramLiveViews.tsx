@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Blocks, Braces, Bug, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns3, Copy, FileText, FolderOpen, FolderPlus, GitBranch, GripVertical, History, Info, ListChecks, Network, Plus, QrCode, Radio, RefreshCcw, Search, ShieldCheck, SlidersHorizontal, Sparkles, Trash2, Workflow, XCircle } from "lucide-react";
+import { AlertTriangle, Blocks, Braces, Bug, Calculator, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleDot, Clock, Columns3, Copy, Database, Dice5, FileText, FolderOpen, FolderPlus, GitBranch, GripVertical, History, Info, ListChecks, Merge, Network, Plus, QrCode, Radio, RefreshCcw, Repeat, Search, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Split, Trash2, Waves, Workflow, XCircle, Zap } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import {
@@ -25,7 +25,7 @@ import {
   type NodeProps,
   type ReactFlowInstance
 } from "@xyflow/react";
-import { automationNodeClassGroups, getAutomationNodeDefinitions, type AutomationNodeDefinition, type AutomationNodePort } from "fluxiq/automation-studio/nodes";
+import { automationNodeClassGroups, getAutomationNodeDefinition, getAutomationNodeDefinitions, type AutomationNodeDefinition, type AutomationNodeParameter, type AutomationNodePort } from "fluxiq/automation-studio/nodes";
 
 type ApiResponse<T = unknown> = { ok: boolean; payload?: T; error?: string };
 type JsonObject = Record<string, unknown>;
@@ -54,7 +54,7 @@ export function LiveProgramMain({ programId, user }: { programId: string; user: 
 }
 
 type AutomationStudioView = "design" | "recordings" | "signals" | "runtime" | "problems";
-type AutomationViewType = AutomationStudioView | "node-detail" | "assistant" | "config" | "routine" | "state" | "inspector" | "dock";
+type AutomationViewType = AutomationStudioView | "assistant" | "config" | "routine" | "state" | "inspector" | "dock";
 type AutomationDockTab = "assistant" | "problems" | "history" | "state";
 type AutomationViewInstance = {
   id: string;
@@ -118,6 +118,8 @@ type AutomationEditorNodeSpec = {
   nodeType: "base" | "custom" | "generated";
   inputs: AutomationNodePort[];
   outputs: AutomationNodePort[];
+  parameters: AutomationNodeParameter[];
+  icon?: string;
   privileged?: boolean;
   actionTypes?: string[];
 };
@@ -160,6 +162,8 @@ function automationNodeDefinitionToEditorSpec(definition: AutomationNodeDefiniti
     nodeType: definition.origin === "custom" ? "custom" : "base",
     inputs: definition.inputs,
     outputs: definition.outputs,
+    parameters: definition.parameters,
+    ...(definition.icon !== undefined ? { icon: definition.icon } : {}),
     ...(definition.privileged !== undefined ? { privileged: definition.privileged } : {}),
     ...(definition.class === "policy" && definition.id === "builtin.policy.action" ? { actionTypes: ["action"] } : {})
   };
@@ -199,7 +203,7 @@ type AutomationProjectModal = "create" | "rename" | "delete" | "move" | "create-
 type AutomationSelection =
   | { kind: "policy"; id: string }
   | { kind: "node"; id: string }
-  | { kind: "editor-node"; id: string; node: { label: string; nodeType: string; family: string; description: string; inputs: AutomationNodePort[]; outputs: AutomationNodePort[]; privileged?: boolean; actionTypes?: string[] } }
+  | { kind: "editor-node"; id: string; node: { label: string; nodeType: string; family: string; description: string; customDescription?: string; nodeDefinitionId?: string; icon?: string; inputs: AutomationNodePort[]; outputs: AutomationNodePort[]; parameters: AutomationNodeParameter[]; parameterValues: JsonObject; privileged?: boolean; actionTypes?: string[] } }
   | { kind: "recording"; id: string }
   | { kind: "timeline"; id: string }
   | { kind: "signal"; id: string };
@@ -207,6 +211,9 @@ type AutomationSelection =
 type AutomationPolicyNodeData = {
   nodeDefinitionId?: string;
   label: string;
+  description: string;
+  customDescription?: string;
+  icon?: string;
   actionTypes: string[];
   recovery: string;
   evidenceCount: number;
@@ -214,6 +221,8 @@ type AutomationPolicyNodeData = {
   successCount: number;
   inputs: AutomationNodePort[];
   outputs: AutomationNodePort[];
+  parameters: AutomationNodeParameter[];
+  parameterValues: JsonObject;
   isStart: boolean;
   confidence?: number;
   timeoutMs?: number;
@@ -224,8 +233,12 @@ type AutomationRoutineNodeData = {
   nodeType: "base" | "custom";
   family: string;
   description: string;
+  customDescription?: string;
+  icon?: string;
   inputs: AutomationNodePort[];
   outputs: AutomationNodePort[];
+  parameters: AutomationNodeParameter[];
+  parameterValues: JsonObject;
   privileged?: boolean;
 };
 
@@ -344,7 +357,6 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const viewInstances: AutomationViewInstance[] = [
     { id: "policy-primary", label: `Policy: ${selectedPolicy?.taskId ?? "Task"}`, type: "design", icon: GitBranch },
     { id: "timeline-recording", label: `Timeline: ${selectedRecording?.name ?? selectedRecording?.recordingId ?? "Recording"}`, type: "recordings", icon: Radio, state: "live" },
-    { id: "node-detail", label: `Node: ${selectedNode?.label ?? "Detail"}`, type: "node-detail", icon: SlidersHorizontal },
     { id: "signals-web", label: "Signals: Relationship Web", type: "signals", icon: Network, state: "warning" },
     { id: "runtime-debug", label: "Runtime Debug", type: "runtime", icon: Bug },
     { id: "problems-view", label: "Problems", type: "problems", icon: AlertTriangle },
@@ -385,7 +397,6 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     setSelection(next);
     if (next.kind === "recording" || next.kind === "timeline") openView("timeline-recording", "preview");
     if (next.kind === "signal") openView("signals-web", "preview");
-    if (next.kind === "node") openView("node-detail", "preview");
     if (next.kind === "policy") openView("policy-primary", "preview");
   };
 
@@ -1318,7 +1329,6 @@ function viewTitle(view: AutomationViewInstance): string {
   if (view.type === "signals") return "Relationship Web";
   if (view.type === "runtime") return "Runtime Debug";
   if (view.type === "problems") return "Problems";
-  if (view.type === "node-detail") return "Node Detail";
   if (view.type === "assistant") return "AI Assistant";
   if (view.type === "inspector") return "Inspector";
   if (view.type === "dock") return "Workspace Dock";
@@ -1454,7 +1464,7 @@ function AutomationWindowAdderPalette(props: { area: AutomationWorkspaceArea; an
   const groups = [
     { title: "Editors", ids: ["policy-primary", "routine-editor", "config-default"] },
     { title: "Evidence", ids: ["timeline-recording", "signals-web", "runtime-debug", "problems-view"] },
-    { title: "Tools", ids: ["global-inspector", "workspace-dock", "node-detail", "ai-assistant"] }
+    { title: "Tools", ids: ["global-inspector", "workspace-dock", "ai-assistant"] }
   ];
   const byId = new Map(props.views.map((view) => [view.id, view]));
   return (
@@ -1551,7 +1561,6 @@ function automationWindowDescription(view: AutomationViewInstance): string {
   if (view.type === "problems") return "Review validation and authoring issues.";
   if (view.type === "inspector") return "Inspect the current global selection.";
   if (view.type === "dock") return "Assistant, problems, history, and state panels.";
-  if (view.type === "node-detail") return "Open a focused node detail view.";
   if (view.type === "assistant") return "Work with AI proposals and context.";
   return "Open this workspace view.";
 }
@@ -1581,9 +1590,8 @@ function AutomationViewRenderer(props: {
   if (props.view.type === "signals") return <AutomationSignalWorkspace signals={props.signals} setSelection={props.setSelection} />;
   if (props.view.type === "runtime") return <AutomationRuntimeWorkspace timelines={props.selectedTimeline ? [props.selectedTimeline] : []} models={props.models} policies={props.policies} />;
   if (props.view.type === "problems") return <AutomationProblemsWorkspace problems={props.problems} />;
-  if (props.view.type === "node-detail") return <AutomationNodeDetailView node={props.selectedNode} entries={props.entries} />;
   if (props.view.type === "assistant") return <AutomationAssistantView node={props.selectedNode} recording={props.selectedRecording} signals={props.signals} />;
-  if (props.view.type === "inspector") return <AutomationInspector selection={props.selection} policy={props.policy} node={props.selectedNode} recording={props.selectedRecording} entry={props.selectedEntry} signal={props.selectedSignal} />;
+  if (props.view.type === "inspector") return <AutomationInspector selection={props.selection} policy={props.policy} node={props.selectedNode} recording={props.selectedRecording} entry={props.selectedEntry} signal={props.selectedSignal} setSelection={props.setSelection} />;
   if (props.view.type === "dock") return <AutomationWorkspaceDock activeTab={props.dockTab} problems={props.problems} signals={props.signals} models={props.models} selectedNode={props.selectedNode} setActiveTab={props.setDockTab} />;
   if (props.view.type === "routine") return <AutomationRoutineView models={props.models} policies={props.policies} setSelection={props.setSelection} />;
   if (props.view.type === "config") return <AutomationConfigView policy={props.policy} />;
@@ -1651,15 +1659,21 @@ function normalizeAutomationWorkspacePrefs(value: AutomationWorkspacePrefs): Aut
   const sourceWindows = Array.isArray(value.windows) ? value.windows : fallback.windows;
   const normalizedWindows = sourceWindows
     .filter((item) => item.tabs?.length && item.activeViewId)
-    .map((item, index) => ({
-      ...item,
-      area: (["main", "right", "bottom"] as const).includes((item as AutomationWorkspaceWindow).area) ? (item as AutomationWorkspaceWindow).area : "main",
-      x: clampNumber(item.x, 0, 6000, 10 + index * 32),
-      y: clampNumber(item.y, 0, 6000, 10 + index * 32),
-      widthPx: clampNumber(item.widthPx ?? ((item as AutomationWorkspaceWindow & { widthWeight?: number }).widthWeight ? Number((item as AutomationWorkspaceWindow & { widthWeight?: number }).widthWeight) * 8 : legacyColumnWidths?.[index]), 360, 1800, 1040),
-      heightPx: clampNumber(item.heightPx, 320, 1400, 640),
-      zIndex: clampNumber(item.zIndex, 1, 9999, index + 1)
-    }));
+    .map((item, index) => {
+      const tabs = item.tabs.map((tab) => tab === "node-detail" ? "global-inspector" : tab).filter((tab, tabIndex, allTabs) => allTabs.indexOf(tab) === tabIndex);
+      const activeViewId = item.activeViewId === "node-detail" ? "global-inspector" : item.activeViewId;
+      return {
+        ...item,
+        activeViewId,
+        tabs: tabs.length ? tabs : [activeViewId],
+        area: (["main", "right", "bottom"] as const).includes((item as AutomationWorkspaceWindow).area) ? (item as AutomationWorkspaceWindow).area : "main",
+        x: clampNumber(item.x, 0, 6000, 10 + index * 32),
+        y: clampNumber(item.y, 0, 6000, 10 + index * 32),
+        widthPx: clampNumber(item.widthPx ?? ((item as AutomationWorkspaceWindow & { widthWeight?: number }).widthWeight ? Number((item as AutomationWorkspaceWindow & { widthWeight?: number }).widthWeight) * 8 : legacyColumnWidths?.[index]), 360, 1800, 1040),
+        heightPx: clampNumber(item.heightPx, 320, 1400, 640),
+        zIndex: clampNumber(item.zIndex, 1, 9999, index + 1)
+      };
+    });
   const utilityWindowsMigrated = Boolean(value.utilityWindowsMigrated);
   const hasInspectorWindow = normalizedWindows.some((item) => item.tabs.includes("global-inspector") || item.activeViewId === "global-inspector");
   const hasDockWindow = normalizedWindows.some((item) => item.tabs.includes("workspace-dock") || item.activeViewId === "workspace-dock");
@@ -2168,26 +2182,6 @@ function timelineEventWidth(entry: any): string {
   return "130px";
 }
 
-function AutomationNodeDetailView(props: { node: any; entries: any[] }) {
-  if (!props.node) return <EmptyAutomationView title="No node selected" message="Select a policy node to inspect eligibility, actions, expectations, evidence, and runtime history." />;
-  return (
-    <section className="automation-detail-view">
-      <SummaryStrip items={[
-        ["Actions", props.node.actions?.length ?? 0],
-        ["Evidence", props.node.sourceEvidence?.length ?? 0],
-        ["Timeline Hits", props.entries.filter((entry) => entry.type === "action").length],
-        ["Recovery", props.node.recovery?.strategy ?? "default"]
-      ]} />
-      <div className="automation-detail-grid">
-        <InspectorSection title="Eligibility" rows={[["Eligibility", conditionSummary(props.node.eligibility)], ["Readiness", conditionSummary(props.node.readinessConditions)]]} />
-        <InspectorSection title="Expected Results" rows={[["Success", conditionSummary(props.node.successConditions)], ["Failure", conditionSummary(props.node.failureConditions)]]} />
-        <InspectorSection title="Runtime History" rows={[["Runs", "124"], ["Successes", "118"], ["Retries", "5"], ["Median duration", "1.7s"]]} />
-        <InspectorSection title="Training" rows={[["Suggested adjustment", "Increase timeout when recent runs exceed observed median"], ["Risk", "Low"]]} />
-      </div>
-    </section>
-  );
-}
-
 function AutomationAssistantView(props: { node: any; recording: any; signals: any[] }) {
   const [assistantText, setAssistantText] = useState("");
   const [proposal, setProposal] = useState("No proposal selected.");
@@ -2237,6 +2231,27 @@ function automationPaletteIcon(family: string): typeof Blocks {
   }
 }
 
+function automationNodeIcon(icon: string | undefined, family: string | undefined): typeof Blocks {
+  switch (icon) {
+    case "calculator": return Calculator;
+    case "circle-dot": return CircleDot;
+    case "clock-alert":
+    case "clock": return Clock;
+    case "database": return Database;
+    case "dice-5": return Dice5;
+    case "git-branch": return GitBranch;
+    case "merge": return Merge;
+    case "repeat": return Repeat;
+    case "shield": return ShieldCheck;
+    case "shuffle": return Shuffle;
+    case "split": return Split;
+    case "waves": return Waves;
+    case "workflow": return Workflow;
+    case "zap": return Zap;
+    default: return automationPaletteIcon(family ?? "custom");
+  }
+}
+
 function AutomationNodePalette(props: {
   collapsed: boolean;
   groups: AutomationEditorPaletteGroup[];
@@ -2256,7 +2271,7 @@ function AutomationNodePalette(props: {
         <section key={group.title}>
           <strong>{group.title}</strong>
           {group.nodes.map((item) => {
-            const Icon = automationPaletteIcon(item.family);
+            const Icon = automationNodeIcon(item.icon, item.family);
             return (
               <button key={item.id} onClick={() => props.onAddNode(item)} title={item.description} type="button">
                 <Icon size={15} aria-hidden />
@@ -2283,8 +2298,13 @@ function routineEditorSelection(id: string, data: AutomationRoutineNodeData): Au
       nodeType: data.nodeType,
       family: data.family,
       description: data.description,
+      ...(data.customDescription !== undefined ? { customDescription: data.customDescription } : {}),
       inputs: data.inputs,
       outputs: data.outputs,
+      parameters: data.parameters,
+      parameterValues: data.parameterValues,
+      ...(data.nodeDefinitionId !== undefined ? { nodeDefinitionId: data.nodeDefinitionId } : {}),
+      ...(data.icon !== undefined ? { icon: data.icon } : {}),
       ...(data.privileged !== undefined ? { privileged: data.privileged } : {})
     }
   };
@@ -2298,9 +2318,14 @@ function policyEditorSelection(id: string, data: AutomationPolicyNodeData): Auto
       label: data.label,
       nodeType: data.isStart ? "start" : "policy",
       family: data.recovery,
-      description: data.actionTypes.length ? data.actionTypes.join(", ") : "Policy editor node",
+      description: data.description,
+      ...(data.customDescription !== undefined ? { customDescription: data.customDescription } : {}),
       inputs: data.inputs,
       outputs: data.outputs,
+      parameters: data.parameters,
+      parameterValues: data.parameterValues,
+      ...(data.nodeDefinitionId !== undefined ? { nodeDefinitionId: data.nodeDefinitionId } : {}),
+      ...(data.icon !== undefined ? { icon: data.icon } : {}),
       actionTypes: data.actionTypes
     }
   };
@@ -2332,8 +2357,11 @@ function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelec
       nodeType: spec.nodeType === "custom" ? "custom" : "base",
       family: spec.family,
       description: spec.description,
+      ...(spec.icon !== undefined ? { icon: spec.icon } : {}),
       inputs: automationVisualInputPorts(spec.inputs, spec.id),
       outputs: spec.outputs,
+      parameters: spec.parameters,
+      parameterValues: defaultAutomationParameterValues(spec.parameters),
       ...(spec.privileged !== undefined ? { privileged: spec.privileged } : {})
     };
     const node: Node<AutomationRoutineNodeData> = {
@@ -2370,11 +2398,18 @@ function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelec
       setRoutineEdges((edges) => edges.filter((edge) => edge.id !== edgeId));
       setSelectedRoutineEdgeIds((ids) => ids.filter((id) => id !== edgeId));
     }
+    function handleUpdateParameters(event: Event) {
+      const detail = (event as CustomEvent<{ nodeId?: string; parameterValues?: JsonObject; customDescription?: string }>).detail;
+      if (!detail?.nodeId) return;
+      setRoutineNodes((nodes) => nodes.map((node) => node.id === detail.nodeId ? { ...node, data: { ...node.data, ...(detail.parameterValues ? { parameterValues: detail.parameterValues } : {}), ...(detail.customDescription !== undefined ? { customDescription: detail.customDescription } : {}) } } : node));
+    }
     window.addEventListener("automation-studio:delete-node", handleDeleteNode);
     window.addEventListener("automation-studio:delete-edge", handleDeleteEdge);
+    window.addEventListener("automation-studio:update-node-parameters", handleUpdateParameters);
     return () => {
       window.removeEventListener("automation-studio:delete-node", handleDeleteNode);
       window.removeEventListener("automation-studio:delete-edge", handleDeleteEdge);
+      window.removeEventListener("automation-studio:update-node-parameters", handleUpdateParameters);
     };
   }, []);
   return (
@@ -2537,6 +2572,8 @@ function AutomationPolicyCanvas(props: { policy: any; selectedNode: any; setSele
     const data: AutomationPolicyNodeData = {
       nodeDefinitionId: spec.id,
       label: spec.label,
+      description: spec.description,
+      ...(spec.icon !== undefined ? { icon: spec.icon } : {}),
       actionTypes: spec.actionTypes ?? [],
       recovery: spec.family,
       evidenceCount: 0,
@@ -2544,6 +2581,8 @@ function AutomationPolicyCanvas(props: { policy: any; selectedNode: any; setSele
       successCount: spec.outputs.length,
       inputs: automationVisualInputPorts(spec.inputs, spec.id),
       outputs: spec.outputs,
+      parameters: spec.parameters,
+      parameterValues: defaultAutomationParameterValues(spec.parameters),
       isStart: spec.id === "builtin.control.start"
     };
     const node: Node<AutomationPolicyNodeData> = {
@@ -2580,11 +2619,18 @@ function AutomationPolicyCanvas(props: { policy: any; selectedNode: any; setSele
       setPolicyEdges((edges) => edges.filter((edge) => edge.id !== edgeId));
       setSelectedPolicyEdgeIds((ids) => ids.filter((id) => id !== edgeId));
     }
+    function handleUpdateParameters(event: Event) {
+      const detail = (event as CustomEvent<{ nodeId?: string; parameterValues?: JsonObject; customDescription?: string }>).detail;
+      if (!detail?.nodeId) return;
+      setPolicyNodes((nodes) => nodes.map((node) => node.id === detail.nodeId ? { ...node, data: { ...node.data, ...(detail.parameterValues ? { parameterValues: detail.parameterValues } : {}), ...(detail.customDescription !== undefined ? { customDescription: detail.customDescription } : {}) } } : node));
+    }
     window.addEventListener("automation-studio:delete-node", handleDeleteNode);
     window.addEventListener("automation-studio:delete-edge", handleDeleteEdge);
+    window.addEventListener("automation-studio:update-node-parameters", handleUpdateParameters);
     return () => {
       window.removeEventListener("automation-studio:delete-node", handleDeleteNode);
       window.removeEventListener("automation-studio:delete-edge", handleDeleteEdge);
+      window.removeEventListener("automation-studio:update-node-parameters", handleUpdateParameters);
     };
   }, []);
   return (
@@ -2654,6 +2700,8 @@ function AutomationPolicyCanvas(props: { policy: any; selectedNode: any; setSele
 
 function AutomationPolicyNode({ id, data, selected }: NodeProps) {
   const node = data as AutomationPolicyNodeData;
+  const Icon = automationNodeIcon(node.icon, node.recovery);
+  const description = node.customDescription || node.description || node.actionTypes.join(", ") || "Policy node";
   return (
     <div className={selected ? "automation-flow-node selected" : "automation-flow-node"}>
       {selected ? <SelectedNodeDeleteButton nodeId={id} /> : null}
@@ -2666,12 +2714,12 @@ function AutomationPolicyNode({ id, data, selected }: NodeProps) {
         {node.confidence !== undefined ? <span className="node-badge confidence">{Math.round(node.confidence * 100)}%</span> : null}
       </div>
       <div className="automation-flow-node-main">
-        <span className="node-icon" title="Policy node">
-          <GitBranch size={18} strokeWidth={2.2} />
+        <span className="node-icon" title={node.nodeDefinitionId ? node.label : "Generated policy node"}>
+          <Icon size={18} strokeWidth={2.2} />
         </span>
         <div>
           <strong>{node.label}</strong>
-          <span>{node.actionTypes.join(", ") || "No action"}</span>
+          <span>{description}</span>
         </div>
       </div>
       <div className="node-definition-lines">
@@ -2692,6 +2740,8 @@ function AutomationPolicyNode({ id, data, selected }: NodeProps) {
 
 function AutomationRoutineNode({ id, data, selected }: NodeProps) {
   const node = data as AutomationRoutineNodeData;
+  const Icon = automationNodeIcon(node.icon, node.family);
+  const description = node.customDescription || node.description;
   return (
     <div className={selected ? `automation-flow-node routine-node selected ${node.nodeType}` : `automation-flow-node routine-node ${node.nodeType}`}>
       {selected ? <SelectedNodeDeleteButton nodeId={id} /> : null}
@@ -2703,12 +2753,12 @@ function AutomationRoutineNode({ id, data, selected }: NodeProps) {
         {node.privileged ? <span className="node-badge privileged">PIN</span> : null}
       </div>
       <div className="automation-flow-node-main">
-        <span className="node-icon" title="Routine node">
-          <Workflow size={18} strokeWidth={2.2} />
+        <span className="node-icon" title={node.label}>
+          <Icon size={18} strokeWidth={2.2} />
         </span>
         <div>
           <strong>{node.label}</strong>
-          <span>{node.description}</span>
+          <span>{description}</span>
         </div>
       </div>
       <div className="node-definition-lines">
@@ -2739,6 +2789,34 @@ function AutomationNodePortHandles(props: { ports: AutomationNodePort[]; type: "
 function automationVisualInputPorts(inputs: AutomationNodePort[], nodeDefinitionId: string): AutomationNodePort[] {
   if (inputs.length || nodeDefinitionId === "builtin.control.start") return inputs;
   return [{ id: "in", label: "In", valueType: "any" }];
+}
+
+function defaultAutomationParameterValues(parameters: AutomationNodeParameter[]): JsonObject {
+  return Object.fromEntries(parameters.map((parameter) => [parameter.id, parameter.defaultValue ?? defaultAutomationParameterValue(parameter)]));
+}
+
+function defaultAutomationParameterValue(parameter: AutomationNodeParameter): unknown {
+  if (parameter.options?.[0]) return parameter.options[0].value;
+  if (parameter.valueType === "number") return 0;
+  if (parameter.valueType === "boolean") return false;
+  if (parameter.valueType === "json") return {};
+  return "";
+}
+
+function automationNodeExecutionPreview(definition: AutomationNodeDefinition | undefined, parameterValues: JsonObject): string {
+  if (!definition?.execute) return "No built-in executor available.";
+  try {
+    const result = definition.execute({
+      inputs: {},
+      parameters: parameterValues as Record<string, any>,
+      random: () => 0.42,
+      now: () => 0
+    });
+    if (result instanceof Promise) return "Async executor preview pending runtime integration.";
+    return shortJson(result);
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
 }
 
 function AutomationNodePortList(props: { inputs: AutomationNodePort[]; outputs: AutomationNodePort[] }) {
@@ -2887,8 +2965,32 @@ function AutomationProblemsWorkspace(props: { problems: any[] }) {
   return <DataTable columns={["Severity", "Artifact", "Message"]} rows={props.problems.map((problem) => [<StatusBadge key={problem.id} value={problem.severity} />, problem.artifactId ?? problem.artifactKind ?? "-", problem.message])} empty="No validation, runtime, or fixture problems are currently reported." />;
 }
 
-function AutomationInspector(props: { selection: AutomationSelection | null; policy: any; node: any; recording: any; entry: any; signal: any }) {
+function AutomationInspector(props: { selection: AutomationSelection | null; policy: any; node: any; recording: any; entry: any; signal: any; setSelection(selection: AutomationSelection): void }) {
   const title = props.selection?.kind === "signal" ? "Signal" : props.selection?.kind === "timeline" ? "Timeline Entry" : props.selection?.kind === "recording" ? "Recording" : props.selection?.kind === "policy" ? "Policy Graph" : props.selection?.kind === "editor-node" ? "Editor Node" : "Node Inspector";
+  const updateEditorNodeParameters = (parameterValues: JsonObject) => {
+    if (props.selection?.kind !== "editor-node") return;
+    const nextSelection: AutomationSelection = {
+      ...props.selection,
+      node: {
+        ...props.selection.node,
+        parameterValues
+      }
+    };
+    props.setSelection(nextSelection);
+    window.dispatchEvent(new CustomEvent("automation-studio:update-node-parameters", { detail: { nodeId: props.selection.id, parameterValues } }));
+  };
+  const updateEditorNodeDescription = (customDescription: string) => {
+    if (props.selection?.kind !== "editor-node") return;
+    const nextSelection: AutomationSelection = {
+      ...props.selection,
+      node: {
+        ...props.selection.node,
+        customDescription
+      }
+    };
+    props.setSelection(nextSelection);
+    window.dispatchEvent(new CustomEvent("automation-studio:update-node-parameters", { detail: { nodeId: props.selection.id, customDescription } }));
+  };
   return (
     <aside className="automation-inspector">
       <header>
@@ -2913,16 +3015,17 @@ function AutomationInspector(props: { selection: AutomationSelection | null; pol
         <InspectorSection title="Dataset Actions" rows={[["Status", "Raw, normalized, mined"], ["Compare", "Align by semantic actions"], ["Reprocess", "Run normalization and mining"]]} />
       </> : null}
       {props.selection?.kind === "editor-node" && props.node ? <>
-        <InspectorSection title="General" rows={[["Node", props.node.label], ["ID", props.node.id], ["Type", props.node.nodeType ?? "-"], ["Family", props.node.family ?? "-"], ["Description", props.node.description ?? "-"]]} />
+        <AutomationNodeParameterEditor node={props.node} onChange={updateEditorNodeParameters} onDescriptionChange={updateEditorNodeDescription} />
+        <InspectorSection title="Metadata" rows={[["Node", props.node.label], ["ID", props.node.id], ["Type", props.node.nodeType ?? "-"], ["Family", props.node.family ?? "-"], ["Default description", props.node.description ?? "-"]]} />
         <InspectorSection title="Ports" rows={[["Inputs", formatAutomationPorts(props.node.inputs)], ["Outputs", formatAutomationPorts(props.node.outputs)], ["Privileged", props.node.privileged ? "Yes" : "No"], ["Actions", (props.node.actionTypes ?? []).join(", ") || "-"]]} />
-        <details className="json-details"><summary><Braces size={13} aria-hidden />Raw definition</summary><pre>{shortJson(props.node)}</pre></details>
       </> : null}
       {(!props.selection || props.selection.kind === "node") && props.node ? <>
         <InspectorSection title="General" rows={[["Node", props.node.label], ["ID", props.node.id], ["Actions", (props.node.actions ?? []).map((action: any) => action.actionType).join(", ")], ["Recovery", props.node.recovery?.strategy ?? "-"]]} />
         <InspectorSection title="Conditions" rows={[["Eligibility", conditionSummary(props.node.eligibility)], ["Readiness", conditionSummary(props.node.readinessConditions)], ["Success", conditionSummary(props.node.successConditions)]]} />
         <InspectorSection title="Timing and Retries" rows={[["Timeout", props.node.timeout?.timeoutMs ? `${props.node.timeout.timeoutMs} ms` : "Default"], ["Retry", props.node.retry?.strategy ?? "Default"], ["Recovery", props.node.recovery?.strategy ?? "-"]]} />
+        <InspectorSection title="Runtime History" rows={[["Runs", "124"], ["Successes", "118"], ["Retries", "5"], ["Median duration", "1.7s"]]} />
+        <InspectorSection title="Training" rows={[["Suggested adjustment", "Increase timeout when recent runs exceed observed median"], ["Risk", "Low"]]} />
         <InspectorProvenance current={props.node.timeout?.timeoutMs ? `${props.node.timeout.timeoutMs} ms` : "Default"} source="Generated from recording evidence and editable by user" />
-        <details className="json-details"><summary><Braces size={13} aria-hidden />Raw definition</summary><pre>{shortJson(props.node)}</pre></details>
       </> : null}
       {props.selection?.kind === "policy" && props.policy ? <>
         <InspectorSection title="Policy" rows={[["Policy", props.policy.policyId], ["Task", props.policy.taskId], ["Version", props.policy.version], ["Nodes", String(props.policy.nodes?.length ?? 0)], ["Edges", String(props.policy.edges?.length ?? 0)]]} />
@@ -2930,6 +3033,178 @@ function AutomationInspector(props: { selection: AutomationSelection | null; pol
       </> : null}
     </aside>
   );
+}
+
+function AutomationNodeParameterEditor(props: {
+  node: {
+    nodeDefinitionId?: string;
+    description?: string;
+    customDescription?: string;
+    parameters?: AutomationNodeParameter[];
+    parameterValues?: JsonObject;
+  };
+  onChange(parameterValues: JsonObject): void;
+  onDescriptionChange(customDescription: string): void;
+}) {
+  const parameters = props.node.parameters ?? [];
+  const values = props.node.parameterValues ?? {};
+  const definition = props.node.nodeDefinitionId ? getAutomationNodeDefinition(props.node.nodeDefinitionId) : undefined;
+  const preview = automationNodeExecutionPreview(definition, values);
+  const setValue = (parameter: AutomationNodeParameter, value: unknown) => {
+    props.onChange({ ...values, [parameter.id]: value });
+  };
+  return (
+    <details className="automation-inspector-section automation-node-parameters" open>
+      <summary>Parameters</summary>
+      <div className="automation-parameter-stack">
+        <label className="automation-parameter-field">
+          <span>Node description</span>
+          <textarea
+            className="automation-description-input"
+            placeholder={props.node.description ?? "Describe what this node does in this flow"}
+            value={props.node.customDescription ?? ""}
+            onChange={(event) => props.onDescriptionChange(event.target.value)}
+          />
+        </label>
+        {parameters.length ? parameters.map((parameter) => (
+          <AutomationNodeParameterField
+            key={parameter.id}
+            parameter={parameter}
+            value={values[parameter.id] ?? parameter.defaultValue}
+            onChange={(value) => setValue(parameter, value)}
+          />
+        )) : <span className="muted-text">This node has no editable parameters.</span>}
+      </div>
+      <div className="automation-node-preview">
+        <strong>Preview</strong>
+        <pre>{preview}</pre>
+      </div>
+    </details>
+  );
+}
+
+function AutomationNodeParameterField(props: { parameter: AutomationNodeParameter; value: unknown; onChange(value: unknown): void }) {
+  const parameter = props.parameter;
+  const value = props.value;
+  if (parameter.options?.length) {
+    return (
+      <label className="automation-parameter-field">
+        <span>{parameter.label}{parameter.required ? " *" : ""}</span>
+        <select value={String(value ?? "")} onChange={(event) => props.onChange(event.target.value)}>
+          {parameter.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+      </label>
+    );
+  }
+  if (parameter.valueType === "boolean") {
+    return (
+      <label className="automation-parameter-field checkbox">
+        <input type="checkbox" checked={Boolean(value)} onChange={(event) => props.onChange(event.target.checked)} />
+        <span>{parameter.label}{parameter.required ? " *" : ""}</span>
+      </label>
+    );
+  }
+  if (parameter.valueType === "number") {
+    return (
+      <label className="automation-parameter-field">
+        <span>{parameter.label}{parameter.required ? " *" : ""}</span>
+        <input type="number" value={String(value ?? 0)} onChange={(event) => props.onChange(Number(event.target.value))} />
+      </label>
+    );
+  }
+  if (parameter.valueType === "object" || parameter.valueType === "json") {
+    return (
+      <div className="automation-parameter-field">
+        <span>{parameter.label}{parameter.required ? " *" : ""}</span>
+        <AutomationObjectParameterEditor value={value} onChange={props.onChange} />
+      </div>
+    );
+  }
+  if (parameter.valueType === "array") {
+    return (
+      <div className="automation-parameter-field">
+        <span>{parameter.label}{parameter.required ? " *" : ""}</span>
+        <AutomationArrayParameterEditor value={value} onChange={props.onChange} />
+      </div>
+    );
+  }
+  return (
+    <label className="automation-parameter-field">
+      <span>{parameter.label}{parameter.required ? " *" : ""}</span>
+      <input value={automationParameterPrimitiveText(value)} onChange={(event) => props.onChange(parameter.valueType === "any" ? automationCoercedParameterValue(event.target.value) : event.target.value)} />
+    </label>
+  );
+}
+
+function AutomationObjectParameterEditor(props: { value: unknown; onChange(value: JsonObject): void }) {
+  const entries = Object.entries(automationObjectParameterValue(props.value));
+  const updateEntry = (index: number, key: string, value: unknown) => {
+    const nextEntries: Array<[string, unknown]> = entries.map(([entryKey, entryValue], entryIndex) => entryIndex === index ? [key, automationCoercedParameterValue(value)] : [entryKey, entryValue]);
+    props.onChange(Object.fromEntries(nextEntries.filter(([entryKey]) => entryKey.trim())));
+  };
+  const removeEntry = (index: number) => props.onChange(Object.fromEntries(entries.filter((_entry, entryIndex) => entryIndex !== index)));
+  return (
+    <div className="automation-structured-parameter">
+      {entries.map(([key, entryValue], index) => (
+        <div className="automation-structured-row" key={`${key}-${index}`}>
+          <input aria-label="Field name" placeholder="Field" value={key} onChange={(event) => updateEntry(index, event.target.value, entryValue)} />
+          <input aria-label="Field value" placeholder="Value" value={automationParameterPrimitiveText(entryValue)} onChange={(event) => updateEntry(index, key, event.target.value)} />
+          <button className="icon-button" onClick={() => removeEntry(index)} title="Remove field" aria-label="Remove field" type="button"><Trash2 size={12} aria-hidden /></button>
+        </div>
+      ))}
+      <button className="secondary-button compact" onClick={() => props.onChange({ ...automationObjectParameterValue(props.value), field: "" })} type="button">
+        <Plus size={13} aria-hidden /> Add field
+      </button>
+    </div>
+  );
+}
+
+function AutomationArrayParameterEditor(props: { value: unknown; onChange(value: unknown[]): void }) {
+  const values = Array.isArray(props.value) ? props.value : [];
+  const updateItem = (index: number, value: unknown) => props.onChange(values.map((item, itemIndex) => itemIndex === index ? automationCoercedParameterValue(value) : item));
+  const removeItem = (index: number) => props.onChange(values.filter((_item, itemIndex) => itemIndex !== index));
+  return (
+    <div className="automation-structured-parameter">
+      {values.map((item, index) => (
+        typeof item === "object" && item !== null && !Array.isArray(item) ? (
+          <div className="automation-array-object" key={index}>
+            <AutomationObjectParameterEditor value={item} onChange={(value) => updateItem(index, value)} />
+            <button className="secondary-button compact danger" onClick={() => removeItem(index)} type="button"><Trash2 size={12} aria-hidden /> Remove item</button>
+          </div>
+        ) : (
+          <div className="automation-structured-row" key={index}>
+            <input aria-label="Item value" placeholder="Value" value={automationParameterPrimitiveText(item)} onChange={(event) => updateItem(index, event.target.value)} />
+            <button className="icon-button" onClick={() => removeItem(index)} title="Remove item" aria-label="Remove item" type="button"><Trash2 size={12} aria-hidden /></button>
+          </div>
+        )
+      ))}
+      <button className="secondary-button compact" onClick={() => props.onChange([...values, {}])} type="button">
+        <Plus size={13} aria-hidden /> Add item
+      </button>
+    </div>
+  );
+}
+
+function automationObjectParameterValue(value: unknown): JsonObject {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : {};
+}
+
+function automationParameterPrimitiveText(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object") return shortJson(value);
+  return String(value);
+}
+
+function automationCoercedParameterValue(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (trimmed === "true") return true;
+  if (trimmed === "false") return false;
+  if (trimmed === "null") return null;
+  const numeric = Number(trimmed);
+  if (Number.isFinite(numeric) && /^-?\d+(\.\d+)?$/.test(trimmed)) return numeric;
+  return value;
 }
 
 function InspectorSection(props: { title: string; rows: Array<[string, string]> }) {
@@ -4241,6 +4516,8 @@ function policyToReactFlowGraph(policy: any, selectedNodeId = ""): { nodes: Node
     selected: node.id === selectedNodeId,
     data: {
       label: node.label ?? node.id,
+      description: generatedPolicyNodeDescription(node),
+      icon: generatedPolicyNodeIcon(node, index),
       actionTypes: (node.actions ?? []).map((action: any) => action.actionType),
       recovery: node.recovery?.strategy ?? "ready",
       evidenceCount: node.sourceEvidence?.length ?? 0,
@@ -4248,6 +4525,8 @@ function policyToReactFlowGraph(policy: any, selectedNodeId = ""): { nodes: Node
       successCount: countConditionLeaves(node.successConditions),
       inputs: generatedPolicyInputPorts(node, index),
       outputs: generatedPolicyOutputPorts(node, policyEdges),
+      parameters: [],
+      parameterValues: {},
       isStart: index === 0,
       confidence: node.generatedMetadata?.confidence,
       timeoutMs: node.timeout?.timeoutMs ?? node.timeoutMs
@@ -4286,6 +4565,24 @@ function policyToReactFlowGraph(policy: any, selectedNodeId = ""): { nodes: Node
 function generatedPolicyInputPorts(node: any, index: number): AutomationNodePort[] {
   if (index === 0 || node.isStart) return [];
   return [{ id: "in", label: "In", valueType: "any" }];
+}
+
+function generatedPolicyNodeDescription(node: any): string {
+  const actions = (node.actions ?? []).map((action: any) => action.actionType).filter(Boolean);
+  if (actions.length) return actions.join(", ");
+  if (node.description) return String(node.description);
+  if (node.recovery?.strategy) return `Recovery: ${String(node.recovery.strategy).replace(/_/g, " ")}`;
+  return "Generated policy node";
+}
+
+function generatedPolicyNodeIcon(node: any, index: number): string {
+  if (index === 0 || node.isStart) return "workflow";
+  const actions = (node.actions ?? []).map((action: any) => String(action.actionType ?? "").toLowerCase());
+  if (actions.some((action: string) => action.includes("database") || action.includes("record"))) return "database";
+  if (actions.some((action: string) => action.includes("random"))) return "dice-5";
+  if (actions.some((action: string) => action.includes("calculate") || action.includes("math"))) return "calculator";
+  if (node.recovery?.strategy) return "shield";
+  return "git-branch";
 }
 
 function generatedPolicyOutputPorts(node: any, policyEdges: any[]): AutomationNodePort[] {

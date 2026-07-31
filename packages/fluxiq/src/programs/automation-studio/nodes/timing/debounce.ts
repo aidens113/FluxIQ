@@ -9,7 +9,20 @@ export const debounceNode = defineBuiltinNode({
   scope: "both",
   inputs: [{ id: "signal", label: "Signal", valueType: "signal", required: true }],
   outputs: [{ id: "stable", label: "Stable", valueType: "boolean" }],
-  parameters: [{ id: "windowMs", label: "Window ms", valueType: "number", defaultValue: 250 }],
+  parameters: [
+    { id: "windowMs", label: "Window ms", valueType: "number", defaultValue: 250 },
+    {
+      id: "edge",
+      label: "Edge",
+      valueType: "string",
+      defaultValue: "trailing",
+      options: [
+        { label: "Trailing", value: "trailing" },
+        { label: "Leading", value: "leading" },
+        { label: "Both", value: "both" }
+      ]
+    }
+  ],
   icon: "activity",
-  execute: (context) => emptyResult({ stable: Boolean(context.inputs.signal), windowMs: durationMs(context.parameters.windowMs, 250) })
+  execute: (context) => emptyResult({ stable: Boolean(context.inputs.signal), windowMs: durationMs(context.parameters.windowMs, 250), edge: context.parameters.edge ?? "trailing" })
 });

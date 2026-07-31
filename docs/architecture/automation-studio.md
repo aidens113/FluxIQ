@@ -144,14 +144,42 @@ policy nodes, and routine editors include orchestration nodes without recording
 or state layers.
 
 The visual node language is backed by the same node registry definitions used
-by execution. Palette-created nodes store their definition ID plus the full
-input and output port arrays. Node cards render named port rows and matching
-React Flow handles for each port rather than a generic single input and single
-output. Manual edges attach to the exact source and target port handles, label
-the edge from the selected output port, and reject incompatible source/target
-value types at connection time. Generated policy nodes that do not yet come
-from a source node definition receive derived visual ports from the generated
-policy graph so they still participate in the same connection language.
+by execution. Palette-created nodes store their definition ID, icon,
+description, full input and output port arrays, editable parameter definitions,
+and per-node parameter values. Node cards render the node-specific icon and
+description, named port rows, and matching React Flow handles for each port
+rather than a generic single input and single output. Manual edges attach to
+the exact source and target port handles, label the edge from the selected
+output port, and reject incompatible source/target value types at connection
+time. Generated policy nodes that do not yet come from a source node definition
+receive derived icons and visual ports from the generated policy graph so they
+still participate in the same connection language.
+
+The global inspector is also the focused node-detail editor. Automation Studio
+does not maintain a separate node-detail window type; saved legacy node-detail
+tabs migrate to the global inspector. Selecting an editor-created built-in node
+opens with editable parameters first, including a per-instance description that
+only affects that node placement in the current flow. Metadata and ports follow
+the editable fields, and raw node-definition dumps are intentionally omitted
+from the user-facing inspector. Fixed-choice settings use dropdowns, object and
+array settings use structured row editors, and deterministic executor previews
+show the result of the current parameter values. Parameter edits update the
+selected React Flow node instance so options such as random-number min/max,
+integer vs float mode, precision, and inclusive maximum are part of the live
+graph state. Generated policy nodes still show their evidence, condition,
+timing, runtime, and training detail sections in the same inspector.
+
+Built-in nodes should not be thin palette placeholders. Each source-owned
+built-in exposes editable parameters and concrete domain-neutral executor
+behavior. Control-flow nodes own route names, case matching, branch inversion,
+loop limits, fan-out, merge, and terminal status metadata. Logic nodes own
+comparison operators, case sensitivity, and empty/missing input behavior. Math
+nodes own precision, offsets, rounding modes, clamps, and divide-by-zero
+handling. Random nodes own range, mode, precision, fallback, weighted choice,
+and jitter controls. Data nodes own variable defaults/write modes, object
+mapping modes, and list predicates. Timing nodes own duration units, jitter,
+timeout, retry, backoff, and debounce modes. Policy, routine, and database
+nodes emit configurable adapter/effect requests while staying domain-neutral.
 
 Policy and routine editors must not carry their own properties inspector. The
 right-side global inspector is the single properties viewer for selected nodes,

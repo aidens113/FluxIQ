@@ -1,5 +1,5 @@
 import { compareValues } from "./shared";
-import { defineBuiltinNode, emptyResult } from "../shared/definition";
+import { defineBuiltinNode } from "../shared/definition";
 
 export const compareNode = defineBuiltinNode({
   id: "builtin.logic.compare",
@@ -18,9 +18,30 @@ export const compareNode = defineBuiltinNode({
       label: "Operator",
       valueType: "string",
       defaultValue: "equals",
-      options: ["equals", "not-equals", "greater-than", "less-than", "contains"].map((value) => ({ label: value, value }))
+      options: [
+        { value: "equals", label: "Equals" },
+        { value: "not-equals", label: "Does not equal" },
+        { value: "greater-than", label: "Greater than" },
+        { value: "greater-than-or-equal", label: "Greater than or equal" },
+        { value: "less-than", label: "Less than" },
+        { value: "less-than-or-equal", label: "Less than or equal" },
+        { value: "contains", label: "Contains" },
+        { value: "starts-with", label: "Starts with" },
+        { value: "ends-with", label: "Ends with" },
+        { value: "exists", label: "Exists" }
+      ]
     }
+    ,
+    { id: "rightDefault", label: "Right default", valueType: "any", defaultValue: null },
+    { id: "caseSensitive", label: "Case sensitive", valueType: "boolean", defaultValue: true }
   ],
   icon: "equal",
-  execute: (context) => emptyResult({ result: compareValues(context.inputs.left, context.inputs.right, String(context.parameters.operator ?? "equals")) })
+  execute: (context) => {
+    const caseSensitive = context.parameters.caseSensitive !== false;
+    const left = !caseSensitive && typeof context.inputs.left === "string" ? context.inputs.left.toLowerCase() : context.inputs.left;
+    const rawRight = context.inputs.right ?? context.parameters.rightDefault;
+    const right = !caseSensitive && typeof rawRight === "string" ? rawRight.toLowerCase() : rawRight;
+    const result = compareValues(left, right, String(context.parameters.operator ?? "equals"));
+    return { status: "success", route: result ? "true" : "false", outputs: { result } };
+  }
 });

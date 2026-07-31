@@ -37,4 +37,74 @@ describe("automation node registry", () => {
       outputs: { result: 5 }
     });
   });
+
+  it("executes random number mode and range options", async () => {
+    const randomNumber = getAutomationNodeDefinition("builtin.random.number");
+
+    await expect(Promise.resolve(randomNumber?.execute?.({
+      inputs: {},
+      parameters: { min: 10, max: 20, mode: "integer", includeMax: true, precision: 0 },
+      random: () => 0.5
+    }))).resolves.toMatchObject({
+      status: "success",
+      outputs: { value: 15 }
+    });
+
+    await expect(Promise.resolve(randomNumber?.execute?.({
+      inputs: {},
+      parameters: { min: 0, max: 1, mode: "float", includeMax: false, precision: 3 },
+      random: () => 0.4242
+    }))).resolves.toMatchObject({
+      status: "success",
+      outputs: { value: 0.424 }
+    });
+  });
+
+  it("gives every built-in node editable configuration", () => {
+    for (const definition of builtinAutomationNodeDefinitions) {
+      expect(definition.parameters.length, definition.id).toBeGreaterThan(0);
+      for (const parameter of definition.parameters) {
+        expect(parameter.id.length, `${definition.id}:${parameter.id}`).toBeGreaterThan(0);
+        expect(parameter.label.length, `${definition.id}:${parameter.id}`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("executes representative built-ins from every category", async () => {
+    await expect(Promise.resolve(getAutomationNodeDefinition("builtin.logic.compare")?.execute?.({
+      inputs: { left: "FluxIQ", right: "flux" },
+      parameters: { operator: "starts-with", caseSensitive: false }
+    }))).resolves.toMatchObject({ route: "true", outputs: { result: true } });
+
+    await expect(Promise.resolve(getAutomationNodeDefinition("builtin.data.filter-list")?.execute?.({
+      inputs: { items: [{ score: 2 }, { score: 8 }] },
+      parameters: { path: "score", operator: "greater-than", value: 5 }
+    }))).resolves.toMatchObject({ outputs: { items: [{ score: 8 }] } });
+
+    await expect(Promise.resolve(getAutomationNodeDefinition("builtin.control.switch")?.execute?.({
+      inputs: { value: "ready" },
+      parameters: { cases: [{ value: "ready", route: "go" }], defaultRoute: "fallback" }
+    }))).resolves.toMatchObject({ route: "go" });
+
+    await expect(Promise.resolve(getAutomationNodeDefinition("builtin.timing.wait")?.execute?.({
+      inputs: { in: "signal" },
+      parameters: { duration: 2, unit: "seconds", jitterMs: 0 },
+      random: () => 0.5
+    }))).resolves.toMatchObject({ status: "waiting", outputs: { durationMs: 2000 } });
+
+    await expect(Promise.resolve(getAutomationNodeDefinition("builtin.policy.action")?.execute?.({
+      inputs: { ready: true },
+      parameters: { actionDefinitionId: "action.test", parameters: { ok: true }, timeoutMs: 3000 }
+    }))).resolves.toMatchObject({ effects: [{ type: "policy.action.requested" }] });
+
+    await expect(Promise.resolve(getAutomationNodeDefinition("builtin.routine.task-policy")?.execute?.({
+      inputs: { in: "start" },
+      parameters: { taskId: "task-a", inputs: { target: "x" } }
+    }))).resolves.toMatchObject({ effects: [{ type: "routine.task-policy.requested" }] });
+
+    await expect(Promise.resolve(getAutomationNodeDefinition("builtin.database.query")?.execute?.({
+      inputs: {},
+      parameters: { collection: "runs", where: { status: "ok" }, limit: 10 }
+    }))).resolves.toMatchObject({ route: "records", effects: [{ type: "database.query.requested" }] });
+  });
 });

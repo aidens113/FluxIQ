@@ -1,5 +1,5 @@
 import { someBoolean } from "./shared";
-import { defineBuiltinNode, emptyResult, arrayValue } from "../shared/definition";
+import { defineBuiltinNode, arrayValue } from "../shared/definition";
 
 export const orNode = defineBuiltinNode({
   id: "builtin.logic.or",
@@ -9,7 +9,22 @@ export const orNode = defineBuiltinNode({
   scope: "both",
   inputs: [{ id: "conditions", label: "Conditions", valueType: "boolean", required: true, multiple: true }],
   outputs: [{ id: "result", label: "Result", valueType: "boolean" }],
-  parameters: [],
+  parameters: [
+    {
+      id: "emptyBehavior",
+      label: "When empty",
+      valueType: "string",
+      defaultValue: "false",
+      options: [
+        { label: "Return false", value: "false" },
+        { label: "Return true", value: "true" }
+      ]
+    }
+  ],
   icon: "list-tree",
-  execute: (context) => emptyResult({ result: someBoolean(arrayValue(context.inputs.conditions)) })
+  execute: (context) => {
+    const conditions = arrayValue(context.inputs.conditions);
+    const result = conditions.length ? someBoolean(conditions) : context.parameters.emptyBehavior === "true";
+    return { status: "success", route: result ? "true" : "false", outputs: { result } };
+  }
 });

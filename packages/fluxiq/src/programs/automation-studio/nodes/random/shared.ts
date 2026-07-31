@@ -8,5 +8,7 @@ export function randomFloat(context: AutomationNodeExecutionContext): number {
 export function randomInRange(context: AutomationNodeExecutionContext): number {
   const min = numberValue(context.parameters.min);
   const max = numberValue(context.parameters.max, 1);
-  return Math.min(min, max) + randomFloat(context) * Math.abs(max - min);
+  const includeMax = context.parameters.includeMax === true;
+  const value = Math.min(min, max) + randomFloat(context) * Math.abs(max - min);
+  return includeMax ? Math.min(Math.max(min, max), value) : value;
 }

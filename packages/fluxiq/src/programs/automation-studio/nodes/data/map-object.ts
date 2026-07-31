@@ -1,4 +1,4 @@
-import { defineBuiltinNode, emptyResult } from "../shared/definition";
+import { defineBuiltinNode, emptyResult, getPathValue, objectValue, setPathValue } from "../shared/definition";
 
 export const mapObjectNode = defineBuiltinNode({
   id: "builtin.data.map-object",
@@ -8,11 +8,32 @@ export const mapObjectNode = defineBuiltinNode({
   scope: "both",
   inputs: [{ id: "object", label: "Object", valueType: "object", required: true }],
   outputs: [{ id: "object", label: "Object", valueType: "object" }],
-  parameters: [{ id: "mapping", label: "Mapping", valueType: "json", defaultValue: {} }],
+  parameters: [
+    { id: "mapping", label: "Mapping", valueType: "object", defaultValue: {} },
+    {
+      id: "mode",
+      label: "Mode",
+      valueType: "string",
+      defaultValue: "merge",
+      options: [
+        { label: "Merge fields", value: "merge" },
+        { label: "Pick fields", value: "pick" },
+        { label: "Rename paths", value: "rename" }
+      ]
+    }
+  ],
   icon: "file-json",
   execute: (context) => {
-    const source = typeof context.inputs.object === "object" && context.inputs.object !== null && !Array.isArray(context.inputs.object) ? context.inputs.object : {};
-    const mapping = typeof context.parameters.mapping === "object" && context.parameters.mapping !== null && !Array.isArray(context.parameters.mapping) ? context.parameters.mapping : {};
+    const source = objectValue(context.inputs.object);
+    const mapping = objectValue(context.parameters.mapping);
+    if (context.parameters.mode === "pick") {
+      return emptyResult({ object: Object.fromEntries(Object.entries(mapping).map(([target, path]) => [target, getPathValue(source, path)])) });
+    }
+    if (context.parameters.mode === "rename") {
+      let next = { ...source };
+      for (const [target, path] of Object.entries(mapping)) next = setPathValue(next, target, getPathValue(source, path));
+      return emptyResult({ object: next });
+    }
     return emptyResult({ object: { ...source, ...mapping } });
   }
 });

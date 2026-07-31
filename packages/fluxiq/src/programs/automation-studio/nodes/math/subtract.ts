@@ -1,4 +1,4 @@
-import { binaryNumbers } from "./shared";
+import { applyPrecision, binaryNumbers, optionalPrecisionOptions } from "./shared";
 import { defineBuiltinNode, emptyResult } from "../shared/definition";
 
 export const subtractNode = defineBuiltinNode({
@@ -12,10 +12,10 @@ export const subtractNode = defineBuiltinNode({
     { id: "right", label: "Right", valueType: "number", required: true }
   ],
   outputs: [{ id: "result", label: "Result", valueType: "number" }],
-  parameters: [],
+  parameters: [{ id: "precision", label: "Decimal places", valueType: "string", defaultValue: "none", options: optionalPrecisionOptions }],
   icon: "calculator",
   execute: (context) => {
     const [left, right] = binaryNumbers(context);
-    return emptyResult({ result: left - right });
+    return emptyResult({ result: applyPrecision(left - right, context.parameters.precision) });
   }
 });
