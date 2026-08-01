@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Blocks, Braces, Bug, Calculator, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleDot, Clock, Columns3, Copy, Database, Dice5, FileText, FolderOpen, FolderPlus, GitBranch, GripVertical, History, Info, ListChecks, Merge, Network, Plus, QrCode, Radio, RefreshCcw, Repeat, Search, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Split, Trash2, Waves, Workflow, XCircle, Zap } from "lucide-react";
+import { AlertTriangle, Blocks, Braces, Bug, Calculator, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleDot, Clock, Columns3, Copy, Database, Dice5, FileText, FolderOpen, FolderPlus, GitBranch, GripVertical, History, Info, ListChecks, Maximize2, Merge, Minimize2, Network, Plus, QrCode, Radio, RefreshCcw, Repeat, Search, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Split, Trash2, Waves, Workflow, XCircle, Zap } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import {
@@ -90,6 +90,7 @@ type AutomationSharedResizePartner = {
   side: "north" | "east" | "south" | "west";
   start: AutomationWorkspaceWindow;
 };
+type AutomationDragSelectBox = { left: number; top: number; width: number; height: number };
 type AutomationSnapRegion = "left" | "right" | "top" | "bottom";
 type AutomationLayoutPreset = "single" | "two-columns" | "two-rows" | "main-sidebar" | "three-columns" | "quad";
 type AutomationLayoutPresetOption = {
@@ -307,6 +308,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const [layoutPickerOpen, setLayoutPickerOpen] = useState<AutomationLayoutPickerState | null>(null);
   const [snapPreview, setSnapPreview] = useState<(NonNullable<ReturnType<typeof automationSnapGeometry>> & { area: AutomationWorkspaceArea }) | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [pageFullscreenWindowId, setPageFullscreenWindowId] = useState<string | null>(null);
   const [projectSearch, setProjectSearch] = useState("");
   const [projectTypeFilter, setProjectTypeFilter] = useState<"all" | "folder" | "task" | "routine" | "config">("all");
   const [selection, setSelection] = useState<AutomationSelection | null>(null);
@@ -426,7 +428,9 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   ].filter((node) => !deletedHierarchyIds.includes(node.id));
   const folderOptions = hierarchyNodes.filter((node) => node.kind === "folder" && node.category === hierarchyCategory);
   const viewById = new Map(viewInstances.map((view) => [view.id, view]));
-  const visibleWindows = workspacePrefs.maximizedWindowId ? workspacePrefs.windows.filter((item) => item.id === workspacePrefs.maximizedWindowId) : workspacePrefs.windows;
+  const visibleWindows = pageFullscreenWindowId
+    ? workspacePrefs.windows.filter((item) => item.id === pageFullscreenWindowId && (item.area ?? "main") === "main")
+    : workspacePrefs.maximizedWindowId ? workspacePrefs.windows.filter((item) => item.id === workspacePrefs.maximizedWindowId) : workspacePrefs.windows;
   const activeWindow = workspacePrefs.windows.find((item) => item.id === workspacePrefs.activeWindowId) ?? workspacePrefs.windows[0];
   const activeViewId = activeWindow?.activeViewId ?? "policy-primary";
   const windowsByArea = (area: AutomationWorkspaceArea) => visibleWindows.filter((item) => (item.area ?? "main") === area);
@@ -441,6 +445,24 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   useEffect(() => {
     document.title = activeProject ? `${activeProject.name} - Automation Studio` : "Automation Studio";
   }, [activeProject]);
+
+  useEffect(() => {
+    if (pageFullscreenWindowId && !workspacePrefs.windows.some((item) => item.id === pageFullscreenWindowId && (item.area ?? "main") === "main")) setPageFullscreenWindowId(null);
+  }, [pageFullscreenWindowId, workspacePrefs.windows]);
+
+  useEffect(() => {
+    const resize = () => window.dispatchEvent(new Event("resize"));
+    const restoreNodeViewport = () => window.dispatchEvent(new Event("automation-studio:restore-node-viewport"));
+    const firstFrame = window.requestAnimationFrame(() => {
+      resize();
+      restoreNodeViewport();
+      window.requestAnimationFrame(() => {
+        resize();
+        restoreNodeViewport();
+      });
+    });
+    return () => window.cancelAnimationFrame(firstFrame);
+  }, [pageFullscreenWindowId]);
 
   useEffect(() => {
     if (!urlProjectId || activeProjectId === urlProjectId || urlProjectOpenAttemptRef.current === urlProjectId) return;
@@ -775,6 +797,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     setRuntimeSessions([]);
     setAutomationActionStatus("");
     setWorkspacePrefs(defaultAutomationWorkspacePrefs());
+    setPageFullscreenWindowId(null);
     lastSavedHierarchySignatureRef.current = "";
     setSelection(null);
     setProjectUrl(null);
@@ -843,6 +866,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     });
   }
   function closeWindow(windowId: string) {
+    if (pageFullscreenWindowId === windowId) setPageFullscreenWindowId(null);
     updateWorkspacePrefs((current) => {
       const windows = current.windows.filter((item) => item.id !== windowId);
       return { ...current, activeWindowId: windows[0]?.id ?? "", maximizedWindowId: current.maximizedWindowId === windowId ? null : current.maximizedWindowId, windows };
@@ -863,6 +887,17 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   }
   function activateWindow(windowId: string) {
     updateWorkspacePrefs((current) => ({ ...current, activeWindowId: windowId, windows: current.windows.map((item) => item.id === windowId ? { ...item, zIndex: nextAutomationZIndex(current.windows) } : item) }));
+  }
+  function togglePageFullscreenWindow(windowItem: AutomationWorkspaceWindow) {
+    if ((windowItem.area ?? "main") !== "main") return;
+    window.dispatchEvent(new Event("automation-studio:capture-node-viewport"));
+    setPageFullscreenWindowId((current) => current === windowItem.id ? null : windowItem.id);
+    updateWorkspacePrefs((current) => ({
+      ...current,
+      activeWindowId: windowItem.id,
+      maximizedWindowId: current.maximizedWindowId === windowItem.id ? null : current.maximizedWindowId,
+      windows: current.windows.map((item) => item.id === windowItem.id ? { ...item, zIndex: nextAutomationZIndex(current.windows) } : item)
+    }));
   }
   function setWindowGeometry(windowId: string, geometry: Partial<Pick<AutomationWorkspaceWindow, "x" | "y" | "widthPx" | "heightPx">>) {
     updateWorkspacePrefs((current) => ({
@@ -960,6 +995,10 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     event.preventDefault();
     event.stopPropagation();
     activateWindow(windowItem.id);
+    if (pageFullscreenWindowId === windowItem.id) {
+      window.dispatchEvent(new Event("automation-studio:capture-node-viewport"));
+      setPageFullscreenWindowId(null);
+    }
     const startX = event.clientX;
     const startY = event.clientY;
     const canvas = canvasForArea(windowItem.area ?? "main");
@@ -1140,6 +1179,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
             {areaWindows.map((windowItem, windowIndex) => {
               const view = viewById.get(windowItem.activeViewId) ?? viewById.get("policy-primary");
               if (!view) return null;
+              const isPageFullscreenWindow = pageFullscreenWindowId === windowItem.id && (windowItem.area ?? "main") === "main";
               const bounds = canvasForArea(area)?.getBoundingClientRect();
               const renderedWindow = clampAutomationWindowGeometry(
                 windowItem,
@@ -1152,11 +1192,13 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
                 <div
                   className="automation-window-shell"
                   key={windowItem.id}
-                  style={workspacePrefs.maximizedWindowId ? { inset: 0, zIndex: windowItem.zIndex } : { left: renderedWindow.x, top: renderedWindow.y, width: renderedWindow.widthPx, height: renderedWindow.heightPx, zIndex: windowItem.zIndex }}
+                  style={workspacePrefs.maximizedWindowId || isPageFullscreenWindow ? { inset: 0, zIndex: windowItem.zIndex } : { left: renderedWindow.x, top: renderedWindow.y, width: renderedWindow.widthPx, height: renderedWindow.heightPx, zIndex: windowItem.zIndex }}
                 >
                   <AutomationViewContainer
                     active={workspacePrefs.activeWindowId === windowItem.id}
+                    canPageFullscreen={(windowItem.area ?? "main") === "main"}
                     icon={view.icon}
+                    pageFullscreen={isPageFullscreenWindow}
                     tabs={windowItem.tabs.map((tabId) => viewById.get(tabId)).filter(Boolean) as AutomationViewInstance[]}
                     windowId={windowItem.id}
                     windowIndex={windowIndex}
@@ -1167,6 +1209,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
                     onCloseTab={(viewId) => closeWindowTab(windowItem.id, viewId)}
                     onAddTab={(event) => toggleWindowAdder(windowItem.area ?? "main", event, windowItem.id)}
                     onMoveStart={(event) => startWindowMove(windowItem, event)}
+                    onPageFullscreen={() => togglePageFullscreenWindow(windowItem)}
                     onResetSize={() => resetWindowSize(windowItem.id)}
                     onResizeStart={(edge, event) => startWindowResize(windowItem, edge, event)}
                     onTabSelect={(viewId) => setWindowTab(windowItem.id, viewId)}
@@ -1316,7 +1359,10 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   }
 
   return (
-    <section className={sidebarCollapsed ? "automation-studio-shell sidebar-collapsed" : "automation-studio-shell"} style={{ gridTemplateColumns: `${sidebarCollapsed ? 48 : workspacePrefs.sidebarWidth}px minmax(0, 1fr)` }}>
+    <section
+      className={`automation-studio-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${pageFullscreenWindowId ? " page-window-fullscreen" : ""}`}
+      style={{ gridTemplateColumns: `${sidebarCollapsed ? 48 : workspacePrefs.sidebarWidth}px minmax(0, 1fr)` }}
+    >
       <aside className="automation-studio-sidebar">
         <div className="automation-studio-sidebar-heading">
           {!sidebarCollapsed ? <strong>{activeProject.name}</strong> : null}
@@ -1363,7 +1409,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
         </header>
 
         <section
-          className={`automation-studio-workspace${workspacePrefs.rightSidebarCollapsed ? " right-collapsed" : ""}${workspacePrefs.bottomBarCollapsed ? " bottom-collapsed" : ""}`}
+          className={`automation-studio-workspace${workspacePrefs.rightSidebarCollapsed ? " right-collapsed" : ""}${workspacePrefs.bottomBarCollapsed ? " bottom-collapsed" : ""}${pageFullscreenWindowId ? " page-window-fullscreen" : ""}`}
           style={{
             gridTemplateColumns: `minmax(0, 1fr) ${workspacePrefs.rightSidebarCollapsed ? 38 : workspacePrefs.inspectorWidth}px`,
             gridTemplateRows: `minmax(0, 1fr) ${workspacePrefs.bottomBarCollapsed ? 38 : workspacePrefs.bottomDockHeight}px`
@@ -2160,8 +2206,10 @@ function collectHierarchyDescendantIds(parentId: string, nodes: AutomationHierar
 
 function AutomationViewContainer(props: {
   active: boolean;
+  canPageFullscreen: boolean;
   children: ReactNode;
   icon: typeof Blocks;
+  pageFullscreen: boolean;
   tabs: AutomationViewInstance[];
   windowId: string;
   windowIndex: number;
@@ -2172,6 +2220,7 @@ function AutomationViewContainer(props: {
   onClose(): void;
   onCloseTab(viewId: string): void;
   onMoveStart(event: ReactPointerEvent<HTMLElement>): void;
+  onPageFullscreen(): void;
   onResetSize(): void;
   onResizeStart(edge: AutomationWindowResizeEdge, event: ReactPointerEvent<HTMLButtonElement>): void;
   onTabSelect(viewId: string): void;
@@ -2186,6 +2235,16 @@ function AutomationViewContainer(props: {
         </div>
         <div className="automation-pane-actions">
           <button className="icon-button" onClick={(event) => { event.stopPropagation(); props.onAddTab(event); }} title="Add tab" aria-label="Add tab" type="button"><Plus size={13} aria-hidden /></button>
+          {props.canPageFullscreen ? <button
+            className="icon-button"
+            onClick={(event) => {
+              event.stopPropagation();
+              props.onPageFullscreen();
+            }}
+            title={props.pageFullscreen ? "Exit full page" : "Fill page"}
+            aria-label={props.pageFullscreen ? "Exit full page" : "Fill page"}
+            type="button"
+          >{props.pageFullscreen ? <Minimize2 size={13} aria-hidden /> : <Maximize2 size={13} aria-hidden />}</button> : null}
           <button className="icon-button" onClick={(event) => { event.stopPropagation(); props.onResetSize(); }} title="Reset window size" aria-label="Reset window size" type="button"><RefreshCcw size={13} aria-hidden /></button>
           <button className="icon-button" onClick={(event) => { event.stopPropagation(); props.onClose(); }} title="Close window" aria-label="Close window" type="button"><XCircle size={13} aria-hidden /></button>
         </div>
@@ -2473,14 +2532,18 @@ const automationRoutineEditorModes: Array<{ id: AutomationRoutineEditorMode; lab
   { id: "plan", label: "Run Plan", description: "Review execution order, dependencies, parallel paths, and validation warnings." },
   { id: "test", label: "Test Run", description: "Preview routine execution, skipped branches, approval pauses, retries, and final status." }
 ];
+const automationNodeEditorConnectionRadius = 72;
+const automationNodeEditorReconnectRadius = 22;
 
 function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelection(selection: AutomationSelection): void }) {
   const [selectedRoutineNodeId, setSelectedRoutineNodeId] = useState("");
   const [selectedRoutineEdgeIds, setSelectedRoutineEdgeIds] = useState<string[]>([]);
   const [mode, setMode] = useState<AutomationRoutineEditorMode>("flow");
   const [paletteCollapsed, setPaletteCollapsed] = useState(false);
+  const [routineDragSelectBox, setRoutineDragSelectBox] = useState<AutomationDragSelectBox | null>(null);
   const routineFrameRef = useRef<HTMLDivElement>(null);
   const routineSelectionRef = useRef("");
+  const routineViewportRestoreRef = useRef<{ x: number; y: number; zoom: number } | null>(null);
   const [routineFlow, setRoutineFlow] = useState<ReactFlowInstance<Node<AutomationRoutineNodeData>, Edge> | null>(null);
   const graph = useMemo(() => routineToReactFlowGraph(), []);
   const [routineNodes, setRoutineNodes] = useState(graph.nodes);
@@ -2489,6 +2552,21 @@ function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelec
     setRoutineNodes((current) => syncGraphNodes(current, graph.nodes));
     setRoutineEdges(rebalanceAutomationEdgeLanes(graph.edges, graph.nodes));
   }, [graph.edges, graph.nodes]);
+  useEffect(() => {
+    function captureViewport() {
+      if (routineFlow) routineViewportRestoreRef.current = routineFlow.getViewport();
+    }
+    function restoreViewport() {
+      const viewport = routineViewportRestoreRef.current;
+      if (routineFlow && viewport) void routineFlow.setViewport(viewport, { duration: 0 });
+    }
+    window.addEventListener("automation-studio:capture-node-viewport", captureViewport);
+    window.addEventListener("automation-studio:restore-node-viewport", restoreViewport);
+    return () => {
+      window.removeEventListener("automation-studio:capture-node-viewport", captureViewport);
+      window.removeEventListener("automation-studio:restore-node-viewport", restoreViewport);
+    };
+  }, [routineFlow]);
   const palette = automationEditorPalette
     .map((group) => ({ ...group, nodes: group.nodes.filter((node) => node.scope === "routine" || node.scope === "both") }))
     .filter((group) => group.nodes.length > 0);
@@ -2534,6 +2612,25 @@ function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelec
     setSelectedRoutineNodeId("");
     setSelectedRoutineEdgeIds([]);
   };
+  const startRoutineDragSelect = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!isFlowMode) return;
+    startAutomationNodeMarquee({
+      event,
+      flow: routineFlow,
+      frame: routineFrameRef.current,
+      nodes: routineNodes,
+      setDragBox: setRoutineDragSelectBox,
+      setEdges: (updater) => setRoutineEdges((edges) => updater(edges)),
+      setNodes: (updater) => setRoutineNodes((nodes) => updater(nodes)),
+      onSelected: (nodes) => {
+        const primaryNode = nodes[0];
+        setSelectedRoutineNodeId(primaryNode?.id ?? "");
+        setSelectedRoutineEdgeIds([]);
+        routineSelectionRef.current = primaryNode ? `node:${primaryNode.id}` : "";
+        if (primaryNode) props.setSelection(routineEditorSelection(primaryNode.id, primaryNode.data));
+      }
+    });
+  };
   useEffect(() => {
     function handleDeleteNode(event: Event) {
       if (!isFlowMode) return;
@@ -2575,7 +2672,7 @@ function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelec
         <span>{activeMode.description}</span>
       </div>
       <div className={paletteCollapsed ? "automation-routine-editor-grid palette-collapsed" : "automation-routine-editor-grid"}>
-        <div className="automation-react-flow-frame" ref={routineFrameRef}>
+        <div className="automation-react-flow-frame" onContextMenu={(event) => event.preventDefault()} onPointerDownCapture={startRoutineDragSelect} ref={routineFrameRef}>
           <ReactFlow<Node<AutomationRoutineNodeData>, Edge>
             fitView
             fitViewOptions={{ padding: 0.25 }}
@@ -2585,11 +2682,16 @@ function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelec
             nodeTypes={automationNodeTypes}
             nodesDraggable={isFlowMode}
             nodesConnectable={isFlowMode}
+            edgesReconnectable={isFlowMode}
+            connectionRadius={automationNodeEditorConnectionRadius}
             elementsSelectable
             deleteKeyCode={isFlowMode ? ["Backspace", "Delete"] : null}
+            minZoom={0.1}
+            reconnectRadius={automationNodeEditorReconnectRadius}
             onInit={setRoutineFlow}
             isValidConnection={(connection) => automationConnectionIsValid(connection, routineNodes)}
             onConnect={(connection) => isFlowMode ? setRoutineEdges((edges) => rebalanceAutomationEdgeLanes(addEdge(createAutomationConnectionEdge(connection, edges, "routine-edge", routineNodes), edges), routineNodes)) : undefined}
+            onReconnect={(oldEdge, connection) => isFlowMode ? setRoutineEdges((edges) => reconnectAutomationEdge(oldEdge, connection, edges, routineNodes)) : undefined}
             onEdgesChange={(changes: EdgeChange[]) => isFlowMode ? setRoutineEdges((edges) => rebalanceAutomationEdgeLanes(applyEdgeChanges(changes, edges), routineNodes)) : undefined}
             onEdgesDelete={(deletedEdges) => setSelectedRoutineEdgeIds((ids) => ids.filter((id) => !deletedEdges.some((edge) => edge.id === id)))}
             onNodesDelete={(deletedNodes) => {
@@ -2628,6 +2730,7 @@ function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelec
             <MiniMap pannable zoomable />
             <Controls showInteractive={false} />
           </ReactFlow>
+          {routineDragSelectBox ? <div className="automation-node-marquee" style={{ left: routineDragSelectBox.left, top: routineDragSelectBox.top, width: routineDragSelectBox.width, height: routineDragSelectBox.height }} /> : null}
         </div>
         <AutomationNodePalette collapsed={paletteCollapsed} disabled={!isFlowMode} groups={palette} title="Routine Nodes" onAddNode={addRoutineNode} onCollapsedChange={setPaletteCollapsed} />
       </div>
@@ -2844,8 +2947,10 @@ function AutomationPolicyCanvas(props: { entries: any[]; policy: any; recordings
   const [selectedPolicyNodeId, setSelectedPolicyNodeId] = useState(props.selectedNode?.id ?? "");
   const [selectedPolicyEdgeIds, setSelectedPolicyEdgeIds] = useState<string[]>([]);
   const [paletteCollapsed, setPaletteCollapsed] = useState(false);
+  const [policyDragSelectBox, setPolicyDragSelectBox] = useState<AutomationDragSelectBox | null>(null);
   const policyFrameRef = useRef<HTMLDivElement>(null);
   const policySelectionRef = useRef("");
+  const policyViewportRestoreRef = useRef<{ x: number; y: number; zoom: number } | null>(null);
   const [policyFlow, setPolicyFlow] = useState<ReactFlowInstance<Node<AutomationPolicyNodeData>, Edge> | null>(null);
   const graph = useMemo(() => policyToReactFlowGraph(props.policy, ""), [props.policy]);
   const [policyNodes, setPolicyNodes] = useState(graph.nodes);
@@ -2855,6 +2960,21 @@ function AutomationPolicyCanvas(props: { entries: any[]; policy: any; recordings
     setPolicyEdges(rebalanceAutomationEdgeLanes(graph.edges, graph.nodes));
     setSelectedPolicyEdgeIds([]);
   }, [graph.edges, graph.nodes]);
+  useEffect(() => {
+    function captureViewport() {
+      if (policyFlow) policyViewportRestoreRef.current = policyFlow.getViewport();
+    }
+    function restoreViewport() {
+      const viewport = policyViewportRestoreRef.current;
+      if (policyFlow && viewport) void policyFlow.setViewport(viewport, { duration: 0 });
+    }
+    window.addEventListener("automation-studio:capture-node-viewport", captureViewport);
+    window.addEventListener("automation-studio:restore-node-viewport", restoreViewport);
+    return () => {
+      window.removeEventListener("automation-studio:capture-node-viewport", captureViewport);
+      window.removeEventListener("automation-studio:restore-node-viewport", restoreViewport);
+    };
+  }, [policyFlow]);
   useEffect(() => {
     setSelectedPolicyNodeId(props.selectedNode?.id ?? "");
   }, [props.selectedNode?.id]);
@@ -2906,6 +3026,25 @@ function AutomationPolicyCanvas(props: { entries: any[]; policy: any; recordings
     setSelectedPolicyNodeId("");
     setSelectedPolicyEdgeIds([]);
   };
+  const startPolicyDragSelect = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!isFlowMode) return;
+    startAutomationNodeMarquee({
+      event,
+      flow: policyFlow,
+      frame: policyFrameRef.current,
+      nodes: policyNodes,
+      setDragBox: setPolicyDragSelectBox,
+      setEdges: (updater) => setPolicyEdges((edges) => updater(edges)),
+      setNodes: (updater) => setPolicyNodes((nodes) => updater(nodes)),
+      onSelected: (nodes) => {
+        const primaryNode = nodes[0];
+        setSelectedPolicyNodeId(primaryNode?.id ?? "");
+        setSelectedPolicyEdgeIds([]);
+        policySelectionRef.current = primaryNode ? `node:${primaryNode.id}` : "";
+        if (primaryNode) props.setSelection(props.policy?.nodes?.some((policyNode: any) => policyNode.id === primaryNode.id) ? { kind: "node", id: primaryNode.id } : policyEditorSelection(primaryNode.id, primaryNode.data));
+      }
+    });
+  };
   useEffect(() => {
     function handleDeleteNode(event: Event) {
       if (!isFlowMode) return;
@@ -2947,7 +3086,7 @@ function AutomationPolicyCanvas(props: { entries: any[]; policy: any; recordings
         <span>{activeMode.description}</span>
       </div>
       <div className={paletteCollapsed ? "automation-policy-editor-grid palette-collapsed" : "automation-policy-editor-grid"}>
-        <div className="automation-react-flow-frame" ref={policyFrameRef}>
+        <div className="automation-react-flow-frame" onContextMenu={(event) => event.preventDefault()} onPointerDownCapture={startPolicyDragSelect} ref={policyFrameRef}>
           <ReactFlow<Node<AutomationPolicyNodeData>, Edge>
             fitView
             fitViewOptions={{ padding: 0.25 }}
@@ -2957,11 +3096,16 @@ function AutomationPolicyCanvas(props: { entries: any[]; policy: any; recordings
             nodeTypes={automationNodeTypes}
             nodesDraggable={isFlowMode}
             nodesConnectable={isFlowMode}
+            edgesReconnectable={isFlowMode}
+            connectionRadius={automationNodeEditorConnectionRadius}
             elementsSelectable
             deleteKeyCode={isFlowMode ? ["Backspace", "Delete"] : null}
+            minZoom={0.1}
+            reconnectRadius={automationNodeEditorReconnectRadius}
             onInit={setPolicyFlow}
             isValidConnection={(connection) => automationConnectionIsValid(connection, policyNodes)}
             onConnect={(connection) => isFlowMode ? setPolicyEdges((edges) => rebalanceAutomationEdgeLanes(addEdge(createAutomationConnectionEdge(connection, edges, "policy-edge", policyNodes), edges), policyNodes)) : undefined}
+            onReconnect={(oldEdge, connection) => isFlowMode ? setPolicyEdges((edges) => reconnectAutomationEdge(oldEdge, connection, edges, policyNodes)) : undefined}
             onEdgesChange={(changes: EdgeChange[]) => isFlowMode ? setPolicyEdges((edges) => rebalanceAutomationEdgeLanes(applyEdgeChanges(changes, edges), policyNodes)) : undefined}
             onEdgesDelete={(deletedEdges) => setSelectedPolicyEdgeIds((ids) => ids.filter((id) => !deletedEdges.some((edge) => edge.id === id)))}
             onNodesDelete={(deletedNodes) => {
@@ -3001,6 +3145,7 @@ function AutomationPolicyCanvas(props: { entries: any[]; policy: any; recordings
             <MiniMap pannable zoomable />
             <Controls showInteractive={false} />
           </ReactFlow>
+          {policyDragSelectBox ? <div className="automation-node-marquee" style={{ left: policyDragSelectBox.left, top: policyDragSelectBox.top, width: policyDragSelectBox.width, height: policyDragSelectBox.height }} /> : null}
         </div>
         <AutomationNodePalette collapsed={paletteCollapsed} disabled={!isFlowMode} groups={palette} title="Policy Nodes" onAddNode={addPolicyNode} onCollapsedChange={setPaletteCollapsed} />
       </div>
@@ -4726,6 +4871,73 @@ function spawnAutomationNodePosition<T extends Record<string, unknown>>(_selecte
   return { x: 80 + (nodes.length % 4) * 300, y: 80 + Math.floor(nodes.length / 4) * 190 };
 }
 
+function startAutomationNodeMarquee<T extends Record<string, unknown>>(options: {
+  event: ReactPointerEvent<HTMLDivElement>;
+  flow: Pick<ReactFlowInstance<Node<T>, Edge>, "screenToFlowPosition"> | null;
+  frame: HTMLDivElement | null;
+  nodes: Array<Node<T>>;
+  setDragBox(value: AutomationDragSelectBox | null): void;
+  setEdges(updater: (edges: Edge[]) => Edge[]): void;
+  setNodes(updater: (nodes: Array<Node<T>>) => Array<Node<T>>): void;
+  onSelected(nodes: Array<Node<T>>): void;
+}) {
+  if (options.event.button !== 2 || !options.flow || !options.frame) return;
+  const target = options.event.target as HTMLElement;
+  if (target.closest(".react-flow__node, .react-flow__handle, button, input, select, textarea, a")) return;
+  options.event.preventDefault();
+  options.event.stopPropagation();
+  const flow = options.flow;
+  const frameBounds = options.frame.getBoundingClientRect();
+  const start = { x: options.event.clientX, y: options.event.clientY };
+  let latest = start;
+  const toBox = (point: { x: number; y: number }): AutomationDragSelectBox => ({
+    left: Math.min(start.x, point.x) - frameBounds.left,
+    top: Math.min(start.y, point.y) - frameBounds.top,
+    width: Math.abs(point.x - start.x),
+    height: Math.abs(point.y - start.y)
+  });
+  options.setDragBox(toBox(start));
+  const onMove = (moveEvent: PointerEvent) => {
+    latest = { x: moveEvent.clientX, y: moveEvent.clientY };
+    options.setDragBox(toBox(latest));
+  };
+  const onUp = (upEvent: PointerEvent) => {
+    latest = { x: upEvent.clientX, y: upEvent.clientY };
+    const selectedIds = automationNodesInScreenRect(options.nodes, flow, start, latest);
+    const selectedNodes = options.nodes.filter((node) => selectedIds.has(node.id));
+    options.setNodes((nodes) => nodes.map((node) => ({ ...node, selected: selectedIds.has(node.id) })));
+    options.setEdges((edges) => edges.map((edge) => ({ ...edge, selected: false })));
+    options.onSelected(selectedNodes);
+    options.setDragBox(null);
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+  };
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp, { once: true });
+}
+
+function automationNodesInScreenRect<T extends Record<string, unknown>>(nodes: Array<Node<T>>, flow: Pick<ReactFlowInstance<Node<T>, Edge>, "screenToFlowPosition">, start: { x: number; y: number }, end: { x: number; y: number }): Set<string> {
+  const startFlow = flow.screenToFlowPosition(start);
+  const endFlow = flow.screenToFlowPosition(end);
+  const rect = {
+    left: Math.min(startFlow.x, endFlow.x),
+    top: Math.min(startFlow.y, endFlow.y),
+    right: Math.max(startFlow.x, endFlow.x),
+    bottom: Math.max(startFlow.y, endFlow.y)
+  };
+  return new Set(nodes.filter((node) => {
+    const width = typeof node.measured?.width === "number" ? node.measured.width : 280;
+    const height = typeof node.measured?.height === "number" ? node.measured.height : 196;
+    const nodeRect = {
+      left: node.position.x,
+      top: node.position.y,
+      right: node.position.x + width,
+      bottom: node.position.y + height
+    };
+    return rect.left <= nodeRect.right && rect.right >= nodeRect.left && rect.top <= nodeRect.bottom && rect.bottom >= nodeRect.top;
+  }).map((node) => node.id));
+}
+
 function roundedAutomationPosition(position: { x: number; y: number }): { x: number; y: number } {
   return { x: Math.round(position.x), y: Math.round(position.y) };
 }
@@ -4751,6 +4963,38 @@ function createAutomationConnectionEdge<T extends AutomationPolicyNodeData | Aut
     markerEnd: { type: MarkerType.ArrowClosed, color, width: 18, height: 18 },
     style: { stroke: color, strokeWidth: 3 }
   };
+}
+
+function reconnectAutomationEdge<T extends AutomationPolicyNodeData | AutomationRoutineNodeData>(oldEdge: Edge, connection: Connection, existingEdges: Edge[], nodes: Array<Node<T>>): Edge[] {
+  const source = connection.source ?? oldEdge.source;
+  const target = connection.target ?? oldEdge.target;
+  const sourceHandle = connection.sourceHandle ?? oldEdge.sourceHandle ?? "next";
+  const targetHandle = connection.targetHandle ?? oldEdge.targetHandle ?? "in";
+  const nextConnection = { source, target, sourceHandle, targetHandle };
+  if (!automationConnectionIsValid(nextConnection, nodes)) return existingEdges;
+  const sourcePort = nodes.find((node) => node.id === source)?.data.outputs.find((port) => port.id === sourceHandle);
+  const label = sourcePort ? automationPortDisplayLabel(sourcePort) : automationPortLabelFromId(sourceHandle) ?? String(oldEdge.label ?? "Next");
+  const color = automationPortColor(automationPortTone(sourcePort ?? { id: sourceHandle, label, valueType: "any" }, "source"));
+  const updatedEdges = existingEdges.map((edge) => {
+    if (edge.id !== oldEdge.id) return edge;
+    return {
+      ...edge,
+      source,
+      target,
+      sourceHandle,
+      targetHandle,
+      label,
+      data: {
+        ...(edge.data as Record<string, unknown> | undefined),
+        label,
+        sourcePort: sourceHandle,
+        targetPort: targetHandle
+      },
+      markerEnd: { type: MarkerType.ArrowClosed, color, width: 18, height: 18 },
+      style: { ...edge.style, stroke: color }
+    };
+  });
+  return rebalanceAutomationEdgeLanes(updatedEdges, nodes);
 }
 
 function automationConnectionIsValid<T extends AutomationPolicyNodeData | AutomationRoutineNodeData>(connection: Connection | Edge, nodes: Array<Node<T>>): boolean {
