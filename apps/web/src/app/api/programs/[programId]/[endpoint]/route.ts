@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { FLUXIQ_SESSION_COOKIE } from "../../../../../lib/auth";
-import { getFluxIQ } from "../../../../../lib/fluxiq";
+import { getFluxIQ, getFluxIQWebRuntimeStatus } from "../../../../../lib/fluxiq";
 
 type RouteParams = {
   params: Promise<{
@@ -22,7 +22,7 @@ export async function GET(_request: Request, context: RouteParams) {
     endpoint,
     scope: { domainId: url.searchParams.get("domainId") }
   });
-  return NextResponse.json(response, { status: response.ok ? 200 : 404 });
+  return NextResponse.json(withWebRuntimeStatus(programId, endpoint, response), { status: response.ok ? 200 : 404 });
 }
 
 export async function POST(request: Request, context: RouteParams) {
@@ -41,10 +41,21 @@ export async function POST(request: Request, context: RouteParams) {
       ? { ...payload, authSessionId: sessionId }
       : payload
   });
-  return NextResponse.json(response, { status: response.ok ? 200 : 400 });
+  return NextResponse.json(withWebRuntimeStatus(programId, endpoint, response), { status: response.ok ? 200 : 400 });
 }
 
 async function readSessionId(): Promise<string | undefined> {
   const cookieStore = await cookies();
   return cookieStore.get(FLUXIQ_SESSION_COOKIE)?.value;
+}
+
+function withWebRuntimeStatus<TResponse extends { ok: boolean; payload?: unknown }>(programId: string, endpoint: string, response: TResponse): TResponse {
+  if (programId !== "automation-studio" || endpoint !== "client-gateway-snapshot" || !response.ok || !response.payload || typeof response.payload !== "object") return response;
+  return {
+    ...response,
+    payload: {
+      ...response.payload,
+      webRuntime: getFluxIQWebRuntimeStatus()
+    }
+  };
 }

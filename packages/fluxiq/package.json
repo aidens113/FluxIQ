@@ -6,6 +6,7 @@
     ".": "./src/index.ts",
     "./api-contracts": "./src/api-contracts/index.ts",
     "./auth": "./src/programs/identity-access/index.ts",
+    "./client-gateway": "./src/client-gateway/index.ts",
     "./automation-studio": "./src/programs/automation-studio/index.ts",
     "./automation-studio/nodes": "./src/programs/automation-studio/nodes/index.ts",
     "./background-tasks": "./src/programs/background-tasks/index.ts",

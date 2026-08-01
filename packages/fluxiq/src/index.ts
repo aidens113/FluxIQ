@@ -1,6 +1,7 @@
 export * from "./api-contracts";
 export * from "./components";
 export * from "./core";
+export * from "./client-gateway";
 export * from "./domains";
 export * from "./engine";
 export * from "./flows";

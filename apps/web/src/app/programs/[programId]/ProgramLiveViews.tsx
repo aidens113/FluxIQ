@@ -54,7 +54,7 @@ export function LiveProgramMain({ programId, user }: { programId: string; user: 
 }
 
 type AutomationStudioView = "design" | "recordings" | "signals" | "runtime" | "problems";
-type AutomationViewType = AutomationStudioView | "assistant" | "config" | "routine" | "state" | "inspector" | "dock";
+type AutomationViewType = AutomationStudioView | "assistant" | "clients" | "config" | "routine" | "state" | "inspector" | "dock";
 type AutomationDockTab = "assistant" | "problems" | "history" | "state";
 type AutomationViewInstance = {
   id: string;
@@ -399,6 +399,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     { id: "timeline-recording", label: `Timeline: ${selectedRecording?.name ?? selectedRecording?.recordingId ?? "Recording"}`, type: "recordings", icon: Radio, state: "live" },
     { id: "signals-web", label: "Signals: Relationship Web", type: "signals", icon: Network, state: "warning" },
     { id: "runtime-debug", label: "Runtime Debug", type: "runtime", icon: Bug },
+    { id: "client-gateway", label: "Connected Clients", type: "clients", icon: Radio, state: "live" },
     { id: "problems-view", label: "Problems", type: "problems", icon: AlertTriangle },
     { id: "ai-assistant", label: "AI Assistant", type: "assistant", icon: Sparkles },
     { id: "global-inspector", label: "Inspector", type: "inspector", icon: SlidersHorizontal },
@@ -1221,6 +1222,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
                       policies={policies}
                       policy={selectedPolicy}
                       problems={problems}
+                      projectId={activeProjectId}
                       recordings={recordings}
                       runtimeSessions={runtimeSessions}
                       dockTab={dockTab}
@@ -1367,7 +1369,6 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
         <div className="automation-studio-sidebar-heading">
           {!sidebarCollapsed ? <strong>{activeProject.name}</strong> : null}
           <div className="inline-actions">
-            {!sidebarCollapsed ? <button className="icon-button" onClick={() => requestHierarchyAction({ action: "create", parentId: null })} title="Create" aria-label="Create" type="button"><Plus size={14} aria-hidden /></button> : null}
             <button className="icon-button" onClick={() => setSidebarCollapsed((value) => !value)} title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} type="button">{sidebarCollapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronLeft size={14} aria-hidden />}</button>
           </div>
         </div>
@@ -1477,6 +1478,7 @@ function viewTitle(view: AutomationViewInstance): string {
   if (view.type === "runtime") return "Runtime Debug";
   if (view.type === "problems") return "Problems";
   if (view.type === "assistant") return "AI Assistant";
+  if (view.type === "clients") return "Connected Clients";
   if (view.type === "inspector") return "Inspector";
   if (view.type === "dock") return "Workspace Dock";
   if (view.type === "routine") return "Routine Editor";
@@ -1611,7 +1613,7 @@ function AutomationWindowAdderPalette(props: { area: AutomationWorkspaceArea; an
   const groups = [
     { title: "Editors", ids: ["policy-primary", "routine-editor", "config-default"] },
     { title: "Evidence", ids: ["timeline-recording", "signals-web", "runtime-debug", "problems-view"] },
-    { title: "Tools", ids: ["global-inspector", "workspace-dock", "ai-assistant"] }
+    { title: "Tools", ids: ["client-gateway", "global-inspector", "workspace-dock", "ai-assistant"] }
   ];
   const byId = new Map(props.views.map((view) => [view.id, view]));
   return (
@@ -1705,6 +1707,7 @@ function automationWindowDescription(view: AutomationViewInstance): string {
   if (view.type === "recordings") return "Review timeline evidence and notes.";
   if (view.type === "signals") return "Browse mined state signals.";
   if (view.type === "runtime") return "Inspect live/debug execution state.";
+  if (view.type === "clients") return "Pair remote recorder and action clients.";
   if (view.type === "problems") return "Review validation and authoring issues.";
   if (view.type === "inspector") return "Inspect the current global selection.";
   if (view.type === "dock") return "Assistant, problems, history, and state panels.";
@@ -1719,6 +1722,7 @@ function AutomationViewRenderer(props: {
   policies: any[];
   policy: any;
   problems: any[];
+  projectId: string | null;
   recordings: any[];
   runtimeSessions: any[];
   dockTab: AutomationDockTab;
@@ -1737,6 +1741,7 @@ function AutomationViewRenderer(props: {
   if (props.view.type === "recordings") return <AutomationTimelineView entries={props.entries} notes={props.notes} selectedEntry={props.selectedEntry} setSelection={props.setSelection} />;
   if (props.view.type === "signals") return <AutomationSignalWorkspace signals={props.signals} setSelection={props.setSelection} />;
   if (props.view.type === "runtime") return <AutomationRuntimeWorkspace timelines={props.selectedTimeline ? [props.selectedTimeline] : []} models={props.models} policies={props.policies} runtimeSessions={props.runtimeSessions} />;
+  if (props.view.type === "clients") return <AutomationClientGatewayView projectId={props.projectId} />;
   if (props.view.type === "problems") return <AutomationProblemsWorkspace problems={props.problems} />;
   if (props.view.type === "assistant") return <AutomationAssistantView node={props.selectedNode} recording={props.selectedRecording} signals={props.signals} />;
   if (props.view.type === "inspector") return <AutomationInspector selection={props.selection} policy={props.policy} node={props.selectedNode} recording={props.selectedRecording} entry={props.selectedEntry} signal={props.selectedSignal} setSelection={props.setSelection} />;
@@ -2397,6 +2402,143 @@ function AutomationConfigView(props: { policy: any }) {
       <InspectorSection title="Configuration" rows={[["Policy", props.policy?.policyId ?? "-"], ["Environment overrides", "None"], ["Runtime limits", "Default"]]} />
     </section>
   );
+}
+
+function AutomationClientGatewayView(props: { projectId: string | null }) {
+  const api = useProgramApi("automation-studio");
+  const [snapshot, setSnapshot] = useState<any>({ enabled: false, sessions: [], pairings: [], auditLog: [] });
+  const [selectedSessionId, setSelectedSessionId] = useState("");
+  const [pin, setPin] = useState("");
+  const [status, setStatus] = useState("");
+  const [actionType, setActionType] = useState("");
+  const [selector, setSelector] = useState("");
+  const [text, setText] = useState("");
+  const refreshGateway = useCallback(async () => {
+    const result = await api.get<any>("client-gateway-snapshot");
+    if (!result.ok) {
+      setStatus(result.error ?? "Client gateway could not be loaded.");
+      return;
+    }
+    const next = result.payload ?? { enabled: false, sessions: [], pairings: [], auditLog: [] };
+    setSnapshot(next);
+    const sessions = next.sessions ?? [];
+    setSelectedSessionId((current) => sessions.some((session: any) => session.sessionId === current) ? current : sessions[0]?.sessionId ?? "");
+  }, [api]);
+  useEffect(() => {
+    void refreshGateway();
+    const interval = window.setInterval(() => void refreshGateway(), 2500);
+    return () => window.clearInterval(interval);
+  }, [refreshGateway]);
+  const sessions = snapshot.sessions ?? [];
+  const selectedSession = sessions.find((session: any) => session.sessionId === selectedSessionId) ?? sessions[0];
+  const pairings = snapshot.pairings ?? [];
+  const actionTypes = uniqueStrings((selectedSession?.capabilities ?? []).flatMap((capability: any) => capability.actionTypes ?? []));
+  useEffect(() => {
+    if (!actionType && actionTypes.length) setActionType(actionTypes[0] ?? "");
+  }, [actionType, actionTypes]);
+  const startRecording = async () => {
+    if (!selectedSession) return;
+    setStatus("Starting client recording...");
+    const result = await api.post<any>("start-client-recording", { sessionId: selectedSession.sessionId, projectId: props.projectId, authorizationPin: pin });
+    setStatus(result.ok ? `Recording ${result.payload?.recording?.recordingId ?? "started"}.` : result.error ?? "Recording could not start.");
+    if (result.ok) {
+      setPin("");
+      await refreshGateway();
+    }
+  };
+  const stopRecording = async () => {
+    if (!selectedSession) return;
+    setStatus("Stopping client recording...");
+    const result = await api.post<any>("stop-client-recording", { sessionId: selectedSession.sessionId, authorizationPin: pin });
+    setStatus(result.ok ? `Recording ${result.payload?.recording?.recordingId ?? "stopped"}.` : result.error ?? "Recording could not stop.");
+    if (result.ok) {
+      setPin("");
+      await refreshGateway();
+    }
+  };
+  const captureSnapshot = async () => {
+    if (!selectedSession) return;
+    const result = await api.post("capture-client-snapshot", { sessionId: selectedSession.sessionId, kind: "dom" });
+    setStatus(result.ok ? "Snapshot request queued." : result.error ?? "Snapshot request failed.");
+    if (result.ok) await refreshGateway();
+  };
+  const executeAction = async () => {
+    if (!selectedSession || !actionType) return;
+    setStatus("Sending action...");
+    const parameters: Record<string, unknown> = {};
+    if (selector.trim()) parameters.selector = selector.trim();
+    if (text) parameters.text = text;
+    const command: Record<string, unknown> = { actionType, parameters, timeoutMs: 10_000 };
+    if (selector.trim()) command.target = { type: "selector", selector: selector.trim() };
+    const result = await api.post<any>("execute-client-action", { sessionId: selectedSession.sessionId, authorizationPin: pin, command });
+    setStatus(result.ok ? `Action ${result.payload?.result?.status ?? "completed"}.` : result.error ?? "Action failed.");
+    if (result.ok) {
+      setPin("");
+      await refreshGateway();
+    }
+  };
+  return (
+    <section className="automation-client-gateway-view">
+      <header>
+        <div><strong>Client Gateway</strong><span>{snapshot.webRuntime?.clientGatewayPublicUrl ?? snapshot.publicUrl ?? "Host WebSocket URL"} | {snapshot.webRuntime?.clientGatewayListening === false ? "not listening" : `${sessions.length} connected`}</span></div>
+        <button className="button compact" onClick={() => void refreshGateway()} type="button"><RefreshCcw size={13} aria-hidden />Refresh</button>
+      </header>
+      <div className="automation-client-gateway-grid">
+        <section className="automation-client-panel">
+          <header><QrCode size={14} aria-hidden /><strong>Approval</strong></header>
+          {snapshot.webRuntime?.clientGatewayError ? <VisualAlert tone="warning" title="Gateway port issue" message={snapshot.webRuntime.clientGatewayError} /> : null}
+          <p className="muted-text">Open the extension and click connect. Approve pending requests from the global web-panel popup.</p>
+          <div className="automation-client-pairings">
+            {pairings.slice(0, 4).map((pairing: any) => (
+              <span key={pairing.pairingCode}>
+                <strong>{pairing.referenceCode ?? pairing.pairingCode}</strong>
+                <small>{pairing.consumedAt ? "Paired" : pairing.requestedByClientName ? `${pairing.requestedByClientName} | expires ${formatTime(pairing.expiresAt)}` : `Expires ${formatTime(pairing.expiresAt)}`}</small>
+              </span>
+            ))}
+            {!pairings.length ? <span><strong>No approval requests</strong><small>Waiting for an extension/client connect request.</small></span> : null}
+          </div>
+        </section>
+        <section className="automation-client-panel wide">
+          <header><Radio size={14} aria-hidden /><strong>Connected Clients</strong></header>
+          <div className="automation-client-list">
+            {sessions.map((session: any) => (
+              <button className={selectedSession?.sessionId === session.sessionId ? "selected" : ""} key={session.sessionId} onClick={() => setSelectedSessionId(session.sessionId)} type="button">
+                <span><strong>{session.name}</strong><small>{session.clientType} | {session.status}</small></span>
+                <StatusBadge value={session.activeRecordingId ? "recording" : session.capabilities?.length ? "ready" : "idle"} />
+              </button>
+            ))}
+            {!sessions.length ? <span>No clients connected yet.</span> : null}
+          </div>
+        </section>
+        <section className="automation-client-panel">
+          <header><Radio size={14} aria-hidden /><strong>Recording</strong></header>
+          <Field label="PIN"><input inputMode="numeric" onChange={(event) => setPin(digits(event.target.value))} value={pin} /></Field>
+          <div className="inline-actions">
+            <button className="button" disabled={!selectedSession || pin.length < 4} onClick={() => void startRecording()} type="button">Start</button>
+            <button className="button" disabled={!selectedSession || pin.length < 4} onClick={() => void stopRecording()} type="button">Stop</button>
+            <button className="button" disabled={!selectedSession} onClick={() => void captureSnapshot()} type="button">Snapshot</button>
+          </div>
+          <KeyValue rows={[
+            ["Selected", selectedSession?.name ?? "none"],
+            ["Recording", selectedSession?.activeRecordingId ?? "none"],
+            ["Last seen", selectedSession?.lastSeenAt ? formatTime(selectedSession.lastSeenAt) : "-"]
+          ]} />
+        </section>
+        <section className="automation-client-panel wide">
+          <header><Zap size={14} aria-hidden /><strong>Action Test</strong></header>
+          <Field label="Action"><select value={actionType} onChange={(event) => setActionType(event.target.value)}>{actionTypes.map((item) => <option key={item} value={item}>{item}</option>)}{!actionTypes.length ? <option value="">No client actions</option> : null}</select></Field>
+          <Field label="Selector"><input placeholder="CSS selector or client target selector" value={selector} onChange={(event) => setSelector(event.target.value)} /></Field>
+          <Field label="Text"><input value={text} onChange={(event) => setText(event.target.value)} /></Field>
+          <button className="button button-primary" disabled={!selectedSession || !actionType || pin.length < 4} onClick={() => void executeAction()} type="button">Send Action</button>
+        </section>
+      </div>
+      <StatusText value={status} />
+    </section>
+  );
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))];
 }
 
 function automationPaletteIcon(family: string): typeof Blocks {

@@ -11,6 +11,7 @@ import type {
 } from "../model";
 import type { NormalizationOptions } from "../normalization";
 import type { JsonObject } from "../../../core";
+import type { ClientGatewayActionCommand } from "../../../client-gateway";
 
 export const AUTOMATION_STUDIO_ENDPOINTS = {
   snapshot: "snapshot",
@@ -38,7 +39,13 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   startRuntimeSession: "start-runtime-session",
   runRuntimeSession: "run-runtime-session",
   inspectStateDiff: "inspect-state-diff",
-  listSignalRegistries: "list-signal-registries"
+  listSignalRegistries: "list-signal-registries",
+  clientGatewaySnapshot: "client-gateway-snapshot",
+  createClientPairing: "create-client-pairing",
+  startClientRecording: "start-client-recording",
+  stopClientRecording: "stop-client-recording",
+  captureClientSnapshot: "capture-client-snapshot",
+  executeClientAction: "execute-client-action"
 } as const;
 
 export type AutomationStudioProject = {
@@ -132,4 +139,32 @@ export type InspectStateDiffRequest = {
   previous: StateSnapshot;
   current: StateSnapshot;
   includeStable?: boolean;
+};
+
+export type CreateClientPairingRequest = {
+  projectId?: string | null;
+  ttlMs?: number;
+};
+
+export type StartClientRecordingRequest = {
+  sessionId: string;
+  projectId?: string | null;
+  taskId?: string;
+  recordingId?: string;
+  metadata?: JsonObject;
+};
+
+export type StopClientRecordingRequest = {
+  sessionId: string;
+};
+
+export type CaptureClientSnapshotRequest = {
+  sessionId: string;
+  kind?: string;
+  metadata?: JsonObject;
+};
+
+export type ExecuteClientActionRequest = {
+  sessionId: string;
+  command: ClientGatewayActionCommand;
 };

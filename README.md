@@ -114,3 +114,10 @@ Install dependencies before running checks:
 pnpm install
 pnpm check
 ```
+
+## Client Gateway
+
+WebSocket-capable clients such as browser extensions can connect through the
+global client gateway. See
+[`docs/integrations/client-gateway-websocket.md`](docs/integrations/client-gateway-websocket.md)
+for the approval flow, message examples, and development endpoint.

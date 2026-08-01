@@ -68,6 +68,7 @@ Global program internals use the layout described in
 
 - [Current System](current-system.md)
 - [Automation Studio Architecture](automation-studio.md)
+- [Client Gateway WebSocket Integration](../integrations/client-gateway-websocket.md)
 - [Documentation System](docs-system.md)
 - [Program Layout](program-layout.md)
 - [UI Theme](ui-theme.md)

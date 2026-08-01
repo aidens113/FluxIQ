@@ -147,7 +147,7 @@ Planned improvements:
 ## Automation Studio
 
 Automation Studio is the central authoring program for tasks, routines,
-interfaces, recordings, and generated policies.
+configurations, recordings, and generated policies.
 
 Current behavior:
 

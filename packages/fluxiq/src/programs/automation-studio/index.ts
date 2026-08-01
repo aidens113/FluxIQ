@@ -1,4 +1,5 @@
 export * from "./api";
+export * from "./client-gateway";
 export * from "./fingerprinting";
 export * from "./learning";
 export * from "./metadata";

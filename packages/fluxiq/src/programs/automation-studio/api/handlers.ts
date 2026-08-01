@@ -3,17 +3,24 @@ import { authorizeProgramPin } from "../../_shared/authorization";
 import {
   AUTOMATION_STUDIO_ENDPOINTS,
   type AppendRecordingEntryRequest,
+  type CaptureClientSnapshotRequest,
+  type CreateClientPairingRequest,
   type CreateRecordingRequest,
+  type ExecuteClientActionRequest,
   type FinalizeRecordingRequest,
   type InspectStateDiffRequest,
   type NormalizeRecordingRequest,
-  type RecordingProjectRequest
+  type RecordingProjectRequest,
+  type StartClientRecordingRequest,
+  type StopClientRecordingRequest
 } from "./contracts";
 import type { AutomationStudioFlowDocument, AutomationStudioProjectArtifactKind } from "../model";
 import type { AutomationStudioService } from "../runtime/service";
 import type { IdentityAccessService } from "../../identity-access";
+import type { AutomationStudioClientGatewayBridge } from "../client-gateway";
+import type { ClientGatewayService } from "../../../client-gateway";
 
-export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, service: AutomationStudioService, identityAccess?: IdentityAccessService): void {
+export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, service: AutomationStudioService, identityAccess?: IdentityAccessService, clientGatewayBridge?: AutomationStudioClientGatewayBridge, clientGateway?: ClientGatewayService): void {
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.snapshot,
@@ -245,5 +252,70 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
       ok: true,
       payload: { signalRegistries: await service.listSignalRegistries() }
     })
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.clientGatewaySnapshot,
+    handler: async () => ({
+      ok: true,
+      payload: clientGateway?.snapshot() ?? { enabled: false, sessions: [], pairings: [], auditLog: [] }
+    })
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.createClientPairing,
+    handler: async (request) => {
+      if (!clientGateway) return { ok: false, error: "Client gateway is not available." };
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as CreateClientPairingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: { pairing: clientGateway.createPairing({
+        ...(payload.projectId !== undefined ? { projectId: payload.projectId } : {}),
+        ...(typeof payload.authSessionId === "string" ? { userId: payload.authSessionId } : {}),
+        ...(payload.ttlMs !== undefined ? { ttlMs: payload.ttlMs } : {})
+      }) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.startClientRecording,
+    handler: async (request) => {
+      if (!clientGatewayBridge) return { ok: false, error: "Client gateway bridge is not available." };
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as StartClientRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: { recording: await clientGatewayBridge.startRecording(payload) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.stopClientRecording,
+    handler: async (request) => {
+      if (!clientGatewayBridge) return { ok: false, error: "Client gateway bridge is not available." };
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as StopClientRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: { recording: await clientGatewayBridge.stopRecording(String(payload.sessionId ?? "")) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.captureClientSnapshot,
+    handler: async (request) => {
+      if (!clientGateway) return { ok: false, error: "Client gateway is not available." };
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as CaptureClientSnapshotRequest;
+      await clientGateway.captureSnapshot(String(payload.sessionId ?? ""), {
+        ...(payload.kind !== undefined ? { kind: payload.kind } : {}),
+        ...(payload.metadata !== undefined ? { metadata: payload.metadata } : {})
+      });
+      return { ok: true, payload: { queued: true } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.executeClientAction,
+    handler: async (request) => {
+      if (!clientGatewayBridge) return { ok: false, error: "Client gateway bridge is not available." };
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ExecuteClientActionRequest & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: { result: await clientGatewayBridge.executeAction(String(payload.sessionId ?? ""), payload.command) } };
+    }
   });
 }

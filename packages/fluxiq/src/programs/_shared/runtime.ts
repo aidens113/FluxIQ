@@ -1,6 +1,7 @@
 import path from "node:path";
+import { ClientGatewayService } from "../../client-gateway";
 import type { FluxIQHostPaths } from "../../framework";
-import { AutomationStudioService, registerAutomationStudioApi } from "../automation-studio";
+import { AutomationStudioClientGatewayBridge, AutomationStudioService, registerAutomationStudioApi } from "../automation-studio";
 import { BackgroundTasksService, registerBackgroundTasksApi } from "../background-tasks";
 import { ComputeControlService, registerComputeControlApi } from "../compute-control";
 import { DatabaseManagerService, registerDatabaseManagerApi, SQLiteRepository } from "../database-manager";
@@ -14,6 +15,8 @@ import { registerGlobalDocumentationGenerators } from "./docs-generators";
 export type GlobalProgramRuntime = {
   api: GlobalProgramApiRegistry;
   automationStudio: AutomationStudioService;
+  clientGateway: ClientGatewayService;
+  automationStudioClientGateway: AutomationStudioClientGatewayBridge;
   backgroundTasks: BackgroundTasksService;
   computeControl: ComputeControlService;
   databaseManager: DatabaseManagerService;
@@ -27,6 +30,11 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
   const api = new GlobalProgramApiRegistry();
   const storageOptions = paths ? { dataDir: paths.data } : {};
   const automationStudio = new AutomationStudioService(storageOptions);
+  const clientGateway = new ClientGatewayService({
+    enabled: process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED !== "false",
+    ...(process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL ? { publicUrl: process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL } : {})
+  });
+  const automationStudioClientGateway = new AutomationStudioClientGatewayBridge({ gateway: clientGateway, automationStudio });
   const backgroundTasksRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "background.tasks" }) : undefined;
   const identityUsersRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "identity.users" }) : undefined;
   const backgroundTasks = new BackgroundTasksService(backgroundTasksRepository ? { repository: backgroundTasksRepository } : {});
@@ -68,7 +76,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
 
   }
 
-  registerAutomationStudioApi(api, automationStudio, identityAccess);
+  registerAutomationStudioApi(api, automationStudio, identityAccess, automationStudioClientGateway, clientGateway);
   registerBackgroundTasksApi(api, backgroundTasks);
   registerComputeControlApi(api, computeControl);
   registerDatabaseManagerApi(api, databaseManager, identityAccess);
@@ -91,6 +99,8 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
   return {
     api,
     automationStudio,
+    clientGateway,
+    automationStudioClientGateway,
     backgroundTasks,
     computeControl,
     databaseManager,
