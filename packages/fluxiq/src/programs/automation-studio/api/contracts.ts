@@ -5,6 +5,8 @@ import type {
   AppendRecordingEntryInput,
   CreateRecordingSessionInput,
   PolicyGraph,
+  RecordingDomainDefinition,
+  RecordingDomainEventInput,
   RecordingSession,
   SignalRegistry,
   StateSnapshot
@@ -40,6 +42,9 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   runRuntimeSession: "run-runtime-session",
   inspectStateDiff: "inspect-state-diff",
   listSignalRegistries: "list-signal-registries",
+  listRecordingDomains: "list-recording-domains",
+  validateRecordingDomainEvent: "validate-recording-domain-event",
+  appendRecordingDomainEvent: "append-recording-domain-event",
   clientGatewaySnapshot: "client-gateway-snapshot",
   createClientPairing: "create-client-pairing",
   startClientRecording: "start-client-recording",
@@ -124,6 +129,14 @@ export type AppendRecordingEntryRequest = RecordingProjectRequest & {
   recordingId: string;
   entry: AppendRecordingEntryInput;
 };
+
+export type ListRecordingDomainsResponse = {
+  domains: RecordingDomainDefinition[];
+};
+
+export type ValidateRecordingDomainEventRequest = RecordingDomainEventInput;
+
+export type AppendRecordingDomainEventRequest = RecordingDomainEventInput;
 
 export type FinalizeRecordingRequest = RecordingProjectRequest & {
   recordingId: string;

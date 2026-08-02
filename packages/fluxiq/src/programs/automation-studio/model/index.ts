@@ -6,6 +6,7 @@ export * from "./evidence";
 export * from "./fixtures";
 export * from "./policies";
 export * from "./recordings";
+export * from "./recording-domain";
 export * from "./recording-framework";
 export * from "./runtime";
 export * from "./signal-registry";

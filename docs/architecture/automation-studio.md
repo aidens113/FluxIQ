@@ -238,6 +238,19 @@ Control-flow nodes own route names, case matching, branch inversion, loop
 limits, fan-out, merge, and terminal status metadata. Logic nodes own
 comparison operators, case sensitivity, and empty/missing input behavior, and
 route through `true` or `false` while exposing a boolean `result` data output.
+
+Recording domains are the contract boundary between FluxIQ core and
+domain-specific automation repositories. An importing repository registers a
+`RecordingDomainDefinition` with accepted event types, payload schemas, state
+reducers, and observation extractors. Recording events can then enter through
+direct import (`AutomationStudioService.appendRecordingDomainEvent`) or through
+the global client gateway WebSocket (`client.recording_event` with `domainId`).
+Automation Studio validates the domain and event type before writing anything
+to the recording. Accepted events become timeline `domain_event` entries and
+may produce observation entries, state deltas, and state checkpoints through
+the registered reducer/extractor functions. FluxIQ core must not contain
+domain-specific browser automation behavior; it only provides the common
+recording, state, signal, runtime, and transport framework.
 Math nodes own precision, offsets, rounding modes, clamps, and
 divide-by-zero handling while exposing `result` data and success/failure
 routes. Random nodes own range, mode, precision, fallback, weighted choice, and
@@ -617,12 +630,25 @@ The reusable gateway lives under `packages/fluxiq/src/client-gateway/`:
 - `service.ts` owns in-memory session state, approval references, session tokens,
   outbound server messages, command/result correlation, timeouts, heartbeat
   messages, and gateway events.
+- `@fluxiq/client-gateway-websocket` is a small typed client package for
+  WebSocket-capable recorders. It re-exports the same protocol types as
+  `fluxiq/client-gateway` and the same Automation Studio recording request
+  types as `fluxiq/automation-studio`. Its Automation Studio facade mirrors
+  direct-import method params such as `createRecording`,
+  `appendRecordingEvent`, `appendRecordingDomainEvent`, and
+  `finalizeRecording`, but implements them by sending websocket messages. The
+  package is split into transport, message helpers, Automation Studio facade,
+  and shared types so the public `index.ts` stays an export doorway rather than
+  the implementation.
 
 Automation Studio consumes the gateway through
 `packages/fluxiq/src/programs/automation-studio/client-gateway/bridge.ts`.
 The bridge converts client messages into canonical Studio artifacts:
 
-- `client.recording_event` becomes a raw `domain_event` timeline entry.
+- `client.recording_event` is accepted only when its `domainId` and `eventType`
+  match a registered `RecordingDomainDefinition`; accepted events become
+  `domain_event` timeline entries and may derive observations, state deltas,
+  and state checkpoints.
 - `client.browser_state` and `client.dom_snapshot` become `observation`
   timeline entries.
 - `server.execute_action` waits for `client.action_result`; resolved action

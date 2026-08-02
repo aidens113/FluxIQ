@@ -2,6 +2,7 @@ import type { GlobalProgramApiRegistry } from "../../_shared/api";
 import { authorizeProgramPin } from "../../_shared/authorization";
 import {
   AUTOMATION_STUDIO_ENDPOINTS,
+  type AppendRecordingDomainEventRequest,
   type AppendRecordingEntryRequest,
   type CaptureClientSnapshotRequest,
   type CreateClientPairingRequest,
@@ -12,7 +13,8 @@ import {
   type NormalizeRecordingRequest,
   type RecordingProjectRequest,
   type StartClientRecordingRequest,
-  type StopClientRecordingRequest
+  type StopClientRecordingRequest,
+  type ValidateRecordingDomainEventRequest
 } from "./contracts";
 import type { AutomationStudioFlowDocument, AutomationStudioProjectArtifactKind } from "../model";
 import type { AutomationStudioService } from "../runtime/service";
@@ -252,6 +254,33 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
       ok: true,
       payload: { signalRegistries: await service.listSignalRegistries() }
     })
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRecordingDomains,
+    handler: async () => ({
+      ok: true,
+      payload: { domains: service.listRecordingDomains() }
+    })
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.validateRecordingDomainEvent,
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ValidateRecordingDomainEventRequest;
+      return { ok: true, payload: service.validateRecordingDomainEvent(payload) };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendRecordingDomainEvent,
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as AppendRecordingDomainEventRequest;
+      const result = await service.appendRecordingDomainEvent(payload);
+      return result.accepted
+        ? { ok: true, payload: result }
+        : { ok: false, error: result.issues.map((issue) => issue.message).join(" ") || "Recording event was rejected.", payload: result };
+    }
   });
   registry.register({
     programId: "automation-studio",

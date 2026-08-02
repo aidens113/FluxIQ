@@ -4,11 +4,13 @@ import type {
   ClientGatewayEvent,
   ClientGatewayRecordingEvent,
   ClientGatewaySession,
+  ClientGatewayStartRecordingRequest,
+  ClientGatewayStopRecordingRequest,
   ClientGatewaySnapshot
 } from "../../../client-gateway";
 import { ClientGatewayService } from "../../../client-gateway";
 import type { JsonObject } from "../../../core";
-import type { StateSnapshot } from "../model";
+import type { ActionChannelDescriptor, EnvironmentDescriptor, SourceDescriptor, StateSnapshot } from "../model";
 import type { AutomationStudioService } from "../runtime/service";
 
 export type AutomationStudioClientGatewayBridgeOptions = {
@@ -21,13 +23,14 @@ export type StartClientRecordingInput = {
   projectId?: string | null;
   taskId?: string;
   recordingId?: string;
+  domainId?: string | null;
   metadata?: JsonObject;
 };
 
 export class AutomationStudioClientGatewayBridge {
   private readonly gateway: ClientGatewayService;
   private readonly automationStudio: AutomationStudioService;
-  private readonly activeRecordings = new Map<string, { projectId?: string | null; recordingId: string }>();
+  private readonly activeRecordings = new Map<string, { projectId?: string | null; recordingId: string; domainId?: string | null }>();
 
   constructor(options: AutomationStudioClientGatewayBridgeOptions) {
     this.gateway = options.gateway;
@@ -39,6 +42,7 @@ export class AutomationStudioClientGatewayBridge {
     const session = this.session(input.sessionId);
     const recordingId = input.recordingId ?? `client.${session.clientId}.${Date.now()}`;
     const projectId = input.projectId ?? session.projectId;
+    const domainId = input.domainId ?? stringMetadataValue(session.metadata, "domainId") ?? null;
     const actionTypes = session.capabilities.flatMap((capability) => capability.actionTypes ?? []);
     const recording = await this.automationStudio.createRecording({
       ...(projectId !== undefined ? { projectId } : {}),
@@ -48,7 +52,7 @@ export class AutomationStudioClientGatewayBridge {
         id: `client.${session.clientId}`,
         label: session.name,
         kind: session.clientType,
-        domainId: null,
+        domainId,
         capabilities: session.capabilities.map((capability) => capability.id),
         metadata: compactJsonObject({ sessionId: session.sessionId, ...(session.version ? { version: session.version } : {}), ...(session.metadata ?? {}) })
       },
@@ -78,8 +82,13 @@ export class AutomationStudioClientGatewayBridge {
       initialState: emptyClientStateSnapshot(session),
       metadata: { createdFrom: "client-gateway", sessionId: session.sessionId, ...(input.metadata ?? {}) }
     });
-    this.activeRecordings.set(session.sessionId, { ...(projectId !== undefined ? { projectId } : {}), recordingId });
-    await this.gateway.startRecording(session.sessionId, { recordingId, ...(projectId !== undefined ? { projectId } : {}), ...(input.taskId !== undefined ? { taskId: input.taskId } : {}) });
+    this.activeRecordings.set(session.sessionId, { ...(projectId !== undefined ? { projectId } : {}), recordingId, domainId });
+    await this.gateway.startRecording(session.sessionId, {
+      recordingId,
+      ...(projectId !== undefined ? { projectId } : {}),
+      ...(input.taskId !== undefined ? { taskId: input.taskId } : {}),
+      ...(domainId ? { domainId } : {})
+    });
     return recording;
   }
 
@@ -100,6 +109,22 @@ export class AutomationStudioClientGatewayBridge {
   }
 
   private async handleGatewayEvent(event: ClientGatewayEvent): Promise<void> {
+    if (event.type === "client.start_recording") {
+      await this.startRecordingFromClient(event.session, event.message.payload);
+      return;
+    }
+    if (event.type === "client.stop_recording") {
+      await this.stopRecordingFromClient(event.session, event.message.payload);
+      return;
+    }
+    if (event.type === "client.recording_entry") {
+      await this.automationStudio.appendRecordingEvent({
+        ...(event.message.payload.projectId !== undefined ? { projectId: event.message.payload.projectId } : {}),
+        recordingId: event.message.payload.recordingId,
+        entry: event.message.payload.entry as unknown as Parameters<AutomationStudioService["appendRecordingEvent"]>[0]["entry"]
+      });
+      return;
+    }
     if (event.type === "client.recording_event") {
       await this.appendRecordingEvent(event.session, event.message.payload, event.message.id);
       return;
@@ -128,22 +153,108 @@ export class AutomationStudioClientGatewayBridge {
     }
   }
 
+  private async startRecordingFromClient(session: ClientGatewaySession, input: ClientGatewayStartRecordingRequest) {
+    const domainId = input.domainId ?? stringMetadataValue(input.metadata, "domainId") ?? stringMetadataValue(session.metadata, "domainId") ?? null;
+    const recording = await this.automationStudio.createRecording({
+      ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
+      recordingId: input.recordingId,
+      ...(input.taskId !== undefined ? { taskId: input.taskId } : {}),
+      ...(input.startedAt !== undefined ? { startedAt: input.startedAt } : {}),
+      environment: input.environment
+        ? input.environment as unknown as Partial<EnvironmentDescriptor>
+        : {
+            id: `client.${session.clientId}`,
+            label: session.name,
+            kind: session.clientType,
+            domainId,
+            capabilities: session.capabilities.map((capability) => capability.id),
+            metadata: compactJsonObject({ sessionId: session.sessionId, ...(session.version ? { version: session.version } : {}), ...(session.metadata ?? {}) })
+          },
+      sources: input.sources as unknown as SourceDescriptor[] | undefined ?? [
+        {
+          id: `client.${session.clientId}.events`,
+          label: `${session.name} events`,
+          kind: "event",
+          metadata: { sessionId: session.sessionId, clientType: session.clientType }
+        },
+        {
+          id: `client.${session.clientId}.observations`,
+          label: `${session.name} observations`,
+          kind: "observation",
+          metadata: { sessionId: session.sessionId, clientType: session.clientType }
+        }
+      ],
+      actionChannels: input.actionChannels as unknown as ActionChannelDescriptor[] | undefined ?? [],
+      initialState: input.initialState as unknown as StateSnapshot | undefined ?? emptyClientStateSnapshot(session),
+      metadata: compactJsonObject({ createdFrom: "client-gateway", sessionId: session.sessionId, ...(input.metadata ?? {}) })
+    });
+    this.activeRecordings.set(session.sessionId, { ...(input.projectId !== undefined ? { projectId: input.projectId } : {}), recordingId: recording.recordingId, domainId });
+    return recording;
+  }
+
+  private async stopRecordingFromClient(session: ClientGatewaySession, input: ClientGatewayStopRecordingRequest) {
+    const active = this.activeRecordings.get(session.sessionId);
+    const projectId = input.projectId ?? active?.projectId;
+    const recording = await this.automationStudio.finalizeRecording({
+      ...(projectId !== undefined ? { projectId } : {}),
+      recordingId: input.recordingId,
+      ...(input.endedAt !== undefined ? { endedAt: input.endedAt } : {})
+    });
+    this.activeRecordings.delete(session.sessionId);
+    return recording;
+  }
+
   private async appendRecordingEvent(session: ClientGatewaySession, event: ClientGatewayRecordingEvent, messageId: string): Promise<void> {
     const active = this.activeRecordings.get(session.sessionId);
     if (!active) return;
+    const domainId = event.domainId ?? active.domainId ?? stringMetadataValue(event.metadata, "domainId");
+    if (domainId) {
+      const result = await this.automationStudio.appendRecordingDomainEvent({
+        ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
+        recordingId: active.recordingId,
+        domainId,
+        eventType: event.eventType,
+        ...(event.eventId !== undefined ? { eventId: event.eventId } : {}),
+        ...(event.timestamp !== undefined ? { timestamp: event.timestamp } : {}),
+        sourceId: event.sourceId ?? `client.${session.clientId}.events`,
+        ...(event.target !== undefined ? { target: event.target } : {}),
+        ...(event.payload !== undefined ? { payload: event.payload } : {}),
+        metadata: compactJsonObject({
+          clientGatewayMessageId: messageId,
+          clientId: session.clientId,
+          ...(event.metadata ?? {})
+        })
+      });
+      if (!result.accepted) {
+        const message = result.issues.map((issue) => issue.path ? `${issue.path}: ${issue.message}` : issue.message).join("; ");
+        await this.appendRejectedRecordingMarker(active, session, event, messageId, message || `Recording event ${domainId}.${event.eventType} was rejected.`);
+      }
+      return;
+    }
+    await this.appendRejectedRecordingMarker(active, session, event, messageId, "Recording event domainId is required.");
+  }
+
+  private async appendRejectedRecordingMarker(
+    active: { projectId?: string | null; recordingId: string },
+    session: ClientGatewaySession,
+    event: ClientGatewayRecordingEvent,
+    messageId: string,
+    reason: string
+  ): Promise<void> {
     await this.automationStudio.appendRecordingEvent({
       ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
       recordingId: active.recordingId,
       entry: {
-        type: "domain_event",
-        eventType: event.eventType,
+        type: "marker",
+        label: `Rejected recording event: ${event.eventType}`,
         ...(event.timestamp !== undefined ? { timestamp: event.timestamp } : {}),
         sourceId: event.sourceId ?? `client.${session.clientId}.events`,
         correlationId: event.eventId ?? messageId,
-        payload: compactJsonObject({
-          ...(event.target !== undefined ? { target: event.target } : {}),
-          ...(event.payload !== undefined ? { payload: event.payload } : {}),
-          ...(event.metadata !== undefined ? { metadata: event.metadata } : {})
+        metadata: compactJsonObject({
+          reason,
+          eventType: event.eventType,
+          ...(event.domainId !== undefined ? { domainId: event.domainId } : {}),
+          ...(event.metadata !== undefined ? { clientMetadata: event.metadata } : {})
         })
       }
     });
@@ -251,4 +362,9 @@ function emptyClientStateSnapshot(session: ClientGatewaySession): StateSnapshot 
 
 function compactJsonObject(value: Record<string, unknown>): JsonObject {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as JsonObject;
+}
+
+function stringMetadataValue(metadata: JsonObject | undefined, key: string): string | undefined {
+  const value = metadata?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }

@@ -26,6 +26,8 @@ apps/
   web/                  Next.js control panel shell
 packages/
   fluxiq/               Importable framework package
+  client-gateway-websocket/
+                         Typed WebSocket client for FluxIQ web-panel clients
 docs/
   architecture/         Framework architecture and migration notes
 ```

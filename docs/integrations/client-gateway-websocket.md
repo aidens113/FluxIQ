@@ -156,6 +156,132 @@ FluxIQ may send:
 - `server.disconnect`
 - `server.error`
 
+## Typed WebSocket Client Package
+
+Framework clients can use the workspace package. It exposes a low-level gateway
+transport and an Automation Studio facade. The facade imports Automation Studio
+request types from `fluxiq/automation-studio`, so websocket clients compile
+against the same params as direct-import callers.
+
+```ts
+import { FluxIQAutomationStudioWebSocketClient } from "@fluxiq/client-gateway-websocket";
+
+const client = new FluxIQAutomationStudioWebSocketClient({
+  url: "ws://127.0.0.1:4777/client",
+  client: {
+    clientId: "extension-abc",
+    clientType: "browser-extension",
+    name: "Domain Recorder",
+    capabilities: [{ id: "recording.events", kind: "recording" }]
+  },
+  tokenStorage: {
+    read: () => localStorage.getItem("fluxiq-client-token") ?? undefined,
+    write: (token) => localStorage.setItem("fluxiq-client-token", token)
+  }
+});
+
+client.on("pairing_required", ({ message }) => {
+  console.log("Approve this client in FluxIQ:", message.payload.referenceCode);
+});
+
+client.on("session_ready", ({ message }) => {
+  console.log("Connected to FluxIQ session:", message.payload.sessionId);
+});
+
+await client.connect();
+```
+
+The package is split by responsibility:
+
+- `transport.ts`: connection, pairing/session events, token callbacks, and raw
+  typed `send(...)`.
+- `automation-studio.ts`: websocket-backed wrappers for Automation Studio
+  recording methods.
+- `messages.ts`: message construction/parsing helpers.
+- `types.ts`: websocket constructor/event types.
+- `index.ts`: public exports only.
+
+The package exports protocol types from `fluxiq/client-gateway` and recording
+request types from `fluxiq/automation-studio`. It does not contain browser,
+scraping, or domain-specific automation behavior.
+
+## Domain Recording Events
+
+Domain-specific repositories must register their accepted recording event
+contract with Automation Studio before events are recorded. FluxIQ core stays
+domain-neutral; the importing domain repo owns event names, payload schemas,
+state reducers, and observation extractors.
+
+Direct import path:
+
+```ts
+import { AutomationStudioService } from "fluxiq/automation-studio";
+
+const automationStudio = new AutomationStudioService();
+
+automationStudio.registerRecordingDomain({
+  domainId: "example.domain",
+  label: "Example Domain",
+  schemaVersion: "0.1",
+  events: [
+    {
+      eventType: "value.observed",
+      label: "Value observed",
+      payloadSchema: {
+        type: "object",
+        required: true,
+        properties: {
+          value: { type: "number", required: true, label: "Observed value" }
+        }
+      },
+      stateReducer: ({ event, previousState }) => ({
+        state: {
+          timestamp: event.timestamp ?? Date.now(),
+          namespaces: previousState.namespaces
+        }
+      })
+    }
+  ]
+});
+```
+
+WebSocket path:
+
+```ts
+await client.createRecording({
+  projectId: "project-id",
+  recordingId: "recording-id",
+  startedAt: Date.now(),
+  initialState: { timestamp: Date.now(), namespaces: {} },
+  environment: {
+    id: "environment.example",
+    label: "Example environment",
+    kind: "custom",
+    domainId: "example.domain"
+  }
+});
+
+await client.appendRecordingDomainEvent({
+  projectId: "project-id",
+  recordingId: "recording-id",
+  domainId: "example.domain",
+  eventType: "value.observed",
+  payload: { value: 42 }
+});
+
+await client.finalizeRecording({
+  projectId: "project-id",
+  recordingId: "recording-id",
+  endedAt: Date.now()
+});
+```
+
+Automation Studio rejects events whose `domainId` is not registered, whose
+`eventType` is not allowed by that domain, or whose payload does not match the
+registered schema. Accepted events are appended as domain events and can derive
+observations, state deltas, and state checkpoints through the registered
+reducers.
+
 ## Web Panel APIs
 
 The global web shell uses these authenticated endpoints:

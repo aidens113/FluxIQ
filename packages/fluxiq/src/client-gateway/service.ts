@@ -192,6 +192,21 @@ export class ClientGatewayService {
       await this.emit({ type: "client.browser_state", session: this.publicSession(session), message });
       return;
     }
+    if (message.type === "client.start_recording") {
+      session.activeRecordingId = message.payload.recordingId;
+      if (message.payload.projectId !== undefined) session.projectId = message.payload.projectId;
+      await this.emit({ type: "client.start_recording", session: this.publicSession(session), message });
+      return;
+    }
+    if (message.type === "client.stop_recording") {
+      await this.emit({ type: "client.stop_recording", session: this.publicSession(session), message });
+      session.activeRecordingId = null;
+      return;
+    }
+    if (message.type === "client.recording_entry") {
+      await this.emit({ type: "client.recording_entry", session: this.publicSession(session), message });
+      return;
+    }
     if (message.type === "client.recording_event") {
       await this.emit({ type: "client.recording_event", session: this.publicSession(session), message });
       return;
@@ -213,7 +228,7 @@ export class ClientGatewayService {
     if (message.type === "client.error") await this.emit({ type: "client.error", session: this.publicSession(session), message });
   }
 
-  async startRecording(sessionId: string, input: { recordingId: string; projectId?: string | null; taskId?: string }): Promise<void> {
+  async startRecording(sessionId: string, input: { recordingId: string; projectId?: string | null; taskId?: string; domainId?: string }): Promise<void> {
     const session = this.requireReadySession(sessionId);
     session.activeRecordingId = input.recordingId;
     if (input.projectId !== undefined) session.projectId = input.projectId;

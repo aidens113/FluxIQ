@@ -90,4 +90,74 @@ describe("AutomationStudioService recording persistence", () => {
     await expect(readFile(path.join(projectRoot, "flows", `${flow.flowId}.json`), "utf8")).resolves.toContain("\"flowId\"");
     await expect(readFile(path.join(projectRoot, "runtime", "indexes", "sessions.json"), "utf8")).resolves.toContain(run.runId);
   });
+
+  it("accepts only registered domain recording events and records derived state", async () => {
+    const service = new AutomationStudioService({ seedFixture: false });
+    service.registerRecordingDomain({
+      domainId: "example.domain",
+      label: "Example domain",
+      schemaVersion: "0.1",
+      events: [
+        {
+          eventType: "counter.changed",
+          label: "Counter changed",
+          payloadSchema: {
+            type: "object",
+            required: true,
+            properties: {
+              value: { type: "integer", required: true, label: "Counter value" }
+            }
+          },
+          stateReducer: ({ event, previousState }) => ({
+            state: {
+              timestamp: event.timestamp ?? Date.now(),
+              namespaces: {
+                ...previousState.namespaces,
+                example: {
+                  schemaId: "example.counter",
+                  schemaVersion: "0.1",
+                  values: {
+                    count: stateValue("integer", Number(event.payload?.value ?? 0), event.timestamp ?? Date.now())
+                  }
+                }
+              }
+            }
+          }),
+          observationExtractor: ({ event }) => ({
+            observationType: "example.counter_observed",
+            payload: { value: event.payload?.value ?? 0 }
+          })
+        }
+      ]
+    });
+    const recording = await service.createRecording({
+      recordingId: "recording.domain-test",
+      initialState: { timestamp: 1, namespaces: {} }
+    });
+
+    const rejected = await service.appendRecordingDomainEvent({
+      recordingId: recording.recordingId,
+      domainId: "example.domain",
+      eventType: "counter.changed",
+      payload: { value: "wrong" }
+    });
+    expect(rejected.accepted).toBe(false);
+
+    const accepted = await service.appendRecordingDomainEvent({
+      recordingId: recording.recordingId,
+      domainId: "example.domain",
+      eventType: "counter.changed",
+      timestamp: 10,
+      payload: { value: 3 }
+    });
+
+    expect(accepted.accepted).toBe(true);
+    expect(accepted.stateDeltas).toHaveLength(1);
+    expect(accepted.recording.timeline.map((entry) => entry.type)).toEqual(["domain_event", "state_delta", "state_checkpoint", "observation"]);
+    expect(service.validateRecordingDomainEvent({
+      recordingId: recording.recordingId,
+      domainId: "example.domain",
+      eventType: "missing"
+    }).ok).toBe(false);
+  });
 });

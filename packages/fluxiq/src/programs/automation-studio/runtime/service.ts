@@ -19,9 +19,14 @@ import {
   type AutomationStudioTaskArtifact,
   type AppendRecordingEntryInput,
   type CreateRecordingSessionInput,
+  type RecordingDomainDefinition,
+  type RecordingDomainEventInput,
+  type RecordingDomainEventProcessingResult,
+  RecordingDomainRegistry,
   type RecordingSession,
   type SignalRegistry,
-  type StateSnapshot
+  type StateSnapshot,
+  processRecordingDomainEvent
 } from "../model";
 import { normalizeRecordingTimeline, type NormalizationOptions, type NormalizedTimeline } from "../normalization";
 import { automationNodeClasses } from "../nodes";
@@ -61,6 +66,7 @@ export class AutomationStudioService {
   private readonly legacyProjectStore?: ProgramJsonStore<{ categories: AutomationStudioProjectCategory[]; projects: AutomationStudioProjectRecord[] }>;
   private readonly projectRootDir?: string;
   private readonly nodeRootDir?: string;
+  private readonly recordingDomains = new RecordingDomainRegistry();
   private readonly ready: Promise<void>;
   private storageReady?: Promise<void>;
 
@@ -152,6 +158,32 @@ export class AutomationStudioService {
   async listSignalRegistries(): Promise<SignalRegistry[]> {
     await this.ready;
     return await this.repositories.signalRegistries.list();
+  }
+
+  registerRecordingDomain(definition: RecordingDomainDefinition): RecordingDomainDefinition {
+    return this.recordingDomains.register(definition);
+  }
+
+  unregisterRecordingDomain(domainId: string): boolean {
+    return this.recordingDomains.unregister(domainId);
+  }
+
+  listRecordingDomains(): RecordingDomainDefinition[] {
+    return this.recordingDomains.list();
+  }
+
+  validateRecordingDomainEvent(input: RecordingDomainEventInput) {
+    return this.recordingDomains.validate(input);
+  }
+
+  async appendRecordingDomainEvent(input: RecordingDomainEventInput): Promise<RecordingDomainEventProcessingResult> {
+    const recording = await this.getRecordingSession(input.recordingId, input.projectId);
+    const result = await processRecordingDomainEvent(this.recordingDomains, recording, input);
+    if (result.accepted) {
+      await this.repositories.recordingSessions.put(result.recording);
+      if (input.projectId) await this.writeProjectRecordingSession(input.projectId, result.recording);
+    }
+    return result;
   }
 
   async listProjectArtifacts(projectId: string): Promise<AutomationStudioProjectArtifacts> {

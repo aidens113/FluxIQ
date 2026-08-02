@@ -53,12 +53,38 @@ export type ClientGatewayBrowserState = {
 export type ClientGatewayRecordingEvent = {
   eventId?: string;
   recordingId?: string;
+  domainId?: string;
   eventType: string;
   timestamp?: number;
   sourceId?: string;
   target?: JsonObject;
   payload?: JsonObject;
   metadata?: JsonObject;
+};
+
+export type ClientGatewayStartRecordingRequest = {
+  projectId?: string | null;
+  recordingId: string;
+  taskId?: string;
+  startedAt?: number;
+  domainId?: string | null;
+  initialState?: JsonObject;
+  environment?: JsonObject;
+  sources?: JsonObject[];
+  actionChannels?: JsonObject[];
+  metadata?: JsonObject;
+};
+
+export type ClientGatewayStopRecordingRequest = {
+  projectId?: string | null;
+  recordingId: string;
+  endedAt?: number;
+};
+
+export type ClientGatewayAppendRecordingEntryRequest = {
+  projectId?: string | null;
+  recordingId: string;
+  entry: JsonObject;
 };
 
 export type ClientGatewaySnapshot = {
@@ -150,6 +176,9 @@ export type ClientGatewayClientMessage =
   | ClientGatewayEnvelope<"client.capabilities", { capabilities: ClientGatewayCapability[] }>
   | ClientGatewayEnvelope<"client.browser_state", ClientGatewayBrowserState>
   | ClientGatewayEnvelope<"client.tab_state", JsonObject>
+  | ClientGatewayEnvelope<"client.start_recording", ClientGatewayStartRecordingRequest>
+  | ClientGatewayEnvelope<"client.stop_recording", ClientGatewayStopRecordingRequest>
+  | ClientGatewayEnvelope<"client.recording_entry", ClientGatewayAppendRecordingEntryRequest>
   | ClientGatewayEnvelope<"client.recording_event", ClientGatewayRecordingEvent>
   | ClientGatewayEnvelope<"client.dom_snapshot", ClientGatewaySnapshot>
   | ClientGatewayEnvelope<"client.action_result", ClientGatewayActionResult>
@@ -158,7 +187,7 @@ export type ClientGatewayClientMessage =
 export type ClientGatewayServerMessage =
   | ClientGatewayEnvelope<"server.pairing_required", { referenceCode?: string; reason: string }>
   | ClientGatewayEnvelope<"server.session_ready", { sessionId: string; token: string; projectId?: string | null }>
-  | ClientGatewayEnvelope<"server.start_recording", { recordingId: string; projectId?: string | null; taskId?: string }>
+  | ClientGatewayEnvelope<"server.start_recording", { recordingId: string; projectId?: string | null; taskId?: string; domainId?: string }>
   | ClientGatewayEnvelope<"server.stop_recording", { recordingId?: string }>
   | ClientGatewayEnvelope<"server.capture_snapshot", { kind?: string; metadata?: JsonObject }>
   | ClientGatewayEnvelope<"server.execute_action", ClientGatewayActionCommand & { commandId: string }>
@@ -184,6 +213,9 @@ export type ClientGatewayEvent =
   | { type: "session.ready"; session: ClientGatewaySession }
   | { type: "session.disconnected"; session: ClientGatewaySession }
   | { type: "client.browser_state"; session: ClientGatewaySession; message: ClientGatewayEnvelope<"client.browser_state", ClientGatewayBrowserState> }
+  | { type: "client.start_recording"; session: ClientGatewaySession; message: ClientGatewayEnvelope<"client.start_recording", ClientGatewayStartRecordingRequest> }
+  | { type: "client.stop_recording"; session: ClientGatewaySession; message: ClientGatewayEnvelope<"client.stop_recording", ClientGatewayStopRecordingRequest> }
+  | { type: "client.recording_entry"; session: ClientGatewaySession; message: ClientGatewayEnvelope<"client.recording_entry", ClientGatewayAppendRecordingEntryRequest> }
   | { type: "client.recording_event"; session: ClientGatewaySession; message: ClientGatewayEnvelope<"client.recording_event", ClientGatewayRecordingEvent> }
   | { type: "client.dom_snapshot"; session: ClientGatewaySession; message: ClientGatewayEnvelope<"client.dom_snapshot", ClientGatewaySnapshot> }
   | { type: "client.action_result"; session: ClientGatewaySession; message: ClientGatewayEnvelope<"client.action_result", ClientGatewayActionResult> }
