@@ -3,7 +3,6 @@ export type AutomationStudioPanel =
   | "routines"
   | "recordings"
   | "policies"
-  | "interfaces"
   | "generation";
 
 export type AutomationStudioViewState = {

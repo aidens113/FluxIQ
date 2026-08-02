@@ -96,7 +96,7 @@ export class AutomationStudioClientGatewayBridge {
         }
       ],
       initialState: emptyClientStateSnapshot(session),
-      metadata: { createdFrom: "client-gateway", sessionId: session.sessionId, ...(input.metadata ?? {}) }
+      metadata: { createdFrom: "client-gateway", sessionId: session.sessionId, clientId: session.clientId, clientName: session.name, ...(input.metadata ?? {}) }
     });
     this.activeRecordings.set(session.sessionId, { ...(projectId !== undefined ? { projectId } : {}), recordingId, domainId });
     await this.gateway.startRecording(session.sessionId, {
@@ -213,7 +213,7 @@ export class AutomationStudioClientGatewayBridge {
       ],
       actionChannels: input.actionChannels as unknown as ActionChannelDescriptor[] | undefined ?? [],
       initialState: input.initialState as unknown as StateSnapshot | undefined ?? emptyClientStateSnapshot(session),
-      metadata: compactJsonObject({ createdFrom: "client-gateway", sessionId: session.sessionId, ...(input.metadata ?? {}) })
+      metadata: compactJsonObject({ createdFrom: "client-gateway", sessionId: session.sessionId, clientId: session.clientId, clientName: session.name, ...(input.metadata ?? {}) })
     });
     this.activeRecordings.set(session.sessionId, { projectId, recordingId: recording.recordingId, domainId });
     this.gateway.markActiveRecording(session.sessionId, { recordingId: recording.recordingId, projectId });
@@ -263,36 +263,31 @@ export class AutomationStudioClientGatewayBridge {
       });
       if (!result.accepted) {
         const message = result.issues.map((issue) => issue.path ? `${issue.path}: ${issue.message}` : issue.message).join("; ");
-        await this.appendRejectedRecordingMarker(active, session, event, messageId, message || `Recording event ${domainId}.${event.eventType} was rejected.`);
+        await this.reportRejectedRecordingEvent(session, event, messageId, message || `Recording event ${domainId}.${event.eventType} was rejected.`);
       }
       return;
     }
-    await this.appendRejectedRecordingMarker(active, session, event, messageId, "Recording event domainId is required.");
+    await this.reportRejectedRecordingEvent(session, event, messageId, "Recording event domainId is required.");
   }
 
-  private async appendRejectedRecordingMarker(
-    active: { projectId?: string | null; recordingId: string },
+  private async reportRejectedRecordingEvent(
     session: ClientGatewaySession,
     event: ClientGatewayRecordingEvent,
     messageId: string,
     reason: string
   ): Promise<void> {
-    await this.automationStudio.appendRecordingEvent({
-      ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
-      recordingId: active.recordingId,
-      entry: {
-        type: "marker",
-        label: `Rejected recording event: ${event.eventType}`,
-        ...(event.timestamp !== undefined ? { timestamp: event.timestamp } : {}),
-        sourceId: event.sourceId ?? `client.${session.clientId}.events`,
-        correlationId: event.eventId ?? messageId,
-        metadata: compactJsonObject({
-          reason,
-          eventType: event.eventType,
-          ...(event.domainId !== undefined ? { domainId: event.domainId } : {}),
-          ...(event.metadata !== undefined ? { clientMetadata: event.metadata } : {})
-        })
-      }
+    await this.gateway.sendError(session.sessionId, {
+      message: reason,
+      code: "recording.event_rejected",
+      metadata: compactJsonObject({
+        source: "automation-studio",
+        clientGatewayMessageId: messageId,
+        clientId: session.clientId,
+        eventType: event.eventType,
+        ...(event.eventId !== undefined ? { eventId: event.eventId } : {}),
+        ...(event.domainId !== undefined ? { domainId: event.domainId } : {}),
+        ...(event.metadata !== undefined ? { clientMetadata: event.metadata } : {})
+      })
     });
   }
 

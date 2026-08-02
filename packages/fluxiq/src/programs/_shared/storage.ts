@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
 import type { JsonObject, JsonValue } from "../../core";
 import type { RepositoryScope } from "../database-manager";
@@ -9,6 +11,7 @@ export type JsonFileDocument<T extends JsonObject = JsonObject> = {
 };
 
 export class ProgramJsonStore<T extends JsonObject = JsonObject> {
+  private static readonly writeLocks = new Map<string, Promise<void>>();
   readonly filePath: string;
 
   constructor(filePath: string, private readonly empty: () => T) {
@@ -28,11 +31,23 @@ export class ProgramJsonStore<T extends JsonObject = JsonObject> {
   }
 
   async write(data: T): Promise<T> {
+    return await ProgramJsonStore.withFileLock(this.filePath, async () => this.writeUnlocked(data));
+  }
+
+  async update(mutator: (data: T) => T | void | Promise<T | void>): Promise<T> {
+    return await ProgramJsonStore.withFileLock(this.filePath, async () => {
+      const data = await this.read();
+      const result = await mutator(data);
+      return this.writeUnlocked(result ?? data);
+    });
+  }
+
+  private async writeUnlocked(data: T): Promise<T> {
     await mkdir(path.dirname(this.filePath), { recursive: true });
-    const tempPath = `${this.filePath}.${process.pid}.${Date.now()}.tmp`;
+    const tempPath = `${this.filePath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
     await writeFile(tempPath, `${JSON.stringify({ version: 1, data }, null, 2)}\n`, "utf8");
     try {
-      await rename(tempPath, this.filePath);
+      await renameWithWindowsRetry(tempPath, this.filePath);
     } catch (error) {
       await rm(tempPath, { force: true });
       throw error;
@@ -40,10 +55,22 @@ export class ProgramJsonStore<T extends JsonObject = JsonObject> {
     return data;
   }
 
-  async update(mutator: (data: T) => T | void | Promise<T | void>): Promise<T> {
-    const data = await this.read();
-    const result = await mutator(data);
-    return this.write(result ?? data);
+  private static async withFileLock<TResult>(filePath: string, operation: () => Promise<TResult>): Promise<TResult> {
+    const key = path.resolve(filePath).toLowerCase();
+    const previous = ProgramJsonStore.writeLocks.get(key) ?? Promise.resolve();
+    let release: () => void = () => undefined;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const chained = previous.then(() => current, () => current);
+    ProgramJsonStore.writeLocks.set(key, chained);
+    await previous.catch(() => undefined);
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (ProgramJsonStore.writeLocks.get(key) === chained) ProgramJsonStore.writeLocks.delete(key);
+    }
   }
 }
 
@@ -70,4 +97,18 @@ export function isJsonObject(value: unknown): value is JsonObject {
 
 export function cloneJson<T extends JsonValue>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+async function renameWithWindowsRetry(source: string, target: string): Promise<void> {
+  const delays = [4, 12, 28, 60, 120];
+  for (let attempt = 0; attempt <= delays.length; attempt += 1) {
+    try {
+      await rename(source, target);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (attempt >= delays.length || (code !== "EPERM" && code !== "EACCES" && code !== "EBUSY")) throw error;
+      await delay(delays[attempt]!);
+    }
+  }
 }

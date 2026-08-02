@@ -3,6 +3,7 @@
 import { AlertTriangle, Blocks, Braces, Bug, Calculator, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleDot, Clock, Columns3, Copy, Database, Dice5, FileText, FolderOpen, FolderPlus, GitBranch, GripVertical, History, Info, ListChecks, Maximize2, Merge, Minimize2, Network, Plus, QrCode, Radio, RefreshCcw, Repeat, Search, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Split, Trash2, Waves, Workflow, XCircle, Zap } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import {
   Background,
   BaseEdge,
@@ -68,12 +69,15 @@ type AutomationWorkspaceWindow = {
   activeViewId: string;
   tabs: string[];
   area: AutomationWorkspaceArea;
-  x: number;
-  y: number;
-  widthPx: number;
-  heightPx: number;
+  xPct: number;
+  yPct: number;
+  widthPct: number;
+  heightPct: number;
   zIndex: number;
 };
+type AutomationWindowPixelGeometry = { x: number; y: number; widthPx: number; heightPx: number };
+type AutomationWindowRelativeGeometry = Pick<AutomationWorkspaceWindow, "xPct" | "yPct" | "widthPct" | "heightPct">;
+type AutomationWorkspaceWindowPixels = AutomationWorkspaceWindow & AutomationWindowPixelGeometry;
 type AutomationWorkspaceArea = "main" | "right";
 type AutomationWindowAdderState = {
   area: AutomationWorkspaceArea;
@@ -88,7 +92,7 @@ type AutomationWindowResizeEdge = "north" | "east" | "south" | "west" | "north-e
 type AutomationSharedResizePartner = {
   id: string;
   side: "north" | "east" | "south" | "west";
-  start: AutomationWorkspaceWindow;
+  start: AutomationWindowPixelGeometry;
 };
 type AutomationDragSelectBox = { left: number; top: number; width: number; height: number };
 type AutomationSnapRegion = "left" | "right" | "top" | "bottom";
@@ -126,13 +130,14 @@ type AutomationEditorPaletteGroup = {
   title: string;
   nodes: AutomationEditorNodeSpec[];
 };
-type AutomationHierarchyKind = "folder" | "task" | "routine" | "config";
+type AutomationHierarchyKind = "folder" | "task" | "routine" | "config" | "recording";
 type AutomationCreatableHierarchyKind = "folder" | "task" | "routine";
-type AutomationHierarchyCategory = "task" | "routine" | "config";
+type AutomationHierarchyCategory = "task" | "routine" | "config" | "recording";
 const automationHierarchyCategories: Array<{ id: AutomationHierarchyCategory; label: string; description: string }> = [
   { id: "task", label: "Tasks", description: "Task folders and task workspaces" },
   { id: "routine", label: "Routines", description: "Routine folders and orchestration workspaces" },
-  { id: "config", label: "Configurations", description: "Configuration folders and defaults" }
+  { id: "config", label: "Configurations", description: "Configuration folders and defaults" },
+  { id: "recording", label: "Recordings", description: "Raw and processed recording sessions" }
 ];
 const automationLayoutPresetOptions: AutomationLayoutPresetOption[] = [
   { id: "single", label: "Full", title: "Full stack", cells: [{ x: 0, y: 0, w: 1, h: 1 }] },
@@ -272,6 +277,8 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const [projectRecordings, setProjectRecordings] = useState<any[]>([]);
   const [projectTimelines, setProjectTimelines] = useState<any[]>([]);
   const [runtimeSessions, setRuntimeSessions] = useState<any[]>([]);
+  const [pipelineArtifacts, setPipelineArtifacts] = useState<any>({ normalizationReviews: [], miningRuns: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
+  const [recordingDomains, setRecordingDomains] = useState<any[]>([]);
   const [automationActionStatus, setAutomationActionStatus] = useState("");
   const [projects, setProjects] = useState<AutomationStudioProject[]>([]);
   const [projectCategories, setProjectCategories] = useState<AutomationStudioProjectCategory[]>([]);
@@ -306,7 +313,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [pageFullscreenWindowId, setPageFullscreenWindowId] = useState<string | null>(null);
   const [projectSearch, setProjectSearch] = useState("");
-  const [projectTypeFilter, setProjectTypeFilter] = useState<"all" | "folder" | "task" | "routine" | "config">("all");
+  const [projectTypeFilter, setProjectTypeFilter] = useState<"all" | AutomationHierarchyKind>("all");
   const [selection, setSelection] = useState<AutomationSelection | null>(null);
   const [gatewaySnapshot, setGatewaySnapshot] = useState<any>({ enabled: false, sessions: [], pairings: [], auditLog: [] });
   const [recordingBlockedAlert, setRecordingBlockedAlert] = useState<{ message: string; clientId?: string; timestamp: number } | null>(null);
@@ -356,6 +363,8 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
       setProjectRecordings([]);
       setProjectTimelines([]);
       setRuntimeSessions([]);
+      setPipelineArtifacts({ normalizationReviews: [], miningRuns: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
+      setRecordingDomains([]);
       return;
     }
     void refreshProjectData(activeProjectId).then(() => undefined);
@@ -416,12 +425,16 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const recordings = mergeById(projectRecordings, canonical.recordingSessions ?? [], "recordingId");
   const timelines = mergeById(projectTimelines, canonical.normalizedTimelines ?? [], "normalizedTimelineId");
   const registries = canonical.signalRegistries ?? [];
-  const models = canonical.learnedTaskModels ?? [];
+  const models = mergeById(pipelineArtifacts.learnedTaskModels ?? [], canonical.learnedTaskModels ?? [], "learnedTaskModelId");
   const policies = canonical.policyGraphs ?? [];
   const problems = snapshot?.payload?.problems ?? [];
   const signals = registries.flatMap((registry: any) => (registry.definitions ?? []).map((signal: any) => ({ ...signal, registryId: registry.registryId })));
   const selectedPolicy = policies.find((policy: any) => selection?.kind === "policy" && policy.policyId === selection.id) ?? policies[0];
-  const selectedRecording = recordings.find((recording: any) => selection?.kind === "recording" && recording.recordingId === selection.id) ?? recordings[0];
+  const timelineSelectionRecordingId = selection?.kind === "timeline"
+    ? timelines.find((timeline: any) => timeline.timeline?.some((entry: any) => entry.id === selection.id))?.recordingId
+      ?? recordings.find((recording: any) => recording.timeline?.some((entry: any) => entry.id === selection.id))?.recordingId
+    : null;
+  const selectedRecording = recordings.find((recording: any) => selection?.kind === "recording" ? recording.recordingId === selection.id : recording.recordingId === timelineSelectionRecordingId) ?? recordings[0];
   const selectedTimeline = selectedRecording ? timelines.find((timeline: any) => timeline.recordingId === selectedRecording.recordingId) : timelines[0];
   const selectedNode = selection?.kind === "editor-node"
     ? { id: selection.id, ...selection.node, actions: (selection.node.actionTypes ?? []).map((actionType) => ({ actionType })), recovery: { strategy: selection.node.family } }
@@ -444,6 +457,8 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     { id: "routine-editor", label: "Routine Editor", type: "routine", icon: Workflow },
     { id: "config-default", label: "Config: Default", type: "config", icon: SlidersHorizontal }
   ];
+  const recordingNodes = recordingHierarchyNodes(recordings);
+  const generatedRecordingHierarchyIds = new Set(recordingNodes.map((node) => node.id));
   const hierarchyNodes: AutomationHierarchyNode[] = [
     ...policies.map((policy: any) => ({
       id: policy.policyId,
@@ -462,8 +477,9 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
       parentId: null,
       viewId: "config-default"
     },
+    ...recordingNodes,
     ...customHierarchyNodes
-  ].filter((node) => !deletedHierarchyIds.includes(node.id));
+  ].filter((node) => generatedRecordingHierarchyIds.has(node.id) || !deletedHierarchyIds.includes(node.id));
   const folderOptions = hierarchyNodes.filter((node) => node.kind === "folder" && node.category === hierarchyCategory);
   const viewById = new Map(viewInstances.map((view) => [view.id, view]));
   const visibleWindows = pageFullscreenWindowId
@@ -500,11 +516,10 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     lastOpenedGatewayRecordingRef.current = activeRecordingId;
     void refreshProjectData(activeProjectId).then(() => {
       setSelection({ kind: "recording", id: activeRecordingId });
-      const hasTimelineWindow = workspacePrefs.windows.some((item) => (item.area ?? "main") === "main" && item.tabs.includes("timeline-recording"));
-      openView("timeline-recording", hasTimelineWindow ? "preview" : "new-window", "main");
+      openView("timeline-recording", "preview", "main");
       setAutomationActionStatus(`Recording ${activeRecordingId} is live.`);
     });
-  }, [activeProjectId, gatewaySnapshot.sessions, refreshProjectData, workspacePrefs.windows]);
+  }, [activeProjectId, gatewaySnapshot.sessions, refreshProjectData]);
 
   useEffect(() => {
     document.title = activeProject ? `${activeProject.name} - Automation Studio` : "Automation Studio";
@@ -535,6 +550,15 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   }, [activeProjectId, urlProjectId]);
 
   useEffect(() => {
+    if (!activeProjectId || !projectRecordings.length) return;
+    const generatedIds = new Set(recordingHierarchyNodes(projectRecordings).map((node) => node.id));
+    setDeletedHierarchyIds((current) => {
+      const cleaned = current.filter((id) => !id.startsWith("recordings-client-") && !generatedIds.has(id));
+      return cleaned.length === current.length ? current : cleaned;
+    });
+  }, [activeProjectId, projectRecordings]);
+
+  useEffect(() => {
     if (!activeProjectId || loadedProjectHierarchyId !== activeProjectId) return;
     const signature = automationHierarchySignature(customHierarchyNodes, deletedHierarchyIds, workspacePrefs);
     if (signature === lastSavedHierarchySignatureRef.current) return;
@@ -560,7 +584,10 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
           if (!canvas) return item;
           const bounds = canvas.getBoundingClientRect();
           if (bounds.width < 24 || bounds.height < 24) return item;
-          return clampAutomationWindowGeometry(item, Math.max(1, Math.floor(bounds.width)), Math.max(1, Math.floor(bounds.height)), 240, 210);
+          const canvasWidth = Math.max(1, Math.floor(bounds.width));
+          const canvasHeight = Math.max(1, Math.floor(bounds.height));
+          const geometry = automationWindowToPixels(item, canvasWidth, canvasHeight, 240, 210);
+          return { ...item, ...automationPixelsToRelativeGeometry(geometry, canvasWidth, canvasHeight) };
         });
         return automationWindowGeometrySignature(windows) === automationWindowGeometrySignature(current.windows) ? current : { ...current, windows };
       });
@@ -796,14 +823,18 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
 
   async function refreshProjectRuntimeState(projectId = activeProjectId) {
     if (!projectId) return;
-    const [recordingResult, timelineResult, runtimeResult] = await Promise.all([
+    const [recordingResult, timelineResult, runtimeResult, pipelineResult, domainResult] = await Promise.all([
       api.post<{ recordings: any[] }>("list-recordings", { projectId }),
       api.post<{ normalizedTimelines: any[] }>("list-normalized-timelines", { projectId }),
-      api.post<{ runtimeSessions: any[] }>("list-runtime-sessions", { projectId })
+      api.post<{ runtimeSessions: any[] }>("list-runtime-sessions", { projectId }),
+      api.post<any>("list-pipeline-artifacts", { projectId }),
+      api.post<{ domains: any[] }>("list-recording-domains", { projectId })
     ]);
     if (recordingResult.ok) setProjectRecordings(recordingResult.payload?.recordings ?? []);
     if (timelineResult.ok) setProjectTimelines(timelineResult.payload?.normalizedTimelines ?? []);
     if (runtimeResult.ok) setRuntimeSessions(runtimeResult.payload?.runtimeSessions ?? []);
+    if (pipelineResult.ok) setPipelineArtifacts(pipelineResult.payload ?? { normalizationReviews: [], miningRuns: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
+    if (domainResult.ok) setRecordingDomains(domainResult.payload?.domains ?? []);
   }
 
   async function runCurrentAutomationFlow() {
@@ -887,6 +918,91 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     await refreshProjectRuntimeState(activeProjectId);
   }
 
+  async function updateProjectRecording(recordingId: string, changes: JsonObject) {
+    if (!activeProjectId || !recordingId) return;
+    const authorizationPin = window.prompt("Enter PIN to update this recording") ?? "";
+    if (authorizationPin.length < 4) {
+      setAutomationActionStatus("PIN is required to update a recording.");
+      return;
+    }
+    const result = await api.post<{ recording: any }>("update-recording", { projectId: activeProjectId, recordingId, authorizationPin, ...changes });
+    setAutomationActionStatus(result.ok ? "Recording updated." : result.error ?? "Recording could not be updated.");
+    await refreshProjectRuntimeState(activeProjectId);
+  }
+
+  async function deleteProjectRecording(recordingId: string, authorizationPin?: string) {
+    if (!activeProjectId || !recordingId) return;
+    if (!authorizationPin && !window.confirm("Delete this recording? This removes the raw session from this project.")) return;
+    const pin = authorizationPin ?? window.prompt("Enter PIN to delete this recording") ?? "";
+    if (pin.length < 4) {
+      setAutomationActionStatus("PIN is required to delete a recording.");
+      return;
+    }
+    const result = await api.post("delete-recording", { projectId: activeProjectId, recordingId, authorizationPin: pin });
+    setAutomationActionStatus(result.ok ? "Recording deleted." : result.error ?? "Recording could not be deleted.");
+    if (selection?.kind === "recording" && selection.id === recordingId) setSelection(null);
+    await refreshProjectRuntimeState(activeProjectId);
+  }
+
+  async function deleteProjectRecordings(recordingIds: string[], authorizationPin: string) {
+    if (!activeProjectId || !recordingIds.length) return true;
+    const uniqueIds = [...new Set(recordingIds)];
+    let deletedCount = 0;
+    for (const recordingId of uniqueIds) {
+      const result = await api.post("delete-recording", { projectId: activeProjectId, recordingId, authorizationPin });
+      if (!result.ok) {
+        setAutomationActionStatus(result.error ?? `Recording ${recordingId} could not be deleted.`);
+        return false;
+      }
+      deletedCount += 1;
+    }
+    setAutomationActionStatus(`${deletedCount} recording${deletedCount === 1 ? "" : "s"} deleted.`);
+    if (selection?.kind === "recording" && uniqueIds.includes(selection.id)) setSelection(null);
+    await refreshProjectRuntimeState(activeProjectId);
+    return true;
+  }
+
+  async function appendProjectRecordingNote(recordingId: string, linkedEntryId?: string) {
+    if (!activeProjectId || !recordingId) return;
+    const text = window.prompt("Note text") ?? "";
+    if (!text.trim()) return;
+    const authorizationPin = window.prompt("Enter PIN to add this note") ?? "";
+    if (authorizationPin.length < 4) {
+      setAutomationActionStatus("PIN is required to add a note.");
+      return;
+    }
+    const result = await api.post<{ recording: any }>("append-recording-note", { projectId: activeProjectId, recordingId, text, linkedEntryIds: linkedEntryId ? [linkedEntryId] : [], authorizationPin });
+    setAutomationActionStatus(result.ok ? "Note added." : result.error ?? "Note could not be added.");
+    await refreshProjectRuntimeState(activeProjectId);
+  }
+
+  async function appendProjectRecordingMarker(recordingId: string, linkedEntryId?: string, monotonicOffsetMs?: number) {
+    if (!activeProjectId || !recordingId) return;
+    const label = window.prompt("Marker label") ?? "";
+    if (!label.trim()) return;
+    const authorizationPin = window.prompt("Enter PIN to add this marker") ?? "";
+    if (authorizationPin.length < 4) {
+      setAutomationActionStatus("PIN is required to add a marker.");
+      return;
+    }
+    const result = await api.post<{ recording: any }>("append-recording-marker", { projectId: activeProjectId, recordingId, label, linkedEntryId, monotonicOffsetMs, authorizationPin });
+    setAutomationActionStatus(result.ok ? "Marker added." : result.error ?? "Marker could not be added.");
+    await refreshProjectRuntimeState(activeProjectId);
+  }
+
+  async function runRecordingPipelineStep(endpoint: string, payload: JsonObject, success: string) {
+    if (!activeProjectId) return;
+    const authorizationPin = window.prompt("Enter PIN for this pipeline action") ?? "";
+    if (authorizationPin.length < 4) {
+      setAutomationActionStatus("PIN is required for this pipeline action.");
+      return;
+    }
+    setAutomationActionStatus(`${success}...`);
+    const result = await api.post(endpoint, { projectId: activeProjectId, authorizationPin, ...payload });
+    setAutomationActionStatus(result.ok ? success : result.error ?? "Pipeline action failed.");
+    await refreshProjectRuntimeState(activeProjectId);
+  }
+
   function closeProject() {
     setActiveProjectId(null);
     setLoadedProjectHierarchyId(null);
@@ -895,6 +1011,8 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     setProjectRecordings([]);
     setProjectTimelines([]);
     setRuntimeSessions([]);
+    setPipelineArtifacts({ normalizationReviews: [], miningRuns: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
+    setRecordingDomains([]);
     setAutomationActionStatus("");
     setWorkspacePrefs(defaultAutomationWorkspacePrefs());
     setPageFullscreenWindowId(null);
@@ -913,7 +1031,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
         const bounds = canvasForArea(area)?.getBoundingClientRect();
         const geometry = area === "main"
           ? placeAutomationWindow(current.windows.filter((item) => (item.area ?? "main") === area), bounds)
-          : fullAutomationWindowGeometry(bounds);
+          : fullAutomationWindowGeometry();
         return {
           ...current,
           activeWindowId: id,
@@ -921,8 +1039,9 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
           windows: [...current.windows, { id, activeViewId: viewId, tabs: [viewId], area, ...geometry, zIndex: nextAutomationZIndex(current.windows) }]
         };
       }
+      const existingViewWindow = current.windows.find((item) => (item.area ?? "main") === area && item.tabs.includes(viewId));
       const activeWindowInArea = current.windows.find((item) => item.id === current.activeWindowId && (item.area ?? "main") === area);
-      const targetWindow = activeWindowInArea ?? current.windows.find((item) => (item.area ?? "main") === area);
+      const targetWindow = existingViewWindow ?? activeWindowInArea ?? current.windows.find((item) => (item.area ?? "main") === area);
       if (!targetWindow) {
         const id = `window-${viewId}-${Date.now()}`;
         const bounds = canvasForArea(area)?.getBoundingClientRect();
@@ -999,16 +1118,17 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
       windows: current.windows.map((item) => item.id === windowItem.id ? { ...item, zIndex: nextAutomationZIndex(current.windows) } : item)
     }));
   }
-  function setWindowGeometry(windowId: string, geometry: Partial<Pick<AutomationWorkspaceWindow, "x" | "y" | "widthPx" | "heightPx">>) {
+  function setWindowGeometry(windowId: string, geometry: Partial<AutomationWindowPixelGeometry>) {
     updateWorkspacePrefs((current) => ({
       ...current,
       windows: current.windows.map((item) => {
         if (item.id !== windowId) return item;
         const bounds = canvasForArea(item.area ?? "main")?.getBoundingClientRect();
-        return clampAutomationWindowGeometry({
-          ...item,
-          ...geometry
-        }, Math.max(1, Math.floor(bounds?.width ?? 1120)), Math.max(1, Math.floor(bounds?.height ?? 680)));
+        const canvasWidth = Math.max(1, Math.floor(bounds?.width ?? 1120));
+        const canvasHeight = Math.max(1, Math.floor(bounds?.height ?? 680));
+        const currentPixels = automationWindowToPixels(item, canvasWidth, canvasHeight);
+        const nextPixels = clampAutomationWindowPixelGeometry({ ...currentPixels, ...geometry }, canvasWidth, canvasHeight);
+        return { ...item, ...automationPixelsToRelativeGeometry(nextPixels, canvasWidth, canvasHeight) };
       })
     }));
   }
@@ -1017,14 +1137,18 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     event.stopPropagation();
     const startX = event.clientX;
     const startY = event.clientY;
-    const startLeft = windowItem.x;
-    const startTop = windowItem.y;
-    const startWidth = windowItem.widthPx;
-    const startHeight = windowItem.heightPx;
     const bounds = canvasForArea(windowItem.area ?? "main")?.getBoundingClientRect();
     const canvasWidth = Math.max(1, Math.floor(bounds?.width ?? 1120));
     const canvasHeight = Math.max(1, Math.floor(bounds?.height ?? 680));
-    const sharedPartners = findAutomationSharedResizePartners(windowItem, edge, workspacePrefs.windows.filter((item) => (item.area ?? "main") === (windowItem.area ?? "main")));
+    const startWindow = automationWindowToPixels(windowItem, canvasWidth, canvasHeight);
+    const startLeft = startWindow.x;
+    const startTop = startWindow.y;
+    const startWidth = startWindow.widthPx;
+    const startHeight = startWindow.heightPx;
+    const windowsInArea = workspacePrefs.windows
+      .filter((item) => (item.area ?? "main") === (windowItem.area ?? "main"))
+      .map((item) => automationWindowToPixels(item, canvasWidth, canvasHeight));
+    const sharedPartners = findAutomationSharedResizePartners(startWindow, edge, windowsInArea);
     const onMove = (moveEvent: PointerEvent) => {
       const west = edge.includes("west");
       const east = edge.includes("east");
@@ -1034,7 +1158,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
         moveEvent.clientX - startX,
         "x",
         edge,
-        windowItem,
+        startWindow,
         sharedPartners,
         canvasWidth
       );
@@ -1042,7 +1166,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
         moveEvent.clientY - startY,
         "y",
         edge,
-        windowItem,
+        startWindow,
         sharedPartners,
         canvasHeight
       );
@@ -1050,7 +1174,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
       const nextY = north ? startTop + deltaY : startTop;
       const nextWidth = west ? startWidth - deltaX : east ? startWidth + deltaX : startWidth;
       const nextHeight = north ? startHeight - deltaY : south ? startHeight + deltaY : startHeight;
-      const partnerGeometry = new Map<string, Partial<Pick<AutomationWorkspaceWindow, "x" | "y" | "widthPx" | "heightPx">>>();
+      const partnerGeometry = new Map<string, Partial<AutomationWindowPixelGeometry>>();
       for (const partner of sharedPartners) {
         const geometry = partnerGeometry.get(partner.id) ?? {};
         if (partner.side === "west") {
@@ -1069,16 +1193,19 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
         ...current,
         windows: current.windows.map((item) => {
           if (item.id === windowItem.id) {
-            return clampAutomationWindowGeometry({
-              ...item,
+            const geometry = clampAutomationWindowPixelGeometry({
               x: nextX,
               y: nextY,
               widthPx: nextWidth,
               heightPx: nextHeight
             }, canvasWidth, canvasHeight, 240, 210);
+            return { ...item, ...automationPixelsToRelativeGeometry(geometry, canvasWidth, canvasHeight) };
           }
           const geometry = partnerGeometry.get(item.id);
-          return geometry ? clampAutomationWindowGeometry({ ...item, ...geometry }, canvasWidth, canvasHeight, 240, 210) : item;
+          if (!geometry) return item;
+          const start = windowsInArea.find((window) => window.id === item.id) ?? automationWindowToPixels(item, canvasWidth, canvasHeight);
+          const nextGeometry = clampAutomationWindowPixelGeometry({ ...start, ...geometry }, canvasWidth, canvasHeight, 240, 210);
+          return { ...item, ...automationPixelsToRelativeGeometry(nextGeometry, canvasWidth, canvasHeight) };
         })
       }));
     };
@@ -1105,10 +1232,11 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     const bounds = canvas?.getBoundingClientRect();
     const canvasWidth = Math.max(1, Math.floor(bounds?.width ?? 1120));
     const canvasHeight = Math.max(1, Math.floor(bounds?.height ?? 680));
-    const restored = automationWindowFillsCanvas(windowItem, canvasWidth, canvasHeight)
-      ? restoreAutomationWindowFromFullscreen(windowItem, startX - (bounds?.left ?? 0), startY - (bounds?.top ?? 0), canvasWidth, canvasHeight)
-      : windowItem;
-    if (restored !== windowItem) setWindowGeometry(windowItem.id, {
+    const startWindow = automationWindowToPixels(windowItem, canvasWidth, canvasHeight);
+    const restored = automationWindowFillsCanvas(startWindow, canvasWidth, canvasHeight)
+      ? restoreAutomationWindowFromFullscreen(startWindow, startX - (bounds?.left ?? 0), startY - (bounds?.top ?? 0), canvasWidth, canvasHeight)
+      : startWindow;
+    if (restored !== startWindow) setWindowGeometry(windowItem.id, {
       x: restored.x,
       y: restored.y,
       widthPx: restored.widthPx,
@@ -1137,17 +1265,19 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
       maximizedWindowId: current.maximizedWindowId === windowId ? null : current.maximizedWindowId,
       windows: current.windows.map((item) => {
         if (item.id !== windowId) return item;
-        const bounds = canvasForArea(item.area ?? "main")?.getBoundingClientRect();
-        const width = Math.max(1, Math.floor(bounds?.width ?? 1120));
-        const height = Math.max(1, Math.floor(bounds?.height ?? 680));
-        return clampAutomationWindowGeometry({
+      const bounds = canvasForArea(item.area ?? "main")?.getBoundingClientRect();
+      const width = Math.max(1, Math.floor(bounds?.width ?? 1120));
+      const height = Math.max(1, Math.floor(bounds?.height ?? 680));
+        return {
           ...item,
-          x: 0,
-          y: 0,
-          widthPx: width,
-          heightPx: height,
+          ...automationPixelsToRelativeGeometry({
+            x: 0,
+            y: 0,
+            widthPx: width,
+            heightPx: height
+          }, width, height),
           zIndex: nextAutomationZIndex(current.windows)
-        }, width, height);
+        };
       })
     }));
   }
@@ -1197,12 +1327,12 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
       const category = action.category ?? parent?.category ?? "task";
       setHierarchyCreateStep("type");
       setHierarchyCategory(category);
-      setHierarchyKind(category === "routine" ? "routine" : "task");
+      setHierarchyKind(category === "routine" ? "routine" : category === "task" ? "task" : "folder");
       setHierarchyName("");
       setHierarchyParentId(action.parentId ?? null);
     }
     if (action.action === "delete" && action.node) {
-      if (action.node.kind !== "config") setHierarchyKind(action.node.kind);
+      if (action.node.kind !== "config" && action.node.kind !== "recording") setHierarchyKind(action.node.kind);
       setHierarchyCategory(action.node.category);
       setHierarchyName(action.node.label);
       setHierarchyParentId(action.node.parentId);
@@ -1210,7 +1340,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     setHierarchyPin("");
     setHierarchyStatus("");
   }
-  function confirmHierarchyAction() {
+  async function confirmHierarchyAction() {
     if (hierarchyPin.length < 4) {
       setHierarchyStatus("Enter your PIN before changing hierarchy items.");
       return;
@@ -1234,6 +1364,21 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     }
     if (hierarchyAction.action === "delete" && hierarchyAction.node) {
       const ids = collectHierarchyDescendantIds(hierarchyAction.node.id, hierarchyNodes);
+      const deletingNodes = [hierarchyAction.node, ...ids.map((id) => hierarchyNodes.find((node) => node.id === id)).filter((node): node is AutomationHierarchyNode => Boolean(node))];
+      const recordingIds = deletingNodes
+        .filter((node) => node.kind === "recording" && node.sourceId)
+        .map((node) => node.sourceId!);
+      if (hierarchyAction.node.category === "recording" && recordingIds.length) {
+        setHierarchyStatus(`Deleting ${recordingIds.length} recording${recordingIds.length === 1 ? "" : "s"}...`);
+        const deleted = await deleteProjectRecordings(recordingIds, hierarchyPin);
+        if (!deleted) return;
+        setDeletedHierarchyIds((items) => items.filter((id) => !id.startsWith("recordings-client-") && !recordingIds.includes(id)));
+        setCustomHierarchyNodes((items) => items.filter((item) => item.id !== hierarchyAction.node!.id && !ids.includes(item.id)));
+        setHierarchyAction(null);
+        setHierarchyPin("");
+        setHierarchyName("");
+        return;
+      }
       setDeletedHierarchyIds((items) => [...new Set([...items, hierarchyAction.node!.id, ...ids])]);
       setCustomHierarchyNodes((items) => items.filter((item) => item.id !== hierarchyAction.node!.id && !ids.includes(item.id)));
       setHierarchyStatus(`${hierarchyAction.node.label} deleted.`);
@@ -1273,10 +1418,10 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
               if (!view) return null;
               const isPageFullscreenWindow = pageFullscreenWindowId === windowItem.id && (windowItem.area ?? "main") === "main";
               const bounds = canvasForArea(area)?.getBoundingClientRect();
-              const renderedWindow = clampAutomationWindowGeometry(
+              const renderedWindow = automationWindowToPixels(
                 windowItem,
-                Math.max(1, Math.floor(bounds?.width ?? windowItem.widthPx)),
-                Math.max(1, Math.floor(bounds?.height ?? windowItem.heightPx)),
+                Math.max(1, Math.floor(bounds?.width ?? 1120)),
+                Math.max(1, Math.floor(bounds?.height ?? 680)),
                 1,
                 1
               );
@@ -1312,10 +1457,12 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
                       notes={selectedRecording?.notes ?? []}
                       actionStatus={automationActionStatus}
                       policies={policies}
+                      pipelineArtifacts={pipelineArtifacts}
                       policy={selectedPolicy}
                       problems={problems}
                       projectId={activeProjectId}
                       recordings={recordings}
+                      recordingDomains={recordingDomains}
                       runtimeSessions={runtimeSessions}
                       dockTab={dockTab}
                       selectedEntry={selectedEntry}
@@ -1328,9 +1475,14 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
                       timelines={timelines}
                       view={view}
                       onCreateRecording={createProjectRecording}
+                      onDeleteRecording={deleteProjectRecording}
                       onFinalizeRecording={finalizeProjectRecording}
+                      onAppendRecordingMarker={appendProjectRecordingMarker}
+                      onAppendRecordingNote={appendProjectRecordingNote}
                       onNormalizeRecording={normalizeProjectRecording}
+                      onPipelineAction={runRecordingPipelineStep}
                       onRefreshRecordings={() => refreshProjectRuntimeState(activeProjectId)}
+                      onUpdateRecording={updateProjectRecording}
                       setDockTab={setDockTab}
                       setSelection={setSelectionAndFollow}
                     />
@@ -1478,6 +1630,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
             <option value="task">Tasks</option>
             <option value="routine">Routines</option>
             <option value="config">Configs</option>
+            <option value="recording">Recordings</option>
           </select>
         </div> : null}
         {!sidebarCollapsed ? <AutomationProjectTree
@@ -1821,10 +1974,12 @@ function AutomationViewRenderer(props: {
   models: any[];
   notes: any[];
   policies: any[];
+  pipelineArtifacts: any;
   policy: any;
   problems: any[];
   projectId: string | null;
   recordings: any[];
+  recordingDomains: any[];
   runtimeSessions: any[];
   dockTab: AutomationDockTab;
   selectedEntry: any;
@@ -1837,16 +1992,21 @@ function AutomationViewRenderer(props: {
   timelines: any[];
   view: AutomationViewInstance;
   onCreateRecording(): Promise<void>;
+  onDeleteRecording(recordingId: string): Promise<void>;
   onFinalizeRecording(recordingId: string): Promise<void>;
+  onAppendRecordingMarker(recordingId: string, linkedEntryId?: string, monotonicOffsetMs?: number): Promise<void>;
+  onAppendRecordingNote(recordingId: string, linkedEntryId?: string): Promise<void>;
   onNormalizeRecording(recordingId: string): Promise<void>;
+  onPipelineAction(endpoint: string, payload: JsonObject, success: string): Promise<void>;
   onRefreshRecordings(): Promise<void>;
+  onUpdateRecording(recordingId: string, changes: JsonObject): Promise<void>;
   setDockTab(tab: AutomationDockTab): void;
   setSelection(selection: AutomationSelection): void;
 }) {
   if (props.view.type === "design") return <AutomationPolicyCanvas entries={props.entries} policy={props.policy} recordings={props.recordings} selectedNode={props.selectedNode} selectedTimeline={props.selectedTimeline} signals={props.signals} setSelection={props.setSelection} />;
-  if (props.view.type === "recordings") return <AutomationTimelineView actionStatus={props.actionStatus} entries={props.entries} notes={props.notes} recordings={props.recordings} selectedEntry={props.selectedEntry} selectedRecording={props.selectedRecording} selectedTimeline={props.selectedTimeline} timelines={props.timelines} onCreateRecording={props.onCreateRecording} onFinalizeRecording={props.onFinalizeRecording} onNormalizeRecording={props.onNormalizeRecording} onRefreshRecordings={props.onRefreshRecordings} setSelection={props.setSelection} />;
-  if (props.view.type === "signals") return <AutomationSignalWorkspace signals={props.signals} setSelection={props.setSelection} />;
-  if (props.view.type === "runtime") return <AutomationRuntimeWorkspace timelines={props.selectedTimeline ? [props.selectedTimeline] : []} models={props.models} policies={props.policies} runtimeSessions={props.runtimeSessions} />;
+  if (props.view.type === "recordings") return <AutomationTimelineView actionStatus={props.actionStatus} entries={props.entries} notes={props.notes} pipelineArtifacts={props.pipelineArtifacts} recordings={props.recordings} selectedEntry={props.selectedEntry} selectedRecording={props.selectedRecording} selectedTimeline={props.selectedTimeline} timelines={props.timelines} onAppendRecordingMarker={props.onAppendRecordingMarker} onAppendRecordingNote={props.onAppendRecordingNote} onCreateRecording={props.onCreateRecording} onDeleteRecording={props.onDeleteRecording} onFinalizeRecording={props.onFinalizeRecording} onNormalizeRecording={props.onNormalizeRecording} onPipelineAction={props.onPipelineAction} onRefreshRecordings={props.onRefreshRecordings} onUpdateRecording={props.onUpdateRecording} setSelection={props.setSelection} />;
+  if (props.view.type === "signals") return <AutomationSignalWorkspace domains={props.recordingDomains} signals={props.signals} setSelection={props.setSelection} />;
+  if (props.view.type === "runtime") return <AutomationRuntimeWorkspace pipelineArtifacts={props.pipelineArtifacts} timelines={props.selectedTimeline ? [props.selectedTimeline] : []} models={props.models} policies={props.policies} runtimeSessions={props.runtimeSessions} />;
   if (props.view.type === "clients") return <AutomationClientGatewayView projectId={props.projectId} />;
   if (props.view.type === "problems") return <AutomationProblemsWorkspace problems={props.problems} />;
   if (props.view.type === "assistant") return <AutomationAssistantView node={props.selectedNode} recording={props.selectedRecording} signals={props.signals} />;
@@ -1891,8 +2051,8 @@ function PreferenceSlider(props: { label: string; min: number; max: number; unit
 
 function defaultAutomationWorkspaceWindows(): AutomationWorkspaceWindow[] {
   return [
-    { id: "window-policy", activeViewId: "policy-primary", tabs: ["policy-primary"], area: "main", x: 0, y: 0, widthPx: 1040, heightPx: 640, zIndex: 1 },
-    { id: "window-inspector", activeViewId: "global-inspector", tabs: ["global-inspector"], area: "right", x: 0, y: 0, widthPx: 320, heightPx: 520, zIndex: 2 }
+    { id: "window-policy", activeViewId: "policy-primary", tabs: ["policy-primary"], area: "main", xPct: 0, yPct: 0, widthPct: 100, heightPct: 100, zIndex: 1 },
+    { id: "window-inspector", activeViewId: "global-inspector", tabs: ["global-inspector"], area: "right", xPct: 0, yPct: 0, widthPct: 100, heightPct: 100, zIndex: 2 }
   ];
 }
 
@@ -1917,17 +2077,31 @@ function normalizeAutomationWorkspacePrefs(value: AutomationWorkspacePrefs): Aut
     .map((item, index) => {
       const tabs = item.tabs.map((tab) => tab === "node-detail" ? "global-inspector" : tab).filter((tab, tabIndex, allTabs) => allTabs.indexOf(tab) === tabIndex);
       const activeViewId = item.activeViewId === "node-detail" ? "global-inspector" : item.activeViewId;
-      const legacyArea = String((item as AutomationWorkspaceWindow & { area?: string }).area ?? "main");
+      const legacyWindow = item as AutomationWorkspaceWindow & { area?: string; x?: number; y?: number; widthPx?: number; heightPx?: number; widthWeight?: number };
+      const legacyArea = String(legacyWindow.area ?? "main");
       const area: AutomationWorkspaceArea = legacyArea === "right" ? "right" : "main";
+      const fallbackWidth = area === "right" ? 320 : 1040;
+      const fallbackHeight = area === "right" ? 520 : 640;
+      const fallbackCanvasWidth = area === "right" ? 420 : 1120;
+      const fallbackCanvasHeight = area === "right" ? 680 : 680;
+      const legacyWidth = legacyWindow.widthPx ?? (legacyWindow.widthWeight ? Number(legacyWindow.widthWeight) * 8 : legacyColumnWidths?.[index]);
+      const migratedGeometry = legacyWidth || legacyWindow.heightPx || legacyWindow.x || legacyWindow.y
+        ? automationPixelsToRelativeGeometry({
+          x: area === "main" && legacyArea === "bottom" ? 24 + index * 28 : clampNumber(legacyWindow.x, 0, 6000, 10 + index * 32),
+          y: area === "main" && legacyArea === "bottom" ? 360 + index * 28 : clampNumber(legacyWindow.y, 0, 6000, 10 + index * 32),
+          widthPx: clampNumber(legacyWidth, 240, 1800, fallbackWidth),
+          heightPx: clampNumber(legacyWindow.heightPx, 210, 1400, fallbackHeight)
+        }, fallbackCanvasWidth, fallbackCanvasHeight)
+        : null;
       return {
         ...item,
         activeViewId,
         tabs: tabs.length ? tabs : [activeViewId],
         area,
-        x: area === "main" && legacyArea === "bottom" ? 24 + index * 28 : clampNumber(item.x, 0, 6000, 10 + index * 32),
-        y: area === "main" && legacyArea === "bottom" ? 360 + index * 28 : clampNumber(item.y, 0, 6000, 10 + index * 32),
-        widthPx: clampNumber(item.widthPx ?? ((item as AutomationWorkspaceWindow & { widthWeight?: number }).widthWeight ? Number((item as AutomationWorkspaceWindow & { widthWeight?: number }).widthWeight) * 8 : legacyColumnWidths?.[index]), 360, 1800, area === "right" ? 320 : 1040),
-        heightPx: clampNumber(item.heightPx, area === "right" ? 260 : 320, 1400, area === "right" ? 520 : 640),
+        xPct: clampNumber(item.xPct ?? migratedGeometry?.xPct, 0, 100, 0),
+        yPct: clampNumber(item.yPct ?? migratedGeometry?.yPct, 0, 100, 0),
+        widthPct: clampNumber(item.widthPct ?? migratedGeometry?.widthPct, 1, 100, 100),
+        heightPct: clampNumber(item.heightPct ?? migratedGeometry?.heightPct, 1, 100, 100),
         zIndex: clampNumber(item.zIndex, 1, 9999, index + 1)
       };
     });
@@ -1960,10 +2134,10 @@ function nextAutomationZIndex(windows: AutomationWorkspaceWindow[]): number {
 }
 
 function automationWindowGeometrySignature(windows: AutomationWorkspaceWindow[]): string {
-  return windows.map((item) => `${item.id}:${item.area}:${item.x},${item.y},${item.widthPx},${item.heightPx}`).join("|");
+  return windows.map((item) => `${item.id}:${item.area}:${item.xPct},${item.yPct},${item.widthPct},${item.heightPct}`).join("|");
 }
 
-function automationWindowFillsCanvas(windowItem: AutomationWorkspaceWindow, canvasWidth: number, canvasHeight: number): boolean {
+function automationWindowFillsCanvas(windowItem: AutomationWindowPixelGeometry, canvasWidth: number, canvasHeight: number): boolean {
   return windowItem.x <= 2
     && windowItem.y <= 2
     && Math.abs(windowItem.widthPx - canvasWidth) <= 3
@@ -1971,38 +2145,73 @@ function automationWindowFillsCanvas(windowItem: AutomationWorkspaceWindow, canv
 }
 
 function restoreAutomationWindowFromFullscreen(
-  windowItem: AutomationWorkspaceWindow,
+  windowItem: AutomationWorkspaceWindowPixels,
   pointerX: number,
   pointerY: number,
   canvasWidth: number,
   canvasHeight: number
-): AutomationWorkspaceWindow {
+): AutomationWindowPixelGeometry {
   const widthPx = Math.min(Math.max(360, Math.round(canvasWidth * 0.62)), Math.min(860, canvasWidth));
   const heightPx = Math.min(Math.max(260, Math.round(canvasHeight * 0.62)), Math.min(560, canvasHeight));
   const ratioX = clampNumber(pointerX / Math.max(1, canvasWidth), 0.15, 0.85, 0.5);
   const x = pointerX - widthPx * ratioX;
   const y = Math.max(0, pointerY - 24);
-  return clampAutomationWindowGeometry({ ...windowItem, x, y, widthPx, heightPx }, canvasWidth, canvasHeight, 240, 210);
+  return clampAutomationWindowPixelGeometry({ x, y, widthPx, heightPx }, canvasWidth, canvasHeight, 240, 210);
 }
 
-function clampAutomationWindowGeometry(
-  windowItem: AutomationWorkspaceWindow,
+function clampAutomationWindowPixelGeometry(
+  windowItem: AutomationWindowPixelGeometry,
   maxWidth: number,
   maxHeight: number,
   minWidth = 360,
   minHeight = 320
-): AutomationWorkspaceWindow {
+): AutomationWindowPixelGeometry {
   const effectiveMinWidth = Math.min(minWidth, maxWidth);
   const effectiveMinHeight = Math.min(minHeight, maxHeight);
   const widthPx = clampNumber(windowItem.widthPx, effectiveMinWidth, maxWidth, Math.min(1040, maxWidth));
   const heightPx = clampNumber(windowItem.heightPx, effectiveMinHeight, maxHeight, Math.min(640, maxHeight));
   return {
-    ...windowItem,
     widthPx,
     heightPx,
     x: clampNumber(windowItem.x, 0, Math.max(0, maxWidth - widthPx), 0),
     y: clampNumber(windowItem.y, 0, Math.max(0, maxHeight - heightPx), 0)
   };
+}
+
+function automationWindowToPixels(
+  windowItem: AutomationWorkspaceWindow,
+  canvasWidth: number,
+  canvasHeight: number,
+  minWidth = 240,
+  minHeight = 210
+): AutomationWorkspaceWindowPixels {
+  const geometry = clampAutomationWindowPixelGeometry({
+    x: (clampNumber(windowItem.xPct, 0, 100, 0) / 100) * canvasWidth,
+    y: (clampNumber(windowItem.yPct, 0, 100, 0) / 100) * canvasHeight,
+    widthPx: (clampNumber(windowItem.widthPct, 1, 100, 100) / 100) * canvasWidth,
+    heightPx: (clampNumber(windowItem.heightPct, 1, 100, 100) / 100) * canvasHeight
+  }, canvasWidth, canvasHeight, minWidth, minHeight);
+  return { ...windowItem, ...geometry };
+}
+
+function automationPixelsToRelativeGeometry(
+  geometry: AutomationWindowPixelGeometry,
+  canvasWidth: number,
+  canvasHeight: number
+): AutomationWindowRelativeGeometry {
+  const width = Math.max(1, canvasWidth);
+  const height = Math.max(1, canvasHeight);
+  const clamped = clampAutomationWindowPixelGeometry(geometry, width, height, 1, 1);
+  return {
+    xPct: roundAutomationPercent((clamped.x / width) * 100),
+    yPct: roundAutomationPercent((clamped.y / height) * 100),
+    widthPct: roundAutomationPercent((clamped.widthPx / width) * 100),
+    heightPct: roundAutomationPercent((clamped.heightPx / height) * 100)
+  };
+}
+
+function roundAutomationPercent(value: number): number {
+  return Math.round(value * 1000) / 1000;
 }
 
 function layoutAutomationWindowsInPreset(
@@ -2027,21 +2236,24 @@ function layoutAutomationWindowsInPreset(
     const splitCount = Math.max(1, bucket.length);
     const cellWidth = Math.max(240, Math.round(cell.w * canvasWidth));
     const cellHeight = Math.max(210, Math.floor((cell.h * canvasHeight) / splitCount));
-    return clampAutomationWindowGeometry({
-      ...windowItem,
+    const geometry = automationPixelsToRelativeGeometry(clampAutomationWindowPixelGeometry({
       x: Math.round(cell.x * canvasWidth),
       y: Math.round(cell.y * canvasHeight) + bucketIndex * cellHeight,
       widthPx: cellWidth,
-      heightPx: cellHeight,
+      heightPx: cellHeight
+    }, canvasWidth, canvasHeight, Math.min(360, cellWidth), Math.min(320, cellHeight)), canvasWidth, canvasHeight);
+    return {
+      ...windowItem,
+      ...geometry,
       zIndex: index + 1
-    }, canvasWidth, canvasHeight, Math.min(360, cellWidth), Math.min(320, cellHeight));
+    };
   });
 }
 
 function findAutomationSharedResizePartners(
-  windowItem: AutomationWorkspaceWindow,
+  windowItem: AutomationWorkspaceWindowPixels,
   edge: AutomationWindowResizeEdge,
-  windows: AutomationWorkspaceWindow[]
+  windows: AutomationWorkspaceWindowPixels[]
 ): AutomationSharedResizePartner[] {
   const threshold = 14;
   const partners = new Map<string, AutomationSharedResizePartner>();
@@ -2073,7 +2285,7 @@ function constrainAutomationResizeDelta(
   value: number,
   axis: "x" | "y",
   edge: AutomationWindowResizeEdge,
-  windowItem: AutomationWorkspaceWindow,
+  windowItem: AutomationWindowPixelGeometry,
   partners: AutomationSharedResizePartner[],
   canvasSize: number
 ): number {
@@ -2114,35 +2326,34 @@ function automationRangesOverlap(startA: number, endA: number, startB: number, e
   return Math.min(endA, endB) - Math.max(startA, startB) > 24;
 }
 
-function fullAutomationWindowGeometry(bounds: DOMRect | undefined): Pick<AutomationWorkspaceWindow, "x" | "y" | "widthPx" | "heightPx"> {
-  return {
-    x: 0,
-    y: 0,
-    widthPx: Math.max(1, Math.floor(bounds?.width ?? 420)),
-    heightPx: Math.max(1, Math.floor(bounds?.height ?? 320))
-  };
+function fullAutomationWindowGeometry(): AutomationWindowRelativeGeometry {
+  return { xPct: 0, yPct: 0, widthPct: 100, heightPct: 100 };
 }
 
-function placeAutomationWindow(windows: AutomationWorkspaceWindow[], bounds: DOMRect | undefined): Pick<AutomationWorkspaceWindow, "x" | "y" | "widthPx" | "heightPx"> {
+function placeAutomationWindow(windows: AutomationWorkspaceWindow[], bounds: DOMRect | undefined): AutomationWindowRelativeGeometry {
   const canvasWidth = Math.max(1, Math.floor(bounds?.width ?? 1120));
   const canvasHeight = Math.max(1, Math.floor(bounds?.height ?? 680));
   const gap = 8;
-  const active = windows.reduce<AutomationWorkspaceWindow | null>((latest, item) => !latest || item.zIndex > latest.zIndex ? item : latest, null);
+  const pixelWindows = windows.map((item) => automationWindowToPixels(item, canvasWidth, canvasHeight));
+  const active = pixelWindows.reduce<AutomationWorkspaceWindowPixels | null>((latest, item) => !latest || item.zIndex > latest.zIndex ? item : latest, null);
   if (active) {
     const rightX = active.x + active.widthPx + gap;
     const rightSpace = canvasWidth - rightX;
-    if (rightSpace >= 420) return { x: rightX, y: active.y, widthPx: rightSpace, heightPx: Math.min(active.heightPx, canvasHeight - active.y) };
+    if (rightSpace >= 420) return automationPixelsToRelativeGeometry({ x: rightX, y: active.y, widthPx: rightSpace, heightPx: Math.min(active.heightPx, canvasHeight - active.y) }, canvasWidth, canvasHeight);
     const belowY = active.y + active.heightPx + gap;
     const belowSpace = canvasHeight - belowY;
-    if (belowSpace >= 340) return { x: active.x, y: belowY, widthPx: Math.min(active.widthPx, canvasWidth - active.x), heightPx: belowSpace };
+    if (belowSpace >= 340) return automationPixelsToRelativeGeometry({ x: active.x, y: belowY, widthPx: Math.min(active.widthPx, canvasWidth - active.x), heightPx: belowSpace }, canvasWidth, canvasHeight);
   }
   const offset = windows.length * 34;
-  const placed = { id: "", activeViewId: "", tabs: [""], area: "main" as const, x: offset, y: offset, widthPx: Math.min(1040, canvasWidth), heightPx: Math.min(640, canvasHeight), zIndex: 1 };
-  const clamped = clampAutomationWindowGeometry(placed, canvasWidth, canvasHeight);
-  return { x: clamped.x, y: clamped.y, widthPx: clamped.widthPx, heightPx: clamped.heightPx };
+  return automationPixelsToRelativeGeometry(clampAutomationWindowPixelGeometry({
+    x: offset,
+    y: offset,
+    widthPx: Math.min(1040, canvasWidth),
+    heightPx: Math.min(640, canvasHeight)
+  }, canvasWidth, canvasHeight), canvasWidth, canvasHeight);
 }
 
-function automationSnapGeometry(canvasElement: HTMLDivElement | null, clientX: number, clientY: number): Pick<AutomationWorkspaceWindow, "x" | "y" | "widthPx" | "heightPx"> | null {
+function automationSnapGeometry(canvasElement: HTMLDivElement | null, clientX: number, clientY: number): AutomationWindowPixelGeometry | null {
   if (!canvasElement) return null;
   const bounds = canvasElement.getBoundingClientRect();
   const threshold = 64;
@@ -2170,7 +2381,7 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 function AutomationProjectTree(props: {
   nodes: AutomationHierarchyNode[];
   search: string;
-  typeFilter: "all" | "folder" | "task" | "routine" | "config";
+  typeFilter: "all" | AutomationHierarchyKind;
   selection: AutomationSelection | null;
   setSelection(selection: AutomationSelection): void;
   openView(viewId: string, mode?: "preview" | "new-window"): void;
@@ -2183,14 +2394,22 @@ function AutomationProjectTree(props: {
   useEffect(() => () => {
     if (singleClickTimer.current !== null) window.clearTimeout(singleClickTimer.current);
   }, []);
-  const openFromTree = (node: AutomationHierarchyNode, mode: "preview" | "new-window") => {
+  const cancelPendingOpen = () => {
     if (singleClickTimer.current !== null) {
       window.clearTimeout(singleClickTimer.current);
       singleClickTimer.current = null;
     }
+  };
+  const requestTreeAction = (action: NonNullable<AutomationHierarchyAction>) => {
+    cancelPendingOpen();
+    props.requestAction(action);
+  };
+  const openFromTree = (node: AutomationHierarchyNode, mode: "preview" | "new-window") => {
+    cancelPendingOpen();
     if (node.kind === "folder") return;
     const open = () => {
       if (node.kind === "task" && node.sourceId) props.setSelection({ kind: "policy", id: node.sourceId });
+      if (node.kind === "recording" && node.sourceId) props.setSelection({ kind: "recording", id: node.sourceId });
       props.openView(node.viewId ?? (node.kind === "task" ? "policy-primary" : node.kind === "routine" ? "routine-editor" : "config-default"), mode);
     };
     if (mode === "preview") {
@@ -2218,10 +2437,10 @@ function AutomationProjectTree(props: {
                 {collapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
                 <span><strong>{category.label}</strong><small>{category.description}</small></span>
               </button>
-              <button className="tree-row-action" onClick={() => props.requestAction({ action: "create", category: category.id, parentId: null })} title={`Add inside ${category.label}`} aria-label={`Add inside ${category.label}`} type="button"><Plus size={13} aria-hidden /></button>
+              <button className="tree-row-action" onClick={(event) => { event.preventDefault(); event.stopPropagation(); requestTreeAction({ action: "create", category: category.id, parentId: null }); }} onPointerDown={(event) => event.stopPropagation()} title={`Add inside ${category.label}`} aria-label={`Add inside ${category.label}`} type="button"><Plus size={13} aria-hidden /></button>
             </div>
             {!collapsed ? <div className="automation-tree-children root-children">
-              <AutomationHierarchyChildren nodes={sortAutomationHierarchyNodes(rootNodes)} allNodes={props.nodes} visibleIds={visibleIds} collapsedFolderIds={collapsedFolderIds} selection={props.selection} openNode={openFromTree} requestAction={props.requestAction} toggleFolder={toggleFolder} />
+              <AutomationHierarchyChildren nodes={sortAutomationHierarchyNodes(rootNodes)} allNodes={props.nodes} visibleIds={visibleIds} collapsedFolderIds={collapsedFolderIds} selection={props.selection} openNode={openFromTree} requestAction={requestTreeAction} toggleFolder={toggleFolder} />
               {!rootNodes.length ? <div className="automation-tree-empty">No {category.label.toLowerCase()} match the current filter.</div> : null}
             </div> : null}
           </section>
@@ -2242,10 +2461,10 @@ function AutomationHierarchyTreeNode(props: {
   toggleFolder(folderId: string): void;
 }) {
   const children = props.nodes.filter((node) => node.parentId === props.node.id && props.visibleIds.has(node.id));
-  const selected = props.node.sourceId && props.selection?.kind === "policy" && props.selection.id === props.node.sourceId;
+  const selected = props.node.sourceId && ((props.selection?.kind === "policy" && props.selection.id === props.node.sourceId) || (props.selection?.kind === "recording" && props.selection.id === props.node.sourceId));
   const isFolder = props.node.kind === "folder";
   const collapsed = props.collapsedFolderIds.includes(props.node.id);
-  const Icon = props.node.kind === "folder" ? FolderOpen : props.node.kind === "routine" ? Workflow : props.node.kind === "config" ? SlidersHorizontal : GitBranch;
+  const Icon = props.node.kind === "folder" ? FolderOpen : props.node.kind === "routine" ? Workflow : props.node.kind === "config" ? SlidersHorizontal : props.node.kind === "recording" ? Radio : GitBranch;
   return (
     <div className="automation-tree-branch">
       <div className="automation-tree-item">
@@ -2253,8 +2472,30 @@ function AutomationHierarchyTreeNode(props: {
           {isFolder ? (collapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />) : <Icon size={14} aria-hidden />}
           <span><strong>{props.node.label}</strong><small>{props.node.kind}</small></span>
         </button>
-        {props.node.kind === "folder" ? <button className="tree-row-action" onClick={() => props.requestAction({ action: "create", parentId: props.node.id })} title={`Add inside ${props.node.label}`} aria-label={`Add inside ${props.node.label}`} type="button"><Plus size={13} aria-hidden /></button> : null}
-        <button className="tree-row-action danger" onClick={() => props.requestAction({ action: "delete", node: props.node })} title={`Delete ${props.node.label}`} aria-label={`Delete ${props.node.label}`} type="button"><Trash2 size={13} aria-hidden /></button>
+        {props.node.kind === "folder" ? <button
+          className="tree-row-action"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            props.requestAction({ action: "create", parentId: props.node.id });
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          title={`Add inside ${props.node.label}`}
+          aria-label={`Add inside ${props.node.label}`}
+          type="button"
+        ><Plus size={13} aria-hidden /></button> : null}
+        <button
+          className="tree-row-action danger"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            props.requestAction({ action: "delete", node: props.node });
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          title={`Delete ${props.node.label}`}
+          aria-label={`Delete ${props.node.label}`}
+          type="button"
+        ><Trash2 size={13} aria-hidden /></button>
       </div>
       {children.length && !collapsed ? <div className="automation-tree-children"><AutomationHierarchyChildren nodes={sortAutomationHierarchyNodes(children)} allNodes={props.nodes} visibleIds={props.visibleIds} collapsedFolderIds={props.collapsedFolderIds} selection={props.selection} openNode={props.openNode} requestAction={props.requestAction} toggleFolder={props.toggleFolder} /></div> : null}
     </div>
@@ -2291,7 +2532,7 @@ function AutomationHierarchyChildren(props: {
 }
 
 function sortAutomationHierarchyNodes(nodes: AutomationHierarchyNode[]): AutomationHierarchyNode[] {
-  const rank: Record<AutomationHierarchyKind, number> = { folder: 0, task: 1, routine: 1, config: 1 };
+  const rank: Record<AutomationHierarchyKind, number> = { folder: 0, task: 1, routine: 1, config: 1, recording: 1 };
   return [...nodes].sort((first, second) => rank[first.kind] - rank[second.kind] || first.label.localeCompare(second.label));
 }
 
@@ -2384,20 +2625,26 @@ function AutomationTimelineView(props: {
   actionStatus: string;
   entries: any[];
   notes: any[];
+  pipelineArtifacts: any;
   recordings: any[];
   selectedEntry: any;
   selectedRecording: any;
   selectedTimeline: any;
   timelines: any[];
+  onAppendRecordingMarker(recordingId: string, linkedEntryId?: string, monotonicOffsetMs?: number): Promise<void>;
+  onAppendRecordingNote(recordingId: string, linkedEntryId?: string): Promise<void>;
   onCreateRecording(): Promise<void>;
+  onDeleteRecording(recordingId: string): Promise<void>;
   onFinalizeRecording(recordingId: string): Promise<void>;
   onNormalizeRecording(recordingId: string): Promise<void>;
+  onPipelineAction(endpoint: string, payload: JsonObject, success: string): Promise<void>;
   onRefreshRecordings(): Promise<void>;
+  onUpdateRecording(recordingId: string, changes: JsonObject): Promise<void>;
   setSelection(selection: AutomationSelection): void;
 }) {
   const timelineEditorRef = useRef<HTMLDivElement>(null);
   const noteById = useMemo(() => new Map(props.notes.map((note) => [note.id, note])), [props.notes]);
-  const sortedEntries = useMemo(() => [...props.entries].sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0) || (left.monotonicOffsetMs ?? 0) - (right.monotonicOffsetMs ?? 0)), [props.entries]);
+  const sortedEntries = useMemo(() => props.entries.filter((entry) => !isRejectedRecordingMarker(entry)).sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0) || (left.monotonicOffsetMs ?? 0) - (right.monotonicOffsetMs ?? 0)), [props.entries]);
   const totalMs = Math.max(0, ...sortedEntries.map((entry) => entry.monotonicOffsetMs ?? 0));
   const timelineSteps = sortedEntries.map((entry, index) => {
     const previous = sortedEntries[index - 1];
@@ -2413,48 +2660,57 @@ function AutomationTimelineView(props: {
     { id: "markers", label: "Markers", types: ["marker"] }
   ];
   const selectedStepIndex = timelineSteps.findIndex((step) => step.entry.id === props.selectedEntry?.id);
+  const timelineStepKey = (laneId: string, step: { entry: any; waitMs: number }, index: number) => `${laneId}:${index}:${step.entry.sequence ?? "seq"}:${step.entry.id ?? "entry"}`;
   const gridColumns = `repeat(${Math.max(1, timelineSteps.length)}, minmax(180px, 220px))`;
+  const selectedDuration = props.selectedRecording
+    ? props.selectedRecording.endedAt ? Math.max(0, props.selectedRecording.endedAt - props.selectedRecording.startedAt) : Math.max(0, Date.now() - props.selectedRecording.startedAt)
+    : 0;
+  const selectedIsNormalized = props.selectedRecording ? props.timelines.some((timeline) => timeline.recordingId === props.selectedRecording.recordingId) : false;
   const selectPreviewStep = (entryId: string, index: number) => {
     props.setSelection({ kind: "timeline", id: entryId });
     window.requestAnimationFrame(() => {
       const editor = timelineEditorRef.current;
       if (!editor) return;
-      const labelWidth = 104;
-      const columnWidth = 200;
+      const target = editor.querySelector<HTMLElement>(`.automation-timeline-slot[data-timeline-index="${index}"]`);
+      if (!target) return;
+      const editorBounds = editor.getBoundingClientRect();
+      const targetBounds = target.getBoundingClientRect();
+      const targetCenter = targetBounds.left - editorBounds.left + editor.scrollLeft + targetBounds.width / 2;
+      const maxScrollLeft = Math.max(0, editor.scrollWidth - editor.clientWidth);
       editor.scrollTo({
-        left: Math.max(0, labelWidth + index * columnWidth - editor.clientWidth / 2 + columnWidth / 2),
+        left: Math.min(maxScrollLeft, Math.max(0, targetCenter - editor.clientWidth / 2)),
         behavior: "smooth"
       });
     });
   };
   return (
     <section className="automation-timeline-view">
-      <aside className="automation-recording-browser">
-        <header>
-          <strong>Recordings</strong>
-          <button className="icon-button" onClick={() => void props.onRefreshRecordings()} title="Refresh recordings" aria-label="Refresh recordings" type="button"><RefreshCcw size={14} aria-hidden /></button>
-        </header>
-        <div className="automation-recording-actions">
+      <header className="automation-timeline-toolbar">
+        <div>
+          <strong>{props.selectedRecording?.metadata?.name ?? props.selectedRecording?.recordingId ?? "No recording selected"}</strong>
+          <span>{props.selectedRecording ? `${props.selectedRecording.endedAt ? "Finalized" : "Open"} | ${formatTimelineDuration(selectedDuration)} | ${props.entries.length} events | ${selectedIsNormalized ? "normalized" : "raw"}` : "Select a recording from the project hierarchy."}</span>
+        </div>
+        <div className="automation-timeline-toolbar-actions">
           <button className="button button-primary" onClick={() => void props.onCreateRecording()} type="button"><Plus size={13} aria-hidden />New</button>
+          <button className="button" onClick={() => void props.onRefreshRecordings()} type="button"><RefreshCcw size={13} aria-hidden />Refresh</button>
+          <button className="button" disabled={!props.selectedRecording} onClick={() => {
+            const name = window.prompt("Recording name", props.selectedRecording?.metadata?.name ?? props.selectedRecording?.recordingId ?? "") ?? "";
+            if (name.trim() && props.selectedRecording) void props.onUpdateRecording(props.selectedRecording.recordingId, { name });
+          }} type="button">Rename</button>
           <button className="button" disabled={!props.selectedRecording} onClick={() => props.selectedRecording && void props.onNormalizeRecording(props.selectedRecording.recordingId)} type="button"><Sparkles size={13} aria-hidden />Normalize</button>
           <button className="button" disabled={!props.selectedRecording || Boolean(props.selectedRecording.endedAt)} onClick={() => props.selectedRecording && void props.onFinalizeRecording(props.selectedRecording.recordingId)} type="button"><CheckCircle2 size={13} aria-hidden />Finalize</button>
+          <button className="button danger" disabled={!props.selectedRecording} onClick={() => props.selectedRecording && void props.onDeleteRecording(props.selectedRecording.recordingId)} type="button"><Trash2 size={13} aria-hidden />Delete</button>
         </div>
-        <div className="automation-recording-list">
-          {props.recordings.map((recording) => {
-            const selected = recording.recordingId === props.selectedRecording?.recordingId;
-            const normalized = props.timelines.some((timeline) => timeline.recordingId === recording.recordingId);
-            return (
-              <button className={selected ? "selected" : ""} key={recording.recordingId} onClick={() => props.setSelection({ kind: "recording", id: recording.recordingId })} type="button">
-                <strong>{recording.name ?? recording.recordingId}</strong>
-                <span>{recording.endedAt ? "Finalized" : "Open"} | {recording.timeline?.length ?? 0} events | {normalized ? "normalized" : "raw"}</span>
-                <small>{recording.startedAt ? new Date(recording.startedAt).toLocaleString() : "No start time"}</small>
-              </button>
-            );
-          })}
-          {!props.recordings.length ? <div className="automation-recording-empty"><strong>No recordings</strong><span>Create one here or start recording from a connected client.</span></div> : null}
-        </div>
+        {props.selectedRecording ? <div className="automation-timeline-pipeline-actions">
+          <button className="button" onClick={() => void props.onPipelineAction("create-normalization-review", { recordingId: props.selectedRecording.recordingId }, "Normalization review created")} type="button">Review</button>
+          <button className="button" onClick={() => void props.onPipelineAction("mine-recording-evidence", { recordingId: props.selectedRecording.recordingId }, "Evidence mined")} type="button">Mine</button>
+          <button className="button" onClick={() => void props.onPipelineAction("learn-task-model", { taskId: props.selectedRecording.taskId ?? props.selectedRecording.recordingId }, "Task model learned")} type="button">Learn</button>
+          <button className="button" onClick={() => void props.onPipelineAction("propose-policy-from-model", {}, "Policy proposal created")} type="button">Propose</button>
+          <button className="button" onClick={() => void props.onPipelineAction("replay-policy-against-recording", { recordingId: props.selectedRecording.recordingId }, "Replay completed")} type="button">Replay</button>
+        </div> : null}
+        <PipelineSummary artifacts={props.pipelineArtifacts} selectedRecordingId={props.selectedRecording?.recordingId} onApprove={(proposalId) => props.onPipelineAction("approve-policy-proposal", { proposalId }, "Policy proposal approved")} />
         {props.actionStatus ? <StatusText value={props.actionStatus} /> : null}
-      </aside>
+      </header>
       <div className="automation-timeline-stage">
         <div className="automation-timeline-detail-strip">
           {props.selectedEntry ? <>
@@ -2462,6 +2718,8 @@ function AutomationTimelineView(props: {
             <span>{formatTimelineDuration(props.selectedEntry.monotonicOffsetMs ?? 0)}</span>
             <span>{props.selectedEntry.sourceId ?? "unknown source"}</span>
             <small>{selectedNote?.text ?? timelineEntrySummary(props.selectedEntry)}</small>
+            {props.selectedRecording ? <button className="icon-button" onClick={() => void props.onAppendRecordingNote(props.selectedRecording.recordingId, props.selectedEntry.id)} title="Add note" aria-label="Add note" type="button"><FileText size={14} aria-hidden /></button> : null}
+            {props.selectedRecording ? <button className="icon-button" onClick={() => void props.onAppendRecordingMarker(props.selectedRecording.recordingId, props.selectedEntry.id, props.selectedEntry.monotonicOffsetMs)} title="Add marker" aria-label="Add marker" type="button"><CircleDot size={14} aria-hidden /></button> : null}
           </> : <span>Select a clip to inspect the event globally.</span>}
         </div>
         <div className="automation-timeline-editor" ref={timelineEditorRef}>
@@ -2474,12 +2732,12 @@ function AutomationTimelineView(props: {
                 {timelineSteps.map((step, index) => {
                   const note = step.entry.type === "note" ? noteById.get(step.entry.noteId) : undefined;
                   if (lane.id === "timing") return (
-                    <div className={selectedStepIndex === index ? "automation-timeline-slot selected" : "automation-timeline-slot"} key={`${lane.id}:${step.entry.id}`}>
+                    <div className={selectedStepIndex === index ? "automation-timeline-slot selected" : "automation-timeline-slot"} data-timeline-index={index} key={timelineStepKey(lane.id, step, index)}>
                       {step.waitMs >= 250 ? <button className="automation-wait-clip" onClick={() => props.setSelection({ kind: "timeline", id: step.entry.id })} type="button"><Clock size={12} aria-hidden />Wait {formatTimelineDuration(step.waitMs)}</button> : null}
                     </div>
                   );
                   return (
-                    <div className={selectedStepIndex === index ? "automation-timeline-slot selected" : "automation-timeline-slot"} key={`${lane.id}:${step.entry.id}`}>
+                    <div className={selectedStepIndex === index ? "automation-timeline-slot selected" : "automation-timeline-slot"} data-timeline-index={index} key={timelineStepKey(lane.id, step, index)}>
                       {lane.types.includes(step.entry.type) ? <TimelineClip
                         entry={step.entry}
                         index={index}
@@ -2501,7 +2759,7 @@ function AutomationTimelineView(props: {
             {timelineSteps.map((step, index) => (
               <button
                 className={props.selectedEntry?.id === step.entry.id ? `selected ${step.entry.type}` : step.entry.type}
-                key={step.entry.id}
+                key={`overview:${index}:${step.entry.sequence ?? "seq"}:${step.entry.id ?? "entry"}`}
                 onClick={() => selectPreviewStep(step.entry.id, index)}
                 title={`${index + 1}. ${timelineEntryTitle(step.entry, step.entry.type === "note" ? noteById.get(step.entry.noteId) : undefined)}`}
                 type="button"
@@ -2523,6 +2781,37 @@ function TimelineClip(props: { entry: any; index: number; note?: any; selected: 
       <strong>{timelineEntryTitle(props.entry, props.note)}</strong>
       <small>{props.note?.text ?? timelineEntrySummary(props.entry)}</small>
     </button>
+  );
+}
+
+function PipelineSummary(props: { artifacts: any; selectedRecordingId?: string; onApprove(proposalId: string): Promise<void> }) {
+  const reviews = props.artifacts?.normalizationReviews ?? [];
+  const miningRuns = props.artifacts?.miningRuns ?? [];
+  const models = props.artifacts?.learnedTaskModels ?? [];
+  const proposals = props.artifacts?.policyProposals ?? [];
+  const replays = props.artifacts?.replayResults ?? [];
+  const latestProposal = proposals[0];
+  const latestReplay = replays.find((replay: any) => !props.selectedRecordingId || replay.recordingId === props.selectedRecordingId) ?? replays[0];
+  return (
+    <section className="automation-pipeline-summary">
+      <header><strong>Pipeline</strong><span>{reviews.length + miningRuns.length + models.length + proposals.length + replays.length} artifacts</span></header>
+      <div>
+        <span>Reviews {reviews.length}</span>
+        <span>Mining {miningRuns.length}</span>
+        <span>Models {models.length}</span>
+        <span>Proposals {proposals.length}</span>
+        <span>Replays {replays.length}</span>
+      </div>
+      {latestProposal ? <article>
+        <strong>{latestProposal.status === "approved" ? "Approved policy" : "Draft proposal"}</strong>
+        <small>{latestProposal.summary}</small>
+        {latestProposal.status !== "approved" ? <button className="button button-primary" onClick={() => void props.onApprove(latestProposal.proposalId)} type="button">Approve</button> : null}
+      </article> : null}
+      {latestReplay ? <article>
+        <strong>Replay {readableToken(latestReplay.status)}</strong>
+        <small>{latestReplay.matchedActions}/{latestReplay.expectedActions} actions matched</small>
+      </article> : null}
+    </section>
   );
 }
 
@@ -3700,10 +3989,21 @@ function AutomationRecordingWorkspace(props: { recordings: any[]; selectedRecord
   );
 }
 
-function AutomationSignalWorkspace(props: { signals: any[]; setSelection(selection: AutomationSelection): void }) {
+function AutomationSignalWorkspace(props: { domains: any[]; signals: any[]; setSelection(selection: AutomationSelection): void }) {
   const namespaces = groupByNamespace(props.signals);
   return (
     <section className="automation-signal-board">
+      <div className="automation-domain-contracts">
+        <header><strong>Recording Domains</strong><span>{props.domains.length} registered</span></header>
+        {props.domains.map((domain) => (
+          <article key={domain.domainId}>
+            <strong>{domain.label ?? domain.domainId}</strong>
+            <span>{domain.domainId}</span>
+            <small>{domain.eventTypes?.length ?? 0} event types | {domain.stateReducers?.length ?? 0} reducers | {domain.observationExtractors?.length ?? 0} extractors</small>
+          </article>
+        ))}
+        {!props.domains.length ? <span>No recording domain contracts are registered by the host repo yet.</span> : null}
+      </div>
       {Object.entries(namespaces).map(([namespace, namespaceSignals]) => (
         <div className="automation-state-namespace" key={namespace}>
           <strong>{namespace}</strong>
@@ -3721,13 +4021,16 @@ function AutomationSignalWorkspace(props: { signals: any[]; setSelection(selecti
   );
 }
 
-function AutomationRuntimeWorkspace(props: { timelines: any[]; models: any[]; policies: any[]; runtimeSessions: any[] }) {
+function AutomationRuntimeWorkspace(props: { pipelineArtifacts: any; timelines: any[]; models: any[]; policies: any[]; runtimeSessions: any[] }) {
+  const proposals = props.pipelineArtifacts?.policyProposals ?? [];
+  const replays = props.pipelineArtifacts?.replayResults ?? [];
   return (
     <section className="automation-runtime-stage">
       <SummaryStrip items={[
         ["Runs", props.runtimeSessions.length],
         ["Timelines", props.timelines.length],
         ["Models", props.models.length],
+        ["Proposals", proposals.length],
         ["Runnable Nodes", props.policies.reduce((total, policy) => total + (policy.nodes?.length ?? 0), 0)]
       ]} />
       <DataTable columns={["Run", "Target", "Status", "Attempts", "Effects"]} rows={props.runtimeSessions.map((session) => [
@@ -3744,6 +4047,21 @@ function AutomationRuntimeWorkspace(props: { timelines: any[]; models: any[]; po
         model.transitions?.length ?? 0,
         model.unresolvedQuestions?.length ?? 0
       ])} empty="No learned task models available." />
+      <DataTable columns={["Proposal", "Status", "Policy", "Nodes", "Summary"]} rows={proposals.map((proposal: any) => [
+        proposal.proposalId,
+        <StatusBadge key={proposal.proposalId} value={proposal.status} />,
+        proposal.policy?.policyId ?? "-",
+        proposal.policy?.nodes?.length ?? 0,
+        proposal.summary ?? "-"
+      ])} empty="No policy proposals generated yet." />
+      <DataTable columns={["Replay", "Status", "Recording", "Policy", "Matched", "Warnings"]} rows={replays.map((replay: any) => [
+        replay.replayId,
+        <StatusBadge key={replay.replayId} value={replay.status} />,
+        replay.recordingId,
+        replay.policyId,
+        `${replay.matchedActions}/${replay.expectedActions}`,
+        replay.timingWarnings?.length ?? 0
+      ])} empty="No replay/test results yet." />
     </section>
   );
 }
@@ -4924,7 +5242,19 @@ function Modal(props: { title: string; children: ReactNode; onClose(): void }) {
     event.preventDefault();
     submitButton.click();
   }
-  return <div className="modal-backdrop"><section className="modal-panel" role="dialog" aria-modal="true" onKeyDown={submitOnEnter}><div className="panel-heading"><h2 className="panel-title">{props.title}</h2><button className="button" onClick={props.onClose} type="button">Close</button></div>{props.children}</section></div>;
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className="modal-backdrop">
+      <section className="modal-panel" role="dialog" aria-modal="true" onKeyDown={submitOnEnter}>
+        <div className="panel-heading">
+          <h2 className="panel-title">{props.title}</h2>
+          <button className="button" onClick={props.onClose} type="button">Close</button>
+        </div>
+        {props.children}
+      </section>
+    </div>,
+    document.body
+  );
 }
 
 function StatusText({ value }: { value: string }) {
@@ -4965,6 +5295,62 @@ function yesNo(value: unknown): string {
 
 function formatTime(value: unknown): string {
   return typeof value === "number" && value > 0 ? new Date(value).toLocaleString() : "-";
+}
+
+function recordingHierarchyNodes(recordings: any[]): AutomationHierarchyNode[] {
+  const clientFolders = new Map<string, AutomationHierarchyNode>();
+  const nodes: AutomationHierarchyNode[] = [];
+  for (const recording of recordings) {
+    const clientName = recordingClientName(recording);
+    const folderId = `recordings-client-${stableNodeId(clientName)}`;
+    if (!clientFolders.has(folderId)) {
+      const folder: AutomationHierarchyNode = {
+        id: folderId,
+        label: clientName,
+        kind: "folder",
+        category: "recording",
+        parentId: null
+      };
+      clientFolders.set(folderId, folder);
+      nodes.push(folder);
+    }
+    nodes.push({
+      id: recording.recordingId,
+      label: recordingDateTimeLabel(recording),
+      kind: "recording",
+      category: "recording",
+      parentId: folderId,
+      viewId: "timeline-recording",
+      sourceId: recording.recordingId
+    });
+  }
+  return nodes;
+}
+
+function recordingClientName(recording: any): string {
+  const metadata = recording?.metadata ?? {};
+  const environment = recording?.environment ?? {};
+  return String(
+    metadata.clientName
+    ?? metadata.clientId
+    ?? metadata.sessionId
+    ?? environment.label
+    ?? environment.id
+    ?? recording?.sources?.[0]?.label
+    ?? "Local Studio"
+  );
+}
+
+function recordingDateTimeLabel(recording: any): string {
+  const startedAt = typeof recording?.startedAt === "number" ? recording.startedAt : 0;
+  const fallback = recording?.metadata?.name ?? recording?.name ?? recording?.recordingId ?? "Recording";
+  if (!startedAt) return String(fallback);
+  return new Date(startedAt).toLocaleString();
+}
+
+function stableNodeId(value: string): string {
+  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return normalized || "unknown";
 }
 
 function isSensitiveDatabaseStore(kind: string): boolean {
@@ -5251,6 +5637,10 @@ function timelineEntrySummary(entry: any): string {
   if (entry.type === "observation") return entry.observationType;
   if (entry.type === "marker") return entry.label;
   return shortJson(entry);
+}
+
+function isRejectedRecordingMarker(entry: any): boolean {
+  return entry?.type === "marker" && typeof entry.label === "string" && entry.label.startsWith("Rejected recording event:");
 }
 
 function timelineEntryTitle(entry: any, note?: any): string {

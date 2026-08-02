@@ -16,6 +16,21 @@ describe("AutomationStudioService recording persistence", () => {
     await rm(tempRoot, { recursive: true, force: true });
   });
 
+  it("does not seed demo fixture recordings by default", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot });
+
+    await expect(service.listRecordingSessions()).resolves.toEqual([]);
+    await expect(service.snapshot()).resolves.toMatchObject({
+      canonical: {
+        recordingSessions: [],
+        normalizedTimelines: [],
+        signalRegistries: [],
+        learnedTaskModels: [],
+        policyGraphs: []
+      }
+    });
+  });
+
   it("stores project recordings and normalized timelines in project folders", async () => {
     const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "State Framework" });
@@ -59,6 +74,35 @@ describe("AutomationStudioService recording persistence", () => {
     await expect(readFile(path.join(projectRoot, "recordings", "indexes", "recordings.json"), "utf8")).resolves.toContain("\"normalizedTimelineId\"");
   });
 
+  it("persists rapid recording event bursts without colliding JSON temp files", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Event Burst" });
+    const recording = await service.createRecording({
+      projectId: project.id,
+      recordingId: "recording.event-burst",
+      taskId: "task.event-burst",
+      initialState: {
+        timestamp: 1,
+        namespaces: {}
+      }
+    });
+
+    await Promise.all(Array.from({ length: 32 }, (_, index) => service.appendRecordingEvent({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entry: {
+        id: `marker.${index}`,
+        type: "marker",
+        label: `Burst ${index}`,
+        timestamp: 1 + index
+      }
+    })));
+
+    const stored = await service.getRecordingSession(recording.recordingId, project.id);
+
+    expect(stored.timeline).toHaveLength(32);
+  });
+
   it("stores project artifacts and runtime sessions in project folders", async () => {
     const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Runtime Project" });
@@ -89,6 +133,43 @@ describe("AutomationStudioService recording persistence", () => {
     const projectRoot = path.join(tempRoot, "programs", "automation-studio", "projects", project.id);
     await expect(readFile(path.join(projectRoot, "flows", `${flow.flowId}.json`), "utf8")).resolves.toContain("\"flowId\"");
     await expect(readFile(path.join(projectRoot, "runtime", "indexes", "sessions.json"), "utf8")).resolves.toContain(run.runId);
+  });
+
+  it("persists recording pipeline artifacts through proposal approval and replay", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Pipeline Project" });
+    const recording = await service.createRecording({
+      projectId: project.id,
+      recordingId: "recording.pipeline-test",
+      taskId: "task.pipeline",
+      startedAt: 100,
+      initialState: { timestamp: 100, namespaces: {} }
+    });
+    await service.appendRecordingEvent({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entry: { type: "domain_event", eventType: "step.started", timestamp: 300, payload: { step: 1 } }
+    });
+    await service.appendRecordingMarkerEntry({ projectId: project.id, recordingId: recording.recordingId, label: "Goal", monotonicOffsetMs: 1000 });
+    await service.normalizeRecording({ projectId: project.id, recordingId: recording.recordingId });
+
+    const review = await service.createNormalizationReview({ projectId: project.id, recordingId: recording.recordingId });
+    const miningRun = await service.mineRecordingEvidence({ projectId: project.id, recordingId: recording.recordingId });
+    const model = await service.learnTaskModel({ projectId: project.id, taskId: "task.pipeline", miningRunId: miningRun.miningRunId });
+    const proposal = await service.proposePolicyFromModel({ projectId: project.id, learnedTaskModelId: model.learnedTaskModelId });
+    const approved = await service.approvePolicyProposal({ projectId: project.id, proposalId: proposal.proposalId });
+    const replay = await service.replayPolicyAgainstRecording({ projectId: project.id, recordingId: recording.recordingId, policyId: approved.policy.policyId });
+    const artifacts = await service.listPipelineArtifacts(project.id);
+
+    expect(review.waitClips[0]).toMatchObject({ waitMs: 800 });
+    expect(artifacts.miningRuns.map((item) => item.miningRunId)).toContain(miningRun.miningRunId);
+    expect(artifacts.learnedTaskModels.map((item) => item.learnedTaskModelId)).toContain(model.learnedTaskModelId);
+    expect(artifacts.policyProposals[0]).toMatchObject({ proposalId: proposal.proposalId, status: "approved" });
+    expect(replay.policyId).toBe(approved.policy.policyId);
+
+    const projectRoot = path.join(tempRoot, "programs", "automation-studio", "projects", project.id);
+    await expect(readFile(path.join(projectRoot, "pipeline", "indexes", "pipeline.json"), "utf8")).resolves.toContain(proposal.proposalId);
+    await expect(readFile(path.join(projectRoot, "policies", `${approved.policy.policyId}.json`), "utf8")).resolves.toContain("\"policyId\"");
   });
 
   it("accepts only registered domain recording events and records derived state", async () => {

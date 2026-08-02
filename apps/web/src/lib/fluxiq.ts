@@ -1,11 +1,15 @@
 import { FluxIQ } from "fluxiq";
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { parseAllowedOrigins, startClientGatewayWebSocketServer, type ClientGatewayWebSocketServerHandle } from "../server/client-gateway-websocket";
+
+type FluxIQHostModuleRegistration = (fluxiq: FluxIQ) => FluxIQ | void;
 
 type FluxIQWebGlobal = typeof globalThis & {
   __fluxiqWebRuntime?: {
     instance: FluxIQ;
+    hostModulePath: string | null;
     clientGatewayServer: ClientGatewayWebSocketServerHandle | null;
     runtimeId: string;
     automationStudioContext: {
@@ -14,6 +18,8 @@ type FluxIQWebGlobal = typeof globalThis & {
     };
   };
 };
+
+const hostModuleRequire = createRequire(path.join(process.cwd(), "package.json"));
 
 export function getFluxIQ(): FluxIQ {
   const state = getWebRuntimeState();
@@ -27,6 +33,8 @@ export function getFluxIQWebRuntimeStatus() {
     runtimeId: state.runtimeId,
     hostRoot: state.instance.paths.root,
     fluxiqDir: state.instance.paths.fluxiq,
+    hostModulePath: state.hostModulePath,
+    hostModuleLoaded: Boolean(state.hostModulePath),
     clientGatewayPublicUrl: state.clientGatewayServer?.publicUrl ?? process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL ?? null,
     clientGatewayStarted: Boolean(state.clientGatewayServer),
     clientGatewayListening: state.clientGatewayServer?.status.listening ?? false,
@@ -49,7 +57,8 @@ export function setAutomationStudioWebContext(input: { activeProjectId: string |
 function getWebRuntimeState(): NonNullable<FluxIQWebGlobal["__fluxiqWebRuntime"]> {
   const globalState = globalThis as FluxIQWebGlobal;
   globalState.__fluxiqWebRuntime ??= {
-    instance: FluxIQ.create({ rootDir: resolveFluxIQWebHostRoot(process.cwd()) }),
+    instance: createFluxIQWebInstance(),
+    hostModulePath: resolveFluxIQHostModulePath(),
     clientGatewayServer: null,
     runtimeId: `web.${Date.now().toString(36)}.${Math.random().toString(36).slice(2)}`,
     automationStudioContext: { activeProjectId: null, updatedAt: 0 }
@@ -66,6 +75,41 @@ function getWebRuntimeState(): NonNullable<FluxIQWebGlobal["__fluxiqWebRuntime"]
     };
   });
   return globalState.__fluxiqWebRuntime;
+}
+
+export function createFluxIQWebInstance(): FluxIQ {
+  const fluxiq = FluxIQ.create({ rootDir: resolveFluxIQWebHostRoot(process.cwd()) });
+  return applyFluxIQHostModule(fluxiq);
+}
+
+export function applyFluxIQHostModule(fluxiq: FluxIQ): FluxIQ {
+  const resolved = resolveFluxIQHostModulePath();
+  if (!resolved) return fluxiq;
+  const loaded = hostModuleRequire(resolved) as { default?: unknown; registerFluxIQHost?: unknown };
+  const register = typeof loaded.registerFluxIQHost === "function"
+    ? loaded.registerFluxIQHost as FluxIQHostModuleRegistration
+    : typeof loaded.default === "function"
+      ? loaded.default as FluxIQHostModuleRegistration
+      : null;
+  if (!register) {
+    throw new Error(`FLUXIQ_HOST_MODULE must export registerFluxIQHost() or a default registration function: ${resolved}`);
+  }
+  const registered = register(fluxiq);
+  const maybePromise = registered as unknown as { then?: unknown };
+  if (registered && typeof maybePromise.then === "function") {
+    throw new Error(`FLUXIQ_HOST_MODULE registration must be synchronous for the web runtime: ${resolved}`);
+  }
+  return registered ?? fluxiq;
+}
+
+export function resolveFluxIQHostModulePath(): string | null {
+  const hostModulePath = process.env.FLUXIQ_HOST_MODULE;
+  if (!hostModulePath?.trim()) return null;
+  const resolved = path.resolve(hostModulePath.trim());
+  if (!existsSync(resolved)) {
+    throw new Error(`FLUXIQ_HOST_MODULE points to a missing file: ${resolved}`);
+  }
+  return resolved;
 }
 
 function startSharedClientGateway(state: NonNullable<FluxIQWebGlobal["__fluxiqWebRuntime"]>): void {

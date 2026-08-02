@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AutomationInMemoryStateStore,
   appendRecordingNote,
+  appendRecordingEntry,
   appendRecordingStateCheckpoint,
   buildSignalRegistryFromSchemas,
   createRecordingSession,
@@ -79,5 +80,28 @@ describe("automation studio state, signals, and recording framework", () => {
     const normalized = normalizeRecordingTimeline(recording);
     expect(normalized.sourceRecording).toEqual({ layer: "raw_recording", artifactId: "recording.test" });
     expect(normalized.timeline.some((entry) => entry.type === "state_delta")).toBe(true);
+  });
+
+  it("suffixes duplicate timeline entry ids while preserving the first id", () => {
+    const initial = { timestamp: 1, namespaces: {} };
+    const first = appendRecordingEntry(createRecordingSession({
+      recordingId: "recording.duplicate-ids",
+      taskId: "task.duplicate-ids",
+      initialState: initial
+    }), {
+      id: "web.duplicate",
+      type: "marker",
+      label: "First",
+      timestamp: 2
+    });
+    const second = appendRecordingEntry(first, {
+      id: "web.duplicate",
+      type: "marker",
+      label: "Second",
+      timestamp: 3
+    });
+
+    expect(second.timeline.map((entry) => entry.id)).toEqual(["web.duplicate", "web.duplicate.2"]);
+    expect(validateRecordingSession(second).ok).toBe(true);
   });
 });

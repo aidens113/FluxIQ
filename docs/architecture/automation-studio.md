@@ -114,8 +114,8 @@ the remaining viewport to the studio itself.
 
 The default design layout follows the consultant plan:
 
-- left sidebar: project hierarchy for folders, tasks, routines, and
-  configurations;
+- left sidebar: project hierarchy for folders, tasks, routines,
+  configurations, and recordings;
 - center workspace: the active design/debugging surface;
 - right inspector: synchronized details for the selected policy node, policy,
   recording, timeline entry, or signal.
@@ -142,17 +142,32 @@ editor because it is part of direct node editing, not a separate workspace
 window.
 
 The recording timeline window follows a video-editor-style horizontal layout.
-It has a compact recording browser for selecting sessions and running recording
-actions, a selected-event detail strip above the editor, lane labels,
-horizontally and vertically scrollable clips, and a compact overview strip below
-the editor. Clicking an overview preview snaps the editor to that timeline
-location. Raw elapsed time is rendered as explicit wait clips in a Timing lane
-from adjacent recorded monotonic offsets, so long pauses do not create
-confusing blank space. Actions, domain events, observations, state deltas,
-checkpoints, notes, and markers each render in their appropriate lane with
-distinct visual treatments. Selecting any clip updates the global inspector
-selection with event-specific details, timing gaps, source, correlation, and
-recording context.
+Recording selection belongs to the project hierarchy sidebar under the
+Recordings root. Recording rows are auto-grouped by client folder, and each
+recording child is labeled by its recording start date/time. The timeline
+window itself is the editor/review surface for the selected recording: it has
+selected-recording controls, a selected-event detail strip above the editor,
+lane labels, horizontally and vertically scrollable clips, and a compact
+overview strip below the editor. Clicking an overview preview snaps the editor
+to that timeline location. Raw elapsed time is rendered as explicit wait clips
+in a Timing lane from adjacent recorded monotonic offsets, so long pauses do
+not create confusing blank space. Actions, domain events, observations, state
+deltas, checkpoints, notes, and markers each render in their appropriate lane
+with distinct visual treatments. Selecting any clip updates the global
+inspector selection with event-specific details, timing gaps, source,
+correlation, and recording context.
+
+Recording client folders and recording rows in the project hierarchy are
+generated from persisted recording sessions. They must not be hidden by the
+custom hierarchy `deletedHierarchyIds` list. Deleting a generated recording row
+or a generated recording client folder is a destructive recording operation:
+the UI asks for the user's PIN, then deletes the underlying recording session
+or all recording sessions contained by that client folder.
+
+Demo recording fixtures such as `Demo Environment` are test fixtures only.
+The Automation Studio service does not seed fixture recordings by default in
+the web panel or imported runtime; callers must explicitly opt in with
+`seedFixture: true` for tests or examples.
 
 The recording-to-task pipeline is intentionally staged:
 
@@ -372,7 +387,7 @@ imports that should move with a project export.
 
 The first UI surface includes the core views called out in the studio plan:
 policy design, recordings, signals, runtime debugging, and problems. Later
-slices should add routine editing, interface editing, command palette support,
+slices should add deeper routine editing, command palette support,
 lockable synchronized views, provenance overlays, and history/change tracking
 without collapsing these concerns into one generic dashboard.
 
@@ -407,14 +422,17 @@ Workspace preferences should control frame-level dimensions such as sidebar and
 inspector sizes. Window layout itself belongs to direct manipulation inside the
 canvas.
 
-The left hierarchy editor is limited to folders, tasks, routines, and
-configurations. Interfaces are no longer represented as project hierarchy
-objects. The tree uses real explorer-style root folder structures for tasks,
-routines, and configurations. Each structure owns its own expandable/collapsible
-folders, and folder rows keep add/delete controls. Creating a hierarchy item
-first opens a category-aware type chooser for folder, task, or routine, then
-asks for name, location, and PIN authorization. Delete actions remain privileged
-and require PIN authorization.
+The left hierarchy editor is limited to folders, tasks, routines,
+configurations, and recordings. Interfaces are no longer represented as project
+hierarchy objects. The tree uses real explorer-style root folder structures for
+tasks, routines, configurations, and recordings. Each structure owns its own
+expandable/collapsible folders, and folder rows keep add/delete controls.
+Creating a hierarchy item first opens a category-aware type chooser for folder,
+task, or routine where those object types apply, then asks for name, location,
+and PIN authorization. Recording rows are generated from project recording
+sessions, grouped into auto-generated folders by client name, labeled by
+recording start date/time, and open the selected recording in the timeline
+editor. Delete actions remain privileged and require PIN authorization.
 
 Automation Studio opens through a project chooser. Users must create or open a
 project before the editor workspace appears. Projects and their owned state are
@@ -434,6 +452,14 @@ developing the panel from the FluxIQ source checkout, set
 repo. Without that explicit root, the panel refuses to use the framework source
 checkout for Automation Studio state so recordings are not written into core
 FluxIQ folders by accident.
+
+The web runtime also supports a generic importing-repo host module hook through
+`FLUXIQ_HOST_MODULE`. The path must point at a CommonJS module exporting
+`registerFluxIQHost(fluxiq)` or a default synchronous registration function.
+The hook runs immediately after `FluxIQ.create(...)` and before API routes or
+the client gateway use the runtime, so domain repositories can register
+recording domains such as `web-automation`, domain node definitions, and other
+host-owned adapters without adding domain-specific code to FluxIQ core.
 
 Opening a project also writes its encoded project ID into the page URL so
 refreshing the editor restores the same project. The chooser presents projects
@@ -467,8 +493,11 @@ vertically, and subwindows are clamped inside their owning inner-window region
 while moving, resizing, snapping, applying a layout preset, or when that section
 resizes. Full-size subwindows use their full visible section canvas without an
 extra inset, and child editor content must not force the shell to spill past its
-saved geometry. Each subwindow has saved `area`, `x`, `y`, `width`, `height`,
-and z-order values.
+saved geometry. Each subwindow has saved `area`, `xPct`, `yPct`, `widthPct`,
+`heightPct`, and z-order values. Runtime drag, resize, snap, and preset math
+uses pixels for pointer accuracy, then normalizes the result back into owning
+section percentages before persistence. Older layouts that stored `x`, `y`,
+`widthPx`, and `heightPx` are migrated on load.
 
 Inspector and dock-style content are utility window views rather than fixed
 rails. The inspector is present in the default right sidebar, but can be moved,
@@ -535,6 +564,32 @@ and snapshot files are deliberate helper artifacts for later inspectors,
 recording scrubbers, diff viewers, and export tooling; they do not replace the
 canonical recording document.
 
+Recording session writes are burst-safe. The shared JSON store uses unique temp
+files and serializes writes per document path, and Automation Studio queues
+mutations per recording session so websocket event bursts append to the latest
+recording state instead of racing through stale read/write cycles.
+If a client sends repeated event IDs, the recording framework preserves the
+first ID and suffixes later duplicate timeline entry IDs before validation and
+persistence. Timeline UI keys also include row index and sequence so older
+recordings with duplicate IDs can still render.
+
+The recording pipeline reserves derived project artifacts beside recordings:
+
+```text
+.fluxiq/data/programs/automation-studio/projects/{projectId}/pipeline/
+  normalization-reviews/{reviewId}.json
+  mining-runs/{miningRunId}.json
+  learned-task-models/{learnedTaskModelId}.json
+  policy-proposals/{proposalId}.json
+  replay-results/{replayId}.json
+  indexes/pipeline.json
+```
+
+These files are derived artifacts. They should preserve references back to raw
+recordings and normalized timelines so users can audit how a final task policy
+was produced. Approving a policy proposal writes the generated `PolicyGraph`
+into the canonical policy repository and the project `policies/` folder.
+
 Project-owned authoring artifacts are now explicit documents instead of only
 hierarchy rows. Each project reserves:
 
@@ -592,7 +647,9 @@ React Flow interaction model.
 
 The inspector follows global selection, and the recording timeline uses a
 horizontal editor-style lane surface with preview snapping, event selection,
-and selected-event summary data.
+and selected-event summary data. Rejected client recording events are domain
+contract validation failures, so they are reported through the client gateway
+error/audit path instead of being appended as timeline evidence clips.
 
 These controls are the UI foundation. Follow-up slices should connect them to
 the persistent workspace layout model, command registry, undo/redo stack,
@@ -636,11 +693,29 @@ The state and recording framework now includes:
   raw evidence.
 
 The Automation Studio API exposes these as first-class framework endpoints:
-`list-recordings`, `get-recording`, `create-recording`,
-`append-recording-entry`, `finalize-recording`, `normalize-recording`,
+`list-recordings`, `get-recording`, `create-recording`, `update-recording`,
+`delete-recording`, `append-recording-entry`, `append-recording-note`,
+`append-recording-marker`, `finalize-recording`, `normalize-recording`,
+`create-normalization-review`, `list-pipeline-artifacts`,
+`mine-recording-evidence`, `learn-task-model`, `propose-policy-from-model`,
+`approve-policy-proposal`, `replay-policy-against-recording`,
 `inspect-state-diff`, and `list-signal-registries`. Mutating endpoints are
 privileged and should use the same shared PIN authorization path as project and
 category edits.
+
+The first pipeline implementation is deliberately conservative:
+
+- normalization review records raw-to-normalized mappings, derived entries,
+  explicit wait clips from recorded monotonic gaps, and normalizer issues;
+- mining creates windows around action/domain events and extracts candidate
+  effects and state conditions from normalized timeline deltas;
+- learned task models cluster those windows into tentative task steps,
+  transitions, expected effects, invariants, and unresolved questions;
+- policy proposals convert the learned model into a draft `PolicyGraph` without
+  mutating the active policy until the user approves it;
+- replay compares a policy proposal or approved policy against a recording and
+  records matched actions, missing actions, unexpected actions, and timing
+  warnings.
 
 Domain scope is part of the document identity. Raw recordings read it from the
 recording environment; derived artifacts carry it in metadata until richer
@@ -807,8 +882,8 @@ generic concepts:
 - evidence references preserve the path back to recordings, notes, mined
   signals, generated nodes, and runtime attempts.
 
-Host projects own domain-specific interfaces, adapters, recordings, generated
-policies, and runtime artifacts.
+Host projects own domain-specific adapters, recordings, generated policies, and
+runtime artifacts.
 
 ## Near-Term Build Order
 

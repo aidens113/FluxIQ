@@ -1,11 +1,13 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { FluxIQ } from "fluxiq";
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveFluxIQWebHostRoot } from "./fluxiq";
+import { applyFluxIQHostModule, resolveFluxIQHostModulePath, resolveFluxIQWebHostRoot } from "./fluxiq";
 
 const originalEnv = {
   FLUXIQ_ALLOW_FRAMEWORK_REPO_ROOT: process.env.FLUXIQ_ALLOW_FRAMEWORK_REPO_ROOT,
+  FLUXIQ_HOST_MODULE: process.env.FLUXIQ_HOST_MODULE,
   FLUXIQ_HOST_ROOT: process.env.FLUXIQ_HOST_ROOT,
   FLUXIQ_IMPORTER_ROOT: process.env.FLUXIQ_IMPORTER_ROOT,
   FLUXIQ_ROOT: process.env.FLUXIQ_ROOT
@@ -16,6 +18,46 @@ afterEach(() => {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
   }
+});
+
+describe("FluxIQ web host module loading", () => {
+  it("returns null when no host module is configured", () => {
+    delete process.env.FLUXIQ_HOST_MODULE;
+
+    expect(resolveFluxIQHostModulePath()).toBeNull();
+  });
+
+  it("fails loudly when the configured host module is missing", () => {
+    process.env.FLUXIQ_HOST_MODULE = path.join(os.tmpdir(), "missing-fluxiq-host-module.cjs");
+
+    expect(() => resolveFluxIQHostModulePath()).toThrow("FLUXIQ_HOST_MODULE points to a missing file");
+  });
+
+  it("applies registerFluxIQHost from the configured host module", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "fluxiq-host-module-"));
+    const modulePath = path.join(root, "host.cjs");
+    writeFileSync(modulePath, "module.exports.registerFluxIQHost = (fluxiq) => { fluxiq.__hostRegistered = 'named'; return fluxiq; };\n");
+    process.env.FLUXIQ_HOST_MODULE = modulePath;
+    const fluxiq = FluxIQ.create({ rootDir: root });
+
+    expect(applyFluxIQHostModule(fluxiq)).toBe(fluxiq);
+    expect((fluxiq as unknown as { __hostRegistered?: string }).__hostRegistered).toBe("named");
+
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("applies a default export from the configured host module", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "fluxiq-host-module-"));
+    const modulePath = path.join(root, "host-default.cjs");
+    writeFileSync(modulePath, "module.exports.default = (fluxiq) => { fluxiq.__hostRegistered = 'default'; };\n");
+    process.env.FLUXIQ_HOST_MODULE = modulePath;
+    const fluxiq = FluxIQ.create({ rootDir: root });
+
+    expect(applyFluxIQHostModule(fluxiq)).toBe(fluxiq);
+    expect((fluxiq as unknown as { __hostRegistered?: string }).__hostRegistered).toBe("default");
+
+    rmSync(root, { recursive: true, force: true });
+  });
 });
 
 describe("FluxIQ web host root resolution", () => {

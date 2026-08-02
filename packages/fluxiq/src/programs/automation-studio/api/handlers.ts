@@ -2,18 +2,28 @@ import type { GlobalProgramApiRegistry } from "../../_shared/api";
 import { authorizeProgramPin } from "../../_shared/authorization";
 import {
   AUTOMATION_STUDIO_ENDPOINTS,
+  type AppendRecordingMarkerRequest,
+  type AppendRecordingNoteRequest,
   type AppendRecordingDomainEventRequest,
   type AppendRecordingEntryRequest,
+  type ApprovePolicyProposalRequest,
   type CaptureClientSnapshotRequest,
   type CreateClientPairingRequest,
   type CreateRecordingRequest,
+  type DeleteRecordingRequest,
   type ExecuteClientActionRequest,
   type FinalizeRecordingRequest,
   type InspectStateDiffRequest,
+  type LearnTaskModelRequest,
+  type MineRecordingEvidenceRequest,
   type NormalizeRecordingRequest,
+  type ProposePolicyFromModelRequest,
   type RecordingProjectRequest,
+  type RecordingIdProjectRequest,
+  type ReplayPolicyAgainstRecordingRequest,
   type StartClientRecordingRequest,
   type StopClientRecordingRequest,
+  type UpdateRecordingRequest,
   type ValidateRecordingDomainEventRequest
 } from "./contracts";
 import type { AutomationStudioFlowDocument, AutomationStudioProjectArtifactKind } from "../model";
@@ -182,11 +192,47 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   });
   registry.register({
     programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateRecording,
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as UpdateRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: { recording: await service.updateRecording(payload) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteRecording,
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as DeleteRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: await service.deleteRecording(payload) };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendRecordingEntry,
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as AppendRecordingEntryRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
       return { ok: true, payload: { recording: await service.appendRecordingEvent(payload) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendRecordingNote,
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as AppendRecordingNoteRequest & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: { recording: await service.appendRecordingNoteEntry(payload) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendRecordingMarker,
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as AppendRecordingMarkerRequest & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: { recording: await service.appendRecordingMarkerEntry(payload) } };
     }
   });
   registry.register({
@@ -209,10 +255,82 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   });
   registry.register({
     programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.createNormalizationReview,
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as RecordingIdProjectRequest & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: { review: await service.createNormalizationReview({ projectId: String(payload.projectId ?? ""), recordingId: String(payload.recordingId ?? "") }) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listNormalizedTimelines,
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as RecordingProjectRequest : {};
       return { ok: true, payload: { normalizedTimelines: payload.projectId ? await service.listProjectNormalizedTimelines(payload.projectId) : [] } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listPipelineArtifacts,
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as RecordingProjectRequest : {};
+      return { ok: true, payload: await service.listPipelineArtifacts(String(payload.projectId ?? "")) };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.mineRecordingEvidence,
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as MineRecordingEvidenceRequest & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      const input: Parameters<AutomationStudioService["mineRecordingEvidence"]>[0] = { projectId: String(payload.projectId ?? "") };
+      if (payload.recordingId !== undefined) input.recordingId = payload.recordingId;
+      if (payload.normalizedTimelineId !== undefined) input.normalizedTimelineId = payload.normalizedTimelineId;
+      return { ok: true, payload: { miningRun: await service.mineRecordingEvidence(input) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.learnTaskModel,
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as LearnTaskModelRequest & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      const input: Parameters<AutomationStudioService["learnTaskModel"]>[0] = { projectId: String(payload.projectId ?? "") };
+      if (payload.taskId !== undefined) input.taskId = payload.taskId;
+      if (payload.miningRunId !== undefined) input.miningRunId = payload.miningRunId;
+      return { ok: true, payload: { learnedTaskModel: await service.learnTaskModel(input) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.proposePolicyFromModel,
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ProposePolicyFromModelRequest & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      const input: Parameters<AutomationStudioService["proposePolicyFromModel"]>[0] = { projectId: String(payload.projectId ?? "") };
+      if (payload.learnedTaskModelId !== undefined) input.learnedTaskModelId = payload.learnedTaskModelId;
+      return { ok: true, payload: { proposal: await service.proposePolicyFromModel(input) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.approvePolicyProposal,
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ApprovePolicyProposalRequest & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: { proposal: await service.approvePolicyProposal({ projectId: String(payload.projectId ?? ""), proposalId: String(payload.proposalId ?? "") }) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.replayPolicyAgainstRecording,
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ReplayPolicyAgainstRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      const input: Parameters<AutomationStudioService["replayPolicyAgainstRecording"]>[0] = { projectId: String(payload.projectId ?? ""), recordingId: String(payload.recordingId ?? "") };
+      if (payload.policyId !== undefined) input.policyId = payload.policyId;
+      return { ok: true, payload: { replayResult: await service.replayPolicyAgainstRecording(input) } };
     }
   });
   registry.register({

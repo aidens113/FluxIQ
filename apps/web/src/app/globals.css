@@ -1370,17 +1370,22 @@ select {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  z-index: 2147482000;
   display: grid;
   place-items: center;
   background: rgb(0 0 0 / 35%);
   padding: 24px;
+  pointer-events: auto;
 }
 
 .modal-panel {
+  position: relative;
+  z-index: 2147482001;
   display: grid;
   gap: 14px;
   width: min(100%, 520px);
+  max-height: min(720px, calc(100vh - 48px));
+  overflow: auto;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-panel);
   background: var(--color-surface);
@@ -4690,7 +4695,7 @@ select {
 
 .automation-timeline-view {
   display: grid;
-  grid-template-columns: minmax(220px, 270px) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
   height: 100%;
   min-height: 0;
@@ -4699,9 +4704,57 @@ select {
   padding: 12px;
 }
 
+.automation-timeline-toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 8px 10px;
+}
+
+.automation-timeline-toolbar > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.automation-timeline-toolbar > div:first-child strong,
+.automation-timeline-toolbar > div:first-child span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-timeline-toolbar > div:first-child span,
+.automation-timeline-toolbar .status-text {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.automation-timeline-toolbar-actions,
+.automation-timeline-pipeline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.automation-timeline-pipeline-actions,
+.automation-timeline-toolbar .automation-pipeline-summary,
+.automation-timeline-toolbar .status-text {
+  grid-column: 1 / -1;
+}
+
+.automation-timeline-toolbar .automation-pipeline-summary {
+  padding: 6px;
+}
+
 .automation-recording-browser {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto auto;
   gap: 8px;
   min-width: 0;
   min-height: 0;
@@ -4729,10 +4782,27 @@ select {
   gap: 6px;
 }
 
+.automation-recording-actions.secondary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .automation-recording-actions .button {
   justify-content: center;
   min-width: 0;
   padding-inline: 8px;
+}
+
+.automation-recording-pipeline {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.automation-recording-pipeline .button {
+  justify-content: center;
+  min-width: 0;
+  padding-inline: 5px;
+  font-size: 11px;
 }
 
 .automation-recording-list {
@@ -4782,6 +4852,38 @@ select {
   gap: 4px;
   padding: 10px;
   color: var(--color-text-muted);
+}
+
+.automation-pipeline-summary {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: #fbfcfd;
+  padding: 8px;
+}
+
+.automation-pipeline-summary header,
+.automation-pipeline-summary article {
+  display: grid;
+  gap: 3px;
+}
+
+.automation-pipeline-summary header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.automation-pipeline-summary > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.automation-pipeline-summary span,
+.automation-pipeline-summary small {
+  color: var(--color-text-muted);
+  font-size: 11px;
 }
 
 .automation-timeline-stage {
@@ -4996,7 +5098,7 @@ select {
 
 .automation-timeline-detail-strip {
   display: grid;
-  grid-template-columns: minmax(140px, 0.8fr) 70px minmax(120px, 0.6fr) minmax(0, 1.4fr);
+  grid-template-columns: minmax(140px, 0.8fr) 70px minmax(120px, 0.6fr) minmax(0, 1.4fr) auto auto;
   align-items: center;
   gap: 10px;
   min-height: 42px;
@@ -5025,6 +5127,33 @@ select {
 }
 
 .automation-timeline-empty span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.automation-domain-contracts {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.automation-domain-contracts > header,
+.automation-domain-contracts article {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 10px;
+}
+
+.automation-domain-contracts > header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.automation-domain-contracts span,
+.automation-domain-contracts small {
   color: var(--color-text-muted);
   font-size: 12px;
 }

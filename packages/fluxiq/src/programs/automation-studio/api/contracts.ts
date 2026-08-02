@@ -33,10 +33,21 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   saveProjectArtifact: "save-project-artifact",
   getRecording: "get-recording",
   createRecording: "create-recording",
+  updateRecording: "update-recording",
+  deleteRecording: "delete-recording",
   appendRecordingEntry: "append-recording-entry",
+  appendRecordingNote: "append-recording-note",
+  appendRecordingMarker: "append-recording-marker",
   finalizeRecording: "finalize-recording",
   normalizeRecording: "normalize-recording",
+  createNormalizationReview: "create-normalization-review",
   listNormalizedTimelines: "list-normalized-timelines",
+  listPipelineArtifacts: "list-pipeline-artifacts",
+  mineRecordingEvidence: "mine-recording-evidence",
+  learnTaskModel: "learn-task-model",
+  proposePolicyFromModel: "propose-policy-from-model",
+  approvePolicyProposal: "approve-policy-proposal",
+  replayPolicyAgainstRecording: "replay-policy-against-recording",
   listRuntimeSessions: "list-runtime-sessions",
   startRuntimeSession: "start-runtime-session",
   runRuntimeSession: "run-runtime-session",
@@ -73,8 +84,8 @@ export type AutomationStudioProjectCategory = {
 export type AutomationStudioHierarchyNode = {
   id: string;
   label: string;
-  kind: "folder" | "task" | "routine" | "config";
-  category: "task" | "routine" | "config";
+  kind: "folder" | "task" | "routine" | "config" | "recording";
+  category: "task" | "routine" | "config" | "recording";
   parentId: string | null;
   viewId?: string;
   sourceId?: string;
@@ -130,6 +141,31 @@ export type AppendRecordingEntryRequest = RecordingProjectRequest & {
   entry: AppendRecordingEntryInput;
 };
 
+export type UpdateRecordingRequest = RecordingProjectRequest & {
+  recordingId: string;
+  name?: unknown;
+  archived?: unknown;
+};
+
+export type DeleteRecordingRequest = RecordingProjectRequest & {
+  recordingId: string;
+};
+
+export type AppendRecordingNoteRequest = RecordingProjectRequest & {
+  recordingId: string;
+  text?: unknown;
+  linkedEntryIds?: unknown;
+  startOffsetMs?: unknown;
+  endOffsetMs?: unknown;
+};
+
+export type AppendRecordingMarkerRequest = RecordingProjectRequest & {
+  recordingId: string;
+  label?: unknown;
+  monotonicOffsetMs?: unknown;
+  linkedEntryId?: unknown;
+};
+
 export type ListRecordingDomainsResponse = {
   domains: RecordingDomainDefinition[];
 };
@@ -146,6 +182,33 @@ export type FinalizeRecordingRequest = RecordingProjectRequest & {
 export type NormalizeRecordingRequest = RecordingProjectRequest & {
   recordingId: string;
   options?: NormalizationOptions;
+};
+
+export type RecordingIdProjectRequest = RecordingProjectRequest & {
+  recordingId: string;
+};
+
+export type MineRecordingEvidenceRequest = RecordingProjectRequest & {
+  recordingId?: string;
+  normalizedTimelineId?: string;
+};
+
+export type LearnTaskModelRequest = RecordingProjectRequest & {
+  taskId?: string;
+  miningRunId?: string;
+};
+
+export type ProposePolicyFromModelRequest = RecordingProjectRequest & {
+  learnedTaskModelId?: string;
+};
+
+export type ApprovePolicyProposalRequest = RecordingProjectRequest & {
+  proposalId: string;
+};
+
+export type ReplayPolicyAgainstRecordingRequest = RecordingProjectRequest & {
+  recordingId: string;
+  policyId?: string;
 };
 
 export type InspectStateDiffRequest = {

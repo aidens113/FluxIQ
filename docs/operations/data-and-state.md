@@ -28,6 +28,14 @@ FluxIQ source checkout as the host root unless
 `FLUXIQ_ALLOW_FRAMEWORK_REPO_ROOT=true` is set for deliberate framework-only
 development.
 
+Importing repositories can also attach domain-specific framework registration
+to the web panel with `FLUXIQ_HOST_MODULE`. The value must be a path to a
+CommonJS module that exports either `registerFluxIQHost(fluxiq)` or a default
+synchronous registration function. The web runtime creates the plain `FluxIQ`
+instance, loads this module, and lets the importer register recording domains,
+nodes, adapters, or other host-owned extensions before API routes and the
+client gateway start using the shared runtime.
+
 ## Global SQLite Database
 
 The global framework database is:

@@ -52,7 +52,7 @@ export function appendRecordingEntry(recording: RecordingSession, input: AppendR
   const sequence = nextTimelineSequence(recording);
   const entry = {
     ...input,
-    id: input.id ?? `entry.${sequence}`,
+    id: uniqueTimelineEntryId(recording, input.id ?? `entry.${sequence}`),
     recordingId: recording.recordingId,
     timestamp,
     monotonicOffsetMs: input.monotonicOffsetMs ?? Math.max(0, timestamp - recording.startedAt),
@@ -109,6 +109,7 @@ export function finalizeRecordingSession(recording: RecordingSession, endedAt = 
 function appendTimelineEntry(recording: RecordingSession, entry: TimelineEntry): RecordingSession {
   const next = {
     ...entry,
+    id: uniqueTimelineEntryId(recording, entry.id),
     recordingId: recording.recordingId,
     sequence: nextTimelineSequence(recording),
     monotonicOffsetMs: Math.max(0, entry.timestamp - recording.startedAt)
@@ -119,7 +120,7 @@ function appendTimelineEntry(recording: RecordingSession, entry: TimelineEntry):
 function baseAppendFields(recording: RecordingSession, input: Partial<{ id: string; timestamp: number; sourceId: string; metadata: JsonObject }>): Pick<TimelineBase, "id" | "timestamp" | "sourceId"> & Partial<Pick<TimelineBase, "metadata">> {
   const timestamp = input.timestamp ?? Date.now();
   return {
-    id: input.id ?? `entry.${nextTimelineSequence(recording)}`,
+    id: uniqueTimelineEntryId(recording, input.id ?? `entry.${nextTimelineSequence(recording)}`),
     timestamp,
     sourceId: input.sourceId ?? recording.sources[0]?.id ?? "source.host",
     ...(input.metadata !== undefined ? { metadata: input.metadata } : {})
@@ -128,4 +129,12 @@ function baseAppendFields(recording: RecordingSession, input: Partial<{ id: stri
 
 function nextTimelineSequence(recording: RecordingSession): number {
   return recording.timeline.reduce((max, entry) => Math.max(max, entry.sequence), -1) + 1;
+}
+
+function uniqueTimelineEntryId(recording: RecordingSession, preferredId: string): string {
+  const existing = new Set(recording.timeline.map((entry) => entry.id));
+  if (!existing.has(preferredId)) return preferredId;
+  let suffix = 2;
+  while (existing.has(`${preferredId}.${suffix}`)) suffix += 1;
+  return `${preferredId}.${suffix}`;
 }
