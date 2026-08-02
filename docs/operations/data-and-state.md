@@ -20,6 +20,14 @@ The default database root is:
 These paths can be overridden through `FluxIQ.create(...)` or environment
 variables such as `FLUXIQ_ROOT`, `FLUXIQ_DIR`, and `FLUXIQ_DATABASES_DIR`.
 
+When the web panel is run from the FluxIQ framework checkout during local
+development, it must be pointed at the importing repository explicitly. Set
+`FLUXIQ_IMPORTER_ROOT`, `FLUXIQ_HOST_ROOT`, or `FLUXIQ_ROOT` to the repository
+that owns the `.fluxiq` folder. The web panel refuses to silently use the
+FluxIQ source checkout as the host root unless
+`FLUXIQ_ALLOW_FRAMEWORK_REPO_ROOT=true` is set for deliberate framework-only
+development.
+
 ## Global SQLite Database
 
 The global framework database is:

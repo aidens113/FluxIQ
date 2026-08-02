@@ -1,40 +1,48 @@
-import { describe, expect, it } from "vitest";
+import { rm } from "node:fs/promises";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import { CLIENT_GATEWAY_PROTOCOL_VERSION, ClientGatewayService, type ClientGatewayClientMessage } from "../../../client-gateway";
 import { stateValue } from "../model";
 import { AutomationStudioService } from "../runtime/service";
 import { AutomationStudioClientGatewayBridge } from "./bridge";
+
+const tempRoot = path.join(process.cwd(), ".tmp", "automation-studio-client-gateway-bridge-test");
+
+afterEach(async () => {
+  await rm(tempRoot, { recursive: true, force: true });
+});
 
 describe("AutomationStudioClientGatewayBridge", () => {
   it("stores remote client evidence in Automation Studio recordings", async () => {
     const gateway = new ClientGatewayService();
     const automationStudio = new AutomationStudioService({ seedFixture: false });
     automationStudio.registerRecordingDomain({
-      domainId: "example.web",
-      label: "Example web",
+      domainId: "example.domain",
+      label: "Example domain",
       schemaVersion: "0.1",
-      events: [{ eventType: "click", label: "Click", payloadSchema: { type: "object" } }]
+      events: [{ eventType: "signal.observed", label: "Signal observed", payloadSchema: { type: "object" } }]
     });
     const bridge = new AutomationStudioClientGatewayBridge({ gateway, automationStudio });
     const session = gateway.connect();
     await gateway.receive(session.sessionId, clientMessage("client.hello", {
       clientId: "extension.test",
-      clientType: "browser-extension",
+      clientType: "extension",
       name: "Test extension",
-      capabilities: [{ id: "browser.actions", kind: "action", actionTypes: ["click"] }]
+      capabilities: [{ id: "sample.actions", kind: "action", actionTypes: ["sample.action"] }]
     }));
     await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "");
 
-    const recording = await bridge.startRecording({ sessionId: session.sessionId, taskId: "task.web" });
+    const recording = await bridge.startRecording({ sessionId: session.sessionId, taskId: "task.sample" });
     await gateway.receive(session.sessionId, clientMessage("client.recording_event", {
-      domainId: "example.web",
-      eventType: "click",
-      target: { selector: "#submit" },
-      payload: { button: 0 }
+      domainId: "example.domain",
+      eventType: "signal.observed",
+      target: { id: "target.1" },
+      payload: { value: 1 }
     }));
 
     const stored = await automationStudio.getRecordingSession(recording.recordingId);
     expect(stored.timeline).toHaveLength(1);
-    expect(stored.timeline[0]).toMatchObject({ type: "domain_event", eventType: "click" });
+    expect(stored.timeline[0]).toMatchObject({ type: "domain_event", eventType: "signal.observed" });
   });
 
   it("records remote action results when a client command resolves", async () => {
@@ -46,18 +54,18 @@ describe("AutomationStudioClientGatewayBridge", () => {
     await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "");
     const recording = await bridge.startRecording({ sessionId: session.sessionId });
 
-    const resultPromise = bridge.executeAction(session.sessionId, { actionType: "click", parameters: { selector: "#save" } });
+    const resultPromise = bridge.executeAction(session.sessionId, { actionType: "sample.action", parameters: { targetId: "target.1" } });
     const command = gateway.outbound(session.sessionId).find((message) => message.type === "server.execute_action");
     expect(command?.type).toBe("server.execute_action");
     await gateway.receive(session.sessionId, clientMessage("client.action_result", {
       commandId: command?.payload.commandId ?? "",
       status: "succeeded",
-      message: "clicked"
+      message: "completed"
     }));
     await expect(resultPromise).resolves.toMatchObject({ status: "succeeded" });
 
     const stored = await automationStudio.getRecordingSession(recording.recordingId);
-    expect(stored.timeline.some((entry) => entry.type === "action" && entry.actionType === "click")).toBe(true);
+    expect(stored.timeline.some((entry) => entry.type === "action" && entry.actionType === "sample.action")).toBe(true);
   });
 
   it("routes websocket recording events through registered domain contracts", async () => {
@@ -98,7 +106,7 @@ describe("AutomationStudioClientGatewayBridge", () => {
     });
     const bridge = new AutomationStudioClientGatewayBridge({ gateway, automationStudio });
     const session = gateway.connect();
-    await gateway.receive(session.sessionId, clientMessage("client.hello", { clientId: "extension.domain", clientType: "browser-extension", name: "Domain extension" }));
+    await gateway.receive(session.sessionId, clientMessage("client.hello", { clientId: "extension.domain", clientType: "extension", name: "Domain extension" }));
     await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "");
     const recording = await bridge.startRecording({ sessionId: session.sessionId });
 
@@ -114,8 +122,13 @@ describe("AutomationStudioClientGatewayBridge", () => {
 
   it("creates and finalizes recordings from client-initiated websocket lifecycle messages", async () => {
     const gateway = new ClientGatewayService();
-    const automationStudio = new AutomationStudioService({ seedFixture: false });
-    new AutomationStudioClientGatewayBridge({ gateway, automationStudio });
+    const automationStudio = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await automationStudio.createProject({ name: "Open Project" });
+    new AutomationStudioClientGatewayBridge({
+      gateway,
+      automationStudio,
+      clientRecordingContextProvider: () => ({ ok: true, projectId: project.id })
+    });
     const session = gateway.connect();
     await gateway.receive(session.sessionId, clientMessage("client.hello", { clientId: "recorder.test", clientType: "custom", name: "Recorder" }));
     await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "");
@@ -135,10 +148,30 @@ describe("AutomationStudioClientGatewayBridge", () => {
       endedAt: 10
     }));
 
-    const stored = await automationStudio.getRecordingSession("recording.client-start");
+    const stored = await automationStudio.getRecordingSession("recording.client-start", project.id);
     expect(stored.environment.domainId).toBe("example.lifecycle");
     expect(stored.timeline).toHaveLength(1);
     expect(stored.endedAt).toBe(10);
+  });
+
+  it("rejects client-initiated recording starts when no project is open", async () => {
+    const gateway = new ClientGatewayService();
+    const automationStudio = new AutomationStudioService({ seedFixture: false });
+    new AutomationStudioClientGatewayBridge({ gateway, automationStudio });
+    const session = gateway.connect();
+    await gateway.receive(session.sessionId, clientMessage("client.hello", { clientId: "recorder.blocked", clientType: "custom", name: "Recorder" }));
+    await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "");
+
+    await gateway.receive(session.sessionId, clientMessage("client.start_recording", {
+      recordingId: "recording.blocked",
+      startedAt: 1,
+      initialState: { timestamp: 1, namespaces: {} }
+    }));
+
+    const error = gateway.outbound(session.sessionId).find((message): message is Extract<ReturnType<ClientGatewayService["outbound"]>[number], { type: "server.error" }> => message.type === "server.error" && message.payload.code === "recording.project_required");
+    expect(error?.payload.message).toContain("open project");
+    expect(gateway.snapshot().auditLog.some((entry) => entry.type === "recording.project_required")).toBe(true);
+    await expect(automationStudio.getRecordingSession("recording.blocked")).rejects.toThrow("Unknown Automation Studio recording");
   });
 });
 

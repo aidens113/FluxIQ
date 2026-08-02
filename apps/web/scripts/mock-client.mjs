@@ -11,15 +11,15 @@ socket.addEventListener("open", () => {
   console.log(`[mock-client] connected ${url}`);
   send("client.hello", {
     clientId: "mock.extension.local",
-    clientType: "browser-extension",
-    name: "Mock Browser Extension",
+    clientType: "extension",
+    name: "Mock Extension Client",
     version: "0.1.0",
     ...(sessionToken ? { token: sessionToken } : {}),
     capabilities: [
-      { id: "browser.recording", label: "Browser recording", kind: "recording" },
-      { id: "browser.state", label: "Browser state", kind: "state" },
-      { id: "browser.snapshot", label: "DOM snapshot", kind: "snapshot" },
-      { id: "browser.actions", label: "Browser actions", kind: "action", actionTypes: ["click", "type", "navigate", "snapshot"] }
+      { id: "sample.recording", label: "Sample recording", kind: "recording" },
+      { id: "sample.state", label: "Sample state", kind: "state" },
+      { id: "sample.snapshot", label: "Sample snapshot", kind: "snapshot" },
+      { id: "sample.actions", label: "Sample actions", kind: "action", actionTypes: ["sample.action"] }
     ],
     metadata: { mock: true }
   });
@@ -34,16 +34,16 @@ socket.addEventListener("message", (event) => {
   if (message.type === "server.session_ready") {
     sessionToken = message.payload.token;
     console.log(`[mock-client] session token ${sessionToken}`);
-    sendBrowserState();
+    sendStateUpdate();
   }
   if (message.type === "server.capture_snapshot") {
-    send("client.dom_snapshot", {
-      kind: "dom",
+    send("client.snapshot", {
+      kind: "structured",
       timestamp: Date.now(),
       state: {
-        url: "https://example.local/mock",
-        title: "Mock page",
-        elements: [{ selector: "#demo", text: "Demo button" }]
+        contextId: "mock.context.1",
+        label: "Mock context",
+        items: [{ id: "item.1", label: "Demo item" }]
       },
       metadata: { requestedBy: message.id }
     });
@@ -53,7 +53,7 @@ socket.addEventListener("message", (event) => {
       recordingId: message.payload.recordingId,
       eventType: "recording.started",
       timestamp: Date.now(),
-      payload: { url: "https://example.local/mock" }
+      payload: { contextId: "mock.context.1" }
     });
   }
   if (message.type === "server.execute_action") {
@@ -82,17 +82,16 @@ function send(type, payload) {
   }));
 }
 
-function sendBrowserState() {
-  send("client.browser_state", {
-    activeTabId: "mock.tab.1",
-    tabs: [{
-      tabId: "mock.tab.1",
-      url: "https://example.local/mock",
-      title: "Mock page",
+function sendStateUpdate() {
+  send("client.state_update", {
+    activeContextId: "mock.context.1",
+    contexts: [{
+      contextId: "mock.context.1",
+      label: "Mock context",
       active: true,
-      viewport: { width: 1440, height: 900, deviceScaleFactor: 1 }
+      dimensions: { width: 1440, height: 900 }
     }],
-    permissions: ["tabs", "scripting"],
+    state: { status: "ready" },
     recording: false,
     metadata: { mock: true }
   });

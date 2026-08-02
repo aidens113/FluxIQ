@@ -12,7 +12,7 @@ describe("FluxIQClientGatewayWebSocketClient", () => {
     const sockets: FakeWebSocket[] = [];
     const client = new FluxIQClientGatewayWebSocketClient({
       url: "ws://local/client",
-      client: { clientId: "extension.test", clientType: "browser-extension", name: "Test extension" },
+      client: { clientId: "extension.test", clientType: "extension", name: "Test extension" },
       WebSocketImpl: class extends FakeWebSocket {
         constructor(url: string) {
           super(url);
@@ -29,7 +29,7 @@ describe("FluxIQClientGatewayWebSocketClient", () => {
     expect(JSON.parse(sockets[0]!.sent[0] ?? "{}")).toMatchObject({
       type: "client.hello",
       protocolVersion: CLIENT_GATEWAY_PROTOCOL_VERSION,
-      payload: { clientId: "extension.test", clientType: "browser-extension" }
+      payload: { clientId: "extension.test", clientType: "extension" }
     });
 
     sockets[0]!.receive(serverMessage("server.pairing_required", { reason: "Approve in FluxIQ.", referenceCode: "ABCD" }));

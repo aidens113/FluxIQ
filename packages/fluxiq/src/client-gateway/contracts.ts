@@ -3,7 +3,7 @@ import type { JsonObject, JsonValue } from "../core";
 export const CLIENT_GATEWAY_PROTOCOL_VERSION = "0.1";
 
 export type ClientGatewayClientType =
-  | "browser-extension"
+  | "extension"
   | "desktop-recorder"
   | "cli"
   | "worker"
@@ -33,19 +33,10 @@ export type ClientGatewayClientHello = {
   metadata?: JsonObject;
 };
 
-export type ClientGatewayBrowserState = {
-  activeTabId?: string;
-  tabs?: Array<{
-    tabId: string;
-    url?: string;
-    title?: string;
-    faviconUrl?: string;
-    active?: boolean;
-    viewport?: { width: number; height: number; deviceScaleFactor?: number };
-    frameTree?: JsonObject;
-    metadata?: JsonObject;
-  }>;
-  permissions?: string[];
+export type ClientGatewayStateUpdate = {
+  activeContextId?: string;
+  contexts?: JsonObject[];
+  state?: JsonObject;
   recording?: boolean;
   metadata?: JsonObject;
 };
@@ -90,7 +81,7 @@ export type ClientGatewayAppendRecordingEntryRequest = {
 export type ClientGatewaySnapshot = {
   snapshotId?: string;
   timestamp?: number;
-  kind: "dom" | "state" | "screenshot" | "custom";
+  kind: "state" | "structured" | "image" | "binary" | "custom";
   state?: JsonObject;
   payload?: JsonObject;
   metadata?: JsonObject;
@@ -145,7 +136,7 @@ export type ClientGatewaySession = {
   projectId?: string | null;
   activeRecordingId?: string | null;
   capabilities: ClientGatewayCapability[];
-  browserState?: ClientGatewayBrowserState;
+  stateUpdate?: ClientGatewayStateUpdate;
   metadata?: JsonObject;
 };
 
@@ -174,13 +165,12 @@ export type ClientGatewayClientMessage =
   // Deprecated compatibility path. New clients wait for web-panel approval.
   | ClientGatewayEnvelope<"client.pairing_submit", { pairingCode: string }>
   | ClientGatewayEnvelope<"client.capabilities", { capabilities: ClientGatewayCapability[] }>
-  | ClientGatewayEnvelope<"client.browser_state", ClientGatewayBrowserState>
-  | ClientGatewayEnvelope<"client.tab_state", JsonObject>
+  | ClientGatewayEnvelope<"client.state_update", ClientGatewayStateUpdate>
   | ClientGatewayEnvelope<"client.start_recording", ClientGatewayStartRecordingRequest>
   | ClientGatewayEnvelope<"client.stop_recording", ClientGatewayStopRecordingRequest>
   | ClientGatewayEnvelope<"client.recording_entry", ClientGatewayAppendRecordingEntryRequest>
   | ClientGatewayEnvelope<"client.recording_event", ClientGatewayRecordingEvent>
-  | ClientGatewayEnvelope<"client.dom_snapshot", ClientGatewaySnapshot>
+  | ClientGatewayEnvelope<"client.snapshot", ClientGatewaySnapshot>
   | ClientGatewayEnvelope<"client.action_result", ClientGatewayActionResult>
   | ClientGatewayEnvelope<"client.error", { message: string; code?: string; metadata?: JsonObject }>;
 
@@ -212,12 +202,12 @@ export type ClientGatewaySocket = {
 export type ClientGatewayEvent =
   | { type: "session.ready"; session: ClientGatewaySession }
   | { type: "session.disconnected"; session: ClientGatewaySession }
-  | { type: "client.browser_state"; session: ClientGatewaySession; message: ClientGatewayEnvelope<"client.browser_state", ClientGatewayBrowserState> }
+  | { type: "client.state_update"; session: ClientGatewaySession; message: ClientGatewayEnvelope<"client.state_update", ClientGatewayStateUpdate> }
   | { type: "client.start_recording"; session: ClientGatewaySession; message: ClientGatewayEnvelope<"client.start_recording", ClientGatewayStartRecordingRequest> }
   | { type: "client.stop_recording"; session: ClientGatewaySession; message: ClientGatewayEnvelope<"client.stop_recording", ClientGatewayStopRecordingRequest> }
   | { type: "client.recording_entry"; session: ClientGatewaySession; message: ClientGatewayEnvelope<"client.recording_entry", ClientGatewayAppendRecordingEntryRequest> }
   | { type: "client.recording_event"; session: ClientGatewaySession; message: ClientGatewayEnvelope<"client.recording_event", ClientGatewayRecordingEvent> }
-  | { type: "client.dom_snapshot"; session: ClientGatewaySession; message: ClientGatewayEnvelope<"client.dom_snapshot", ClientGatewaySnapshot> }
+  | { type: "client.snapshot"; session: ClientGatewaySession; message: ClientGatewayEnvelope<"client.snapshot", ClientGatewaySnapshot> }
   | { type: "client.action_result"; session: ClientGatewaySession; message: ClientGatewayEnvelope<"client.action_result", ClientGatewayActionResult> }
   | { type: "client.error"; session: ClientGatewaySession; message: ClientGatewayEnvelope<"client.error", { message: string; code?: string; metadata?: JsonObject }> };
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Blocks, Braces, Bug, Calculator, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleDot, Clock, Columns3, Copy, Database, Dice5, FileText, FolderOpen, FolderPlus, GitBranch, GripVertical, History, Info, ListChecks, Maximize2, Merge, Minimize2, Network, Plus, QrCode, Radio, RefreshCcw, Repeat, Search, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Split, Trash2, Waves, Workflow, XCircle, Zap } from "lucide-react";
+import { AlertTriangle, Blocks, Braces, Bug, Calculator, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleDot, Clock, Columns3, Copy, Database, Dice5, FileText, FolderOpen, FolderPlus, GitBranch, GripVertical, History, Info, ListChecks, Maximize2, Merge, Minimize2, Network, Plus, QrCode, Radio, RefreshCcw, Repeat, Search, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Split, Trash2, Waves, Workflow, XCircle, Zap } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import {
@@ -74,7 +74,7 @@ type AutomationWorkspaceWindow = {
   heightPx: number;
   zIndex: number;
 };
-type AutomationWorkspaceArea = "main" | "right" | "bottom";
+type AutomationWorkspaceArea = "main" | "right";
 type AutomationWindowAdderState = {
   area: AutomationWorkspaceArea;
   targetWindowId?: string;
@@ -105,10 +105,8 @@ type AutomationWorkspacePrefs = {
   maximizedWindowId: string | null;
   sidebarWidth: number;
   inspectorWidth: number;
-  bottomDockHeight: number;
   utilityWindowsMigrated: boolean;
   rightSidebarCollapsed: boolean;
-  bottomBarCollapsed: boolean;
 };
 type AutomationEditorNodeSpec = {
   id: string;
@@ -297,10 +295,8 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     maximizedWindowId: null,
     sidebarWidth: 280,
     inspectorWidth: 320,
-    bottomDockHeight: 206,
     utilityWindowsMigrated: true,
-    rightSidebarCollapsed: false,
-    bottomBarCollapsed: false
+    rightSidebarCollapsed: false
   });
   const [dockTab, setDockTab] = useState<AutomationDockTab>("assistant");
   const [preferencesOpen, setPreferencesOpen] = useState(false);
@@ -312,6 +308,8 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const [projectSearch, setProjectSearch] = useState("");
   const [projectTypeFilter, setProjectTypeFilter] = useState<"all" | "folder" | "task" | "routine" | "config">("all");
   const [selection, setSelection] = useState<AutomationSelection | null>(null);
+  const [gatewaySnapshot, setGatewaySnapshot] = useState<any>({ enabled: false, sessions: [], pairings: [], auditLog: [] });
+  const [recordingBlockedAlert, setRecordingBlockedAlert] = useState<{ message: string; clientId?: string; timestamp: number } | null>(null);
   const [hierarchyAction, setHierarchyAction] = useState<AutomationHierarchyAction>(null);
   const [hierarchyCreateStep, setHierarchyCreateStep] = useState<"type" | "details">("type");
   const [hierarchyPin, setHierarchyPin] = useState("");
@@ -325,10 +323,21 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const urlProjectOpenAttemptRef = useRef<string | null>(null);
   const mainWorkspaceCanvasRef = useRef<HTMLDivElement>(null);
   const rightWorkspaceCanvasRef = useRef<HTMLDivElement>(null);
-  const bottomWorkspaceCanvasRef = useRef<HTMLDivElement>(null);
   const lastSavedHierarchySignatureRef = useRef("");
+  const lastOpenedGatewayRecordingRef = useRef("");
+  const lastRecordingBlockedAuditRef = useRef("");
 
   const refresh = useCallback(async () => setSnapshot(await api.get("snapshot")), [api]);
+  const refreshProjectData = useCallback(async (projectId: string) => {
+    const [recordingResult, timelineResult, runtimeResult] = await Promise.all([
+      api.post<{ recordings: any[] }>("list-recordings", { projectId }),
+      api.post<{ normalizedTimelines: any[] }>("list-normalized-timelines", { projectId }),
+      api.post<{ runtimeSessions: any[] }>("list-runtime-sessions", { projectId })
+    ]);
+    if (recordingResult.ok) setProjectRecordings(recordingResult.payload?.recordings ?? []);
+    if (timelineResult.ok) setProjectTimelines(timelineResult.payload?.normalizedTimelines ?? []);
+    if (runtimeResult.ok) setRuntimeSessions(runtimeResult.payload?.runtimeSessions ?? []);
+  }, [api]);
   const refreshProjects = useCallback(async () => {
     setProjectStatus("");
     const result = await api.get<{ categories: AutomationStudioProjectCategory[]; projects: AutomationStudioProject[] }>("projects");
@@ -343,26 +352,14 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   useEffect(() => void refresh(), [refresh]);
   useEffect(() => void refreshProjects(), [refreshProjects]);
   useEffect(() => {
-    let cancelled = false;
     if (!activeProjectId) {
       setProjectRecordings([]);
       setProjectTimelines([]);
       setRuntimeSessions([]);
       return;
     }
-    void api.post<{ recordings: any[] }>("list-recordings", { projectId: activeProjectId }).then((result) => {
-      if (!cancelled && result.ok) setProjectRecordings(result.payload?.recordings ?? []);
-    });
-    void api.post<{ normalizedTimelines: any[] }>("list-normalized-timelines", { projectId: activeProjectId }).then((result) => {
-      if (!cancelled && result.ok) setProjectTimelines(result.payload?.normalizedTimelines ?? []);
-    });
-    void api.post<{ runtimeSessions: any[] }>("list-runtime-sessions", { projectId: activeProjectId }).then((result) => {
-      if (!cancelled && result.ok) setRuntimeSessions(result.payload?.runtimeSessions ?? []);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeProjectId, api]);
+    void refreshProjectData(activeProjectId).then(() => undefined);
+  }, [activeProjectId, refreshProjectData]);
   useEffect(() => {
     function refreshProjectChooser() {
       if (document.visibilityState === "visible" && !activeProjectId) void refreshProjects();
@@ -375,6 +372,46 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     };
   }, [activeProjectId, refreshProjects]);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function publishContext() {
+      await fetch("/api/client-gateway/automation-studio-context", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ activeProjectId })
+      }).catch(() => undefined);
+    }
+    void publishContext();
+    const interval = window.setInterval(() => {
+      if (!cancelled) void publishContext();
+    }, 3_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      void fetch("/api/client-gateway/automation-studio-context", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ activeProjectId: null })
+      }).catch(() => undefined);
+    };
+  }, [activeProjectId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function refreshGatewaySnapshot() {
+      const response = await fetch("/api/client-gateway/snapshot", { cache: "no-store" }).catch(() => null);
+      if (!response) return;
+      const result = await response.json().catch(() => null);
+      if (!cancelled && result?.ok) setGatewaySnapshot(result.payload ?? { enabled: false, sessions: [], pairings: [], auditLog: [] });
+    }
+    void refreshGatewaySnapshot();
+    const interval = window.setInterval(() => void refreshGatewaySnapshot(), 1_500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, []);
+
   const canonical = snapshot?.payload?.canonical ?? {};
   const recordings = mergeById(projectRecordings, canonical.recordingSessions ?? [], "recordingId");
   const timelines = mergeById(projectTimelines, canonical.normalizedTimelines ?? [], "normalizedTimelineId");
@@ -385,11 +422,11 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const signals = registries.flatMap((registry: any) => (registry.definitions ?? []).map((signal: any) => ({ ...signal, registryId: registry.registryId })));
   const selectedPolicy = policies.find((policy: any) => selection?.kind === "policy" && policy.policyId === selection.id) ?? policies[0];
   const selectedRecording = recordings.find((recording: any) => selection?.kind === "recording" && recording.recordingId === selection.id) ?? recordings[0];
-  const selectedTimeline = timelines.find((timeline: any) => timeline.recordingId === selectedRecording?.recordingId) ?? timelines[0];
+  const selectedTimeline = selectedRecording ? timelines.find((timeline: any) => timeline.recordingId === selectedRecording.recordingId) : timelines[0];
   const selectedNode = selection?.kind === "editor-node"
     ? { id: selection.id, ...selection.node, actions: (selection.node.actionTypes ?? []).map((actionType) => ({ actionType })), recovery: { strategy: selection.node.family } }
     : selectedPolicy?.nodes?.find((node: any) => selection?.kind === "node" && selection.id === node.id) ?? selectedPolicy?.nodes?.[0];
-  const selectedEntry = selectedTimeline?.timeline?.find((entry: any) => selection?.kind === "timeline" && selection.id === entry.id);
+  const selectedEntry = selectedTimeline?.timeline?.find((entry: any) => selection?.kind === "timeline" && selection.id === entry.id) ?? selectedRecording?.timeline?.find((entry: any) => selection?.kind === "timeline" && selection.id === entry.id);
   const selectedSignal = signals.find((signal: any) => selection?.kind === "signal" && selection.id === signal.path);
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
   const restoringUrlProject = Boolean(urlProjectId && !activeProject && !projectStatus && (!projectsLoaded || activeProjectId === urlProjectId || urlProjectOpenAttemptRef.current === urlProjectId));
@@ -435,13 +472,39 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const activeWindow = workspacePrefs.windows.find((item) => item.id === workspacePrefs.activeWindowId) ?? workspacePrefs.windows[0];
   const activeViewId = activeWindow?.activeViewId ?? "policy-primary";
   const windowsByArea = (area: AutomationWorkspaceArea) => visibleWindows.filter((item) => (item.area ?? "main") === area);
-  const canvasForArea = (area: AutomationWorkspaceArea) => area === "right" ? rightWorkspaceCanvasRef.current : area === "bottom" ? bottomWorkspaceCanvasRef.current : mainWorkspaceCanvasRef.current;
+  const canvasForArea = (area: AutomationWorkspaceArea) => area === "right" ? rightWorkspaceCanvasRef.current : mainWorkspaceCanvasRef.current;
   const setSelectionAndFollow = (next: AutomationSelection) => {
     setSelection(next);
     if (next.kind === "recording" || next.kind === "timeline") openView("timeline-recording", "preview");
     if (next.kind === "signal") openView("signals-web", "preview");
     if (next.kind === "policy") openView("policy-primary", "preview");
   };
+
+  useEffect(() => {
+    const blocked = [...(gatewaySnapshot.auditLog ?? [])].reverse().find((entry: any) => entry.type === "recording.project_required");
+    if (!blocked || blocked.id === lastRecordingBlockedAuditRef.current) return;
+    lastRecordingBlockedAuditRef.current = blocked.id;
+    setRecordingBlockedAlert({
+      message: blocked.message ?? "Recording cannot start because Automation Studio does not have an open project.",
+      clientId: String(blocked.metadata?.clientId ?? blocked.sessionId ?? ""),
+      timestamp: blocked.timestamp ?? Date.now()
+    });
+  }, [gatewaySnapshot.auditLog]);
+
+  useEffect(() => {
+    if (!activeProjectId) return;
+    const activeRecordingId = (gatewaySnapshot.sessions ?? [])
+      .map((session: any) => session.activeRecordingId)
+      .find((recordingId: unknown): recordingId is string => typeof recordingId === "string" && recordingId.length > 0);
+    if (!activeRecordingId || activeRecordingId === lastOpenedGatewayRecordingRef.current) return;
+    lastOpenedGatewayRecordingRef.current = activeRecordingId;
+    void refreshProjectData(activeProjectId).then(() => {
+      setSelection({ kind: "recording", id: activeRecordingId });
+      const hasTimelineWindow = workspacePrefs.windows.some((item) => (item.area ?? "main") === "main" && item.tabs.includes("timeline-recording"));
+      openView("timeline-recording", hasTimelineWindow ? "preview" : "new-window", "main");
+      setAutomationActionStatus(`Recording ${activeRecordingId} is live.`);
+    });
+  }, [activeProjectId, gatewaySnapshot.sessions, refreshProjectData, workspacePrefs.windows]);
 
   useEffect(() => {
     document.title = activeProject ? `${activeProject.name} - Automation Studio` : "Automation Studio";
@@ -492,7 +555,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
       setWorkspacePrefs((current) => {
         const windows = current.windows.map((item) => {
           const area = item.area ?? "main";
-          if ((area === "right" && current.rightSidebarCollapsed) || (area === "bottom" && current.bottomBarCollapsed)) return item;
+          if (area === "right" && current.rightSidebarCollapsed) return item;
           const canvas = canvasForArea(item.area ?? "main");
           if (!canvas) return item;
           const bounds = canvas.getBoundingClientRect();
@@ -504,7 +567,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     };
     clampWindows();
     const observer = new ResizeObserver(clampWindows);
-    [mainWorkspaceCanvasRef.current, rightWorkspaceCanvasRef.current, bottomWorkspaceCanvasRef.current].forEach((canvas) => {
+    [mainWorkspaceCanvasRef.current, rightWorkspaceCanvasRef.current].forEach((canvas) => {
       if (canvas) observer.observe(canvas);
     });
     return () => observer.disconnect();
@@ -785,6 +848,42 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     setProjectRecordings((current) => [result.payload!.recording, ...current.filter((recording) => recording.recordingId !== recordingId)]);
     setSelectionAndFollow({ kind: "recording", id: recordingId });
     setAutomationActionStatus("Recording session created.");
+    await refreshProjectRuntimeState(activeProjectId);
+  }
+
+  async function finalizeProjectRecording(recordingId: string) {
+    if (!activeProjectId || !recordingId) return;
+    const authorizationPin = window.prompt("Enter PIN to finalize this recording") ?? "";
+    if (authorizationPin.length < 4) {
+      setAutomationActionStatus("PIN is required to finalize a recording.");
+      return;
+    }
+    setAutomationActionStatus("Finalizing recording...");
+    const result = await api.post<{ recording: any }>("finalize-recording", { projectId: activeProjectId, recordingId, authorizationPin });
+    if (!result.ok || !result.payload?.recording) {
+      setAutomationActionStatus(result.error ?? "Recording could not be finalized.");
+      return;
+    }
+    setProjectRecordings((current) => [result.payload!.recording, ...current.filter((recording) => recording.recordingId !== recordingId)]);
+    setAutomationActionStatus("Recording finalized.");
+    await refreshProjectRuntimeState(activeProjectId);
+  }
+
+  async function normalizeProjectRecording(recordingId: string) {
+    if (!activeProjectId || !recordingId) return;
+    const authorizationPin = window.prompt("Enter PIN to normalize this recording") ?? "";
+    if (authorizationPin.length < 4) {
+      setAutomationActionStatus("PIN is required to normalize a recording.");
+      return;
+    }
+    setAutomationActionStatus("Normalizing recording timeline...");
+    const result = await api.post<{ normalizedTimeline: any }>("normalize-recording", { projectId: activeProjectId, recordingId, authorizationPin });
+    if (!result.ok || !result.payload?.normalizedTimeline) {
+      setAutomationActionStatus(result.error ?? "Recording could not be normalized.");
+      return;
+    }
+    setProjectTimelines((current) => [result.payload!.normalizedTimeline, ...current.filter((timeline) => timeline.normalizedTimelineId !== result.payload!.normalizedTimeline.normalizedTimelineId)]);
+    setAutomationActionStatus("Recording normalized.");
     await refreshProjectRuntimeState(activeProjectId);
   }
 
@@ -1072,17 +1171,17 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
       anchor: { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left }
     });
   }
-  function startWorkspaceSectionResize(area: "right" | "bottom", event: ReactPointerEvent<HTMLButtonElement>) {
+  function startWorkspaceSectionResize(area: "right", event: ReactPointerEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
     const startX = event.clientX;
-    const startY = event.clientY;
     const startWidth = workspacePrefs.inspectorWidth;
-    const startHeight = workspacePrefs.bottomDockHeight;
     const onMove = (moveEvent: PointerEvent) => {
-      updateWorkspacePrefs((current) => area === "right"
-        ? { ...current, inspectorWidth: clampNumber(startWidth + startX - moveEvent.clientX, 260, 620, startWidth), rightSidebarCollapsed: false }
-        : { ...current, bottomDockHeight: clampNumber(startHeight + startY - moveEvent.clientY, 140, 460, startHeight), bottomBarCollapsed: false });
+      updateWorkspacePrefs((current) => ({
+        ...current,
+        inspectorWidth: clampNumber(startWidth + startX - moveEvent.clientX, 260, 620, startWidth),
+        rightSidebarCollapsed: false
+      }));
     };
     const onUp = () => {
       window.removeEventListener("pointermove", onMove);
@@ -1149,7 +1248,6 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     return (
       <section className={`automation-workspace-section ${area}`}>
         {area === "right" ? <button className="automation-section-resize-handle right" onPointerDown={(event) => startWorkspaceSectionResize("right", event)} title="Resize right area" aria-label="Resize right area" type="button" /> : null}
-        {area === "bottom" ? <button className="automation-section-resize-handle bottom" onPointerDown={(event) => startWorkspaceSectionResize("bottom", event)} title="Resize bottom area" aria-label="Resize bottom area" type="button" /> : null}
         <header className="automation-workspace-section-header">
           <div className="automation-workspace-section-actions">
             {area === "right" ? <button
@@ -1163,13 +1261,6 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
             <div className={`automation-window-adder-anchor area-${area}`}>
               <button className="icon-button" onClick={(event) => toggleWindowAdder(area, event)} title={`Add window to ${label}`} aria-label={`Add window to ${label}`} type="button"><Plus size={13} aria-hidden /></button>
             </div>
-            {area === "bottom" ? <button
-              className="icon-button"
-              onClick={() => updateWorkspacePrefs((current) => ({ ...current, bottomBarCollapsed: !current.bottomBarCollapsed }))}
-              title={workspacePrefs.bottomBarCollapsed ? "Expand bottom area" : "Collapse bottom area"}
-              aria-label={workspacePrefs.bottomBarCollapsed ? "Expand bottom area" : "Collapse bottom area"}
-              type="button"
-            >{workspacePrefs.bottomBarCollapsed ? <ChevronUp size={13} aria-hidden /> : <ChevronDown size={13} aria-hidden />}</button> : null}
           </div>
         </header>
         <div
@@ -1219,6 +1310,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
                       entries={selectedTimeline?.timeline ?? selectedRecording?.timeline ?? []}
                       models={models}
                       notes={selectedRecording?.notes ?? []}
+                      actionStatus={automationActionStatus}
                       policies={policies}
                       policy={selectedPolicy}
                       problems={problems}
@@ -1233,7 +1325,12 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
                       selectedTimeline={selectedTimeline}
                       selection={selection}
                       signals={signals}
+                      timelines={timelines}
                       view={view}
+                      onCreateRecording={createProjectRecording}
+                      onFinalizeRecording={finalizeProjectRecording}
+                      onNormalizeRecording={normalizeProjectRecording}
+                      onRefreshRecordings={() => refreshProjectRuntimeState(activeProjectId)}
                       setDockTab={setDockTab}
                       setSelection={setSelectionAndFollow}
                     />
@@ -1410,17 +1507,26 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
         </header>
 
         <section
-          className={`automation-studio-workspace${workspacePrefs.rightSidebarCollapsed ? " right-collapsed" : ""}${workspacePrefs.bottomBarCollapsed ? " bottom-collapsed" : ""}${pageFullscreenWindowId ? " page-window-fullscreen" : ""}`}
+          className={`automation-studio-workspace${workspacePrefs.rightSidebarCollapsed ? " right-collapsed" : ""}${pageFullscreenWindowId ? " page-window-fullscreen" : ""}`}
           style={{
             gridTemplateColumns: `minmax(0, 1fr) ${workspacePrefs.rightSidebarCollapsed ? 38 : workspacePrefs.inspectorWidth}px`,
-            gridTemplateRows: `minmax(0, 1fr) ${workspacePrefs.bottomBarCollapsed ? 38 : workspacePrefs.bottomDockHeight}px`
+            gridTemplateRows: "minmax(0, 1fr)"
           }}
         >
           {renderWorkspaceArea("main", "Main", mainWorkspaceCanvasRef)}
           {renderWorkspaceArea("right", "Right Sidebar", rightWorkspaceCanvasRef)}
-          {renderWorkspaceArea("bottom", "Bottom Bar", bottomWorkspaceCanvasRef)}
         </section>
       </div>
+      {recordingBlockedAlert ? <Modal title="Recording Cannot Start" onClose={() => setRecordingBlockedAlert(null)}>
+        <VisualAlert
+          tone="warning"
+          title="Open a project first"
+          message={recordingBlockedAlert.message}
+        />
+        <div className="automation-modal-actions">
+          <button className="button primary" onClick={() => setRecordingBlockedAlert(null)} type="button">OK</button>
+        </div>
+      </Modal> : null}
       {hierarchyAction ? <Modal title={hierarchyAction.action === "create" && hierarchyCreateStep === "type" ? "Add To Hierarchy" : "Authorize Hierarchy Change"} onClose={() => setHierarchyAction(null)}>
         {hierarchyAction.action === "create" && hierarchyCreateStep === "type" ? <>
           <div className="automation-create-type-grid" role="list" aria-label="Choose item type">
@@ -1646,12 +1752,10 @@ function automationWindowAdderPanelStyle(area: AutomationWorkspaceArea, anchor: 
   const margin = 12;
   const width = Math.min(420, window.innerWidth - 48);
   const height = Math.min(620, window.innerHeight - 126);
-  const left = area === "right" || area === "bottom"
+  const left = area === "right"
     ? Math.max(margin, Math.min(window.innerWidth - width - margin, anchor.right - width))
     : Math.max(margin, Math.min(window.innerWidth - width - margin, anchor.left));
-  const top = area === "bottom"
-    ? Math.max(margin, anchor.top - height - gap)
-    : Math.max(margin, Math.min(window.innerHeight - height - margin, anchor.bottom + gap));
+  const top = Math.max(margin, Math.min(window.innerHeight - height - margin, anchor.bottom + gap));
   return { left, top, width };
 }
 
@@ -1676,13 +1780,11 @@ function AutomationLayoutPicker(props: { area: AutomationWorkspaceArea; anchor: 
 
 function automationLayoutOptionsForArea(area: AutomationWorkspaceArea): AutomationLayoutPresetOption[] {
   if (area === "right") return automationLayoutPresetOptions.filter((item) => item.id === "single" || item.id === "two-rows");
-  if (area === "bottom") return automationLayoutPresetOptions.filter((item) => item.id === "single" || item.id === "two-columns");
   return automationLayoutPresetOptions.filter((item) => item.id !== "two-rows");
 }
 
 function automationAreaLabel(area: AutomationWorkspaceArea): string {
   if (area === "right") return "Right Sidebar";
-  if (area === "bottom") return "Bottom Bar";
   return "Main";
 }
 
@@ -1691,12 +1793,10 @@ function automationFloatingPanelStyle(area: AutomationWorkspaceArea, anchor: Aut
   const margin = 12;
   const width = Math.min(maxWidth, window.innerWidth - 48);
   const height = Math.min(maxHeight, window.innerHeight - 126);
-  const left = area === "right" || area === "bottom"
+  const left = area === "right"
     ? Math.max(margin, Math.min(window.innerWidth - width - margin, anchor.right - width))
     : Math.max(margin, Math.min(window.innerWidth - width - margin, anchor.left));
-  const top = area === "bottom"
-    ? Math.max(margin, anchor.top - height - gap)
-    : Math.max(margin, Math.min(window.innerHeight - height - margin, anchor.bottom + gap));
+  const top = Math.max(margin, Math.min(window.innerHeight - height - margin, anchor.bottom + gap));
   return { left, top, width };
 }
 
@@ -1716,6 +1816,7 @@ function automationWindowDescription(view: AutomationViewInstance): string {
 }
 
 function AutomationViewRenderer(props: {
+  actionStatus: string;
   entries: any[];
   models: any[];
   notes: any[];
@@ -1733,18 +1834,23 @@ function AutomationViewRenderer(props: {
   selectedTimeline: any;
   selection: AutomationSelection | null;
   signals: any[];
+  timelines: any[];
   view: AutomationViewInstance;
+  onCreateRecording(): Promise<void>;
+  onFinalizeRecording(recordingId: string): Promise<void>;
+  onNormalizeRecording(recordingId: string): Promise<void>;
+  onRefreshRecordings(): Promise<void>;
   setDockTab(tab: AutomationDockTab): void;
   setSelection(selection: AutomationSelection): void;
 }) {
   if (props.view.type === "design") return <AutomationPolicyCanvas entries={props.entries} policy={props.policy} recordings={props.recordings} selectedNode={props.selectedNode} selectedTimeline={props.selectedTimeline} signals={props.signals} setSelection={props.setSelection} />;
-  if (props.view.type === "recordings") return <AutomationTimelineView entries={props.entries} notes={props.notes} selectedEntry={props.selectedEntry} setSelection={props.setSelection} />;
+  if (props.view.type === "recordings") return <AutomationTimelineView actionStatus={props.actionStatus} entries={props.entries} notes={props.notes} recordings={props.recordings} selectedEntry={props.selectedEntry} selectedRecording={props.selectedRecording} selectedTimeline={props.selectedTimeline} timelines={props.timelines} onCreateRecording={props.onCreateRecording} onFinalizeRecording={props.onFinalizeRecording} onNormalizeRecording={props.onNormalizeRecording} onRefreshRecordings={props.onRefreshRecordings} setSelection={props.setSelection} />;
   if (props.view.type === "signals") return <AutomationSignalWorkspace signals={props.signals} setSelection={props.setSelection} />;
   if (props.view.type === "runtime") return <AutomationRuntimeWorkspace timelines={props.selectedTimeline ? [props.selectedTimeline] : []} models={props.models} policies={props.policies} runtimeSessions={props.runtimeSessions} />;
   if (props.view.type === "clients") return <AutomationClientGatewayView projectId={props.projectId} />;
   if (props.view.type === "problems") return <AutomationProblemsWorkspace problems={props.problems} />;
   if (props.view.type === "assistant") return <AutomationAssistantView node={props.selectedNode} recording={props.selectedRecording} signals={props.signals} />;
-  if (props.view.type === "inspector") return <AutomationInspector selection={props.selection} policy={props.policy} node={props.selectedNode} recording={props.selectedRecording} entry={props.selectedEntry} signal={props.selectedSignal} setSelection={props.setSelection} />;
+  if (props.view.type === "inspector") return <AutomationInspector entries={props.entries} selection={props.selection} policy={props.policy} node={props.selectedNode} recording={props.selectedRecording} entry={props.selectedEntry} signal={props.selectedSignal} setSelection={props.setSelection} />;
   if (props.view.type === "dock") return <AutomationWorkspaceDock activeTab={props.dockTab} problems={props.problems} signals={props.signals} models={props.models} selectedNode={props.selectedNode} setActiveTab={props.setDockTab} />;
   if (props.view.type === "routine") return <AutomationRoutineView models={props.models} policies={props.policies} setSelection={props.setSelection} />;
   if (props.view.type === "config") return <AutomationConfigView policy={props.policy} />;
@@ -1752,7 +1858,7 @@ function AutomationViewRenderer(props: {
 }
 
 function AutomationWorkspacePreferences(props: { prefs: AutomationWorkspacePrefs; setPrefs(updater: (current: AutomationWorkspacePrefs) => AutomationWorkspacePrefs): void }) {
-  const setNumber = (key: "sidebarWidth" | "inspectorWidth" | "bottomDockHeight", value: number) => props.setPrefs((current) => ({ ...current, [key]: value }));
+  const setNumber = (key: "sidebarWidth" | "inspectorWidth", value: number) => props.setPrefs((current) => ({ ...current, [key]: value }));
   const resetLayout = () => props.setPrefs(() => defaultAutomationWorkspacePrefs());
   return (
     <section className="automation-preferences-panel">
@@ -1764,7 +1870,6 @@ function AutomationWorkspacePreferences(props: { prefs: AutomationWorkspacePrefs
         <strong>Frame</strong>
         <PreferenceSlider label="Sidebar" max={420} min={220} unit="px" value={props.prefs.sidebarWidth} onChange={(value) => setNumber("sidebarWidth", value)} />
         <PreferenceSlider label="Right area" max={620} min={260} unit="px" value={props.prefs.inspectorWidth} onChange={(value) => setNumber("inspectorWidth", value)} />
-        <PreferenceSlider label="Bottom area" max={460} min={140} unit="px" value={props.prefs.bottomDockHeight} onChange={(value) => setNumber("bottomDockHeight", value)} />
       </div>
       <div className="automation-preference-group">
         <strong>Window Canvas</strong>
@@ -1787,8 +1892,7 @@ function PreferenceSlider(props: { label: string; min: number; max: number; unit
 function defaultAutomationWorkspaceWindows(): AutomationWorkspaceWindow[] {
   return [
     { id: "window-policy", activeViewId: "policy-primary", tabs: ["policy-primary"], area: "main", x: 0, y: 0, widthPx: 1040, heightPx: 640, zIndex: 1 },
-    { id: "window-inspector", activeViewId: "global-inspector", tabs: ["global-inspector"], area: "right", x: 0, y: 0, widthPx: 320, heightPx: 520, zIndex: 2 },
-    { id: "window-dock", activeViewId: "workspace-dock", tabs: ["workspace-dock"], area: "bottom", x: 0, y: 0, widthPx: 960, heightPx: 206, zIndex: 3 }
+    { id: "window-inspector", activeViewId: "global-inspector", tabs: ["global-inspector"], area: "right", x: 0, y: 0, widthPx: 320, heightPx: 520, zIndex: 2 }
   ];
 }
 
@@ -1799,10 +1903,8 @@ function defaultAutomationWorkspacePrefs(): AutomationWorkspacePrefs {
     maximizedWindowId: null,
     sidebarWidth: 280,
     inspectorWidth: 320,
-    bottomDockHeight: 206,
     utilityWindowsMigrated: true,
-    rightSidebarCollapsed: false,
-    bottomBarCollapsed: false
+    rightSidebarCollapsed: false
   };
 }
 
@@ -1815,23 +1917,24 @@ function normalizeAutomationWorkspacePrefs(value: AutomationWorkspacePrefs): Aut
     .map((item, index) => {
       const tabs = item.tabs.map((tab) => tab === "node-detail" ? "global-inspector" : tab).filter((tab, tabIndex, allTabs) => allTabs.indexOf(tab) === tabIndex);
       const activeViewId = item.activeViewId === "node-detail" ? "global-inspector" : item.activeViewId;
+      const legacyArea = String((item as AutomationWorkspaceWindow & { area?: string }).area ?? "main");
+      const area: AutomationWorkspaceArea = legacyArea === "right" ? "right" : "main";
       return {
         ...item,
         activeViewId,
         tabs: tabs.length ? tabs : [activeViewId],
-        area: (["main", "right", "bottom"] as const).includes((item as AutomationWorkspaceWindow).area) ? (item as AutomationWorkspaceWindow).area : "main",
-        x: clampNumber(item.x, 0, 6000, 10 + index * 32),
-        y: clampNumber(item.y, 0, 6000, 10 + index * 32),
-        widthPx: clampNumber(item.widthPx ?? ((item as AutomationWorkspaceWindow & { widthWeight?: number }).widthWeight ? Number((item as AutomationWorkspaceWindow & { widthWeight?: number }).widthWeight) * 8 : legacyColumnWidths?.[index]), 360, 1800, 1040),
-        heightPx: clampNumber(item.heightPx, 320, 1400, 640),
+        area,
+        x: area === "main" && legacyArea === "bottom" ? 24 + index * 28 : clampNumber(item.x, 0, 6000, 10 + index * 32),
+        y: area === "main" && legacyArea === "bottom" ? 360 + index * 28 : clampNumber(item.y, 0, 6000, 10 + index * 32),
+        widthPx: clampNumber(item.widthPx ?? ((item as AutomationWorkspaceWindow & { widthWeight?: number }).widthWeight ? Number((item as AutomationWorkspaceWindow & { widthWeight?: number }).widthWeight) * 8 : legacyColumnWidths?.[index]), 360, 1800, area === "right" ? 320 : 1040),
+        heightPx: clampNumber(item.heightPx, area === "right" ? 260 : 320, 1400, area === "right" ? 520 : 640),
         zIndex: clampNumber(item.zIndex, 1, 9999, index + 1)
       };
     });
   const utilityWindowsMigrated = Boolean(value.utilityWindowsMigrated);
   const hasInspectorWindow = normalizedWindows.some((item) => item.tabs.includes("global-inspector") || item.activeViewId === "global-inspector");
-  const hasDockWindow = normalizedWindows.some((item) => item.tabs.includes("workspace-dock") || item.activeViewId === "workspace-dock");
   const utilityMigrationWindows = !utilityWindowsMigrated
-    ? defaultAutomationWorkspaceWindows().filter((item) => (item.activeViewId === "global-inspector" && !hasInspectorWindow) || (item.activeViewId === "workspace-dock" && !hasDockWindow))
+    ? defaultAutomationWorkspaceWindows().filter((item) => item.activeViewId === "global-inspector" && !hasInspectorWindow)
     : [];
   const windows = utilityMigrationWindows.length
     ? [
@@ -1847,10 +1950,8 @@ function normalizeAutomationWorkspacePrefs(value: AutomationWorkspacePrefs): Aut
     maximizedWindowId: value.maximizedWindowId && windows.some((item) => item.id === value.maximizedWindowId) ? value.maximizedWindowId : null,
     sidebarWidth: clampNumber(value.sidebarWidth, 220, 420, fallback.sidebarWidth),
     inspectorWidth: clampNumber(value.inspectorWidth, 260, 620, fallback.inspectorWidth),
-    bottomDockHeight: clampNumber(value.bottomDockHeight, 140, 460, fallback.bottomDockHeight),
     utilityWindowsMigrated: true,
-    rightSidebarCollapsed: Boolean(value.rightSidebarCollapsed),
-    bottomBarCollapsed: Boolean(value.bottomBarCollapsed)
+    rightSidebarCollapsed: Boolean(value.rightSidebarCollapsed)
   };
 }
 
@@ -2279,73 +2380,150 @@ function AutomationViewContainer(props: {
   );
 }
 
-function AutomationTimelineView(props: { entries: any[]; notes: any[]; selectedEntry: any; setSelection(selection: AutomationSelection): void }) {
-  const [zoom, setZoom] = useState(60);
-  const [visibleTracks, setVisibleTracks] = useState<string[]>(["notes", "actions", "state", "policy", "runtime"]);
-  const actionEntries = props.entries.filter((entry) => entry.type === "action");
-  const stateEntries = props.entries.filter((entry) => entry.type === "state_delta" || entry.type === "state_checkpoint");
-  const maxMs = Math.max(1, ...props.entries.map((entry) => entry.monotonicOffsetMs ?? 0));
-  const timelineWidth = `${Math.max(100, zoom * 3)}%`;
-  const tracks = [
-    { id: "notes", label: "Notes", entries: props.entries.filter((entry) => entry.type === "note"), tone: "note" },
-    { id: "actions", label: "Actions", entries: actionEntries, tone: "action" },
-    { id: "state", label: "State Changes", entries: stateEntries, tone: "state" },
-    { id: "policy", label: "Policy Nodes", entries: actionEntries, tone: "policy" },
-    { id: "runtime", label: "Runtime Decisions", entries: props.entries.filter((entry) => entry.type === "marker" || entry.type === "observation"), tone: "runtime" }
+function AutomationTimelineView(props: {
+  actionStatus: string;
+  entries: any[];
+  notes: any[];
+  recordings: any[];
+  selectedEntry: any;
+  selectedRecording: any;
+  selectedTimeline: any;
+  timelines: any[];
+  onCreateRecording(): Promise<void>;
+  onFinalizeRecording(recordingId: string): Promise<void>;
+  onNormalizeRecording(recordingId: string): Promise<void>;
+  onRefreshRecordings(): Promise<void>;
+  setSelection(selection: AutomationSelection): void;
+}) {
+  const timelineEditorRef = useRef<HTMLDivElement>(null);
+  const noteById = useMemo(() => new Map(props.notes.map((note) => [note.id, note])), [props.notes]);
+  const sortedEntries = useMemo(() => [...props.entries].sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0) || (left.monotonicOffsetMs ?? 0) - (right.monotonicOffsetMs ?? 0)), [props.entries]);
+  const totalMs = Math.max(0, ...sortedEntries.map((entry) => entry.monotonicOffsetMs ?? 0));
+  const timelineSteps = sortedEntries.map((entry, index) => {
+    const previous = sortedEntries[index - 1];
+    const waitMs = previous ? Math.max(0, (entry.monotonicOffsetMs ?? 0) - (previous.monotonicOffsetMs ?? 0)) : Math.max(0, entry.monotonicOffsetMs ?? 0);
+    return { entry, waitMs };
+  });
+  const selectedNote = props.selectedEntry?.type === "note" ? noteById.get(props.selectedEntry.noteId) : null;
+  const lanes = [
+    { id: "timing", label: "Timing", types: [] },
+    { id: "actions", label: "Actions", types: ["action", "domain_event"] },
+    { id: "state", label: "State", types: ["observation", "state_delta", "state_checkpoint"] },
+    { id: "notes", label: "Notes", types: ["note"] },
+    { id: "markers", label: "Markers", types: ["marker"] }
   ];
+  const selectedStepIndex = timelineSteps.findIndex((step) => step.entry.id === props.selectedEntry?.id);
+  const gridColumns = `repeat(${Math.max(1, timelineSteps.length)}, minmax(180px, 220px))`;
+  const selectPreviewStep = (entryId: string, index: number) => {
+    props.setSelection({ kind: "timeline", id: entryId });
+    window.requestAnimationFrame(() => {
+      const editor = timelineEditorRef.current;
+      if (!editor) return;
+      const labelWidth = 104;
+      const columnWidth = 200;
+      editor.scrollTo({
+        left: Math.max(0, labelWidth + index * columnWidth - editor.clientWidth / 2 + columnWidth / 2),
+        behavior: "smooth"
+      });
+    });
+  };
   return (
     <section className="automation-timeline-view">
-      <div className="automation-timeline-controls">
-        <span>00:00</span>
-        <input aria-label="Timeline zoom" max={100} min={25} onChange={(event) => setZoom(Number(event.target.value))} type="range" value={zoom} />
-        <span>{props.entries.length ? `${maxMs} ms` : "00:00"}</span>
-      </div>
-      <div className="automation-track-filter-row">
-        {tracks.map((track) => (
-          <label key={track.id}><input checked={visibleTracks.includes(track.id)} onChange={(event) => setVisibleTracks((current) => event.target.checked ? [...current, track.id] : current.filter((item) => item !== track.id))} type="checkbox" />{track.label}</label>
-        ))}
-      </div>
-      <div className="automation-timeline-ruler">
-        <span>0s</span><span>25%</span><span>50%</span><span>75%</span><span>End</span>
-      </div>
-      <div className="automation-timeline-tracks">
-        <div className="automation-timeline-inner" style={{ width: timelineWidth }}>
-        {tracks.filter((track) => visibleTracks.includes(track.id)).map((track) => (
-          <div className="automation-timeline-track" key={track.id}>
-            <strong>{track.label}</strong>
-            <div>
-              {track.entries.map((entry) => (
-                <button
-                  className={props.selectedEntry?.id === entry.id ? `selected ${track.tone}` : track.tone}
-                  key={`${track.id}:${entry.id}`}
-                  onClick={() => props.setSelection({ kind: "timeline", id: entry.id })}
-                  style={{ left: `${Math.min(96, Math.max(1, ((entry.monotonicOffsetMs ?? 0) / maxMs) * 100))}%`, width: timelineEventWidth(entry) }}
-                  type="button"
-                >
-                  {timelineEntrySummary(entry)}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
+      <aside className="automation-recording-browser">
+        <header>
+          <strong>Recordings</strong>
+          <button className="icon-button" onClick={() => void props.onRefreshRecordings()} title="Refresh recordings" aria-label="Refresh recordings" type="button"><RefreshCcw size={14} aria-hidden /></button>
+        </header>
+        <div className="automation-recording-actions">
+          <button className="button button-primary" onClick={() => void props.onCreateRecording()} type="button"><Plus size={13} aria-hidden />New</button>
+          <button className="button" disabled={!props.selectedRecording} onClick={() => props.selectedRecording && void props.onNormalizeRecording(props.selectedRecording.recordingId)} type="button"><Sparkles size={13} aria-hidden />Normalize</button>
+          <button className="button" disabled={!props.selectedRecording || Boolean(props.selectedRecording.endedAt)} onClick={() => props.selectedRecording && void props.onFinalizeRecording(props.selectedRecording.recordingId)} type="button"><CheckCircle2 size={13} aria-hidden />Finalize</button>
         </div>
-      </div>
-      <div className="automation-range-summary">
-        <strong>Selected Range</strong>
-        <span>Actions {actionEntries.length}</span>
-        <span>State changes {stateEntries.length}</span>
-        <span>Notes {props.notes.length}</span>
-        <span>Selected {props.selectedEntry ? timelineEntrySummary(props.selectedEntry) : "none"}</span>
+        <div className="automation-recording-list">
+          {props.recordings.map((recording) => {
+            const selected = recording.recordingId === props.selectedRecording?.recordingId;
+            const normalized = props.timelines.some((timeline) => timeline.recordingId === recording.recordingId);
+            return (
+              <button className={selected ? "selected" : ""} key={recording.recordingId} onClick={() => props.setSelection({ kind: "recording", id: recording.recordingId })} type="button">
+                <strong>{recording.name ?? recording.recordingId}</strong>
+                <span>{recording.endedAt ? "Finalized" : "Open"} | {recording.timeline?.length ?? 0} events | {normalized ? "normalized" : "raw"}</span>
+                <small>{recording.startedAt ? new Date(recording.startedAt).toLocaleString() : "No start time"}</small>
+              </button>
+            );
+          })}
+          {!props.recordings.length ? <div className="automation-recording-empty"><strong>No recordings</strong><span>Create one here or start recording from a connected client.</span></div> : null}
+        </div>
+        {props.actionStatus ? <StatusText value={props.actionStatus} /> : null}
+      </aside>
+      <div className="automation-timeline-stage">
+        <div className="automation-timeline-detail-strip">
+          {props.selectedEntry ? <>
+            <strong>{timelineEntryTitle(props.selectedEntry, selectedNote)}</strong>
+            <span>{formatTimelineDuration(props.selectedEntry.monotonicOffsetMs ?? 0)}</span>
+            <span>{props.selectedEntry.sourceId ?? "unknown source"}</span>
+            <small>{selectedNote?.text ?? timelineEntrySummary(props.selectedEntry)}</small>
+          </> : <span>Select a clip to inspect the event globally.</span>}
+        </div>
+        <div className="automation-timeline-editor" ref={timelineEditorRef}>
+          <div className="automation-timeline-lane-labels">
+            {lanes.map((lane) => <strong key={lane.id}>{lane.label}</strong>)}
+          </div>
+          <div className="automation-timeline-lanes">
+            {lanes.map((lane) => (
+              <div className={`automation-timeline-lane ${lane.id}`} key={lane.id} style={{ gridTemplateColumns: gridColumns }}>
+                {timelineSteps.map((step, index) => {
+                  const note = step.entry.type === "note" ? noteById.get(step.entry.noteId) : undefined;
+                  if (lane.id === "timing") return (
+                    <div className={selectedStepIndex === index ? "automation-timeline-slot selected" : "automation-timeline-slot"} key={`${lane.id}:${step.entry.id}`}>
+                      {step.waitMs >= 250 ? <button className="automation-wait-clip" onClick={() => props.setSelection({ kind: "timeline", id: step.entry.id })} type="button"><Clock size={12} aria-hidden />Wait {formatTimelineDuration(step.waitMs)}</button> : null}
+                    </div>
+                  );
+                  return (
+                    <div className={selectedStepIndex === index ? "automation-timeline-slot selected" : "automation-timeline-slot"} key={`${lane.id}:${step.entry.id}`}>
+                      {lane.types.includes(step.entry.type) ? <TimelineClip
+                        entry={step.entry}
+                        index={index}
+                        note={note}
+                        selected={props.selectedEntry?.id === step.entry.id}
+                        onSelect={() => props.setSelection({ kind: "timeline", id: step.entry.id })}
+                      /> : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+            {!timelineSteps.length ? <div className="automation-timeline-empty"><strong>No timeline events</strong><span>Start a recording to build the timeline.</span></div> : null}
+          </div>
+        </div>
+        <footer className="automation-timeline-overview">
+          <span>0ms</span>
+          <div style={{ gridTemplateColumns: `repeat(${Math.max(1, timelineSteps.length)}, minmax(18px, 1fr))` }}>
+            {timelineSteps.map((step, index) => (
+              <button
+                className={props.selectedEntry?.id === step.entry.id ? `selected ${step.entry.type}` : step.entry.type}
+                key={step.entry.id}
+                onClick={() => selectPreviewStep(step.entry.id, index)}
+                title={`${index + 1}. ${timelineEntryTitle(step.entry, step.entry.type === "note" ? noteById.get(step.entry.noteId) : undefined)}`}
+                type="button"
+              />
+            ))}
+          </div>
+          <span>{formatTimelineDuration(totalMs)}</span>
+        </footer>
       </div>
     </section>
   );
 }
 
-function timelineEventWidth(entry: any): string {
-  if (entry.type === "note") return "180px";
-  if (entry.type === "state_checkpoint") return "150px";
-  if (entry.type === "state_delta") return "170px";
-  return "130px";
+function TimelineClip(props: { entry: any; index: number; note?: any; selected: boolean; onSelect(): void }) {
+  const Icon = timelineEntryIcon(props.entry.type);
+  return (
+    <button className={props.selected ? `automation-timeline-clip selected ${props.entry.type}` : `automation-timeline-clip ${props.entry.type}`} onClick={props.onSelect} type="button">
+      <span><Icon size={13} aria-hidden />{props.index + 1}</span>
+      <strong>{timelineEntryTitle(props.entry, props.note)}</strong>
+      <small>{props.note?.text ?? timelineEntrySummary(props.entry)}</small>
+    </button>
+  );
 }
 
 function createStudioSmokeFlow(projectId: string, projectName: string): JsonObject {
@@ -3574,8 +3752,9 @@ function AutomationProblemsWorkspace(props: { problems: any[] }) {
   return <DataTable columns={["Severity", "Artifact", "Message"]} rows={props.problems.map((problem) => [<StatusBadge key={problem.id} value={problem.severity} />, problem.artifactId ?? problem.artifactKind ?? "-", problem.message])} empty="No validation, runtime, or fixture problems are currently reported." />;
 }
 
-function AutomationInspector(props: { selection: AutomationSelection | null; policy: any; node: any; recording: any; entry: any; signal: any; setSelection(selection: AutomationSelection): void }) {
+function AutomationInspector(props: { entries: any[]; selection: AutomationSelection | null; policy: any; node: any; recording: any; entry: any; signal: any; setSelection(selection: AutomationSelection): void }) {
   const title = props.selection?.kind === "signal" ? "Signal" : props.selection?.kind === "timeline" ? "Timeline Entry" : props.selection?.kind === "recording" ? "Recording" : props.selection?.kind === "policy" ? "Policy Graph" : props.selection?.kind === "editor-node" ? "Editor Node" : props.selection?.kind === "editor-mode" ? `${props.selection.label} Mode` : "Node Inspector";
+  const timelineInspector = props.selection?.kind === "timeline" && props.entry ? buildTimelineInspectorSections(props.entry, props.entries, props.recording) : [];
   const updateEditorNodeParameters = (parameterValues: JsonObject) => {
     if (props.selection?.kind !== "editor-node") return;
     const nextSelection: AutomationSelection = {
@@ -3619,10 +3798,7 @@ function AutomationInspector(props: { selection: AutomationSelection | null; pol
         <InspectorSection title="Connections" rows={[["Used by nodes", "Linked through eligibility and success conditions"], ["Relationship view", "Open in signal web"]]} />
         <InspectorProvenance current={String(props.signal.defaultWeight)} source="Signal registry default" />
       </> : null}
-      {props.selection?.kind === "timeline" && props.entry ? <>
-        <InspectorSection title="General" rows={[["Entry", props.entry.id], ["Type", props.entry.type], ["Offset", `${props.entry.monotonicOffsetMs} ms`], ["Source", props.entry.sourceId], ["Summary", timelineEntrySummary(props.entry)]]} />
-        <InspectorSection title="Linked Views" rows={[["Policy node", "Highlight matching node"], ["State diff", "Open selected range"]]} />
-      </> : null}
+      {props.selection?.kind === "timeline" && props.entry ? timelineInspector.map((section) => <InspectorSection key={section.title} title={section.title} rows={section.rows} />) : null}
       {props.selection?.kind === "recording" && props.recording ? <>
         <InspectorSection title="Recording Metadata" rows={[["Recording", props.recording.recordingId], ["Task", props.recording.taskId ?? "-"], ["Environment", props.recording.environment?.label ?? "-"], ["Entries", String(props.recording.timeline?.length ?? 0)], ["Notes", String(props.recording.notes?.length ?? 0)]]} />
         <InspectorSection title="Dataset Actions" rows={[["Status", "Raw, normalized, mined"], ["Compare", "Align by semantic actions"], ["Reprocess", "Run normalization and mining"]]} />
@@ -4967,6 +5143,105 @@ function automationHierarchySignature(customHierarchyNodes: AutomationHierarchyN
   return JSON.stringify({ customHierarchyNodes, deletedHierarchyIds, workspacePrefs });
 }
 
+function buildTimelineInspectorSections(entry: any, entries: any[], recording: any): Array<{ title: string; rows: Array<[string, string]> }> {
+  const sortedEntries = [...entries].sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0) || (left.monotonicOffsetMs ?? 0) - (right.monotonicOffsetMs ?? 0));
+  const index = sortedEntries.findIndex((item) => item.id === entry.id);
+  const previous = index > 0 ? sortedEntries[index - 1] : null;
+  const next = index >= 0 && index < sortedEntries.length - 1 ? sortedEntries[index + 1] : null;
+  const offset = Number(entry.monotonicOffsetMs ?? 0);
+  const gapBefore = previous ? Math.max(0, offset - Number(previous.monotonicOffsetMs ?? 0)) : offset;
+  const gapAfter = next ? Math.max(0, Number(next.monotonicOffsetMs ?? 0) - offset) : 0;
+  const sections: Array<{ title: string; rows: Array<[string, string]> }> = [{
+    title: "Event",
+    rows: [
+      ["Title", timelineEntryTitle(entry)],
+      ["Summary", timelineEntrySummary(entry)],
+      ["Type", readableToken(entry.type ?? "event")],
+      ["Sequence", index >= 0 ? `${index + 1} of ${sortedEntries.length}` : String(entry.sequence ?? "-")],
+      ["Source", sourceLabel(recording, entry.sourceId)],
+      ["Confidence", typeof entry.confidence === "number" ? `${Math.round(entry.confidence * 100)}%` : "-"]
+    ]
+  }, {
+    title: "Timing",
+    rows: [
+      ["Recorded offset", formatTimelineDuration(offset)],
+      ["Gap before", formatTimelineDuration(gapBefore)],
+      ["Gap after", next ? formatTimelineDuration(gapAfter) : "-"],
+      ["Timestamp", entry.timestamp ? new Date(entry.timestamp).toLocaleString() : "-"],
+      ["Delay source", "Recorded monotonic gaps"]
+    ]
+  }];
+  const detailRows = timelineEntryDetailRows(entry);
+  if (detailRows.length) sections.push({ title: "Details", rows: detailRows });
+  const linkageRows: Array<[string, string]> = [
+    ["Recording", entry.recordingId ?? recording?.recordingId ?? "-"],
+    ["Correlation", entry.correlationId ?? "-"],
+    ["Causation", entry.causationId ?? "-"],
+    ["Metadata", readableObjectSummary(entry.metadata)]
+  ];
+  sections.push({ title: "Links", rows: linkageRows });
+  return sections;
+}
+
+function timelineEntryDetailRows(entry: any): Array<[string, string]> {
+  if (entry.type === "action") return [
+    ["Action", readableToken(entry.actionType ?? "action")],
+    ["Origin", readableToken(entry.origin ?? "-")],
+    ["Target", entry.target?.label ?? entry.target?.id ?? "-"],
+    ["Parameters", readableObjectSummary(entry.parameters)],
+    ["Started", entry.startedAt ? new Date(entry.startedAt).toLocaleString() : "-"],
+    ["Completed", entry.completedAt ? new Date(entry.completedAt).toLocaleString() : "-"],
+    ["Result", actionResultSummary(entry.result)]
+  ];
+  if (entry.type === "domain_event") return [
+    ["Event", readableToken(entry.eventType ?? "domain event")],
+    ["Payload", readableObjectSummary(entry.payload)]
+  ];
+  if (entry.type === "observation") return [
+    ["Observation", readableToken(entry.observationType ?? "observation")],
+    ["Signals", readableObjectSummary(entry.signals)],
+    ["Payload", readableObjectSummary(entry.payload)]
+  ];
+  if (entry.type === "state_delta") return [
+    ["Changes", String(entry.deltas?.length ?? 0)],
+    ["Changed paths", (entry.deltas ?? []).slice(0, 8).map((delta: any) => `${delta.path} (${readableToken(delta.change ?? "changed")})`).join(", ") || "-"]
+  ];
+  if (entry.type === "state_checkpoint") return [
+    ["Namespaces", String(Object.keys(entry.state?.namespaces ?? {}).length)],
+    ["State time", entry.state?.timestamp ? new Date(entry.state.timestamp).toLocaleString() : "-"]
+  ];
+  if (entry.type === "note") return [["Note", entry.noteId ?? "-"]];
+  if (entry.type === "marker") return [["Marker", entry.label ?? "-"]];
+  return [];
+}
+
+function sourceLabel(recording: any, sourceId: unknown): string {
+  const id = typeof sourceId === "string" ? sourceId : "";
+  const source = (recording?.sources ?? []).find((item: any) => item.id === id);
+  if (!source) return id || "-";
+  return `${source.label ?? source.id} (${source.kind ?? "source"})`;
+}
+
+function readableObjectSummary(value: unknown): string {
+  if (!value || typeof value !== "object") return "-";
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (!entries.length) return "-";
+  return entries.slice(0, 6).map(([key, item]) => `${readableToken(key)}: ${simpleValue(item)}`).join(", ");
+}
+
+function simpleValue(value: unknown): string {
+  if (value === null || value === undefined) return "-";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? "" : "s"}`;
+  if (typeof value === "object") return `${Object.keys(value).length} field${Object.keys(value).length === 1 ? "" : "s"}`;
+  return String(value);
+}
+
+function actionResultSummary(result: any): string {
+  if (!result) return "-";
+  return [result.status, result.message, result.error].filter(Boolean).join(" | ") || readableObjectSummary(result);
+}
+
 function timelineEntrySummary(entry: any): string {
   if (entry.type === "action") return `${entry.actionType} ${entry.target?.label ?? entry.target?.id ?? ""}`.trim();
   if (entry.type === "state_delta") return (entry.deltas ?? []).map((delta: any) => `${delta.path} ${delta.change}`).join(", ");
@@ -4976,6 +5251,55 @@ function timelineEntrySummary(entry: any): string {
   if (entry.type === "observation") return entry.observationType;
   if (entry.type === "marker") return entry.label;
   return shortJson(entry);
+}
+
+function timelineEntryTitle(entry: any, note?: any): string {
+  if (entry.type === "action") return readableToken(entry.actionType ?? "Action");
+  if (entry.type === "domain_event") return readableToken(entry.eventType ?? "Domain event");
+  if (entry.type === "observation") return readableToken(entry.observationType ?? "Observation");
+  if (entry.type === "state_delta") return `${entry.deltas?.length ?? 0} State Change${entry.deltas?.length === 1 ? "" : "s"}`;
+  if (entry.type === "state_checkpoint") return "State Checkpoint";
+  if (entry.type === "note") return note?.text ?? "Timeline Note";
+  if (entry.type === "marker") return entry.label ?? "Marker";
+  return readableToken(entry.type ?? "Timeline event");
+}
+
+function timelineEntryIcon(type: string): typeof Blocks {
+  switch (type) {
+    case "action": return Zap;
+    case "domain_event": return Radio;
+    case "observation": return Search;
+    case "state_delta": return GitBranch;
+    case "state_checkpoint": return Database;
+    case "note": return FileText;
+    case "marker": return AlertTriangle;
+    default: return CircleDot;
+  }
+}
+
+function formatTimelineDuration(value: unknown): string {
+  if (typeof value !== "number" || value <= 0) return "0ms";
+  if (value < 1000) return `${Math.round(value)}ms`;
+  if (value < 60_000) return `${trimNumber(value / 1000)}s`;
+  const minutes = Math.floor(value / 60_000);
+  const seconds = Math.round((value % 60_000) / 1000);
+  if (minutes < 60) return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${hours}:${String(remainingMinutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function trimNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
+}
+
+function readableToken(value: string): string {
+  return value
+    .replace(/[_:.]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
 }
 
 function conditionSummary(group: any): string {

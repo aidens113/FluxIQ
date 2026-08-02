@@ -58,15 +58,15 @@ client.
   "timestamp": 1785560378159,
   "payload": {
     "clientId": "extension-abc",
-    "clientType": "browser-extension",
-    "name": "FluxIQ Browser Extension",
+    "clientType": "extension",
+    "name": "FluxIQ Extension Client",
     "version": "0.1.0",
     "capabilities": [
       {
-        "id": "browser.actions",
-        "label": "Browser actions",
+        "id": "sample.actions",
+        "label": "Sample actions",
         "kind": "action",
-        "actionTypes": ["click", "type", "navigate", "snapshot"]
+        "actionTypes": ["sample.action", "sample.capture"]
       }
     ]
   }
@@ -83,8 +83,8 @@ For reconnects, include the saved token:
   "timestamp": 1785560379000,
   "payload": {
     "clientId": "extension-abc",
-    "clientType": "browser-extension",
-    "name": "FluxIQ Browser Extension",
+    "clientType": "extension",
+    "name": "FluxIQ Extension Client",
     "token": "saved-session-token"
   }
 }
@@ -139,8 +139,8 @@ Store `payload.token` in the client. Future reconnects should include it in
 After `server.session_ready`, clients may send:
 
 - `client.capabilities`
-- `client.browser_state`
-- `client.dom_snapshot`
+- `client.state_update`
+- `client.snapshot`
 - `client.recording_event`
 - `client.action_result`
 - `client.error`
@@ -170,7 +170,7 @@ const client = new FluxIQAutomationStudioWebSocketClient({
   url: "ws://127.0.0.1:4777/client",
   client: {
     clientId: "extension-abc",
-    clientType: "browser-extension",
+    clientType: "extension",
     name: "Domain Recorder",
     capabilities: [{ id: "recording.events", kind: "recording" }]
   },
@@ -281,6 +281,22 @@ Automation Studio rejects events whose `domainId` is not registered, whose
 registered schema. Accepted events are appended as domain events and can derive
 observations, state deltas, and state checkpoints through the registered
 reducers.
+
+## Recording Start Sequence
+
+Recording over WebSocket is project-bound.
+
+1. The user opens Automation Studio in the web panel.
+2. If a project is open, the web panel heartbeats that active project to the
+   shared gateway runtime.
+3. A paired client calls `createRecording(...)` on
+   `FluxIQAutomationStudioWebSocketClient`, which sends `client.start_recording`.
+4. FluxIQ creates the recording in the active project, marks the client session
+   as recording, and the web panel opens the recording timeline in the main
+   workspace area.
+5. If Automation Studio has no open project, FluxIQ rejects the request,
+   sends `server.error` with code `recording.project_required`, and the web
+   panel shows a modal telling the user to open a project first.
 
 ## Web Panel APIs
 

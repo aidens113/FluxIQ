@@ -16,7 +16,17 @@ import type { AutomationStudioService } from "../runtime/service";
 export type AutomationStudioClientGatewayBridgeOptions = {
   gateway: ClientGatewayService;
   automationStudio: AutomationStudioService;
+  clientRecordingContextProvider?: ClientRecordingContextProvider;
 };
+
+export type ClientRecordingContext =
+  | { ok: true; projectId: string }
+  | { ok: false; message: string; code?: string; metadata?: JsonObject };
+
+export type ClientRecordingContextProvider = (input: {
+  session: ClientGatewaySession;
+  request: ClientGatewayStartRecordingRequest;
+}) => ClientRecordingContext | Promise<ClientRecordingContext>;
 
 export type StartClientRecordingInput = {
   sessionId: string;
@@ -31,11 +41,17 @@ export class AutomationStudioClientGatewayBridge {
   private readonly gateway: ClientGatewayService;
   private readonly automationStudio: AutomationStudioService;
   private readonly activeRecordings = new Map<string, { projectId?: string | null; recordingId: string; domainId?: string | null }>();
+  private clientRecordingContextProvider: ClientRecordingContextProvider | undefined;
 
   constructor(options: AutomationStudioClientGatewayBridgeOptions) {
     this.gateway = options.gateway;
     this.automationStudio = options.automationStudio;
+    this.clientRecordingContextProvider = options.clientRecordingContextProvider;
     this.gateway.onEvent((event) => this.handleGatewayEvent(event));
+  }
+
+  setClientRecordingContextProvider(provider: ClientRecordingContextProvider | undefined): void {
+    this.clientRecordingContextProvider = provider;
   }
 
   async startRecording(input: StartClientRecordingInput) {
@@ -118,8 +134,9 @@ export class AutomationStudioClientGatewayBridge {
       return;
     }
     if (event.type === "client.recording_entry") {
+      const active = this.activeRecordings.get(event.session.sessionId);
       await this.automationStudio.appendRecordingEvent({
-        ...(event.message.payload.projectId !== undefined ? { projectId: event.message.payload.projectId } : {}),
+        ...(event.message.payload.projectId !== undefined ? { projectId: event.message.payload.projectId } : active?.projectId !== undefined ? { projectId: active.projectId } : {}),
         recordingId: event.message.payload.recordingId,
         entry: event.message.payload.entry as unknown as Parameters<AutomationStudioService["appendRecordingEvent"]>[0]["entry"]
       });
@@ -129,12 +146,12 @@ export class AutomationStudioClientGatewayBridge {
       await this.appendRecordingEvent(event.session, event.message.payload, event.message.id);
       return;
     }
-    if (event.type === "client.dom_snapshot") {
+    if (event.type === "client.snapshot") {
       await this.appendSnapshot(event.session, event.message.payload, event.message.id);
       return;
     }
-    if (event.type === "client.browser_state") {
-      await this.appendBrowserState(event.session, event.message.payload as JsonObject, event.message.id);
+    if (event.type === "client.state_update") {
+      await this.appendStateUpdate(event.session, event.message.payload as JsonObject, event.message.id);
       return;
     }
     if (event.type === "client.error") {
@@ -154,9 +171,19 @@ export class AutomationStudioClientGatewayBridge {
   }
 
   private async startRecordingFromClient(session: ClientGatewaySession, input: ClientGatewayStartRecordingRequest) {
+    const context = await this.resolveClientRecordingContext(session, input);
+    if (!context.ok) {
+      await this.gateway.sendError(session.sessionId, {
+        message: context.message,
+        code: context.code ?? "recording.project_required",
+        metadata: { source: "automation-studio", clientId: session.clientId, clientName: session.name, ...(context.metadata ?? {}) }
+      });
+      return null;
+    }
     const domainId = input.domainId ?? stringMetadataValue(input.metadata, "domainId") ?? stringMetadataValue(session.metadata, "domainId") ?? null;
+    const projectId = input.projectId ?? context.projectId;
     const recording = await this.automationStudio.createRecording({
-      ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
+      projectId,
       recordingId: input.recordingId,
       ...(input.taskId !== undefined ? { taskId: input.taskId } : {}),
       ...(input.startedAt !== undefined ? { startedAt: input.startedAt } : {}),
@@ -188,8 +215,17 @@ export class AutomationStudioClientGatewayBridge {
       initialState: input.initialState as unknown as StateSnapshot | undefined ?? emptyClientStateSnapshot(session),
       metadata: compactJsonObject({ createdFrom: "client-gateway", sessionId: session.sessionId, ...(input.metadata ?? {}) })
     });
-    this.activeRecordings.set(session.sessionId, { ...(input.projectId !== undefined ? { projectId: input.projectId } : {}), recordingId: recording.recordingId, domainId });
+    this.activeRecordings.set(session.sessionId, { projectId, recordingId: recording.recordingId, domainId });
+    this.gateway.markActiveRecording(session.sessionId, { recordingId: recording.recordingId, projectId });
     return recording;
+  }
+
+  private async resolveClientRecordingContext(session: ClientGatewaySession, request: ClientGatewayStartRecordingRequest): Promise<ClientRecordingContext> {
+    if (request.projectId) return { ok: true, projectId: request.projectId };
+    if (!this.clientRecordingContextProvider) {
+      return { ok: false, message: "Recording cannot start because Automation Studio does not have an open project.", code: "recording.project_required" };
+    }
+    return await this.clientRecordingContextProvider({ session, request });
   }
 
   private async stopRecordingFromClient(session: ClientGatewaySession, input: ClientGatewayStopRecordingRequest) {
@@ -295,7 +331,7 @@ export class AutomationStudioClientGatewayBridge {
     });
   }
 
-  private async appendBrowserState(session: ClientGatewaySession, browserState: JsonObject, messageId: string): Promise<void> {
+  private async appendStateUpdate(session: ClientGatewaySession, stateUpdate: JsonObject, messageId: string): Promise<void> {
     const active = this.activeRecordings.get(session.sessionId);
     if (!active) return;
     await this.automationStudio.appendRecordingEvent({
@@ -303,10 +339,10 @@ export class AutomationStudioClientGatewayBridge {
       recordingId: active.recordingId,
       entry: {
         type: "observation",
-        observationType: "client.browser_state",
+        observationType: "client.state_update",
         sourceId: `client.${session.clientId}.observations`,
         correlationId: messageId,
-        payload: browserState
+        payload: stateUpdate
       }
     });
   }

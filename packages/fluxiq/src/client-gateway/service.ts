@@ -187,14 +187,12 @@ export class ClientGatewayService {
       session.capabilities = message.payload.capabilities;
       return;
     }
-    if (message.type === "client.browser_state") {
-      session.browserState = message.payload;
-      await this.emit({ type: "client.browser_state", session: this.publicSession(session), message });
+    if (message.type === "client.state_update") {
+      session.stateUpdate = message.payload;
+      await this.emit({ type: "client.state_update", session: this.publicSession(session), message });
       return;
     }
     if (message.type === "client.start_recording") {
-      session.activeRecordingId = message.payload.recordingId;
-      if (message.payload.projectId !== undefined) session.projectId = message.payload.projectId;
       await this.emit({ type: "client.start_recording", session: this.publicSession(session), message });
       return;
     }
@@ -211,8 +209,8 @@ export class ClientGatewayService {
       await this.emit({ type: "client.recording_event", session: this.publicSession(session), message });
       return;
     }
-    if (message.type === "client.dom_snapshot") {
-      await this.emit({ type: "client.dom_snapshot", session: this.publicSession(session), message });
+    if (message.type === "client.snapshot") {
+      await this.emit({ type: "client.snapshot", session: this.publicSession(session), message });
       return;
     }
     if (message.type === "client.action_result") {
@@ -270,6 +268,22 @@ export class ClientGatewayService {
   async sendPing(sessionId: string): Promise<void> {
     const session = this.requireSession(sessionId);
     await this.send(sessionId, this.serverMessage("server.ping", { nonce: randomUUID() }, session));
+  }
+
+  async sendError(sessionId: string, input: { message: string; code?: string; metadata?: JsonObject }): Promise<void> {
+    const session = this.requireSession(sessionId);
+    await this.send(sessionId, this.serverMessage("server.error", {
+      message: input.message,
+      ...(input.code !== undefined ? { code: input.code } : {}),
+      ...(input.metadata !== undefined ? { metadata: input.metadata } : {})
+    }, session));
+    this.audit(input.code ?? "client.error", input.message, { sessionId, ...(input.metadata ?? {}) });
+  }
+
+  markActiveRecording(sessionId: string, input: { recordingId: string; projectId?: string | null }): void {
+    const session = this.requireReadySession(sessionId);
+    session.activeRecordingId = input.recordingId;
+    if (input.projectId !== undefined) session.projectId = input.projectId;
   }
 
   outbound(sessionId: string): ClientGatewayServerMessage[] {

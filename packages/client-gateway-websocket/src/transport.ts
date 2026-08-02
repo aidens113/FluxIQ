@@ -1,10 +1,10 @@
 import {
   CLIENT_GATEWAY_PROTOCOL_VERSION,
   type ClientGatewayActionResult,
-  type ClientGatewayBrowserState,
   type ClientGatewayClientMessage,
   type ClientGatewayRecordingEvent,
-  type ClientGatewaySnapshot
+  type ClientGatewaySnapshot,
+  type ClientGatewayStateUpdate
 } from "fluxiq/client-gateway";
 import type { JsonObject } from "fluxiq/core";
 import { parseServerMessage } from "./messages";
@@ -89,8 +89,8 @@ export class FluxIQClientGatewayWebSocketClient {
     return message;
   }
 
-  async sendBrowserState(state: ClientGatewayBrowserState) {
-    return await this.send("client.browser_state", state);
+  async sendStateUpdate(state: ClientGatewayStateUpdate) {
+    return await this.send("client.state_update", state);
   }
 
   async sendRecordingEvent(event: ClientGatewayRecordingEvent) {
@@ -98,7 +98,7 @@ export class FluxIQClientGatewayWebSocketClient {
   }
 
   async sendSnapshot(snapshot: ClientGatewaySnapshot) {
-    return await this.send("client.dom_snapshot", snapshot);
+    return await this.send("client.snapshot", snapshot);
   }
 
   async sendActionResult(result: ClientGatewayActionResult) {

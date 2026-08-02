@@ -8,7 +8,6 @@ export {
   type ClientGatewayActionCommand,
   type ClientGatewayActionResult,
   type ClientGatewayAppendRecordingEntryRequest,
-  type ClientGatewayBrowserState,
   type ClientGatewayCapability,
   type ClientGatewayClientHello,
   type ClientGatewayClientMessage,
@@ -20,6 +19,7 @@ export {
   type ClientGatewaySession,
   type ClientGatewaySnapshot,
   type ClientGatewayStartRecordingRequest,
+  type ClientGatewayStateUpdate,
   type ClientGatewayStopRecordingRequest
 } from "fluxiq/client-gateway";
 

@@ -118,8 +118,7 @@ The default design layout follows the consultant plan:
   configurations;
 - center workspace: the active design/debugging surface;
 - right inspector: synchronized details for the selected policy node, policy,
-  recording, timeline entry, or signal;
-- bottom dock: timeline, notes, problems, and runtime/debug activity.
+  recording, timeline entry, or signal.
 
 The policy graph display uses React Flow/XYFlow (`@xyflow/react`), matching the
 node display framework used by the FluxBot v1 flow editor. Policy graph nodes
@@ -141,6 +140,35 @@ inspector remain ordinary addable windows. The node palette is the exception:
 it stays embedded as the collapsible right rail inside the policy/routine node
 editor because it is part of direct node editing, not a separate workspace
 window.
+
+The recording timeline window follows a video-editor-style horizontal layout.
+It has a compact recording browser for selecting sessions and running recording
+actions, a selected-event detail strip above the editor, lane labels,
+horizontally and vertically scrollable clips, and a compact overview strip below
+the editor. Clicking an overview preview snaps the editor to that timeline
+location. Raw elapsed time is rendered as explicit wait clips in a Timing lane
+from adjacent recorded monotonic offsets, so long pauses do not create
+confusing blank space. Actions, domain events, observations, state deltas,
+checkpoints, notes, and markers each render in their appropriate lane with
+distinct visual treatments. Selecting any clip updates the global inspector
+selection with event-specific details, timing gaps, source, correlation, and
+recording context.
+
+The recording-to-task pipeline is intentionally staged:
+
+1. Capture one or more raw `RecordingSession` documents from direct-import
+   framework calls or a paired client gateway session.
+2. Finalize raw recordings so the evidence boundary is explicit.
+3. Normalize each recording into a `NormalizedTimeline` while preserving raw
+   evidence links and monotonic timing gaps.
+4. Mine normalized timelines for reusable signals, state deltas, action
+   clusters, waits, branches, and unresolved questions.
+5. Combine mined evidence into a learned task model that can explain stable
+   states, expected transitions, and user-confirmed intent.
+6. Generate or update the task policy graph from that learned model, with every
+   generated node and edge linking back to evidence.
+7. Test and replay the policy against selected recordings/state timelines
+   before marking it usable for runtime.
 
 Task editor modes are:
 
@@ -359,9 +387,7 @@ The current web shell implements the first workspace foundation pass:
   timeline on the right;
 - reusable view containers with direct move, resize, reset, and close controls;
 - a contextual right inspector organized into schema-like sections with value
-  provenance;
-- a bottom dock for assistant context, problems, state/history, and future
-  runtime/debug panels.
+  provenance.
 
 The workspace shell now treats these as interactive editor systems rather than
 static placeholders. Subwindows own their own tabs and the top workbar no
@@ -377,9 +403,9 @@ controls were removed from the window header. The current header actions are
 reset window size and close window; advanced layout changes belong in direct
 resizing, snap gestures, or topbar layout presets, not a per-window overflow
 menu.
-Workspace preferences should control frame-level dimensions such as sidebar,
-inspector, and bottom dock sizes. Window layout itself belongs to direct
-manipulation inside the canvas.
+Workspace preferences should control frame-level dimensions such as sidebar and
+inspector sizes. Window layout itself belongs to direct manipulation inside the
+canvas.
 
 The left hierarchy editor is limited to folders, tasks, routines, and
 configurations. Interfaces are no longer represented as project hierarchy
@@ -402,6 +428,13 @@ each project gets its own folder named by project ID. A project folder contains
 legacy `.fluxiq/data/programs/automation-studio/projects.json` file is imported
 into this folder layout when no folder-backed index exists.
 
+The web panel must use the importing repository as its FluxIQ host root. When
+developing the panel from the FluxIQ source checkout, set
+`FLUXIQ_IMPORTER_ROOT`, `FLUXIQ_HOST_ROOT`, or `FLUXIQ_ROOT` to the importing
+repo. Without that explicit root, the panel refuses to use the framework source
+checkout for Automation Studio state so recordings are not written into core
+FluxIQ folders by accident.
+
 Opening a project also writes its encoded project ID into the page URL so
 refreshing the editor restores the same project. The chooser presents projects
 as a grid grouped by user-created categories. Categories can be created,
@@ -419,36 +452,37 @@ is intentionally global so later programs can use the same PIN authorization
 path for their own privileged edit or destructive actions.
 
 Project-owned state includes the custom hierarchy, deleted hierarchy IDs,
-subwindow tabs, active subwindow, maximized subwindow, sidebar width, soft
-section dimensions, and per-subwindow canvas geometry. The editor has three
-semi-hard inner-window areas: main, right sidebar, and bottom bar. Each section
-is its own bounded desktop with its own add-window control, window placement,
-dragging, resizing, snapping, and layout behavior. The right sidebar spans the
-full editor height, can be resized horizontally, and can be collapsed. The
-bottom bar spans the main column, can be resized vertically, and can be
-collapsed. Collapsing a section must not mutate, minimize, or reflow the
-windows inside that section; it only hides or reveals the owning section.
+subwindow tabs, active subwindow, maximized subwindow, sidebar width, right
+sidebar dimensions, and per-subwindow canvas geometry. The editor has two
+semi-hard inner-window areas: main and right sidebar. Each section is its own
+bounded desktop with its own add-window control, window placement, dragging,
+resizing, snapping, and layout behavior. The right sidebar spans the full editor
+height, can be resized horizontally, and can be collapsed. Collapsing the right
+sidebar must not mutate, minimize, or reflow the windows inside that section; it
+only hides or reveals the owning section.
 
 Inner-window sections are bounded desktops rather than scrollable pages, a
-fixed inspector layout, a fixed bottom dock layout, or a forced row grid. They
-do not scroll horizontally or vertically, and subwindows are clamped inside
-their owning inner-window region while moving, resizing, snapping, applying a
-layout preset, or when that section resizes. Full-size subwindows use their full
-visible section canvas without an extra inset, and child editor content must not
-force the shell to spill past its saved geometry. Each subwindow has saved
-`area`, `x`, `y`, `width`, `height`, and z-order values.
+fixed inspector layout, or a forced row grid. They do not scroll horizontally or
+vertically, and subwindows are clamped inside their owning inner-window region
+while moving, resizing, snapping, applying a layout preset, or when that section
+resizes. Full-size subwindows use their full visible section canvas without an
+extra inset, and child editor content must not force the shell to spill past its
+saved geometry. Each subwindow has saved `area`, `x`, `y`, `width`, `height`,
+and z-order values.
 
-Inspector and bottom dock content are now utility window views rather than fixed
-rails. They are present in the default workspace, but can be moved, resized,
-closed, and reopened like any other inner window. Each inner-window section has
+Inspector and dock-style content are utility window views rather than fixed
+rails. The inspector is present in the default right sidebar, but can be moved,
+resized, closed, and reopened like any other inner window. The dedicated bottom
+bar has been removed to preserve main workspace height; saved legacy bottom-bar
+windows migrate into the main inner-window area. Each inner-window section has
 an add-window plus button; its palette groups editor, evidence, and tool windows
 with icon, name, and description so views that are not directly represented in
 the left project hierarchy can still be opened. Generic opens from the project
 hierarchy and selection-follow behavior target the main inner-window area. The
-only way to add new windows directly into the right sidebar or bottom bar is
-through that section's own plus button, and those windows fill their owning
-section by default. Section resize grips remain above full-size inner windows
-so the right sidebar and bottom bar can still be resized while occupied.
+only way to add new windows directly into the right sidebar is through that
+section's own plus button, and those windows fill the sidebar by default.
+Section resize grips remain above full-size inner windows so the right sidebar
+can still be resized while occupied.
 Each inner window also has its own plus button. That button opens the same view
 palette, but selecting a view adds it as a tab inside the existing window rather
 than creating another subwindow.
@@ -477,8 +511,7 @@ text. The widget opens as a fixed floating panel, flipping left or upward when
 near the viewport edge. Presets apply only to windows inside that section,
 distributing extra windows within the selected regions instead of arranging only
 the active window. The main area exposes the broader layout set; the right
-sidebar exposes fullscreen and vertical 1:1 rows; the bottom bar exposes
-fullscreen and horizontal 50/50.
+sidebar exposes fullscreen and vertical 1:1 rows.
 
 Workspace persistence is debounced and signature-based. Loading a project seeds
 the last-saved hierarchy signature, and `save-project-hierarchy` should only be
@@ -557,9 +590,9 @@ editors may display generated policy nodes from the selected task policy, but
 manual nodes and connections are still edited through the same palette and
 React Flow interaction model.
 
-The inspector follows global selection, the bottom dock switches between real
-panels, and the timeline supports zoom, track visibility, event selection, and
-selected-range summary data.
+The inspector follows global selection, and the recording timeline uses a
+horizontal editor-style lane surface with preview snapping, event selection,
+and selected-event summary data.
 
 These controls are the UI foundation. Follow-up slices should connect them to
 the persistent workspace layout model, command registry, undo/redo stack,
@@ -649,8 +682,13 @@ The bridge converts client messages into canonical Studio artifacts:
   match a registered `RecordingDomainDefinition`; accepted events become
   `domain_event` timeline entries and may derive observations, state deltas,
   and state checkpoints.
-- `client.browser_state` and `client.dom_snapshot` become `observation`
+- `client.state_update` and `client.snapshot` become `observation`
   timeline entries.
+- `client.start_recording` is accepted only when the web panel has an active
+  Automation Studio project context. The web runtime publishes that context
+  while a project is open. If no project is open, the gateway sends
+  `server.error` with `recording.project_required` and the web panel surfaces a
+  modal instead of silently dropping the client request.
 - `server.execute_action` waits for `client.action_result`; resolved action
   results are appended as `action` timeline entries when a client recording is
   active.
@@ -666,7 +704,7 @@ web panel approve
 server.session_ready
 ```
 
-Paired clients can then send browser state, snapshots, recording events, action
+Paired clients can then send generic state updates, snapshots, recording events, action
 results, and errors. FluxIQ can send start/stop recording, capture snapshot,
 set active tab, ping, disconnect, and execute action commands. Every message is
 versioned JSON with an ID and timestamp; action commands include a command ID
@@ -739,7 +777,7 @@ Extension/client connection flow:
 6. If the user approves, FluxIQ pairs the waiting socket directly.
 7. Store the token returned by `server.session_ready`; future `client.hello`
    messages can include it to reconnect without another approval.
-8. Stream `client.browser_state`, `client.dom_snapshot`,
+8. Stream `client.state_update`, `client.snapshot`,
    `client.recording_event`, `client.action_result`, and `client.error` as
    appropriate. Execute incoming `server.execute_action`,
    `server.start_recording`, `server.stop_recording`, and

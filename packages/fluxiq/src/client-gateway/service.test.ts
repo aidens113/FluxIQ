@@ -8,9 +8,9 @@ describe("ClientGatewayService", () => {
     const session = gateway.connect();
     await gateway.receive(session.sessionId, clientMessage("client.hello", {
       clientId: "extension.local",
-      clientType: "browser-extension",
-      name: "Local browser",
-      capabilities: [{ id: "browser.record", kind: "recording", actionTypes: ["click"] }]
+      clientType: "extension",
+      name: "Local recorder",
+      capabilities: [{ id: "sample.record", kind: "recording", actionTypes: ["sample.action"] }]
     }));
     expect(gateway.snapshot().sessions[0]?.status).toBe("pairing_required");
 
@@ -27,7 +27,7 @@ describe("ClientGatewayService", () => {
     const session = gateway.connect();
     await gateway.receive(session.sessionId, clientMessage("client.hello", {
       clientId: "extension.request",
-      clientType: "browser-extension",
+      clientType: "extension",
       name: "Extension Connect Button"
     }));
 
@@ -47,7 +47,7 @@ describe("ClientGatewayService", () => {
     const session = gateway.connect();
     await gateway.receive(session.sessionId, clientMessage("client.hello", {
       clientId: "extension.approve",
-      clientType: "browser-extension",
+      clientType: "extension",
       name: "Approve Test"
     }));
     const pairingCode = gateway.snapshot().pairings[0]?.pairingCode ?? "";
@@ -63,7 +63,7 @@ describe("ClientGatewayService", () => {
     const session = gateway.connect();
     await gateway.receive(session.sessionId, clientMessage("client.hello", {
       clientId: "extension.dismiss",
-      clientType: "browser-extension",
+      clientType: "extension",
       name: "Dismiss Test"
     }));
     const pairingCode = gateway.snapshot().pairings[0]?.pairingCode;
