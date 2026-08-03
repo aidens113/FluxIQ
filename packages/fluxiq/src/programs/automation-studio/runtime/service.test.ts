@@ -71,6 +71,8 @@ describe("AutomationStudioService recording persistence", () => {
 
     const projectRoot = path.join(tempRoot, "programs", "automation-studio", "projects", project.id);
     await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.service-test", "recording.json"), "utf8")).resolves.toContain("\"recordingId\": \"recording.service-test\"");
+    await expect(readFile(path.join(projectRoot, "pipeline", "sessions", "recording.service-test", "pipeline.json"), "utf8")).resolves.toContain("\"recordingId\": \"recording.service-test\"");
+    await expect(readFile(path.join(projectRoot, "pipeline", "sessions", "recording.service-test", "artifacts", "normalized-timelines", `${normalized.normalizedTimelineId}.json`), "utf8")).resolves.toContain("\"normalizedTimelineId\"");
     await expect(readFile(path.join(projectRoot, "recordings", "indexes", "recordings.json"), "utf8")).resolves.toContain("\"normalizedTimelineId\"");
   });
 
@@ -169,7 +171,14 @@ describe("AutomationStudioService recording persistence", () => {
 
     const projectRoot = path.join(tempRoot, "programs", "automation-studio", "projects", project.id);
     await expect(readFile(path.join(projectRoot, "pipeline", "indexes", "pipeline.json"), "utf8")).resolves.toContain(proposal.proposalId);
+    await expect(readFile(path.join(projectRoot, "pipeline", "sessions", "recording.pipeline-test", "pipeline.json"), "utf8")).resolves.toContain(proposal.proposalId);
+    await expect(readFile(path.join(projectRoot, "pipeline", "sessions", "recording.pipeline-test", "artifacts", "policy-proposals", `${proposal.proposalId}.json`), "utf8")).resolves.toContain("\"proposalId\"");
     await expect(readFile(path.join(projectRoot, "policies", `${approved.policy.policyId}.json`), "utf8")).resolves.toContain("\"policyId\"");
+
+    await service.deleteRecording({ projectId: project.id, recordingId: recording.recordingId });
+    await expect(readFile(path.join(projectRoot, "pipeline", "sessions", "recording.pipeline-test", "pipeline.json"), "utf8")).rejects.toThrow();
+    await expect(readFile(path.join(projectRoot, "pipeline", "policy-proposals", `${proposal.proposalId}.json`), "utf8")).rejects.toThrow();
+    expect((await service.listPipelineArtifacts(project.id)).policyProposals).toEqual([]);
   });
 
   it("accepts only registered domain recording events and records derived state", async () => {

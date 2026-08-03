@@ -125,11 +125,32 @@ export type AutomationPipelineArtifacts = {
 };
 
 type PipelineIndex = {
+  pipelines: { pipelineId: string; recordingId: string; taskId?: string; updatedAt: number }[];
   normalizationReviews: { reviewId: string; generatedAt: number }[];
   miningRuns: { miningRunId: string; generatedAt: number }[];
   learnedTaskModels: { learnedTaskModelId: string; generatedAt: number }[];
   policyProposals: { proposalId: string; generatedAt: number; status: PolicyProposalArtifact["status"] }[];
   replayResults: { replayId: string; generatedAt: number }[];
+};
+
+type PipelineArtifactKind = Exclude<keyof PipelineIndex, "pipelines">;
+
+type RecordingPipelineDocument = {
+  schemaVersion: "0.1";
+  pipelineId: string;
+  recordingId: string;
+  taskId?: string;
+  status: "ready" | "processing" | "complete";
+  createdAt: number;
+  updatedAt: number;
+  artifacts: {
+    normalizedTimelineIds: string[];
+    normalizationReviewIds: string[];
+    miningRunIds: string[];
+    learnedTaskModelIds: string[];
+    policyProposalIds: string[];
+    replayResultIds: string[];
+  };
 };
 
 type RuntimeIndex = {
@@ -280,10 +301,11 @@ export class AutomationStudioService {
   async deleteRecording(input: { projectId?: string | null; recordingId: string }): Promise<{ deletedRecordingId: string }> {
     await this.repositories.recordingSessions.delete(input.recordingId);
     if (input.projectId && this.projectRootDir) {
+      await this.deleteProjectRecordingPipeline(input.projectId, input.recordingId);
       await rm(this.projectFile(input.projectId, "recordings", "sessions", safeSegment(input.recordingId)), { recursive: true, force: true });
       await this.writeRecordingIndex(input.projectId, (index) => ({
         recordings: (index.recordings ?? []).filter((item) => item.recordingId !== input.recordingId),
-        normalizedTimelines: index.normalizedTimelines ?? []
+        normalizedTimelines: (index.normalizedTimelines ?? []).filter((item) => item.recordingId !== input.recordingId)
       }));
     }
     return { deletedRecordingId: input.recordingId };
@@ -970,6 +992,7 @@ export class AutomationStudioService {
       mkdir(path.join(root, "recordings", "indexes"), { recursive: true }),
       mkdir(path.join(root, "policies"), { recursive: true }),
       mkdir(path.join(root, "pipeline"), { recursive: true }),
+      mkdir(path.join(root, "pipeline", "sessions"), { recursive: true }),
       mkdir(path.join(root, "pipeline", "normalization-reviews"), { recursive: true }),
       mkdir(path.join(root, "pipeline", "mining-runs"), { recursive: true }),
       mkdir(path.join(root, "pipeline", "learned-task-models"), { recursive: true }),
@@ -1023,7 +1046,7 @@ export class AutomationStudioService {
     }));
   }
 
-  private pipelineFolder(kind: keyof PipelineIndex): string {
+  private pipelineFolder(kind: PipelineArtifactKind): string {
     if (kind === "normalizationReviews") return "normalization-reviews";
     if (kind === "miningRuns") return "mining-runs";
     if (kind === "learnedTaskModels") return "learned-task-models";
@@ -1031,19 +1054,155 @@ export class AutomationStudioService {
     return "replay-results";
   }
 
-  private async writePipelineArtifact(projectId: string, kind: keyof PipelineIndex, id: string, artifact: JsonObject): Promise<void> {
+  private async writePipelineArtifact(projectId: string, kind: PipelineArtifactKind, id: string, artifact: JsonObject): Promise<void> {
     await this.ensureProjectStructure(projectId);
     await new ProgramJsonStore<JsonObject>(this.projectFile(projectId, "pipeline", this.pipelineFolder(kind), `${safeSegment(id)}.json`), () => ({})).write(artifact);
     await new ProgramJsonStore<PipelineIndex>(this.projectFile(projectId, "pipeline", "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => upsertPipelineIndex(index, kind, id, Date.now(), artifact.status));
+    const recordingId = await this.pipelineArtifactRecordingId(projectId, kind, artifact);
+    if (recordingId) await this.writeRecordingPipelineArtifact(projectId, recordingId, kind, id, artifact);
   }
 
-  private async readPipelineArtifact<TArtifact>(projectId: string, kind: keyof PipelineIndex, id: string): Promise<TArtifact | null> {
+  private async ensureProjectRecordingPipeline(projectId: string, recording: RecordingSession): Promise<RecordingPipelineDocument> {
+    await this.ensureProjectStructure(projectId);
+    const pipelineId = recordingPipelineId(recording.recordingId);
+    const store = new ProgramJsonStore<RecordingPipelineDocument>(
+      this.projectFile(projectId, "pipeline", "sessions", safeSegment(recording.recordingId), "pipeline.json"),
+      () => createRecordingPipelineDocument(recording)
+    );
+    const now = Date.now();
+    const existing = await store.read();
+    const next: RecordingPipelineDocument = {
+      ...createRecordingPipelineDocument(recording),
+      ...existing,
+      pipelineId,
+      recordingId: recording.recordingId,
+      ...(recording.taskId !== undefined ? { taskId: recording.taskId } : {}),
+      updatedAt: now,
+      artifacts: {
+        ...createRecordingPipelineDocument(recording).artifacts,
+        ...(existing.artifacts ?? {})
+      }
+    };
+    await mkdir(this.projectFile(projectId, "pipeline", "sessions", safeSegment(recording.recordingId), "artifacts"), { recursive: true });
+    await Promise.all([
+      mkdir(this.projectFile(projectId, "pipeline", "sessions", safeSegment(recording.recordingId), "artifacts", "normalized-timelines"), { recursive: true }),
+      mkdir(this.projectFile(projectId, "pipeline", "sessions", safeSegment(recording.recordingId), "artifacts", "normalization-reviews"), { recursive: true }),
+      mkdir(this.projectFile(projectId, "pipeline", "sessions", safeSegment(recording.recordingId), "artifacts", "mining-runs"), { recursive: true }),
+      mkdir(this.projectFile(projectId, "pipeline", "sessions", safeSegment(recording.recordingId), "artifacts", "learned-task-models"), { recursive: true }),
+      mkdir(this.projectFile(projectId, "pipeline", "sessions", safeSegment(recording.recordingId), "artifacts", "policy-proposals"), { recursive: true }),
+      mkdir(this.projectFile(projectId, "pipeline", "sessions", safeSegment(recording.recordingId), "artifacts", "replay-results"), { recursive: true })
+    ]);
+    await store.write(next);
+    await new ProgramJsonStore<PipelineIndex>(this.projectFile(projectId, "pipeline", "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => ({
+      ...emptyPipelineIndex(),
+      ...index,
+      pipelines: upsertBy(index.pipelines ?? [], "pipelineId", {
+        pipelineId,
+        recordingId: recording.recordingId,
+        ...(recording.taskId !== undefined ? { taskId: recording.taskId } : {}),
+        updatedAt: now
+      })
+    }));
+    return next;
+  }
+
+  private async writeRecordingPipelineArtifact(projectId: string, recordingId: string, kind: PipelineArtifactKind, id: string, artifact: JsonObject): Promise<void> {
+    const recording = await this.repositories.recordingSessions.get(recordingId) ?? await this.getRecordingSession(recordingId, projectId).catch(() => null);
+    if (!recording) return;
+    await this.ensureProjectRecordingPipeline(projectId, recording);
+    const folder = this.recordingPipelineArtifactFolder(kind);
+    await new ProgramJsonStore<JsonObject>(
+      this.projectFile(projectId, "pipeline", "sessions", safeSegment(recordingId), "artifacts", folder, `${safeSegment(id)}.json`),
+      () => ({})
+    ).write(artifact);
+    await this.updateRecordingPipeline(projectId, recordingId, (pipeline) => addRecordingPipelineArtifactId(pipeline, kind, id));
+  }
+
+  private async writeRecordingPipelineNormalizedTimeline(projectId: string, normalized: NormalizedTimeline): Promise<void> {
+    const recording = await this.repositories.recordingSessions.get(normalized.recordingId) ?? await this.getRecordingSession(normalized.recordingId, projectId).catch(() => null);
+    if (!recording) return;
+    await this.ensureProjectRecordingPipeline(projectId, recording);
+    await new ProgramJsonStore<JsonObject>(
+      this.projectFile(projectId, "pipeline", "sessions", safeSegment(normalized.recordingId), "artifacts", "normalized-timelines", `${safeSegment(normalized.normalizedTimelineId)}.json`),
+      () => ({})
+    ).write({ normalizedTimeline: normalized as unknown as JsonObject });
+    await this.updateRecordingPipeline(projectId, normalized.recordingId, (pipeline) => ({
+      ...pipeline,
+      updatedAt: Date.now(),
+      artifacts: {
+        ...pipeline.artifacts,
+        normalizedTimelineIds: uniqueStrings([normalized.normalizedTimelineId, ...(pipeline.artifacts.normalizedTimelineIds ?? [])])
+      }
+    }));
+  }
+
+  private async updateRecordingPipeline(projectId: string, recordingId: string, mutator: (pipeline: RecordingPipelineDocument) => RecordingPipelineDocument): Promise<RecordingPipelineDocument> {
+    const recording = await this.getRecordingSession(recordingId, projectId);
+    await this.ensureProjectRecordingPipeline(projectId, recording);
+    const store = new ProgramJsonStore<RecordingPipelineDocument>(
+      this.projectFile(projectId, "pipeline", "sessions", safeSegment(recordingId), "pipeline.json"),
+      () => createRecordingPipelineDocument(recording)
+    );
+    const next = mutator(await store.read());
+    await store.write(next);
+    await new ProgramJsonStore<PipelineIndex>(this.projectFile(projectId, "pipeline", "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => ({
+      ...emptyPipelineIndex(),
+      ...index,
+      pipelines: upsertBy(index.pipelines ?? [], "pipelineId", {
+        pipelineId: next.pipelineId,
+        recordingId: next.recordingId,
+        ...(next.taskId !== undefined ? { taskId: next.taskId } : {}),
+        updatedAt: next.updatedAt
+      })
+    }));
+    return next;
+  }
+
+  private recordingPipelineArtifactFolder(kind: PipelineArtifactKind): string {
+    return this.pipelineFolder(kind);
+  }
+
+  private async pipelineArtifactRecordingId(projectId: string, kind: PipelineArtifactKind, artifact: JsonObject): Promise<string | null> {
+    if (typeof artifact.recordingId === "string") return artifact.recordingId;
+    if (kind === "miningRuns" && artifact.metadata && typeof artifact.metadata === "object" && !Array.isArray(artifact.metadata) && typeof (artifact.metadata as JsonObject).recordingId === "string") return (artifact.metadata as JsonObject).recordingId as string;
+    if (kind === "learnedTaskModels" && Array.isArray(artifact.sourceRecordings) && typeof artifact.sourceRecordings[0] === "string") return artifact.sourceRecordings[0];
+    if (kind === "policyProposals" && typeof artifact.learnedTaskModelId === "string") {
+      const model = await this.readPipelineArtifact<LearnedTaskModel>(projectId, "learnedTaskModels", artifact.learnedTaskModelId);
+      return model?.sourceRecordings[0] ?? null;
+    }
+    return null;
+  }
+
+  private async deleteProjectRecordingPipeline(projectId: string, recordingId: string): Promise<void> {
+    const pipeline = await new ProgramJsonStore<RecordingPipelineDocument>(
+      this.projectFile(projectId, "pipeline", "sessions", safeSegment(recordingId), "pipeline.json"),
+      () => createRecordingPipelineDocument({ recordingId, startedAt: Date.now() })
+    ).read();
+    await Promise.all([
+      ...pipeline.artifacts.normalizationReviewIds.map((id) => rm(this.projectFile(projectId, "pipeline", "normalization-reviews", `${safeSegment(id)}.json`), { force: true })),
+      ...pipeline.artifacts.miningRunIds.map((id) => rm(this.projectFile(projectId, "pipeline", "mining-runs", `${safeSegment(id)}.json`), { force: true })),
+      ...pipeline.artifacts.learnedTaskModelIds.map((id) => rm(this.projectFile(projectId, "pipeline", "learned-task-models", `${safeSegment(id)}.json`), { force: true })),
+      ...pipeline.artifacts.policyProposalIds.map((id) => rm(this.projectFile(projectId, "pipeline", "policy-proposals", `${safeSegment(id)}.json`), { force: true })),
+      ...pipeline.artifacts.replayResultIds.map((id) => rm(this.projectFile(projectId, "pipeline", "replay-results", `${safeSegment(id)}.json`), { force: true }))
+    ]);
+    await rm(this.projectFile(projectId, "pipeline", "sessions", safeSegment(recordingId)), { recursive: true, force: true });
+    await new ProgramJsonStore<PipelineIndex>(this.projectFile(projectId, "pipeline", "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => ({
+      pipelines: (index.pipelines ?? []).filter((item) => item.recordingId !== recordingId),
+      normalizationReviews: (index.normalizationReviews ?? []).filter((item) => !pipeline.artifacts.normalizationReviewIds.includes(item.reviewId)),
+      miningRuns: (index.miningRuns ?? []).filter((item) => !pipeline.artifacts.miningRunIds.includes(item.miningRunId)),
+      learnedTaskModels: (index.learnedTaskModels ?? []).filter((item) => !pipeline.artifacts.learnedTaskModelIds.includes(item.learnedTaskModelId)),
+      policyProposals: (index.policyProposals ?? []).filter((item) => !pipeline.artifacts.policyProposalIds.includes(item.proposalId)),
+      replayResults: (index.replayResults ?? []).filter((item) => !pipeline.artifacts.replayResultIds.includes(item.replayId))
+    }));
+  }
+
+  private async readPipelineArtifact<TArtifact>(projectId: string, kind: PipelineArtifactKind, id: string): Promise<TArtifact | null> {
     await this.ensureProjectStructure(projectId);
     const artifact = await new ProgramJsonStore<JsonObject>(this.projectFile(projectId, "pipeline", this.pipelineFolder(kind), `${safeSegment(id)}.json`), () => ({})).read();
     return Object.keys(artifact).length ? artifact as unknown as TArtifact : null;
   }
 
-  private async readPipelineArtifactList<TArtifact>(projectId: string, kind: keyof PipelineIndex, ids: string[]): Promise<TArtifact[]> {
+  private async readPipelineArtifactList<TArtifact>(projectId: string, kind: PipelineArtifactKind, ids: string[]): Promise<TArtifact[]> {
     const artifacts: TArtifact[] = [];
     for (const id of ids) {
       const artifact = await this.readPipelineArtifact<TArtifact>(projectId, kind, id);
@@ -1119,6 +1278,7 @@ export class AutomationStudioService {
     await new ProgramJsonStore<JsonObject>(path.join(sessionDir, "recording.json"), () => ({ recording: recording as unknown as JsonObject })).write({ recording: recording as unknown as JsonObject });
     await new ProgramJsonStore<JsonObject>(path.join(sessionDir, "events", "timeline.json"), () => ({ timeline: [] })).write({ timeline: recording.timeline as unknown as JsonObject[] });
     await new ProgramJsonStore<JsonObject>(path.join(sessionDir, "snapshots", "initial-state.json"), () => ({ initialState: recording.initialState as unknown as JsonObject })).write({ initialState: recording.initialState as unknown as JsonObject });
+    await this.ensureProjectRecordingPipeline(projectId, recording);
     await this.writeRecordingIndex(projectId, (index) => ({
       recordings: upsertBy(index.recordings ?? [], "recordingId", {
         recordingId: recording.recordingId,
@@ -1135,6 +1295,7 @@ export class AutomationStudioService {
     await this.ensureProjectStructure(projectId);
     const fileName = `${safeSegment(normalized.normalizedTimelineId)}.json`;
     await new ProgramJsonStore<JsonObject>(this.projectFile(projectId, "recordings", "normalized", fileName), () => ({ normalizedTimeline: normalized as unknown as JsonObject })).write({ normalizedTimeline: normalized as unknown as JsonObject });
+    await this.writeRecordingPipelineNormalizedTimeline(projectId, normalized);
     await this.writeRecordingIndex(projectId, (index) => ({
       recordings: index.recordings ?? [],
       normalizedTimelines: upsertBy(index.normalizedTimelines ?? [], "normalizedTimelineId", {
@@ -1228,10 +1389,10 @@ function normalizePositiveInteger(value: unknown, fallback: number, min: number,
 }
 
 function emptyPipelineIndex(): PipelineIndex {
-  return { normalizationReviews: [], miningRuns: [], learnedTaskModels: [], policyProposals: [], replayResults: [] };
+  return { pipelines: [], normalizationReviews: [], miningRuns: [], learnedTaskModels: [], policyProposals: [], replayResults: [] };
 }
 
-function upsertPipelineIndex(index: PipelineIndex, kind: keyof PipelineIndex, id: string, generatedAt: number, status?: unknown): PipelineIndex {
+function upsertPipelineIndex(index: PipelineIndex, kind: PipelineArtifactKind, id: string, generatedAt: number, status?: unknown): PipelineIndex {
   const item = kind === "normalizationReviews"
     ? { reviewId: id, generatedAt }
     : kind === "miningRuns"
@@ -1247,6 +1408,59 @@ function upsertPipelineIndex(index: PipelineIndex, kind: keyof PipelineIndex, id
     ...index,
     [kind]: upsertBy((index[kind] as any[]) ?? [], key as any, item as any).sort((left: any, right: any) => right.generatedAt - left.generatedAt)
   };
+}
+
+function recordingPipelineId(recordingId: string): string {
+  return `pipeline.${safeSegment(recordingId)}`;
+}
+
+function createRecordingPipelineDocument(recording: Pick<RecordingSession, "recordingId" | "taskId" | "startedAt">): RecordingPipelineDocument {
+  return {
+    schemaVersion: "0.1",
+    pipelineId: recordingPipelineId(recording.recordingId),
+    recordingId: recording.recordingId,
+    ...(recording.taskId !== undefined ? { taskId: recording.taskId } : {}),
+    status: "ready",
+    createdAt: recording.startedAt,
+    updatedAt: Date.now(),
+    artifacts: emptyRecordingPipelineArtifacts()
+  };
+}
+
+function emptyRecordingPipelineArtifacts(): RecordingPipelineDocument["artifacts"] {
+  return {
+    normalizedTimelineIds: [],
+    normalizationReviewIds: [],
+    miningRunIds: [],
+    learnedTaskModelIds: [],
+    policyProposalIds: [],
+    replayResultIds: []
+  };
+}
+
+function addRecordingPipelineArtifactId(pipeline: RecordingPipelineDocument, kind: PipelineArtifactKind, id: string): RecordingPipelineDocument {
+  const key = kind === "normalizationReviews"
+    ? "normalizationReviewIds"
+    : kind === "miningRuns"
+      ? "miningRunIds"
+      : kind === "learnedTaskModels"
+        ? "learnedTaskModelIds"
+        : kind === "policyProposals"
+          ? "policyProposalIds"
+          : "replayResultIds";
+  return {
+    ...pipeline,
+    status: kind === "replayResults" || kind === "policyProposals" ? "complete" : "processing",
+    updatedAt: Date.now(),
+    artifacts: {
+      ...pipeline.artifacts,
+      [key]: uniqueStrings([id, ...(pipeline.artifacts[key] ?? [])])
+    }
+  };
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))];
 }
 
 function average(values: number[]): number {

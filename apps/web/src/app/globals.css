@@ -3904,6 +3904,17 @@ select {
   border-left: 3px solid var(--color-text-subtle);
 }
 
+.automation-project-tree button.selected.correlated {
+  border-color: #c7ced6;
+  border-left-color: #9aa5b1;
+  background: #f4f6f8;
+  color: #3f4954;
+}
+
+.automation-project-tree button.selected.correlated small {
+  color: #697586;
+}
+
 .automation-project-tree button span {
   display: grid;
   gap: 2px;

@@ -112,10 +112,50 @@ Automation Studio is a fullscreen program workspace, not a standard padded
 program detail page. The app shell keeps the global program topbar, then gives
 the remaining viewport to the studio itself.
 
+The Next route layer should stay thin. `apps/web/src/app/programs/[programId]/`
+owns routing, authentication handoff, and the generic program workspace shell.
+Automation Studio React implementation code belongs under
+`apps/web/src/features/automation-studio/`, while reusable web-panel helpers for
+all program views belong under `apps/web/src/features/programs/`.
+
+The web-side feature layout is:
+
+```text
+apps/web/src/features/automation-studio/
+  AutomationStudioLive.tsx   Feature entrypoint for the live workspace.
+  graph/                     React Flow port rules, connection helpers, edge routing, and graph view models.
+  hierarchy/                 Project tree/modal components, generated recording nodes, and hierarchy signatures.
+  parameters/                Node parameter inspector controls and value coercion helpers.
+  runtime/                   Small UI-triggered runtime payload builders and execution helpers.
+  timeline/                  Timeline titles, summaries, icons, durations, and inspector view models.
+  types.ts                   Shared Automation Studio UI/view/editor types.
+  views/                     Named workspace pane modules: renderer, timeline, pipeline,
+                             client/config/assistant, graph editors, workspaces, inspector,
+                             dock, and shared view utilities.
+  workspace/                 Inner-window desktop components, defaults, geometry, snapping, and layout math.
+
+apps/web/src/features/programs/
+  live-views.tsx             Non-Automation program live workspaces.
+  program-api.ts             Generic `/api/programs/{programId}/{endpoint}` client hook.
+  shared-ui.tsx              Reusable panels, fields, tables, badges, modals, and alerts.
+  types.ts                   Shared program-view types such as the authenticated user shape.
+  ProgramLiveViews.tsx       Program switchboard only.
+```
+
+`ProgramLiveViews.tsx` must remain a switchboard and must not grow program
+implementation logic. New inner-window behavior belongs in
+`automation-studio/workspace/`; project organization UI belongs in
+`automation-studio/hierarchy/`; React Flow port, edge, node, layout, and
+connection rules belong in `automation-studio/graph/`; timeline interpretation
+for UI display belongs in `automation-studio/timeline/`; node parameter editing
+belongs in `automation-studio/parameters/`; workspace pane implementations
+belong in `automation-studio/views/`; and API orchestration should move behind
+named Automation Studio hooks or action modules before new endpoints are added.
+
 The default design layout follows the consultant plan:
 
-- left sidebar: project hierarchy for folders, tasks, routines,
-  configurations, and recordings;
+- left sidebar: project hierarchy for recording-owned pipelines, folders,
+  tasks, routines, configurations, and recordings;
 - center workspace: the active design/debugging surface;
 - right inspector: synchronized details for the selected policy node, policy,
   recording, timeline entry, or signal.
@@ -163,6 +203,13 @@ custom hierarchy `deletedHierarchyIds` list. Deleting a generated recording row
 or a generated recording client folder is a destructive recording operation:
 the UI asks for the user's PIN, then deletes the underlying recording session
 or all recording sessions contained by that client folder.
+
+Pipeline rows in the project hierarchy are also generated from persisted
+recording sessions. The Pipeline root mirrors the Recordings root by client
+folder and recording start date/time. There is no single global Pipeline
+sidebar row, and the pipeline pane does not include its own recording selector:
+opening a pipeline row selects the corresponding recording and runs pipeline
+stages against that recording-owned pipeline session.
 
 Demo recording fixtures such as `Demo Environment` are test fixtures only.
 The Automation Studio service does not seed fixture recordings by default in
@@ -422,17 +469,20 @@ Workspace preferences should control frame-level dimensions such as sidebar and
 inspector sizes. Window layout itself belongs to direct manipulation inside the
 canvas.
 
-The left hierarchy editor is limited to folders, tasks, routines,
-configurations, and recordings. Interfaces are no longer represented as project
-hierarchy objects. The tree uses real explorer-style root folder structures for
-tasks, routines, configurations, and recordings. Each structure owns its own
-expandable/collapsible folders, and folder rows keep add/delete controls.
+The left hierarchy editor is limited to recording-owned pipelines, folders,
+tasks, routines, configurations, and recordings. Interfaces are no longer
+represented as project hierarchy objects. The tree uses real explorer-style root
+folder structures for pipelines, tasks, routines, configurations, and
+recordings. Each structure owns its own expandable/collapsible folders, and
+folder rows keep add/delete controls.
 Creating a hierarchy item first opens a category-aware type chooser for folder,
 task, or routine where those object types apply, then asks for name, location,
 and PIN authorization. Recording rows are generated from project recording
 sessions, grouped into auto-generated folders by client name, labeled by
 recording start date/time, and open the selected recording in the timeline
-editor. Delete actions remain privileged and require PIN authorization.
+editor. Pipeline rows are generated from the same recordings and open the
+pipeline pane scoped to that selected recording. Delete actions remain
+privileged and require PIN authorization.
 
 Automation Studio opens through a project chooser. Users must create or open a
 project before the editor workspace appears. Projects and their owned state are
@@ -577,6 +627,15 @@ The recording pipeline reserves derived project artifacts beside recordings:
 
 ```text
 .fluxiq/data/programs/automation-studio/projects/{projectId}/pipeline/
+  sessions/{recordingId}/
+    pipeline.json
+    artifacts/
+      normalized-timelines/{normalizedTimelineId}.json
+      normalization-reviews/{reviewId}.json
+      mining-runs/{miningRunId}.json
+      learned-task-models/{learnedTaskModelId}.json
+      policy-proposals/{proposalId}.json
+      replay-results/{replayId}.json
   normalization-reviews/{reviewId}.json
   mining-runs/{miningRunId}.json
   learned-task-models/{learnedTaskModelId}.json
@@ -585,10 +644,20 @@ The recording pipeline reserves derived project artifacts beside recordings:
   indexes/pipeline.json
 ```
 
-These files are derived artifacts. They should preserve references back to raw
+Each recording creates a matching recording pipeline session as soon as the
+recording is captured. `pipeline/sessions/{recordingId}/pipeline.json` is the
+recording-owned pipeline manifest and mirrors the recording session folder:
+normalized timelines, reviews, mining runs, learned models, proposals, and
+replay results are copied under that recording pipeline as they are generated.
+The flat pipeline artifact folders and `indexes/pipeline.json` remain aggregate
+indexes for project-wide listing.
+
+Pipeline files are derived artifacts. They preserve references back to raw
 recordings and normalized timelines so users can audit how a final task policy
-was produced. Approving a policy proposal writes the generated `PolicyGraph`
-into the canonical policy repository and the project `policies/` folder.
+was produced. Deleting a recording also deletes its matching pipeline session
+and removes linked pipeline artifacts from the aggregate pipeline index.
+Approving a policy proposal writes the generated `PolicyGraph` into the
+canonical policy repository and the project `policies/` folder.
 
 Project-owned authoring artifacts are now explicit documents instead of only
 hierarchy rows. Each project reserves:
