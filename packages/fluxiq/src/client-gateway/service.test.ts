@@ -73,6 +73,22 @@ describe("ClientGatewayService", () => {
     expect(gateway.snapshot().pairings).toHaveLength(0);
   });
 
+  it("authorizes active paired session tokens", async () => {
+    const gateway = new ClientGatewayService();
+    const session = gateway.connect();
+    await gateway.receive(session.sessionId, clientMessage("client.hello", {
+      clientId: "extension.authorized",
+      clientType: "extension",
+      name: "Authorized Test"
+    }));
+    const pairingCode = gateway.snapshot().pairings[0]?.pairingCode ?? "";
+    await gateway.approvePairing(pairingCode);
+    const token = gateway.snapshot().sessions[0]?.token;
+
+    expect(gateway.authorizeToken(token)?.clientId).toBe("extension.authorized");
+    expect(gateway.authorizeToken("missing-token")).toBeNull();
+  });
+
   it("correlates execute_action commands with client action results", async () => {
     const gateway = new ClientGatewayService({ commandTimeoutMs: 1000 });
     const session = gateway.connect();

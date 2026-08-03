@@ -61,6 +61,25 @@ type RecordingIndex = {
   normalizedTimelines: { normalizedTimelineId: string; recordingId: string; generatedAt: number }[];
 };
 
+export type RecordingSummaryItem = {
+  id: string;
+  title: string;
+  status: "recording" | "completed";
+  projectId: string;
+  taskId: string | null;
+  eventCount: number;
+  startedAt: string;
+  endedAt: string | null;
+  updatedAt: string;
+};
+
+export type RecordingSummaryList = {
+  items: RecordingSummaryItem[];
+  page: number;
+  pageSize: number;
+  total: number;
+};
+
 export type NormalizationReviewArtifact = {
   schemaVersion: "0.1";
   reviewId: string;
@@ -175,6 +194,36 @@ export class AutomationStudioService {
     const recording = await this.repositories.recordingSessions.get(recordingId);
     if (!recording) throw new Error(`Unknown Automation Studio recording: ${recordingId}`);
     return recording;
+  }
+
+  async listRecordingSummaries(input: { page?: unknown; pageSize?: unknown } = {}): Promise<RecordingSummaryList> {
+    await this.ready;
+    const page = normalizePositiveInteger(input.page, 1, 1, 1_000_000);
+    const pageSize = normalizePositiveInteger(input.pageSize, 10, 1, 100);
+    const { projects } = await this.listProjects();
+    const summaries: RecordingSummaryItem[] = [];
+    const seen = new Set<string>();
+
+    for (const project of projects) {
+      if (this.projectRootDir) await this.loadProjectRecordings(project.id);
+      const recordingIds = this.projectRootDir
+        ? (await this.readRecordingIndex(project.id)).recordings.map((item) => item.recordingId)
+        : (await this.repositories.recordingSessions.list()).map((recording) => recording.recordingId);
+
+      for (const recordingId of recordingIds) {
+        const key = `${project.id}:${recordingId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const recording = await this.repositories.recordingSessions.get(recordingId);
+        if (!recording) continue;
+        summaries.push(recordingSummaryFromSession(recording, project.id));
+      }
+    }
+
+    summaries.sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+    const total = summaries.length;
+    const start = (page - 1) * pageSize;
+    return { items: summaries.slice(start, start + pageSize), page, pageSize, total };
   }
 
   async createRecording(input: CreateRecordingSessionInput & { projectId?: string | null }): Promise<RecordingSession> {
@@ -1143,6 +1192,39 @@ function upsertBy<TItem, TKey extends keyof TItem>(items: TItem[], key: TKey, it
   const index = items.findIndex((candidate) => candidate[key] === item[key]);
   if (index < 0) return [item, ...items];
   return items.map((candidate, candidateIndex) => candidateIndex === index ? item : candidate);
+}
+
+function recordingSummaryFromSession(recording: RecordingSession, projectId: string): RecordingSummaryItem {
+  const title = stringMetadataValue(recording.metadata, "name")
+    ?? stringMetadataValue(recording.metadata, "title")
+    ?? recording.recordingId;
+  const updatedAt = Math.max(recording.endedAt ?? 0, latestTimelineTimestamp(recording), recording.startedAt);
+  return {
+    id: recording.recordingId,
+    title,
+    status: recording.endedAt === undefined ? "recording" : "completed",
+    projectId,
+    taskId: recording.taskId ?? null,
+    eventCount: recording.timeline.length,
+    startedAt: new Date(recording.startedAt).toISOString(),
+    endedAt: recording.endedAt === undefined ? null : new Date(recording.endedAt).toISOString(),
+    updatedAt: new Date(updatedAt).toISOString()
+  };
+}
+
+function latestTimelineTimestamp(recording: RecordingSession): number {
+  return recording.timeline.reduce((latest, entry) => Math.max(latest, typeof entry.timestamp === "number" ? entry.timestamp : 0), 0);
+}
+
+function stringMetadataValue(metadata: JsonObject, key: string): string | null {
+  const value = metadata[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function normalizePositiveInteger(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(parsed)));
 }
 
 function emptyPipelineIndex(): PipelineIndex {

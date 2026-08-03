@@ -69,6 +69,17 @@ export class ClientGatewayService {
     };
   }
 
+  authorizeToken(token: string | null | undefined): ClientGatewaySession | null {
+    const normalizedToken = typeof token === "string" ? token.trim() : "";
+    if (!normalizedToken) return null;
+    const sessionId = this.tokenToSession.get(normalizedToken);
+    if (!sessionId) return null;
+    const session = this.sessions.get(sessionId);
+    if (!session || session.status !== "ready" || session.token !== normalizedToken) return null;
+    session.lastSeenAt = this.now();
+    return this.publicSession(session);
+  }
+
   createPairing(input: {
     projectId?: string | null;
     userId?: string;

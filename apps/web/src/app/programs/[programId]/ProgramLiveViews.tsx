@@ -54,7 +54,7 @@ export function LiveProgramMain({ programId, user }: { programId: string; user: 
   }
 }
 
-type AutomationStudioView = "design" | "recordings" | "signals" | "runtime" | "problems";
+type AutomationStudioView = "design" | "recordings" | "pipeline" | "signals" | "runtime" | "runs" | "problems";
 type AutomationViewType = AutomationStudioView | "assistant" | "clients" | "config" | "routine" | "state" | "inspector" | "dock";
 type AutomationDockTab = "assistant" | "problems" | "history" | "state";
 type AutomationViewInstance = {
@@ -130,14 +130,17 @@ type AutomationEditorPaletteGroup = {
   title: string;
   nodes: AutomationEditorNodeSpec[];
 };
-type AutomationHierarchyKind = "folder" | "task" | "routine" | "config" | "recording";
+type AutomationHierarchyKind = "folder" | "client" | "pipeline" | "task" | "routine" | "config" | "recording" | "run";
 type AutomationCreatableHierarchyKind = "folder" | "task" | "routine";
-type AutomationHierarchyCategory = "task" | "routine" | "config" | "recording";
-const automationHierarchyCategories: Array<{ id: AutomationHierarchyCategory; label: string; description: string }> = [
-  { id: "task", label: "Tasks", description: "Task folders and task workspaces" },
-  { id: "routine", label: "Routines", description: "Routine folders and orchestration workspaces" },
-  { id: "config", label: "Configurations", description: "Configuration folders and defaults" },
-  { id: "recording", label: "Recordings", description: "Raw and processed recording sessions" }
+type AutomationHierarchyCategory = "client" | "pipeline" | "task" | "routine" | "config" | "recording" | "run";
+const automationHierarchyCategories: Array<{ id: AutomationHierarchyCategory; label: string; description: string; creatable?: boolean }> = [
+  { id: "client", label: "Clients", description: "Connected recorder and action clients" },
+  { id: "recording", label: "Recordings", description: "Raw browser recording sessions", creatable: true },
+  { id: "pipeline", label: "Pipeline", description: "Transform recordings into task drafts" },
+  { id: "task", label: "Tasks", description: "Learned task workspaces", creatable: true },
+  { id: "routine", label: "Routines", description: "Deterministic routine orchestration", creatable: true },
+  { id: "config", label: "Configurations", description: "Configuration folders and defaults", creatable: true },
+  { id: "run", label: "Runs", description: "Replay and runtime validation history" }
 ];
 const automationLayoutPresetOptions: AutomationLayoutPresetOption[] = [
   { id: "single", label: "Full", title: "Full stack", cells: [{ x: 0, y: 0, w: 1, h: 1 }] },
@@ -205,6 +208,7 @@ type AutomationStudioProjectCategory = {
 };
 type AutomationProjectModal = "create" | "rename" | "delete" | "move" | "create-category" | "rename-category" | "delete-category" | "move-category" | null;
 type AutomationSelection =
+  | { kind: "workspace"; id: "clients" | "pipeline" | "runs" }
   | { kind: "policy"; id: string }
   | { kind: "node"; id: string }
   | { kind: "editor-node"; id: string; node: { label: string; nodeType: string; family: string; description: string; customDescription?: string; nodeDefinitionId?: string; icon?: string; inputs: AutomationNodePort[]; outputs: AutomationNodePort[]; parameters: AutomationNodeParameter[]; parameterValues: JsonObject; privileged?: boolean; actionTypes?: string[] } }
@@ -445,11 +449,13 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const restoringUrlProject = Boolean(urlProjectId && !activeProject && !projectStatus && (!projectsLoaded || activeProjectId === urlProjectId || urlProjectOpenAttemptRef.current === urlProjectId));
 
   const viewInstances: AutomationViewInstance[] = [
-    { id: "policy-primary", label: `Policy: ${selectedPolicy?.taskId ?? "Task"}`, type: "design", icon: GitBranch },
+    { id: "client-gateway", label: "Connected Clients", type: "clients", icon: Radio, state: "live" },
     { id: "timeline-recording", label: `Timeline: ${selectedRecording?.name ?? selectedRecording?.recordingId ?? "Recording"}`, type: "recordings", icon: Radio, state: "live" },
+    { id: "pipeline-workbench", label: "Pipeline", type: "pipeline", icon: Sparkles },
+    { id: "policy-primary", label: `Task: ${selectedPolicy?.taskId ?? "Draft"}`, type: "design", icon: GitBranch },
+    { id: "runs-history", label: "Runs", type: "runs", icon: History },
     { id: "signals-web", label: "Signals: Relationship Web", type: "signals", icon: Network, state: "warning" },
     { id: "runtime-debug", label: "Runtime Debug", type: "runtime", icon: Bug },
-    { id: "client-gateway", label: "Connected Clients", type: "clients", icon: Radio, state: "live" },
     { id: "problems-view", label: "Problems", type: "problems", icon: AlertTriangle },
     { id: "ai-assistant", label: "AI Assistant", type: "assistant", icon: Sparkles },
     { id: "global-inspector", label: "Inspector", type: "inspector", icon: SlidersHorizontal },
@@ -460,6 +466,9 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const recordingNodes = recordingHierarchyNodes(recordings);
   const generatedRecordingHierarchyIds = new Set(recordingNodes.map((node) => node.id));
   const hierarchyNodes: AutomationHierarchyNode[] = [
+    { id: "workspace-clients", label: "Connected Clients", kind: "client", category: "client", parentId: null, viewId: "client-gateway", sourceId: "clients" },
+    { id: "workspace-pipeline", label: "Pipeline", kind: "pipeline", category: "pipeline", parentId: null, viewId: "pipeline-workbench", sourceId: "pipeline" },
+    { id: "workspace-runs", label: "Runs", kind: "run", category: "run", parentId: null, viewId: "runs-history", sourceId: "runs" },
     ...policies.map((policy: any) => ({
       id: policy.policyId,
       label: policy.taskId ?? policy.policyId,
@@ -1003,6 +1012,42 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
     await refreshProjectRuntimeState(activeProjectId);
   }
 
+  function processPipelineProposalWithLlm(_proposalId: string) {
+    setAutomationActionStatus("LLM task processing is not connected yet.");
+  }
+
+  async function runRecordingPipeline(recordingId: string, taskId?: string) {
+    if (!activeProjectId || !recordingId) return;
+    const authorizationPin = window.prompt("Enter PIN to run the recording pipeline") ?? "";
+    if (authorizationPin.length < 4) {
+      setAutomationActionStatus("PIN is required to run the recording pipeline.");
+      return;
+    }
+    const steps: Array<{ endpoint: string; payload: JsonObject; status: string; success: string }> = [
+      { endpoint: "normalize-recording", payload: { recordingId }, status: "Normalizing recording timeline...", success: "Recording normalized." },
+      { endpoint: "create-normalization-review", payload: { recordingId }, status: "Creating normalization review...", success: "Normalization review created." },
+      { endpoint: "mine-recording-evidence", payload: { recordingId }, status: "Mining recording evidence...", success: "Evidence mined." },
+      { endpoint: "learn-task-model", payload: { taskId: taskId ?? recordingId }, status: "Learning task model...", success: "Task model learned." },
+      { endpoint: "propose-policy-from-model", payload: {}, status: "Creating task draft...", success: "Task draft proposed." },
+      { endpoint: "replay-policy-against-recording", payload: { recordingId }, status: "Replaying policy against recording...", success: "Replay completed." }
+    ];
+    for (const step of steps) {
+      setAutomationActionStatus(step.status);
+      const result = await api.post<{ normalizedTimeline?: any }>(step.endpoint, { projectId: activeProjectId, authorizationPin, ...step.payload });
+      if (!result.ok) {
+        setAutomationActionStatus(result.error ?? `${step.endpoint} failed.`);
+        await refreshProjectRuntimeState(activeProjectId);
+        return;
+      }
+      if (step.endpoint === "normalize-recording" && result.payload?.normalizedTimeline) {
+        setProjectTimelines((current) => [result.payload!.normalizedTimeline, ...current.filter((timeline) => timeline.normalizedTimelineId !== result.payload!.normalizedTimeline.normalizedTimelineId)]);
+      }
+      setAutomationActionStatus(step.success);
+    }
+    setAutomationActionStatus("Recording pipeline complete.");
+    await refreshProjectRuntimeState(activeProjectId);
+  }
+
   function closeProject() {
     setActiveProjectId(null);
     setLoadedProjectHierarchyId(null);
@@ -1332,7 +1377,7 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
       setHierarchyParentId(action.parentId ?? null);
     }
     if (action.action === "delete" && action.node) {
-      if (action.node.kind !== "config" && action.node.kind !== "recording") setHierarchyKind(action.node.kind);
+      if (action.node.kind === "task" || action.node.kind === "routine" || action.node.kind === "folder") setHierarchyKind(action.node.kind);
       setHierarchyCategory(action.node.category);
       setHierarchyName(action.node.label);
       setHierarchyParentId(action.node.parentId);
@@ -1474,13 +1519,14 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
                       signals={signals}
                       timelines={timelines}
                       view={view}
-                      onCreateRecording={createProjectRecording}
                       onDeleteRecording={deleteProjectRecording}
                       onFinalizeRecording={finalizeProjectRecording}
                       onAppendRecordingMarker={appendProjectRecordingMarker}
                       onAppendRecordingNote={appendProjectRecordingNote}
                       onNormalizeRecording={normalizeProjectRecording}
                       onPipelineAction={runRecordingPipelineStep}
+                      onRunRecordingPipeline={runRecordingPipeline}
+                      onProcessProposalWithLlm={processPipelineProposalWithLlm}
                       onRefreshRecordings={() => refreshProjectRuntimeState(activeProjectId)}
                       onUpdateRecording={updateProjectRecording}
                       setDockTab={setDockTab}
@@ -1627,10 +1673,13 @@ function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
           <select aria-label="Filter project type" onChange={(event) => setProjectTypeFilter(event.target.value as typeof projectTypeFilter)} value={projectTypeFilter}>
             <option value="all">All</option>
             <option value="folder">Folders</option>
+            <option value="client">Clients</option>
+            <option value="recording">Recordings</option>
+            <option value="pipeline">Pipeline</option>
             <option value="task">Tasks</option>
             <option value="routine">Routines</option>
             <option value="config">Configs</option>
-            <option value="recording">Recordings</option>
+            <option value="run">Runs</option>
           </select>
         </div> : null}
         {!sidebarCollapsed ? <AutomationProjectTree
@@ -1870,9 +1919,10 @@ function moveCategoryId(categoryIds: string[], categoryId: string, targetCategor
 
 function AutomationWindowAdderPalette(props: { area: AutomationWorkspaceArea; anchor: AutomationWindowAdderState["anchor"]; targetWindowId?: string; views: AutomationViewInstance[]; onAdd(viewId: string, area: AutomationWorkspaceArea, targetWindowId?: string): void }) {
   const groups = [
-    { title: "Editors", ids: ["policy-primary", "routine-editor", "config-default"] },
-    { title: "Evidence", ids: ["timeline-recording", "signals-web", "runtime-debug", "problems-view"] },
-    { title: "Tools", ids: ["client-gateway", "global-inspector", "workspace-dock", "ai-assistant"] }
+    { title: "Workflow", ids: ["client-gateway", "timeline-recording", "pipeline-workbench", "policy-primary", "runs-history"] },
+    { title: "Editors", ids: ["routine-editor", "config-default"] },
+    { title: "Evidence", ids: ["signals-web", "runtime-debug", "problems-view"] },
+    { title: "Tools", ids: ["global-inspector", "workspace-dock", "ai-assistant"] }
   ];
   const byId = new Map(props.views.map((view) => [view.id, view]));
   return (
@@ -1954,12 +2004,14 @@ function automationFloatingPanelStyle(area: AutomationWorkspaceArea, anchor: Aut
 }
 
 function automationWindowDescription(view: AutomationViewInstance): string {
-  if (view.type === "design") return "Edit task policy nodes and edges.";
+  if (view.type === "design") return "Edit learned task nodes and edges.";
   if (view.type === "routine") return "Build routine orchestration graphs.";
   if (view.type === "config") return "Edit project configuration values.";
-  if (view.type === "recordings") return "Review timeline evidence and notes.";
+  if (view.type === "recordings") return "Review raw timeline evidence and notes.";
+  if (view.type === "pipeline") return "Transform recordings into task drafts.";
   if (view.type === "signals") return "Browse mined state signals.";
   if (view.type === "runtime") return "Inspect live/debug execution state.";
+  if (view.type === "runs") return "Inspect replay and validation history.";
   if (view.type === "clients") return "Pair remote recorder and action clients.";
   if (view.type === "problems") return "Review validation and authoring issues.";
   if (view.type === "inspector") return "Inspect the current global selection.";
@@ -1991,22 +2043,25 @@ function AutomationViewRenderer(props: {
   signals: any[];
   timelines: any[];
   view: AutomationViewInstance;
-  onCreateRecording(): Promise<void>;
   onDeleteRecording(recordingId: string): Promise<void>;
   onFinalizeRecording(recordingId: string): Promise<void>;
   onAppendRecordingMarker(recordingId: string, linkedEntryId?: string, monotonicOffsetMs?: number): Promise<void>;
   onAppendRecordingNote(recordingId: string, linkedEntryId?: string): Promise<void>;
   onNormalizeRecording(recordingId: string): Promise<void>;
   onPipelineAction(endpoint: string, payload: JsonObject, success: string): Promise<void>;
+  onRunRecordingPipeline(recordingId: string, taskId?: string): Promise<void>;
+  onProcessProposalWithLlm(proposalId: string): void;
   onRefreshRecordings(): Promise<void>;
   onUpdateRecording(recordingId: string, changes: JsonObject): Promise<void>;
   setDockTab(tab: AutomationDockTab): void;
   setSelection(selection: AutomationSelection): void;
 }) {
   if (props.view.type === "design") return <AutomationPolicyCanvas entries={props.entries} policy={props.policy} recordings={props.recordings} selectedNode={props.selectedNode} selectedTimeline={props.selectedTimeline} signals={props.signals} setSelection={props.setSelection} />;
-  if (props.view.type === "recordings") return <AutomationTimelineView actionStatus={props.actionStatus} entries={props.entries} notes={props.notes} pipelineArtifacts={props.pipelineArtifacts} recordings={props.recordings} selectedEntry={props.selectedEntry} selectedRecording={props.selectedRecording} selectedTimeline={props.selectedTimeline} timelines={props.timelines} onAppendRecordingMarker={props.onAppendRecordingMarker} onAppendRecordingNote={props.onAppendRecordingNote} onCreateRecording={props.onCreateRecording} onDeleteRecording={props.onDeleteRecording} onFinalizeRecording={props.onFinalizeRecording} onNormalizeRecording={props.onNormalizeRecording} onPipelineAction={props.onPipelineAction} onRefreshRecordings={props.onRefreshRecordings} onUpdateRecording={props.onUpdateRecording} setSelection={props.setSelection} />;
+  if (props.view.type === "recordings") return <AutomationTimelineView actionStatus={props.actionStatus} entries={props.entries} notes={props.notes} recordings={props.recordings} selectedEntry={props.selectedEntry} selectedRecording={props.selectedRecording} selectedTimeline={props.selectedTimeline} timelines={props.timelines} onAppendRecordingMarker={props.onAppendRecordingMarker} onAppendRecordingNote={props.onAppendRecordingNote} onDeleteRecording={props.onDeleteRecording} onFinalizeRecording={props.onFinalizeRecording} onRefreshRecordings={props.onRefreshRecordings} onUpdateRecording={props.onUpdateRecording} setSelection={props.setSelection} />;
+  if (props.view.type === "pipeline") return <AutomationPipelineView actionStatus={props.actionStatus} models={props.models} pipelineArtifacts={props.pipelineArtifacts} recordings={props.recordings} selectedRecording={props.selectedRecording} selectedTimeline={props.selectedTimeline} timelines={props.timelines} onNormalizeRecording={props.onNormalizeRecording} onPipelineAction={props.onPipelineAction} onProcessProposalWithLlm={props.onProcessProposalWithLlm} onRunRecordingPipeline={props.onRunRecordingPipeline} setSelection={props.setSelection} />;
   if (props.view.type === "signals") return <AutomationSignalWorkspace domains={props.recordingDomains} signals={props.signals} setSelection={props.setSelection} />;
   if (props.view.type === "runtime") return <AutomationRuntimeWorkspace pipelineArtifacts={props.pipelineArtifacts} timelines={props.selectedTimeline ? [props.selectedTimeline] : []} models={props.models} policies={props.policies} runtimeSessions={props.runtimeSessions} />;
+  if (props.view.type === "runs") return <AutomationRunsWorkspace pipelineArtifacts={props.pipelineArtifacts} runtimeSessions={props.runtimeSessions} />;
   if (props.view.type === "clients") return <AutomationClientGatewayView projectId={props.projectId} />;
   if (props.view.type === "problems") return <AutomationProblemsWorkspace problems={props.problems} />;
   if (props.view.type === "assistant") return <AutomationAssistantView node={props.selectedNode} recording={props.selectedRecording} signals={props.signals} />;
@@ -2410,7 +2465,8 @@ function AutomationProjectTree(props: {
     const open = () => {
       if (node.kind === "task" && node.sourceId) props.setSelection({ kind: "policy", id: node.sourceId });
       if (node.kind === "recording" && node.sourceId) props.setSelection({ kind: "recording", id: node.sourceId });
-      props.openView(node.viewId ?? (node.kind === "task" ? "policy-primary" : node.kind === "routine" ? "routine-editor" : "config-default"), mode);
+      if ((node.kind === "client" || node.kind === "pipeline" || node.kind === "run") && node.sourceId) props.setSelection({ kind: "workspace", id: node.sourceId as "clients" | "pipeline" | "runs" });
+      props.openView(node.viewId ?? (node.kind === "task" ? "policy-primary" : node.kind === "routine" ? "routine-editor" : node.kind === "recording" ? "timeline-recording" : node.kind === "client" ? "client-gateway" : node.kind === "pipeline" ? "pipeline-workbench" : node.kind === "run" ? "runs-history" : "config-default"), mode);
     };
     if (mode === "preview") {
       singleClickTimer.current = window.setTimeout(() => {
@@ -2428,6 +2484,7 @@ function AutomationProjectTree(props: {
         const rootId = `root-${category.id}`;
         const collapsed = collapsedFolderIds.includes(rootId);
         const rootNodes = props.nodes.filter((node) => node.parentId === null && node.category === category.id && visibleIds.has(node.id));
+        const canCreate = category.creatable === true;
         const shouldShowTree = props.typeFilter === "all" || props.typeFilter === "folder" || props.typeFilter === category.id || rootNodes.length > 0;
         if (!shouldShowTree) return null;
         return (
@@ -2437,7 +2494,7 @@ function AutomationProjectTree(props: {
                 {collapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
                 <span><strong>{category.label}</strong><small>{category.description}</small></span>
               </button>
-              <button className="tree-row-action" onClick={(event) => { event.preventDefault(); event.stopPropagation(); requestTreeAction({ action: "create", category: category.id, parentId: null }); }} onPointerDown={(event) => event.stopPropagation()} title={`Add inside ${category.label}`} aria-label={`Add inside ${category.label}`} type="button"><Plus size={13} aria-hidden /></button>
+              {canCreate ? <button className="tree-row-action" onClick={(event) => { event.preventDefault(); event.stopPropagation(); requestTreeAction({ action: "create", category: category.id, parentId: null }); }} onPointerDown={(event) => event.stopPropagation()} title={`Add inside ${category.label}`} aria-label={`Add inside ${category.label}`} type="button"><Plus size={13} aria-hidden /></button> : null}
             </div>
             {!collapsed ? <div className="automation-tree-children root-children">
               <AutomationHierarchyChildren nodes={sortAutomationHierarchyNodes(rootNodes)} allNodes={props.nodes} visibleIds={visibleIds} collapsedFolderIds={collapsedFolderIds} selection={props.selection} openNode={openFromTree} requestAction={requestTreeAction} toggleFolder={toggleFolder} />
@@ -2461,10 +2518,11 @@ function AutomationHierarchyTreeNode(props: {
   toggleFolder(folderId: string): void;
 }) {
   const children = props.nodes.filter((node) => node.parentId === props.node.id && props.visibleIds.has(node.id));
-  const selected = props.node.sourceId && ((props.selection?.kind === "policy" && props.selection.id === props.node.sourceId) || (props.selection?.kind === "recording" && props.selection.id === props.node.sourceId));
+  const selected = props.node.sourceId && ((props.selection?.kind === "policy" && props.selection.id === props.node.sourceId) || (props.selection?.kind === "recording" && props.selection.id === props.node.sourceId) || (props.selection?.kind === "workspace" && props.selection.id === props.node.sourceId));
   const isFolder = props.node.kind === "folder";
+  const isStaticWorkspaceNode = props.node.kind === "client" || props.node.kind === "pipeline" || props.node.kind === "run";
   const collapsed = props.collapsedFolderIds.includes(props.node.id);
-  const Icon = props.node.kind === "folder" ? FolderOpen : props.node.kind === "routine" ? Workflow : props.node.kind === "config" ? SlidersHorizontal : props.node.kind === "recording" ? Radio : GitBranch;
+  const Icon = props.node.kind === "folder" ? FolderOpen : props.node.kind === "routine" ? Workflow : props.node.kind === "config" ? SlidersHorizontal : props.node.kind === "recording" ? Radio : props.node.kind === "client" ? Radio : props.node.kind === "pipeline" ? Sparkles : props.node.kind === "run" ? History : GitBranch;
   return (
     <div className="automation-tree-branch">
       <div className="automation-tree-item">
@@ -2484,7 +2542,7 @@ function AutomationHierarchyTreeNode(props: {
           aria-label={`Add inside ${props.node.label}`}
           type="button"
         ><Plus size={13} aria-hidden /></button> : null}
-        <button
+        {!isStaticWorkspaceNode ? <button
           className="tree-row-action danger"
           onClick={(event) => {
             event.preventDefault();
@@ -2495,7 +2553,7 @@ function AutomationHierarchyTreeNode(props: {
           title={`Delete ${props.node.label}`}
           aria-label={`Delete ${props.node.label}`}
           type="button"
-        ><Trash2 size={13} aria-hidden /></button>
+        ><Trash2 size={13} aria-hidden /></button> : null}
       </div>
       {children.length && !collapsed ? <div className="automation-tree-children"><AutomationHierarchyChildren nodes={sortAutomationHierarchyNodes(children)} allNodes={props.nodes} visibleIds={props.visibleIds} collapsedFolderIds={props.collapsedFolderIds} selection={props.selection} openNode={props.openNode} requestAction={props.requestAction} toggleFolder={props.toggleFolder} /></div> : null}
     </div>
@@ -2532,7 +2590,7 @@ function AutomationHierarchyChildren(props: {
 }
 
 function sortAutomationHierarchyNodes(nodes: AutomationHierarchyNode[]): AutomationHierarchyNode[] {
-  const rank: Record<AutomationHierarchyKind, number> = { folder: 0, task: 1, routine: 1, config: 1, recording: 1 };
+  const rank: Record<AutomationHierarchyKind, number> = { folder: 0, client: 1, pipeline: 1, task: 1, routine: 1, config: 1, recording: 1, run: 1 };
   return [...nodes].sort((first, second) => rank[first.kind] - rank[second.kind] || first.label.localeCompare(second.label));
 }
 
@@ -2625,7 +2683,6 @@ function AutomationTimelineView(props: {
   actionStatus: string;
   entries: any[];
   notes: any[];
-  pipelineArtifacts: any;
   recordings: any[];
   selectedEntry: any;
   selectedRecording: any;
@@ -2633,11 +2690,8 @@ function AutomationTimelineView(props: {
   timelines: any[];
   onAppendRecordingMarker(recordingId: string, linkedEntryId?: string, monotonicOffsetMs?: number): Promise<void>;
   onAppendRecordingNote(recordingId: string, linkedEntryId?: string): Promise<void>;
-  onCreateRecording(): Promise<void>;
   onDeleteRecording(recordingId: string): Promise<void>;
   onFinalizeRecording(recordingId: string): Promise<void>;
-  onNormalizeRecording(recordingId: string): Promise<void>;
-  onPipelineAction(endpoint: string, payload: JsonObject, success: string): Promise<void>;
   onRefreshRecordings(): Promise<void>;
   onUpdateRecording(recordingId: string, changes: JsonObject): Promise<void>;
   setSelection(selection: AutomationSelection): void;
@@ -2691,24 +2745,14 @@ function AutomationTimelineView(props: {
           <span>{props.selectedRecording ? `${props.selectedRecording.endedAt ? "Finalized" : "Open"} | ${formatTimelineDuration(selectedDuration)} | ${props.entries.length} events | ${selectedIsNormalized ? "normalized" : "raw"}` : "Select a recording from the project hierarchy."}</span>
         </div>
         <div className="automation-timeline-toolbar-actions">
-          <button className="button button-primary" onClick={() => void props.onCreateRecording()} type="button"><Plus size={13} aria-hidden />New</button>
           <button className="button" onClick={() => void props.onRefreshRecordings()} type="button"><RefreshCcw size={13} aria-hidden />Refresh</button>
           <button className="button" disabled={!props.selectedRecording} onClick={() => {
             const name = window.prompt("Recording name", props.selectedRecording?.metadata?.name ?? props.selectedRecording?.recordingId ?? "") ?? "";
             if (name.trim() && props.selectedRecording) void props.onUpdateRecording(props.selectedRecording.recordingId, { name });
           }} type="button">Rename</button>
-          <button className="button" disabled={!props.selectedRecording} onClick={() => props.selectedRecording && void props.onNormalizeRecording(props.selectedRecording.recordingId)} type="button"><Sparkles size={13} aria-hidden />Normalize</button>
           <button className="button" disabled={!props.selectedRecording || Boolean(props.selectedRecording.endedAt)} onClick={() => props.selectedRecording && void props.onFinalizeRecording(props.selectedRecording.recordingId)} type="button"><CheckCircle2 size={13} aria-hidden />Finalize</button>
           <button className="button danger" disabled={!props.selectedRecording} onClick={() => props.selectedRecording && void props.onDeleteRecording(props.selectedRecording.recordingId)} type="button"><Trash2 size={13} aria-hidden />Delete</button>
         </div>
-        {props.selectedRecording ? <div className="automation-timeline-pipeline-actions">
-          <button className="button" onClick={() => void props.onPipelineAction("create-normalization-review", { recordingId: props.selectedRecording.recordingId }, "Normalization review created")} type="button">Review</button>
-          <button className="button" onClick={() => void props.onPipelineAction("mine-recording-evidence", { recordingId: props.selectedRecording.recordingId }, "Evidence mined")} type="button">Mine</button>
-          <button className="button" onClick={() => void props.onPipelineAction("learn-task-model", { taskId: props.selectedRecording.taskId ?? props.selectedRecording.recordingId }, "Task model learned")} type="button">Learn</button>
-          <button className="button" onClick={() => void props.onPipelineAction("propose-policy-from-model", {}, "Policy proposal created")} type="button">Propose</button>
-          <button className="button" onClick={() => void props.onPipelineAction("replay-policy-against-recording", { recordingId: props.selectedRecording.recordingId }, "Replay completed")} type="button">Replay</button>
-        </div> : null}
-        <PipelineSummary artifacts={props.pipelineArtifacts} selectedRecordingId={props.selectedRecording?.recordingId} onApprove={(proposalId) => props.onPipelineAction("approve-policy-proposal", { proposalId }, "Policy proposal approved")} />
         {props.actionStatus ? <StatusText value={props.actionStatus} /> : null}
       </header>
       <div className="automation-timeline-stage">
@@ -2784,6 +2828,107 @@ function TimelineClip(props: { entry: any; index: number; note?: any; selected: 
   );
 }
 
+
+type PipelineStageTab = "normalize" | "review" | "mine" | "learn" | "propose" | "replay";
+
+const pipelineStageTabs: Array<TabButton<PipelineStageTab>> = [
+  { id: "normalize", label: "Normalize" },
+  { id: "review", label: "Review" },
+  { id: "mine", label: "Mine Evidence" },
+  { id: "learn", label: "Learn Model" },
+  { id: "propose", label: "Propose Task" },
+  { id: "replay", label: "Replay / Validate" }
+];
+
+function AutomationPipelineView(props: {
+  actionStatus: string;
+  models: any[];
+  pipelineArtifacts: any;
+  recordings: any[];
+  selectedRecording: any;
+  selectedTimeline: any;
+  timelines: any[];
+  onNormalizeRecording(recordingId: string): Promise<void>;
+  onPipelineAction(endpoint: string, payload: JsonObject, success: string): Promise<void>;
+  onRunRecordingPipeline(recordingId: string, taskId?: string): Promise<void>;
+  onProcessProposalWithLlm(proposalId: string): void;
+  setSelection(selection: AutomationSelection): void;
+}) {
+  const [activeStage, setActiveStage] = useState<PipelineStageTab>("normalize");
+  const selectedRecordingId = props.selectedRecording?.recordingId ?? props.recordings[0]?.recordingId ?? "";
+  const sourceRecording = props.recordings.find((recording) => recording.recordingId === selectedRecordingId) ?? props.selectedRecording ?? props.recordings[0];
+  const sourceTimeline = sourceRecording ? props.timelines.find((timeline) => timeline.recordingId === sourceRecording.recordingId) : props.selectedTimeline;
+  const reviews = props.pipelineArtifacts?.normalizationReviews ?? [];
+  const miningRuns = props.pipelineArtifacts?.miningRuns ?? [];
+  const learnedModels = props.models.length ? props.models : props.pipelineArtifacts?.learnedTaskModels ?? [];
+  const proposals = props.pipelineArtifacts?.policyProposals ?? [];
+  const replays = props.pipelineArtifacts?.replayResults ?? [];
+  const latestProposal = [...proposals].sort((left, right) => (right.generatedAt ?? 0) - (left.generatedAt ?? 0))[0];
+  const taskId = sourceRecording?.taskId ?? sourceRecording?.recordingId;
+  const runStage = async (stage: PipelineStageTab) => {
+    if (!sourceRecording?.recordingId) return;
+    if (stage === "normalize") return await props.onNormalizeRecording(sourceRecording.recordingId);
+    if (stage === "review") return await props.onPipelineAction("create-normalization-review", { recordingId: sourceRecording.recordingId }, "Normalization review created.");
+    if (stage === "mine") return await props.onPipelineAction("mine-recording-evidence", { recordingId: sourceRecording.recordingId }, "Evidence mined.");
+    if (stage === "learn") return await props.onPipelineAction("learn-task-model", { taskId: taskId ?? sourceRecording.recordingId }, "Task model learned.");
+    if (stage === "propose") return await props.onPipelineAction("propose-policy-from-model", {}, "Task draft proposed.");
+    return await props.onPipelineAction("replay-policy-against-recording", { recordingId: sourceRecording.recordingId }, "Replay validation completed.");
+  };
+  return (
+    <section className="automation-pipeline-workspace">
+      <header className="automation-pipeline-header">
+        <div>
+          <strong>Recording Pipeline</strong>
+          <span>{sourceRecording ? `${sourceRecording.recordingId} | ${sourceTimeline?.timeline?.length ?? sourceRecording.timeline?.length ?? 0} entries` : "Select a source recording"}</span>
+        </div>
+        <div className="automation-pipeline-controls">
+          <select aria-label="Source recording" value={selectedRecordingId} onChange={(event) => props.setSelection({ kind: "recording", id: event.target.value })}>
+            {props.recordings.map((recording) => <option key={recording.recordingId} value={recording.recordingId}>{recording.metadata?.name ?? recording.recordingId}</option>)}
+          </select>
+          <button className="button button-primary" disabled={!sourceRecording} onClick={() => sourceRecording && void props.onRunRecordingPipeline(sourceRecording.recordingId, sourceRecording.taskId)} type="button"><Sparkles size={13} aria-hidden />Run Full Pipeline</button>
+        </div>
+        {props.actionStatus ? <StatusText value={props.actionStatus} /> : null}
+      </header>
+      <div className="automation-pipeline-tabs" role="tablist" aria-label="Pipeline stages">
+        {pipelineStageTabs.map((tab) => <button className={activeStage === tab.id ? "selected" : ""} key={tab.id} onClick={() => setActiveStage(tab.id)} role="tab" type="button">{tab.label}</button>)}
+      </div>
+      <section className="automation-pipeline-stage-panel">
+        <header>
+          <div>
+            <strong>{pipelineStageTabs.find((tab) => tab.id === activeStage)?.label}</strong>
+            <span>{pipelineStageDescription(activeStage)}</span>
+          </div>
+          <button className="button" disabled={!sourceRecording} onClick={() => void runStage(activeStage)} type="button">Run Stage</button>
+        </header>
+        {activeStage === "normalize" ? <>
+          <SummaryStrip items={[["Raw entries", sourceRecording?.timeline?.length ?? 0], ["Normalized entries", sourceTimeline?.timeline?.length ?? 0], ["Checkpoints", (sourceTimeline?.timeline ?? sourceRecording?.timeline ?? []).filter((entry: any) => entry.type === "state_checkpoint").length], ["Issues", sourceTimeline?.issues?.length ?? 0]]} />
+          <DataTable columns={["Timeline", "Recording", "Entries", "Generated"]} rows={(sourceTimeline ? [sourceTimeline] : []).map((timeline) => [timeline.normalizedTimelineId, timeline.recordingId, timeline.timeline?.length ?? 0, formatTime(timeline.generatedAt)])} empty="No normalized timeline has been generated for the selected recording." />
+        </> : null}
+        {activeStage === "review" ? <DataTable columns={["Review", "Recording", "Mappings", "Wait Clips"]} rows={reviews.map((review: any) => [review.reviewId, review.recordingId, review.mappings?.length ?? 0, review.waitClips?.length ?? 0])} empty="No normalization reviews generated yet." /> : null}
+        {activeStage === "mine" ? <DataTable columns={["Mining Run", "Timeline", "Windows", "Effects", "Signals"]} rows={miningRuns.map((run: any) => [run.miningRunId, run.normalizedTimelineId, run.windows?.length ?? 0, run.actionEffects?.length ?? 0, run.conditionCandidates?.length ?? 0])} empty="No evidence mining runs generated yet." /> : null}
+        {activeStage === "learn" ? <DataTable columns={["Model", "Task", "Clusters", "Transitions", "Questions"]} rows={learnedModels.map((model: any) => [model.learnedTaskModelId, model.taskId, model.actionClusters?.length ?? 0, model.transitions?.length ?? 0, model.unresolvedQuestions?.length ?? 0])} empty="No learned task models generated yet." /> : null}
+        {activeStage === "propose" ? <>
+          <DataTable columns={["Draft", "Status", "Task", "Steps", "Summary"]} rows={proposals.map((proposal: any) => [proposal.proposalId, <StatusBadge key={proposal.proposalId} value={proposal.status ?? "draft"} />, proposal.policy?.taskId ?? "-", proposal.policy?.nodes?.length ?? 0, proposal.summary ?? "-"])} empty="No task drafts proposed yet." />
+          <div className="automation-pipeline-apply-actions">
+            <button className="button button-primary" disabled={!latestProposal} onClick={() => latestProposal && void props.onPipelineAction("approve-policy-proposal", { proposalId: latestProposal.proposalId }, "Task draft applied.")} type="button">Apply Directly</button>
+            <button className="button" disabled={!latestProposal} onClick={() => latestProposal && props.onProcessProposalWithLlm(latestProposal.proposalId)} type="button"><Sparkles size={13} aria-hidden />Process With LLM</button>
+          </div>
+        </> : null}
+        {activeStage === "replay" ? <DataTable columns={["Replay", "Status", "Recording", "Matched", "Warnings"]} rows={replays.map((replay: any) => [replay.replayId, <StatusBadge key={replay.replayId} value={replay.status ?? "unknown"} />, replay.recordingId, `${replay.matchedActions ?? 0}/${replay.expectedActions ?? 0}`, replay.timingWarnings?.length ?? 0])} empty="No replay or validation runs generated yet." /> : null}
+      </section>
+      <PipelineSummary artifacts={props.pipelineArtifacts} selectedRecordingId={sourceRecording?.recordingId} onApprove={(proposalId) => props.onPipelineAction("approve-policy-proposal", { proposalId }, "Task draft applied.")} />
+    </section>
+  );
+}
+
+function pipelineStageDescription(stage: PipelineStageTab): string {
+  if (stage === "normalize") return "Prepare the raw recording timeline for downstream analysis.";
+  if (stage === "review") return "Inspect mappings, timing clips, and normalization quality.";
+  if (stage === "mine") return "Extract signals, effects, and evidence windows from the recording.";
+  if (stage === "learn") return "Build a task model from mined evidence.";
+  if (stage === "propose") return "Create and apply the task draft produced by the learned model.";
+  return "Replay the generated draft against the selected recording.";
+}
 function PipelineSummary(props: { artifacts: any; selectedRecordingId?: string; onApprove(proposalId: string): Promise<void> }) {
   const reviews = props.artifacts?.normalizationReviews ?? [];
   const miningRuns = props.artifacts?.miningRuns ?? [];
@@ -2799,13 +2944,13 @@ function PipelineSummary(props: { artifacts: any; selectedRecordingId?: string; 
         <span>Reviews {reviews.length}</span>
         <span>Mining {miningRuns.length}</span>
         <span>Models {models.length}</span>
-        <span>Proposals {proposals.length}</span>
+        <span>Drafts {proposals.length}</span>
         <span>Replays {replays.length}</span>
       </div>
       {latestProposal ? <article>
-        <strong>{latestProposal.status === "approved" ? "Approved policy" : "Draft proposal"}</strong>
+        <strong>{latestProposal.status === "approved" ? "Applied task draft" : "Task draft"}</strong>
         <small>{latestProposal.summary}</small>
-        {latestProposal.status !== "approved" ? <button className="button button-primary" onClick={() => void props.onApprove(latestProposal.proposalId)} type="button">Approve</button> : null}
+        {latestProposal.status !== "approved" ? <button className="button button-primary" onClick={() => void props.onApprove(latestProposal.proposalId)} type="button">Apply</button> : null}
       </article> : null}
       {latestReplay ? <article>
         <strong>Replay {readableToken(latestReplay.status)}</strong>
@@ -4066,6 +4211,33 @@ function AutomationRuntimeWorkspace(props: { pipelineArtifacts: any; timelines: 
   );
 }
 
+
+function AutomationRunsWorkspace(props: { pipelineArtifacts: any; runtimeSessions: any[] }) {
+  const replays = props.pipelineArtifacts?.replayResults ?? [];
+  return (
+    <section className="automation-runs-workspace">
+      <header>
+        <div><strong>Runs</strong><span>Replay and runtime validation history</span></div>
+      </header>
+      <SummaryStrip items={[["Runtime Runs", props.runtimeSessions.length], ["Replay Runs", replays.length], ["Failures", props.runtimeSessions.filter((session) => session.status === "failed").length + replays.filter((replay: any) => replay.status === "failed").length], ["Validated", replays.filter((replay: any) => replay.status === "matched").length]]} />
+      <DataTable columns={["Run", "Target", "Status", "Attempts", "Effects"]} rows={props.runtimeSessions.map((session) => [
+        session.runId?.slice(0, 8) ?? "-",
+        `${session.targetKind ?? "flow"}:${session.targetId ?? session.flowId ?? "-"}`,
+        <StatusBadge key={session.runId} value={session.status ?? "queued"} />,
+        session.trace?.attempts?.length ?? 0,
+        session.trace?.effects?.length ?? 0
+      ])} empty="No runtime sessions have been started for this project." />
+      <DataTable columns={["Replay", "Status", "Recording", "Draft", "Matched", "Warnings"]} rows={replays.map((replay: any) => [
+        replay.replayId,
+        <StatusBadge key={replay.replayId} value={replay.status ?? "unknown"} />,
+        replay.recordingId,
+        replay.policyId,
+        `${replay.matchedActions ?? 0}/${replay.expectedActions ?? 0}`,
+        replay.timingWarnings?.length ?? 0
+      ])} empty="No replay validations generated yet." />
+    </section>
+  );
+}
 function AutomationProblemsWorkspace(props: { problems: any[] }) {
   return <DataTable columns={["Severity", "Artifact", "Message"]} rows={props.problems.map((problem) => [<StatusBadge key={problem.id} value={problem.severity} />, problem.artifactId ?? problem.artifactKind ?? "-", problem.message])} empty="No validation, runtime, or fixture problems are currently reported." />;
 }
