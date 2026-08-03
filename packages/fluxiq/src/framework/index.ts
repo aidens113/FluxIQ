@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ComponentRegistry } from "../components";
-import { DomainRegistry, domainSummary, type DomainRegistration } from "../domains";
+import { DomainRegistry, domainSummary, normalizeDomainId, type DomainRegistration } from "../domains";
 import {
   IoRegistry,
   type IoRegistration,
@@ -16,6 +16,8 @@ import { buildProgramDirectory, createGlobalProgramRuntime, registerHostDocument
 export type FluxIQHostPaths = {
   root: string;
   fluxiq: string;
+  domainId?: string | null;
+  domainRoot?: string | null;
   config: string;
   data: string;
   databases: string;
@@ -44,6 +46,7 @@ export type FluxIQSetupOptions = {
 export type FluxIQOptions = {
   rootDir?: string;
   fluxiqDir?: string;
+  domainId?: string | null;
   dataDir?: string;
   databasesDir?: string;
   inputsDir?: string;
@@ -71,6 +74,8 @@ export type FluxIQEnvironment = Partial<Record<FluxIQEnvironmentKey, string | un
 export type FluxIQEnvironmentKey =
   | "FLUXIQ_ROOT"
   | "FLUXIQ_DIR"
+  | "FLUXIQ_DOMAIN_ID"
+  | "FLUXIQ_HOST_DOMAIN"
   | "FLUXIQ_DATA_DIR"
   | "FLUXIQ_DATABASES_DIR"
   | "FLUXIQ_INPUTS_DIR"
@@ -107,6 +112,7 @@ export class FluxIQ {
   readonly domains = new DomainRegistry();
   readonly io = new IoRegistry();
   readonly programs: GlobalProgramRuntime;
+  readonly activeDomainId: string | null;
 
   constructor(options: FluxIQOptions = {}) {
     const cwd = process.cwd();
@@ -120,26 +126,32 @@ export class FluxIQ {
     }
     const fluxiqDir = options.fluxiqDir ?? cleanEnv(env.FLUXIQ_DIR) ?? DEFAULT_FLUXIQ_DIR;
     const fluxiq = resolveInside(root, fluxiqDir);
+    const activeDomainId = activeHostDomainId(options, env);
+    const domainRoot = activeDomainId ? resolveInside(root, path.join(fluxiqDir, activeDomainId)) : null;
+    const baseDir = domainRoot ? path.relative(root, domainRoot) : fluxiqDir;
+    this.activeDomainId = activeDomainId;
     this.paths = {
       root,
       fluxiq,
-      config: resolveInside(root, path.join(fluxiqDir, "config")),
-      data: resolveInside(root, options.dataDir ?? cleanEnv(env.FLUXIQ_DATA_DIR) ?? path.join(fluxiqDir, "data")),
-      databases: resolveInside(root, options.databasesDir ?? cleanEnv(env.FLUXIQ_DATABASES_DIR) ?? path.join(fluxiqDir, "databases")),
-      inputs: resolveInside(root, options.inputsDir ?? cleanEnv(env.FLUXIQ_INPUTS_DIR) ?? path.join(fluxiqDir, "inputs")),
-      outputs: resolveInside(root, options.outputsDir ?? cleanEnv(env.FLUXIQ_OUTPUTS_DIR) ?? path.join(fluxiqDir, "outputs")),
-      streams: resolveInside(root, options.streamsDir ?? cleanEnv(env.FLUXIQ_STREAMS_DIR) ?? path.join(fluxiqDir, "streams")),
-      domains: resolveInside(root, options.domainsDir ?? cleanEnv(env.FLUXIQ_DOMAINS_DIR) ?? path.join(fluxiqDir, "domains")),
-      domainPrograms: resolveInside(root, options.domainProgramsDir ?? cleanEnv(env.FLUXIQ_DOMAIN_PROGRAMS_DIR) ?? path.join(fluxiqDir, "domains", "programs")),
-      domainInputs: resolveInside(root, options.domainInputsDir ?? cleanEnv(env.FLUXIQ_DOMAIN_INPUTS_DIR) ?? path.join(fluxiqDir, "domains", "inputs")),
-      domainOutputs: resolveInside(root, options.domainOutputsDir ?? cleanEnv(env.FLUXIQ_DOMAIN_OUTPUTS_DIR) ?? path.join(fluxiqDir, "domains", "outputs")),
-      domainConfigs: resolveInside(root, options.domainConfigsDir ?? cleanEnv(env.FLUXIQ_DOMAIN_CONFIGS_DIR) ?? path.join(fluxiqDir, "domains", "configs")),
-      domainData: resolveInside(root, options.domainDataDir ?? cleanEnv(env.FLUXIQ_DOMAIN_DATA_DIR) ?? path.join(fluxiqDir, "domains", "data")),
-      domainDatabases: resolveInside(root, options.domainDatabasesDir ?? cleanEnv(env.FLUXIQ_DOMAIN_DATABASES_DIR) ?? path.join(fluxiqDir, "domains", "databases")),
-      recordings: resolveInside(root, options.recordingsDir ?? cleanEnv(env.FLUXIQ_RECORDINGS_DIR) ?? path.join(fluxiqDir, "recordings")),
-      policies: resolveInside(root, options.policiesDir ?? cleanEnv(env.FLUXIQ_POLICIES_DIR) ?? path.join(fluxiqDir, "policies")),
-      logs: resolveInside(root, options.logsDir ?? cleanEnv(env.FLUXIQ_LOGS_DIR) ?? path.join(fluxiqDir, "logs")),
-      temp: resolveInside(root, options.tempDir ?? cleanEnv(env.FLUXIQ_TEMP_DIR) ?? path.join(fluxiqDir, "tmp"))
+      domainId: activeDomainId,
+      domainRoot,
+      config: resolveInside(root, path.join(baseDir, "config")),
+      data: resolveInside(root, options.dataDir ?? cleanEnv(env.FLUXIQ_DATA_DIR) ?? path.join(baseDir, "data")),
+      databases: resolveInside(root, options.databasesDir ?? cleanEnv(env.FLUXIQ_DATABASES_DIR) ?? path.join(baseDir, "databases")),
+      inputs: resolveInside(root, options.inputsDir ?? cleanEnv(env.FLUXIQ_INPUTS_DIR) ?? path.join(baseDir, "inputs")),
+      outputs: resolveInside(root, options.outputsDir ?? cleanEnv(env.FLUXIQ_OUTPUTS_DIR) ?? path.join(baseDir, "outputs")),
+      streams: resolveInside(root, options.streamsDir ?? cleanEnv(env.FLUXIQ_STREAMS_DIR) ?? path.join(baseDir, "streams")),
+      domains: resolveInside(root, options.domainsDir ?? cleanEnv(env.FLUXIQ_DOMAINS_DIR) ?? path.join(baseDir, "domains")),
+      domainPrograms: resolveInside(root, options.domainProgramsDir ?? cleanEnv(env.FLUXIQ_DOMAIN_PROGRAMS_DIR) ?? path.join(activeDomainId ? baseDir : path.join(fluxiqDir, "domains"), "programs")),
+      domainInputs: resolveInside(root, options.domainInputsDir ?? cleanEnv(env.FLUXIQ_DOMAIN_INPUTS_DIR) ?? path.join(activeDomainId ? baseDir : path.join(fluxiqDir, "domains"), "inputs")),
+      domainOutputs: resolveInside(root, options.domainOutputsDir ?? cleanEnv(env.FLUXIQ_DOMAIN_OUTPUTS_DIR) ?? path.join(activeDomainId ? baseDir : path.join(fluxiqDir, "domains"), "outputs")),
+      domainConfigs: resolveInside(root, options.domainConfigsDir ?? cleanEnv(env.FLUXIQ_DOMAIN_CONFIGS_DIR) ?? path.join(activeDomainId ? baseDir : path.join(fluxiqDir, "domains"), activeDomainId ? "config" : "configs")),
+      domainData: resolveInside(root, options.domainDataDir ?? cleanEnv(env.FLUXIQ_DOMAIN_DATA_DIR) ?? path.join(activeDomainId ? baseDir : path.join(fluxiqDir, "domains"), "data")),
+      domainDatabases: resolveInside(root, options.domainDatabasesDir ?? cleanEnv(env.FLUXIQ_DOMAIN_DATABASES_DIR) ?? path.join(activeDomainId ? baseDir : path.join(fluxiqDir, "domains"), "databases")),
+      recordings: resolveInside(root, options.recordingsDir ?? cleanEnv(env.FLUXIQ_RECORDINGS_DIR) ?? path.join(baseDir, "recordings")),
+      policies: resolveInside(root, options.policiesDir ?? cleanEnv(env.FLUXIQ_POLICIES_DIR) ?? path.join(baseDir, "policies")),
+      logs: resolveInside(root, options.logsDir ?? cleanEnv(env.FLUXIQ_LOGS_DIR) ?? path.join(baseDir, "logs")),
+      temp: resolveInside(root, options.tempDir ?? cleanEnv(env.FLUXIQ_TEMP_DIR) ?? path.join(baseDir, "tmp"))
     };
     this.programs = createGlobalProgramRuntime(this.paths);
 
@@ -243,6 +255,7 @@ export class FluxIQ {
     const created: string[] = [];
     const directories = [
       this.paths.fluxiq,
+      ...(this.paths.domainRoot ? [this.paths.domainRoot] : []),
       this.paths.config,
       this.paths.data,
       this.paths.databases,
@@ -278,9 +291,11 @@ export class FluxIQ {
       await ensureJsonConfig(configPath, {
         version: 1,
         createdBy: "fluxiq",
-        paths: {
-          fluxiq: this.paths.fluxiq,
-          config: this.paths.config,
+      paths: {
+        fluxiq: this.paths.fluxiq,
+        domainId: this.activeDomainId,
+        domainRoot: this.paths.domainRoot ?? null,
+        config: this.paths.config,
           data: this.paths.data,
           databases: this.paths.databases,
           inputs: this.paths.inputs,
@@ -326,6 +341,12 @@ function resolveInside(root: string, value: string): string {
 function cleanEnv(value: string | undefined): string | undefined {
   const clean = value?.trim();
   return clean ? clean : undefined;
+}
+
+function activeHostDomainId(options: FluxIQOptions, env: FluxIQEnvironment): string | null {
+  const configured = options.domainId ?? cleanEnv(env.FLUXIQ_DOMAIN_ID) ?? cleanEnv(env.FLUXIQ_HOST_DOMAIN) ?? options.domains?.[0]?.manifest.id ?? null;
+  if (!configured) return null;
+  return normalizeDomainId(configured);
 }
 
 function envLoadOptions(cwd: string, files: string[] | undefined): LoadFluxIQEnvOptions {
@@ -395,6 +416,7 @@ function guideForDirectory(directory: string, paths: FluxIQHostPaths): string {
   const normalized = path.resolve(directory);
   const guideEntries: Array<[string, string]> = [
     [paths.fluxiq, "FluxIQ runtime state, generated artifacts, and host-local framework files live under this root.\n"],
+    ...(paths.domainRoot ? [[paths.domainRoot, `FluxIQ runtime state for the ${paths.domainId} host domain lives under this root.\n`] as [string, string]] : []),
     [paths.config, "Host-project FluxIQ configuration files live here.\n"],
     [paths.data, "Framework-managed JSON data and repository state live here.\n"],
     [paths.databases, "Framework-managed database files and migration state live here.\n"],

@@ -31,7 +31,7 @@ export function discoverSignalDefinitions(snapshot: StateSnapshot, registryId = 
         derived: false,
         ...(state.semanticRole !== undefined ? { description: state.semanticRole } : {}),
         ...(state.sensitive !== undefined ? { sensitive: state.sensitive } : {}),
-        metadata: { statePath: path }
+        metadata: { statePath: path, ...(typeof state.metadata?.elementKind === "string" ? { elementKind: state.metadata.elementKind } : {}) }
       });
     }
   }
@@ -51,10 +51,17 @@ export function signalDefinitionFromSchema(schema: StatePathSchema): SignalDefin
     defaultWeight: schema.permissions?.readable === false ? 0 : 0.6,
     volatility: schema.volatility ?? "normal",
     persistence: schema.persistence ?? "snapshot",
-    tags: [schema.namespace, schema.type],
+    tags: [schema.namespace, schema.type, ...(schema.elementKind ? [schema.elementKind] : [])],
     ...(schema.description !== undefined ? { description: schema.description } : {}),
-    ...(schema.permissions?.privileged !== undefined ? { sensitive: schema.permissions.privileged } : {}),
-    metadata: schema.label !== undefined ? { ...metadata, label: schema.label } : metadata
+    ...(schema.sensitive !== undefined ? { sensitive: schema.sensitive } : schema.permissions?.privileged !== undefined ? { sensitive: schema.permissions.privileged } : {}),
+    metadata: {
+      ...metadata,
+      ...(schema.label !== undefined ? { label: schema.label } : {}),
+      ...(schema.elementKind !== undefined ? { elementKind: schema.elementKind } : {}),
+      ...(schema.entityId !== undefined ? { entityId: schema.entityId } : {}),
+      ...(schema.entityKind !== undefined ? { entityKind: schema.entityKind } : {}),
+      ...(schema.stableAcrossSessions !== undefined ? { stableAcrossSessions: schema.stableAcrossSessions } : {})
+    }
   };
 }
 

@@ -11,6 +11,7 @@ import {
 import { defaultGlobalProgramCatalog, type FluxIQIconName, type ProgramSummary } from "fluxiq";
 import { AuthStatus, LoginPanel } from "./AuthShell";
 import { currentFluxIQUser } from "../lib/auth";
+import { getFluxIQ } from "../lib/fluxiq";
 
 const icons = {
   blocks: Blocks,
@@ -34,6 +35,9 @@ export default async function HomePage() {
   const auth = await currentFluxIQUser();
   if (!auth) return <LoginPanel />;
 
+  const fluxiq = getFluxIQ();
+  const activeDomain = fluxiq.activeDomainId ? fluxiq.programDirectory(fluxiq.activeDomainId).domain : null;
+  const domainName = activeDomain?.title ?? fluxiq.activeDomainId ?? "Global";
   const programs = defaultGlobalProgramCatalog();
   const groups = groupPrograms(programs);
 
@@ -44,17 +48,17 @@ export default async function HomePage() {
           <span className="brand-mark">
             <Blocks size={17} aria-hidden />
           </span>
-          <span>FluxIQ</span>
+          <span>FluxIQ - {domainName}</span>
         </div>
         <AuthStatus displayName={auth.user.displayName} roleId={auth.user.roleId} />
       </header>
 
       <div className="directory-container">
         <section className="directory-heading">
-          <p className="page-kicker">Framework console</p>
-          <h1 className="page-title">Global Programs</h1>
+          <p className="page-kicker">{fluxiq.activeDomainId ? "Domain console" : "Framework console"}</p>
+          <h1 className="page-title">{domainName} Programs</h1>
           <p className="page-copy">
-            Open shared framework programs for automation authoring, identity, data,
+            Open FluxIQ programs for automation authoring, identity, data,
             compute, deployments, documentation, scheduling, and production runs.
           </p>
         </section>

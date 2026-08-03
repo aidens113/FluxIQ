@@ -3,10 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { FluxIQ } from "fluxiq";
 import { afterEach, describe, expect, it } from "vitest";
-import { applyFluxIQHostModule, resolveFluxIQHostModulePath, resolveFluxIQWebHostRoot } from "./fluxiq";
+import { applyFluxIQHostModule, createFluxIQWebInstance, resolveFluxIQHostModulePath, resolveFluxIQWebHostRoot } from "./fluxiq";
 
 const originalEnv = {
   FLUXIQ_ALLOW_FRAMEWORK_REPO_ROOT: process.env.FLUXIQ_ALLOW_FRAMEWORK_REPO_ROOT,
+  FLUXIQ_DOMAIN_ID: process.env.FLUXIQ_DOMAIN_ID,
+  FLUXIQ_HOST_DOMAIN: process.env.FLUXIQ_HOST_DOMAIN,
   FLUXIQ_HOST_MODULE: process.env.FLUXIQ_HOST_MODULE,
   FLUXIQ_HOST_ROOT: process.env.FLUXIQ_HOST_ROOT,
   FLUXIQ_IMPORTER_ROOT: process.env.FLUXIQ_IMPORTER_ROOT,
@@ -55,6 +57,35 @@ describe("FluxIQ web host module loading", () => {
 
     expect(applyFluxIQHostModule(fluxiq)).toBe(fluxiq);
     expect((fluxiq as unknown as { __hostRegistered?: string }).__hostRegistered).toBe("default");
+
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("uses the sole host-registered domain as the web storage root", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "fluxiq-domain-host-"));
+    const modulePath = path.join(root, "host-domain.cjs");
+    writeFileSync(modulePath, `
+module.exports.registerFluxIQHost = (fluxiq) => {
+  fluxiq.registerDomain({
+    manifest: {
+      id: 'example.domain',
+      title: 'Example Domain',
+      category: 'Tests',
+      description: 'Domain registered by host.',
+      icon: 'blocks'
+    }
+  });
+};
+`);
+    process.env.FLUXIQ_IMPORTER_ROOT = root;
+    process.env.FLUXIQ_HOST_MODULE = modulePath;
+    delete process.env.FLUXIQ_DOMAIN_ID;
+    delete process.env.FLUXIQ_HOST_DOMAIN;
+
+    const fluxiq = createFluxIQWebInstance();
+
+    expect(fluxiq.activeDomainId).toBe("example.domain");
+    expect(fluxiq.paths.data).toBe(path.join(root, ".fluxiq", "example.domain", "data"));
 
     rmSync(root, { recursive: true, force: true });
   });

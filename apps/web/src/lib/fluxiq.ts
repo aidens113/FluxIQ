@@ -78,8 +78,13 @@ function getWebRuntimeState(): NonNullable<FluxIQWebGlobal["__fluxiqWebRuntime"]
 }
 
 export function createFluxIQWebInstance(): FluxIQ {
-  const fluxiq = FluxIQ.create({ rootDir: resolveFluxIQWebHostRoot(process.cwd()) });
-  return applyFluxIQHostModule(fluxiq);
+  const rootDir = resolveFluxIQWebHostRoot(process.cwd());
+  const fluxiq = applyFluxIQHostModule(FluxIQ.create({ rootDir }));
+  if (fluxiq.activeDomainId) return fluxiq;
+  if (explicitFluxIQDomainId()) return fluxiq;
+  const domains = fluxiq.domains.summaries();
+  if (domains.length !== 1) return fluxiq;
+  return applyFluxIQHostModule(FluxIQ.create({ rootDir, domainId: domains[0]!.id }));
 }
 
 export function applyFluxIQHostModule(fluxiq: FluxIQ): FluxIQ {
@@ -110,6 +115,10 @@ export function resolveFluxIQHostModulePath(): string | null {
     throw new Error(`FLUXIQ_HOST_MODULE points to a missing file: ${resolved}`);
   }
   return resolved;
+}
+
+function explicitFluxIQDomainId(): string | null {
+  return (process.env.FLUXIQ_DOMAIN_ID || process.env.FLUXIQ_HOST_DOMAIN || "").trim() || null;
 }
 
 function startSharedClientGateway(state: NonNullable<FluxIQWebGlobal["__fluxiqWebRuntime"]>): void {

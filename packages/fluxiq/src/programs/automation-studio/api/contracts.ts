@@ -200,6 +200,8 @@ export type LearnTaskModelRequest = RecordingProjectRequest & {
 
 export type ProposePolicyFromModelRequest = RecordingProjectRequest & {
   learnedTaskModelId?: string;
+  miningRunId?: string;
+  recordingId?: string;
 };
 
 export type ApprovePolicyProposalRequest = RecordingProjectRequest & {

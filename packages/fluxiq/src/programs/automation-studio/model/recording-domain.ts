@@ -6,7 +6,7 @@ import {
 } from "./recording-framework";
 import type { RecordingSession } from "./recordings";
 import type { SignalDefinition } from "./signals";
-import type { StateDelta, StateSnapshot, StateValue, StateValueType, StateVolatility } from "./state";
+import type { StateDelta, StateElementKind, StateSnapshot, StateValue, StateValueType, StateVolatility } from "./state";
 
 export type RecordingEventJsonSchema = {
   type: "string" | "number" | "integer" | "boolean" | "object" | "array" | "null" | "json";
@@ -23,9 +23,14 @@ export type RecordingDomainStatePathDefinition = {
   namespace: string;
   path: string;
   type: StateValueType;
+  elementKind?: StateElementKind;
   label?: string;
   description?: string;
+  entityId?: string;
+  entityKind?: string;
+  stableAcrossSessions?: boolean;
   volatility?: StateVolatility;
+  sensitive?: boolean;
   metadata?: JsonObject;
 };
 

@@ -9,6 +9,8 @@ import { FluxIQ } from "./index";
 const ENV_KEYS = [
   "FLUXIQ_ROOT",
   "FLUXIQ_DIR",
+  "FLUXIQ_DOMAIN_ID",
+  "FLUXIQ_HOST_DOMAIN",
   "FLUXIQ_DATA_DIR",
   "FLUXIQ_DATABASES_DIR",
   "FLUXIQ_INPUTS_DIR",
@@ -70,6 +72,24 @@ describe("FluxIQ", () => {
       const config = JSON.parse(await readFile(result.configPath, "utf8")) as { version: number; createdBy: string };
       expect(config.version).toBe(1);
       expect(config.createdBy).toBe("fluxiq");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("uses an active host domain as the top-level .fluxiq storage root", async () => {
+    const root = await tempRoot();
+    try {
+      const fluxiq = FluxIQ.create({ rootDir: root, domainId: "Example Domain", loadEnv: false });
+      const result = await fluxiq.setup();
+
+      expect(fluxiq.activeDomainId).toBe("example_domain");
+      expect(result.paths.domainId).toBe("example_domain");
+      expect(result.paths.domainRoot).toBe(path.join(root, ".fluxiq", "example_domain"));
+      expect(result.paths.data).toBe(path.join(root, ".fluxiq", "example_domain", "data"));
+      expect(result.paths.databases).toBe(path.join(root, ".fluxiq", "example_domain", "databases"));
+      expect(result.paths.domainPrograms).toBe(path.join(root, ".fluxiq", "example_domain", "programs"));
+      await expect(stat(path.join(root, ".fluxiq", "example_domain", "README.md"))).resolves.toBeTruthy();
     } finally {
       await rm(root, { recursive: true, force: true });
     }

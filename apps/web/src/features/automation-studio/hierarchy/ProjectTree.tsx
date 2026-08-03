@@ -11,6 +11,8 @@ export function AutomationProjectTree(props: {
   search: string;
   typeFilter: "all" | AutomationHierarchyKind;
   selection: AutomationSelection | null;
+  recordingPrimaryKind: "recording" | "pipeline" | null;
+  setRecordingPrimaryKind(kind: "recording" | "pipeline" | null): void;
   setSelection(selection: AutomationSelection): void;
   openView(viewId: string, mode?: "preview" | "new-window"): void;
   requestAction(action: NonNullable<AutomationHierarchyAction>): void;
@@ -39,8 +41,14 @@ export function AutomationProjectTree(props: {
     const open = () => {
       setPrimaryTreeNodeId(node.id);
       if (node.kind === "task" && node.sourceId) props.setSelection({ kind: "policy", id: node.sourceId });
-      if (node.kind === "recording" && node.sourceId) props.setSelection({ kind: "recording", id: node.sourceId });
-      if (node.kind === "pipeline" && node.sourceId) props.setSelection({ kind: "recording", id: node.sourceId });
+      if (node.kind === "recording" && node.sourceId) {
+        props.setRecordingPrimaryKind("recording");
+        props.setSelection({ kind: "recording", id: node.sourceId });
+      }
+      if (node.kind === "pipeline" && node.sourceId) {
+        props.setRecordingPrimaryKind("pipeline");
+        props.setSelection({ kind: "recording", id: node.sourceId });
+      }
       if ((node.kind === "client" || node.kind === "run") && node.sourceId) props.setSelection({ kind: "workspace", id: node.sourceId as "clients" | "runs" });
       props.openView(node.viewId ?? (node.kind === "task" ? "policy-primary" : node.kind === "routine" ? "routine-editor" : node.kind === "recording" ? "timeline-recording" : node.kind === "client" ? "client-gateway" : node.kind === "pipeline" ? "pipeline-workbench" : node.kind === "run" ? "runs-history" : "config-default"), mode);
     };
@@ -58,6 +66,11 @@ export function AutomationProjectTree(props: {
     const primaryNode = props.nodes.find((node) => node.id === primaryTreeNodeId);
     if (!primaryNode || !automationHierarchyNodeMatchesSelection(primaryNode, props.selection)) setPrimaryTreeNodeId(null);
   }, [primaryTreeNodeId, props.nodes, props.selection]);
+  useEffect(() => {
+    if (props.selection?.kind !== "recording" || !props.recordingPrimaryKind) return;
+    const primaryNode = props.nodes.find((node) => node.kind === props.recordingPrimaryKind && node.sourceId === props.selection?.id);
+    setPrimaryTreeNodeId(primaryNode?.id ?? null);
+  }, [props.nodes, props.recordingPrimaryKind, props.selection]);
   const toggleFolder = (folderId: string) => setCollapsedFolderIds((current) => current.includes(folderId) ? current.filter((id) => id !== folderId) : [...current, folderId]);
   return (
     <nav className="automation-project-tree" aria-label="Automation Studio project tree">
@@ -78,7 +91,7 @@ export function AutomationProjectTree(props: {
               {canCreate ? <button className="tree-row-action" onClick={(event) => { event.preventDefault(); event.stopPropagation(); requestTreeAction({ action: "create", category: category.id, parentId: null }); }} onPointerDown={(event) => event.stopPropagation()} title={`Add inside ${category.label}`} aria-label={`Add inside ${category.label}`} type="button"><Plus size={13} aria-hidden /></button> : null}
             </div>
             {!collapsed ? <div className="automation-tree-children root-children">
-              <AutomationHierarchyChildren nodes={sortAutomationHierarchyNodes(rootNodes)} allNodes={props.nodes} visibleIds={visibleIds} collapsedFolderIds={collapsedFolderIds} primaryTreeNodeId={primaryTreeNodeId} selection={props.selection} openNode={openFromTree} requestAction={requestTreeAction} toggleFolder={toggleFolder} />
+              <AutomationHierarchyChildren nodes={sortAutomationHierarchyNodes(rootNodes)} allNodes={props.nodes} visibleIds={visibleIds} collapsedFolderIds={collapsedFolderIds} primaryTreeNodeId={primaryTreeNodeId} recordingPrimaryKind={props.recordingPrimaryKind} selection={props.selection} openNode={openFromTree} requestAction={requestTreeAction} toggleFolder={toggleFolder} />
               {!rootNodes.length ? <div className="automation-tree-empty">No {category.label.toLowerCase()} match the current filter.</div> : null}
             </div> : null}
           </section>
@@ -94,6 +107,7 @@ export function AutomationHierarchyTreeNode(props: {
   visibleIds: Set<string>;
   collapsedFolderIds: string[];
   primaryTreeNodeId: string | null;
+  recordingPrimaryKind: "recording" | "pipeline" | null;
   selection: AutomationSelection | null;
   openNode(node: AutomationHierarchyNode, mode: "preview" | "new-window"): void;
   requestAction(action: NonNullable<AutomationHierarchyAction>): void;
@@ -101,7 +115,8 @@ export function AutomationHierarchyTreeNode(props: {
 }) {
   const children = props.nodes.filter((node) => node.parentId === props.node.id && props.visibleIds.has(node.id));
   const selected = automationHierarchyNodeMatchesSelection(props.node, props.selection);
-  const primarySelected = selected && (props.primaryTreeNodeId ? props.primaryTreeNodeId === props.node.id : props.selection?.kind === "recording" ? props.node.kind === "recording" : true);
+  const recordingPrimarySelected = props.selection?.kind === "recording" && props.recordingPrimaryKind ? props.node.kind === props.recordingPrimaryKind : props.node.kind === "recording";
+  const primarySelected = selected && (props.primaryTreeNodeId ? props.primaryTreeNodeId === props.node.id : props.selection?.kind === "recording" ? recordingPrimarySelected : true);
   const correlatedSelected = selected && !primarySelected;
   const isFolder = props.node.kind === "folder";
   const isPipelineHierarchyNode = props.node.category === "pipeline";
@@ -140,7 +155,7 @@ export function AutomationHierarchyTreeNode(props: {
           type="button"
         ><Trash2 size={13} aria-hidden /></button> : null}
       </div>
-      {children.length && !collapsed ? <div className="automation-tree-children"><AutomationHierarchyChildren nodes={sortAutomationHierarchyNodes(children)} allNodes={props.nodes} visibleIds={props.visibleIds} collapsedFolderIds={props.collapsedFolderIds} primaryTreeNodeId={props.primaryTreeNodeId} selection={props.selection} openNode={props.openNode} requestAction={props.requestAction} toggleFolder={props.toggleFolder} /></div> : null}
+      {children.length && !collapsed ? <div className="automation-tree-children"><AutomationHierarchyChildren nodes={sortAutomationHierarchyNodes(children)} allNodes={props.nodes} visibleIds={props.visibleIds} collapsedFolderIds={props.collapsedFolderIds} primaryTreeNodeId={props.primaryTreeNodeId} recordingPrimaryKind={props.recordingPrimaryKind} selection={props.selection} openNode={props.openNode} requestAction={props.requestAction} toggleFolder={props.toggleFolder} /></div> : null}
     </div>
   );
 }
@@ -151,6 +166,7 @@ export function AutomationHierarchyChildren(props: {
   visibleIds: Set<string>;
   collapsedFolderIds: string[];
   primaryTreeNodeId: string | null;
+  recordingPrimaryKind: "recording" | "pipeline" | null;
   selection: AutomationSelection | null;
   openNode(node: AutomationHierarchyNode, mode: "preview" | "new-window"): void;
   requestAction(action: NonNullable<AutomationHierarchyAction>): void;
@@ -166,6 +182,7 @@ export function AutomationHierarchyChildren(props: {
           visibleIds={props.visibleIds}
           collapsedFolderIds={props.collapsedFolderIds}
           primaryTreeNodeId={props.primaryTreeNodeId}
+          recordingPrimaryKind={props.recordingPrimaryKind}
           selection={props.selection}
           openNode={props.openNode}
           requestAction={props.requestAction}

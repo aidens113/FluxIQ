@@ -225,12 +225,13 @@ The recording-to-task pipeline is intentionally staged:
    evidence links and monotonic timing gaps.
 4. Mine normalized timelines for reusable signals, state deltas, action
    clusters, waits, branches, and unresolved questions.
-5. Combine mined evidence into a learned task model that can explain stable
-   states, expected transitions, and user-confirmed intent.
-6. Generate or update the task policy graph from that learned model, with every
+5. Propose a task policy graph directly from mined evidence, with every
    generated node and edge linking back to evidence.
-7. Test and replay the policy against selected recordings/state timelines
-   before marking it usable for runtime.
+6. Apply the proposed task draft only after explicit approval.
+
+Model learning and replay/validation are not recording pipeline stages in the
+current product surface. Model-shaped artifacts may still be used internally as
+compatibility data, and replay belongs to a separate runtime view.
 
 Task editor modes are:
 
@@ -405,7 +406,7 @@ Custom node definitions belong in the importing repository's `.fluxiq` folder,
 not in FluxIQ source. The global custom-node library is reserved at:
 
 ```text
-.fluxiq/data/programs/automation-studio/nodes/
+.fluxiq/{domain-id}/data/programs/automation-studio/nodes/
   custom/
     control-flow/
     policy/
@@ -425,7 +426,7 @@ Project-local node overrides or project-owned custom nodes remain inside the
 project folder:
 
 ```text
-.fluxiq/data/programs/automation-studio/projects/{projectId}/custom-nodes/
+.fluxiq/{domain-id}/data/programs/automation-studio/projects/{projectId}/custom-nodes/
 ```
 
 Global custom nodes should be reusable across projects. Project-local custom
@@ -486,15 +487,17 @@ privileged and require PIN authorization.
 
 Automation Studio opens through a project chooser. Users must create or open a
 project before the editor workspace appears. Projects and their owned state are
-persisted under the importing repository's `.fluxiq` root, currently at
-`.fluxiq/data/programs/automation-studio/projects/`. The project store is
+persisted under the importing repository's active FluxIQ domain root, currently
+`.fluxiq/{domain-id}/data/programs/automation-studio/projects/` when a host
+domain is active, or the legacy `.fluxiq/data/programs/automation-studio/projects/`
+layout when no active domain is configured. The project store is
 folder-backed: `index.json` tracks project summaries and grid categories, while
 each project gets its own folder named by project ID. A project folder contains
 `manifest.json`, `hierarchy/nodes.json`, `hierarchy/deleted.json`,
 `workspace/preferences.json`, and reserved subfolders for `tasks`, `routines`,
 `configs`, `recordings`, `policies`, `custom-nodes`, and `artifacts`. The
-legacy `.fluxiq/data/programs/automation-studio/projects.json` file is imported
-into this folder layout when no folder-backed index exists.
+legacy `projects.json` file in the same data root is imported into this folder
+layout when no folder-backed index exists.
 
 The web panel must use the importing repository as its FluxIQ host root. When
 developing the panel from the FluxIQ source checkout, set
@@ -601,7 +604,7 @@ Project recordings now use the same folder-backed ownership model as project
 workspace state. Each project reserves:
 
 ```text
-.fluxiq/data/programs/automation-studio/projects/{projectId}/recordings/
+.fluxiq/{domain-id}/data/programs/automation-studio/projects/{projectId}/recordings/
   sessions/{recordingId}/recording.json
   sessions/{recordingId}/events/timeline.json
   sessions/{recordingId}/snapshots/initial-state.json
@@ -626,31 +629,40 @@ recordings with duplicate IDs can still render.
 The recording pipeline reserves derived project artifacts beside recordings:
 
 ```text
-.fluxiq/data/programs/automation-studio/projects/{projectId}/pipeline/
+.fluxiq/{domain-id}/data/programs/automation-studio/projects/{projectId}/pipeline/
   sessions/{recordingId}/
     pipeline.json
     artifacts/
       normalized-timelines/{normalizedTimelineId}.json
       normalization-reviews/{reviewId}.json
       mining-runs/{miningRunId}.json
-      learned-task-models/{learnedTaskModelId}.json
+      evidence/
+        facts/{factId}.json
+        observations/{observationId}.json
+        correlations/{correlationId}.json
+        claims/{claimId}.json
       policy-proposals/{proposalId}.json
-      replay-results/{replayId}.json
   normalization-reviews/{reviewId}.json
   mining-runs/{miningRunId}.json
-  learned-task-models/{learnedTaskModelId}.json
+  evidence/
+    facts/{factId}.json
+    observations/{observationId}.json
+    correlations/{correlationId}.json
+    claims/{claimId}.json
   policy-proposals/{proposalId}.json
-  replay-results/{replayId}.json
   indexes/pipeline.json
 ```
 
 Each recording creates a matching recording pipeline session as soon as the
 recording is captured. `pipeline/sessions/{recordingId}/pipeline.json` is the
 recording-owned pipeline manifest and mirrors the recording session folder:
-normalized timelines, reviews, mining runs, learned models, proposals, and
-replay results are copied under that recording pipeline as they are generated.
-The flat pipeline artifact folders and `indexes/pipeline.json` remain aggregate
-indexes for project-wide listing.
+normalized timelines, normalization details, mining runs, evidence facts,
+evidence observations, state-action correlations, evidence claims, and task
+proposals are copied under that recording pipeline as they are generated. The
+flat pipeline artifact folders and `indexes/pipeline.json` remain aggregate
+indexes for project-wide listing. Legacy/internal artifact folders such as
+learned task models and replay results may exist for API compatibility, but
+they are not visible recording-pipeline stages.
 
 Pipeline files are derived artifacts. They preserve references back to raw
 recordings and normalized timelines so users can audit how a final task policy
@@ -663,7 +675,7 @@ Project-owned authoring artifacts are now explicit documents instead of only
 hierarchy rows. Each project reserves:
 
 ```text
-.fluxiq/data/programs/automation-studio/projects/{projectId}/
+.fluxiq/{domain-id}/data/programs/automation-studio/projects/{projectId}/
   tasks/{taskId}.json
   routines/{routineId}.json
   configs/{configId}.json
@@ -755,6 +767,11 @@ The state and recording framework now includes:
   and replay.
 - `buildSignalRegistryFromSchemas` and `discoverSignalDefinitions` so state
   schemas and observed snapshots become visual signal definitions.
+- factual state element descriptors for text, static IDs, internal IDs,
+  selectors, labels, statuses, routes, URLs, visibility, enabled flags, counts,
+  positions, bounds, collections, JSON, and unknown values. Importing
+  repositories describe what a state path is; FluxIQ infers whether it matters
+  by correlating it with recorded actions.
 - recording helpers for create, append timeline entry, append checkpoint,
   append delta, append note, and finalize.
 - `ConservativeTimelineNormalizer`, which preserves raw timeline entries while
@@ -766,25 +783,37 @@ The Automation Studio API exposes these as first-class framework endpoints:
 `delete-recording`, `append-recording-entry`, `append-recording-note`,
 `append-recording-marker`, `finalize-recording`, `normalize-recording`,
 `create-normalization-review`, `list-pipeline-artifacts`,
-`mine-recording-evidence`, `learn-task-model`, `propose-policy-from-model`,
-`approve-policy-proposal`, `replay-policy-against-recording`,
-`inspect-state-diff`, and `list-signal-registries`. Mutating endpoints are
+`mine-recording-evidence`, `propose-policy-from-model`,
+`approve-policy-proposal`, `inspect-state-diff`, and
+`list-signal-registries`. Compatibility endpoints for learned task models and
+replay results remain available for non-UI/runtime work. Mutating endpoints are
 privileged and should use the same shared PIN authorization path as project and
 category edits.
 
-The first pipeline implementation is deliberately conservative:
+The recording pipeline UI has three user-facing stages:
 
-- normalization review records raw-to-normalized mappings, derived entries,
-  explicit wait clips from recorded monotonic gaps, and normalizer issues;
-- mining creates windows around action/domain events and extracts candidate
-  effects and state conditions from normalized timeline deltas;
-- learned task models cluster those windows into tentative task steps,
-  transitions, expected effects, invariants, and unresolved questions;
-- policy proposals convert the learned model into a draft `PolicyGraph` without
-  mutating the active policy until the user approves it;
-- replay compares a policy proposal or approved policy against a recording and
-  records matched actions, missing actions, unexpected actions, and timing
-  warnings.
+- Normalize prepares the raw recording as a normalized timeline and writes
+  normalization detail artifacts with raw-to-normalized mappings, derived
+  entries, explicit wait clips from recorded monotonic gaps, and normalizer
+  issues.
+- Mine Evidence creates windows around action/domain events and extracts
+  facts, observations, state-action correlations, and claims from normalized
+  timeline entries. Facts are observed timeline events or state changes.
+  Observations are domain-shaped descriptions of those facts. Correlations
+  capture which factual state elements were present before an action or changed
+  after it. Claims are interpretations such as action effects, candidate
+  conditions, waits, and transitions; confidence belongs on these claims
+  because they are the inferred layer.
+- Propose Task converts mined evidence into a draft `PolicyGraph` without
+  mutating the active policy until the user approves it. Proposed nodes link to
+  supporting evidence claims, which link back to observations, facts, and
+  normalized/raw recording entries. The current path does not train a model;
+  any learned-model artifact is an internal compatibility representation rather
+  than a user-facing pipeline stage.
+
+Replay/validate is not part of the recording pipeline. It belongs in a later
+runtime view where runs, simulations, validations, and execution traces can be
+shown independently from recording-derived task authoring.
 
 Domain scope is part of the document identity. Raw recordings read it from the
 recording environment; derived artifacts carry it in metadata until richer

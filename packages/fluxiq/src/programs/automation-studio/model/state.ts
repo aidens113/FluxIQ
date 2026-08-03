@@ -16,6 +16,37 @@ export type StateValueType =
 
 export type StateVolatility = "static" | "slow" | "normal" | "rapid";
 
+export type StateElementKind =
+  | "text"
+  | "static_id"
+  | "internal_id"
+  | "selector"
+  | "label"
+  | "status"
+  | "route"
+  | "url"
+  | "visibility"
+  | "enabled"
+  | "count"
+  | "position"
+  | "bounds"
+  | "collection"
+  | "json"
+  | "unknown";
+
+export type StateElementDescriptor = {
+  namespace: StateNamespaceId;
+  path: string;
+  kind: StateElementKind;
+  label?: string;
+  description?: string;
+  entityId?: string;
+  entityKind?: string;
+  stableAcrossSessions?: boolean;
+  sensitive?: boolean;
+  metadata?: JsonObject;
+};
+
 export type StateValue<T = unknown> = {
   type: StateValueType;
   value: T;
@@ -67,8 +98,13 @@ export type StatePathSchema = {
   namespace: StateNamespaceId;
   path: string;
   type: StateValueType;
+  elementKind?: StateElementKind;
   label?: string;
   description?: string;
+  entityId?: string;
+  entityKind?: string;
+  stableAcrossSessions?: boolean;
+  sensitive?: boolean;
   persistence?: "snapshot" | "session" | "task" | "environment";
   volatility?: StateVolatility;
   permissions?: StatePathPermissions;

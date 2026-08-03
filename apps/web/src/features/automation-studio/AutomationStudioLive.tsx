@@ -103,7 +103,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const [projectRecordings, setProjectRecordings] = useState<any[]>([]);
   const [projectTimelines, setProjectTimelines] = useState<any[]>([]);
   const [runtimeSessions, setRuntimeSessions] = useState<any[]>([]);
-  const [pipelineArtifacts, setPipelineArtifacts] = useState<any>({ normalizationReviews: [], miningRuns: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
+  const [pipelineArtifacts, setPipelineArtifacts] = useState<any>({ normalizationReviews: [], miningRuns: [], evidenceFacts: [], evidenceObservations: [], stateActionCorrelations: [], evidenceClaims: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
   const [recordingDomains, setRecordingDomains] = useState<any[]>([]);
   const [automationActionStatus, setAutomationActionStatus] = useState("");
   const [projects, setProjects] = useState<AutomationStudioProject[]>([]);
@@ -141,6 +141,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const [projectSearch, setProjectSearch] = useState("");
   const [projectTypeFilter, setProjectTypeFilter] = useState<"all" | AutomationHierarchyKind>("all");
   const [selection, setSelection] = useState<AutomationSelection | null>(null);
+  const [recordingTreePrimaryKind, setRecordingTreePrimaryKind] = useState<"recording" | "pipeline" | null>(null);
   const [gatewaySnapshot, setGatewaySnapshot] = useState<any>({ enabled: false, sessions: [], pairings: [], auditLog: [] });
   const [recordingBlockedAlert, setRecordingBlockedAlert] = useState<{ message: string; clientId?: string; timestamp: number } | null>(null);
   const [hierarchyAction, setHierarchyAction] = useState<AutomationHierarchyAction>(null);
@@ -189,7 +190,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       setProjectRecordings([]);
       setProjectTimelines([]);
       setRuntimeSessions([]);
-      setPipelineArtifacts({ normalizationReviews: [], miningRuns: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
+      setPipelineArtifacts({ normalizationReviews: [], miningRuns: [], evidenceFacts: [], evidenceObservations: [], stateActionCorrelations: [], evidenceClaims: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
       setRecordingDomains([]);
       return;
     }
@@ -236,6 +237,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     async function refreshGatewaySnapshot() {
       const response = await fetch("/api/client-gateway/snapshot", { cache: "no-store" }).catch(() => null);
       if (!response) return;
+      if (response.status === 401) {
+        cancelled = true;
+        window.location.href = "/";
+        return;
+      }
       const result = await response.json().catch(() => null);
       if (!cancelled && result?.ok) setGatewaySnapshot(result.payload ?? { enabled: false, sessions: [], pairings: [], auditLog: [] });
     }
@@ -321,16 +327,21 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const canvasForArea = (area: AutomationWorkspaceArea) => area === "right" ? rightWorkspaceCanvasRef.current : mainWorkspaceCanvasRef.current;
   const setSelectionAndFollow = (next: AutomationSelection) => {
     setSelection(next);
-    if (next.kind === "recording" || next.kind === "timeline") openView("timeline-recording", "preview");
+    if (next.kind === "recording" || next.kind === "timeline") {
+      setRecordingTreePrimaryKind("recording");
+      openView("timeline-recording", "preview");
+    }
     if (next.kind === "signal") openView("signals-web", "preview");
     if (next.kind === "policy") openView("policy-primary", "preview");
   };
   const openRecordingPipeline = (recordingId: string) => {
     setSelection({ kind: "recording", id: recordingId });
+    setRecordingTreePrimaryKind("pipeline");
     openView("pipeline-workbench", "preview");
   };
   const openRecordingTimeline = (recordingId: string) => {
     setSelection({ kind: "recording", id: recordingId });
+    setRecordingTreePrimaryKind("recording");
     openView("timeline-recording", "preview");
   };
 
@@ -671,7 +682,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     if (recordingResult.ok) setProjectRecordings(recordingResult.payload?.recordings ?? []);
     if (timelineResult.ok) setProjectTimelines(timelineResult.payload?.normalizedTimelines ?? []);
     if (runtimeResult.ok) setRuntimeSessions(runtimeResult.payload?.runtimeSessions ?? []);
-    if (pipelineResult.ok) setPipelineArtifacts(pipelineResult.payload ?? { normalizationReviews: [], miningRuns: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
+    if (pipelineResult.ok) setPipelineArtifacts(pipelineResult.payload ?? { normalizationReviews: [], miningRuns: [], evidenceFacts: [], evidenceObservations: [], stateActionCorrelations: [], evidenceClaims: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
     if (domainResult.ok) setRecordingDomains(domainResult.payload?.domains ?? []);
   }
 
@@ -752,7 +763,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       return;
     }
     setProjectTimelines((current) => [result.payload!.normalizedTimeline, ...current.filter((timeline) => timeline.normalizedTimelineId !== result.payload!.normalizedTimeline.normalizedTimelineId)]);
-    setAutomationActionStatus("Recording normalized.");
+    const reviewResult = await api.post("create-normalization-review", { projectId: activeProjectId, recordingId, authorizationPin });
+    setAutomationActionStatus(reviewResult.ok ? "Recording normalized." : "Recording normalized. Normalization details could not be created.");
     await refreshProjectRuntimeState(activeProjectId);
   }
 
@@ -845,7 +857,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setAutomationActionStatus("LLM task processing is not connected yet.");
   }
 
-  async function runRecordingPipeline(recordingId: string, taskId?: string) {
+  async function runRecordingPipeline(recordingId: string) {
     if (!activeProjectId || !recordingId) return;
     const authorizationPin = window.prompt("Enter PIN to run the recording pipeline") ?? "";
     if (authorizationPin.length < 4) {
@@ -854,11 +866,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     }
     const steps: Array<{ endpoint: string; payload: JsonObject; status: string; success: string }> = [
       { endpoint: "normalize-recording", payload: { recordingId }, status: "Normalizing recording timeline...", success: "Recording normalized." },
-      { endpoint: "create-normalization-review", payload: { recordingId }, status: "Creating normalization review...", success: "Normalization review created." },
       { endpoint: "mine-recording-evidence", payload: { recordingId }, status: "Mining recording evidence...", success: "Evidence mined." },
-      { endpoint: "learn-task-model", payload: { taskId: taskId ?? recordingId }, status: "Learning task model...", success: "Task model learned." },
-      { endpoint: "propose-policy-from-model", payload: {}, status: "Creating task draft...", success: "Task draft proposed." },
-      { endpoint: "replay-policy-against-recording", payload: { recordingId }, status: "Replaying policy against recording...", success: "Replay completed." }
+      { endpoint: "propose-policy-from-model", payload: { recordingId }, status: "Creating task draft...", success: "Task draft proposed." }
     ];
     for (const step of steps) {
       setAutomationActionStatus(step.status);
@@ -870,6 +879,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       }
       if (step.endpoint === "normalize-recording" && result.payload?.normalizedTimeline) {
         setProjectTimelines((current) => [result.payload!.normalizedTimeline, ...current.filter((timeline) => timeline.normalizedTimelineId !== result.payload!.normalizedTimeline.normalizedTimelineId)]);
+        await api.post("create-normalization-review", { projectId: activeProjectId, recordingId, authorizationPin });
       }
       setAutomationActionStatus(step.success);
     }
@@ -885,7 +895,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setProjectRecordings([]);
     setProjectTimelines([]);
     setRuntimeSessions([]);
-    setPipelineArtifacts({ normalizationReviews: [], miningRuns: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
+    setPipelineArtifacts({ normalizationReviews: [], miningRuns: [], evidenceFacts: [], evidenceObservations: [], stateActionCorrelations: [], evidenceClaims: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
     setRecordingDomains([]);
     setAutomationActionStatus("");
     setWorkspacePrefs(defaultAutomationWorkspacePrefs());
@@ -1514,6 +1524,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         {!sidebarCollapsed ? <AutomationProjectTree
           nodes={hierarchyNodes}
           selection={selection}
+          recordingPrimaryKind={recordingTreePrimaryKind}
+          setRecordingPrimaryKind={setRecordingTreePrimaryKind}
           search={projectSearch}
           typeFilter={projectTypeFilter}
           setSelection={setSelection}

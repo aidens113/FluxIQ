@@ -22,38 +22,30 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
   }
 
   async list(scope: RepositoryScope = {}): Promise<Array<RecordEnvelope<T>>> {
-    const db = await this.open(scope);
-    try {
+    return this.withDatabase(scope, async (db, normalizedScope) => {
       const rows = await all<SQLiteRecordRow>(db, `select id, kind, data, created_at_ms as createdAtMs, updated_at_ms as updatedAtMs from ${this.tableName} order by id`);
-      return rows.map((row) => rowToRecord<T>(row, normalizeScope(scope)));
-    } finally {
-      await close(db);
-    }
+      return rows.map((row) => rowToRecord<T>(row, normalizedScope));
+    });
   }
 
   async get(id: string, scope: RepositoryScope = {}): Promise<RecordEnvelope<T> | null> {
-    const db = await this.open(scope);
-    try {
+    return this.withDatabase(scope, async (db, normalizedScope) => {
       const row = await get<SQLiteRecordRow>(db, `select id, kind, data, created_at_ms as createdAtMs, updated_at_ms as updatedAtMs from ${this.tableName} where id = ?`, [id]);
-      return row ? rowToRecord<T>(row, normalizeScope(scope)) : null;
-    } finally {
-      await close(db);
-    }
+      return row ? rowToRecord<T>(row, normalizedScope) : null;
+    });
   }
 
   async put(record: RecordEnvelope<T>): Promise<RecordEnvelope<T>> {
-    const scope = normalizeScope(record.scope);
-    const existing = await this.get(record.id, scope);
-    const now = Date.now();
-    const next: RecordEnvelope<T> = {
-      ...record,
-      kind: this.kind,
-      scope,
-      createdAtMs: existing?.createdAtMs ?? (record.createdAtMs || now),
-      updatedAtMs: now
-    };
-    const db = await this.open(scope);
-    try {
+    return this.withDatabase(record.scope, async (db, scope) => {
+      const existing = await get<SQLiteRecordRow>(db, `select id, kind, data, created_at_ms as createdAtMs, updated_at_ms as updatedAtMs from ${this.tableName} where id = ?`, [record.id]);
+      const now = Date.now();
+      const next: RecordEnvelope<T> = {
+        ...record,
+        kind: this.kind,
+        scope,
+        createdAtMs: existing?.createdAtMs ?? (record.createdAtMs || now),
+        updatedAtMs: now
+      };
       await run(db, `
         insert into ${this.tableName} (id, kind, data, created_at_ms, updated_at_ms)
         values (?, ?, ?, ?, ?)
@@ -63,19 +55,14 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
           updated_at_ms = excluded.updated_at_ms
       `, [next.id, next.kind, JSON.stringify(next.data), next.createdAtMs, next.updatedAtMs]);
       return next;
-    } finally {
-      await close(db);
-    }
+    });
   }
 
   async delete(id: string, scope: RepositoryScope = {}): Promise<boolean> {
-    const db = await this.open(scope);
-    try {
+    return this.withDatabase(scope, async (db) => {
       const result = await run(db, `delete from ${this.tableName} where id = ?`, [id]);
       return result.changes > 0;
-    } finally {
-      await close(db);
-    }
+    });
   }
 
   databases(): string[] {
@@ -112,6 +99,19 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
     return db;
   }
 
+  private async withDatabase<TResult>(scope: RepositoryScope, operation: (db: sqlite3.Database, normalizedScope: RepositoryScope) => Promise<TResult>): Promise<TResult> {
+    const normalizedScope = normalizeScope(scope);
+    const filePath = this.databasePath(normalizedScope);
+    return enqueueDatabaseOperation(filePath, async () => {
+      const db = await this.open(normalizedScope);
+      try {
+        return await operation(db, normalizedScope);
+      } finally {
+        await close(db);
+      }
+    });
+  }
+
   private databasePath(scope: RepositoryScope): string {
     const normalized = normalizeScope(scope);
     if (normalized.domainId) {
@@ -134,6 +134,8 @@ type RunResult = {
   lastID: number;
 };
 
+const databaseOperationLocks = new Map<string, Promise<void>>();
+
 export function createRecord<T extends JsonObject>(params: {
   id: string;
   kind: string;
@@ -154,11 +156,30 @@ export function createRecord<T extends JsonObject>(params: {
 
 function openDatabase(filePath: string): Promise<sqlite3.Database> {
   return new Promise((resolve, reject) => {
-    const db = new sqlite3.Database(filePath, (error) => {
+    const db = new sqlite3.Database(filePath, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE | sqlite3.OPEN_FULLMUTEX, (error) => {
       if (error) reject(error);
       else resolve(db);
     });
+    db.configure("busyTimeout", 10_000);
   });
+}
+
+async function enqueueDatabaseOperation<TResult>(filePath: string, operation: () => Promise<TResult>): Promise<TResult> {
+  const previous = databaseOperationLocks.get(filePath) ?? Promise.resolve();
+  let release: () => void = () => undefined;
+  const current = previous.catch(() => undefined).then(() => new Promise<void>((resolve) => {
+    release = resolve;
+  }));
+  databaseOperationLocks.set(filePath, current);
+  await previous.catch(() => undefined);
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (databaseOperationLocks.get(filePath) === current) {
+      databaseOperationLocks.delete(filePath);
+    }
+  }
 }
 
 function run(db: sqlite3.Database, sql: string, params: unknown[] = []): Promise<RunResult> {

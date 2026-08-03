@@ -76,8 +76,29 @@ describe("SQLiteRepository", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it("waits for concurrent access instead of failing with SQLITE_BUSY", async () => {
+    const root = await tempRoot();
+    try {
+      const repo = new SQLiteRepository({ rootDir: root, kind: "widgets" });
+      await Promise.all(Array.from({ length: 20 }, (_, index) => repo.put(createRecord({
+        id: `item-${index}`,
+        kind: "widgets",
+        data: { index }
+      }))));
+
+      expect(await repo.list()).toHaveLength(20);
+    } finally {
+      await delay(100);
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 async function tempRoot(): Promise<string> {
   return mkdtemp(path.join(os.tmpdir(), "fluxiq-data-"));
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

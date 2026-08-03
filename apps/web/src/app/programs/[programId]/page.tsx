@@ -13,6 +13,7 @@ import { defaultGlobalProgramCatalog, type FluxIQIconName, type ProgramSummary }
 import { redirect } from "next/navigation";
 import { AuthStatus } from "../../AuthShell";
 import { currentFluxIQUser } from "../../../lib/auth";
+import { getFluxIQ } from "../../../lib/fluxiq";
 import { ProgramWorkspace } from "./ProgramWorkspace";
 
 const icons = {
@@ -80,6 +81,9 @@ export default async function ProgramPage(context: ProgramPageParams) {
   if (!auth) redirect("/");
 
   const { programId } = await context.params;
+  const fluxiq = getFluxIQ();
+  const activeDomain = fluxiq.activeDomainId ? fluxiq.programDirectory(fluxiq.activeDomainId).domain : null;
+  const domainName = activeDomain?.title ?? fluxiq.activeDomainId ?? "Global";
   const programs = defaultGlobalProgramCatalog();
   const program = programs.find((item) => item.id === programId);
 
@@ -94,6 +98,7 @@ export default async function ProgramPage(context: ProgramPageParams) {
       runtime: ["Program service"]
     }}
     program={program}
+    domainName={domainName}
     user={{
       id: auth.user.id,
       displayName: auth.user.displayName,

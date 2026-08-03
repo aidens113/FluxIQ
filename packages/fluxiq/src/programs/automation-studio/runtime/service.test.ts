@@ -153,6 +153,11 @@ describe("AutomationStudioService recording persistence", () => {
       entry: { type: "domain_event", eventType: "step.started", timestamp: 300, payload: { step: 1 } }
     });
     await service.appendRecordingMarkerEntry({ projectId: project.id, recordingId: recording.recordingId, label: "Goal", monotonicOffsetMs: 1000 });
+    await service.appendRecordingEvent({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entry: { type: "domain_event", eventType: "step.completed", timestamp: 1300, payload: { step: 1 } }
+    });
     await service.normalizeRecording({ projectId: project.id, recordingId: recording.recordingId });
 
     const review = await service.createNormalizationReview({ projectId: project.id, recordingId: recording.recordingId });
@@ -165,6 +170,9 @@ describe("AutomationStudioService recording persistence", () => {
 
     expect(review.waitClips[0]).toMatchObject({ waitMs: 800 });
     expect(artifacts.miningRuns.map((item) => item.miningRunId)).toContain(miningRun.miningRunId);
+    expect(artifacts.evidenceFacts.length).toBeGreaterThan(0);
+    expect(artifacts.evidenceObservations.length).toBeGreaterThan(0);
+    expect(artifacts.evidenceClaims.length).toBeGreaterThan(0);
     expect(artifacts.learnedTaskModels.map((item) => item.learnedTaskModelId)).toContain(model.learnedTaskModelId);
     expect(artifacts.policyProposals[0]).toMatchObject({ proposalId: proposal.proposalId, status: "approved" });
     expect(replay.policyId).toBe(approved.policy.policyId);
@@ -172,13 +180,85 @@ describe("AutomationStudioService recording persistence", () => {
     const projectRoot = path.join(tempRoot, "programs", "automation-studio", "projects", project.id);
     await expect(readFile(path.join(projectRoot, "pipeline", "indexes", "pipeline.json"), "utf8")).resolves.toContain(proposal.proposalId);
     await expect(readFile(path.join(projectRoot, "pipeline", "sessions", "recording.pipeline-test", "pipeline.json"), "utf8")).resolves.toContain(proposal.proposalId);
+    await expect(readFile(path.join(projectRoot, "pipeline", "sessions", "recording.pipeline-test", "artifacts", "evidence", "claims", `${artifacts.evidenceClaims[0]!.claimId}.json`), "utf8")).resolves.toContain("\"claimId\"");
     await expect(readFile(path.join(projectRoot, "pipeline", "sessions", "recording.pipeline-test", "artifacts", "policy-proposals", `${proposal.proposalId}.json`), "utf8")).resolves.toContain("\"proposalId\"");
     await expect(readFile(path.join(projectRoot, "policies", `${approved.policy.policyId}.json`), "utf8")).resolves.toContain("\"policyId\"");
 
     await service.deleteRecording({ projectId: project.id, recordingId: recording.recordingId });
     await expect(readFile(path.join(projectRoot, "pipeline", "sessions", "recording.pipeline-test", "pipeline.json"), "utf8")).rejects.toThrow();
     await expect(readFile(path.join(projectRoot, "pipeline", "policy-proposals", `${proposal.proposalId}.json`), "utf8")).rejects.toThrow();
+    await expect(readFile(path.join(projectRoot, "pipeline", "evidence", "claims", `${artifacts.evidenceClaims[0]!.claimId}.json`), "utf8")).rejects.toThrow();
     expect((await service.listPipelineArtifacts(project.id)).policyProposals).toEqual([]);
+  });
+
+  it("proposes a task directly from recording-owned mined evidence", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    service.registerRecordingDomain({
+      domainId: "example.direct",
+      label: "Direct proposal domain",
+      schemaVersion: "0.1",
+      events: [{
+        eventType: "step.completed",
+        label: "Step completed",
+        payloadSchema: { type: "object" },
+        stateReducer: ({ event, previousState }) => ({
+          state: {
+            timestamp: event.timestamp ?? Date.now(),
+            namespaces: {
+              ...previousState.namespaces,
+              task: {
+                schemaId: "example.direct",
+                schemaVersion: "0.1",
+                values: {
+                  status: stateValue("string", "completed", event.timestamp ?? Date.now())
+                }
+              }
+            }
+          }
+        })
+      }],
+      statePaths: [{
+        namespace: "task",
+        path: "status",
+        type: "string",
+        elementKind: "status",
+        label: "Task status",
+        stableAcrossSessions: false
+      }]
+    });
+    const project = await service.createProject({ name: "Direct Proposal Project" });
+    const recording = await service.createRecording({
+      projectId: project.id,
+      recordingId: "recording.direct-proposal",
+      taskId: "task.direct",
+      startedAt: 100,
+      initialState: { timestamp: 100, namespaces: {} }
+    });
+    await service.appendRecordingDomainEvent({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      domainId: "example.direct",
+      eventType: "step.completed",
+      timestamp: 300,
+      payload: { step: 1 }
+    });
+    await service.normalizeRecording({ projectId: project.id, recordingId: recording.recordingId });
+    const miningRun = await service.mineRecordingEvidence({ projectId: project.id, recordingId: recording.recordingId });
+
+    const proposal = await service.proposePolicyFromModel({ projectId: project.id, recordingId: recording.recordingId });
+
+    expect(proposal.metadata).toMatchObject({ source: "mined_evidence", recordingId: recording.recordingId, miningRunId: miningRun.miningRunId });
+    expect(proposal.policy.sourceEvidence[0]).toMatchObject({ layer: "signal_mining", artifactId: miningRun.miningRunId });
+    expect(proposal.policy.nodes[0]?.sourceEvidence[0]?.layer).toBe("evidence_claim");
+    expect(miningRun.correlations?.[0]).toMatchObject({ statePath: "task.status", elementKind: "status", descriptor: { label: "Task status" } });
+
+    const projectRoot = path.join(tempRoot, "programs", "automation-studio", "projects", project.id);
+    await expect(readFile(path.join(projectRoot, "pipeline", "sessions", "recording.direct-proposal", "artifacts", "mining-runs", `${miningRun.miningRunId}.json`), "utf8")).resolves.toContain("\"miningRunId\"");
+    await expect(readFile(path.join(projectRoot, "pipeline", "sessions", "recording.direct-proposal", "artifacts", "evidence", "facts", `${miningRun.evidenceFactIds![0]}.json`), "utf8")).resolves.toContain("\"factId\"");
+    await expect(readFile(path.join(projectRoot, "pipeline", "sessions", "recording.direct-proposal", "artifacts", "evidence", "observations", `${miningRun.evidenceObservationIds![0]}.json`), "utf8")).resolves.toContain("\"observationId\"");
+    await expect(readFile(path.join(projectRoot, "pipeline", "sessions", "recording.direct-proposal", "artifacts", "evidence", "correlations", `${miningRun.stateActionCorrelationIds![0]}.json`), "utf8")).resolves.toContain("\"correlationId\"");
+    await expect(readFile(path.join(projectRoot, "pipeline", "sessions", "recording.direct-proposal", "artifacts", "evidence", "claims", `${miningRun.evidenceClaimIds![0]}.json`), "utf8")).resolves.toContain("\"claimId\"");
+    await expect(readFile(path.join(projectRoot, "pipeline", "sessions", "recording.direct-proposal", "artifacts", "policy-proposals", `${proposal.proposalId}.json`), "utf8")).resolves.toContain("\"proposalId\"");
   });
 
   it("accepts only registered domain recording events and records derived state", async () => {

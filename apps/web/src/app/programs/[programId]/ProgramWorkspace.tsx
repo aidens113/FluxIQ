@@ -30,6 +30,7 @@ type WorkspaceTab = "main" | "api" | "storage" | "runtime";
 
 type ProgramWorkspaceProps = {
   program: ProgramSummary;
+  domainName: string;
   user: {
     id: string;
     displayName: string;
@@ -62,7 +63,7 @@ const icons = {
   "shield-check": ShieldCheck
 } satisfies Record<FluxIQIconName, typeof Blocks>;
 
-export function ProgramWorkspace({ program, capabilities, user }: ProgramWorkspaceProps) {
+export function ProgramWorkspace({ program, capabilities, domainName, user }: ProgramWorkspaceProps) {
   const [tab, setTab] = useState<WorkspaceTab>("main");
   const [automationStatus, setAutomationStatus] = useState<{ state: string; detail: string; running: boolean; dirty: boolean }>({
     state: "Idle",
@@ -90,6 +91,7 @@ export function ProgramWorkspace({ program, capabilities, user }: ProgramWorkspa
               <Icon size={16} aria-hidden />
             </span>
             <strong>{program.title}</strong>
+            <span className="program-domain-label">{domainName}</span>
           </div>
           <div className="automation-command-center" aria-label="Automation Studio runtime state">
             <span className={automationStatus.running ? "running" : ""}>{automationStatus.state}</span>
@@ -128,6 +130,7 @@ export function ProgramWorkspace({ program, capabilities, user }: ProgramWorkspa
             <Icon size={16} aria-hidden />
           </span>
           <strong>{program.title}</strong>
+          <span className="program-domain-label">{domainName}</span>
         </div>
         <div className="program-topbar-actions">
           <div className="program-tabs" role="tablist" aria-label={`${program.title} sections`}>

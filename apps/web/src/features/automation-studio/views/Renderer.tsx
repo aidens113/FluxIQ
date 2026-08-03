@@ -39,7 +39,7 @@ export function AutomationViewRenderer(props: {
   onAppendRecordingNote(recordingId: string, linkedEntryId?: string): Promise<void>;
   onNormalizeRecording(recordingId: string): Promise<void>;
   onPipelineAction(endpoint: string, payload: JsonObject, success: string): Promise<void>;
-  onRunRecordingPipeline(recordingId: string, taskId?: string): Promise<void>;
+  onRunRecordingPipeline(recordingId: string): Promise<void>;
   onProcessProposalWithLlm(proposalId: string): void;
   onRefreshRecordings(): Promise<void>;
   onUpdateRecording(recordingId: string, changes: JsonObject): Promise<void>;

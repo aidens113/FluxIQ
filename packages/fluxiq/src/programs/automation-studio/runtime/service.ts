@@ -26,13 +26,17 @@ import {
   type RecordingDomainEventInput,
   type RecordingDomainEventProcessingResult,
   RecordingDomainRegistry,
+  type StateDelta,
+  type StateElementDescriptor,
+  type StateElementKind,
   type RecordingSession,
   type SignalRegistry,
   type StateSnapshot,
+  type StateValue,
   processRecordingDomainEvent
 } from "../model";
 import type { LearnedTaskModel } from "../learning";
-import type { SignalMiningResult } from "../mining";
+import type { EvidenceClaim, EvidenceFact, EvidenceObservation, SignalMiningResult, StateActionCorrelation } from "../mining";
 import { normalizeRecordingTimeline, type NormalizationOptions, type NormalizedTimeline } from "../normalization";
 import { automationNodeClasses } from "../nodes";
 import { runAutomationStudioGraph } from "./executor";
@@ -100,6 +104,7 @@ export type PolicyProposalArtifact = {
   summary: string;
   generatedAt: number;
   approvedAt?: number;
+  metadata?: JsonObject;
 };
 
 export type ReplayResultArtifact = {
@@ -119,6 +124,10 @@ export type ReplayResultArtifact = {
 export type AutomationPipelineArtifacts = {
   normalizationReviews: NormalizationReviewArtifact[];
   miningRuns: SignalMiningResult[];
+  evidenceFacts: EvidenceFact[];
+  evidenceObservations: EvidenceObservation[];
+  stateActionCorrelations: StateActionCorrelation[];
+  evidenceClaims: EvidenceClaim[];
   learnedTaskModels: LearnedTaskModel[];
   policyProposals: PolicyProposalArtifact[];
   replayResults: ReplayResultArtifact[];
@@ -128,6 +137,10 @@ type PipelineIndex = {
   pipelines: { pipelineId: string; recordingId: string; taskId?: string; updatedAt: number }[];
   normalizationReviews: { reviewId: string; generatedAt: number }[];
   miningRuns: { miningRunId: string; generatedAt: number }[];
+  evidenceFacts: { factId: string; generatedAt: number }[];
+  evidenceObservations: { observationId: string; generatedAt: number }[];
+  stateActionCorrelations: { correlationId: string; generatedAt: number }[];
+  evidenceClaims: { claimId: string; generatedAt: number }[];
   learnedTaskModels: { learnedTaskModelId: string; generatedAt: number }[];
   policyProposals: { proposalId: string; generatedAt: number; status: PolicyProposalArtifact["status"] }[];
   replayResults: { replayId: string; generatedAt: number }[];
@@ -147,6 +160,10 @@ type RecordingPipelineDocument = {
     normalizedTimelineIds: string[];
     normalizationReviewIds: string[];
     miningRunIds: string[];
+    evidenceFactIds: string[];
+    evidenceObservationIds: string[];
+    stateActionCorrelationIds: string[];
+    evidenceClaimIds: string[];
     learnedTaskModelIds: string[];
     policyProposalIds: string[];
     replayResultIds: string[];
@@ -387,8 +404,20 @@ export class AutomationStudioService {
       ? (await this.repositories.normalizedTimelines.get(input.normalizedTimelineId))
       : (await this.listProjectNormalizedTimelines(input.projectId)).find((item) => item.recordingId === input.recordingId);
     if (!timeline) throw new Error("Normalized timeline is required before mining.");
+    const miningRunId = `mining.${safeSegment(timeline.normalizedTimelineId)}.${Date.now()}`;
     const actions = timeline.timeline.filter((entry) => entry.type === "action" || entry.type === "domain_event");
     const deltas = timeline.timeline.filter((entry) => entry.type === "state_delta");
+    const facts = timeline.timeline.map((entry) => createEvidenceFact(miningRunId, timeline, entry, this.recordingDomains.get(String(entry.metadata?.domainId ?? ""))));
+    const factsByEntryId = new Map(facts.map((fact) => [String(fact.source.entryId ?? ""), fact]));
+    const observations = facts.flatMap((fact) => createEvidenceObservations(fact));
+    const observationsByFactId = new Map<string, EvidenceObservation[]>();
+    for (const observation of observations) {
+      for (const factId of observation.factIds) {
+        observationsByFactId.set(factId, [...(observationsByFactId.get(factId) ?? []), observation]);
+      }
+    }
+    const descriptors = stateElementDescriptorsForTimeline(timeline, this.recordingDomains.list());
+    const correlations = createStateActionCorrelations(miningRunId, timeline, actions, descriptors);
     const windows = actions.map((entry, index) => ({
       id: `window.${entry.id}`,
       kind: "immediate_post_action" as const,
@@ -402,11 +431,11 @@ export class AutomationStudioService {
       .slice(0, 3)
       .flatMap((delta) => (delta as any).deltas?.map((stateDelta: any) => ({
         actionOccurrenceId: action.id,
-        signalPath: stateDelta.path,
+        signalPath: formatStatePath(stateDelta.namespace, stateDelta.path),
         relationship: "possible_effect" as const,
         probability: 0.55,
         delayMs: { min: Math.max(0, delta.monotonicOffsetMs - action.monotonicOffsetMs), median: Math.max(0, delta.monotonicOffsetMs - action.monotonicOffsetMs), max: Math.max(0, delta.monotonicOffsetMs - action.monotonicOffsetMs) },
-        evidence: [{ layer: "normalized_timeline" as const, artifactId: timeline.normalizedTimelineId, entryId: delta.id, signalPath: stateDelta.path }]
+        evidence: [{ layer: "normalized_timeline" as const, artifactId: timeline.normalizedTimelineId, entryId: delta.id, signalPath: formatStatePath(stateDelta.namespace, stateDelta.path) }]
       })) ?? []));
     const conditionCandidates = [...new Map(actionEffects.map((effect) => [effect.signalPath, effect])).values()].map((effect) => ({
       signalPath: effect.signalPath,
@@ -414,10 +443,22 @@ export class AutomationStudioService {
       probability: 0.5,
       evidence: effect.evidence
     }));
+    const claims = [
+      ...correlations.map((correlation, index) => createCorrelationClaim(miningRunId, timeline, correlation, index, observations)),
+      ...createTransitionClaims(miningRunId, timeline, actions, factsByEntryId, observationsByFactId)
+    ];
     const result: SignalMiningResult = {
       schemaVersion: "0.1",
-      miningRunId: `mining.${safeSegment(timeline.normalizedTimelineId)}.${Date.now()}`,
+      miningRunId,
       normalizedTimelineId: timeline.normalizedTimelineId,
+      evidenceFactIds: facts.map((fact) => fact.factId),
+      evidenceObservationIds: observations.map((observation) => observation.observationId),
+      stateActionCorrelationIds: correlations.map((correlation) => correlation.correlationId),
+      evidenceClaimIds: claims.map((claim) => claim.claimId),
+      facts,
+      observations,
+      correlations,
+      claims,
       windows,
       actionEffects,
       conditionCandidates,
@@ -425,6 +466,10 @@ export class AutomationStudioService {
       generatedAt: Date.now(),
       metadata: { recordingId: timeline.recordingId }
     };
+    for (const fact of facts) await this.writePipelineArtifact(input.projectId, "evidenceFacts", fact.factId, fact as unknown as JsonObject);
+    for (const observation of observations) await this.writePipelineArtifact(input.projectId, "evidenceObservations", observation.observationId, observation as unknown as JsonObject);
+    for (const correlation of correlations) await this.writePipelineArtifact(input.projectId, "stateActionCorrelations", correlation.correlationId, correlation as unknown as JsonObject);
+    for (const claim of claims) await this.writePipelineArtifact(input.projectId, "evidenceClaims", claim.claimId, claim as unknown as JsonObject);
     await this.writePipelineArtifact(input.projectId, "miningRuns", result.miningRunId, result as unknown as JsonObject);
     return result;
   }
@@ -434,48 +479,29 @@ export class AutomationStudioService {
       ? await this.readPipelineArtifact<SignalMiningResult>(input.projectId, "miningRuns", input.miningRunId)
       : (await this.listPipelineArtifacts(input.projectId)).miningRuns[0];
     if (!miningRun) throw new Error("A mining run is required before learning a task model.");
-    const taskId = input.taskId ?? String(miningRun.metadata?.taskId ?? miningRun.metadata?.recordingId ?? "task.learned");
-    const actionClusters = miningRun.windows.filter((window) => window.actionEntryId).map((window, index) => ({
-      id: `cluster.${index + 1}`,
-      label: `Step ${index + 1}`,
-      actionTemplate: { id: `action.${index + 1}`, actionType: "learned.action", parameters: {}, sourceEvidence: window.sourceEvidence },
-      positiveRequirements: miningRun.conditionCandidates.slice(0, 3).map((candidate) => ({ signalPath: candidate.signalPath, operator: "exists" as const, weight: candidate.probability })),
-      negativeRequirements: [],
-      expectedEffects: miningRun.actionEffects.filter((effect) => effect.actionOccurrenceId === window.actionEntryId).map((effect) => ({ signalPath: effect.signalPath, condition: { signalPath: effect.signalPath, operator: "changed" as const }, probability: effect.probability, evidence: effect.evidence })),
-      possibleSideEffects: [],
-      confidence: Math.min(0.85, 0.45 + miningRun.actionEffects.length * 0.05),
-      sourceOccurrences: window.actionEntryId ? [window.actionEntryId] : []
-    }));
-    const transitions = actionClusters.slice(0, -1).map((cluster, index) => ({
-      id: `transition.${index + 1}`,
-      fromClusterId: cluster.id,
-      toClusterId: actionClusters[index + 1]!.id,
-      probability: 0.8,
-      evidence: []
-    }));
-    const model: LearnedTaskModel = {
-      schemaVersion: "0.1",
-      learnedTaskModelId: `model.${safeSegment(taskId)}.${Date.now()}`,
-      taskId,
-      version: "0.1",
-      actionClusters,
-      transitions,
-      invariants: miningRun.conditionCandidates.slice(0, 5).map((candidate) => ({ signalPath: candidate.signalPath, operator: "exists" })),
-      unresolvedQuestions: miningRun.issues.map((issue, index) => ({ id: `question.${index + 1}`, question: issue, severity: "important", evidence: [] })),
-      sourceRecordings: [String(miningRun.metadata?.recordingId ?? "")].filter(Boolean),
-      sourceMiningRuns: [miningRun.miningRunId],
-      generatedAt: Date.now()
-    };
+    const model = createTaskDraftModelFromMiningRun(miningRun, input.taskId);
     await this.repositories.learnedTaskModels.put(model);
     await this.writePipelineArtifact(input.projectId, "learnedTaskModels", model.learnedTaskModelId, model as unknown as JsonObject);
     return model;
   }
 
-  async proposePolicyFromModel(input: { projectId: string; learnedTaskModelId?: string }): Promise<PolicyProposalArtifact> {
-    const model = input.learnedTaskModelId
+  async proposePolicyFromModel(input: { projectId: string; learnedTaskModelId?: string; miningRunId?: string; recordingId?: string }): Promise<PolicyProposalArtifact> {
+    let model = input.learnedTaskModelId
       ? await this.repositories.learnedTaskModels.get(input.learnedTaskModelId) ?? await this.readPipelineArtifact<LearnedTaskModel>(input.projectId, "learnedTaskModels", input.learnedTaskModelId)
-      : (await this.listPipelineArtifacts(input.projectId)).learnedTaskModels[0];
-    if (!model) throw new Error("A learned task model is required before proposing a policy.");
+      : null;
+    const artifacts = await this.listPipelineArtifacts(input.projectId);
+    if (!model && input.miningRunId) {
+      const miningRun = artifacts.miningRuns.find((run) => run.miningRunId === input.miningRunId) ?? await this.readPipelineArtifact<SignalMiningResult>(input.projectId, "miningRuns", input.miningRunId);
+      if (miningRun) model = createTaskDraftModelFromMiningRun(miningRun);
+    }
+    if (!model && input.recordingId) {
+      const timelines = await this.listProjectNormalizedTimelines(input.projectId);
+      const timelineIds = new Set(timelines.filter((timeline) => timeline.recordingId === input.recordingId).map((timeline) => timeline.normalizedTimelineId));
+      const miningRun = artifacts.miningRuns.find((run) => run.metadata?.recordingId === input.recordingId || timelineIds.has(run.normalizedTimelineId));
+      if (miningRun) model = createTaskDraftModelFromMiningRun(miningRun);
+    }
+    model ??= artifacts.learnedTaskModels[0] ?? null;
+    if (!model) throw new Error("Mined evidence is required before proposing a task.");
     const nodes: PolicyNode[] = model.actionClusters.map((cluster) => ({
       id: `node.${cluster.id}`,
       label: cluster.label,
@@ -505,7 +531,9 @@ export class AutomationStudioService {
       version: "0.1",
       nodes: nodes.map((node) => ({ ...node, outgoingEdges: edges.filter((edge) => edge.fromNodeId === node.id) })),
       edges,
-      sourceEvidence: [{ layer: "learned_task_model", artifactId: model.learnedTaskModelId }],
+      sourceEvidence: model.metadata?.source === "mined_evidence" && model.sourceMiningRuns[0]
+        ? [{ layer: "signal_mining", artifactId: model.sourceMiningRuns[0] }]
+        : [{ layer: "learned_task_model", artifactId: model.learnedTaskModelId }],
       generatedMetadata: { generatedBy: "signal_miner", generatedAt: Date.now(), confidence: average(nodes.map((node) => node.generatedMetadata.confidence ?? 0)) },
       metadata: { learnedTaskModelId: model.learnedTaskModelId }
     };
@@ -515,8 +543,13 @@ export class AutomationStudioService {
       learnedTaskModelId: model.learnedTaskModelId,
       policy,
       status: "draft",
-      summary: `${policy.nodes.length} nodes and ${policy.edges.length} edges proposed from learned evidence.`,
-      generatedAt: Date.now()
+      summary: `${policy.nodes.length} nodes and ${policy.edges.length} edges proposed from mined evidence.`,
+      generatedAt: Date.now(),
+      metadata: {
+        source: input.learnedTaskModelId ? "learned_task_model" : "mined_evidence",
+        recordingId: model.sourceRecordings[0] ?? null,
+        miningRunId: model.sourceMiningRuns[0] ?? null
+      }
     };
     await this.writePipelineArtifact(input.projectId, "policyProposals", proposal.proposalId, proposal as unknown as JsonObject);
     return proposal;
@@ -736,10 +769,14 @@ export class AutomationStudioService {
     const index = await this.readPipelineIndex(projectId);
     const normalizationReviews = await this.readPipelineArtifactList<NormalizationReviewArtifact>(projectId, "normalizationReviews", index.normalizationReviews.map((item) => item.reviewId));
     const miningRuns = await this.readPipelineArtifactList<SignalMiningResult>(projectId, "miningRuns", index.miningRuns.map((item) => item.miningRunId));
+    const evidenceFacts = await this.readPipelineArtifactList<EvidenceFact>(projectId, "evidenceFacts", index.evidenceFacts.map((item) => item.factId));
+    const evidenceObservations = await this.readPipelineArtifactList<EvidenceObservation>(projectId, "evidenceObservations", index.evidenceObservations.map((item) => item.observationId));
+    const stateActionCorrelations = await this.readPipelineArtifactList<StateActionCorrelation>(projectId, "stateActionCorrelations", (index.stateActionCorrelations ?? []).map((item) => item.correlationId));
+    const evidenceClaims = await this.readPipelineArtifactList<EvidenceClaim>(projectId, "evidenceClaims", index.evidenceClaims.map((item) => item.claimId));
     const learnedTaskModels = await this.readPipelineArtifactList<LearnedTaskModel>(projectId, "learnedTaskModels", index.learnedTaskModels.map((item) => item.learnedTaskModelId));
     const policyProposals = await this.readPipelineArtifactList<PolicyProposalArtifact>(projectId, "policyProposals", index.policyProposals.map((item) => item.proposalId));
     const replayResults = await this.readPipelineArtifactList<ReplayResultArtifact>(projectId, "replayResults", index.replayResults.map((item) => item.replayId));
-    return { normalizationReviews, miningRuns, learnedTaskModels, policyProposals, replayResults };
+    return { normalizationReviews, miningRuns, evidenceFacts, evidenceObservations, stateActionCorrelations, evidenceClaims, learnedTaskModels, policyProposals, replayResults };
   }
 
   async listProjects(): Promise<{ categories: AutomationStudioProjectCategory[]; projects: AutomationStudioProject[] }> {
@@ -995,6 +1032,11 @@ export class AutomationStudioService {
       mkdir(path.join(root, "pipeline", "sessions"), { recursive: true }),
       mkdir(path.join(root, "pipeline", "normalization-reviews"), { recursive: true }),
       mkdir(path.join(root, "pipeline", "mining-runs"), { recursive: true }),
+      mkdir(path.join(root, "pipeline", "evidence"), { recursive: true }),
+      mkdir(path.join(root, "pipeline", "evidence", "facts"), { recursive: true }),
+      mkdir(path.join(root, "pipeline", "evidence", "observations"), { recursive: true }),
+      mkdir(path.join(root, "pipeline", "evidence", "correlations"), { recursive: true }),
+      mkdir(path.join(root, "pipeline", "evidence", "claims"), { recursive: true }),
       mkdir(path.join(root, "pipeline", "learned-task-models"), { recursive: true }),
       mkdir(path.join(root, "pipeline", "policy-proposals"), { recursive: true }),
       mkdir(path.join(root, "pipeline", "replay-results"), { recursive: true }),
@@ -1049,6 +1091,10 @@ export class AutomationStudioService {
   private pipelineFolder(kind: PipelineArtifactKind): string {
     if (kind === "normalizationReviews") return "normalization-reviews";
     if (kind === "miningRuns") return "mining-runs";
+    if (kind === "evidenceFacts") return path.join("evidence", "facts");
+    if (kind === "evidenceObservations") return path.join("evidence", "observations");
+    if (kind === "stateActionCorrelations") return path.join("evidence", "correlations");
+    if (kind === "evidenceClaims") return path.join("evidence", "claims");
     if (kind === "learnedTaskModels") return "learned-task-models";
     if (kind === "policyProposals") return "policy-proposals";
     return "replay-results";
@@ -1088,6 +1134,11 @@ export class AutomationStudioService {
       mkdir(this.projectFile(projectId, "pipeline", "sessions", safeSegment(recording.recordingId), "artifacts", "normalized-timelines"), { recursive: true }),
       mkdir(this.projectFile(projectId, "pipeline", "sessions", safeSegment(recording.recordingId), "artifacts", "normalization-reviews"), { recursive: true }),
       mkdir(this.projectFile(projectId, "pipeline", "sessions", safeSegment(recording.recordingId), "artifacts", "mining-runs"), { recursive: true }),
+      mkdir(this.projectFile(projectId, "pipeline", "sessions", safeSegment(recording.recordingId), "artifacts", "evidence"), { recursive: true }),
+      mkdir(this.projectFile(projectId, "pipeline", "sessions", safeSegment(recording.recordingId), "artifacts", "evidence", "facts"), { recursive: true }),
+      mkdir(this.projectFile(projectId, "pipeline", "sessions", safeSegment(recording.recordingId), "artifacts", "evidence", "observations"), { recursive: true }),
+      mkdir(this.projectFile(projectId, "pipeline", "sessions", safeSegment(recording.recordingId), "artifacts", "evidence", "correlations"), { recursive: true }),
+      mkdir(this.projectFile(projectId, "pipeline", "sessions", safeSegment(recording.recordingId), "artifacts", "evidence", "claims"), { recursive: true }),
       mkdir(this.projectFile(projectId, "pipeline", "sessions", safeSegment(recording.recordingId), "artifacts", "learned-task-models"), { recursive: true }),
       mkdir(this.projectFile(projectId, "pipeline", "sessions", safeSegment(recording.recordingId), "artifacts", "policy-proposals"), { recursive: true }),
       mkdir(this.projectFile(projectId, "pipeline", "sessions", safeSegment(recording.recordingId), "artifacts", "replay-results"), { recursive: true })
@@ -1164,8 +1215,10 @@ export class AutomationStudioService {
 
   private async pipelineArtifactRecordingId(projectId: string, kind: PipelineArtifactKind, artifact: JsonObject): Promise<string | null> {
     if (typeof artifact.recordingId === "string") return artifact.recordingId;
+    if ((kind === "evidenceFacts" || kind === "evidenceObservations" || kind === "stateActionCorrelations" || kind === "evidenceClaims") && typeof artifact.recordingId === "string") return artifact.recordingId;
     if (kind === "miningRuns" && artifact.metadata && typeof artifact.metadata === "object" && !Array.isArray(artifact.metadata) && typeof (artifact.metadata as JsonObject).recordingId === "string") return (artifact.metadata as JsonObject).recordingId as string;
     if (kind === "learnedTaskModels" && Array.isArray(artifact.sourceRecordings) && typeof artifact.sourceRecordings[0] === "string") return artifact.sourceRecordings[0];
+    if (kind === "policyProposals" && artifact.metadata && typeof artifact.metadata === "object" && !Array.isArray(artifact.metadata) && typeof (artifact.metadata as JsonObject).recordingId === "string") return (artifact.metadata as JsonObject).recordingId as string;
     if (kind === "policyProposals" && typeof artifact.learnedTaskModelId === "string") {
       const model = await this.readPipelineArtifact<LearnedTaskModel>(projectId, "learnedTaskModels", artifact.learnedTaskModelId);
       return model?.sourceRecordings[0] ?? null;
@@ -1181,6 +1234,10 @@ export class AutomationStudioService {
     await Promise.all([
       ...pipeline.artifacts.normalizationReviewIds.map((id) => rm(this.projectFile(projectId, "pipeline", "normalization-reviews", `${safeSegment(id)}.json`), { force: true })),
       ...pipeline.artifacts.miningRunIds.map((id) => rm(this.projectFile(projectId, "pipeline", "mining-runs", `${safeSegment(id)}.json`), { force: true })),
+      ...(pipeline.artifacts.evidenceFactIds ?? []).map((id) => rm(this.projectFile(projectId, "pipeline", "evidence", "facts", `${safeSegment(id)}.json`), { force: true })),
+      ...(pipeline.artifacts.evidenceObservationIds ?? []).map((id) => rm(this.projectFile(projectId, "pipeline", "evidence", "observations", `${safeSegment(id)}.json`), { force: true })),
+      ...(pipeline.artifacts.stateActionCorrelationIds ?? []).map((id) => rm(this.projectFile(projectId, "pipeline", "evidence", "correlations", `${safeSegment(id)}.json`), { force: true })),
+      ...(pipeline.artifacts.evidenceClaimIds ?? []).map((id) => rm(this.projectFile(projectId, "pipeline", "evidence", "claims", `${safeSegment(id)}.json`), { force: true })),
       ...pipeline.artifacts.learnedTaskModelIds.map((id) => rm(this.projectFile(projectId, "pipeline", "learned-task-models", `${safeSegment(id)}.json`), { force: true })),
       ...pipeline.artifacts.policyProposalIds.map((id) => rm(this.projectFile(projectId, "pipeline", "policy-proposals", `${safeSegment(id)}.json`), { force: true })),
       ...pipeline.artifacts.replayResultIds.map((id) => rm(this.projectFile(projectId, "pipeline", "replay-results", `${safeSegment(id)}.json`), { force: true }))
@@ -1190,6 +1247,10 @@ export class AutomationStudioService {
       pipelines: (index.pipelines ?? []).filter((item) => item.recordingId !== recordingId),
       normalizationReviews: (index.normalizationReviews ?? []).filter((item) => !pipeline.artifacts.normalizationReviewIds.includes(item.reviewId)),
       miningRuns: (index.miningRuns ?? []).filter((item) => !pipeline.artifacts.miningRunIds.includes(item.miningRunId)),
+      evidenceFacts: (index.evidenceFacts ?? []).filter((item) => !(pipeline.artifacts.evidenceFactIds ?? []).includes(item.factId)),
+      evidenceObservations: (index.evidenceObservations ?? []).filter((item) => !(pipeline.artifacts.evidenceObservationIds ?? []).includes(item.observationId)),
+      stateActionCorrelations: (index.stateActionCorrelations ?? []).filter((item) => !(pipeline.artifacts.stateActionCorrelationIds ?? []).includes(item.correlationId)),
+      evidenceClaims: (index.evidenceClaims ?? []).filter((item) => !(pipeline.artifacts.evidenceClaimIds ?? []).includes(item.claimId)),
       learnedTaskModels: (index.learnedTaskModels ?? []).filter((item) => !pipeline.artifacts.learnedTaskModelIds.includes(item.learnedTaskModelId)),
       policyProposals: (index.policyProposals ?? []).filter((item) => !pipeline.artifacts.policyProposalIds.includes(item.proposalId)),
       replayResults: (index.replayResults ?? []).filter((item) => !pipeline.artifacts.replayResultIds.includes(item.replayId))
@@ -1389,7 +1450,7 @@ function normalizePositiveInteger(value: unknown, fallback: number, min: number,
 }
 
 function emptyPipelineIndex(): PipelineIndex {
-  return { pipelines: [], normalizationReviews: [], miningRuns: [], learnedTaskModels: [], policyProposals: [], replayResults: [] };
+  return { pipelines: [], normalizationReviews: [], miningRuns: [], evidenceFacts: [], evidenceObservations: [], stateActionCorrelations: [], evidenceClaims: [], learnedTaskModels: [], policyProposals: [], replayResults: [] };
 }
 
 function upsertPipelineIndex(index: PipelineIndex, kind: PipelineArtifactKind, id: string, generatedAt: number, status?: unknown): PipelineIndex {
@@ -1397,11 +1458,19 @@ function upsertPipelineIndex(index: PipelineIndex, kind: PipelineArtifactKind, i
     ? { reviewId: id, generatedAt }
     : kind === "miningRuns"
       ? { miningRunId: id, generatedAt }
-      : kind === "learnedTaskModels"
-        ? { learnedTaskModelId: id, generatedAt }
-        : kind === "policyProposals"
-          ? { proposalId: id, generatedAt, status: status === "approved" ? "approved" as const : "draft" as const }
-          : { replayId: id, generatedAt };
+      : kind === "evidenceFacts"
+        ? { factId: id, generatedAt }
+      : kind === "evidenceObservations"
+        ? { observationId: id, generatedAt }
+        : kind === "stateActionCorrelations"
+          ? { correlationId: id, generatedAt }
+          : kind === "evidenceClaims"
+            ? { claimId: id, generatedAt }
+            : kind === "learnedTaskModels"
+              ? { learnedTaskModelId: id, generatedAt }
+              : kind === "policyProposals"
+                ? { proposalId: id, generatedAt, status: status === "approved" ? "approved" as const : "draft" as const }
+                : { replayId: id, generatedAt };
   const key = Object.keys(item)[0] as keyof typeof item;
   return {
     ...emptyPipelineIndex(),
@@ -1432,6 +1501,10 @@ function emptyRecordingPipelineArtifacts(): RecordingPipelineDocument["artifacts
     normalizedTimelineIds: [],
     normalizationReviewIds: [],
     miningRunIds: [],
+    evidenceFactIds: [],
+    evidenceObservationIds: [],
+    stateActionCorrelationIds: [],
+    evidenceClaimIds: [],
     learnedTaskModelIds: [],
     policyProposalIds: [],
     replayResultIds: []
@@ -1443,11 +1516,19 @@ function addRecordingPipelineArtifactId(pipeline: RecordingPipelineDocument, kin
     ? "normalizationReviewIds"
     : kind === "miningRuns"
       ? "miningRunIds"
-      : kind === "learnedTaskModels"
-        ? "learnedTaskModelIds"
-        : kind === "policyProposals"
-          ? "policyProposalIds"
-          : "replayResultIds";
+      : kind === "evidenceFacts"
+        ? "evidenceFactIds"
+      : kind === "evidenceObservations"
+        ? "evidenceObservationIds"
+        : kind === "stateActionCorrelations"
+          ? "stateActionCorrelationIds"
+          : kind === "evidenceClaims"
+            ? "evidenceClaimIds"
+            : kind === "learnedTaskModels"
+              ? "learnedTaskModelIds"
+              : kind === "policyProposals"
+                ? "policyProposalIds"
+                : "replayResultIds";
   return {
     ...pipeline,
     status: kind === "replayResults" || kind === "policyProposals" ? "complete" : "processing",
@@ -1461,6 +1542,459 @@ function addRecordingPipelineArtifactId(pipeline: RecordingPipelineDocument, kin
 
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
+}
+
+function createEvidenceFact(
+  miningRunId: string,
+  timeline: NormalizedTimeline,
+  entry: NormalizedTimeline["timeline"][number],
+  domain?: RecordingDomainDefinition
+): EvidenceFact {
+  const domainId = typeof entry.metadata?.domainId === "string" ? entry.metadata.domainId : undefined;
+  const eventType = "eventType" in entry ? entry.eventType : undefined;
+  const eventDefinition = domain && eventType ? domain.events.find((event) => event.eventType === eventType) : undefined;
+  const title = factTitle(entry, eventDefinition?.label);
+  return {
+    schemaVersion: "0.1",
+    factId: `fact.${safeSegment(timeline.recordingId)}.${safeSegment(entry.id)}`,
+    miningRunId,
+    recordingId: timeline.recordingId,
+    normalizedTimelineId: timeline.normalizedTimelineId,
+    kind: entry.type,
+    title,
+    summary: factSummary(entry, title),
+    occurredAt: entry.timestamp,
+    offsetMs: entry.monotonicOffsetMs,
+    source: { layer: "normalized_timeline", artifactId: timeline.normalizedTimelineId, entryId: entry.id },
+    ...(domainId ? { domain: { domainId, ...(eventType ? { eventType } : {}), ...(eventDefinition?.label ? { label: eventDefinition.label } : {}) } } : {}),
+    data: compactJsonObject({
+      ...(entry.type === "action" ? { actionType: entry.actionType, target: entry.target as JsonObject | undefined, parameters: entry.parameters as JsonObject } : {}),
+      ...(entry.type === "domain_event" ? { eventType: entry.eventType, payload: entry.payload } : {}),
+      ...(entry.type === "state_delta" ? { deltas: entry.deltas as unknown as JsonObject[] } : {}),
+      ...(entry.type === "observation" ? { observationType: entry.observationType, signals: entry.signals as JsonObject | undefined, payload: entry.payload } : {}),
+      ...(entry.type === "marker" ? { label: entry.label } : {}),
+      ...(entry.type === "note" ? { noteId: entry.noteId } : {})
+    }),
+    metadata: compactJsonObject({
+      sourceId: entry.sourceId,
+      ...(entry.correlationId ? { correlationId: entry.correlationId } : {}),
+      ...(entry.metadata ?? {})
+    })
+  };
+}
+
+function createEvidenceObservations(fact: EvidenceFact): EvidenceObservation[] {
+  if (fact.kind === "state_delta" && Array.isArray(fact.data?.deltas)) {
+    return fact.data.deltas.map((delta, index) => {
+      const statePath = formatStatePath(String((delta as any).namespace ?? ""), String((delta as any).path ?? ""));
+      const previous = (delta as any).previous;
+      const current = (delta as any).current;
+      return {
+        schemaVersion: "0.1",
+        observationId: `obs.${safeSegment(fact.factId)}.${index + 1}`,
+        miningRunId: fact.miningRunId,
+        recordingId: fact.recordingId,
+        normalizedTimelineId: fact.normalizedTimelineId,
+        kind: "state_changed",
+        title: `${readableStatePath(statePath)} ${readableTokenValue(String((delta as any).change ?? "changed"))}`,
+        summary: `${readableStatePath(statePath)} changed from ${stateValueSummary(previous)} to ${stateValueSummary(current)}.`,
+        factIds: [fact.factId],
+        subject: { type: "state", statePath, label: readableStatePath(statePath) },
+        ...(previous && typeof previous === "object" && !Array.isArray(previous) ? { before: previous as JsonObject } : {}),
+        ...(current && typeof current === "object" && !Array.isArray(current) ? { after: current as JsonObject } : {}),
+        metadata: compactJsonObject({ change: (delta as any).change })
+      };
+    });
+  }
+  const kind: EvidenceObservation["kind"] = fact.kind === "action"
+    ? "action_performed"
+    : fact.kind === "domain_event"
+      ? "domain_event_observed"
+      : fact.kind === "state_checkpoint"
+        ? "state_recorded"
+        : fact.kind === "note"
+          ? "note_added"
+          : fact.kind === "marker"
+            ? "marker_added"
+            : "condition_observed";
+  return [{
+    schemaVersion: "0.1",
+    observationId: `obs.${safeSegment(fact.factId)}`,
+    miningRunId: fact.miningRunId,
+    recordingId: fact.recordingId,
+    normalizedTimelineId: fact.normalizedTimelineId,
+    kind,
+    title: fact.title,
+    summary: fact.summary,
+    factIds: [fact.factId],
+    subject: compactJsonObject({
+      type: fact.kind,
+      ...(fact.domain?.eventType ? { eventType: fact.domain.eventType } : {}),
+      ...(fact.data?.target && typeof fact.data.target === "object" && !Array.isArray(fact.data.target) ? { target: fact.data.target } : {})
+    }) as NonNullable<EvidenceObservation["subject"]>,
+    ...(fact.domain ? { metadata: { domain: fact.domain } } : {})
+  }];
+}
+
+function stateElementDescriptorsForTimeline(timeline: NormalizedTimeline, domains: RecordingDomainDefinition[]): Map<string, StateElementDescriptor> {
+  const descriptors = new Map<string, StateElementDescriptor>();
+  const domainIds = new Set<string>([
+    ...(typeof timeline.metadata?.domainId === "string" ? [timeline.metadata.domainId] : []),
+    ...timeline.timeline.map((entry) => typeof entry.metadata?.domainId === "string" ? entry.metadata.domainId : "").filter(Boolean)
+  ]);
+  for (const domain of domains) {
+    if (domainIds.size && !domainIds.has(domain.domainId)) continue;
+    for (const pathDefinition of domain.statePaths ?? []) {
+      const statePath = formatStatePath(pathDefinition.namespace, pathDefinition.path);
+      descriptors.set(statePath, {
+        namespace: pathDefinition.namespace,
+        path: pathDefinition.path,
+        kind: pathDefinition.elementKind ?? inferStateElementKind(pathDefinition.path, pathDefinition.type),
+        ...(pathDefinition.label !== undefined ? { label: pathDefinition.label } : {}),
+        ...(pathDefinition.description !== undefined ? { description: pathDefinition.description } : {}),
+        ...(pathDefinition.entityId !== undefined ? { entityId: pathDefinition.entityId } : {}),
+        ...(pathDefinition.entityKind !== undefined ? { entityKind: pathDefinition.entityKind } : {}),
+        ...(pathDefinition.stableAcrossSessions !== undefined ? { stableAcrossSessions: pathDefinition.stableAcrossSessions } : {}),
+        ...(pathDefinition.sensitive !== undefined ? { sensitive: pathDefinition.sensitive } : {}),
+        ...(pathDefinition.metadata !== undefined ? { metadata: pathDefinition.metadata } : {})
+      });
+    }
+  }
+  return descriptors;
+}
+
+function createStateActionCorrelations(
+  miningRunId: string,
+  timeline: NormalizedTimeline,
+  actions: NormalizedTimeline["timeline"],
+  descriptors: Map<string, StateElementDescriptor>
+): StateActionCorrelation[] {
+  const correlations: StateActionCorrelation[] = [];
+  const checkpoints = timeline.timeline.filter((entry) => entry.type === "state_checkpoint");
+  const stateDeltas = timeline.timeline.filter((entry) => entry.type === "state_delta");
+  actions.forEach((action, actionIndex) => {
+    const previousAction = actions[actionIndex - 1];
+    const nextAction = actions[actionIndex + 1];
+    const windowStartOffsetMs = previousAction?.monotonicOffsetMs ?? 0;
+    const windowEndOffsetMs = nextAction?.monotonicOffsetMs ?? timeline.timeline[timeline.timeline.length - 1]?.monotonicOffsetMs ?? action.monotonicOffsetMs;
+    const previousCheckpoint = [...checkpoints].reverse().find((checkpoint) => checkpoint.monotonicOffsetMs <= action.monotonicOffsetMs);
+    if (previousCheckpoint?.type === "state_checkpoint") {
+      let index = 0;
+      for (const [statePath, stateValue] of stateValuesFromSnapshot(previousCheckpoint.state)) {
+        if (!isValuableStateElement(statePath, stateValue, descriptors)) continue;
+        const descriptor = descriptorForStateValue(statePath, stateValue, descriptors);
+        correlations.push({
+          schemaVersion: "0.1",
+          correlationId: `corr.${safeSegment(timeline.recordingId)}.${safeSegment(action.id)}.before.${index + 1}`,
+          miningRunId,
+          recordingId: timeline.recordingId,
+          normalizedTimelineId: timeline.normalizedTimelineId,
+          actionEntryId: action.id,
+          statePath,
+          relation: descriptor.kind === "enabled" && stateValue.value === true ? "became_enabled_before_action" : "present_before_action",
+          elementKind: descriptor.kind,
+          descriptor,
+          before: stateValueToJson(stateValue),
+          timing: {
+            beforeMs: Math.max(0, action.monotonicOffsetMs - previousCheckpoint.monotonicOffsetMs),
+            windowStartOffsetMs,
+            actionOffsetMs: action.monotonicOffsetMs,
+            windowEndOffsetMs
+          },
+          support: [
+            { layer: "normalized_timeline", artifactId: timeline.normalizedTimelineId, entryId: previousCheckpoint.id, signalPath: statePath },
+            { layer: "normalized_timeline", artifactId: timeline.normalizedTimelineId, entryId: action.id }
+          ]
+        });
+        index += 1;
+      }
+    }
+    for (const deltaEntry of stateDeltas.filter((entry) => entry.monotonicOffsetMs >= action.monotonicOffsetMs && entry.monotonicOffsetMs <= windowEndOffsetMs)) {
+      if (deltaEntry.type !== "state_delta") continue;
+      deltaEntry.deltas.forEach((delta, deltaIndex) => {
+        const statePath = formatStatePath(delta.namespace, delta.path);
+        const stateValue = delta.current ?? delta.previous;
+        if (!stateValue || !isValuableStateElement(statePath, stateValue, descriptors)) return;
+        const descriptor = descriptorForStateValue(statePath, stateValue, descriptors);
+        correlations.push({
+          schemaVersion: "0.1",
+          correlationId: `corr.${safeSegment(timeline.recordingId)}.${safeSegment(action.id)}.after.${safeSegment(deltaEntry.id)}.${safeSegment(statePath)}.${deltaIndex + 1}`,
+          miningRunId,
+          recordingId: timeline.recordingId,
+          normalizedTimelineId: timeline.normalizedTimelineId,
+          actionEntryId: action.id,
+          statePath,
+          relation: correlationRelationForDelta(delta, descriptor.kind),
+          elementKind: descriptor.kind,
+          descriptor,
+          ...(delta.previous ? { before: stateValueToJson(delta.previous) } : {}),
+          ...(delta.current ? { after: stateValueToJson(delta.current) } : {}),
+          timing: {
+            afterMs: Math.max(0, deltaEntry.monotonicOffsetMs - action.monotonicOffsetMs),
+            windowStartOffsetMs,
+            actionOffsetMs: action.monotonicOffsetMs,
+            windowEndOffsetMs
+          },
+          support: [
+            { layer: "normalized_timeline", artifactId: timeline.normalizedTimelineId, entryId: action.id },
+            { layer: "normalized_timeline", artifactId: timeline.normalizedTimelineId, entryId: deltaEntry.id, signalPath: statePath }
+          ]
+        });
+      });
+    }
+  });
+  return correlations;
+}
+
+function createCorrelationClaim(
+  miningRunId: string,
+  timeline: NormalizedTimeline,
+  correlation: StateActionCorrelation,
+  index: number,
+  observations: EvidenceObservation[]
+): EvidenceClaim {
+  const relatedObservations = observations.filter((observation) => observation.subject?.statePath === correlation.statePath || observation.factIds.some((factId) => correlation.support.some((evidence) => evidence.artifactId === factId)));
+  const isAfter = correlation.relation.includes("after") || correlation.relation === "changed_between_actions";
+  const label = correlation.descriptor?.label ?? readableStatePath(correlation.statePath);
+  return {
+    schemaVersion: "0.1",
+    claimId: `claim.${safeSegment(timeline.recordingId)}.correlation.${index + 1}`,
+    miningRunId,
+    recordingId: timeline.recordingId,
+    normalizedTimelineId: timeline.normalizedTimelineId,
+    claimType: isAfter ? "action_effect" : "candidate_condition",
+    title: isAfter ? `${label} changed after action` : `${label} was present before action`,
+    summary: isAfter
+      ? `${label} ${correlation.relation.replace(/_/g, " ")} within ${correlation.timing.afterMs ?? 0}ms after the action.`
+      : `${label} was observed before the action and may identify context, readiness, or the action target.`,
+    observationIds: relatedObservations.map((observation) => observation.observationId),
+    factIds: uniqueStrings(relatedObservations.flatMap((observation) => observation.factIds)),
+    statement: {
+      subject: { kind: "action", entryId: correlation.actionEntryId },
+      relationship: correlation.relation,
+      object: { kind: "state_element", signalPath: correlation.statePath, elementKind: correlation.elementKind }
+    },
+    confidence: { score: confidenceForCorrelation(correlation), basis: "Inferred from state timing around a recorded action.", sampleSize: 1 },
+    sourceEvidence: [{ layer: "state_action_correlation", artifactId: correlation.correlationId, relationship: correlation.relation }, ...correlation.support],
+    metadata: { correlationId: correlation.correlationId }
+  };
+}
+
+function createTransitionClaims(
+  miningRunId: string,
+  timeline: NormalizedTimeline,
+  actions: NormalizedTimeline["timeline"],
+  factsByEntryId: Map<string, EvidenceFact>,
+  observationsByFactId: Map<string, EvidenceObservation[]>
+): EvidenceClaim[] {
+  return actions.slice(0, -1).map((entry, index) => {
+    const next = actions[index + 1]!;
+    const currentFact = factsByEntryId.get(entry.id);
+    const nextFact = factsByEntryId.get(next.id);
+    const currentObservation = currentFact ? observationsByFactId.get(currentFact.factId)?.[0] : undefined;
+    const nextObservation = nextFact ? observationsByFactId.get(nextFact.factId)?.[0] : undefined;
+    const gapMs = Math.max(0, next.monotonicOffsetMs - entry.monotonicOffsetMs);
+    return {
+      schemaVersion: "0.1",
+      claimId: `claim.${safeSegment(timeline.recordingId)}.transition.${index + 1}`,
+      miningRunId,
+      recordingId: timeline.recordingId,
+      normalizedTimelineId: timeline.normalizedTimelineId,
+      claimType: gapMs >= 250 ? "wait" : "transition",
+      title: gapMs >= 250 ? `Waited ${gapMs}ms before ${nextObservation?.title ?? next.id}` : `${currentObservation?.title ?? entry.id} led to ${nextObservation?.title ?? next.id}`,
+      summary: `${nextObservation?.title ?? "Next action"} occurred ${gapMs}ms after ${currentObservation?.title ?? "the previous action"}.`,
+      observationIds: uniqueStrings([currentObservation?.observationId ?? "", nextObservation?.observationId ?? ""]),
+      factIds: uniqueStrings([currentFact?.factId ?? "", nextFact?.factId ?? ""]),
+      statement: {
+        subject: { kind: "observation", observationId: currentObservation?.observationId ?? null },
+        relationship: gapMs >= 250 ? "followed_after_wait" : "followed_by",
+        object: { kind: "observation", observationId: nextObservation?.observationId ?? null, waitMs: gapMs }
+      },
+      confidence: { score: 0.6, basis: "Observed ordering within one recording.", sampleSize: 1 },
+      sourceEvidence: [
+        { layer: "normalized_timeline", artifactId: timeline.normalizedTimelineId, entryId: entry.id },
+        { layer: "normalized_timeline", artifactId: timeline.normalizedTimelineId, entryId: next.id }
+      ]
+    };
+  });
+}
+
+function factTitle(entry: NormalizedTimeline["timeline"][number], eventLabel?: string): string {
+  if (entry.type === "action") return `Action: ${readableTokenValue(entry.actionType)}`;
+  if (entry.type === "domain_event") return eventLabel ?? `Event: ${readableTokenValue(entry.eventType)}`;
+  if (entry.type === "state_delta") return `State changed: ${entry.deltas.map((delta) => readableStatePath(formatStatePath(delta.namespace, delta.path))).slice(0, 3).join(", ")}`;
+  if (entry.type === "state_checkpoint") return "State checkpoint recorded";
+  if (entry.type === "observation") return `Observation: ${readableTokenValue(entry.observationType)}`;
+  if (entry.type === "marker") return `Marker: ${entry.label}`;
+  return "Note added";
+}
+
+function factSummary(entry: NormalizedTimeline["timeline"][number], title: string): string {
+  if (entry.type === "domain_event" && entry.payload) return `${title} with ${Object.keys(entry.payload).join(", ") || "payload"}.`;
+  if (entry.type === "state_delta") return `${entry.deltas.length} state change${entry.deltas.length === 1 ? "" : "s"} observed.`;
+  if (entry.type === "observation" && entry.signals) return `${Object.keys(entry.signals).length} signal${Object.keys(entry.signals).length === 1 ? "" : "s"} observed.`;
+  return `${title} at ${entry.monotonicOffsetMs}ms.`;
+}
+
+function formatStatePath(namespace: string, pathValue: string): string {
+  return namespace ? `${namespace}.${pathValue}` : pathValue;
+}
+
+function readableStatePath(pathValue: string): string {
+  return pathValue.split(".").filter(Boolean).map(readableTokenValue).join(" / ");
+}
+
+function readableTokenValue(value: string): string {
+  return value.replace(/[_:.-]+/g, " ").replace(/\s+/g, " ").trim().replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Unknown";
+}
+
+function stateValueSummary(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return String(value ?? "missing");
+  const stateValue = value as { value?: unknown };
+  if (stateValue.value === undefined) return "missing";
+  if (typeof stateValue.value === "object") return JSON.stringify(stateValue.value);
+  return String(stateValue.value);
+}
+
+function stateValuesFromSnapshot(snapshot: StateSnapshot): Array<[string, StateValue]> {
+  return Object.entries(snapshot.namespaces).flatMap(([namespace, stateNamespace]) =>
+    Object.entries(stateNamespace.values).map(([pathValue, stateValue]) => [formatStatePath(namespace, pathValue), stateValue] as [string, StateValue])
+  );
+}
+
+function descriptorForStateValue(statePath: string, stateValue: StateValue, descriptors: Map<string, StateElementDescriptor>): StateElementDescriptor {
+  const existing = descriptors.get(statePath);
+  if (existing) return existing;
+  const [namespace, ...pathParts] = statePath.split(".");
+  const pathValue = pathParts.join(".");
+  return {
+    namespace: namespace || "custom",
+    path: pathValue,
+    kind: typeof stateValue.metadata?.elementKind === "string" ? stateValue.metadata.elementKind as StateElementKind : inferStateElementKind(pathValue, stateValue.type),
+    ...(typeof stateValue.semanticRole === "string" ? { description: stateValue.semanticRole } : {}),
+    ...(typeof stateValue.metadata?.label === "string" ? { label: stateValue.metadata.label } : {}),
+    ...(typeof stateValue.metadata?.entityId === "string" ? { entityId: stateValue.metadata.entityId } : {}),
+    ...(typeof stateValue.metadata?.entityKind === "string" ? { entityKind: stateValue.metadata.entityKind } : {}),
+    ...(typeof stateValue.metadata?.stableAcrossSessions === "boolean" ? { stableAcrossSessions: stateValue.metadata.stableAcrossSessions } : {}),
+    ...(stateValue.sensitive !== undefined ? { sensitive: stateValue.sensitive } : {})
+  };
+}
+
+function isValuableStateElement(statePath: string, stateValue: StateValue, descriptors: Map<string, StateElementDescriptor>): boolean {
+  if (stateValue.sensitive || stateValue.comparable === false) return false;
+  const descriptor = descriptorForStateValue(statePath, stateValue, descriptors);
+  if (descriptor.kind === "unknown" || descriptor.kind === "position" || descriptor.kind === "bounds") return false;
+  const normalizedPath = statePath.toLowerCase();
+  if (normalizedPath.includes("mouse") || normalizedPath.includes("cursor") || normalizedPath.includes("hover")) return false;
+  return true;
+}
+
+function inferStateElementKind(pathValue: string, type: StateValue["type"]): StateElementKind {
+  const normalized = pathValue.toLowerCase();
+  if (normalized.includes("selector")) return "selector";
+  if (normalized.includes("testid") || normalized.includes("test_id") || normalized.endsWith("id") || normalized.includes(".id")) return "static_id";
+  if (normalized.includes("internal")) return "internal_id";
+  if (normalized.includes("label")) return "label";
+  if (normalized.includes("text") || normalized.includes("title") || normalized.includes("message")) return "text";
+  if (normalized.includes("status") || normalized.includes("state")) return "status";
+  if (normalized.includes("route")) return "route";
+  if (normalized.includes("url") || normalized.includes("href")) return "url";
+  if (normalized.includes("visible") || normalized.includes("visibility")) return "visibility";
+  if (normalized.includes("enabled") || normalized.includes("disabled")) return "enabled";
+  if (normalized.includes("count") || normalized.includes("total") || normalized.includes("quantity")) return "count";
+  if (type === "point") return "position";
+  if (type === "rectangle") return "bounds";
+  if (type === "entity_ref" || type === "entity_ref_list") return "internal_id";
+  if (type === "json") return "json";
+  if (type === "string") return "text";
+  if (type === "number" || type === "integer") return "count";
+  if (type === "boolean") return "visibility";
+  return "unknown";
+}
+
+function correlationRelationForDelta(delta: StateDelta, kind: StateElementKind): StateActionCorrelation["relation"] {
+  if (delta.change === "added") return "appeared_after_action";
+  if (delta.change === "removed") return "disappeared_after_action";
+  if (kind === "visibility" && delta.current?.value === true) return "became_visible_after_action";
+  return "changed_after_action";
+}
+
+function stateValueToJson(value: StateValue): JsonObject {
+  return compactJsonObject({
+    type: value.type,
+    value: value.value,
+    observedAt: value.observedAt,
+    ...(value.sourceId !== undefined ? { sourceId: value.sourceId } : {}),
+    ...(value.volatility !== undefined ? { volatility: value.volatility } : {}),
+    ...(value.semanticRole !== undefined ? { semanticRole: value.semanticRole } : {}),
+    ...(value.metadata !== undefined ? { metadata: value.metadata } : {})
+  });
+}
+
+function confidenceForCorrelation(correlation: StateActionCorrelation): number {
+  if (correlation.relation === "changed_after_action" || correlation.relation === "appeared_after_action" || correlation.relation === "became_visible_after_action") return 0.68;
+  if (correlation.elementKind === "static_id" || correlation.elementKind === "selector" || correlation.elementKind === "label" || correlation.elementKind === "text") return 0.58;
+  return 0.5;
+}
+
+function compactJsonObject(value: Record<string, unknown>): JsonObject {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as JsonObject;
+}
+
+function createTaskDraftModelFromMiningRun(miningRun: SignalMiningResult, taskId?: string): LearnedTaskModel {
+  const resolvedTaskId = taskId ?? String(miningRun.metadata?.taskId ?? miningRun.metadata?.recordingId ?? "task.learned");
+  const actionClaims = (miningRun.claims ?? []).filter((claim) => claim.claimType === "action_effect");
+  const windows = miningRun.windows.filter((window) => window.actionEntryId);
+  const actionClusters = (actionClaims.length ? actionClaims : windows).map((item, index) => {
+    const claim = "claimId" in item ? item : undefined;
+    const window = "actionEntryId" in item ? item : windows[index];
+    const actionEntryId = typeof claim?.statement.subject.entryId === "string" ? claim.statement.subject.entryId : window?.actionEntryId;
+    const matchingEffects = miningRun.actionEffects.filter((effect) => effect.actionOccurrenceId === actionEntryId);
+    const claimEvidence = claim ? [{ layer: "evidence_claim" as const, artifactId: claim.claimId, relationship: claim.claimType }] : window?.sourceEvidence ?? [];
+    return {
+      id: `cluster.${index + 1}`,
+      label: claim ? claim.title : `Step ${index + 1}`,
+      actionTemplate: { id: `action.${index + 1}`, actionType: "learned.action", parameters: {}, sourceEvidence: claimEvidence },
+      positiveRequirements: (miningRun.claims ?? [])
+        .filter((candidate) => candidate.claimType === "candidate_condition")
+        .slice(0, 3)
+        .map((candidate) => ({ signalPath: String(candidate.statement.subject.signalPath ?? ""), operator: "exists" as const, weight: candidate.confidence.score })),
+      negativeRequirements: [],
+      expectedEffects: matchingEffects.map((effect) => ({
+        signalPath: effect.signalPath,
+        condition: { signalPath: effect.signalPath, operator: "changed" as const },
+        probability: actionClaims.find((candidate) => candidate.statement.object?.signalPath === effect.signalPath && candidate.statement.subject.entryId === actionEntryId)?.confidence.score ?? effect.probability,
+        evidence: actionClaims
+          .filter((candidate) => candidate.statement.object?.signalPath === effect.signalPath && candidate.statement.subject.entryId === actionEntryId)
+          .map((candidate) => ({ layer: "evidence_claim" as const, artifactId: candidate.claimId, relationship: candidate.claimType }))
+      })),
+      possibleSideEffects: [],
+      confidence: claim?.confidence.score ?? Math.min(0.85, 0.45 + matchingEffects.length * 0.05),
+      sourceOccurrences: actionEntryId ? [actionEntryId] : [],
+      ...(claim ? { metadata: { sourceClaimId: claim.claimId, observationIds: claim.observationIds, factIds: claim.factIds } } : {})
+    };
+  });
+  const transitions = actionClusters.slice(0, -1).map((cluster, index) => ({
+    id: `transition.${index + 1}`,
+    fromClusterId: cluster.id,
+    toClusterId: actionClusters[index + 1]!.id,
+    probability: 0.8,
+    evidence: []
+  }));
+  return {
+    schemaVersion: "0.1",
+    learnedTaskModelId: `model.${safeSegment(resolvedTaskId)}.${Date.now()}`,
+    taskId: resolvedTaskId,
+    version: "0.1",
+    actionClusters,
+    transitions,
+    invariants: miningRun.conditionCandidates.slice(0, 5).map((candidate) => ({ signalPath: candidate.signalPath, operator: "exists" })),
+    unresolvedQuestions: miningRun.issues.map((issue, index) => ({ id: `question.${index + 1}`, question: issue, severity: "important", evidence: [] })),
+    sourceRecordings: [String(miningRun.metadata?.recordingId ?? "")].filter(Boolean),
+    sourceMiningRuns: [miningRun.miningRunId],
+    generatedAt: Date.now(),
+    metadata: { source: "mined_evidence" }
+  };
 }
 
 function average(values: number[]): number {

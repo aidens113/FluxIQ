@@ -10,6 +10,7 @@ Docs program in the control panel.
 - [Documentation System](architecture/docs-system.md)
 - [Program Layout](architecture/program-layout.md)
 - [Client Gateway WebSocket Integration](integrations/client-gateway-websocket.md)
+- [Automation Studio Importer Guide](integrations/automation-studio-importing-repos.md)
 - [Global Programs](programs/global-programs.md)
 - [Data And State](operations/data-and-state.md)
 - [UI Theme](architecture/ui-theme.md)

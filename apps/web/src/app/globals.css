@@ -339,6 +339,17 @@ select {
   white-space: nowrap;
 }
 
+.program-domain-label {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: #f4f6f8;
+  color: var(--color-text-muted);
+  padding: 2px 7px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .breadcrumb-separator {
   color: var(--color-text-subtle);
 }

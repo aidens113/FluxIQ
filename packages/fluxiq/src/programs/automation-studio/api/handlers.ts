@@ -310,6 +310,8 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
       await authorizeProgramPin(identityAccess, payload);
       const input: Parameters<AutomationStudioService["proposePolicyFromModel"]>[0] = { projectId: String(payload.projectId ?? "") };
       if (payload.learnedTaskModelId !== undefined) input.learnedTaskModelId = payload.learnedTaskModelId;
+      if (payload.miningRunId !== undefined) input.miningRunId = payload.miningRunId;
+      if (payload.recordingId !== undefined) input.recordingId = payload.recordingId;
       return { ok: true, payload: { proposal: await service.proposePolicyFromModel(input) } };
     }
   });

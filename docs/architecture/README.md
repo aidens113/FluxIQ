@@ -68,6 +68,7 @@ Global program internals use the layout described in
 
 - [Current System](current-system.md)
 - [Automation Studio Architecture](automation-studio.md)
+- [Automation Studio Importer Guide](../integrations/automation-studio-importing-repos.md)
 - [Client Gateway WebSocket Integration](../integrations/client-gateway-websocket.md)
 - [Documentation System](docs-system.md)
 - [Program Layout](program-layout.md)
@@ -121,35 +122,41 @@ By default this creates:
 
 ```text
 .fluxiq/
-  config/
-  data/
-  databases/
-  inputs/
-  logs/
-  outputs/
-  policies/
-  recordings/
-  streams/
-  tmp/
-domains/
-  configs/
-  data/
-  databases/
-  inputs/
-  outputs/
-  programs/
+  {domain-id}/
+    config/
+    data/
+    databases/
+    domains/
+    inputs/
+    logs/
+    outputs/
+    policies/
+    programs/
+    recordings/
+    streams/
+    tmp/
 ```
 
 The `.fluxiq` folder is for host-project runtime state, generated artifacts,
-recordings, and local framework config. The `domains` folder is for downstream
-domain code owned by that project.
+recordings, and local framework config. Runtime state is separated by active
+host domain at the top level: `.fluxiq/{domain-id}/...`. The active domain can
+come from `FluxIQ.create({ domainId })`, `FLUXIQ_DOMAIN_ID`,
+`FLUXIQ_HOST_DOMAIN`, or the first domain passed to `FluxIQ.create({ domains })`.
+The Next.js web runtime also infers the active domain when the importing host
+module registers exactly one domain; hosts with multiple registered domains
+must select one explicitly with `FLUXIQ_DOMAIN_ID` or `FLUXIQ_HOST_DOMAIN`.
+
+When no active host domain is configured, FluxIQ keeps the legacy unscoped
+layout under `.fluxiq/data`, `.fluxiq/databases`, and related folders for
+framework-only use and backward compatibility.
 
 The internal `programs` area contains global framework programs only. Host projects own
 domain-specific programs in the configured domain program root, which defaults
-to `domains/programs`.
+to `.fluxiq/{domain-id}/programs` when an active host domain is configured.
 
 Host projects can set `FLUXIQ_ROOT` to move the framework root without changing
-code. They can also override individual folders with `FLUXIQ_DATA_DIR`,
+code. They can set `FLUXIQ_DOMAIN_ID` or `FLUXIQ_HOST_DOMAIN` to choose the
+active host-domain storage root. They can also override individual folders with `FLUXIQ_DATA_DIR`,
 `FLUXIQ_DOMAINS_DIR`, `FLUXIQ_DOMAIN_PROGRAMS_DIR`, `FLUXIQ_RECORDINGS_DIR`,
 `FLUXIQ_POLICIES_DIR`, `FLUXIQ_LOGS_DIR`, and `FLUXIQ_TEMP_DIR`. Constructor
 options override environment variables. `FluxIQ.create()` loads `.env` and
