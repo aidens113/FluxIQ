@@ -167,8 +167,10 @@ describe("AutomationStudioService recording persistence", () => {
     const approved = await service.approvePolicyProposal({ projectId: project.id, proposalId: proposal.proposalId });
     const replay = await service.replayPolicyAgainstRecording({ projectId: project.id, recordingId: recording.recordingId, policyId: approved.policy.policyId });
     const artifacts = await service.listPipelineArtifacts(project.id);
+    const projectArtifacts = await service.listProjectArtifacts(project.id);
 
     expect(review.waitClips[0]).toMatchObject({ waitMs: 800 });
+    expect(proposal.patch).toMatchObject({ targetTaskId: "task.pipeline", mergeStrategy: "append_or_branch" });
     expect(artifacts.miningRuns.map((item) => item.miningRunId)).toContain(miningRun.miningRunId);
     expect(artifacts.evidenceFacts.length).toBeGreaterThan(0);
     expect(artifacts.evidenceObservations.length).toBeGreaterThan(0);
@@ -176,6 +178,9 @@ describe("AutomationStudioService recording persistence", () => {
     expect(artifacts.learnedTaskModels.map((item) => item.learnedTaskModelId)).toContain(model.learnedTaskModelId);
     expect(artifacts.policyProposals[0]).toMatchObject({ proposalId: proposal.proposalId, status: "approved" });
     expect(replay.policyId).toBe(approved.policy.policyId);
+    expect(projectArtifacts.tasks[0]).toMatchObject({ taskId: "task.pipeline", policyFlowId: "task.task.pipeline.policy-flow" });
+    expect(projectArtifacts.flows[0]).toMatchObject({ ownerKind: "task", ownerId: "task.pipeline" });
+    expect(projectArtifacts.flows[0]?.nodes.length).toBe(approved.policy.nodes.length);
 
     const projectRoot = path.join(tempRoot, "programs", "automation-studio", "projects", project.id);
     await expect(readFile(path.join(projectRoot, "indexes", "pipeline.json"), "utf8")).resolves.toContain(proposal.proposalId);
@@ -259,6 +264,92 @@ describe("AutomationStudioService recording persistence", () => {
     await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.direct-proposal", "derived", "evidence", "correlations", `${miningRun.stateActionCorrelationIds![0]}.json`), "utf8")).resolves.toContain("\"correlationId\"");
     await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.direct-proposal", "derived", "evidence", "claims", `${miningRun.evidenceClaimIds![0]}.json`), "utf8")).resolves.toContain("\"claimId\"");
     await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.direct-proposal", "derived", "proposal", "proposal.json"), "utf8")).resolves.toContain("\"proposalId\"");
+  });
+
+  it("merges proposals from multiple recordings into one task-owned flow", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Branching Proposal Project" });
+    for (const [recordingId, secondStep] of [["recording.branch-a", "branch.a"], ["recording.branch-b", "branch.b"]] as const) {
+      const recording = await service.createRecording({
+        projectId: project.id,
+        recordingId,
+        taskId: "task.branching",
+        startedAt: 100,
+        initialState: { timestamp: 100, namespaces: {} }
+      });
+      await service.appendRecordingEvent({
+        projectId: project.id,
+        recordingId: recording.recordingId,
+        entry: { type: "domain_event", eventType: "shared.start", timestamp: 200, payload: {} }
+      });
+      await service.appendRecordingEvent({
+        projectId: project.id,
+        recordingId: recording.recordingId,
+        entry: { type: "domain_event", eventType: secondStep, timestamp: 300, payload: {} }
+      });
+      await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId, endedAt: 400 });
+      const processed = await service.processFinalizedRecording({ projectId: project.id, recordingId: recording.recordingId });
+      expect(processed.proposal?.patch?.nodes.length).toBe(2);
+      await service.approvePolicyProposal({ projectId: project.id, proposalId: processed.proposal!.proposalId });
+    }
+
+    const artifacts = await service.listProjectArtifacts(project.id);
+    const task = artifacts.tasks.find((item) => item.taskId === "task.branching");
+    const flow = artifacts.flows.find((item) => item.flowId === task?.policyFlowId);
+
+    expect(task?.recordingIds.sort()).toEqual(["recording.branch-a", "recording.branch-b"]);
+    expect(flow?.nodes.map((node) => node.label)).toEqual(expect.arrayContaining(["Event: Shared Start", "Event: Branch A", "Event: Branch B"]));
+    expect(flow?.nodes.length).toBeGreaterThanOrEqual(3);
+    expect(flow?.edges.some((edge) => edge.label === "Recorded branch")).toBe(true);
+  });
+
+  it("applies edited proposal overrides exactly instead of preserving deleted nodes", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Edited Proposal Project" });
+    const recording = await service.createRecording({
+      projectId: project.id,
+      recordingId: "recording.edited-proposal",
+      taskId: "task.edited-proposal",
+      startedAt: 100,
+      initialState: { timestamp: 100, namespaces: {} }
+    });
+    await service.appendRecordingEvent({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entry: { type: "domain_event", eventType: "step.one", timestamp: 200, payload: { step: 1 } }
+    });
+    await service.appendRecordingEvent({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entry: { type: "domain_event", eventType: "step.two", timestamp: 300, payload: { step: 2 } }
+    });
+    await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId, endedAt: 400 });
+    const processed = await service.processFinalizedRecording({ projectId: project.id, recordingId: recording.recordingId });
+    const proposal = processed.proposal!;
+    const approved = await service.approvePolicyProposal({ projectId: project.id, proposalId: proposal.proposalId });
+    expect(approved.policy.nodes.length).toBeGreaterThan(1);
+
+    const override = {
+      ...proposal.policy,
+      policyId: approved.policy.policyId,
+      taskId: "task.edited-proposal",
+      nodes: [],
+      edges: []
+    };
+    const edited = await service.approvePolicyProposal({
+      projectId: project.id,
+      proposalId: proposal.proposalId,
+      targetTaskId: "task.edited-proposal",
+      requireExistingTask: true,
+      policyOverride: override
+    });
+    const artifacts = await service.listProjectArtifacts(project.id);
+    const flow = artifacts.flows.find((item) => item.ownerId === "task.edited-proposal");
+
+    expect(edited.policy.nodes).toEqual([]);
+    expect(edited.policy.edges).toEqual([]);
+    expect(flow?.nodes).toEqual([]);
+    expect(flow?.edges).toEqual([]);
   });
 
   it("proposes a task from sparse mined action evidence without state correlations", async () => {

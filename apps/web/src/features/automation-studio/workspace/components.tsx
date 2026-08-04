@@ -183,7 +183,7 @@ export function AutomationViewContainer(props: {
 }) {
   const Icon = props.icon;
   return (
-    <section className={props.active ? "automation-view-container active" : "automation-view-container"} onMouseDown={props.onActivate}>
+    <section className={props.active ? "automation-view-container active" : "automation-view-container"} data-automation-window-id={props.windowId} onMouseDown={props.onActivate}>
       <header onPointerDown={props.onMoveStart}>
         <div>
           <Icon size={15} aria-hidden />

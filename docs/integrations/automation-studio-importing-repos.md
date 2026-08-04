@@ -130,6 +130,12 @@ mines evidence, and creates a task proposal unless a current proposal already
 exists. Importers should focus on factual event/state quality; they do not need
 to call each mining stage directly in normal operation.
 
+Recordings that are meant to contribute to the same task should use the same
+`taskId` when the recording session is created. FluxIQ carries that task ID
+through normalization, mining, proposal generation, and direct application.
+When multiple approved proposals target the same task, the framework reuses
+matching leading steps and branches at the first divergent proposed step.
+
 In the web panel, stopping or finalizing a recording refreshes the timeline
 automatically and shows stage progress while derived data is being created. The
 generated proposal appears under Proposals in the project hierarchy and remains
@@ -137,6 +143,14 @@ a draft until the user explicitly approves or applies it. Regeneration keeps
 one current proposal per recording and rewrites that proposal artifact rather
 than adding duplicate proposal rows. Deleting a recording deletes its generated
 proposal.
+
+Each proposal contains a preview policy graph and a mergeable graph patch. The
+importing repo does not define patch criticality, confidence, or merge rules;
+it only supplies factual events, factual state, stable IDs/text/selectors, and
+the task identity. Proposal edits are cached by FluxIQ as workspace state until
+the user explicitly applies the proposal to an existing task or saves it as a
+new task. Only that explicit action writes or updates the project task and its
+task-owned flow on the server side.
 
 The importer should expose enough factual state for the framework to compare:
 

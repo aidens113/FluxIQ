@@ -690,9 +690,14 @@ Pipeline files are derived artifacts. They preserve references back to raw
 recordings and normalized timelines so users can audit how a final task policy
 was produced. Deleting a recording deletes the recording session folder,
 including all derived evidence and proposal data, and removes linked entries
-from project indexes.
-Approving a policy proposal writes the generated `PolicyGraph` into the
-canonical policy repository and the project `policies/` folder.
+from project indexes. A proposal stores both a preview `PolicyGraph` and a
+mergeable `PolicyGraphPatch`. The patch is the application contract: it names
+the target task, proposed nodes, proposed edges, source recording IDs, source
+mining run IDs, and the merge strategy.
+Approving a policy proposal merges that patch into the task's current policy
+graph when one exists, writes the merged `PolicyGraph` into the canonical
+policy repository and project `policies/` folder, and writes a task-owned flow
+document for the editable Automation Studio graph.
 
 Project-owned authoring artifacts are now explicit documents instead of only
 hierarchy rows. Each project reserves:
@@ -714,11 +719,14 @@ documents rather than becoming the only source of task/routine identity. Flow
 documents use Automation Studio node definition IDs, per-node parameter values,
 named source/target ports, positions, labels, descriptions, and metadata so the
 visual graph and executor speak the same language.
-Approving a generated proposal writes the approved `PolicyGraph` and creates or
-updates a draft task artifact at `tasks/{taskId}/task.json`. This lets the
-proposal apply path create a real task even when the project did not already
-contain one, and gives the left project hierarchy a file-backed task row to
-open after application.
+Approving a generated proposal writes the approved merged `PolicyGraph`, creates
+or updates a task artifact at `tasks/{taskId}/task.json`, and creates or updates
+the task policy flow at `flows/{flowId}/flow.json`. This only happens from an
+explicit Apply/Save action. Proposal edits before that point are cached in the
+server-backed workspace preferences file, not as task files and not as left-tree
+project artifacts. Multiple recordings for the same task are merged by shared
+prefix: matching leading steps are reused, and the first divergent proposed step
+becomes a recorded branch from the last shared node.
 
 Automation Studio now has a neutral graph executor for these flow documents.
 The executor starts at the `builtin.control.start` node when present, runs
@@ -819,13 +827,17 @@ privileged and should use the same shared PIN authorization path as project and
 category edits.
 
 The proposal UI is the user-facing surface for the final generated draft. It
-shows the source recording, proposal status, generated time, and an ordered
-task-step draft. Each step presents action summaries, requirements, expected
-state results, and the most readable supporting state signals. The UI avoids
-raw node/edge artifact tables by default; transitions are shown inline with
-the step flow when they add useful context. Proposal actions allow applying the
-draft directly, regenerating it from the recording, or processing it with an
-LLM.
+shows the source recording, proposal status, generated time, summary counts,
+and an embedded policy graph editor. The editor uses the same React Flow node
+renderer as the task editor through a small embeddable graph API and includes a
+proposal-local node palette. In proposal-review mode, existing/locked graph
+content can be shown differently from proposed nodes, while proposal edits are
+cached in workspace preferences until the user applies or saves. Selecting a
+proposed node opens a compact inspector with editable node label/description,
+action summaries, requirements, expected state results, and readable supporting
+state signals. Proposal actions apply the current edited draft to the last open
+valid task, save it as a new task, regenerate it from the recording, or process
+it with an LLM.
 
 When a recording is finalized from the timeline, the web UI runs the recording
 authoring stages in order: normalize, mine evidence, and propose task. The
@@ -871,13 +883,13 @@ The internal recording pipeline has three stages:
   after it. Claims are interpretations such as action effects, candidate
   conditions, waits, and transitions; confidence belongs on these claims
   because they are the inferred layer.
-- Propose Task converts mined evidence into a draft `PolicyGraph` without
-  mutating the active policy until the user approves it. Proposed nodes are
-  centered on recorded actions or domain events, while supporting effect and
-  condition claims are attached as evidence for those steps. This prevents one
-  repeated state-effect signal from becoming many duplicate task steps.
-  Supporting claims link back to observations, facts, and normalized/raw
-  recording entries. The current path does not train a model;
+- Propose Task converts mined evidence into a draft `PolicyGraph` plus a
+  `PolicyGraphPatch` without mutating the active task until the user approves
+  it. Proposed nodes are centered on recorded actions or domain events, while
+  supporting effect and condition claims are attached as evidence for those
+  steps. This prevents one repeated state-effect signal from becoming many
+  duplicate task steps. Supporting claims link back to observations, facts, and
+  normalized/raw recording entries. The current path does not train a model;
   any learned-model artifact is an internal compatibility representation rather
   than a user-facing pipeline stage.
 

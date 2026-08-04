@@ -96,6 +96,7 @@ export type AutomationPolicyNodeData = {
   isStart: boolean;
   confidence?: number;
   timeoutMs?: number;
+  reviewTone?: "existing" | "proposed" | "locked";
 };
 export type AutomationRoutineNodeData = {
   nodeDefinitionId?: string;

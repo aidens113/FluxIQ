@@ -212,6 +212,9 @@ export type ProposePolicyFromModelRequest = RecordingProjectRequest & {
 
 export type ApprovePolicyProposalRequest = RecordingProjectRequest & {
   proposalId: string;
+  targetTaskId?: string;
+  policyOverride?: unknown;
+  requireExistingTask?: boolean;
 };
 
 export type ReplayPolicyAgainstRecordingRequest = RecordingProjectRequest & {

@@ -168,8 +168,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const lastActiveGatewayRecordingRef = useRef<string | null>(null);
   const processedStoppedGatewayRecordingsRef = useRef<Set<string>>(new Set());
   const lastRecordingBlockedAuditRef = useRef("");
+  const windowShellRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const pendingLiveWindowGeometriesRef = useRef<Record<string, AutomationWindowPixelGeometry>>({});
   const liveWindowGeometryFrameRef = useRef<number | null>(null);
+  const windowMoveFrameRef = useRef<number | null>(null);
+  const snapPreviewSignatureRef = useRef("");
 
   const refresh = useCallback(async () => setSnapshot(await api.get("snapshot")), [api]);
   const refreshProjectData = useCallback(async (projectId: string) => {
@@ -277,9 +280,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     ?? proposals.find((proposal: any) => selection?.kind === "recording" && proposal.metadata?.recordingId === selection.id)
     ?? proposals[0];
   const selectedTask = projectArtifacts.tasks?.find((task: any) => selection?.kind === "policy" && (task.metadata?.policyId === selection.id || task.taskId === selection.id));
-  const selectedPolicy = policies.find((policy: any) => selection?.kind === "policy" && policy.policyId === selection.id)
-    ?? policies.find((policy: any) => selectedTask?.metadata?.policyId && policy.policyId === selectedTask.metadata.policyId)
-    ?? policies[0];
+  const selectedPolicy = selection?.kind === "policy"
+    ? policies.find((policy: any) => policy.policyId === selection.id)
+      ?? policies.find((policy: any) => selectedTask?.metadata?.policyId && policy.policyId === selectedTask.metadata.policyId)
+      ?? null
+    : policies[0] ?? null;
   const timelineSelectionRecordingId = selection?.kind === "timeline"
     ? timelines.find((timeline: any) => timeline.timeline?.some((entry: any) => entry.id === selection.id))?.recordingId
       ?? recordings.find((recording: any) => recording.timeline?.some((entry: any) => entry.id === selection.id))?.recordingId
@@ -353,9 +358,18 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const activeWindow = workspacePrefs.windows.find((item) => item.id === workspacePrefs.activeWindowId) ?? workspacePrefs.windows[0];
   const activeViewId = activeWindow?.activeViewId ?? "policy-primary";
   const rawPolicyDraft = workspacePrefs.viewStates?.["policy-primary"]?.draftGraph;
-  const policyDraft = rawPolicyDraft && typeof rawPolicyDraft === "object" && !Array.isArray(rawPolicyDraft) && (!selectedPolicy?.policyId || (rawPolicyDraft as { policyId?: unknown }).policyId === selectedPolicy.policyId)
+  const policyDraftTargetId = selectedPolicy?.policyId ?? (selection?.kind === "policy" ? selection.id : "task.draft");
+  const policyDraft = rawPolicyDraft && typeof rawPolicyDraft === "object" && !Array.isArray(rawPolicyDraft) && (rawPolicyDraft as { targetId?: unknown; policyId?: unknown }).targetId === policyDraftTargetId
     ? rawPolicyDraft
     : null;
+  const proposalViewState = workspacePrefs.viewStates?.["proposal-workbench"] ?? {};
+  const proposalDrafts = proposalViewState.proposalDrafts && typeof proposalViewState.proposalDrafts === "object" && !Array.isArray(proposalViewState.proposalDrafts) ? proposalViewState.proposalDrafts as Record<string, any> : {};
+  const selectedProposalDraft = selectedProposal?.proposalId ? proposalDrafts[selectedProposal.proposalId] ?? null : null;
+  const lastOpenTaskId = typeof proposalViewState.lastOpenTaskId === "string" ? proposalViewState.lastOpenTaskId : null;
+  const validLastOpenTask = lastOpenTaskId ? projectArtifacts.tasks?.find((task: any) => task.taskId === lastOpenTaskId) : null;
+  const proposalTargetTaskId = typeof selectedProposalDraft?.targetTaskId === "string" && projectArtifacts.tasks?.some((task: any) => task.taskId === selectedProposalDraft.targetTaskId)
+    ? selectedProposalDraft.targetTaskId
+    : validLastOpenTask?.taskId ?? null;
   const windowsByArea = (area: AutomationWorkspaceArea) => visibleWindows.filter((item) => (item.area ?? "main") === area);
   const canvasForArea = (area: AutomationWorkspaceArea) => area === "right" ? rightWorkspaceCanvasRef.current : mainWorkspaceCanvasRef.current;
   const setSelectionAndFollow = (next: AutomationSelection) => {
@@ -548,7 +562,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   useEffect(() => {
     const hasDirtyDraft = Object.values(workspacePrefs.viewStates ?? {}).some((state) => {
       const draft = state?.draftGraph;
-      return Boolean(draft && typeof draft === "object" && !Array.isArray(draft) && (draft as { dirty?: unknown }).dirty === true);
+      const proposalDrafts = state?.proposalDrafts;
+      const hasDirtyProposalDraft = proposalDrafts && typeof proposalDrafts === "object" && !Array.isArray(proposalDrafts)
+        ? Object.values(proposalDrafts as Record<string, any>).some((item) => item?.dirty === true)
+        : false;
+      return Boolean(draft && typeof draft === "object" && !Array.isArray(draft) && (draft as { dirty?: unknown }).dirty === true) || hasDirtyProposalDraft;
     });
     if (!hasDirtyDraft) return;
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -558,6 +576,24 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     window.addEventListener("beforeunload", warnBeforeUnload);
     return () => window.removeEventListener("beforeunload", warnBeforeUnload);
   }, [workspacePrefs.viewStates]);
+
+  useEffect(() => {
+    if (!selectedTask?.taskId || !projectArtifacts.tasks?.some((task: any) => task.taskId === selectedTask.taskId)) return;
+    setWorkspacePrefs((current) => {
+      const currentState = current.viewStates?.["proposal-workbench"] ?? {};
+      if (currentState.lastOpenTaskId === selectedTask.taskId) return current;
+      return normalizeAutomationWorkspacePrefs({
+        ...current,
+        viewStates: {
+          ...(current.viewStates ?? {}),
+          "proposal-workbench": {
+            ...currentState,
+            lastOpenTaskId: selectedTask.taskId
+          }
+        }
+      });
+    });
+  }, [projectArtifacts.tasks, selectedTask?.taskId]);
 
   useEffect(() => {
     if (!activeProjectId) return;
@@ -1153,7 +1189,29 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     if (result.ok && result.payload) {
       applyPipelineActionPayload(endpoint, result.payload);
       if (endpoint === "approve-policy-proposal" && result.payload.proposal?.policy?.policyId) {
-        setSelection({ kind: "policy", id: result.payload.proposal.policy.policyId });
+        const approvedPolicy = result.payload.proposal.policy;
+        updateWorkspacePrefs((current) => {
+          const policyPrimaryState = current.viewStates?.["policy-primary"] ?? {};
+          const { draftGraph: _draftGraph, ...policyPrimaryWithoutDraft } = policyPrimaryState;
+          return {
+            ...current,
+            viewStates: {
+              ...(current.viewStates ?? {}),
+              "policy-primary": policyPrimaryWithoutDraft
+            }
+          };
+        });
+        setSnapshot((current: any) => current ? {
+          ...current,
+          payload: {
+            ...(current.payload ?? {}),
+            canonical: {
+              ...(current.payload?.canonical ?? {}),
+              policyGraphs: upsertById([approvedPolicy, ...(current.payload?.canonical?.policyGraphs ?? [])], "policyId")
+            }
+          }
+        } : current);
+        setSelection({ kind: "policy", id: approvedPolicy.policyId });
         openView("policy-primary", "preview", "main");
         setAutomationActionStatus("Task draft applied and opened.");
         void refresh();
@@ -1273,10 +1331,34 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         ...(current.viewStates ?? {}),
         "policy-primary": {
           ...(current.viewStates?.["policy-primary"] ?? {}),
-          draftGraph: draft
+          draftGraph: {
+            ...draft,
+            targetId: policyDraftTargetId
+          }
         }
       }
     }));
+  }
+  function updateProposalDraft(proposalId: string, draft: JsonObject) {
+    updateWorkspacePrefs((current) => {
+      const proposalState = current.viewStates?.["proposal-workbench"] ?? {};
+      const drafts = proposalState.proposalDrafts && typeof proposalState.proposalDrafts === "object" && !Array.isArray(proposalState.proposalDrafts)
+        ? proposalState.proposalDrafts as Record<string, unknown>
+        : {};
+      return {
+        ...current,
+        viewStates: {
+          ...(current.viewStates ?? {}),
+          "proposal-workbench": {
+            ...proposalState,
+            proposalDrafts: {
+              ...drafts,
+              [proposalId]: draft
+            }
+          }
+        }
+      };
+    });
   }
   function scheduleLiveWindowGeometry(geometries: Record<string, AutomationWindowPixelGeometry>) {
     pendingLiveWindowGeometriesRef.current = geometries;
@@ -1285,6 +1367,18 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       liveWindowGeometryFrameRef.current = null;
       setLiveWindowGeometries(pendingLiveWindowGeometriesRef.current);
     });
+  }
+  function paintWindowShellGeometry(windowId: string, geometry: AutomationWindowPixelGeometry) {
+    const shell = windowShellRefs.current.get(windowId);
+    if (!shell) return;
+    shell.style.left = `${geometry.x}px`;
+    shell.style.top = `${geometry.y}px`;
+    shell.style.width = `${geometry.widthPx}px`;
+    shell.style.height = `${geometry.heightPx}px`;
+  }
+  function setWindowShellRef(windowId: string, element: HTMLDivElement | null) {
+    if (element) windowShellRefs.current.set(windowId, element);
+    else windowShellRefs.current.delete(windowId);
   }
   function commitWindowPixelGeometries(area: AutomationWorkspaceArea, geometries: Record<string, AutomationWindowPixelGeometry>) {
     if (!Object.keys(geometries).length) return;
@@ -1507,7 +1601,16 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     const startTop = restored.y;
     let latestSnap: ReturnType<typeof automationSnapGeometry> | null = null;
     let latestGeometries: Record<string, AutomationWindowPixelGeometry> = restored !== startWindow ? { [windowItem.id]: restored } : {};
-    if (Object.keys(latestGeometries).length) scheduleLiveWindowGeometry(latestGeometries);
+    let pendingGeometry = latestGeometries[windowItem.id];
+    const applyPendingGeometry = () => {
+      windowMoveFrameRef.current = null;
+      if (!pendingGeometry) return;
+      paintWindowShellGeometry(windowItem.id, pendingGeometry);
+    };
+    if (pendingGeometry) {
+      if (windowMoveFrameRef.current !== null) window.cancelAnimationFrame(windowMoveFrameRef.current);
+      windowMoveFrameRef.current = window.requestAnimationFrame(applyPendingGeometry);
+    }
     const onMove = (moveEvent: PointerEvent) => {
       latestGeometries = {
         [windowItem.id]: clampAutomationWindowPixelGeometry({
@@ -1516,15 +1619,27 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           y: startTop + moveEvent.clientY - startY
         }, canvasWidth, canvasHeight)
       };
-      scheduleLiveWindowGeometry(latestGeometries);
+      pendingGeometry = latestGeometries[windowItem.id];
+      if (windowMoveFrameRef.current === null) windowMoveFrameRef.current = window.requestAnimationFrame(applyPendingGeometry);
       latestSnap = automationSnapGeometry(canvasForArea(windowItem.area ?? "main"), moveEvent.clientX, moveEvent.clientY);
-      setSnapPreview(latestSnap ? { ...latestSnap, area: windowItem.area ?? "main" } : null);
+      const nextSnapSignature = latestSnap ? `${latestSnap.x}:${latestSnap.y}:${latestSnap.widthPx}:${latestSnap.heightPx}` : "";
+      if (snapPreviewSignatureRef.current !== nextSnapSignature) {
+        snapPreviewSignatureRef.current = nextSnapSignature;
+        setSnapPreview(latestSnap ? { ...latestSnap, area: windowItem.area ?? "main" } : null);
+      }
     };
     const onUp = () => {
       const finalGeometries = latestSnap ? { [windowItem.id]: latestSnap } : latestGeometries;
+      if (windowMoveFrameRef.current !== null) {
+        window.cancelAnimationFrame(windowMoveFrameRef.current);
+        windowMoveFrameRef.current = null;
+      }
+      const finalGeometry = finalGeometries[windowItem.id];
+      if (finalGeometry) paintWindowShellGeometry(windowItem.id, finalGeometry);
       commitWindowPixelGeometries(windowItem.area ?? "main", finalGeometries);
       setLiveWindowGeometries({});
       pendingLiveWindowGeometriesRef.current = {};
+      snapPreviewSignatureRef.current = "";
       setSnapPreview(null);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
@@ -1629,14 +1744,21 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         setHierarchyStatus("Name is required.");
         return;
       }
+      const id = `custom-${hierarchyKind}-${Date.now()}`;
+      const sourceId = hierarchyKind === "task" ? `draft.${id}` : undefined;
       setCustomHierarchyNodes((items) => [...items, {
-        id: `custom-${hierarchyKind}-${Date.now()}`,
+        id,
         kind: hierarchyKind,
         category: hierarchyKind === "folder" ? hierarchyCategory : hierarchyKind,
         label,
         parentId: hierarchyParentId,
-        viewId: hierarchyKind === "task" ? "policy-primary" : hierarchyKind === "routine" ? "routine-editor" : "config-default"
+        viewId: hierarchyKind === "task" ? "policy-primary" : hierarchyKind === "routine" ? "routine-editor" : "config-default",
+        ...(sourceId ? { sourceId } : {})
       }]);
+      if (sourceId) {
+        setSelection({ kind: "policy", id: sourceId });
+        openView("policy-primary", "preview", "main");
+      }
       setHierarchyStatus(`${label} created.`);
     }
     if (hierarchyAction.action === "delete" && hierarchyAction.node) {
@@ -1706,7 +1828,9 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
               return (
                 <div
                   className="automation-window-shell"
+                  data-automation-window-id={windowItem.id}
                   key={windowItem.id}
+                  ref={(element) => setWindowShellRef(windowItem.id, element)}
                   style={workspacePrefs.maximizedWindowId || isPageFullscreenWindow ? { inset: 0, zIndex: windowItem.zIndex } : { left: liveGeometry?.x ?? renderedWindow.x, top: liveGeometry?.y ?? renderedWindow.y, width: liveGeometry?.widthPx ?? renderedWindow.widthPx, height: liveGeometry?.heightPx ?? renderedWindow.heightPx, zIndex: windowItem.zIndex }}
                 >
                   <AutomationViewContainer
@@ -1738,6 +1862,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                       pipelineArtifacts={pipelineArtifacts}
                       policy={selectedPolicy}
                       policyDraft={policyDraft}
+                      proposalDraft={selectedProposalDraft}
+                      proposalTargetTaskId={proposalTargetTaskId}
                       problems={problems}
                       projectId={activeProjectId}
                       recordings={recordings}
@@ -1766,6 +1892,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                       onNormalizeRecording={normalizeProjectRecording}
                       onPipelineAction={runRecordingPipelineStep}
                       onPolicyDraftChange={updatePolicyDraft}
+                      onProposalDraftChange={updateProposalDraft}
                       onProcessFinalizedRecording={processFinalizedRecording}
                       onRunRecordingPipeline={runRecordingPipeline}
                       onProcessProposalWithLlm={processPipelineProposalWithLlm}

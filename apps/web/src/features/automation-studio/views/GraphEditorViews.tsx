@@ -325,9 +325,9 @@ export function AutomationRoutineView(props: { models: any[]; policies: any[]; s
             }}
             onNodesChange={(changes: NodeChange<Node<AutomationRoutineNodeData>>[]) => isFlowMode ? setRoutineNodes((nodes) => {
               const nextNodes = applyNodeChanges(changes, nodes);
-              setRoutineEdges((edges) => rebalanceAutomationEdgeLanes(edges, nextNodes));
               return nextNodes;
             }) : undefined}
+            onNodeDragStop={(_event, _node, nodes) => setRoutineEdges((edges) => rebalanceAutomationEdgeLanes(edges, nodes))}
             onNodeClick={(_event, node) => {
               setSelectedRoutineNodeId((current) => current === node.id ? current : node.id);
               const key = `node:${node.id}`;
@@ -575,6 +575,8 @@ export function AutomationPolicyCanvas(props: { draft: any; entries: any[]; poli
   const [policyNodes, setPolicyNodes] = useState(graph.nodes);
   const [policyEdges, setPolicyEdges] = useState(graph.edges);
   const lastPolicyDraftSignatureRef = useRef("");
+  const policyDraftSaveSequenceRef = useRef(0);
+  const policyNodeDragActiveRef = useRef(false);
   useEffect(() => {
     setPolicyNodes((current) => syncGraphNodes(current, graph.nodes));
     setPolicyEdges(rebalanceAutomationEdgeLanes(graph.edges, graph.nodes));
@@ -586,14 +588,18 @@ export function AutomationPolicyCanvas(props: { draft: any; entries: any[]; poli
     });
   }, [graph.edges, graph.nodes]);
   useEffect(() => {
-    const signature = JSON.stringify({
-      policyId: props.policy?.policyId ?? props.draft?.policyId ?? "draft",
-      nodes: policyNodes,
-      edges: policyEdges
-    });
-    if (signature === lastPolicyDraftSignatureRef.current) return;
-    lastPolicyDraftSignatureRef.current = signature;
+    if (policyNodeDragActiveRef.current) return;
+    const sequence = policyDraftSaveSequenceRef.current + 1;
+    policyDraftSaveSequenceRef.current = sequence;
     const timeout = window.setTimeout(() => {
+      if (sequence !== policyDraftSaveSequenceRef.current) return;
+      const signature = JSON.stringify({
+        policyId: props.policy?.policyId ?? props.draft?.policyId ?? "draft",
+        nodes: policyNodes,
+        edges: policyEdges
+      });
+      if (signature === lastPolicyDraftSignatureRef.current) return;
+      lastPolicyDraftSignatureRef.current = signature;
       props.onDraftChange({
         policyId: props.policy?.policyId ?? props.draft?.policyId ?? "draft",
         taskId: props.policy?.taskId ?? props.draft?.taskId ?? "task.draft",
@@ -760,9 +766,16 @@ export function AutomationPolicyCanvas(props: { draft: any; entries: any[]; poli
             }}
             onNodesChange={(changes: NodeChange<Node<AutomationPolicyNodeData>>[]) => isFlowMode ? setPolicyNodes((nodes) => {
               const nextNodes = applyNodeChanges(changes, nodes);
-              setPolicyEdges((edges) => rebalanceAutomationEdgeLanes(edges, nextNodes));
               return nextNodes;
             }) : undefined}
+            onNodeDragStart={() => {
+              policyNodeDragActiveRef.current = true;
+              policyDraftSaveSequenceRef.current += 1;
+            }}
+            onNodeDragStop={(_event, _node, nodes) => {
+              policyNodeDragActiveRef.current = false;
+              setPolicyEdges((edges) => rebalanceAutomationEdgeLanes(edges, nodes));
+            }}
             onNodeClick={(_event, node) => {
               setSelectedPolicyNodeId((current: string) => current === node.id ? current : node.id);
               const key = `node:${node.id}`;
@@ -798,12 +811,208 @@ export function AutomationPolicyCanvas(props: { draft: any; entries: any[]; poli
   );
 }
 
+export type AutomationPolicyGraphEditorMode = "full-edit" | "readonly" | "proposal-review";
+
+export function AutomationPolicyGraphEditor(props: {
+  className?: string;
+  showPalette?: boolean;
+  mode: AutomationPolicyGraphEditorMode;
+  nodes: Array<Node<AutomationPolicyNodeData>>;
+  edges: Edge[];
+  editableNodeIds?: string[];
+  selectedNodeId?: string;
+  onGraphChange?(graph: { nodes: Array<Node<AutomationPolicyNodeData>>; edges: Edge[] }): void;
+  onNodeSelect?(node: Node<AutomationPolicyNodeData>): void;
+}) {
+  const [nodes, setNodes] = useState(props.nodes);
+  const [edges, setEdges] = useState(props.edges);
+  const [paletteCollapsed, setPaletteCollapsed] = useState(false);
+  const [selectedNodeId, setSelectedNodeId] = useState(props.selectedNodeId ?? "");
+  const [localEditableNodeIds, setLocalEditableNodeIds] = useState<string[]>([]);
+  const [flow, setFlow] = useState<ReactFlowInstance<Node<AutomationPolicyNodeData>, Edge> | null>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+  const nodesRef = useRef(props.nodes);
+  const edgesRef = useRef(props.edges);
+  const lastExternalGraphSignatureRef = useRef("");
+  const editableNodeKey = (props.editableNodeIds ?? []).join("\u0000");
+  const localEditableNodeKey = localEditableNodeIds.join("\u0000");
+  const editableNodeIds = useMemo(() => new Set([...(props.editableNodeIds ?? []), ...localEditableNodeIds]), [editableNodeKey, localEditableNodeKey]);
+  const canEditGraph = props.mode === "full-edit" || props.mode === "proposal-review";
+  const canMoveNode = (node: Node<AutomationPolicyNodeData>) => props.mode === "full-edit" || (props.mode === "proposal-review" && editableNodeIds.has(node.id));
+  const palette = automationEditorPalette
+    .map((group) => ({ ...group, nodes: group.nodes.filter((node) => node.scope === "policy" || node.scope === "both") }))
+    .filter((group) => group.nodes.length > 0);
+  useEffect(() => {
+    const externalSignature = automationEmbeddedGraphSignature(props.nodes, props.edges, props.selectedNodeId ?? "", props.mode, editableNodeKey);
+    if (externalSignature === lastExternalGraphSignatureRef.current) return;
+    lastExternalGraphSignatureRef.current = externalSignature;
+    setSelectedNodeId(props.selectedNodeId ?? "");
+    setLocalEditableNodeIds((current) => {
+      const next = current.filter((id) => props.nodes.some((node) => node.id === id));
+      return sameStringList(current, next) ? current : next;
+    });
+    const nextNodes = props.nodes.map((node) => ({
+      ...node,
+      selected: node.id === props.selectedNodeId,
+      draggable: canMoveNode(node),
+      data: props.mode === "proposal-review" || node.data.reviewTone
+        ? { ...node.data, reviewTone: node.data.reviewTone ?? "proposed" }
+        : node.data
+    }));
+    const nextEdges = rebalanceAutomationEdgeLanes(props.edges, props.nodes);
+    nodesRef.current = nextNodes;
+    edgesRef.current = nextEdges;
+    setNodes(nextNodes);
+    setEdges(nextEdges);
+  }, [props.edges, props.mode, props.nodes, props.selectedNodeId, editableNodeKey]);
+  const emit = (nextNodes: Array<Node<AutomationPolicyNodeData>>, nextEdges: Edge[]) => props.onGraphChange?.({ nodes: nextNodes, edges: nextEdges });
+  const removeNodes = (nodeIds: Set<string>) => {
+    if (!nodeIds.size || !canEditGraph) return;
+    if (props.mode === "proposal-review" && [...nodeIds].some((id) => !editableNodeIds.has(id))) return;
+    const nextNodes = nodesRef.current.filter((node) => !nodeIds.has(node.id));
+    const nextEdges = edgesRef.current.filter((edge) => !nodeIds.has(edge.source) && !nodeIds.has(edge.target));
+    nodesRef.current = nextNodes;
+    edgesRef.current = nextEdges;
+    setNodes(nextNodes);
+    setEdges(nextEdges);
+    emit(nextNodes, nextEdges);
+  };
+  const removeEdge = (edgeId: string) => {
+    if (!edgeId || !canEditGraph) return;
+    const nextEdges = edgesRef.current.filter((edge) => edge.id !== edgeId);
+    edgesRef.current = nextEdges;
+    setEdges(nextEdges);
+    emit(nodesRef.current, nextEdges);
+  };
+  useEffect(() => {
+    function handleDeleteNode(event: Event) {
+      const nodeId = (event as CustomEvent<{ nodeId?: string }>).detail?.nodeId;
+      if (nodeId) removeNodes(new Set([nodeId]));
+    }
+    function handleDeleteEdge(event: Event) {
+      const edgeId = (event as CustomEvent<{ edgeId?: string }>).detail?.edgeId;
+      if (edgeId) removeEdge(edgeId);
+    }
+    window.addEventListener("automation-studio:delete-node", handleDeleteNode);
+    window.addEventListener("automation-studio:delete-edge", handleDeleteEdge);
+    return () => {
+      window.removeEventListener("automation-studio:delete-node", handleDeleteNode);
+      window.removeEventListener("automation-studio:delete-edge", handleDeleteEdge);
+    };
+  }, [canEditGraph, editableNodeKey, localEditableNodeKey, props.mode]);
+  const addNode = (spec: AutomationEditorNodeSpec) => {
+    if (!canEditGraph) return;
+    const id = `proposal-${spec.id}-${Date.now().toString(36)}`;
+    const data: AutomationPolicyNodeData = {
+      nodeDefinitionId: spec.id,
+      label: spec.label,
+      description: spec.description,
+      ...(spec.icon !== undefined ? { icon: spec.icon } : {}),
+      actionTypes: spec.actionTypes ?? [],
+      recovery: spec.family,
+      evidenceCount: 0,
+      readinessCount: spec.inputs.length,
+      successCount: spec.outputs.length,
+      inputs: automationVisualInputPorts(spec.inputs, spec.id),
+      outputs: spec.outputs,
+      parameters: spec.parameters,
+      parameterValues: defaultAutomationParameterValues(spec.parameters),
+      isStart: false,
+      reviewTone: "proposed"
+    };
+    const node: Node<AutomationPolicyNodeData> = {
+      id,
+      type: "policyNode",
+      position: roundedAutomationPosition(spawnAutomationNodePosition(selectedNodeId, nodes, edges, flow, frameRef.current)),
+      draggable: true,
+      data
+    };
+    const nextNodes = [...nodes, node];
+    nodesRef.current = nextNodes;
+    setLocalEditableNodeIds((current) => current.includes(id) ? current : [...current, id]);
+    setNodes(nextNodes);
+    setSelectedNodeId(id);
+    emit(nextNodes, edges);
+  };
+  return (
+    <div className={props.showPalette ? paletteCollapsed ? "automation-graph-embed-shell with-palette palette-collapsed" : "automation-graph-embed-shell with-palette" : "automation-graph-embed-shell"}>
+      <div className={props.className ? `automation-graph-embed ${props.className}` : "automation-graph-embed"} ref={frameRef}>
+        <ReactFlow<Node<AutomationPolicyNodeData>, Edge>
+        fitView
+        fitViewOptions={{ padding: 0.28 }}
+        nodes={nodes}
+        edges={edges}
+        edgeTypes={automationEdgeTypes}
+        nodeTypes={automationNodeTypes}
+        nodesDraggable={props.mode === "full-edit" || props.mode === "proposal-review"}
+        nodesConnectable={canEditGraph}
+        edgesReconnectable={canEditGraph}
+        elementsSelectable
+        deleteKeyCode={canEditGraph ? ["Backspace", "Delete"] : null}
+        minZoom={0.1}
+        nodesFocusable
+        edgesFocusable
+        onInit={setFlow}
+        onNodeClick={(_event, node) => {
+          setSelectedNodeId(node.id);
+          props.onNodeSelect?.(node);
+        }}
+        onNodesChange={(changes: NodeChange<Node<AutomationPolicyNodeData>>[]) => {
+          const allowedChanges = props.mode === "proposal-review"
+            ? changes.filter((change) => !("id" in change) || editableNodeIds.has(change.id))
+            : changes;
+          if (!canEditGraph) return;
+          const nextNodes = applyNodeChanges(allowedChanges, nodesRef.current);
+          const removedNodeIds = new Set(allowedChanges.filter((change) => change.type === "remove").map((change) => change.id));
+          const nextEdges = removedNodeIds.size
+            ? edgesRef.current.filter((edge) => !removedNodeIds.has(edge.source) && !removedNodeIds.has(edge.target))
+            : edgesRef.current;
+          nodesRef.current = nextNodes;
+          edgesRef.current = nextEdges;
+          setNodes(nextNodes);
+          if (nextEdges !== edges) setEdges(nextEdges);
+          const shouldPersist = allowedChanges.some((change) => change.type === "remove");
+          if (shouldPersist) emit(nextNodes, nextEdges);
+        }}
+        onNodeDragStop={() => {
+          const currentNodes = nodesRef.current;
+          const nextEdges = rebalanceAutomationEdgeLanes(edgesRef.current, currentNodes);
+          edgesRef.current = nextEdges;
+          setEdges(nextEdges);
+          emit(currentNodes, nextEdges);
+        }}
+        onEdgesChange={(changes: EdgeChange[]) => {
+          if (!canEditGraph) return;
+          const nextEdges = rebalanceAutomationEdgeLanes(applyEdgeChanges(changes, edgesRef.current), nodesRef.current);
+          edgesRef.current = nextEdges;
+          setEdges(nextEdges);
+          emit(nodesRef.current, nextEdges);
+        }}
+        onConnect={(connection) => {
+          if (!canEditGraph) return;
+          const nextEdges = rebalanceAutomationEdgeLanes(addEdge(createAutomationConnectionEdge(connection, edgesRef.current, "policy-edge", nodesRef.current), edgesRef.current), nodesRef.current);
+          edgesRef.current = nextEdges;
+          setEdges(nextEdges);
+          emit(nodesRef.current, nextEdges);
+        }}
+      >
+        <Background gap={24} size={1} />
+        <MiniMap pannable zoomable />
+        <Controls showInteractive={false} />
+        </ReactFlow>
+      </div>
+      {props.showPalette ? <AutomationNodePalette collapsed={paletteCollapsed} disabled={!canEditGraph} groups={palette} title="Proposal Nodes" onAddNode={addNode} onCollapsedChange={setPaletteCollapsed} /> : null}
+    </div>
+  );
+}
+
 function AutomationPolicyNode({ id, data, selected }: NodeProps) {
   const node = data as AutomationPolicyNodeData;
   const Icon = automationNodeIcon(node.icon, node.recovery);
   const description = node.customDescription || node.description || node.actionTypes.join(", ") || "Policy node";
+  const toneClass = node.reviewTone ? ` ${node.reviewTone}` : "";
   return (
-    <div className={selected ? "automation-flow-node selected" : "automation-flow-node"}>
+    <div className={selected ? `automation-flow-node selected${toneClass}` : `automation-flow-node${toneClass}`}>
       {selected ? <SelectedNodeDeleteButton nodeId={id} /> : null}
       <div className="node-badges">
         {node.isStart ? <span className="node-badge start">Start</span> : null}
@@ -834,6 +1043,31 @@ function AutomationPolicyNode({ id, data, selected }: NodeProps) {
       <footer className="node-runtime-line">12 successes - 1 retry</footer>
     </div>
   );
+}
+
+function automationEmbeddedGraphSignature(nodes: Array<Node<AutomationPolicyNodeData>>, edges: Edge[], selectedNodeId: string, mode: AutomationPolicyGraphEditorMode, editableNodeKey: string): string {
+  return JSON.stringify({
+    selectedNodeId,
+    mode,
+    editableNodeKey,
+    nodes: nodes.map((node) => ({
+      id: node.id,
+      x: Math.round(node.position.x),
+      y: Math.round(node.position.y),
+      label: node.data.label,
+      description: node.data.description,
+      customDescription: node.data.customDescription,
+      reviewTone: node.data.reviewTone
+    })),
+    edges: edges.map((edge) => ({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourceHandle,
+      targetHandle: edge.targetHandle,
+      label: edge.label ?? edge.data?.label
+    }))
+  });
 }
 
 function AutomationRoutineNode({ id, data, selected }: NodeProps) {

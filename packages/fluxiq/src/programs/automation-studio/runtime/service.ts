@@ -104,10 +104,25 @@ export type PolicyProposalArtifact = {
   proposalId: string;
   learnedTaskModelId: string;
   policy: PolicyGraph;
+  patch?: PolicyGraphPatch;
   status: "draft" | "approved";
   summary: string;
   generatedAt: number;
   approvedAt?: number;
+  metadata?: JsonObject;
+};
+
+export type PolicyGraphPatch = {
+  schemaVersion: "0.1";
+  patchId: string;
+  targetTaskId: string;
+  basePolicyId?: string | null;
+  mergeStrategy: "append_or_branch";
+  nodes: PolicyNode[];
+  edges: PolicyGraph["edges"];
+  sourceRecordingIds: string[];
+  sourceMiningRunIds: string[];
+  generatedAt: number;
   metadata?: JsonObject;
 };
 
@@ -557,7 +572,10 @@ export class AutomationStudioService {
       conditionCandidates,
       issues: actions.length ? [] : ["No action/domain events were available to mine."],
       generatedAt: Date.now(),
-      metadata: { recordingId: timeline.recordingId }
+      metadata: {
+        recordingId: timeline.recordingId,
+        ...(timeline.taskId !== undefined ? { taskId: timeline.taskId } : {})
+      }
     };
     await this.writePipelineArtifacts(input.projectId, [
       ...facts.map((fact) => ({ kind: "evidenceFacts" as const, id: fact.factId, artifact: fact as unknown as JsonObject })),
@@ -632,11 +650,28 @@ export class AutomationStudioService {
       generatedMetadata: { generatedBy: "signal_miner", generatedAt: Date.now(), confidence: average(nodes.map((node) => node.generatedMetadata.confidence ?? 0)) },
       metadata: { learnedTaskModelId: model.learnedTaskModelId }
     };
+    const patch: PolicyGraphPatch = {
+      schemaVersion: "0.1",
+      patchId: `patch.${safeSegment(input.recordingId ?? model.sourceRecordings[0] ?? model.learnedTaskModelId)}`,
+      targetTaskId: model.taskId,
+      basePolicyId: null,
+      mergeStrategy: "append_or_branch",
+      nodes: policy.nodes,
+      edges: policy.edges,
+      sourceRecordingIds: model.sourceRecordings,
+      sourceMiningRunIds: model.sourceMiningRuns,
+      generatedAt: Date.now(),
+      metadata: {
+        learnedTaskModelId: model.learnedTaskModelId,
+        proposalKind: "task_graph_patch"
+      }
+    };
     const proposal: PolicyProposalArtifact = {
       schemaVersion: "0.1",
       proposalId: `proposal.${safeSegment(input.recordingId ?? model.sourceRecordings[0] ?? model.learnedTaskModelId)}`,
       learnedTaskModelId: model.learnedTaskModelId,
       policy,
+      patch,
       status: "draft",
       summary: `${policy.nodes.length} nodes and ${policy.edges.length} edges proposed from mined evidence.`,
       generatedAt: Date.now(),
@@ -652,19 +687,73 @@ export class AutomationStudioService {
     return proposal;
   }
 
-  async approvePolicyProposal(input: { projectId: string; proposalId: string }): Promise<PolicyProposalArtifact> {
+  async approvePolicyProposal(input: { projectId: string; proposalId: string; targetTaskId?: string; policyOverride?: PolicyGraph; requireExistingTask?: boolean }): Promise<PolicyProposalArtifact> {
     const proposal = await this.readPipelineArtifact<PolicyProposalArtifact>(input.projectId, "policyProposals", input.proposalId);
     if (!proposal) throw new Error("Unknown policy proposal.");
-    const approved = { ...proposal, status: "approved" as const, approvedAt: Date.now() };
+    const targetTaskId = input.targetTaskId?.trim() || proposal.policy.taskId;
+    const policyInput = input.policyOverride ? { ...input.policyOverride, taskId: targetTaskId } : { ...proposal.policy, taskId: targetTaskId };
+    const proposalForApproval: PolicyProposalArtifact = {
+      ...proposal,
+      policy: policyInput,
+      patch: {
+        ...(proposal.patch ?? {
+          schemaVersion: "0.1" as const,
+          patchId: `patch.${safeSegment(proposal.proposalId)}`,
+          basePolicyId: null,
+          mergeStrategy: "append_or_branch" as const,
+          sourceRecordingIds: [String(proposal.metadata?.recordingId ?? "")].filter(Boolean),
+          sourceMiningRunIds: [String(proposal.metadata?.miningRunId ?? "")].filter(Boolean),
+          generatedAt: proposal.generatedAt
+        }),
+        targetTaskId,
+        nodes: policyInput.nodes,
+        edges: policyInput.edges
+      }
+    };
+    const existingTask = await this.getProjectArtifact(input.projectId, "task", targetTaskId).then((artifact) => artifact as AutomationStudioTaskArtifact).catch(() => null);
+    if (input.requireExistingTask && !existingTask) throw new Error("The target task is no longer available. Open an existing saved task or save this proposal as a new task.");
+    const existingPolicyId = typeof existingTask?.metadata?.policyId === "string" ? existingTask.metadata.policyId : undefined;
+    const existingPolicy = existingPolicyId ? await this.repositories.policyGraphs.get(existingPolicyId).catch(() => null) : null;
+    const mergedPolicy = input.policyOverride
+      ? withPolicyOutgoingEdges({
+        ...policyInput,
+        policyId: existingPolicy?.policyId ?? policyInput.policyId,
+        taskId: targetTaskId,
+        sourceEvidence: uniqueEvidenceReferences([...(existingPolicy?.sourceEvidence ?? []), ...(policyInput.sourceEvidence ?? proposal.policy.sourceEvidence ?? [])]),
+        generatedMetadata: {
+          ...(policyInput.generatedMetadata ?? proposal.policy.generatedMetadata),
+          generatedAt: Date.now()
+        },
+        metadata: {
+          ...(existingPolicy?.metadata ?? {}),
+          ...(policyInput.metadata ?? {}),
+          proposalId: proposal.proposalId,
+          sourceRecordingIds: uniqueStrings([
+            ...asStringArray(existingPolicy?.metadata?.sourceRecordingIds),
+            ...asStringArray(policyInput.metadata?.sourceRecordingIds),
+            String(proposal.metadata?.recordingId ?? "")
+          ])
+        }
+      })
+      : mergeProposalPatchIntoPolicy(existingPolicy, proposalForApproval);
+    const approved = { ...proposalForApproval, policy: mergedPolicy, status: "approved" as const, approvedAt: Date.now() };
     await this.repositories.policyGraphs.put(approved.policy);
     await this.writePipelineArtifact(input.projectId, "policyProposals", approved.proposalId, approved as unknown as JsonObject);
     await new ProgramJsonStore<JsonObject>(this.projectFile(input.projectId, "policies", `${safeSegment(approved.policy.policyId)}.json`), () => ({})).write({ policy: approved.policy as unknown as JsonObject });
-    const existingTask = await this.getProjectArtifact(input.projectId, "task", approved.policy.taskId).then((artifact) => artifact as AutomationStudioTaskArtifact).catch(() => null);
+    const flowInput: Parameters<typeof policyGraphToAutomationStudioFlow>[1] = {
+      flowId: existingTask?.policyFlowId ?? `task.${safeSegment(approved.policy.taskId)}.policy-flow`,
+      existingFlow: existingTask?.policyFlowId ? await this.getProjectArtifact(input.projectId, "flow", existingTask.policyFlowId).then((artifact) => artifact as AutomationStudioFlowDocument).catch(() => null) : null,
+      proposalId: approved.proposalId
+    };
+    if (typeof approved.metadata?.recordingId === "string") flowInput.recordingId = approved.metadata.recordingId;
+    const flow = policyGraphToAutomationStudioFlow(approved.policy, flowInput);
+    const savedFlow = await this.saveProjectArtifact({ projectId: input.projectId, kind: "flow", artifact: flow }) as AutomationStudioFlowDocument;
     const task: AutomationStudioTaskArtifact = {
       schemaVersion: "0.1",
       taskId: approved.policy.taskId,
       name: humanTaskName(approved.policy.taskId),
       description: approved.summary,
+      policyFlowId: savedFlow.flowId,
       recordingIds: uniqueStrings([...(existingTask?.recordingIds ?? []), String(approved.metadata?.recordingId ?? "")]),
       createdAt: existingTask?.createdAt ?? Date.now(),
       updatedAt: Date.now(),
@@ -674,6 +763,7 @@ export class AutomationStudioService {
         source: "policy_proposal",
         proposalId: approved.proposalId,
         policyId: approved.policy.policyId,
+        policyFlowId: savedFlow.flowId,
         approvedAt: approved.approvedAt
       }
     };
@@ -2188,6 +2278,210 @@ function confidenceForCorrelation(correlation: StateActionCorrelation): number {
 
 function compactJsonObject(value: Record<string, unknown>): JsonObject {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as JsonObject;
+}
+
+function mergeProposalPatchIntoPolicy(existingPolicy: PolicyGraph | null | undefined, proposal: PolicyProposalArtifact): PolicyGraph {
+  const patch = proposal.patch ?? {
+    schemaVersion: "0.1" as const,
+    patchId: `patch.${safeSegment(proposal.proposalId)}`,
+    targetTaskId: proposal.policy.taskId,
+    basePolicyId: null,
+    mergeStrategy: "append_or_branch" as const,
+    nodes: proposal.policy.nodes,
+    edges: proposal.policy.edges,
+    sourceRecordingIds: [String(proposal.metadata?.recordingId ?? "")].filter(Boolean),
+    sourceMiningRunIds: [String(proposal.metadata?.miningRunId ?? "")].filter(Boolean),
+    generatedAt: proposal.generatedAt
+  };
+  if (!existingPolicy || existingPolicy.taskId !== patch.targetTaskId) {
+    return withPolicyOutgoingEdges({
+      ...proposal.policy,
+      policyId: existingPolicy?.policyId ?? `policy.${safeSegment(patch.targetTaskId)}.draft`,
+      taskId: patch.targetTaskId,
+      nodes: patch.nodes.map((node) => markProposalNode(node, proposal.proposalId, patch.sourceRecordingIds)),
+      edges: patch.edges,
+      sourceEvidence: uniqueEvidenceReferences([...proposal.policy.sourceEvidence]),
+      metadata: {
+        ...(proposal.policy.metadata ?? {}),
+        proposalId: proposal.proposalId,
+        patchId: patch.patchId,
+        sourceRecordingIds: patch.sourceRecordingIds
+      }
+    });
+  }
+
+  const existingNodes = existingPolicy.nodes.map((node) => ({ ...node }));
+  const existingEdges = existingPolicy.edges.map((edge) => ({ ...edge }));
+  const nodeIds = new Set(existingNodes.map((node) => node.id));
+  const edgeIds = new Set(existingEdges.map((edge) => edge.id));
+  const idMap = new Map<string, string>();
+  let previousResolvedId = "";
+
+  for (const [index, proposedNode] of patch.nodes.entries()) {
+    const matchingPrefixNode = existingNodes[index];
+    if (matchingPrefixNode && policyNodeSignature(matchingPrefixNode) === policyNodeSignature(proposedNode)) {
+      idMap.set(proposedNode.id, matchingPrefixNode.id);
+      previousResolvedId = matchingPrefixNode.id;
+      continue;
+    }
+    const nextId = uniqueGraphId(`${proposedNode.id}.${safeSegment(proposal.proposalId)}`, nodeIds);
+    nodeIds.add(nextId);
+    idMap.set(proposedNode.id, nextId);
+    existingNodes.push(markProposalNode({ ...proposedNode, id: nextId }, proposal.proposalId, patch.sourceRecordingIds));
+    if (previousResolvedId) {
+      const branchEdgeId = uniqueGraphId(`edge.${safeSegment(previousResolvedId)}.${safeSegment(nextId)}`, edgeIds);
+      edgeIds.add(branchEdgeId);
+      existingEdges.push({
+        id: branchEdgeId,
+        fromNodeId: previousResolvedId,
+        toNodeId: nextId,
+        label: index === 0 ? "Start branch" : "Recorded branch",
+        probability: 0.8,
+        metadata: { proposalId: proposal.proposalId, patchId: patch.patchId, branch: true }
+      });
+    }
+    previousResolvedId = nextId;
+  }
+
+  for (const edge of patch.edges) {
+    const fromNodeId = idMap.get(edge.fromNodeId) ?? edge.fromNodeId;
+    const toNodeId = idMap.get(edge.toNodeId) ?? edge.toNodeId;
+    if (!fromNodeId || !toNodeId) continue;
+    const duplicate = existingEdges.some((candidate) => candidate.fromNodeId === fromNodeId && candidate.toNodeId === toNodeId && String(candidate.label ?? "Next") === String(edge.label ?? "Next"));
+    if (duplicate) continue;
+    const nextId = uniqueGraphId(`${edge.id}.${safeSegment(proposal.proposalId)}`, edgeIds);
+    edgeIds.add(nextId);
+    existingEdges.push({
+      ...edge,
+      id: nextId,
+      fromNodeId,
+      toNodeId,
+      metadata: { ...(edge.metadata ?? {}), proposalId: proposal.proposalId, patchId: patch.patchId }
+    });
+  }
+
+  return withPolicyOutgoingEdges({
+    ...existingPolicy,
+    nodes: existingNodes,
+    edges: existingEdges,
+    sourceEvidence: uniqueEvidenceReferences([...existingPolicy.sourceEvidence, ...proposal.policy.sourceEvidence]),
+    generatedMetadata: {
+      ...existingPolicy.generatedMetadata,
+      generatedAt: Date.now(),
+      confidence: average(existingNodes.map((node) => node.generatedMetadata.confidence ?? 0))
+    },
+    metadata: {
+      ...(existingPolicy.metadata ?? {}),
+      lastProposalId: proposal.proposalId,
+      sourceRecordingIds: uniqueStrings([
+        ...asStringArray(existingPolicy.metadata?.sourceRecordingIds),
+        ...patch.sourceRecordingIds
+      ])
+    }
+  });
+}
+
+function withPolicyOutgoingEdges(policy: PolicyGraph): PolicyGraph {
+  return {
+    ...policy,
+    nodes: policy.nodes.map((node) => ({
+      ...node,
+      outgoingEdges: policy.edges.filter((edge) => edge.fromNodeId === node.id)
+    }))
+  };
+}
+
+function markProposalNode(node: PolicyNode, proposalId: string, recordingIds: string[]): PolicyNode {
+  return {
+    ...node,
+    metadata: {
+      ...(node.metadata ?? {}),
+      proposalId,
+      sourceRecordingIds: recordingIds,
+      graphTone: "proposed"
+    }
+  };
+}
+
+function policyNodeSignature(node: PolicyNode): string {
+  const actions = node.actions.map((action) => `${action.actionType}:${JSON.stringify(action.parameters ?? {})}`).join("|");
+  const success = JSON.stringify(node.successConditions ?? {});
+  return `${node.label.toLowerCase().trim()}::${actions}::${success}`;
+}
+
+function uniqueGraphId(seed: string, used: Set<string>): string {
+  const base = safeSegment(seed);
+  let id = base;
+  let index = 2;
+  while (used.has(id)) {
+    id = `${base}.${index}`;
+    index += 1;
+  }
+  return id;
+}
+
+function uniqueEvidenceReferences(items: PolicyGraph["sourceEvidence"]): PolicyGraph["sourceEvidence"] {
+  return uniqueBy(items, (item) => `${item.layer}:${item.artifactId}:${item.entryId ?? ""}:${item.relationship ?? ""}`);
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(String).filter(Boolean) : [];
+}
+
+function policyGraphToAutomationStudioFlow(policy: PolicyGraph, input: { flowId: string; existingFlow?: AutomationStudioFlowDocument | null; proposalId: string; recordingId?: string }): AutomationStudioFlowDocument {
+  const now = Date.now();
+  const flow: AutomationStudioFlowDocument = {
+    schemaVersion: "0.1",
+    flowId: input.flowId,
+    ownerKind: "task",
+    ownerId: policy.taskId,
+    name: humanTaskName(policy.taskId),
+    description: `Task flow generated from policy ${policy.policyId}.`,
+    nodes: policy.nodes.map((node, index) => ({
+      id: node.id,
+      definitionId: node.metadata?.graphTone === "proposed" ? "automation.policy.proposed-step" : "automation.policy.step",
+      label: node.label,
+      ...(node.description !== undefined ? { description: node.description } : {}),
+      position: { x: index * 340, y: index % 2 === 0 ? 120 : 280 },
+      parameterValues: compactJsonObject({
+        actions: node.actions as unknown as JsonObject[],
+        eligibility: node.eligibility as unknown as JsonObject,
+        successConditions: node.successConditions as unknown as JsonObject,
+        timeout: node.timeout as unknown as JsonObject,
+        retry: node.retry as unknown as JsonObject,
+        recovery: node.recovery as unknown as JsonObject
+      }),
+      metadata: {
+        ...(node.metadata ?? {}),
+        policyNodeId: node.id,
+        policyId: policy.policyId,
+        proposalId: input.proposalId,
+        ...(input.recordingId !== undefined ? { recordingId: input.recordingId } : {})
+      }
+    })),
+    edges: policy.edges.map((edge) => ({
+      id: edge.id,
+      sourceNodeId: edge.fromNodeId,
+      targetNodeId: edge.toNodeId,
+      ...(edge.label !== undefined ? { label: edge.label } : {}),
+      metadata: {
+        ...(edge.metadata ?? {}),
+        policyEdgeId: edge.id,
+        policyId: policy.policyId,
+        proposalId: input.proposalId
+      }
+    })),
+    createdAt: input.existingFlow?.createdAt ?? now,
+    updatedAt: now,
+    metadata: {
+      ...(input.existingFlow?.metadata ?? {}),
+      source: "policy_proposal",
+      policyId: policy.policyId,
+      lastProposalId: input.proposalId,
+      ...(input.recordingId !== undefined ? { lastRecordingId: input.recordingId } : {})
+    }
+  };
+  return flow;
 }
 
 function createTaskDraftModelFromMiningRun(miningRun: SignalMiningResult, taskId?: string): LearnedTaskModel {

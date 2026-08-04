@@ -4434,6 +4434,22 @@ select {
   box-shadow: 0 0 0 4px rgb(9 114 211 / 16%), 0 12px 28px rgb(0 28 36 / 16%);
 }
 
+.automation-flow-node.proposed {
+  border-color: #22a06b;
+  background: #f5fff9;
+}
+
+.automation-flow-node.existing,
+.automation-flow-node.locked {
+  border-color: #b8c0ca;
+  background: #f7f8fa;
+}
+
+.automation-flow-node.proposed.selected {
+  border-color: #12805c;
+  box-shadow: 0 0 0 4px rgb(34 160 107 / 16%), 0 12px 28px rgb(0 28 36 / 16%);
+}
+
 .automation-flow-node.routine-node {
   min-height: 166px;
   border-color: #c4cbd3;
@@ -5861,6 +5877,132 @@ select {
   line-height: 1.35;
 }
 
+.automation-proposal-graph-review {
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) minmax(260px, 340px);
+  gap: 8px;
+  min-width: 0;
+  min-height: 520px;
+}
+
+.automation-graph-embed {
+  min-width: 0;
+  min-height: 420px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: #edf2f6;
+}
+
+.automation-graph-embed-shell {
+  display: grid;
+  min-width: 0;
+  min-height: 420px;
+}
+
+.automation-graph-embed-shell.with-palette {
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 8px;
+}
+
+.automation-graph-embed-shell.with-palette.palette-collapsed {
+  grid-template-columns: minmax(0, 1fr) 44px;
+}
+
+.automation-graph-embed-shell.with-palette .automation-node-palette {
+  max-height: 520px;
+  overflow: auto;
+}
+
+.automation-graph-embed-shell.with-palette .automation-node-palette.collapsed {
+  width: 44px;
+}
+
+.automation-graph-embed .react-flow {
+  background:
+    linear-gradient(90deg, rgb(10 31 45 / 3%) 1px, transparent 1px),
+    linear-gradient(rgb(10 31 45 / 3%) 1px, transparent 1px),
+    #edf2f6;
+  background-size: 24px 24px;
+}
+
+.automation-graph-embed .react-flow__minimap {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+}
+
+.automation-proposal-step-inspector {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  min-width: 0;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 10px;
+}
+
+.automation-proposal-step-inspector header {
+  display: grid;
+  gap: 3px;
+}
+
+.automation-proposal-step-inspector header span,
+.automation-proposal-step-inspector header small,
+.automation-proposal-step-inspector > span,
+.automation-proposal-step-list-block strong {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.automation-proposal-step-inspector header strong,
+.automation-proposal-step-inspector p {
+  overflow-wrap: anywhere;
+}
+
+.automation-proposal-step-inspector p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.automation-proposal-node-edit {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.automation-proposal-node-edit label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.automation-proposal-node-edit span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.automation-proposal-node-edit input,
+.automation-proposal-node-edit textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: #fbfcfd;
+  padding: 7px 8px;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 12px;
+}
+
 .automation-proposal-step-list {
   display: grid;
   gap: 8px;
@@ -5949,6 +6091,11 @@ select {
   gap: 5px;
 }
 
+.automation-proposal-evidence-strip.compact {
+  display: grid;
+  align-items: stretch;
+}
+
 .automation-proposal-evidence-strip strong,
 .automation-proposal-evidence-strip span {
   display: inline-flex;
@@ -5964,6 +6111,8 @@ select {
 }
 
 @media (max-width: 820px) {
+  .automation-proposal-graph-review,
+  .automation-graph-embed-shell.with-palette,
   .automation-proposal-step-grid,
   .automation-proposal-step-card header {
     grid-template-columns: 1fr;
