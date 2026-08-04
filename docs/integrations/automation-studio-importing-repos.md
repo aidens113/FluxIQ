@@ -124,6 +124,20 @@ task proposals
   policy nodes linked back to supporting claims
 ```
 
+Finalized recordings are processed automatically by the framework when the
+recording has a project owner. Automation Studio normalizes the recording,
+mines evidence, and creates a task proposal unless a current proposal already
+exists. Importers should focus on factual event/state quality; they do not need
+to call each mining stage directly in normal operation.
+
+In the web panel, stopping or finalizing a recording refreshes the timeline
+automatically and shows stage progress while derived data is being created. The
+generated proposal appears under Proposals in the project hierarchy and remains
+a draft until the user explicitly approves or applies it. Regeneration keeps
+one current proposal per recording and rewrites that proposal artifact rather
+than adding duplicate proposal rows. Deleting a recording deletes its generated
+proposal.
+
 The importer should expose enough factual state for the framework to compare:
 
 - state before an action;
@@ -134,28 +148,27 @@ The importer should expose enough factual state for the framework to compare:
 
 ## Storage
 
-Pipeline artifacts are recording-owned. For a recording pipeline, FluxIQ stores:
+Pipeline artifacts are internal recording-owned derived files. The user-facing
+UI exposes generated proposals and timeline evidence inspection, but FluxIQ
+stores the underlying evidence as:
 
 ```text
-pipeline/sessions/{recordingId}/artifacts/evidence/
-  facts/{factId}.json
-  observations/{observationId}.json
-  correlations/{correlationId}.json
-  claims/{claimId}.json
+recordings/sessions/{recordingId}/derived/
+  index.json
+  normalization/
+    timelines/{normalizedTimelineId}.json
+    reviews/{reviewId}.json
+  evidence/
+    mining-runs/{miningRunId}.json
+    facts/{factId}.json
+    observations/{observationId}.json
+    correlations/{correlationId}.json
+    claims/{claimId}.json
+  proposal/proposal.json
 ```
 
-Aggregate project indexes live under:
-
-```text
-pipeline/evidence/
-  facts/
-  observations/
-  correlations/
-  claims/
-```
-
-Deleting a recording removes its recording-owned pipeline and linked aggregate
-pipeline artifacts.
+Project indexes live under `indexes/` and contain references only. Deleting a
+recording removes its session folder, derived evidence, and generated proposal.
 
 ## Practical Guidance
 

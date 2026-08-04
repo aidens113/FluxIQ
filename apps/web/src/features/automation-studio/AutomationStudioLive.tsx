@@ -8,7 +8,7 @@ import {
   automationHierarchyCategoryLabel,
   automationHierarchySignature,
   collectHierarchyDescendantIds,
-  pipelineHierarchyNodes,
+  proposalHierarchyNodes,
   recordingHierarchyNodes,
   type AutomationCreatableHierarchyKind,
   type AutomationHierarchyAction,
@@ -24,7 +24,8 @@ import { AutomationProjectTree } from "./hierarchy/ProjectTree";
 import type {
   AutomationDockTab,
   AutomationSelection,
-  AutomationViewInstance
+  AutomationViewInstance,
+  RecordingProcessingStatus
 } from "./types";
 import {
   automationLayoutPresetOptions,
@@ -129,9 +130,12 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     sidebarWidth: 280,
     inspectorWidth: 320,
     utilityWindowsMigrated: true,
-    rightSidebarCollapsed: false
+    rightSidebarCollapsed: false,
+    viewStates: {}
   });
   const [dockTab, setDockTab] = useState<AutomationDockTab>("assistant");
+  const [liveWindowGeometries, setLiveWindowGeometries] = useState<Record<string, AutomationWindowPixelGeometry>>({});
+  const [liveInspectorWidth, setLiveInspectorWidth] = useState<number | null>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [windowAdderOpen, setWindowAdderOpen] = useState<AutomationWindowAdderState | null>(null);
   const [layoutPickerOpen, setLayoutPickerOpen] = useState<AutomationLayoutPickerState | null>(null);
@@ -141,7 +145,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const [projectSearch, setProjectSearch] = useState("");
   const [projectTypeFilter, setProjectTypeFilter] = useState<"all" | AutomationHierarchyKind>("all");
   const [selection, setSelection] = useState<AutomationSelection | null>(null);
-  const [recordingTreePrimaryKind, setRecordingTreePrimaryKind] = useState<"recording" | "pipeline" | null>(null);
+  const [recordingTreePrimaryKind, setRecordingTreePrimaryKind] = useState<"recording" | "proposal" | null>(null);
+  const [recordingProcessing, setRecordingProcessing] = useState<RecordingProcessingStatus | null>(null);
   const [gatewaySnapshot, setGatewaySnapshot] = useState<any>({ enabled: false, sessions: [], pairings: [], auditLog: [] });
   const [recordingBlockedAlert, setRecordingBlockedAlert] = useState<{ message: string; clientId?: string; timestamp: number } | null>(null);
   const [hierarchyAction, setHierarchyAction] = useState<AutomationHierarchyAction>(null);
@@ -159,7 +164,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const rightWorkspaceCanvasRef = useRef<HTMLDivElement>(null);
   const lastSavedHierarchySignatureRef = useRef("");
   const lastOpenedGatewayRecordingRef = useRef("");
+  const lastActiveGatewayRecordingRef = useRef<string | null>(null);
+  const processedStoppedGatewayRecordingsRef = useRef<Set<string>>(new Set());
   const lastRecordingBlockedAuditRef = useRef("");
+  const pendingLiveWindowGeometriesRef = useRef<Record<string, AutomationWindowPixelGeometry>>({});
+  const liveWindowGeometryFrameRef = useRef<number | null>(null);
 
   const refresh = useCallback(async () => setSnapshot(await api.get("snapshot")), [api]);
   const refreshProjectData = useCallback(async (projectId: string) => {
@@ -194,8 +203,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       setRecordingDomains([]);
       return;
     }
-    void refreshProjectData(activeProjectId).then(() => undefined);
-  }, [activeProjectId, refreshProjectData]);
+    void refreshProjectRuntimeState(activeProjectId).then(() => undefined);
+  }, [activeProjectId]);
   useEffect(() => {
     function refreshProjectChooser() {
       if (document.visibilityState === "visible" && !activeProjectId) void refreshProjects();
@@ -258,15 +267,20 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const timelines = mergeById(projectTimelines, canonical.normalizedTimelines ?? [], "normalizedTimelineId");
   const registries = canonical.signalRegistries ?? [];
   const models = mergeById(pipelineArtifacts.learnedTaskModels ?? [], canonical.learnedTaskModels ?? [], "learnedTaskModelId");
+  const proposals = pipelineArtifacts.policyProposals ?? [];
   const policies = canonical.policyGraphs ?? [];
   const problems = snapshot?.payload?.problems ?? [];
   const signals = registries.flatMap((registry: any) => (registry.definitions ?? []).map((signal: any) => ({ ...signal, registryId: registry.registryId })));
+  const selectedProposal = proposals.find((proposal: any) => selection?.kind === "proposal" && proposal.proposalId === selection.id)
+    ?? proposals.find((proposal: any) => selection?.kind === "recording" && proposal.metadata?.recordingId === selection.id)
+    ?? proposals[0];
   const selectedPolicy = policies.find((policy: any) => selection?.kind === "policy" && policy.policyId === selection.id) ?? policies[0];
   const timelineSelectionRecordingId = selection?.kind === "timeline"
     ? timelines.find((timeline: any) => timeline.timeline?.some((entry: any) => entry.id === selection.id))?.recordingId
       ?? recordings.find((recording: any) => recording.timeline?.some((entry: any) => entry.id === selection.id))?.recordingId
     : null;
-  const selectedRecording = recordings.find((recording: any) => selection?.kind === "recording" ? recording.recordingId === selection.id : recording.recordingId === timelineSelectionRecordingId) ?? recordings[0];
+  const proposalSelectionRecordingId = selection?.kind === "proposal" ? selection.recordingId ?? selectedProposal?.metadata?.recordingId : null;
+  const selectedRecording = recordings.find((recording: any) => selection?.kind === "recording" ? recording.recordingId === selection.id : recording.recordingId === (timelineSelectionRecordingId ?? proposalSelectionRecordingId)) ?? recordings[0];
   const selectedTimeline = selectedRecording ? timelines.find((timeline: any) => timeline.recordingId === selectedRecording.recordingId) : timelines[0];
   const selectedNode = selection?.kind === "editor-node"
     ? { id: selection.id, ...selection.node, actions: (selection.node.actionTypes ?? []).map((actionType) => ({ actionType })), recovery: { strategy: selection.node.family } }
@@ -279,7 +293,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const viewInstances: AutomationViewInstance[] = [
     { id: "client-gateway", label: "Connected Clients", type: "clients", icon: Radio, state: "live" },
     { id: "timeline-recording", label: `Timeline: ${selectedRecording?.name ?? selectedRecording?.recordingId ?? "Recording"}`, type: "recordings", icon: Radio, state: "live" },
-    { id: "pipeline-workbench", label: "Pipeline", type: "pipeline", icon: Sparkles },
+    { id: "proposal-workbench", label: `Proposal: ${selectedProposal?.policy?.taskId ?? selectedProposal?.proposalId ?? "Task Draft"}`, type: "proposal", icon: Sparkles },
+    { id: "timeline-evidence-inspector", label: `Evidence: ${selectedEntry?.id ?? "Timeline Item"}`, type: "timeline-inspector", icon: Search },
     { id: "policy-primary", label: `Task: ${selectedPolicy?.taskId ?? "Draft"}`, type: "design", icon: GitBranch },
     { id: "runs-history", label: "Runs", type: "runs", icon: History },
     { id: "signals-web", label: "Signals: Relationship Web", type: "signals", icon: Network, state: "warning" },
@@ -292,10 +307,10 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     { id: "config-default", label: "Config: Default", type: "config", icon: SlidersHorizontal }
   ];
   const recordingNodes = recordingHierarchyNodes(recordings);
-  const pipelineNodes = pipelineHierarchyNodes(recordings);
-  const generatedRecordingOwnedHierarchyIds = new Set([...recordingNodes, ...pipelineNodes].map((node) => node.id));
+  const proposalNodes = proposalHierarchyNodes(recordings, proposals);
+  const generatedRecordingOwnedHierarchyIds = new Set([...recordingNodes, ...proposalNodes].map((node) => node.id));
   const hierarchyNodes: AutomationHierarchyNode[] = [
-    ...pipelineNodes,
+    ...proposalNodes,
     ...policies.map((policy: any) => ({
       id: policy.policyId,
       label: policy.taskId ?? policy.policyId,
@@ -334,16 +349,75 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     if (next.kind === "signal") openView("signals-web", "preview");
     if (next.kind === "policy") openView("policy-primary", "preview");
   };
-  const openRecordingPipeline = (recordingId: string) => {
-    setSelection({ kind: "recording", id: recordingId });
-    setRecordingTreePrimaryKind("pipeline");
-    openView("pipeline-workbench", "preview");
+  const openRecordingProposal = (recordingId: string) => {
+    const proposal = latestByGeneratedAt<any>(proposals.filter((item: any) => item.metadata?.recordingId === recordingId));
+    setSelection(proposal ? { kind: "proposal", id: proposal.proposalId, recordingId } : { kind: "recording", id: recordingId });
+    setRecordingTreePrimaryKind("proposal");
+    openView("proposal-workbench", "preview");
   };
   const openRecordingTimeline = (recordingId: string) => {
     setSelection({ kind: "recording", id: recordingId });
     setRecordingTreePrimaryKind("recording");
     openView("timeline-recording", "preview");
   };
+  const openTimelineEvidenceInspector = (recordingId: string, entryId: string) => {
+    setSelection({ kind: "timeline", id: entryId });
+    setRecordingTreePrimaryKind("recording");
+    openView("timeline-evidence-inspector", "preview");
+  };
+
+  async function monitorStoppedGatewayRecording(recordingId: string) {
+    if (!activeProjectId) return;
+    setSelection({ kind: "recording", id: recordingId });
+    setRecordingTreePrimaryKind("recording");
+    openView("timeline-recording", "preview", "main");
+    setRecordingProcessing({
+      recordingId,
+      label: "Recording stopped",
+      detail: "Loading the finalized timeline and waiting for generated proposal data.",
+      progress: 12
+    });
+    setAutomationActionStatus("Recording stopped. Loading final timeline...");
+    for (let attempt = 0; attempt < 75; attempt += 1) {
+      const refreshed = await refreshProjectRuntimeState(activeProjectId);
+      const artifacts = refreshed?.pipelineArtifacts;
+      const proposal = latestByGeneratedAt<any>((artifacts?.policyProposals ?? []).filter((item: any) => item.metadata?.recordingId === recordingId));
+      if (proposal) {
+        setSelection({ kind: "proposal", id: proposal.proposalId, recordingId });
+        setRecordingTreePrimaryKind("proposal");
+        openView("proposal-workbench", "preview");
+        setRecordingProcessing({
+          recordingId,
+          label: "Proposal ready",
+          detail: "The recording was normalized, evidence was mined, and a draft proposal is ready for review.",
+          progress: 100
+        });
+        setAutomationActionStatus("Task proposal generated.");
+        window.setTimeout(() => setRecordingProcessing((current) => current?.recordingId === recordingId && current.progress >= 100 ? null : current), 1_200);
+        return;
+      }
+      const progress = Math.min(90, 18 + attempt);
+      const detail = attempt < 10
+        ? "Loading the final recording timeline."
+        : attempt < 35
+          ? "Waiting for normalization and evidence mining artifacts."
+          : "Waiting for the task proposal artifact.";
+      setRecordingProcessing({
+        recordingId,
+        label: "Generating proposal",
+        detail,
+        progress
+      });
+      await new Promise((resolve) => window.setTimeout(resolve, 1_000));
+    }
+    setRecordingProcessing({
+      recordingId,
+      label: "Proposal still pending",
+      detail: "The final timeline loaded, but no generated proposal artifact was found yet.",
+      progress: 100
+    });
+    setAutomationActionStatus("Proposal generation is still pending. Refresh or regenerate the proposal if it does not appear.");
+  }
 
   useEffect(() => {
     const blocked = [...(gatewaySnapshot.auditLog ?? [])].reverse().find((entry: any) => entry.type === "recording.project_required");
@@ -361,13 +435,22 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     const activeRecordingId = (gatewaySnapshot.sessions ?? [])
       .map((session: any) => session.activeRecordingId)
       .find((recordingId: unknown): recordingId is string => typeof recordingId === "string" && recordingId.length > 0);
-    if (!activeRecordingId || activeRecordingId === lastOpenedGatewayRecordingRef.current) return;
-    lastOpenedGatewayRecordingRef.current = activeRecordingId;
-    void refreshProjectData(activeProjectId).then(() => {
-      setSelection({ kind: "recording", id: activeRecordingId });
-      openView("timeline-recording", "preview", "main");
-      setAutomationActionStatus(`Recording ${activeRecordingId} is live.`);
-    });
+    const previousActiveRecordingId = lastActiveGatewayRecordingRef.current;
+    if (activeRecordingId) {
+      lastActiveGatewayRecordingRef.current = activeRecordingId;
+      if (activeRecordingId === lastOpenedGatewayRecordingRef.current) return;
+      lastOpenedGatewayRecordingRef.current = activeRecordingId;
+      void refreshProjectData(activeProjectId).then(() => {
+        setSelection({ kind: "recording", id: activeRecordingId });
+        openView("timeline-recording", "preview", "main");
+        setAutomationActionStatus(`Recording ${activeRecordingId} is live.`);
+      });
+      return;
+    }
+    if (!previousActiveRecordingId || processedStoppedGatewayRecordingsRef.current.has(previousActiveRecordingId)) return;
+    lastActiveGatewayRecordingRef.current = null;
+    processedStoppedGatewayRecordingsRef.current.add(previousActiveRecordingId);
+    void monitorStoppedGatewayRecording(previousActiveRecordingId);
   }, [activeProjectId, gatewaySnapshot.sessions, refreshProjectData]);
 
   useEffect(() => {
@@ -400,12 +483,12 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
 
   useEffect(() => {
     if (!activeProjectId || !projectRecordings.length) return;
-    const generatedIds = new Set([...recordingHierarchyNodes(projectRecordings), ...pipelineHierarchyNodes(projectRecordings)].map((node) => node.id));
+    const generatedIds = new Set([...recordingHierarchyNodes(projectRecordings), ...proposalHierarchyNodes(projectRecordings, proposals)].map((node) => node.id));
     setDeletedHierarchyIds((current) => {
-      const cleaned = current.filter((id) => !id.startsWith("recordings-client-") && !id.startsWith("pipelines-client-") && !generatedIds.has(id));
+      const cleaned = current.filter((id) => !id.startsWith("recordings-client-") && !id.startsWith("proposals-client-") && !generatedIds.has(id));
       return cleaned.length === current.length ? current : cleaned;
     });
-  }, [activeProjectId, projectRecordings]);
+  }, [activeProjectId, projectRecordings, proposals]);
 
   useEffect(() => {
     if (!activeProjectId || loadedProjectHierarchyId !== activeProjectId) return;
@@ -421,6 +504,28 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     }, 800);
     return () => window.clearTimeout(timeout);
   }, [activeProjectId, loadedProjectHierarchyId, customHierarchyNodes, deletedHierarchyIds, workspacePrefs]);
+
+  useEffect(() => {
+    if (!activeProjectId || loadedProjectHierarchyId !== activeProjectId) return;
+    setWorkspacePrefs((current) => {
+      const activeViewId = current.windows.find((item) => item.id === current.activeWindowId)?.activeViewId;
+      if (!activeViewId) return current;
+      const currentState = current.viewStates?.[activeViewId] ?? {};
+      const nextState = {
+        ...currentState,
+        ...(selection ? { selection } : {}),
+        ...(activeViewId === "workspace-dock" ? { dockTab } : {})
+      };
+      if (JSON.stringify(currentState) === JSON.stringify(nextState)) return current;
+      return normalizeAutomationWorkspacePrefs({
+        ...current,
+        viewStates: {
+          ...(current.viewStates ?? {}),
+          [activeViewId]: nextState
+        }
+      });
+    });
+  }, [activeProjectId, loadedProjectHierarchyId, selection, dockTab]);
 
   useEffect(() => {
     if (!activeProjectId) return;
@@ -662,6 +767,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setCustomHierarchyNodes(result.payload.hierarchy.customHierarchyNodes);
     setDeletedHierarchyIds(result.payload.hierarchy.deletedHierarchyIds);
     setWorkspacePrefs(loadedPrefs);
+    const activeLoadedViewId = loadedPrefs.windows.find((item) => item.id === loadedPrefs.activeWindowId)?.activeViewId;
+    if (activeLoadedViewId) restoreViewState(activeLoadedViewId, loadedPrefs);
     lastSavedHierarchySignatureRef.current = automationHierarchySignature(result.payload.hierarchy.customHierarchyNodes, result.payload.hierarchy.deletedHierarchyIds, loadedPrefs);
     setLoadedProjectHierarchyId(projectId);
     setProjectModal(null);
@@ -683,7 +790,15 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     if (timelineResult.ok) setProjectTimelines(timelineResult.payload?.normalizedTimelines ?? []);
     if (runtimeResult.ok) setRuntimeSessions(runtimeResult.payload?.runtimeSessions ?? []);
     if (pipelineResult.ok) setPipelineArtifacts(pipelineResult.payload ?? { normalizationReviews: [], miningRuns: [], evidenceFacts: [], evidenceObservations: [], stateActionCorrelations: [], evidenceClaims: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
+    if (!pipelineResult.ok) setAutomationActionStatus(pipelineResult.error ?? "Pipeline artifacts could not be loaded.");
     if (domainResult.ok) setRecordingDomains(domainResult.payload?.domains ?? []);
+    return {
+      recordings: recordingResult.ok ? recordingResult.payload?.recordings ?? [] : null,
+      timelines: timelineResult.ok ? timelineResult.payload?.normalizedTimelines ?? [] : null,
+      runtimeSessions: runtimeResult.ok ? runtimeResult.payload?.runtimeSessions ?? [] : null,
+      pipelineArtifacts: pipelineResult.ok ? pipelineResult.payload ?? emptyPipelineArtifacts() : null,
+      domains: domainResult.ok ? domainResult.payload?.domains ?? [] : null
+    };
   }
 
   async function runCurrentAutomationFlow() {
@@ -738,15 +853,128 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       setAutomationActionStatus("PIN is required to finalize a recording.");
       return;
     }
+    setRecordingProcessing({
+      recordingId,
+      label: "Finalizing recording",
+      detail: "Writing the final raw timeline before derived proposal data is generated.",
+      progress: 8
+    });
     setAutomationActionStatus("Finalizing recording...");
     const result = await api.post<{ recording: any }>("finalize-recording", { projectId: activeProjectId, recordingId, authorizationPin });
     if (!result.ok || !result.payload?.recording) {
       setAutomationActionStatus(result.error ?? "Recording could not be finalized.");
+      setRecordingProcessing({
+        recordingId,
+        label: "Finalization failed",
+        detail: result.error ?? "Recording could not be finalized.",
+        progress: 100
+      });
       return;
     }
     setProjectRecordings((current) => [result.payload!.recording, ...current.filter((recording) => recording.recordingId !== recordingId)]);
-    setAutomationActionStatus("Recording finalized.");
+    setAutomationActionStatus("Recording finalized. Generating proposal...");
+    await processFinalizedRecording(recordingId, false, authorizationPin);
     await refreshProjectRuntimeState(activeProjectId);
+  }
+
+  function selectProposalForRecording(recordingId: string, artifacts = pipelineArtifacts) {
+    const proposal = latestByGeneratedAt<any>((artifacts?.policyProposals ?? []).filter((item: any) => item.metadata?.recordingId === recordingId));
+    if (!proposal) return false;
+    setSelection({ kind: "proposal", id: proposal.proposalId, recordingId });
+    setRecordingTreePrimaryKind("proposal");
+    openView("proposal-workbench", "preview");
+    return true;
+  }
+
+  async function processFinalizedRecording(recordingId: string, force = false, providedAuthorizationPin?: string) {
+    if (!activeProjectId || !recordingId) return false;
+    if (!force && selectProposalForRecording(recordingId)) {
+      setAutomationActionStatus("Proposal already current.");
+      return true;
+    }
+    const authorizationPin = providedAuthorizationPin ?? window.prompt(force ? "Enter PIN to regenerate this proposal" : "Enter PIN to generate this proposal") ?? "";
+    if (authorizationPin.length < 4) {
+      setAutomationActionStatus("PIN is required to generate a proposal.");
+      return false;
+    }
+    setRecordingProcessing({
+      recordingId,
+      label: force ? "Regenerating proposal" : "Generating proposal",
+      detail: "Normalizing the raw recording into stable timeline events.",
+      progress: 18
+    });
+    setAutomationActionStatus(force ? "Regenerating task proposal..." : "Generating task proposal...");
+    const normalizeResult = await api.post<{ normalizedTimeline: any }>("normalize-recording", { projectId: activeProjectId, recordingId, authorizationPin });
+    if (!normalizeResult.ok || !normalizeResult.payload?.normalizedTimeline) {
+      setAutomationActionStatus(normalizeResult.error ?? "Recording could not be normalized.");
+      setRecordingProcessing({
+        recordingId,
+        label: "Proposal generation failed",
+        detail: normalizeResult.error ?? "Recording could not be normalized.",
+        progress: 100
+      });
+      return false;
+    }
+    setProjectTimelines((current) => [normalizeResult.payload!.normalizedTimeline, ...current.filter((timeline) => timeline.normalizedTimelineId !== normalizeResult.payload!.normalizedTimeline.normalizedTimelineId)]);
+    setRecordingProcessing({
+      recordingId,
+      label: "Reviewing normalized timeline",
+      detail: "Writing normalization details and raw-to-normalized mappings.",
+      progress: 36
+    });
+    const reviewResult = await api.post<{ review: any }>("create-normalization-review", { projectId: activeProjectId, recordingId, authorizationPin });
+    if (reviewResult.ok && reviewResult.payload?.review) applyPipelineActionPayload("create-normalization-review", reviewResult.payload);
+    setRecordingProcessing({
+      recordingId,
+      label: "Mining evidence",
+      detail: "Extracting facts, observations, state-action correlations, and claims.",
+      progress: 58
+    });
+    const miningResult = await api.post<{ miningRun: any }>("mine-recording-evidence", { projectId: activeProjectId, recordingId, authorizationPin });
+    if (!miningResult.ok || !miningResult.payload?.miningRun) {
+      setAutomationActionStatus(miningResult.error ?? "Evidence could not be mined.");
+      setRecordingProcessing({
+        recordingId,
+        label: "Proposal generation failed",
+        detail: miningResult.error ?? "Evidence could not be mined.",
+        progress: 100
+      });
+      await refreshProjectRuntimeState(activeProjectId);
+      return false;
+    }
+    applyPipelineActionPayload("mine-recording-evidence", miningResult.payload);
+    setRecordingProcessing({
+      recordingId,
+      label: "Creating task proposal",
+      detail: "Converting mined evidence into a draft task policy. The proposal will not be applied automatically.",
+      progress: 82
+    });
+    const proposalResult = await api.post<{ proposal: any }>("propose-policy-from-model", { projectId: activeProjectId, recordingId, miningRunId: miningResult.payload.miningRun.miningRunId, authorizationPin });
+    if (!proposalResult.ok || !proposalResult.payload?.proposal) {
+      setAutomationActionStatus(proposalResult.error ?? "Task proposal could not be generated.");
+      setRecordingProcessing({
+        recordingId,
+        label: "Proposal generation failed",
+        detail: proposalResult.error ?? "Task proposal could not be generated.",
+        progress: 100
+      });
+      await refreshProjectRuntimeState(activeProjectId);
+      return false;
+    }
+    applyPipelineActionPayload("propose-policy-from-model", proposalResult.payload);
+    setSelection({ kind: "proposal", id: proposalResult.payload.proposal.proposalId, recordingId });
+    setRecordingTreePrimaryKind("proposal");
+    openView("proposal-workbench", "preview");
+    setRecordingProcessing({
+      recordingId,
+      label: "Proposal ready",
+      detail: "The draft task proposal has been generated and is waiting for review.",
+      progress: 100
+    });
+    setAutomationActionStatus("Task proposal generated.");
+    window.setTimeout(() => setRecordingProcessing((current) => current?.recordingId === recordingId && current.progress >= 100 ? null : current), 1_200);
+    void refreshProjectRuntimeState(activeProjectId);
+    return true;
   }
 
   async function normalizeProjectRecording(recordingId: string) {
@@ -754,18 +982,26 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     const authorizationPin = window.prompt("Enter PIN to normalize this recording") ?? "";
     if (authorizationPin.length < 4) {
       setAutomationActionStatus("PIN is required to normalize a recording.");
-      return;
+      return false;
     }
     setAutomationActionStatus("Normalizing recording timeline...");
     const result = await api.post<{ normalizedTimeline: any }>("normalize-recording", { projectId: activeProjectId, recordingId, authorizationPin });
     if (!result.ok || !result.payload?.normalizedTimeline) {
       setAutomationActionStatus(result.error ?? "Recording could not be normalized.");
-      return;
+      return false;
     }
     setProjectTimelines((current) => [result.payload!.normalizedTimeline, ...current.filter((timeline) => timeline.normalizedTimelineId !== result.payload!.normalizedTimeline.normalizedTimelineId)]);
-    const reviewResult = await api.post("create-normalization-review", { projectId: activeProjectId, recordingId, authorizationPin });
+    const reviewResult = await api.post<{ review: any }>("create-normalization-review", { projectId: activeProjectId, recordingId, authorizationPin });
+    if (reviewResult.ok && reviewResult.payload?.review) {
+      setPipelineArtifacts((current: any) => ({
+        ...emptyPipelineArtifacts(),
+        ...current,
+        normalizationReviews: upsertById([reviewResult.payload!.review, ...(current.normalizationReviews ?? [])], "reviewId")
+      }));
+    }
     setAutomationActionStatus(reviewResult.ok ? "Recording normalized." : "Recording normalized. Normalization details could not be created.");
-    await refreshProjectRuntimeState(activeProjectId);
+    void refreshProjectRuntimeState(activeProjectId);
+    return true;
   }
 
   async function updateProjectRecording(recordingId: string, changes: JsonObject) {
@@ -840,17 +1076,51 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     await refreshProjectRuntimeState(activeProjectId);
   }
 
+  function applyPipelineActionPayload(endpoint: string, payload: any) {
+    setPipelineArtifacts((current: any) => {
+      const base = { ...emptyPipelineArtifacts(), ...current };
+      if (endpoint === "create-normalization-review" && payload.review) {
+        return { ...base, normalizationReviews: upsertById([payload.review, ...base.normalizationReviews], "reviewId") };
+      }
+      if (endpoint === "mine-recording-evidence" && payload.miningRun) {
+        const miningRun = payload.miningRun;
+        return {
+          ...base,
+          miningRuns: upsertById([miningRun, ...base.miningRuns], "miningRunId"),
+          evidenceFacts: upsertById([...(miningRun.facts ?? []), ...base.evidenceFacts], "factId"),
+          evidenceObservations: upsertById([...(miningRun.observations ?? []), ...base.evidenceObservations], "observationId"),
+          stateActionCorrelations: upsertById([...(miningRun.correlations ?? []), ...base.stateActionCorrelations], "correlationId"),
+          evidenceClaims: upsertById([...(miningRun.claims ?? []), ...base.evidenceClaims], "claimId")
+        };
+      }
+      if (endpoint === "learn-task-model" && payload.learnedTaskModel) {
+        return { ...base, learnedTaskModels: upsertById([payload.learnedTaskModel, ...base.learnedTaskModels], "learnedTaskModelId") };
+      }
+      if (endpoint === "propose-policy-from-model" && payload.proposal) {
+        return { ...base, policyProposals: upsertById([payload.proposal, ...base.policyProposals], "proposalId") };
+      }
+      if (endpoint === "approve-policy-proposal" && payload.proposal) {
+        return { ...base, policyProposals: upsertById([payload.proposal, ...base.policyProposals], "proposalId") };
+      }
+      return base;
+    });
+  }
+
   async function runRecordingPipelineStep(endpoint: string, payload: JsonObject, success: string) {
     if (!activeProjectId) return;
     const authorizationPin = window.prompt("Enter PIN for this pipeline action") ?? "";
     if (authorizationPin.length < 4) {
       setAutomationActionStatus("PIN is required for this pipeline action.");
-      return;
+      return false;
     }
-    setAutomationActionStatus(`${success}...`);
-    const result = await api.post(endpoint, { projectId: activeProjectId, authorizationPin, ...payload });
+    setAutomationActionStatus(pipelineActionRunningMessage(endpoint));
+    const result = await api.post<any>(endpoint, { projectId: activeProjectId, authorizationPin, ...payload });
+    if (result.ok && result.payload) {
+      applyPipelineActionPayload(endpoint, result.payload);
+    }
     setAutomationActionStatus(result.ok ? success : result.error ?? "Pipeline action failed.");
-    await refreshProjectRuntimeState(activeProjectId);
+    void refreshProjectRuntimeState(activeProjectId);
+    return result.ok;
   }
 
   function processPipelineProposalWithLlm(_proposalId: string) {
@@ -869,22 +1139,29 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       { endpoint: "mine-recording-evidence", payload: { recordingId }, status: "Mining recording evidence...", success: "Evidence mined." },
       { endpoint: "propose-policy-from-model", payload: { recordingId }, status: "Creating task draft...", success: "Task draft proposed." }
     ];
+    let miningRunId: string | null = null;
     for (const step of steps) {
       setAutomationActionStatus(step.status);
-      const result = await api.post<{ normalizedTimeline?: any }>(step.endpoint, { projectId: activeProjectId, authorizationPin, ...step.payload });
+      const stepPayload: JsonObject = step.endpoint === "propose-policy-from-model" && miningRunId ? { ...step.payload, miningRunId } : step.payload;
+      const result: { ok: boolean; payload?: any; error?: string } = await api.post<any>(step.endpoint, { projectId: activeProjectId, authorizationPin, ...stepPayload });
       if (!result.ok) {
         setAutomationActionStatus(result.error ?? `${step.endpoint} failed.`);
         await refreshProjectRuntimeState(activeProjectId);
         return;
       }
+      applyPipelineActionPayload(step.endpoint, result.payload ?? {});
       if (step.endpoint === "normalize-recording" && result.payload?.normalizedTimeline) {
         setProjectTimelines((current) => [result.payload!.normalizedTimeline, ...current.filter((timeline) => timeline.normalizedTimelineId !== result.payload!.normalizedTimeline.normalizedTimelineId)]);
-        await api.post("create-normalization-review", { projectId: activeProjectId, recordingId, authorizationPin });
+        const reviewResult = await api.post<{ review: any }>("create-normalization-review", { projectId: activeProjectId, recordingId, authorizationPin });
+        if (reviewResult.ok && reviewResult.payload?.review) applyPipelineActionPayload("create-normalization-review", reviewResult.payload);
+      }
+      if (step.endpoint === "mine-recording-evidence" && result.payload?.miningRun?.miningRunId) {
+        miningRunId = result.payload.miningRun.miningRunId;
       }
       setAutomationActionStatus(step.success);
     }
     setAutomationActionStatus("Recording pipeline complete.");
-    await refreshProjectRuntimeState(activeProjectId);
+    void refreshProjectRuntimeState(activeProjectId);
   }
 
   function closeProject() {
@@ -899,6 +1176,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setRecordingDomains([]);
     setAutomationActionStatus("");
     setWorkspacePrefs(defaultAutomationWorkspacePrefs());
+    setLiveWindowGeometries({});
+    setLiveInspectorWidth(null);
     setPageFullscreenWindowId(null);
     lastSavedHierarchySignatureRef.current = "";
     setSelection(null);
@@ -908,8 +1187,66 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   function updateWorkspacePrefs(updater: (current: AutomationWorkspacePrefs) => AutomationWorkspacePrefs) {
     setWorkspacePrefs((current) => normalizeAutomationWorkspacePrefs(updater(current)));
   }
+  function captureActiveViewState(current: AutomationWorkspacePrefs): AutomationWorkspacePrefs {
+    const activeViewId = current.windows.find((item) => item.id === current.activeWindowId)?.activeViewId;
+    if (!activeViewId) return current;
+    return {
+      ...current,
+      viewStates: {
+        ...(current.viewStates ?? {}),
+        [activeViewId]: {
+          ...(current.viewStates?.[activeViewId] ?? {}),
+          ...(selection ? { selection } : {}),
+          ...(activeViewId === "workspace-dock" ? { dockTab } : {})
+        }
+      }
+    };
+  }
+  function restoreViewState(viewId: string, sourcePrefs = workspacePrefs) {
+    const saved = sourcePrefs.viewStates?.[viewId];
+    const savedSelection = saved?.selection;
+    if (isAutomationSelection(savedSelection)) setSelection(savedSelection);
+    if (viewId === "workspace-dock" && isAutomationDockTab(saved?.dockTab)) setDockTab(saved.dockTab);
+  }
+  function setDockTabAndPersist(tab: AutomationDockTab) {
+    setDockTab(tab);
+    updateWorkspacePrefs((current) => ({
+      ...captureActiveViewState(current),
+      viewStates: {
+        ...(current.viewStates ?? {}),
+        "workspace-dock": {
+          ...(current.viewStates?.["workspace-dock"] ?? {}),
+          ...(selection ? { selection } : {}),
+          dockTab: tab
+        }
+      }
+    }));
+  }
+  function scheduleLiveWindowGeometry(geometries: Record<string, AutomationWindowPixelGeometry>) {
+    pendingLiveWindowGeometriesRef.current = geometries;
+    if (liveWindowGeometryFrameRef.current !== null) return;
+    liveWindowGeometryFrameRef.current = window.requestAnimationFrame(() => {
+      liveWindowGeometryFrameRef.current = null;
+      setLiveWindowGeometries(pendingLiveWindowGeometriesRef.current);
+    });
+  }
+  function commitWindowPixelGeometries(area: AutomationWorkspaceArea, geometries: Record<string, AutomationWindowPixelGeometry>) {
+    if (!Object.keys(geometries).length) return;
+    updateWorkspacePrefs((current) => ({
+      ...current,
+      windows: current.windows.map((item) => {
+        const geometry = geometries[item.id];
+        if (!geometry) return item;
+        const bounds = canvasForArea(area)?.getBoundingClientRect();
+        const canvasWidth = Math.max(1, Math.floor(bounds?.width ?? 1120));
+        const canvasHeight = Math.max(1, Math.floor(bounds?.height ?? 680));
+        return { ...item, ...automationPixelsToRelativeGeometry(geometry, canvasWidth, canvasHeight) };
+      })
+    }));
+  }
   function openView(viewId: string, mode: "preview" | "new-window" = "preview", area: AutomationWorkspaceArea = "main") {
     updateWorkspacePrefs((current) => {
+      current = captureActiveViewState(current);
       if (mode === "new-window") {
         const id = `window-${viewId}-${Date.now()}`;
         const bounds = canvasForArea(area)?.getBoundingClientRect();
@@ -949,7 +1286,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   function addWorkspaceWindow(viewId: string, area: AutomationWorkspaceArea, targetWindowId?: string) {
     if (targetWindowId) {
       updateWorkspacePrefs((current) => ({
-        ...current,
+        ...captureActiveViewState(current),
         activeWindowId: targetWindowId,
         windows: current.windows.map((item) => item.id === targetWindowId
           ? { ...item, activeViewId: viewId, tabs: item.tabs.includes(viewId) ? item.tabs : [...item.tabs, viewId] }
@@ -971,12 +1308,14 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   function closeWindow(windowId: string) {
     if (pageFullscreenWindowId === windowId) setPageFullscreenWindowId(null);
     updateWorkspacePrefs((current) => {
+      current = captureActiveViewState(current);
       const windows = current.windows.filter((item) => item.id !== windowId);
       return { ...current, activeWindowId: windows[0]?.id ?? "", maximizedWindowId: current.maximizedWindowId === windowId ? null : current.maximizedWindowId, windows };
     });
   }
   function closeWindowTab(windowId: string, viewId: string) {
     updateWorkspacePrefs((current) => {
+      current = captureActiveViewState(current);
       const windows = current.windows.map((item) => {
         if (item.id !== windowId) return item;
         const tabs = item.tabs.filter((tab) => tab !== viewId);
@@ -986,10 +1325,13 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     });
   }
   function setWindowTab(windowId: string, viewId: string) {
-    updateWorkspacePrefs((current) => ({ ...current, activeWindowId: windowId, windows: current.windows.map((item) => item.id === windowId ? { ...item, activeViewId: viewId } : item) }));
+    restoreViewState(viewId);
+    updateWorkspacePrefs((current) => ({ ...captureActiveViewState(current), activeWindowId: windowId, windows: current.windows.map((item) => item.id === windowId ? { ...item, activeViewId: viewId } : item) }));
   }
   function activateWindow(windowId: string) {
-    updateWorkspacePrefs((current) => ({ ...current, activeWindowId: windowId, windows: current.windows.map((item) => item.id === windowId ? { ...item, zIndex: nextAutomationZIndex(current.windows) } : item) }));
+    const viewId = workspacePrefs.windows.find((item) => item.id === windowId)?.activeViewId;
+    if (viewId) restoreViewState(viewId);
+    updateWorkspacePrefs((current) => ({ ...captureActiveViewState(current), activeWindowId: windowId, windows: current.windows.map((item) => item.id === windowId ? { ...item, zIndex: nextAutomationZIndex(current.windows) } : item) }));
   }
   function togglePageFullscreenWindow(windowItem: AutomationWorkspaceWindow) {
     if ((windowItem.area ?? "main") !== "main") return;
@@ -1000,20 +1342,6 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       activeWindowId: windowItem.id,
       maximizedWindowId: current.maximizedWindowId === windowItem.id ? null : current.maximizedWindowId,
       windows: current.windows.map((item) => item.id === windowItem.id ? { ...item, zIndex: nextAutomationZIndex(current.windows) } : item)
-    }));
-  }
-  function setWindowGeometry(windowId: string, geometry: Partial<AutomationWindowPixelGeometry>) {
-    updateWorkspacePrefs((current) => ({
-      ...current,
-      windows: current.windows.map((item) => {
-        if (item.id !== windowId) return item;
-        const bounds = canvasForArea(item.area ?? "main")?.getBoundingClientRect();
-        const canvasWidth = Math.max(1, Math.floor(bounds?.width ?? 1120));
-        const canvasHeight = Math.max(1, Math.floor(bounds?.height ?? 680));
-        const currentPixels = automationWindowToPixels(item, canvasWidth, canvasHeight);
-        const nextPixels = clampAutomationWindowPixelGeometry({ ...currentPixels, ...geometry }, canvasWidth, canvasHeight);
-        return { ...item, ...automationPixelsToRelativeGeometry(nextPixels, canvasWidth, canvasHeight) };
-      })
     }));
   }
   function startWindowResize(windowItem: AutomationWorkspaceWindow, edge: AutomationWindowResizeEdge, event: ReactPointerEvent<HTMLButtonElement>) {
@@ -1033,6 +1361,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       .filter((item) => (item.area ?? "main") === (windowItem.area ?? "main"))
       .map((item) => automationWindowToPixels(item, canvasWidth, canvasHeight));
     const sharedPartners = findAutomationSharedResizePartners(startWindow, edge, windowsInArea);
+    let latestGeometries: Record<string, AutomationWindowPixelGeometry> = {};
     const onMove = (moveEvent: PointerEvent) => {
       const west = edge.includes("west");
       const east = edge.includes("east");
@@ -1073,27 +1402,25 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         if (partner.side === "south") geometry.heightPx = partner.start.heightPx + deltaY;
         partnerGeometry.set(partner.id, geometry);
       }
-      updateWorkspacePrefs((current) => ({
-        ...current,
-        windows: current.windows.map((item) => {
-          if (item.id === windowItem.id) {
-            const geometry = clampAutomationWindowPixelGeometry({
-              x: nextX,
-              y: nextY,
-              widthPx: nextWidth,
-              heightPx: nextHeight
-            }, canvasWidth, canvasHeight, 240, 210);
-            return { ...item, ...automationPixelsToRelativeGeometry(geometry, canvasWidth, canvasHeight) };
-          }
-          const geometry = partnerGeometry.get(item.id);
-          if (!geometry) return item;
-          const start = windowsInArea.find((window) => window.id === item.id) ?? automationWindowToPixels(item, canvasWidth, canvasHeight);
-          const nextGeometry = clampAutomationWindowPixelGeometry({ ...start, ...geometry }, canvasWidth, canvasHeight, 240, 210);
-          return { ...item, ...automationPixelsToRelativeGeometry(nextGeometry, canvasWidth, canvasHeight) };
-        })
-      }));
+      latestGeometries = {
+        [windowItem.id]: clampAutomationWindowPixelGeometry({
+          x: nextX,
+          y: nextY,
+          widthPx: nextWidth,
+          heightPx: nextHeight
+        }, canvasWidth, canvasHeight, 240, 210)
+      };
+      for (const [partnerId, geometry] of partnerGeometry) {
+        const start = windowsInArea.find((window) => window.id === partnerId);
+        if (!start) continue;
+        latestGeometries[partnerId] = clampAutomationWindowPixelGeometry({ ...start, ...geometry }, canvasWidth, canvasHeight, 240, 210);
+      }
+      scheduleLiveWindowGeometry(latestGeometries);
     };
     const onUp = () => {
+      commitWindowPixelGeometries(windowItem.area ?? "main", latestGeometries);
+      setLiveWindowGeometries({});
+      pendingLiveWindowGeometriesRef.current = {};
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
@@ -1120,22 +1447,28 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     const restored = automationWindowFillsCanvas(startWindow, canvasWidth, canvasHeight)
       ? restoreAutomationWindowFromFullscreen(startWindow, startX - (bounds?.left ?? 0), startY - (bounds?.top ?? 0), canvasWidth, canvasHeight)
       : startWindow;
-    if (restored !== startWindow) setWindowGeometry(windowItem.id, {
-      x: restored.x,
-      y: restored.y,
-      widthPx: restored.widthPx,
-      heightPx: restored.heightPx
-    });
     const startLeft = restored.x;
     const startTop = restored.y;
     let latestSnap: ReturnType<typeof automationSnapGeometry> | null = null;
+    let latestGeometries: Record<string, AutomationWindowPixelGeometry> = restored !== startWindow ? { [windowItem.id]: restored } : {};
+    if (Object.keys(latestGeometries).length) scheduleLiveWindowGeometry(latestGeometries);
     const onMove = (moveEvent: PointerEvent) => {
-      setWindowGeometry(windowItem.id, { x: startLeft + moveEvent.clientX - startX, y: startTop + moveEvent.clientY - startY });
+      latestGeometries = {
+        [windowItem.id]: clampAutomationWindowPixelGeometry({
+          ...restored,
+          x: startLeft + moveEvent.clientX - startX,
+          y: startTop + moveEvent.clientY - startY
+        }, canvasWidth, canvasHeight)
+      };
+      scheduleLiveWindowGeometry(latestGeometries);
       latestSnap = automationSnapGeometry(canvasForArea(windowItem.area ?? "main"), moveEvent.clientX, moveEvent.clientY);
       setSnapPreview(latestSnap ? { ...latestSnap, area: windowItem.area ?? "main" } : null);
     };
     const onUp = () => {
-      if (latestSnap) setWindowGeometry(windowItem.id, latestSnap);
+      const finalGeometries = latestSnap ? { [windowItem.id]: latestSnap } : latestGeometries;
+      commitWindowPixelGeometries(windowItem.area ?? "main", finalGeometries);
+      setLiveWindowGeometries({});
+      pendingLiveWindowGeometriesRef.current = {};
       setSnapPreview(null);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
@@ -1190,14 +1523,18 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     event.stopPropagation();
     const startX = event.clientX;
     const startWidth = workspacePrefs.inspectorWidth;
+    let latestWidth = startWidth;
     const onMove = (moveEvent: PointerEvent) => {
-      updateWorkspacePrefs((current) => ({
-        ...current,
-        inspectorWidth: clampNumber(startWidth + startX - moveEvent.clientX, 260, 620, startWidth),
-        rightSidebarCollapsed: false
-      }));
+      latestWidth = clampNumber(startWidth + startX - moveEvent.clientX, 260, 620, startWidth);
+      setLiveInspectorWidth(latestWidth);
     };
     const onUp = () => {
+      updateWorkspacePrefs((current) => ({
+        ...current,
+        inspectorWidth: latestWidth,
+        rightSidebarCollapsed: false
+      }));
+      setLiveInspectorWidth(null);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
@@ -1309,11 +1646,12 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                 1,
                 1
               );
+              const liveGeometry = liveWindowGeometries[windowItem.id];
               return (
                 <div
                   className="automation-window-shell"
                   key={windowItem.id}
-                  style={workspacePrefs.maximizedWindowId || isPageFullscreenWindow ? { inset: 0, zIndex: windowItem.zIndex } : { left: renderedWindow.x, top: renderedWindow.y, width: renderedWindow.widthPx, height: renderedWindow.heightPx, zIndex: windowItem.zIndex }}
+                  style={workspacePrefs.maximizedWindowId || isPageFullscreenWindow ? { inset: 0, zIndex: windowItem.zIndex } : { left: liveGeometry?.x ?? renderedWindow.x, top: liveGeometry?.y ?? renderedWindow.y, width: liveGeometry?.widthPx ?? renderedWindow.widthPx, height: liveGeometry?.heightPx ?? renderedWindow.heightPx, zIndex: windowItem.zIndex }}
                 >
                   <AutomationViewContainer
                     active={workspacePrefs.activeWindowId === windowItem.id}
@@ -1351,7 +1689,9 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                       dockTab={dockTab}
                       selectedEntry={selectedEntry}
                       selectedNode={selectedNode}
+                      selectedProposal={selectedProposal}
                       selectedRecording={selectedRecording}
+                      recordingProcessing={recordingProcessing}
                       selectedSignal={selectedSignal}
                       selectedTimeline={selectedTimeline}
                       selection={selection}
@@ -1360,17 +1700,22 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                       view={view}
                       onDeleteRecording={deleteProjectRecording}
                       onFinalizeRecording={finalizeProjectRecording}
-                      onOpenPipeline={openRecordingPipeline}
+                      onInspectTimelineEntry={openTimelineEvidenceInspector}
+                      onOpenPipeline={openRecordingProposal}
+                      onOpenProposal={openRecordingProposal}
                       onOpenRecording={openRecordingTimeline}
                       onAppendRecordingMarker={appendProjectRecordingMarker}
                       onAppendRecordingNote={appendProjectRecordingNote}
                       onNormalizeRecording={normalizeProjectRecording}
                       onPipelineAction={runRecordingPipelineStep}
+                      onProcessFinalizedRecording={processFinalizedRecording}
                       onRunRecordingPipeline={runRecordingPipeline}
                       onProcessProposalWithLlm={processPipelineProposalWithLlm}
-                      onRefreshRecordings={() => refreshProjectRuntimeState(activeProjectId)}
+                      onRefreshRecordings={async () => {
+                        await refreshProjectRuntimeState(activeProjectId);
+                      }}
                       onUpdateRecording={updateProjectRecording}
-                      setDockTab={setDockTab}
+                      setDockTab={setDockTabAndPersist}
                       setSelection={setSelectionAndFollow}
                     />
                   </AutomationViewContainer>
@@ -1515,7 +1860,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
             <option value="all">All</option>
             <option value="folder">Folders</option>
             <option value="recording">Recordings</option>
-            <option value="pipeline">Pipeline</option>
+            <option value="proposal">Proposals</option>
             <option value="task">Tasks</option>
             <option value="routine">Routines</option>
             <option value="config">Configs</option>
@@ -1552,7 +1897,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         <section
           className={`automation-studio-workspace${workspacePrefs.rightSidebarCollapsed ? " right-collapsed" : ""}${pageFullscreenWindowId ? " page-window-fullscreen" : ""}`}
           style={{
-            gridTemplateColumns: `minmax(0, 1fr) ${workspacePrefs.rightSidebarCollapsed ? 38 : workspacePrefs.inspectorWidth}px`,
+            gridTemplateColumns: `minmax(0, 1fr) ${workspacePrefs.rightSidebarCollapsed ? 38 : (liveInspectorWidth ?? workspacePrefs.inspectorWidth)}px`,
             gridTemplateRows: "minmax(0, 1fr)"
           }}
         >
@@ -1621,6 +1966,53 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
 }
 
 
+
+function emptyPipelineArtifacts() {
+  return {
+    normalizationReviews: [],
+    miningRuns: [],
+    evidenceFacts: [],
+    evidenceObservations: [],
+    stateActionCorrelations: [],
+    evidenceClaims: [],
+    learnedTaskModels: [],
+    policyProposals: [],
+    replayResults: []
+  };
+}
+
+function upsertById<TItem extends Record<string, any>>(items: TItem[], idKey: keyof TItem): TItem[] {
+  const seen = new Set<string>();
+  const merged: TItem[] = [];
+  for (const item of items) {
+    const id = String(item[idKey] ?? "");
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    merged.push(item);
+  }
+  return merged;
+}
+
+function isAutomationDockTab(value: unknown): value is AutomationDockTab {
+  return value === "assistant" || value === "problems" || value === "history" || value === "state";
+}
+
+function isAutomationSelection(value: unknown): value is AutomationSelection {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const selection = value as { kind?: unknown; id?: unknown };
+  return typeof selection.kind === "string" && typeof selection.id === "string";
+}
+
+function pipelineActionRunningMessage(endpoint: string): string {
+  if (endpoint === "mine-recording-evidence") return "Mining evidence: writing facts, observations, correlations, and claims...";
+  if (endpoint === "propose-policy-from-model") return "Creating task draft from mined evidence...";
+  if (endpoint === "approve-policy-proposal") return "Applying task draft...";
+  return "Running pipeline action...";
+}
+
+function latestByGeneratedAt<TItem extends { generatedAt?: number }>(items: TItem[]): TItem | undefined {
+  return [...items].sort((left, right) => (right.generatedAt ?? 0) - (left.generatedAt ?? 0))[0];
+}
 
 function yesNo(value: unknown): string {
   return value ? "Yes" : "No";

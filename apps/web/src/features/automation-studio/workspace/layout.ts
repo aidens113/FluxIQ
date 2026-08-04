@@ -45,6 +45,7 @@ export type AutomationWorkspacePrefs = {
   inspectorWidth: number;
   utilityWindowsMigrated: boolean;
   rightSidebarCollapsed: boolean;
+  viewStates: Record<string, Record<string, unknown>>;
 };
 
 export const automationLayoutPresetOptions: AutomationLayoutPresetOption[] = [
@@ -71,7 +72,8 @@ export function defaultAutomationWorkspacePrefs(): AutomationWorkspacePrefs {
     sidebarWidth: 280,
     inspectorWidth: 320,
     utilityWindowsMigrated: true,
-    rightSidebarCollapsed: false
+    rightSidebarCollapsed: false,
+    viewStates: {}
   };
 }
 
@@ -82,8 +84,8 @@ export function normalizeAutomationWorkspacePrefs(value: AutomationWorkspacePref
   const normalizedWindows = sourceWindows
     .filter((item) => item.tabs?.length && item.activeViewId)
     .map((item, index) => {
-      const tabs = item.tabs.map((tab) => tab === "node-detail" ? "global-inspector" : tab).filter((tab, tabIndex, allTabs) => allTabs.indexOf(tab) === tabIndex);
-      const activeViewId = item.activeViewId === "node-detail" ? "global-inspector" : item.activeViewId;
+      const tabs = item.tabs.map((tab) => tab === "node-detail" ? "global-inspector" : tab === "pipeline-workbench" ? "proposal-workbench" : tab).filter((tab, tabIndex, allTabs) => allTabs.indexOf(tab) === tabIndex);
+      const activeViewId = item.activeViewId === "node-detail" ? "global-inspector" : item.activeViewId === "pipeline-workbench" ? "proposal-workbench" : item.activeViewId;
       const legacyWindow = item as AutomationWorkspaceWindow & { area?: string; x?: number; y?: number; widthPx?: number; heightPx?: number; widthWeight?: number };
       const legacyArea = String(legacyWindow.area ?? "main");
       const area: AutomationWorkspaceArea = legacyArea === "right" ? "right" : "main";
@@ -132,7 +134,8 @@ export function normalizeAutomationWorkspacePrefs(value: AutomationWorkspacePref
     sidebarWidth: clampNumber(value.sidebarWidth, 220, 420, fallback.sidebarWidth),
     inspectorWidth: clampNumber(value.inspectorWidth, 260, 620, fallback.inspectorWidth),
     utilityWindowsMigrated: true,
-    rightSidebarCollapsed: Boolean(value.rightSidebarCollapsed)
+    rightSidebarCollapsed: Boolean(value.rightSidebarCollapsed),
+    viewStates: value.viewStates && typeof value.viewStates === "object" && !Array.isArray(value.viewStates) ? value.viewStates : {}
   };
 }
 

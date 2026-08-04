@@ -1,16 +1,17 @@
 "use client";
 
-import { CheckCircle2, CircleDot, Clock, FileText, Link2, RefreshCcw, Trash2 } from "lucide-react";
+import { CheckCircle2, CircleDot, Clock, FileText, Link2, RefreshCcw, Sparkles, Trash2 } from "lucide-react";
 import { useMemo, useRef } from "react";
 import type { JsonObject } from "../../programs/program-api";
 import { StatusText } from "../../programs/shared-ui";
-import type { AutomationSelection } from "../types";
+import type { AutomationSelection, RecordingProcessingStatus } from "../types";
 import { formatTimelineDuration, isRejectedRecordingMarker, timelineEntryIcon, timelineEntrySummary, timelineEntryTitle } from "../timeline/view-model";
 export function AutomationTimelineView(props: {
   actionStatus: string;
   entries: any[];
   notes: any[];
   recordings: any[];
+  recordingProcessing: RecordingProcessingStatus | null;
   selectedEntry: any;
   selectedRecording: any;
   selectedTimeline: any;
@@ -19,7 +20,9 @@ export function AutomationTimelineView(props: {
   onAppendRecordingNote(recordingId: string, linkedEntryId?: string): Promise<void>;
   onDeleteRecording(recordingId: string): Promise<void>;
   onFinalizeRecording(recordingId: string): Promise<void>;
-  onOpenPipeline(recordingId: string): void;
+  onInspectTimelineEntry(recordingId: string, entryId: string): void;
+  onOpenProposal(recordingId: string): void;
+  onProcessFinalizedRecording(recordingId: string, force?: boolean): Promise<boolean | void>;
   onRefreshRecordings(): Promise<void>;
   onUpdateRecording(recordingId: string, changes: JsonObject): Promise<void>;
   setSelection(selection: AutomationSelection): void;
@@ -48,6 +51,7 @@ export function AutomationTimelineView(props: {
     ? props.selectedRecording.endedAt ? Math.max(0, props.selectedRecording.endedAt - props.selectedRecording.startedAt) : Math.max(0, Date.now() - props.selectedRecording.startedAt)
     : 0;
   const selectedIsNormalized = props.selectedRecording ? props.timelines.some((timeline) => timeline.recordingId === props.selectedRecording.recordingId) : false;
+  const processing = props.selectedRecording && props.recordingProcessing?.recordingId === props.selectedRecording.recordingId ? props.recordingProcessing : null;
   const selectPreviewStep = (entryId: string, index: number) => {
     props.setSelection({ kind: "timeline", id: entryId });
     window.requestAnimationFrame(() => {
@@ -73,7 +77,8 @@ export function AutomationTimelineView(props: {
           <span>{props.selectedRecording ? `${props.selectedRecording.endedAt ? "Finalized" : "Open"} | ${formatTimelineDuration(selectedDuration)} | ${props.entries.length} events | ${selectedIsNormalized ? "normalized" : "raw"}` : "Select a recording from the project hierarchy."}</span>
         </div>
         <div className="automation-timeline-toolbar-actions">
-          <button className="button" disabled={!props.selectedRecording} onClick={() => props.selectedRecording && props.onOpenPipeline(props.selectedRecording.recordingId)} type="button"><Link2 size={13} aria-hidden />Open Corresponding Pipeline</button>
+          <button className="button" disabled={!props.selectedRecording} onClick={() => props.selectedRecording && props.onOpenProposal(props.selectedRecording.recordingId)} type="button"><Link2 size={13} aria-hidden />Open Corresponding Proposal</button>
+          <button className="button" disabled={!props.selectedRecording || !props.selectedRecording.endedAt || Boolean(processing)} onClick={() => props.selectedRecording && void props.onProcessFinalizedRecording(props.selectedRecording.recordingId)} type="button"><Sparkles size={13} aria-hidden />Generate Proposal</button>
           <button className="button" onClick={() => void props.onRefreshRecordings()} type="button"><RefreshCcw size={13} aria-hidden />Refresh</button>
           <button className="button" disabled={!props.selectedRecording} onClick={() => {
             const name = window.prompt("Recording name", props.selectedRecording?.metadata?.name ?? props.selectedRecording?.recordingId ?? "") ?? "";
@@ -85,6 +90,16 @@ export function AutomationTimelineView(props: {
         {props.actionStatus ? <StatusText value={props.actionStatus} /> : null}
       </header>
       <div className="automation-timeline-stage">
+        {processing ? <div className="automation-timeline-processing-overlay" role="status" aria-live="polite">
+          <div className="automation-timeline-processing-panel">
+            <strong>{processing.label}</strong>
+            <span>{processing.detail}</span>
+            <div className="automation-timeline-processing-track">
+              <div style={{ width: `${Math.min(100, Math.max(0, processing.progress))}%` }} />
+            </div>
+            <small>{Math.round(Math.min(100, Math.max(0, processing.progress)))}%</small>
+          </div>
+        </div> : null}
         <div className="automation-timeline-detail-strip">
           {props.selectedEntry ? <>
             <strong>{timelineEntryTitle(props.selectedEntry, selectedNote)}</strong>
@@ -117,6 +132,7 @@ export function AutomationTimelineView(props: {
                         note={note}
                         selected={props.selectedEntry?.id === step.entry.id}
                         onSelect={() => props.setSelection({ kind: "timeline", id: step.entry.id })}
+                        onInspect={() => props.selectedRecording && props.onInspectTimelineEntry(props.selectedRecording.recordingId, step.entry.id)}
                       /> : null}
                     </div>
                   );
@@ -146,10 +162,10 @@ export function AutomationTimelineView(props: {
   );
 }
 
-function TimelineClip(props: { entry: any; index: number; note?: any; selected: boolean; onSelect(): void }) {
+function TimelineClip(props: { entry: any; index: number; note?: any; selected: boolean; onInspect(): void; onSelect(): void }) {
   const Icon = timelineEntryIcon(props.entry.type);
   return (
-    <button className={props.selected ? `automation-timeline-clip selected ${props.entry.type}` : `automation-timeline-clip ${props.entry.type}`} onClick={props.onSelect} type="button">
+    <button className={props.selected ? `automation-timeline-clip selected ${props.entry.type}` : `automation-timeline-clip ${props.entry.type}`} onClick={props.onSelect} onDoubleClick={props.onInspect} type="button">
       <span><Icon size={13} aria-hidden />{props.index + 1}</span>
       <strong>{timelineEntryTitle(props.entry, props.note)}</strong>
       <small>{props.note?.text ?? timelineEntrySummary(props.entry)}</small>

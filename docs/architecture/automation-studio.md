@@ -129,8 +129,8 @@ apps/web/src/features/automation-studio/
   runtime/                   Small UI-triggered runtime payload builders and execution helpers.
   timeline/                  Timeline titles, summaries, icons, durations, and inspector view models.
   types.ts                   Shared Automation Studio UI/view/editor types.
-  views/                     Named workspace pane modules: renderer, timeline, pipeline,
-                             client/config/assistant, graph editors, workspaces, inspector,
+  views/                     Named workspace pane modules: renderer, timeline, proposal,
+                             timeline evidence inspector, client/config/assistant, graph editors, workspaces, inspector,
                              dock, and shared view utilities.
   workspace/                 Inner-window desktop components, defaults, geometry, snapping, and layout math.
 
@@ -154,7 +154,7 @@ named Automation Studio hooks or action modules before new endpoints are added.
 
 The default design layout follows the consultant plan:
 
-- left sidebar: project hierarchy for recording-owned pipelines, folders,
+- left sidebar: project hierarchy for proposals, recordings, folders,
   tasks, routines, configurations, and recordings;
 - center workspace: the active design/debugging surface;
 - right inspector: synchronized details for the selected policy node, policy,
@@ -204,19 +204,19 @@ or a generated recording client folder is a destructive recording operation:
 the UI asks for the user's PIN, then deletes the underlying recording session
 or all recording sessions contained by that client folder.
 
-Pipeline rows in the project hierarchy are also generated from persisted
-recording sessions. The Pipeline root mirrors the Recordings root by client
-folder and recording start date/time. There is no single global Pipeline
-sidebar row, and the pipeline pane does not include its own recording selector:
-opening a pipeline row selects the corresponding recording and runs pipeline
-stages against that recording-owned pipeline session.
+Proposal rows in the project hierarchy are generated from policy proposals
+linked to finalized recordings. The Proposals root mirrors the Recordings root
+by client folder and recording start date/time, but opens the final task draft
+instead of exposing internal pipeline stages. Opening a proposal row selects
+the generated proposal and keeps its source recording correlated with the
+Recordings tree.
 
 Demo recording fixtures such as `Demo Environment` are test fixtures only.
 The Automation Studio service does not seed fixture recordings by default in
 the web panel or imported runtime; callers must explicitly opt in with
 `seedFixture: true` for tests or examples.
 
-The recording-to-task pipeline is intentionally staged:
+The recording-to-task pipeline is intentionally staged internally:
 
 1. Capture one or more raw `RecordingSession` documents from direct-import
    framework calls or a paired client gateway session.
@@ -228,6 +228,13 @@ The recording-to-task pipeline is intentionally staged:
 5. Propose a task policy graph directly from mined evidence, with every
    generated node and edge linking back to evidence.
 6. Apply the proposed task draft only after explicit approval.
+
+In the normal UI, finalized recordings are processed automatically. When a
+recording ends, Automation Studio normalizes it, writes normalization details,
+mines evidence, and proposes a task draft if evidence exists. Users navigate to
+the resulting task draft through the Proposals sidebar root rather than a
+Pipeline root. Manual stage endpoints remain available for debugging and
+advanced tooling, but they are not the primary product surface.
 
 Model learning and replay/validation are not recording pipeline stages in the
 current product surface. Model-shaped artifacts may still be used internally as
@@ -599,6 +606,16 @@ Workspace persistence is debounced and signature-based. Loading a project seeds
 the last-saved hierarchy signature, and `save-project-hierarchy` should only be
 sent after real hierarchy or workspace changes, not continuously for equivalent
 state.
+Workspace preferences include each inner window's active tab, geometry, active
+window, sidebar sizing, and a `viewStates` map keyed by view ID. A view state
+stores the last relevant selection context for that tab, plus view-local values
+such as the workspace dock subtab. Switching between inner-window tabs saves
+the outgoing view state and restores the incoming view state so timeline,
+proposal, inspector, and editor panes return to the item they were showing.
+Pointer movement uses transient pixel geometry while a window or section is
+being dragged/resized. The persisted percentage geometry is written back to
+workspace preferences only once the pointer interaction ends, preventing config
+writes on every pixel movement.
 
 Project recordings now use the same folder-backed ownership model as project
 workspace state. Each project reserves:
@@ -626,48 +643,48 @@ first ID and suffixes later duplicate timeline entry IDs before validation and
 persistence. Timeline UI keys also include row index and sequence so older
 recordings with duplicate IDs can still render.
 
-The recording pipeline reserves derived project artifacts beside recordings:
+Recording-derived artifacts belong inside the recording session that produced
+them. The project-level pipeline index is lookup metadata only; it is not an
+aggregate artifact bucket.
 
 ```text
-.fluxiq/{domain-id}/data/programs/automation-studio/projects/{projectId}/pipeline/
-  sessions/{recordingId}/
-    pipeline.json
-    artifacts/
-      normalized-timelines/{normalizedTimelineId}.json
-      normalization-reviews/{reviewId}.json
-      mining-runs/{miningRunId}.json
-      evidence/
-        facts/{factId}.json
-        observations/{observationId}.json
-        correlations/{correlationId}.json
-        claims/{claimId}.json
-      policy-proposals/{proposalId}.json
-  normalization-reviews/{reviewId}.json
-  mining-runs/{miningRunId}.json
-  evidence/
-    facts/{factId}.json
-    observations/{observationId}.json
-    correlations/{correlationId}.json
-    claims/{claimId}.json
-  policy-proposals/{proposalId}.json
+.fluxiq/{domain-id}/data/programs/automation-studio/projects/{projectId}/
+  recordings/
+    indexes/recordings.json
+    sessions/{recordingId}/
+      recording.json
+      events/timeline.json
+      snapshots/initial-state.json
+      derived/
+        index.json
+        normalization/
+          timelines/{normalizedTimelineId}.json
+          reviews/{reviewId}.json
+        evidence/
+          mining-runs/{miningRunId}.json
+          facts/{factId}.json
+          observations/{observationId}.json
+          correlations/{correlationId}.json
+          claims/{claimId}.json
+        task-models/{learnedTaskModelId}.json
+        proposal/proposal.json
+        replays/{replayId}.json
   indexes/pipeline.json
 ```
 
-Each recording creates a matching recording pipeline session as soon as the
-recording is captured. `pipeline/sessions/{recordingId}/pipeline.json` is the
-recording-owned pipeline manifest and mirrors the recording session folder:
-normalized timelines, normalization details, mining runs, evidence facts,
-evidence observations, state-action correlations, evidence claims, and task
-proposals are copied under that recording pipeline as they are generated. The
-flat pipeline artifact folders and `indexes/pipeline.json` remain aggregate
-indexes for project-wide listing. Legacy/internal artifact folders such as
-learned task models and replay results may exist for API compatibility, but
-they are not visible recording-pipeline stages.
+Each recording creates a derived artifact manifest at
+`recordings/sessions/{recordingId}/derived/index.json`. Normalized timelines,
+normalization details, mining runs, evidence facts, evidence observations,
+state-action correlations, evidence claims, task models, proposals, and replays
+are written under that recording's `derived/` folder. `indexes/pipeline.json`
+contains project-wide references with `recordingId` so the UI can list data
+without making the filesystem layout global.
 
 Pipeline files are derived artifacts. They preserve references back to raw
 recordings and normalized timelines so users can audit how a final task policy
-was produced. Deleting a recording also deletes its matching pipeline session
-and removes linked pipeline artifacts from the aggregate pipeline index.
+was produced. Deleting a recording deletes the recording session folder,
+including all derived evidence and proposal data, and removes linked entries
+from project indexes.
 Approving a policy proposal writes the generated `PolicyGraph` into the
 canonical policy repository and the project `policies/` folder.
 
@@ -676,10 +693,10 @@ hierarchy rows. Each project reserves:
 
 ```text
 .fluxiq/{domain-id}/data/programs/automation-studio/projects/{projectId}/
-  tasks/{taskId}.json
-  routines/{routineId}.json
-  configs/{configId}.json
-  flows/{flowId}.json
+  tasks/{taskId}/task.json
+  routines/{routineId}/routine.json
+  configs/{configId}/config.json
+  flows/{flowId}/flow.json
   runtime/sessions/{runId}.json
   runtime/indexes/sessions.json
   state/
@@ -790,7 +807,46 @@ replay results remain available for non-UI/runtime work. Mutating endpoints are
 privileged and should use the same shared PIN authorization path as project and
 category edits.
 
-The recording pipeline UI has three user-facing stages:
+The proposal UI is the user-facing surface for the final generated draft. It
+shows the source recording, proposal status, generated time, and an ordered
+task-step draft. Each step presents action summaries, requirements, expected
+state results, and the most readable supporting state signals. The UI avoids
+raw node/edge artifact tables by default; transitions are shown inline with
+the step flow when they add useful context. Proposal actions allow applying the
+draft directly, regenerating it from the recording, or processing it with an
+LLM.
+
+When a recording is finalized from the timeline, the web UI runs the recording
+authoring stages in order: normalize, mine evidence, and propose task. The
+timeline pane shows an overlay with the active stage and progress while this
+happens. When the proposal is written, Automation Studio opens the proposal
+view and highlights the generated proposal in the left hierarchy. This does not
+approve or apply the proposal.
+
+Each recording has one current draft proposal artifact. Regenerating the
+proposal overwrites that recording-owned draft instead of creating additional
+proposal rows for the same source recording. The proposal is persisted under
+the source recording's derived artifact folder. Deleting the source recording
+deletes its proposal artifact and removes it from the project pipeline index.
+
+When a connected client stops a recording, the client gateway finalizes and
+processes the recording in the framework service. The web UI detects the
+active-recording-to-stopped transition from gateway snapshots, refreshes the
+final timeline automatically, and keeps the timeline covered with a progress
+overlay until the generated proposal artifact appears.
+
+The timeline evidence inspector is a separate addable inner-window view. A
+timeline clip can be double-clicked to open the inspector for that recording
+entry. The inspector is entry-centered and intentionally product-facing: it
+shows the selected moment, useful state signals connected to that moment, and
+proposal steps that consume those signals. Internal artifact layers such as
+facts, observations, correlations, and claims remain storage/framework concepts;
+the main inspector UI collapses them into readable signals like text, static
+IDs, labels, before/after values, and action timing. This view explains why a
+proposal used a piece of evidence without turning the global inspector into a
+pipeline debugger.
+
+The internal recording pipeline has three stages:
 
 - Normalize prepares the raw recording as a normalized timeline and writes
   normalization detail artifacts with raw-to-normalized mappings, derived
@@ -805,9 +861,12 @@ The recording pipeline UI has three user-facing stages:
   conditions, waits, and transitions; confidence belongs on these claims
   because they are the inferred layer.
 - Propose Task converts mined evidence into a draft `PolicyGraph` without
-  mutating the active policy until the user approves it. Proposed nodes link to
-  supporting evidence claims, which link back to observations, facts, and
-  normalized/raw recording entries. The current path does not train a model;
+  mutating the active policy until the user approves it. Proposed nodes are
+  centered on recorded actions or domain events, while supporting effect and
+  condition claims are attached as evidence for those steps. This prevents one
+  repeated state-effect signal from becoming many duplicate task steps.
+  Supporting claims link back to observations, facts, and normalized/raw
+  recording entries. The current path does not train a model;
   any learned-model artifact is an internal compatibility representation rather
   than a user-facing pipeline stage.
 

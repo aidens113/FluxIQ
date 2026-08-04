@@ -9,6 +9,8 @@ import { automationLayoutPresetOptions, defaultAutomationWorkspacePrefs, type Au
 export function viewTitle(view: AutomationViewInstance): string {
   if (view.type === "design") return "Policy Graph";
   if (view.type === "recordings") return "Timeline";
+  if (view.type === "proposal") return "Proposal";
+  if (view.type === "timeline-inspector") return "Timeline Evidence";
   if (view.type === "signals") return "Relationship Web";
   if (view.type === "runtime") return "Runtime Debug";
   if (view.type === "problems") return "Problems";
@@ -24,9 +26,9 @@ export function viewTitle(view: AutomationViewInstance): string {
 
 export function AutomationWindowAdderPalette(props: { area: AutomationWorkspaceArea; anchor: AutomationWindowAdderState["anchor"]; targetWindowId?: string; views: AutomationViewInstance[]; onAdd(viewId: string, area: AutomationWorkspaceArea, targetWindowId?: string): void }) {
   const groups = [
-    { title: "Workflow", ids: ["client-gateway", "timeline-recording", "pipeline-workbench", "policy-primary", "runs-history"] },
+    { title: "Workflow", ids: ["client-gateway", "timeline-recording", "proposal-workbench", "policy-primary", "runs-history"] },
     { title: "Editors", ids: ["routine-editor", "config-default"] },
-    { title: "Evidence", ids: ["signals-web", "runtime-debug", "problems-view"] },
+    { title: "Evidence", ids: ["timeline-evidence-inspector", "signals-web", "runtime-debug", "problems-view"] },
     { title: "Tools", ids: ["global-inspector", "workspace-dock", "ai-assistant"] }
   ];
   const byId = new Map(props.views.map((view) => [view.id, view]));
@@ -113,7 +115,8 @@ export function automationWindowDescription(view: AutomationViewInstance): strin
   if (view.type === "routine") return "Build routine orchestration graphs.";
   if (view.type === "config") return "Edit project configuration values.";
   if (view.type === "recordings") return "Review raw timeline evidence and notes.";
-  if (view.type === "pipeline") return "Transform recordings into task drafts.";
+  if (view.type === "proposal") return "Review and apply generated task drafts.";
+  if (view.type === "timeline-inspector") return "Inspect facts, evidence, and claims for a timeline item.";
   if (view.type === "signals") return "Browse mined state signals.";
   if (view.type === "runtime") return "Inspect live/debug execution state.";
   if (view.type === "runs") return "Inspect replay and validation history.";

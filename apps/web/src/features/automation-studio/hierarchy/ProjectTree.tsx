@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, ChevronRight, FolderOpen, GitBranch, History, Plus, Radio, SlidersHorizontal, Sparkles, Trash2, Workflow } from "lucide-react";
+import { ChevronDown, ChevronRight, FileText, FolderOpen, GitBranch, History, Plus, Radio, SlidersHorizontal, Trash2, Workflow } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { AutomationHierarchyAction, AutomationHierarchyCategory, AutomationHierarchyKind, AutomationHierarchyNode } from "./model";
 import { automationHierarchyCategories, automationHierarchyCategoryLabel, collectHierarchyAncestorIds, sortAutomationHierarchyNodes } from "./model";
@@ -11,8 +11,8 @@ export function AutomationProjectTree(props: {
   search: string;
   typeFilter: "all" | AutomationHierarchyKind;
   selection: AutomationSelection | null;
-  recordingPrimaryKind: "recording" | "pipeline" | null;
-  setRecordingPrimaryKind(kind: "recording" | "pipeline" | null): void;
+  recordingPrimaryKind: "recording" | "proposal" | null;
+  setRecordingPrimaryKind(kind: "recording" | "proposal" | null): void;
   setSelection(selection: AutomationSelection): void;
   openView(viewId: string, mode?: "preview" | "new-window"): void;
   requestAction(action: NonNullable<AutomationHierarchyAction>): void;
@@ -45,12 +45,12 @@ export function AutomationProjectTree(props: {
         props.setRecordingPrimaryKind("recording");
         props.setSelection({ kind: "recording", id: node.sourceId });
       }
-      if (node.kind === "pipeline" && node.sourceId) {
-        props.setRecordingPrimaryKind("pipeline");
-        props.setSelection({ kind: "recording", id: node.sourceId });
+      if (node.kind === "proposal" && node.sourceId) {
+        props.setRecordingPrimaryKind("proposal");
+        props.setSelection({ kind: "proposal", id: node.sourceId, ...(node.recordingId ? { recordingId: node.recordingId } : {}) });
       }
       if ((node.kind === "client" || node.kind === "run") && node.sourceId) props.setSelection({ kind: "workspace", id: node.sourceId as "clients" | "runs" });
-      props.openView(node.viewId ?? (node.kind === "task" ? "policy-primary" : node.kind === "routine" ? "routine-editor" : node.kind === "recording" ? "timeline-recording" : node.kind === "client" ? "client-gateway" : node.kind === "pipeline" ? "pipeline-workbench" : node.kind === "run" ? "runs-history" : "config-default"), mode);
+      props.openView(node.viewId ?? (node.kind === "task" ? "policy-primary" : node.kind === "routine" ? "routine-editor" : node.kind === "recording" ? "timeline-recording" : node.kind === "client" ? "client-gateway" : node.kind === "proposal" ? "proposal-workbench" : node.kind === "run" ? "runs-history" : "config-default"), mode);
     };
     if (mode === "preview") {
       singleClickTimer.current = window.setTimeout(() => {
@@ -67,8 +67,12 @@ export function AutomationProjectTree(props: {
     if (!primaryNode || !automationHierarchyNodeMatchesSelection(primaryNode, props.selection)) setPrimaryTreeNodeId(null);
   }, [primaryTreeNodeId, props.nodes, props.selection]);
   useEffect(() => {
-    if (props.selection?.kind !== "recording" || !props.recordingPrimaryKind) return;
-    const primaryNode = props.nodes.find((node) => node.kind === props.recordingPrimaryKind && node.sourceId === props.selection?.id);
+    if (!props.recordingPrimaryKind) return;
+    const primaryNode = props.selection?.kind === "recording"
+      ? props.nodes.find((node) => node.kind === props.recordingPrimaryKind && (node.sourceId === props.selection?.id || node.recordingId === props.selection?.id))
+      : props.selection?.kind === "proposal"
+        ? props.nodes.find((node) => node.kind === props.recordingPrimaryKind && node.sourceId === props.selection?.id)
+        : null;
     setPrimaryTreeNodeId(primaryNode?.id ?? null);
   }, [props.nodes, props.recordingPrimaryKind, props.selection]);
   const toggleFolder = (folderId: string) => setCollapsedFolderIds((current) => current.includes(folderId) ? current.filter((id) => id !== folderId) : [...current, folderId]);
@@ -107,7 +111,7 @@ export function AutomationHierarchyTreeNode(props: {
   visibleIds: Set<string>;
   collapsedFolderIds: string[];
   primaryTreeNodeId: string | null;
-  recordingPrimaryKind: "recording" | "pipeline" | null;
+  recordingPrimaryKind: "recording" | "proposal" | null;
   selection: AutomationSelection | null;
   openNode(node: AutomationHierarchyNode, mode: "preview" | "new-window"): void;
   requestAction(action: NonNullable<AutomationHierarchyAction>): void;
@@ -119,10 +123,10 @@ export function AutomationHierarchyTreeNode(props: {
   const primarySelected = selected && (props.primaryTreeNodeId ? props.primaryTreeNodeId === props.node.id : props.selection?.kind === "recording" ? recordingPrimarySelected : true);
   const correlatedSelected = selected && !primarySelected;
   const isFolder = props.node.kind === "folder";
-  const isPipelineHierarchyNode = props.node.category === "pipeline";
+  const isProposalHierarchyNode = props.node.category === "proposal";
   const isStaticWorkspaceNode = props.node.kind === "client" || props.node.kind === "run";
   const collapsed = props.collapsedFolderIds.includes(props.node.id);
-  const Icon = props.node.kind === "folder" ? FolderOpen : props.node.kind === "routine" ? Workflow : props.node.kind === "config" ? SlidersHorizontal : props.node.kind === "recording" ? Radio : props.node.kind === "client" ? Radio : props.node.kind === "pipeline" ? Sparkles : props.node.kind === "run" ? History : GitBranch;
+  const Icon = props.node.kind === "folder" ? FolderOpen : props.node.kind === "routine" ? Workflow : props.node.kind === "config" ? SlidersHorizontal : props.node.kind === "recording" ? Radio : props.node.kind === "client" ? Radio : props.node.kind === "proposal" ? FileText : props.node.kind === "run" ? History : GitBranch;
   return (
     <div className="automation-tree-branch">
       <div className="automation-tree-item">
@@ -130,7 +134,7 @@ export function AutomationHierarchyTreeNode(props: {
           {isFolder ? (collapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />) : <Icon size={14} aria-hidden />}
           <span><strong>{props.node.label}</strong><small>{props.node.kind}</small></span>
         </button>
-        {props.node.kind === "folder" && !isPipelineHierarchyNode ? <button
+        {props.node.kind === "folder" && !isProposalHierarchyNode ? <button
           className="tree-row-action"
           onClick={(event) => {
             event.preventDefault();
@@ -142,7 +146,7 @@ export function AutomationHierarchyTreeNode(props: {
           aria-label={`Add inside ${props.node.label}`}
           type="button"
         ><Plus size={13} aria-hidden /></button> : null}
-        {!isStaticWorkspaceNode && !isPipelineHierarchyNode ? <button
+        {!isStaticWorkspaceNode && !isProposalHierarchyNode ? <button
           className="tree-row-action danger"
           onClick={(event) => {
             event.preventDefault();
@@ -166,7 +170,7 @@ export function AutomationHierarchyChildren(props: {
   visibleIds: Set<string>;
   collapsedFolderIds: string[];
   primaryTreeNodeId: string | null;
-  recordingPrimaryKind: "recording" | "pipeline" | null;
+  recordingPrimaryKind: "recording" | "proposal" | null;
   selection: AutomationSelection | null;
   openNode(node: AutomationHierarchyNode, mode: "preview" | "new-window"): void;
   requestAction(action: NonNullable<AutomationHierarchyAction>): void;
@@ -199,6 +203,8 @@ function automationHierarchyNodeMatchesSelection(node: AutomationHierarchyNode, 
     && (
       (selection?.kind === "policy" && selection.id === node.sourceId)
       || (selection?.kind === "recording" && selection.id === node.sourceId)
+      || (selection?.kind === "recording" && selection.id === node.recordingId)
+      || (selection?.kind === "proposal" && selection.id === node.sourceId)
       || (selection?.kind === "workspace" && selection.id === node.sourceId)
     )
   );

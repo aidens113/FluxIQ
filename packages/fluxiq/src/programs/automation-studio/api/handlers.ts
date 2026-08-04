@@ -13,6 +13,7 @@ import {
   type DeleteRecordingRequest,
   type ExecuteClientActionRequest,
   type FinalizeRecordingRequest,
+  type ProcessFinalizedRecordingRequest,
   type InspectStateDiffRequest,
   type LearnTaskModelRequest,
   type MineRecordingEvidenceRequest,
@@ -242,6 +243,15 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as FinalizeRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
       return { ok: true, payload: { recording: await service.finalizeRecording(payload) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.processFinalizedRecording,
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ProcessFinalizedRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: { result: await service.processFinalizedRecording({ projectId: String(payload.projectId ?? ""), recordingId: String(payload.recordingId ?? ""), force: payload.force === true }) } };
     }
   });
   registry.register({

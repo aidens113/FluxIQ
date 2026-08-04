@@ -39,6 +39,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   appendRecordingNote: "append-recording-note",
   appendRecordingMarker: "append-recording-marker",
   finalizeRecording: "finalize-recording",
+  processFinalizedRecording: "process-finalized-recording",
   normalizeRecording: "normalize-recording",
   createNormalizationReview: "create-normalization-review",
   listNormalizedTimelines: "list-normalized-timelines",
@@ -177,6 +178,11 @@ export type AppendRecordingDomainEventRequest = RecordingDomainEventInput;
 export type FinalizeRecordingRequest = RecordingProjectRequest & {
   recordingId: string;
   endedAt?: number;
+};
+
+export type ProcessFinalizedRecordingRequest = RecordingProjectRequest & {
+  recordingId: string;
+  force?: boolean;
 };
 
 export type NormalizeRecordingRequest = RecordingProjectRequest & {

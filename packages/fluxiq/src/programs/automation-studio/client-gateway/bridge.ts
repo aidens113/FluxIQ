@@ -113,6 +113,7 @@ export class AutomationStudioClientGatewayBridge {
     await this.gateway.stopRecording(sessionId, active?.recordingId);
     if (!active) return null;
     const recording = await this.automationStudio.finalizeRecording({ ...(active.projectId !== undefined ? { projectId: active.projectId } : {}), recordingId: active.recordingId });
+    if (active.projectId) await this.automationStudio.processFinalizedRecording({ projectId: active.projectId, recordingId: active.recordingId });
     this.activeRecordings.delete(sessionId);
     return recording;
   }
@@ -236,6 +237,7 @@ export class AutomationStudioClientGatewayBridge {
       recordingId: input.recordingId,
       ...(input.endedAt !== undefined ? { endedAt: input.endedAt } : {})
     });
+    if (projectId) await this.automationStudio.processFinalizedRecording({ projectId, recordingId: input.recordingId });
     this.activeRecordings.delete(session.sessionId);
     return recording;
   }

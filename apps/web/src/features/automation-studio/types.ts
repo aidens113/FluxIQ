@@ -8,9 +8,15 @@ import {
 } from "fluxiq/automation-studio/nodes";
 import type { JsonObject } from "../programs/program-api";
 
-export type AutomationStudioView = "design" | "recordings" | "pipeline" | "signals" | "runtime" | "runs" | "problems";
+export type AutomationStudioView = "design" | "recordings" | "proposal" | "timeline-inspector" | "signals" | "runtime" | "runs" | "problems";
 export type AutomationViewType = AutomationStudioView | "assistant" | "clients" | "config" | "routine" | "state" | "inspector" | "dock";
 export type AutomationDockTab = "assistant" | "problems" | "history" | "state";
+export type RecordingProcessingStatus = {
+  recordingId: string;
+  label: string;
+  detail: string;
+  progress: number;
+};
 export type AutomationViewInstance = {
   id: string;
   label: string;
@@ -62,8 +68,9 @@ function automationNodeDefinitionToEditorSpec(definition: AutomationNodeDefiniti
   };
 }
 export type AutomationSelection =
-  | { kind: "workspace"; id: "clients" | "pipeline" | "runs" }
+  | { kind: "workspace"; id: "clients" | "runs" }
   | { kind: "policy"; id: string }
+  | { kind: "proposal"; id: string; recordingId?: string }
   | { kind: "node"; id: string }
   | { kind: "editor-node"; id: string; node: { label: string; nodeType: string; family: string; description: string; customDescription?: string; nodeDefinitionId?: string; icon?: string; inputs: AutomationNodePort[]; outputs: AutomationNodePort[]; parameters: AutomationNodeParameter[]; parameterValues: JsonObject; privileged?: boolean; actionTypes?: string[] } }
   | { kind: "editor-mode"; id: string; editor: "task" | "routine"; label: string; description: string; sections: Array<{ title: string; rows: Array<[string, string]> }> }
