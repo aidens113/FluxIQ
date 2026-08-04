@@ -103,6 +103,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const [snapshot, setSnapshot] = useState<any>(null);
   const [projectRecordings, setProjectRecordings] = useState<any[]>([]);
   const [projectTimelines, setProjectTimelines] = useState<any[]>([]);
+  const [projectArtifacts, setProjectArtifacts] = useState<any>({ tasks: [], routines: [], configs: [], flows: [] });
   const [runtimeSessions, setRuntimeSessions] = useState<any[]>([]);
   const [pipelineArtifacts, setPipelineArtifacts] = useState<any>({ normalizationReviews: [], miningRuns: [], evidenceFacts: [], evidenceObservations: [], stateActionCorrelations: [], evidenceClaims: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
   const [recordingDomains, setRecordingDomains] = useState<any[]>([]);
@@ -198,6 +199,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     if (!activeProjectId) {
       setProjectRecordings([]);
       setProjectTimelines([]);
+      setProjectArtifacts({ tasks: [], routines: [], configs: [], flows: [] });
       setRuntimeSessions([]);
       setPipelineArtifacts({ normalizationReviews: [], miningRuns: [], evidenceFacts: [], evidenceObservations: [], stateActionCorrelations: [], evidenceClaims: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
       setRecordingDomains([]);
@@ -268,13 +270,16 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const registries = canonical.signalRegistries ?? [];
   const models = mergeById(pipelineArtifacts.learnedTaskModels ?? [], canonical.learnedTaskModels ?? [], "learnedTaskModelId");
   const proposals = pipelineArtifacts.policyProposals ?? [];
-  const policies = canonical.policyGraphs ?? [];
+  const policies: any[] = mergeById<any>(canonical.policyGraphs ?? [], proposals.map((proposal: any) => proposal.policy).filter(Boolean), "policyId");
   const problems = snapshot?.payload?.problems ?? [];
   const signals = registries.flatMap((registry: any) => (registry.definitions ?? []).map((signal: any) => ({ ...signal, registryId: registry.registryId })));
   const selectedProposal = proposals.find((proposal: any) => selection?.kind === "proposal" && proposal.proposalId === selection.id)
     ?? proposals.find((proposal: any) => selection?.kind === "recording" && proposal.metadata?.recordingId === selection.id)
     ?? proposals[0];
-  const selectedPolicy = policies.find((policy: any) => selection?.kind === "policy" && policy.policyId === selection.id) ?? policies[0];
+  const selectedTask = projectArtifacts.tasks?.find((task: any) => selection?.kind === "policy" && (task.metadata?.policyId === selection.id || task.taskId === selection.id));
+  const selectedPolicy = policies.find((policy: any) => selection?.kind === "policy" && policy.policyId === selection.id)
+    ?? policies.find((policy: any) => selectedTask?.metadata?.policyId && policy.policyId === selectedTask.metadata.policyId)
+    ?? policies[0];
   const timelineSelectionRecordingId = selection?.kind === "timeline"
     ? timelines.find((timeline: any) => timeline.timeline?.some((entry: any) => entry.id === selection.id))?.recordingId
       ?? recordings.find((recording: any) => recording.timeline?.some((entry: any) => entry.id === selection.id))?.recordingId
@@ -311,7 +316,16 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const generatedRecordingOwnedHierarchyIds = new Set([...recordingNodes, ...proposalNodes].map((node) => node.id));
   const hierarchyNodes: AutomationHierarchyNode[] = [
     ...proposalNodes,
-    ...policies.map((policy: any) => ({
+    ...(projectArtifacts.tasks ?? []).map((task: any) => ({
+      id: `task-${task.taskId}`,
+      label: task.name ?? task.taskId,
+      kind: "task" as const,
+      category: "task" as const,
+      parentId: null,
+      viewId: "policy-primary",
+      sourceId: task.metadata?.policyId ?? task.taskId
+    })),
+    ...policies.filter((policy: any) => !(projectArtifacts.tasks ?? []).some((task: any) => task.metadata?.policyId === policy.policyId || task.taskId === policy.taskId)).map((policy: any) => ({
       id: policy.policyId,
       label: policy.taskId ?? policy.policyId,
       kind: "task" as const,
@@ -338,6 +352,10 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     : workspacePrefs.maximizedWindowId ? workspacePrefs.windows.filter((item) => item.id === workspacePrefs.maximizedWindowId) : workspacePrefs.windows;
   const activeWindow = workspacePrefs.windows.find((item) => item.id === workspacePrefs.activeWindowId) ?? workspacePrefs.windows[0];
   const activeViewId = activeWindow?.activeViewId ?? "policy-primary";
+  const rawPolicyDraft = workspacePrefs.viewStates?.["policy-primary"]?.draftGraph;
+  const policyDraft = rawPolicyDraft && typeof rawPolicyDraft === "object" && !Array.isArray(rawPolicyDraft) && (!selectedPolicy?.policyId || (rawPolicyDraft as { policyId?: unknown }).policyId === selectedPolicy.policyId)
+    ? rawPolicyDraft
+    : null;
   const windowsByArea = (area: AutomationWorkspaceArea) => visibleWindows.filter((item) => (item.area ?? "main") === area);
   const canvasForArea = (area: AutomationWorkspaceArea) => area === "right" ? rightWorkspaceCanvasRef.current : mainWorkspaceCanvasRef.current;
   const setSelectionAndFollow = (next: AutomationSelection) => {
@@ -526,6 +544,20 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       });
     });
   }, [activeProjectId, loadedProjectHierarchyId, selection, dockTab]);
+
+  useEffect(() => {
+    const hasDirtyDraft = Object.values(workspacePrefs.viewStates ?? {}).some((state) => {
+      const draft = state?.draftGraph;
+      return Boolean(draft && typeof draft === "object" && !Array.isArray(draft) && (draft as { dirty?: unknown }).dirty === true);
+    });
+    if (!hasDirtyDraft) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [workspacePrefs.viewStates]);
 
   useEffect(() => {
     if (!activeProjectId) return;
@@ -779,17 +811,19 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
 
   async function refreshProjectRuntimeState(projectId = activeProjectId) {
     if (!projectId) return;
-    const [recordingResult, timelineResult, runtimeResult, pipelineResult, domainResult] = await Promise.all([
+    const [recordingResult, timelineResult, runtimeResult, pipelineResult, artifactResult, domainResult] = await Promise.all([
       api.post<{ recordings: any[] }>("list-recordings", { projectId }),
       api.post<{ normalizedTimelines: any[] }>("list-normalized-timelines", { projectId }),
       api.post<{ runtimeSessions: any[] }>("list-runtime-sessions", { projectId }),
       api.post<any>("list-pipeline-artifacts", { projectId }),
+      api.post<{ artifacts: any }>("list-project-artifacts", { projectId }),
       api.post<{ domains: any[] }>("list-recording-domains", { projectId })
     ]);
     if (recordingResult.ok) setProjectRecordings(recordingResult.payload?.recordings ?? []);
     if (timelineResult.ok) setProjectTimelines(timelineResult.payload?.normalizedTimelines ?? []);
     if (runtimeResult.ok) setRuntimeSessions(runtimeResult.payload?.runtimeSessions ?? []);
     if (pipelineResult.ok) setPipelineArtifacts(pipelineResult.payload ?? { normalizationReviews: [], miningRuns: [], evidenceFacts: [], evidenceObservations: [], stateActionCorrelations: [], evidenceClaims: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
+    if (artifactResult.ok) setProjectArtifacts(artifactResult.payload?.artifacts ?? { tasks: [], routines: [], configs: [], flows: [] });
     if (!pipelineResult.ok) setAutomationActionStatus(pipelineResult.error ?? "Pipeline artifacts could not be loaded.");
     if (domainResult.ok) setRecordingDomains(domainResult.payload?.domains ?? []);
     return {
@@ -797,6 +831,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       timelines: timelineResult.ok ? timelineResult.payload?.normalizedTimelines ?? [] : null,
       runtimeSessions: runtimeResult.ok ? runtimeResult.payload?.runtimeSessions ?? [] : null,
       pipelineArtifacts: pipelineResult.ok ? pipelineResult.payload ?? emptyPipelineArtifacts() : null,
+      projectArtifacts: artifactResult.ok ? artifactResult.payload?.artifacts ?? { tasks: [], routines: [], configs: [], flows: [] } : null,
       domains: domainResult.ok ? domainResult.payload?.domains ?? [] : null
     };
   }
@@ -1117,6 +1152,14 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     const result = await api.post<any>(endpoint, { projectId: activeProjectId, authorizationPin, ...payload });
     if (result.ok && result.payload) {
       applyPipelineActionPayload(endpoint, result.payload);
+      if (endpoint === "approve-policy-proposal" && result.payload.proposal?.policy?.policyId) {
+        setSelection({ kind: "policy", id: result.payload.proposal.policy.policyId });
+        openView("policy-primary", "preview", "main");
+        setAutomationActionStatus("Task draft applied and opened.");
+        void refresh();
+        void refreshProjectRuntimeState(activeProjectId);
+        return true;
+      }
     }
     setAutomationActionStatus(result.ok ? success : result.error ?? "Pipeline action failed.");
     void refreshProjectRuntimeState(activeProjectId);
@@ -1171,6 +1214,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setDeletedHierarchyIds([]);
     setProjectRecordings([]);
     setProjectTimelines([]);
+    setProjectArtifacts({ tasks: [], routines: [], configs: [], flows: [] });
     setRuntimeSessions([]);
     setPipelineArtifacts({ normalizationReviews: [], miningRuns: [], evidenceFacts: [], evidenceObservations: [], stateActionCorrelations: [], evidenceClaims: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
     setRecordingDomains([]);
@@ -1218,6 +1262,18 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           ...(current.viewStates?.["workspace-dock"] ?? {}),
           ...(selection ? { selection } : {}),
           dockTab: tab
+        }
+      }
+    }));
+  }
+  function updatePolicyDraft(draft: JsonObject) {
+    updateWorkspacePrefs((current) => ({
+      ...current,
+      viewStates: {
+        ...(current.viewStates ?? {}),
+        "policy-primary": {
+          ...(current.viewStates?.["policy-primary"] ?? {}),
+          draftGraph: draft
         }
       }
     }));
@@ -1681,6 +1737,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                       policies={policies}
                       pipelineArtifacts={pipelineArtifacts}
                       policy={selectedPolicy}
+                      policyDraft={policyDraft}
                       problems={problems}
                       projectId={activeProjectId}
                       recordings={recordings}
@@ -1708,6 +1765,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                       onAppendRecordingNote={appendProjectRecordingNote}
                       onNormalizeRecording={normalizeProjectRecording}
                       onPipelineAction={runRecordingPipelineStep}
+                      onPolicyDraftChange={updatePolicyDraft}
                       onProcessFinalizedRecording={processFinalizedRecording}
                       onRunRecordingPipeline={runRecordingPipeline}
                       onProcessProposalWithLlm={processPipelineProposalWithLlm}

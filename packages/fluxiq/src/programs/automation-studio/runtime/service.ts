@@ -659,6 +659,25 @@ export class AutomationStudioService {
     await this.repositories.policyGraphs.put(approved.policy);
     await this.writePipelineArtifact(input.projectId, "policyProposals", approved.proposalId, approved as unknown as JsonObject);
     await new ProgramJsonStore<JsonObject>(this.projectFile(input.projectId, "policies", `${safeSegment(approved.policy.policyId)}.json`), () => ({})).write({ policy: approved.policy as unknown as JsonObject });
+    const existingTask = await this.getProjectArtifact(input.projectId, "task", approved.policy.taskId).then((artifact) => artifact as AutomationStudioTaskArtifact).catch(() => null);
+    const task: AutomationStudioTaskArtifact = {
+      schemaVersion: "0.1",
+      taskId: approved.policy.taskId,
+      name: humanTaskName(approved.policy.taskId),
+      description: approved.summary,
+      recordingIds: uniqueStrings([...(existingTask?.recordingIds ?? []), String(approved.metadata?.recordingId ?? "")]),
+      createdAt: existingTask?.createdAt ?? Date.now(),
+      updatedAt: Date.now(),
+      metadata: {
+        ...(existingTask?.metadata ?? {}),
+        status: "draft",
+        source: "policy_proposal",
+        proposalId: approved.proposalId,
+        policyId: approved.policy.policyId,
+        approvedAt: approved.approvedAt
+      }
+    };
+    await this.saveProjectArtifact({ projectId: input.projectId, kind: "task", artifact: task });
     return approved;
   }
 
@@ -2048,6 +2067,11 @@ function readableStatePath(pathValue: string): string {
 
 function readableTokenValue(value: string): string {
   return value.replace(/[_:.-]+/g, " ").replace(/\s+/g, " ").trim().replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Unknown";
+}
+
+function humanTaskName(taskId: string): string {
+  const name = readableTokenValue(taskId.replace(/^task[.:_-]?/i, ""));
+  return name === "Unknown" ? "Generated Task Draft" : name;
 }
 
 function stateValueSummary(value: unknown): string {

@@ -612,6 +612,12 @@ stores the last relevant selection context for that tab, plus view-local values
 such as the workspace dock subtab. Switching between inner-window tabs saves
 the outgoing view state and restores the incoming view state so timeline,
 proposal, inspector, and editor panes return to the item they were showing.
+Task editor graph edits are also autosaved into the active task view state as a
+server-side draft graph. This draft is stored in the project's
+`workspace/preferences.json`, not browser-local storage, so refreshing and
+reopening the project restores unsaved editor work. Draft graphs are marked
+dirty until they are formally applied/saved as project artifacts, and the web
+panel installs a browser leave-page warning while dirty drafts exist.
 Pointer movement uses transient pixel geometry while a window or section is
 being dragged/resized. The persisted percentage geometry is written back to
 workspace preferences only once the pointer interaction ends, preventing config
@@ -708,6 +714,11 @@ documents rather than becoming the only source of task/routine identity. Flow
 documents use Automation Studio node definition IDs, per-node parameter values,
 named source/target ports, positions, labels, descriptions, and metadata so the
 visual graph and executor speak the same language.
+Approving a generated proposal writes the approved `PolicyGraph` and creates or
+updates a draft task artifact at `tasks/{taskId}/task.json`. This lets the
+proposal apply path create a real task even when the project did not already
+contain one, and gives the left project hierarchy a file-backed task row to
+open after application.
 
 Automation Studio now has a neutral graph executor for these flow documents.
 The executor starts at the `builtin.control.start` node when present, runs

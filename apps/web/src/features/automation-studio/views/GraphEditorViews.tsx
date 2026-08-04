@@ -558,7 +558,7 @@ export function AutomationWorkspaceDock(props: { activeTab: AutomationDockTab; p
   );
 }
 
-export function AutomationPolicyCanvas(props: { entries: any[]; policy: any; recordings: any[]; selectedNode: any; selectedTimeline: any; signals: any[]; setSelection(selection: AutomationSelection): void }) {
+export function AutomationPolicyCanvas(props: { draft: any; entries: any[]; policy: any; recordings: any[]; selectedNode: any; selectedTimeline: any; signals: any[]; onDraftChange(draft: JsonObject): void; setSelection(selection: AutomationSelection): void }) {
   const [mode, setMode] = useState<AutomationTaskEditorMode>("flow");
   const [selectedPolicyNodeId, setSelectedPolicyNodeId] = useState(props.selectedNode?.id ?? "");
   const [selectedPolicyEdgeIds, setSelectedPolicyEdgeIds] = useState<string[]>([]);
@@ -568,14 +568,43 @@ export function AutomationPolicyCanvas(props: { entries: any[]; policy: any; rec
   const policySelectionRef = useRef("");
   const policyViewportRestoreRef = useRef<{ x: number; y: number; zoom: number } | null>(null);
   const [policyFlow, setPolicyFlow] = useState<ReactFlowInstance<Node<AutomationPolicyNodeData>, Edge> | null>(null);
-  const graph = useMemo(() => policyToReactFlowGraph(props.policy, ""), [props.policy]);
+  const graph = useMemo(() => {
+    if (Array.isArray(props.draft?.nodes) && Array.isArray(props.draft?.edges)) return { nodes: props.draft.nodes as Array<Node<AutomationPolicyNodeData>>, edges: props.draft.edges as Edge[] };
+    return policyToReactFlowGraph(props.policy, "");
+  }, [props.draft, props.policy]);
   const [policyNodes, setPolicyNodes] = useState(graph.nodes);
   const [policyEdges, setPolicyEdges] = useState(graph.edges);
+  const lastPolicyDraftSignatureRef = useRef("");
   useEffect(() => {
     setPolicyNodes((current) => syncGraphNodes(current, graph.nodes));
     setPolicyEdges(rebalanceAutomationEdgeLanes(graph.edges, graph.nodes));
     setSelectedPolicyEdgeIds([]);
+    lastPolicyDraftSignatureRef.current = JSON.stringify({
+      policyId: props.policy?.policyId ?? props.draft?.policyId ?? "draft",
+      nodes: graph.nodes,
+      edges: graph.edges
+    });
   }, [graph.edges, graph.nodes]);
+  useEffect(() => {
+    const signature = JSON.stringify({
+      policyId: props.policy?.policyId ?? props.draft?.policyId ?? "draft",
+      nodes: policyNodes,
+      edges: policyEdges
+    });
+    if (signature === lastPolicyDraftSignatureRef.current) return;
+    lastPolicyDraftSignatureRef.current = signature;
+    const timeout = window.setTimeout(() => {
+      props.onDraftChange({
+        policyId: props.policy?.policyId ?? props.draft?.policyId ?? "draft",
+        taskId: props.policy?.taskId ?? props.draft?.taskId ?? "task.draft",
+        nodes: policyNodes as unknown as JsonObject[],
+        edges: policyEdges as unknown as JsonObject[],
+        updatedAt: Date.now(),
+        dirty: true
+      });
+    }, 500);
+    return () => window.clearTimeout(timeout);
+  }, [policyEdges, policyNodes, props.policy?.policyId, props.policy?.taskId, props.draft?.policyId, props.draft?.taskId]);
   useEffect(() => {
     function captureViewport() {
       if (policyFlow) policyViewportRestoreRef.current = policyFlow.getViewport();
