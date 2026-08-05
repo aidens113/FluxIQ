@@ -34,6 +34,10 @@ describe("AutomationStudioService recording persistence", () => {
   it("stores project recordings and normalized timelines in project folders", async () => {
     const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "State Framework" });
+    await expect(service.listProjectArtifacts(project.id)).resolves.toMatchObject({
+      tasks: [{ taskId: "task.unnamed_task", name: "unnamed_task", metadata: { status: "empty", source: "project_default" } }],
+      flows: []
+    });
     const initialState: StateSnapshot = {
       timestamp: 1,
       namespaces: {
@@ -137,6 +141,56 @@ describe("AutomationStudioService recording persistence", () => {
     await expect(readFile(path.join(projectRoot, "runtime", "indexes", "sessions.json"), "utf8")).resolves.toContain(run.runId);
   });
 
+  it("deletes saved project artifacts and owned flow files from project folders", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Deletion Project" });
+    const now = Date.now();
+    await service.saveProjectArtifact({
+      projectId: project.id,
+      kind: "task",
+      artifact: {
+        schemaVersion: "0.1",
+        taskId: "task.delete-me",
+        name: "Delete Me",
+        policyFlowId: "task.task.delete-me.policy-flow",
+        recordingIds: [],
+        createdAt: now,
+        updatedAt: now,
+        metadata: {
+          policyId: "policy.task.delete-me.saved"
+        }
+      }
+    });
+    await service.saveProjectArtifact({
+      projectId: project.id,
+      kind: "flow",
+      artifact: {
+        schemaVersion: "0.1",
+        flowId: "task.task.delete-me.policy-flow",
+        ownerKind: "task",
+        ownerId: "task.delete-me",
+        name: "Delete Me",
+        nodes: [],
+        edges: [],
+        createdAt: now,
+        updatedAt: now
+      }
+    });
+
+    const projectRoot = path.join(tempRoot, "programs", "automation-studio", "projects", project.id);
+    await expect(readFile(path.join(projectRoot, "tasks", "task.delete-me", "task.json"), "utf8")).resolves.toContain("\"taskId\"");
+    await expect(readFile(path.join(projectRoot, "flows", "task.task.delete-me.policy-flow", "flow.json"), "utf8")).resolves.toContain("\"flowId\"");
+
+    const deleted = await service.deleteProjectArtifact({ projectId: project.id, kind: "task", artifactId: "task.delete-me", deleteOwnedArtifacts: true });
+    const artifacts = await service.listProjectArtifacts(project.id);
+
+    expect(deleted.deletedArtifactIds).toEqual(expect.arrayContaining(["task:task.delete-me", "flow:task.task.delete-me.policy-flow", "policy:policy.task.delete-me.saved"]));
+    expect(artifacts.tasks.map((item) => item.taskId)).not.toContain("task.delete-me");
+    expect(artifacts.flows.map((item) => item.flowId)).not.toContain("task.task.delete-me.policy-flow");
+    await expect(readFile(path.join(projectRoot, "tasks", "task.delete-me", "task.json"), "utf8")).rejects.toThrow();
+    await expect(readFile(path.join(projectRoot, "flows", "task.task.delete-me.policy-flow", "flow.json"), "utf8")).rejects.toThrow();
+  });
+
   it("persists recording pipeline artifacts through proposal approval and replay", async () => {
     const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Pipeline Project" });
@@ -178,9 +232,11 @@ describe("AutomationStudioService recording persistence", () => {
     expect(artifacts.learnedTaskModels.map((item) => item.learnedTaskModelId)).toContain(model.learnedTaskModelId);
     expect(artifacts.policyProposals[0]).toMatchObject({ proposalId: proposal.proposalId, status: "approved" });
     expect(replay.policyId).toBe(approved.policy.policyId);
-    expect(projectArtifacts.tasks[0]).toMatchObject({ taskId: "task.pipeline", policyFlowId: "task.task.pipeline.policy-flow" });
-    expect(projectArtifacts.flows[0]).toMatchObject({ ownerKind: "task", ownerId: "task.pipeline" });
-    expect(projectArtifacts.flows[0]?.nodes.length).toBe(approved.policy.nodes.length);
+    const task = projectArtifacts.tasks.find((item) => item.taskId === "task.pipeline");
+    const flow = projectArtifacts.flows.find((item) => item.ownerId === "task.pipeline");
+    expect(task).toMatchObject({ taskId: "task.pipeline", graphId: "task.task.pipeline.graph", policyFlowId: "task.task.pipeline.graph", graph: { flowId: "task.task.pipeline.graph", ownerKind: "task", ownerId: "task.pipeline" } });
+    expect(flow).toMatchObject({ ownerKind: "task", ownerId: "task.pipeline" });
+    expect(flow?.nodes.length).toBe(approved.policy.nodes.length);
 
     const projectRoot = path.join(tempRoot, "programs", "automation-studio", "projects", project.id);
     await expect(readFile(path.join(projectRoot, "indexes", "pipeline.json"), "utf8")).resolves.toContain(proposal.proposalId);
@@ -188,6 +244,7 @@ describe("AutomationStudioService recording persistence", () => {
     await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.pipeline-test", "derived", "evidence", "claims", `${artifacts.evidenceClaims[0]!.claimId}.json`), "utf8")).resolves.toContain("\"claimId\"");
     await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.pipeline-test", "derived", "proposal", "proposal.json"), "utf8")).resolves.toContain("\"proposalId\"");
     await expect(readFile(path.join(projectRoot, "policies", `${approved.policy.policyId}.json`), "utf8")).resolves.toContain("\"policyId\"");
+    await expect(readFile(path.join(projectRoot, "tasks", "task.pipeline", "task.json"), "utf8")).resolves.toContain("\"graph\"");
 
     await service.deleteRecording({ projectId: project.id, recordingId: recording.recordingId });
     await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.pipeline-test", "derived", "index.json"), "utf8")).rejects.toThrow();
@@ -251,11 +308,14 @@ describe("AutomationStudioService recording persistence", () => {
     const miningRun = await service.mineRecordingEvidence({ projectId: project.id, recordingId: recording.recordingId });
 
     const proposal = await service.proposePolicyFromModel({ projectId: project.id, recordingId: recording.recordingId });
+    const projectArtifacts = await service.listProjectArtifacts(project.id);
 
     expect(proposal.metadata).toMatchObject({ source: "mined_evidence", recordingId: recording.recordingId, miningRunId: miningRun.miningRunId });
     expect(proposal.policy.sourceEvidence[0]).toMatchObject({ layer: "signal_mining", artifactId: miningRun.miningRunId });
     expect(proposal.policy.nodes[0]?.sourceEvidence[0]?.layer).toBe("evidence_claim");
     expect(miningRun.correlations?.[0]).toMatchObject({ statePath: "task.status", elementKind: "status", descriptor: { label: "Task status" } });
+    expect(projectArtifacts.tasks).toMatchObject([{ taskId: "task.unnamed_task", name: "unnamed_task" }]);
+    expect(projectArtifacts.flows).toEqual([]);
 
     const projectRoot = path.join(tempRoot, "programs", "automation-studio", "projects", project.id);
     await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.direct-proposal", "derived", "evidence", "mining-runs", `${miningRun.miningRunId}.json`), "utf8")).resolves.toContain("\"miningRunId\"");
@@ -295,7 +355,7 @@ describe("AutomationStudioService recording persistence", () => {
 
     const artifacts = await service.listProjectArtifacts(project.id);
     const task = artifacts.tasks.find((item) => item.taskId === "task.branching");
-    const flow = artifacts.flows.find((item) => item.flowId === task?.policyFlowId);
+    const flow = artifacts.flows.find((item) => item.flowId === task?.graphId);
 
     expect(task?.recordingIds.sort()).toEqual(["recording.branch-a", "recording.branch-b"]);
     expect(flow?.nodes.map((node) => node.label)).toEqual(expect.arrayContaining(["Event: Shared Start", "Event: Branch A", "Event: Branch B"]));
@@ -328,6 +388,10 @@ describe("AutomationStudioService recording persistence", () => {
     const proposal = processed.proposal!;
     const approved = await service.approvePolicyProposal({ projectId: project.id, proposalId: proposal.proposalId });
     expect(approved.policy.nodes.length).toBeGreaterThan(1);
+    const initialArtifacts = await service.listProjectArtifacts(project.id);
+    const existingTask = initialArtifacts.tasks.find((item) => item.taskId === "task.edited-proposal");
+    expect(existingTask).toBeDefined();
+    await service.saveProjectArtifact({ projectId: project.id, kind: "task", artifact: { ...existingTask!, name: "Edited Proposal Task" } });
 
     const override = {
       ...proposal.policy,
@@ -344,10 +408,12 @@ describe("AutomationStudioService recording persistence", () => {
       policyOverride: override
     });
     const artifacts = await service.listProjectArtifacts(project.id);
+    const task = artifacts.tasks.find((item) => item.taskId === "task.edited-proposal");
     const flow = artifacts.flows.find((item) => item.ownerId === "task.edited-proposal");
 
     expect(edited.policy.nodes).toEqual([]);
     expect(edited.policy.edges).toEqual([]);
+    expect(task?.name).toBe("Edited Proposal Task");
     expect(flow?.nodes).toEqual([]);
     expect(flow?.edges).toEqual([]);
   });
@@ -412,6 +478,7 @@ describe("AutomationStudioService recording persistence", () => {
     expect(processed.normalizedTimeline?.recordingId).toBe(recording.recordingId);
     expect(processed.miningRun?.metadata).toMatchObject({ recordingId: recording.recordingId });
     expect(processed.proposal?.metadata).toMatchObject({ recordingId: recording.recordingId, miningRunId: processed.miningRun?.miningRunId });
+    await expect(service.listProjectArtifacts(project.id)).resolves.toMatchObject({ tasks: [{ taskId: "task.unnamed_task", name: "unnamed_task" }], flows: [] });
     expect(skipped.status).toBe("skipped");
     expect(skipped.proposal?.proposalId).toBe(processed.proposal?.proposalId);
   });

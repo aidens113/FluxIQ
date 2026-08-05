@@ -6,7 +6,7 @@ export type AutomationHierarchyCategory = "client" | "proposal" | "task" | "rout
 export const automationHierarchyCategories: Array<{ id: AutomationHierarchyCategory; label: string; description: string; creatable?: boolean }> = [
   { id: "routine", label: "Routines", description: "Deterministic routine orchestration", creatable: true },
   { id: "task", label: "Tasks", description: "Learned task workspaces", creatable: true },
-  { id: "proposal", label: "Proposals", description: "Generated task drafts from recordings" },
+  { id: "proposal", label: "Proposals", description: "Generated task proposals from recordings" },
   { id: "recording", label: "Recordings", description: "Raw browser recording sessions", creatable: true },
   { id: "config", label: "Configurations", description: "Configuration folders and defaults", creatable: true }
 ];

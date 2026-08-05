@@ -8,7 +8,7 @@ import { formatAutomationPorts } from "../graph/ports";
 import { buildTimelineInspectorSections, conditionSummary } from "../timeline/view-model";
 import { AutomationNodeParameterEditor } from "../parameters/ParameterEditor";
 export function AutomationInspector(props: { entries: any[]; selection: AutomationSelection | null; policy: any; node: any; recording: any; entry: any; signal: any; setSelection(selection: AutomationSelection): void }) {
-  const title = props.selection?.kind === "signal" ? "Signal" : props.selection?.kind === "timeline" ? "Timeline Entry" : props.selection?.kind === "recording" ? "Recording" : props.selection?.kind === "policy" ? "Policy Graph" : props.selection?.kind === "editor-node" ? "Editor Node" : props.selection?.kind === "editor-mode" ? `${props.selection.label} Mode` : "Node Inspector";
+  const title = props.selection?.kind === "signal" ? "Signal" : props.selection?.kind === "timeline" ? "Timeline Entry" : props.selection?.kind === "recording" ? "Recording" : props.selection?.kind === "policy" ? "Policy Graph" : props.selection?.kind === "proposal-step" ? "Proposal Step" : props.selection?.kind === "editor-node" ? "Editor Node" : props.selection?.kind === "editor-mode" ? `${props.selection.label} Mode` : "Node Inspector";
   const timelineInspector = props.selection?.kind === "timeline" && props.entry ? buildTimelineInspectorSections(props.entry, props.entries, props.recording) : [];
   const updateEditorNodeParameters = (parameterValues: JsonObject) => {
     if (props.selection?.kind !== "editor-node") return;
@@ -34,6 +34,20 @@ export function AutomationInspector(props: { entries: any[]; selection: Automati
     props.setSelection(nextSelection);
     window.dispatchEvent(new CustomEvent("automation-studio:update-node-parameters", { detail: { nodeId: props.selection.id, customDescription } }));
   };
+  const updateProposalNode = (changes: { label?: string; customDescription?: string }) => {
+    if (props.selection?.kind !== "proposal-step") return;
+    const customDescription = changes.customDescription ?? props.selection.node?.customDescription;
+    const nextSelection: AutomationSelection = {
+      ...props.selection,
+      node: {
+        label: changes.label ?? props.selection.node?.label ?? props.selection.step.label,
+        description: props.selection.node?.description ?? props.selection.step.description,
+        ...(customDescription !== undefined ? { customDescription } : {})
+      }
+    };
+    props.setSelection(nextSelection);
+    window.dispatchEvent(new CustomEvent("automation-studio:update-proposal-node", { detail: { nodeId: props.selection.id, ...changes } }));
+  };
   return (
     <aside className="automation-inspector">
       <header>
@@ -47,6 +61,23 @@ export function AutomationInspector(props: { entries: any[]; selection: Automati
       {props.selection?.kind === "editor-mode" ? <>
         <InspectorSection title="Mode" rows={[["Editor", props.selection.editor === "task" ? "Task editor" : "Routine editor"], ["Mode", props.selection.label], ["Purpose", props.selection.description]]} />
         {props.selection.sections.map((section, sectionIndex) => <InspectorSection key={`${section.title}:${sectionIndex}`} title={section.title} rows={section.rows} />)}
+      </> : null}
+      {props.selection?.kind === "proposal-step" ? <>
+        <section className="automation-proposal-node-edit">
+          <label><span>Node Label</span><input value={props.selection.node?.label ?? props.selection.step.label} onChange={(event) => updateProposalNode({ label: event.target.value })} /></label>
+          <label><span>Description</span><textarea rows={3} value={props.selection.node?.customDescription ?? props.selection.node?.description ?? props.selection.step.description} onChange={(event) => updateProposalNode({ customDescription: event.target.value })} /></label>
+        </section>
+        <InspectorSection title="Proposal Step" rows={[
+          ["Confidence", props.selection.step.confidence],
+          ["Event", props.selection.step.label],
+          ["Transition", props.selection.step.transition ?? "-"],
+          ["Occurrences", props.selection.step.occurrenceCount > 1 ? `${props.selection.step.occurrenceCount} grouped occurrences` : "1 occurrence"],
+          ["Description", props.selection.step.occurrenceCount > 1 ? `${props.selection.step.occurrenceCount} similar recorded occurrences were grouped into this proposed step.` : props.selection.step.description]
+        ]} />
+        <InspectorSection title="Actions" rows={listRows(props.selection.step.actions)} />
+        {props.selection.step.requirements.length ? <InspectorSection title="Requirements" rows={listRows(props.selection.step.requirements)} /> : null}
+        {props.selection.step.expectedEffects.length ? <InspectorSection title="Expected Result" rows={listRows(props.selection.step.expectedEffects)} /> : null}
+        {props.selection.step.evidence.length ? <InspectorSection title="Evidence" rows={props.selection.step.evidence.map((signal) => [signal.title, signal.relation])} /> : null}
       </> : null}
       {props.selection?.kind === "signal" && props.signal ? <>
         <InspectorSection title="General" rows={[["Path", props.signal.path], ["Type", props.signal.type], ["Weight", String(props.signal.defaultWeight)], ["Volatility", props.signal.volatility], ["Registry", props.signal.registryId]]} />
@@ -86,6 +117,10 @@ export function InspectorSection(props: { title: string; rows: Array<[string, st
       <KeyValue rows={props.rows} />
     </details>
   );
+}
+
+function listRows(items: string[]): Array<[string, string]> {
+  return items.length ? items.map((item, index) => [String(index + 1), item]) : [["Items", "-"]];
 }
 
 function InspectorProvenance(props: { current: string; source: string }) {

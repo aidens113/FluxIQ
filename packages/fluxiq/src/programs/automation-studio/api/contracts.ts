@@ -31,6 +31,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   listProjectArtifacts: "list-project-artifacts",
   getProjectArtifact: "get-project-artifact",
   saveProjectArtifact: "save-project-artifact",
+  deleteProjectArtifact: "delete-project-artifact",
   getRecording: "get-recording",
   createRecording: "create-recording",
   updateRecording: "update-recording",

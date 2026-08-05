@@ -206,10 +206,10 @@ or all recording sessions contained by that client folder.
 
 Proposal rows in the project hierarchy are generated from policy proposals
 linked to finalized recordings. The Proposals root mirrors the Recordings root
-by client folder and recording start date/time, but opens the final task draft
-instead of exposing internal pipeline stages. Opening a proposal row selects
+by client folder and recording start date/time. Opening a proposal row selects
 the generated proposal and keeps its source recording correlated with the
-Recordings tree.
+Recordings tree without creating or opening a task until the user applies or
+saves the proposal.
 
 Demo recording fixtures such as `Demo Environment` are test fixtures only.
 The Automation Studio service does not seed fixture recordings by default in
@@ -227,12 +227,12 @@ The recording-to-task pipeline is intentionally staged internally:
    clusters, waits, branches, and unresolved questions.
 5. Propose a task policy graph directly from mined evidence, with every
    generated node and edge linking back to evidence.
-6. Apply the proposed task draft only after explicit approval.
+6. Apply the proposed task policy only after explicit approval.
 
 In the normal UI, finalized recordings are processed automatically. When a
 recording ends, Automation Studio normalizes it, writes normalization details,
-mines evidence, and proposes a task draft if evidence exists. Users navigate to
-the resulting task draft through the Proposals sidebar root rather than a
+mines evidence, and creates a task proposal if evidence exists. Users navigate
+to the resulting proposal through the Proposals sidebar root rather than a
 Pipeline root. Manual stage endpoints remain available for debugging and
 advanced tooling, but they are not the primary product surface.
 
@@ -612,12 +612,12 @@ stores the last relevant selection context for that tab, plus view-local values
 such as the workspace dock subtab. Switching between inner-window tabs saves
 the outgoing view state and restores the incoming view state so timeline,
 proposal, inspector, and editor panes return to the item they were showing.
-Task editor graph edits are also autosaved into the active task view state as a
-server-side draft graph. This draft is stored in the project's
-`workspace/preferences.json`, not browser-local storage, so refreshing and
-reopening the project restores unsaved editor work. Draft graphs are marked
-dirty until they are formally applied/saved as project artifacts, and the web
-panel installs a browser leave-page warning while dirty drafts exist.
+Task editor tabs render saved task/policy data only. Automation Studio no
+longer maintains an unsaved task graph in workspace preferences. Proposal review
+edits can still be cached in the project's `workspace/preferences.json` until
+the user explicitly applies the proposal to an existing saved task or saves it
+as a new task, and the web panel installs a browser leave-page warning while
+proposal review edits are dirty.
 Pointer movement uses transient pixel geometry while a window or section is
 being dragged/resized. The persisted percentage geometry is written back to
 workspace preferences only once the pointer interaction ends, preventing config
@@ -713,15 +713,27 @@ hierarchy rows. Each project reserves:
   state/
 ```
 
-Task, routine, config, and flow files are the canonical project edit targets.
-Hierarchy rows are navigation and organization; they should point at these
-documents rather than becoming the only source of task/routine identity. Flow
-documents use Automation Studio node definition IDs, per-node parameter values,
-named source/target ports, positions, labels, descriptions, and metadata so the
-visual graph and executor speak the same language.
+Task, routine, and config files are the canonical project edit targets.
+Task files embed their editable graph under `graph`, so
+`tasks/{taskId}/task.json` is not only a descriptor. The embedded graph uses
+Automation Studio node definition IDs, per-node parameter values, named
+source/target ports, positions, labels, descriptions, and metadata so the visual
+graph and executor speak the same language. `flows/{flowId}/flow.json` may still
+exist as a runtime-compatible mirror and migration source, but task editing must
+hydrate from the task artifact's embedded graph first.
+Left sidebar create/delete actions for saved tasks and routines must call the
+project artifact API and be reflected in this file structure immediately.
+Deleting a saved task/routine removes its artifact directory plus owned flow
+documents, and the workspace closes inner-window views whose saved selection
+points at the deleted object. Folder rows remain hierarchy-only organizational
+containers.
+Creating a project immediately creates a saved blank task artifact with
+`taskId` `task.unnamed_task`, name `unnamed_task`, and an embedded empty graph.
+The web workspace opens that saved task by default, so task views always point
+at real task artifacts instead of synthetic draft IDs.
 Approving a generated proposal writes the approved merged `PolicyGraph`, creates
 or updates a task artifact at `tasks/{taskId}/task.json`, and creates or updates
-the task policy flow at `flows/{flowId}/flow.json`. This only happens from an
+the task graph embedded in that same task artifact. This only happens from an
 explicit Apply/Save action. Proposal edits before that point are cached in the
 server-backed workspace preferences file, not as task files and not as left-tree
 project artifacts. Multiple recordings for the same task are merged by shared
@@ -826,7 +838,7 @@ replay results remain available for non-UI/runtime work. Mutating endpoints are
 privileged and should use the same shared PIN authorization path as project and
 category edits.
 
-The proposal UI is the user-facing surface for the final generated draft. It
+The proposal UI is the user-facing surface for generated task proposals. It
 shows the source recording, proposal status, generated time, summary counts,
 and an embedded policy graph editor. The editor uses the same React Flow node
 renderer as the task editor through a small embeddable graph API and includes a
@@ -835,7 +847,7 @@ content can be shown differently from proposed nodes, while proposal edits are
 cached in workspace preferences until the user applies or saves. Selecting a
 proposed node opens a compact inspector with editable node label/description,
 action summaries, requirements, expected state results, and readable supporting
-state signals. Proposal actions apply the current edited draft to the last open
+state signals. Proposal actions apply the current edited proposal to the last open
 valid task, save it as a new task, regenerate it from the recording, or process
 it with an LLM.
 
@@ -846,8 +858,8 @@ happens. When the proposal is written, Automation Studio opens the proposal
 view and highlights the generated proposal in the left hierarchy. This does not
 approve or apply the proposal.
 
-Each recording has one current draft proposal artifact. Regenerating the
-proposal overwrites that recording-owned draft instead of creating additional
+Each recording has one current proposal artifact. Regenerating the
+proposal overwrites that recording-owned proposal instead of creating additional
 proposal rows for the same source recording. The proposal is persisted under
 the source recording's derived artifact folder. Deleting the source recording
 deletes its proposal artifact and removes it from the project pipeline index.

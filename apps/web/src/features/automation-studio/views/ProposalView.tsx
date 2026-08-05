@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Link2, RefreshCcw, Route, Save, Sparkles } from "lucide-react";
+import { CheckCircle2, Link2, RefreshCcw, Save, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Edge, Node } from "@xyflow/react";
 import type { JsonObject } from "../../programs/program-api";
@@ -8,21 +8,22 @@ import { StatusBadge, StatusText, SummaryStrip } from "../../programs/shared-ui"
 import { buildProposalViewModel, type ProposalStepViewModel } from "../evidence/view-model";
 import { policyToReactFlowGraph } from "../graph/view-model";
 import { AutomationPolicyGraphEditor } from "./GraphEditorViews";
-import type { AutomationPolicyNodeData } from "../types";
+import type { AutomationPolicyNodeData, AutomationSelection } from "../types";
 
 export function AutomationProposalView(props: {
   actionStatus: string;
   pipelineArtifacts: any;
-  proposalDraft: any;
+  proposalReview: any;
   proposalTargetTaskId: string | null;
   recordings: any[];
   selectedProposal: any;
   selectedRecording: any;
   onOpenRecording(recordingId: string): void;
   onPipelineAction(endpoint: string, payload: JsonObject, success: string): Promise<boolean | void>;
-  onProposalDraftChange(proposalId: string, draft: JsonObject): void;
+  onProposalReviewChange(proposalId: string, review: JsonObject): void;
   onProcessFinalizedRecording(recordingId: string, force?: boolean): Promise<boolean | void>;
   onProcessProposalWithLlm(proposalId: string): void;
+  setSelection(selection: AutomationSelection): void;
 }) {
   const proposal = props.selectedProposal;
   const recording = props.selectedRecording ?? props.recordings.find((item) => item.recordingId === proposal?.metadata?.recordingId);
@@ -48,30 +49,51 @@ export function AutomationProposalView(props: {
   useEffect(() => {
     const nextGraph = (
       proposal?.proposalId
-      && props.proposalDraft
-      && props.proposalDraft.proposalId === proposal.proposalId
-      && props.proposalDraft.sourceGeneratedAt === proposal.generatedAt
-      && Array.isArray(props.proposalDraft.nodes)
-      && Array.isArray(props.proposalDraft.edges)
+      && props.proposalReview
+      && props.proposalReview.proposalId === proposal.proposalId
+      && props.proposalReview.sourceGeneratedAt === proposal.generatedAt
+      && Array.isArray(props.proposalReview.nodes)
+      && Array.isArray(props.proposalReview.edges)
     )
-      ? { nodes: props.proposalDraft.nodes as Array<Node<AutomationPolicyNodeData>>, edges: props.proposalDraft.edges as Edge[] }
+      ? { nodes: props.proposalReview.nodes as Array<Node<AutomationPolicyNodeData>>, edges: props.proposalReview.edges as Edge[] }
       : baseGraph;
     const signature = proposalGraphSignature(nextGraph, proposal?.proposalId ?? "", proposal?.generatedAt ?? 0);
     if (signature === lastRestoredGraphSignatureRef.current) return;
     lastRestoredGraphSignatureRef.current = signature;
     graphRef.current = nextGraph;
     setGraph(nextGraph);
-  }, [baseGraph, proposal?.generatedAt, proposal?.proposalId, props.proposalDraft]);
+  }, [baseGraph, proposal?.generatedAt, proposal?.proposalId, props.proposalReview]);
   const selectedStep = model?.steps.find((step) => step.id === selectedGraphNodeId || `node.${step.id}` === selectedGraphNodeId) ?? model?.steps[0];
   const selectedGraphNode = graph.nodes.find((node) => node.id === selectedGraphNodeId) ?? graph.nodes[0];
+  const publishProposalStepSelection = (node: Node<AutomationPolicyNodeData> | undefined, step: ProposalStepViewModel | undefined) => {
+    if (!proposal?.proposalId || !step) return;
+    props.setSelection({
+      kind: "proposal-step",
+      id: step.id,
+      proposalId: proposal.proposalId,
+      ...(recording?.recordingId ? { recordingId: recording.recordingId } : {}),
+      step: {
+        label: step.label,
+        description: step.description,
+        actions: step.actions,
+        requirements: step.requirements,
+        expectedEffects: step.expectedEffects,
+        confidence: step.confidence,
+        occurrenceCount: step.occurrenceCount,
+        ...(step.transition ? { transition: step.transition } : {}),
+        evidence: step.evidence.map((signal) => ({ id: signal.id, title: signal.title, relation: signal.relation }))
+      },
+      ...(node ? { node: { label: node.data.label, description: node.data.description, ...(node.data.customDescription !== undefined ? { customDescription: node.data.customDescription } : {}) } } : {})
+    });
+  };
   const updateGraph = (next: { nodes: Array<Node<AutomationPolicyNodeData>>; edges: Edge[] }) => {
     graphRef.current = next;
     setGraph(next);
     if (!proposal?.proposalId) return;
-    props.onProposalDraftChange(proposal.proposalId, {
+    props.onProposalReviewChange(proposal.proposalId, {
       proposalId: proposal.proposalId,
       sourceGeneratedAt: proposal.generatedAt,
-      targetTaskId: props.proposalTargetTaskId ?? `draft.${proposal.proposalId}`,
+      targetTaskId: props.proposalTargetTaskId ?? proposal.policy?.taskId ?? proposal.proposalId,
       nodes: next.nodes as unknown as JsonObject[],
       edges: next.edges as unknown as JsonObject[],
       updatedAt: Date.now(),
@@ -85,6 +107,18 @@ export function AutomationProposalView(props: {
       edges: graph.edges
     });
   };
+  useEffect(() => {
+    const onProposalNodeUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<{ nodeId?: string; label?: string; customDescription?: string }>).detail;
+      if (!detail?.nodeId || detail.nodeId !== selectedGraphNode?.id) return;
+      updateSelectedNode({
+        ...(detail.label !== undefined ? { label: detail.label } : {}),
+        ...(detail.customDescription !== undefined ? { customDescription: detail.customDescription } : {})
+      });
+    };
+    window.addEventListener("automation-studio:update-proposal-node", onProposalNodeUpdate);
+    return () => window.removeEventListener("automation-studio:update-proposal-node", onProposalNodeUpdate);
+  }, [selectedGraphNode?.id, graph.nodes, graph.edges]);
   const policyOverride = () => proposal ? reactFlowGraphToPolicyOverride(proposal.policy, graphRef.current, props.proposalTargetTaskId ?? proposal.policy?.taskId) : null;
   const applyToExistingTask = () => {
     if (!proposal) return;
@@ -124,7 +158,7 @@ export function AutomationProposalView(props: {
         {model ? <>
           <section className="automation-proposal-summary-panel">
             <div>
-              <span>Task draft</span>
+              <span>Proposal</span>
               <strong>{model.title}</strong>
               <p>{model.summary}</p>
             </div>
@@ -141,9 +175,12 @@ export function AutomationProposalView(props: {
               selectedNodeId={selectedGraphNodeId}
               showPalette
               onGraphChange={updateGraph}
-              onNodeSelect={(node) => setSelectedGraphNodeId(node.id)}
+              onNodeSelect={(node) => {
+                setSelectedGraphNodeId(node.id);
+                const step = model.steps.find((candidate) => candidate.id === node.id || `node.${candidate.id}` === node.id);
+                publishProposalStepSelection(node, step);
+              }}
             />
-            <ProposalStepInspector node={selectedGraphNode} step={selectedStep} onNodeChange={updateSelectedNode} />
           </section>
         </> : null}
       </section>
@@ -151,47 +188,11 @@ export function AutomationProposalView(props: {
   );
 }
 
-function ProposalStepInspector(props: { node: Node<AutomationPolicyNodeData> | undefined; step: ProposalStepViewModel | undefined; onNodeChange(changes: Partial<AutomationPolicyNodeData>): void }) {
-  if (!props.step) return <aside className="automation-proposal-step-inspector"><strong>No step selected</strong><span>Select a proposed node to inspect its actions and evidence.</span></aside>;
-  return (
-    <aside className="automation-proposal-step-inspector">
-      <header>
-        <span>{props.step.confidence} confidence</span>
-        <strong>{props.step.label}</strong>
-        {props.step.transition ? <small>{props.step.transition}</small> : null}
-      </header>
-      {props.node ? <div className="automation-proposal-node-edit">
-        <label><span>Node Label</span><input value={props.node.data.label} onChange={(event) => props.onNodeChange({ label: event.target.value })} /></label>
-        <label><span>Description</span><textarea rows={3} value={props.node.data.customDescription ?? props.node.data.description} onChange={(event) => props.onNodeChange({ customDescription: event.target.value })} /></label>
-      </div> : null}
-      <p>{props.step.occurrenceCount > 1 ? `${props.step.occurrenceCount} similar recorded occurrences were grouped into this proposed step.` : props.step.description}</p>
-      <StepList title="Actions" items={props.step.actions} />
-      {props.step.requirements.length ? <StepList title="Requirements" items={props.step.requirements} /> : null}
-      {props.step.expectedEffects.length ? <StepList title="Expected Result" items={props.step.expectedEffects} /> : null}
-      {props.step.evidence.length ? <div className="automation-proposal-evidence-strip compact">
-        <strong><Route size={14} aria-hidden />Evidence</strong>
-        {props.step.evidence.slice(0, 5).map((signal) => <span key={signal.id}>{signal.title}: {signal.relation}</span>)}
-      </div> : null}
-    </aside>
-  );
-}
-
-function StepList(props: { title: string; items: string[] }) {
-  return (
-    <div className="automation-proposal-step-list-block">
-      <strong>{props.title}</strong>
-      <ul>
-        {props.items.map((item, index) => <li key={`${item}:${index}`}>{item}</li>)}
-      </ul>
-    </div>
-  );
-}
-
 function reactFlowGraphToPolicyOverride(basePolicy: any, graph: { nodes: Array<Node<AutomationPolicyNodeData>>; edges: Edge[] }, targetTaskId: string) {
   const baseNodesById = new Map((basePolicy?.nodes ?? []).map((node: any) => [node.id, node]));
   const targetPolicyId = basePolicy?.taskId === targetTaskId
-    ? basePolicy?.policyId ?? `policy.${targetTaskId}.draft`
-    : `policy.${targetTaskId}.draft`;
+    ? basePolicy?.policyId ?? `policy.${targetTaskId}.proposal`
+    : `policy.${targetTaskId}.proposal`;
   const nodes = graph.nodes.map((node, index) => {
     const existing = baseNodesById.get(node.id) as any;
     return {

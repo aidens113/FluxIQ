@@ -115,7 +115,7 @@ export function automationWindowDescription(view: AutomationViewInstance): strin
   if (view.type === "routine") return "Build routine orchestration graphs.";
   if (view.type === "config") return "Edit project configuration values.";
   if (view.type === "recordings") return "Review raw timeline evidence and notes.";
-  if (view.type === "proposal") return "Review and apply generated task drafts.";
+  if (view.type === "proposal") return "Review and apply generated proposals.";
   if (view.type === "timeline-inspector") return "Inspect facts, evidence, and claims for a timeline item.";
   if (view.type === "signals") return "Browse mined state signals.";
   if (view.type === "runtime") return "Inspect live/debug execution state.";
@@ -162,6 +162,7 @@ export function PreferenceSlider(props: { label: string; min: number; max: numbe
 
 export function AutomationViewContainer(props: {
   active: boolean;
+  activeViewId: string;
   canPageFullscreen: boolean;
   children: ReactNode;
   icon: typeof Blocks;
@@ -209,7 +210,7 @@ export function AutomationViewContainer(props: {
         {props.tabs.map((tab) => {
           const TabIcon = tab.icon;
           return (
-            <button className={tab.label === props.subtitle ? "selected" : ""} key={tab.id} onClick={() => props.onTabSelect(tab.id)} role="tab" type="button">
+            <button className={tab.id === props.activeViewId ? "selected" : ""} key={tab.id} onClick={() => props.onTabSelect(tab.id)} role="tab" title={tab.label} aria-selected={tab.id === props.activeViewId} type="button">
               <TabIcon size={13} aria-hidden />
               <span>{tab.label}</span>
               <span className="tab-close" onClick={(event) => { event.stopPropagation(); props.onCloseTab(tab.id); }}>x</span>

@@ -23,7 +23,7 @@ export function AutomationAssistantView(props: { node: any; recording: any; sign
       <div className="assistant-proposal-card">
         <strong>Proposal Preview</strong>
         <span>{proposal}</span>
-        <div className="inline-actions"><button className="button" onClick={() => propose("Explain selection")} type="button">Explain Selection</button><button className="button" onClick={() => propose("Compare evidence")} type="button">Compare Evidence</button><button className="button" disabled={!assistantText.trim()} onClick={() => propose("Draft policy edit")} type="button">Draft Edit</button></div>
+        <div className="inline-actions"><button className="button" onClick={() => propose("Explain selection")} type="button">Explain Selection</button><button className="button" onClick={() => propose("Compare evidence")} type="button">Compare Evidence</button><button className="button" disabled={!assistantText.trim()} onClick={() => propose("Propose policy edit")} type="button">Propose Edit</button></div>
       </div>
     </section>
   );

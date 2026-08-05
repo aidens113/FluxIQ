@@ -3,7 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import type { AutomationNodeParameter, AutomationNodePort } from "fluxiq/automation-studio/nodes";
 import type { JsonObject } from "../../programs/program-api";
 import type { AutomationDragSelectBox } from "../workspace/layout";
-import type { AutomationPolicyNodeData, AutomationRoutineNodeData } from "../types";
+import { automationEditorPalette, type AutomationPolicyNodeData, type AutomationRoutineNodeData } from "../types";
 import { automationConnectionIsValid, automationPortColor, automationPortDisplayLabel, automationPortIdFromLabel, automationPortLabelFromId, automationPortTone, uniqueAutomationPorts } from "./ports";
 
 export function defaultAutomationParameterValues(parameters: AutomationNodeParameter[]): JsonObject {
@@ -448,11 +448,15 @@ export function policyToReactFlowGraph(policy: any, selectedNodeId = ""): { node
   const nodes: Node<AutomationPolicyNodeData>[] = policyNodes.map((node: any, index: number) => ({
     id: node.id,
     type: "policyNode",
-    position: positions.get(node.id) ?? { x: index * 340, y: 160 },
+    position: node.metadata?.position && typeof node.metadata.position === "object"
+      ? { x: Number(node.metadata.position.x ?? 0), y: Number(node.metadata.position.y ?? 0) }
+      : positions.get(node.id) ?? { x: index * 340, y: 160 },
     selected: node.id === selectedNodeId,
     data: {
       label: node.label ?? node.id,
       description: generatedPolicyNodeDescription(node),
+      customDescription: node.metadata?.customDescription,
+      nodeDefinitionId: node.metadata?.nodeDefinitionId,
       icon: generatedPolicyNodeIcon(node, index),
       actionTypes: (node.actions ?? []).map((action: any) => action.actionType),
       recovery: node.recovery?.strategy ?? "ready",
@@ -461,8 +465,8 @@ export function policyToReactFlowGraph(policy: any, selectedNodeId = ""): { node
       successCount: countConditionLeaves(node.successConditions),
       inputs: generatedPolicyInputPorts(node, index),
       outputs: generatedPolicyOutputPorts(node, policyEdges),
-      parameters: [],
-      parameterValues: {},
+      parameters: Array.isArray(node.metadata?.parameters) ? node.metadata.parameters : [],
+      parameterValues: node.metadata?.parameterValues && typeof node.metadata.parameterValues === "object" ? node.metadata.parameterValues : {},
       isStart: index === 0,
       confidence: node.generatedMetadata?.confidence,
       timeoutMs: node.timeout?.timeoutMs ?? node.timeoutMs
@@ -475,30 +479,150 @@ export function policyToReactFlowGraph(policy: any, selectedNodeId = ""): { node
     const target = String(edge.toNodeId ?? edge.target ?? "");
     const count = outgoingCounts.get(source) ?? 0;
     outgoingCounts.set(source, count + 1);
-    const visuals = edgeVisuals(edge);
-    const label = edge.label ?? edge.kind ?? edge.type ?? (edge.probability !== undefined ? `${Math.round(Number(edge.probability) * 100)}%` : "Next");
+    const fallbackLabel = edge.label ?? edge.kind ?? edge.type ?? (edge.probability !== undefined ? `${Math.round(Number(edge.probability) * 100)}%` : "Next");
     const id = edge.id ?? `${edge.fromNodeId}-${edge.toNodeId}-${index}`;
+    const sourcePort = policyEdgeSourcePort(edge, nodes.find((node) => node.id === source)?.data.outputs ?? [], fallbackLabel, count);
+    const targetPort = policyEdgeTargetPort(edge, nodes.find((node) => node.id === target)?.data.inputs ?? []);
+    const label = sourcePort ? automationPortDisplayLabel(sourcePort) : String(fallbackLabel);
+    const color = automationPortColor(automationPortTone(sourcePort ?? { id: automationPortIdFromLabel(label), label, valueType: "any", role: generatedPolicyOutputRole(automationPortIdFromLabel(label), label) }, "source"));
     const nextEdge: Edge = {
       id,
       source,
       target,
-      sourceHandle: automationPortIdFromLabel(label),
-      targetHandle: "in",
+      sourceHandle: sourcePort?.id ?? automationPortIdFromLabel(label),
+      targetHandle: targetPort?.id ?? "in",
       type: "automationEdge",
       animated: false,
-      data: { label, lane: chooseAutomationEdgeLane(source, target, edges, nodes, id, count), siblingIndex: count, routeIndex: count },
+      data: { label, lane: chooseAutomationEdgeLane(source, target, edges, nodes, id, count), siblingIndex: count, routeIndex: count, sourcePort: sourcePort?.id ?? automationPortIdFromLabel(label), targetPort: targetPort?.id ?? "in" },
       markerEnd: {
         type: MarkerType.ArrowClosed,
-        color: visuals.color,
+        color,
         width: 18,
         height: 18
       },
-      label
+      label,
+      style: { stroke: color, strokeWidth: 3 }
     };
-    if (visuals.style) nextEdge.style = visuals.style;
     edges.push(nextEdge);
   }
   return { nodes, edges };
+}
+
+export function taskFlowToReactFlowGraph(flow: any, selectedNodeId = ""): { nodes: Node<AutomationPolicyNodeData>[]; edges: Edge[] } {
+  if (!flow) return { nodes: [], edges: [] };
+  const flowNodes = flow.nodes ?? [];
+  const flowEdges = flow.edges ?? [];
+  const positions = layoutAutomationPolicyNodes(
+    flowNodes.map((node: any) => ({ id: node.id, metadata: { position: node.position } })),
+    flowEdges.map((edge: any) => ({ fromNodeId: edge.sourceNodeId, toNodeId: edge.targetNodeId }))
+  );
+  const nodes: Node<AutomationPolicyNodeData>[] = flowNodes.map((node: any, index: number) => {
+    const definition = automationNodeSpecForDefinition(node.definitionId);
+    const parameterValues = node.parameterValues && typeof node.parameterValues === "object" ? node.parameterValues : {};
+    const inputs = automationVisualInputPorts(definition?.inputs ?? [], node.definitionId);
+    const outputs = flowNodeOutputPorts(node, flowEdges, definition?.outputs ?? []);
+    return {
+      id: node.id,
+      type: "policyNode",
+      position: node.position && typeof node.position === "object"
+        ? { x: Number(node.position.x ?? 0), y: Number(node.position.y ?? 0) }
+        : positions.get(node.id) ?? { x: index * 340, y: 160 },
+      selected: node.id === selectedNodeId,
+      data: {
+        label: node.label ?? definition?.label ?? node.id,
+        description: node.description ?? definition?.description ?? "Task graph node",
+        customDescription: node.metadata?.customDescription,
+        nodeDefinitionId: node.definitionId,
+        ...(definition?.icon !== undefined ? { icon: definition.icon } : {}),
+        actionTypes: Array.isArray(parameterValues.actions) ? parameterValues.actions.map((action: any) => String(action.actionType ?? "")).filter(Boolean) : [],
+        recovery: typeof parameterValues.recovery?.strategy === "string" ? parameterValues.recovery.strategy : definition?.family ?? "ready",
+        evidenceCount: 0,
+        readinessCount: inputs.length,
+        successCount: outputs.length,
+        inputs,
+        outputs,
+        parameters: definition?.parameters ?? [],
+        parameterValues,
+        isStart: node.definitionId === "builtin.control.start" || index === 0,
+        timeoutMs: typeof parameterValues.timeout?.timeoutMs === "number" ? parameterValues.timeout.timeoutMs : undefined
+      }
+    };
+  });
+  const edges: Edge[] = [];
+  const outgoingCounts = new Map<string, number>();
+  for (const [index, edge] of flowEdges.entries()) {
+    const source = String(edge.sourceNodeId ?? edge.source ?? "");
+    const target = String(edge.targetNodeId ?? edge.target ?? "");
+    const count = outgoingCounts.get(source) ?? 0;
+    outgoingCounts.set(source, count + 1);
+    const sourcePorts = nodes.find((node) => node.id === source)?.data.outputs ?? [];
+    const targetPorts = nodes.find((node) => node.id === target)?.data.inputs ?? [];
+    const sourcePort = flowEdgeSourcePort(edge, sourcePorts, count);
+    const targetPort = flowEdgeTargetPort(edge, targetPorts);
+    const label = sourcePort ? automationPortDisplayLabel(sourcePort) : String(edge.label ?? edge.metadata?.label ?? "Next");
+    const color = automationPortColor(automationPortTone(sourcePort ?? { id: edge.sourcePortId ?? "next", label, valueType: "any", role: generatedPolicyOutputRole(edge.sourcePortId ?? "next", label) }, "source"));
+    edges.push({
+      id: edge.id ?? `${source}-${target}-${index}`,
+      source,
+      target,
+      sourceHandle: sourcePort?.id ?? edge.sourcePortId ?? automationPortIdFromLabel(label),
+      targetHandle: targetPort?.id ?? edge.targetPortId ?? "in",
+      type: "automationEdge",
+      data: { ...(edge.metadata ?? {}), label, lane: chooseAutomationEdgeLane(source, target, edges, nodes, edge.id ?? `${source}-${target}-${index}`, count), siblingIndex: count, routeIndex: count, sourcePort: sourcePort?.id ?? edge.sourcePortId ?? automationPortIdFromLabel(label), targetPort: targetPort?.id ?? edge.targetPortId ?? "in" },
+      label,
+      markerEnd: { type: MarkerType.ArrowClosed, color, width: 18, height: 18 },
+      style: { stroke: color, strokeWidth: 3 }
+    });
+  }
+  return { nodes, edges };
+}
+
+function automationNodeSpecForDefinition(definitionId: string | undefined) {
+  return automationEditorPalette.flatMap((group) => group.nodes).find((node) => node.id === definitionId);
+}
+
+function flowNodeOutputPorts(node: any, flowEdges: any[], definitionOutputs: AutomationNodePort[]): AutomationNodePort[] {
+  if (definitionOutputs.length) return definitionOutputs;
+  const ports = flowEdges
+    .filter((edge: any) => String(edge.sourceNodeId ?? edge.source ?? "") === String(node.id))
+    .map((edge: any, index: number) => {
+      const label = edge.label ?? edge.metadata?.label ?? edge.sourcePortId ?? (index === 0 ? "Next" : `Branch ${index + 1}`);
+      const id = String(edge.sourcePortId ?? automationPortIdFromLabel(label));
+      return { id, label: String(label), valueType: "any" as const, role: generatedPolicyOutputRole(id, label) };
+    });
+  return ports.length ? uniqueAutomationPorts(ports) : [{ id: "success", label: "Success", valueType: "any", role: "success" }];
+}
+
+function flowEdgeSourcePort(edge: any, ports: AutomationNodePort[], routeIndex: number): AutomationNodePort | undefined {
+  const requestedId = String(edge.sourcePortId ?? edge.sourceHandle ?? edge.metadata?.sourcePort ?? "").trim();
+  if (requestedId) {
+    const byId = ports.find((port) => port.id === requestedId);
+    if (byId) return byId;
+  }
+  return ports[routeIndex] ?? ports[0];
+}
+
+function flowEdgeTargetPort(edge: any, ports: AutomationNodePort[]): AutomationNodePort | undefined {
+  const requestedId = String(edge.targetPortId ?? edge.targetHandle ?? edge.metadata?.targetPort ?? "").trim();
+  return requestedId ? ports.find((port) => port.id === requestedId) : ports.find((port) => port.id === "in") ?? ports[0];
+}
+
+function policyEdgeSourcePort(edge: any, ports: AutomationNodePort[], label: unknown, routeIndex: number): AutomationNodePort | undefined {
+  const requestedId = String(edge.sourceHandle ?? edge.sourcePortId ?? edge.sourcePort ?? edge.metadata?.sourcePortId ?? edge.metadata?.sourcePort ?? edge.data?.sourcePort ?? "").trim();
+  if (requestedId) {
+    const byId = ports.find((port) => port.id === requestedId);
+    if (byId) return byId;
+  }
+  const labelId = automationPortIdFromLabel(label);
+  return ports.find((port) => port.id === labelId)
+    ?? ports.find((port) => automationPortDisplayLabel(port).toLowerCase() === String(label ?? "").toLowerCase())
+    ?? ports[routeIndex]
+    ?? ports[0];
+}
+
+function policyEdgeTargetPort(edge: any, ports: AutomationNodePort[]): AutomationNodePort | undefined {
+  const requestedId = String(edge.targetHandle ?? edge.targetPortId ?? edge.targetPort ?? edge.metadata?.targetPortId ?? edge.metadata?.targetPort ?? edge.data?.targetPort ?? "").trim();
+  return requestedId ? ports.find((port) => port.id === requestedId) : ports.find((port) => port.id === "in") ?? ports[0];
 }
 
 export function generatedPolicyInputPorts(node: any, index: number): AutomationNodePort[] {

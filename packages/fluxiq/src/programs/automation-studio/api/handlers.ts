@@ -176,6 +176,23 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   });
   registry.register({
     programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectArtifact,
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; kind?: unknown; artifactId?: unknown; deleteOwnedArtifacts?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
+      await authorizeProgramPin(identityAccess, payload);
+      return {
+        ok: true,
+        payload: await service.deleteProjectArtifact({
+          projectId: String(payload.projectId ?? ""),
+          kind: String(payload.kind ?? "") as AutomationStudioProjectArtifactKind,
+          artifactId: String(payload.artifactId ?? ""),
+          deleteOwnedArtifacts: payload.deleteOwnedArtifacts === true
+        })
+      };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRecording,
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as RecordingProjectRequest & { recordingId?: unknown } : {};

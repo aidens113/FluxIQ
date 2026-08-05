@@ -71,6 +71,7 @@ export type AutomationSelection =
   | { kind: "workspace"; id: "clients" | "runs" }
   | { kind: "policy"; id: string }
   | { kind: "proposal"; id: string; recordingId?: string }
+  | { kind: "proposal-step"; id: string; proposalId: string; recordingId?: string; step: { label: string; description: string; actions: string[]; requirements: string[]; expectedEffects: string[]; confidence: string; occurrenceCount: number; transition?: string; evidence: Array<{ id: string; title: string; relation: string }> }; node?: { label: string; description: string; customDescription?: string } }
   | { kind: "node"; id: string }
   | { kind: "editor-node"; id: string; node: { label: string; nodeType: string; family: string; description: string; customDescription?: string; nodeDefinitionId?: string; icon?: string; inputs: AutomationNodePort[]; outputs: AutomationNodePort[]; parameters: AutomationNodeParameter[]; parameterValues: JsonObject; privileged?: boolean; actionTypes?: string[] } }
   | { kind: "editor-mode"; id: string; editor: "task" | "routine"; label: string; description: string; sections: Array<{ title: string; rows: Array<[string, string]> }> }

@@ -135,7 +135,7 @@ export function AutomationRunsWorkspace(props: { pipelineArtifacts: any; runtime
         session.trace?.attempts?.length ?? 0,
         session.trace?.effects?.length ?? 0
       ])} empty="No runtime sessions have been started for this project." />
-      <DataTable columns={["Replay", "Status", "Recording", "Draft", "Matched", "Warnings"]} rows={replays.map((replay: any) => [
+      <DataTable columns={["Replay", "Status", "Recording", "Proposal", "Matched", "Warnings"]} rows={replays.map((replay: any) => [
         replay.replayId,
         <StatusBadge key={replay.replayId} value={replay.status ?? "unknown"} />,
         replay.recordingId,

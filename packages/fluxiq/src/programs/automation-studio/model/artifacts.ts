@@ -44,7 +44,9 @@ export type AutomationStudioTaskArtifact = {
   taskId: string;
   name: string;
   description?: string;
+  graphId?: string;
   policyFlowId?: string;
+  graph?: AutomationStudioFlowDocument;
   signalRegistryId?: string;
   recordingIds: string[];
   createdAt: number;

@@ -146,7 +146,7 @@ export function buildProposalViewModel(input: {
   return {
     title: readableProposalTitle(proposal.policy?.taskId ?? proposal.proposalId),
     source: input.recording ? input.recording.metadata?.name ?? readableRecordingId(input.recording.recordingId) : readableRecordingId(recordingId),
-    status: proposal.status ?? "draft",
+    status: proposal.status ?? "proposed",
     generated: proposal.generatedAt ? new Date(proposal.generatedAt).toLocaleString() : "-",
     summary: `${steps.length} unique task step${steps.length === 1 ? "" : "s"} proposed from ${rawSteps.length} recorded action/effect item${rawSteps.length === 1 ? "" : "s"}.`,
     steps,
@@ -261,8 +261,8 @@ function collapseRepeatedProposalSteps(steps: ProposalStepViewModel[]): Proposal
 
 function readableProposalTitle(value: unknown): string {
   const text = String(value ?? "").trim();
-  if (!text) return "Generated Task Draft";
-  if (text.startsWith("client.extension-")) return "Generated Task Draft";
+  if (!text) return "Generated Proposal";
+  if (text.startsWith("client.extension-")) return "Generated Proposal";
   return text.length > 80 ? `${text.slice(0, 77)}...` : text;
 }
 

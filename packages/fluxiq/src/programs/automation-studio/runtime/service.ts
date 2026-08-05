@@ -105,7 +105,7 @@ export type PolicyProposalArtifact = {
   learnedTaskModelId: string;
   policy: PolicyGraph;
   patch?: PolicyGraphPatch;
-  status: "draft" | "approved";
+  status: "proposed" | "approved";
   summary: string;
   generatedAt: number;
   approvedAt?: number;
@@ -592,7 +592,7 @@ export class AutomationStudioService {
       ? await this.readPipelineArtifact<SignalMiningResult>(input.projectId, "miningRuns", input.miningRunId)
       : latestByGeneratedAt((await this.listPipelineArtifacts(input.projectId)).miningRuns);
     if (!miningRun) throw new Error("A mining run is required before learning a task model.");
-    const model = createTaskDraftModelFromMiningRun(miningRun, input.taskId);
+    const model = createTaskProposalModelFromMiningRun(miningRun, input.taskId);
     await this.repositories.learnedTaskModels.put(model);
     await this.writePipelineArtifact(input.projectId, "learnedTaskModels", model.learnedTaskModelId, model as unknown as JsonObject);
     return model;
@@ -605,13 +605,13 @@ export class AutomationStudioService {
     const artifacts = await this.listPipelineArtifacts(input.projectId);
     if (!model && input.miningRunId) {
       const miningRun = artifacts.miningRuns.find((run) => run.miningRunId === input.miningRunId) ?? await this.readPipelineArtifact<SignalMiningResult>(input.projectId, "miningRuns", input.miningRunId);
-      if (miningRun) model = createTaskDraftModelFromMiningRun(miningRun);
+      if (miningRun) model = createTaskProposalModelFromMiningRun(miningRun);
     }
     if (!model && input.recordingId) {
       const timelines = await this.listProjectNormalizedTimelines(input.projectId);
       const timelineIds = new Set(timelines.filter((timeline) => timeline.recordingId === input.recordingId).map((timeline) => timeline.normalizedTimelineId));
       const miningRun = latestByGeneratedAt(artifacts.miningRuns.filter((run) => run.metadata?.recordingId === input.recordingId || timelineIds.has(run.normalizedTimelineId)));
-      if (miningRun) model = createTaskDraftModelFromMiningRun(miningRun);
+      if (miningRun) model = createTaskProposalModelFromMiningRun(miningRun);
     }
     model ??= latestByGeneratedAt(artifacts.learnedTaskModels) ?? null;
     if (!model) throw new Error("Mined evidence is required before proposing a task.");
@@ -672,7 +672,7 @@ export class AutomationStudioService {
       learnedTaskModelId: model.learnedTaskModelId,
       policy,
       patch,
-      status: "draft",
+      status: "proposed",
       summary: `${policy.nodes.length} nodes and ${policy.edges.length} edges proposed from mined evidence.`,
       generatedAt: Date.now(),
       metadata: {
@@ -741,8 +741,8 @@ export class AutomationStudioService {
     await this.writePipelineArtifact(input.projectId, "policyProposals", approved.proposalId, approved as unknown as JsonObject);
     await new ProgramJsonStore<JsonObject>(this.projectFile(input.projectId, "policies", `${safeSegment(approved.policy.policyId)}.json`), () => ({})).write({ policy: approved.policy as unknown as JsonObject });
     const flowInput: Parameters<typeof policyGraphToAutomationStudioFlow>[1] = {
-      flowId: existingTask?.policyFlowId ?? `task.${safeSegment(approved.policy.taskId)}.policy-flow`,
-      existingFlow: existingTask?.policyFlowId ? await this.getProjectArtifact(input.projectId, "flow", existingTask.policyFlowId).then((artifact) => artifact as AutomationStudioFlowDocument).catch(() => null) : null,
+      flowId: existingTask?.graphId ?? existingTask?.policyFlowId ?? `task.${safeSegment(approved.policy.taskId)}.graph`,
+      existingFlow: (existingTask?.graphId ?? existingTask?.policyFlowId) ? await this.getProjectArtifact(input.projectId, "flow", existingTask.graphId ?? existingTask.policyFlowId!).then((artifact) => artifact as AutomationStudioFlowDocument).catch(() => null) : null,
       proposalId: approved.proposalId
     };
     if (typeof approved.metadata?.recordingId === "string") flowInput.recordingId = approved.metadata.recordingId;
@@ -751,17 +751,20 @@ export class AutomationStudioService {
     const task: AutomationStudioTaskArtifact = {
       schemaVersion: "0.1",
       taskId: approved.policy.taskId,
-      name: humanTaskName(approved.policy.taskId),
+      name: existingTask?.name ?? humanTaskName(approved.policy.taskId),
       description: approved.summary,
+      graphId: savedFlow.flowId,
       policyFlowId: savedFlow.flowId,
+      graph: savedFlow,
       recordingIds: uniqueStrings([...(existingTask?.recordingIds ?? []), String(approved.metadata?.recordingId ?? "")]),
       createdAt: existingTask?.createdAt ?? Date.now(),
       updatedAt: Date.now(),
       metadata: {
         ...(existingTask?.metadata ?? {}),
-        status: "draft",
+        status: "approved",
         source: "policy_proposal",
         proposalId: approved.proposalId,
+        graphId: savedFlow.flowId,
         policyId: approved.policy.policyId,
         policyFlowId: savedFlow.flowId,
         approvedAt: approved.approvedAt
@@ -841,11 +844,14 @@ export class AutomationStudioService {
 
   async listProjectArtifacts(projectId: string): Promise<AutomationStudioProjectArtifacts> {
     await this.findProject(projectId);
+    const tasks = await this.readProjectArtifactList<AutomationStudioTaskArtifact>(projectId, "tasks");
+    const flows = await this.readProjectArtifactList<AutomationStudioFlowDocument>(projectId, "flows");
+    const tasksWithGraphs = await this.embedTaskGraphs(projectId, tasks, flows);
     return {
-      tasks: await this.readProjectArtifactList<AutomationStudioTaskArtifact>(projectId, "tasks"),
+      tasks: tasksWithGraphs,
       routines: await this.readProjectArtifactList<AutomationStudioRoutineArtifact>(projectId, "routines"),
       configs: await this.readProjectArtifactList<AutomationStudioConfigArtifact>(projectId, "configs"),
-      flows: await this.readProjectArtifactList<AutomationStudioFlowDocument>(projectId, "flows")
+      flows
     };
   }
 
@@ -870,6 +876,48 @@ export class AutomationStudioService {
     const artifact = await new ProgramJsonStore<JsonObject>(this.projectArtifactFile(projectId, kind, artifactId), () => ({})).read();
     if (!Object.keys(artifact).length) throw new Error(`Unknown Automation Studio ${kind}: ${artifactId}`);
     return artifact;
+  }
+
+  async deleteProjectArtifact(input: { projectId: string; kind: AutomationStudioProjectArtifactKind; artifactId: string; deleteOwnedArtifacts?: boolean }): Promise<{ deleted: boolean; projectId: string; kind: AutomationStudioProjectArtifactKind; artifactId: string; deletedArtifactIds: string[] }> {
+    await this.findProject(input.projectId);
+    const artifactId = input.artifactId.trim();
+    if (!artifactId) throw new Error(`${input.kind} ID is required.`);
+    const deletedArtifactIds = new Set<string>([`${input.kind}:${artifactId}`]);
+    const artifact = await this.getProjectArtifact(input.projectId, input.kind, artifactId).catch(() => null);
+    if (input.deleteOwnedArtifacts && artifact && typeof artifact === "object") {
+      const projectArtifacts = await this.listProjectArtifacts(input.projectId);
+      if (input.kind === "task") {
+        const task = artifact as AutomationStudioTaskArtifact;
+        const flowIds = uniqueStrings([
+          ...(typeof task.graphId === "string" ? [task.graphId] : []),
+          ...(typeof task.policyFlowId === "string" ? [task.policyFlowId] : []),
+          ...projectArtifacts.flows.filter((flow) => flow.ownerKind === "task" && flow.ownerId === artifactId).map((flow) => flow.flowId)
+        ]);
+        for (const flowId of flowIds) {
+          await this.deleteProjectArtifactFile(input.projectId, "flow", flowId);
+          deletedArtifactIds.add(`flow:${flowId}`);
+        }
+        const policyId = typeof task.metadata?.policyId === "string" ? task.metadata.policyId : null;
+        if (policyId) {
+          await this.repositories.policyGraphs.delete(policyId).catch(() => false);
+          if (this.projectRootDir) await rm(this.projectFile(input.projectId, "policies", `${safeSegment(policyId)}.json`), { force: true });
+          deletedArtifactIds.add(`policy:${policyId}`);
+        }
+      }
+      if (input.kind === "routine") {
+        const routine = artifact as AutomationStudioRoutineArtifact;
+        const flowIds = uniqueStrings([
+          ...(typeof routine.flowId === "string" ? [routine.flowId] : []),
+          ...projectArtifacts.flows.filter((flow) => flow.ownerKind === "routine" && flow.ownerId === artifactId).map((flow) => flow.flowId)
+        ]);
+        for (const flowId of flowIds) {
+          await this.deleteProjectArtifactFile(input.projectId, "flow", flowId);
+          deletedArtifactIds.add(`flow:${flowId}`);
+        }
+      }
+    }
+    await this.deleteProjectArtifactFile(input.projectId, input.kind, artifactId);
+    return { deleted: true, projectId: input.projectId, kind: input.kind, artifactId, deletedArtifactIds: [...deletedArtifactIds] };
   }
 
   async createDefaultFlow(input: { projectId: string; ownerKind: "task" | "routine"; ownerId: string; name: string; description?: string }): Promise<AutomationStudioFlowDocument> {
@@ -1013,6 +1061,11 @@ export class AutomationStudioService {
     };
     await this.writeProjectIndex((state) => ({ ...state, projects: [project, ...state.projects] }));
     await this.writeProjectRecord({ ...project, customHierarchyNodes: [], deletedHierarchyIds: [], workspacePrefs: {} });
+    await this.saveProjectArtifact({
+      projectId: project.id,
+      kind: "task",
+      artifact: createDefaultProjectTaskArtifact(now)
+    });
     return project;
   }
 
@@ -1577,9 +1630,44 @@ export class AutomationStudioService {
     return artifacts;
   }
 
+  private async embedTaskGraphs(projectId: string, tasks: AutomationStudioTaskArtifact[], flows: AutomationStudioFlowDocument[]): Promise<AutomationStudioTaskArtifact[]> {
+    const flowsById = new Map(flows.map((flow) => [flow.flowId, flow]));
+    const nextTasks: AutomationStudioTaskArtifact[] = [];
+    for (const task of tasks) {
+      if (task.graph?.nodes && task.graph?.edges) {
+        nextTasks.push(task);
+        continue;
+      }
+      const graph = (typeof task.graphId === "string" ? flowsById.get(task.graphId) : undefined)
+        ?? (typeof task.policyFlowId === "string" ? flowsById.get(task.policyFlowId) : undefined)
+        ?? flows.find((flow) => flow.ownerKind === "task" && flow.ownerId === task.taskId);
+      if (!graph) {
+        nextTasks.push(task);
+        continue;
+      }
+      const nextTask: AutomationStudioTaskArtifact = {
+        ...task,
+        graphId: graph.flowId,
+        policyFlowId: graph.flowId,
+        graph,
+        metadata: {
+          ...(task.metadata ?? {}),
+          graphEmbeddedAt: Date.now()
+        }
+      };
+      nextTasks.push(await this.saveProjectArtifact({ projectId, kind: "task", artifact: nextTask }) as AutomationStudioTaskArtifact);
+    }
+    return nextTasks;
+  }
+
   private projectArtifactFile(projectId: string, kind: AutomationStudioProjectArtifactKind, artifactId: string): string {
     const folder = this.projectArtifactFolder(kind);
     return this.projectFile(projectId, folder, safeSegment(artifactId), projectArtifactDocumentFileName(folder));
+  }
+
+  private async deleteProjectArtifactFile(projectId: string, kind: AutomationStudioProjectArtifactKind, artifactId: string): Promise<void> {
+    if (!this.projectRootDir) return;
+    await rm(path.dirname(this.projectArtifactFile(projectId, kind, artifactId)), { recursive: true, force: true });
   }
 
   private projectArtifactFolder(kind: AutomationStudioProjectArtifactKind): "tasks" | "routines" | "configs" | "flows" {
@@ -1746,6 +1834,32 @@ function emptyPipelineIndex(): PipelineIndex {
   return { pipelines: [], normalizationReviews: [], miningRuns: [], evidenceFacts: [], evidenceObservations: [], stateActionCorrelations: [], evidenceClaims: [], learnedTaskModels: [], policyProposals: [], replayResults: [] };
 }
 
+function createDefaultProjectTaskArtifact(now = Date.now()): AutomationStudioTaskArtifact {
+  const graph = createBlankAutomationStudioFlow({
+    flowId: "task.task.unnamed_task.graph",
+    ownerKind: "task",
+    ownerId: "task.unnamed_task",
+    name: "unnamed_task",
+    description: "Task graph for unnamed_task.",
+    now,
+    metadata: { source: "project_default" }
+  });
+  return {
+    schemaVersion: "0.1",
+    taskId: "task.unnamed_task",
+    name: "unnamed_task",
+    graphId: graph.flowId,
+    graph,
+    recordingIds: [],
+    createdAt: now,
+    updatedAt: now,
+    metadata: {
+      status: "empty",
+      source: "project_default"
+    }
+  };
+}
+
 function upsertPipelineIndex(index: PipelineIndex, kind: PipelineArtifactKind, id: string, generatedAt: number, status?: unknown, recordingId?: string): PipelineIndex {
   const item = kind === "normalizationReviews"
     ? { reviewId: id, generatedAt, ...(recordingId ? { recordingId } : {}) }
@@ -1762,7 +1876,7 @@ function upsertPipelineIndex(index: PipelineIndex, kind: PipelineArtifactKind, i
             : kind === "learnedTaskModels"
               ? { learnedTaskModelId: id, generatedAt, ...(recordingId ? { recordingId } : {}) }
               : kind === "policyProposals"
-                ? { proposalId: id, generatedAt, status: status === "approved" ? "approved" as const : "draft" as const, ...(recordingId ? { recordingId } : {}) }
+                ? { proposalId: id, generatedAt, status: status === "approved" ? "approved" as const : "proposed" as const, ...(recordingId ? { recordingId } : {}) }
                 : { replayId: id, generatedAt, ...(recordingId ? { recordingId } : {}) };
   const key = pipelineIndexKey(kind) as keyof typeof item;
   return {
@@ -2161,7 +2275,7 @@ function readableTokenValue(value: string): string {
 
 function humanTaskName(taskId: string): string {
   const name = readableTokenValue(taskId.replace(/^task[.:_-]?/i, ""));
-  return name === "Unknown" ? "Generated Task Draft" : name;
+  return name === "Unknown" ? "Generated Proposal" : name;
 }
 
 function stateValueSummary(value: unknown): string {
@@ -2296,7 +2410,7 @@ function mergeProposalPatchIntoPolicy(existingPolicy: PolicyGraph | null | undef
   if (!existingPolicy || existingPolicy.taskId !== patch.targetTaskId) {
     return withPolicyOutgoingEdges({
       ...proposal.policy,
-      policyId: existingPolicy?.policyId ?? `policy.${safeSegment(patch.targetTaskId)}.draft`,
+      policyId: existingPolicy?.policyId ?? `policy.${safeSegment(patch.targetTaskId)}.proposal`,
       taskId: patch.targetTaskId,
       nodes: patch.nodes.map((node) => markProposalNode(node, proposal.proposalId, patch.sourceRecordingIds)),
       edges: patch.edges,
@@ -2484,7 +2598,7 @@ function policyGraphToAutomationStudioFlow(policy: PolicyGraph, input: { flowId:
   return flow;
 }
 
-function createTaskDraftModelFromMiningRun(miningRun: SignalMiningResult, taskId?: string): LearnedTaskModel {
+function createTaskProposalModelFromMiningRun(miningRun: SignalMiningResult, taskId?: string): LearnedTaskModel {
   const resolvedTaskId = taskId ?? String(miningRun.metadata?.taskId ?? miningRun.metadata?.recordingId ?? "task.learned");
   const actionClaims = (miningRun.claims ?? []).filter((claim) => claim.claimType === "action_effect");
   const transitionClaims = (miningRun.claims ?? []).filter((claim) => claim.claimType === "transition" || claim.claimType === "wait");

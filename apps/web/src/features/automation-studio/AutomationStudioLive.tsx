@@ -94,6 +94,150 @@ function mergeById<TItem extends Record<string, any>>(primary: TItem[], secondar
   return merged;
 }
 
+function createManualTaskId(label: string): string {
+  const slug = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "")
+    .slice(0, 48) || "task";
+  return `task.${slug}.${Date.now().toString(36)}`;
+}
+
+function createManualRoutineId(label: string): string {
+  const slug = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "")
+    .slice(0, 48) || "routine";
+  return `routine.${slug}.${Date.now().toString(36)}`;
+}
+
+function isPersistableHierarchyNode(node: AutomationHierarchyNode): boolean {
+  return node.kind !== "task" || !node.sourceId?.startsWith("draft.");
+}
+
+function taskPolicyId(taskId: string): string {
+  return `policy.${taskId.replace(/[^a-zA-Z0-9._-]+/g, ".")}.saved`;
+}
+
+function taskFlowId(taskId: string): string {
+  return `task.${taskId.replace(/[^a-zA-Z0-9._-]+/g, ".")}.graph`;
+}
+
+function flowToTaskPolicy(flow: any, task: any): any {
+  if (!flow) return null;
+  const policyId = typeof flow.metadata?.policyId === "string" ? flow.metadata.policyId : taskPolicyId(task?.taskId ?? flow.ownerId ?? "task.unnamed_task");
+  const nodes = (flow.nodes ?? []).map((node: any, index: number) => {
+    const values = node.parameterValues && typeof node.parameterValues === "object" ? node.parameterValues : {};
+    const actions = Array.isArray(values.actions) ? values.actions : [];
+    const eligibility = values.eligibility && typeof values.eligibility === "object" ? values.eligibility : { type: "all", conditions: [] };
+    const successConditions = values.successConditions && typeof values.successConditions === "object" ? values.successConditions : { type: "all", conditions: [] };
+    const timeout = values.timeout && typeof values.timeout === "object" ? values.timeout : { timeoutMs: 5000 };
+    const retry = values.retry && typeof values.retry === "object" ? values.retry : { maxAttempts: 1, backoffMs: 500 };
+    const recovery = values.recovery && typeof values.recovery === "object" ? values.recovery : { strategy: "pause" };
+    return {
+      id: node.id,
+      label: node.label ?? node.id,
+      description: node.description ?? "",
+      eligibility,
+      actions,
+      successConditions,
+      failureConditions: values.failureConditions && typeof values.failureConditions === "object" ? values.failureConditions : { type: "none", conditions: [] },
+      timeout,
+      retry,
+      recovery,
+      outgoingEdges: [],
+      sourceEvidence: [],
+      generatedMetadata: { generatedBy: "task_flow", generatedAt: flow.updatedAt ?? Date.now(), confidence: 0.5 },
+      metadata: {
+        ...(node.metadata ?? {}),
+        position: node.position,
+        nodeDefinitionId: node.definitionId,
+        parameterValues: values,
+        order: index
+      }
+    };
+  });
+  const edges = (flow.edges ?? []).map((edge: any, index: number) => ({
+    id: edge.id,
+    fromNodeId: edge.sourceNodeId,
+    toNodeId: edge.targetNodeId,
+    label: edge.label ?? edge.metadata?.label ?? "Next",
+    metadata: { ...(edge.metadata ?? {}), order: index }
+  }));
+  return {
+    schemaVersion: "0.1",
+    policyId,
+    taskId: task?.taskId ?? flow.ownerId,
+    version: "0.1",
+    nodes: nodes.map((node: any) => ({ ...node, outgoingEdges: edges.filter((edge: any) => edge.fromNodeId === node.id) })),
+    edges,
+    sourceEvidence: [],
+    generatedMetadata: { generatedBy: "task_flow", generatedAt: flow.updatedAt ?? Date.now(), confidence: 0.5 },
+    metadata: { ...(flow.metadata ?? {}), source: "task_flow" }
+  };
+}
+
+function graphToTaskFlow(input: { task: any; existingFlow?: any; graph: { nodes: any[]; edges: any[] }; policy?: any }): any {
+  const now = Date.now();
+  const flowId = input.existingFlow?.flowId ?? input.task?.graphId ?? input.task?.policyFlowId ?? taskFlowId(input.task?.taskId ?? "task.unnamed_task");
+  const policyId = input.policy?.policyId ?? input.existingFlow?.metadata?.policyId ?? taskPolicyId(input.task?.taskId ?? "task.unnamed_task");
+  return {
+    schemaVersion: "0.1",
+    flowId,
+    ownerKind: "task",
+    ownerId: input.task?.taskId ?? "task.unnamed_task",
+    name: input.task?.name ?? input.task?.taskId ?? "unnamed_task",
+    description: input.task?.description ?? `Task graph for ${input.task?.name ?? input.task?.taskId ?? "unnamed_task"}.`,
+    nodes: input.graph.nodes.map((node, index) => ({
+      id: node.id,
+      definitionId: node.data?.nodeDefinitionId ?? (node.data?.isStart ? "builtin.control.start" : "automation.policy.step"),
+      label: node.data?.label ?? node.id,
+      description: node.data?.customDescription || node.data?.description,
+      position: { x: Math.round(node.position?.x ?? index * 340), y: Math.round(node.position?.y ?? 160) },
+      parameterValues: {
+        ...(node.data?.parameterValues ?? {}),
+        actions: Array.isArray(node.data?.parameterValues?.actions) ? node.data.parameterValues.actions : (node.data?.actionTypes ?? []).map((actionType: string, actionIndex: number) => ({ id: `action.${node.id}.${actionIndex + 1}`, actionType, parameters: {} })),
+        eligibility: node.data?.parameterValues?.eligibility ?? { type: "all", conditions: [] },
+        successConditions: node.data?.parameterValues?.successConditions ?? { type: "all", conditions: [] },
+        timeout: node.data?.parameterValues?.timeout ?? { timeoutMs: node.data?.timeoutMs ?? 5000 },
+        retry: node.data?.parameterValues?.retry ?? { maxAttempts: 1, backoffMs: 500 },
+        recovery: node.data?.parameterValues?.recovery ?? { strategy: node.data?.recovery ?? "pause" }
+      },
+      metadata: {
+        ...(input.existingFlow?.nodes?.find((item: any) => item.id === node.id)?.metadata ?? {}),
+        policyId,
+        policyNodeId: node.id,
+        order: index
+      }
+    })),
+    edges: input.graph.edges.map((edge, index) => ({
+      id: edge.id,
+      sourceNodeId: edge.source,
+      targetNodeId: edge.target,
+      sourcePortId: edge.sourceHandle ?? edge.data?.sourcePort,
+      targetPortId: edge.targetHandle ?? edge.data?.targetPort,
+      label: String(edge.label ?? edge.data?.label ?? "Next"),
+      metadata: {
+        ...(edge.data ?? {}),
+        policyId,
+        policyEdgeId: edge.id,
+        order: index
+      }
+    })),
+    createdAt: input.existingFlow?.createdAt ?? now,
+    updatedAt: now,
+    metadata: {
+      ...(input.existingFlow?.metadata ?? {}),
+      source: "task_editor",
+      policyId,
+      savedAt: now
+    }
+  };
+}
+
 export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const api = useProgramApi("automation-studio");
   const pathname = usePathname();
@@ -273,18 +417,38 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const registries = canonical.signalRegistries ?? [];
   const models = mergeById(pipelineArtifacts.learnedTaskModels ?? [], canonical.learnedTaskModels ?? [], "learnedTaskModelId");
   const proposals = pipelineArtifacts.policyProposals ?? [];
-  const policies: any[] = mergeById<any>(canonical.policyGraphs ?? [], proposals.map((proposal: any) => proposal.policy).filter(Boolean), "policyId");
+  const policies: any[] = canonical.policyGraphs ?? [];
   const problems = snapshot?.payload?.problems ?? [];
   const signals = registries.flatMap((registry: any) => (registry.definitions ?? []).map((signal: any) => ({ ...signal, registryId: registry.registryId })));
+  const projectTasks = projectArtifacts.tasks ?? [];
+  const projectRoutines = projectArtifacts.routines ?? [];
+  const proposalViewState = workspacePrefs.viewStates?.["proposal-workbench"] ?? {};
+  const proposalReviewsSource = proposalViewState.proposalReviews;
+  const proposalReviews = proposalReviewsSource && typeof proposalReviewsSource === "object" && !Array.isArray(proposalReviewsSource) ? proposalReviewsSource as Record<string, any> : {};
+  const lastOpenTaskId = typeof proposalViewState.lastOpenTaskId === "string" ? proposalViewState.lastOpenTaskId : null;
+  const validLastOpenTask = lastOpenTaskId ? projectTasks.find((task: any) => task.taskId === lastOpenTaskId) : null;
   const selectedProposal = proposals.find((proposal: any) => selection?.kind === "proposal" && proposal.proposalId === selection.id)
     ?? proposals.find((proposal: any) => selection?.kind === "recording" && proposal.metadata?.recordingId === selection.id)
     ?? proposals[0];
-  const selectedTask = projectArtifacts.tasks?.find((task: any) => selection?.kind === "policy" && (task.metadata?.policyId === selection.id || task.taskId === selection.id));
-  const selectedPolicy = selection?.kind === "policy"
+  const selectedTask = projectTasks.find((task: any) => selection?.kind === "policy" && (task.metadata?.policyId === selection.id || task.taskId === selection.id))
+    ?? validLastOpenTask
+    ?? projectTasks[0]
+    ?? null;
+  const selectedTaskFlow = selectedTask
+    ? (projectArtifacts.flows ?? []).find((flow: any) => (selectedTask.graphId || selectedTask.policyFlowId) && flow.flowId === (selectedTask.graphId ?? selectedTask.policyFlowId))
+      ?? (projectArtifacts.flows ?? []).find((flow: any) => flow.ownerKind === "task" && flow.ownerId === selectedTask.taskId)
+      ?? null
+    : null;
+  const selectedTaskGraph = selectedTask?.graph ?? selectedTaskFlow;
+  const selectedCanonicalPolicy = selectedTask
+    ? policies.find((policy: any) => selectedTask.metadata?.policyId && policy.policyId === selectedTask.metadata.policyId)
+      ?? policies.find((policy: any) => policy.taskId === selectedTask.taskId)
+      ?? null
+    : selection?.kind === "policy"
     ? policies.find((policy: any) => policy.policyId === selection.id)
-      ?? policies.find((policy: any) => selectedTask?.metadata?.policyId && policy.policyId === selectedTask.metadata.policyId)
       ?? null
     : policies[0] ?? null;
+  const selectedPolicy = selectedTaskGraph ? flowToTaskPolicy(selectedTaskGraph, selectedTask) : selectedCanonicalPolicy;
   const timelineSelectionRecordingId = selection?.kind === "timeline"
     ? timelines.find((timeline: any) => timeline.timeline?.some((entry: any) => entry.id === selection.id))?.recordingId
       ?? recordings.find((recording: any) => recording.timeline?.some((entry: any) => entry.id === selection.id))?.recordingId
@@ -303,9 +467,9 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const viewInstances: AutomationViewInstance[] = [
     { id: "client-gateway", label: "Connected Clients", type: "clients", icon: Radio, state: "live" },
     { id: "timeline-recording", label: `Timeline: ${selectedRecording?.name ?? selectedRecording?.recordingId ?? "Recording"}`, type: "recordings", icon: Radio, state: "live" },
-    { id: "proposal-workbench", label: `Proposal: ${selectedProposal?.policy?.taskId ?? selectedProposal?.proposalId ?? "Task Draft"}`, type: "proposal", icon: Sparkles },
+    { id: "proposal-workbench", label: `Proposal: ${selectedProposal?.policy?.taskId ?? selectedProposal?.proposalId ?? "Proposal"}`, type: "proposal", icon: Sparkles },
     { id: "timeline-evidence-inspector", label: `Evidence: ${selectedEntry?.id ?? "Timeline Item"}`, type: "timeline-inspector", icon: Search },
-    { id: "policy-primary", label: `Task: ${selectedPolicy?.taskId ?? "Draft"}`, type: "design", icon: GitBranch },
+    { id: "policy-primary", label: projectTasks.length ? `Task: ${selectedTask?.name ?? selectedPolicy?.taskId ?? "Unselected"}` : "Task: None", type: "design", icon: GitBranch },
     { id: "runs-history", label: "Runs", type: "runs", icon: History },
     { id: "signals-web", label: "Signals: Relationship Web", type: "signals", icon: Network, state: "warning" },
     { id: "runtime-debug", label: "Runtime Debug", type: "runtime", icon: Bug },
@@ -321,23 +485,23 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const generatedRecordingOwnedHierarchyIds = new Set([...recordingNodes, ...proposalNodes].map((node) => node.id));
   const hierarchyNodes: AutomationHierarchyNode[] = [
     ...proposalNodes,
-    ...(projectArtifacts.tasks ?? []).map((task: any) => ({
+    ...projectTasks.map((task: any) => ({
       id: `task-${task.taskId}`,
       label: task.name ?? task.taskId,
       kind: "task" as const,
       category: "task" as const,
-      parentId: null,
+      parentId: typeof task.metadata?.parentId === "string" ? task.metadata.parentId : null,
       viewId: "policy-primary",
-      sourceId: task.metadata?.policyId ?? task.taskId
+      sourceId: task.taskId
     })),
-    ...policies.filter((policy: any) => !(projectArtifacts.tasks ?? []).some((task: any) => task.metadata?.policyId === policy.policyId || task.taskId === policy.taskId)).map((policy: any) => ({
-      id: policy.policyId,
-      label: policy.taskId ?? policy.policyId,
-      kind: "task" as const,
-      category: "task" as const,
-      parentId: null,
-      viewId: "policy-primary",
-      sourceId: policy.policyId
+    ...projectRoutines.map((routine: any) => ({
+      id: `routine-${routine.routineId}`,
+      label: routine.name ?? routine.routineId,
+      kind: "routine" as const,
+      category: "routine" as const,
+      parentId: typeof routine.metadata?.parentId === "string" ? routine.metadata.parentId : null,
+      viewId: "routine-editor",
+      sourceId: routine.routineId
     })),
     {
       id: "config-default",
@@ -348,27 +512,67 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       viewId: "config-default"
     },
     ...recordingNodes,
-    ...customHierarchyNodes
+    ...customHierarchyNodes.filter(isPersistableHierarchyNode)
   ].filter((node) => generatedRecordingOwnedHierarchyIds.has(node.id) || !deletedHierarchyIds.includes(node.id));
   const folderOptions = hierarchyNodes.filter((node) => node.kind === "folder" && node.category === hierarchyCategory);
   const viewById = new Map(viewInstances.map((view) => [view.id, view]));
+  function viewWithTitleData(view: AutomationViewInstance, sourceSelection?: AutomationSelection | null): AutomationViewInstance {
+    return {
+      ...view,
+      label: viewLabelForSelection(view, sourceSelection)
+    };
+  }
+  function viewLabelForSelection(view: AutomationViewInstance, sourceSelection?: AutomationSelection | null): string {
+    const source = sourceSelection ?? selection;
+    const recording = recordingForSelection(source);
+    const proposal = proposalForSelection(source);
+    const policy = policyForSelection(source);
+    const task = taskForSelection(source);
+    const entryId = source?.kind === "timeline" ? source.id : selectedEntry?.id;
+    if (view.id === "timeline-recording") return `Timeline: ${recording?.name ?? recording?.recordingId ?? "Recording"}`;
+    if (view.id === "proposal-workbench") return `Proposal: ${proposal?.policy?.taskId ?? proposal?.proposalId ?? "Proposal"}`;
+    if (view.id === "timeline-evidence-inspector") return `Evidence: ${entryId ?? "Timeline Item"}`;
+    if (view.id === "policy-primary") return projectTasks.length ? `Task: ${task?.name ?? policy?.taskId ?? "Unselected"}` : "Task: None";
+    return view.label;
+  }
+  function recordingForSelection(source: AutomationSelection | null | undefined) {
+    const timelineRecordingId = source?.kind === "timeline"
+      ? timelines.find((timeline: any) => timeline.timeline?.some((entry: any) => entry.id === source.id))?.recordingId
+        ?? recordings.find((recording: any) => recording.timeline?.some((entry: any) => entry.id === source.id))?.recordingId
+      : null;
+    const proposalRecordingId = source?.kind === "proposal"
+      ? source.recordingId ?? proposals.find((proposal: any) => proposal.proposalId === source.id)?.metadata?.recordingId
+      : null;
+    if (source?.kind === "recording") return recordings.find((recording: any) => recording.recordingId === source.id) ?? selectedRecording;
+    return recordings.find((recording: any) => recording.recordingId === (timelineRecordingId ?? proposalRecordingId)) ?? selectedRecording;
+  }
+  function proposalForSelection(source: AutomationSelection | null | undefined) {
+    return proposals.find((proposal: any) => source?.kind === "proposal" && proposal.proposalId === source.id)
+      ?? proposals.find((proposal: any) => source?.kind === "recording" && proposal.metadata?.recordingId === source.id)
+      ?? selectedProposal;
+  }
+  function taskForSelection(source: AutomationSelection | null | undefined) {
+    return projectTasks.find((task: any) => source?.kind === "policy" && (task.metadata?.policyId === source.id || task.taskId === source.id))
+      ?? validLastOpenTask
+      ?? projectTasks[0]
+      ?? selectedTask;
+  }
+  function policyForSelection(source: AutomationSelection | null | undefined) {
+    const task = taskForSelection(source);
+    return source?.kind === "policy"
+      ? policies.find((policy: any) => policy.policyId === source.id)
+        ?? policies.find((policy: any) => task?.metadata?.policyId && policy.policyId === task.metadata.policyId)
+        ?? selectedPolicy
+      : selectedPolicy;
+  }
   const visibleWindows = pageFullscreenWindowId
     ? workspacePrefs.windows.filter((item) => item.id === pageFullscreenWindowId && (item.area ?? "main") === "main")
     : workspacePrefs.maximizedWindowId ? workspacePrefs.windows.filter((item) => item.id === workspacePrefs.maximizedWindowId) : workspacePrefs.windows;
   const activeWindow = workspacePrefs.windows.find((item) => item.id === workspacePrefs.activeWindowId) ?? workspacePrefs.windows[0];
   const activeViewId = activeWindow?.activeViewId ?? "policy-primary";
-  const rawPolicyDraft = workspacePrefs.viewStates?.["policy-primary"]?.draftGraph;
-  const policyDraftTargetId = selectedPolicy?.policyId ?? (selection?.kind === "policy" ? selection.id : "task.draft");
-  const policyDraft = rawPolicyDraft && typeof rawPolicyDraft === "object" && !Array.isArray(rawPolicyDraft) && (rawPolicyDraft as { targetId?: unknown; policyId?: unknown }).targetId === policyDraftTargetId
-    ? rawPolicyDraft
-    : null;
-  const proposalViewState = workspacePrefs.viewStates?.["proposal-workbench"] ?? {};
-  const proposalDrafts = proposalViewState.proposalDrafts && typeof proposalViewState.proposalDrafts === "object" && !Array.isArray(proposalViewState.proposalDrafts) ? proposalViewState.proposalDrafts as Record<string, any> : {};
-  const selectedProposalDraft = selectedProposal?.proposalId ? proposalDrafts[selectedProposal.proposalId] ?? null : null;
-  const lastOpenTaskId = typeof proposalViewState.lastOpenTaskId === "string" ? proposalViewState.lastOpenTaskId : null;
-  const validLastOpenTask = lastOpenTaskId ? projectArtifacts.tasks?.find((task: any) => task.taskId === lastOpenTaskId) : null;
-  const proposalTargetTaskId = typeof selectedProposalDraft?.targetTaskId === "string" && projectArtifacts.tasks?.some((task: any) => task.taskId === selectedProposalDraft.targetTaskId)
-    ? selectedProposalDraft.targetTaskId
+  const selectedProposalReview = selectedProposal?.proposalId ? proposalReviews[selectedProposal.proposalId] ?? null : null;
+  const proposalTargetTaskId = typeof selectedProposalReview?.targetTaskId === "string" && projectTasks.some((task: any) => task.taskId === selectedProposalReview.targetTaskId)
+    ? selectedProposalReview.targetTaskId
     : validLastOpenTask?.taskId ?? null;
   const windowsByArea = (area: AutomationWorkspaceArea) => visibleWindows.filter((item) => (item.area ?? "main") === area);
   const canvasForArea = (area: AutomationWorkspaceArea) => area === "right" ? rightWorkspaceCanvasRef.current : mainWorkspaceCanvasRef.current;
@@ -421,7 +625,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         setRecordingProcessing({
           recordingId,
           label: "Proposal ready",
-          detail: "The recording was normalized, evidence was mined, and a draft proposal is ready for review.",
+          detail: "The recording was normalized, evidence was mined, and a proposal is ready for review.",
           progress: 100
         });
         setAutomationActionStatus("Task proposal generated.");
@@ -560,15 +764,13 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   }, [activeProjectId, loadedProjectHierarchyId, selection, dockTab]);
 
   useEffect(() => {
-    const hasDirtyDraft = Object.values(workspacePrefs.viewStates ?? {}).some((state) => {
-      const draft = state?.draftGraph;
-      const proposalDrafts = state?.proposalDrafts;
-      const hasDirtyProposalDraft = proposalDrafts && typeof proposalDrafts === "object" && !Array.isArray(proposalDrafts)
-        ? Object.values(proposalDrafts as Record<string, any>).some((item) => item?.dirty === true)
+    const hasDirtyProposalReview = Object.values(workspacePrefs.viewStates ?? {}).some((state) => {
+      const proposalReviews = state?.proposalReviews;
+      return proposalReviews && typeof proposalReviews === "object" && !Array.isArray(proposalReviews)
+        ? Object.values(proposalReviews as Record<string, any>).some((item) => item?.dirty === true)
         : false;
-      return Boolean(draft && typeof draft === "object" && !Array.isArray(draft) && (draft as { dirty?: unknown }).dirty === true) || hasDirtyProposalDraft;
     });
-    if (!hasDirtyDraft) return;
+    if (!hasDirtyProposalReview) return;
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
@@ -648,6 +850,9 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setProjectPin("");
     setProjectStatus("");
     setProjectUrl(project.id);
+    await refreshProjectRuntimeState(project.id);
+    setSelection({ kind: "policy", id: "task.unnamed_task" });
+    openView("policy-primary", "preview", "main");
   }
 
   async function renameProject() {
@@ -831,8 +1036,9 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       return;
     }
     const loadedPrefs = normalizeAutomationWorkspacePrefs(result.payload.hierarchy.workspacePrefs ?? defaultAutomationWorkspacePrefs());
+    const loadedCustomHierarchyNodes = result.payload.hierarchy.customHierarchyNodes.filter(isPersistableHierarchyNode);
     setActiveProjectId(projectId);
-    setCustomHierarchyNodes(result.payload.hierarchy.customHierarchyNodes);
+    setCustomHierarchyNodes(loadedCustomHierarchyNodes);
     setDeletedHierarchyIds(result.payload.hierarchy.deletedHierarchyIds);
     setWorkspacePrefs(loadedPrefs);
     const activeLoadedViewId = loadedPrefs.windows.find((item) => item.id === loadedPrefs.activeWindowId)?.activeViewId;
@@ -1017,7 +1223,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setRecordingProcessing({
       recordingId,
       label: "Creating task proposal",
-      detail: "Converting mined evidence into a draft task policy. The proposal will not be applied automatically.",
+      detail: "Converting mined evidence into a task proposal. The proposal will not be applied automatically.",
       progress: 82
     });
     const proposalResult = await api.post<{ proposal: any }>("propose-policy-from-model", { projectId: activeProjectId, recordingId, miningRunId: miningResult.payload.miningRun.miningRunId, authorizationPin });
@@ -1039,7 +1245,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setRecordingProcessing({
       recordingId,
       label: "Proposal ready",
-      detail: "The draft task proposal has been generated and is waiting for review.",
+      detail: "The task proposal has been generated and is waiting for review.",
       progress: 100
     });
     setAutomationActionStatus("Task proposal generated.");
@@ -1147,6 +1353,57 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     await refreshProjectRuntimeState(activeProjectId);
   }
 
+  async function saveSelectedTaskGraph(graph: { nodes: any[]; edges: any[] }) {
+    if (!activeProjectId || !selectedTask?.taskId) {
+      setAutomationActionStatus("Open a saved task before saving the task graph.");
+      return false;
+    }
+    const authorizationPin = window.prompt("Enter PIN to save this task") ?? "";
+    if (authorizationPin.length < 4) {
+      setAutomationActionStatus("PIN is required to save a task.");
+      return false;
+    }
+    const flow = graphToTaskFlow({ task: selectedTask, existingFlow: selectedTaskGraph, graph, policy: selectedPolicy });
+    const flowResult = await api.post<{ artifact: any }>("save-project-artifact", {
+      projectId: activeProjectId,
+      kind: "flow",
+      authorizationPin,
+      artifact: flow
+    });
+    if (!flowResult.ok || !flowResult.payload?.artifact) {
+      setAutomationActionStatus(flowResult.error ?? "Task flow could not be saved.");
+      return false;
+    }
+    const taskResult = await api.post<{ artifact: any }>("save-project-artifact", {
+      projectId: activeProjectId,
+      kind: "task",
+      authorizationPin,
+      artifact: {
+        ...selectedTask,
+        graphId: flow.flowId,
+        policyFlowId: flow.flowId,
+        graph: flow,
+        updatedAt: Date.now(),
+        metadata: {
+          ...(selectedTask.metadata ?? {}),
+          status: "saved",
+          graphId: flow.flowId,
+          policyFlowId: flow.flowId,
+          policyId: flow.metadata.policyId,
+          savedAt: flow.updatedAt
+        }
+      }
+    });
+    if (!taskResult.ok) {
+      setAutomationActionStatus(taskResult.error ?? "Task metadata could not be saved.");
+      return false;
+    }
+    await refreshProjectRuntimeState(activeProjectId);
+    setSelection({ kind: "policy", id: selectedTask.taskId });
+    setAutomationActionStatus("Task saved.");
+    return true;
+  }
+
   function applyPipelineActionPayload(endpoint: string, payload: any) {
     setPipelineArtifacts((current: any) => {
       const base = { ...emptyPipelineArtifacts(), ...current };
@@ -1211,11 +1468,10 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
             }
           }
         } : current);
-        setSelection({ kind: "policy", id: approvedPolicy.policyId });
+        await refreshProjectRuntimeState(activeProjectId);
+        setSelection({ kind: "policy", id: approvedPolicy.taskId });
         openView("policy-primary", "preview", "main");
-        setAutomationActionStatus("Task draft applied and opened.");
-        void refresh();
-        void refreshProjectRuntimeState(activeProjectId);
+        setAutomationActionStatus("Proposal applied and task opened.");
         return true;
       }
     }
@@ -1238,7 +1494,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     const steps: Array<{ endpoint: string; payload: JsonObject; status: string; success: string }> = [
       { endpoint: "normalize-recording", payload: { recordingId }, status: "Normalizing recording timeline...", success: "Recording normalized." },
       { endpoint: "mine-recording-evidence", payload: { recordingId }, status: "Mining recording evidence...", success: "Evidence mined." },
-      { endpoint: "propose-policy-from-model", payload: { recordingId }, status: "Creating task draft...", success: "Task draft proposed." }
+      { endpoint: "propose-policy-from-model", payload: { recordingId }, status: "Creating proposal...", success: "Proposal created." }
     ];
     let miningRunId: string | null = null;
     for (const step of steps) {
@@ -1324,26 +1580,12 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       }
     }));
   }
-  function updatePolicyDraft(draft: JsonObject) {
-    updateWorkspacePrefs((current) => ({
-      ...current,
-      viewStates: {
-        ...(current.viewStates ?? {}),
-        "policy-primary": {
-          ...(current.viewStates?.["policy-primary"] ?? {}),
-          draftGraph: {
-            ...draft,
-            targetId: policyDraftTargetId
-          }
-        }
-      }
-    }));
-  }
-  function updateProposalDraft(proposalId: string, draft: JsonObject) {
+  function updateProposalReview(proposalId: string, review: JsonObject) {
     updateWorkspacePrefs((current) => {
       const proposalState = current.viewStates?.["proposal-workbench"] ?? {};
-      const drafts = proposalState.proposalDrafts && typeof proposalState.proposalDrafts === "object" && !Array.isArray(proposalState.proposalDrafts)
-        ? proposalState.proposalDrafts as Record<string, unknown>
+      const reviewsSource = proposalState.proposalReviews;
+      const reviews = reviewsSource && typeof reviewsSource === "object" && !Array.isArray(reviewsSource)
+        ? reviewsSource as Record<string, unknown>
         : {};
       return {
         ...current,
@@ -1351,9 +1593,9 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           ...(current.viewStates ?? {}),
           "proposal-workbench": {
             ...proposalState,
-            proposalDrafts: {
-              ...drafts,
-              [proposalId]: draft
+            proposalReviews: {
+              ...reviews,
+              [proposalId]: review
             }
           }
         }
@@ -1472,6 +1714,50 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         return { ...item, tabs, activeViewId: item.activeViewId === viewId ? tabs[0] ?? "" : item.activeViewId };
       }).filter((item) => item.tabs.length > 0);
       return { ...current, activeWindowId: windows[0]?.id ?? "", windows };
+    });
+  }
+  function selectionMatchesDeletedHierarchy(selectionValue: unknown, refs: { taskIds: Set<string>; routineIds: Set<string>; configIds: Set<string>; recordingIds: Set<string>; proposalIds: Set<string> }): boolean {
+    if (!isAutomationSelection(selectionValue)) return false;
+    if (selectionValue.kind === "policy") return refs.taskIds.has(selectionValue.id);
+    if (selectionValue.kind === "recording") return refs.recordingIds.has(selectionValue.id);
+    if (selectionValue.kind === "proposal" || selectionValue.kind === "proposal-step") return refs.proposalIds.has(selectionValue.id) || (selectionValue.recordingId ? refs.recordingIds.has(selectionValue.recordingId) : false);
+    return false;
+  }
+  function viewStateMatchesDeletedHierarchy(viewId: string, state: JsonObject | undefined, refs: { taskIds: Set<string>; routineIds: Set<string>; configIds: Set<string>; recordingIds: Set<string>; proposalIds: Set<string> }): boolean {
+    if (selectionMatchesDeletedHierarchy(state?.selection, refs)) return true;
+    if (viewId === "policy-primary" && typeof state?.lastOpenTaskId === "string" && refs.taskIds.has(state.lastOpenTaskId)) return true;
+    if (viewId === "routine-editor" && refs.routineIds.size > 0) return true;
+    if (viewId === "config-default" && refs.configIds.size > 0) return true;
+    return false;
+  }
+  function closeDeletedHierarchyViews(deletingNodes: AutomationHierarchyNode[]) {
+    const refs = {
+      taskIds: new Set(deletingNodes.filter((node) => node.kind === "task" && node.sourceId).map((node) => node.sourceId!)),
+      routineIds: new Set(deletingNodes.filter((node) => node.kind === "routine" && node.sourceId).map((node) => node.sourceId!)),
+      configIds: new Set(deletingNodes.filter((node) => node.kind === "config" && node.sourceId).map((node) => node.sourceId!)),
+      recordingIds: new Set(deletingNodes.filter((node) => node.kind === "recording" && node.sourceId).map((node) => node.sourceId!)),
+      proposalIds: new Set(deletingNodes.filter((node) => node.kind === "proposal" && node.sourceId).map((node) => node.sourceId!))
+    };
+    if (selectionMatchesDeletedHierarchy(selection, refs)) setSelection(null);
+    updateWorkspacePrefs((current) => {
+      const nextViewStates = Object.fromEntries(Object.entries(current.viewStates ?? {}).filter(([viewId, state]) => !viewStateMatchesDeletedHierarchy(viewId, state as JsonObject, refs)));
+      const windows = current.windows
+        .map((item) => {
+          const tabs = item.tabs.filter((tabId) => {
+            const activeTabHasDeletedSelection = item.id === current.activeWindowId && tabId === item.activeViewId && selectionMatchesDeletedHierarchy(selection, refs);
+            return !activeTabHasDeletedSelection && !viewStateMatchesDeletedHierarchy(tabId, current.viewStates?.[tabId] as JsonObject | undefined, refs);
+          });
+          return { ...item, tabs, activeViewId: tabs.includes(item.activeViewId) ? item.activeViewId : tabs[0] ?? "" };
+        })
+        .filter((item) => item.tabs.length > 0);
+      const activeWindowId = windows.some((item) => item.id === current.activeWindowId) ? current.activeWindowId : windows[0]?.id ?? "";
+      return {
+        ...current,
+        activeWindowId,
+        maximizedWindowId: current.maximizedWindowId && windows.some((item) => item.id === current.maximizedWindowId) ? current.maximizedWindowId : null,
+        windows,
+        viewStates: nextViewStates
+      };
     });
   }
   function setWindowTab(windowId: string, viewId: string) {
@@ -1744,22 +2030,83 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         setHierarchyStatus("Name is required.");
         return;
       }
-      const id = `custom-${hierarchyKind}-${Date.now()}`;
-      const sourceId = hierarchyKind === "task" ? `draft.${id}` : undefined;
-      setCustomHierarchyNodes((items) => [...items, {
-        id,
-        kind: hierarchyKind,
-        category: hierarchyKind === "folder" ? hierarchyCategory : hierarchyKind,
-        label,
-        parentId: hierarchyParentId,
-        viewId: hierarchyKind === "task" ? "policy-primary" : hierarchyKind === "routine" ? "routine-editor" : "config-default",
-        ...(sourceId ? { sourceId } : {})
-      }]);
-      if (sourceId) {
-        setSelection({ kind: "policy", id: sourceId });
-        openView("policy-primary", "preview", "main");
+      if (hierarchyKind === "task" || hierarchyKind === "routine") {
+        if (!activeProjectId) {
+          setHierarchyStatus(`Open a project before creating a ${hierarchyKind}.`);
+          return;
+        }
+        const now = Date.now();
+        const artifactId = hierarchyKind === "task" ? createManualTaskId(label) : createManualRoutineId(label);
+        const taskGraph = hierarchyKind === "task" ? {
+          schemaVersion: "0.1",
+          flowId: taskFlowId(artifactId),
+          ownerKind: "task",
+          ownerId: artifactId,
+          name: label,
+          description: `Task graph for ${label}.`,
+          nodes: [],
+          edges: [],
+          createdAt: now,
+          updatedAt: now,
+          metadata: { source: "automation-studio-sidebar" }
+        } : null;
+        const result = await api.post<{ artifact: any }>("save-project-artifact", {
+          projectId: activeProjectId,
+          kind: hierarchyKind,
+          authorizationPin: hierarchyPin,
+          artifact: hierarchyKind === "task"
+            ? {
+              schemaVersion: "0.1",
+              taskId: artifactId,
+              name: label,
+              graphId: taskGraph!.flowId,
+              graph: taskGraph,
+              recordingIds: [],
+              createdAt: now,
+              updatedAt: now,
+              metadata: {
+                createdFrom: "automation-studio-sidebar",
+                status: "empty",
+                ...(hierarchyParentId ? { parentId: hierarchyParentId } : {})
+              }
+            }
+            : {
+              schemaVersion: "0.1",
+              routineId: artifactId,
+              name: label,
+              taskIds: [],
+              createdAt: now,
+              updatedAt: now,
+              metadata: {
+                createdFrom: "automation-studio-sidebar",
+                status: "empty",
+                ...(hierarchyParentId ? { parentId: hierarchyParentId } : {})
+              }
+            }
+        });
+        if (!result.ok) {
+          setHierarchyStatus(result.error ?? `${hierarchyKind === "task" ? "Task" : "Routine"} could not be saved.`);
+          return;
+        }
+        await refreshProjectRuntimeState(activeProjectId);
+        if (hierarchyKind === "task") {
+          setSelection({ kind: "policy", id: artifactId });
+          openView("policy-primary", "preview", "main");
+        } else {
+          openView("routine-editor", "preview", "main");
+        }
+        setHierarchyStatus(`${label} saved.`);
+      } else {
+        const id = `custom-${hierarchyKind}-${Date.now()}`;
+        setCustomHierarchyNodes((items) => [...items, {
+          id,
+          kind: hierarchyKind,
+          category: hierarchyCategory,
+          label,
+          parentId: hierarchyParentId
+        }]);
+        setHierarchyStatus(`${label} created.`);
       }
-      setHierarchyStatus(`${label} created.`);
     }
     if (hierarchyAction.action === "delete" && hierarchyAction.node) {
       const ids = collectHierarchyDescendantIds(hierarchyAction.node.id, hierarchyNodes);
@@ -1778,7 +2125,37 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         setHierarchyName("");
         return;
       }
-      setDeletedHierarchyIds((items) => [...new Set([...items, hierarchyAction.node!.id, ...ids])]);
+      const artifactNodes = deletingNodes.filter((node) => (node.kind === "task" || node.kind === "routine" || node.kind === "config") && node.sourceId);
+      if (artifactNodes.length) {
+        if (!activeProjectId) {
+          setHierarchyStatus("Open a project before deleting saved artifacts.");
+          return;
+        }
+        setHierarchyStatus(`Deleting ${artifactNodes.length} saved item${artifactNodes.length === 1 ? "" : "s"}...`);
+        for (const node of artifactNodes) {
+          const result = await api.post<{ deleted: boolean }>("delete-project-artifact", {
+            projectId: activeProjectId,
+            kind: node.kind,
+            artifactId: node.sourceId,
+            deleteOwnedArtifacts: true,
+            authorizationPin: hierarchyPin
+          });
+          if (!result.ok) {
+            setHierarchyStatus(result.error ?? `${node.label} could not be deleted from disk.`);
+            return;
+          }
+        }
+        closeDeletedHierarchyViews(deletingNodes);
+        const refreshed = await refreshProjectRuntimeState(activeProjectId);
+        const deletedTaskIds = new Set(artifactNodes.filter((node) => node.kind === "task").map((node) => node.sourceId));
+        if (selection?.kind === "policy" && deletedTaskIds.has(selection.id)) {
+          const nextTask = (refreshed?.projectArtifacts?.tasks ?? []).find((task: any) => !deletedTaskIds.has(task.taskId));
+          setSelection(nextTask ? { kind: "policy", id: nextTask.taskId } : null);
+        }
+      }
+      const artifactNodeIds = new Set(artifactNodes.map((node) => node.id));
+      const hierarchyOnlyDeletedIds = [hierarchyAction.node.id, ...ids].filter((id) => !artifactNodeIds.has(id));
+      if (hierarchyOnlyDeletedIds.length) setDeletedHierarchyIds((items) => [...new Set([...items, ...hierarchyOnlyDeletedIds])]);
       setCustomHierarchyNodes((items) => items.filter((item) => item.id !== hierarchyAction.node!.id && !ids.includes(item.id)));
       setHierarchyStatus(`${hierarchyAction.node.label} deleted.`);
     }
@@ -1813,8 +2190,24 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         >
           <div className="automation-window-canvas">
             {areaWindows.map((windowItem, windowIndex) => {
-              const view = viewById.get(windowItem.activeViewId) ?? viewById.get("policy-primary");
-              if (!view) return null;
+              const baseView = viewById.get(windowItem.activeViewId) ?? viewById.get("policy-primary");
+              if (!baseView) return null;
+              const savedActiveSelection = workspacePrefs.viewStates?.[windowItem.activeViewId]?.selection;
+              const activeTitleSelection = workspacePrefs.activeWindowId === windowItem.id
+                ? selection
+                : isAutomationSelection(savedActiveSelection) ? savedActiveSelection : null;
+              const view = viewWithTitleData(baseView, activeTitleSelection);
+              const tabViews = windowItem.tabs
+                .map((tabId) => {
+                  const tabView = viewById.get(tabId);
+                  if (!tabView) return null;
+                  const savedTabSelection = workspacePrefs.viewStates?.[tabId]?.selection;
+                  const tabTitleSelection = tabId === windowItem.activeViewId
+                    ? activeTitleSelection
+                    : isAutomationSelection(savedTabSelection) ? savedTabSelection : null;
+                  return viewWithTitleData(tabView, tabTitleSelection);
+                })
+                .filter(Boolean) as AutomationViewInstance[];
               const isPageFullscreenWindow = pageFullscreenWindowId === windowItem.id && (windowItem.area ?? "main") === "main";
               const bounds = canvasForArea(area)?.getBoundingClientRect();
               const renderedWindow = automationWindowToPixels(
@@ -1835,10 +2228,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                 >
                   <AutomationViewContainer
                     active={workspacePrefs.activeWindowId === windowItem.id}
+                    activeViewId={windowItem.activeViewId}
                     canPageFullscreen={(windowItem.area ?? "main") === "main"}
                     icon={view.icon}
                     pageFullscreen={isPageFullscreenWindow}
-                    tabs={windowItem.tabs.map((tabId) => viewById.get(tabId)).filter(Boolean) as AutomationViewInstance[]}
+                    tabs={tabViews}
                     windowId={windowItem.id}
                     windowIndex={windowIndex}
                     subtitle={view.label}
@@ -1861,8 +2255,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                       policies={policies}
                       pipelineArtifacts={pipelineArtifacts}
                       policy={selectedPolicy}
-                      policyDraft={policyDraft}
-                      proposalDraft={selectedProposalDraft}
+                      taskGraph={selectedTaskGraph}
+                      proposalReview={selectedProposalReview}
                       proposalTargetTaskId={proposalTargetTaskId}
                       problems={problems}
                       projectId={activeProjectId}
@@ -1881,6 +2275,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                       signals={signals}
                       timelines={timelines}
                       view={view}
+                      viewActive={workspacePrefs.activeWindowId === windowItem.id && windowItem.activeViewId === view.id}
                       onDeleteRecording={deleteProjectRecording}
                       onFinalizeRecording={finalizeProjectRecording}
                       onInspectTimelineEntry={openTimelineEvidenceInspector}
@@ -1891,8 +2286,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                       onAppendRecordingNote={appendProjectRecordingNote}
                       onNormalizeRecording={normalizeProjectRecording}
                       onPipelineAction={runRecordingPipelineStep}
-                      onPolicyDraftChange={updatePolicyDraft}
-                      onProposalDraftChange={updateProposalDraft}
+                      onProposalReviewChange={updateProposalReview}
+                      onSaveTaskGraph={saveSelectedTaskGraph}
                       onProcessFinalizedRecording={processFinalizedRecording}
                       onRunRecordingPipeline={runRecordingPipeline}
                       onProcessProposalWithLlm={processPipelineProposalWithLlm}
@@ -2190,8 +2585,8 @@ function isAutomationSelection(value: unknown): value is AutomationSelection {
 
 function pipelineActionRunningMessage(endpoint: string): string {
   if (endpoint === "mine-recording-evidence") return "Mining evidence: writing facts, observations, correlations, and claims...";
-  if (endpoint === "propose-policy-from-model") return "Creating task draft from mined evidence...";
-  if (endpoint === "approve-policy-proposal") return "Applying task draft...";
+  if (endpoint === "propose-policy-from-model") return "Creating proposal from mined evidence...";
+  if (endpoint === "approve-policy-proposal") return "Applying proposal...";
   return "Running pipeline action...";
 }
 

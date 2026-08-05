@@ -76,6 +76,21 @@ export function ProgramWorkspace({ program, capabilities, domainName, user }: Pr
   const setCommandState = (state: string, detail: string, running = false, dirty = automationStatus.dirty) => {
     setAutomationStatus({ state, detail, running, dirty });
   };
+  const saveAutomationStudio = () => {
+    setCommandState("Saving", "Saving workspace and selected task", true, automationStatus.dirty);
+    let completed = false;
+    window.dispatchEvent(new CustomEvent("automation-studio:global-save", {
+      detail: {
+        onComplete: (result: { ok: boolean; message: string }) => {
+          completed = true;
+          setCommandState(result.ok ? "Saved" : "Save failed", result.message, false, !result.ok);
+        }
+      }
+    }));
+    window.setTimeout(() => {
+      if (!completed) setCommandState("Saved", "Workspace layout saved", false, false);
+    }, 1000);
+  };
 
   if (fullscreen) {
     return (
@@ -100,7 +115,7 @@ export function ProgramWorkspace({ program, capabilities, domainName, user }: Pr
           <div className="automation-main-command-bar" aria-label="Automation Studio commands">
             <IconCommand label="Undo" onClick={() => setCommandState("Edited", "Undo applied", false, true)}><Undo2 size={15} aria-hidden /></IconCommand>
             <IconCommand label="Redo" onClick={() => setCommandState("Edited", "Redo applied", false, true)}><Redo2 size={15} aria-hidden /></IconCommand>
-            <IconCommand label="Save" onClick={() => setCommandState("Saved", "Workspace layout and policy snapshot saved", false, false)}><Save size={15} aria-hidden /></IconCommand>
+            <IconCommand label="Save" onClick={saveAutomationStudio}><Save size={15} aria-hidden /></IconCommand>
             <span className="command-divider" />
             <button className="button automation-command-menu" onClick={() => setCommandState("Recording", "Capturing operator timeline", true, true)} type="button" title="Record options"><Circle size={13} aria-hidden />Record<ChevronDown size={13} aria-hidden /></button>
             <IconCommand className="run-command" label="Run" onClick={() => setCommandState("Running", "Running selected task from start", true)}><Play size={15} aria-hidden /></IconCommand>
