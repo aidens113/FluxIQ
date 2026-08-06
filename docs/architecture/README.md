@@ -71,6 +71,9 @@ Global program internals use the layout described in
 
 - [Current System](current-system.md)
 - [Automation Studio Architecture](automation-studio.md)
+  - [Workspace And Authoring UI](automation-studio/workspace.md)
+  - [Canonical Persistence](automation-studio/persistence.md)
+  - [Client Gateway](automation-studio/client-gateway.md)
 - [Automation Studio Importer Guide](../integrations/automation-studio-importing-repos.md)
 - [Client Gateway WebSocket Integration](../integrations/client-gateway-websocket.md)
 - [Documentation System](docs-system.md)

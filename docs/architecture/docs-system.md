@@ -1,13 +1,15 @@
 # Documentation System
 
-FluxIQ documentation has two layers:
+FluxIQ documentation has three layers:
 
 - authored Markdown written by maintainers;
-- generated Markdown, HTML, and JSON written by the Docs program from live
-  framework state.
+- a deterministic framework API reference generated from source exports;
+- ephemeral Markdown, HTML, and JSON operator snapshots generated from the
+  active importing repository and live framework state.
 
-Both layers live under the normal repository `docs/` folder so documentation is
-readable in Git and in the control panel.
+The first two layers live in `docs/` and are versioned. Operator snapshots live
+under ignored `.fluxiq/cache/docs/`. The Docs program presents both sources in
+one explorer without conflating runtime observations with authored truth.
 
 ## Source Layout
 
@@ -26,24 +28,26 @@ docs/
     global-programs.md
   operations/
     data-and-state.md
-  generated/
-    README.md
-    ...
+  reference/
+    framework-reference.md
+
+.fluxiq/cache/docs/
+  index.md
+  ...
 ```
 
 Authored docs are the source of truth for design intent, current behavior,
 architecture, and roadmap notes.
 
-Generated docs are inventory and runtime reference pages. They should help
-operators inspect the current repository and running framework, but they are
-not a replacement for authored design documentation.
+The committed reference is deterministic and contains no timestamp, local
+filesystem root, Git state, database count, or scheduler state.
 
-## Generated Docs
+## Runtime Documentation Snapshots
 
-The Docs program writes generated documentation under:
+The Docs program writes rebuildable operator documentation under:
 
 ```text
-docs/generated/
+.fluxiq/cache/docs/
 ```
 
 Generated pages currently include:
@@ -60,10 +64,11 @@ Generated pages currently include:
 - TypeDoc HTML site;
 - TypeDoc JSON reflection model.
 
-Generated Markdown pages are intentionally deterministic repository files.
-TypeDoc HTML and JSON artifacts are also generated for API inspection. The Docs
-program scans Markdown, HTML, and JSON documentation files so authored docs,
-generated pages, and TypeDoc artifacts can be browsed from one hierarchy.
+These pages are intentionally host- and time-specific. They may contain
+database counts, task schedules, Git metadata, importer domains, or registered
+IO. They must not be committed. TypeDoc HTML and JSON artifacts are cached here
+for interactive API inspection, while the stable Markdown API inventory lives
+in `docs/reference/`.
 
 ## Rebuild Flow
 
@@ -76,8 +81,8 @@ Docs rebuilds happen when:
 During a rebuild, FluxIQ:
 
 1. runs registered documentation generators;
-2. writes generated documentation files under `docs/generated`;
-3. scans the configured docs root;
+2. writes operator snapshot files under `.fluxiq/cache/docs`;
+3. scans the allowlisted authored and runtime-cache roots;
 4. caches page metadata for the Docs program;
 5. renders individual documentation pages on demand.
 
@@ -102,11 +107,18 @@ readability and displayed in a sandboxed frame without script, form, same-origin
 top-navigation, or external network privileges. Imported HTML must never be
 injected directly into the control-panel document.
 
+Repository validation:
+
+- `pnpm docs:reference` regenerates the deterministic TypeDoc-backed Markdown
+  inventory;
+- `pnpm docs:check` validates local Markdown links and fails when the committed
+  reference is stale;
+- CI runs `pnpm docs:check` after building the repository.
+
 Planned upgrades:
 
 - add syntax highlighting;
 - add table-of-contents extraction;
-- add link validation;
 - improve generated reference pages with richer symbol metadata.
 
 ## Agent Rule

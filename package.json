@@ -9,6 +9,8 @@
     "build": "pnpm --filter @fluxiq/contracts build && pnpm --filter fluxiq build && pnpm --filter @fluxiq/client-gateway-websocket build && pnpm --filter @fluxiq/web build",
     "check": "pnpm -r check",
     "test": "pnpm -r test",
+    "docs:reference": "node scripts/docs-reference.mjs",
+    "docs:check": "node scripts/validate-docs.mjs && node scripts/docs-reference.mjs --check",
     "package:lint": "publint packages/contracts --strict && publint packages/fluxiq --strict && publint packages/client-gateway-websocket --strict && attw --pack --profile esm-only packages/contracts && attw --pack --profile esm-only packages/fluxiq && attw --pack --profile esm-only packages/client-gateway-websocket",
     "package:smoke": "node scripts/validate-packages.mjs",
     "package:validate": "pnpm build && pnpm package:lint && pnpm package:smoke"

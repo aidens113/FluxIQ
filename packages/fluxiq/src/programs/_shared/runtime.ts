@@ -53,7 +53,14 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
   const computeControl = new ComputeControlService(storageOptions);
   const databaseManager = new DatabaseManagerService(storageOptions);
   const deploymentSync = new DeploymentSyncService(undefined, paths ? { ...storageOptions, rootDir: paths.root } : storageOptions);
-  const docs = new DocsService(paths ? { ...storageOptions, docsRootDir: path.join(paths.root, "docs"), generatedRootDir: path.join(paths.root, "docs", "generated") } : storageOptions);
+  const docsRootDir = paths ? path.join(paths.root, "docs") : undefined;
+  const runtimeDocsRootDir = paths ? path.join(paths.cache ?? path.join(paths.fluxiq, "cache"), "docs") : undefined;
+  const docs = new DocsService(paths ? {
+    ...storageOptions,
+    docsRootDir: docsRootDir!,
+    generatedRootDir: runtimeDocsRootDir!,
+    allowedSourceRootDirs: [docsRootDir!, runtimeDocsRootDir!]
+  } : storageOptions);
   const identityAccess = new IdentityAccessService(identityUsersRepository ? { repository: identityUsersRepository } : {});
   const productionRunner = new ProductionRunnerService(undefined, storageOptions);
 
@@ -67,9 +74,15 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
 
     docs.registerSource({
       id: "framework-docs",
-      title: "Framework Docs",
-      rootDir: path.join(paths.root, "docs"),
+      title: "Authored Documentation",
+      rootDir: docsRootDir!,
       scope: "framework"
+    });
+    docs.registerSource({
+      id: "runtime-docs",
+      title: "Runtime Snapshot",
+      rootDir: runtimeDocsRootDir!,
+      scope: "program"
     });
 
     backgroundTasks.register({

@@ -140,15 +140,17 @@ immediately, then flushes a full state snapshot to SQLite on the batch window.
 
 ## Generated Documentation
 
-Generated Markdown docs are written under:
+Host-specific operator snapshots are written under:
 
 ```text
-docs/generated/
+.fluxiq/cache/docs/
 ```
 
-They are not framework source code, but they are intentionally readable in Git.
-When generated docs become noisy or shallow, improve the generator and authored
-docs rather than treating generated output as the design source of truth.
+They are ignored, rebuildable runtime state and may contain local paths, Git
+metadata, database counts, task schedules, importer domains, and registered IO.
+The Docs program reads them as a separate allowlisted source and never writes
+into importer-authored `docs/` content. The deterministic public API inventory
+is versioned separately at `docs/reference/framework-reference.md`.
 
 ## Runtime Artifacts
 

@@ -815,7 +815,7 @@ Completion criteria:
 
 ## 5. Consolidate Code Without Losing Ownership Boundaries
 
-Status: pending; detailed design required before implementation
+Status: implemented 2026-08-06
 
 Problems:
 
@@ -824,9 +824,9 @@ Problems:
   several 1,000-2,500-line files.
 - `AutomationStudioLive.tsx` mixes data orchestration, project lifecycle,
   recording state, selection, window management, and modal workflows.
-- `AutomationStudioService` mixes project storage, recording persistence,
+- `AutomationStudioService` mixed project storage, recording persistence,
   evidence generation, policy proposal logic, runtime sessions, and migration.
-- Generic global-program UI remains concentrated in `live-views.tsx` with
+- Generic global-program UI was concentrated in `live-views.tsx` with
   extensive `any` usage.
 
 Design gate:
@@ -854,9 +854,117 @@ Completion criteria:
 - Large modules have focused ownership rather than arbitrary line-count splits.
 - Redundant empty folders and pass-through barrels are removed.
 
+### Point 5 Responsibility Map
+
+| Hotspot | Current responsibilities | Target owner |
+| --- | --- | --- |
+| `AutomationStudioLive.tsx` | project CRUD, project runtime refresh, recording lifecycle, evidence pipeline, graph persistence, hierarchy modals, selection derivation, and window geometry | thin application composition plus project, recording-pipeline, selection, and workspace controllers |
+| `AutomationStudioService` | façade/API, project index and files, recordings, normalized timelines, evidence derivation, policy proposal merge/application, runtime sessions, and migration compatibility | public service façade plus storage coordinator, evidence derivation, and policy translation modules |
+| `features/programs/live-views.tsx` | seven unrelated global-program screens and shared presentation/formatting helpers | one typed view per global program plus shared view utilities |
+| repeated program `api/runtime/storage/ui` files | endpoint contracts, handler registration, durable ownership, runtime behavior, and UI surface contracts | retain when the file expresses one of those boundaries; remove only empty/pass-through ceremony |
+
+Dependency direction after extraction:
+
+```text
+web program router
+  -> per-program live view
+     -> shared web API/presentation utilities
+
+AutomationStudioLive composition
+  -> project controller
+  -> recording/pipeline controller
+  -> selection view model
+  -> workspace/window controller
+
+AutomationStudioService façade
+  -> project/recording stores
+  -> evidence derivation (pure model transformation)
+  -> policy translation/application (pure model transformation)
+  -> runtime executor
+```
+
+Controllers may depend on contracts and lower-level model/storage modules.
+Storage and pure model modules must not import the service façade, API handlers,
+or web code. Per-program web views must not import one another.
+
+### Point 5 Module Heuristics
+
+- Split by owned state and invariants, not an arbitrary line target.
+- A module may be large when one cohesive algorithm requires it, but files over
+  roughly 600 lines receive an explicit responsibility review.
+- Keep endpoint contracts beside their program even when short. A short file is
+  not ceremony when it prevents runtime/UI or framework/domain coupling.
+- Collapse a file only when it contains no owned type, invariant, registration,
+  or independently testable behavior.
+- Preserve `fluxiq` public exports and endpoint names. New extracted internals
+  stay private unless an existing public symbol already requires re-export.
+- Do not combine this point with persistence-format, authorization, protocol,
+  or visual-design changes.
+
+### Point 5 Implementation Sequence
+
+5A. Extract Automation Studio evidence construction and policy/flow translation
+from the runtime service into pure internal modules. Keep the service as the
+transactional/application façade and add focused model tests for extracted
+behavior.
+
+5B. Extract project-index and artifact-path persistence into a storage
+coordinator where it can be moved without changing write ordering, locking, or
+layout-v2 paths. Keep recording mutation locking at the service boundary.
+
+5C. Move Automation Studio web selection derivation, project operations,
+recording pipeline operations, and workspace-window operations behind focused
+hooks/view-model modules. `AutomationStudioLive` remains responsible for
+composition and rendering.
+
+5D. Split `live-views.tsx` into one module per global program. Introduce typed
+snapshot/payload aliases from the existing program contracts and shared helpers
+instead of propagating `any`; retain a compatibility barrel for its current
+callers.
+
+5E. Audit pass-through barrels. Retain contract and registration boundaries;
+remove only redundant files discovered by the audit. Add public export/package
+consumer assertions so internal movement cannot silently change consumers.
+
+5F. Update authored architecture docs with the resulting ownership map, then
+run `pnpm check`, `pnpm test`, `pnpm build`, `pnpm package:lint`, and
+`pnpm package:smoke`.
+
+### Point 5 Implemented Result
+
+- Extracted pure project-artifact identity and translation rules from the
+  Automation Studio React composition into `model/project-artifacts.ts`.
+- Extracted policy proposal merging, learned-model translation, and
+  policy-to-flow translation from the runtime facade into `policy-model.ts`.
+- Extracted pipeline-index ordering and recording-pipeline lifecycle invariants
+  into `pipeline-model.ts`, with focused tests. Repository coordination,
+  transaction ordering, and recording mutation locks remain single-owner in
+  the service facade.
+- Split the seven global-program workspaces into one module per program behind
+  the existing `live-views.tsx` compatibility facade. Their snapshots, records,
+  and runs now use the framework's exported contracts; the split directory has
+  no explicit `any` usage.
+- Audited the short `api/runtime/storage/ui` files and retained them: they own
+  endpoint types, registration, persistence contracts, or UI surface types.
+  Their size is a consequence of narrow ownership rather than redundant
+  structure.
+- Kept the remaining coupled React orchestration in `AutomationStudioLive`.
+  Moving it mechanically would duplicate mutable state across hooks and violate
+  this point's stop condition; future workflow extraction must move state,
+  effects, and actions together by owner.
+
+Stop conditions:
+
+- Do not change observable API payloads or storage documents to make an
+  extraction easier.
+- Do not move domain-specific behavior into this framework repository.
+- If an extraction requires duplicated mutable state or circular imports,
+  leave that responsibility in the façade and document the remaining seam for
+  a later behavior-aware change.
+
 ## 6. Separate Stable Documentation From Runtime Snapshots
 
-Status: pending
+Status: implemented 2026-08-06
 
 Problems:
 
@@ -873,6 +981,79 @@ Planned direction:
 - Store runtime/operator snapshots under ignored `.fluxiq/cache/docs`.
 - Split the large Automation Studio architecture document by responsibility.
 - Add link and freshness validation.
+
+### Point 6 Ownership Model
+
+| Documentation class | Owner | Location | Versioned |
+| --- | --- | --- | --- |
+| Design, architecture, operator, integration, and roadmap guidance | maintainers/importing repository | `docs/` | yes |
+| Deterministic public API inventory | framework release/docs tooling | `docs/reference/` | yes |
+| Database counts, scheduler state, Git state, host domains, registered IO, and TypeDoc browsing artifacts | the active importing-repository runtime | `.fluxiq/cache/docs/` | no |
+| Docs page index/cache metadata | Docs service | global program storage in `.fluxiq` | no |
+
+The importing repository remains the documentation authority for its domain.
+FluxIQ may index authored host docs and may generate an ignored operator view,
+but it must not write host-specific state into the framework's versioned docs
+tree.
+
+### Point 6 Detailed Implementation Sequence
+
+6A. Change global runtime construction so the Docs service reads authored
+pages from `<host>/docs` and writes rebuildable operator snapshots to
+`<host>/.fluxiq/cache/docs`. Register both roots as explicit, sandboxed Docs
+sources. Preserve the existing generator API and `generatedRootDir` option as
+a compatibility surface while changing its default runtime target.
+
+6B. Keep runtime-sensitive generators together: platform paths/counts,
+database inventory, background tasks, deployment/Git state, registered host
+domains and IO, and browseable TypeDoc HTML/JSON. Make their index clearly say
+that it is an ephemeral operator snapshot.
+
+6C. Add a deterministic TypeDoc-backed reference command for
+`docs/reference/framework-reference.md`. It must omit timestamps, machine
+paths, Git state, and runtime counts; normalize source paths; and support a
+check-only mode so CI can reject stale committed reference output.
+
+6D. Remove tracked `docs/generated` output. Correct authored docs that describe
+runtime rebuilds as repository writes, and update program/storage/roadmap
+guidance to distinguish authored, stable reference, and cached operator docs.
+
+6E. Add an authored-document validator that checks local Markdown links,
+rejects links escaping the repository, ignores external/anchor/code links,
+and invokes deterministic reference freshness validation. Add the validation
+command to CI after the build.
+
+6F. Update Docs service tests to assert the new cache location, source
+separation, and absence of writes under `<host>/docs/generated`. Run the full
+repository and package validation gates.
+
+Stop conditions:
+
+- Do not delete or rewrite importer-authored documentation during a runtime
+  rebuild.
+- Do not expose arbitrary filesystem paths by broadening Docs source roots.
+- Do not make TypeDoc a required dependency for ordinary installed-package
+  runtime use.
+- Do not treat runtime snapshot timestamps as stable documentation freshness.
+
+### Point 6 Implemented Result
+
+- Runtime rebuilds now write exclusively to the importing host's ignored
+  `.fluxiq/cache/docs` tree. The Docs service registers authored
+  `framework-docs` and ephemeral `runtime-docs` as distinct allowlisted sources
+  and prefixes page routes by source to prevent collisions.
+- Removed the tracked `docs/generated` tree: 300 runtime-generated Markdown,
+  JSON, HTML, and asset files no longer dominate the repository.
+- Added `docs/reference/framework-reference.md`, a deterministic TypeDoc-backed
+  inventory with normalized source paths and no timestamp, machine root, Git
+  state, or runtime counts.
+- Added `pnpm docs:reference` and `pnpm docs:check`. The latter validates local
+  Markdown targets and rejects a stale deterministic reference; CI runs it
+  after the build.
+- Split the 1,078-line Automation Studio architecture document into a 167-line
+  overview and owned workspace, persistence, and client-gateway guides.
+- Corrected authored documentation for layout-v2 SQLite paths, runtime docs
+  ownership, TypeDoc status, Docs program behavior, and remaining roadmap work.
 
 ## 7. Raise The Quality Baseline
 
@@ -916,3 +1097,12 @@ Work:
   Windows/Linux Node 22 CI matrix. License metadata, registry publication,
   tags, signing, and provenance remain intentionally blocked pending explicit
   owner decisions.
+- 2026-08-06: Point 5 implemented: split global program views into typed,
+  program-owned modules; extracted Automation Studio project-artifact, policy,
+  and pipeline models; retained transactional state in the service facade; and
+  documented the resulting ownership and intentional remaining seams.
+- 2026-08-06: Point 6 implemented: separated authored/stable documentation
+  from ignored runtime snapshots, removed 300 tracked generated files, added a
+  deterministic TypeDoc reference plus link/freshness validation, split the
+  Automation Studio architecture guide, and passed all repository/package
+  validation gates.

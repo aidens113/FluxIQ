@@ -337,7 +337,7 @@ describe("global program services", () => {
     }
   });
 
-  it("writes generated documentation into the host docs hierarchy", async () => {
+  it("writes runtime documentation into the ignored host cache without mutating authored docs", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-docs-"));
     try {
       const runtime = createGlobalProgramRuntime({
@@ -363,11 +363,13 @@ describe("global program services", () => {
       });
 
       const snapshot = await runtime.docs.rebuild(1000);
-      const catalog = await readFile(path.join(root, "docs", "generated", "programs", "catalog.md"), "utf8");
-      const apiMap = await readFile(path.join(root, "docs", "generated", "programs", "api-map.md"), "utf8");
+      const catalog = await readFile(path.join(root, ".fluxiq", "cache", "docs", "programs", "catalog.md"), "utf8");
+      const apiMap = await readFile(path.join(root, ".fluxiq", "cache", "docs", "programs", "api-map.md"), "utf8");
 
       expect(snapshot.generatedPages).toBeGreaterThan(0);
-      expect(snapshot.pages.some((page) => page.routePath === "/generated/programs/catalog")).toBe(true);
+      expect(snapshot.sources.map((source) => source.id)).toEqual(["framework-docs", "runtime-docs"]);
+      expect(snapshot.pages.some((page) => page.sourceId === "runtime-docs" && page.routePath === "/runtime-docs/programs/catalog")).toBe(true);
+      await expect(stat(path.join(root, "docs", "generated"))).rejects.toThrow();
       expect(catalog).toContain("# Program Catalog");
       expect(apiMap).toContain("background-tasks");
     } finally {

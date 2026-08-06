@@ -70,6 +70,7 @@ import {
 } from "./workspace/components";
 import { AutomationTimelineDock, AutomationViewRenderer } from "./views";
 import { createStudioSmokeFlow } from "./runtime/smoke-flow";
+import { createManualRoutineId, createManualTaskId, flowToTaskPolicy, graphToTaskFlow, isPersistableHierarchyNode, mergeById, taskFlowId } from "./model/project-artifacts";
 import { useProgramApi, type JsonObject } from "../programs/program-api";
 import type { CurrentUser } from "../programs/types";
 import {
@@ -81,162 +82,6 @@ import {
 } from "../programs/shared-ui";
 
 type TabButton<T extends string> = { id: T; label: string; count?: number };
-
-function mergeById<TItem extends Record<string, any>>(primary: TItem[], secondary: TItem[], idKey: keyof TItem): TItem[] {
-  const seen = new Set<string>();
-  const merged: TItem[] = [];
-  for (const item of [...primary, ...secondary]) {
-    const id = String(item[idKey] ?? "");
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    merged.push(item);
-  }
-  return merged;
-}
-
-function createManualTaskId(label: string): string {
-  const slug = label
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ".")
-    .replace(/^\.+|\.+$/g, "")
-    .slice(0, 48) || "task";
-  return `task.${slug}.${Date.now().toString(36)}`;
-}
-
-function createManualRoutineId(label: string): string {
-  const slug = label
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ".")
-    .replace(/^\.+|\.+$/g, "")
-    .slice(0, 48) || "routine";
-  return `routine.${slug}.${Date.now().toString(36)}`;
-}
-
-function isPersistableHierarchyNode(node: AutomationHierarchyNode): boolean {
-  return node.kind !== "task" || !node.sourceId?.startsWith("draft.");
-}
-
-function taskPolicyId(taskId: string): string {
-  return `policy.${taskId.replace(/[^a-zA-Z0-9._-]+/g, ".")}.saved`;
-}
-
-function taskFlowId(taskId: string): string {
-  return `task.${taskId.replace(/[^a-zA-Z0-9._-]+/g, ".")}.graph`;
-}
-
-function flowToTaskPolicy(flow: any, task: any): any {
-  if (!flow) return null;
-  const policyId = typeof flow.metadata?.policyId === "string" ? flow.metadata.policyId : taskPolicyId(task?.taskId ?? flow.ownerId ?? "task.unnamed_task");
-  const nodes = (flow.nodes ?? []).map((node: any, index: number) => {
-    const values = node.parameterValues && typeof node.parameterValues === "object" ? node.parameterValues : {};
-    const actions = Array.isArray(values.actions) ? values.actions : [];
-    const eligibility = values.eligibility && typeof values.eligibility === "object" ? values.eligibility : { type: "all", conditions: [] };
-    const successConditions = values.successConditions && typeof values.successConditions === "object" ? values.successConditions : { type: "all", conditions: [] };
-    const timeout = values.timeout && typeof values.timeout === "object" ? values.timeout : { timeoutMs: 5000 };
-    const retry = values.retry && typeof values.retry === "object" ? values.retry : { maxAttempts: 1, backoffMs: 500 };
-    const recovery = values.recovery && typeof values.recovery === "object" ? values.recovery : { strategy: "pause" };
-    return {
-      id: node.id,
-      label: node.label ?? node.id,
-      description: node.description ?? "",
-      eligibility,
-      actions,
-      successConditions,
-      failureConditions: values.failureConditions && typeof values.failureConditions === "object" ? values.failureConditions : { type: "none", conditions: [] },
-      timeout,
-      retry,
-      recovery,
-      outgoingEdges: [],
-      sourceEvidence: [],
-      generatedMetadata: { generatedBy: "task_flow", generatedAt: flow.updatedAt ?? Date.now(), confidence: 0.5 },
-      metadata: {
-        ...(node.metadata ?? {}),
-        position: node.position,
-        nodeDefinitionId: node.definitionId,
-        parameterValues: values,
-        order: index
-      }
-    };
-  });
-  const edges = (flow.edges ?? []).map((edge: any, index: number) => ({
-    id: edge.id,
-    fromNodeId: edge.sourceNodeId,
-    toNodeId: edge.targetNodeId,
-    label: edge.label ?? edge.metadata?.label ?? "Next",
-    metadata: { ...(edge.metadata ?? {}), order: index }
-  }));
-  return {
-    schemaVersion: "0.1",
-    policyId,
-    taskId: task?.taskId ?? flow.ownerId,
-    version: "0.1",
-    nodes: nodes.map((node: any) => ({ ...node, outgoingEdges: edges.filter((edge: any) => edge.fromNodeId === node.id) })),
-    edges,
-    sourceEvidence: [],
-    generatedMetadata: { generatedBy: "task_flow", generatedAt: flow.updatedAt ?? Date.now(), confidence: 0.5 },
-    metadata: { ...(flow.metadata ?? {}), source: "task_flow" }
-  };
-}
-
-function graphToTaskFlow(input: { task: any; existingFlow?: any; graph: { nodes: any[]; edges: any[] }; policy?: any }): any {
-  const now = Date.now();
-  const flowId = input.existingFlow?.flowId ?? input.task?.graphId ?? input.task?.policyFlowId ?? taskFlowId(input.task?.taskId ?? "task.unnamed_task");
-  const policyId = input.policy?.policyId ?? input.existingFlow?.metadata?.policyId ?? taskPolicyId(input.task?.taskId ?? "task.unnamed_task");
-  return {
-    schemaVersion: "0.1",
-    flowId,
-    ownerKind: "task",
-    ownerId: input.task?.taskId ?? "task.unnamed_task",
-    name: input.task?.name ?? input.task?.taskId ?? "unnamed_task",
-    description: input.task?.description ?? `Task graph for ${input.task?.name ?? input.task?.taskId ?? "unnamed_task"}.`,
-    nodes: input.graph.nodes.map((node, index) => ({
-      id: node.id,
-      definitionId: node.data?.nodeDefinitionId ?? (node.data?.isStart ? "builtin.control.start" : "automation.policy.step"),
-      label: node.data?.label ?? node.id,
-      description: node.data?.customDescription || node.data?.description,
-      position: { x: Math.round(node.position?.x ?? index * 340), y: Math.round(node.position?.y ?? 160) },
-      parameterValues: {
-        ...(node.data?.parameterValues ?? {}),
-        actions: Array.isArray(node.data?.parameterValues?.actions) ? node.data.parameterValues.actions : (node.data?.actionTypes ?? []).map((actionType: string, actionIndex: number) => ({ id: `action.${node.id}.${actionIndex + 1}`, actionType, parameters: {} })),
-        eligibility: node.data?.parameterValues?.eligibility ?? { type: "all", conditions: [] },
-        successConditions: node.data?.parameterValues?.successConditions ?? { type: "all", conditions: [] },
-        timeout: node.data?.parameterValues?.timeout ?? { timeoutMs: node.data?.timeoutMs ?? 5000 },
-        retry: node.data?.parameterValues?.retry ?? { maxAttempts: 1, backoffMs: 500 },
-        recovery: node.data?.parameterValues?.recovery ?? { strategy: node.data?.recovery ?? "pause" }
-      },
-      metadata: {
-        ...(input.existingFlow?.nodes?.find((item: any) => item.id === node.id)?.metadata ?? {}),
-        policyId,
-        policyNodeId: node.id,
-        order: index
-      }
-    })),
-    edges: input.graph.edges.map((edge, index) => ({
-      id: edge.id,
-      sourceNodeId: edge.source,
-      targetNodeId: edge.target,
-      sourcePortId: edge.sourceHandle ?? edge.data?.sourcePort,
-      targetPortId: edge.targetHandle ?? edge.data?.targetPort,
-      label: String(edge.label ?? edge.data?.label ?? "Next"),
-      metadata: {
-        ...(edge.data ?? {}),
-        policyId,
-        policyEdgeId: edge.id,
-        order: index
-      }
-    })),
-    createdAt: input.existingFlow?.createdAt ?? now,
-    updatedAt: now,
-    metadata: {
-      ...(input.existingFlow?.metadata ?? {}),
-      source: "task_editor",
-      policyId,
-      savedAt: now
-    }
-  };
-}
 
 export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const api = useProgramApi("automation-studio");
@@ -1389,7 +1234,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           status: "saved",
           graphId: flow.flowId,
           policyFlowId: flow.flowId,
-          policyId: flow.metadata.policyId,
+          policyId: flow.metadata?.policyId,
           savedAt: flow.updatedAt
         }
       }

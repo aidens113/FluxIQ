@@ -41,8 +41,8 @@ Database Manager is the explorer for framework and domain data stores.
 Current behavior:
 
 - uses SQLite repositories;
-- global data lives in `.fluxiq/databases/global.sqlite`;
-- domain databases are supported separately;
+- global data lives in `.fluxiq/global.sqlite`;
+- domain data lives in `.fluxiq/domains/<domainId>/domain.sqlite`;
 - the UI shows database/table hierarchy, records, values, search, and filters;
 - Background Tasks state is visible through the `background.tasks` store.
 - Credential records in `identity.users` are AES-256-GCM encrypted at rest with
@@ -119,9 +119,11 @@ Docs renders authored and generated repository documentation.
 
 Current behavior:
 
-- reads the repository `docs/` tree;
-- rebuilds generated Markdown under `docs/generated`;
-- generates TypeDoc HTML and JSON artifacts under `docs/generated/reference`;
+- reads authored host documentation from `docs/`;
+- rebuilds runtime/operator Markdown under `.fluxiq/cache/docs`;
+- generates browseable TypeDoc HTML and JSON artifacts under
+  `.fluxiq/cache/docs/reference`;
+- presents authored and runtime-cache sources in the same folder-style explorer;
 - shows Markdown, HTML, and JSON documentation files in a folder-style explorer;
 - resolves internal documentation links inside the Docs program when a matching
   page exists;
@@ -133,7 +135,7 @@ Current behavior:
 
 Planned improvements:
 
-- link and docs freshness checks.
+- richer reference symbol metadata and navigation.
 
 ## Production Runner
 

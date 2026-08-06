@@ -116,7 +116,7 @@ export class DocsService {
           sourceId: source.id,
           title: titleFromPath(relative),
           path: filePath,
-          routePath: `/${relative.replace(/\.(md|mdx|html|json)$/i, "")}`,
+          routePath: `/${source.id}/${relative.replace(/\.(md|mdx|html|json)$/i, "")}`,
           updatedAtMs: info.mtimeMs
         };
       })

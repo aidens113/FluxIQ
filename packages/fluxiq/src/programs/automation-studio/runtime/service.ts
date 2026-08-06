@@ -39,6 +39,31 @@ import type { LearnedTaskModel } from "../learning/index.ts";
 import type { EvidenceClaim, EvidenceFact, EvidenceObservation, SignalMiningResult, StateActionCorrelation } from "../mining/index.ts";
 import { normalizeRecordingTimeline, type NormalizationOptions, type NormalizedTimeline } from "../normalization/index.ts";
 import { runAutomationStudioGraph } from "./executor.ts";
+import {
+  addRecordingPipelineArtifactId,
+  createRecordingPipelineDocument,
+  emptyPipelineIndex,
+  emptyRecordingPipelineArtifacts,
+  pipelineIndexKey,
+  recordingPipelineId,
+  upsertPipelineIndex,
+  type PipelineArtifactKind,
+  type PipelineIndex,
+  type RecordingPipelineDocument
+} from "./pipeline-model.ts";
+import {
+  average,
+  asStringArray,
+  createTaskProposalModelFromMiningRun,
+  humanTaskName,
+  mergeProposalPatchIntoPolicy,
+  policyGraphToAutomationStudioFlow,
+  uniqueEvidenceReferences,
+  withPolicyOutgoingEdges,
+  type PolicyGraphPatch,
+  type PolicyProposalArtifact
+} from "./policy-model.ts";
+export type { PolicyGraphPatch, PolicyProposalArtifact } from "./policy-model.ts";
 import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage.ts";
 import type { JsonObject } from "../../../core/index.ts";
 import {
@@ -103,33 +128,6 @@ export type NormalizationReviewArtifact = {
   generatedAt: number;
 };
 
-export type PolicyProposalArtifact = {
-  schemaVersion: "0.1";
-  proposalId: string;
-  learnedTaskModelId: string;
-  policy: PolicyGraph;
-  patch?: PolicyGraphPatch;
-  status: "proposed" | "approved";
-  summary: string;
-  generatedAt: number;
-  approvedAt?: number;
-  metadata?: JsonObject;
-};
-
-export type PolicyGraphPatch = {
-  schemaVersion: "0.1";
-  patchId: string;
-  targetTaskId: string;
-  basePolicyId?: string | null;
-  mergeStrategy: "append_or_branch";
-  nodes: PolicyNode[];
-  edges: PolicyGraph["edges"];
-  sourceRecordingIds: string[];
-  sourceMiningRunIds: string[];
-  generatedAt: number;
-  metadata?: JsonObject;
-};
-
 export type ReplayResultArtifact = {
   schemaVersion: "0.1";
   replayId: string;
@@ -166,43 +164,6 @@ export type AutomationPipelineArtifacts = {
   learnedTaskModels: LearnedTaskModel[];
   policyProposals: PolicyProposalArtifact[];
   replayResults: ReplayResultArtifact[];
-};
-
-type PipelineIndex = {
-  pipelines: { pipelineId: string; recordingId: string; taskId?: string; updatedAt: number }[];
-  normalizationReviews: { reviewId: string; generatedAt: number; recordingId?: string }[];
-  miningRuns: { miningRunId: string; generatedAt: number; recordingId?: string }[];
-  evidenceFacts: { factId: string; generatedAt: number; recordingId?: string }[];
-  evidenceObservations: { observationId: string; generatedAt: number; recordingId?: string }[];
-  stateActionCorrelations: { correlationId: string; generatedAt: number; recordingId?: string }[];
-  evidenceClaims: { claimId: string; generatedAt: number; recordingId?: string }[];
-  learnedTaskModels: { learnedTaskModelId: string; generatedAt: number; recordingId?: string }[];
-  policyProposals: { proposalId: string; generatedAt: number; status: PolicyProposalArtifact["status"]; recordingId?: string }[];
-  replayResults: { replayId: string; generatedAt: number; recordingId?: string }[];
-};
-
-type PipelineArtifactKind = Exclude<keyof PipelineIndex, "pipelines">;
-
-type RecordingPipelineDocument = {
-  schemaVersion: "0.1";
-  pipelineId: string;
-  recordingId: string;
-  taskId?: string;
-  status: "ready" | "processing" | "complete";
-  createdAt: number;
-  updatedAt: number;
-  artifacts: {
-    normalizedTimelineIds: string[];
-    normalizationReviewIds: string[];
-    miningRunIds: string[];
-    evidenceFactIds: string[];
-    evidenceObservationIds: string[];
-    stateActionCorrelationIds: string[];
-    evidenceClaimIds: string[];
-    learnedTaskModelIds: string[];
-    policyProposalIds: string[];
-    replayResultIds: string[];
-  };
 };
 
 type RuntimeIndex = {
@@ -1946,10 +1907,6 @@ function normalizePositiveInteger(value: unknown, fallback: number, min: number,
   return Math.min(max, Math.max(min, Math.floor(parsed)));
 }
 
-function emptyPipelineIndex(): PipelineIndex {
-  return { pipelines: [], normalizationReviews: [], miningRuns: [], evidenceFacts: [], evidenceObservations: [], stateActionCorrelations: [], evidenceClaims: [], learnedTaskModels: [], policyProposals: [], replayResults: [] };
-}
-
 function createDefaultProjectTaskArtifact(now = Date.now()): AutomationStudioTaskArtifact {
   const graph = createBlankAutomationStudioFlow({
     flowId: "task.task.unnamed_task.graph",
@@ -1976,110 +1933,11 @@ function createDefaultProjectTaskArtifact(now = Date.now()): AutomationStudioTas
   };
 }
 
-function upsertPipelineIndex(index: PipelineIndex, kind: PipelineArtifactKind, id: string, generatedAt: number, status?: unknown, recordingId?: string): PipelineIndex {
-  const item = kind === "normalizationReviews"
-    ? { reviewId: id, generatedAt, ...(recordingId ? { recordingId } : {}) }
-    : kind === "miningRuns"
-      ? { miningRunId: id, generatedAt, ...(recordingId ? { recordingId } : {}) }
-      : kind === "evidenceFacts"
-        ? { factId: id, generatedAt, ...(recordingId ? { recordingId } : {}) }
-      : kind === "evidenceObservations"
-        ? { observationId: id, generatedAt, ...(recordingId ? { recordingId } : {}) }
-        : kind === "stateActionCorrelations"
-          ? { correlationId: id, generatedAt, ...(recordingId ? { recordingId } : {}) }
-          : kind === "evidenceClaims"
-            ? { claimId: id, generatedAt, ...(recordingId ? { recordingId } : {}) }
-            : kind === "learnedTaskModels"
-              ? { learnedTaskModelId: id, generatedAt, ...(recordingId ? { recordingId } : {}) }
-              : kind === "policyProposals"
-                ? { proposalId: id, generatedAt, status: status === "approved" ? "approved" as const : "proposed" as const, ...(recordingId ? { recordingId } : {}) }
-                : { replayId: id, generatedAt, ...(recordingId ? { recordingId } : {}) };
-  const key = pipelineIndexKey(kind) as keyof typeof item;
-  return {
-    ...emptyPipelineIndex(),
-    ...index,
-    [kind]: upsertBy((index[kind] as any[]) ?? [], key as any, item as any).sort((left: any, right: any) => right.generatedAt - left.generatedAt)
-  };
-}
-
-function pipelineIndexKey(kind: PipelineArtifactKind): string {
-  if (kind === "normalizationReviews") return "reviewId";
-  if (kind === "miningRuns") return "miningRunId";
-  if (kind === "evidenceFacts") return "factId";
-  if (kind === "evidenceObservations") return "observationId";
-  if (kind === "stateActionCorrelations") return "correlationId";
-  if (kind === "evidenceClaims") return "claimId";
-  if (kind === "learnedTaskModels") return "learnedTaskModelId";
-  if (kind === "policyProposals") return "proposalId";
-  return "replayId";
-}
-
 function projectArtifactDocumentFileName(folder: "tasks" | "routines" | "configs" | "flows"): string {
   if (folder === "tasks") return "task.json";
   if (folder === "routines") return "routine.json";
   if (folder === "configs") return "config.json";
   return "flow.json";
-}
-
-function recordingPipelineId(recordingId: string): string {
-  return `pipeline.${safeSegment(recordingId)}`;
-}
-
-function createRecordingPipelineDocument(recording: Pick<RecordingSession, "recordingId" | "taskId" | "startedAt">): RecordingPipelineDocument {
-  return {
-    schemaVersion: "0.1",
-    pipelineId: recordingPipelineId(recording.recordingId),
-    recordingId: recording.recordingId,
-    ...(recording.taskId !== undefined ? { taskId: recording.taskId } : {}),
-    status: "ready",
-    createdAt: recording.startedAt,
-    updatedAt: Date.now(),
-    artifacts: emptyRecordingPipelineArtifacts()
-  };
-}
-
-function emptyRecordingPipelineArtifacts(): RecordingPipelineDocument["artifacts"] {
-  return {
-    normalizedTimelineIds: [],
-    normalizationReviewIds: [],
-    miningRunIds: [],
-    evidenceFactIds: [],
-    evidenceObservationIds: [],
-    stateActionCorrelationIds: [],
-    evidenceClaimIds: [],
-    learnedTaskModelIds: [],
-    policyProposalIds: [],
-    replayResultIds: []
-  };
-}
-
-function addRecordingPipelineArtifactId(pipeline: RecordingPipelineDocument, kind: PipelineArtifactKind, id: string): RecordingPipelineDocument {
-  const key = kind === "normalizationReviews"
-    ? "normalizationReviewIds"
-    : kind === "miningRuns"
-      ? "miningRunIds"
-      : kind === "evidenceFacts"
-        ? "evidenceFactIds"
-      : kind === "evidenceObservations"
-        ? "evidenceObservationIds"
-        : kind === "stateActionCorrelations"
-          ? "stateActionCorrelationIds"
-          : kind === "evidenceClaims"
-            ? "evidenceClaimIds"
-            : kind === "learnedTaskModels"
-              ? "learnedTaskModelIds"
-              : kind === "policyProposals"
-                ? "policyProposalIds"
-                : "replayResultIds";
-  return {
-    ...pipeline,
-    status: kind === "replayResults" || kind === "policyProposals" ? "complete" : "processing",
-    updatedAt: Date.now(),
-    artifacts: {
-      ...pipeline.artifacts,
-      [key]: uniqueStrings([id, ...(pipeline.artifacts[key] ?? [])])
-    }
-  };
 }
 
 function uniqueStrings(values: string[]): string[] {
@@ -2389,11 +2247,6 @@ function readableTokenValue(value: string): string {
   return value.replace(/[_:.-]+/g, " ").replace(/\s+/g, " ").trim().replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Unknown";
 }
 
-function humanTaskName(taskId: string): string {
-  const name = readableTokenValue(taskId.replace(/^task[.:_-]?/i, ""));
-  return name === "Unknown" ? "Generated Proposal" : name;
-}
-
 function stateValueSummary(value: unknown): string {
   if (!value || typeof value !== "object" || Array.isArray(value)) return String(value ?? "missing");
   const stateValue = value as { value?: unknown };
@@ -2508,313 +2361,6 @@ function confidenceForCorrelation(correlation: StateActionCorrelation): number {
 
 function compactJsonObject(value: Record<string, unknown>): JsonObject {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as JsonObject;
-}
-
-function mergeProposalPatchIntoPolicy(existingPolicy: PolicyGraph | null | undefined, proposal: PolicyProposalArtifact): PolicyGraph {
-  const patch = proposal.patch ?? {
-    schemaVersion: "0.1" as const,
-    patchId: `patch.${safeSegment(proposal.proposalId)}`,
-    targetTaskId: proposal.policy.taskId,
-    basePolicyId: null,
-    mergeStrategy: "append_or_branch" as const,
-    nodes: proposal.policy.nodes,
-    edges: proposal.policy.edges,
-    sourceRecordingIds: [String(proposal.metadata?.recordingId ?? "")].filter(Boolean),
-    sourceMiningRunIds: [String(proposal.metadata?.miningRunId ?? "")].filter(Boolean),
-    generatedAt: proposal.generatedAt
-  };
-  if (!existingPolicy || existingPolicy.taskId !== patch.targetTaskId) {
-    return withPolicyOutgoingEdges({
-      ...proposal.policy,
-      policyId: existingPolicy?.policyId ?? `policy.${safeSegment(patch.targetTaskId)}.proposal`,
-      taskId: patch.targetTaskId,
-      nodes: patch.nodes.map((node) => markProposalNode(node, proposal.proposalId, patch.sourceRecordingIds)),
-      edges: patch.edges,
-      sourceEvidence: uniqueEvidenceReferences([...proposal.policy.sourceEvidence]),
-      metadata: {
-        ...(proposal.policy.metadata ?? {}),
-        proposalId: proposal.proposalId,
-        patchId: patch.patchId,
-        sourceRecordingIds: patch.sourceRecordingIds
-      }
-    });
-  }
-
-  const existingNodes = existingPolicy.nodes.map((node) => ({ ...node }));
-  const existingEdges = existingPolicy.edges.map((edge) => ({ ...edge }));
-  const nodeIds = new Set(existingNodes.map((node) => node.id));
-  const edgeIds = new Set(existingEdges.map((edge) => edge.id));
-  const idMap = new Map<string, string>();
-  let previousResolvedId = "";
-
-  for (const [index, proposedNode] of patch.nodes.entries()) {
-    const matchingPrefixNode = existingNodes[index];
-    if (matchingPrefixNode && policyNodeSignature(matchingPrefixNode) === policyNodeSignature(proposedNode)) {
-      idMap.set(proposedNode.id, matchingPrefixNode.id);
-      previousResolvedId = matchingPrefixNode.id;
-      continue;
-    }
-    const nextId = uniqueGraphId(`${proposedNode.id}.${safeSegment(proposal.proposalId)}`, nodeIds);
-    nodeIds.add(nextId);
-    idMap.set(proposedNode.id, nextId);
-    existingNodes.push(markProposalNode({ ...proposedNode, id: nextId }, proposal.proposalId, patch.sourceRecordingIds));
-    if (previousResolvedId) {
-      const branchEdgeId = uniqueGraphId(`edge.${safeSegment(previousResolvedId)}.${safeSegment(nextId)}`, edgeIds);
-      edgeIds.add(branchEdgeId);
-      existingEdges.push({
-        id: branchEdgeId,
-        fromNodeId: previousResolvedId,
-        toNodeId: nextId,
-        label: index === 0 ? "Start branch" : "Recorded branch",
-        probability: 0.8,
-        metadata: { proposalId: proposal.proposalId, patchId: patch.patchId, branch: true }
-      });
-    }
-    previousResolvedId = nextId;
-  }
-
-  for (const edge of patch.edges) {
-    const fromNodeId = idMap.get(edge.fromNodeId) ?? edge.fromNodeId;
-    const toNodeId = idMap.get(edge.toNodeId) ?? edge.toNodeId;
-    if (!fromNodeId || !toNodeId) continue;
-    const duplicate = existingEdges.some((candidate) => candidate.fromNodeId === fromNodeId && candidate.toNodeId === toNodeId && String(candidate.label ?? "Next") === String(edge.label ?? "Next"));
-    if (duplicate) continue;
-    const nextId = uniqueGraphId(`${edge.id}.${safeSegment(proposal.proposalId)}`, edgeIds);
-    edgeIds.add(nextId);
-    existingEdges.push({
-      ...edge,
-      id: nextId,
-      fromNodeId,
-      toNodeId,
-      metadata: { ...(edge.metadata ?? {}), proposalId: proposal.proposalId, patchId: patch.patchId }
-    });
-  }
-
-  return withPolicyOutgoingEdges({
-    ...existingPolicy,
-    nodes: existingNodes,
-    edges: existingEdges,
-    sourceEvidence: uniqueEvidenceReferences([...existingPolicy.sourceEvidence, ...proposal.policy.sourceEvidence]),
-    generatedMetadata: {
-      ...existingPolicy.generatedMetadata,
-      generatedAt: Date.now(),
-      confidence: average(existingNodes.map((node) => node.generatedMetadata.confidence ?? 0))
-    },
-    metadata: {
-      ...(existingPolicy.metadata ?? {}),
-      lastProposalId: proposal.proposalId,
-      sourceRecordingIds: uniqueStrings([
-        ...asStringArray(existingPolicy.metadata?.sourceRecordingIds),
-        ...patch.sourceRecordingIds
-      ])
-    }
-  });
-}
-
-function withPolicyOutgoingEdges(policy: PolicyGraph): PolicyGraph {
-  return {
-    ...policy,
-    nodes: policy.nodes.map((node) => ({
-      ...node,
-      outgoingEdges: policy.edges.filter((edge) => edge.fromNodeId === node.id)
-    }))
-  };
-}
-
-function markProposalNode(node: PolicyNode, proposalId: string, recordingIds: string[]): PolicyNode {
-  return {
-    ...node,
-    metadata: {
-      ...(node.metadata ?? {}),
-      proposalId,
-      sourceRecordingIds: recordingIds,
-      graphTone: "proposed"
-    }
-  };
-}
-
-function policyNodeSignature(node: PolicyNode): string {
-  const actions = node.actions.map((action) => `${action.actionType}:${JSON.stringify(action.parameters ?? {})}`).join("|");
-  const success = JSON.stringify(node.successConditions ?? {});
-  return `${node.label.toLowerCase().trim()}::${actions}::${success}`;
-}
-
-function uniqueGraphId(seed: string, used: Set<string>): string {
-  const base = safeSegment(seed);
-  let id = base;
-  let index = 2;
-  while (used.has(id)) {
-    id = `${base}.${index}`;
-    index += 1;
-  }
-  return id;
-}
-
-function uniqueEvidenceReferences(items: PolicyGraph["sourceEvidence"]): PolicyGraph["sourceEvidence"] {
-  return uniqueBy(items, (item) => `${item.layer}:${item.artifactId}:${item.entryId ?? ""}:${item.relationship ?? ""}`);
-}
-
-function asStringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.map(String).filter(Boolean) : [];
-}
-
-function policyGraphToAutomationStudioFlow(policy: PolicyGraph, input: { flowId: string; existingFlow?: AutomationStudioFlowDocument | null; proposalId: string; recordingId?: string }): AutomationStudioFlowDocument {
-  const now = Date.now();
-  const flow: AutomationStudioFlowDocument = {
-    schemaVersion: "0.1",
-    flowId: input.flowId,
-    ownerKind: "task",
-    ownerId: policy.taskId,
-    name: humanTaskName(policy.taskId),
-    description: `Task flow generated from policy ${policy.policyId}.`,
-    nodes: policy.nodes.map((node, index) => ({
-      id: node.id,
-      definitionId: node.metadata?.graphTone === "proposed" ? "automation.policy.proposed-step" : "automation.policy.step",
-      label: node.label,
-      ...(node.description !== undefined ? { description: node.description } : {}),
-      position: { x: index * 340, y: index % 2 === 0 ? 120 : 280 },
-      parameterValues: compactJsonObject({
-        actions: node.actions as unknown as JsonObject[],
-        eligibility: node.eligibility as unknown as JsonObject,
-        successConditions: node.successConditions as unknown as JsonObject,
-        timeout: node.timeout as unknown as JsonObject,
-        retry: node.retry as unknown as JsonObject,
-        recovery: node.recovery as unknown as JsonObject
-      }),
-      metadata: {
-        ...(node.metadata ?? {}),
-        policyNodeId: node.id,
-        policyId: policy.policyId,
-        proposalId: input.proposalId,
-        ...(input.recordingId !== undefined ? { recordingId: input.recordingId } : {})
-      }
-    })),
-    edges: policy.edges.map((edge) => ({
-      id: edge.id,
-      sourceNodeId: edge.fromNodeId,
-      targetNodeId: edge.toNodeId,
-      ...(edge.label !== undefined ? { label: edge.label } : {}),
-      metadata: {
-        ...(edge.metadata ?? {}),
-        policyEdgeId: edge.id,
-        policyId: policy.policyId,
-        proposalId: input.proposalId
-      }
-    })),
-    createdAt: input.existingFlow?.createdAt ?? now,
-    updatedAt: now,
-    metadata: {
-      ...(input.existingFlow?.metadata ?? {}),
-      source: "policy_proposal",
-      policyId: policy.policyId,
-      lastProposalId: input.proposalId,
-      ...(input.recordingId !== undefined ? { lastRecordingId: input.recordingId } : {})
-    }
-  };
-  return flow;
-}
-
-function createTaskProposalModelFromMiningRun(miningRun: SignalMiningResult, taskId?: string): LearnedTaskModel {
-  const resolvedTaskId = taskId ?? String(miningRun.metadata?.taskId ?? miningRun.metadata?.recordingId ?? "task.learned");
-  const actionClaims = (miningRun.claims ?? []).filter((claim) => claim.claimType === "action_effect");
-  const transitionClaims = (miningRun.claims ?? []).filter((claim) => claim.claimType === "transition" || claim.claimType === "wait");
-  const actionObservations = (miningRun.observations ?? []).filter((observation) => observation.kind === "action_performed" || observation.kind === "domain_event_observed");
-  const factsById = new Map((miningRun.facts ?? []).map((fact) => [fact.factId, fact]));
-  const windows = miningRun.windows.filter((window) => window.actionEntryId);
-  const clusterSources = actionObservations.length ? actionObservations : windows.length ? windows : actionClaims.length ? actionClaims : transitionClaims;
-  const actionClusters = clusterSources.map((item, index) => {
-    const claim = "claimId" in item ? item : undefined;
-    const observation = "observationId" in item ? item : undefined;
-    const observationSourceEntryId = observation ? factsById.get(observation.factIds[0] ?? "")?.source.entryId : undefined;
-    const window = "actionEntryId" in item ? item : windows[index];
-    const actionEntryId = typeof claim?.statement.subject.entryId === "string"
-      ? claim.statement.subject.entryId
-      : typeof observationSourceEntryId === "string"
-        ? observationSourceEntryId
-        : typeof observation?.metadata?.entryId === "string"
-          ? observation.metadata.entryId
-          : window?.actionEntryId;
-    const matchingEffects = uniqueBy(miningRun.actionEffects.filter((effect) => effect.actionOccurrenceId === actionEntryId), (effect) => `${effect.signalPath}:${effect.relationship}`);
-    const matchingActionClaims = actionClaims.filter((candidate) => candidate.statement.subject.entryId === actionEntryId);
-    const primaryEvidence = claim
-      ? [{ layer: "evidence_claim" as const, artifactId: claim.claimId, relationship: claim.claimType }]
-      : observation
-        ? [{ layer: "evidence_observation" as const, artifactId: observation.observationId, relationship: observation.kind }]
-        : window?.sourceEvidence ?? [];
-    const claimEvidence = uniqueBy([
-      ...matchingActionClaims.map((candidate) => ({ layer: "evidence_claim" as const, artifactId: candidate.claimId, relationship: candidate.claimType })),
-      ...primaryEvidence
-    ], (evidence) => `${evidence.layer}:${evidence.artifactId}`);
-    const actionType = observation?.subject?.eventType
-      ?? (observation?.subject?.target && typeof observation.subject.target === "object" && typeof observation.subject.target.actionType === "string" ? observation.subject.target.actionType : undefined)
-      ?? (claim?.statement.subject && typeof claim.statement.subject === "object" && typeof claim.statement.subject.actionType === "string" ? claim.statement.subject.actionType : undefined)
-      ?? "learned.action";
-    return {
-      id: `cluster.${index + 1}`,
-      label: claim?.title ?? observation?.title ?? `Step ${index + 1}`,
-      actionTemplate: { id: `action.${index + 1}`, actionType, parameters: {}, sourceEvidence: claimEvidence },
-      positiveRequirements: uniqueBy((miningRun.claims ?? [])
-        .filter((candidate) => candidate.claimType === "candidate_condition")
-        .map((candidate) => ({
-          signalPath: String(candidate.statement.object?.signalPath ?? candidate.statement.subject.signalPath ?? ""),
-          operator: "exists" as const,
-          weight: candidate.confidence.score
-        }))
-        .filter((condition) => condition.signalPath)
-        .slice(0, 3), (condition) => condition.signalPath),
-      negativeRequirements: [],
-      expectedEffects: matchingEffects.map((effect) => ({
-        signalPath: effect.signalPath,
-        condition: { signalPath: effect.signalPath, operator: "changed" as const },
-        probability: actionClaims.find((candidate) => candidate.statement.object?.signalPath === effect.signalPath && candidate.statement.subject.entryId === actionEntryId)?.confidence.score ?? effect.probability,
-        evidence: matchingActionClaims
-          .filter((candidate) => candidate.statement.object?.signalPath === effect.signalPath)
-          .map((candidate) => ({ layer: "evidence_claim" as const, artifactId: candidate.claimId, relationship: candidate.claimType }))
-      })),
-      possibleSideEffects: [],
-      confidence: claim?.confidence.score ?? Math.min(0.85, 0.45 + matchingEffects.length * 0.05 + (observation ? 0.1 : 0)),
-      sourceOccurrences: actionEntryId ? [actionEntryId] : [],
-      ...(claim ? { metadata: { sourceClaimId: claim.claimId, observationIds: claim.observationIds, factIds: claim.factIds } } : observation ? { metadata: { sourceObservationId: observation.observationId, factIds: observation.factIds } } : {})
-    };
-  });
-  const transitions = actionClusters.slice(0, -1).map((cluster, index) => ({
-    id: `transition.${index + 1}`,
-    fromClusterId: cluster.id,
-    toClusterId: actionClusters[index + 1]!.id,
-    probability: 0.8,
-    evidence: []
-  }));
-  return {
-    schemaVersion: "0.1",
-    learnedTaskModelId: `model.${safeSegment(resolvedTaskId)}.${Date.now()}`,
-    taskId: resolvedTaskId,
-    version: "0.1",
-    actionClusters,
-    transitions,
-    invariants: miningRun.conditionCandidates.slice(0, 5).map((candidate) => ({ signalPath: candidate.signalPath, operator: "exists" })),
-    unresolvedQuestions: miningRun.issues.map((issue, index) => ({ id: `question.${index + 1}`, question: issue, severity: "important", evidence: [] })),
-    sourceRecordings: [String(miningRun.metadata?.recordingId ?? "")].filter(Boolean),
-    sourceMiningRuns: [miningRun.miningRunId],
-    generatedAt: Date.now(),
-    metadata: { source: "mined_evidence" }
-  };
-}
-
-function uniqueBy<T>(items: T[], keyFor: (item: T) => string): T[] {
-  const seen = new Set<string>();
-  const output: T[] = [];
-  for (const item of items) {
-    const key = keyFor(item);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    output.push(item);
-  }
-  return output;
-}
-
-function average(values: number[]): number {
-  const finite = values.filter((value) => Number.isFinite(value));
-  return finite.length ? finite.reduce((total, value) => total + value, 0) / finite.length : 0;
 }
 
 function latestByGeneratedAt<T extends { generatedAt?: number }>(items: T[]): T | undefined {

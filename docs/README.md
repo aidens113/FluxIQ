@@ -9,6 +9,7 @@ Docs program in the control panel.
 - [Working Codebase Audit Remediation Plan](working/codebase-audit-remediation-plan.md)
 - [Current System](architecture/current-system.md)
 - [Documentation System](architecture/docs-system.md)
+- [Framework API Reference](reference/framework-reference.md)
 - [Program Layout](architecture/program-layout.md)
 - [Package Boundaries And Distribution](architecture/package-boundaries.md)
 - [Client Gateway WebSocket Integration](integrations/client-gateway-websocket.md)
@@ -19,13 +20,15 @@ Docs program in the control panel.
 - [Migration Plan](architecture/migration-plan.md)
 - [Roadmap](architecture/roadmap.md)
 
-## Generated Docs
+## Stable Reference And Runtime Snapshots
 
-Generated documentation is written under [`generated/`](generated/README.md)
-whenever the Docs program rebuilds. The same Markdown hierarchy is used by the
-web Docs program, so repository readers and panel users see the same structure.
+The deterministic [framework API reference](reference/framework-reference.md)
+is versioned with authored documentation. Regenerate it with
+`pnpm docs:reference`; `pnpm docs:check` validates both freshness and local
+Markdown links.
 
-Generated pages include:
+The Docs program also exposes ephemeral operator pages from the active host at
+`.fluxiq/cache/docs/`. Those pages are ignored runtime state and include:
 
 - platform map;
 - global program catalog;
@@ -35,4 +38,6 @@ Generated pages include:
 - deployment sync state;
 - host domain registrations;
 - host input and output contracts;
-- framework reference inventory.
+- a browseable TypeDoc reference and reflection model.
+
+Runtime rebuilds never write into this repository's `docs/` tree.

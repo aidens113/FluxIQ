@@ -8,7 +8,7 @@ It is not a release promise; it is the working plan for the current refactor.
 - Improve authored documentation for every global program.
 - Replace shallow generated docs with richer generator output.
 - Add proper Markdown/MDX rendering for the Docs program.
-- Add TypeDoc reference generation for exported TypeScript APIs.
+- Improve TypeDoc reference metadata for exported TypeScript APIs.
 - Continue hardening global program UIs around real v1 functionality.
 - Persist remaining global program state in SQLite where appropriate.
 
@@ -37,13 +37,11 @@ Docs should become a living operator and developer reference.
 
 Planned documentation work:
 
-- TypeDoc integration;
-- generated API reference from exported framework contracts;
+- richer TypeDoc summaries for exported framework contracts;
 - generated program capability pages;
 - generated IO contract pages for host projects;
 - generated database schema/state pages;
-- link validation;
-- stale-doc detection in checks or CI.
+- anchor-level link validation in addition to current file-level checks.
 
 ## Data Management
 
