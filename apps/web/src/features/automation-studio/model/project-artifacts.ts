@@ -33,14 +33,18 @@ export function taskFlowId(taskId: string): string {
   return `task.${taskId.replace(/[^a-zA-Z0-9._-]+/g, ".")}.graph`;
 }
 
-export function flowToTaskPolicy(flow: AutomationStudioFlowDocument | null | undefined, task: AutomationStudioTaskArtifact | null | undefined): PolicyGraph | null {
+export function flowToTaskPolicy(
+  flow: AutomationStudioFlowDocument | null | undefined,
+  task: AutomationStudioTaskArtifact | null | undefined,
+): PolicyGraph | null {
   if (!flow) return null;
   const policyId = typeof flow.metadata?.policyId === "string" ? flow.metadata.policyId : taskPolicyId(task?.taskId ?? flow.ownerId ?? "task.unnamed_task");
   const nodes = flow.nodes.map((node, index) => {
     const values = node.parameterValues && typeof node.parameterValues === "object" ? node.parameterValues : {};
     const actions = Array.isArray(values.actions) ? values.actions : [];
     const eligibility = values.eligibility && typeof values.eligibility === "object" ? values.eligibility : { type: "all", conditions: [] };
-    const successConditions = values.successConditions && typeof values.successConditions === "object" ? values.successConditions : { type: "all", conditions: [] };
+    const successConditions =
+      values.successConditions && typeof values.successConditions === "object" ? values.successConditions : { type: "all", conditions: [] };
     const timeout = values.timeout && typeof values.timeout === "object" ? values.timeout : { timeoutMs: 5000 };
     const retry = values.retry && typeof values.retry === "object" ? values.retry : { maxAttempts: 1, backoffMs: 500 };
     const recovery = values.recovery && typeof values.recovery === "object" ? values.recovery : { strategy: "pause" };
@@ -58,7 +62,7 @@ export function flowToTaskPolicy(flow: AutomationStudioFlowDocument | null | und
       outgoingEdges: [],
       sourceEvidence: [],
       generatedMetadata: { generatedBy: "task_flow", generatedAt: flow.updatedAt ?? Date.now(), confidence: 0.5 },
-      metadata: { ...(node.metadata ?? {}), position: node.position, nodeDefinitionId: node.definitionId, parameterValues: values, order: index }
+      metadata: { ...(node.metadata ?? {}), position: node.position, nodeDefinitionId: node.definitionId, parameterValues: values, order: index },
     };
   });
   const edges = flow.edges.map((edge, index) => ({
@@ -66,7 +70,7 @@ export function flowToTaskPolicy(flow: AutomationStudioFlowDocument | null | und
     fromNodeId: edge.sourceNodeId,
     toNodeId: edge.targetNodeId,
     label: edge.label ?? (typeof edge.metadata?.label === "string" ? edge.metadata.label : "Next"),
-    metadata: { ...(edge.metadata ?? {}), order: index }
+    metadata: { ...(edge.metadata ?? {}), order: index },
   }));
   return {
     schemaVersion: "0.1",
@@ -77,7 +81,7 @@ export function flowToTaskPolicy(flow: AutomationStudioFlowDocument | null | und
     edges,
     sourceEvidence: [],
     generatedMetadata: { generatedBy: "task_flow", generatedAt: flow.updatedAt ?? Date.now(), confidence: 0.5 },
-    metadata: { ...(flow.metadata ?? {}), source: "task_flow" }
+    metadata: { ...(flow.metadata ?? {}), source: "task_flow" },
   } as unknown as PolicyGraph;
 }
 
@@ -105,14 +109,20 @@ export function graphToTaskFlow(input: {
       position: { x: Math.round(node.position?.x ?? index * 340), y: Math.round(node.position?.y ?? 160) },
       parameterValues: {
         ...(node.data?.parameterValues ?? {}),
-        actions: Array.isArray(node.data?.parameterValues?.actions) ? node.data.parameterValues.actions : (node.data?.actionTypes ?? []).map((actionType: string, actionIndex: number) => ({ id: `action.${node.id}.${actionIndex + 1}`, actionType, parameters: {} })),
+        actions: Array.isArray(node.data?.parameterValues?.actions)
+          ? node.data.parameterValues.actions
+          : (node.data?.actionTypes ?? []).map((actionType: string, actionIndex: number) => ({
+              id: `action.${node.id}.${actionIndex + 1}`,
+              actionType,
+              parameters: {},
+            })),
         eligibility: node.data?.parameterValues?.eligibility ?? { type: "all", conditions: [] },
         successConditions: node.data?.parameterValues?.successConditions ?? { type: "all", conditions: [] },
         timeout: node.data?.parameterValues?.timeout ?? { timeoutMs: node.data?.timeoutMs ?? 5000 },
         retry: node.data?.parameterValues?.retry ?? { maxAttempts: 1, backoffMs: 500 },
-        recovery: node.data?.parameterValues?.recovery ?? { strategy: node.data?.recovery ?? "pause" }
+        recovery: node.data?.parameterValues?.recovery ?? { strategy: node.data?.recovery ?? "pause" },
       },
-      metadata: { ...(input.existingFlow?.nodes.find((item) => item.id === node.id)?.metadata ?? {}), policyId, policyNodeId: node.id, order: index }
+      metadata: { ...(input.existingFlow?.nodes.find((item) => item.id === node.id)?.metadata ?? {}), policyId, policyNodeId: node.id, order: index },
     })),
     edges: input.graph.edges.map((edge, index) => ({
       id: edge.id,
@@ -121,14 +131,21 @@ export function graphToTaskFlow(input: {
       sourcePortId: edge.sourceHandle ?? edge.data?.sourcePort,
       targetPortId: edge.targetHandle ?? edge.data?.targetPort,
       label: String(edge.label ?? edge.data?.label ?? "Next"),
-      metadata: { ...(edge.data ?? {}), policyId, policyEdgeId: edge.id, order: index }
+      metadata: { ...(edge.data ?? {}), policyId, policyEdgeId: edge.id, order: index },
     })),
     createdAt: input.existingFlow?.createdAt ?? now,
     updatedAt: now,
-    metadata: { ...(input.existingFlow?.metadata ?? {}), source: "task_editor", policyId, savedAt: now }
+    metadata: { ...(input.existingFlow?.metadata ?? {}), source: "task_editor", policyId, savedAt: now },
   };
 }
 
 function artifactSlug(label: string, fallback: string): string {
-  return label.trim().toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "").slice(0, 48) || fallback;
+  return (
+    label
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ".")
+      .replace(/^\.+|\.+$/g, "")
+      .slice(0, 48) || fallback
+  );
 }

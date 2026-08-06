@@ -1,7 +1,7 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import process from "node:process";
-import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -20,17 +20,19 @@ const app = await Application.bootstrap({
   excludeProtected: true,
   excludeInternal: true,
   skipErrorChecking: true,
-  plugin: []
+  plugin: [],
 });
 const project = await app.convert();
 if (!project) throw new Error("TypeDoc conversion did not produce a project reflection.");
 
-const declarations = (project.children ?? []).map((reflection) => ({
-  name: reflection.name,
-  kind: kindName(reflection.kind),
-  source: sourceSummary(reflection),
-  summary: commentSummary(reflection.comment)
-})).sort((left, right) => left.name.localeCompare(right.name));
+const declarations = (project.children ?? [])
+  .map((reflection) => ({
+    name: reflection.name,
+    kind: kindName(reflection.kind),
+    source: sourceSummary(reflection),
+    summary: commentSummary(reflection.comment),
+  }))
+  .sort((left, right) => left.name.localeCompare(right.name));
 const counts = new Map();
 for (const declaration of declarations) counts.set(declaration.kind, (counts.get(declaration.kind) ?? 0) + 1);
 
@@ -51,8 +53,11 @@ const markdown = [
   "",
   "| Name | Kind | Source | Summary |",
   "| --- | --- | --- | --- |",
-  ...declarations.map((item) => `| \`${escapeTable(item.name)}\` | ${escapeTable(item.kind)} | ${item.source ? `\`${escapeTable(item.source)}\`` : "-"} | ${escapeTable(item.summary || "-")} |`),
-  ""
+  ...declarations.map(
+    (item) =>
+      `| \`${escapeTable(item.name)}\` | ${escapeTable(item.kind)} | ${item.source ? `\`${escapeTable(item.source)}\`` : "-"} | ${escapeTable(item.summary || "-")} |`,
+  ),
+  "",
 ].join("\n");
 
 if (checkOnly) {
@@ -68,7 +73,11 @@ if (checkOnly) {
 }
 
 function commentSummary(comment) {
-  return (comment?.summary ?? []).map((part) => part.text).join("").trim().replace(/\s+/g, " ");
+  return (comment?.summary ?? [])
+    .map((part) => part.text)
+    .join("")
+    .trim()
+    .replace(/\s+/g, " ");
 }
 
 function sourceSummary(reflection) {
@@ -82,11 +91,27 @@ function sourceSummary(reflection) {
 
 function kindName(kind) {
   const names = {
-    1: "Project", 2: "Module", 4: "Namespace", 32: "Object", 64: "Value", 128: "Class",
-    256: "Interface", 512: "Constructor", 1024: "Property", 2048: "Method", 4096: "Call Signature",
-    8192: "Index Signature", 16384: "Constructor Signature", 32768: "Parameter", 65536: "Type Literal",
-    131072: "Type Parameter", 262144: "Accessor", 2097152: "Type", 4194304: "Type Alias",
-    8388608: "Variable", 16777216: "Function"
+    1: "Project",
+    2: "Module",
+    4: "Namespace",
+    32: "Object",
+    64: "Value",
+    128: "Class",
+    256: "Interface",
+    512: "Constructor",
+    1024: "Property",
+    2048: "Method",
+    4096: "Call Signature",
+    8192: "Index Signature",
+    16384: "Constructor Signature",
+    32768: "Parameter",
+    65536: "Type Literal",
+    131072: "Type Parameter",
+    262144: "Accessor",
+    2097152: "Type",
+    4194304: "Type Alias",
+    8388608: "Variable",
+    16777216: "Function",
   };
   return names[kind] ?? `Kind ${kind}`;
 }

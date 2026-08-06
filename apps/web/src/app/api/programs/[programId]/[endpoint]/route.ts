@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 import { FLUXIQ_SESSION_COOKIE } from "../../../../../lib/auth";
 import { getFluxIQ, getFluxIQWebRuntimeStatus } from "../../../../../lib/fluxiq";
+import { programDomainScope, programResponseStatus, withProgramAuthSession } from "../../../../../lib/program-route";
 
 type RouteParams = {
   params: Promise<{
@@ -14,14 +15,14 @@ export async function GET(_request: Request, context: RouteParams) {
   const { programId, endpoint } = await context.params;
   const fluxiq = getFluxIQ();
   const sessionId = await readSessionId();
+  if (!sessionId) return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
   const auth = await fluxiq.programs.identityAccess.validateSession(sessionId);
   if (!auth) return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
-  const url = new URL(_request.url);
   const response = await fluxiq.programs.api.call({
     programId,
     endpoint,
-    scope: { domainId: url.searchParams.get("domainId") },
-    actor: programApiActor(sessionId!, auth)
+    scope: programDomainScope(_request.url),
+    actor: programApiActor(sessionId, auth),
   });
   return NextResponse.json(withWebRuntimeStatus(programId, endpoint, response, auth.user.id), { status: programResponseStatus(response) });
 }
@@ -30,37 +31,30 @@ export async function POST(request: Request, context: RouteParams) {
   const { programId, endpoint } = await context.params;
   const fluxiq = getFluxIQ();
   const sessionId = await readSessionId();
+  if (!sessionId) return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
   const auth = await fluxiq.programs.identityAccess.validateSession(sessionId);
   if (!auth) return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
   const payload = await request.json().catch(() => undefined);
-  const url = new URL(request.url);
   const response = await fluxiq.programs.api.call({
     programId,
     endpoint,
-    scope: { domainId: url.searchParams.get("domainId") },
-    actor: programApiActor(sessionId!, auth),
-    payload: (programId === "identity-access" || programId === "database-manager" || programId === "automation-studio") && payload && typeof payload === "object"
-      ? { ...payload, authSessionId: sessionId }
-      : payload
+    scope: programDomainScope(request.url),
+    actor: programApiActor(sessionId, auth),
+    payload: withProgramAuthSession(programId, payload, sessionId),
   });
   return NextResponse.json(withWebRuntimeStatus(programId, endpoint, response, auth.user.id), { status: programResponseStatus(response) });
 }
 
-function programApiActor(sessionId: string, auth: NonNullable<Awaited<ReturnType<ReturnType<typeof getFluxIQ>["programs"]["identityAccess"]["validateSession"]>>>) {
+function programApiActor(
+  sessionId: string,
+  auth: NonNullable<Awaited<ReturnType<ReturnType<typeof getFluxIQ>["programs"]["identityAccess"]["validateSession"]>>>,
+) {
   return {
     sessionId,
     userId: auth.user.id,
     roleId: auth.role.id,
-    permissions: auth.role.permissions
+    permissions: auth.role.permissions,
   };
-}
-
-function programResponseStatus(response: { ok: boolean; errorCode?: string }): number {
-  if (response.ok) return 200;
-  if (response.errorCode === "authorization.required") return 401;
-  if (response.errorCode === "authorization.forbidden") return 403;
-  if (response.errorCode === "endpoint.not_found") return 404;
-  return 400;
 }
 
 async function readSessionId(): Promise<string | undefined> {
@@ -68,13 +62,19 @@ async function readSessionId(): Promise<string | undefined> {
   return cookieStore.get(FLUXIQ_SESSION_COOKIE)?.value;
 }
 
-function withWebRuntimeStatus<TResponse extends { ok: boolean; payload?: unknown }>(programId: string, endpoint: string, response: TResponse, operatorUserId: string): TResponse {
-  if (programId !== "automation-studio" || endpoint !== "client-gateway-snapshot" || !response.ok || !response.payload || typeof response.payload !== "object") return response;
+function withWebRuntimeStatus<TResponse extends { ok: boolean; payload?: unknown }>(
+  programId: string,
+  endpoint: string,
+  response: TResponse,
+  operatorUserId: string,
+): TResponse {
+  if (programId !== "automation-studio" || endpoint !== "client-gateway-snapshot" || !response.ok || !response.payload || typeof response.payload !== "object")
+    return response;
   return {
     ...response,
     payload: {
       ...response.payload,
-      webRuntime: getFluxIQWebRuntimeStatus(operatorUserId)
-    }
+      webRuntime: getFluxIQWebRuntimeStatus(operatorUserId),
+    },
   };
 }

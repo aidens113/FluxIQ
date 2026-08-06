@@ -1,40 +1,89 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import type { JsonObject, JsonValue } from "../../core/index.ts";
 import type { RepositoryScope } from "../database-manager/index.ts";
-import { SQLiteRepository, createRecord, type SQLiteTransaction } from "../database-manager/storage/sqlite-repository.ts";
+import { createRecord, SQLiteRepository, type SQLiteTransaction } from "../database-manager/storage/sqlite-repository.ts";
 
 export type JsonFileDocument<T extends JsonObject = JsonObject> = {
   version: 1;
   data: T;
 };
 
+export class ProgramStateReadError extends Error {
+  readonly code = "program_state.invalid";
+
+  constructor(
+    readonly filePath: string,
+    cause: unknown,
+    readonly fileRecoveryAvailable: boolean,
+  ) {
+    super(
+      fileRecoveryAvailable
+        ? `Program state is malformed at ${filePath}. Call recoverMalformedState() to archive it and reset this store.`
+        : `Program state is malformed at ${filePath}. Inspect and repair the owning SQLite record before retrying.`,
+      { cause },
+    );
+    this.name = "ProgramStateReadError";
+  }
+}
+
 export class ProgramJsonStore<T extends JsonObject = JsonObject> {
   private static readonly writeLocks = new Map<string, Promise<void>>();
   readonly filePath: string;
 
-  constructor(filePath: string, private readonly empty: () => T) {
+  constructor(
+    filePath: string,
+    private readonly empty: () => T,
+  ) {
     this.filePath = path.resolve(filePath);
   }
 
   async read(): Promise<T> {
     const sqlite = this.sqliteState();
     if (sqlite) {
-      const record = await sqlite.repository.get(sqlite.id);
-      return record?.data as T | undefined ?? this.empty();
+      try {
+        const record = await sqlite.repository.get(sqlite.id);
+        return (record?.data as T | undefined) ?? this.empty();
+      } catch (error) {
+        throw new ProgramStateReadError(this.filePath, error, false);
+      }
     }
     try {
       const payload = JSON.parse(await readFile(this.filePath, "utf8")) as Partial<JsonFileDocument<T>>;
-      if (payload && typeof payload === "object" && payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)) {
+      if (payload?.version === 1 && payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)) {
         return payload.data as T;
       }
-    } catch {
-      // Missing or malformed program state is treated as an empty store.
+      throw new Error("Expected a version 1 program-state envelope with object data.");
+    } catch (error) {
+      if (isNodeError(error, "ENOENT")) return this.empty();
+      if (error instanceof ProgramStateReadError) throw error;
+      throw new ProgramStateReadError(this.filePath, error, true);
     }
-    return this.empty();
+  }
+
+  async recoverMalformedState(nowMs = Date.now()): Promise<{ backupPath: string; data: T }> {
+    if (this.sqliteState()) throw new Error("File recovery is unavailable for SQLite-backed program state; repair the owning record through Database Manager.");
+    return await ProgramJsonStore.withFileLock(this.filePath, async () => {
+      try {
+        await this.read();
+      } catch (error) {
+        if (!(error instanceof ProgramStateReadError)) throw error;
+        const backupPath = `${this.filePath}.corrupt.${nowMs}.${randomUUID()}.bak`;
+        await rename(this.filePath, backupPath);
+        const data = this.empty();
+        try {
+          await this.writeUnlocked(data);
+        } catch (writeError) {
+          await rename(backupPath, this.filePath).catch(() => undefined);
+          throw writeError;
+        }
+        return { backupPath, data };
+      }
+      throw new Error(`Program state is valid and does not require recovery: ${this.filePath}`);
+    });
   }
 
   async write(data: T): Promise<T> {
@@ -70,7 +119,7 @@ export class ProgramJsonStore<T extends JsonObject = JsonObject> {
     const records = await sqlite.repository.list();
     let deleted = false;
     for (const record of records) {
-      if (record.id === sqlite.id || record.id.startsWith(prefix)) deleted = await sqlite.repository.delete(record.id) || deleted;
+      if (record.id === sqlite.id || record.id.startsWith(prefix)) deleted = (await sqlite.repository.delete(record.id)) || deleted;
     }
     return deleted;
   }
@@ -111,7 +160,10 @@ export class ProgramJsonStore<T extends JsonObject = JsonObject> {
     const current = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const chained = previous.then(() => current, () => current);
+    const chained = previous.then(
+      () => current,
+      () => current,
+    );
     ProgramJsonStore.writeLocks.set(key, chained);
     await previous.catch(() => undefined);
     try {
@@ -123,23 +175,34 @@ export class ProgramJsonStore<T extends JsonObject = JsonObject> {
   }
 }
 
+function isNodeError(error: unknown, code: string): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error && error.code === code;
+}
+
 export class ProgramDocumentTransaction {
-  constructor(private readonly rootDir: string, private readonly kind: string, private readonly transaction: SQLiteTransaction) {}
+  constructor(
+    private readonly rootDir: string,
+    private readonly kind: string,
+    private readonly transaction: SQLiteTransaction,
+  ) {}
 
   async read<T extends JsonObject>(filePath: string, empty: () => T): Promise<T> {
     const state = this.state(filePath);
     const row = await this.transaction.get<{ data: string }>(`select data from ${state.repository.tableName} where id = ?`, [state.id]);
-    return row ? JSON.parse(row.data) as T : empty();
+    return row ? (JSON.parse(row.data) as T) : empty();
   }
 
   async write<T extends JsonObject>(filePath: string, data: T): Promise<T> {
     const state = this.state(filePath);
     const now = Date.now();
-    await this.transaction.run(`
+    await this.transaction.run(
+      `
       insert into ${state.repository.tableName} (id, kind, data, created_at_ms, updated_at_ms)
       values (?, ?, ?, ?, ?)
       on conflict(id) do update set data = excluded.data, updated_at_ms = excluded.updated_at_ms
-    `, [state.id, this.kind, JSON.stringify(data), now, now]);
+    `,
+      [state.id, this.kind, JSON.stringify(data), now, now],
+    );
     return data;
   }
 
@@ -178,7 +241,7 @@ function sqliteStateForPath(targetPath: string): { repository: SQLiteRepository<
             repository: new SQLiteRepository({ rootDir: current, kind: "program.state", layoutVersion: 2 }),
             id: relative.slice(programPrefix.length).replace(/\.json$/i, ""),
             rootDir: current,
-            kind: "program.state"
+            kind: "program.state",
           };
         }
         if (relative.startsWith(automationPrefix)) {
@@ -186,7 +249,7 @@ function sqliteStateForPath(targetPath: string): { repository: SQLiteRepository<
             repository: new SQLiteRepository({ rootDir: current, kind: "automation.state", layoutVersion: 2 }),
             id: relative.slice(automationPrefix.length).replace(/\.json$/i, ""),
             rootDir: current,
-            kind: "automation.state"
+            kind: "automation.state",
           };
         }
       } catch {
@@ -214,7 +277,10 @@ export function scopeKey(scope: RepositoryScope = {}): string {
 }
 
 export function safeSegment(value: string): string {
-  return value.trim().toLowerCase().replace(/[^a-z0-9_.-]+/g, "_");
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]+/g, "_");
 }
 
 export function isJsonObject(value: unknown): value is JsonObject {
@@ -234,7 +300,7 @@ async function renameWithWindowsRetry(source: string, target: string): Promise<v
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (attempt >= delays.length || (code !== "EPERM" && code !== "EACCES" && code !== "EBUSY")) throw error;
-      await delay(delays[attempt]!);
+      await delay(delays[attempt] ?? 0);
     }
   }
 }

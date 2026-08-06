@@ -1,6 +1,5 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -12,7 +11,7 @@ for (const file of markdownFiles) {
   const source = stripFencedCode(await readFile(file, "utf8"));
   for (const match of source.matchAll(/!?\[[^\]]*\]\(([^)]+)\)/g)) {
     const rawTarget = match[1]?.trim() ?? "";
-    const target = rawTarget.startsWith("<") && rawTarget.endsWith(">") ? rawTarget.slice(1, -1) : rawTarget.split(/\s+["']/)[0] ?? "";
+    const target = rawTarget.startsWith("<") && rawTarget.endsWith(">") ? rawTarget.slice(1, -1) : (rawTarget.split(/\s+["']/)[0] ?? "");
     if (!target || target.startsWith("#") || /^(https?:|mailto:|data:)/i.test(target)) continue;
     const withoutSuffix = target.split(/[?#]/, 1)[0] ?? "";
     if (!withoutSuffix) continue;
@@ -41,11 +40,13 @@ console.log(`Validated local links in ${markdownFiles.length} authored/reference
 
 async function findMarkdownFiles(root) {
   const entries = await readdir(root, { withFileTypes: true });
-  const files = await Promise.all(entries.map(async (entry) => {
-    const entryPath = path.join(root, entry.name);
-    if (entry.isDirectory()) return findMarkdownFiles(entryPath);
-    return entry.isFile() && /\.mdx?$/i.test(entry.name) ? [entryPath] : [];
-  }));
+  const files = await Promise.all(
+    entries.map(async (entry) => {
+      const entryPath = path.join(root, entry.name);
+      if (entry.isDirectory()) return findMarkdownFiles(entryPath);
+      return entry.isFile() && /\.mdx?$/i.test(entry.name) ? [entryPath] : [];
+    }),
+  );
   return files.flat().sort();
 }
 

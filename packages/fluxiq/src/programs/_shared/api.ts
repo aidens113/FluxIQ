@@ -1,6 +1,6 @@
+import type { Permission } from "../identity-access/types.ts";
 import { GLOBAL_PROGRAMS } from "./catalog.ts";
 import type { ProgramScope } from "./types.ts";
-import type { Permission } from "../identity-access/types.ts";
 
 export type ProgramApiActor = {
   sessionId: string;
@@ -25,18 +25,13 @@ export type ProgramApiResponse<TPayload = unknown> = {
 };
 
 export type ProgramApiHandler<TRequest = unknown, TResponse = unknown> = (
-  request: ProgramApiRequest<TRequest>
+  request: ProgramApiRequest<TRequest>,
 ) => Promise<ProgramApiResponse<TResponse>> | ProgramApiResponse<TResponse>;
 
 export class GlobalProgramApiRegistry {
   private readonly handlers = new Map<string, { handler: ProgramApiHandler; permission: Permission }>();
 
-  register(params: {
-    programId: string;
-    endpoint: string;
-    permission: Permission;
-    handler: ProgramApiHandler;
-  }): void {
+  register(params: { programId: string; endpoint: string; permission: Permission; handler: ProgramApiHandler }): void {
     const key = apiKey(params.programId, params.endpoint);
     if (this.handlers.has(key)) {
       throw new Error(`Duplicate global program API handler: ${key}`);
@@ -47,33 +42,31 @@ export class GlobalProgramApiRegistry {
     this.handlers.set(key, { handler: params.handler, permission: params.permission });
   }
 
-  async call<TRequest = unknown, TResponse = unknown>(
-    request: ProgramApiRequest<TRequest>
-  ): Promise<ProgramApiResponse<TResponse>> {
+  async call<TRequest = unknown, TResponse = unknown>(request: ProgramApiRequest<TRequest>): Promise<ProgramApiResponse<TResponse>> {
     const registration = this.handlers.get(apiKey(request.programId, request.endpoint));
     if (!registration) {
       return {
         ok: false,
         error: `Global program API handler not found: ${request.programId}/${request.endpoint}`,
-        errorCode: "endpoint.not_found"
+        errorCode: "endpoint.not_found",
       };
     }
     if (!request.actor) {
       return {
         ok: false,
         error: "Authentication is required for this program operation.",
-        errorCode: "authorization.required"
+        errorCode: "authorization.required",
       };
     }
     if (!request.actor.permissions.includes(registration.permission)) {
       return {
         ok: false,
         error: `Permission required: ${registration.permission}`,
-        errorCode: "authorization.forbidden"
+        errorCode: "authorization.forbidden",
       };
     }
     try {
-      return await registration.handler(request) as ProgramApiResponse<TResponse>;
+      return (await registration.handler(request)) as ProgramApiResponse<TResponse>;
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }

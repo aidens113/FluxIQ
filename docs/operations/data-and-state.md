@@ -166,6 +166,21 @@ These host-owned folders should not be committed from framework development:
 - `.next`;
 - generated private domain artifacts.
 
+## Malformed Legacy JSON Recovery
+
+Legacy file-backed program stores distinguish missing state from malformed
+state. A missing file still means an unused empty store. Invalid JSON or an
+invalid `{ version: 1, data: object }` envelope raises
+`ProgramStateReadError` with the exact path instead of silently discarding the
+problem.
+
+Framework code handling an explicitly confirmed corrupt legacy file can call
+`recoverMalformedState()`. Recovery renames the original to a unique
+`.corrupt.<timestamp>.<id>.bak` file and writes a valid empty envelope. If the
+replacement write fails, FluxIQ attempts to restore the original path. SQLite-
+backed corruption is never reset through this file helper; inspect and repair
+the owning record through Database Manager or restore the database from backup.
+
 ## Storage Migration
 
 Hosts without `config.json` but with legacy `.fluxiq/data`, `databases`, or an

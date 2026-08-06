@@ -11,16 +11,27 @@
     "test": "pnpm -r test",
     "docs:reference": "node scripts/docs-reference.mjs",
     "docs:check": "node scripts/validate-docs.mjs && node scripts/docs-reference.mjs --check",
+    "quality:check": "biome check .",
+    "quality:fix": "biome check --write .",
+    "quality:coverage": "pnpm --filter fluxiq exec vitest run --config vitest.quality.config.ts --coverage && pnpm --filter @fluxiq/web exec vitest run --config vitest.quality.config.ts --coverage",
     "package:lint": "publint packages/contracts --strict && publint packages/fluxiq --strict && publint packages/client-gateway-websocket --strict && attw --pack --profile esm-only packages/contracts && attw --pack --profile esm-only packages/fluxiq && attw --pack --profile esm-only packages/client-gateway-websocket",
     "package:smoke": "node scripts/validate-packages.mjs",
     "package:validate": "pnpm build && pnpm package:lint && pnpm package:smoke"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.2",
+    "@biomejs/biome": "^2.5.7",
     "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "2.1.9",
     "esbuild": "^0.25.0",
     "publint": "^0.3.12",
     "typescript": "^5.7.0",
     "vitest": "^2.1.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss@<=8.5.17": "^8.5.18",
+      "sharp@<0.35.0": "^0.35.0"
+    }
   }
 }

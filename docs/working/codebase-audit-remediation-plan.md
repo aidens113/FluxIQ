@@ -1057,7 +1057,7 @@ Stop conditions:
 
 ## 7. Raise The Quality Baseline
 
-Status: pending
+Status: implemented and validated 2026-08-06
 
 Work:
 
@@ -1071,6 +1071,84 @@ Work:
 - Make malformed JSON state a visible recoverable error instead of silently
   treating it as an empty store.
 - Remove unused dependencies and resolve known production advisories.
+
+### Point 7 Quality Gates
+
+| Risk area | Required gate |
+| --- | --- |
+| Global program authorization | Every registered endpoint rejects anonymous and permission-less actors before its handler executes; representative read/write endpoints prove exact-permission dispatch |
+| Web program route behavior | Status mapping, authenticated-session payload injection, and domain scope parsing are pure helpers with route-level tests |
+| Authentication and privileged UI | Authentication rate-limit state and reusable privileged modal rendering have focused web tests without starting a server |
+| Project/policy editing | Pure project-artifact and policy translation behavior has focused tests independent of React rendering |
+| Legacy JSON persistence | Missing state remains an empty store; malformed or structurally invalid state raises a path-specific error and supports explicit backup/reset recovery |
+| Coverage | Security/persistence modules have an explicit focused coverage command and thresholds; ordinary tests remain fast |
+| Static quality | A repository formatter/linter runs in check mode in CI; adoption is scoped to maintained source/config/docs rather than forcing unrelated generated or migration churn |
+| Supply chain | Production dependency audit, package boundary checks, and clean packed-consumer installation run in CI |
+
+### Point 7 Detailed Implementation Sequence
+
+7A. Add a global endpoint permission-matrix suite against the real registered
+runtime. Add pure route helpers for HTTP status, domain scope, and trusted
+session injection so Next route behavior can be tested without booting the web
+server or creating host state.
+
+7B. Extract login-attempt bookkeeping into a deterministic web module and test
+window reset, lockout, and success reset. Add render-level tests for the shared
+modal/alert primitives used by credential and destructive-action workflows.
+Add focused tests for web project-artifact conversion and runtime policy/pipeline
+translation where behavior is already pure.
+
+7C. Replace `ProgramJsonStore`'s catch-all empty fallback. `ENOENT` remains the
+only implicit empty state. Malformed JSON or an invalid envelope throws a
+`ProgramStateReadError` containing the exact path and recovery guidance. Add an
+explicit method that archives the corrupt file and writes a valid empty
+envelope; never overwrite corrupt evidence silently.
+
+7D. Add a focused Vitest coverage configuration for authorization and legacy
+JSON persistence with enforceable thresholds. Keep it separate from the normal
+test command so full UI/model coverage is not misrepresented by one global
+percentage.
+
+7E. Add one formatter/linter tool with a narrow, checked configuration. CI runs
+the non-mutating quality command; mass formatting of unrelated user changes is
+out of scope. Retain TypeScript checks as the semantic static-analysis gate.
+
+7F. Add `CONTRIBUTING.md` and `SECURITY.md` covering repository boundaries,
+required commands, vulnerability reporting, supported runtime, secrets, and
+generated/runtime-state exclusions. Add docs validation and a production
+dependency audit to CI.
+
+7G. Remove dependencies with no source imports from their owning package,
+refresh the lockfile, run the advisory audit, document any accepted transitive
+finding, and finish with check, lint/format, coverage, test, build, docs,
+package lint, and package smoke gates.
+
+Stop conditions:
+
+- Do not weaken authorization to make matrix tests pass.
+- Do not auto-delete malformed state; recovery must preserve a backup.
+- Do not claim broad UI coverage from server-render smoke tests.
+- Do not reformat the existing dirty worktree wholesale.
+- Do not upgrade unrelated major dependencies as part of advisory cleanup.
+
+### Point 7 Implemented Result
+
+- Added a real-runtime permission matrix covering every registered global
+  program endpoint, plus focused program-route and login-attempt tests.
+- Added render-level shared modal/alert tests and pure project-artifact policy
+  translation tests without claiming broad browser UI coverage.
+- Made malformed legacy JSON state a path-specific error and added explicit
+  backup-and-reset recovery while preserving missing-file empty-store behavior.
+- Added focused coverage thresholds for framework authorization/persistence
+  and web authentication/route helpers, alongside an allowlisted Biome quality
+  gate.
+- Added contributor, security, and quality/dependency guidance and expanded CI
+  to run static checks, coverage, tests, builds, docs checks, production audit,
+  package lint, and packed-consumer smoke validation.
+- Removed unused web YAML and Zod dependencies, upgraded within Next.js 15,
+  pinned patched PostCSS and Sharp transitive releases, and retained `sqlite3`
+  at the deployed web boundary because Next externalizes its native addon.
+- The production dependency audit reports no known vulnerabilities.
 
 ## Progress Log
 
@@ -1106,3 +1184,7 @@ Work:
   deterministic TypeDoc reference plus link/freshness validation, split the
   Automation Studio architecture guide, and passed all repository/package
   validation gates.
+- 2026-08-06: Point 7 implemented: added authorization, route, authentication,
+  project-artifact, UI primitive, and malformed-state tests; focused coverage
+  and scoped static-quality gates; contributor/security guidance; complete CI
+  gates; and dependency advisory remediation with a clean production audit.
