@@ -1,7 +1,7 @@
-import type { JsonObject } from "../../../core";
-import type { PolicyAction } from "./actions";
-import type { AutomationConditionGroup } from "./conditions";
-import type { AutomationStudioSchemaVersion, EvidenceReference, GeneratedMetadata } from "./evidence";
+import type { JsonObject } from "../../../core/index.ts";
+import type { PolicyAction } from "./actions.ts";
+import type { AutomationConditionGroup } from "./conditions.ts";
+import type { AutomationStudioSchemaVersion, EvidenceReference, GeneratedMetadata } from "./evidence.ts";
 
 export type TimeoutPolicy = {
   timeoutMs: number;

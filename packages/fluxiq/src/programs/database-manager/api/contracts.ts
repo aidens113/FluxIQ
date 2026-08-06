@@ -1,5 +1,5 @@
-import type { JsonObject } from "../../../core";
-import type { DatabaseManagerSnapshot, RecordEnvelope, RepositoryScope } from "../types";
+import type { JsonObject } from "../../../core/index.ts";
+import type { DatabaseManagerSnapshot, RecordEnvelope, RepositoryScope } from "../types.ts";
 
 export const DATABASE_MANAGER_ENDPOINTS = {
   snapshot: "snapshot",

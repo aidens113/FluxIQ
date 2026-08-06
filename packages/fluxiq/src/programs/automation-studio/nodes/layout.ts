@@ -1,4 +1,4 @@
-import { automationNodeClasses } from "./registry";
+import { automationNodeClasses } from "./registry.ts";
 
 export const automationStudioSourceNodeRoot = "packages/fluxiq/src/programs/automation-studio/nodes";
 export const automationStudioBuiltinNodeRoots = automationNodeClasses

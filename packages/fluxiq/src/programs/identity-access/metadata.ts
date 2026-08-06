@@ -1,4 +1,4 @@
-import type { GlobalProgramDefinition } from "../_shared/types";
+import type { GlobalProgramDefinition } from "../_shared/types.ts";
 
 export const IDENTITY_ACCESS_PROGRAM: GlobalProgramDefinition = {
   id: "identity-access",

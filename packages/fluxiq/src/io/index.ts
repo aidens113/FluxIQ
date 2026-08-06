@@ -1,5 +1,5 @@
-import type { JsonObject } from "../core";
-import type { DomainInputDefinition, DomainManifest, DomainOutputDefinition } from "../domains";
+import type { JsonObject } from "../core/index.ts";
+import type { DomainInputDefinition, DomainManifest, DomainOutputDefinition } from "../domains/index.ts";
 
 export type IoMode = "stream" | "request" | "stream_and_request";
 

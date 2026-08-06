@@ -1,4 +1,4 @@
-import type { DocumentationPageContent, DocumentationSource, DocsSnapshot } from "../types";
+import type { DocumentationPageContent, DocumentationSource, DocsSnapshot } from "../types.ts";
 
 export const DOCS_ENDPOINTS = {
   snapshot: "snapshot",

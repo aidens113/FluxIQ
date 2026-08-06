@@ -1,5 +1,5 @@
-import { someBoolean } from "./shared";
-import { defineBuiltinNode, arrayValue } from "../shared/definition";
+import { someBoolean } from "./shared.ts";
+import { defineBuiltinNode, arrayValue } from "../shared/definition.ts";
 
 export const orNode = defineBuiltinNode({
   id: "builtin.logic.or",

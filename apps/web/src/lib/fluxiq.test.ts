@@ -61,7 +61,7 @@ describe("FluxIQ web host module loading", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("uses the sole host-registered domain as the web storage root", () => {
+  it("uses the sole host-registered domain without relocating global web state", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "fluxiq-domain-host-"));
     const modulePath = path.join(root, "host-domain.cjs");
     writeFileSync(modulePath, `
@@ -85,7 +85,9 @@ module.exports.registerFluxIQHost = (fluxiq) => {
     const fluxiq = createFluxIQWebInstance();
 
     expect(fluxiq.activeDomainId).toBe("example.domain");
-    expect(fluxiq.paths.data).toBe(path.join(root, ".fluxiq", "example.domain", "data"));
+    expect(fluxiq.paths.data).toBe(path.join(root, ".fluxiq"));
+    expect(fluxiq.paths.domainRoot).toBe(path.join(root, ".fluxiq", "domains", "example.domain"));
+    expect(fluxiq.paths.domainPrograms).toBe(path.join(root, "domains", "example.domain", "programs"));
 
     rmSync(root, { recursive: true, force: true });
   });

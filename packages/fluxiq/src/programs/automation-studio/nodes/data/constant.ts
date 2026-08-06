@@ -1,4 +1,4 @@
-import { defineBuiltinNode, emptyResult } from "../shared/definition";
+import { defineBuiltinNode, emptyResult } from "../shared/definition.ts";
 
 export const constantNode = defineBuiltinNode({
   id: "builtin.data.constant",

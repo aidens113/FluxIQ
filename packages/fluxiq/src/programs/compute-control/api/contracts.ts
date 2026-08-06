@@ -1,5 +1,5 @@
-import type { JsonObject } from "../../../core";
-import type { ComputeCommand, ComputeControlSnapshot, ComputeNode, ComputeStatus } from "../types";
+import type { JsonObject } from "../../../core/index.ts";
+import type { ComputeCommand, ComputeControlSnapshot, ComputeNode, ComputeStatus } from "../types.ts";
 
 export const COMPUTE_CONTROL_ENDPOINTS = {
   snapshot: "snapshot",

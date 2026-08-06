@@ -16,6 +16,7 @@ export type DocumentationPage = {
 };
 
 export type DocumentationPageContent = DocumentationPage & {
+  format: "markdown" | "html" | "json" | "text";
   markdown: string;
   html: string;
 };

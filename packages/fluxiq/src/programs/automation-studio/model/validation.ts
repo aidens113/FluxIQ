@@ -1,18 +1,18 @@
 import type {
   AutomationConditionExpression,
-} from "./conditions";
+} from "./conditions.ts";
 import type {
   PolicyGraph,
-} from "./policies";
+} from "./policies.ts";
 import type {
   RecordingSession,
-} from "./recordings";
+} from "./recordings.ts";
 import type {
   SignalRegistry,
-} from "./signals";
+} from "./signals.ts";
 import type {
   TimelineEntry
-} from "./timeline";
+} from "./timeline.ts";
 
 export type AutomationStudioValidationSeverity = "error" | "warning" | "info";
 

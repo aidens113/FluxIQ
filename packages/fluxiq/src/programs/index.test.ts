@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildProgramDirectory,
   defaultGlobalProgramCatalog,
-  GlobalProgramApiRegistry
-} from "./index";
+  GlobalProgramApiRegistry,
+  type ProgramApiActor
+} from "./index.ts";
 
 describe("global programs", () => {
   it("catalogs audited global programs and excludes domain/account programs", () => {
@@ -49,9 +50,10 @@ describe("global programs", () => {
 
   it("registers and calls global program API handlers", async () => {
     const registry = new GlobalProgramApiRegistry();
-    registry.register({
-      programId: "automation-studio",
-      endpoint: "snapshot",
+      registry.register({
+        programId: "automation-studio",
+        endpoint: "snapshot",
+        permission: "programs.read",
       handler: (request) => ({
         ok: true,
         payload: { domainId: request.scope.domainId ?? null }
@@ -62,7 +64,8 @@ describe("global programs", () => {
       programId: "automation-studio",
       endpoint: "snapshot",
       scope: { domainId: "example" },
-      payload: { id: "task" }
+      payload: { id: "task" },
+      actor: viewerActor
     });
 
     expect(result.ok).toBe(true);
@@ -76,8 +79,53 @@ describe("global programs", () => {
       registry.register({
         programId: "domain-only-program",
         endpoint: "snapshot",
+        permission: "programs.read",
         handler: () => ({ ok: true })
       });
     }).toThrow("Unknown global program id");
   });
+
+  it("enforces endpoint permissions before calling handlers", async () => {
+    const registry = new GlobalProgramApiRegistry();
+    let called = false;
+    registry.register({
+      programId: "database-manager",
+      endpoint: "put-record",
+      permission: "data.manage",
+      handler: () => {
+        called = true;
+        return { ok: true };
+      }
+    });
+
+    await expect(registry.call({
+      programId: "database-manager",
+      endpoint: "put-record",
+      scope: {},
+      actor: viewerActor
+    })).resolves.toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+    expect(called).toBe(false);
+
+    await expect(registry.call({
+      programId: "database-manager",
+      endpoint: "put-record",
+      scope: {},
+      actor: adminActor
+    })).resolves.toMatchObject({ ok: true });
+    expect(called).toBe(true);
+  });
 });
+
+const viewerActor = {
+  sessionId: "session.viewer",
+  userId: "viewer",
+  roleId: "viewer",
+  permissions: ["programs.read" as const]
+} satisfies ProgramApiActor;
+
+const adminActor = {
+  sessionId: "session.admin",
+  userId: "admin",
+  roleId: "admin",
+  permissions: ["programs.read", "data.manage"]
+} satisfies ProgramApiActor;

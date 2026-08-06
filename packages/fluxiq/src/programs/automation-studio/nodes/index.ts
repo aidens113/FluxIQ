@@ -1,3 +1,3 @@
-export * from "./contracts";
-export * from "./layout";
-export * from "./registry";
+export * from "./contracts.ts";
+export * from "./layout.ts";
+export * from "./registry.ts";

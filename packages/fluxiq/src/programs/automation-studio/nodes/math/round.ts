@@ -1,5 +1,5 @@
-import { precisionOptions } from "./shared";
-import { defineBuiltinNode, emptyResult, inputValue, numberValue } from "../shared/definition";
+import { precisionOptions } from "./shared.ts";
+import { defineBuiltinNode, emptyResult, inputValue, numberValue } from "../shared/definition.ts";
 
 export const roundNode = defineBuiltinNode({
   id: "builtin.math.round",

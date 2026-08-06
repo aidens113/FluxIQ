@@ -1,4 +1,4 @@
-import { booleanValue, defineBuiltinNode } from "../shared/definition";
+import { booleanValue, defineBuiltinNode } from "../shared/definition.ts";
 
 export const notNode = defineBuiltinNode({
   id: "builtin.logic.not",

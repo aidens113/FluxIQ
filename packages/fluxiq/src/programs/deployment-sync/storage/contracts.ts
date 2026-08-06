@@ -1,4 +1,4 @@
-import type { DeploymentArtifact, DeploymentSyncRun, DeploymentTarget } from "../types";
+import type { DeploymentArtifact, DeploymentSyncRun, DeploymentTarget } from "../types.ts";
 
 export type DeploymentSyncStore = {
   listTargets(): Promise<DeploymentTarget[]>;

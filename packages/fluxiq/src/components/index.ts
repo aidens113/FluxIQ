@@ -1,5 +1,5 @@
-import type { JsonObject } from "../core";
-import type { FlowNodeHandler } from "../flows";
+import type { JsonObject } from "../core/index.ts";
+import type { FlowNodeHandler } from "../flows/index.ts";
 
 export type ComponentParamSpec = {
   name: string;

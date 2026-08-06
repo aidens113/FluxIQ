@@ -1,4 +1,4 @@
-import type { IdentityAccessService } from "../identity-access";
+import type { IdentityAccessService } from "../identity-access/index.ts";
 
 export type ProgramPinAuthorizationPayload = {
   authSessionId?: unknown;

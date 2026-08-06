@@ -1,5 +1,5 @@
-import { referenceId } from "./shared";
-import { defineBuiltinNode } from "../shared/definition";
+import { referenceId } from "./shared.ts";
+import { defineBuiltinNode } from "../shared/definition.ts";
 
 export const taskPolicyNode = defineBuiltinNode({
   id: "builtin.routine.task-policy",

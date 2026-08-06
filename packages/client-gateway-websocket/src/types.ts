@@ -2,7 +2,7 @@ import type {
   ClientGatewayActionResult,
   ClientGatewayClientHello,
   ClientGatewayServerMessage
-} from "fluxiq/client-gateway";
+} from "@fluxiq/contracts/client-gateway";
 
 export type FluxIQWebSocketLike = {
   readyState: number;

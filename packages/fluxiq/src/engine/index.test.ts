@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { ComponentRegistry } from "../components";
-import type { FlowDocument } from "../flows";
-import { createEnvelope, IoRegistry } from "../io";
+import { ComponentRegistry } from "../components/index.ts";
+import type { FlowDocument } from "../flows/index.ts";
+import { createEnvelope, IoRegistry } from "../io/index.ts";
 import {
   chooseNextEdge,
   createRuntimeSession,
   runFlow,
   stepFlow
-} from "./index";
+} from "./index.ts";
 
 describe("flow engine", () => {
   it("chooses matching edges by priority then probability", () => {

@@ -1,7 +1,7 @@
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { ProgramJsonStore, programDataFile } from "../../_shared/storage";
-import type { DocumentationGenerator, DocumentationPage, DocumentationPageContent, DocumentationSource, DocsSnapshot, GeneratedDocumentationPage } from "../types";
+import { ProgramJsonStore, programDataFile } from "../../_shared/storage.ts";
+import type { DocumentationGenerator, DocumentationPage, DocumentationPageContent, DocumentationSource, DocsSnapshot, GeneratedDocumentationPage } from "../types.ts";
 
 type DocsState = {
   sources: DocumentationSource[];
@@ -17,12 +17,14 @@ export class DocsService {
   private readonly store?: ProgramJsonStore<DocsState>;
   private readonly docsRootDir: string | undefined;
   private readonly generatedRootDir: string | undefined;
+  private readonly allowedSourceRootDirs: string[];
   private loaded = false;
   private cache: DocsState = { sources: [], pages: [], generatedAtMs: 0, warnings: [], generatedPages: 0 };
 
-  constructor(options: { dataDir?: string; docsRootDir?: string; generatedRootDir?: string } = {}) {
+  constructor(options: { dataDir?: string; docsRootDir?: string; generatedRootDir?: string; allowedSourceRootDirs?: string[] } = {}) {
     this.docsRootDir = options.docsRootDir ? path.resolve(options.docsRootDir) : undefined;
     this.generatedRootDir = options.generatedRootDir ? path.resolve(options.generatedRootDir) : this.docsRootDir ? path.join(this.docsRootDir, "generated") : undefined;
+    this.allowedSourceRootDirs = (options.allowedSourceRootDirs ?? (this.docsRootDir ? [this.docsRootDir] : [])).map((root) => path.resolve(root));
     if (options.dataDir) {
       this.store = new ProgramJsonStore(programDataFile(options.dataDir, "docs", "cache.json"), () => ({ sources: [], pages: [], generatedAtMs: 0, warnings: [], generatedPages: 0 }));
     }
@@ -32,6 +34,7 @@ export class DocsService {
     if (this.sources.has(source.id)) {
       throw new Error(`Duplicate docs source: ${source.id}`);
     }
+    this.assertSourceAllowed(source);
     this.sources.set(source.id, source);
     return this;
   }
@@ -46,6 +49,7 @@ export class DocsService {
 
   async upsertSource(source: DocumentationSource): Promise<DocumentationSource> {
     await this.load();
+    this.assertSourceAllowed(source);
     this.sources.set(source.id, source);
     await this.rebuild();
     return source;
@@ -81,10 +85,14 @@ export class DocsService {
     const snapshot = await this.snapshot();
     const page = snapshot.pages.find((item) => item.id === pageId);
     if (!page) return null;
-    const content = await readFile(page.path, "utf8");
-    const format = documentationFormat(page.path);
+    const source = snapshot.sources.find((item) => item.id === page.sourceId);
+    if (!source) return null;
+    const canonicalPagePath = await this.assertPageAllowed(source, page.path);
+    const content = await readFile(canonicalPagePath, "utf8");
+    const format = documentationFormat(canonicalPagePath);
     return {
       ...page,
+      format,
       markdown: format === "markdown" ? content : "",
       html: renderDocumentationContent(content, format)
     };
@@ -92,6 +100,12 @@ export class DocsService {
 
   private async scanSource(source: DocumentationSource, warnings: string[]): Promise<DocumentationPage[]> {
     const root = path.resolve(source.rootDir);
+    try {
+      await this.assertCanonicalSourceAllowed(root);
+    } catch (error) {
+      warnings.push(error instanceof Error ? error.message : String(error));
+      return [];
+    }
     const files = await documentationFiles(root, warnings);
     return Promise.all(
       files.map(async (filePath) => {
@@ -163,6 +177,39 @@ export class DocsService {
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, page.markdown.endsWith("\n") ? page.markdown : `${page.markdown}\n`, "utf8");
   }
+
+  private assertSourceAllowed(source: DocumentationSource): void {
+    if (!this.allowedSourceRootDirs.length) return;
+    const root = path.resolve(source.rootDir);
+    if (!this.allowedSourceRootDirs.some((allowedRoot) => isPathInside(allowedRoot, root))) {
+      throw new Error(`Documentation source must be inside an allowed docs root: ${root}`);
+    }
+  }
+
+  private async assertCanonicalSourceAllowed(root: string): Promise<void> {
+    if (!this.allowedSourceRootDirs.length) return;
+    const canonicalRoot = await realpath(root);
+    const canonicalAllowedRoots = await Promise.all(this.allowedSourceRootDirs.map(async (allowedRoot) => realpath(allowedRoot).catch(() => allowedRoot)));
+    if (!canonicalAllowedRoots.some((allowedRoot) => isPathInside(allowedRoot, canonicalRoot))) {
+      throw new Error(`Documentation source resolves outside an allowed docs root: ${root}`);
+    }
+  }
+
+  private async assertPageAllowed(source: DocumentationSource, pagePath: string): Promise<string> {
+    this.assertSourceAllowed(source);
+    const canonicalSourceRoot = await realpath(path.resolve(source.rootDir));
+    const canonicalPagePath = await realpath(path.resolve(pagePath));
+    await this.assertCanonicalSourceAllowed(canonicalSourceRoot);
+    if (!isPathInside(canonicalSourceRoot, canonicalPagePath)) {
+      throw new Error(`Documentation page resolves outside its source root: ${pagePath}`);
+    }
+    return canonicalPagePath;
+  }
+}
+
+function isPathInside(root: string, candidate: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 async function documentationFiles(root: string, warnings: string[]): Promise<string[]> {
@@ -204,7 +251,7 @@ function titleFromPath(value: string): string {
     .join(" ");
 }
 
-type DocumentationFormat = "markdown" | "html" | "json" | "text";
+type DocumentationFormat = DocumentationPageContent["format"];
 
 function documentationFormat(filePath: string): DocumentationFormat {
   if (/\.mdx?$/i.test(filePath)) return "markdown";
@@ -237,13 +284,15 @@ function renderHtmlDocument(value: string): string {
     .replace(/<dialog\b[^>]*>[\s\S]*?<\/dialog>/gi, "")
     .replace(/<button\b[^>]*>[\s\S]*?<\/button>/gi, "")
     .replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, "")
+    .replace(/<(iframe|object|embed|form|input|textarea|select|option|link|meta)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
+    .replace(/<(iframe|object|embed|form|input|textarea|select|option|link|meta)\b[^>]*\/?\s*>/gi, "")
     .replace(/<details\b([^>]*)>/gi, "<section$1>")
     .replace(/<\/details>/gi, "</section>")
     .replace(/<summary\b[^>]*>/gi, "<div class=\"docs-html-summary\">")
     .replace(/<\/summary>/gi, "</div>")
     .replace(/\sopen(?=[\s>])/gi, "")
-    .replace(/\son[a-z]+\s*=\s*(['"]).*?\1/gi, "")
-    .replace(/\s(href|src)\s*=\s*(['"])javascript:[\s\S]*?\2/gi, "");
+    .replace(/\son[a-z]+\s*=\s*(?:(['"])[\s\S]*?\1|[^\s>]+)/gi, "")
+    .replace(/\s(href|src)\s*=\s*(?:(['"])\s*(?:javascript|data):[\s\S]*?\2|(?:javascript|data):[^\s>]+)/gi, "");
   return [
     title ? `<h1>${escapeHtml(title)}</h1>` : "",
     `<div class="docs-html-document">${cleaned}</div>`

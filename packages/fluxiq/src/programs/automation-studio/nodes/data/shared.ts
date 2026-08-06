@@ -1,4 +1,4 @@
-import type { JsonValue } from "../../../../core";
+import type { JsonValue } from "../../../../core/index.ts";
 
 export function variableName(value: unknown): string {
   return String(value ?? "").trim();

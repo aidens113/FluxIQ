@@ -7,11 +7,11 @@ import type {
   ClientGatewayStartRecordingRequest,
   ClientGatewayStopRecordingRequest,
   ClientGatewaySnapshot
-} from "../../../client-gateway";
-import { ClientGatewayService } from "../../../client-gateway";
-import type { JsonObject } from "../../../core";
-import type { ActionChannelDescriptor, EnvironmentDescriptor, SourceDescriptor, StateSnapshot } from "../model";
-import type { AutomationStudioService } from "../runtime/service";
+} from "../../../client-gateway/index.ts";
+import { ClientGatewayService } from "../../../client-gateway/index.ts";
+import type { JsonObject } from "../../../core/index.ts";
+import type { ActionChannelDescriptor, EnvironmentDescriptor, SourceDescriptor, StateSnapshot } from "../model/index.ts";
+import type { AutomationStudioService } from "../runtime/service.ts";
 
 export type AutomationStudioClientGatewayBridgeOptions = {
   gateway: ClientGatewayService;
@@ -98,7 +98,7 @@ export class AutomationStudioClientGatewayBridge {
       initialState: emptyClientStateSnapshot(session),
       metadata: { createdFrom: "client-gateway", sessionId: session.sessionId, clientId: session.clientId, clientName: session.name, ...(input.metadata ?? {}) }
     });
-    this.activeRecordings.set(session.sessionId, { ...(projectId !== undefined ? { projectId } : {}), recordingId, domainId });
+    this.activeRecordings.set(this.recordingOwnerKey(session), { ...(projectId !== undefined ? { projectId } : {}), recordingId, domainId });
     await this.gateway.startRecording(session.sessionId, {
       recordingId,
       ...(projectId !== undefined ? { projectId } : {}),
@@ -109,12 +109,14 @@ export class AutomationStudioClientGatewayBridge {
   }
 
   async stopRecording(sessionId: string) {
-    const active = this.activeRecordings.get(sessionId);
+    const session = this.session(sessionId);
+    const ownerKey = this.recordingOwnerKey(session);
+    const active = this.activeRecordings.get(ownerKey);
     await this.gateway.stopRecording(sessionId, active?.recordingId);
     if (!active) return null;
     const recording = await this.automationStudio.finalizeRecording({ ...(active.projectId !== undefined ? { projectId: active.projectId } : {}), recordingId: active.recordingId });
     if (active.projectId) await this.automationStudio.processFinalizedRecording({ projectId: active.projectId, recordingId: active.recordingId });
-    this.activeRecordings.delete(sessionId);
+    this.activeRecordings.delete(ownerKey);
     return recording;
   }
 
@@ -135,7 +137,7 @@ export class AutomationStudioClientGatewayBridge {
       return;
     }
     if (event.type === "client.recording_entry") {
-      const active = this.activeRecordings.get(event.session.sessionId);
+      const active = this.activeRecordings.get(this.recordingOwnerKey(event.session));
       await this.automationStudio.appendRecordingEvent({
         ...(event.message.payload.projectId !== undefined ? { projectId: event.message.payload.projectId } : active?.projectId !== undefined ? { projectId: active.projectId } : {}),
         recordingId: event.message.payload.recordingId,
@@ -156,7 +158,7 @@ export class AutomationStudioClientGatewayBridge {
       return;
     }
     if (event.type === "client.error") {
-      const active = this.activeRecordings.get(event.session.sessionId);
+      const active = this.activeRecordings.get(this.recordingOwnerKey(event.session));
       if (active) await this.automationStudio.appendRecordingEvent({
         ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
         recordingId: active.recordingId,
@@ -216,21 +218,20 @@ export class AutomationStudioClientGatewayBridge {
       initialState: input.initialState as unknown as StateSnapshot | undefined ?? emptyClientStateSnapshot(session),
       metadata: compactJsonObject({ createdFrom: "client-gateway", sessionId: session.sessionId, clientId: session.clientId, clientName: session.name, ...(input.metadata ?? {}) })
     });
-    this.activeRecordings.set(session.sessionId, { projectId, recordingId: recording.recordingId, domainId });
+    this.activeRecordings.set(this.recordingOwnerKey(session), { projectId, recordingId: recording.recordingId, domainId });
     this.gateway.markActiveRecording(session.sessionId, { recordingId: recording.recordingId, projectId });
     return recording;
   }
 
   private async resolveClientRecordingContext(session: ClientGatewaySession, request: ClientGatewayStartRecordingRequest): Promise<ClientRecordingContext> {
+    if (this.clientRecordingContextProvider) return await this.clientRecordingContextProvider({ session, request });
     if (request.projectId) return { ok: true, projectId: request.projectId };
-    if (!this.clientRecordingContextProvider) {
-      return { ok: false, message: "Recording cannot start because Automation Studio does not have an open project.", code: "recording.project_required" };
-    }
-    return await this.clientRecordingContextProvider({ session, request });
+    return { ok: false, message: "Recording cannot start because Automation Studio does not have an open project.", code: "recording.project_required" };
   }
 
   private async stopRecordingFromClient(session: ClientGatewaySession, input: ClientGatewayStopRecordingRequest) {
-    const active = this.activeRecordings.get(session.sessionId);
+    const ownerKey = this.recordingOwnerKey(session);
+    const active = this.activeRecordings.get(ownerKey);
     const projectId = input.projectId ?? active?.projectId;
     const recording = await this.automationStudio.finalizeRecording({
       ...(projectId !== undefined ? { projectId } : {}),
@@ -238,12 +239,12 @@ export class AutomationStudioClientGatewayBridge {
       ...(input.endedAt !== undefined ? { endedAt: input.endedAt } : {})
     });
     if (projectId) await this.automationStudio.processFinalizedRecording({ projectId, recordingId: input.recordingId });
-    this.activeRecordings.delete(session.sessionId);
+    this.activeRecordings.delete(ownerKey);
     return recording;
   }
 
   private async appendRecordingEvent(session: ClientGatewaySession, event: ClientGatewayRecordingEvent, messageId: string): Promise<void> {
-    const active = this.activeRecordings.get(session.sessionId);
+    const active = this.activeRecordings.get(this.recordingOwnerKey(session));
     if (!active) return;
     const domainId = event.domainId ?? active.domainId ?? stringMetadataValue(event.metadata, "domainId");
     if (domainId) {
@@ -294,7 +295,7 @@ export class AutomationStudioClientGatewayBridge {
   }
 
   private async appendSnapshot(session: ClientGatewaySession, snapshot: ClientGatewaySnapshot, messageId: string): Promise<void> {
-    const active = this.activeRecordings.get(session.sessionId);
+    const active = this.activeRecordings.get(this.recordingOwnerKey(session));
     if (!active) return;
     if (snapshot.kind === "state" && snapshot.state) {
       await this.automationStudio.appendRecordingEvent({
@@ -329,7 +330,7 @@ export class AutomationStudioClientGatewayBridge {
   }
 
   private async appendStateUpdate(session: ClientGatewaySession, stateUpdate: JsonObject, messageId: string): Promise<void> {
-    const active = this.activeRecordings.get(session.sessionId);
+    const active = this.activeRecordings.get(this.recordingOwnerKey(session));
     if (!active) return;
     await this.automationStudio.appendRecordingEvent({
       ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
@@ -346,7 +347,7 @@ export class AutomationStudioClientGatewayBridge {
 
   private async appendActionResult(sessionId: string, command: ClientGatewayActionCommand, result: ClientGatewayActionResult): Promise<void> {
     const session = this.session(sessionId);
-    const active = this.activeRecordings.get(sessionId);
+    const active = this.activeRecordings.get(this.recordingOwnerKey(session));
     if (!active) return;
     await this.automationStudio.appendRecordingEvent({
       ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
@@ -374,6 +375,10 @@ export class AutomationStudioClientGatewayBridge {
     const session = this.gateway.snapshot().sessions.find((item) => item.sessionId === sessionId);
     if (!session) throw new Error(`Unknown client gateway session: ${sessionId}`);
     return session;
+  }
+
+  private recordingOwnerKey(session: ClientGatewaySession): string {
+    return session.trustedClientId ? `trusted:${session.trustedClientId}` : `session:${session.sessionId}`;
   }
 }
 

@@ -1,4 +1,4 @@
-import type { JsonObject } from "../../../core";
+import type { JsonObject } from "../../../core/index.ts";
 import {
   appendRecordingStateCheckpoint,
   appendRecordingStateDelta,
@@ -8,7 +8,7 @@ import {
   type RecordingSession,
   type StateSnapshot,
   type StateUnsubscribe
-} from "../model";
+} from "../model/index.ts";
 
 export type AutomationStudioRecordingControllerOptions = CreateRecordingSessionInput & {
   stateStore?: AutomationStateStore;

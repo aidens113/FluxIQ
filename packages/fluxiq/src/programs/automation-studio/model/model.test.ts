@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createAutomationStudioFixture } from "./fixtures";
-import { validatePolicyGraph, validateRecordingSession, validateSignalRegistry } from "./validation";
+import { createAutomationStudioFixture } from "./fixtures.ts";
+import { validatePolicyGraph, validateRecordingSession, validateSignalRegistry } from "./validation.ts";
 
 describe("automation studio canonical model", () => {
   it("represents a domain-neutral recording, signal registry, and policy graph", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createAutomationStudioFixture } from "../model";
+import { createAutomationStudioFixture } from "../model/index.ts";
 import {
   canonicalArtifactIdentity,
   createCanonicalAutomationStudioMemoryRepositories,
@@ -8,7 +8,7 @@ import {
   policyGraphDocumentId,
   recordingSessionDocumentId,
   signalRegistryDocumentId
-} from "./index";
+} from "./index.ts";
 
 describe("automation studio canonical storage", () => {
   it("derives stable document IDs for canonical artifacts", () => {

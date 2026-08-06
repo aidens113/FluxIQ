@@ -1,14 +1,14 @@
 import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import type { JSONOutput } from "typedoc";
-import type { IoSnapshot } from "../../io";
-import type { DomainRegistration } from "../../domains";
-import type { BackgroundTasksService } from "../background-tasks";
-import type { DatabaseManagerService } from "../database-manager";
-import type { DeploymentSyncService } from "../deployment-sync";
-import type { DocsService, GeneratedDocumentationPage } from "../docs";
-import { GLOBAL_PROGRAMS } from "./catalog";
-import type { GlobalProgramApiRegistry } from "./api";
+import type { IoSnapshot } from "../../io/index.ts";
+import type { DomainRegistration } from "../../domains/index.ts";
+import type { BackgroundTasksService } from "../background-tasks/index.ts";
+import type { DatabaseManagerService } from "../database-manager/index.ts";
+import type { DeploymentSyncService } from "../deployment-sync/index.ts";
+import type { DocsService, GeneratedDocumentationPage } from "../docs/index.ts";
+import { GLOBAL_PROGRAMS } from "./catalog.ts";
+import type { GlobalProgramApiRegistry } from "./api.ts";
 
 export type DocumentationRuntimeProviders = {
   domains?(): DomainRegistration[];
@@ -99,11 +99,11 @@ export function registerGlobalDocumentationGenerators(params: {
           "",
           "This page is generated from the global program API registry.",
           "",
-          "| Program | Endpoint |",
-          "| --- | --- |",
+          "| Program | Endpoint | Permission |",
+          "| --- | --- | --- |",
           ...api.endpoints()
             .sort((left, right) => `${left.programId}/${left.endpoint}`.localeCompare(`${right.programId}/${right.endpoint}`))
-            .map((endpoint) => `| \`${escapeTable(endpoint.programId)}\` | \`${escapeTable(endpoint.endpoint)}\` |`)
+            .map((endpoint) => `| \`${escapeTable(endpoint.programId)}\` | \`${escapeTable(endpoint.endpoint)}\` | \`${escapeTable(endpoint.permission)}\` |`)
         ].join("\n")
       }]
     })

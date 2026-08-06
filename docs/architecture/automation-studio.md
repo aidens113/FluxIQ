@@ -409,11 +409,12 @@ This mirrors the FluxBot v1 component-catalog direction while moving the new
 framework to source-owned TypeScript node functions instead of one category file
 or a YAML-only metadata shell.
 
-Custom node definitions belong in the importing repository's `.fluxiq` folder,
-not in FluxIQ source. The global custom-node library is reserved at:
+Custom node definitions belong in the importing repository's authored domain
+source, not in FluxIQ source or ignored `.fluxiq` runtime state. The default
+domain custom-node root is:
 
 ```text
-.fluxiq/{domain-id}/data/programs/automation-studio/nodes/
+domains/{domain-id}/programs/automation-studio/nodes/
   custom/
     control-flow/
     policy/
@@ -429,11 +430,12 @@ not in FluxIQ source. The global custom-node library is reserved at:
   packages/
 ```
 
-Project-local node overrides or project-owned custom nodes remain inside the
-project folder:
+Project-local authored node overrides should live in an importer-managed source
+root associated with the project, rather than beside runtime artifacts. Hosts
+can provide a custom source root when their repository layout differs.
 
 ```text
-.fluxiq/{domain-id}/data/programs/automation-studio/projects/{projectId}/custom-nodes/
+domains/{domain-id}/programs/automation-studio/projects/{projectId}/custom-nodes/
 ```
 
 Global custom nodes should be reusable across projects. Project-local custom
@@ -493,18 +495,20 @@ pipeline pane scoped to that selected recording. Delete actions remain
 privileged and require PIN authorization.
 
 Automation Studio opens through a project chooser. Users must create or open a
-project before the editor workspace appears. Projects and their owned state are
-persisted under the importing repository's active FluxIQ domain root, currently
-`.fluxiq/{domain-id}/data/programs/automation-studio/projects/` when a host
-domain is active, or the legacy `.fluxiq/data/programs/automation-studio/projects/`
-layout when no active domain is configured. The project store is
-folder-backed: `index.json` tracks project summaries and grid categories, while
-each project gets its own folder named by project ID. A project folder contains
-`manifest.json`, `hierarchy/nodes.json`, `hierarchy/deleted.json`,
-`workspace/preferences.json`, and reserved subfolders for `tasks`, `routines`,
-`configs`, `recordings`, `policies`, `custom-nodes`, and `artifacts`. The
-legacy `projects.json` file in the same data root is imported into this folder
-layout when no folder-backed index exists.
+project before the editor workspace appears. In storage layout v2, project
+catalogs, manifests, hierarchy, workspace preferences, authoring documents,
+recording metadata, and pipeline metadata are global Automation Studio records
+inside `.fluxiq/global.sqlite`. Creating a project performs its catalog,
+project-document, and default-task bootstrap in one transaction and creates no
+empty project folder. Payloads at or above 256 KiB are written first as
+immutable SHA-256-addressed objects under
+`.fluxiq/artifacts/automation-studio/projects/{projectId}/objects/`; the
+database stores and verifies the object reference.
+
+The importer's registered domain remains the authority for display names,
+labels, recording contracts, and adapters. A project or recording can carry a
+domain ID as targeting/ownership metadata, but selecting that domain does not
+move the global editor catalog into a domain-specific storage tree.
 
 The web panel must use the importing repository as its FluxIQ host root. When
 developing the panel from the FluxIQ source checkout, set
@@ -623,68 +627,42 @@ being dragged/resized. The persisted percentage geometry is written back to
 workspace preferences only once the pointer interaction ends, preventing config
 writes on every pixel movement.
 
-Project recordings now use the same folder-backed ownership model as project
-workspace state. Each project reserves:
+Canonical project recordings and normalized timelines use SQLite repositories
+in `.fluxiq/global.sqlite`. Recording events remain ordered within the
+canonical recording document; no event-type or snapshot folder is pre-created.
+The conceptual ownership is:
 
 ```text
-.fluxiq/{domain-id}/data/programs/automation-studio/projects/{projectId}/recordings/
-  sessions/{recordingId}/recording.json
-  sessions/{recordingId}/events/timeline.json
-  sessions/{recordingId}/snapshots/initial-state.json
-  normalized/{normalizedTimelineId}.json
-  indexes/recordings.json
+.fluxiq/global.sqlite
+  automation.recording_sessions
+  automation.normalized_timelines
+  automation.state
 ```
 
-`recording.json` is the canonical `RecordingSession` envelope. The timeline
-and snapshot files are deliberate helper artifacts for later inspectors,
-recording scrubbers, diff viewers, and export tooling; they do not replace the
-canonical recording document.
-
-Recording session writes are burst-safe. The shared JSON store uses unique temp
-files and serializes writes per document path, and Automation Studio queues
-mutations per recording session so websocket event bursts append to the latest
-recording state instead of racing through stale read/write cycles.
+Recording session writes are burst-safe. Automation Studio queues mutations per
+recording ID, and each canonical repository write is atomic. Reconnects and
+active-domain changes resolve the same global recording by stable ID and
+project metadata.
 If a client sends repeated event IDs, the recording framework preserves the
 first ID and suffixes later duplicate timeline entry IDs before validation and
 persistence. Timeline UI keys also include row index and sequence so older
 recordings with duplicate IDs can still render.
 
-Recording-derived artifacts belong inside the recording session that produced
-them. The project-level pipeline index is lookup metadata only; it is not an
-aggregate artifact bucket.
+Recording-derived documents remain logically owned by the recording and retain
+stable evidence references. Small documents and lookup metadata are stored in
+SQLite. Only oversized or binary payloads use the project object store.
 
 ```text
-.fluxiq/{domain-id}/data/programs/automation-studio/projects/{projectId}/
-  recordings/
-    indexes/recordings.json
-    sessions/{recordingId}/
-      recording.json
-      events/timeline.json
-      snapshots/initial-state.json
-      derived/
-        index.json
-        normalization/
-          timelines/{normalizedTimelineId}.json
-          reviews/{reviewId}.json
-        evidence/
-          mining-runs/{miningRunId}.json
-          facts/{factId}.json
-          observations/{observationId}.json
-          correlations/{correlationId}.json
-          claims/{claimId}.json
-        task-models/{learnedTaskModelId}.json
-        proposal/proposal.json
-        replays/{replayId}.json
-  indexes/pipeline.json
+.fluxiq/
+  global.sqlite
+  artifacts/automation-studio/projects/{projectId}/objects/{sha256}.json
 ```
 
-Each recording creates a derived artifact manifest at
-`recordings/sessions/{recordingId}/derived/index.json`. Normalized timelines,
-normalization details, mining runs, evidence facts, evidence observations,
-state-action correlations, evidence claims, task models, proposals, and replays
-are written under that recording's `derived/` folder. `indexes/pipeline.json`
-contains project-wide references with `recordingId` so the UI can list data
-without making the filesystem layout global.
+Normalized timelines, normalization details, mining runs, evidence facts,
+evidence observations, state-action correlations, evidence claims, task
+models, proposals, and replays are indexed database documents carrying their
+`recordingId`. The physical object path is content-addressed and deliberately
+does not encode mutable pipeline structure.
 
 Pipeline files are derived artifacts. They preserve references back to raw
 recordings and normalized timelines so users can audit how a final task policy
@@ -699,18 +677,16 @@ graph when one exists, writes the merged `PolicyGraph` into the canonical
 policy repository and project `policies/` folder, and writes a task-owned flow
 document for the editable Automation Studio graph.
 
-Project-owned authoring artifacts are now explicit documents instead of only
-hierarchy rows. Each project reserves:
+Project-owned authoring artifacts are explicit SQLite documents instead of only
+hierarchy rows. Their logical keys retain the familiar project/task/routine/
+config/flow ownership without requiring matching directories:
 
 ```text
-.fluxiq/{domain-id}/data/programs/automation-studio/projects/{projectId}/
-  tasks/{taskId}/task.json
-  routines/{routineId}/routine.json
-  configs/{configId}/config.json
-  flows/{flowId}/flow.json
-  runtime/sessions/{runId}.json
-  runtime/indexes/sessions.json
-  state/
+projects/{projectId}/tasks/{taskId}/task
+projects/{projectId}/routines/{routineId}/routine
+projects/{projectId}/configs/{configId}/config
+projects/{projectId}/flows/{flowId}/flow
+projects/{projectId}/runtime/sessions/{runId}
 ```
 
 Task, routine, and config files are the canonical project edit targets.
@@ -797,9 +773,9 @@ stable document IDs:
 | `LearnedTaskModel` | `learnedTaskModels` | `learnedTaskModelId` |
 | `PolicyGraph` | `policyGraphs` | `policyId` |
 
-The first implementation is an in-memory repository for framework tests,
-prototype wiring, and pipeline development. Durable storage can later wrap the
-same contracts with SQLite or host-owned document storage.
+Framework tests can use the in-memory repository implementation. Host runtimes
+use canonical SQLite repositories in `.fluxiq/global.sqlite`; domain IDs are
+document metadata/filter keys and do not select a different database.
 
 Repository reads return cloned documents. Callers should modify a document by
 loading it, creating the next version or edited artifact, and writing it back
@@ -927,9 +903,10 @@ The reusable gateway lives under `packages/fluxiq/src/client-gateway/`:
 - `contracts.ts` defines the versioned JSON protocol, client capabilities,
   session records, pairing challenges, audit entries, and a socket interface
   that hosts can back with any WebSocket implementation.
-- `service.ts` owns in-memory session state, approval references, session tokens,
-  outbound server messages, command/result correlation, timeouts, heartbeat
-  messages, and gateway events.
+- `service.ts` separates transient socket sessions from persisted trusted-client
+  identities. It owns approval references, hashed rotating credentials,
+  expiry/revocation, outbound messages, command/result correlation, timeouts,
+  heartbeat messages, and gateway events.
 - `@fluxiq/client-gateway-websocket` is a small typed client package for
   WebSocket-capable recorders. It re-exports the same protocol types as
   `fluxiq/client-gateway` and the same Automation Studio recording request
@@ -951,9 +928,10 @@ The bridge converts client messages into canonical Studio artifacts:
   and state checkpoints.
 - `client.state_update` and `client.snapshot` become `observation`
   timeline entries.
-- `client.start_recording` is accepted only when the web panel has an active
-  Automation Studio project context. The web runtime publishes that context
-  while a project is open. If no project is open, the gateway sends
+- `client.start_recording` is accepted only when the approving operator has an
+  active Automation Studio project context. Context is isolated by operator
+  and can be overridden for a specific client. The web runtime publishes that
+  context while a project is open. If no matching project is open, the gateway sends
   `server.error` with `recording.project_required` and the web panel surfaces a
   modal instead of silently dropping the client request.
 - `server.execute_action` waits for `client.action_result`; resolved action
@@ -1001,7 +979,7 @@ adapter. The framework package only requires a `ClientGatewaySocket` with
 Automation Studio exposes framework API endpoints for the editor:
 
 - `client-gateway-snapshot`
-- `create-client-pairing`
+- `revoke-client-trust`
 - `start-client-recording`
 - `stop-client-recording`
 - `capture-client-snapshot`
@@ -1027,7 +1005,9 @@ open. Closing or dismissing the pairing modal calls
 `/api/client-gateway/dismiss-pairing` and removes the pending challenge from
 the gateway, so dismissed requests do not reappear after a browser refresh.
 Approving the modal calls `/api/client-gateway/approve-pairing`; the client
-then receives `server.session_ready` with its session token.
+then receives `server.session_ready` with its client credential. Raw
+credentials are never included in session snapshots. The Client Gateway view
+lists safe trust metadata and lets a PIN-authorized operator revoke access.
 
 Extension/client connection flow:
 
@@ -1035,15 +1015,17 @@ Extension/client connection flow:
 2. Sign in to the FluxIQ web panel.
 3. Click connect in the extension and connect it to `FLUXIQ_PUBLIC_CLIENT_WS_URL` or the default
    `ws://127.0.0.1:4777/client`.
-4. The extension sends `client.hello` with the client type, name, capabilities, and any saved
-   session token.
+4. The extension sends `client.hello` with the client type, name, capabilities,
+   and any saved trusted-client credential.
 5. If FluxIQ replies with `server.pairing_required`, the global web-panel shell
    shows a modal with Approve and Reject controls. The modal displays the same
    reference code sent to the client so the user can verify the right client is
    being approved.
 6. If the user approves, FluxIQ pairs the waiting socket directly.
-7. Store the token returned by `server.session_ready`; future `client.hello`
-   messages can include it to reconnect without another approval.
+7. Replace the saved token with every token returned by
+   `server.session_ready`; reconnect consumes and rotates it. The persisted
+   trust record is bound to the approving operator and stable `clientId`, while
+   each socket connection receives a new session ID.
 8. Stream `client.state_update`, `client.snapshot`,
    `client.recording_event`, `client.action_result`, and `client.error` as
    appropriate. Execute incoming `server.execute_action`,

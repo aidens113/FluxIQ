@@ -25,6 +25,7 @@ own domain packages, data, component packs, and runtime capabilities.
 apps/
   web/                  Next.js control panel shell
 packages/
+  contracts/            Browser-safe shared protocol and API contracts
   fluxiq/               Importable framework package
   client-gateway-websocket/
                          Typed WebSocket client for FluxIQ web-panel clients
@@ -55,11 +56,15 @@ state, commands, files, or effects.
 
 The internal `programs` module is only for global framework programs. Domain-specific
 programs belong to the host/importing project, under its configured domain
-program root. By default that root is:
+program root. By default that root is scoped to the active importing domain:
 
 ```text
-domains/programs
+domains/{domain-id}/programs
 ```
+
+The importer manifest remains authoritative for domain names, labels, and
+branding. Framework terms such as "global" describe shared framework ownership
+and persistence, not a replacement for importer-defined naming.
 
 ## Importing From A Host Project
 
@@ -76,36 +81,27 @@ const fluxiq = FluxIQ.create({
 await fluxiq.setup();
 ```
 
-This creates the host-owned folders FluxIQ needs for local config, data,
-recordings, generated policies, logs, temporary files, and custom downstream
-domains. Domain projects can override any path through `FluxIQ.create(...)`.
+This creates only `.fluxiq/config.json`. The global database, domain runtime
+database, large-object artifacts, cache, logs, and temporary folders are
+created lazily on first use. Importer-authored domain code stays outside
+`.fluxiq`, under the importer's configured domain source roots.
 
 The same root and storage paths can be configured with environment variables:
 
 ```bash
 FLUXIQ_ROOT=.
 FLUXIQ_DIR=.fluxiq
-FLUXIQ_DATA_DIR=.fluxiq/data
-FLUXIQ_DATABASES_DIR=.fluxiq/databases
-FLUXIQ_INPUTS_DIR=.fluxiq/inputs
-FLUXIQ_OUTPUTS_DIR=.fluxiq/outputs
-FLUXIQ_STREAMS_DIR=.fluxiq/streams
-FLUXIQ_DOMAINS_DIR=domains
-FLUXIQ_DOMAIN_PROGRAMS_DIR=domains/programs
-FLUXIQ_DOMAIN_INPUTS_DIR=domains/inputs
-FLUXIQ_DOMAIN_OUTPUTS_DIR=domains/outputs
-FLUXIQ_DOMAIN_CONFIGS_DIR=domains/configs
-FLUXIQ_DOMAIN_DATA_DIR=domains/data
-FLUXIQ_DOMAIN_DATABASES_DIR=domains/databases
-FLUXIQ_RECORDINGS_DIR=.fluxiq/recordings
-FLUXIQ_POLICIES_DIR=.fluxiq/policies
-FLUXIQ_LOGS_DIR=.fluxiq/logs
-FLUXIQ_TEMP_DIR=.fluxiq/tmp
+FLUXIQ_DOMAIN_ID=example
+FLUXIQ_DOMAIN_PROGRAMS_DIR=domains/example/programs
+FLUXIQ_DOMAIN_INPUTS_DIR=domains/example/inputs
+FLUXIQ_DOMAIN_OUTPUTS_DIR=domains/example/outputs
 ```
 
 Explicit `FluxIQ.create(...)` options take precedence over environment
 variables. In plain Node hosts, `FluxIQ.create()` loads `.env` and `.env.local`
 from the current working directory by default before resolving paths.
+Legacy storage-folder variables are still accepted as externally managed path
+overrides, but automatic layout migration will not move their contents.
 
 ## Development
 
@@ -115,7 +111,14 @@ Install dependencies before running checks:
 ```bash
 pnpm install
 pnpm check
+pnpm test
+pnpm build
 ```
+
+Distribution changes should also run `pnpm package:validate`, which validates
+packed tarballs in clean Node and browser consumers. Package ownership and the
+release gate are documented in
+[`docs/architecture/package-boundaries.md`](docs/architecture/package-boundaries.md).
 
 ## Client Gateway
 

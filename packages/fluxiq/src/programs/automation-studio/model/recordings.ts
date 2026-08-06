@@ -1,8 +1,8 @@
-import type { JsonObject } from "../../../core";
-import type { ActionChannelDescriptor, EnvironmentDescriptor, SourceDescriptor } from "./descriptors";
-import type { AutomationStudioSchemaVersion } from "./evidence";
-import type { StateSnapshot } from "./state";
-import type { TimelineEntry } from "./timeline";
+import type { JsonObject } from "../../../core/index.ts";
+import type { ActionChannelDescriptor, EnvironmentDescriptor, SourceDescriptor } from "./descriptors.ts";
+import type { AutomationStudioSchemaVersion } from "./evidence.ts";
+import type { StateSnapshot } from "./state.ts";
+import type { TimelineEntry } from "./timeline.ts";
 
 export type RecordingNote = {
   id: string;

@@ -1,6 +1,6 @@
-import { randomFloat } from "./shared";
-import { optionalPrecisionOptions } from "../math/shared";
-import { defineBuiltinNode, emptyResult, inputValue, numberValue } from "../shared/definition";
+import { randomFloat } from "./shared.ts";
+import { optionalPrecisionOptions } from "../math/shared.ts";
+import { defineBuiltinNode, emptyResult, inputValue, numberValue } from "../shared/definition.ts";
 
 export const jitterNode = defineBuiltinNode({
   id: "builtin.random.jitter",

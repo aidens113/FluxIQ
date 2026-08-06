@@ -1,5 +1,5 @@
-import type { JsonObject, JsonValue } from "../../../core";
-import type { ActionDefinition, ActionResult, StatePathSchema, StateSnapshot } from "../model";
+import type { JsonObject, JsonValue } from "../../../core/index.ts";
+import type { ActionDefinition, ActionResult, StatePathSchema, StateSnapshot } from "../model/index.ts";
 
 export type AutomationStudioObservation = {
   observationType: string;

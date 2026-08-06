@@ -67,6 +67,7 @@ export function AutomationClientGatewayView(props: { projectId: string | null })
   const sessions = snapshot.sessions ?? [];
   const selectedSession = sessions.find((session: any) => session.sessionId === selectedSessionId) ?? sessions[0];
   const pairings = snapshot.pairings ?? [];
+  const trustedClients = snapshot.trustedClients ?? [];
   const actionTypes = uniqueStrings((selectedSession?.capabilities ?? []).flatMap((capability: any) => capability.actionTypes ?? []));
   useEffect(() => {
     if (!actionType && actionTypes.length) setActionType(actionTypes[0] ?? "");
@@ -112,6 +113,18 @@ export function AutomationClientGatewayView(props: { projectId: string | null })
       await refreshGateway();
     }
   };
+  const revokeTrust = async (trustedClientId: string) => {
+    if (pin.length < 4) {
+      setStatus("Enter your PIN before revoking client trust.");
+      return;
+    }
+    const result = await api.post("revoke-client-trust", { trustedClientId, authorizationPin: pin });
+    setStatus(result.ok ? "Client trust revoked." : result.error ?? "Client trust could not be revoked.");
+    if (result.ok) {
+      setPin("");
+      await refreshGateway();
+    }
+  };
   return (
     <section className="automation-client-gateway-view">
       <header>
@@ -131,6 +144,16 @@ export function AutomationClientGatewayView(props: { projectId: string | null })
               </span>
             ))}
             {!pairings.length ? <span><strong>No approval requests</strong><small>Waiting for an extension/client connect request.</small></span> : null}
+          </div>
+          <div className="automation-client-pairings">
+            {trustedClients.slice(0, 6).map((client: any) => (
+              <span key={client.trustedClientId}>
+                <strong>{client.name}</strong>
+                <small>{client.status} | approved {formatTime(client.approvedAt)} | expires {formatTime(client.expiresAt)}</small>
+                {client.status === "active" ? <button className="button compact" onClick={() => void revokeTrust(client.trustedClientId)} type="button">Revoke</button> : null}
+              </span>
+            ))}
+            {!trustedClients.length ? <span><strong>No trusted clients</strong><small>Approved clients will appear here.</small></span> : null}
           </div>
         </section>
         <section className="automation-client-panel wide">

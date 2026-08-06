@@ -1,6 +1,6 @@
-import type { JsonObject } from "../../../core";
-import type { AutomationStudioSchemaVersion } from "./evidence";
-import type { StateValueType, StateVolatility } from "./state";
+import type { JsonObject } from "../../../core/index.ts";
+import type { AutomationStudioSchemaVersion } from "./evidence.ts";
+import type { StateValueType, StateVolatility } from "./state.ts";
 
 export type SignalProvenance = {
   extractorId: string;

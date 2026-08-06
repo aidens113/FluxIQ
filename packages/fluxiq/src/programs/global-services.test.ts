@@ -3,16 +3,17 @@ import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { BackgroundTasksService } from "./background-tasks";
-import { AutomationStudioService } from "./automation-studio";
-import { ComputeControlService } from "./compute-control";
-import { DatabaseManagerService, SQLiteRepository, createRecord } from "./database-manager";
-import { DeploymentSyncService } from "./deployment-sync";
-import { DocsService } from "./docs";
-import { registerGlobalDocumentationGenerators } from "./_shared/docs-generators";
-import { IdentityAccessService, TotpRequiredError } from "./identity-access";
-import { createGlobalProgramRuntime } from "./index";
-import { ProductionRunnerService } from "./production-runner";
+import { BackgroundTasksService } from "./background-tasks/index.ts";
+import { AutomationStudioService } from "./automation-studio/index.ts";
+import { ComputeControlService } from "./compute-control/index.ts";
+import { DatabaseManagerService, SQLiteRepository, createRecord } from "./database-manager/index.ts";
+import { DeploymentSyncService } from "./deployment-sync/index.ts";
+import { DocsService } from "./docs/index.ts";
+import { registerGlobalDocumentationGenerators } from "./_shared/docs-generators.ts";
+import { IdentityAccessService, TotpRequiredError } from "./identity-access/index.ts";
+import { createGlobalProgramRuntime } from "./index.ts";
+import type { ProgramApiActor } from "./_shared/api.ts";
+import { ProductionRunnerService } from "./production-runner/index.ts";
 
 describe("global program services", () => {
   it("registers global program API endpoints", () => {
@@ -206,6 +207,7 @@ describe("global program services", () => {
         programId: "database-manager",
         endpoint: "list-records",
         scope: {},
+        actor: actorFor(login),
         payload: { kind: "identity.users", authSessionId: login.session.id }
       })).resolves.toMatchObject({ ok: false, requiresRecheck: true });
 
@@ -213,6 +215,7 @@ describe("global program services", () => {
         programId: "database-manager",
         endpoint: "list-records",
         scope: {},
+        actor: actorFor(login),
         payload: { kind: "identity.users", authSessionId: login.session.id, authorizationPassword: "admin" }
       })).resolves.toMatchObject({ ok: true });
     } finally {
@@ -278,6 +281,9 @@ describe("global program services", () => {
       await writeFile(path.join(root, "docs", "typedoc.html"), [
         "<!doctype html><html><head><title>API</title></head><body>",
         "<script>window.bad = true</script>",
+        "<img src=x onerror=alert(1)>",
+        "<a href=javascript:alert(1)>Unsafe link</a>",
+        "<iframe srcdoc=\"<script>window.bad = true</script>\"></iframe>",
         "<button id=\"tsd-search-trigger\">Search</button>",
         "<details open><summary><svg><use href=\"icon-chevronDown\"></use></svg>Classes</summary><p>FluxIQ</p></details>",
         "</body></html>"
@@ -295,8 +301,39 @@ describe("global program services", () => {
       expect(page?.html).not.toContain("<svg");
       expect(page?.html).not.toContain("<button");
       expect(page?.html).not.toContain("<script");
+      expect(page?.html).not.toMatch(/onerror/i);
+      expect(page?.html).not.toMatch(/javascript:/i);
+      expect(page?.html).not.toContain("<iframe");
+      expect(page?.format).toBe("html");
     } finally {
       await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects docs sources outside configured roots", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-docs-boundary-"));
+    const outside = await mkdtemp(path.join(os.tmpdir(), "fluxiq-docs-outside-"));
+    try {
+      const docsRoot = path.join(root, "docs");
+      await mkdir(docsRoot, { recursive: true });
+      const service = new DocsService({ docsRootDir: docsRoot });
+
+      expect(() => service.registerSource({
+        id: "outside",
+        title: "Outside",
+        rootDir: outside,
+        scope: "framework"
+      })).toThrow("Documentation source must be inside an allowed docs root");
+
+      await expect(service.upsertSource({
+        id: "outside",
+        title: "Outside",
+        rootDir: outside,
+        scope: "framework"
+      })).rejects.toThrow("Documentation source must be inside an allowed docs root");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
     }
   });
 
@@ -475,6 +512,7 @@ describe("global program services", () => {
         programId: "automation-studio",
         endpoint: "create-project-category",
         scope: {},
+        actor: actorFor(login),
         payload: { name: "Blocked", authSessionId: login.session.id, authorizationPin: "0000" }
       })).resolves.toMatchObject({ ok: false, error: "Invalid PIN" });
 
@@ -482,12 +520,14 @@ describe("global program services", () => {
         programId: "automation-studio",
         endpoint: "create-project-category",
         scope: {},
+        actor: actorFor(login),
         payload: { name: "First", authSessionId: login.session.id, authorizationPin: "1234" }
       });
       const second = await reloadedRuntime.api.call<{ name: string; authSessionId: string; authorizationPin: string }, { category: { id: string; name: string; order: number } }>({
         programId: "automation-studio",
         endpoint: "create-project-category",
         scope: {},
+        actor: actorFor(login),
         payload: { name: "Second", authSessionId: login.session.id, authorizationPin: "1234" }
       });
 
@@ -497,6 +537,7 @@ describe("global program services", () => {
         programId: "automation-studio",
         endpoint: "reorder-project-categories",
         scope: {},
+        actor: actorFor(login),
         payload: { categoryIds: [secondId, firstId], authSessionId: login.session.id, authorizationPin: "1234" }
       })).resolves.toMatchObject({ ok: true, payload: { categories: [{ id: secondId }, { id: firstId }] } });
     } finally {
@@ -552,6 +593,7 @@ describe("global program services", () => {
         programId: "automation-studio",
         endpoint: "create-project-category",
         scope: {},
+        actor: actorFor(login),
         payload: { name: "Recovered", authSessionId: login.session.id, authorizationPin: "1234" }
       })).resolves.toMatchObject({ ok: true, payload: { category: { name: "Recovered" } } });
     } finally {
@@ -559,7 +601,7 @@ describe("global program services", () => {
     }
   });
 
-  it("stores Automation Studio projects as folder-backed project workspaces", async () => {
+  it("creates only populated documents in legacy folder-backed project workspaces", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-automation-folders-"));
     try {
       const dataDir = path.join(root, ".fluxiq", "data");
@@ -583,12 +625,10 @@ describe("global program services", () => {
       expect(nodes.data.customHierarchyNodes).toHaveLength(1);
       expect(deleted.data.deletedHierarchyIds).toEqual(["old-node"]);
       expect(prefs.data.workspacePrefs).toMatchObject({ sidebarWidth: 300 });
-      await expect(stat(path.join(projectRoot, "recordings")).then((item) => item.isDirectory())).resolves.toBe(true);
-      await expect(stat(path.join(projectRoot, "custom-nodes")).then((item) => item.isDirectory())).resolves.toBe(true);
-      await expect(stat(path.join(projectRoot, "artifacts")).then((item) => item.isDirectory())).resolves.toBe(true);
-      await expect(stat(path.join(dataDir, "programs", "automation-studio", "nodes", "custom", "math")).then((item) => item.isDirectory())).resolves.toBe(true);
-      await expect(stat(path.join(dataDir, "programs", "automation-studio", "nodes", "custom", "routine")).then((item) => item.isDirectory())).resolves.toBe(true);
-      await expect(stat(path.join(dataDir, "programs", "automation-studio", "nodes", "packages")).then((item) => item.isDirectory())).resolves.toBe(true);
+      await expect(stat(path.join(projectRoot, "recordings"))).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(stat(path.join(projectRoot, "custom-nodes"))).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(stat(path.join(projectRoot, "artifacts"))).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(stat(path.join(dataDir, "programs", "automation-studio", "nodes"))).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -750,6 +790,15 @@ describe("global program services", () => {
     expect((await service.snapshot()).runs).toHaveLength(1);
   });
 });
+
+function actorFor(login: Awaited<ReturnType<IdentityAccessService["authenticate"]>>): ProgramApiActor {
+  return {
+    sessionId: login.session.id,
+    userId: login.user.id,
+    roleId: login.role.id,
+    permissions: login.role.permissions
+  };
+}
 
 function testTotpCode(secret: string, nowMs = Date.now()): string {
   const counter = Math.floor(nowMs / 30_000);

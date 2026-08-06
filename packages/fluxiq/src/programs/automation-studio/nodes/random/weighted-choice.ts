@@ -1,5 +1,5 @@
-import { randomFloat } from "./shared";
-import { arrayValue, defineBuiltinNode, emptyResult, numberValue } from "../shared/definition";
+import { randomFloat } from "./shared.ts";
+import { arrayValue, defineBuiltinNode, emptyResult, numberValue } from "../shared/definition.ts";
 
 type WeightedChoice = { value?: unknown; weight?: unknown };
 

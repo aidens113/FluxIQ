@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, rm } from "node:fs/promises";
+import { readdir, rm } from "node:fs/promises";
 import path from "node:path";
-import type { AutomationStudioSnapshot } from "../api";
-import type { AutomationStudioProject, AutomationStudioProjectCategory, AutomationStudioProjectHierarchy } from "../api/contracts";
+import type { AutomationStudioSnapshot } from "../api/index.ts";
+import type { AutomationStudioProject, AutomationStudioProjectCategory, AutomationStudioProjectHierarchy } from "../api/contracts.ts";
 import {
   appendRecordingEntry,
   appendRecordingNote,
@@ -34,21 +34,25 @@ import {
   type StateSnapshot,
   type StateValue,
   processRecordingDomainEvent
-} from "../model";
-import type { LearnedTaskModel } from "../learning";
-import type { EvidenceClaim, EvidenceFact, EvidenceObservation, SignalMiningResult, StateActionCorrelation } from "../mining";
-import { normalizeRecordingTimeline, type NormalizationOptions, type NormalizedTimeline } from "../normalization";
-import { automationNodeClasses } from "../nodes";
-import { runAutomationStudioGraph } from "./executor";
-import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage";
-import type { JsonObject } from "../../../core";
+} from "../model/index.ts";
+import type { LearnedTaskModel } from "../learning/index.ts";
+import type { EvidenceClaim, EvidenceFact, EvidenceObservation, SignalMiningResult, StateActionCorrelation } from "../mining/index.ts";
+import { normalizeRecordingTimeline, type NormalizationOptions, type NormalizedTimeline } from "../normalization/index.ts";
+import { runAutomationStudioGraph } from "./executor.ts";
+import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage.ts";
+import type { JsonObject } from "../../../core/index.ts";
 import {
   type CanonicalAutomationStudioRepositories,
-  createCanonicalAutomationStudioMemoryRepositories
-} from "../storage";
+  createCanonicalAutomationStudioMemoryRepositories,
+  AutomationStudioObjectStore,
+  AUTOMATION_STUDIO_OBJECT_THRESHOLD_BYTES,
+  isAutomationStudioObjectReference
+} from "../storage/index.ts";
 
 export type AutomationStudioServiceOptions = {
   dataDir?: string;
+  storageRootDir?: string;
+  customNodeRootDir?: string;
   repositories?: CanonicalAutomationStudioRepositories;
   seedFixture?: boolean;
 };
@@ -212,18 +216,21 @@ export class AutomationStudioService {
   private readonly projectRootDir?: string;
   private readonly nodeRootDir?: string;
   private readonly recordingDomains = new RecordingDomainRegistry();
+  private readonly objectStore?: AutomationStudioObjectStore;
   private readonly recordingMutationLocks = new Map<string, Promise<void>>();
   private readonly ready: Promise<void>;
   private storageReady?: Promise<void>;
 
   constructor(options: AutomationStudioServiceOptions = {}) {
     this.repositories = options.repositories ?? createCanonicalAutomationStudioMemoryRepositories();
-    if (options.dataDir) {
-      const automationDataDir = path.join(options.dataDir, "programs", "automation-studio");
+    if (options.dataDir || options.storageRootDir) {
+      const automationDataDir = options.storageRootDir ?? path.join(options.dataDir!, "programs", "automation-studio");
+      if (options.storageRootDir) this.objectStore = new AutomationStudioObjectStore(automationDataDir);
       this.projectRootDir = path.join(automationDataDir, "projects");
-      this.nodeRootDir = path.join(automationDataDir, "nodes");
+      const nodeRootDir = options.customNodeRootDir ?? (options.storageRootDir ? undefined : path.join(automationDataDir, "nodes"));
+      if (nodeRootDir) this.nodeRootDir = nodeRootDir;
       this.projectIndexStore = new ProgramJsonStore(path.join(this.projectRootDir, "index.json"), () => ({ categories: [], projects: [] }));
-      this.legacyProjectStore = new ProgramJsonStore(programDataFile(options.dataDir, "automation-studio", "projects.json"), () => ({ categories: [], projects: [] }));
+      if (options.dataDir) this.legacyProjectStore = new ProgramJsonStore(programDataFile(options.dataDir, "automation-studio", "projects.json"), () => ({ categories: [], projects: [] }));
     }
     this.ready = options.seedFixture === true ? this.seedFixture() : Promise.resolve();
   }
@@ -273,7 +280,12 @@ export class AutomationStudioService {
     const summaries: RecordingSummaryItem[] = [];
     const seen = new Set<string>();
 
-    for (const project of projects) {
+    if (this.objectStore) {
+      for (const recording of await this.repositories.recordingSessions.list()) {
+        const projectId = typeof recording.metadata?.projectId === "string" ? recording.metadata.projectId : "";
+        if (projectId) summaries.push(recordingSummaryFromSession(recording, projectId));
+      }
+    } else for (const project of projects) {
       if (this.projectRootDir) await this.loadProjectRecordings(project.id);
       const recordingIds = this.projectRootDir
         ? (await this.readRecordingIndex(project.id)).recordings.map((item) => item.recordingId)
@@ -297,7 +309,10 @@ export class AutomationStudioService {
 
   async createRecording(input: CreateRecordingSessionInput & { projectId?: string | null }): Promise<RecordingSession> {
     await this.ready;
-    const recording = createRecordingSession(input);
+    const created = createRecordingSession(input);
+    const recording = input.projectId && this.objectStore
+      ? { ...created, metadata: { ...(created.metadata ?? {}), projectId: input.projectId } }
+      : created;
     await this.repositories.recordingSessions.put(recording);
     if (input.projectId) await this.writeProjectRecordingSession(input.projectId, recording);
     return recording;
@@ -402,7 +417,10 @@ export class AutomationStudioService {
 
   async normalizeRecording(input: { projectId?: string | null; recordingId: string; options?: NormalizationOptions }): Promise<NormalizedTimeline> {
     const recording = await this.getRecordingSession(input.recordingId, input.projectId);
-    const normalized = normalizeRecordingTimeline(recording, input.options);
+    const generated = normalizeRecordingTimeline(recording, input.options);
+    const normalized = input.projectId && this.objectStore
+      ? { ...generated, metadata: { ...(generated.metadata ?? {}), projectId: input.projectId } }
+      : generated;
     await this.repositories.normalizedTimelines.put(normalized);
     if (input.projectId) await this.writeProjectNormalizedTimeline(input.projectId, normalized);
     return normalized;
@@ -427,7 +445,8 @@ export class AutomationStudioService {
     await this.repositories.recordingSessions.delete(input.recordingId);
     if (input.projectId && this.projectRootDir) {
       await this.deleteProjectRecordingPipeline(input.projectId, input.recordingId);
-      await rm(this.recordingSessionDirectory(input.projectId, input.recordingId), { recursive: true, force: true });
+      if (this.objectStore) await ProgramJsonStore.deletePath(this.recordingSessionDirectory(input.projectId, input.recordingId));
+      else await rm(this.recordingSessionDirectory(input.projectId, input.recordingId), { recursive: true, force: true });
       await this.writeRecordingIndex(input.projectId, (index) => ({
         recordings: (index.recordings ?? []).filter((item) => item.recordingId !== input.recordingId),
         normalizedTimelines: (index.normalizedTimelines ?? []).filter((item) => item.recordingId !== input.recordingId)
@@ -900,7 +919,11 @@ export class AutomationStudioService {
         const policyId = typeof task.metadata?.policyId === "string" ? task.metadata.policyId : null;
         if (policyId) {
           await this.repositories.policyGraphs.delete(policyId).catch(() => false);
-          if (this.projectRootDir) await rm(this.projectFile(input.projectId, "policies", `${safeSegment(policyId)}.json`), { force: true });
+          if (this.projectRootDir) {
+            const policyPath = this.projectFile(input.projectId, "policies", `${safeSegment(policyId)}.json`);
+            if (this.objectStore) await ProgramJsonStore.deletePath(policyPath);
+            else await rm(policyPath, { force: true });
+          }
           deletedArtifactIds.add(`policy:${policyId}`);
         }
       }
@@ -933,6 +956,9 @@ export class AutomationStudioService {
   }
 
   async listProjectNormalizedTimelines(projectId: string): Promise<NormalizedTimeline[]> {
+    if (this.objectStore) {
+      return (await this.repositories.normalizedTimelines.list()).filter((timeline) => timeline.metadata?.projectId === projectId);
+    }
     await this.loadProjectRecordings(projectId);
     const index = await this.readRecordingIndex(projectId);
     const timelines: NormalizedTimeline[] = [];
@@ -1059,6 +1085,21 @@ export class AutomationStudioService {
       createdAt: now,
       updatedAt: now
     };
+    if (this.objectStore && this.projectIndexStore) {
+      const record: AutomationStudioProjectRecord = { ...project, customHierarchyNodes: [], deletedHierarchyIds: [], workspacePrefs: {} };
+      const defaultTask = createDefaultProjectTaskArtifact(now);
+      await ProgramJsonStore.transaction(this.projectIndexStore.filePath, async (transaction) => {
+        const state = await transaction.read(this.projectIndexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
+        await transaction.write(this.projectIndexStore!.filePath, { ...state, projects: [project, ...state.projects] });
+        const { customHierarchyNodes, deletedHierarchyIds, workspacePrefs, ...manifest } = record;
+        await transaction.write(this.projectFile(project.id, "manifest.json"), manifest);
+        await transaction.write(this.projectFile(project.id, "hierarchy", "nodes.json"), { customHierarchyNodes });
+        await transaction.write(this.projectFile(project.id, "hierarchy", "deleted.json"), { deletedHierarchyIds });
+        await transaction.write(this.projectFile(project.id, "workspace", "preferences.json"), { workspacePrefs });
+        await transaction.write(this.projectArtifactFile(project.id, "task", defaultTask.taskId), defaultTask as unknown as JsonObject);
+      });
+      return project;
+    }
     await this.writeProjectIndex((state) => ({ ...state, projects: [project, ...state.projects] }));
     await this.writeProjectRecord({ ...project, customHierarchyNodes: [], deletedHierarchyIds: [], workspacePrefs: {} });
     await this.saveProjectArtifact({
@@ -1073,6 +1114,23 @@ export class AutomationStudioService {
     const projectId = String(input.projectId ?? "");
     const name = typeof input.name === "string" ? input.name.trim() : undefined;
     if (name !== undefined && !name) throw new Error("Project name is required.");
+    if (this.objectStore && this.projectIndexStore) {
+      return await ProgramJsonStore.transaction(this.projectIndexStore.filePath, async (transaction) => {
+        const state = await transaction.read(this.projectIndexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
+        const current = state.projects.find((project) => project.id === projectId);
+        if (!current) throw new Error(`Unknown Automation Studio project: ${projectId}`);
+        const updated = {
+          ...current,
+          ...(name !== undefined ? { name } : {}),
+          ...(typeof input.description === "string" ? { description: input.description.trim() } : {}),
+          ...(input.categoryId !== undefined ? { categoryId: typeof input.categoryId === "string" && input.categoryId.trim() ? input.categoryId.trim() : null } : {}),
+          updatedAt: Date.now()
+        };
+        await transaction.write(this.projectIndexStore!.filePath, { ...state, projects: state.projects.map((project) => project.id === projectId ? updated : project) });
+        await transaction.write(this.projectFile(projectId, "manifest.json"), updated);
+        return updated;
+      });
+    }
     let updated: AutomationStudioProject | undefined;
     await this.writeProjectIndex((state) => ({
       ...state,
@@ -1095,12 +1153,24 @@ export class AutomationStudioService {
   }
 
   async deleteProject(projectId: string): Promise<{ deletedProjectId: string }> {
+    if (this.objectStore && this.projectIndexStore) {
+      await ProgramJsonStore.transaction(this.projectIndexStore.filePath, async (transaction) => {
+        const state = await transaction.read(this.projectIndexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
+        if (!state.projects.some((project) => project.id === projectId)) throw new Error(`Unknown Automation Studio project: ${projectId}`);
+        await transaction.write(this.projectIndexStore!.filePath, { ...state, projects: state.projects.filter((project) => project.id !== projectId) });
+        await transaction.deletePath(this.projectDirectory(projectId));
+      });
+      return { deletedProjectId: projectId };
+    }
     await this.findProject(projectId);
     await this.writeProjectIndex((state) => ({
       ...state,
       projects: state.projects.filter((project) => project.id !== projectId)
     }));
-    if (this.projectRootDir) await rm(this.projectDirectory(projectId), { recursive: true, force: true });
+    if (this.projectRootDir) {
+      if (this.objectStore) await ProgramJsonStore.deletePath(this.projectDirectory(projectId));
+      else await rm(this.projectDirectory(projectId), { recursive: true, force: true });
+    }
     return { deletedProjectId: projectId };
   }
 
@@ -1132,6 +1202,18 @@ export class AutomationStudioService {
   }
 
   async deleteProjectCategory(categoryId: string): Promise<{ deletedCategoryId: string }> {
+    if (this.objectStore && this.projectIndexStore) {
+      await ProgramJsonStore.transaction(this.projectIndexStore.filePath, async (transaction) => {
+        const state = await transaction.read(this.projectIndexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
+        const projects = state.projects.map((project) => project.categoryId === categoryId ? { ...project, categoryId: null, updatedAt: Date.now() } : project);
+        await transaction.write(this.projectIndexStore!.filePath, { categories: state.categories.filter((category) => category.id !== categoryId), projects });
+        for (const project of projects) {
+          if (project.categoryId !== null || state.projects.find((item) => item.id === project.id)?.categoryId !== categoryId) continue;
+          await transaction.write(this.projectFile(project.id, "manifest.json"), project);
+        }
+      });
+      return { deletedCategoryId: categoryId };
+    }
     const affectedProjects: AutomationStudioProject[] = [];
     await this.writeProjectIndex((state) => ({
       ...state,
@@ -1180,6 +1262,20 @@ export class AutomationStudioService {
       deletedHierarchyIds: Array.isArray(hierarchy.deletedHierarchyIds) ? hierarchy.deletedHierarchyIds : [],
       workspacePrefs: hierarchy.workspacePrefs && typeof hierarchy.workspacePrefs === "object" && !Array.isArray(hierarchy.workspacePrefs) ? hierarchy.workspacePrefs : {}
     };
+    if (this.objectStore && this.projectIndexStore) {
+      await ProgramJsonStore.transaction(this.projectIndexStore.filePath, async (transaction) => {
+        const state = await transaction.read(this.projectIndexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
+        const current = state.projects.find((project) => project.id === projectId);
+        if (!current) throw new Error(`Unknown Automation Studio project: ${projectId}`);
+        const updated = { ...current, updatedAt: Date.now() };
+        await transaction.write(this.projectIndexStore!.filePath, { ...state, projects: state.projects.map((project) => project.id === projectId ? updated : project) });
+        await transaction.write(this.projectFile(projectId, "manifest.json"), updated);
+        await transaction.write(this.projectFile(projectId, "hierarchy", "nodes.json"), { customHierarchyNodes: nextHierarchy.customHierarchyNodes });
+        await transaction.write(this.projectFile(projectId, "hierarchy", "deleted.json"), { deletedHierarchyIds: nextHierarchy.deletedHierarchyIds });
+        await transaction.write(this.projectFile(projectId, "workspace", "preferences.json"), { workspacePrefs: nextHierarchy.workspacePrefs });
+      });
+      return nextHierarchy;
+    }
     let updatedProject: AutomationStudioProject | undefined;
     await this.writeProjectIndex((state) => ({
       ...state,
@@ -1266,39 +1362,12 @@ export class AutomationStudioService {
   }
 
   private async ensureNodeLibraryStructure(): Promise<void> {
-    if (!this.nodeRootDir) return;
-    await Promise.all([
-      mkdir(path.join(this.nodeRootDir, "custom"), { recursive: true }),
-      mkdir(path.join(this.nodeRootDir, "packages"), { recursive: true }),
-      ...automationNodeClasses.map((nodeClass) => mkdir(path.join(this.nodeRootDir!, "custom", nodeClass), { recursive: true }))
-    ]);
+    // Importer-owned custom-node source roots are read lazily. Built-in node
+    // classes are code registrations and do not need placeholder directories.
   }
 
   private async ensureProjectStructure(projectId: string): Promise<void> {
-    if (!this.projectRootDir) return;
-    const root = this.projectDirectory(projectId);
-    await Promise.all([
-      mkdir(root, { recursive: true }),
-      mkdir(path.join(root, "hierarchy"), { recursive: true }),
-      mkdir(path.join(root, "workspace"), { recursive: true }),
-      mkdir(path.join(root, "tasks"), { recursive: true }),
-      mkdir(path.join(root, "routines"), { recursive: true }),
-      mkdir(path.join(root, "configs"), { recursive: true }),
-      mkdir(path.join(root, "flows"), { recursive: true }),
-      mkdir(path.join(root, "recordings"), { recursive: true }),
-      mkdir(path.join(root, "recordings", "indexes"), { recursive: true }),
-      mkdir(path.join(root, "proposals"), { recursive: true }),
-      mkdir(path.join(root, "proposals", "indexes"), { recursive: true }),
-      mkdir(path.join(root, "policies"), { recursive: true }),
-      mkdir(path.join(root, "pipeline"), { recursive: true }),
-      mkdir(path.join(root, "indexes"), { recursive: true }),
-      mkdir(path.join(root, "runtime"), { recursive: true }),
-      mkdir(path.join(root, "runtime", "sessions"), { recursive: true }),
-      mkdir(path.join(root, "runtime", "indexes"), { recursive: true }),
-      mkdir(path.join(root, "state"), { recursive: true }),
-      mkdir(path.join(root, "custom-nodes"), { recursive: true }),
-      mkdir(path.join(root, "artifacts"), { recursive: true })
-    ]);
+    // ProgramJsonStore creates only the parent needed by an actual write.
   }
 
   private projectDirectory(projectId: string): string {
@@ -1373,14 +1442,7 @@ export class AutomationStudioService {
   }
 
   private async writePipelineArtifact(projectId: string, kind: PipelineArtifactKind, id: string, artifact: JsonObject): Promise<void> {
-    await this.ensureProjectStructure(projectId);
-    const recordingId = await this.pipelineArtifactRecordingId(projectId, kind, artifact);
-    if (recordingId) {
-      await this.writeRecordingPipelineArtifact(projectId, recordingId, kind, id, artifact);
-    } else {
-      await new ProgramJsonStore<JsonObject>(this.projectFile(projectId, "pipeline", "shared", this.pipelineFolder(kind), `${safeSegment(id)}.json`), () => ({})).write(artifact);
-    }
-    await new ProgramJsonStore<PipelineIndex>(this.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => upsertPipelineIndex(index, kind, id, Date.now(), artifact.status, recordingId ?? undefined));
+    await this.writePipelineArtifacts(projectId, [{ kind, id, artifact }]);
   }
 
   private async writePipelineArtifacts(projectId: string, artifacts: Array<{ kind: PipelineArtifactKind; id: string; artifact: JsonObject }>): Promise<void> {
@@ -1396,10 +1458,47 @@ export class AutomationStudioService {
       if (recordingId) byRecording.set(recordingId, [...(byRecording.get(recordingId) ?? []), item]);
       else aggregateArtifacts.push(item);
     }
-    await mapWithConcurrency(aggregateArtifacts, PIPELINE_ARTIFACT_WRITE_CONCURRENCY, async (item) => new ProgramJsonStore<JsonObject>(
+    if (this.objectStore) {
+      const prepared = new Map<string, JsonObject>();
+      for (const item of indexed) prepared.set(`${item.kind}:${item.id}`, await this.prepareArtifactDocument(projectId, item.artifact));
+      const recordings = new Map<string, RecordingSession>();
+      for (const recordingId of byRecording.keys()) recordings.set(recordingId, await this.getRecordingSession(recordingId, projectId));
+      const indexPath = this.projectFile(projectId, "indexes", "pipeline.json");
+      await ProgramJsonStore.transaction(indexPath, async (transaction) => {
+        let index = await transaction.read(indexPath, emptyPipelineIndex);
+        for (const item of aggregateArtifacts) {
+          const filePath = this.projectFile(projectId, "pipeline", "shared", this.pipelineFolder(item.kind), `${safeSegment(item.id)}.json`);
+          await transaction.write(filePath, prepared.get(`${item.kind}:${item.id}`)!);
+        }
+        for (const [recordingId, items] of byRecording) {
+          const recording = recordings.get(recordingId)!;
+          const pipelinePath = this.recordingPipelineFile(projectId, recordingId);
+          let pipeline = await transaction.read(pipelinePath, () => createRecordingPipelineDocument(recording));
+          for (const item of items) {
+            pipeline = addRecordingPipelineArtifactId(pipeline, item.kind, item.id);
+            await transaction.write(this.recordingPipelineArtifactFile(projectId, recordingId, item.kind, item.id), prepared.get(`${item.kind}:${item.id}`)!);
+          }
+          await transaction.write(pipelinePath, pipeline);
+          index = {
+            ...index,
+            pipelines: upsertBy(index.pipelines ?? [], "pipelineId", {
+              pipelineId: pipeline.pipelineId,
+              recordingId,
+              ...(recording.taskId ? { taskId: recording.taskId } : {}),
+              updatedAt: pipeline.updatedAt
+            })
+          };
+        }
+        index = indexed.reduce((next, item) => upsertPipelineIndex(next, item.kind, item.id, generatedAt, item.artifact.status, item.recordingId), index);
+        await transaction.write(indexPath, index);
+      });
+      return;
+    }
+    await mapWithConcurrency(aggregateArtifacts, PIPELINE_ARTIFACT_WRITE_CONCURRENCY, async (item) => this.writeArtifactDocument(
+      projectId,
       this.projectFile(projectId, "pipeline", "shared", this.pipelineFolder(item.kind), `${safeSegment(item.id)}.json`),
-      () => ({})
-    ).write(item.artifact));
+      item.artifact
+    ));
     for (const [recordingId, items] of byRecording) await this.writeRecordingPipelineArtifacts(projectId, recordingId, items);
     await new ProgramJsonStore<PipelineIndex>(this.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => indexed.reduce(
       (next, item) => upsertPipelineIndex(next, item.kind, item.id, generatedAt, item.artifact.status, item.recordingId),
@@ -1428,18 +1527,6 @@ export class AutomationStudioService {
         ...(existing.artifacts ?? {})
       }
     };
-    await Promise.all([
-      mkdir(this.recordingDerivedFile(projectId, recording.recordingId, "normalization", "timelines"), { recursive: true }),
-      mkdir(this.recordingDerivedFile(projectId, recording.recordingId, "normalization", "reviews"), { recursive: true }),
-      mkdir(this.recordingDerivedFile(projectId, recording.recordingId, "evidence", "mining-runs"), { recursive: true }),
-      mkdir(this.recordingDerivedFile(projectId, recording.recordingId, "evidence", "facts"), { recursive: true }),
-      mkdir(this.recordingDerivedFile(projectId, recording.recordingId, "evidence", "observations"), { recursive: true }),
-      mkdir(this.recordingDerivedFile(projectId, recording.recordingId, "evidence", "correlations"), { recursive: true }),
-      mkdir(this.recordingDerivedFile(projectId, recording.recordingId, "evidence", "claims"), { recursive: true }),
-      mkdir(this.recordingDerivedFile(projectId, recording.recordingId, "task-models"), { recursive: true }),
-      mkdir(this.recordingDerivedFile(projectId, recording.recordingId, "proposal"), { recursive: true }),
-      mkdir(this.recordingDerivedFile(projectId, recording.recordingId, "replays"), { recursive: true })
-    ]);
     await store.write(next);
     await new ProgramJsonStore<PipelineIndex>(this.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => ({
       ...emptyPipelineIndex(),
@@ -1458,7 +1545,7 @@ export class AutomationStudioService {
     const recording = await this.repositories.recordingSessions.get(recordingId) ?? await this.getRecordingSession(recordingId, projectId).catch(() => null);
     if (!recording) return;
     await this.ensureProjectRecordingPipeline(projectId, recording);
-    await new ProgramJsonStore<JsonObject>(this.recordingPipelineArtifactFile(projectId, recordingId, kind, id), () => ({})).write(artifact);
+    await this.writeArtifactDocument(projectId, this.recordingPipelineArtifactFile(projectId, recordingId, kind, id), artifact);
     await this.updateRecordingPipeline(projectId, recordingId, (pipeline) => addRecordingPipelineArtifactId(pipeline, kind, id));
   }
 
@@ -1466,7 +1553,7 @@ export class AutomationStudioService {
     const recording = await this.repositories.recordingSessions.get(recordingId) ?? await this.getRecordingSession(recordingId, projectId).catch(() => null);
     if (!recording || !artifacts.length) return;
     await this.ensureProjectRecordingPipeline(projectId, recording);
-    await mapWithConcurrency(artifacts, PIPELINE_ARTIFACT_WRITE_CONCURRENCY, async (item) => new ProgramJsonStore<JsonObject>(this.recordingPipelineArtifactFile(projectId, recordingId, item.kind, item.id), () => ({})).write(item.artifact));
+    await mapWithConcurrency(artifacts, PIPELINE_ARTIFACT_WRITE_CONCURRENCY, async (item) => this.writeArtifactDocument(projectId, this.recordingPipelineArtifactFile(projectId, recordingId, item.kind, item.id), item.artifact));
     await this.updateRecordingPipeline(projectId, recordingId, (pipeline) => artifacts.reduce((next, item) => addRecordingPipelineArtifactId(next, item.kind, item.id), pipeline));
   }
 
@@ -1533,7 +1620,8 @@ export class AutomationStudioService {
       this.recordingPipelineFile(projectId, recordingId),
       () => createRecordingPipelineDocument({ recordingId, startedAt: Date.now() })
     ).read();
-    await rm(this.recordingDerivedDirectory(projectId, recordingId), { recursive: true, force: true });
+    if (this.objectStore) await ProgramJsonStore.deletePath(this.recordingDerivedDirectory(projectId, recordingId));
+    else await rm(this.recordingDerivedDirectory(projectId, recordingId), { recursive: true, force: true });
     await new ProgramJsonStore<PipelineIndex>(this.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => ({
       pipelines: (index.pipelines ?? []).filter((item) => item.recordingId !== recordingId),
       normalizationReviews: (index.normalizationReviews ?? []).filter((item) => !pipeline.artifacts.normalizationReviewIds.includes(item.reviewId)),
@@ -1556,7 +1644,9 @@ export class AutomationStudioService {
       if (proposal?.metadata?.recordingId === recordingId && proposal.proposalId !== keepProposalId) ids.add(proposal.proposalId);
     }
     if (!ids.size) return;
-    await rm(path.join(this.recordingDerivedDirectory(projectId, recordingId), "proposal"), { recursive: true, force: true });
+    const proposalPath = path.join(this.recordingDerivedDirectory(projectId, recordingId), "proposal");
+    if (this.objectStore) await ProgramJsonStore.deletePath(proposalPath);
+    else await rm(proposalPath, { recursive: true, force: true });
     await new ProgramJsonStore<PipelineIndex>(this.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((current) => ({
       ...emptyPipelineIndex(),
       ...current,
@@ -1591,8 +1681,27 @@ export class AutomationStudioService {
     const filePath = recordingId
       ? this.recordingPipelineArtifactFile(projectId, recordingId, kind, id)
       : this.projectFile(projectId, "pipeline", "shared", this.pipelineFolder(kind), `${safeSegment(id)}.json`);
-    const artifact = await new ProgramJsonStore<JsonObject>(filePath, () => ({})).read();
+    const artifact = await this.readArtifactDocument(filePath);
     return Object.keys(artifact).length ? artifact as unknown as TArtifact : null;
+  }
+
+  private async writeArtifactDocument(projectId: string, filePath: string, artifact: JsonObject): Promise<void> {
+    const stored = await this.prepareArtifactDocument(projectId, artifact);
+    await new ProgramJsonStore<JsonObject>(filePath, () => ({})).write(stored);
+  }
+
+  private async prepareArtifactDocument(projectId: string, artifact: JsonObject): Promise<JsonObject> {
+    const size = Buffer.byteLength(JSON.stringify(artifact), "utf8");
+    return this.objectStore && size >= AUTOMATION_STUDIO_OBJECT_THRESHOLD_BYTES
+      ? await this.objectStore.putJson(projectId, artifact) as unknown as JsonObject
+      : artifact;
+  }
+
+  private async readArtifactDocument(filePath: string): Promise<JsonObject> {
+    const stored = await new ProgramJsonStore<JsonObject>(filePath, () => ({})).read();
+    return this.objectStore && isAutomationStudioObjectReference(stored)
+      ? await this.objectStore.readJson(stored)
+      : stored;
   }
 
   private async pipelineIndexRecordingId(projectId: string, kind: PipelineArtifactKind, id: string): Promise<string | null> {
@@ -1615,6 +1724,10 @@ export class AutomationStudioService {
     await this.ensureProjectStructure(projectId);
     if (!this.projectRootDir) return [];
     const dir = path.join(this.projectDirectory(projectId), folder);
+    if (this.objectStore) {
+      const documents = await ProgramJsonStore.listDirectoryDocuments<JsonObject>(dir, projectArtifactDocumentFileName(folder));
+      return (documents ?? []) as unknown as TArtifact[];
+    }
     let entries: string[] = [];
     try {
       entries = await readdir(dir);
@@ -1667,7 +1780,9 @@ export class AutomationStudioService {
 
   private async deleteProjectArtifactFile(projectId: string, kind: AutomationStudioProjectArtifactKind, artifactId: string): Promise<void> {
     if (!this.projectRootDir) return;
-    await rm(path.dirname(this.projectArtifactFile(projectId, kind, artifactId)), { recursive: true, force: true });
+    const artifactRoot = path.dirname(this.projectArtifactFile(projectId, kind, artifactId));
+    if (this.objectStore) await ProgramJsonStore.deletePath(artifactRoot);
+    else await rm(artifactRoot, { recursive: true, force: true });
   }
 
   private projectArtifactFolder(kind: AutomationStudioProjectArtifactKind): "tasks" | "routines" | "configs" | "flows" {
@@ -1707,10 +1822,9 @@ export class AutomationStudioService {
   }
 
   private async writeProjectRecordingSession(projectId: string, recording: RecordingSession): Promise<void> {
+    if (this.objectStore) return;
     await this.ensureProjectStructure(projectId);
     const sessionDir = this.recordingSessionDirectory(projectId, recording.recordingId);
-    await mkdir(path.join(sessionDir, "events"), { recursive: true });
-    await mkdir(path.join(sessionDir, "snapshots"), { recursive: true });
     await new ProgramJsonStore<JsonObject>(path.join(sessionDir, "recording.json"), () => ({ recording: recording as unknown as JsonObject })).write({ recording: recording as unknown as JsonObject });
     await new ProgramJsonStore<JsonObject>(path.join(sessionDir, "events", "timeline.json"), () => ({ timeline: [] })).write({ timeline: recording.timeline as unknown as JsonObject[] });
     await new ProgramJsonStore<JsonObject>(path.join(sessionDir, "snapshots", "initial-state.json"), () => ({ initialState: recording.initialState as unknown as JsonObject })).write({ initialState: recording.initialState as unknown as JsonObject });
@@ -1728,6 +1842,7 @@ export class AutomationStudioService {
   }
 
   private async writeProjectNormalizedTimeline(projectId: string, normalized: NormalizedTimeline): Promise<void> {
+    if (this.objectStore) return;
     await this.ensureProjectStructure(projectId);
     await this.writeRecordingPipelineNormalizedTimeline(projectId, normalized);
     await this.writeRecordingIndex(projectId, (index) => ({
@@ -1741,6 +1856,7 @@ export class AutomationStudioService {
   }
 
   private async loadProjectRecordings(projectId: string): Promise<void> {
+    if (this.objectStore) return;
     if (!this.projectRootDir) return;
     const index = await this.readRecordingIndex(projectId);
     for (const item of index.recordings ?? []) {

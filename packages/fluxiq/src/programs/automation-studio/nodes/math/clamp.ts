@@ -1,4 +1,4 @@
-import { defineBuiltinNode, emptyResult, inputValue, numberValue } from "../shared/definition";
+import { defineBuiltinNode, emptyResult, inputValue, numberValue } from "../shared/definition.ts";
 
 export const clampNode = defineBuiltinNode({
   id: "builtin.math.clamp",

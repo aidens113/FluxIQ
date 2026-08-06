@@ -1,5 +1,5 @@
-import { durationFromUnit } from "./shared";
-import { defineBuiltinNode } from "../shared/definition";
+import { durationFromUnit } from "./shared.ts";
+import { defineBuiltinNode } from "../shared/definition.ts";
 
 export const waitNode = defineBuiltinNode({
   id: "builtin.timing.wait",

@@ -1604,6 +1604,12 @@ select {
   line-height: 1.6;
 }
 
+.docs-html-frame {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+}
+
 .docs-rendered h1,
 .docs-rendered h2,
 .docs-rendered h3 {

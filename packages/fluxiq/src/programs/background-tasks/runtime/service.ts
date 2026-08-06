@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { JsonObject } from "../../../core";
-import type { RecordEnvelope, Repository } from "../../database-manager";
-import type { BackgroundTaskDefinition, BackgroundTaskRun, BackgroundTasksSnapshot } from "../types";
+import type { JsonObject } from "../../../core/index.ts";
+import type { RecordEnvelope, Repository } from "../../database-manager/index.ts";
+import type { BackgroundTaskDefinition, BackgroundTaskRun, BackgroundTasksSnapshot } from "../types.ts";
 
 export type BackgroundTaskHandler = (payload?: JsonObject) => Promise<JsonObject | void> | JsonObject | void;
 

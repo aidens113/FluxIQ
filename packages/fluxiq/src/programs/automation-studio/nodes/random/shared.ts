@@ -1,5 +1,5 @@
-import { numberValue } from "../shared/definition";
-import type { AutomationNodeExecutionContext } from "../contracts";
+import { numberValue } from "../shared/definition.ts";
+import type { AutomationNodeExecutionContext } from "../contracts.ts";
 
 export function randomFloat(context: AutomationNodeExecutionContext): number {
   return context.random ? context.random() : Math.random();

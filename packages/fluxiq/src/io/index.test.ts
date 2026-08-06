@@ -3,7 +3,7 @@ import {
   createEnvelope,
   IoRegistry,
   validateDomainIo
-} from "./index";
+} from "./index.ts";
 
 describe("IoRegistry", () => {
   it("reads inputs on demand", async () => {

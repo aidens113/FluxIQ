@@ -1,4 +1,4 @@
-import type { GlobalProgramDefinition } from "../_shared/types";
+import type { GlobalProgramDefinition } from "../_shared/types.ts";
 
 export const DATABASE_MANAGER_PROGRAM: GlobalProgramDefinition = {
   id: "database-manager",

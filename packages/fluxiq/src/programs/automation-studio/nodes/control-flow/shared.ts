@@ -1,5 +1,5 @@
-import { booleanValue, numberValue } from "../shared/definition";
-import type { AutomationNodeExecutionContext } from "../contracts";
+import { booleanValue, numberValue } from "../shared/definition.ts";
+import type { AutomationNodeExecutionContext } from "../contracts.ts";
 
 export function routeFromCondition(context: AutomationNodeExecutionContext, trueRoute = "true", falseRoute = "false"): string {
   return booleanValue(context.inputs.condition ?? context.parameters.condition) ? trueRoute : falseRoute;

@@ -1,5 +1,5 @@
-import { jsonParameter } from "./shared";
-import { defineBuiltinNode } from "../shared/definition";
+import { jsonParameter } from "./shared.ts";
+import { defineBuiltinNode } from "../shared/definition.ts";
 
 export const actionNode = defineBuiltinNode({
   id: "builtin.policy.action",

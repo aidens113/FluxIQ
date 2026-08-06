@@ -1,5 +1,5 @@
-import type { FrameworkResult, JsonObject } from "../core";
-import type { RuntimeInputs, RuntimeOutputs } from "../io";
+import type { FrameworkResult, JsonObject } from "../core/index.ts";
+import type { RuntimeInputs, RuntimeOutputs } from "../io/index.ts";
 
 export type FlowNode = {
   id: string;

@@ -1,7 +1,7 @@
-import type { JsonObject } from "../../../core";
-import type { EvidenceReference } from "../model";
-import type { StateElementDescriptor, StateElementKind } from "../model";
-import type { NormalizedTimeline } from "../normalization";
+import type { JsonObject } from "../../../core/index.ts";
+import type { EvidenceReference } from "../model/index.ts";
+import type { StateElementDescriptor, StateElementKind } from "../model/index.ts";
+import type { NormalizedTimeline } from "../normalization/index.ts";
 
 export type EvidenceFactKind =
   | "action"

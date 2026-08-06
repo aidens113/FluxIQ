@@ -1,5 +1,5 @@
-import { variableName, writeVariable } from "./shared";
-import { defineBuiltinNode, emptyResult, jsonValue } from "../shared/definition";
+import { variableName, writeVariable } from "./shared.ts";
+import { defineBuiltinNode, emptyResult, jsonValue } from "../shared/definition.ts";
 
 export const setVariableNode = defineBuiltinNode({
   id: "builtin.data.set-variable",

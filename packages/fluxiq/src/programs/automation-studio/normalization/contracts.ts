@@ -1,5 +1,5 @@
-import type { JsonObject } from "../../../core";
-import type { EvidenceReference, RecordingSession, StateSnapshot, TimelineEntry } from "../model";
+import type { JsonObject } from "../../../core/index.ts";
+import type { EvidenceReference, RecordingSession, StateSnapshot, TimelineEntry } from "../model/index.ts";
 
 export type NormalizationIssueSeverity = "error" | "warning" | "info";
 

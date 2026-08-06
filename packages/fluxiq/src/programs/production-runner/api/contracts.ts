@@ -1,5 +1,5 @@
-import type { JsonObject } from "../../../core";
-import type { ProductionRun, ProductionRunnerSnapshot, ProductionRunTargetType, ProductionTarget } from "../types";
+import type { JsonObject } from "../../../core/index.ts";
+import type { ProductionRun, ProductionRunnerSnapshot, ProductionRunTargetType, ProductionTarget } from "../types.ts";
 
 export const PRODUCTION_RUNNER_ENDPOINTS = {
   snapshot: "snapshot",

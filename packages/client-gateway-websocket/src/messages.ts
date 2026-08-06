@@ -3,7 +3,7 @@ import {
   type ClientGatewayClientMessage,
   type ClientGatewayEnvelope,
   type ClientGatewayServerMessage
-} from "fluxiq/client-gateway";
+} from "@fluxiq/contracts/client-gateway";
 
 export type ClientGatewayMessageOptions = {
   clientId?: string;

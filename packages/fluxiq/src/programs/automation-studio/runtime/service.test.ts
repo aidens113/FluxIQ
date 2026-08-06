@@ -1,8 +1,8 @@
 import { mkdir, readFile, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { stateValue, type StateSnapshot } from "../model";
-import { AutomationStudioService } from "./service";
+import { stateValue, type StateSnapshot } from "../model/index.ts";
+import { AutomationStudioService } from "./service.ts";
 
 const tempRoot = path.join(process.cwd(), ".tmp", "automation-studio-service-test");
 

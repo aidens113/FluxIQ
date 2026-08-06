@@ -5,7 +5,7 @@ import {
   FluxIQClientGatewayWebSocketClient,
   type ClientGatewayServerMessage,
   type FluxIQWebSocketLike
-} from "./index";
+} from "./index.ts";
 
 describe("FluxIQClientGatewayWebSocketClient", () => {
   it("connects, sends hello, and emits pairing requests", async () => {
@@ -61,6 +61,8 @@ describe("FluxIQClientGatewayWebSocketClient", () => {
     sockets[0]!.receive(serverMessage("server.session_ready", { sessionId: "session.1", token: "token.1" }, { sessionId: "session.1" }));
     expect(storedToken).toBe("token.1");
     expect(client.currentSessionId).toBe("session.1");
+    sockets[0]!.receive(serverMessage("server.session_ready", { sessionId: "session.1", token: "token.2" }, { sessionId: "session.1" }));
+    expect(storedToken).toBe("token.2");
 
     await client.sendRecordingEvent({
       domainId: "example.domain",

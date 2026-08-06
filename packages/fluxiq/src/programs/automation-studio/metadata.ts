@@ -1,4 +1,4 @@
-import type { GlobalProgramDefinition } from "../_shared/types";
+import type { GlobalProgramDefinition } from "../_shared/types.ts";
 
 export const AUTOMATION_STUDIO_PROGRAM: GlobalProgramDefinition = {
   id: "automation-studio",

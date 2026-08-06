@@ -11,14 +11,27 @@ The default host state root is:
 .fluxiq/
 ```
 
-The default database root is:
+Layout v2 is intentionally sparse:
 
 ```text
-.fluxiq/databases/
+.fluxiq/
+  config.json
+  global.sqlite                 # created on the first global write
+  artifacts/automation-studio/ # created only for large immutable objects
+  domains/<domainId>/
+    domain.sqlite               # created on the first domain write
+    config/                     # created only when used
+    data/                       # created only when used
+  cache/                        # rebuildable; created only when used
+  logs/                         # created only when used
+  tmp/                          # created only when used
 ```
 
-These paths can be overridden through `FluxIQ.create(...)` or environment
-variables such as `FLUXIQ_ROOT`, `FLUXIQ_DIR`, and `FLUXIQ_DATABASES_DIR`.
+`FluxIQ.create()` is read-only. On a fresh host, `setup()` creates only
+`.fluxiq/config.json`; databases and directories are created by their first
+owning write. `FLUXIQ_ROOT` and `FLUXIQ_DIR` select the host and state roots.
+Legacy per-folder overrides remain accepted for compatibility, but they are
+externally managed and block automatic v1-to-v2 migration.
 
 When the web panel is run from the FluxIQ framework checkout during local
 development, it must be pointed at the importing repository explicitly. Set
@@ -36,12 +49,20 @@ instance, loads this module, and lets the importer register recording domains,
 nodes, adapters, or other host-owned extensions before API routes and the
 client gateway start using the shared runtime.
 
+The importing repository remains the domain authority. Its domain manifest and
+host registration provide the domain name, labels, recording contracts,
+adapters, and extensions shown by the global editor. "Global" means the editor
+and framework control plane share one storage owner; it does not replace or
+rename the importer-defined domain. Selecting another domain changes domain
+runtime paths and filters/targets data, but never relocates identity, trusted
+clients, or Automation Studio projects.
+
 ## Global SQLite Database
 
 The global framework database is:
 
 ```text
-.fluxiq/databases/global.sqlite
+.fluxiq/global.sqlite
 ```
 
 Framework stores should use this database unless they are intentionally
@@ -53,9 +74,15 @@ Current global stores include:
 - `background.tasks`;
 - `compute.nodes`;
 - `deployment.targets`;
-- `production.targets`.
+- `production.targets`;
+- `program.state` for global program documents, including trusted clients;
+- `automation.state` for Automation Studio project and pipeline documents;
+- canonical Automation Studio recording, timeline, signal, model, and policy
+  repositories.
 
-## Background Tasks State
+Domain repository records use `.fluxiq/domains/<domainId>/domain.sqlite`.
+Domain IDs are normalized path/storage keys; user-facing identity still comes
+from the importer's registered manifest.
 
 ## Identity State
 
@@ -95,6 +122,8 @@ vault
 The first default admin user is created with username `admin` and password
 `admin`. No default PIN is created.
 
+## Background Tasks State
+
 Background task scheduler state, task definitions, and recent run history are
 stored in the `background.tasks` table inside `global.sqlite`.
 
@@ -125,11 +154,29 @@ docs rather than treating generated output as the design source of truth.
 
 These host-owned folders should not be committed from framework development:
 
-- `.fluxiq/data`;
-- `.fluxiq/databases`;
+- `.fluxiq/global.sqlite` and SQLite sidecars;
+- `.fluxiq/artifacts`;
+- `.fluxiq/domains` runtime data;
+- `.fluxiq/cache`;
 - `.fluxiq/logs`;
 - `.fluxiq/tmp`;
-- `.fluxiq/recordings`;
-- `.fluxiq/policies`;
+- `.fluxiq/legacy` migration archives;
 - `.next`;
 - generated private domain artifacts.
+
+## Storage Migration
+
+Hosts without `config.json` but with legacy `.fluxiq/data`, `databases`, or an
+active-domain-scoped state tree are reported as layout v1. Normal runtime setup
+does not migrate implicitly. Inspect with `fluxiq.inspectStorage()` and apply
+with `await fluxiq.migrateStorage()` (or authenticated `POST
+/api/framework/setup` with `{ "action": "migrate" }`). The web runtime reloads
+its FluxIQ instance after migration so resolved paths switch to v2.
+
+Migration uses an exclusive lock and a restartable journal below
+`.fluxiq/.migration/v2`. It stages and verifies databases/documents first,
+rejects divergent stable-ID collisions, archives recognized sources under
+`.fluxiq/legacy/v1-<timestamp>/`, and writes `config.json` last as the v2 commit
+marker. External overrides are inventoried but never moved automatically. An
+incomplete pre-commit migration can be resumed by calling `migrateStorage()`
+again or rolled back with `rollbackStorageMigration()`.

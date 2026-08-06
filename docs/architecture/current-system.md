@@ -34,29 +34,28 @@ The runtime owns:
 
 ## Host Project Folders
 
-By default, FluxIQ creates a `.fluxiq` folder in the importing repository for
-runtime state and generated artifacts:
+FluxIQ layout v2 keeps runtime state sparse and separates global control-plane
+ownership from importer-owned domain runtime state:
 
 ```text
 .fluxiq/
-  config/
-  data/
-  databases/
-  inputs/
-  outputs/
-  streams/
-  domains/
-    programs/
-    inputs/
-    outputs/
-    configs/
+  config.json
+  global.sqlite
+  artifacts/automation-studio/projects/<projectId>/objects/
+  domains/<domainId>/
+    config/
     data/
-    databases/
-  policies/
-  recordings/
+    domain.sqlite
+  cache/
   logs/
   tmp/
 ```
+
+Only `config.json` exists after fresh setup. Importer-authored domain programs,
+adapters, nodes, inputs, and outputs live outside ignored runtime state under
+the importing repository's configured source roots (by default
+`domains/<domainId>/...`). The importer domain manifest controls names and
+labels in the global editor; domain selection does not relocate global state.
 
 The framework repo also has a normal `docs/` folder for authored and generated
 Markdown documentation. The Docs program reads this same folder, so Git readers
@@ -86,7 +85,7 @@ Framework state should be persisted in the host project, not inside package
 source. The main persistent database path is:
 
 ```text
-.fluxiq/databases/global.sqlite
+.fluxiq/global.sqlite
 ```
 
 Database Manager exposes framework stores as SQLite-backed repositories. Domain

@@ -1,4 +1,4 @@
-import type { JsonObject } from "../../core";
+import type { JsonObject } from "../../core/index.ts";
 
 export type ProductionRunStatus = "created" | "starting" | "running" | "scheduled" | "stopping" | "stopped" | "completed" | "failed" | "cancelled";
 

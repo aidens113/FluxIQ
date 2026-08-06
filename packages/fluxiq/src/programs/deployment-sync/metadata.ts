@@ -1,4 +1,4 @@
-import type { GlobalProgramDefinition } from "../_shared/types";
+import type { GlobalProgramDefinition } from "../_shared/types.ts";
 
 export const DEPLOYMENT_SYNC_PROGRAM: GlobalProgramDefinition = {
   id: "deployment-sync",

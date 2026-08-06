@@ -1,5 +1,5 @@
-import { durationMs } from "./shared";
-import { defineBuiltinNode, emptyResult } from "../shared/definition";
+import { durationMs } from "./shared.ts";
+import { defineBuiltinNode, emptyResult } from "../shared/definition.ts";
 
 export const retryNode = defineBuiltinNode({
   id: "builtin.timing.retry",

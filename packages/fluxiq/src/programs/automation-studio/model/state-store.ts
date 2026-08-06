@@ -1,6 +1,6 @@
-import type { JsonObject } from "../../../core";
-import type { StateDelta, StatePathSchema, StateSnapshot, StateValue } from "./state";
-import { applyStateDeltas, diffStateSnapshots } from "./state-diff";
+import type { JsonObject } from "../../../core/index.ts";
+import type { StateDelta, StatePathSchema, StateSnapshot, StateValue } from "./state.ts";
+import { applyStateDeltas, diffStateSnapshots } from "./state-diff.ts";
 
 export type StateChangeEvent = {
   snapshot: StateSnapshot;

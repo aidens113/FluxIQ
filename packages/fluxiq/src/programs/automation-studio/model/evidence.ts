@@ -1,4 +1,4 @@
-import type { JsonObject } from "../../../core";
+import type { JsonObject } from "../../../core/index.ts";
 
 export type AutomationStudioSchemaVersion = "0.1";
 

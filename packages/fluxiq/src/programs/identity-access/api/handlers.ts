@@ -1,4 +1,4 @@
-import type { GlobalProgramApiRegistry } from "../../_shared/api";
+import type { GlobalProgramApiRegistry } from "../../_shared/api.ts";
 import {
   IDENTITY_ACCESS_ENDPOINTS,
   type CreateIdentityUserRequest,
@@ -8,13 +8,14 @@ import {
   type TotpConfirmRequest,
   type UpdateIdentityUserRequest,
   type VaultUnlockRequest
-} from "./contracts";
-import type { IdentityAccessService } from "../runtime/service";
+} from "./contracts.ts";
+import type { IdentityAccessService } from "../runtime/service.ts";
 
 export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, service: IdentityAccessService): void {
   registry.register({
     programId: "identity-access",
     endpoint: IDENTITY_ACCESS_ENDPOINTS.snapshot,
+    permission: "programs.read",
     handler: async () => ({
       ok: true,
       payload: await service.snapshot()
@@ -23,6 +24,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
   registry.register({
     programId: "identity-access",
     endpoint: IDENTITY_ACCESS_ENDPOINTS.createUser,
+    permission: "identity.manage",
     handler: async (request) => {
       const payload = request.payload as CreateIdentityUserRequest | undefined;
       if (!payload?.username || !payload.displayName || !payload.roleId) return { ok: false, error: "username, displayName, and roleId are required" };
@@ -32,6 +34,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
   registry.register({
     programId: "identity-access",
     endpoint: IDENTITY_ACCESS_ENDPOINTS.updateUser,
+    permission: "identity.manage",
     handler: async (request) => {
       const payload = request.payload as UpdateIdentityUserRequest | undefined;
       if (!payload?.id) return { ok: false, error: "id is required" };
@@ -49,6 +52,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
   registry.register({
     programId: "identity-access",
     endpoint: IDENTITY_ACCESS_ENDPOINTS.setPassword,
+    permission: "identity.manage",
     handler: async (request) => {
       const payload = request.payload as SetIdentitySecretRequest | undefined;
       if (!payload?.userId || !payload.value) return { ok: false, error: "userId and value are required" };
@@ -65,6 +69,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
   registry.register({
     programId: "identity-access",
     endpoint: IDENTITY_ACCESS_ENDPOINTS.setPin,
+    permission: "identity.manage",
     handler: async (request) => {
       const payload = request.payload as SetIdentitySecretRequest | undefined;
       if (!payload?.userId || !payload.value) return { ok: false, error: "userId and value are required" };
@@ -81,6 +86,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
   registry.register({
     programId: "identity-access",
     endpoint: IDENTITY_ACCESS_ENDPOINTS.beginTotp,
+    permission: "identity.manage",
     handler: async (request) => {
       const payload = request.payload as { userId?: string } | undefined;
       if (!payload?.userId) return { ok: false, error: "userId is required" };
@@ -90,6 +96,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
   registry.register({
     programId: "identity-access",
     endpoint: IDENTITY_ACCESS_ENDPOINTS.confirmTotp,
+    permission: "identity.manage",
     handler: async (request) => {
       const payload = request.payload as TotpConfirmRequest | undefined;
       if (!payload?.userId || !payload.code) return { ok: false, error: "userId and code are required" };
@@ -99,6 +106,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
   registry.register({
     programId: "identity-access",
     endpoint: IDENTITY_ACCESS_ENDPOINTS.disableTotp,
+    permission: "identity.manage",
     handler: async (request) => {
       const payload = request.payload as { userId?: string } | undefined;
       if (!payload?.userId) return { ok: false, error: "userId is required" };
@@ -108,6 +116,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
   registry.register({
     programId: "identity-access",
     endpoint: IDENTITY_ACCESS_ENDPOINTS.createSession,
+    permission: "identity.manage",
     handler: async (request) => {
       const payload = request.payload as SessionRequest | undefined;
       if (!payload?.userId) return { ok: false, error: "userId is required" };
@@ -117,6 +126,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
   registry.register({
     programId: "identity-access",
     endpoint: IDENTITY_ACCESS_ENDPOINTS.revokeSession,
+    permission: "identity.manage",
     handler: async (request) => {
       const payload = request.payload as RevokeSessionRequest | undefined;
       if (!payload?.sessionId) return { ok: false, error: "sessionId is required" };
@@ -126,6 +136,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
   registry.register({
     programId: "identity-access",
     endpoint: IDENTITY_ACCESS_ENDPOINTS.unlockVault,
+    permission: "identity.manage",
     handler: async (request) => {
       const payload = request.payload as VaultUnlockRequest | undefined;
       if (!payload?.userId) return { ok: false, error: "userId is required" };
@@ -135,6 +146,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
   registry.register({
     programId: "identity-access",
     endpoint: IDENTITY_ACCESS_ENDPOINTS.lockVault,
+    permission: "identity.manage",
     handler: async () => ({ ok: true, payload: await service.lockVault() })
   });
 }

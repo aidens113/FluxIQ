@@ -1,0 +1,27 @@
+{
+  "name": "@fluxiq/contracts",
+  "version": "0.1.0",
+  "description": "Browser-safe shared contracts for FluxIQ programs, clients, and recording integrations.",
+  "type": "module",
+  "sideEffects": false,
+  "engines": { "node": ">=22" },
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./core": { "types": "./dist/core.d.ts", "import": "./dist/core.js" },
+    "./client-gateway": { "types": "./dist/client-gateway.d.ts", "import": "./dist/client-gateway.js" },
+    "./program-api": { "types": "./dist/program-api.d.ts", "import": "./dist/program-api.js" },
+    "./automation-studio": { "types": "./dist/automation-studio.d.ts", "import": "./dist/automation-studio.js" }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json --clean && tsc -b tsconfig.build.json && node ../../scripts/rewrite-declaration-imports.mjs dist",
+    "check": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": { "zod": "^3.24.0" },
+  "devDependencies": { "typescript": "^5.7.0", "vitest": "^2.1.0" },
+  "publishConfig": { "access": "public" },
+  "repository": { "type": "git", "url": "git+https://github.com/aidens113/FluxIQ.git", "directory": "packages/contracts" },
+  "homepage": "https://github.com/aidens113/FluxIQ#readme",
+  "bugs": { "url": "https://github.com/aidens113/FluxIQ/issues" }
+}

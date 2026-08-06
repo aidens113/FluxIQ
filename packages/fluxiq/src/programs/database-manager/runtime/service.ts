@@ -1,5 +1,5 @@
-import type { JsonObject } from "../../../core";
-import { ProgramJsonStore, programDataFile } from "../../_shared/storage";
+import type { JsonObject } from "../../../core/index.ts";
+import { ProgramJsonStore, programDataFile } from "../../_shared/storage.ts";
 import type {
   DatabaseManagerSnapshot,
   DatabaseManagerStoreSummary,
@@ -8,7 +8,7 @@ import type {
   RecordEnvelope,
   Repository,
   RepositoryScope
-} from "../types";
+} from "../types.ts";
 
 type DatabaseManagerState = {
   migrationRuns: MigrationRun[];

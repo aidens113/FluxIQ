@@ -1,12 +1,12 @@
-import type { ComponentRegistry } from "../components";
-import type { FrameworkResult } from "../core";
-import type { FlowDocument, FlowEdge, FlowNodeContext, FlowState } from "../flows";
+import type { ComponentRegistry } from "../components/index.ts";
+import type { FrameworkResult } from "../core/index.ts";
+import type { FlowDocument, FlowEdge, FlowNodeContext, FlowState } from "../flows/index.ts";
 import {
   IoRegistry,
   type RuntimeInputs,
   type RuntimeOutputs,
   validateIoRequirements
-} from "../io";
+} from "../io/index.ts";
 
 export type RuntimeMode = "idle" | "running" | "paused" | "completed" | "stopped" | "failed";
 

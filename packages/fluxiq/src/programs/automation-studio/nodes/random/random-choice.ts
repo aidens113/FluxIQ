@@ -1,5 +1,5 @@
-import { randomFloat } from "./shared";
-import { arrayValue, defineBuiltinNode, emptyResult } from "../shared/definition";
+import { randomFloat } from "./shared.ts";
+import { arrayValue, defineBuiltinNode, emptyResult } from "../shared/definition.ts";
 
 export const randomChoiceNode = defineBuiltinNode({
   id: "builtin.random.choice",

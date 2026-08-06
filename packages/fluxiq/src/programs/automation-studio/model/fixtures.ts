@@ -1,8 +1,8 @@
-import type { LearnedTaskModel } from "../learning";
-import type { NormalizedTimeline } from "../normalization";
-import type { PolicyGraph } from "./policies";
-import type { RecordingSession } from "./recordings";
-import type { SignalRegistry } from "./signals";
+import type { LearnedTaskModel } from "../learning/index.ts";
+import type { NormalizedTimeline } from "../normalization/index.ts";
+import type { PolicyGraph } from "./policies.ts";
+import type { RecordingSession } from "./recordings.ts";
+import type { SignalRegistry } from "./signals.ts";
 
 export type AutomationStudioFixture = {
   signalRegistry: SignalRegistry;

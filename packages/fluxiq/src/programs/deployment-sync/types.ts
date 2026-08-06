@@ -1,4 +1,4 @@
-import type { JsonObject } from "../../core";
+import type { JsonObject } from "../../core/index.ts";
 
 export type DeploymentSyncStatus = "idle" | "syncing" | "synced" | "failed";
 export type DeploymentRunMode = "dry-run" | "sync" | "rollback";

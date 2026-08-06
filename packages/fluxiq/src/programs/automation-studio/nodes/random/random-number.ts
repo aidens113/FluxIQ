@@ -1,6 +1,6 @@
-import { randomInRange } from "./shared";
-import { precisionOptions } from "../math/shared";
-import { defineBuiltinNode, emptyResult, numberValue } from "../shared/definition";
+import { randomInRange } from "./shared.ts";
+import { precisionOptions } from "../math/shared.ts";
+import { defineBuiltinNode, emptyResult, numberValue } from "../shared/definition.ts";
 
 export const randomNumberNode = defineBuiltinNode({
   id: "builtin.random.number",

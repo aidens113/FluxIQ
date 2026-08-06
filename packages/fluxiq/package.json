@@ -1,59 +1,63 @@
 {
   "name": "fluxiq",
   "version": "0.1.0",
+  "description": "Domain-neutral FluxIQ framework runtime for Node.js.",
   "type": "module",
+  "engines": { "node": ">=22" },
   "exports": {
-    ".": "./src/index.ts",
-    "./api-contracts": "./src/api-contracts/index.ts",
-    "./auth": "./src/programs/identity-access/index.ts",
-    "./client-gateway": "./src/client-gateway/index.ts",
-    "./automation-studio": "./src/programs/automation-studio/index.ts",
-    "./automation-studio/nodes": "./src/programs/automation-studio/nodes/index.ts",
-    "./background-tasks": "./src/programs/background-tasks/index.ts",
-    "./components": "./src/components/index.ts",
-    "./compute": "./src/programs/compute-control/index.ts",
-    "./compute-control": "./src/programs/compute-control/index.ts",
-    "./core": "./src/core/index.ts",
-    "./data": "./src/programs/database-manager/index.ts",
-    "./database-manager": "./src/programs/database-manager/index.ts",
-    "./deployment-sync": "./src/programs/deployment-sync/index.ts",
-    "./domains": "./src/domains/index.ts",
-    "./docs": "./src/programs/docs/index.ts",
-    "./engine": "./src/engine/index.ts",
-    "./flows": "./src/flows/index.ts",
-    "./framework": "./src/framework/index.ts",
-    "./identity-access": "./src/programs/identity-access/index.ts",
-    "./io": "./src/io/index.ts",
-    "./production-runner": "./src/programs/production-runner/index.ts",
-    "./programs": "./src/programs/index.ts",
-    "./ui": "./src/ui/index.ts"
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./api-contracts": { "types": "./dist/api-contracts/index.d.ts", "import": "./dist/api-contracts/index.js" },
+    "./auth": { "types": "./dist/programs/identity-access/index.d.ts", "import": "./dist/programs/identity-access/index.js" },
+    "./client-gateway": { "types": "./dist/client-gateway/index.d.ts", "import": "./dist/client-gateway/index.js" },
+    "./automation-studio": { "types": "./dist/programs/automation-studio/index.d.ts", "import": "./dist/programs/automation-studio/index.js" },
+    "./automation-studio/nodes": { "types": "./dist/programs/automation-studio/nodes/index.d.ts", "import": "./dist/programs/automation-studio/nodes/index.js" },
+    "./background-tasks": { "types": "./dist/programs/background-tasks/index.d.ts", "import": "./dist/programs/background-tasks/index.js" },
+    "./components": { "types": "./dist/components/index.d.ts", "import": "./dist/components/index.js" },
+    "./compute": { "types": "./dist/programs/compute-control/index.d.ts", "import": "./dist/programs/compute-control/index.js" },
+    "./compute-control": { "types": "./dist/programs/compute-control/index.d.ts", "import": "./dist/programs/compute-control/index.js" },
+    "./core": { "types": "./dist/core/index.d.ts", "import": "./dist/core/index.js" },
+    "./data": { "types": "./dist/programs/database-manager/index.d.ts", "import": "./dist/programs/database-manager/index.js" },
+    "./database-manager": { "types": "./dist/programs/database-manager/index.d.ts", "import": "./dist/programs/database-manager/index.js" },
+    "./deployment-sync": { "types": "./dist/programs/deployment-sync/index.d.ts", "import": "./dist/programs/deployment-sync/index.js" },
+    "./domains": { "types": "./dist/domains/index.d.ts", "import": "./dist/domains/index.js" },
+    "./docs": { "types": "./dist/programs/docs/index.d.ts", "import": "./dist/programs/docs/index.js" },
+    "./engine": { "types": "./dist/engine/index.d.ts", "import": "./dist/engine/index.js" },
+    "./flows": { "types": "./dist/flows/index.d.ts", "import": "./dist/flows/index.js" },
+    "./framework": { "types": "./dist/framework/index.d.ts", "import": "./dist/framework/index.js" },
+    "./identity-access": { "types": "./dist/programs/identity-access/index.d.ts", "import": "./dist/programs/identity-access/index.js" },
+    "./io": { "types": "./dist/io/index.d.ts", "import": "./dist/io/index.js" },
+    "./production-runner": { "types": "./dist/programs/production-runner/index.d.ts", "import": "./dist/programs/production-runner/index.js" },
+    "./programs": { "types": "./dist/programs/index.d.ts", "import": "./dist/programs/index.js" },
+    "./ui": { "types": "./dist/ui/index.d.ts", "import": "./dist/ui/index.js" }
   },
+  "files": ["dist", "README.md"],
   "scripts": {
-    "build": "tsc --noEmit",
+    "build": "tsc -b tsconfig.build.json --clean && tsc -b tsconfig.build.json && node ../../scripts/rewrite-declaration-imports.mjs dist",
     "check": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "drizzle-orm": "^0.45.2",
+    "@fluxiq/contracts": "workspace:*",
     "qrcode": "^1.5.4",
-    "sqlite3": "^6.0.1",
-    "typedoc": "^0.28.20",
-    "zod": "^3.24.0"
+    "sqlite3": "^6.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/qrcode": "^1.5.6",
-    "@types/react": "^19.0.0",
-    "drizzle-kit": "^0.31.10",
+    "typedoc": "^0.28.20",
     "typescript": "^5.7.0",
     "vitest": "^2.1.0"
   },
   "peerDependencies": {
-    "react": "^19.0.0"
+    "typedoc": "^0.28.20"
   },
   "peerDependenciesMeta": {
-    "react": {
+    "typedoc": {
       "optional": true
     }
-  }
+  },
+  "repository": { "type": "git", "url": "git+https://github.com/aidens113/FluxIQ.git", "directory": "packages/fluxiq" },
+  "homepage": "https://github.com/aidens113/FluxIQ#readme",
+  "bugs": { "url": "https://github.com/aidens113/FluxIQ/issues" },
+  "publishConfig": { "access": "public" }
 }

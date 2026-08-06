@@ -1,5 +1,5 @@
-import { routeFromCondition } from "./shared";
-import { defineBuiltinNode } from "../shared/definition";
+import { routeFromCondition } from "./shared.ts";
+import { defineBuiltinNode } from "../shared/definition.ts";
 
 export const branchNode = defineBuiltinNode({
   id: "builtin.control.branch",

@@ -1,6 +1,6 @@
-import type { NormalizedTimeline, NormalizationOptions, TimelineNormalizer } from "./contracts";
-import type { RecordingSession, StateSnapshot, TimelineEntry } from "../model";
-import { diffStateSnapshots } from "../model";
+import type { NormalizedTimeline, NormalizationOptions, TimelineNormalizer } from "./contracts.ts";
+import type { RecordingSession, StateSnapshot, TimelineEntry } from "../model/index.ts";
+import { diffStateSnapshots } from "../model/index.ts";
 
 export class ConservativeTimelineNormalizer implements TimelineNormalizer {
   normalize(recording: RecordingSession, options: NormalizationOptions = {}): NormalizedTimeline {

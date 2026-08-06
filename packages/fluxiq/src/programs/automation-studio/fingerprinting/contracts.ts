@@ -1,5 +1,5 @@
-import type { JsonObject } from "../../../core";
-import type { PolicyGraph, PolicyNode, StateSnapshot } from "../model";
+import type { JsonObject } from "../../../core/index.ts";
+import type { PolicyGraph, PolicyNode, StateSnapshot } from "../model/index.ts";
 
 export type SignalContribution = {
   signalPath: string;

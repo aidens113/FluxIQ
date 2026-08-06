@@ -14,6 +14,10 @@ Identity & Access owns framework authentication and authorization.
 Current behavior:
 
 - login is required before using program APIs;
+- every global program endpoint declares a required role permission, enforced
+  by the shared API registry before its handler runs;
+- the viewer role is read-only and cannot invoke identity, data, compute,
+  runtime, deployment, or authoring mutations;
 - login sessions last 12 hours;
 - first-run credentials default to `admin` / `admin`;
 - no default PIN is created;
@@ -121,6 +125,10 @@ Current behavior:
 - shows Markdown, HTML, and JSON documentation files in a folder-style explorer;
 - resolves internal documentation links inside the Docs program when a matching
   page exists;
+- restricts web-registered documentation sources to configured documentation
+  roots and verifies canonical paths before reading pages;
+- renders imported HTML in a sandboxed frame rather than injecting it into the
+  control-panel document;
 - background rebuild runs every 24 hours.
 
 Planned improvements:

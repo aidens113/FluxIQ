@@ -1,5 +1,5 @@
-import { compareValues } from "./shared";
-import { defineBuiltinNode } from "../shared/definition";
+import { compareValues } from "./shared.ts";
+import { defineBuiltinNode } from "../shared/definition.ts";
 
 export const compareNode = defineBuiltinNode({
   id: "builtin.logic.compare",

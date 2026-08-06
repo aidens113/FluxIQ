@@ -11,8 +11,8 @@ import {
   finalizeRecordingSession,
   stateValue,
   validateRecordingSession
-} from "./index";
-import { normalizeRecordingTimeline } from "../normalization";
+} from "./index.ts";
+import { normalizeRecordingTimeline } from "../normalization/index.ts";
 
 describe("automation studio state, signals, and recording framework", () => {
   it("reads, writes, snapshots, restores, subscribes, and diffs state", () => {

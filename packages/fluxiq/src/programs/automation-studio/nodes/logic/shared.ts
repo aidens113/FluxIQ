@@ -1,4 +1,4 @@
-import { booleanValue, compareBasic } from "../shared/definition";
+import { booleanValue, compareBasic } from "../shared/definition.ts";
 
 export function compareValues(left: unknown, right: unknown, operator: string): boolean {
   return compareBasic(left, right, operator);

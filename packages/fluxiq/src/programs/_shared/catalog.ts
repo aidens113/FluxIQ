@@ -1,12 +1,12 @@
-import { AUTOMATION_STUDIO_PROGRAM } from "../automation-studio/metadata";
-import { BACKGROUND_TASKS_PROGRAM } from "../background-tasks/metadata";
-import { COMPUTE_CONTROL_PROGRAM } from "../compute-control/metadata";
-import { DATABASE_MANAGER_PROGRAM } from "../database-manager/metadata";
-import { DEPLOYMENT_SYNC_PROGRAM } from "../deployment-sync/metadata";
-import { DOCS_PROGRAM } from "../docs/metadata";
-import { IDENTITY_ACCESS_PROGRAM } from "../identity-access/metadata";
-import { PRODUCTION_RUNNER_PROGRAM } from "../production-runner/metadata";
-import type { GlobalProgramDefinition, ProgramDirectory, ProgramScope, ProgramSummary } from "./types";
+import { AUTOMATION_STUDIO_PROGRAM } from "../automation-studio/metadata.ts";
+import { BACKGROUND_TASKS_PROGRAM } from "../background-tasks/metadata.ts";
+import { COMPUTE_CONTROL_PROGRAM } from "../compute-control/metadata.ts";
+import { DATABASE_MANAGER_PROGRAM } from "../database-manager/metadata.ts";
+import { DEPLOYMENT_SYNC_PROGRAM } from "../deployment-sync/metadata.ts";
+import { DOCS_PROGRAM } from "../docs/metadata.ts";
+import { IDENTITY_ACCESS_PROGRAM } from "../identity-access/metadata.ts";
+import { PRODUCTION_RUNNER_PROGRAM } from "../production-runner/metadata.ts";
+import type { GlobalProgramDefinition, ProgramDirectory, ProgramScope, ProgramSummary } from "./types.ts";
 
 export const GLOBAL_PROGRAMS: GlobalProgramDefinition[] = [
   AUTOMATION_STUDIO_PROGRAM,

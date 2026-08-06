@@ -1,9 +1,9 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import QRCode from "qrcode";
-import type { JsonObject } from "../../../core";
-import type { RecordEnvelope, Repository } from "../../database-manager";
-import { defaultRoles } from "./roles";
-import type { IdentityAccessSnapshot, Role, Session, User, UserCredential, VaultRecord, VaultStatus } from "../types";
+import type { JsonObject } from "../../../core/index.ts";
+import type { RecordEnvelope, Repository } from "../../database-manager/index.ts";
+import { defaultRoles } from "./roles.ts";
+import type { IdentityAccessSnapshot, Role, Session, User, UserCredential, VaultRecord, VaultStatus } from "../types.ts";
 
 type IdentityAccessState = {
   users: User[];

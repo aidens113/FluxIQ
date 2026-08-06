@@ -91,6 +91,17 @@ handlers are stripped.
 The Docs UI uses a folder-style explorer backed by normalized document routes.
 Internal links are resolved inside the program when the target document exists.
 
+Documentation sources registered through the web API must stay inside the
+runtime's configured documentation roots. FluxIQ checks both configured paths
+and their canonical filesystem targets before scanning or reading pages. This
+prevents a documentation source or persisted cache entry from becoming an
+arbitrary local-file reader.
+
+Markdown and JSON use FluxIQ's escaped renderers. Imported HTML is cleaned for
+readability and displayed in a sandboxed frame without script, form, same-origin,
+top-navigation, or external network privileges. Imported HTML must never be
+injected directly into the control-panel document.
+
 Planned upgrades:
 
 - add syntax highlighting;

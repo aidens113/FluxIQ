@@ -1,4 +1,4 @@
-import type { Role } from "../types";
+import type { Role } from "../types.ts";
 
 export const adminRole: Role = {
   id: "admin",

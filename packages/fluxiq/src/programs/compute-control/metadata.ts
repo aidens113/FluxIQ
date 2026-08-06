@@ -1,4 +1,4 @@
-import type { GlobalProgramDefinition } from "../_shared/types";
+import type { GlobalProgramDefinition } from "../_shared/types.ts";
 
 export const COMPUTE_CONTROL_PROGRAM: GlobalProgramDefinition = {
   id: "compute-control",

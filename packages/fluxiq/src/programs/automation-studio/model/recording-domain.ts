@@ -1,12 +1,12 @@
-import type { JsonObject, JsonValue } from "../../../core";
+import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import {
   appendRecordingEntry,
   appendRecordingStateCheckpoint,
   appendRecordingStateDelta
-} from "./recording-framework";
-import type { RecordingSession } from "./recordings";
-import type { SignalDefinition } from "./signals";
-import type { StateDelta, StateElementKind, StateSnapshot, StateValue, StateValueType, StateVolatility } from "./state";
+} from "./recording-framework.ts";
+import type { RecordingSession } from "./recordings.ts";
+import type { SignalDefinition } from "./signals.ts";
+import type { StateDelta, StateElementKind, StateSnapshot, StateValue, StateValueType, StateVolatility } from "./state.ts";
 
 export type RecordingEventJsonSchema = {
   type: "string" | "number" | "integer" | "boolean" | "object" | "array" | "null" | "json";

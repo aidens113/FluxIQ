@@ -1,4 +1,4 @@
-import type { DocumentationPage, DocumentationSource } from "../types";
+import type { DocumentationPage, DocumentationSource } from "../types.ts";
 
 export type DocsStore = {
   listSources(): Promise<DocumentationSource[]>;

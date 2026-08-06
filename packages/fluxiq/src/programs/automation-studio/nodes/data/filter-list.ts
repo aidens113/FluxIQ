@@ -1,4 +1,4 @@
-import { arrayValue, compareBasic, defineBuiltinNode, emptyResult, getPathValue } from "../shared/definition";
+import { arrayValue, compareBasic, defineBuiltinNode, emptyResult, getPathValue } from "../shared/definition.ts";
 
 export const filterListNode = defineBuiltinNode({
   id: "builtin.data.filter-list",

@@ -1,4 +1,4 @@
-import type { BackgroundTaskDefinition, BackgroundTaskRun } from "../types";
+import type { BackgroundTaskDefinition, BackgroundTaskRun } from "../types.ts";
 
 export type BackgroundTasksStore = {
   listTasks(): Promise<BackgroundTaskDefinition[]>;

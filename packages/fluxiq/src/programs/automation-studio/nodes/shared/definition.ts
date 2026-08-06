@@ -1,5 +1,5 @@
-import type { AutomationNodeDefinition, AutomationNodeExecutionContext, AutomationNodeExecutionResult, AutomationNodePort, AutomationNodeValueType } from "../contracts";
-import type { JsonValue } from "../../../../core";
+import type { AutomationNodeDefinition, AutomationNodeExecutionContext, AutomationNodeExecutionResult, AutomationNodePort, AutomationNodeValueType } from "../contracts.ts";
+import type { JsonValue } from "../../../../core/index.ts";
 
 export type AutomationNodeDefinitionInput = Omit<AutomationNodeDefinition, "origin" | "implementationKey"> & {
   implementationKey?: string;

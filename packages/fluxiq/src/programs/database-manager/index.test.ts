@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { createRecord, SQLiteRepository } from "./index";
+import { createRecord, SQLiteRepository } from "./index.ts";
 
 describe("SQLiteRepository", () => {
   it("stores and lists global records", async () => {

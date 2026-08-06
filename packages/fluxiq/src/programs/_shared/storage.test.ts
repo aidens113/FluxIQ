@@ -1,31 +1,39 @@
-import { mkdir, readdir, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ProgramJsonStore } from "./storage";
+import { afterEach, describe, expect, it } from "vitest";
+import { initializeFluxIQStorage } from "../../framework/storage-layout.ts";
+import { ProgramJsonStore } from "./storage.ts";
 
-const tempRoot = path.join(process.cwd(), ".tmp", "program-json-store-test");
+const roots: string[] = [];
 
-describe("ProgramJsonStore", () => {
-  beforeEach(async () => {
-    await rm(tempRoot, { recursive: true, force: true });
-    await mkdir(tempRoot, { recursive: true });
-  });
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
 
-  afterEach(async () => {
-    await rm(tempRoot, { recursive: true, force: true });
-  });
+describe("ProgramJsonStore layout-v2 transactions", () => {
+  it("rolls back a multi-document Automation Studio mutation", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-program-store-"));
+    roots.push(root);
+    const fluxiqRoot = path.join(root, ".fluxiq");
+    await initializeFluxIQStorage(fluxiqRoot);
+    const firstPath = path.join(fluxiqRoot, "artifacts", "automation-studio", "projects", "one", "manifest.json");
+    const secondPath = path.join(fluxiqRoot, "artifacts", "automation-studio", "projects", "one", "workspace", "preferences.json");
 
-  it("uses unique temp files for concurrent writes to the same document", async () => {
-    const filePath = path.join(tempRoot, "nested", "state.json");
-    const store = new ProgramJsonStore<{ value: number }>(filePath, () => ({ value: 0 }));
+    await expect(ProgramJsonStore.transaction(firstPath, async (transaction) => {
+      await transaction.write(firstPath, { name: "one" });
+      await transaction.write(secondPath, { layout: "wide" });
+      throw new Error("injected failure");
+    })).rejects.toThrow("injected failure");
 
-    await Promise.all(Array.from({ length: 64 }, (_, index) => store.write({ value: index })));
+    expect(await new ProgramJsonStore(firstPath, () => ({})).read()).toEqual({});
+    expect(await new ProgramJsonStore(secondPath, () => ({})).read()).toEqual({});
 
-    const finalValue = await store.read();
-    const leftovers = await readdir(path.dirname(filePath));
-
-    expect(finalValue.value).toBeGreaterThanOrEqual(0);
-    expect(finalValue.value).toBeLessThan(64);
-    expect(leftovers.filter((item) => item.endsWith(".tmp"))).toEqual([]);
+    await ProgramJsonStore.transaction(firstPath, async (transaction) => {
+      await transaction.write(firstPath, { name: "one" });
+      await transaction.write(secondPath, { layout: "wide" });
+    });
+    expect(await new ProgramJsonStore(firstPath, () => ({})).read()).toEqual({ name: "one" });
+    expect(await new ProgramJsonStore(secondPath, () => ({})).read()).toEqual({ layout: "wide" });
   });
 });

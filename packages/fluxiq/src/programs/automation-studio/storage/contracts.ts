@@ -1,7 +1,7 @@
-import type { AutomationRecording, AutomationTask, DynamicPolicyArtifact } from "../types";
-import type { LearnedTaskModel } from "../learning";
-import type { NormalizedTimeline } from "../normalization";
-import type { PolicyGraph, RecordingSession, SignalRegistry } from "../model";
+import type { AutomationRecording, AutomationTask, DynamicPolicyArtifact } from "../types.ts";
+import type { LearnedTaskModel } from "../learning/index.ts";
+import type { NormalizedTimeline } from "../normalization/index.ts";
+import type { PolicyGraph, RecordingSession, SignalRegistry } from "../model/index.ts";
 
 export type AutomationStudioRepository<TDocument> = {
   list(domainId?: string | null): Promise<TDocument[]>;

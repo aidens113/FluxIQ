@@ -1,22 +1,31 @@
 import { mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
 import sqlite3 from "sqlite3";
-import type { JsonObject } from "../../../core";
-import type { RecordEnvelope, Repository, RepositoryScope } from "../types";
+import type { JsonObject } from "../../../core/index.ts";
+import type { RecordEnvelope, Repository, RepositoryScope } from "../types.ts";
 
 export type SQLiteRepositoryOptions = {
   rootDir: string;
   kind: string;
+  layoutVersion?: 1 | 2;
+};
+
+export type SQLiteTransaction = {
+  run(sql: string, params?: unknown[]): Promise<{ changes: number; lastID: number }>;
+  all<T>(sql: string, params?: unknown[]): Promise<T[]>;
+  get<T>(sql: string, params?: unknown[]): Promise<T | undefined>;
 };
 
 export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repository<T> {
   readonly rootDir: string;
   readonly kind: string;
   readonly tableName: string;
+  readonly layoutVersion: 1 | 2;
 
   constructor(options: SQLiteRepositoryOptions) {
     this.rootDir = path.resolve(options.rootDir);
     this.kind = safeKind(options.kind);
+    this.layoutVersion = options.layoutVersion ?? 1;
     if (!this.kind) throw new Error("Repository kind is required");
     this.tableName = quoteIdentifier(this.kind);
   }
@@ -70,8 +79,14 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
     const domainRoot = path.join(this.rootDir, "domains");
     try {
       for (const entry of readdirSync(domainRoot, { withFileTypes: true })) {
-        if (entry.isFile() && entry.name.endsWith(".sqlite")) {
+        if (this.layoutVersion === 1 && entry.isFile() && entry.name.endsWith(".sqlite")) {
           values.add(entry.name.replace(/\.sqlite$/i, ""));
+        } else if (this.layoutVersion === 2 && entry.isDirectory()) {
+          try {
+            if (readdirSync(path.join(domainRoot, entry.name)).includes("domain.sqlite")) values.add(entry.name);
+          } catch {
+            // Domain state has not been created yet.
+          }
         }
       }
     } catch {
@@ -115,9 +130,34 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
   private databasePath(scope: RepositoryScope): string {
     const normalized = normalizeScope(scope);
     if (normalized.domainId) {
-      return path.join(this.rootDir, "domains", `${safeKind(normalized.domainId)}.sqlite`);
+      return this.layoutVersion === 2
+        ? path.join(this.rootDir, "domains", safeKind(normalized.domainId), "domain.sqlite")
+        : path.join(this.rootDir, "domains", `${safeKind(normalized.domainId)}.sqlite`);
     }
     return path.join(this.rootDir, "global.sqlite");
+  }
+
+  async transaction<TResult>(scope: RepositoryScope, operation: (transaction: SQLiteTransaction) => Promise<TResult>): Promise<TResult> {
+    const filePath = this.databasePath(scope);
+    return enqueueDatabaseOperation(filePath, async () => {
+      const db = await this.open(scope);
+      await run(db, "begin immediate");
+      const transaction: SQLiteTransaction = {
+        run: (sql, params = []) => run(db, sql, params),
+        all: <T>(sql: string, params: unknown[] = []) => all<T>(db, sql, params),
+        get: <T>(sql: string, params: unknown[] = []) => get<T>(db, sql, params)
+      };
+      try {
+        const result = await operation(transaction);
+        await run(db, "commit");
+        return result;
+      } catch (error) {
+        await run(db, "rollback").catch(() => undefined);
+        throw error;
+      } finally {
+        await close(db);
+      }
+    });
   }
 }
 

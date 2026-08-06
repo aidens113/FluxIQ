@@ -16,7 +16,7 @@ export async function GET(request: Request) {
 
 async function isAuthorized(request: Request, fluxiq: ReturnType<typeof getFluxIQ>): Promise<boolean> {
   const bearerToken = readBearerToken(request.headers.get("authorization"));
-  if (bearerToken && fluxiq.programs.clientGateway.authorizeToken(bearerToken)) return true;
+  if (bearerToken && await fluxiq.programs.clientGateway.authorizeToken(bearerToken)) return true;
   return Boolean(await requireFluxIQUser());
 }
 

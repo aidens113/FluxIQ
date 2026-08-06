@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { JsonObject } from "../../../core";
-import { ProgramJsonStore, programDataFile } from "../../_shared/storage";
-import type { ComputeCommand, ComputeControlSnapshot, ComputeLease, ComputeNode, ComputeStatus } from "../types";
+import type { JsonObject } from "../../../core/index.ts";
+import { ProgramJsonStore, programDataFile } from "../../_shared/storage.ts";
+import type { ComputeCommand, ComputeControlSnapshot, ComputeLease, ComputeNode, ComputeStatus } from "../types.ts";
 
 type ComputeControlState = {
   nodes: ComputeNode[];

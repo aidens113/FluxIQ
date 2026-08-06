@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { parseAllowedOrigins, startClientGatewayWebSocketServer, type ClientGatewayWebSocketServerHandle } from "../server/client-gateway-websocket";
+import { resolveAutomationStudioContext, resolveClientRecordingProject, setAutomationStudioContext, type AutomationStudioWebContext } from "./automation-studio-context";
 
 type FluxIQHostModuleRegistration = (fluxiq: FluxIQ) => FluxIQ | void;
 
@@ -12,10 +13,7 @@ type FluxIQWebGlobal = typeof globalThis & {
     hostModulePath: string | null;
     clientGatewayServer: ClientGatewayWebSocketServerHandle | null;
     runtimeId: string;
-    automationStudioContext: {
-      activeProjectId: string | null;
-      updatedAt: number;
-    };
+    automationStudioContexts: Record<string, AutomationStudioWebContext>;
   };
 };
 
@@ -27,8 +25,9 @@ export function getFluxIQ(): FluxIQ {
   return state.instance;
 }
 
-export function getFluxIQWebRuntimeStatus() {
+export function getFluxIQWebRuntimeStatus(operatorUserId?: string) {
   const state = getWebRuntimeState();
+  const context = operatorUserId ? resolveAutomationStudioContext(state.automationStudioContexts, operatorUserId) : undefined;
   return {
     runtimeId: state.runtimeId,
     hostRoot: state.instance.paths.root,
@@ -40,18 +39,26 @@ export function getFluxIQWebRuntimeStatus() {
     clientGatewayListening: state.clientGatewayServer?.status.listening ?? false,
     clientGatewayError: state.clientGatewayServer?.status.error ?? null,
     automationStudio: {
-      activeProjectId: state.automationStudioContext.activeProjectId,
-      updatedAt: state.automationStudioContext.updatedAt
+      activeProjectId: context?.activeProjectId ?? null,
+      updatedAt: context?.updatedAt ?? 0,
+      contextCount: Object.keys(state.automationStudioContexts).length
     }
   };
 }
 
-export function setAutomationStudioWebContext(input: { activeProjectId: string | null }): void {
+export function setAutomationStudioWebContext(input: { operatorUserId: string; clientId?: string; activeProjectId: string | null }): void {
   const state = getWebRuntimeState();
-  state.automationStudioContext = {
-    activeProjectId: input.activeProjectId,
-    updatedAt: Date.now()
-  };
+  setAutomationStudioContext(state.automationStudioContexts, input);
+}
+
+export async function reloadFluxIQWebInstance(): Promise<FluxIQ> {
+  const state = getWebRuntimeState();
+  if (state.clientGatewayServer) await state.clientGatewayServer.close();
+  state.instance = createFluxIQWebInstance();
+  state.clientGatewayServer = null;
+  state.automationStudioContexts = {};
+  startSharedClientGateway(state);
+  return state.instance;
 }
 
 function getWebRuntimeState(): NonNullable<FluxIQWebGlobal["__fluxiqWebRuntime"]> {
@@ -61,17 +68,28 @@ function getWebRuntimeState(): NonNullable<FluxIQWebGlobal["__fluxiqWebRuntime"]
     hostModulePath: resolveFluxIQHostModulePath(),
     clientGatewayServer: null,
     runtimeId: `web.${Date.now().toString(36)}.${Math.random().toString(36).slice(2)}`,
-    automationStudioContext: { activeProjectId: null, updatedAt: 0 }
+    automationStudioContexts: {}
   };
-  globalState.__fluxiqWebRuntime.instance.programs.automationStudioClientGateway.setClientRecordingContextProvider(() => {
-    const context = globalState.__fluxiqWebRuntime?.automationStudioContext;
-    const isFresh = context ? Date.now() - context.updatedAt < 10_000 : false;
-    if (context?.activeProjectId && isFresh) return { ok: true, projectId: context.activeProjectId };
+  globalState.__fluxiqWebRuntime.automationStudioContexts ??= {};
+  globalState.__fluxiqWebRuntime.instance.programs.automationStudioClientGateway.setClientRecordingContextProvider(({ session, request }) => {
+    const contexts = globalState.__fluxiqWebRuntime?.automationStudioContexts ?? {};
+    const resolved = resolveClientRecordingProject(contexts, {
+      ...(session.operatorUserId ? { operatorUserId: session.operatorUserId } : {}),
+      clientId: session.clientId,
+      ...(request.projectId !== undefined ? { requestedProjectId: request.projectId } : {})
+    });
+    if (resolved.ok) return resolved;
     return {
       ok: false,
-      message: "Recording cannot start because Automation Studio does not have an open project.",
-      code: "recording.project_required",
-      metadata: { activeProjectId: context?.activeProjectId ?? null, contextUpdatedAt: context?.updatedAt ?? 0 }
+      message: resolved.code === "recording.project_context_mismatch"
+        ? "Recording cannot start because the requested project does not match the approving operator's active project."
+        : "Recording cannot start because Automation Studio does not have an open project.",
+      code: resolved.code,
+      metadata: {
+        ...(request.projectId ? { requestedProjectId: request.projectId } : {}),
+        activeProjectId: resolved.activeProjectId,
+        contextUpdatedAt: resolved.contextUpdatedAt
+      }
     };
   });
   return globalState.__fluxiqWebRuntime;

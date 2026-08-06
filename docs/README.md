@@ -6,9 +6,11 @@ Docs program in the control panel.
 ## Authored Docs
 
 - [Architecture](architecture/README.md)
+- [Working Codebase Audit Remediation Plan](working/codebase-audit-remediation-plan.md)
 - [Current System](architecture/current-system.md)
 - [Documentation System](architecture/docs-system.md)
 - [Program Layout](architecture/program-layout.md)
+- [Package Boundaries And Distribution](architecture/package-boundaries.md)
 - [Client Gateway WebSocket Integration](integrations/client-gateway-websocket.md)
 - [Automation Studio Importer Guide](integrations/automation-studio-importing-repos.md)
 - [Global Programs](programs/global-programs.md)

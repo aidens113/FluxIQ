@@ -1,10 +1,10 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ComponentRegistry } from "../components";
-import { createEnvelope } from "../io";
-import { FluxIQ } from "./index";
+import { ComponentRegistry } from "../components/index.ts";
+import { createEnvelope } from "../io/index.ts";
+import { FluxIQ } from "./index.ts";
 
 const ENV_KEYS = [
   "FLUXIQ_ROOT",
@@ -51,33 +51,29 @@ afterEach(() => {
 });
 
 describe("FluxIQ", () => {
-  it("creates host project folders and config", async () => {
+  it("creates only the layout-v2 config for a fresh host", async () => {
     const root = await tempRoot();
     try {
       const fluxiq = FluxIQ.create({ rootDir: root, loadEnv: false });
       const result = await fluxiq.setup();
 
       expect(result.paths.root).toBe(root);
-      expect(result.paths.data).toBe(path.join(root, ".fluxiq", "data"));
-      expect(result.paths.databases).toBe(path.join(root, ".fluxiq", "databases"));
-      expect(result.paths.inputs).toBe(path.join(root, ".fluxiq", "inputs"));
-      expect(result.paths.outputs).toBe(path.join(root, ".fluxiq", "outputs"));
+      expect(result.paths.data).toBe(path.join(root, ".fluxiq"));
+      expect(result.paths.databases).toBe(path.join(root, ".fluxiq"));
       expect(result.paths.domains).toBe(path.join(root, ".fluxiq", "domains"));
-      expect(result.paths.domainPrograms).toBe(path.join(root, ".fluxiq", "domains", "programs"));
-      expect(result.paths.domainInputs).toBe(path.join(root, ".fluxiq", "domains", "inputs"));
-      expect(result.paths.domainOutputs).toBe(path.join(root, ".fluxiq", "domains", "outputs"));
-      await expect(stat(path.join(result.paths.domainPrograms, "README.md"))).resolves.toBeTruthy();
-      await expect(stat(path.join(result.paths.inputs, "README.md"))).resolves.toBeTruthy();
+      expect(result.paths.domainPrograms).toBe(path.join(root, "domains", "programs"));
+      expect(await readdir(path.join(root, ".fluxiq"))).toEqual(["config.json"]);
 
-      const config = JSON.parse(await readFile(result.configPath, "utf8")) as { version: number; createdBy: string };
-      expect(config.version).toBe(1);
+      const config = JSON.parse(await readFile(result.configPath, "utf8")) as { version: number; layoutVersion: number; createdBy: string };
+      expect(config.version).toBe(2);
+      expect(config.layoutVersion).toBe(2);
       expect(config.createdBy).toBe("fluxiq");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
-  it("uses an active host domain as the top-level .fluxiq storage root", async () => {
+  it("keeps global storage global while exposing importer-owned domain roots", async () => {
     const root = await tempRoot();
     try {
       const fluxiq = FluxIQ.create({ rootDir: root, domainId: "Example Domain", loadEnv: false });
@@ -85,11 +81,38 @@ describe("FluxIQ", () => {
 
       expect(fluxiq.activeDomainId).toBe("example_domain");
       expect(result.paths.domainId).toBe("example_domain");
-      expect(result.paths.domainRoot).toBe(path.join(root, ".fluxiq", "example_domain"));
-      expect(result.paths.data).toBe(path.join(root, ".fluxiq", "example_domain", "data"));
-      expect(result.paths.databases).toBe(path.join(root, ".fluxiq", "example_domain", "databases"));
-      expect(result.paths.domainPrograms).toBe(path.join(root, ".fluxiq", "example_domain", "programs"));
-      await expect(stat(path.join(root, ".fluxiq", "example_domain", "README.md"))).resolves.toBeTruthy();
+      expect(result.paths.domainRoot).toBe(path.join(root, ".fluxiq", "domains", "example_domain"));
+      expect(result.paths.data).toBe(path.join(root, ".fluxiq"));
+      expect(result.paths.databases).toBe(path.join(root, ".fluxiq"));
+      expect(result.paths.domainPrograms).toBe(path.join(root, "domains", "example_domain", "programs"));
+      expect(result.paths.domainData).toBe(path.join(root, ".fluxiq", "domains", "example_domain", "data"));
+      expect(await readdir(path.join(root, ".fluxiq"))).toEqual(["config.json"]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("shares global editor state across importer-defined domain identities without eager trees", async () => {
+    const root = await tempRoot();
+    try {
+      const first = FluxIQ.create({ rootDir: root, domainId: "Importer Alpha", loadEnv: false });
+      await first.setup();
+      const project = await first.programs.automationStudio.createProject({ name: "Importer-owned project" });
+      await first.programs.automationStudio.createRecording({
+        projectId: project.id,
+        recordingId: "recording.shared",
+        startedAt: 1,
+        initialState: { timestamp: 1, namespaces: {} }
+      });
+
+      const projectRoot = path.join(root, ".fluxiq", "artifacts", "automation-studio", "projects", project.id);
+      const directories = await readdir(projectRoot, { recursive: true, withFileTypes: true })
+        .then((entries) => entries.filter((entry) => entry.isDirectory()), () => []);
+      expect(directories.length).toBeLessThan(10);
+      const second = FluxIQ.create({ rootDir: root, domainId: "Importer Beta", loadEnv: false });
+      expect((await second.programs.automationStudio.listProjects()).projects).toContainEqual(expect.objectContaining({ id: project.id }));
+      expect((await second.programs.automationStudio.getRecordingSession("recording.shared", project.id)).recordingId).toBe("recording.shared");
+      expect(second.paths.databases).toBe(path.join(root, ".fluxiq"));
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -103,7 +126,7 @@ describe("FluxIQ", () => {
       const fluxiq = FluxIQ.create({ rootDir: root });
 
       expect(fluxiq.paths.fluxiq).toBe(path.join(root, ".framework"));
-      expect(fluxiq.paths.config).toBe(path.join(root, ".framework", "config"));
+      expect(fluxiq.paths.config).toBe(path.join(root, ".framework", "config.json"));
       expect(fluxiq.paths.data).toBe(path.join(root, "var", "data"));
       expect(fluxiq.paths.domainPrograms).toBe(path.join(root, "domain-programs"));
     } finally {

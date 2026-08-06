@@ -1,5 +1,5 @@
-import { applyPrecision, binaryNumbers, optionalPrecisionOptions } from "./shared";
-import { defineBuiltinNode, emptyResult } from "../shared/definition";
+import { applyPrecision, binaryNumbers, optionalPrecisionOptions } from "./shared.ts";
+import { defineBuiltinNode, emptyResult } from "../shared/definition.ts";
 
 export const multiplyNode = defineBuiltinNode({
   id: "builtin.math.multiply",

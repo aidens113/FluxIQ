@@ -1,4 +1,4 @@
-import type { JsonValue } from "../../../core";
+import type { JsonValue } from "../../../core/index.ts";
 
 export type AutomationNodeScope = "policy" | "routine" | "both";
 export type AutomationNodeOrigin = "builtin" | "custom";

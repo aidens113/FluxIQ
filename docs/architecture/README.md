@@ -43,10 +43,13 @@ Framework components and Automation Studio actions can then declare
 `requiredInputs` and `requiredOutputs`. The runtime can validate that a domain
 can satisfy a policy before attempting to execute it.
 
-## Internal Boundaries
+## Package And Internal Boundaries
 
-The framework is published as one importable package, `fluxiq`. Internally it
-keeps clear folders rather than many tiny workspace packages.
+The framework runtime is published as `fluxiq`, with browser-safe contracts and
+WebSocket transport separated so clients do not install the Node runtime. See
+[`package-boundaries.md`](./package-boundaries.md) for package ownership,
+compiled exports, clean-consumer validation, and release policy. Internally the
+runtime keeps clear folders rather than many tiny workspace packages.
 
 | Internal Area | Owns | Must Not Own |
 | --- | --- | --- |
@@ -72,6 +75,7 @@ Global program internals use the layout described in
 - [Client Gateway WebSocket Integration](../integrations/client-gateway-websocket.md)
 - [Documentation System](docs-system.md)
 - [Program Layout](program-layout.md)
+- [Package Boundaries And Distribution](package-boundaries.md)
 - [UI Theme](ui-theme.md)
 - [Migration Plan](migration-plan.md)
 - [Roadmap](roadmap.md)
@@ -118,47 +122,34 @@ const fluxiq = FluxIQ.create({
 await fluxiq.setup();
 ```
 
-By default this creates:
+On a fresh importing repository this creates only:
 
 ```text
 .fluxiq/
-  {domain-id}/
-    config/
-    data/
-    databases/
-    domains/
-    inputs/
-    logs/
-    outputs/
-    policies/
-    programs/
-    recordings/
-    streams/
-    tmp/
+  config.json
 ```
 
-The `.fluxiq` folder is for host-project runtime state, generated artifacts,
-recordings, and local framework config. Runtime state is separated by active
-host domain at the top level: `.fluxiq/{domain-id}/...`. The active domain can
+Databases and artifact directories appear lazily on first write. Global
+framework state uses `.fluxiq/global.sqlite`; domain runtime state uses
+`.fluxiq/domains/{domain-id}/`. The active domain can
 come from `FluxIQ.create({ domainId })`, `FLUXIQ_DOMAIN_ID`,
 `FLUXIQ_HOST_DOMAIN`, or the first domain passed to `FluxIQ.create({ domains })`.
 The Next.js web runtime also infers the active domain when the importing host
 module registers exactly one domain; hosts with multiple registered domains
 must select one explicitly with `FLUXIQ_DOMAIN_ID` or `FLUXIQ_HOST_DOMAIN`.
 
-When no active host domain is configured, FluxIQ keeps the legacy unscoped
-layout under `.fluxiq/data`, `.fluxiq/databases`, and related folders for
-framework-only use and backward compatibility.
-
-The internal `programs` area contains global framework programs only. Host projects own
+Host projects own
 domain-specific programs in the configured domain program root, which defaults
-to `.fluxiq/{domain-id}/programs` when an active host domain is configured.
+to `domains/{domain-id}/programs` outside `.fluxiq`. Their registered domain
+manifest remains the authority for domain names and labels in the global
+editor. "Global" describes shared framework ownership, not generic branding.
 
 Host projects can set `FLUXIQ_ROOT` to move the framework root without changing
 code. They can set `FLUXIQ_DOMAIN_ID` or `FLUXIQ_HOST_DOMAIN` to choose the
-active host-domain storage root. They can also override individual folders with `FLUXIQ_DATA_DIR`,
+active domain target. They can also supply legacy folder overrides such as `FLUXIQ_DATA_DIR`,
 `FLUXIQ_DOMAINS_DIR`, `FLUXIQ_DOMAIN_PROGRAMS_DIR`, `FLUXIQ_RECORDINGS_DIR`,
 `FLUXIQ_POLICIES_DIR`, `FLUXIQ_LOGS_DIR`, and `FLUXIQ_TEMP_DIR`. Constructor
-options override environment variables. `FluxIQ.create()` loads `.env` and
+options override environment variables; externally managed overrides are not
+automatically migrated. `FluxIQ.create()` loads `.env` and
 `.env.local` from the current working directory by default for non-Next.js Node
 hosts.

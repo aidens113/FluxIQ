@@ -1,4 +1,4 @@
-import type { IdentityAccessSnapshot } from "../types";
+import type { IdentityAccessSnapshot } from "../types.ts";
 
 export const IDENTITY_ACCESS_ENDPOINTS = {
   snapshot: "snapshot",

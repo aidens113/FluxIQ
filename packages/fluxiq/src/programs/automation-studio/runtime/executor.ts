@@ -1,7 +1,7 @@
-import type { JsonObject, JsonValue } from "../../../core";
-import type { AutomationStudioFlowDocument, AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../model";
-import { getAutomationNodeDefinition } from "../nodes";
-import type { AutomationNodeExecutionResult } from "../nodes/contracts";
+import type { JsonObject, JsonValue } from "../../../core/index.ts";
+import type { AutomationStudioFlowDocument, AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../model/index.ts";
+import { getAutomationNodeDefinition } from "../nodes/index.ts";
+import type { AutomationNodeExecutionResult } from "../nodes/contracts.ts";
 
 export type AutomationStudioGraphRunStatus = "running" | "succeeded" | "failed" | "waiting" | "cancelled";
 

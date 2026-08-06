@@ -1,5 +1,5 @@
-import type { JsonObject } from "../../../core";
-import type { AutomationStudioSchemaVersion } from "./evidence";
+import type { JsonObject } from "../../../core/index.ts";
+import type { AutomationStudioSchemaVersion } from "./evidence.ts";
 
 export type AutomationStudioProjectArtifactKind = "task" | "routine" | "config" | "flow";
 

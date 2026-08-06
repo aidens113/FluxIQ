@@ -1,7 +1,7 @@
-import type { JsonObject } from "../../../core";
-import type { EvidenceReference } from "./evidence";
-import type { AutomationStudioFlowDocument } from "./artifacts";
-import type { AutomationStudioGraphExecutionTrace } from "../runtime/executor";
+import type { JsonObject } from "../../../core/index.ts";
+import type { EvidenceReference } from "./evidence.ts";
+import type { AutomationStudioFlowDocument } from "./artifacts.ts";
+import type { AutomationStudioGraphExecutionTrace } from "../runtime/executor.ts";
 
 export type RuntimeActionAttempt = {
   attemptId: string;

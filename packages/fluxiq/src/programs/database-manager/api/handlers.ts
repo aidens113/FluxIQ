@@ -1,19 +1,20 @@
-import type { GlobalProgramApiRegistry } from "../../_shared/api";
-import { isJsonObject } from "../../_shared/storage";
+import type { GlobalProgramApiRegistry } from "../../_shared/api.ts";
+import { isJsonObject } from "../../_shared/storage.ts";
 import {
   DATABASE_MANAGER_ENDPOINTS,
   type DatabaseManagerPutRecordRequest,
   type DatabaseManagerRecordRequest,
   type DatabaseManagerRunMigrationRequest,
   type DatabaseManagerStoreRequest
-} from "./contracts";
-import type { DatabaseManagerService } from "../runtime/service";
-import type { IdentityAccessService } from "../../identity-access";
+} from "./contracts.ts";
+import type { DatabaseManagerService } from "../runtime/service.ts";
+import type { IdentityAccessService } from "../../identity-access/index.ts";
 
 export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, service: DatabaseManagerService, identityAccess?: IdentityAccessService): void {
   registry.register({
     programId: "database-manager",
     endpoint: DATABASE_MANAGER_ENDPOINTS.snapshot,
+    permission: "programs.read",
     handler: async (request) => ({
       ok: true,
       payload: await service.snapshot(request.scope)
@@ -22,6 +23,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
   registry.register({
     programId: "database-manager",
     endpoint: DATABASE_MANAGER_ENDPOINTS.listRecords,
+    permission: "programs.read",
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerStoreRequest | undefined;
       if (!payload?.kind) return { ok: false, error: "kind is required" };
@@ -33,6 +35,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
   registry.register({
     programId: "database-manager",
     endpoint: DATABASE_MANAGER_ENDPOINTS.getRecord,
+    permission: "programs.read",
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerRecordRequest | undefined;
       if (!payload?.kind || !payload.id) return { ok: false, error: "kind and id are required" };
@@ -44,6 +47,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
   registry.register({
     programId: "database-manager",
     endpoint: DATABASE_MANAGER_ENDPOINTS.putRecord,
+    permission: "data.manage",
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerPutRecordRequest | undefined;
       if (!payload?.kind || !payload.id) return { ok: false, error: "kind and id are required" };
@@ -54,6 +58,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
   registry.register({
     programId: "database-manager",
     endpoint: DATABASE_MANAGER_ENDPOINTS.deleteRecord,
+    permission: "data.manage",
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerRecordRequest | undefined;
       if (!payload?.kind || !payload.id) return { ok: false, error: "kind and id are required" };
@@ -63,6 +68,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
   registry.register({
     programId: "database-manager",
     endpoint: DATABASE_MANAGER_ENDPOINTS.runMigration,
+    permission: "data.manage",
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerRunMigrationRequest | undefined;
       if (!payload?.id) return { ok: false, error: "id is required" };

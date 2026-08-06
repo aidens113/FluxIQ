@@ -1,4 +1,4 @@
-import { defineBuiltinNode, emptyResult } from "../shared/definition";
+import { defineBuiltinNode, emptyResult } from "../shared/definition.ts";
 
 export const mergeNode = defineBuiltinNode({
   id: "builtin.control.merge",

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { JsonObject } from "../../../core";
-import { ProgramJsonStore, programDataFile } from "../../_shared/storage";
-import type { ProductionRun, ProductionRunExecution, ProductionRunnerSnapshot, ProductionRunTargetType, ProductionTarget } from "../types";
+import type { JsonObject } from "../../../core/index.ts";
+import { ProgramJsonStore, programDataFile } from "../../_shared/storage.ts";
+import type { ProductionRun, ProductionRunExecution, ProductionRunnerSnapshot, ProductionRunTargetType, ProductionTarget } from "../types.ts";
 
 export type ProductionRunDispatcher = {
   execute(run: ProductionRun): Promise<JsonObject | void> | JsonObject | void;

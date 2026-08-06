@@ -1,4 +1,4 @@
-import type { ProductionRun } from "../types";
+import type { ProductionRun } from "../types.ts";
 
 export type ProductionRunnerStore = {
   listRuns(domainId?: string | null): Promise<ProductionRun[]>;

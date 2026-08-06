@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioFlowDocument } from "../model";
-import { runAutomationStudioGraph } from "./executor";
+import type { AutomationStudioFlowDocument } from "../model/index.ts";
+import { runAutomationStudioGraph } from "./executor.ts";
 
 describe("Automation Studio graph executor", () => {
   it("runs built-in nodes, follows named routes, and records attempts/effects", async () => {

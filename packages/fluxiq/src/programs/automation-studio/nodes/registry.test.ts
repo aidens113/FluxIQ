@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationNodeClassGroups, automationNodeClasses, builtinAutomationNodeDefinitions, getAutomationNodeDefinition, getAutomationNodeDefinitions } from "./registry";
+import { automationNodeClassGroups, automationNodeClasses, builtinAutomationNodeDefinitions, getAutomationNodeDefinition, getAutomationNodeDefinitions } from "./registry.ts";
 
 describe("automation node registry", () => {
   it("groups built-in node definitions by stable domain-neutral classes", () => {

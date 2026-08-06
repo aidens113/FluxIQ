@@ -5,9 +5,9 @@ import {
   type ClientGatewayRecordingEvent,
   type ClientGatewaySnapshot,
   type ClientGatewayStateUpdate
-} from "fluxiq/client-gateway";
-import type { JsonObject } from "fluxiq/core";
-import { parseServerMessage } from "./messages";
+} from "@fluxiq/contracts/client-gateway";
+import type { JsonObject } from "@fluxiq/contracts/core";
+import { parseServerMessage } from "./messages.ts";
 import type {
   FluxIQClientGatewayWebSocketEvent,
   FluxIQClientGatewayWebSocketEventType,
@@ -15,7 +15,7 @@ import type {
   FluxIQClientGatewayWebSocketOptions,
   FluxIQWebSocketConstructor,
   FluxIQWebSocketLike
-} from "./types";
+} from "./types.ts";
 
 export class FluxIQClientGatewayWebSocketClient {
   private readonly options: FluxIQClientGatewayWebSocketOptions;
@@ -126,7 +126,7 @@ export class FluxIQClientGatewayWebSocketClient {
     addListener(socket, "error", (event) => this.emit({ type: "error", event }));
   }
 
-  private async handleServerMessage(message: import("fluxiq/client-gateway").ClientGatewayServerMessage): Promise<void> {
+  private async handleServerMessage(message: import("@fluxiq/contracts/client-gateway").ClientGatewayServerMessage): Promise<void> {
     if (message.sessionId) this.sessionId = message.sessionId;
     this.emit({ type: "message", message });
     if (message.type === "server.session_ready") {

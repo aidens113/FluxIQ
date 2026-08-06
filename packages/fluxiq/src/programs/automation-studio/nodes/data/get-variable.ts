@@ -1,5 +1,5 @@
-import { readVariable, variableName } from "./shared";
-import { defineBuiltinNode, emptyResult } from "../shared/definition";
+import { readVariable, variableName } from "./shared.ts";
+import { defineBuiltinNode, emptyResult } from "../shared/definition.ts";
 
 export const getVariableNode = defineBuiltinNode({
   id: "builtin.data.get-variable",

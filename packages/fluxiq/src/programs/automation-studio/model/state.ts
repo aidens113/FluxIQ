@@ -1,5 +1,5 @@
-import type { JsonObject } from "../../../core";
-import type { SignalProvenance } from "./signals";
+import type { JsonObject } from "../../../core/index.ts";
+import type { SignalProvenance } from "./signals.ts";
 
 export type StateValueType =
   | "string"

@@ -1,5 +1,5 @@
-import { everyBoolean } from "./shared";
-import { defineBuiltinNode, arrayValue } from "../shared/definition";
+import { everyBoolean } from "./shared.ts";
+import { defineBuiltinNode, arrayValue } from "../shared/definition.ts";
 
 export const andNode = defineBuiltinNode({
   id: "builtin.logic.and",

@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
-import type { JsonObject, JsonValue } from "../../core";
-import type { RepositoryScope } from "../database-manager";
+import type { JsonObject, JsonValue } from "../../core/index.ts";
+import type { RepositoryScope } from "../database-manager/index.ts";
+import { SQLiteRepository, createRecord, type SQLiteTransaction } from "../database-manager/storage/sqlite-repository.ts";
 
 export type JsonFileDocument<T extends JsonObject = JsonObject> = {
   version: 1;
@@ -19,6 +21,11 @@ export class ProgramJsonStore<T extends JsonObject = JsonObject> {
   }
 
   async read(): Promise<T> {
+    const sqlite = this.sqliteState();
+    if (sqlite) {
+      const record = await sqlite.repository.get(sqlite.id);
+      return record?.data as T | undefined ?? this.empty();
+    }
     try {
       const payload = JSON.parse(await readFile(this.filePath, "utf8")) as Partial<JsonFileDocument<T>>;
       if (payload && typeof payload === "object" && payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)) {
@@ -42,7 +49,44 @@ export class ProgramJsonStore<T extends JsonObject = JsonObject> {
     });
   }
 
+  static async listDirectoryDocuments<TDocument extends JsonObject>(directoryPath: string, documentFileName: string): Promise<TDocument[] | null> {
+    const sqlite = sqliteStateForPath(directoryPath);
+    if (!sqlite) return null;
+    const suffix = `/${documentFileName.replace(/\.json$/i, "")}`;
+    const prefix = `${sqlite.id.replace(/\/$/, "")}/`;
+    const records = await sqlite.repository.list();
+    return records
+      .filter((record) => record.id.startsWith(prefix) && record.id.endsWith(suffix))
+      .filter((record) => !record.id.slice(prefix.length, -suffix.length).includes("/"))
+      .map((record) => structuredClone(record.data) as TDocument);
+  }
+
+  static async deletePath(targetPath: string): Promise<boolean> {
+    const sqlite = sqliteStateForPath(targetPath);
+    if (!sqlite) return false;
+    const isDocument = path.extname(targetPath).toLowerCase() === ".json";
+    if (isDocument) return await sqlite.repository.delete(sqlite.id);
+    const prefix = `${sqlite.id.replace(/\/$/, "")}/`;
+    const records = await sqlite.repository.list();
+    let deleted = false;
+    for (const record of records) {
+      if (record.id === sqlite.id || record.id.startsWith(prefix)) deleted = await sqlite.repository.delete(record.id) || deleted;
+    }
+    return deleted;
+  }
+
+  static async transaction<TResult>(anchorPath: string, operation: (transaction: ProgramDocumentTransaction) => Promise<TResult>): Promise<TResult> {
+    const anchor = sqliteStateForPath(anchorPath);
+    if (!anchor) throw new Error(`Program document transactions require FluxIQ storage layout v2: ${anchorPath}`);
+    return await anchor.repository.transaction({}, async (sqlite) => operation(new ProgramDocumentTransaction(anchor.rootDir, anchor.kind, sqlite)));
+  }
+
   private async writeUnlocked(data: T): Promise<T> {
+    const sqlite = this.sqliteState();
+    if (sqlite) {
+      await sqlite.repository.put(createRecord({ id: sqlite.id, kind: "program.state", data }));
+      return data;
+    }
     await mkdir(path.dirname(this.filePath), { recursive: true });
     const tempPath = `${this.filePath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
     await writeFile(tempPath, `${JSON.stringify({ version: 1, data }, null, 2)}\n`, "utf8");
@@ -53,6 +97,11 @@ export class ProgramJsonStore<T extends JsonObject = JsonObject> {
       throw error;
     }
     return data;
+  }
+
+  private sqliteState(): { repository: SQLiteRepository<T>; id: string } | null {
+    const state = sqliteStateForPath(this.filePath);
+    return state ? { repository: state.repository as SQLiteRepository<T>, id: state.id } : null;
   }
 
   private static async withFileLock<TResult>(filePath: string, operation: () => Promise<TResult>): Promise<TResult> {
@@ -71,6 +120,83 @@ export class ProgramJsonStore<T extends JsonObject = JsonObject> {
       release();
       if (ProgramJsonStore.writeLocks.get(key) === chained) ProgramJsonStore.writeLocks.delete(key);
     }
+  }
+}
+
+export class ProgramDocumentTransaction {
+  constructor(private readonly rootDir: string, private readonly kind: string, private readonly transaction: SQLiteTransaction) {}
+
+  async read<T extends JsonObject>(filePath: string, empty: () => T): Promise<T> {
+    const state = this.state(filePath);
+    const row = await this.transaction.get<{ data: string }>(`select data from ${state.repository.tableName} where id = ?`, [state.id]);
+    return row ? JSON.parse(row.data) as T : empty();
+  }
+
+  async write<T extends JsonObject>(filePath: string, data: T): Promise<T> {
+    const state = this.state(filePath);
+    const now = Date.now();
+    await this.transaction.run(`
+      insert into ${state.repository.tableName} (id, kind, data, created_at_ms, updated_at_ms)
+      values (?, ?, ?, ?, ?)
+      on conflict(id) do update set data = excluded.data, updated_at_ms = excluded.updated_at_ms
+    `, [state.id, this.kind, JSON.stringify(data), now, now]);
+    return data;
+  }
+
+  async deletePath(targetPath: string): Promise<void> {
+    const state = this.state(targetPath);
+    if (path.extname(targetPath).toLowerCase() === ".json") {
+      await this.transaction.run(`delete from ${state.repository.tableName} where id = ?`, [state.id]);
+      return;
+    }
+    await this.transaction.run(`delete from ${state.repository.tableName} where id = ? or id like ?`, [state.id, `${state.id.replace(/\/$/, "")}/%`]);
+  }
+
+  private state(filePath: string): NonNullable<ReturnType<typeof sqliteStateForPath>> {
+    const state = sqliteStateForPath(filePath);
+    if (!state || state.rootDir !== this.rootDir || state.kind !== this.kind) {
+      throw new Error(`Program document transaction cannot cross storage owners: ${filePath}`);
+    }
+    return state;
+  }
+}
+
+function sqliteStateForPath(targetPath: string): { repository: SQLiteRepository<JsonObject>; id: string; rootDir: string; kind: string } | null {
+  const resolved = path.resolve(targetPath);
+  let current = path.dirname(resolved);
+  while (true) {
+    const configPath = path.join(current, "config.json");
+    if (existsSync(configPath)) {
+      try {
+        const config = JSON.parse(readFileSync(configPath, "utf8")) as { layoutVersion?: unknown };
+        if (config.layoutVersion !== 2) return null;
+        const relative = path.relative(current, resolved).replaceAll("\\", "/");
+        const programPrefix = "programs/";
+        const automationPrefix = "artifacts/automation-studio/";
+        if (relative.startsWith(programPrefix)) {
+          return {
+            repository: new SQLiteRepository({ rootDir: current, kind: "program.state", layoutVersion: 2 }),
+            id: relative.slice(programPrefix.length).replace(/\.json$/i, ""),
+            rootDir: current,
+            kind: "program.state"
+          };
+        }
+        if (relative.startsWith(automationPrefix)) {
+          return {
+            repository: new SQLiteRepository({ rootDir: current, kind: "automation.state", layoutVersion: 2 }),
+            id: relative.slice(automationPrefix.length).replace(/\.json$/i, ""),
+            rootDir: current,
+            kind: "automation.state"
+          };
+        }
+      } catch {
+        return null;
+      }
+      return null;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) return null;
+    current = parent;
   }
 }
 

@@ -1,2 +1,2 @@
-export * from "./contracts";
-export * from "./default-normalizer";
+export * from "./contracts.ts";
+export * from "./default-normalizer.ts";

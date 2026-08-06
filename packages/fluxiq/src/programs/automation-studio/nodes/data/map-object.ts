@@ -1,4 +1,4 @@
-import { defineBuiltinNode, emptyResult, getPathValue, objectValue, setPathValue } from "../shared/definition";
+import { defineBuiltinNode, emptyResult, getPathValue, objectValue, setPathValue } from "../shared/definition.ts";
 
 export const mapObjectNode = defineBuiltinNode({
   id: "builtin.data.map-object",

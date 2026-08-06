@@ -20,9 +20,10 @@ export async function GET(_request: Request, context: RouteParams) {
   const response = await fluxiq.programs.api.call({
     programId,
     endpoint,
-    scope: { domainId: url.searchParams.get("domainId") }
+    scope: { domainId: url.searchParams.get("domainId") },
+    actor: programApiActor(sessionId!, auth)
   });
-  return NextResponse.json(withWebRuntimeStatus(programId, endpoint, response), { status: response.ok ? 200 : 404 });
+  return NextResponse.json(withWebRuntimeStatus(programId, endpoint, response, auth.user.id), { status: programResponseStatus(response) });
 }
 
 export async function POST(request: Request, context: RouteParams) {
@@ -37,11 +38,29 @@ export async function POST(request: Request, context: RouteParams) {
     programId,
     endpoint,
     scope: { domainId: url.searchParams.get("domainId") },
+    actor: programApiActor(sessionId!, auth),
     payload: (programId === "identity-access" || programId === "database-manager" || programId === "automation-studio") && payload && typeof payload === "object"
       ? { ...payload, authSessionId: sessionId }
       : payload
   });
-  return NextResponse.json(withWebRuntimeStatus(programId, endpoint, response), { status: response.ok ? 200 : 400 });
+  return NextResponse.json(withWebRuntimeStatus(programId, endpoint, response, auth.user.id), { status: programResponseStatus(response) });
+}
+
+function programApiActor(sessionId: string, auth: NonNullable<Awaited<ReturnType<ReturnType<typeof getFluxIQ>["programs"]["identityAccess"]["validateSession"]>>>) {
+  return {
+    sessionId,
+    userId: auth.user.id,
+    roleId: auth.role.id,
+    permissions: auth.role.permissions
+  };
+}
+
+function programResponseStatus(response: { ok: boolean; errorCode?: string }): number {
+  if (response.ok) return 200;
+  if (response.errorCode === "authorization.required") return 401;
+  if (response.errorCode === "authorization.forbidden") return 403;
+  if (response.errorCode === "endpoint.not_found") return 404;
+  return 400;
 }
 
 async function readSessionId(): Promise<string | undefined> {
@@ -49,13 +68,13 @@ async function readSessionId(): Promise<string | undefined> {
   return cookieStore.get(FLUXIQ_SESSION_COOKIE)?.value;
 }
 
-function withWebRuntimeStatus<TResponse extends { ok: boolean; payload?: unknown }>(programId: string, endpoint: string, response: TResponse): TResponse {
+function withWebRuntimeStatus<TResponse extends { ok: boolean; payload?: unknown }>(programId: string, endpoint: string, response: TResponse, operatorUserId: string): TResponse {
   if (programId !== "automation-studio" || endpoint !== "client-gateway-snapshot" || !response.ok || !response.payload || typeof response.payload !== "object") return response;
   return {
     ...response,
     payload: {
       ...response.payload,
-      webRuntime: getFluxIQWebRuntimeStatus()
+      webRuntime: getFluxIQWebRuntimeStatus(operatorUserId)
     }
   };
 }

@@ -1,16 +1,18 @@
 import path from "node:path";
-import { ClientGatewayService } from "../../client-gateway";
-import type { FluxIQHostPaths } from "../../framework";
-import { AutomationStudioClientGatewayBridge, AutomationStudioService, registerAutomationStudioApi } from "../automation-studio";
-import { BackgroundTasksService, registerBackgroundTasksApi } from "../background-tasks";
-import { ComputeControlService, registerComputeControlApi } from "../compute-control";
-import { DatabaseManagerService, registerDatabaseManagerApi, SQLiteRepository } from "../database-manager";
-import { DeploymentSyncService, registerDeploymentSyncApi } from "../deployment-sync";
-import { DocsService, registerDocsApi } from "../docs";
-import { IdentityAccessService, registerIdentityAccessApi } from "../identity-access";
-import { ProductionRunnerService, registerProductionRunnerApi } from "../production-runner";
-import { GlobalProgramApiRegistry } from "./api";
-import { registerGlobalDocumentationGenerators } from "./docs-generators";
+import { ClientGatewayService, type ClientGatewayTrustedClient, type ClientGatewayTrustedClientStore } from "../../client-gateway/index.ts";
+import type { JsonObject } from "../../core/index.ts";
+import type { FluxIQHostPaths } from "../../framework/index.ts";
+import { AutomationStudioClientGatewayBridge, AutomationStudioService, createCanonicalAutomationStudioSQLiteRepositories, registerAutomationStudioApi } from "../automation-studio/index.ts";
+import { BackgroundTasksService, registerBackgroundTasksApi } from "../background-tasks/index.ts";
+import { ComputeControlService, registerComputeControlApi } from "../compute-control/index.ts";
+import { DatabaseManagerService, registerDatabaseManagerApi, SQLiteRepository } from "../database-manager/index.ts";
+import { DeploymentSyncService, registerDeploymentSyncApi } from "../deployment-sync/index.ts";
+import { DocsService, registerDocsApi } from "../docs/index.ts";
+import { IdentityAccessService, registerIdentityAccessApi } from "../identity-access/index.ts";
+import { ProductionRunnerService, registerProductionRunnerApi } from "../production-runner/index.ts";
+import { GlobalProgramApiRegistry } from "./api.ts";
+import { registerGlobalDocumentationGenerators } from "./docs-generators.ts";
+import { ProgramJsonStore, programDataFile } from "./storage.ts";
 
 export type GlobalProgramRuntime = {
   api: GlobalProgramApiRegistry;
@@ -28,15 +30,25 @@ export type GlobalProgramRuntime = {
 
 export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgramRuntime {
   const api = new GlobalProgramApiRegistry();
+  const storageLayoutVersion = paths && path.basename(paths.config) === "config.json" ? 2 : 1;
   const storageOptions = paths ? { dataDir: paths.data } : {};
-  const automationStudio = new AutomationStudioService(storageOptions);
+  const automationStudio = new AutomationStudioService(paths && storageLayoutVersion === 2
+    ? {
+        storageRootDir: paths.recordings,
+        repositories: createCanonicalAutomationStudioSQLiteRepositories(paths.databases),
+        customNodeRootDir: path.join(paths.domainPrograms, "automation-studio", "nodes")
+      }
+    : storageOptions);
+  const trustedClientTtlMs = positiveNumber(process.env.FLUXIQ_CLIENT_GATEWAY_TRUST_TTL_MS);
   const clientGateway = new ClientGatewayService({
     enabled: process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED !== "false",
+    ...(paths ? { trustedClientStore: createClientGatewayTrustedClientStore(paths.data) } : {}),
+    ...(trustedClientTtlMs ? { trustedClientTtlMs } : {}),
     ...(process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL ? { publicUrl: process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL } : {})
   });
   const automationStudioClientGateway = new AutomationStudioClientGatewayBridge({ gateway: clientGateway, automationStudio });
-  const backgroundTasksRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "background.tasks" }) : undefined;
-  const identityUsersRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "identity.users" }) : undefined;
+  const backgroundTasksRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "background.tasks", layoutVersion: storageLayoutVersion }) : undefined;
+  const identityUsersRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "identity.users", layoutVersion: storageLayoutVersion }) : undefined;
   const backgroundTasks = new BackgroundTasksService(backgroundTasksRepository ? { repository: backgroundTasksRepository } : {});
   const computeControl = new ComputeControlService(storageOptions);
   const databaseManager = new DatabaseManagerService(storageOptions);
@@ -49,9 +61,9 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
     databaseManager
       .registerRepository("identity.users", identityUsersRepository!)
       .registerRepository("background.tasks", backgroundTasksRepository!)
-      .registerRepository("compute.nodes", new SQLiteRepository({ rootDir: paths.databases, kind: "compute.nodes" }))
-      .registerRepository("deployment.targets", new SQLiteRepository({ rootDir: paths.databases, kind: "deployment.targets" }))
-      .registerRepository("production.targets", new SQLiteRepository({ rootDir: paths.databases, kind: "production.targets" }));
+      .registerRepository("compute.nodes", new SQLiteRepository({ rootDir: paths.databases, kind: "compute.nodes", layoutVersion: storageLayoutVersion }))
+      .registerRepository("deployment.targets", new SQLiteRepository({ rootDir: paths.databases, kind: "deployment.targets", layoutVersion: storageLayoutVersion }))
+      .registerRepository("production.targets", new SQLiteRepository({ rootDir: paths.databases, kind: "production.targets", layoutVersion: storageLayoutVersion }));
 
     docs.registerSource({
       id: "framework-docs",
@@ -109,4 +121,22 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
     identityAccess,
     productionRunner
   };
+}
+
+function createClientGatewayTrustedClientStore(dataDir: string): ClientGatewayTrustedClientStore {
+  const store = new ProgramJsonStore<JsonObject>(programDataFile(dataDir, "client-gateway", "trusted-clients.json"), () => ({ clients: [] }));
+  return {
+    async load() {
+      const data = await store.read();
+      return Array.isArray(data.clients) ? data.clients as unknown as ClientGatewayTrustedClient[] : [];
+    },
+    async save(clients) {
+      await store.write({ clients: clients as unknown as JsonObject[] });
+    }
+  };
+}
+
+function positiveNumber(value: string | undefined): number | undefined {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }

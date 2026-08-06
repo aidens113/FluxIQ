@@ -1,5 +1,5 @@
-import { CLIENT_GATEWAY_PROTOCOL_VERSION, type ClientGatewayClientMessage, type ClientGatewayClientType, type ClientGatewayServerMessage } from "../contracts";
-import type { ClientGatewayService } from "../service";
+import { CLIENT_GATEWAY_PROTOCOL_VERSION, type ClientGatewayClientMessage, type ClientGatewayClientType, type ClientGatewayServerMessage } from "../contracts.ts";
+import type { ClientGatewayService } from "../service.ts";
 
 export class MockClientGatewayClient {
   readonly sessionId: string;

@@ -1,6 +1,6 @@
-import type { AutomationRecording, AutomationTask, DynamicPolicyArtifact } from "../types";
-import type { LearnedTaskModel } from "../learning";
-import type { NormalizedTimeline } from "../normalization";
+import type { AutomationRecording, AutomationTask, DynamicPolicyArtifact } from "../types.ts";
+import type { LearnedTaskModel } from "../learning/index.ts";
+import type { NormalizedTimeline } from "../normalization/index.ts";
 import type {
   AppendRecordingEntryInput,
   CreateRecordingSessionInput,
@@ -10,10 +10,10 @@ import type {
   RecordingSession,
   SignalRegistry,
   StateSnapshot
-} from "../model";
-import type { NormalizationOptions } from "../normalization";
-import type { JsonObject } from "../../../core";
-import type { ClientGatewayActionCommand } from "../../../client-gateway";
+} from "../model/index.ts";
+import type { NormalizationOptions } from "../normalization/index.ts";
+import type { JsonObject } from "../../../core/index.ts";
+import type { ClientGatewayActionCommand } from "../../../client-gateway/index.ts";
 
 export const AUTOMATION_STUDIO_ENDPOINTS = {
   snapshot: "snapshot",
@@ -59,7 +59,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   validateRecordingDomainEvent: "validate-recording-domain-event",
   appendRecordingDomainEvent: "append-recording-domain-event",
   clientGatewaySnapshot: "client-gateway-snapshot",
-  createClientPairing: "create-client-pairing",
+  revokeClientTrust: "revoke-client-trust",
   startClientRecording: "start-client-recording",
   stopClientRecording: "stop-client-recording",
   captureClientSnapshot: "capture-client-snapshot",
@@ -229,9 +229,9 @@ export type InspectStateDiffRequest = {
   includeStable?: boolean;
 };
 
-export type CreateClientPairingRequest = {
-  projectId?: string | null;
-  ttlMs?: number;
+export type RevokeClientTrustRequest = {
+  trustedClientId: string;
+  reason?: string;
 };
 
 export type StartClientRecordingRequest = {

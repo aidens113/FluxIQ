@@ -1,6 +1,6 @@
-import type { LearnedTaskModel } from "../learning";
-import type { NormalizedTimeline } from "../normalization";
-import type { PolicyGraph, RecordingSession, SignalRegistry } from "../model";
+import type { LearnedTaskModel } from "../learning/index.ts";
+import type { NormalizedTimeline } from "../normalization/index.ts";
+import type { PolicyGraph, RecordingSession, SignalRegistry } from "../model/index.ts";
 
 export type CanonicalAutomationStudioArtifact =
   | RecordingSession

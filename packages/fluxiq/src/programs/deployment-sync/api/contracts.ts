@@ -1,4 +1,4 @@
-import type { DeploymentSyncRun, DeploymentSyncSnapshot } from "../types";
+import type { DeploymentSyncRun, DeploymentSyncSnapshot } from "../types.ts";
 
 export const DEPLOYMENT_SYNC_ENDPOINTS = {
   snapshot: "snapshot",
@@ -14,8 +14,8 @@ export type DeploymentSyncRequest = {
   versionSha?: string;
 };
 
-export type UpsertDeploymentTargetRequest = import("../types").DeploymentTarget;
-export type UpsertDeploymentArtifactRequest = import("../types").DeploymentArtifact;
+export type UpsertDeploymentTargetRequest = import("../types.ts").DeploymentTarget;
+export type UpsertDeploymentArtifactRequest = import("../types.ts").DeploymentArtifact;
 
 export type DeploymentSyncResponse = DeploymentSyncRun;
 

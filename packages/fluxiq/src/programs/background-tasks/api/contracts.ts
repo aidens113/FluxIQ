@@ -1,5 +1,5 @@
-import type { JsonObject } from "../../../core";
-import type { BackgroundTaskRun, BackgroundTasksSnapshot } from "../types";
+import type { JsonObject } from "../../../core/index.ts";
+import type { BackgroundTaskRun, BackgroundTasksSnapshot } from "../types.ts";
 
 export const BACKGROUND_TASKS_ENDPOINTS = {
   snapshot: "snapshot",

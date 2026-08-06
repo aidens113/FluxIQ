@@ -1,5 +1,5 @@
-import type { DomainSummary } from "../../domains";
-import type { FluxIQIconName } from "../../ui";
+import type { DomainSummary } from "../../domains/index.ts";
+import type { FluxIQIconName } from "../../ui/index.ts";
 
 export type ProgramScope = {
   domainId?: string | null;

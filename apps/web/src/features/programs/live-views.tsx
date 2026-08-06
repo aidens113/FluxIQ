@@ -628,7 +628,9 @@ export function DocsLive() {
           <span className="program-chip">{formatTime(snapshot?.payload?.generatedAtMs)}</span>
         </div>
         {snapshot?.payload?.warnings?.length ? <details className="json-details"><summary>Warnings</summary><pre>{snapshot.payload.warnings.join("\n")}</pre></details> : null}
-        {page ? <article className="docs-rendered" onClick={handleViewerClick} dangerouslySetInnerHTML={{ __html: page.html }} /> : <p className="muted-text">Select a page to view rendered documentation.</p>}
+        {page?.format === "html" ? <iframe className="docs-rendered docs-html-frame" sandbox="" srcDoc={sandboxedDocumentationHtml(page.html)} title={page.title ?? "Documentation"} /> : null}
+        {page && page.format !== "html" ? <article className="docs-rendered" onClick={handleViewerClick} dangerouslySetInnerHTML={{ __html: page.html }} /> : null}
+        {!page ? <p className="muted-text">Select a page to view rendered documentation.</p> : null}
         <StatusText value={status} />
       </main>
     </section>
@@ -919,6 +921,10 @@ function shortJson(value: unknown): string {
   if (!value) return "-";
   const text = JSON.stringify(value);
   return text.length > 90 ? `${text.slice(0, 90)}...` : text;
+}
+
+function sandboxedDocumentationHtml(html: string): string {
+  return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:"></head><body>${html}</body></html>`;
 }
 
 function formatDbCell(value: unknown): string {

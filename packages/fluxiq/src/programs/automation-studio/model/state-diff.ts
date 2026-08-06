@@ -1,4 +1,4 @@
-import type { StateDelta, StateSnapshot, StateValue } from "./state";
+import type { StateDelta, StateSnapshot, StateValue } from "./state.ts";
 
 export type StateDiffOptions = {
   includeStable?: boolean;

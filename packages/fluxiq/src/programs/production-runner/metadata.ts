@@ -1,4 +1,4 @@
-import type { GlobalProgramDefinition } from "../_shared/types";
+import type { GlobalProgramDefinition } from "../_shared/types.ts";
 
 export const PRODUCTION_RUNNER_PROGRAM: GlobalProgramDefinition = {
   id: "production-runner",

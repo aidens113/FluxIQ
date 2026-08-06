@@ -1,4 +1,4 @@
-import type { GlobalProgramApiRegistry } from "../../_shared/api";
+import type { GlobalProgramApiRegistry } from "../../_shared/api.ts";
 import {
   COMPUTE_CONTROL_ENDPOINTS,
   type AcquireComputeLeaseRequest,
@@ -8,18 +8,20 @@ import {
   type PollComputeCommandsRequest,
   type RegisterComputeNodeRequest,
   type ReleaseComputeLeaseRequest
-} from "./contracts";
-import type { ComputeControlService } from "../runtime/service";
+} from "./contracts.ts";
+import type { ComputeControlService } from "../runtime/service.ts";
 
 export function registerComputeControlApi(registry: GlobalProgramApiRegistry, service: ComputeControlService): void {
   registry.register({
     programId: "compute-control",
     endpoint: COMPUTE_CONTROL_ENDPOINTS.snapshot,
+    permission: "programs.read",
     handler: async () => ({ ok: true, payload: await service.snapshot() })
   });
   registry.register({
     programId: "compute-control",
     endpoint: COMPUTE_CONTROL_ENDPOINTS.registerNode,
+    permission: "compute.control",
     handler: async (request) => {
       const payload = request.payload as RegisterComputeNodeRequest | undefined;
       if (!payload?.id || !payload.label) return { ok: false, error: "id and label are required" };
@@ -29,6 +31,7 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
   registry.register({
     programId: "compute-control",
     endpoint: COMPUTE_CONTROL_ENDPOINTS.heartbeat,
+    permission: "compute.control",
     handler: async (request) => {
       const payload = request.payload as ComputeHeartbeatRequest | undefined;
       if (!payload?.nodeId) return { ok: false, error: "nodeId is required" };
@@ -38,6 +41,7 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
   registry.register({
     programId: "compute-control",
     endpoint: COMPUTE_CONTROL_ENDPOINTS.command,
+    permission: "compute.control",
     handler: async (request) => {
       const payload = request.payload as ComputeControlCommandRequest | undefined;
       if (!payload?.targetComputeId || !payload.kind) {
@@ -49,6 +53,7 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
   registry.register({
     programId: "compute-control",
     endpoint: COMPUTE_CONTROL_ENDPOINTS.pollCommands,
+    permission: "compute.control",
     handler: async (request) => {
       const payload = request.payload as PollComputeCommandsRequest | undefined;
       if (!payload?.nodeId) return { ok: false, error: "nodeId is required" };
@@ -58,6 +63,7 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
   registry.register({
     programId: "compute-control",
     endpoint: COMPUTE_CONTROL_ENDPOINTS.completeCommand,
+    permission: "compute.control",
     handler: async (request) => {
       const payload = request.payload as CompleteComputeCommandRequest | undefined;
       if (!payload?.commandId) return { ok: false, error: "commandId is required" };
@@ -67,6 +73,7 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
   registry.register({
     programId: "compute-control",
     endpoint: COMPUTE_CONTROL_ENDPOINTS.acquireLease,
+    permission: "compute.control",
     handler: async (request) => {
       const payload = request.payload as AcquireComputeLeaseRequest | undefined;
       if (!payload?.computeId || !payload.holder || !payload.purpose || !payload.ttlMs) {
@@ -78,6 +85,7 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
   registry.register({
     programId: "compute-control",
     endpoint: COMPUTE_CONTROL_ENDPOINTS.releaseLease,
+    permission: "compute.control",
     handler: async (request) => {
       const payload = request.payload as ReleaseComputeLeaseRequest | undefined;
       if (!payload?.leaseId) return { ok: false, error: "leaseId is required" };

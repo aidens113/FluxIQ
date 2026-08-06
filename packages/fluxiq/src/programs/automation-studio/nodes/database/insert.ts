@@ -1,5 +1,5 @@
-import { collectionName } from "./shared";
-import { defineBuiltinNode } from "../shared/definition";
+import { collectionName } from "./shared.ts";
+import { defineBuiltinNode } from "../shared/definition.ts";
 
 export const databaseInsertNode = defineBuiltinNode({
   id: "builtin.database.insert",

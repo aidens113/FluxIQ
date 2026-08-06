@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import type { JsonObject } from "../core";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import type { JsonObject } from "../core/index.ts";
 import type {
   ClientGatewayActionCommand,
   ClientGatewayActionResponse,
@@ -13,16 +13,26 @@ import type {
   ClientGatewayServerMessage,
   ClientGatewaySession,
   ClientGatewaySocket,
-  ClientGatewaySnapshotView
-} from "./contracts";
-import { CLIENT_GATEWAY_PROTOCOL_VERSION } from "./contracts";
+  ClientGatewaySnapshotView,
+  ClientGatewayTrustedClient,
+  ClientGatewayTrustedClientView
+} from "./contracts.ts";
+import { CLIENT_GATEWAY_PROTOCOL_VERSION } from "./contracts.ts";
 
 export type ClientGatewayServiceOptions = {
   enabled?: boolean;
   publicUrl?: string;
   pairingTtlMs?: number;
   commandTimeoutMs?: number;
+  trustedClientTtlMs?: number;
+  trustedClientStore?: ClientGatewayTrustedClientStore;
+  createToken?: () => string;
   now?: () => number;
+};
+
+export type ClientGatewayTrustedClientStore = {
+  load(): Promise<ClientGatewayTrustedClient[]>;
+  save(clients: ClientGatewayTrustedClient[]): Promise<void>;
 };
 
 type InternalSession = ClientGatewaySession & {
@@ -42,20 +52,37 @@ export class ClientGatewayService {
   private readonly publicUrl: string | undefined;
   private readonly pairingTtlMs: number;
   private readonly commandTimeoutMs: number;
+  private readonly trustedClientTtlMs: number;
+  private readonly trustedClientStore: ClientGatewayTrustedClientStore | undefined;
+  private readonly createToken: () => string;
   private readonly now: () => number;
   private readonly sessions = new Map<string, InternalSession>();
   private readonly pairings = new Map<string, ClientGatewayPairingChallenge>();
-  private readonly tokenToSession = new Map<string, string>();
+  private readonly trustedClients = new Map<string, ClientGatewayTrustedClient>();
+  private readonly trustedClientByTokenHash = new Map<string, string>();
   private readonly pendingCommands = new Map<string, PendingCommand>();
   private readonly handlers = new Set<ClientGatewayEventHandler>();
   private readonly auditLog: ClientGatewayAuditEntry[] = [];
+  private readonly trustedClientsReady: Promise<void>;
+  private trustedClientsLoadError: unknown;
 
   constructor(options: ClientGatewayServiceOptions = {}) {
     this.enabled = options.enabled ?? true;
     this.publicUrl = options.publicUrl;
     this.pairingTtlMs = options.pairingTtlMs ?? 5 * 60_000;
     this.commandTimeoutMs = options.commandTimeoutMs ?? 30_000;
+    this.trustedClientTtlMs = options.trustedClientTtlMs ?? 30 * 24 * 60 * 60_000;
+    this.trustedClientStore = options.trustedClientStore;
+    this.createToken = options.createToken ?? (() => randomBytes(32).toString("base64url"));
     this.now = options.now ?? Date.now;
+    this.trustedClientsReady = this.loadTrustedClients().catch((error: unknown) => {
+      this.trustedClientsLoadError = error;
+    });
+  }
+
+  async ready(): Promise<void> {
+    await this.trustedClientsReady;
+    if (this.trustedClientsLoadError) throw this.trustedClientsLoadError;
   }
 
   snapshot(): ClientGatewaySnapshotView {
@@ -65,17 +92,21 @@ export class ClientGatewayService {
       ...(this.publicUrl ? { publicUrl: this.publicUrl } : {}),
       sessions: [...this.sessions.values()].map(({ socket: _socket, outbound: _outbound, pendingPairingCode: _pendingPairingCode, ...session }) => ({ ...session })),
       pairings: [...this.pairings.values()],
+      trustedClients: [...this.trustedClients.values()].map((client) => this.publicTrustedClient(client)),
       auditLog: this.auditLog.slice(-100)
     };
   }
 
-  authorizeToken(token: string | null | undefined): ClientGatewaySession | null {
+  async authorizeToken(token: string | null | undefined): Promise<ClientGatewaySession | null> {
+    await this.ready();
     const normalizedToken = typeof token === "string" ? token.trim() : "";
     if (!normalizedToken) return null;
-    const sessionId = this.tokenToSession.get(normalizedToken);
-    if (!sessionId) return null;
-    const session = this.sessions.get(sessionId);
-    if (!session || session.status !== "ready" || session.token !== normalizedToken) return null;
+    const trustedClientId = this.trustedClientByTokenHash.get(this.hashToken(normalizedToken));
+    if (!trustedClientId) return null;
+    const trustedClient = this.trustedClients.get(trustedClientId);
+    if (!trustedClient || !this.isTrustedClientActive(trustedClient)) return null;
+    const session = [...this.sessions.values()].find((candidate) => candidate.status === "ready" && candidate.trustedClientId === trustedClientId);
+    if (!session) return null;
     session.lastSeenAt = this.now();
     return this.publicSession(session);
   }
@@ -104,11 +135,42 @@ export class ClientGatewayService {
     return pairing;
   }
 
-  async approvePairing(pairingCode: string): Promise<ClientGatewaySession | null> {
+  async approvePairing(pairingCode: string, input: { approvedByUserId: string }): Promise<ClientGatewaySession | null> {
+    await this.ready();
     this.pruneExpiredPairings();
     const pairing = this.pairings.get(pairingCode);
     if (!pairing || pairing.consumedAt || !pairing.requestedBySessionId) return null;
-    return this.completePairing(pairing.requestedBySessionId, pairingCode);
+    const approvedByUserId = input.approvedByUserId.trim();
+    if (!approvedByUserId) throw new Error("Approving operator is required.");
+    return this.completePairing(pairing.requestedBySessionId, pairingCode, approvedByUserId);
+  }
+
+  async revokeTrustedClient(trustedClientId: string, reason = "revoked by operator"): Promise<boolean> {
+    await this.ready();
+    const trustedClient = this.trustedClients.get(trustedClientId);
+    if (!trustedClient || trustedClient.revokedAt) return false;
+    const now = this.now();
+    const previousUpdatedAt = trustedClient.updatedAt;
+    trustedClient.revokedAt = now;
+    trustedClient.revocationReason = reason;
+    trustedClient.updatedAt = now;
+    this.trustedClientByTokenHash.delete(trustedClient.tokenHash);
+    try {
+      await this.persistTrustedClients();
+    } catch (error) {
+      delete trustedClient.revokedAt;
+      delete trustedClient.revocationReason;
+      trustedClient.updatedAt = previousUpdatedAt;
+      this.trustedClientByTokenHash.set(trustedClient.tokenHash, trustedClient.trustedClientId);
+      throw error;
+    }
+    for (const session of this.sessions.values()) {
+      if (session.status !== "ready" || session.trustedClientId !== trustedClientId) continue;
+      await this.send(session.sessionId, this.serverMessage("server.disconnect", { reason: "Client trust was revoked." }, session));
+      this.disconnect(session.sessionId, "client trust revoked");
+    }
+    this.audit("trust.revoked", "Trusted client access revoked.", { trustedClientId, clientId: trustedClient.clientId, reason });
+    return true;
   }
 
   dismissPairing(pairingCode: string): boolean {
@@ -161,7 +223,6 @@ export class ClientGatewayService {
     if (!session) return null;
     const next: InternalSession = { ...session, status: "disconnected", disconnectedAt: this.now(), lastSeenAt: this.now() };
     this.sessions.set(sessionId, next);
-    if (next.token) this.tokenToSession.delete(next.token);
     void next.socket?.close?.(1000, reason);
     this.audit("session.disconnected", "Client disconnected.", { sessionId, reason });
     void this.emit({ type: "session.disconnected", session: this.publicSession(next) });
@@ -307,6 +368,7 @@ export class ClientGatewayService {
   }
 
   private async handleHello(sessionId: string, hello: ClientGatewayClientHello): Promise<void> {
+    await this.ready();
     const session = this.requireSession(sessionId);
     session.clientId = hello.clientId ?? session.clientId;
     session.clientType = hello.clientType;
@@ -314,13 +376,43 @@ export class ClientGatewayService {
     if (hello.version !== undefined) session.version = hello.version;
     session.capabilities = hello.capabilities ?? session.capabilities;
     if (hello.metadata !== undefined) session.metadata = hello.metadata;
-    if (hello.token && this.tokenToSession.get(hello.token) === sessionId) {
-      session.status = "ready";
-      session.token = hello.token;
-      session.pairedAt ??= this.now();
-      await this.send(sessionId, this.serverMessage("server.session_ready", { sessionId, token: hello.token, ...(session.projectId !== undefined ? { projectId: session.projectId } : {}) }, session));
-      await this.emit({ type: "session.ready", session: this.publicSession(session) });
-      return;
+    if (hello.token) {
+      const trustedClientId = this.trustedClientByTokenHash.get(this.hashToken(hello.token));
+      const trustedClient = trustedClientId ? this.trustedClients.get(trustedClientId) : undefined;
+      if (trustedClient && this.isTrustedClientActive(trustedClient) && trustedClient.clientId === session.clientId) {
+        const previousHash = trustedClient.tokenHash;
+        const previousUpdatedAt = trustedClient.updatedAt;
+        const previousLastUsedAt = trustedClient.lastUsedAt;
+        const token = this.createToken();
+        const now = this.now();
+        trustedClient.tokenHash = this.hashToken(token);
+        trustedClient.updatedAt = now;
+        trustedClient.lastUsedAt = now;
+        this.trustedClientByTokenHash.delete(previousHash);
+        this.trustedClientByTokenHash.set(trustedClient.tokenHash, trustedClient.trustedClientId);
+        try {
+          await this.persistTrustedClients();
+        } catch (error) {
+          this.trustedClientByTokenHash.delete(trustedClient.tokenHash);
+          trustedClient.tokenHash = previousHash;
+          trustedClient.updatedAt = previousUpdatedAt;
+          trustedClient.lastUsedAt = previousLastUsedAt;
+          this.trustedClientByTokenHash.set(previousHash, trustedClient.trustedClientId);
+          throw error;
+        }
+        for (const existing of this.sessions.values()) {
+          if (existing.sessionId !== sessionId && existing.status === "ready" && existing.trustedClientId === trustedClient.trustedClientId) {
+            await this.send(existing.sessionId, this.serverMessage("server.disconnect", { reason: "Client reconnected in a newer session." }, existing));
+            this.disconnect(existing.sessionId, "replaced by newer session");
+          }
+        }
+        this.attachTrustedClient(session, trustedClient);
+        await this.send(sessionId, this.serverMessage("server.session_ready", { sessionId, token, ...(session.projectId !== undefined ? { projectId: session.projectId } : {}) }, session));
+        this.audit("session.reconnected", "Trusted client reconnected and its credential was rotated.", { sessionId, trustedClientId: trustedClient.trustedClientId, clientId: session.clientId });
+        await this.emit({ type: "session.ready", session: this.publicSession(session) });
+        return;
+      }
+      this.audit("session.credential_rejected", "Client credential was not accepted; pairing is required.", { sessionId, clientId: session.clientId });
     }
     session.status = "pairing_required";
     const pairing = this.ensureSessionPairing(session);
@@ -332,29 +424,52 @@ export class ClientGatewayService {
 
   private async submitPairing(sessionId: string, pairingCode: string): Promise<void> {
     const session = this.requireSession(sessionId);
-    const pairedSession = await this.completePairing(sessionId, pairingCode);
-    if (!pairedSession) {
-      await this.send(sessionId, this.serverMessage("server.error", { message: "Invalid or expired pairing code.", code: "pairing.invalid" }, session));
-    }
+    await this.send(sessionId, this.serverMessage("server.error", {
+      message: "Pairing must be approved by an authenticated operator in FluxIQ.",
+      code: "pairing.operator_approval_required"
+    }, session));
+    this.audit("pairing.client_submit_rejected", "Client-side pairing submission was rejected.", { sessionId, pairingCode });
   }
 
-  private async completePairing(sessionId: string, pairingCode: string): Promise<ClientGatewaySession | null> {
+  private async completePairing(sessionId: string, pairingCode: string, approvedByUserId: string): Promise<ClientGatewaySession | null> {
     this.pruneExpiredPairings();
     const pairing = this.pairings.get(pairingCode);
     const session = this.sessions.get(sessionId);
     if (!pairing || pairing.consumedAt || !session) return null;
-    const token = randomUUID();
-    pairing.consumedAt = this.now();
+    const token = this.createToken();
+    const now = this.now();
+    const trustedClient: ClientGatewayTrustedClient = {
+      trustedClientId: randomUUID(),
+      clientId: session.clientId,
+      clientType: session.clientType,
+      name: session.name,
+      tokenHash: this.hashToken(token),
+      approvedByUserId,
+      approvedAt: now,
+      createdAt: now,
+      updatedAt: now,
+      lastUsedAt: now,
+      expiresAt: now + this.trustedClientTtlMs
+    };
+    this.trustedClients.set(trustedClient.trustedClientId, trustedClient);
+    this.trustedClientByTokenHash.set(trustedClient.tokenHash, trustedClient.trustedClientId);
+    try {
+      await this.persistTrustedClients();
+    } catch (error) {
+      this.trustedClients.delete(trustedClient.trustedClientId);
+      this.trustedClientByTokenHash.delete(trustedClient.tokenHash);
+      throw error;
+    }
+    pairing.consumedAt = now;
     pairing.sessionId = sessionId;
+    pairing.userId = approvedByUserId;
     delete session.pendingPairingCode;
     this.removeOtherSessionPairings(sessionId, pairingCode);
-    session.status = "ready";
-    session.token = token;
+    this.attachTrustedClient(session, trustedClient);
     if (pairing.projectId !== undefined) session.projectId = pairing.projectId;
-    session.pairedAt = this.now();
-    this.tokenToSession.set(token, sessionId);
+    session.pairedAt = now;
     await this.send(sessionId, this.serverMessage("server.session_ready", { sessionId, token, ...(pairing.projectId !== undefined ? { projectId: pairing.projectId } : {}) }, session));
-    this.audit("session.paired", "Client session paired.", { sessionId, pairingCode, projectId: pairing.projectId ?? null });
+    this.audit("session.paired", "Client session paired and durable trust created.", { sessionId, pairingCode, trustedClientId: trustedClient.trustedClientId, approvedByUserId, projectId: pairing.projectId ?? null });
     await this.emit({ type: "session.ready", session: this.publicSession(session) });
     return this.publicSession(session);
   }
@@ -410,6 +525,42 @@ export class ClientGatewayService {
   private publicSession(session: InternalSession): ClientGatewaySession {
     const { socket: _socket, outbound: _outbound, pendingPairingCode: _pendingPairingCode, ...publicSession } = session;
     return { ...publicSession };
+  }
+
+  private attachTrustedClient(session: InternalSession, trustedClient: ClientGatewayTrustedClient): void {
+    session.status = "ready";
+    session.trustedClientId = trustedClient.trustedClientId;
+    session.operatorUserId = trustedClient.approvedByUserId;
+    session.pairedAt ??= trustedClient.approvedAt;
+  }
+
+  private hashToken(token: string): string {
+    return createHash("sha256").update(token, "utf8").digest("hex");
+  }
+
+  private isTrustedClientActive(client: ClientGatewayTrustedClient): boolean {
+    return !client.revokedAt && client.expiresAt > this.now();
+  }
+
+  private publicTrustedClient(client: ClientGatewayTrustedClient): ClientGatewayTrustedClientView {
+    const { tokenHash: _tokenHash, ...view } = client;
+    const status = client.revokedAt ? "revoked" : client.expiresAt <= this.now() ? "expired" : "active";
+    return { ...view, status };
+  }
+
+  private async loadTrustedClients(): Promise<void> {
+    if (!this.trustedClientStore) return;
+    const clients = await this.trustedClientStore.load();
+    for (const client of clients) {
+      if (!client?.trustedClientId || !client.clientId || !client.tokenHash || !client.approvedByUserId) continue;
+      this.trustedClients.set(client.trustedClientId, { ...client });
+      if (this.isTrustedClientActive(client)) this.trustedClientByTokenHash.set(client.tokenHash, client.trustedClientId);
+    }
+  }
+
+  private async persistTrustedClients(): Promise<void> {
+    if (!this.trustedClientStore) return;
+    await this.trustedClientStore.save([...this.trustedClients.values()].map((client) => ({ ...client })));
   }
 
   private createPairingCode(): string {

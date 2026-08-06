@@ -27,6 +27,9 @@ export function startClientGatewayWebSocketServer(options: ClientGatewayWebSocke
   const host = options.host ?? "127.0.0.1";
   const port = options.port ?? 4777;
   const path = normalizePath(options.path ?? "/client");
+  if (!isLoopbackHost(host) && (!options.allowedOrigins?.length || options.allowedOrigins.includes("*"))) {
+    throw new Error("A restrictive FLUXIQ_CLIENT_GATEWAY_ALLOWED_ORIGINS list is required when the client gateway binds beyond loopback.");
+  }
   const publicHost = host === "0.0.0.0" ? "127.0.0.1" : host;
   const publicUrl = `ws://${publicHost}:${port}${path}`;
   const status: ClientGatewayWebSocketServerHandle["status"] = { listening: false };
@@ -97,6 +100,11 @@ export function isOriginAllowed(origin: string | undefined, allowedOrigins?: str
   if (!allowedOrigins?.length || allowedOrigins.includes("*")) return true;
   if (!origin) return false;
   return allowedOrigins.includes(origin);
+}
+
+export function isLoopbackHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  return normalized === "127.0.0.1" || normalized === "localhost" || normalized === "::1" || normalized === "[::1]";
 }
 
 function acceptClientGatewaySocket(input: {

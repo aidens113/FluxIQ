@@ -1,13 +1,13 @@
-import type { AutomationNodeClass, AutomationNodeClassGroup, AutomationNodeDefinition, AutomationNodeScope } from "./contracts";
-import { controlFlowNodes } from "./control-flow";
-import { dataNodes } from "./data";
-import { databaseNodes } from "./database";
-import { logicNodes } from "./logic";
-import { mathNodes } from "./math";
-import { policyNodes } from "./policy";
-import { randomNodes } from "./random";
-import { routineNodes } from "./routine";
-import { timingNodes } from "./timing";
+import type { AutomationNodeClass, AutomationNodeClassGroup, AutomationNodeDefinition, AutomationNodeScope } from "./contracts.ts";
+import { controlFlowNodes } from "./control-flow/index.ts";
+import { dataNodes } from "./data/index.ts";
+import { databaseNodes } from "./database/index.ts";
+import { logicNodes } from "./logic/index.ts";
+import { mathNodes } from "./math/index.ts";
+import { policyNodes } from "./policy/index.ts";
+import { randomNodes } from "./random/index.ts";
+import { routineNodes } from "./routine/index.ts";
+import { timingNodes } from "./timing/index.ts";
 
 export const automationNodeClassGroups: AutomationNodeClassGroup[] = [
   { id: "control-flow", label: "Control Flow", description: "Graph routing, branching, joining, and lifecycle nodes." },

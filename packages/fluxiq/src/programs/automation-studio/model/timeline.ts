@@ -1,6 +1,6 @@
-import type { JsonObject } from "../../../core";
-import type { ActionResult, ActionTarget } from "./actions";
-import type { StateDelta, StateSnapshot, StateValue } from "./state";
+import type { JsonObject } from "../../../core/index.ts";
+import type { ActionResult, ActionTarget } from "./actions.ts";
+import type { StateDelta, StateSnapshot, StateValue } from "./state.ts";
 
 export type TimelineBase = {
   id: string;

@@ -1,4 +1,4 @@
-import type { Role, Session, User, VaultStatus } from "../types";
+import type { Role, Session, User, VaultStatus } from "../types.ts";
 
 export type IdentityAccessStore = {
   listUsers(): Promise<User[]>;

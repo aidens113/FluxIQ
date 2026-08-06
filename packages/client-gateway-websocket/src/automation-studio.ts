@@ -1,12 +1,19 @@
 import type {
+  ClientGatewayAppendRecordingEntryRequest,
+  ClientGatewayEnvelope,
+  ClientGatewayRecordingEvent,
+  ClientGatewayStartRecordingRequest,
+  ClientGatewayStopRecordingRequest
+} from "@fluxiq/contracts/client-gateway";
+import type {
   AppendRecordingDomainEventRequest,
   AppendRecordingEntryRequest,
   CreateRecordingRequest,
   FinalizeRecordingRequest
-} from "fluxiq/automation-studio";
-import type { JsonObject } from "fluxiq/core";
-import { FluxIQClientGatewayWebSocketClient } from "./transport";
-import type { FluxIQClientGatewayWebSocketOptions } from "./types";
+} from "@fluxiq/contracts/automation-studio";
+import type { JsonObject } from "@fluxiq/contracts/core";
+import { FluxIQClientGatewayWebSocketClient } from "./transport.ts";
+import type { FluxIQClientGatewayWebSocketOptions } from "./types.ts";
 
 export type FluxIQAutomationStudioWebSocketClientOptions =
   | FluxIQClientGatewayWebSocketOptions
@@ -29,7 +36,7 @@ export class FluxIQAutomationStudioWebSocketClient {
 
   on: FluxIQClientGatewayWebSocketClient["on"] = (...args) => this.gateway.on(...args);
 
-  createRecording(input: CreateRecordingRequest) {
+  createRecording(input: CreateRecordingRequest): Promise<ClientGatewayEnvelope<"client.start_recording", ClientGatewayStartRecordingRequest>> {
     return this.gateway.send("client.start_recording", {
       recordingId: input.recordingId,
       ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
@@ -44,7 +51,7 @@ export class FluxIQAutomationStudioWebSocketClient {
     });
   }
 
-  appendRecordingEvent(input: AppendRecordingEntryRequest) {
+  appendRecordingEvent(input: AppendRecordingEntryRequest): Promise<ClientGatewayEnvelope<"client.recording_entry", ClientGatewayAppendRecordingEntryRequest>> {
     return this.gateway.send("client.recording_entry", {
       recordingId: input.recordingId,
       ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
@@ -52,7 +59,7 @@ export class FluxIQAutomationStudioWebSocketClient {
     });
   }
 
-  appendRecordingDomainEvent(input: AppendRecordingDomainEventRequest) {
+  appendRecordingDomainEvent(input: AppendRecordingDomainEventRequest): Promise<ClientGatewayEnvelope<"client.recording_event", ClientGatewayRecordingEvent>> {
     return this.gateway.send("client.recording_event", {
       eventType: input.eventType,
       domainId: input.domainId,
@@ -68,7 +75,7 @@ export class FluxIQAutomationStudioWebSocketClient {
     });
   }
 
-  finalizeRecording(input: FinalizeRecordingRequest) {
+  finalizeRecording(input: FinalizeRecordingRequest): Promise<ClientGatewayEnvelope<"client.stop_recording", ClientGatewayStopRecordingRequest>> {
     return this.gateway.send("client.stop_recording", {
       recordingId: input.recordingId,
       ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),

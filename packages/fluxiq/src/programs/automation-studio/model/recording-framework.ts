@@ -1,9 +1,9 @@
-import type { JsonObject } from "../../../core";
-import type { ActionEntry, DomainEventEntry, MarkerEntry, ObservationEntry, StateCheckpointEntry, StateDeltaEntry, TimelineBase, TimelineEntry } from "./timeline";
-import type { RecordingNote, RecordingSession } from "./recordings";
-import type { ActionChannelDescriptor, EnvironmentDescriptor, SourceDescriptor } from "./descriptors";
-import type { StateSnapshot } from "./state";
-import { diffStateSnapshots } from "./state-diff";
+import type { JsonObject } from "../../../core/index.ts";
+import type { ActionEntry, DomainEventEntry, MarkerEntry, ObservationEntry, StateCheckpointEntry, StateDeltaEntry, TimelineBase, TimelineEntry } from "./timeline.ts";
+import type { RecordingNote, RecordingSession } from "./recordings.ts";
+import type { ActionChannelDescriptor, EnvironmentDescriptor, SourceDescriptor } from "./descriptors.ts";
+import type { StateSnapshot } from "./state.ts";
+import { diffStateSnapshots } from "./state-diff.ts";
 
 export type CreateRecordingSessionInput = {
   recordingId: string;

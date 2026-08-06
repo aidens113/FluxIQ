@@ -1,5 +1,5 @@
-import type { CanonicalAutomationStudioRepositories, AutomationStudioRepository } from "./contracts";
-import type { AutomationStudioDocumentIdentity } from "./ids";
+import type { CanonicalAutomationStudioRepositories, AutomationStudioRepository } from "./contracts.ts";
+import type { AutomationStudioDocumentIdentity } from "./ids.ts";
 import {
   canonicalArtifactIdentity,
   learnedTaskModelDocumentId,
@@ -7,10 +7,10 @@ import {
   policyGraphDocumentId,
   recordingSessionDocumentId,
   signalRegistryDocumentId
-} from "./ids";
-import type { LearnedTaskModel } from "../learning";
-import type { NormalizedTimeline } from "../normalization";
-import type { PolicyGraph, RecordingSession, SignalRegistry } from "../model";
+} from "./ids.ts";
+import type { LearnedTaskModel } from "../learning/index.ts";
+import type { NormalizedTimeline } from "../normalization/index.ts";
+import type { PolicyGraph, RecordingSession, SignalRegistry } from "../model/index.ts";
 
 export type AutomationStudioMemoryRepositoryOptions<TDocument> = {
   identify(document: TDocument): AutomationStudioDocumentIdentity;

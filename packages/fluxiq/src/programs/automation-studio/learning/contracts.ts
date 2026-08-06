@@ -1,6 +1,6 @@
-import type { JsonObject } from "../../../core";
-import type { AutomationCondition, EvidenceReference, PolicyAction } from "../model";
-import type { SignalMiningResult } from "../mining";
+import type { JsonObject } from "../../../core/index.ts";
+import type { AutomationCondition, EvidenceReference, PolicyAction } from "../model/index.ts";
+import type { SignalMiningResult } from "../mining/index.ts";
 
 export type LearningUncertainty = {
   id: string;

@@ -1,7 +1,7 @@
-export * from "./automation-studio";
-export * from "./messages";
-export * from "./transport";
-export * from "./types";
+export * from "./automation-studio.ts";
+export * from "./messages.ts";
+export * from "./transport.ts";
+export * from "./types.ts";
 
 export {
   CLIENT_GATEWAY_PROTOCOL_VERSION,
@@ -21,7 +21,7 @@ export {
   type ClientGatewayStartRecordingRequest,
   type ClientGatewayStateUpdate,
   type ClientGatewayStopRecordingRequest
-} from "fluxiq/client-gateway";
+} from "@fluxiq/contracts/client-gateway";
 
 export type {
   AppendRecordingDomainEventRequest,
@@ -33,4 +33,4 @@ export type {
   RecordingDomainEventInput,
   RecordingSession,
   StateSnapshot
-} from "fluxiq/automation-studio";
+} from "@fluxiq/contracts/automation-studio";

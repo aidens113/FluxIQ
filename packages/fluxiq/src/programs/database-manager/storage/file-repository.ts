@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { JsonObject } from "../../../core";
-import type { RecordEnvelope, Repository, RepositoryScope } from "../types";
+import type { JsonObject } from "../../../core/index.ts";
+import type { RecordEnvelope, Repository, RepositoryScope } from "../types.ts";
 
 export type FileRepositoryOptions = {
   rootDir: string;

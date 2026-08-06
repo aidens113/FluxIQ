@@ -1,5 +1,5 @@
-import type { GlobalProgramApiRegistry } from "../../_shared/api";
-import { authorizeProgramPin } from "../../_shared/authorization";
+import type { GlobalProgramApiRegistry } from "../../_shared/api.ts";
+import { authorizeProgramPin } from "../../_shared/authorization.ts";
 import {
   AUTOMATION_STUDIO_ENDPOINTS,
   type AppendRecordingMarkerRequest,
@@ -8,7 +8,6 @@ import {
   type AppendRecordingEntryRequest,
   type ApprovePolicyProposalRequest,
   type CaptureClientSnapshotRequest,
-  type CreateClientPairingRequest,
   type CreateRecordingRequest,
   type DeleteRecordingRequest,
   type ExecuteClientActionRequest,
@@ -22,21 +21,23 @@ import {
   type RecordingProjectRequest,
   type RecordingIdProjectRequest,
   type ReplayPolicyAgainstRecordingRequest,
+  type RevokeClientTrustRequest,
   type StartClientRecordingRequest,
   type StopClientRecordingRequest,
   type UpdateRecordingRequest,
   type ValidateRecordingDomainEventRequest
-} from "./contracts";
-import type { AutomationStudioFlowDocument, AutomationStudioProjectArtifactKind } from "../model";
-import type { AutomationStudioService } from "../runtime/service";
-import type { IdentityAccessService } from "../../identity-access";
-import type { AutomationStudioClientGatewayBridge } from "../client-gateway";
-import type { ClientGatewayService } from "../../../client-gateway";
+} from "./contracts.ts";
+import type { AutomationStudioFlowDocument, AutomationStudioProjectArtifactKind } from "../model/index.ts";
+import type { AutomationStudioService } from "../runtime/service.ts";
+import type { IdentityAccessService } from "../../identity-access/index.ts";
+import type { AutomationStudioClientGatewayBridge } from "../client-gateway/index.ts";
+import type { ClientGatewayService } from "../../../client-gateway/index.ts";
 
 export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, service: AutomationStudioService, identityAccess?: IdentityAccessService, clientGatewayBridge?: AutomationStudioClientGatewayBridge, clientGateway?: ClientGatewayService): void {
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.snapshot,
+    permission: "programs.read",
     handler: async (request) => ({
       ok: true,
       payload: await service.snapshot(request.scope.domainId)
@@ -45,6 +46,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.projects,
+    permission: "programs.read",
     handler: async () => ({
       ok: true,
       payload: await service.listProjects()
@@ -53,6 +55,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.createProject,
+    permission: "programs.write",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { name?: unknown; description?: unknown; categoryId?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
       await authorizeProgramPin(identityAccess, payload);
@@ -62,6 +65,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateProject,
+    permission: "programs.write",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; name?: unknown; description?: unknown; categoryId?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
       await authorizeProgramPin(identityAccess, payload);
@@ -71,6 +75,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProject,
+    permission: "programs.write",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
       await authorizeProgramPin(identityAccess, payload);
@@ -80,6 +85,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.createProjectCategory,
+    permission: "programs.write",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { name?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
       await authorizeProgramPin(identityAccess, payload);
@@ -89,6 +95,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateProjectCategory,
+    permission: "programs.write",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { categoryId?: unknown; name?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
       await authorizeProgramPin(identityAccess, payload);
@@ -98,6 +105,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectCategory,
+    permission: "programs.write",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { categoryId?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
       await authorizeProgramPin(identityAccess, payload);
@@ -107,6 +115,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.reorderProjectCategories,
+    permission: "programs.write",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { categoryIds?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
       await authorizeProgramPin(identityAccess, payload);
@@ -116,6 +125,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProjectHierarchy,
+    permission: "programs.read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown } : {};
       return {
@@ -127,6 +137,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveProjectHierarchy,
+    permission: "programs.write",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object"
         ? request.payload as { projectId?: unknown; hierarchy?: unknown }
@@ -144,6 +155,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRecordings,
+    permission: "programs.read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as RecordingProjectRequest : {};
       return { ok: true, payload: { recordings: await service.listRecordingSessions(payload.projectId) } };
@@ -152,6 +164,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectArtifacts,
+    permission: "programs.read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown } : {};
       return { ok: true, payload: { artifacts: await service.listProjectArtifacts(String(payload.projectId ?? "")) } };
@@ -160,6 +173,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProjectArtifact,
+    permission: "programs.read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; kind?: unknown; artifactId?: unknown } : {};
       return { ok: true, payload: { artifact: await service.getProjectArtifact(String(payload.projectId ?? ""), String(payload.kind ?? "") as AutomationStudioProjectArtifactKind, String(payload.artifactId ?? "")) } };
@@ -168,6 +182,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveProjectArtifact,
+    permission: "flows.write",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; kind?: unknown; artifact?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
       await authorizeProgramPin(identityAccess, payload);
@@ -177,6 +192,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectArtifact,
+    permission: "flows.write",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; kind?: unknown; artifactId?: unknown; deleteOwnedArtifacts?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
       await authorizeProgramPin(identityAccess, payload);
@@ -194,6 +210,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRecording,
+    permission: "programs.read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as RecordingProjectRequest & { recordingId?: unknown } : {};
       return { ok: true, payload: { recording: await service.getRecordingSession(String(payload.recordingId ?? ""), payload.projectId) } };
@@ -202,6 +219,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.createRecording,
+    permission: "runtime.control",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as CreateRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
@@ -211,6 +229,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateRecording,
+    permission: "runtime.control",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as UpdateRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
@@ -220,6 +239,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteRecording,
+    permission: "runtime.control",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as DeleteRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
@@ -229,6 +249,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendRecordingEntry,
+    permission: "runtime.control",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as AppendRecordingEntryRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
@@ -238,6 +259,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendRecordingNote,
+    permission: "runtime.control",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as AppendRecordingNoteRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
@@ -247,6 +269,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendRecordingMarker,
+    permission: "runtime.control",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as AppendRecordingMarkerRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
@@ -256,6 +279,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.finalizeRecording,
+    permission: "runtime.control",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as FinalizeRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
@@ -265,6 +289,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.processFinalizedRecording,
+    permission: "flows.write",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ProcessFinalizedRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
@@ -274,6 +299,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.normalizeRecording,
+    permission: "flows.write",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as NormalizeRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
@@ -283,6 +309,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.createNormalizationReview,
+    permission: "flows.write",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as RecordingIdProjectRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
@@ -292,6 +319,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listNormalizedTimelines,
+    permission: "programs.read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as RecordingProjectRequest : {};
       return { ok: true, payload: { normalizedTimelines: payload.projectId ? await service.listProjectNormalizedTimelines(payload.projectId) : [] } };
@@ -300,6 +328,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listPipelineArtifacts,
+    permission: "programs.read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as RecordingProjectRequest : {};
       return { ok: true, payload: await service.listPipelineArtifacts(String(payload.projectId ?? "")) };
@@ -308,6 +337,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.mineRecordingEvidence,
+    permission: "flows.write",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as MineRecordingEvidenceRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
@@ -320,6 +350,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.learnTaskModel,
+    permission: "flows.write",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as LearnTaskModelRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
@@ -332,6 +363,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.proposePolicyFromModel,
+    permission: "flows.write",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ProposePolicyFromModelRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
@@ -345,6 +377,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.approvePolicyProposal,
+    permission: "flows.write",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ApprovePolicyProposalRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
@@ -358,6 +391,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.replayPolicyAgainstRecording,
+    permission: "runtime.control",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ReplayPolicyAgainstRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
@@ -369,6 +403,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRuntimeSessions,
+    permission: "programs.read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown } : {};
       return { ok: true, payload: { runtimeSessions: await service.listRuntimeSessions(String(payload.projectId ?? "")) } };
@@ -377,6 +412,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.startRuntimeSession,
+    permission: "runtime.control",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; flow?: AutomationStudioFlowDocument; flowId?: string; targetKind?: any; targetId?: string; inputs?: any } : {};
       return { ok: true, payload: { runtimeSession: await service.startRuntimeSession(payload) } };
@@ -385,6 +421,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession,
+    permission: "runtime.control",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number } : {};
       return { ok: true, payload: { runtimeSession: await service.runRuntimeSession(payload) } };
@@ -393,6 +430,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.inspectStateDiff,
+    permission: "programs.read",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as InspectStateDiffRequest;
       return { ok: true, payload: await service.inspectStateDiff(payload) };
@@ -401,6 +439,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listSignalRegistries,
+    permission: "programs.read",
     handler: async () => ({
       ok: true,
       payload: { signalRegistries: await service.listSignalRegistries() }
@@ -409,6 +448,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRecordingDomains,
+    permission: "programs.read",
     handler: async () => ({
       ok: true,
       payload: { domains: service.listRecordingDomains() }
@@ -417,6 +457,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.validateRecordingDomainEvent,
+    permission: "programs.read",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ValidateRecordingDomainEventRequest;
       return { ok: true, payload: service.validateRecordingDomainEvent(payload) };
@@ -425,6 +466,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendRecordingDomainEvent,
+    permission: "runtime.control",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as AppendRecordingDomainEventRequest;
       const result = await service.appendRecordingDomainEvent(payload);
@@ -436,28 +478,31 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.clientGatewaySnapshot,
-    handler: async () => ({
-      ok: true,
-      payload: clientGateway?.snapshot() ?? { enabled: false, sessions: [], pairings: [], auditLog: [] }
-    })
+    permission: "programs.read",
+    handler: async () => {
+      await clientGateway?.ready();
+      return {
+        ok: true,
+        payload: clientGateway?.snapshot() ?? { enabled: false, sessions: [], pairings: [], trustedClients: [], auditLog: [] }
+      };
+    }
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.createClientPairing,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.revokeClientTrust,
+    permission: "runtime.control",
     handler: async (request) => {
       if (!clientGateway) return { ok: false, error: "Client gateway is not available." };
-      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as CreateClientPairingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as RevokeClientTrustRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
-      return { ok: true, payload: { pairing: clientGateway.createPairing({
-        ...(payload.projectId !== undefined ? { projectId: payload.projectId } : {}),
-        ...(typeof payload.authSessionId === "string" ? { userId: payload.authSessionId } : {}),
-        ...(payload.ttlMs !== undefined ? { ttlMs: payload.ttlMs } : {})
-      }) } };
+      const revoked = await clientGateway.revokeTrustedClient(String(payload.trustedClientId ?? ""), payload.reason?.trim() || "revoked by operator");
+      return revoked ? { ok: true, payload: { revoked: true } } : { ok: false, error: "Trusted client was not found or was already revoked." };
     }
   });
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.startClientRecording,
+    permission: "runtime.control",
     handler: async (request) => {
       if (!clientGatewayBridge) return { ok: false, error: "Client gateway bridge is not available." };
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as StartClientRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
@@ -468,6 +513,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.stopClientRecording,
+    permission: "runtime.control",
     handler: async (request) => {
       if (!clientGatewayBridge) return { ok: false, error: "Client gateway bridge is not available." };
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as StopClientRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
@@ -478,6 +524,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.captureClientSnapshot,
+    permission: "runtime.control",
     handler: async (request) => {
       if (!clientGateway) return { ok: false, error: "Client gateway is not available." };
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as CaptureClientSnapshotRequest;
@@ -491,6 +538,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.executeClientAction,
+    permission: "runtime.control",
     handler: async (request) => {
       if (!clientGatewayBridge) return { ok: false, error: "Client gateway bridge is not available." };
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ExecuteClientActionRequest & { authSessionId?: unknown; authorizationPin?: unknown };

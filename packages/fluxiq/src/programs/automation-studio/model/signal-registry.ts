@@ -1,5 +1,5 @@
-import type { StatePathSchema, StateSnapshot, StateValue, StateValueType } from "./state";
-import type { ComparatorDefinition, SignalDefinition, SignalRegistry } from "./signals";
+import type { StatePathSchema, StateSnapshot, StateValue, StateValueType } from "./state.ts";
+import type { ComparatorDefinition, SignalDefinition, SignalRegistry } from "./signals.ts";
 
 export type SignalRegistryBuildOptions = {
   registryId: string;

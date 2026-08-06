@@ -26,9 +26,16 @@ FLUXIQ_CLIENT_GATEWAY_ENABLED=true
 FLUXIQ_CLIENT_GATEWAY_HOST=127.0.0.1
 FLUXIQ_CLIENT_GATEWAY_PORT=4777
 FLUXIQ_CLIENT_GATEWAY_PATH=/client
+FLUXIQ_CLIENT_GATEWAY_TRUST_TTL_MS=2592000000
 FLUXIQ_PUBLIC_CLIENT_WS_URL=ws://127.0.0.1:4777/client
 FLUXIQ_CLIENT_GATEWAY_ALLOWED_ORIGINS=chrome-extension://your-extension-id,moz-extension://your-extension-id
 ```
+
+Loopback listeners may omit an origin allowlist for native and extension
+development. A listener bound to `0.0.0.0`, a LAN address, or another
+non-loopback host will refuse to start unless
+`FLUXIQ_CLIENT_GATEWAY_ALLOWED_ORIGINS` is a restrictive list; `*` is not
+accepted for those listeners.
 
 ## Approval Flow
 
@@ -42,8 +49,13 @@ Pairing is an approval flow, not a code-entry flow.
 6. The web panel shows a global modal with the same reference code.
 7. User clicks **Approve** or **Reject** in the web panel.
 8. If approved, FluxIQ sends `server.session_ready` to the waiting socket.
-9. Client stores the returned token and includes it in future `client.hello`
-   messages.
+9. Client replaces its saved token with the returned token and includes it in
+   the next `client.hello` message.
+
+Approval creates a trusted-client identity bound to the approving operator and
+the stable `clientId`; it does not make the current socket durable. FluxIQ
+persists only a SHA-256 digest of the 256-bit credential. The raw token is sent
+only to the client.
 
 The user should only compare the reference code. They do not type it into the
 client.
@@ -131,8 +143,13 @@ After the user approves the global web-panel modal, FluxIQ sends:
 }
 ```
 
-Store `payload.token` in the client. Future reconnects should include it in
-`client.hello`.
+Always replace the locally saved token with `payload.token`, including after a
+successful reconnect. FluxIQ consumes and rotates the credential on every
+reconnect, so the previous value stops working. Disconnecting ends the socket
+session but does not remove client trust. Trust survives a FluxIQ restart,
+expires after 30 days by default, and can be revoked from Automation Studio's
+Client Gateway view. Expired, revoked, mismatched, and unknown credentials all
+return to the same approval flow.
 
 ## Client Messages After Approval
 
@@ -288,12 +305,13 @@ Recording over WebSocket is project-bound.
 
 1. The user opens Automation Studio in the web panel.
 2. If a project is open, the web panel heartbeats that active project to the
-   shared gateway runtime.
+   shared gateway runtime under the signed-in operator's identity.
 3. A paired client calls `createRecording(...)` on
    `FluxIQAutomationStudioWebSocketClient`, which sends `client.start_recording`.
-4. FluxIQ creates the recording in the active project, marks the client session
-   as recording, and the web panel opens the recording timeline in the main
-   workspace area.
+4. FluxIQ resolves an optional operator+client project override first and then
+   that operator's default project. It cannot use another operator's context.
+   FluxIQ creates the recording there, marks the client session as recording,
+   and the web panel opens the recording timeline in the main workspace area.
 5. If Automation Studio has no open project, FluxIQ rejects the request,
    sends `server.error` with code `recording.project_required`, and the web
    panel shows a modal telling the user to open a project first.
@@ -324,6 +342,9 @@ The mock client connects, prints the reference code from
 - The WebSocket listener is bound to the shared web runtime in
   `apps/web/src/lib/fluxiq.ts` so it sees the same in-memory gateway state as
   the web API routes.
+- Trusted-client state is stored under the framework program-data area in
+  `programs/client-gateway/trusted-clients.json`. This location participates in
+  the broader `.fluxiq` storage migration planned separately.
 - The Node WebSocket adapter lives at
   `apps/web/src/server/client-gateway-websocket.ts`.
 - Hosts can provide their own adapter as long as they attach accepted sockets to

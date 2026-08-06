@@ -1,4 +1,4 @@
-import { defineBuiltinNode } from "../shared/definition";
+import { defineBuiltinNode } from "../shared/definition.ts";
 
 export const approvalNode = defineBuiltinNode({
   id: "builtin.routine.approval",

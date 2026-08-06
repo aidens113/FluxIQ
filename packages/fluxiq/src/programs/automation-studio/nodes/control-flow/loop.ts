@@ -1,5 +1,5 @@
-import { maxIterations, routeFromCondition } from "./shared";
-import { defineBuiltinNode } from "../shared/definition";
+import { maxIterations, routeFromCondition } from "./shared.ts";
+import { defineBuiltinNode } from "../shared/definition.ts";
 
 export const loopNode = defineBuiltinNode({
   id: "builtin.control.loop",

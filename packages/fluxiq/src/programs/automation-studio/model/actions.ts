@@ -1,7 +1,7 @@
-import type { JsonObject } from "../../../core";
-import type { AutomationConditionGroup } from "./conditions";
-import type { EvidenceReference } from "./evidence";
-import type { StateValueType } from "./state";
+import type { JsonObject } from "../../../core/index.ts";
+import type { AutomationConditionGroup } from "./conditions.ts";
+import type { EvidenceReference } from "./evidence.ts";
+import type { StateValueType } from "./state.ts";
 
 export type ParameterDefinition = {
   type: StateValueType | "array" | "object";

@@ -1,4 +1,4 @@
-import type { ComputeCommand, ComputeLease, ComputeNode } from "../types";
+import type { ComputeCommand, ComputeLease, ComputeNode } from "../types.ts";
 
 export type ComputeControlStore = {
   listNodes(): Promise<ComputeNode[]>;
