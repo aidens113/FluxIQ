@@ -624,7 +624,7 @@ export function AutomationWorkspaceDock(props: { activeTab: AutomationDockTab; p
   );
 }
 
-export function AutomationPolicyCanvas(props: { active: boolean; entries: any[]; policy: any; taskGraph?: any; recordings: any[]; selectedNode: any; selectedTimeline: any; signals: any[]; onSaveGraph(graph: { nodes: Array<Node<AutomationPolicyNodeData>>; edges: Edge[] }): Promise<boolean | void>; setSelection(selection: AutomationSelection): void }) {
+export function AutomationPolicyCanvas(props: { active: boolean; entries: any[]; policy: any; taskGraph?: any; recordings: any[]; selectedNode: any; selectedTimeline: any; signals: any[]; onSaveGraph(graph: { nodes: Array<Node<AutomationPolicyNodeData>>; edges: Edge[] }): Promise<boolean | void>; onDirtyChange(dirty: boolean): void; setSelection(selection: AutomationSelection): void }) {
   const [mode, setMode] = useState<AutomationTaskEditorMode>("flow");
   const [selectedPolicyNodeId, setSelectedPolicyNodeId] = useState(props.selectedNode?.id ?? "");
   const [selectedPolicyEdgeIds, setSelectedPolicyEdgeIds] = useState<string[]>([]);
@@ -636,6 +636,7 @@ export function AutomationPolicyCanvas(props: { active: boolean; entries: any[];
   const [policyFlow, setPolicyFlow] = useState<ReactFlowInstance<Node<AutomationPolicyNodeData>, Edge> | null>(null);
   const policyNodesRef = useRef<Array<Node<AutomationPolicyNodeData>>>([]);
   const policyEdgesRef = useRef<Edge[]>([]);
+  const savedGraphSignatureRef = useRef("");
   const recentlyConnectedPolicyEdgeIdsRef = useRef<Set<string>>(new Set());
   const taskGraphSignature = props.taskGraph ? automationTaskGraphSourceSignature(props.taskGraph) : "";
   const policyGraphSignature = props.taskGraph ? "" : automationPolicySourceSignature(props.policy);
@@ -649,8 +650,13 @@ export function AutomationPolicyCanvas(props: { active: boolean; entries: any[];
     setPolicyEdges(nextEdges);
     policyNodesRef.current = graph.nodes;
     policyEdgesRef.current = nextEdges;
+    savedGraphSignatureRef.current = graphSignature(graph.nodes, nextEdges);
+    if (props.active) props.onDirtyChange(false);
     setSelectedPolicyEdgeIds([]);
   }, [taskGraphSignature, policyGraphSignature]);
+  useEffect(() => {
+    if (props.active) props.onDirtyChange(graphSignature(policyNodes, policyEdges) !== savedGraphSignatureRef.current);
+  }, [policyNodes, policyEdges, props.active, props.onDirtyChange]);
   useEffect(() => {
     policyNodesRef.current = policyNodes;
   }, [policyNodes]);
@@ -689,6 +695,10 @@ export function AutomationPolicyCanvas(props: { active: boolean; entries: any[];
       if (!props.active) return;
       const detail = (event as CustomEvent<{ onComplete?: (result: { ok: boolean; message: string }) => void }>).detail;
       const saved = await props.onSaveGraph({ nodes: policyNodesRef.current, edges: policyEdgesRef.current });
+      if (saved !== false) {
+        savedGraphSignatureRef.current = graphSignature(policyNodesRef.current, policyEdgesRef.current);
+        props.onDirtyChange(false);
+      }
       detail?.onComplete?.({
         ok: saved !== false,
         message: saved === false ? "Task graph could not be saved." : "Task graph saved."
@@ -935,6 +945,10 @@ export function AutomationPolicyCanvas(props: { active: boolean; entries: any[];
       </div>
     </section>
   );
+}
+
+function graphSignature(nodes: Array<Node<any>>, edges: Edge[]): string {
+  return JSON.stringify({ nodes: nodes.map(({ id, type, position, data }) => ({ id, type, position, data })), edges: edges.map(({ id, source, target, sourceHandle, targetHandle, data }) => ({ id, source, target, sourceHandle, targetHandle, data })) });
 }
 
 export type AutomationPolicyGraphEditorMode = "full-edit" | "readonly" | "proposal-review";

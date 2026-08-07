@@ -101,6 +101,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const [projectCategories, setProjectCategories] = useState<AutomationStudioProjectCategory[]>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [hasDirtyTaskGraph, setHasDirtyTaskGraph] = useState(false);
   const [projectModal, setProjectModal] = useState<AutomationProjectModal>(null);
   const [projectTarget, setProjectTarget] = useState<AutomationStudioProject | null>(null);
   const [categoryTarget, setCategoryTarget] = useState<AutomationStudioProjectCategory | null>(null);
@@ -615,14 +616,19 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         ? Object.values(proposalReviews as Record<string, any>).some((item) => item?.dirty === true)
         : false;
     });
-    if (!hasDirtyProposalReview) return;
+    if (!hasDirtyProposalReview && !hasDirtyTaskGraph) return;
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warnBeforeUnload);
     return () => window.removeEventListener("beforeunload", warnBeforeUnload);
-  }, [workspacePrefs.viewStates]);
+  }, [workspacePrefs.viewStates, hasDirtyTaskGraph]);
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("automation-studio:dirty-state", { detail: { dirty: hasDirtyTaskGraph } }));
+    return () => { window.dispatchEvent(new CustomEvent("automation-studio:dirty-state", { detail: { dirty: false } })); };
+  }, [hasDirtyTaskGraph]);
 
   useEffect(() => {
     if (!selectedTask?.taskId || !projectArtifacts.tasks?.some((task: any) => task.taskId === selectedTask.taskId)) return;
@@ -874,6 +880,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   }
 
   async function openProject(projectId: string, options: { updateUrl?: boolean } = {}) {
+    if (projectId !== activeProjectId && hasDirtyTaskGraph && !window.confirm("This task has unsaved whiteboard changes. Discard them and switch projects?")) return;
     const result = await api.post<{ hierarchy: { customHierarchyNodes: AutomationHierarchyNode[]; deletedHierarchyIds: string[]; workspacePrefs?: AutomationWorkspacePrefs } }>("get-project-hierarchy", { projectId });
     if (!result.ok || !result.payload?.hierarchy) {
       setProjectStatus(result.error ?? "Project could not be opened.");
@@ -883,6 +890,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     const loadedPrefs = normalizeAutomationWorkspacePrefs(result.payload.hierarchy.workspacePrefs ?? defaultAutomationWorkspacePrefs());
     const loadedCustomHierarchyNodes = result.payload.hierarchy.customHierarchyNodes.filter(isPersistableHierarchyNode);
     setActiveProjectId(projectId);
+    setHasDirtyTaskGraph(false);
     setCustomHierarchyNodes(loadedCustomHierarchyNodes);
     setDeletedHierarchyIds(result.payload.hierarchy.deletedHierarchyIds);
     setWorkspacePrefs(loadedPrefs);
@@ -2133,6 +2141,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                       onPipelineAction={runRecordingPipelineStep}
                       onProposalReviewChange={updateProposalReview}
                       onSaveTaskGraph={saveSelectedTaskGraph}
+                      onTaskGraphDirtyChange={setHasDirtyTaskGraph}
                       onProcessFinalizedRecording={processFinalizedRecording}
                       onRunRecordingPipeline={runRecordingPipeline}
                       onProcessProposalWithLlm={processPipelineProposalWithLlm}

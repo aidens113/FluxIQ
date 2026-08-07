@@ -21,7 +21,7 @@ import {
   Bug,
   Undo2
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import type { FluxIQIconName, ProgramSummary } from "fluxiq";
 import { AuthStatus } from "../../AuthShell";
 import { LiveProgramMain } from "./ProgramLiveViews";
@@ -78,6 +78,17 @@ export function ProgramWorkspace({ program, capabilities, domainName, backHref, 
   const setCommandState = (state: string, detail: string, running = false, dirty = automationStatus.dirty) => {
     setAutomationStatus({ state, detail, running, dirty });
   };
+  useEffect(() => {
+    const onDirtyState = (event: Event) => {
+      const dirty = Boolean((event as CustomEvent<{ dirty?: boolean }>).detail?.dirty);
+      setAutomationStatus((current) => ({ ...current, dirty, ...(dirty ? { state: "Edited", detail: "Unsaved whiteboard changes" } : {}) }));
+    };
+    window.addEventListener("automation-studio:dirty-state", onDirtyState);
+    return () => window.removeEventListener("automation-studio:dirty-state", onDirtyState);
+  }, []);
+  const confirmLeave = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (automationStatus.dirty && !window.confirm("This task has unsaved whiteboard changes. Leave without saving?")) event.preventDefault();
+  };
   const saveAutomationStudio = () => {
     setCommandState("Saving", "Saving workspace and selected task", true, automationStatus.dirty);
     let completed = false;
@@ -99,7 +110,7 @@ export function ProgramWorkspace({ program, capabilities, domainName, backHref, 
       <main className="console-main single-program program-fullscreen-shell">
         <header className="console-topbar program-global-topbar">
           <div className="program-topbar-title">
-            <a className="back-link" href={backHref} aria-label={`Back to ${backLabel}`}>
+            <a className="back-link" href={backHref} aria-label={`Back to ${backLabel}`} onClick={confirmLeave}>
               <ArrowLeft size={16} aria-hidden />
               <span>{backLabel}</span>
             </a>
@@ -138,7 +149,7 @@ export function ProgramWorkspace({ program, capabilities, domainName, backHref, 
     <main className="console-main single-program">
       <header className="console-topbar program-global-topbar">
         <div className="program-topbar-title">
-          <a className="back-link" href={backHref} aria-label={`Back to ${backLabel}`}>
+          <a className="back-link" href={backHref} aria-label={`Back to ${backLabel}`} onClick={confirmLeave}>
             <ArrowLeft size={16} aria-hidden />
             <span>{backLabel}</span>
           </a>
