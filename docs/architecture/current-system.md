@@ -132,3 +132,18 @@ input is recording evidence only: it cannot become a state condition in a
 generated policy. Automation Studio proposes executable nodes only from these
 registered output bindings; all other inputs remain state or non-executable
 evidence.
+## Workspace scopes
+
+The web panel has a global workspace at `/` and a workspace for each registered
+domain at `/domains/:domainId`. The global workspace lists domains alongside the
+global program catalog. A domain workspace has a back link to that global grid
+and presents the same global programs in an explicit domain context. Program API
+calls carry that context as `domainId`; global pages carry no domain ID.
+
+Global Automation Studio projects and flows remain domain-neutral (`domainId:
+null`). Projects, project categories, and newly created recordings are scoped by
+the active domain ID; global and domain project lists are filtered at the
+program API boundary. Legacy projects are treated as global unless their stored
+recordings unambiguously identify one domain. Cross-domain orchestration is an
+intentional next runtime contract: it must invoke explicitly registered domain
+routines rather than treating a domain output as globally executable.

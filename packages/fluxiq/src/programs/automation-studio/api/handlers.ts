@@ -47,9 +47,9 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.projects,
     permission: "programs.read",
-    handler: async () => ({
+    handler: async (request) => ({
       ok: true,
-      payload: await service.listProjects()
+      payload: await service.listProjects(request.scope.domainId)
     })
   });
   registry.register({
@@ -59,7 +59,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { name?: unknown; description?: unknown; categoryId?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
       await authorizeProgramPin(identityAccess, payload);
-      return { ok: true, payload: { project: await service.createProject(payload) } };
+      return { ok: true, payload: { project: await service.createProject({ ...payload, domainId: request.scope.domainId ?? null }) } };
     }
   });
   registry.register({
@@ -89,7 +89,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { name?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
       await authorizeProgramPin(identityAccess, payload);
-      return { ok: true, payload: { category: await service.createProjectCategory(payload) } };
+      return { ok: true, payload: { category: await service.createProjectCategory({ ...payload, domainId: request.scope.domainId ?? null }) } };
     }
   });
   registry.register({
@@ -223,7 +223,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as CreateRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
-      return { ok: true, payload: { recording: await service.createRecording(payload) } };
+      return { ok: true, payload: { recording: await service.createRecording({ ...payload, domainId: request.scope.domainId ?? null }) } };
     }
   });
   registry.register({

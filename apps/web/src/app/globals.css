@@ -71,6 +71,17 @@ select {
   font-weight: 700;
 }
 
+.domain-topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+}
+
+.domain-topbar-nav .back-link {
+  flex: 0 0 auto;
+}
+
 .brand-lockup small {
   display: block;
   margin-top: 2px;
@@ -490,7 +501,8 @@ select {
 
 .program-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 340px));
+  justify-content: start;
   gap: 14px;
 }
 
@@ -582,6 +594,10 @@ select {
   display: grid;
   gap: 24px;
   padding: 16px 24px 32px;
+}
+
+.domain-directory {
+  padding-bottom: 0;
 }
 
 .program-category-section {
@@ -6227,6 +6243,7 @@ select {
   gap: 3px;
   min-width: 0;
 }
+
 
 .automation-pipeline-apply-actions {
   display: flex;

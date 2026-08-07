@@ -70,6 +70,8 @@ export type AutomationStudioProject = {
   id: string;
   name: string;
   description: string;
+  /** Null is a global project; a string scopes the project to one host domain. */
+  domainId?: string | null;
   categoryId?: string | null;
   createdAt: number;
   updatedAt: number;
@@ -78,6 +80,7 @@ export type AutomationStudioProject = {
 export type AutomationStudioProjectCategory = {
   id: string;
   name: string;
+  domainId?: string | null;
   order: number;
   createdAt: number;
   updatedAt: number;

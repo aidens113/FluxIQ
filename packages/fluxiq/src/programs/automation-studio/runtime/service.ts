@@ -277,9 +277,9 @@ export class AutomationStudioService {
     return { items: summaries.slice(start, start + pageSize), page, pageSize, total };
   }
 
-  async createRecording(input: CreateRecordingSessionInput & { projectId?: string | null }): Promise<RecordingSession> {
+  async createRecording(input: CreateRecordingSessionInput & { projectId?: string | null; domainId?: string | null }): Promise<RecordingSession> {
     await this.ready;
-    const created = createRecordingSession(input);
+    const created = createRecordingSession({ ...input, environment: { ...input.environment, domainId: input.domainId ?? input.environment?.domainId ?? null } });
     const recording = input.projectId && this.objectStore
       ? { ...created, metadata: { ...(created.metadata ?? {}), projectId: input.projectId } }
       : created;
@@ -1041,16 +1041,37 @@ export class AutomationStudioService {
     return { normalizationReviews, miningRuns, evidenceFacts, evidenceObservations, stateActionCorrelations, evidenceClaims, learnedTaskModels, policyProposals, replayResults };
   }
 
-  async listProjects(): Promise<{ categories: AutomationStudioProjectCategory[]; projects: AutomationStudioProject[] }> {
+  async listProjects(domainId?: string | null): Promise<{ categories: AutomationStudioProjectCategory[]; projects: AutomationStudioProject[] }> {
     const state = await this.readProjectIndex();
+    const inferredScopes = await this.inferLegacyProjectScopes(state.projects);
+    const projects = state.projects.map((project) => project.domainId === undefined && inferredScopes.has(project.id)
+      ? { ...project, domainId: inferredScopes.get(project.id)! }
+      : project);
     return {
-      categories: this.sortCategories(state.categories ?? []),
-      projects: state.projects
+      categories: this.sortCategories((state.categories ?? []).filter((category) => (category.domainId ?? null) === (domainId ?? null))),
+      projects: projects
+        .filter((project) => (project.domainId ?? null) === (domainId ?? null))
         .sort((left, right) => right.updatedAt - left.updatedAt)
     };
   }
 
-  async createProject(input: { name?: unknown; description?: unknown; categoryId?: unknown }): Promise<AutomationStudioProject> {
+  /** Infers a legacy project's domain only when its recordings agree on one domain. */
+  private async inferLegacyProjectScopes(projects: AutomationStudioProject[]): Promise<Map<string, string>> {
+    const legacyIds = new Set(projects.filter((project) => project.domainId === undefined).map((project) => project.id));
+    if (!legacyIds.size) return new Map();
+    const domainsByProject = new Map<string, Set<string>>();
+    for (const recording of await this.repositories.recordingSessions.list()) {
+      const projectId = typeof recording.metadata?.projectId === "string" ? recording.metadata.projectId : null;
+      const domainId = recording.environment.domainId;
+      if (!projectId || !domainId || !legacyIds.has(projectId)) continue;
+      const domains = domainsByProject.get(projectId) ?? new Set<string>();
+      domains.add(domainId);
+      domainsByProject.set(projectId, domains);
+    }
+    return new Map([...domainsByProject].flatMap(([projectId, domains]) => domains.size === 1 ? [[projectId, [...domains][0]!]] : []));
+  }
+
+  async createProject(input: { name?: unknown; description?: unknown; categoryId?: unknown; domainId?: unknown }): Promise<AutomationStudioProject> {
     const name = typeof input.name === "string" ? input.name.trim() : "";
     if (!name) throw new Error("Project name is required.");
     const now = Date.now();
@@ -1059,6 +1080,7 @@ export class AutomationStudioService {
       id: randomUUID(),
       name,
       description: typeof input.description === "string" ? input.description.trim() : "",
+      domainId: typeof input.domainId === "string" && input.domainId.trim() ? input.domainId.trim() : null,
       categoryId,
       createdAt: now,
       updatedAt: now
@@ -1152,12 +1174,13 @@ export class AutomationStudioService {
     return { deletedProjectId: projectId };
   }
 
-  async createProjectCategory(input: { name?: unknown }): Promise<AutomationStudioProjectCategory> {
+  async createProjectCategory(input: { name?: unknown; domainId?: unknown }): Promise<AutomationStudioProjectCategory> {
     const name = typeof input.name === "string" ? input.name.trim() : "";
     if (!name) throw new Error("Category name is required.");
     const now = Date.now();
     const state = await this.readProjectIndex();
-    const category = { id: randomUUID(), name, order: nextCategoryOrder(state.categories), createdAt: now, updatedAt: now };
+    const domainId = typeof input.domainId === "string" && input.domainId.trim() ? input.domainId.trim() : null;
+    const category = { id: randomUUID(), name, domainId, order: nextCategoryOrder((state.categories ?? []).filter((item) => (item.domainId ?? null) === domainId)), createdAt: now, updatedAt: now };
     await this.writeProjectIndex((state) => ({ ...state, categories: [category, ...(state.categories ?? [])] }));
     return category;
   }

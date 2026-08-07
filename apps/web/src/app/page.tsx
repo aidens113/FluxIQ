@@ -5,6 +5,7 @@ import {
   CloudUpload,
   Database,
   GitBranch,
+  MousePointerClick,
   PlayCircle,
   ShieldCheck
 } from "lucide-react";
@@ -31,13 +32,16 @@ const categoryOrder = new Map<string, number>([
   ["Domain Control", 3]
 ]);
 
+const domainIcons: Record<string, typeof Blocks> = {
+  "mouse-pointer-click": MousePointerClick
+};
+
 export default async function HomePage() {
   const auth = await currentFluxIQUser();
   if (!auth) return <LoginPanel />;
 
   const fluxiq = getFluxIQ();
-  const activeDomain = fluxiq.activeDomainId ? fluxiq.programDirectory(fluxiq.activeDomainId).domain : null;
-  const domainName = activeDomain?.title ?? fluxiq.activeDomainId ?? "Global";
+  const domains = fluxiq.domains.summaries();
   const programs = defaultGlobalProgramCatalog();
   const groups = groupPrograms(programs);
 
@@ -48,19 +52,36 @@ export default async function HomePage() {
           <span className="brand-mark">
             <Blocks size={17} aria-hidden />
           </span>
-          <span>FluxIQ - {domainName}</span>
+          <span>FluxIQ</span>
         </div>
         <AuthStatus displayName={auth.user.displayName} roleId={auth.user.roleId} />
       </header>
 
       <div className="directory-container">
         <section className="directory-heading">
-          <p className="page-kicker">{fluxiq.activeDomainId ? "Domain console" : "Framework console"}</p>
-          <h1 className="page-title">{domainName} Programs</h1>
+          <p className="page-kicker">Global workspace</p>
+          <h1 className="page-title">FluxIQ Workspace</h1>
           <p className="page-copy">
             Open FluxIQ programs for automation authoring, identity, data,
             compute, deployments, documentation, scheduling, and production runs.
           </p>
+        </section>
+
+        <section className="program-category-list domain-directory" aria-label="Available domains">
+          <section className="program-category-section">
+            <div className="program-category-heading">
+              <h2>Domains</h2>
+              <span>{domains.length} available</span>
+            </div>
+          {domains.length ? <div className="program-grid">
+            {domains.map((domain) => (
+              <a className="program-card" href={domain.route} key={domain.id}>
+                <span className="program-icon" aria-hidden>{(() => { const Icon = domainIcons[domain.icon] ?? Blocks; return <Icon size={18} />; })()}</span>
+                <span className="program-card-copy"><strong>{domain.title}</strong><span>{domain.category} · {domain.status}</span><p>{domain.description}</p></span>
+              </a>
+            ))}
+          </div> : <p className="muted-text">No domains are registered by this host yet.</p>}
+          </section>
         </section>
 
         <section className="program-category-list" aria-label="Global program directory">

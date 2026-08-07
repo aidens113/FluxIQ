@@ -31,6 +31,8 @@ type WorkspaceTab = "main" | "api" | "storage" | "runtime";
 type ProgramWorkspaceProps = {
   program: ProgramSummary;
   domainName: string;
+  backHref: string;
+  backLabel: string;
   user: {
     id: string;
     displayName: string;
@@ -63,7 +65,7 @@ const icons = {
   "shield-check": ShieldCheck
 } satisfies Record<FluxIQIconName, typeof Blocks>;
 
-export function ProgramWorkspace({ program, capabilities, domainName, user }: ProgramWorkspaceProps) {
+export function ProgramWorkspace({ program, capabilities, domainName, backHref, backLabel, user }: ProgramWorkspaceProps) {
   const [tab, setTab] = useState<WorkspaceTab>("main");
   const [automationStatus, setAutomationStatus] = useState<{ state: string; detail: string; running: boolean; dirty: boolean }>({
     state: "Idle",
@@ -97,9 +99,9 @@ export function ProgramWorkspace({ program, capabilities, domainName, user }: Pr
       <main className="console-main single-program program-fullscreen-shell">
         <header className="console-topbar program-global-topbar">
           <div className="program-topbar-title">
-            <a className="back-link" href="/" aria-label="Back to programs">
+            <a className="back-link" href={backHref} aria-label={`Back to ${backLabel}`}>
               <ArrowLeft size={16} aria-hidden />
-              <span>Programs</span>
+              <span>{backLabel}</span>
             </a>
             <span className="breadcrumb-separator">/</span>
             <span className="program-topbar-icon">
@@ -136,9 +138,9 @@ export function ProgramWorkspace({ program, capabilities, domainName, user }: Pr
     <main className="console-main single-program">
       <header className="console-topbar program-global-topbar">
         <div className="program-topbar-title">
-          <a className="back-link" href="/" aria-label="Back to programs">
+          <a className="back-link" href={backHref} aria-label={`Back to ${backLabel}`}>
             <ArrowLeft size={16} aria-hidden />
-            <span>Programs</span>
+            <span>{backLabel}</span>
           </a>
           <span className="breadcrumb-separator">/</span>
           <span className="program-topbar-icon">

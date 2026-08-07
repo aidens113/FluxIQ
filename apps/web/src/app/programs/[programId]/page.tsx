@@ -74,17 +74,20 @@ type ProgramPageParams = {
   params: Promise<{
     programId: string;
   }>;
+  searchParams: Promise<{ domainId?: string | string[] }>;
 };
 
 export default async function ProgramPage(context: ProgramPageParams) {
   const auth = await currentFluxIQUser();
   if (!auth) redirect("/");
 
-  const { programId } = await context.params;
+  const [{ programId }, query] = await Promise.all([context.params, context.searchParams]);
   const fluxiq = getFluxIQ();
-  const activeDomain = fluxiq.activeDomainId ? fluxiq.programDirectory(fluxiq.activeDomainId).domain : null;
-  const domainName = activeDomain?.title ?? fluxiq.activeDomainId ?? "Global";
-  const programs = defaultGlobalProgramCatalog();
+  const requestedDomainId = typeof query.domainId === "string" ? query.domainId : null;
+  const domain = requestedDomainId ? fluxiq.programDirectory(requestedDomainId).domain : null;
+  const domainId = domain?.id ?? null;
+  const domainName = domain?.title ?? "Global";
+  const programs = defaultGlobalProgramCatalog(domainId ? { domainId } : {});
   const program = programs.find((item) => item.id === programId);
 
   if (!program) {
@@ -99,6 +102,8 @@ export default async function ProgramPage(context: ProgramPageParams) {
     }}
     program={program}
     domainName={domainName}
+    backHref={domainId ? `/domains/${domainId}` : "/"}
+    backLabel={domainId ? domainName : "Global workspace"}
     user={{
       id: auth.user.id,
       displayName: auth.user.displayName,
