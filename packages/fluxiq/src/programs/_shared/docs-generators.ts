@@ -1,5 +1,6 @@
 import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { JSONOutput } from "typedoc";
 import type { IoSnapshot } from "../../io/index.ts";
 import type { DomainRegistration } from "../../domains/index.ts";
@@ -254,6 +255,9 @@ export function registerHostDocumentationGenerators(params: {
     });
 }
 
+const packageRootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+const packagedFrameworkReferencePath = path.join(packageRootDir, "docs", "reference", "framework-reference.md");
+
 async function frameworkReference(rootDir: string, generatedRootDir: string, nowMs: number): Promise<string> {
   const entryPoint = path.join(rootDir, "packages", "fluxiq", "src", "index.ts");
   const tsconfig = path.join(rootDir, "packages", "fluxiq", "tsconfig.json");
@@ -261,7 +265,8 @@ async function frameworkReference(rootDir: string, generatedRootDir: string, now
   const jsonPath = path.join(generatedRootDir, "reference", "typedoc.json");
   const entryPointInfo = await stat(entryPoint).catch(() => null);
   if (!entryPointInfo?.isFile()) {
-    return fallbackFrameworkReference(rootDir, "TypeDoc entry point was not found.");
+    return (await packagedFrameworkReference("FluxIQ source files are not present in the importing repository."))
+      ?? await fallbackFrameworkReference(rootDir, "TypeDoc entry point was not found.");
   }
   try {
     const { Application, EntryPointStrategy } = await import("typedoc");
@@ -290,8 +295,24 @@ async function frameworkReference(rootDir: string, generatedRootDir: string, now
       jsonPath: ".fluxiq/cache/docs/reference/typedoc.json"
     });
   } catch (error) {
-    return fallbackFrameworkReference(rootDir, `TypeDoc generation failed: ${error instanceof Error ? error.message : String(error)}`);
+    return (await packagedFrameworkReference(`TypeDoc generation failed: ${error instanceof Error ? error.message : String(error)}`))
+      ?? await fallbackFrameworkReference(rootDir, `TypeDoc generation failed: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+async function packagedFrameworkReference(reason: string): Promise<string | undefined> {
+  const reference = await readFile(packagedFrameworkReferencePath, "utf8").catch(() => undefined);
+  if (!reference) return undefined;
+  return [
+    reference.trimEnd(),
+    "",
+    "## Runtime Cache Note",
+    "",
+    "This runtime copy uses the deterministic framework reference packaged with `fluxiq`.",
+    `Reason: ${reason}`,
+    "",
+    "Live TypeDoc HTML and JSON artifacts are generated only when FluxIQ source files and TypeDoc are available in this repository."
+  ].join("\n");
 }
 
 function typedocReferenceMarkdown(model: JSONOutput.ProjectReflection, params: { generatedAtMs: number; htmlPath: string; jsonPath: string }): string {

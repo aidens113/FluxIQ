@@ -3,7 +3,8 @@
 FluxIQ documentation has three layers:
 
 - authored Markdown written by maintainers;
-- a deterministic framework API reference generated from source exports;
+- a deterministic framework API reference generated from source exports and
+  packaged with `fluxiq`;
 - ephemeral Markdown, HTML, and JSON operator snapshots generated from the
   active importing repository and live framework state.
 
@@ -60,15 +61,19 @@ Generated pages currently include:
 - deployment sync state;
 - registered host domains;
 - registered host inputs and outputs;
-- TypeDoc-backed framework reference Markdown;
-- TypeDoc HTML site;
-- TypeDoc JSON reflection model.
+- framework reference Markdown copied from the packaged deterministic
+  reference, or regenerated from TypeDoc when FluxIQ source files are present;
+- TypeDoc HTML site when FluxIQ source files and TypeDoc are available;
+- TypeDoc JSON reflection model when FluxIQ source files and TypeDoc are
+  available.
 
 These pages are intentionally host- and time-specific. They may contain
 database counts, task schedules, Git metadata, importer domains, or registered
-IO. They must not be committed. TypeDoc HTML and JSON artifacts are cached here
-for interactive API inspection, while the stable Markdown API inventory lives
-in `docs/reference/`.
+IO. They must not be committed. Installed/importing repositories do not need
+TypeDoc or FluxIQ source files to show the framework reference; the rebuild
+copies the packaged deterministic Markdown reference into the runtime cache.
+When the source tree and TypeDoc are available, the rebuild also refreshes
+local TypeDoc HTML and JSON artifacts for interactive API inspection.
 
 ## Rebuild Flow
 
@@ -110,7 +115,7 @@ injected directly into the control-panel document.
 Repository validation:
 
 - `pnpm docs:reference` regenerates the deterministic TypeDoc-backed Markdown
-  inventory;
+  inventory in both `docs/reference/` and the packaged `fluxiq` docs asset;
 - `pnpm docs:check` validates local Markdown links and fails when the committed
   reference is stale;
 - CI runs `pnpm docs:check` after building the repository.

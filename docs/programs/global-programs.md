@@ -121,8 +121,10 @@ Current behavior:
 
 - reads authored host documentation from `docs/`;
 - rebuilds runtime/operator Markdown under `.fluxiq/cache/docs`;
+- copies the packaged framework API reference into `.fluxiq/cache/docs`;
 - generates browseable TypeDoc HTML and JSON artifacts under
-  `.fluxiq/cache/docs/reference`;
+  `.fluxiq/cache/docs/reference` when FluxIQ source files and TypeDoc are
+  available;
 - presents authored and runtime-cache sources in the same folder-style explorer;
 - shows Markdown, HTML, and JSON documentation files in a folder-style explorer;
 - resolves internal documentation links inside the Docs program when a matching

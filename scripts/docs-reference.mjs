@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputPath = path.join(repositoryRoot, "docs", "reference", "framework-reference.md");
+const packageOutputPath = path.join(repositoryRoot, "packages", "fluxiq", "docs", "reference", "framework-reference.md");
 const checkOnly = process.argv.includes("--check");
 const packageRequire = createRequire(path.join(repositoryRoot, "packages", "fluxiq", "package.json"));
 const { Application, EntryPointStrategy } = await import(pathToFileURL(packageRequire.resolve("typedoc")).href);
@@ -62,14 +63,20 @@ const markdown = [
 
 if (checkOnly) {
   const current = await readFile(outputPath, "utf8").catch(() => "");
+  const packaged = await readFile(packageOutputPath, "utf8").catch(() => "");
   if (normalizeNewlines(current) !== normalizeNewlines(markdown)) {
     throw new Error("docs/reference/framework-reference.md is stale. Run `pnpm docs:reference` and commit the result.");
+  }
+  if (normalizeNewlines(packaged) !== normalizeNewlines(markdown)) {
+    throw new Error("packages/fluxiq/docs/reference/framework-reference.md is stale. Run `pnpm docs:reference` and commit the result.");
   }
   console.log("Deterministic framework reference is current.");
 } else {
   await mkdir(path.dirname(outputPath), { recursive: true });
+  await mkdir(path.dirname(packageOutputPath), { recursive: true });
   await writeFile(outputPath, markdown, "utf8");
-  console.log(`Wrote ${slash(path.relative(repositoryRoot, outputPath))} (${declarations.length} public declarations).`);
+  await writeFile(packageOutputPath, markdown, "utf8");
+  console.log(`Wrote ${slash(path.relative(repositoryRoot, outputPath))} and ${slash(path.relative(repositoryRoot, packageOutputPath))} (${declarations.length} public declarations).`);
 }
 
 function commentSummary(comment) {

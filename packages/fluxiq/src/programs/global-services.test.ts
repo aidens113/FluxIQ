@@ -365,13 +365,17 @@ describe("global program services", () => {
       const snapshot = await runtime.docs.rebuild(1000);
       const catalog = await readFile(path.join(root, ".fluxiq", "cache", "docs", "programs", "catalog.md"), "utf8");
       const apiMap = await readFile(path.join(root, ".fluxiq", "cache", "docs", "programs", "api-map.md"), "utf8");
+      const reference = await readFile(path.join(root, ".fluxiq", "cache", "docs", "reference", "framework-reference.md"), "utf8");
 
       expect(snapshot.generatedPages).toBeGreaterThan(0);
       expect(snapshot.sources.map((source) => source.id)).toEqual(["framework-docs", "runtime-docs"]);
       expect(snapshot.pages.some((page) => page.sourceId === "runtime-docs" && page.routePath === "/runtime-docs/programs/catalog")).toBe(true);
+      expect(snapshot.pages.some((page) => page.sourceId === "runtime-docs" && page.routePath === "/runtime-docs/reference/framework-reference")).toBe(true);
       await expect(stat(path.join(root, "docs", "generated"))).rejects.toThrow();
       expect(catalog).toContain("# Program Catalog");
       expect(apiMap).toContain("background-tasks");
+      expect(reference).toContain("# Framework API Reference");
+      expect(reference).toContain("Runtime Cache Note");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

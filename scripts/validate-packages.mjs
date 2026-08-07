@@ -186,6 +186,13 @@ for (const subpath of ${JSON.stringify(runtimeSubpaths)}) await import(\`fluxiq/
 const freshRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-runtime-smoke-"));
 const framework = FluxIQ.create({ rootDir: freshRoot, domainId: "Importer Domain", loadEnv: false });
 await framework.setup();
+const docsSnapshot = await framework.programs.docs.rebuild(1000);
+const referencePath = path.join(freshRoot, ".fluxiq", "cache", "docs", "reference", "framework-reference.md");
+const runtimeReference = await readFile(referencePath, "utf8");
+assert.ok(docsSnapshot.pages.some((page) => page.routePath === "/runtime-docs/reference/framework-reference"));
+assert.match(runtimeReference, /# Framework API Reference/);
+assert.match(runtimeReference, /Runtime Cache Note/);
+assert.match(runtimeReference, /Public declarations: [1-9][0-9]*/);
 const repository = new SQLiteRepository({ rootDir: framework.paths.databases, kind: "smoke.records", layoutVersion: 2 });
 await repository.put(createRecord({ id: "global", kind: "smoke.records", data: { owner: "framework" } }));
 await repository.put(createRecord({ id: "domain", kind: "smoke.records", scope: { domainId: "Importer Domain" }, data: { owner: "importer" } }));

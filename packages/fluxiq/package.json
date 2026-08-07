@@ -31,7 +31,7 @@
     "./programs": { "types": "./dist/programs/index.d.ts", "import": "./dist/programs/index.js" },
     "./ui": { "types": "./dist/ui/index.d.ts", "import": "./dist/ui/index.js" }
   },
-  "files": ["dist", "README.md", "LICENSE.md"],
+  "files": ["dist", "docs/reference/framework-reference.md", "README.md", "LICENSE.md"],
   "scripts": {
     "build": "tsc -b tsconfig.build.json --clean && tsc -b tsconfig.build.json && node ../../scripts/rewrite-declaration-imports.mjs dist",
     "check": "tsc --noEmit",
