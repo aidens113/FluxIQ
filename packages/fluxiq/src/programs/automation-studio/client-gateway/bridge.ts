@@ -10,12 +10,15 @@ import type {
 } from "../../../client-gateway/index.ts";
 import { ClientGatewayService } from "../../../client-gateway/index.ts";
 import type { JsonObject } from "../../../core/index.ts";
+import { createEnvelope, IoRegistry } from "../../../io/index.ts";
 import type { ActionChannelDescriptor, EnvironmentDescriptor, SourceDescriptor, StateSnapshot } from "../model/index.ts";
+import { AutomationStudioIoRecorder } from "../runtime/io-bridge.ts";
 import type { AutomationStudioService } from "../runtime/service.ts";
 
 export type AutomationStudioClientGatewayBridgeOptions = {
   gateway: ClientGatewayService;
   automationStudio: AutomationStudioService;
+  io?: IoRegistry;
   clientRecordingContextProvider?: ClientRecordingContextProvider;
 };
 
@@ -42,16 +45,24 @@ export class AutomationStudioClientGatewayBridge {
   private readonly automationStudio: AutomationStudioService;
   private readonly activeRecordings = new Map<string, { projectId?: string | null; recordingId: string; domainId?: string | null }>();
   private clientRecordingContextProvider: ClientRecordingContextProvider | undefined;
+  private io: IoRegistry | undefined;
 
   constructor(options: AutomationStudioClientGatewayBridgeOptions) {
     this.gateway = options.gateway;
     this.automationStudio = options.automationStudio;
+    this.io = options.io;
     this.clientRecordingContextProvider = options.clientRecordingContextProvider;
     this.gateway.onEvent((event) => this.handleGatewayEvent(event));
   }
 
   setClientRecordingContextProvider(provider: ClientRecordingContextProvider | undefined): void {
     this.clientRecordingContextProvider = provider;
+  }
+
+  /** Binds importer-registered inputs so gateway events can enter the IO pipeline. */
+  bindIoRegistry(io: IoRegistry | undefined): this {
+    this.io = io;
+    return this;
   }
 
   async startRecording(input: StartClientRecordingInput) {
@@ -247,6 +258,17 @@ export class AutomationStudioClientGatewayBridge {
     const active = this.activeRecordings.get(this.recordingOwnerKey(session));
     if (!active) return;
     const domainId = event.domainId ?? active.domainId ?? stringMetadataValue(event.metadata, "domainId");
+    const inputId = stringMetadataValue(event.metadata, "inputId");
+    if (domainId && inputId && await this.recordGatewayInput({
+      active,
+      domainId,
+      inputId,
+      payload: event.payload ?? compactJsonObject({ ...(event.target ? { target: event.target } : {}) }),
+      ...(event.timestamp !== undefined ? { timestampMs: event.timestamp } : {}),
+      sourceId: event.sourceId ?? `client.${session.clientId}.events`,
+      messageId,
+      ...(event.metadata ? { metadata: event.metadata } : {})
+    })) return;
     if (domainId) {
       const result = await this.automationStudio.appendRecordingDomainEvent({
         ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
@@ -332,6 +354,17 @@ export class AutomationStudioClientGatewayBridge {
   private async appendStateUpdate(session: ClientGatewaySession, stateUpdate: JsonObject, messageId: string): Promise<void> {
     const active = this.activeRecordings.get(this.recordingOwnerKey(session));
     if (!active) return;
+    const domainId = active.domainId ?? stringMetadataValue(stateUpdate.metadata as JsonObject | undefined, "domainId");
+    const inputId = stringMetadataValue(stateUpdate.metadata as JsonObject | undefined, "inputId");
+    if (domainId && inputId && await this.recordGatewayInput({
+      active,
+      domainId,
+      inputId,
+      payload: stateUpdate.state && typeof stateUpdate.state === "object" && !Array.isArray(stateUpdate.state) ? stateUpdate.state as JsonObject : stateUpdate,
+      sourceId: `client.${session.clientId}.observations`,
+      messageId,
+      ...(stateUpdate.metadata && typeof stateUpdate.metadata === "object" && !Array.isArray(stateUpdate.metadata) ? { metadata: stateUpdate.metadata as JsonObject } : {})
+    })) return;
     await this.automationStudio.appendRecordingEvent({
       ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
       recordingId: active.recordingId,
@@ -343,6 +376,33 @@ export class AutomationStudioClientGatewayBridge {
         payload: stateUpdate
       }
     });
+  }
+
+  private async recordGatewayInput(input: {
+    active: { projectId?: string | null; recordingId: string; domainId?: string | null };
+    domainId: string;
+    inputId: string;
+    payload: JsonObject;
+    timestampMs?: number;
+    sourceId: string;
+    messageId: string;
+    metadata?: JsonObject;
+  }): Promise<boolean> {
+    if (!this.io?.hasInput(input.domainId, input.inputId)) return false;
+    const recorder = new AutomationStudioIoRecorder({
+      automationStudio: this.automationStudio,
+      io: this.io,
+      domainId: input.domainId,
+      ...(input.active.projectId !== undefined ? { projectId: input.active.projectId } : {})
+    });
+    await recorder.recordInput(input.active.recordingId, input.inputId, createEnvelope({
+      domainId: input.domainId,
+      ioId: input.inputId,
+      payload: input.payload,
+      ...(input.timestampMs !== undefined ? { timestampMs: input.timestampMs } : {}),
+      metadata: compactJsonObject({ sourceId: input.sourceId, clientGatewayMessageId: input.messageId, ...(input.metadata ?? {}) })
+    }));
+    return true;
   }
 
   private async appendActionResult(sessionId: string, command: ClientGatewayActionCommand, result: ClientGatewayActionResult): Promise<void> {

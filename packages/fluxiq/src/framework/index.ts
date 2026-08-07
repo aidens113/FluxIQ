@@ -5,13 +5,14 @@ import type { ComponentRegistry } from "../components/index.ts";
 import { DomainRegistry, domainSummary, normalizeDomainId, type DomainRegistration } from "../domains/index.ts";
 import {
   IoRegistry,
+  type DomainIoRegistration,
   type IoRegistration,
   type IoSnapshot,
   type IoValidationIssue,
   validateDomainIo,
   validateIoRequirements
 } from "../io/index.ts";
-import { buildProgramDirectory, createGlobalProgramRuntime, registerHostDocumentationGenerators, type GlobalProgramRuntime, type ProgramDirectory } from "../programs/index.ts";
+import { AutomationStudioIoRecorder, buildProgramDirectory, createGlobalProgramRuntime, registerHostDocumentationGenerators, type GlobalProgramRuntime, type ProgramDirectory } from "../programs/index.ts";
 import { initializeFluxIQStorage, inspectFluxIQStorage, type FluxIQStorageInspection } from "./storage-layout.ts";
 import { migrateFluxIQStorage, rollbackFluxIQStorageMigration, type FluxIQStorageMigrationResult } from "./storage-migration.ts";
 
@@ -170,6 +171,8 @@ export class FluxIQ {
       cache: resolveInside(root, path.join(fluxiqDir, "cache"))
     };
     this.programs = createGlobalProgramRuntime(this.paths);
+    this.programs.automationStudio.bindIoRuntime(this.io, activeDomainId);
+    this.programs.automationStudioClientGateway.bindIoRegistry(this.io);
 
     for (const domain of options.domains ?? []) {
       this.domains.register(domain);
@@ -198,6 +201,23 @@ export class FluxIQ {
   registerIo(registration: IoRegistration): this {
     this.io.register(registration);
     return this;
+  }
+
+  registerDomainIo(registration: DomainIoRegistration): this {
+    this.io.register(registration);
+    return this;
+  }
+
+  /** Creates the importer-facing bridge for recording registered IO inputs. */
+  createAutomationStudioIoRecorder(options: { domainId?: string; projectId?: string | null } = {}): AutomationStudioIoRecorder {
+    const domainId = options.domainId ?? this.activeDomainId;
+    if (!domainId) throw new Error("A domainId is required to record domain IO inputs.");
+    return new AutomationStudioIoRecorder({
+      automationStudio: this.programs.automationStudio,
+      io: this.io,
+      domainId,
+      ...(options.projectId !== undefined ? { projectId: options.projectId } : {})
+    });
   }
 
   ioSnapshot(domainId?: string | null): IoSnapshot {

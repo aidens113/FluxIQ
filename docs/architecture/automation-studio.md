@@ -149,6 +149,27 @@ generic concepts:
 Host projects own domain-specific adapters, recordings, generated policies, and
 runtime artifacts.
 
+## Domain IO execution boundary
+
+An importing repository registers domain inputs and optional outputs through the
+framework IO registry. Inputs are classified as state, event, telemetry, or
+action. A recorded action becomes executable only when that input explicitly
+binds to a registered output ID. The generated policy stores that output ID and
+payload, not an arbitrary event type or host script.
+
+During a runtime session, Automation Studio resolves `builtin.policy.action`
+as an output dispatch effect. FluxIQ validates that the output is registered
+for the active domain and calls its importer-owned `dispatch` adapter. Output
+definitions supply the editor-facing title, description, schema, capabilities,
+and safety metadata. The framework therefore remains neutral about whether an
+output ultimately uses a browser API, RPC, hardware device, or another runtime.
+
+An action input bound to an output remains a live stream during runtime. It is
+not eligible as policy state, but the generated output node awaits that input
+as confirmation after dispatch by default. A missing confirmation fails the
+node after its configured timeout; importers may explicitly disable confirmation
+for intentional fire-and-forget outputs.
+
 ## Near-Term Build Order
 
 The next Automation Studio slices should build on the first contracts in this

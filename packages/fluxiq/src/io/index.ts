@@ -56,6 +56,26 @@ export type InputAdapter<TPayload = unknown> = {
   mode: IoMode;
   read?: (request: InputReadRequest) => Promise<IoEnvelope<TPayload>> | IoEnvelope<TPayload>;
   subscribe?: (handler: (event: IoEnvelope<TPayload>) => void) => IoUnsubscribe;
+  /**
+   * Optional, importer-owned translation from a recorded action input to a
+   * policy output invocation. This function must be deterministic and must
+   * not perform the output itself.
+   */
+  outputBinding?: InputOutputBinding<TPayload>;
+};
+
+export type IoInputRole = NonNullable<DomainInputDefinition["role"]>;
+
+export type InputOutputBinding<TPayload = unknown> = {
+  outputId: string;
+  toPayload: (event: IoEnvelope<TPayload>) => JsonObject;
+  /**
+   * By default, the bound input is also awaited as runtime confirmation after
+   * its output dispatches. Set false only for intentionally fire-and-forget
+   * outputs, or configure the confirmation timeout.
+   */
+  confirmation?: false | { timeoutMs?: number };
+  metadata?: JsonObject;
 };
 
 export type OutputAdapter<TPayload = unknown, TResult = unknown> = {
@@ -67,9 +87,34 @@ export type OutputAdapter<TPayload = unknown, TResult = unknown> = {
 
 export type IoRegistration = {
   domainId?: string | null;
-  inputs?: InputAdapter[];
-  outputs?: OutputAdapter[];
+  inputs?: InputAdapter<any>[];
+  outputs?: OutputAdapter<any, any>[];
 };
+
+/** A cohesive importer-owned domain IO package. */
+export type DomainIoRegistration = IoRegistration & {
+  domainId: string;
+};
+
+export type DefinedInput<TPayload = unknown> = InputAdapter<TPayload>;
+export type DefinedOutput<TPayload = unknown, TResult = unknown> = OutputAdapter<TPayload, TResult>;
+
+export function defineInput<TPayload = unknown>(input: InputAdapter<TPayload>): DefinedInput<TPayload> {
+  validateInputDefinition(input);
+  return input;
+}
+
+export function defineOutput<TPayload = unknown, TResult = unknown>(output: OutputAdapter<TPayload, TResult>): DefinedOutput<TPayload, TResult> {
+  validateOutputDefinition(output);
+  return output;
+}
+
+export function defineDomainIo(registration: DomainIoRegistration): DomainIoRegistration {
+  if (!registration.domainId.trim()) throw new Error("Domain IO registration requires a domainId.");
+  for (const input of registration.inputs ?? []) validateInputDefinition(input);
+  for (const output of registration.outputs ?? []) validateOutputDefinition(output);
+  return registration;
+}
 
 export type IoValidationIssue = {
   severity: "error" | "warning";
@@ -86,6 +131,10 @@ export type IoAdapterSummary = {
   title: string;
   description?: string;
   mode: IoMode;
+  role?: IoInputRole;
+  outputId?: string;
+  capabilities?: string[];
+  safety?: DomainOutputDefinition["safety"];
 };
 
 export type IoSnapshot = {
@@ -94,8 +143,8 @@ export type IoSnapshot = {
 };
 
 export class IoRegistry {
-  private readonly inputs = new Map<string, InputAdapter>();
-  private readonly outputs = new Map<string, OutputAdapter>();
+  private readonly inputs = new Map<string, InputAdapter<any>>();
+  private readonly outputs = new Map<string, OutputAdapter<any, any>>();
 
   register(registration: IoRegistration): void {
     for (const input of registration.inputs ?? []) {
@@ -107,6 +156,7 @@ export class IoRegistry {
   }
 
   registerInput(domainId: string | null | undefined, adapter: InputAdapter): void {
+    validateInputDefinition(adapter);
     const key = ioKey(domainId, adapter.definition.id);
     if (this.inputs.has(key)) {
       throw new Error(`Duplicate input adapter: ${key}`);
@@ -115,6 +165,7 @@ export class IoRegistry {
   }
 
   registerOutput(domainId: string | null | undefined, adapter: OutputAdapter): void {
+    validateOutputDefinition(adapter);
     const key = ioKey(domainId, adapter.definition.id);
     if (this.outputs.has(key)) {
       throw new Error(`Duplicate output adapter: ${key}`);
@@ -140,6 +191,36 @@ export class IoRegistry {
       throw new Error(`Input is not streamable: ${ioKey(domainId, inputId)}`);
     }
     return adapter.subscribe(handler as (event: IoEnvelope) => void);
+  }
+
+  waitForInput<TPayload = unknown>(params: {
+    domainId?: string | null;
+    inputId: string;
+    timeoutMs?: number;
+    predicate?: (event: IoEnvelope<TPayload>) => boolean;
+  }): Promise<IoEnvelope<TPayload>> {
+    const timeoutMs = Math.max(1, params.timeoutMs ?? 5_000);
+    return new Promise<IoEnvelope<TPayload>>((resolve, reject) => {
+      let settled = false;
+      let unsubscribe: IoUnsubscribe | undefined;
+      const settle = (callback: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        unsubscribe?.();
+        callback();
+      };
+      const timeout = setTimeout(() => settle(() => reject(new Error(`Timed out waiting for input confirmation: ${ioKey(params.domainId, params.inputId)}`))), timeoutMs);
+      try {
+        unsubscribe = this.subscribeInput<TPayload>(params.domainId, params.inputId, (event) => {
+          if (params.predicate && !params.predicate(event)) return;
+          settle(() => resolve(event));
+        });
+        if (settled) unsubscribe();
+      } catch (error) {
+        settle(() => reject(error));
+      }
+    });
   }
 
   async dispatchOutput<TPayload = unknown, TResult = unknown>(
@@ -180,10 +261,41 @@ export class IoRegistry {
     return this.outputs.has(ioKey(domainId, outputId));
   }
 
+  getInput(domainId: string | null | undefined, inputId: string): InputAdapter<any> | undefined {
+    return this.inputs.get(ioKey(domainId, inputId));
+  }
+
+  getOutput(domainId: string | null | undefined, outputId: string): OutputAdapter<any, any> | undefined {
+    return this.outputs.get(ioKey(domainId, outputId));
+  }
+
+  resolveInputOutputBinding<TPayload = unknown>(
+    domainId: string | null | undefined,
+    inputId: string,
+    event: IoEnvelope<TPayload>
+  ): { outputId: string; payload: JsonObject; confirmationInputId?: string; confirmationTimeoutMs?: number; metadata?: JsonObject } | null {
+    const input = this.getInput(domainId, inputId) as InputAdapter<TPayload> | undefined;
+    if (!input) throw new Error(`Input adapter not found: ${ioKey(domainId, inputId)}`);
+    if ((input.definition.role ?? "state") !== "action") return null;
+    const binding = input.outputBinding;
+    const outputId = binding?.outputId ?? input.definition.outputId;
+    if (!binding || !outputId) return null;
+    if (!this.hasOutput(domainId, outputId)) {
+      throw new Error(`Input '${input.definition.id}' maps to an unregistered output: ${ioKey(domainId, outputId)}`);
+    }
+    const confirmation = binding.confirmation;
+    return {
+      outputId: normalizeIoId(outputId),
+      payload: binding.toPayload(event),
+      ...(confirmation !== false ? { confirmationInputId: normalizeIoId(input.definition.id), confirmationTimeoutMs: confirmation?.timeoutMs ?? 5_000 } : {}),
+      ...(binding.metadata ? { metadata: binding.metadata } : {})
+    };
+  }
+
   snapshot(domainId?: string | null): IoSnapshot {
     return {
-      inputs: adapterSummaries(this.inputs, domainId),
-      outputs: adapterSummaries(this.outputs, domainId)
+      inputs: adapterSummaries(this.inputs, domainId, "input"),
+      outputs: adapterSummaries(this.outputs, domainId, "output")
     };
   }
 }
@@ -204,6 +316,20 @@ export function validateDomainIo(manifest: DomainManifest, registry: IoRegistry)
         ioId: input.id
       });
     }
+    const adapter = registry.getInput(domainId, input.id);
+    if (adapter && !sameInputDefinition(input, adapter.definition)) {
+      issues.push({ severity: "error", code: "domain.input.definition_mismatch", message: `Domain input '${input.id}' does not match its registered adapter definition`, domainId, ioId: input.id });
+    }
+    const role = input.role ?? "state";
+    if (role === "action" && input.outputId && !registry.hasOutput(domainId, input.outputId)) {
+      issues.push({ severity: "error", code: "domain.input.output_missing", message: `Action input '${input.id}' maps to an unregistered output '${input.outputId}'`, domainId, ioId: input.id });
+    }
+    if (role === "action" && input.outputId && !adapter?.outputBinding) {
+      issues.push({ severity: "error", code: "domain.input.output_mapper_missing", message: `Action input '${input.id}' declares output '${input.outputId}' without a payload mapper`, domainId, ioId: input.id });
+    }
+    if (role !== "action" && input.outputId) {
+      issues.push({ severity: "error", code: "domain.input.output_binding_invalid", message: `Only action inputs may declare an output binding: '${input.id}'`, domainId, ioId: input.id });
+    }
   }
 
   for (const output of manifest.outputs ?? []) {
@@ -215,6 +341,10 @@ export function validateDomainIo(manifest: DomainManifest, registry: IoRegistry)
         domainId,
         ioId: output.id
       });
+    }
+    const adapter = registry.getOutput(domainId, output.id);
+    if (adapter && !sameOutputDefinition(output, adapter.definition)) {
+      issues.push({ severity: "error", code: "domain.output.definition_mismatch", message: `Domain output '${output.id}' does not match its registered adapter definition`, domainId, ioId: output.id });
     }
   }
 
@@ -305,8 +435,9 @@ function idsForDomain(keys: IterableIterator<string>, domainId: string | null | 
 }
 
 function adapterSummaries(
-  adapters: Map<string, InputAdapter | OutputAdapter>,
-  domainId: string | null | undefined
+  adapters: Map<string, InputAdapter<any> | OutputAdapter<any, any>>,
+  domainId: string | null | undefined,
+  kind: "input" | "output"
 ): IoAdapterSummary[] {
   const prefix = domainId === undefined ? "" : `${normalizeDomainId(domainId)}:`;
   return [...adapters.entries()]
@@ -319,10 +450,63 @@ function adapterSummaries(
         title: adapter.definition.title,
         mode: adapter.mode
       };
+      if (kind === "input") {
+        const input = adapter as InputAdapter;
+        summary.role = input.definition.role ?? "state";
+        const outputId = input.outputBinding?.outputId ?? input.definition.outputId;
+        if (outputId) summary.outputId = normalizeIoId(outputId);
+      } else {
+        const output = adapter as OutputAdapter;
+        if (output.definition.capabilities) summary.capabilities = output.definition.capabilities;
+        if (output.definition.safety) summary.safety = output.definition.safety;
+      }
       if (adapter.definition.description) {
         summary.description = adapter.definition.description;
       }
       return summary;
     })
     .sort((left, right) => `${left.domainId ?? "global"}:${left.ioId}`.localeCompare(`${right.domainId ?? "global"}:${right.ioId}`));
+}
+
+function validateInputDefinition<TPayload>(adapter: InputAdapter<TPayload>): void {
+  const role = adapter.definition.role ?? "state";
+  if (!adapter.definition.id.trim()) throw new Error("Input definition id is required.");
+  if (!adapter.definition.title.trim()) throw new Error(`Input '${adapter.definition.id}' requires a title.`);
+  if (role !== "action" && (adapter.definition.outputId || adapter.outputBinding)) {
+    throw new Error(`Only action inputs may bind to outputs: ${adapter.definition.id}`);
+  }
+  if (adapter.outputBinding && !adapter.definition.outputId) {
+    throw new Error(`Action input '${adapter.definition.id}' must declare the bound outputId in its definition.`);
+  }
+  const outputId = adapter.outputBinding?.outputId ?? adapter.definition.outputId;
+  if (role === "action" && adapter.definition.outputId && adapter.outputBinding && normalizeIoId(adapter.definition.outputId) !== normalizeIoId(adapter.outputBinding.outputId)) {
+    throw new Error(`Action input '${adapter.definition.id}' has conflicting output binding IDs.`);
+  }
+  if (adapter.outputBinding && !adapter.outputBinding.toPayload) throw new Error(`Action input '${adapter.definition.id}' requires an output payload mapper.`);
+  if (role === "action" && outputId && !normalizeIoId(outputId)) throw new Error(`Action input '${adapter.definition.id}' has an invalid output binding ID.`);
+}
+
+function validateOutputDefinition<TPayload, TResult>(adapter: OutputAdapter<TPayload, TResult>): void {
+  if (!adapter.definition.id.trim()) throw new Error("Output definition id is required.");
+  if (!adapter.definition.title.trim()) throw new Error(`Output '${adapter.definition.id}' requires a title.`);
+  if (!adapter.dispatch) throw new Error(`Output '${adapter.definition.id}' requires a dispatch implementation.`);
+}
+
+function sameInputDefinition(left: DomainInputDefinition, right: DomainInputDefinition): boolean {
+  return normalizeIoId(left.id) === normalizeIoId(right.id)
+    && left.title === right.title
+    && (left.role ?? "state") === (right.role ?? "state")
+    && normalizeOptionalIoId(left.outputId) === normalizeOptionalIoId(right.outputId)
+    && JSON.stringify(left.schema ?? {}) === JSON.stringify(right.schema ?? {});
+}
+
+function sameOutputDefinition(left: DomainOutputDefinition, right: DomainOutputDefinition): boolean {
+  return normalizeIoId(left.id) === normalizeIoId(right.id)
+    && left.title === right.title
+    && JSON.stringify(left.schema ?? {}) === JSON.stringify(right.schema ?? {})
+    && JSON.stringify(left.safety ?? {}) === JSON.stringify(right.safety ?? {});
+}
+
+function normalizeOptionalIoId(value: string | undefined): string | undefined {
+  return value ? normalizeIoId(value) : undefined;
 }

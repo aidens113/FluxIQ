@@ -192,6 +192,13 @@ describe("FluxIQ", () => {
     expect(fluxiq.validateDomainIo("example").map((issue) => issue.code)).toEqual(["domain.output.adapter_missing"]);
   });
 
+  it("creates an Automation Studio IO recorder for the active importer domain", () => {
+    const fluxiq = FluxIQ.create({ loadEnv: false, domainId: "example" });
+
+    expect(fluxiq.createAutomationStudioIoRecorder()).toBeDefined();
+    expect(() => FluxIQ.create({ loadEnv: false }).createAutomationStudioIoRecorder()).toThrow("domainId is required");
+  });
+
   it("validates component IO requirements", () => {
     const fluxiq = FluxIQ.create({ loadEnv: false });
     fluxiq.registerIo({

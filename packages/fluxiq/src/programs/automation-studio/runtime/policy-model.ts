@@ -140,23 +140,25 @@ export function policyGraphToAutomationStudioFlow(policy: PolicyGraph, input: { 
     description: `Task flow generated from policy ${policy.policyId}.`,
     nodes: policy.nodes.map((node, index) => ({
       id: node.id,
-      definitionId: node.metadata?.graphTone === "proposed" ? "automation.policy.proposed-step" : "automation.policy.step",
+      definitionId: "builtin.policy.action",
       label: node.label,
       ...(node.description !== undefined ? { description: node.description } : {}),
       position: { x: index * 340, y: index % 2 === 0 ? 120 : 280 },
       parameterValues: compactJsonObject({
-        actions: node.actions as unknown as JsonObject[],
-        eligibility: node.eligibility as unknown as JsonObject,
-        successConditions: node.successConditions as unknown as JsonObject,
-        timeout: node.timeout as unknown as JsonObject,
-        retry: node.retry as unknown as JsonObject,
-        recovery: node.recovery as unknown as JsonObject
+        outputId: node.actions[0]?.outputId ?? "",
+        confirmationInputId: node.actions[0]?.confirmationInputId ?? "",
+        confirmationTimeoutMs: node.actions[0]?.confirmationTimeoutMs ?? 5_000,
+        parameters: node.actions[0]?.parameters as JsonObject ?? {},
+        timeoutMs: node.timeout.timeoutMs,
+        requiresApproval: node.actions[0]?.metadata?.requiresApproval === true,
+        failureRoute: "failed"
       }),
       metadata: {
         ...(node.metadata ?? {}),
         policyNodeId: node.id,
         policyId: policy.policyId,
         proposalId: input.proposalId,
+        actions: node.actions as unknown as JsonObject[],
         ...(input.recordingId !== undefined ? { recordingId: input.recordingId } : {})
       }
     })),
@@ -182,42 +184,42 @@ export function policyGraphToAutomationStudioFlow(policy: PolicyGraph, input: { 
 export function createTaskProposalModelFromMiningRun(miningRun: SignalMiningResult, taskId?: string): LearnedTaskModel {
   const resolvedTaskId = taskId ?? String(miningRun.metadata?.taskId ?? miningRun.metadata?.recordingId ?? "task.learned");
   const actionClaims = (miningRun.claims ?? []).filter((claim) => claim.claimType === "action_effect");
-  const transitionClaims = (miningRun.claims ?? []).filter((claim) => claim.claimType === "transition" || claim.claimType === "wait");
-  const actionObservations = (miningRun.observations ?? []).filter((observation) => observation.kind === "action_performed" || observation.kind === "domain_event_observed");
+  // Only output-bound recorded actions are candidates. Domain events, state
+  // inputs, telemetry, unmapped interactions, and legacy opaque action types
+  // are evidence only and can never become executable policy actions.
+  const actionObservations = (miningRun.observations ?? []).filter((observation) =>
+    observation.kind === "action_performed" && typeof observation.subject?.outputId === "string" && Boolean(observation.subject.outputId.trim())
+  );
   const factsById = new Map((miningRun.facts ?? []).map((fact) => [fact.factId, fact]));
   const windows = miningRun.windows.filter((window) => window.actionEntryId);
-  const clusterSources = actionObservations.length ? actionObservations : windows.length ? windows : actionClaims.length ? actionClaims : transitionClaims;
-  const actionClusters = clusterSources.map((item, index) => {
-    const claim = "claimId" in item ? item : undefined;
-    const observation = "observationId" in item ? item : undefined;
-    const observationSourceEntryId = observation ? factsById.get(observation.factIds[0] ?? "")?.source.entryId : undefined;
-    const window = "actionEntryId" in item ? item : windows[index];
-    const actionEntryId = typeof claim?.statement.subject.entryId === "string"
-      ? claim.statement.subject.entryId
-      : typeof observationSourceEntryId === "string"
+  const actionClusters = actionObservations.map((observation, index) => {
+    const observationSourceEntryId = factsById.get(observation.factIds[0] ?? "")?.source.entryId;
+    const window = windows[index];
+    const actionEntryId = typeof observationSourceEntryId === "string"
         ? observationSourceEntryId
-        : typeof observation?.metadata?.entryId === "string"
+        : typeof observation.metadata?.entryId === "string"
           ? observation.metadata.entryId
           : window?.actionEntryId;
     const matchingEffects = uniqueBy(miningRun.actionEffects.filter((effect) => effect.actionOccurrenceId === actionEntryId), (effect) => `${effect.signalPath}:${effect.relationship}`);
     const matchingActionClaims = actionClaims.filter((candidate) => candidate.statement.subject.entryId === actionEntryId);
-    const primaryEvidence = claim
-      ? [{ layer: "evidence_claim" as const, artifactId: claim.claimId, relationship: claim.claimType }]
-      : observation
-        ? [{ layer: "evidence_observation" as const, artifactId: observation.observationId, relationship: observation.kind }]
-        : window?.sourceEvidence ?? [];
+    const primaryEvidence = [{ layer: "evidence_observation" as const, artifactId: observation.observationId, relationship: observation.kind }];
     const claimEvidence = uniqueBy([
       ...matchingActionClaims.map((candidate) => ({ layer: "evidence_claim" as const, artifactId: candidate.claimId, relationship: candidate.claimType })),
       ...primaryEvidence
     ], (evidence) => `${evidence.layer}:${evidence.artifactId}`);
-    const actionType = observation?.subject?.eventType
-      ?? (observation?.subject?.target && typeof observation.subject.target === "object" && typeof observation.subject.target.actionType === "string" ? observation.subject.target.actionType : undefined)
-      ?? (claim?.statement.subject && typeof claim.statement.subject === "object" && typeof claim.statement.subject.actionType === "string" ? claim.statement.subject.actionType : undefined)
-      ?? "learned.action";
+    const outputId = observation.subject!.outputId!;
+    const actionType = outputId;
     return {
       id: `cluster.${index + 1}`,
-      label: claim?.title ?? observation?.title ?? `Step ${index + 1}`,
-      actionTemplate: { id: `action.${index + 1}`, actionType, parameters: {}, sourceEvidence: claimEvidence },
+      label: observation.title ?? `Step ${index + 1}`,
+      actionTemplate: {
+        id: `action.${index + 1}`,
+        actionType,
+        outputId,
+        ...(observation.subject?.confirmationInputId ? { confirmationInputId: observation.subject.confirmationInputId, confirmationTimeoutMs: observation.subject.confirmationTimeoutMs ?? 5_000 } : {}),
+        parameters: observation.subject?.parameters ?? {},
+        sourceEvidence: claimEvidence
+      },
       positiveRequirements: uniqueBy((miningRun.claims ?? [])
         .filter((candidate) => candidate.claimType === "candidate_condition")
         .map((candidate) => ({ signalPath: String(candidate.statement.object?.signalPath ?? candidate.statement.subject.signalPath ?? ""), operator: "exists" as const, weight: candidate.confidence.score }))
@@ -233,9 +235,9 @@ export function createTaskProposalModelFromMiningRun(miningRun: SignalMiningResu
           .map((candidate) => ({ layer: "evidence_claim" as const, artifactId: candidate.claimId, relationship: candidate.claimType }))
       })),
       possibleSideEffects: [],
-      confidence: claim?.confidence.score ?? Math.min(0.85, 0.45 + matchingEffects.length * 0.05 + (observation ? 0.1 : 0)),
+      confidence: Math.min(0.85, 0.55 + matchingEffects.length * 0.05),
       sourceOccurrences: actionEntryId ? [actionEntryId] : [],
-      ...(claim ? { metadata: { sourceClaimId: claim.claimId, observationIds: claim.observationIds, factIds: claim.factIds } } : observation ? { metadata: { sourceObservationId: observation.observationId, factIds: observation.factIds } } : {})
+      metadata: { sourceObservationId: observation.observationId, factIds: observation.factIds }
     };
   });
   const transitions = actionClusters.slice(0, -1).map((cluster, index) => ({

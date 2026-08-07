@@ -54,6 +54,12 @@ export type ActionResult = {
 
 export type PolicyAction = {
   id: string;
+  /** Registered domain output to dispatch. New generated policies always use this. */
+  outputId?: string;
+  /** Action input stream awaited as confirmation after dispatch. */
+  confirmationInputId?: string;
+  confirmationTimeoutMs?: number;
+  /** @deprecated Compatibility field for policies recorded before output bindings. */
   actionType: string;
   parameters: Record<string, unknown>;
   target?: ActionTarget;

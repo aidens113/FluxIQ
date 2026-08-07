@@ -229,6 +229,14 @@ contract with Automation Studio before events are recorded. FluxIQ core stays
 domain-neutral; the importing domain repo owns event names, payload schemas,
 state reducers, and observation extractors.
 
+For a registered FluxIQ IO input, clients may additionally include
+`metadata.inputId` on `client.recording_event` or `client.state_update`.
+The gateway bridge then routes the payload through the importer's IO adapter
+instead of treating it as a raw domain event. An action input with an output
+binding becomes an output-native policy candidate; a state input remains a
+non-executable observation. The input ID must be registered for the active
+recording domain or FluxIQ preserves the normal raw gateway behavior.
+
 Direct import path:
 
 ```ts

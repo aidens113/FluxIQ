@@ -66,6 +66,8 @@ import {
 export type { PolicyGraphPatch, PolicyProposalArtifact } from "./policy-model.ts";
 import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage.ts";
 import type { JsonObject } from "../../../core/index.ts";
+import type { IoRegistry } from "../../../io/index.ts";
+import { createIoPolicyEffectDispatcher } from "./io-policy.ts";
 import {
   type CanonicalAutomationStudioRepositories,
   createCanonicalAutomationStudioMemoryRepositories,
@@ -181,6 +183,7 @@ export class AutomationStudioService {
   private readonly recordingMutationLocks = new Map<string, Promise<void>>();
   private readonly ready: Promise<void>;
   private storageReady?: Promise<void>;
+  private ioRuntime?: { io: IoRegistry; domainId: string | null };
 
   constructor(options: AutomationStudioServiceOptions = {}) {
     this.repositories = options.repositories ?? createCanonicalAutomationStudioMemoryRepositories();
@@ -194,6 +197,12 @@ export class AutomationStudioService {
       if (options.dataDir) this.legacyProjectStore = new ProgramJsonStore(programDataFile(options.dataDir, "automation-studio", "projects.json"), () => ({ categories: [], projects: [] }));
     }
     this.ready = options.seedFixture === true ? this.seedFixture() : Promise.resolve();
+  }
+
+  /** Connects Automation Studio policy execution to importer-registered IO. */
+  bindIoRuntime(io: IoRegistry, domainId?: string | null): this {
+    this.ioRuntime = { io, domainId: domainId ?? null };
+    return this;
   }
 
   async snapshot(domainId?: string | null): Promise<AutomationStudioSnapshot> {
@@ -595,7 +604,12 @@ export class AutomationStudioService {
     }
     model ??= latestByGeneratedAt(artifacts.learnedTaskModels) ?? null;
     if (!model) throw new Error("Mined evidence is required before proposing a task.");
-    const nodes: PolicyNode[] = model.actionClusters.map((cluster) => ({
+    const executableClusters = model.actionClusters.filter((cluster) => {
+      const outputId = cluster.actionTemplate.outputId;
+      return Boolean(outputId) && (!this.ioRuntime || this.ioRuntime.io.hasOutput(this.ioRuntime.domainId, outputId!));
+    });
+    const executableClusterIds = new Set(executableClusters.map((cluster) => cluster.id));
+    const nodes: PolicyNode[] = executableClusters.map((cluster) => ({
       id: `node.${cluster.id}`,
       label: cluster.label,
       description: `Generated from ${cluster.sourceOccurrences.length} recorded occurrence(s).`,
@@ -610,13 +624,15 @@ export class AutomationStudioService {
       sourceEvidence: cluster.actionTemplate.sourceEvidence ?? [],
       generatedMetadata: { generatedBy: "signal_miner", generatedAt: Date.now(), confidence: cluster.confidence }
     }));
-    const edges = model.transitions.map((transition) => ({
+    const edges = model.transitions
+      .filter((transition) => executableClusterIds.has(transition.fromClusterId) && executableClusterIds.has(transition.toClusterId))
+      .map((transition) => ({
       id: `edge.${transition.id}`,
       fromNodeId: `node.${transition.fromClusterId}`,
       toNodeId: `node.${transition.toClusterId}`,
       label: "Next",
       probability: transition.probability
-    }));
+      }));
     const policy: PolicyGraph = {
       schemaVersion: "0.1",
       policyId: `policy.${safeSegment(model.taskId)}.${Date.now()}`,
@@ -977,6 +993,7 @@ export class AutomationStudioService {
     const graphOptions: Parameters<typeof runAutomationStudioGraph>[1] = {
       inputs: (input.inputs ?? session.metadata?.inputs ?? {}) as Record<string, any>
     };
+    if (this.ioRuntime) graphOptions.effectDispatcher = createIoPolicyEffectDispatcher(this.ioRuntime.io, this.ioRuntime.domainId);
     if (input.maxSteps !== undefined) graphOptions.maxSteps = input.maxSteps;
     const trace = await runAutomationStudioGraph(session.flow, graphOptions);
     const next: AutomationStudioRuntimeSession = {
@@ -1968,7 +1985,7 @@ function createEvidenceFact(
     source: { layer: "normalized_timeline", artifactId: timeline.normalizedTimelineId, entryId: entry.id },
     ...(domainId ? { domain: { domainId, ...(eventType ? { eventType } : {}), ...(eventDefinition?.label ? { label: eventDefinition.label } : {}) } } : {}),
     data: compactJsonObject({
-      ...(entry.type === "action" ? { actionType: entry.actionType, target: entry.target as JsonObject | undefined, parameters: entry.parameters as JsonObject } : {}),
+      ...(entry.type === "action" ? { actionType: entry.actionType, ...(entry.outputId ? { outputId: entry.outputId } : {}), ...(entry.confirmationInputId ? { confirmationInputId: entry.confirmationInputId, confirmationTimeoutMs: entry.confirmationTimeoutMs ?? 5_000 } : {}), target: entry.target as JsonObject | undefined, parameters: entry.parameters as JsonObject } : {}),
       ...(entry.type === "domain_event" ? { eventType: entry.eventType, payload: entry.payload } : {}),
       ...(entry.type === "state_delta" ? { deltas: entry.deltas as unknown as JsonObject[] } : {}),
       ...(entry.type === "observation" ? { observationType: entry.observationType, signals: entry.signals as JsonObject | undefined, payload: entry.payload } : {}),
@@ -2030,6 +2047,9 @@ function createEvidenceObservations(fact: EvidenceFact): EvidenceObservation[] {
     subject: compactJsonObject({
       type: fact.kind,
       ...(fact.domain?.eventType ? { eventType: fact.domain.eventType } : {}),
+      ...(typeof fact.data?.outputId === "string" ? { outputId: fact.data.outputId } : {}),
+      ...(typeof fact.data?.confirmationInputId === "string" ? { confirmationInputId: fact.data.confirmationInputId, confirmationTimeoutMs: typeof fact.data.confirmationTimeoutMs === "number" ? fact.data.confirmationTimeoutMs : 5_000 } : {}),
+      ...(fact.data?.parameters && typeof fact.data.parameters === "object" && !Array.isArray(fact.data.parameters) ? { parameters: fact.data.parameters } : {}),
       ...(fact.data?.target && typeof fact.data.target === "object" && !Array.isArray(fact.data.target) ? { target: fact.data.target } : {})
     }) as NonNullable<EvidenceObservation["subject"]>,
     ...(fact.domain ? { metadata: { domain: fact.domain } } : {})

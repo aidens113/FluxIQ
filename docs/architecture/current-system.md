@@ -118,9 +118,17 @@ pnpm --filter @fluxiq/web dev
 Domains are provided by importing repositories. A domain declares what FluxIQ
 can observe and what FluxIQ can affect:
 
-- inputs describe readable or streamable state;
-- outputs describe dispatchable effects;
+- inputs describe readable or streamable state, observations, telemetry, or
+  action intents;
+- outputs describe named, dispatchable effects and their safety contract;
 - adapters implement those surfaces at runtime.
 
 Automation must go through declared inputs and outputs. Framework code should
 not reach into private domain files or hidden global state.
+
+An action input can explicitly link to an output by ID. Its importer-owned
+payload mapper turns the recorded observation into the output payload. Such an
+input is recording evidence only: it cannot become a state condition in a
+generated policy. Automation Studio proposes executable nodes only from these
+registered output bindings; all other inputs remain state or non-executable
+evidence.

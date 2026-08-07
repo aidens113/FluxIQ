@@ -38,6 +38,8 @@ export type AutomationStudioGraphExecutionOptions = {
   random?: () => number;
   now?: () => number;
   signal?: AbortSignal;
+  /** Resolves runtime effects such as importer-owned policy outputs. */
+  effectDispatcher?: (effect: { type: string; payload?: JsonValue }) => Promise<AutomationNodeExecutionResult | undefined> | AutomationNodeExecutionResult | undefined;
 };
 
 export async function runAutomationStudioGraph(
@@ -157,7 +159,19 @@ async function executeAutomationStudioNode(
       ...(options.now ? { now: options.now } : {}),
       ...(options.signal ? { signal: options.signal } : {})
     };
-    const result = await definition.execute(context);
+    let result = await definition.execute(context);
+    if (options.effectDispatcher) {
+      for (const effect of result.effects ?? []) {
+        const dispatched = await options.effectDispatcher(effect);
+        if (!dispatched) continue;
+        const outputs = { ...(result.outputs ?? {}), ...(dispatched.outputs ?? {}) };
+        if (dispatched.status === "failed") {
+          result = { ...result, outputs, status: "failed", route: dispatched.route ?? "failed" };
+          break;
+        }
+        result = { ...result, outputs };
+      }
+    }
     return nodeAttemptFromResult(node, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result);
   } catch (error) {
     return {

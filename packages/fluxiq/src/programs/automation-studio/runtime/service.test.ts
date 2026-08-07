@@ -312,7 +312,7 @@ describe("AutomationStudioService recording persistence", () => {
 
     expect(proposal.metadata).toMatchObject({ source: "mined_evidence", recordingId: recording.recordingId, miningRunId: miningRun.miningRunId });
     expect(proposal.policy.sourceEvidence[0]).toMatchObject({ layer: "signal_mining", artifactId: miningRun.miningRunId });
-    expect(proposal.policy.nodes[0]?.sourceEvidence[0]?.layer).toBe("evidence_claim");
+    expect(proposal.policy.nodes).toEqual([]);
     expect(miningRun.correlations?.[0]).toMatchObject({ statePath: "task.status", elementKind: "status", descriptor: { label: "Task status" } });
     expect(projectArtifacts.tasks).toMatchObject([{ taskId: "task.unnamed_task", name: "unnamed_task" }]);
     expect(projectArtifacts.flows).toEqual([]);
@@ -340,12 +340,12 @@ describe("AutomationStudioService recording persistence", () => {
       await service.appendRecordingEvent({
         projectId: project.id,
         recordingId: recording.recordingId,
-        entry: { type: "domain_event", eventType: "shared.start", timestamp: 200, payload: {} }
+        entry: { type: "action", actionType: "output.shared-start", outputId: "output.shared-start", parameters: {}, origin: "operator", startedAt: 200, timestamp: 200 }
       });
       await service.appendRecordingEvent({
         projectId: project.id,
         recordingId: recording.recordingId,
-        entry: { type: "domain_event", eventType: secondStep, timestamp: 300, payload: {} }
+        entry: { type: "action", actionType: `output.${secondStep}`, outputId: `output.${secondStep}`, parameters: {}, origin: "operator", startedAt: 300, timestamp: 300 }
       });
       await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId, endedAt: 400 });
       const processed = await service.processFinalizedRecording({ projectId: project.id, recordingId: recording.recordingId });
@@ -358,7 +358,7 @@ describe("AutomationStudioService recording persistence", () => {
     const flow = artifacts.flows.find((item) => item.flowId === task?.graphId);
 
     expect(task?.recordingIds.sort()).toEqual(["recording.branch-a", "recording.branch-b"]);
-    expect(flow?.nodes.map((node) => node.label)).toEqual(expect.arrayContaining(["Event: Shared Start", "Event: Branch A", "Event: Branch B"]));
+    expect(flow?.nodes.map((node) => node.parameterValues?.outputId)).toEqual(expect.arrayContaining(["output.shared-start", "output.branch.a", "output.branch.b"]));
     expect(flow?.nodes.length).toBeGreaterThanOrEqual(3);
     expect(flow?.edges.some((edge) => edge.label === "Recorded branch")).toBe(true);
   });
@@ -376,12 +376,12 @@ describe("AutomationStudioService recording persistence", () => {
     await service.appendRecordingEvent({
       projectId: project.id,
       recordingId: recording.recordingId,
-      entry: { type: "domain_event", eventType: "step.one", timestamp: 200, payload: { step: 1 } }
+      entry: { type: "action", actionType: "output.step-one", outputId: "output.step-one", parameters: { step: 1 }, origin: "operator", startedAt: 200, timestamp: 200 }
     });
     await service.appendRecordingEvent({
       projectId: project.id,
       recordingId: recording.recordingId,
-      entry: { type: "domain_event", eventType: "step.two", timestamp: 300, payload: { step: 2 } }
+      entry: { type: "action", actionType: "output.step-two", outputId: "output.step-two", parameters: { step: 2 }, origin: "operator", startedAt: 300, timestamp: 300 }
     });
     await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId, endedAt: 400 });
     const processed = await service.processFinalizedRecording({ projectId: project.id, recordingId: recording.recordingId });
@@ -431,12 +431,12 @@ describe("AutomationStudioService recording persistence", () => {
     await service.appendRecordingEvent({
       projectId: project.id,
       recordingId: recording.recordingId,
-      entry: { type: "domain_event", eventType: "first.action", timestamp: 200, payload: { step: 1 } }
+      entry: { type: "action", actionType: "output.first", outputId: "output.first", parameters: { step: 1 }, origin: "operator", startedAt: 200, timestamp: 200 }
     });
     await service.appendRecordingEvent({
       projectId: project.id,
       recordingId: recording.recordingId,
-      entry: { type: "domain_event", eventType: "second.action", timestamp: 300, payload: { step: 2 } }
+      entry: { type: "action", actionType: "output.second", outputId: "output.second", parameters: { step: 2 }, origin: "operator", startedAt: 300, timestamp: 300 }
     });
     await service.normalizeRecording({ projectId: project.id, recordingId: recording.recordingId });
     const miningRun = await service.mineRecordingEvidence({ projectId: project.id, recordingId: recording.recordingId });

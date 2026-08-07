@@ -57,6 +57,10 @@ export type EvidenceObservation = {
     label?: string;
     statePath?: string;
     eventType?: string;
+    outputId?: string;
+    confirmationInputId?: string;
+    confirmationTimeoutMs?: number;
+    parameters?: JsonObject;
     target?: JsonObject;
   };
   before?: JsonObject;

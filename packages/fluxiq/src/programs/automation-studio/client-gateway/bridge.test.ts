@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { CLIENT_GATEWAY_PROTOCOL_VERSION, ClientGatewayService, type ClientGatewayClientMessage } from "../../../client-gateway/index.ts";
+import { defineInput, defineOutput, IoRegistry } from "../../../io/index.ts";
 import { stateValue } from "../model/index.ts";
 import { AutomationStudioService } from "../runtime/service.ts";
 import { AutomationStudioClientGatewayBridge } from "./bridge.ts";
@@ -13,6 +14,56 @@ afterEach(async () => {
 });
 
 describe("AutomationStudioClientGatewayBridge", () => {
+  it("routes gateway inputId metadata through registered IO bindings", async () => {
+    const gateway = new ClientGatewayService();
+    const automationStudio = new AutomationStudioService({ seedFixture: false });
+    const io = new IoRegistry();
+    io.register({
+      domainId: "extension.example",
+      inputs: [defineInput({
+        definition: { id: "element-pressed", title: "Element pressed", role: "action", outputId: "ui.activate" },
+        mode: "stream",
+        outputBinding: { outputId: "ui.activate", toPayload: (event) => ({ elementId: String((event.payload as { elementId: string }).elementId) }) }
+      }), defineInput({
+        definition: { id: "page-state", title: "Page state", role: "state" },
+        mode: "stream"
+      })],
+      outputs: [defineOutput({
+        definition: { id: "ui.activate", title: "Activate" },
+        mode: "request",
+        dispatch: (request) => ({ ok: true, outputId: request.outputId })
+      })]
+    });
+    const bridge = new AutomationStudioClientGatewayBridge({ gateway, automationStudio, io });
+    const session = gateway.connect();
+    await gateway.receive(session.sessionId, clientMessage("client.hello", { clientId: "extension.io", clientType: "extension", name: "Extension" }));
+    await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "", { approvedByUserId: "user.test" });
+    const recording = await bridge.startRecording({ sessionId: session.sessionId, domainId: "extension.example" });
+
+    await gateway.receive(session.sessionId, clientMessage("client.recording_event", {
+      domainId: "extension.example",
+      eventType: "dom.click",
+      payload: { elementId: "confirm" },
+      metadata: { inputId: "element-pressed" }
+    }));
+    await gateway.receive(session.sessionId, clientMessage("client.state_update", {
+      state: { ready: true },
+      metadata: { domainId: "extension.example", inputId: "page-state" }
+    }));
+
+    const stored = await automationStudio.getRecordingSession(recording.recordingId);
+    expect(stored.timeline).toMatchObject([{
+      type: "action",
+      outputId: "ui.activate",
+      parameters: { elementId: "confirm" },
+      metadata: { inputId: "element-pressed", policyEligible: true }
+    }, {
+      type: "observation",
+      observationType: "input.state",
+      metadata: { inputId: "page-state", policyEligible: false }
+    }]);
+  });
+
   it("stores remote client evidence in Automation Studio recordings", async () => {
     const gateway = new ClientGatewayService();
     const automationStudio = new AutomationStudioService({ seedFixture: false });

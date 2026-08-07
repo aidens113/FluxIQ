@@ -150,8 +150,8 @@ describe("automation node registry", () => {
 
     await expect(Promise.resolve(getAutomationNodeDefinition("builtin.policy.action")?.execute?.({
       inputs: { ready: true },
-      parameters: { actionDefinitionId: "action.test", parameters: { ok: true }, timeoutMs: 3000 }
-    }))).resolves.toMatchObject({ effects: [{ type: "policy.action.requested" }] });
+      parameters: { outputId: "output.test", parameters: { ok: true }, timeoutMs: 3000 }
+    }))).resolves.toMatchObject({ effects: [{ type: "policy.output.dispatch" }] });
 
     await expect(Promise.resolve(getAutomationNodeDefinition("builtin.routine.task-policy")?.execute?.({
       inputs: { in: "start" },

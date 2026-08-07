@@ -3,8 +3,8 @@ import { defineBuiltinNode } from "../shared/definition.ts";
 
 export const actionNode = defineBuiltinNode({
   id: "builtin.policy.action",
-  label: "Run Action",
-  description: "Ask a host adapter to perform one task action.",
+  label: "Run Output",
+  description: "Dispatch one importer-registered domain output.",
   class: "policy",
   scope: "policy",
   inputs: [{ id: "ready", label: "Ready", valueType: "boolean" }],
@@ -13,8 +13,10 @@ export const actionNode = defineBuiltinNode({
     { id: "failed", label: "Failed", valueType: "any" }
   ],
   parameters: [
-    { id: "actionDefinitionId", label: "Action to run", description: "Choose the host-provided action this node should request.", valueType: "string", required: true, ui: { control: "reference", referenceType: "action", placeholder: "Choose an action" } },
-    { id: "parameters", label: "Action settings", description: "Values passed to the selected action.", valueType: "object", defaultValue: {} },
+    { id: "outputId", label: "Output to run", description: "Choose an importer-registered output node.", valueType: "string", required: true, ui: { control: "reference", referenceType: "action", placeholder: "Choose an output" } },
+    { id: "parameters", label: "Output payload", description: "Values passed to the selected output.", valueType: "object", defaultValue: {} },
+    { id: "confirmationInputId", label: "Confirmation input", description: "Action input stream that confirms the output occurred. Leave empty for no confirmation.", valueType: "string", defaultValue: "", ui: { control: "identifier", placeholder: "Registered action input ID" } },
+    { id: "confirmationTimeoutMs", label: "Confirmation timeout", description: "How long to wait for the confirmation input.", valueType: "number", defaultValue: 5000 },
     { id: "timeoutMs", label: "Give up after milliseconds", description: "Maximum time to wait before treating this action as failed.", valueType: "number", defaultValue: 5000 },
     { id: "requiresApproval", label: "Ask before running", description: "Require operator approval before this action executes.", valueType: "boolean", defaultValue: false },
     {
@@ -35,6 +37,6 @@ export const actionNode = defineBuiltinNode({
     status: "success",
     route: "success",
     outputs: { success: true },
-    effects: [{ type: "policy.action.requested", payload: { actionDefinitionId: context.parameters.actionDefinitionId ?? "", parameters: jsonParameter(context.parameters.parameters, {}), timeoutMs: context.parameters.timeoutMs ?? 5000, requiresApproval: context.parameters.requiresApproval === true, failureRoute: context.parameters.failureRoute ?? "failed" } }]
+    effects: [{ type: "policy.output.dispatch", payload: { outputId: context.parameters.outputId ?? "", parameters: jsonParameter(context.parameters.parameters, {}), confirmationInputId: context.parameters.confirmationInputId ?? "", confirmationTimeoutMs: context.parameters.confirmationTimeoutMs ?? 5000, timeoutMs: context.parameters.timeoutMs ?? 5000, requiresApproval: context.parameters.requiresApproval === true, failureRoute: context.parameters.failureRoute ?? "failed" } }]
   })
 });

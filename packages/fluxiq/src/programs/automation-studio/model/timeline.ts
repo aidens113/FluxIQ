@@ -17,6 +17,10 @@ export type TimelineBase = {
 
 export type ActionEntry = TimelineBase & {
   type: "action";
+  /** Registered output represented by this recorded action, when executable. */
+  outputId?: string;
+  confirmationInputId?: string;
+  confirmationTimeoutMs?: number;
   actionType: string;
   parameters: Record<string, unknown>;
   target?: ActionTarget;

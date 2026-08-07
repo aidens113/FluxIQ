@@ -20,6 +20,16 @@ export type DomainInputDefinition = {
   title: string;
   description?: string;
   schema?: JsonObject;
+  /**
+   * How this value may participate in Automation Studio. Action inputs are
+   * recording evidence only and can never be used as policy state.
+   */
+  role?: "state" | "action" | "event" | "telemetry";
+  /**
+   * The domain output that an observed action represents. The executable
+   * implementation remains in the importing repository's output adapter.
+   */
+  outputId?: string;
   metadata?: JsonObject;
 };
 
@@ -29,6 +39,12 @@ export type DomainOutputDefinition = {
   description?: string;
   schema?: JsonObject;
   effects?: string[];
+  capabilities?: string[];
+  safety?: {
+    level: "safe" | "review" | "privileged" | "destructive";
+    requiresApproval?: boolean;
+    reversible?: boolean;
+  };
   metadata?: JsonObject;
 };
 

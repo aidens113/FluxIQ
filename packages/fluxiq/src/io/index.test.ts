@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   createEnvelope,
+  defineDomainIo,
+  defineInput,
+  defineOutput,
   IoRegistry,
   validateDomainIo
 } from "./index.ts";
@@ -86,5 +89,40 @@ describe("IoRegistry", () => {
 
     expect(issues).toHaveLength(1);
     expect(issues[0]?.code).toBe("domain.output.adapter_missing");
+  });
+
+  it("treats action inputs as output-bound recording intents, not state", () => {
+    const registry = new IoRegistry();
+    registry.register(defineDomainIo({
+      domainId: "example",
+      inputs: [defineInput({
+        definition: { id: "primary-pressed", title: "Primary pressed", role: "action", outputId: "activate-element" },
+        mode: "stream",
+        outputBinding: {
+          outputId: "activate-element",
+          toPayload: (event) => ({ elementId: String((event.payload as { elementId: string }).elementId) })
+        }
+      })],
+      outputs: [defineOutput({
+        definition: { id: "activate-element", title: "Activate element", description: "Activates a domain element.", safety: { level: "review" } },
+        mode: "request",
+        dispatch: () => ({ ok: true, outputId: "activate-element" })
+      })]
+    }));
+
+    const event = createEnvelope({ domainId: "example", ioId: "primary-pressed", payload: { elementId: "confirm" } });
+    const binding = registry.resolveInputOutputBinding("example", "primary-pressed", event);
+
+    expect(binding).toMatchObject({ outputId: "activate-element", payload: { elementId: "confirm" } });
+    expect(registry.snapshot("example").inputs).toMatchObject([{ ioId: "primary-pressed", role: "action", outputId: "activate-element" }]);
+    expect(registry.snapshot("example").outputs).toMatchObject([{ ioId: "activate-element", safety: { level: "review" } }]);
+  });
+
+  it("rejects output bindings on state inputs", () => {
+    expect(() => defineInput({
+      definition: { id: "state", title: "State", role: "state", outputId: "activate" },
+      mode: "request",
+      read: () => createEnvelope({ ioId: "state", payload: {} })
+    })).toThrow("Only action inputs may bind to outputs");
   });
 });

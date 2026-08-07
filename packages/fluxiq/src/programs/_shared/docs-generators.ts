@@ -222,14 +222,14 @@ export function registerHostDocumentationGenerators(params: {
             "This page is generated from the host project's registered FluxIQ IO adapters.",
             "",
             "## Inputs",
-            "| Domain | Input | Mode | Description |",
-            "| --- | --- | --- | --- |",
-            ...snapshot.inputs.map((input) => `| ${escapeTable(input.domainId ?? "global")} | \`${escapeTable(input.ioId)}\` ${escapeTable(input.title)} | ${escapeTable(input.mode)} | ${escapeTable(input.description ?? "-")} |`),
+            "| Domain | Input | Role | Output binding | Mode | Description |",
+            "| --- | --- | --- | --- | --- |",
+            ...snapshot.inputs.map((input) => `| ${escapeTable(input.domainId ?? "global")} | \`${escapeTable(input.ioId)}\` ${escapeTable(input.title)} | ${escapeTable(input.role ?? "state")} | ${input.outputId ? `\`${escapeTable(input.outputId)}\`` : "-"} | ${escapeTable(input.mode)} | ${escapeTable(input.description ?? "-")} |`),
             "",
             "## Outputs",
-            "| Domain | Output | Mode | Description |",
-            "| --- | --- | --- | --- |",
-            ...snapshot.outputs.map((output) => `| ${escapeTable(output.domainId ?? "global")} | \`${escapeTable(output.ioId)}\` ${escapeTable(output.title)} | ${escapeTable(output.mode)} | ${escapeTable(output.description ?? "-")} |`)
+            "| Domain | Output | Safety | Capabilities | Mode | Description |",
+            "| --- | --- | --- | --- | --- |",
+            ...snapshot.outputs.map((output) => `| ${escapeTable(output.domainId ?? "global")} | \`${escapeTable(output.ioId)}\` ${escapeTable(output.title)} | ${escapeTable(output.safety?.level ?? "-")} | ${escapeTable(output.capabilities?.join(", ") ?? "-")} | ${escapeTable(output.mode)} | ${escapeTable(output.description ?? "-")} |`)
           ].join("\n")
         }];
       }

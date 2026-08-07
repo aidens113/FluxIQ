@@ -105,6 +105,41 @@ export const domain: DomainRegistration = {
 };
 ```
 
+An importer can register its IO surface as one package:
+
+```ts
+import { defineDomainIo, defineInput, defineOutput } from "fluxiq";
+
+const io = defineDomainIo({
+  domainId: "example",
+  inputs: [defineInput({
+    definition: {
+      id: "primary-pressed",
+      title: "Primary control pressed",
+      role: "action",
+      outputId: "activate-element"
+    },
+    mode: "stream",
+    outputBinding: {
+      outputId: "activate-element",
+      toPayload: (event) => ({ elementId: String(event.payload.elementId) })
+    }
+  })],
+  outputs: [defineOutput({
+    definition: {
+      id: "activate-element",
+      title: "Activate element",
+      description: "Activates one domain-owned element.",
+      safety: { level: "review" }
+    },
+    mode: "request",
+    dispatch: async ({ payload }) => ({ ok: true, outputId: "activate-element", payload })
+  })]
+});
+
+fluxiq.registerDomainIo(io);
+```
+
 The framework can display and scope this domain without importing its
 implementation directly.
 
@@ -156,3 +191,16 @@ options override environment variables; externally managed overrides are not
 automatically migrated. `FluxIQ.create()` loads `.env` and
 `.env.local` from the current working directory by default for non-Next.js Node
 hosts.
+### Recording and policy boundary
+
+Inputs carry a recording role: `state`, `event`, `telemetry`, or `action`.
+Only an `action` input may name an `outputId`. During recording, that binding
+creates an output-native action candidate; it is never treated as policy state.
+State inputs contribute observation and condition evidence, while events,
+telemetry, and unmapped actions remain non-executable evidence.
+
+Importing repositories define the output node's title, description, payload
+schema, capabilities, safety metadata, and `dispatch` implementation. FluxIQ
+stores the output ID and mapped payload in the proposed policy, then dispatches
+it through the registered adapter at runtime. It never stores or evaluates
+domain JavaScript in a recording or policy.
