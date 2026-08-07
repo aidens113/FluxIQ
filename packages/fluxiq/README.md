@@ -15,3 +15,10 @@ the names, labels, recording contracts, and extensions used by FluxIQ.
 
 The package is native ESM. TypeDoc is optional and is needed only when invoking
 the TypeDoc-backed documentation generator.
+
+## License
+
+Source-available under the FluxIQ license included with this package.
+Customer-facing, hosted, managed, embedded, OEM, resale, and white-label uses
+require a separate written agreement. Contact
+[license@getfluxiq.com](mailto:license@getfluxiq.com).

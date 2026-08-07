@@ -2,13 +2,14 @@
   "name": "@fluxiq/client-gateway-websocket",
   "version": "0.1.0",
   "description": "Browser-safe WebSocket client for the FluxIQ client gateway.",
+  "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
   "sideEffects": false,
   "engines": { "node": ">=22" },
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
   },
-  "files": ["dist", "README.md"],
+  "files": ["dist", "README.md", "LICENSE.md"],
   "scripts": {
     "build": "tsc -b tsconfig.build.json --clean && tsc -b tsconfig.build.json && node ../../scripts/rewrite-declaration-imports.mjs dist",
     "check": "tsc --noEmit",
@@ -22,7 +23,7 @@
     "vitest": "^2.1.0"
   },
   "repository": { "type": "git", "url": "git+https://github.com/aidens113/FluxIQ.git", "directory": "packages/client-gateway-websocket" },
-  "homepage": "https://github.com/aidens113/FluxIQ#readme",
+  "homepage": "https://getfluxiq.com",
   "bugs": { "url": "https://github.com/aidens113/FluxIQ/issues" },
   "publishConfig": { "access": "public" }
 }

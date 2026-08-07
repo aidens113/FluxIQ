@@ -539,8 +539,8 @@ Validation:
 
 ## 4. Make FluxIQ A Real Distributable Framework
 
-Status: implemented 2026-08-05; registry publication remains blocked on the
-owner license decision
+Status: implemented 2026-08-05; community licensing selected 2026-08-06;
+registry publication remains a separate owner-controlled action
 
 Problems:
 
@@ -1188,3 +1188,7 @@ Stop conditions:
   project-artifact, UI primitive, and malformed-state tests; focused coverage
   and scoped static-quality gates; contributor/security guidance; complete CI
   gates; and dependency advisory remediation with a clean production audit.
+- 2026-08-06: Added the FluxIQ Sustainable Use community-license foundation,
+  commercial inquiry path, licensing guide, package metadata, and exact
+  tarball-license validation. Legal entity selection, contributor agreement,
+  pricing, and executed Enterprise/Cloud/Embed/OEM terms remain owner work.

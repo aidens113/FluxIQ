@@ -17,6 +17,7 @@ Docs program in the control panel.
 - [Global Programs](programs/global-programs.md)
 - [Data And State](operations/data-and-state.md)
 - [Quality And Dependency Security](operations/quality-and-security.md)
+- [Licensing](legal/licensing.md)
 - [UI Theme](architecture/ui-theme.md)
 - [Migration Plan](architecture/migration-plan.md)
 - [Roadmap](architecture/roadmap.md)

@@ -61,7 +61,8 @@ changes increment the patch version and intentional API breaks increment the
 minor version with migration notes. Registry publication, tags, signing, and
 provenance are separate release actions and are not performed by validation.
 
-License metadata is intentionally absent until the repository owner confirms
-the public license. That decision is the remaining hard gate before registry
-publication.
-
+All public packages carry the repository's source-available FluxIQ license and
+include an exact copy in their tarball. Commercial use outside the community
+terms is available only through a separate written agreement. Registry
+publication, tags, signing, provenance, the final legal licensor identity, and
+commercial contract templates remain separate owner-controlled release work.

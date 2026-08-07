@@ -126,3 +126,14 @@ WebSocket-capable clients such as browser extensions can connect through the
 global client gateway. See
 [`docs/integrations/client-gateway-websocket.md`](docs/integrations/client-gateway-websocket.md)
 for the approval flow, message examples, and development endpoint.
+
+## License
+
+FluxIQ is source-available under a fair-code model. Personal,
+non-commercial, and internal business use is available under the
+[FluxIQ license](LICENSE.md). Customer-facing automation, hosted or managed
+services, embedding, OEM distribution, resale, and white-labeling require a
+separate written agreement.
+
+See the [licensing guide](docs/legal/licensing.md) for examples or contact
+[license@getfluxiq.com](mailto:license@getfluxiq.com) about commercial terms.

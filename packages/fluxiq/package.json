@@ -2,6 +2,7 @@
   "name": "fluxiq",
   "version": "0.1.0",
   "description": "Domain-neutral FluxIQ framework runtime for Node.js.",
+  "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
   "engines": { "node": ">=22" },
   "exports": {
@@ -30,7 +31,7 @@
     "./programs": { "types": "./dist/programs/index.d.ts", "import": "./dist/programs/index.js" },
     "./ui": { "types": "./dist/ui/index.d.ts", "import": "./dist/ui/index.js" }
   },
-  "files": ["dist", "README.md"],
+  "files": ["dist", "README.md", "LICENSE.md"],
   "scripts": {
     "build": "tsc -b tsconfig.build.json --clean && tsc -b tsconfig.build.json && node ../../scripts/rewrite-declaration-imports.mjs dist",
     "check": "tsc --noEmit",
@@ -57,7 +58,7 @@
     }
   },
   "repository": { "type": "git", "url": "git+https://github.com/aidens113/FluxIQ.git", "directory": "packages/fluxiq" },
-  "homepage": "https://github.com/aidens113/FluxIQ#readme",
+  "homepage": "https://getfluxiq.com",
   "bugs": { "url": "https://github.com/aidens113/FluxIQ/issues" },
   "publishConfig": { "access": "public" }
 }

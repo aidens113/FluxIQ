@@ -12,6 +12,7 @@ const packages = [
   { directory: "packages/client-gateway-websocket", name: "@fluxiq/client-gateway-websocket" }
 ];
 const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-packages-"));
+const canonicalLicense = normalizeText(await readFile(path.join(repositoryRoot, "LICENSE.md"), "utf8"));
 
 try {
   const tarballRoot = path.join(temporaryRoot, "tarballs");
@@ -23,7 +24,7 @@ try {
     const created = (await readdir(tarballRoot)).filter((entry) => !before.has(entry) && entry.endsWith(".tgz"));
     if (created.length !== 1) throw new Error(`Expected one tarball for ${packageDefinition.name}; found ${created.length}.`);
     const tarball = path.join(tarballRoot, created[0]);
-    inspectTarball(tarball, packageDefinition.name);
+    inspectTarball(tarball, packageDefinition.name, canonicalLicense);
     tarballs.set(packageDefinition.name, tarball);
   }
 
@@ -34,7 +35,7 @@ try {
   await removeWithRetry(temporaryRoot);
 }
 
-function inspectTarball(tarball, packageName) {
+function inspectTarball(tarball, packageName, expectedLicense) {
   const entries = run("tar", ["-tf", tarball], repositoryRoot, true).split(/\r?\n/).filter(Boolean);
   const forbidden = entries.filter((entry) =>
     /(^|\/)src\//.test(entry)
@@ -43,8 +44,12 @@ function inspectTarball(tarball, packageName) {
     || /(^|\/)docs\/generated\//.test(entry)
   );
   if (forbidden.length) throw new Error(`${packageName} tarball contains forbidden files:\n${forbidden.join("\n")}`);
-  for (const required of ["package/package.json", "package/README.md"]) {
+  for (const required of ["package/package.json", "package/README.md", "package/LICENSE.md"]) {
     if (!entries.includes(required)) throw new Error(`${packageName} tarball is missing ${required}.`);
+  }
+  const packagedLicense = normalizeText(run("tar", ["-xOf", tarball, "package/LICENSE.md"], repositoryRoot, true));
+  if (packagedLicense !== expectedLicense) {
+    throw new Error(`${packageName} tarball license does not match the canonical repository license.`);
   }
   for (const extension of [".js", ".js.map", ".d.ts", ".d.ts.map"]) {
     if (!entries.some((entry) => entry.startsWith("package/dist/") && entry.endsWith(extension))) {
@@ -232,6 +237,10 @@ function run(command, args, cwd, capture = false) {
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed with exit code ${result.status}.\n${result.stderr ?? ""}`);
   return result.stdout ?? "";
+}
+
+function normalizeText(value) {
+  return value.replaceAll("\r\n", "\n").trim();
 }
 
 async function removeWithRetry(target) {
