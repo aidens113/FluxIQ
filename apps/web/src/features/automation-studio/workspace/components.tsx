@@ -7,7 +7,7 @@ import type { AutomationViewInstance } from "../types";
 import { automationLayoutPresetOptions, defaultAutomationWorkspacePrefs, type AutomationLayoutPickerState, type AutomationLayoutPreset, type AutomationLayoutPresetOption, type AutomationWindowAdderState, type AutomationWindowResizeEdge, type AutomationWorkspaceArea, type AutomationWorkspacePrefs } from "./layout";
 
 export function viewTitle(view: AutomationViewInstance): string {
-  if (view.type === "design") return "Policy Graph";
+  if (view.type === "design") return "Flow Editor";
   if (view.type === "recordings") return "Timeline";
   if (view.type === "proposal") return "Proposal";
   if (view.type === "timeline-inspector") return "Timeline Evidence";
@@ -19,7 +19,7 @@ export function viewTitle(view: AutomationViewInstance): string {
   if (view.type === "runs") return "Runs";
   if (view.type === "inspector") return "Inspector";
   if (view.type === "dock") return "Workspace Dock";
-  if (view.type === "routine") return "Routine Editor";
+  if (view.type === "routine") return "Legacy Routine (read-only)";
   if (view.type === "config") return "Configuration";
   return "State Explorer";
 }
@@ -27,7 +27,7 @@ export function viewTitle(view: AutomationViewInstance): string {
 export function AutomationWindowAdderPalette(props: { area: AutomationWorkspaceArea; anchor: AutomationWindowAdderState["anchor"]; targetWindowId?: string; views: AutomationViewInstance[]; onAdd(viewId: string, area: AutomationWorkspaceArea, targetWindowId?: string): void }) {
   const groups = [
     { title: "Workflow", ids: ["client-gateway", "timeline-recording", "proposal-workbench", "policy-primary", "runs-history"] },
-    { title: "Editors", ids: ["routine-editor", "config-default"] },
+    { title: "Editors", ids: ["config-default"] },
     { title: "Evidence", ids: ["timeline-evidence-inspector", "signals-web", "runtime-debug", "problems-view"] },
     { title: "Tools", ids: ["global-inspector", "workspace-dock", "ai-assistant"] }
   ];

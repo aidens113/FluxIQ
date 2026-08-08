@@ -4,6 +4,7 @@ import { AlertTriangle, Blocks, Braces, Calculator, ChevronRight, CircleDot, Clo
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Background, BaseEdge, Controls, EdgeLabelRenderer, Handle, MiniMap, Position, ReactFlow, addEdge, applyEdgeChanges, applyNodeChanges, type Edge, type EdgeChange, type EdgeProps, type Node, type NodeChange, type NodeProps, type ReactFlowInstance } from "@xyflow/react";
 import type { AutomationNodePort } from "fluxiq/automation-studio/nodes";
+import { generateFlowTypeScript } from "fluxiq/automation-studio/dsl/generator";
 import type { JsonObject } from "../../programs/program-api";
 import { DataTable, KeyValue, Segmented, StatusBadge, SummaryStrip } from "../../programs/shared-ui";
 import type { AutomationDockTab, AutomationEditorNodeSpec, AutomationEditorPaletteGroup, AutomationPolicyNodeData, AutomationRoutineNodeData, AutomationSelection } from "../types";
@@ -114,6 +115,7 @@ function routineEditorSelection(id: string, data: AutomationRoutineNodeData): Au
       parameterValues: data.parameterValues,
       ...(data.nodeDefinitionId !== undefined ? { nodeDefinitionId: data.nodeDefinitionId } : {}),
       ...(data.icon !== undefined ? { icon: data.icon } : {}),
+      ...(data.metadata !== undefined ? { metadata: data.metadata } : {}),
       ...(data.privileged !== undefined ? { privileged: data.privileged } : {})
     }
   };
@@ -135,16 +137,18 @@ function policyEditorSelection(id: string, data: AutomationPolicyNodeData): Auto
       parameterValues: data.parameterValues,
       ...(data.nodeDefinitionId !== undefined ? { nodeDefinitionId: data.nodeDefinitionId } : {}),
       ...(data.icon !== undefined ? { icon: data.icon } : {}),
+      ...(data.metadata !== undefined ? { metadata: data.metadata } : {}),
       actionTypes: data.actionTypes
     }
   };
 }
 
-type AutomationTaskEditorMode = "flow" | "state" | "evidence" | "test";
+type AutomationTaskEditorMode = "flow" | "source" | "state" | "evidence" | "test";
 type AutomationRoutineEditorMode = "flow" | "data" | "plan" | "test";
 
 const automationTaskEditorModes: Array<{ id: AutomationTaskEditorMode; label: string; description: string }> = [
   { id: "flow", label: "Flow", description: "Edit policy nodes, routes, conditions, actions, retries, and recovery." },
+  { id: "source", label: "Source", description: "Inspect stable TypeScript DSL source or explicitly change source ownership." },
   { id: "state", label: "State", description: "Inspect task signals, observed state changes, volatility, and expectations." },
   { id: "evidence", label: "Evidence", description: "Review recordings, notes, checkpoints, normalized timeline entries, and raw evidence links." },
   { id: "test", label: "Test Run", description: "Preview policy execution against the selected recording and state timeline." }
@@ -164,6 +168,11 @@ function protectRecentlyConnectedEdge(edgeIdsRef: { current: Set<string> }, edge
   window.setTimeout(() => {
     edgeIdsRef.current.delete(edgeId);
   }, 300);
+}
+
+export function automationCompositeCallMetadata(spec: AutomationEditorNodeSpec): JsonObject | undefined {
+  if (spec.source?.kind !== "composite") return undefined;
+  return { "fluxiq.callFlow": { target: { flowId: spec.source.flowId, version: spec.source.version, scope: spec.availability?.kind === "domain" ? { kind: "domain", domainId: spec.availability.domainId } : { kind: "global" } }, inputBindings: spec.inputs.map((port) => ({ targetPortId: port.id, valueKey: port.id })), outputBindings: spec.outputs.filter((port) => port.role !== "error").map((port) => ({ targetPortId: port.id, valueKey: port.id })), errorBindings: spec.outputs.filter((port) => port.role === "error").map((port) => ({ targetPortId: port.id.replace(/^error\./, ""), valueKey: port.id })) } } as JsonObject;
 }
 
 function ignoreProtectedEdgeRemovals(changes: EdgeChange[], protectedEdgeIds: Set<string>): EdgeChange[] {
@@ -225,6 +234,7 @@ export function AutomationRoutineView(props: { models: any[]; policies: any[]; s
     const id = `routine-${spec.id}-${Date.now().toString(36)}`;
     const data: AutomationRoutineNodeData = {
       nodeDefinitionId: spec.id,
+      nodeDefinitionVersion: spec.version,
       label: spec.label,
       nodeType: spec.nodeType === "custom" ? "custom" : "base",
       family: spec.family,
@@ -320,7 +330,7 @@ export function AutomationRoutineView(props: { models: any[]; policies: any[]; s
   return (
     <section className="automation-policy-canvas routine-canvas">
       <div className="automation-editor-mode-bar">
-        <div className="automation-layer-tabs" role="tablist" aria-label="Routine editor modes">
+        <div className="automation-layer-tabs" role="tablist" aria-label="Legacy orchestration view modes">
           {automationRoutineEditorModes.map((item) => (
           <button className={mode === item.id ? "selected" : ""} key={item.id} onClick={() => selectRoutineMode(item.id)} title={item.description} type="button">{item.label}</button>
         ))}
@@ -624,7 +634,7 @@ export function AutomationWorkspaceDock(props: { activeTab: AutomationDockTab; p
   );
 }
 
-export function AutomationPolicyCanvas(props: { active: boolean; entries: any[]; policy: any; taskGraph?: any; recordings: any[]; selectedNode: any; selectedTimeline: any; signals: any[]; onSaveGraph(graph: { nodes: Array<Node<AutomationPolicyNodeData>>; edges: Edge[] }): Promise<boolean | void>; onDirtyChange(dirty: boolean): void; setSelection(selection: AutomationSelection): void }) {
+export function AutomationPolicyCanvas(props: { active: boolean; editable: boolean; entries: any[]; policy: any; taskGraph?: any; regions?: any[]; regionHandoffs?: any[]; nativeNodeDefinitions: any[]; flowPublications: any[]; flowDependencyInfo: any; recordings: any[]; selectedNode: any; selectedTimeline: any; signals: any[]; onSaveGraph(graph: { nodes: Array<Node<AutomationPolicyNodeData>>; edges: Edge[]; regions: any[]; regionHandoffs: any[]; flowPatch?: any }): Promise<boolean | void>; onConvertToCode(moduleId: string, sourceText: string): Promise<boolean | void>; onConvertToVisual(): Promise<boolean | void>; onPublishFlow(version: string, changelog: string): Promise<boolean | void>; onDeprecateFlow(version: string): Promise<boolean | void>; onDirtyChange(dirty: boolean): void; setSelection(selection: AutomationSelection): void }) {
   const [mode, setMode] = useState<AutomationTaskEditorMode>("flow");
   const [selectedPolicyNodeId, setSelectedPolicyNodeId] = useState(props.selectedNode?.id ?? "");
   const [selectedPolicyEdgeIds, setSelectedPolicyEdgeIds] = useState<string[]>([]);
@@ -637,6 +647,17 @@ export function AutomationPolicyCanvas(props: { active: boolean; entries: any[];
   const policyNodesRef = useRef<Array<Node<AutomationPolicyNodeData>>>([]);
   const policyEdgesRef = useRef<Edge[]>([]);
   const savedGraphSignatureRef = useRef("");
+  const savedRegionSignatureRef = useRef("");
+  const savedFlowDetailsSignatureRef = useRef("");
+  const [flowDetails, setFlowDetails] = useState(() => automationFlowDetailsDraft(props.taskGraph));
+  const [flowDetailsError, setFlowDetailsError] = useState("");
+  const [publishVersion, setPublishVersion] = useState("1.0.0");
+  const [publishChangelog, setPublishChangelog] = useState("");
+  const [regions, setRegions] = useState<any[]>(props.taskGraph?.regions ?? props.regions ?? []);
+  const [regionHandoffs, setRegionHandoffs] = useState<any[]>(props.taskGraph?.regionHandoffs ?? props.regionHandoffs ?? []);
+  const regionsRef = useRef(regions);
+  const regionHandoffsRef = useRef(regionHandoffs);
+  const [activeRegionId, setActiveRegionId] = useState<string>((props.taskGraph?.regions ?? props.regions ?? [])[0]?.id ?? "");
   const recentlyConnectedPolicyEdgeIdsRef = useRef<Set<string>>(new Set());
   const taskGraphSignature = props.taskGraph ? automationTaskGraphSourceSignature(props.taskGraph) : "";
   const policyGraphSignature = props.taskGraph ? "" : automationPolicySourceSignature(props.policy);
@@ -651,18 +672,29 @@ export function AutomationPolicyCanvas(props: { active: boolean; entries: any[];
     policyNodesRef.current = graph.nodes;
     policyEdgesRef.current = nextEdges;
     savedGraphSignatureRef.current = graphSignature(graph.nodes, nextEdges);
+    const nextRegions = structuredClone(props.taskGraph?.regions ?? props.regions ?? []);
+    const nextHandoffs = structuredClone(props.taskGraph?.regionHandoffs ?? props.regionHandoffs ?? []);
+    setRegions(nextRegions); setRegionHandoffs(nextHandoffs); regionsRef.current = nextRegions; regionHandoffsRef.current = nextHandoffs;
+    setActiveRegionId((current) => nextRegions.some((region: any) => region.id === current) ? current : nextRegions[0]?.id ?? "");
+    savedRegionSignatureRef.current = regionSignature(nextRegions, nextHandoffs);
+    const nextFlowDetails = automationFlowDetailsDraft(props.taskGraph);
+    setFlowDetails(nextFlowDetails);
+    savedFlowDetailsSignatureRef.current = JSON.stringify(nextFlowDetails);
+    setFlowDetailsError("");
     if (props.active) props.onDirtyChange(false);
     setSelectedPolicyEdgeIds([]);
   }, [taskGraphSignature, policyGraphSignature]);
   useEffect(() => {
-    if (props.active) props.onDirtyChange(graphSignature(policyNodes, policyEdges) !== savedGraphSignatureRef.current);
-  }, [policyNodes, policyEdges, props.active, props.onDirtyChange]);
+    if (props.active) props.onDirtyChange(graphSignature(policyNodes, policyEdges) !== savedGraphSignatureRef.current || regionSignature(regions, regionHandoffs) !== savedRegionSignatureRef.current || JSON.stringify(flowDetails) !== savedFlowDetailsSignatureRef.current);
+  }, [policyNodes, policyEdges, regions, regionHandoffs, flowDetails, props.active, props.onDirtyChange]);
   useEffect(() => {
     policyNodesRef.current = policyNodes;
   }, [policyNodes]);
   useEffect(() => {
     policyEdgesRef.current = policyEdges;
   }, [policyEdges]);
+  useEffect(() => { regionsRef.current = regions; }, [regions]);
+  useEffect(() => { regionHandoffsRef.current = regionHandoffs; }, [regionHandoffs]);
   useEffect(() => {
     function captureViewport() {
       if (policyFlow) policyViewportRestoreRef.current = policyFlow.getViewport();
@@ -681,37 +713,91 @@ export function AutomationPolicyCanvas(props: { active: boolean; entries: any[];
   useEffect(() => {
     setSelectedPolicyNodeId(props.selectedNode?.id ?? "");
   }, [props.selectedNode?.id]);
-  const palette = automationEditorPalette
-    .map((group) => ({ ...group, nodes: group.nodes.filter((node) => node.scope === "policy" || node.scope === "both") }))
-    .filter((group) => group.nodes.length > 0);
+  const dynamicDefinitions = props.nativeNodeDefinitions.map((definition: any): AutomationEditorNodeSpec => ({ id: definition.id, version: definition.version, label: definition.label, description: definition.description, family: definition.category ?? "custom", scope: definition.legacyScope ?? "both", nodeType: "custom", inputs: definition.inputs ?? [], outputs: definition.outputs ?? [], parameters: definition.parameters ?? [], source: definition.source, availability: definition.availability, ...(definition.icon ? { icon: definition.icon } : {}), privileged: definition.safety?.privileged === true, ...(definition.outputAction ? { actionTypes: ["action"] } : {}) }));
+  const frameworkGroups = automationEditorPalette.map((group) => ({ ...group, nodes: group.nodes.filter((node) => (node.scope === "policy" || node.scope === "both") && node.family !== "policy") })).filter((group) => group.nodes.length);
+  const dynamicGroup = (title: string, predicate: (node: AutomationEditorNodeSpec) => boolean): AutomationEditorPaletteGroup => ({ title, nodes: dynamicDefinitions.filter(predicate) });
+  const palette = [
+    ...frameworkGroups,
+    dynamicGroup("Integrations", (node) => node.source?.kind === "importer" && node.availability?.kind !== "domain"),
+    dynamicGroup("Domain Nodes", (node) => node.source?.kind === "importer" && node.availability?.kind === "domain"),
+    dynamicGroup("Public Flows", (node) => node.source?.kind === "composite"),
+    dynamicGroup("Project Nodes", (node) => node.source?.kind === "recording"),
+    dynamicGroup("Code", (node) => node.source?.kind === "code"),
+    ...automationEditorPalette.map((group) => ({ ...group, nodes: group.nodes.filter((node) => (node.scope === "policy" || node.scope === "both") && node.family === "policy") }))
+  ].filter((group) => group.nodes.length > 0);
   const activeMode = automationTaskEditorModes.find((item) => item.id === mode) ?? { id: "flow", label: "Flow", description: "Edit policy nodes, routes, conditions, actions, retries, and recovery." };
-  const isFlowMode = mode === "flow";
+  const codeOwned = props.taskGraph?.source?.mode === "code";
+  const isFlowMode = mode === "flow" && !codeOwned && props.editable;
+  const generatedSource = useMemo(() => props.taskGraph?.flowId ? generateFlowTypeScript(props.taskGraph) : "", [taskGraphSignature]);
   const selectTaskMode = (nextMode: AutomationTaskEditorMode) => {
     setMode(nextMode);
-    if (nextMode !== "flow") props.setSelection(taskEditorModeSelection({ entries: props.entries, mode: nextMode, policy: props.policy, recordings: props.recordings, selectedTimeline: props.selectedTimeline, signals: props.signals }));
+    if (nextMode !== "flow" && nextMode !== "source") props.setSelection(taskEditorModeSelection({ entries: props.entries, mode: nextMode, policy: props.policy, recordings: props.recordings, selectedTimeline: props.selectedTimeline, signals: props.signals }));
   };
   useEffect(() => {
     async function handleGlobalSave(event: Event) {
       if (!props.active) return;
       const detail = (event as CustomEvent<{ onComplete?: (result: { ok: boolean; message: string }) => void }>).detail;
-      const saved = await props.onSaveGraph({ nodes: policyNodesRef.current, edges: policyEdgesRef.current });
+      if (!props.editable || codeOwned) { detail?.onComplete?.({ ok: false, message: codeOwned ? "Code-owned Flows are read-only in the visual editor." : "Legacy Flows are read-only until migrated." }); return; }
+      let flowPatch: any;
+      try {
+        const inputs = JSON.parse(flowDetails.inputsJson);
+        const outputs = JSON.parse(flowDetails.outputsJson);
+        const errors = JSON.parse(flowDetails.errorsJson);
+        const variables = JSON.parse(flowDetails.variablesJson);
+        if (!Array.isArray(inputs) || !Array.isArray(outputs) || !Array.isArray(errors) || !Array.isArray(variables)) throw new Error("Flow inputs, outputs, errors, and variables must each be JSON arrays.");
+        const timeoutMs = flowDetails.timeoutMs.trim() ? Number(flowDetails.timeoutMs) : undefined;
+        const maxConcurrency = flowDetails.maxConcurrency.trim() ? Number(flowDetails.maxConcurrency) : undefined;
+        if (timeoutMs !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) throw new Error("Flow timeout must be a positive number.");
+        if (maxConcurrency !== undefined && (!Number.isInteger(maxConcurrency) || maxConcurrency <= 0)) throw new Error("Maximum concurrency must be a positive integer.");
+        flowPatch = { name: flowDetails.name.trim(), ...(flowDetails.description.trim() ? { description: flowDetails.description.trim() } : { description: undefined }), interface: { inputs, outputs }, errors, variables, executionDefaults: { ...(props.taskGraph?.executionDefaults ?? {}), ...(timeoutMs !== undefined ? { timeoutMs } : { timeoutMs: undefined }), ...(maxConcurrency !== undefined ? { maxConcurrency } : { maxConcurrency: undefined }), authorizedDomainIds: flowDetails.authorizedDomainIds.split(",").map((value: string) => value.trim()).filter(Boolean) }, ...((props.taskGraph?.publication?.status === "published" || props.taskGraph?.publication?.status === "deprecated") ? {} : { publication: { status: flowDetails.publicationIntent } }) };
+        if (!flowPatch.name) throw new Error("Flow name is required.");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Flow details are invalid.";
+        setFlowDetailsError(message); detail?.onComplete?.({ ok: false, message }); return;
+      }
+      const boundaries = deriveRegionBoundaries(regionsRef.current, policyEdgesRef.current);
+      const saved = await props.onSaveGraph({ nodes: policyNodesRef.current, edges: policyEdgesRef.current, regions: boundaries.regions, regionHandoffs: boundaries.regionHandoffs, flowPatch });
       if (saved !== false) {
         savedGraphSignatureRef.current = graphSignature(policyNodesRef.current, policyEdgesRef.current);
+        savedRegionSignatureRef.current = regionSignature(boundaries.regions, boundaries.regionHandoffs);
+        setRegions(boundaries.regions); setRegionHandoffs(boundaries.regionHandoffs);
         props.onDirtyChange(false);
+        savedFlowDetailsSignatureRef.current = JSON.stringify(flowDetails);
+        setFlowDetailsError("");
       }
       detail?.onComplete?.({
         ok: saved !== false,
-        message: saved === false ? "Task graph could not be saved." : "Task graph saved."
+        message: saved === false ? "Flow graph could not be saved." : "Flow graph saved."
       });
     }
     window.addEventListener("automation-studio:global-save", handleGlobalSave);
     return () => window.removeEventListener("automation-studio:global-save", handleGlobalSave);
-  }, [props.active, props.onSaveGraph]);
+  }, [props.active, props.editable, props.onSaveGraph, codeOwned, flowDetails]);
+  const addRegion = (kind: "deterministic" | "trigger" | "policy") => {
+    const id = `region.${kind}.${Date.now().toString(36)}`;
+    const region = { id, name: `${kind[0]!.toUpperCase()}${kind.slice(1)} region`, kind, nodeIds: [], entryPorts: [{ id: "in", name: "In", valueType: { kind: "unknown" } }], exitPorts: [{ id: "success", name: "Success", valueType: { kind: "unknown" } }, { id: "failed", name: "Failed", valueType: { kind: "unknown" } }] };
+    setRegions((current) => [...current, region]); setActiveRegionId(id);
+  };
+  const assignSelectedNodeToRegion = (regionId: string) => {
+    if (!selectedPolicyNodeId) return;
+    setRegions((current) => current.map((region) => ({ ...region, nodeIds: region.id === regionId ? [...new Set([...(region.nodeIds ?? []), selectedPolicyNodeId])] : (region.nodeIds ?? []).filter((id: string) => id !== selectedPolicyNodeId) })));
+    setActiveRegionId(regionId);
+  };
+  const deleteActiveRegion = () => {
+    if (!activeRegionId) return;
+    setRegions((current) => current.filter((region) => region.id !== activeRegionId));
+    setRegionHandoffs((current) => current.filter((handoff) => handoff.fromRegionId !== activeRegionId && handoff.toRegionId !== activeRegionId));
+    setActiveRegionId("");
+  };
+  const updateActiveRegion = (changes: Record<string, unknown>) => setRegions((current) => current.map((region) => region.id === activeRegionId ? { ...region, ...changes } : region));
+  const activeRegion = regions.find((region) => region.id === activeRegionId);
   const addPolicyNode = (spec: AutomationEditorNodeSpec) => {
     if (!isFlowMode) return;
     const id = `policy-${spec.id}-${Date.now().toString(36)}`;
+    const compositeMetadata = automationCompositeCallMetadata(spec);
     const data: AutomationPolicyNodeData = {
       nodeDefinitionId: spec.id,
+      nodeDefinitionVersion: spec.version,
       label: spec.label,
       description: spec.description,
       ...(spec.icon !== undefined ? { icon: spec.icon } : {}),
@@ -724,6 +810,7 @@ export function AutomationPolicyCanvas(props: { active: boolean; entries: any[];
       outputs: spec.outputs,
       parameters: spec.parameters,
       parameterValues: defaultAutomationParameterValues(spec.parameters),
+      ...(compositeMetadata ? { metadata: compositeMetadata } : {}),
       isStart: spec.id === "builtin.control.start"
     };
     const node: Node<AutomationPolicyNodeData> = {
@@ -737,6 +824,7 @@ export function AutomationPolicyCanvas(props: { active: boolean; entries: any[];
       policyNodesRef.current = nextNodes;
       return nextNodes;
     });
+    if (activeRegionId) setRegions((current) => current.map((region) => region.id === activeRegionId ? { ...region, nodeIds: [...new Set([...(region.nodeIds ?? []), id])] } : region));
     setSelectedPolicyNodeId(id);
     setSelectedPolicyEdgeIds([]);
     props.setSelection(policyEditorSelection(id, data));
@@ -746,9 +834,19 @@ export function AutomationPolicyCanvas(props: { active: boolean; entries: any[];
     const nodeIds = new Set(selectedPolicyNodeId ? [selectedPolicyNodeId] : []);
     const edgeIds = new Set(selectedPolicyEdgeIds);
     setPolicyNodes((nodes) => nodes.filter((node) => !nodeIds.has(node.id)));
+    setRegions((current) => current.map((region) => ({ ...region, nodeIds: (region.nodeIds ?? []).filter((id: string) => !nodeIds.has(id)) })));
     setPolicyEdges((edges) => rebalanceAutomationEdgeLanes(edges.filter((edge) => !edgeIds.has(edge.id) && !nodeIds.has(edge.source) && !nodeIds.has(edge.target)), policyNodes));
     setSelectedPolicyNodeId("");
     setSelectedPolicyEdgeIds([]);
+  };
+  const reviewCompositeUpgrade = (upgrade: any, version: string) => {
+    if (!props.editable || !window.confirm(`Upgrade ${upgrade.flowId} from ${upgrade.currentVersion} to ${version}? The Flow will remain dirty until you save.`)) return;
+    setPolicyNodes((nodes) => nodes.map((node) => {
+      if (node.id !== upgrade.nodeId) return node;
+      const callFlow = node.data.metadata?.["fluxiq.callFlow"] as any;
+      if (!callFlow?.target) return node;
+      return { ...node, data: { ...node.data, nodeDefinitionId: `composite.flow.${encodeURIComponent(upgrade.flowId)}@${version}`, nodeDefinitionVersion: version, metadata: { ...(node.data.metadata ?? {}), "fluxiq.callFlow": { ...callFlow, target: { ...callFlow.target, version } } } } };
+    }));
   };
   const startPolicyDragSelect = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!isFlowMode) return;
@@ -819,22 +917,72 @@ export function AutomationPolicyCanvas(props: { active: boolean; entries: any[];
       window.removeEventListener("automation-studio:update-node-parameters", handleUpdateParameters);
     };
   }, [isFlowMode]);
+  const renderedPolicyNodes = useMemo(() => policyNodes.map((node) => {
+    const region = regions.find((candidate) => candidate.nodeIds?.includes(node.id));
+    return region ? { ...node, data: { ...node.data, regionId: region.id, regionName: region.name, regionKind: region.kind } } : { ...node, data: { ...node.data, regionId: undefined, regionName: undefined, regionKind: undefined } };
+  }), [policyNodes, regions]);
   return (
     <section className="automation-policy-canvas">
+      <details className="automation-flow-details-panel">
+        <summary><strong>Flow Details</strong><span>{props.taskGraph?.scope?.kind === "domain" ? `Domain: ${props.taskGraph.scope.domainId}` : "Global"} · {props.taskGraph?.source?.mode ?? "legacy"} · {props.taskGraph?.origin ?? "compatibility"}</span></summary>
+        {!props.editable ? <div className="automation-source-warning"><strong>Legacy Flow is read-only</strong><span>Run the project migration before editing this compatibility entry.</span></div> : null}
+        <div className="automation-flow-details-grid">
+          <label><span>Name</span><input disabled={!props.editable} value={flowDetails.name} onChange={(event) => setFlowDetails((current) => ({ ...current, name: event.target.value }))} /></label>
+          <label><span>Description</span><input disabled={!props.editable} value={flowDetails.description} onChange={(event) => setFlowDetails((current) => ({ ...current, description: event.target.value }))} /></label>
+          <label><span>Publication intent</span><select disabled={!props.editable || props.taskGraph?.publication?.status === "published" || props.taskGraph?.publication?.status === "deprecated"} value={flowDetails.publicationIntent} onChange={(event) => setFlowDetails((current) => ({ ...current, publicationIntent: event.target.value as "draft" | "publishable" }))}><option value="draft">Private draft</option><option value="publishable">Ready to publish</option></select></label>
+          <label><span>Authorized domains</span><input disabled={!props.editable || props.taskGraph?.scope?.kind !== "global"} placeholder="domain IDs, comma-separated" value={flowDetails.authorizedDomainIds} onChange={(event) => setFlowDetails((current) => ({ ...current, authorizedDomainIds: event.target.value }))} /></label>
+          <label><span>Timeout (ms)</span><input disabled={!props.editable} min="1" type="number" value={flowDetails.timeoutMs} onChange={(event) => setFlowDetails((current) => ({ ...current, timeoutMs: event.target.value }))} /></label>
+          <label><span>Maximum concurrency</span><input disabled={!props.editable} min="1" step="1" type="number" value={flowDetails.maxConcurrency} onChange={(event) => setFlowDetails((current) => ({ ...current, maxConcurrency: event.target.value }))} /></label>
+          <label className="wide"><span>Input interface (JSON)</span><textarea disabled={!props.editable} rows={5} value={flowDetails.inputsJson} onChange={(event) => setFlowDetails((current) => ({ ...current, inputsJson: event.target.value }))} /></label>
+          <label className="wide"><span>Output interface (JSON)</span><textarea disabled={!props.editable} rows={5} value={flowDetails.outputsJson} onChange={(event) => setFlowDetails((current) => ({ ...current, outputsJson: event.target.value }))} /></label>
+          <label className="wide"><span>Declared errors (JSON)</span><textarea disabled={!props.editable} rows={4} value={flowDetails.errorsJson} onChange={(event) => setFlowDetails((current) => ({ ...current, errorsJson: event.target.value }))} /></label>
+          <label className="wide"><span>Variables (JSON)</span><textarea disabled={!props.editable} rows={4} value={flowDetails.variablesJson} onChange={(event) => setFlowDetails((current) => ({ ...current, variablesJson: event.target.value }))} /></label>
+        </div>
+        {flowDetailsError ? <div className="automation-source-warning"><strong>Flow details need attention</strong><span>{flowDetailsError}</span></div> : null}
+        <div className="automation-publication-toolbar">
+          <input aria-label="Publication semantic version" disabled={!props.editable} value={publishVersion} onChange={(event) => setPublishVersion(event.target.value)} />
+          <input aria-label="Publication changelog" disabled={!props.editable} placeholder="What changed?" value={publishChangelog} onChange={(event) => setPublishChangelog(event.target.value)} />
+          <button disabled={!props.editable || !/^\d+\.\d+\.\d+$/.test(publishVersion)} onClick={() => void props.onPublishFlow(publishVersion, publishChangelog)} type="button">Publish version</button>
+        </div>
+        <div className="automation-publication-list">
+          {props.flowPublications.map((publication: any) => <div key={publication.publicationId}><span><strong>{publication.version}</strong> <StatusBadge value={publication.status} /> {publication.snapshot?.changelog ?? "No changelog"}</span>{publication.status === "published" ? <button onClick={() => void props.onDeprecateFlow(publication.version)} type="button">Deprecate</button> : <small>{publication.deprecationReason ?? "Deprecated"}</small>}</div>)}
+          {!props.flowPublications.length ? <span>No published versions.</span> : null}
+        </div>
+        <div className="automation-flow-dependency-summary"><span>Dependencies: {props.flowDependencyInfo?.dependencies?.length ?? 0}</span><span>Used by: {props.flowDependencyInfo?.usedBy?.length ?? 0}</span><span>Reviewed upgrades available: {props.flowDependencyInfo?.availableUpgrades?.length ?? 0}</span></div>
+        <div className="automation-publication-list">
+          {(props.flowDependencyInfo?.dependencies ?? []).map((dependency: any) => <div key={`dependency:${dependency.publicationId}`}><span><strong>Calls {dependency.flowId}@{dependency.version}</strong> <StatusBadge value={dependency.status} /></span><small>{dependency.snapshot?.flowDigest ?? "-"}</small></div>)}
+          {(props.flowDependencyInfo?.usedBy ?? []).map((caller: any) => <div key={`caller:${caller.flowId}:${caller.nodeId}`}><span><strong>Used by {caller.flowName}</strong></span><small>{caller.flowId} · node {caller.nodeId} · pin {caller.version}</small></div>)}
+          {(props.flowDependencyInfo?.availableUpgrades ?? []).map((upgrade: any) => <div key={`upgrade:${upgrade.nodeId}`}><span><strong>Upgrade {upgrade.flowId}</strong><small>Current {upgrade.currentVersion}</small></span><span>{upgrade.versions.map((version: string) => <button key={version} onClick={() => reviewCompositeUpgrade(upgrade, version)} type="button">Review {version}</button>)}</span></div>)}
+        </div>
+      </details>
+      <div className="automation-region-toolbar" aria-label="Flow execution regions">
+        <strong>Regions</strong>
+        <select aria-label="Active region" value={activeRegionId} onChange={(event) => setActiveRegionId(event.target.value)}><option value="">Unassigned</option>{regions.map((region) => <option key={region.id} value={region.id}>{region.kind}: {region.name}</option>)}</select>
+        <button onClick={() => addRegion("deterministic")} type="button">+ Deterministic</button><button onClick={() => addRegion("trigger")} type="button">+ Trigger</button><button onClick={() => addRegion("policy")} type="button">+ Policy</button>
+        {selectedPolicyNodeId ? <select aria-label="Selected node region" value={regions.find((region) => region.nodeIds?.includes(selectedPolicyNodeId))?.id ?? ""} onChange={(event) => assignSelectedNodeToRegion(event.target.value)}><option value="">Assign selected node…</option>{regions.map((region) => <option key={region.id} value={region.id}>{region.name}</option>)}</select> : null}
+        <button disabled={!activeRegionId} onClick={deleteActiveRegion} type="button">Remove</button>
+        {activeRegion ? <>
+          <input aria-label="Region name" value={activeRegion.name} onChange={(event) => updateActiveRegion({ name: event.target.value })} />
+          <select aria-label="Region kind" value={activeRegion.kind} onChange={(event) => updateActiveRegion({ kind: event.target.value })}><option value="deterministic">Deterministic</option><option value="trigger">Trigger</option><option value="policy">Policy</option></select>
+          <input aria-label="Region timeout in milliseconds" min="1" placeholder="Timeout ms" type="number" value={activeRegion.timeoutMs ?? ""} onChange={(event) => updateActiveRegion({ timeoutMs: event.target.value ? Number(event.target.value) : undefined })} />
+          <input aria-label="Required runtime capabilities" placeholder="Capabilities (comma-separated)" value={(activeRegion.requiredRuntimeCapabilities ?? []).join(", ")} onChange={(event) => updateActiveRegion({ requiredRuntimeCapabilities: event.target.value.split(",").map((value) => value.trim()).filter(Boolean) })} />
+        </> : null}
+      </div>
       <div className="automation-editor-mode-bar">
-        <div className="automation-layer-tabs" role="tablist" aria-label="Task editor modes">
+        <div className="automation-layer-tabs" role="tablist" aria-label="Flow editor modes">
           {automationTaskEditorModes.map((item) => (
             <button className={mode === item.id ? "selected" : ""} key={item.id} onClick={() => selectTaskMode(item.id)} title={item.description} type="button">{item.label}</button>
           ))}
         </div>
         <span>{activeMode.description}</span>
       </div>
-      <div className={paletteCollapsed ? "automation-policy-editor-grid palette-collapsed" : "automation-policy-editor-grid"}>
+      {codeOwned && mode === "flow" ? <div className="automation-source-warning"><strong>Code-owned Flow</strong><span>The compiled graph is read-only. Change its module and recompile, or explicitly convert it back to visual ownership.</span></div> : null}
+      {mode === "source" ? <section className="automation-source-view"><header><div><strong>{codeOwned ? "Compiled code-owned snapshot" : "Generated visual Flow source"}</strong><span>{codeOwned ? props.taskGraph.source.moduleId : "Read-only export generated from canonical IR."}</span></div>{codeOwned ? <button onClick={() => void props.onConvertToVisual()} type="button">Convert to visual ownership</button> : <button onClick={() => { const moduleId = window.prompt("Module ID for this code-owned Flow", `flows/${props.taskGraph?.flowId ?? "flow"}.ts`) ?? ""; if (moduleId.trim()) void props.onConvertToCode(moduleId, generatedSource); }} type="button">Make code authoritative</button>}</header><pre><code>{generatedSource}</code></pre></section> : <div className={paletteCollapsed ? "automation-policy-editor-grid palette-collapsed" : "automation-policy-editor-grid"}>
         <div className="automation-react-flow-frame" onContextMenu={(event) => event.preventDefault()} onPointerDownCapture={startPolicyDragSelect} ref={policyFrameRef}>
           <ReactFlow<Node<AutomationPolicyNodeData>, Edge>
             fitView
             fitViewOptions={{ padding: 0.25 }}
-            nodes={policyNodes}
+            nodes={renderedPolicyNodes}
             edges={policyEdges}
             edgeTypes={automationEdgeTypes}
             nodeTypes={automationNodeTypes}
@@ -885,6 +1033,7 @@ export function AutomationPolicyCanvas(props: { active: boolean; entries: any[];
                 return nextEdges;
               });
               if (deletedIds.has(selectedPolicyNodeId)) setSelectedPolicyNodeId("");
+              setRegions((current) => current.map((region) => ({ ...region, nodeIds: (region.nodeIds ?? []).filter((id: string) => !deletedIds.has(id)) })));
             }}
             onNodesChange={(changes: NodeChange<Node<AutomationPolicyNodeData>>[]) => isFlowMode ? setPolicyNodes((nodes) => {
               const nextNodes = applyNodeChanges(changes, nodes);
@@ -942,13 +1091,44 @@ export function AutomationPolicyCanvas(props: { active: boolean; entries: any[];
           {policyDragSelectBox ? <div className="automation-node-marquee" style={{ left: policyDragSelectBox.left, top: policyDragSelectBox.top, width: policyDragSelectBox.width, height: policyDragSelectBox.height }} /> : null}
         </div>
         <AutomationNodePalette collapsed={paletteCollapsed} disabled={!isFlowMode} groups={palette} title="Policy Nodes" onAddNode={addPolicyNode} onCollapsedChange={setPaletteCollapsed} />
-      </div>
+      </div>}
     </section>
   );
 }
 
+function automationFlowDetailsDraft(flow: any) {
+  return {
+    name: String(flow?.name ?? ""),
+    description: String(flow?.description ?? ""),
+    publicationIntent: (flow?.publication?.status === "publishable" ? "publishable" : "draft") as "draft" | "publishable",
+    authorizedDomainIds: Array.isArray(flow?.executionDefaults?.authorizedDomainIds) ? flow.executionDefaults.authorizedDomainIds.join(", ") : "",
+    timeoutMs: flow?.executionDefaults?.timeoutMs === undefined ? "" : String(flow.executionDefaults.timeoutMs),
+    maxConcurrency: flow?.executionDefaults?.maxConcurrency === undefined ? "" : String(flow.executionDefaults.maxConcurrency),
+    inputsJson: JSON.stringify(flow?.interface?.inputs ?? [], null, 2),
+    outputsJson: JSON.stringify(flow?.interface?.outputs ?? [], null, 2),
+    errorsJson: JSON.stringify(flow?.errors ?? [], null, 2),
+    variablesJson: JSON.stringify(flow?.variables ?? [], null, 2)
+  };
+}
+
 function graphSignature(nodes: Array<Node<any>>, edges: Edge[]): string {
   return JSON.stringify({ nodes: nodes.map(({ id, type, position, data }) => ({ id, type, position, data })), edges: edges.map(({ id, source, target, sourceHandle, targetHandle, data }) => ({ id, source, target, sourceHandle, targetHandle, data })) });
+}
+
+function regionSignature(regions: any[], regionHandoffs: any[]): string { return JSON.stringify({ regions, regionHandoffs }); }
+
+export function deriveRegionBoundaries(regions: any[], edges: Edge[]): { regions: any[]; regionHandoffs: any[] } {
+  const owner = new Map<string, string>(); for (const region of regions) for (const nodeId of region.nodeIds ?? []) owner.set(nodeId, region.id);
+  const nextRegions = structuredClone(regions); const handoffs: any[] = [];
+  for (const edge of edges) {
+    const fromRegionId = owner.get(edge.source); const toRegionId = owner.get(edge.target); if (!fromRegionId || !toRegionId || fromRegionId === toRegionId) continue;
+    const fromPortId = edge.sourceHandle ?? "success"; const toPortId = edge.targetHandle ?? "in";
+    const from = nextRegions.find((region: any) => region.id === fromRegionId); const to = nextRegions.find((region: any) => region.id === toRegionId);
+    if (!from.exitPorts.some((port: any) => port.id === fromPortId)) from.exitPorts.push({ id: fromPortId, name: fromPortId, valueType: { kind: "unknown" } });
+    if (!to.entryPorts.some((port: any) => port.id === toPortId)) to.entryPorts.push({ id: toPortId, name: toPortId, valueType: { kind: "unknown" } });
+    handoffs.push({ id: `handoff.${edge.id}`, fromRegionId, fromPortId, toRegionId, toPortId, metadata: { edgeId: edge.id } });
+  }
+  return { regions: nextRegions, regionHandoffs: handoffs };
 }
 
 export type AutomationPolicyGraphEditorMode = "full-edit" | "readonly" | "proposal-review";
@@ -1056,8 +1236,10 @@ export function AutomationPolicyGraphEditor(props: {
   const addNode = (spec: AutomationEditorNodeSpec) => {
     if (!canEditGraph) return;
     const id = `proposal-${spec.id}-${Date.now().toString(36)}`;
+    const compositeMetadata = automationCompositeCallMetadata(spec);
     const data: AutomationPolicyNodeData = {
       nodeDefinitionId: spec.id,
+      nodeDefinitionVersion: spec.version,
       label: spec.label,
       description: spec.description,
       ...(spec.icon !== undefined ? { icon: spec.icon } : {}),
@@ -1070,6 +1252,7 @@ export function AutomationPolicyGraphEditor(props: {
       outputs: spec.outputs,
       parameters: spec.parameters,
       parameterValues: defaultAutomationParameterValues(spec.parameters),
+      ...(compositeMetadata ? { metadata: compositeMetadata } : {}),
       isStart: false,
       reviewTone: "proposed"
     };
@@ -1187,6 +1370,7 @@ function AutomationPolicyNode({ id, data, selected }: NodeProps) {
         {node.isStart ? <span className="node-badge start">Start</span> : null}
         <span className="node-badge category">{node.nodeDefinitionId ? "Base" : "Generated"}</span>
         <span className="node-badge category">{node.recovery.replace(/_/g, " ")}</span>
+        {node.regionName ? <span className={`node-badge region-${node.regionKind}`}>{node.regionName}</span> : null}
         {node.confidence !== undefined ? <span className="node-badge confidence">{Math.round(node.confidence * 100)}%</span> : null}
       </div>
       <div className="automation-flow-node-main">
@@ -1247,6 +1431,7 @@ function automationTaskGraphSourceSignature(graph: any): string {
     nodes: (graph?.nodes ?? []).map((node: any) => ({
       id: node.id,
       definitionId: node.definitionId,
+      definitionVersion: node.definitionVersion,
       label: node.label,
       description: node.description,
       position: node.position,

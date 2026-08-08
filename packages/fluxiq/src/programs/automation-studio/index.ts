@@ -1,5 +1,6 @@
 export * from "./api/index.ts";
 export * from "./client-gateway/index.ts";
+export * from "./dsl/index.ts";
 export * from "./fingerprinting/index.ts";
 export * from "./learning/index.ts";
 export * from "./metadata.ts";

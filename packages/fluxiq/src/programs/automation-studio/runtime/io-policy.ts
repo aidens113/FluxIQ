@@ -7,7 +7,8 @@ import type { AutomationNodeExecutionResult } from "../nodes/contracts.ts";
 export async function dispatchPolicyOutput(
   io: IoRegistry,
   domainId: string | null | undefined,
-  action: Pick<PolicyAction, "outputId" | "actionType" | "parameters" | "confirmationInputId" | "confirmationTimeoutMs" | "metadata">
+  action: Pick<PolicyAction, "outputId" | "actionType" | "parameters" | "confirmationInputId" | "confirmationTimeoutMs" | "metadata">,
+  signal?: AbortSignal
 ): Promise<AutomationNodeExecutionResult> {
   const outputId = action.outputId?.trim();
   if (!outputId) {
@@ -17,7 +18,7 @@ export async function dispatchPolicyOutput(
     return { status: "failed", route: "failed", effects: [], outputs: { error: `Output is not registered: ${outputId}` } };
   }
   const confirmation = action.confirmationInputId
-    ? io.waitForInput({ domainId: domainId ?? null, inputId: action.confirmationInputId, ...(action.confirmationTimeoutMs !== undefined ? { timeoutMs: action.confirmationTimeoutMs } : {}) })
+    ? io.waitForInput({ domainId: domainId ?? null, inputId: action.confirmationInputId, ...(action.confirmationTimeoutMs !== undefined ? { timeoutMs: action.confirmationTimeoutMs } : {}), ...(signal ? { signal } : {}) })
       .then((event) => ({ ok: true as const, event }))
       .catch((error) => ({ ok: false as const, error: error instanceof Error ? error.message : "Output confirmation failed." }))
     : null;
@@ -42,7 +43,7 @@ export async function dispatchPolicyOutput(
 }
 
 export function createIoPolicyEffectDispatcher(io: IoRegistry, domainId: string | null | undefined) {
-  return async (effect: { type: string; payload?: JsonValue }): Promise<AutomationNodeExecutionResult | undefined> => {
+  return async (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal }): Promise<AutomationNodeExecutionResult | undefined> => {
     if (effect.type !== "policy.output.dispatch" || !effect.payload || typeof effect.payload !== "object" || Array.isArray(effect.payload)) return undefined;
     const payload = effect.payload as JsonObject;
     const action = {
@@ -53,6 +54,6 @@ export function createIoPolicyEffectDispatcher(io: IoRegistry, domainId: string 
       ...(typeof payload.confirmationTimeoutMs === "number" ? { confirmationTimeoutMs: payload.confirmationTimeoutMs } : {}),
       ...(payload.metadata && typeof payload.metadata === "object" && !Array.isArray(payload.metadata) ? { metadata: payload.metadata as JsonObject } : {})
     };
-    return dispatchPolicyOutput(io, domainId, action);
+    return dispatchPolicyOutput(io, domainId, action, context?.signal);
   };
 }

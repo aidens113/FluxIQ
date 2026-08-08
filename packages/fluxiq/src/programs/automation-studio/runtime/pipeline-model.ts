@@ -1,6 +1,7 @@
 import type { RecordingSession } from "../model/index.ts";
 import { safeSegment } from "../../_shared/storage.ts";
 import type { PolicyProposalArtifact } from "./policy-model.ts";
+import type { RecordingFlowProposalArtifact } from "./recording-flow-proposal.ts";
 
 export type PipelineIndex = {
   pipelines: { pipelineId: string; recordingId: string; taskId?: string; updatedAt: number }[];
@@ -12,6 +13,7 @@ export type PipelineIndex = {
   evidenceClaims: { claimId: string; generatedAt: number; recordingId?: string }[];
   learnedTaskModels: { learnedTaskModelId: string; generatedAt: number; recordingId?: string }[];
   policyProposals: { proposalId: string; generatedAt: number; status: PolicyProposalArtifact["status"]; recordingId?: string }[];
+  recordingFlowProposals: { proposalId: string; generatedAt: number; status: RecordingFlowProposalArtifact["status"]; recordingId?: string }[];
   replayResults: { replayId: string; generatedAt: number; recordingId?: string }[];
 };
 
@@ -35,12 +37,13 @@ export type RecordingPipelineDocument = {
     evidenceClaimIds: string[];
     learnedTaskModelIds: string[];
     policyProposalIds: string[];
+    recordingFlowProposalIds: string[];
     replayResultIds: string[];
   };
 };
 
 export function emptyPipelineIndex(): PipelineIndex {
-  return { pipelines: [], normalizationReviews: [], miningRuns: [], evidenceFacts: [], evidenceObservations: [], stateActionCorrelations: [], evidenceClaims: [], learnedTaskModels: [], policyProposals: [], replayResults: [] };
+  return { pipelines: [], normalizationReviews: [], miningRuns: [], evidenceFacts: [], evidenceObservations: [], stateActionCorrelations: [], evidenceClaims: [], learnedTaskModels: [], policyProposals: [], recordingFlowProposals: [], replayResults: [] };
 }
 
 export function upsertPipelineIndex(index: PipelineIndex, kind: PipelineArtifactKind, id: string, generatedAt: number, status?: unknown, recordingId?: string): PipelineIndex {
@@ -60,6 +63,8 @@ export function upsertPipelineIndex(index: PipelineIndex, kind: PipelineArtifact
                 ? { learnedTaskModelId: id, generatedAt, ...(recordingId ? { recordingId } : {}) }
                 : kind === "policyProposals"
                   ? { proposalId: id, generatedAt, status: status === "approved" ? "approved" as const : "proposed" as const, ...(recordingId ? { recordingId } : {}) }
+                  : kind === "recordingFlowProposals"
+                    ? { proposalId: id, generatedAt, status: isRecordingProposalStatus(status) ? status : "proposed" as const, ...(recordingId ? { recordingId } : {}) }
                   : { replayId: id, generatedAt, ...(recordingId ? { recordingId } : {}) };
   const key = pipelineIndexKey(kind);
   const items = (index[kind] ?? []) as Array<Record<string, unknown> & { generatedAt: number }>;
@@ -77,6 +82,7 @@ export function pipelineIndexKey(kind: PipelineArtifactKind): string {
   if (kind === "evidenceClaims") return "claimId";
   if (kind === "learnedTaskModels") return "learnedTaskModelId";
   if (kind === "policyProposals") return "proposalId";
+  if (kind === "recordingFlowProposals") return "proposalId";
   return "replayId";
 }
 
@@ -101,7 +107,7 @@ export function emptyRecordingPipelineArtifacts(): RecordingPipelineDocument["ar
   return {
     normalizedTimelineIds: [], normalizationReviewIds: [], miningRunIds: [], evidenceFactIds: [],
     evidenceObservationIds: [], stateActionCorrelationIds: [], evidenceClaimIds: [], learnedTaskModelIds: [],
-    policyProposalIds: [], replayResultIds: []
+    policyProposalIds: [], recordingFlowProposalIds: [], replayResultIds: []
   };
 }
 
@@ -113,13 +119,18 @@ export function addRecordingPipelineArtifactId(pipeline: RecordingPipelineDocume
           : kind === "stateActionCorrelations" ? "stateActionCorrelationIds"
             : kind === "evidenceClaims" ? "evidenceClaimIds"
               : kind === "learnedTaskModels" ? "learnedTaskModelIds"
-                : kind === "policyProposals" ? "policyProposalIds" : "replayResultIds";
+                : kind === "policyProposals" ? "policyProposalIds"
+                  : kind === "recordingFlowProposals" ? "recordingFlowProposalIds" : "replayResultIds";
   return {
     ...pipeline,
-    status: kind === "replayResults" || kind === "policyProposals" ? "complete" : "processing",
+    status: kind === "replayResults" || kind === "policyProposals" || kind === "recordingFlowProposals" ? "complete" : "processing",
     updatedAt: Date.now(),
     artifacts: { ...pipeline.artifacts, [key]: uniqueStrings([id, ...(pipeline.artifacts[key] ?? [])]) }
   };
+}
+
+function isRecordingProposalStatus(value: unknown): value is RecordingFlowProposalArtifact["status"] {
+  return value === "proposed" || value === "approved" || value === "rejected" || value === "invalidated";
 }
 
 function uniqueStrings(values: string[]): string[] {

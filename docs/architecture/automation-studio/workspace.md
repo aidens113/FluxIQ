@@ -75,13 +75,14 @@ map. Routine nodes are static base/custom node types such as start, task policy,
 decision, approval, recovery, end, and custom extension nodes. Routine views do
 not expose recording, evidence, or state-signal layers.
 
-Task and routine editors use concise editor modes instead of broad abstract
-layers. A mode changes what the canvas is doing; supporting views such as
+The single Flow editor uses concise modes instead of broad abstract layers. A
+mode changes what the canvas is doing; supporting views such as
 timeline, signals, recordings, runtime, problems, assistant, state explorer, and
 inspector remain ordinary addable windows. The node palette is the exception:
 it stays embedded as the collapsible right rail inside the policy/routine node
 editor because it is part of direct node editing, not a separate workspace
-window.
+window. Legacy Task/Routine documents may still open through a clearly marked
+read-only compatibility view, but they are not independent authoring modes.
 
 The recording timeline window follows a video-editor-style horizontal layout.
 Recording selection belongs to the project hierarchy sidebar under the
@@ -118,7 +119,7 @@ The Automation Studio service does not seed fixture recordings by default in
 the web panel or imported runtime; callers must explicitly opt in with
 `seedFixture: true` for tests or examples.
 
-The recording-to-task pipeline is intentionally staged internally:
+The recording-to-Policy-Flow pipeline is intentionally staged internally:
 
 1. Capture one or more raw `RecordingSession` documents from direct-import
    framework calls or a paired client gateway session.
@@ -127,13 +128,13 @@ The recording-to-task pipeline is intentionally staged internally:
    evidence links and monotonic timing gaps.
 4. Mine normalized timelines for reusable signals, state deltas, action
    clusters, waits, branches, and unresolved questions.
-5. Propose a task policy graph directly from mined evidence, with every
+5. Propose a Policy Flow graph directly from mined evidence, with every
    generated node and edge linking back to evidence.
-6. Apply the proposed task policy only after explicit approval.
+6. Apply the proposed Policy Flow only after explicit approval.
 
 In the normal UI, finalized recordings are processed automatically. When a
 recording ends, Automation Studio normalizes it, writes normalization details,
-mines evidence, and creates a task proposal if evidence exists. Users navigate
+mines evidence, and creates a Policy Flow proposal if evidence exists. Users navigate
 to the resulting proposal through the Proposals sidebar root rather than a
 Pipeline root. Manual stage endpoints remain available for debugging and
 advanced tooling, but they are not the primary product surface.
@@ -142,27 +143,16 @@ Model learning and replay/validation are not recording pipeline stages in the
 current product surface. Model-shaped artifacts may still be used internally as
 compatibility data, and replay belongs to a separate runtime view.
 
-Task editor modes are:
+Flow editor modes are:
 
 - `Flow`: the default editable policy graph for adding, moving, connecting, and
   deleting nodes and edges.
-- `State`: read/inspect mode for task signals, state entries, deltas,
+- `State`: read/inspect mode for policy signals, state entries, deltas,
   volatility, and condition coverage.
 - `Evidence`: read/inspect mode for recordings, timeline entries, notes,
   checkpoints, and raw/normalized evidence links.
 - `Test Run`: read/inspect preview for replaying or simulating the policy
   against selected recording/state data.
-
-Routine editor modes are:
-
-- `Flow`: the default editable orchestration graph for routine nodes, routes,
-  waits, approvals, recovery, and handoffs.
-- `Data`: read/inspect mode for routine inputs, outputs, variables, and data
-  passed between task/routine nodes.
-- `Run Plan`: read/inspect mode for execution order, dependencies, parallel
-  paths, approvals, and validation warnings.
-- `Test Run`: read/inspect preview for skipped branches, approval pauses,
-  retries, and final routine status.
 
 Only `Flow` mode is directly editable in the current implementation. Other
 modes keep the same canvas visible for context but disable graph edits and show
@@ -173,10 +163,9 @@ Automation Studio node editors follow the FluxBot v1 flow editor direction:
 metadata-first node definitions, grouped palettes, explicit input/output ports,
 custom React Flow cards, minimap/controls, draggable node placement, palette
 insertion, selectable edges, keyboard deletion, and explicit delete-selected
-controls. Policy maps and routine editors share the same node registry concepts
-while keeping their scopes distinct: policy maps include evidence-backed task
-policy nodes, and routine editors include orchestration nodes without recording
-or state layers.
+controls. Deterministic, orchestration, evidence, and policy nodes share the
+same scope-aware node registry; policy regions retain evidence and state layers
+without becoming a separate Task editor.
 
 The visual node language is backed by the same node registry definitions used
 by execution. Palette-created nodes store their definition ID, icon,
@@ -259,7 +248,7 @@ modes, and list predicates. Timing nodes own duration units, jitter, timeout,
 retry, backoff, and debounce modes. Policy, routine, and database nodes emit
 configurable adapter/effect requests while staying domain-neutral.
 
-Policy and routine editors must not carry their own properties inspector. The
+Flow and policy-region editors must not carry their own properties inspector. The
 right-side global inspector is the single properties viewer for selected nodes,
 edges, signals, timeline entries, policies, recordings, and transient
 editor-created nodes. Node palettes live as collapsible right rails inside the
@@ -518,11 +507,11 @@ stores the last relevant selection context for that tab, plus view-local values
 such as the workspace dock subtab. Switching between inner-window tabs saves
 the outgoing view state and restores the incoming view state so timeline,
 proposal, inspector, and editor panes return to the item they were showing.
-Task editor tabs render saved task/policy data only. Automation Studio no
-longer maintains an unsaved task graph in workspace preferences. Proposal review
+Flow editor tabs render canonical Flow/policy data. Automation Studio does not
+maintain a hidden legacy Task graph in workspace preferences. Proposal review
 edits can still be cached in the project's `workspace/preferences.json` until
-the user explicitly applies the proposal to an existing saved task or saves it
-as a new task, and the web panel installs a browser leave-page warning while
+the user explicitly applies the proposal to an existing Flow or saves it
+as a new Flow, and the web panel installs a browser leave-page warning while
 proposal review edits are dirty.
 Pointer movement uses transient pixel geometry while a window or section is
 being dragged/resized. The persisted percentage geometry is written back to
@@ -591,32 +580,19 @@ projects/{projectId}/flows/{flowId}/flow
 projects/{projectId}/runtime/sessions/{runId}
 ```
 
-Task, routine, and config files are the canonical project edit targets.
-Task files embed their editable graph under `graph`, so
-`tasks/{taskId}/task.json` is not only a descriptor. The embedded graph uses
-Automation Studio node definition IDs, per-node parameter values, named
-source/target ports, positions, labels, descriptions, and metadata so the visual
-graph and executor speak the same language. `flows/{flowId}/flow.json` may still
-exist as a runtime-compatible mirror and migration source, but task editing must
-hydrate from the task artifact's embedded graph first.
-Left sidebar create/delete actions for saved tasks and routines must call the
-project artifact API and be reflected in this file structure immediately.
-Deleting a saved task/routine removes its artifact directory plus owned flow
-documents, and the workspace closes inner-window views whose saved selection
-points at the deleted object. Folder rows remain hierarchy-only organizational
-containers.
-Creating a project immediately creates a saved blank task artifact with
-`taskId` `task.unnamed_task`, name `unnamed_task`, and an embedded empty graph.
-The web workspace opens that saved task by default, so task views always point
-at real task artifacts instead of synthetic draft IDs.
-Approving a generated proposal writes the approved merged `PolicyGraph`, creates
-or updates a task artifact at `tasks/{taskId}/task.json`, and creates or updates
-the task graph embedded in that same task artifact. This only happens from an
-explicit Apply/Save action. Proposal edits before that point are cached in the
-server-backed workspace preferences file, not as task files and not as left-tree
-project artifacts. Multiple recordings for the same task are merged by shared
-prefix: matching leading steps are reused, and the first divergent proposed step
-becomes a recorded branch from the last shared node.
+Canonical Flows in the shared Automation Studio repository are the executable
+project edit targets. New project creation does not seed Task, Routine, or
+owner-bound Flow documents. Config files remain editable project artifacts.
+Legacy `tasks/`, `routines/`, and owner-bound `flows/` documents are retained as
+read-only migration sources after a project activates the Flow-first schema
+gate. Their compatibility adapters preserve deep links and provenance.
+
+Approving a generated proposal creates or updates a canonical recorded-origin
+Flow. This only happens from an explicit Apply/Save action. Proposal edits
+before that point are cached in server-backed workspace preferences, not as
+legacy Task files. Multiple recordings targeting the same Flow merge by shared
+prefix: matching leading steps are reused, and the first divergent proposed
+step becomes a recorded branch from the last shared node.
 
 Automation Studio now has a neutral graph executor for these flow documents.
 The executor starts at the `builtin.control.start` node when present, runs
@@ -646,11 +622,26 @@ The recording/state bridge includes a controller that can subscribe to an
 observe external systems, write normalized state, and the controller turns those
 changes into durable evidence.
 
-Routine editors open as blank canvases until a user adds nodes from the palette.
-They must not seed fake routine nodes just because a routine tab opens. Policy
-editors may display generated policy nodes from the selected task policy, but
-manual nodes and connections are still edited through the same palette and
-React Flow interaction model.
+New Flow editors open as blank canvases until a user adds nodes from the palette.
+They do not seed fake orchestration or policy nodes merely because a tab opens.
+Recorded-origin Flows may display generated policy nodes, while manual nodes and
+connections use the same palette and React Flow interaction model.
+
+Flow details are edited in the same workspace transaction as the canvas:
+identity, description, typed input/output/error interfaces, variables,
+timeouts, concurrency, publication intent, and authorized domain grants all
+participate in dirty-state detection. The create
+menu offers blank, deterministic, recorded, integration, scheduled,
+API-endpoint, and reusable presets, each producing a canonical Flow rather than
+a separate artifact kind. Legacy Task/Routine compatibility entries are
+read-only until explicitly migrated.
+
+The palette combines built-ins, importer integrations, scoped domain nodes,
+published public Flow composites, project nodes, trusted-local code nodes, and
+policy/evidence nodes. Adding a published Flow produces a Call Flow node pinned
+to an exact version with explicit input, output, and error bindings. The Flow
+details surface shows publication history, dependencies, callers, and reviewed
+upgrade candidates; it never silently moves a caller to a newer version.
 
 The inspector follows global selection, and the recording timeline uses a
 horizontal editor-style lane surface with preview snapping, event selection,

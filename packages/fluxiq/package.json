@@ -12,6 +12,8 @@
     "./client-gateway": { "types": "./dist/client-gateway/index.d.ts", "import": "./dist/client-gateway/index.js" },
     "./automation-studio": { "types": "./dist/programs/automation-studio/index.d.ts", "import": "./dist/programs/automation-studio/index.js" },
     "./automation-studio/nodes": { "types": "./dist/programs/automation-studio/nodes/index.d.ts", "import": "./dist/programs/automation-studio/nodes/index.js" },
+    "./automation-studio/dsl": { "types": "./dist/programs/automation-studio/dsl/index.d.ts", "import": "./dist/programs/automation-studio/dsl/index.js" },
+    "./automation-studio/dsl/generator": { "types": "./dist/programs/automation-studio/dsl/generator.d.ts", "import": "./dist/programs/automation-studio/dsl/generator.js" },
     "./background-tasks": { "types": "./dist/programs/background-tasks/index.d.ts", "import": "./dist/programs/background-tasks/index.js" },
     "./components": { "types": "./dist/components/index.d.ts", "import": "./dist/components/index.js" },
     "./compute": { "types": "./dist/programs/compute-control/index.d.ts", "import": "./dist/programs/compute-control/index.js" },

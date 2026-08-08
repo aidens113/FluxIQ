@@ -457,6 +457,7 @@ export function policyToReactFlowGraph(policy: any, selectedNodeId = ""): { node
       description: generatedPolicyNodeDescription(node),
       customDescription: node.metadata?.customDescription,
       nodeDefinitionId: node.metadata?.nodeDefinitionId,
+      nodeDefinitionVersion: node.metadata?.nodeDefinitionVersion,
       icon: generatedPolicyNodeIcon(node, index),
       actionTypes: (node.actions ?? []).map((action: any) => action.actionType),
       recovery: node.recovery?.strategy ?? "ready",
@@ -533,6 +534,7 @@ export function taskFlowToReactFlowGraph(flow: any, selectedNodeId = ""): { node
         description: node.description ?? definition?.description ?? "Task graph node",
         customDescription: node.metadata?.customDescription,
         nodeDefinitionId: node.definitionId,
+        nodeDefinitionVersion: node.definitionVersion,
         ...(definition?.icon !== undefined ? { icon: definition.icon } : {}),
         actionTypes: Array.isArray(parameterValues.actions) ? parameterValues.actions.map((action: any) => String(action.actionType ?? "")).filter(Boolean) : [],
         recovery: typeof parameterValues.recovery?.strategy === "string" ? parameterValues.recovery.strategy : definition?.family ?? "ready",
@@ -543,6 +545,7 @@ export function taskFlowToReactFlowGraph(flow: any, selectedNodeId = ""): { node
         outputs,
         parameters: definition?.parameters ?? [],
         parameterValues,
+        metadata: node.metadata ?? {},
         isStart: node.definitionId === "builtin.control.start" || index === 0,
         timeoutMs: typeof parameterValues.timeout?.timeoutMs === "number" ? parameterValues.timeout.timeoutMs : undefined
       }

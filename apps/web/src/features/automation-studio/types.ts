@@ -26,6 +26,7 @@ export type AutomationViewInstance = {
 };
 export type AutomationEditorNodeSpec = {
   id: string;
+  version: string;
   label: string;
   description: string;
   family: string;
@@ -37,6 +38,8 @@ export type AutomationEditorNodeSpec = {
   icon?: string;
   privileged?: boolean;
   actionTypes?: string[];
+  source?: any;
+  availability?: any;
 };
 export type AutomationEditorPaletteGroup = {
   title: string;
@@ -54,6 +57,7 @@ export const automationEditorPalette: AutomationEditorPaletteGroup[] = automatio
 function automationNodeDefinitionToEditorSpec(definition: AutomationNodeDefinition): AutomationEditorNodeSpec {
   return {
     id: definition.id,
+    version: "1.0.0",
     label: definition.label,
     description: definition.description,
     family: definition.class,
@@ -69,11 +73,12 @@ function automationNodeDefinitionToEditorSpec(definition: AutomationNodeDefiniti
 }
 export type AutomationSelection =
   | { kind: "workspace"; id: "clients" | "runs" }
+  | { kind: "flow"; id: string }
   | { kind: "policy"; id: string }
   | { kind: "proposal"; id: string; recordingId?: string }
   | { kind: "proposal-step"; id: string; proposalId: string; recordingId?: string; step: { label: string; description: string; actions: string[]; requirements: string[]; expectedEffects: string[]; confidence: string; occurrenceCount: number; transition?: string; evidence: Array<{ id: string; title: string; relation: string }> }; node?: { label: string; description: string; customDescription?: string } }
   | { kind: "node"; id: string }
-  | { kind: "editor-node"; id: string; node: { label: string; nodeType: string; family: string; description: string; customDescription?: string; nodeDefinitionId?: string; icon?: string; inputs: AutomationNodePort[]; outputs: AutomationNodePort[]; parameters: AutomationNodeParameter[]; parameterValues: JsonObject; privileged?: boolean; actionTypes?: string[] } }
+  | { kind: "editor-node"; id: string; node: { label: string; nodeType: string; family: string; description: string; customDescription?: string; nodeDefinitionId?: string; icon?: string; inputs: AutomationNodePort[]; outputs: AutomationNodePort[]; parameters: AutomationNodeParameter[]; parameterValues: JsonObject; metadata?: JsonObject; privileged?: boolean; actionTypes?: string[] } }
   | { kind: "editor-mode"; id: string; editor: "task" | "routine"; label: string; description: string; sections: Array<{ title: string; rows: Array<[string, string]> }> }
   | { kind: "recording"; id: string }
   | { kind: "timeline"; id: string }
@@ -81,6 +86,7 @@ export type AutomationSelection =
 
 export type AutomationPolicyNodeData = {
   nodeDefinitionId?: string;
+  nodeDefinitionVersion?: string;
   label: string;
   description: string;
   customDescription?: string;
@@ -98,9 +104,14 @@ export type AutomationPolicyNodeData = {
   confidence?: number;
   timeoutMs?: number;
   reviewTone?: "existing" | "proposed" | "locked";
+  regionId?: string;
+  regionName?: string;
+  regionKind?: "deterministic" | "trigger" | "policy";
+  metadata?: JsonObject;
 };
 export type AutomationRoutineNodeData = {
   nodeDefinitionId?: string;
+  nodeDefinitionVersion?: string;
   label: string;
   nodeType: "base" | "custom";
   family: string;
@@ -112,5 +123,6 @@ export type AutomationRoutineNodeData = {
   parameters: AutomationNodeParameter[];
   parameterValues: JsonObject;
   privileged?: boolean;
+  metadata?: JsonObject;
 };
 

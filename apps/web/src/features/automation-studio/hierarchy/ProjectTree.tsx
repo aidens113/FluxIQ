@@ -41,6 +41,7 @@ export function AutomationProjectTree(props: {
     const open = () => {
       setPrimaryTreeNodeId(node.id);
       if (node.kind === "task" && node.sourceId) props.setSelection({ kind: "policy", id: node.sourceId });
+      if (node.kind === "flow" && node.sourceId) props.setSelection({ kind: "flow", id: node.sourceId });
       if (node.kind === "recording" && node.sourceId) {
         props.setRecordingPrimaryKind("recording");
         props.setSelection({ kind: "recording", id: node.sourceId });
@@ -50,7 +51,7 @@ export function AutomationProjectTree(props: {
         props.setSelection({ kind: "proposal", id: node.sourceId, ...(node.recordingId ? { recordingId: node.recordingId } : {}) });
       }
       if ((node.kind === "client" || node.kind === "run") && node.sourceId) props.setSelection({ kind: "workspace", id: node.sourceId as "clients" | "runs" });
-      props.openView(node.viewId ?? (node.kind === "task" ? "policy-primary" : node.kind === "routine" ? "routine-editor" : node.kind === "recording" ? "timeline-recording" : node.kind === "client" ? "client-gateway" : node.kind === "proposal" ? "proposal-workbench" : node.kind === "run" ? "runs-history" : "config-default"), mode);
+      props.openView(node.viewId ?? (node.kind === "flow" || node.kind === "task" ? "policy-primary" : node.kind === "routine" ? "routine-editor" : node.kind === "recording" ? "timeline-recording" : node.kind === "client" ? "client-gateway" : node.kind === "proposal" ? "proposal-workbench" : node.kind === "run" ? "runs-history" : "config-default"), mode);
     };
     if (mode === "preview") {
       singleClickTimer.current = window.setTimeout(() => {
@@ -201,7 +202,8 @@ function automationHierarchyNodeMatchesSelection(node: AutomationHierarchyNode, 
   return Boolean(
     node.sourceId
     && (
-      (selection?.kind === "policy" && selection.id === node.sourceId)
+      (selection?.kind === "flow" && selection.id === node.sourceId)
+      || (selection?.kind === "policy" && selection.id === node.sourceId)
       || (selection?.kind === "recording" && selection.id === node.sourceId)
       || (selection?.kind === "recording" && selection.id === node.recordingId)
       || (selection?.kind === "proposal" && selection.id === node.sourceId)

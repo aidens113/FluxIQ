@@ -76,7 +76,9 @@ if (checkOnly) {
   await mkdir(path.dirname(packageOutputPath), { recursive: true });
   await writeFile(outputPath, markdown, "utf8");
   await writeFile(packageOutputPath, markdown, "utf8");
-  console.log(`Wrote ${slash(path.relative(repositoryRoot, outputPath))} and ${slash(path.relative(repositoryRoot, packageOutputPath))} (${declarations.length} public declarations).`);
+  console.log(
+    `Wrote ${slash(path.relative(repositoryRoot, outputPath))} and ${slash(path.relative(repositoryRoot, packageOutputPath))} (${declarations.length} public declarations).`,
+  );
 }
 
 function commentSummary(comment) {

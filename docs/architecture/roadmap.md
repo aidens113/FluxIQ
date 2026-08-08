@@ -19,9 +19,9 @@ program, not as a separate special-case app.
 
 Planned Automation Studio areas:
 
-- task editor;
-- routine editor;
-- interface editor;
+- unified Flow editor and interface editor;
+- deterministic, orchestration, policy, and evidence regions;
+- reusable published composite Flow nodes;
 - recording browser;
 - policy proposal review;
 - generated policy approval;

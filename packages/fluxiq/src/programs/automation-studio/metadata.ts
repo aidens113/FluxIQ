@@ -4,7 +4,7 @@ export const AUTOMATION_STUDIO_PROGRAM: GlobalProgramDefinition = {
   id: "automation-studio",
   title: "Automation Studio",
   category: "Authoring",
-  description: "Create tasks, routines, configurations, recordings, and generated policies.",
+  description: "Create Flows, configurations, recordings, and evidence-driven policies.",
   icon: "blocks",
   status: "available"
 };

@@ -85,6 +85,139 @@ These contracts are intentionally richer than the existing shallow Automation
 Studio prototype types. The prototype exports remain in place while the
 canonical model is adopted incrementally.
 
+## Canonical Flow Foundation
+
+Automation Studio is moving from separate Task and Routine authoring concepts
+to one owner-independent **Flow** artifact. The first additive contract lives
+in `model/flows.ts`; it coexists with the legacy task/routine-owned
+`AutomationStudioFlowDocument` while compatibility and storage migration are
+implemented in later slices.
+
+A canonical Flow declares its project, global or domain scope, private/public
+visibility, origin, source ownership, typed input/output interface, variables,
+graph, execution defaults, publication metadata, and evidence provenance. A
+public Flow has an immutable published version and interface snapshot, which
+will later be projected as a reusable composite node in the same scope.
+
+The initial Flow type system covers primitives, JSON, unknown values, arrays,
+records, and named schemas. `validateAutomationStudioFlow` validates IDs,
+scope, ports, defaults, local graph structure, source metadata, execution
+defaults, and publication invariants before future storage or execution paths
+consume the artifact. Node-definition port compatibility is deliberately
+deferred until the node registry is migrated to its canonical contract.
+
+Flows may be visual-owned or code-owned. The Source editor generates stable
+declarative TypeScript, and explicit conversion makes either visual IR or a
+validated constrained module authoritative. Code-owned graphs are read-only
+in the visual editor and retain compiler/source digests.
+
+## Canonical Node Definition Foundation
+
+New Flow authoring uses `AutomationStudioNodeDefinition` and the scope-aware
+`AutomationStudioNodeRegistry`. The contract describes a node's identity and
+version, display/category metadata, ports, parameters, source, availability,
+behavior capabilities, runtime capability requirements, safety requirements,
+and optional legacy scope. It supports framework built-ins, importer-native
+nodes, trusted-local Code Nodes, composite Flows, and recording-derived nodes.
+
+Existing `AutomationNodeDefinition` built-ins remain the executable registry
+used by the current runtime. They are adapted into canonical definitions with
+stable implementation keys; no executor behavior changes in this migration
+slice. The adapter maps legacy Routine-category built-ins into the future
+`flow` category while retaining their legacy scope metadata for compatibility.
+
+Importers can provide a declarative `AutomationStudioImporterNodeManifest` for
+their configured domain source root. Each importer node must be bound to the
+same domain in both its source and availability metadata. Registry resolution
+then requires an exact global/domain match plus any declared runtime
+capabilities and permissions. A domain definition therefore cannot appear in
+the global palette or another domain merely because its manifest is registered.
+
+The manifest remains a registration boundary, not a dynamic-code loader.
+Importer implementations execute only after the host explicitly binds a
+matching package/version implementation bundle. The trusted-local runtime
+checks grants, declared ports, timeouts, cancellation, output contracts, and
+trace redaction. It is not a sandbox and does not contain hostile code.
+
+## Legacy Task/Routine Flow Compatibility
+
+`model/flow-compatibility.ts` provides a pure, read-only bridge from the
+current Task/Routine artifact catalog to canonical Flow-shaped entries. A
+legacy Task becomes a private `migrated` Flow with recording evidence, signal
+registry, and task graph provenance. A Routine becomes a private `migrated`
+Flow with its referenced orchestration graph and task-list provenance.
+
+`resolveAutomationStudioFlowCatalog` accepts a project scope, canonical Flow
+artifacts, and the existing legacy artifact catalog. It returns a unified,
+deterministically ordered list whose legacy entries are explicitly marked
+read-only. It also assigns collision-safe synthetic IDs rather than reusing
+the legacy Flow document's ID, keeping future canonical persistence separate
+from the legacy source.
+
+The resolver does not save, delete, or rewrite any artifact. Current runtime
+execution and editor routes continue to use their legacy records until the
+canonical Flow storage/API migration is introduced. This separation preserves
+recordings, policy graph links, and recovery options while providing a safe
+model for the later UI migration.
+
+## Canonical Flow Persistence and Migration
+
+Canonical Flows now persist through the Automation Studio repository family as
+`automation.flows` records in the global framework database. They retain their
+own `projectId` and Flow scope; domain scope is filtering metadata, not a
+reason to move a global Automation Studio project catalog into a domain
+database. Flow migration ledgers persist separately as
+`automation.flow_migration_ledgers` records. Published versions also have a
+standalone durable index in `automation.flow_publications`; publication
+lifecycle metadata is therefore not coupled to the mutable Flow draft or only
+discoverable by scanning artifact history.
+
+`AutomationStudioService` exposes dedicated Flow operations:
+
+- `createFlow`, `getFlow`, `saveFlow`, and `deleteFlow` operate only on
+  canonical Flow artifacts;
+- `listFlows` combines canonical Flows with explicitly read-only legacy
+  compatibility entries;
+- `publishFlow` records an immutable published interface/version snapshot and
+  its dependency digests in the publication index;
+- `listFlowPublications`, `deprecateFlowPublication`, and
+  `inspectFlowDependencies` expose version history, non-destructive
+  deprecation, callers, dependencies, and explicit upgrade candidates;
+- `inspectFlowMigration` reports exactly what a legacy project would create;
+  and
+- `migrateFlows` writes canonical copies and a durable ledger while preserving
+  every legacy source artifact unchanged.
+
+The corresponding API endpoints use `programs.read` for list/get and
+`flows.write` for authoring, publishing, deprecation, inspection, and
+migration. Mutating operations retain the existing authorization-PIN recheck.
+The old generic project-artifact endpoints remain available for legacy callers
+during the compatibility period.
+
+Legacy compatibility is governed per project. Projects begin at schema `0.1`
+in `compatibility`; Task/Routine writes return structured deprecation
+diagnostics while reads remain available. After migration inventory, importer
+coverage, and backup verification are recorded, an explicit schema `0.2` seal
+locks legacy writes. The seal does not remove source documents or read adapters.
+Policy-proposal approval now writes canonical recorded-origin Flows instead of
+creating Task-owned Flow documents.
+
+Migration is explicitly idempotent. A repeat inspection recognizes canonical
+Flows by their Task/Routine provenance and reports `already_migrated`; it does
+not create another copy. The legacy source itself is the recovery source and
+its stable `backupId` is recorded in the migration ledger. There is no
+automatic deletion or in-place rewrite. A partially completed apply records
+blocked outcomes and can be safely inspected and rerun after the cause is
+resolved.
+
+Migration now creates a digest-verified legacy backup and a durable ledger.
+Migration outcomes remain fixed; rollback adds only the lifecycle timestamp
+`rolledBackAt` and a separate append-only audit event.
+Rollback planning refuses to remove a migrated Flow if it was edited, published,
+or lost its source provenance. Successful rollback removes only unchanged
+canonical copies and appends an audit event; the legacy source was never
+modified. See the [legacy retirement runbook](../operations/automation-studio-legacy-retirement.md).
+
 ## Pipeline Contracts
 
 The first slice also defines contract-only homes for upcoming stages:
@@ -126,6 +259,58 @@ node editors, window management, and project operations are documented in the
 Canonical storage ownership, recording pipeline documents, task artifacts,
 and runtime-session persistence are documented in the
 [persistence guide](automation-studio/persistence.md).
+
+## Flow-first authoring UI
+
+Automation Studio presents one **Flows** tree for project automation. Creating a
+Flow writes the canonical Flow repository directly; users do not choose between
+Tasks and Routines. Blank, deterministic, recorded, integration, scheduled,
+API-endpoint, and reusable presets all create the same canonical artifact with
+safe initial metadata and graph content.
+
+The shared editor owns the Flow name, description, typed input/output
+interfaces, declared errors, variables, timeout/concurrency defaults,
+publication intent, authorized domain grants, regions, and graph under one
+dirty-state boundary. Saving validates and persists these details with the
+graph. Running, switching Flows, closing the project, browser
+navigation, and window close all protect unsaved edits. The palette is grouped
+by built-ins, importer integrations, domain nodes, published public Flows,
+project nodes, trusted-local code nodes, and policy/evidence nodes.
+
+Existing Task and Routine artifacts are exposed through the Flow compatibility
+catalog as labelled legacy entries. They are intentionally read-only in the
+editor: editing or deleting one cannot silently mutate its legacy source.
+Projects can explicitly migrate those entries using the Flow migration API,
+after which the canonical copy is editable through the same Flow editor.
+
+## Published Flow composition
+
+Publishing a Flow creates a digest-backed immutable snapshot of its graph,
+typed interface, scope, and declared errors. Automation Studio can project that
+snapshot into a composite node definition for projects in the same scope. A
+Call Flow node pins the target Flow ID and semantic version, so later draft
+changes cannot alter a caller unexpectedly.
+
+Ordinary Flow saves cannot create, rewrite, truncate, or change publication
+history. Only publication lifecycle endpoints may append or deprecate versions.
+Published snapshots pin every resolved non-composite node-definition version;
+unknown, out-of-scope, or version-mismatched definitions block publication.
+
+Composition validation rejects missing or deprecated versions, invalid or
+incomplete port bindings, unavailable/private targets, missing runtime
+capabilities, and direct or indirect dependency cycles. Call Flow uses explicit
+input, output, and error bindings; child ambient inputs are never injected.
+The runtime applies caller retry policy, propagates cancellation and remaining
+deadlines, and retains the child trace plus exact target Flow/version/digest on
+the parent call-node attempt.
+
+Same-scope calls require a public pinned target. Domain-to-global calls may use
+only globally available capabilities. A global-to-domain call requires both an
+explicit per-run domain grant and the importer runtime actually bound to that
+domain; naming a domain Flow cannot acquire its capabilities. The editor lists
+publication history, dependencies, callers, and reviewed upgrade candidates.
+Upgrading changes the pinned version only after confirmation and leaves the
+caller dirty until it is saved.
 
 ## Client Gateway
 

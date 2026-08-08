@@ -2,7 +2,7 @@ import type { JsonObject } from "../../../core/index.ts";
 import { SQLiteRepository, createRecord } from "../../database-manager/storage/sqlite-repository.ts";
 import type { LearnedTaskModel } from "../learning/index.ts";
 import type { NormalizedTimeline } from "../normalization/index.ts";
-import type { PolicyGraph, RecordingSession, SignalRegistry } from "../model/index.ts";
+import type { AutomationStudioFlowArtifact, AutomationStudioFlowMigrationLedger, AutomationStudioFlowPublicationRecord, PolicyGraph, RecordingSession, SignalRegistry } from "../model/index.ts";
 import type { AutomationStudioDocumentIdentity } from "./ids.ts";
 import {
   canonicalArtifactIdentity,
@@ -58,6 +58,9 @@ class AutomationStudioSQLiteRepository<TDocument> implements AutomationStudioRep
 
 export function createCanonicalAutomationStudioSQLiteRepositories(rootDir: string): CanonicalAutomationStudioRepositories {
   return {
+    flows: new AutomationStudioSQLiteRepository<AutomationStudioFlowArtifact>(rootDir, "automation.flows", (document) => ({ ...canonicalArtifactIdentity(document), id: document.flowId })),
+    flowPublications: new AutomationStudioSQLiteRepository<AutomationStudioFlowPublicationRecord>(rootDir, "automation.flow_publications", (document) => ({ ...canonicalArtifactIdentity(document), id: document.publicationId })),
+    flowMigrationLedgers: new AutomationStudioSQLiteRepository<AutomationStudioFlowMigrationLedger>(rootDir, "automation.flow_migration_ledgers", (document) => ({ ...canonicalArtifactIdentity(document), id: document.migrationId })),
     recordingSessions: new AutomationStudioSQLiteRepository<RecordingSession>(rootDir, "automation.recording_sessions", (document) => ({ ...canonicalArtifactIdentity(document), id: recordingSessionDocumentId(document) })),
     normalizedTimelines: new AutomationStudioSQLiteRepository<NormalizedTimeline>(rootDir, "automation.normalized_timelines", (document) => ({ ...canonicalArtifactIdentity(document), id: normalizedTimelineDocumentId(document) })),
     signalRegistries: new AutomationStudioSQLiteRepository<SignalRegistry>(rootDir, "automation.signal_registries", (document) => ({ ...canonicalArtifactIdentity(document), id: signalRegistryDocumentId(document) })),

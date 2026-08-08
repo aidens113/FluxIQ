@@ -1,12 +1,11 @@
 import type { AutomationWorkspacePrefs } from "../workspace/layout";
 
-export type AutomationHierarchyKind = "folder" | "client" | "proposal" | "task" | "routine" | "config" | "recording" | "run";
-export type AutomationCreatableHierarchyKind = "folder" | "task" | "routine";
-export type AutomationHierarchyCategory = "client" | "proposal" | "task" | "routine" | "config" | "recording" | "run";
+export type AutomationHierarchyKind = "folder" | "client" | "proposal" | "flow" | "task" | "routine" | "config" | "recording" | "run";
+export type AutomationCreatableHierarchyKind = "folder" | "flow";
+export type AutomationHierarchyCategory = "client" | "proposal" | "flow" | "task" | "routine" | "config" | "recording" | "run";
 export const automationHierarchyCategories: Array<{ id: AutomationHierarchyCategory; label: string; description: string; creatable?: boolean }> = [
-  { id: "routine", label: "Routines", description: "Deterministic routine orchestration", creatable: true },
-  { id: "task", label: "Tasks", description: "Learned task workspaces", creatable: true },
-  { id: "proposal", label: "Proposals", description: "Generated task proposals from recordings" },
+  { id: "flow", label: "Flows", description: "Visual, recorded, and programmatic automations", creatable: true },
+  { id: "proposal", label: "Proposals", description: "Generated Flow and policy proposals from recordings" },
   { id: "recording", label: "Recordings", description: "Raw browser recording sessions", creatable: true },
   { id: "config", label: "Configurations", description: "Configuration folders and defaults", creatable: true }
 ];
@@ -46,12 +45,12 @@ export type AutomationStudioProjectCategory = {
 export type AutomationProjectModal = "create" | "rename" | "delete" | "move" | "create-category" | "rename-category" | "delete-category" | "move-category" | null;
 
 export function sortAutomationHierarchyNodes(nodes: AutomationHierarchyNode[]): AutomationHierarchyNode[] {
-  const rank: Record<AutomationHierarchyKind, number> = { folder: 0, client: 1, proposal: 1, task: 1, routine: 1, config: 1, recording: 1, run: 1 };
+  const rank: Record<AutomationHierarchyKind, number> = { folder: 0, client: 1, proposal: 1, flow: 1, task: 1, routine: 1, config: 1, recording: 1, run: 1 };
   return [...nodes].sort((first, second) => rank[first.kind] - rank[second.kind] || first.label.localeCompare(second.label));
 }
 
 export function automationHierarchyCategoryLabel(category: AutomationHierarchyCategory): string {
-  return automationHierarchyCategories.find((item) => item.id === category)?.label ?? "Tasks";
+  return automationHierarchyCategories.find((item) => item.id === category)?.label ?? "Flows";
 }
 
 export function collectHierarchyAncestorIds(parentId: string | null, nodes: AutomationHierarchyNode[]): string[] {
@@ -100,7 +99,7 @@ export function proposalHierarchyNodes(recordings: any[], proposals: any[]): Aut
   const nodes: AutomationHierarchyNode[] = [];
   const recordingsById = new Map(recordings.map((recording) => [recording.recordingId, recording]));
   for (const proposal of proposals) {
-    const recordingId = proposal?.metadata?.recordingId;
+    const recordingId = proposal?.recordingId ?? proposal?.metadata?.recordingId;
     const recording = typeof recordingId === "string" ? recordingsById.get(recordingId) : null;
     if (!recording) continue;
     const clientName = recordingClientName(recording);
@@ -118,7 +117,7 @@ export function proposalHierarchyNodes(recordings: any[], proposals: any[]): Aut
     }
     nodes.push({
       id: `proposal-${stableNodeId(proposal.proposalId)}`,
-      label: recordingDateTimeLabel(recording),
+      label: proposal.mapper?.id ? `${recordingDateTimeLabel(recording)} · ${proposal.mapper.id}` : recordingDateTimeLabel(recording),
       kind: "proposal",
       category: "proposal",
       parentId: folderId,

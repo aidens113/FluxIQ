@@ -1,8 +1,11 @@
 import type { LearnedTaskModel } from "../learning/index.ts";
 import type { NormalizedTimeline } from "../normalization/index.ts";
-import type { PolicyGraph, RecordingSession, SignalRegistry } from "../model/index.ts";
+import type { AutomationStudioFlowArtifact, AutomationStudioFlowMigrationLedger, AutomationStudioFlowPublicationRecord, PolicyGraph, RecordingSession, SignalRegistry } from "../model/index.ts";
 
 export type CanonicalAutomationStudioArtifact =
+  | AutomationStudioFlowArtifact
+  | AutomationStudioFlowPublicationRecord
+  | AutomationStudioFlowMigrationLedger
   | RecordingSession
   | NormalizedTimeline
   | SignalRegistry
@@ -10,6 +13,9 @@ export type CanonicalAutomationStudioArtifact =
   | PolicyGraph;
 
 export type CanonicalAutomationStudioArtifactKind =
+  | "flow"
+  | "flow_publication"
+  | "flow_migration_ledger"
   | "recording_session"
   | "normalized_timeline"
   | "signal_registry"
@@ -25,6 +31,18 @@ export type AutomationStudioDocumentIdentity = {
 
 export function recordingSessionDocumentId(recording: RecordingSession): string {
   return recording.recordingId;
+}
+
+export function flowDocumentId(flow: AutomationStudioFlowArtifact): string {
+  return flow.flowId;
+}
+
+export function flowMigrationLedgerDocumentId(ledger: AutomationStudioFlowMigrationLedger): string {
+  return ledger.migrationId;
+}
+
+export function flowPublicationDocumentId(publication: AutomationStudioFlowPublicationRecord): string {
+  return publication.publicationId;
 }
 
 export function normalizedTimelineDocumentId(timeline: NormalizedTimeline): string {
@@ -44,6 +62,19 @@ export function policyGraphDocumentId(policy: PolicyGraph): string {
 }
 
 export function canonicalArtifactIdentity(artifact: CanonicalAutomationStudioArtifact): AutomationStudioDocumentIdentity {
+  if ("publicationId" in artifact && "snapshot" in artifact) {
+    return { kind: "flow_publication", id: flowPublicationDocumentId(artifact), domainId: artifact.snapshot.scope.kind === "domain" ? artifact.snapshot.scope.domainId : null };
+  }
+  if ("migrationId" in artifact && "backupId" in artifact) {
+    return { kind: "flow_migration_ledger", id: flowMigrationLedgerDocumentId(artifact) };
+  }
+  if ("flowId" in artifact && "publication" in artifact && "projectId" in artifact) {
+    return {
+      kind: "flow",
+      id: flowDocumentId(artifact),
+      domainId: artifact.scope.kind === "domain" ? artifact.scope.domainId : null
+    };
+  }
   if ("normalizedTimelineId" in artifact) {
     return withOptionalIdentityFields({
       kind: "normalized_timeline",

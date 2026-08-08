@@ -27,11 +27,14 @@ describe("Automation Studio pipeline model", () => {
     const processing = addRecordingPipelineArtifactId(pipeline, "miningRuns", "mining-1");
     const duplicate = addRecordingPipelineArtifactId(processing, "miningRuns", "mining-1");
     const complete = addRecordingPipelineArtifactId(duplicate, "policyProposals", "proposal-1");
+    const withFlowProposal = addRecordingPipelineArtifactId(complete, "recordingFlowProposals", "flow-proposal-1");
 
     expect(pipeline.pipelineId).toBe("pipeline.recording_1");
     expect(processing.status).toBe("processing");
     expect(duplicate.artifacts.miningRunIds).toEqual(["mining-1"]);
     expect(complete.status).toBe("complete");
     expect(complete.artifacts.policyProposalIds).toEqual(["proposal-1"]);
+    expect(withFlowProposal.artifacts.recordingFlowProposalIds).toEqual(["flow-proposal-1"]);
+    expect(upsertPipelineIndex(emptyPipelineIndex(), "recordingFlowProposals", "flow-proposal-1", 20, "invalidated", "recording/1").recordingFlowProposals[0]).toMatchObject({ proposalId: "flow-proposal-1", status: "invalidated" });
   });
 });

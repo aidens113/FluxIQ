@@ -198,6 +198,7 @@ export class IoRegistry {
     inputId: string;
     timeoutMs?: number;
     predicate?: (event: IoEnvelope<TPayload>) => boolean;
+    signal?: AbortSignal;
   }): Promise<IoEnvelope<TPayload>> {
     const timeoutMs = Math.max(1, params.timeoutMs ?? 5_000);
     return new Promise<IoEnvelope<TPayload>>((resolve, reject) => {
@@ -208,10 +209,14 @@ export class IoRegistry {
         settled = true;
         clearTimeout(timeout);
         unsubscribe?.();
+        params.signal?.removeEventListener("abort", abort);
         callback();
       };
+      const abort = () => settle(() => reject(new Error("Input confirmation cancelled.")));
       const timeout = setTimeout(() => settle(() => reject(new Error(`Timed out waiting for input confirmation: ${ioKey(params.domainId, params.inputId)}`))), timeoutMs);
       try {
+        if (params.signal?.aborted) { abort(); return; }
+        params.signal?.addEventListener("abort", abort, { once: true });
         unsubscribe = this.subscribeInput<TPayload>(params.domainId, params.inputId, (event) => {
           if (params.predicate && !params.predicate(event)) return;
           settle(() => resolve(event));

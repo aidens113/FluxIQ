@@ -32,8 +32,8 @@ export function AutomationAssistantView(props: { node: any; recording: any; sign
 export function AutomationConfigView(props: { policy: any }) {
   return (
     <section className="automation-config-view">
-      <InspectorSection title="Task Inputs" rows={[["target_item", "item reference"], ["retry_count", "integer, default 3"], ["runtime_editable", "true"]]} />
-      <InspectorSection title="Task Outputs" rows={[["completion_status", "runtime statistic"], ["elapsed_time", "runtime statistic"], ["failure_reason", "error path"]]} />
+      <InspectorSection title="Flow Inputs" rows={[["target_item", "item reference"], ["retry_count", "integer, default 3"], ["runtime_editable", "true"]]} />
+      <InspectorSection title="Flow Outputs" rows={[["completion_status", "runtime statistic"], ["elapsed_time", "runtime statistic"], ["failure_reason", "error path"]]} />
       <InspectorSection title="Configuration" rows={[["Policy", props.policy?.policyId ?? "-"], ["Environment overrides", "None"], ["Runtime limits", "Default"]]} />
     </section>
   );

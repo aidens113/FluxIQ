@@ -13,6 +13,7 @@ stable document IDs:
 | `SignalRegistry` | `signalRegistries` | `registryId` |
 | `LearnedTaskModel` | `learnedTaskModels` | `learnedTaskModelId` |
 | `PolicyGraph` | `policyGraphs` | `policyId` |
+| `AutomationStudioFlowPublicationRecord` | `flowPublications` | `publicationId` |
 
 Framework tests can use the in-memory repository implementation. Host runtimes
 use canonical SQLite repositories in `.fluxiq/global.sqlite`; domain IDs are
@@ -49,27 +50,54 @@ The Automation Studio API exposes these as first-class framework endpoints:
 `append-recording-marker`, `finalize-recording`, `normalize-recording`,
 `create-normalization-review`, `list-pipeline-artifacts`,
 `mine-recording-evidence`, `propose-policy-from-model`,
-`approve-policy-proposal`, `inspect-state-diff`, and
-`list-signal-registries`. Compatibility endpoints for learned task models and
-replay results remain available for non-UI/runtime work. Mutating endpoints are
-privileged and should use the same shared PIN authorization path as project and
-category edits.
+`approve-policy-proposal`, `create-recording-flow-proposals`,
+`review-recording-flow-proposal`, `inspect-legacy-retirement`,
+`record-legacy-retirement-evidence`, `export-legacy-project`,
+`verify-legacy-backup`, `seal-legacy-writes`,
+`list-legacy-retirement-audit`, `plan-flow-migration-rollback`,
+`rollback-flow-migration`, `inspect-state-diff`, and
+`list-signal-registries`. Canonical Flow publication is exposed through
+`publish-flow`, `list-flow-publications`, `deprecate-flow-publication`, and
+`inspect-flow-dependencies`. Compatibility endpoints for learned task models
+and replay results remain available for non-UI/runtime work. Mutating endpoints
+are privileged and should use the same shared PIN authorization path as project
+and category edits.
 
-The proposal UI is the user-facing surface for generated task proposals. It
+Publication records are append-oriented standalone documents in
+`automation.flow_publications`. Each record holds the immutable snapshot,
+dependency digests, publisher/changelog metadata, and lifecycle status.
+Deprecation changes the record lifecycle without rewriting the published
+snapshot. Readers merge historical artifact publication events for backward
+compatibility, while all new publications write the standalone index.
+
+Legacy Task/Routine write endpoints are deprecated compatibility surfaces.
+Their responses include either `legacy.compatibility_write` or
+`legacy.write_locked` plus `replacement: "canonical-flow-api"`. New recording
+policy approvals write canonical Flows and retain policy and recording
+provenance in Flow metadata; they no longer create new Task artifacts.
+
+Project retirement state, digest-verified source backups, and append-only audit
+events live beneath `projects/{projectId}/migration/`. Schema `0.2` is an
+explicit write gate, not a deletion migration. Legacy reads and catalog adapters
+remain available after sealing. Migration rollback is allowed only for unchanged
+draft canonical copies whose ledger provenance and backup digest still match.
+
+The proposal UI is the user-facing surface for generated policy/Flow proposals. It
 shows the source recording, proposal status, generated time, summary counts,
 and an embedded policy graph editor. The editor uses the same React Flow node
-renderer as the task editor through a small embeddable graph API and includes a
+renderer as the Flow editor through a small embeddable graph API and includes a
 proposal-local node palette. In proposal-review mode, existing/locked graph
 content can be shown differently from proposed nodes, while proposal edits are
 cached in workspace preferences until the user applies or saves. Selecting a
 proposed node opens a compact inspector with editable node label/description,
 action summaries, requirements, expected state results, and readable supporting
 state signals. Proposal actions apply the current edited proposal to the last open
-valid task, save it as a new task, regenerate it from the recording, or process
+valid canonical Flow, save it as a new Flow, regenerate it from the recording, or process
 it with an LLM.
 
 When a recording is finalized from the timeline, the web UI runs the recording
-authoring stages in order: normalize, mine evidence, and propose task. The
+authoring stages in order: normalize, mine evidence, propose a Policy Flow, and run any
+registered importer recording mappers to produce separate Flow proposals. The
 timeline pane shows an overlay with the active stage and progress while this
 happens. When the proposal is written, Automation Studio opens the proposal
 view and highlights the generated proposal in the left hierarchy. This does not
@@ -80,6 +108,16 @@ proposal overwrites that recording-owned proposal instead of creating additional
 proposal rows for the same source recording. The proposal is persisted under
 the source recording's derived artifact folder. Deleting the source recording
 deletes its proposal artifact and removes it from the project pipeline index.
+
+Importer recording mappers may additionally write multiple immutable-history
+Flow proposals beneath `derived/proposal/flows/{proposalId}.json`. The pipeline
+index stores their status and recording ownership. These proposals retain mapper
+and package versions, observation IDs, evidence links, output/parameter data,
+confirmation expectations, confidence, and the review decision. They are not
+executable before approval. Approval writes either provenance-bearing policy
+action nodes to a selected Flow or reviewed node definitions; raw evidence is
+never edited. Listing revalidates active mapper, output, and action-input
+contracts and records invalidation reasons plus affected Flow IDs.
 
 When a connected client stops a recording, the client gateway finalizes and
 processes the recording in the framework service. The web UI detects the
@@ -98,7 +136,8 @@ IDs, labels, before/after values, and action timing. This view explains why a
 proposal used a piece of evidence without turning the global inspector into a
 pipeline debugger.
 
-The internal recording pipeline has three stages:
+The internal evidence/task pipeline has three stages, followed by an optional
+importer mapper stage for reviewed Flow/node candidates:
 
 - Normalize prepares the raw recording as a normalized timeline and writes
   normalization detail artifacts with raw-to-normalized mappings, derived

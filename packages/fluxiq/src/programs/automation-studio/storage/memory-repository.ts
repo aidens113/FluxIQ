@@ -10,7 +10,7 @@ import {
 } from "./ids.ts";
 import type { LearnedTaskModel } from "../learning/index.ts";
 import type { NormalizedTimeline } from "../normalization/index.ts";
-import type { PolicyGraph, RecordingSession, SignalRegistry } from "../model/index.ts";
+import type { AutomationStudioFlowArtifact, AutomationStudioFlowMigrationLedger, AutomationStudioFlowPublicationRecord, PolicyGraph, RecordingSession, SignalRegistry } from "../model/index.ts";
 
 export type AutomationStudioMemoryRepositoryOptions<TDocument> = {
   identify(document: TDocument): AutomationStudioDocumentIdentity;
@@ -60,6 +60,15 @@ export class AutomationStudioMemoryRepository<TDocument> implements AutomationSt
 
 export function createCanonicalAutomationStudioMemoryRepositories(): CanonicalAutomationStudioRepositories {
   return {
+    flows: new AutomationStudioMemoryRepository<AutomationStudioFlowArtifact>({
+      identify: (document) => ({ ...canonicalArtifactIdentity(document), id: document.flowId })
+    }),
+    flowPublications: new AutomationStudioMemoryRepository<AutomationStudioFlowPublicationRecord>({
+      identify: (document) => ({ ...canonicalArtifactIdentity(document), id: document.publicationId })
+    }),
+    flowMigrationLedgers: new AutomationStudioMemoryRepository<AutomationStudioFlowMigrationLedger>({
+      identify: (document) => ({ ...canonicalArtifactIdentity(document), id: document.migrationId })
+    }),
     recordingSessions: new AutomationStudioMemoryRepository<RecordingSession>({
       identify: (document) => ({
         ...canonicalArtifactIdentity(document),

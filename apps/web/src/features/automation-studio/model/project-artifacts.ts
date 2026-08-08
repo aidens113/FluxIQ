@@ -13,14 +13,6 @@ export function mergeById<TItem extends Record<string, unknown>>(primary: TItem[
   return merged;
 }
 
-export function createManualTaskId(label: string): string {
-  return `task.${artifactSlug(label, "task")}.${Date.now().toString(36)}`;
-}
-
-export function createManualRoutineId(label: string): string {
-  return `routine.${artifactSlug(label, "routine")}.${Date.now().toString(36)}`;
-}
-
 export function isPersistableHierarchyNode(node: AutomationHierarchyNode): boolean {
   return node.kind !== "task" || !node.sourceId?.startsWith("draft.");
 }
@@ -38,7 +30,7 @@ export function flowToTaskPolicy(
   task: AutomationStudioTaskArtifact | null | undefined,
 ): PolicyGraph | null {
   if (!flow) return null;
-  const policyId = typeof flow.metadata?.policyId === "string" ? flow.metadata.policyId : taskPolicyId(task?.taskId ?? flow.ownerId ?? "task.unnamed_task");
+  const policyId = typeof flow.metadata?.policyId === "string" ? flow.metadata.policyId : taskPolicyId(task?.taskId ?? flow.ownerId ?? flow.flowId);
   const nodes = flow.nodes.map((node, index) => {
     const values = node.parameterValues && typeof node.parameterValues === "object" ? node.parameterValues : {};
     const actions = Array.isArray(values.actions) ? values.actions : [];
@@ -104,6 +96,7 @@ export function graphToTaskFlow(input: {
     nodes: input.graph.nodes.map((node, index) => ({
       id: node.id,
       definitionId: node.data?.nodeDefinitionId ?? (node.data?.isStart ? "builtin.control.start" : "automation.policy.step"),
+      ...(node.data?.nodeDefinitionVersion ? { definitionVersion: node.data.nodeDefinitionVersion } : {}),
       label: node.data?.label ?? node.id,
       description: node.data?.customDescription || node.data?.description,
       position: { x: Math.round(node.position?.x ?? index * 340), y: Math.round(node.position?.y ?? 160) },
@@ -122,7 +115,13 @@ export function graphToTaskFlow(input: {
         retry: node.data?.parameterValues?.retry ?? { maxAttempts: 1, backoffMs: 500 },
         recovery: node.data?.parameterValues?.recovery ?? { strategy: node.data?.recovery ?? "pause" },
       },
-      metadata: { ...(input.existingFlow?.nodes.find((item) => item.id === node.id)?.metadata ?? {}), policyId, policyNodeId: node.id, order: index },
+      metadata: {
+        ...(input.existingFlow?.nodes.find((item) => item.id === node.id)?.metadata ?? {}),
+        ...(node.data?.metadata ?? {}),
+        policyId,
+        policyNodeId: node.id,
+        order: index,
+      },
     })),
     edges: input.graph.edges.map((edge, index) => ({
       id: edge.id,
@@ -137,15 +136,4 @@ export function graphToTaskFlow(input: {
     updatedAt: now,
     metadata: { ...(input.existingFlow?.metadata ?? {}), source: "task_editor", policyId, savedAt: now },
   };
-}
-
-function artifactSlug(label: string, fallback: string): string {
-  return (
-    label
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, ".")
-      .replace(/^\.+|\.+$/g, "")
-      .slice(0, 48) || fallback
-  );
 }

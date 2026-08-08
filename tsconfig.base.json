@@ -20,6 +20,8 @@
       "fluxiq": ["packages/fluxiq/src/index.ts"],
       "fluxiq/automation-studio": ["packages/fluxiq/src/programs/automation-studio/index.ts"],
       "fluxiq/automation-studio/nodes": ["packages/fluxiq/src/programs/automation-studio/nodes/index.ts"],
+      "fluxiq/automation-studio/dsl": ["packages/fluxiq/src/programs/automation-studio/dsl/index.ts"],
+      "fluxiq/automation-studio/dsl/generator": ["packages/fluxiq/src/programs/automation-studio/dsl/generator.ts"],
       "fluxiq/*": ["packages/fluxiq/src/*/index.ts"]
     }
   }

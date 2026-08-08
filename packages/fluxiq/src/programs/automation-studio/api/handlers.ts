@@ -8,8 +8,11 @@ import {
   type AppendRecordingEntryRequest,
   type ApprovePolicyProposalRequest,
   type CaptureClientSnapshotRequest,
+  type CreateFlowRequest,
   type CreateRecordingRequest,
   type DeleteRecordingRequest,
+  type FlowIdProjectRequest,
+  type FlowProjectRequest,
   type ExecuteClientActionRequest,
   type FinalizeRecordingRequest,
   type ProcessFinalizedRecordingRequest,
@@ -18,12 +21,14 @@ import {
   type MineRecordingEvidenceRequest,
   type NormalizeRecordingRequest,
   type ProposePolicyFromModelRequest,
+  type PublishFlowRequest,
   type RecordingProjectRequest,
   type RecordingIdProjectRequest,
   type ReplayPolicyAgainstRecordingRequest,
   type RevokeClientTrustRequest,
   type StartClientRecordingRequest,
   type StopClientRecordingRequest,
+  type SaveFlowRequest,
   type UpdateRecordingRequest,
   type ValidateRecordingDomainEventRequest
 } from "./contracts.ts";
@@ -172,6 +177,148 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   });
   registry.register({
     programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlows,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<FlowProjectRequest> : {};
+      return { ok: true, payload: { flows: await service.listFlows(String(payload.projectId ?? "")) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.createFlow,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<CreateFlowRequest> & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: { flow: await service.createFlow({ projectId: String(payload.projectId ?? ""), name: payload.name, description: payload.description, ...(typeof payload.flowId === "string" ? { flowId: payload.flowId } : {}) }) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlow,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<FlowIdProjectRequest> : {};
+      return { ok: true, payload: { flow: await service.getFlow(String(payload.projectId ?? ""), String(payload.flowId ?? "")) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlow,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<SaveFlowRequest> & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      if (!payload.flow || typeof payload.flow !== "object") return { ok: false, error: "Flow object is required." };
+      return { ok: true, payload: { flow: await service.saveFlow({ projectId: String(payload.projectId ?? ""), flow: payload.flow }) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.compileFlowSource,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as { projectId?: unknown; flowId?: unknown; moduleId?: unknown; sourceText?: unknown; authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: await service.compileAndSaveFlowSource({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), moduleId: String(payload.moduleId ?? ""), sourceText: String(payload.sourceText ?? "") }) };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.convertFlowToVisual,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as { projectId?: unknown; flowId?: unknown; authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: { flow: await service.convertFlowToVisual({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? "") }) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteFlow,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<FlowIdProjectRequest> & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: await service.deleteFlow({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? "") }) };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.publishFlow,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<PublishFlowRequest> & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: { flow: await service.publishFlow({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), version: String(payload.version ?? ""), ...(typeof payload.flowDigest === "string" ? { flowDigest: payload.flowDigest } : {}), ...(typeof payload.publishedBy === "string" ? { publishedBy: payload.publishedBy } : {}), ...(typeof payload.changelog === "string" ? { changelog: payload.changelog } : {}) }) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowPublications,
+    permission: "programs.read",
+    handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; flowId?: unknown } : {}; return { ok: true, payload: { publications: await service.listFlowPublications(String(payload.projectId ?? ""), typeof payload.flowId === "string" ? payload.flowId : undefined) } }; }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deprecateFlowPublication,
+    permission: "flows.write",
+    handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; flowId?: unknown; version?: unknown; reason?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {}; await authorizeProgramPin(identityAccess, payload); return { ok: true, payload: { publication: await service.deprecateFlowPublication({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), version: String(payload.version ?? ""), ...(typeof payload.reason === "string" ? { reason: payload.reason } : {}) }) } }; }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.inspectFlowDependencies,
+    permission: "programs.read",
+    handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; flowId?: unknown } : {}; return { ok: true, payload: await service.inspectFlowDependencies(String(payload.projectId ?? ""), String(payload.flowId ?? "")) }; }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listPublishedFlowNodes,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<FlowProjectRequest> : {};
+      return { ok: true, payload: { nodes: await service.listPublishedFlowNodes(String(payload.projectId ?? "")) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listNativeNodeDefinitions,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown } : {};
+      return { ok: true, payload: { nodes: await service.listNativeNodeDefinitions(String(payload.projectId ?? "")) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.inspectFlowMigration,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<FlowProjectRequest> : {};
+      return { ok: true, payload: { inspection: await service.inspectFlowMigration(String(payload.projectId ?? "")) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.migrateFlows,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<FlowProjectRequest> & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: { migration: await service.migrateFlows(String(payload.projectId ?? "")) } };
+    }
+  });
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.inspectLegacyRetirement, permission: "programs.read", handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; return { ok: true, payload: { report: await service.inspectLegacyRetirement(String(payload.projectId ?? "")) } }; } });
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.recordLegacyRetirementEvidence, permission: "flows.write", handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; await authorizeProgramPin(identityAccess, payload); return { ok: true, payload: { report: await service.recordLegacyRetirementEvidence({ projectId: String(payload.projectId ?? ""), ...(Array.isArray(payload.importerEvidence) ? { importerEvidence: payload.importerEvidence as any } : {}), ...(Array.isArray(payload.intentionallyDeferred) ? { intentionallyDeferred: payload.intentionallyDeferred as any } : {}), ...(typeof payload.importerCoverageAcknowledged === "boolean" ? { importerCoverageAcknowledged: payload.importerCoverageAcknowledged } : {}) }) } }; } });
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.exportLegacyProject, permission: "programs.read", handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; return { ok: true, payload: { backup: await service.exportLegacyProject(String(payload.projectId ?? "")) } }; } });
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.verifyLegacyBackup, permission: "flows.write", handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; await authorizeProgramPin(identityAccess, payload); return { ok: true, payload: { report: await service.verifyLegacyBackup(String(payload.projectId ?? ""), String(payload.backupId ?? "")) } }; } });
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.sealLegacyWrites, permission: "flows.write", handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; await authorizeProgramPin(identityAccess, payload); return { ok: true, payload: { report: await service.sealLegacyWrites({ projectId: String(payload.projectId ?? ""), expectedSchemaVersion: String(payload.expectedSchemaVersion ?? "") }) } }; } });
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.listLegacyRetirementAudit, permission: "programs.read", handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; return { ok: true, payload: { events: await service.listLegacyRetirementAudit(String(payload.projectId ?? "")) } }; } });
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.planFlowMigrationRollback, permission: "programs.read", handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; return { ok: true, payload: { plan: await service.planFlowMigrationRollback(String(payload.projectId ?? ""), String(payload.migrationId ?? "")) } }; } });
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.rollbackFlowMigration, permission: "flows.write", handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; await authorizeProgramPin(identityAccess, payload); return { ok: true, payload: { plan: await service.rollbackFlowMigration(String(payload.projectId ?? ""), String(payload.migrationId ?? "")) } }; } });
+  registry.register({
+    programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProjectArtifact,
     permission: "programs.read",
     handler: async (request) => {
@@ -186,7 +333,10 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; kind?: unknown; artifact?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
       await authorizeProgramPin(identityAccess, payload);
-      return { ok: true, payload: { artifact: await service.saveProjectArtifact({ projectId: String(payload.projectId ?? ""), kind: String(payload.kind ?? "") as AutomationStudioProjectArtifactKind, artifact: payload.artifact }) } };
+      const projectId = String(payload.projectId ?? ""); const kind = String(payload.kind ?? "") as AutomationStudioProjectArtifactKind;
+      const deprecation = kind !== "config" ? await service.legacyEndpointDiagnostic(projectId) : undefined;
+      if (deprecation?.code === "legacy.write_locked") return { ok: false, error: deprecation.message, payload: { diagnostic: deprecation } };
+      return { ok: true, payload: { artifact: await service.saveProjectArtifact({ projectId, kind, artifact: payload.artifact }), ...(deprecation ? { diagnostic: deprecation } : {}) } };
     }
   });
   registry.register({
@@ -196,14 +346,17 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; kind?: unknown; artifactId?: unknown; deleteOwnedArtifacts?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
       await authorizeProgramPin(identityAccess, payload);
+      const projectId = String(payload.projectId ?? ""); const kind = String(payload.kind ?? "") as AutomationStudioProjectArtifactKind;
+      const deprecation = kind !== "config" ? await service.legacyEndpointDiagnostic(projectId) : undefined;
+      if (deprecation?.code === "legacy.write_locked") return { ok: false, error: deprecation.message, payload: { diagnostic: deprecation } };
       return {
         ok: true,
-        payload: await service.deleteProjectArtifact({
-          projectId: String(payload.projectId ?? ""),
-          kind: String(payload.kind ?? "") as AutomationStudioProjectArtifactKind,
+        payload: { ...(await service.deleteProjectArtifact({
+          projectId,
+          kind,
           artifactId: String(payload.artifactId ?? ""),
           deleteOwnedArtifacts: payload.deleteOwnedArtifacts === true
-        })
+        })), ...(deprecation ? { diagnostic: deprecation } : {}) }
       };
     }
   });
@@ -383,9 +536,33 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
       await authorizeProgramPin(identityAccess, payload);
       const input: Parameters<AutomationStudioService["approvePolicyProposal"]>[0] = { projectId: String(payload.projectId ?? ""), proposalId: String(payload.proposalId ?? "") };
       if (typeof (payload as any).targetTaskId === "string") input.targetTaskId = (payload as any).targetTaskId;
+      if (typeof (payload as any).targetFlowId === "string") input.targetFlowId = (payload as any).targetFlowId;
       if ((payload as any).policyOverride && typeof (payload as any).policyOverride === "object" && !Array.isArray((payload as any).policyOverride)) input.policyOverride = (payload as any).policyOverride;
       if (typeof (payload as any).requireExistingTask === "boolean") input.requireExistingTask = (payload as any).requireExistingTask;
+      if (typeof (payload as any).requireExistingFlow === "boolean") input.requireExistingFlow = (payload as any).requireExistingFlow;
       return { ok: true, payload: { proposal: await service.approvePolicyProposal(input) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.createRecordingFlowProposals,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Record<string, unknown>;
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: { proposals: await service.createRecordingFlowProposals({ projectId: String(payload.projectId ?? ""), recordingId: String(payload.recordingId ?? ""), ...(typeof payload.mapperId === "string" ? { mapperId: payload.mapperId } : {}) }) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.reviewRecordingFlowProposal,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Record<string, unknown>;
+      await authorizeProgramPin(identityAccess, payload);
+      const decision = payload.decision === "rejected" ? "rejected" as const : "approved" as const;
+      const destination = payload.destination && typeof payload.destination === "object" && !Array.isArray(payload.destination) ? payload.destination as any : undefined;
+      return { ok: true, payload: await service.reviewRecordingFlowProposal({ projectId: String(payload.projectId ?? ""), proposalId: String(payload.proposalId ?? ""), decision, ...(typeof payload.notes === "string" ? { notes: payload.notes } : {}), ...(typeof payload.reviewerId === "string" ? { reviewerId: payload.reviewerId } : {}), ...(destination ? { destination } : {}) }) };
     }
   });
   registry.register({
@@ -414,7 +591,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.startRuntimeSession,
     permission: "runtime.control",
     handler: async (request) => {
-      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; flow?: AutomationStudioFlowDocument; flowId?: string; targetKind?: any; targetId?: string; inputs?: any } : {};
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; flow?: AutomationStudioFlowDocument; flowId?: string; targetKind?: any; targetId?: string; inputs?: any; authorizedDomainIds?: string[] } : {};
       return { ok: true, payload: { runtimeSession: await service.startRuntimeSession(payload) } };
     }
   });
@@ -423,7 +600,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession,
     permission: "runtime.control",
     handler: async (request) => {
-      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number } : {};
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[] } : {};
       return { ok: true, payload: { runtimeSession: await service.runRuntimeSession(payload) } };
     }
   });

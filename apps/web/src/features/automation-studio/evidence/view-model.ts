@@ -148,7 +148,7 @@ export function buildProposalViewModel(input: {
     source: input.recording ? input.recording.metadata?.name ?? readableRecordingId(input.recording.recordingId) : readableRecordingId(recordingId),
     status: proposal.status ?? "proposed",
     generated: proposal.generatedAt ? new Date(proposal.generatedAt).toLocaleString() : "-",
-    summary: `${steps.length} unique task step${steps.length === 1 ? "" : "s"} proposed from ${rawSteps.length} recorded action/effect item${rawSteps.length === 1 ? "" : "s"}.`,
+    summary: `${steps.length} unique Flow step${steps.length === 1 ? "" : "s"} proposed from ${rawSteps.length} recorded action/effect item${rawSteps.length === 1 ? "" : "s"}.`,
     steps,
     rawStepCount: rawSteps.length,
     evidenceCount: uniqueById(steps.flatMap((step: ProposalStepViewModel) => step.evidence)).length

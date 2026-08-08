@@ -7,8 +7,8 @@ import type { AutomationSelection } from "../types";
 import { formatAutomationPorts } from "../graph/ports";
 import { buildTimelineInspectorSections, conditionSummary } from "../timeline/view-model";
 import { AutomationNodeParameterEditor } from "../parameters/ParameterEditor";
-export function AutomationInspector(props: { entries: any[]; selection: AutomationSelection | null; policy: any; node: any; recording: any; entry: any; signal: any; setSelection(selection: AutomationSelection): void }) {
-  const title = props.selection?.kind === "signal" ? "Signal" : props.selection?.kind === "timeline" ? "Timeline Entry" : props.selection?.kind === "recording" ? "Recording" : props.selection?.kind === "policy" ? "Policy Graph" : props.selection?.kind === "proposal-step" ? "Proposal Step" : props.selection?.kind === "editor-node" ? "Editor Node" : props.selection?.kind === "editor-mode" ? `${props.selection.label} Mode` : "Node Inspector";
+export function AutomationInspector(props: { entries: any[]; selection: AutomationSelection | null; policy: any; flow: any; flowPublications: any[]; flowDependencyInfo: any; node: any; recording: any; entry: any; signal: any; setSelection(selection: AutomationSelection): void }) {
+  const title = props.selection?.kind === "flow" ? "Flow" : props.selection?.kind === "signal" ? "Signal" : props.selection?.kind === "timeline" ? "Timeline Entry" : props.selection?.kind === "recording" ? "Recording" : props.selection?.kind === "policy" ? "Policy Graph" : props.selection?.kind === "proposal-step" ? "Proposal Step" : props.selection?.kind === "editor-node" ? "Editor Node" : props.selection?.kind === "editor-mode" ? `${props.selection.label} Mode` : "Node Inspector";
   const timelineInspector = props.selection?.kind === "timeline" && props.entry ? buildTimelineInspectorSections(props.entry, props.entries, props.recording) : [];
   const updateEditorNodeParameters = (parameterValues: JsonObject) => {
     if (props.selection?.kind !== "editor-node") return;
@@ -59,7 +59,7 @@ export function AutomationInspector(props: { entries: any[]; selection: Automati
         <input aria-label="Search inspector fields" placeholder="Search fields" />
       </div>
       {props.selection?.kind === "editor-mode" ? <>
-        <InspectorSection title="Mode" rows={[["Editor", props.selection.editor === "task" ? "Task editor" : "Routine editor"], ["Mode", props.selection.label], ["Purpose", props.selection.description]]} />
+        <InspectorSection title="Mode" rows={[["Editor", "Flow editor"], ["Compatibility source", props.selection.editor === "task" ? "Legacy policy" : "Legacy orchestration"], ["Mode", props.selection.label], ["Purpose", props.selection.description]]} />
         {props.selection.sections.map((section, sectionIndex) => <InspectorSection key={`${section.title}:${sectionIndex}`} title={section.title} rows={section.rows} />)}
       </> : null}
       {props.selection?.kind === "proposal-step" ? <>
@@ -92,7 +92,13 @@ export function AutomationInspector(props: { entries: any[]; selection: Automati
       {props.selection?.kind === "editor-node" && props.node ? <>
         <AutomationNodeParameterEditor node={props.node} onChange={updateEditorNodeParameters} onDescriptionChange={updateEditorNodeDescription} />
         <InspectorSection title="Metadata" rows={[["Node", props.node.label], ["ID", props.node.id], ["Type", props.node.nodeType ?? "-"], ["Family", props.node.family ?? "-"], ["Default description", props.node.description ?? "-"]]} />
+        {props.node.metadata?.["fluxiq.callFlow"] ? <InspectorSection title="Pinned Call Flow" rows={callFlowInspectorRows(props.node.metadata["fluxiq.callFlow"])} /> : null}
         <InspectorSection title="Ports" rows={[["Inputs", formatAutomationPorts(props.node.inputs)], ["Outputs", formatAutomationPorts(props.node.outputs)], ["Privileged", props.node.privileged ? "Yes" : "No"], ["Actions", (props.node.actionTypes ?? []).join(", ") || "-"]]} />
+      </> : null}
+      {props.selection?.kind === "flow" && props.flow ? <>
+        <InspectorSection title="Flow Identity" rows={[["Name", props.flow.name], ["ID", props.flow.flowId], ["Scope", props.flow.scope?.kind === "domain" ? `domain:${props.flow.scope.domainId}` : "global"], ["Origin", props.flow.origin ?? "-"], ["Source owner", props.flow.source?.mode ?? "legacy"], ["Visibility", props.flow.visibility ?? "private"]]} />
+        <InspectorSection title="Interface" rows={[["Inputs", String(props.flow.interface?.inputs?.length ?? 0)], ["Outputs", String(props.flow.interface?.outputs?.length ?? 0)], ["Errors", String(props.flow.errors?.length ?? 0)], ["Variables", String(props.flow.variables?.length ?? 0)]]} />
+        <InspectorSection title="Publication and Dependencies" rows={[["Current state", props.flow.publication?.status ?? "draft"], ["Published versions", String(props.flowPublications.length)], ["Dependencies", String(props.flowDependencyInfo?.dependencies?.length ?? 0)], ["Used by", String(props.flowDependencyInfo?.usedBy?.length ?? 0)], ["Available upgrades", String(props.flowDependencyInfo?.availableUpgrades?.length ?? 0)], ["Compatibility warnings", String(props.flow.metadata?.recordingProposalWarnings?.length ?? 0)]]} />
       </> : null}
       {(!props.selection || props.selection.kind === "node") && props.node ? <>
         <InspectorSection title="General" rows={[["Node", props.node.label], ["ID", props.node.id], ["Actions", (props.node.actions ?? []).map((action: any) => action.actionType).join(", ")], ["Recovery", props.node.recovery?.strategy ?? "-"]]} />
@@ -121,6 +127,11 @@ export function InspectorSection(props: { title: string; rows: Array<[string, st
 
 function listRows(items: string[]): Array<[string, string]> {
   return items.length ? items.map((item, index) => [String(index + 1), item]) : [["Items", "-"]];
+}
+
+function callFlowInspectorRows(value: any): Array<[string, string]> {
+  const target = value?.target ?? {};
+  return [["Flow", String(target.flowId ?? "-")], ["Version", String(target.version ?? "-")], ["Scope", target.scope?.kind === "domain" ? `domain:${target.scope.domainId}` : String(target.scope?.kind ?? "-")], ["Inputs", String(value?.inputBindings?.length ?? 0)], ["Outputs", String(value?.outputBindings?.length ?? 0)], ["Error routes", String(value?.errorBindings?.length ?? 0)]];
 }
 
 function InspectorProvenance(props: { current: string; source: string }) {

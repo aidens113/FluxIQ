@@ -2,6 +2,7 @@ import type { AutomationRecording, AutomationTask, DynamicPolicyArtifact } from 
 import type { LearnedTaskModel } from "../learning/index.ts";
 import type { NormalizedTimeline } from "../normalization/index.ts";
 import type {
+  AutomationStudioFlowArtifact,
   AppendRecordingEntryInput,
   CreateRecordingSessionInput,
   PolicyGraph,
@@ -29,6 +30,29 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   saveProjectHierarchy: "save-project-hierarchy",
   listRecordings: "list-recordings",
   listProjectArtifacts: "list-project-artifacts",
+  listFlows: "list-flows",
+  createFlow: "create-flow",
+  getFlow: "get-flow",
+  saveFlow: "save-flow",
+  compileFlowSource: "compile-flow-source",
+  convertFlowToVisual: "convert-flow-to-visual",
+  deleteFlow: "delete-flow",
+  publishFlow: "publish-flow",
+  listFlowPublications: "list-flow-publications",
+  deprecateFlowPublication: "deprecate-flow-publication",
+  inspectFlowDependencies: "inspect-flow-dependencies",
+  listPublishedFlowNodes: "list-published-flow-nodes",
+  listNativeNodeDefinitions: "list-native-node-definitions",
+  inspectFlowMigration: "inspect-flow-migration",
+  migrateFlows: "migrate-flows",
+  inspectLegacyRetirement: "inspect-legacy-retirement",
+  recordLegacyRetirementEvidence: "record-legacy-retirement-evidence",
+  exportLegacyProject: "export-legacy-project",
+  verifyLegacyBackup: "verify-legacy-backup",
+  sealLegacyWrites: "seal-legacy-writes",
+  listLegacyRetirementAudit: "list-legacy-retirement-audit",
+  planFlowMigrationRollback: "plan-flow-migration-rollback",
+  rollbackFlowMigration: "rollback-flow-migration",
   getProjectArtifact: "get-project-artifact",
   saveProjectArtifact: "save-project-artifact",
   deleteProjectArtifact: "delete-project-artifact",
@@ -49,6 +73,8 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   learnTaskModel: "learn-task-model",
   proposePolicyFromModel: "propose-policy-from-model",
   approvePolicyProposal: "approve-policy-proposal",
+  createRecordingFlowProposals: "create-recording-flow-proposals",
+  reviewRecordingFlowProposal: "review-recording-flow-proposal",
   replayPolicyAgainstRecording: "replay-policy-against-recording",
   listRuntimeSessions: "list-runtime-sessions",
   startRuntimeSession: "start-runtime-session",
@@ -89,11 +115,12 @@ export type AutomationStudioProjectCategory = {
 export type AutomationStudioHierarchyNode = {
   id: string;
   label: string;
-  kind: "folder" | "task" | "routine" | "config" | "recording";
-  category: "task" | "routine" | "config" | "recording";
+  kind: "folder" | "client" | "proposal" | "flow" | "config" | "recording" | "run" | "task" | "routine";
+  category: "client" | "proposal" | "flow" | "config" | "recording" | "run" | "task" | "routine";
   parentId: string | null;
   viewId?: string;
   sourceId?: string;
+  recordingId?: string;
 };
 
 export type AutomationStudioProjectHierarchy = {
@@ -138,6 +165,34 @@ export type GeneratePolicyResponse = {
 export type RecordingProjectRequest = {
   projectId?: string | null;
 };
+
+export type FlowProjectRequest = {
+  projectId: string;
+};
+
+export type CreateFlowRequest = FlowProjectRequest & {
+  name?: unknown;
+  description?: unknown;
+  flowId?: unknown;
+};
+
+export type SaveFlowRequest = FlowProjectRequest & {
+  flow: AutomationStudioFlowArtifact;
+};
+
+export type FlowIdProjectRequest = FlowProjectRequest & {
+  flowId: string;
+};
+
+export type PublishFlowRequest = FlowIdProjectRequest & {
+  version: string;
+  /** @deprecated The service computes the authoritative digest from canonical IR. */
+  flowDigest?: string;
+  publishedBy?: string;
+  changelog?: string;
+};
+
+export type DeprecateFlowPublicationRequest = FlowIdProjectRequest & { version: string; reason?: string };
 
 export type CreateRecordingRequest = RecordingProjectRequest & CreateRecordingSessionInput;
 
@@ -216,6 +271,9 @@ export type ProposePolicyFromModelRequest = RecordingProjectRequest & {
 
 export type ApprovePolicyProposalRequest = RecordingProjectRequest & {
   proposalId: string;
+  targetFlowId?: string;
+  requireExistingFlow?: boolean;
+  /** @deprecated Compatibility alias; new callers target canonical Flows. */
   targetTaskId?: string;
   policyOverride?: unknown;
   requireExistingTask?: boolean;

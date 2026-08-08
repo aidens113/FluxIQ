@@ -13,6 +13,8 @@
     "test": "pnpm -r test",
     "docs:reference": "node scripts/docs-reference.mjs",
     "docs:check": "node scripts/validate-docs.mjs && node scripts/docs-reference.mjs --check",
+    "flows:check": "node scripts/flow-compiler.mjs --check",
+    "flows:build": "node scripts/flow-compiler.mjs --build",
     "quality:check": "biome check .",
     "quality:fix": "biome check --write .",
     "quality:coverage": "pnpm --filter fluxiq exec vitest run --config vitest.quality.config.ts --coverage && pnpm --filter @fluxiq/web exec vitest run --config vitest.quality.config.ts --coverage",

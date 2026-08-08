@@ -1,13 +1,17 @@
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioSchemaVersion } from "./evidence.ts";
 
+/** `task`, `routine`, and owner-bound `flow` are legacy compatibility kinds. New executable work uses canonical Flow APIs. */
 export type AutomationStudioProjectArtifactKind = "task" | "routine" | "config" | "flow";
 
+/** @deprecated Ownership is retained only for legacy Flow-document compatibility. */
 export type AutomationStudioFlowOwnerKind = "task" | "routine" | "policy";
 
 export type AutomationStudioFlowNode = {
   id: string;
   definitionId: string;
+  /** Exact node-definition version used to author this instance. Optional only for legacy documents. */
+  definitionVersion?: string;
   label?: string;
   description?: string;
   parameterValues?: JsonObject;
@@ -25,6 +29,7 @@ export type AutomationStudioFlowEdge = {
   metadata?: JsonObject;
 };
 
+/** @deprecated Use owner-independent AutomationStudioFlowArtifact for new writes. */
 export type AutomationStudioFlowDocument = {
   schemaVersion: AutomationStudioSchemaVersion;
   flowId: string;
@@ -39,6 +44,7 @@ export type AutomationStudioFlowDocument = {
   metadata?: JsonObject;
 };
 
+/** @deprecated New authoring must use AutomationStudioFlowArtifact. Read compatibility remains supported. */
 export type AutomationStudioTaskArtifact = {
   schemaVersion: AutomationStudioSchemaVersion;
   taskId: string;
@@ -54,6 +60,7 @@ export type AutomationStudioTaskArtifact = {
   metadata?: JsonObject;
 };
 
+/** @deprecated New authoring must use AutomationStudioFlowArtifact and published composites. */
 export type AutomationStudioRoutineArtifact = {
   schemaVersion: AutomationStudioSchemaVersion;
   routineId: string;
