@@ -3144,11 +3144,13 @@ select {
 }
 
 .automation-view-container > header {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
+  min-width: 0;
   min-height: 38px;
+  max-height: 38px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
   padding: 6px 8px;
@@ -3160,6 +3162,11 @@ select {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  overflow: hidden;
+}
+
+.automation-view-container > header > div:first-child > svg {
+  flex: 0 0 auto;
 }
 
 .automation-view-container > header span {
@@ -3183,7 +3190,8 @@ select {
   display: flex;
   align-items: center;
   gap: 5px;
-  min-width: 0;
+  flex: 0 0 auto;
+  min-width: max-content;
   cursor: default;
 }
 
@@ -3330,10 +3338,14 @@ select {
   align-items: center;
   gap: 4px;
   min-height: 32px;
-  overflow: auto;
+  max-height: 32px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface-subtle);
   padding: 4px 6px;
+  white-space: nowrap;
 }
 
 .automation-window-tabs button {
@@ -3341,14 +3353,20 @@ select {
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
-  max-width: 240px;
+  max-width: min(240px, 46vw);
+  min-width: 0;
   min-height: 24px;
+  max-height: 24px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-surface);
   color: var(--color-text-muted);
   padding: 2px 6px;
   cursor: pointer;
+}
+
+.automation-window-tabs button > svg {
+  flex: 0 0 auto;
 }
 
 .automation-window-tabs button.selected {
@@ -3458,6 +3476,48 @@ select {
 .automation-inspector-section .key-value {
   border: 0;
   border-radius: 0;
+}
+
+.automation-inspector-widget {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 10px;
+}
+
+.automation-inspector-widget > strong {
+  font-size: 13px;
+}
+
+.automation-inspector-card-list {
+  display: grid;
+  gap: 8px;
+}
+
+.automation-inspector-card-list article {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-subtle);
+  padding: 8px;
+}
+
+.automation-inspector-card-list span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.automation-inspector-card-list p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .automation-node-parameters {
@@ -4142,13 +4202,14 @@ select {
 }
 
 .automation-policy-canvas {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 8px;
   width: 100%;
   min-width: 0;
   height: 100%;
   min-height: 0;
+  overflow: hidden;
   padding: 8px;
 }
 
@@ -4185,28 +4246,12 @@ select {
 }
 
 .automation-editor-mode-bar {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-}
-
-.automation-region-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.automation-region-toolbar select,
-.automation-region-toolbar input,
-.automation-region-toolbar button {
-  min-height: 30px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-text);
+  min-height: 36px;
+  overflow: hidden;
 }
 
 .node-badge.region-deterministic { border-color: #4f7cff; }
@@ -4227,7 +4272,7 @@ select {
 
 .automation-source-warning span,
 .automation-source-view header div { display: grid; gap: 3px; color: var(--color-text-muted); }
-.automation-source-view { display: grid; min-height: 0; gap: 8px; }
+.automation-source-view { display: grid; flex: 1 1 auto; min-height: 0; gap: 8px; }
 .automation-source-view pre { min-height: 0; overflow: auto; margin: 0; padding: 16px; border: 1px solid var(--color-border); border-radius: var(--radius-panel); background: #111827; color: #dbeafe; font-size: 12px; }
 
 .automation-editor-mode-bar > span {
@@ -4270,6 +4315,7 @@ select {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 260px;
   gap: 8px;
+  flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
 }
@@ -4278,6 +4324,7 @@ select {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 260px;
   gap: 8px;
+  flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
 }
@@ -5322,6 +5369,99 @@ select {
   gap: 10px;
 }
 
+.automation-config-editor-header,
+.automation-config-source-editor > header,
+.automation-config-extension-list > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 10px;
+}
+
+.automation-config-editor-header div,
+.automation-config-source-editor > header div,
+.automation-config-extension-list > header {
+  display: grid;
+  gap: 3px;
+}
+
+.automation-config-editor-header span,
+.automation-config-source-editor span,
+.automation-config-extension-list span,
+.automation-config-extension-list small {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.automation-config-form,
+.automation-config-source-editor,
+.automation-config-extension-list {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  padding: 12px;
+}
+
+.automation-config-form {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.automation-config-form label,
+.automation-config-source-editor label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.automation-config-form label:has(textarea),
+.automation-config-source-editor label:has(textarea) {
+  grid-column: 1 / -1;
+}
+
+.automation-config-form input,
+.automation-config-form select,
+.automation-config-form textarea,
+.automation-config-source-editor input,
+.automation-config-source-editor textarea {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 8px 9px;
+  font: inherit;
+}
+
+.automation-config-source-editor textarea {
+  min-height: 220px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.automation-config-extension-list article {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-subtle);
+  padding: 10px;
+}
+
+.automation-config-extension-list p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
 .automation-assistant-view textarea {
   min-height: 112px;
   border: 1px solid var(--color-border-strong);
@@ -6289,24 +6429,3 @@ select {
   justify-content: flex-end;
   gap: 6px;
 }
-.automation-flow-details-panel {
-  border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--panel) 92%, transparent);
-  padding: 8px 12px;
-  max-height: 46%;
-  overflow: auto;
-}
-.automation-flow-details-panel > summary { cursor: pointer; display: flex; gap: 12px; align-items: center; }
-.automation-flow-details-panel > summary span { color: var(--muted); font-size: 12px; }
-.automation-flow-details-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
-.automation-flow-details-grid label { display: grid; gap: 4px; font-size: 12px; }
-.automation-flow-details-grid label.wide { grid-column: 1 / -1; }
-.automation-flow-details-grid input,
-.automation-flow-details-grid select,
-.automation-flow-details-grid textarea,
-.automation-publication-toolbar input { border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: inherit; padding: 6px 8px; }
-.automation-flow-details-grid textarea { resize: vertical; font-family: var(--font-mono, monospace); font-size: 11px; }
-.automation-publication-toolbar { display: grid; grid-template-columns: 130px minmax(180px, 1fr) auto; gap: 8px; margin-top: 10px; }
-.automation-publication-list { display: grid; gap: 5px; margin-top: 8px; }
-.automation-publication-list > div { display: flex; justify-content: space-between; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 5px; padding: 6px 8px; }
-.automation-flow-dependency-summary { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; color: var(--muted); font-size: 12px; }

@@ -28,6 +28,7 @@ export function getFluxIQ(): FluxIQ {
 export function getFluxIQWebRuntimeStatus(operatorUserId?: string) {
   const state = getWebRuntimeState();
   const context = operatorUserId ? resolveAutomationStudioContext(state.automationStudioContexts, operatorUserId) : undefined;
+  const nativeRuntime = state.instance.programs.automationStudio.nativeRuntimeSummary(state.instance.activeDomainId);
   return {
     runtimeId: state.runtimeId,
     hostRoot: state.instance.paths.root,
@@ -41,7 +42,10 @@ export function getFluxIQWebRuntimeStatus(operatorUserId?: string) {
     automationStudio: {
       activeProjectId: context?.activeProjectId ?? null,
       updatedAt: context?.updatedAt ?? 0,
-      contextCount: Object.keys(state.automationStudioContexts).length
+      contextCount: Object.keys(state.automationStudioContexts).length,
+      nativeImporterRuntimeBound: nativeRuntime.bound,
+      nativeNodeDefinitionCount: nativeRuntime.definitionCount,
+      recordingMapperCount: nativeRuntime.recordingMapperCount
     }
   };
 }

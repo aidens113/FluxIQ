@@ -1,21 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationCompositeCallMetadata, deriveRegionBoundaries } from "./GraphEditorViews";
-
-describe("Automation Studio region editing", () => {
-  it("derives a typed persisted handoff for a cross-region editor edge", () => {
-    const regions = [
-      { id: "prepare", name: "Prepare", kind: "deterministic", nodeIds: ["start"], entryPorts: [], exitPorts: [] },
-      { id: "decide", name: "Decide", kind: "policy", nodeIds: ["action"], entryPorts: [], exitPorts: [] }
-    ];
-    const result = deriveRegionBoundaries(regions, [{ id: "start.action", source: "start", target: "action", sourceHandle: "success", targetHandle: "in" }]);
-
-    expect(result.regionHandoffs).toEqual([{
-      id: "handoff.start.action", fromRegionId: "prepare", fromPortId: "success", toRegionId: "decide", toPortId: "in", metadata: { edgeId: "start.action" }
-    }]);
-    expect(result.regions[0].exitPorts[0]).toMatchObject({ id: "success", valueType: { kind: "unknown" } });
-    expect(result.regions[1].entryPorts[0]).toMatchObject({ id: "in", valueType: { kind: "unknown" } });
-  });
-});
+import { automationCompositeCallMetadata } from "./GraphEditorViews";
 
 describe("Automation Studio composite palette nodes", () => {
   it("creates an exact pinned Call Flow configuration with explicit bindings", () => {

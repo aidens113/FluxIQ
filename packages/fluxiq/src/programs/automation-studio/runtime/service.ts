@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { readdir, rm } from "node:fs/promises";
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AutomationStudioSnapshot } from "../api/index.ts";
 import type { AutomationStudioProject, AutomationStudioProjectCategory, AutomationStudioProjectHierarchy } from "../api/contracts.ts";
@@ -59,7 +59,7 @@ import {
   validateAutomationStudioFlow
 } from "../model/index.ts";
 import type { LearnedTaskModel } from "../learning/index.ts";
-import { compileFlowSource, convertCodeOwnedFlowToVisual, verifyCodeOwnedFlowCompilation, type AutomationStudioFlowCompilation } from "../dsl/index.ts";
+import { compileFlowSource, convertCodeOwnedFlowToVisual, generateFlowTypeScript, verifyCodeOwnedFlowCompilation, type AutomationStudioFlowCompilation } from "../dsl/index.ts";
 import type { EvidenceClaim, EvidenceFact, EvidenceObservation, SignalMiningResult, StateActionCorrelation } from "../mining/index.ts";
 import { normalizeRecordingTimeline, type NormalizationOptions, type NormalizedTimeline } from "../normalization/index.ts";
 import { runAutomationStudioGraph } from "./executor.ts";
@@ -199,6 +199,11 @@ export type ProcessFinalizedRecordingResult = {
   generatedAt: number;
 };
 
+export type CreateRecordingFlowProposalsResult = {
+  proposals: RecordingFlowProposalArtifact[];
+  issues: string[];
+};
+
 export type AutomationPipelineArtifacts = {
   normalizationReviews: NormalizationReviewArtifact[];
   miningRuns: SignalMiningResult[];
@@ -255,6 +260,15 @@ export class AutomationStudioService {
 
   /** Binds explicitly registered importer and trusted-local Code Node implementations. */
   bindNativeNodeRuntime(runtime: AutomationStudioNativeNodeRuntime): this { this.nativeNodeRuntime = runtime; return this; }
+
+  nativeRuntimeSummary(domainId?: string | null): { bound: boolean; definitionCount: number; recordingMapperCount: number } {
+    const runtime = this.nativeNodeRuntime;
+    return {
+      bound: Boolean(runtime),
+      definitionCount: runtime?.listDefinitions().length ?? 0,
+      recordingMapperCount: runtime && domainId ? runtime.listRecordingMappers(domainId).length : 0
+    };
+  }
 
   async snapshot(domainId?: string | null): Promise<AutomationStudioSnapshot> {
     await this.ready;
@@ -431,7 +445,9 @@ export class AutomationStudioService {
     }
     if (this.nativeNodeRuntime && this.ioRuntime) {
       try {
-        recordingFlowProposals = await this.createRecordingFlowProposals({ projectId: input.projectId, recordingId: input.recordingId });
+        const result = await this.createRecordingFlowProposals({ projectId: input.projectId, recordingId: input.recordingId });
+        recordingFlowProposals = result.proposals;
+        issues.push(...result.issues);
       } catch (error) {
         issues.push(errorMessage(error, "Recording Flow proposals could not be created."));
       }
@@ -439,7 +455,7 @@ export class AutomationStudioService {
     return {
       schemaVersion: "0.1",
       recordingId: input.recordingId,
-      status: proposal ? "processed" : issues.length ? "partial" : "skipped",
+      status: proposal || recordingFlowProposals?.length ? "processed" : issues.length ? "partial" : "skipped",
       ...(normalizedTimeline ? { normalizedTimeline } : {}),
       ...(review ? { review } : {}),
       ...(miningRun ? { miningRun } : {}),
@@ -673,6 +689,9 @@ export class AutomationStudioService {
       const outputId = cluster.actionTemplate.outputId;
       return Boolean(outputId) && (!this.ioRuntime || this.ioRuntime.io.hasOutput(this.ioRuntime.domainId, outputId!));
     });
+    if (!executableClusters.length) {
+      throw new Error("No executable output-bound actions were found in mined evidence. For extension/domain recordings, generate recording Flow proposals from registered recording mappers instead.");
+    }
     const executableClusterIds = new Set(executableClusters.map((cluster) => cluster.id));
     const nodes: PolicyNode[] = executableClusters.map((cluster) => ({
       id: `node.${cluster.id}`,
@@ -975,7 +994,13 @@ export class AutomationStudioService {
     const validation = validateAutomationStudioFlow(flow);
     if (!validation.ok) throw new Error(`Invalid Automation Studio Flow: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
     if (!verifyCodeOwnedFlowCompilation(flow)) throw new Error("Code-owned Flow IR does not match its compiler digest.");
-    return await this.repositories.flows.put(flow);
+    flow = withFlowSourceFileMetadata(flow);
+    const validationWithSourceMetadata = validateAutomationStudioFlow(flow);
+    if (!validationWithSourceMetadata.ok) throw new Error(`Invalid Automation Studio Flow: ${validationWithSourceMetadata.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
+    const saved = await this.repositories.flows.put(flow);
+    await this.writeFlowSourceFile(project.id, saved);
+    await this.writeGeneratedFlowConfig(project.id, saved);
+    return saved;
   }
 
   async compileAndSaveFlowSource(input: { projectId: string; flowId: string; moduleId: string; sourceText: string }): Promise<{ compilation: AutomationStudioFlowCompilation; flow?: AutomationStudioFlowArtifact }> {
@@ -984,22 +1009,28 @@ export class AutomationStudioService {
     if (!compilation.ok) return { compilation };
     if (compilation.plan.flow.flowId !== existing.flowId) throw new Error("Compiled Flow ID must match the Flow being converted.");
     if (!sameFlowScope(compilation.plan.flow.scope, existing.scope)) throw new Error("Compiled Flow scope must match the project scope.");
-    const flow: AutomationStudioFlowArtifact = { ...compilation.plan.flow, projectId: existing.projectId, createdAt: existing.createdAt, updatedAt: Date.now(), publication: { status: "draft" as const }, ...(existing.publicationHistory ? { publicationHistory: existing.publicationHistory } : {}) };
-    await this.repositories.flows.put(flow);
-    return { compilation, flow };
+    const flow: AutomationStudioFlowArtifact = withFlowSourceFileMetadata({ ...compilation.plan.flow, projectId: existing.projectId, createdAt: existing.createdAt, updatedAt: Date.now(), publication: { status: "draft" as const }, ...(existing.publicationHistory ? { publicationHistory: existing.publicationHistory } : {}) });
+    const saved = await this.repositories.flows.put(flow);
+    await this.writeFlowSourceFile(input.projectId, saved, input.sourceText);
+    await this.writeGeneratedFlowConfig(input.projectId, saved);
+    return { compilation, flow: saved };
   }
 
   async convertFlowToVisual(input: { projectId: string; flowId: string }): Promise<AutomationStudioFlowArtifact> {
     const existing = await this.getFlow(input.projectId, input.flowId);
     if (existing.source.mode !== "code") return existing;
-    const flow = convertCodeOwnedFlowToVisual(existing);
-    await this.repositories.flows.put(flow);
-    return flow;
+    const flow = withFlowSourceFileMetadata(convertCodeOwnedFlowToVisual(existing));
+    const saved = await this.repositories.flows.put(flow);
+    await this.writeFlowSourceFile(input.projectId, saved);
+    await this.writeGeneratedFlowConfig(input.projectId, saved);
+    return saved;
   }
 
   async deleteFlow(input: { projectId: string; flowId: string }): Promise<{ deletedFlowId: string }> {
-    await this.getFlow(input.projectId, input.flowId);
+    const flow = await this.getFlow(input.projectId, input.flowId);
     await this.repositories.flows.delete(input.flowId);
+    await this.deleteProjectArtifactFile(input.projectId, "config", flowConfigArtifactId(input.flowId));
+    await this.deleteFlowSourceFile(input.projectId, flow);
     return { deletedFlowId: input.flowId };
   }
 
@@ -1109,19 +1140,24 @@ export class AutomationStudioService {
   }
 
   /** Runs importer-owned semanticizers over immutable recording entries. */
-  async createRecordingFlowProposals(input: { projectId: string; recordingId: string; mapperId?: string }): Promise<RecordingFlowProposalArtifact[]> {
+  async createRecordingFlowProposals(input: { projectId: string; recordingId: string; mapperId?: string }): Promise<CreateRecordingFlowProposalsResult> {
     const project = await this.findProject(input.projectId);
     const recording = await this.getRecordingSession(input.recordingId, input.projectId);
     const domainId = recording.environment.domainId ?? project.domainId ?? null;
-    if (!domainId) return [];
+    if (!domainId) return { proposals: [], issues: ["Recording Flow proposal generation requires a recording or project domainId."] };
     if (!this.nativeNodeRuntime) throw new Error("Recording proposal generation requires a bound importer runtime.");
     if (!this.ioRuntime) throw new Error("Recording proposal generation requires a bound IO registry.");
     const mappers = this.nativeNodeRuntime.listRecordingMappers(domainId).filter((item) => !input.mapperId || item.definition.id === input.mapperId);
     if (input.mapperId && !mappers.length) throw new Error(`Unknown recording mapper for ${domainId}: ${input.mapperId}`);
+    if (!mappers.length) return { proposals: [], issues: [`No recording mappers are registered for domain ${domainId}.`] };
     const proposals: RecordingFlowProposalArtifact[] = [];
+    const issues: string[] = [];
+    const entryCounts = countRecordingEntryTypes(recording.timeline);
     for (const mapper of mappers) {
       const controller = new AbortController();
       const candidates: RecordingFlowActionCandidate[] = [];
+      let emittedCandidateCount = 0;
+      let mappedEntryCount = 0;
       for (const entry of recording.timeline) {
         const observation: AutomationStudioRecordingMapperObservation = {
           observationId: entry.id,
@@ -1132,13 +1168,24 @@ export class AutomationStudioService {
           payload: recordingEntryPayload(entry),
           metadata: { ...(entry.metadata ?? {}) }
         };
-        const mapped = await mapper.implementation(observation, { signal: controller.signal });
-        const mappedCandidates = !mapped ? [] : "candidates" in mapped ? mapped.candidates : [mapped];
-        for (const candidate of mappedCandidates) {
-          candidates.push(this.validateRecordingCandidate({ candidate, entryId: entry.id, recordingId: recording.recordingId, domainId, ...(mapper.definition.outputIds ? { mapperOutputIds: mapper.definition.outputIds } : {}) }));
+        try {
+          const mapped = await mapper.implementation(observation, { signal: controller.signal });
+          const mappedCandidates = !mapped ? [] : "candidates" in mapped ? mapped.candidates : [mapped];
+          if (mappedCandidates.length) {
+            mappedEntryCount += 1;
+            emittedCandidateCount += mappedCandidates.length;
+          }
+          for (const candidate of mappedCandidates) {
+            candidates.push(this.validateRecordingCandidate({ candidate, entryId: entry.id, recordingId: recording.recordingId, domainId, ...(mapper.definition.outputIds ? { mapperOutputIds: mapper.definition.outputIds } : {}) }));
+          }
+        } catch (error) {
+          issues.push(`Mapper ${mapper.definition.id} could not map entry ${entry.id}: ${errorMessage(error, "Unknown mapper error.")}`);
         }
       }
-      if (!candidates.length) continue;
+      if (!candidates.length) {
+        issues.push(`Mapper ${mapper.definition.id} emitted no valid action candidates for recording ${recording.recordingId}. It saw ${recording.timeline.length} entries (${entryCounts}), matched ${mappedEntryCount}, emitted ${emittedCandidateCount} raw candidates, and accepted 0 valid candidates.`);
+        continue;
+      }
       const now = Date.now();
       const proposal: RecordingFlowProposalArtifact = {
         schemaVersion: "0.1",
@@ -1156,7 +1203,7 @@ export class AutomationStudioService {
       await this.writePipelineArtifact(project.id, "recordingFlowProposals", proposal.proposalId, proposal as unknown as JsonObject);
       proposals.push(proposal);
     }
-    return proposals;
+    return { proposals, issues };
   }
 
   async reviewRecordingFlowProposal(input: {
@@ -2087,6 +2134,19 @@ export class AutomationStudioService {
     return path.join(this.projectDirectory(projectId), ...parts);
   }
 
+  private async writeFlowSourceFile(projectId: string, flow: AutomationStudioFlowArtifact, sourceText?: string): Promise<void> {
+    if (!this.projectRootDir) return;
+    const moduleId = flowSourceModuleId(flow);
+    const filePath = this.projectFile(projectId, "source", ...safeRelativePathParts(moduleId));
+    await mkdir(path.dirname(filePath), { recursive: true });
+    await writeFile(filePath, sourceText ?? generateFlowTypeScript(flow), "utf8");
+  }
+
+  private async deleteFlowSourceFile(projectId: string, flow: AutomationStudioFlowArtifact): Promise<void> {
+    if (!this.projectRootDir) return;
+    await rm(this.projectFile(projectId, "source", ...safeRelativePathParts(flowSourceModuleId(flow))), { force: true });
+  }
+
   private async readRecordingIndex(projectId: string): Promise<RecordingIndex> {
     await this.findProject(projectId);
     return await new ProgramJsonStore<RecordingIndex>(this.projectFile(projectId, "recordings", "indexes", "recordings.json"), () => ({ recordings: [], normalizedTimelines: [] })).read();
@@ -2458,12 +2518,13 @@ export class AutomationStudioService {
   /** Reads legacy project documents without the historical task-graph embedding side effect. */
   private async readLegacyProjectArtifacts(projectId: string): Promise<AutomationStudioProjectArtifacts> {
     await this.findProject(projectId);
-    const [tasks, routines, configs, flows] = await Promise.all([
+    const [tasks, routines, allConfigs, flows] = await Promise.all([
       this.readProjectArtifactList<AutomationStudioTaskArtifact>(projectId, "tasks"),
       this.readProjectArtifactList<AutomationStudioRoutineArtifact>(projectId, "routines"),
       this.readProjectArtifactList<AutomationStudioConfigArtifact>(projectId, "configs"),
       this.readProjectArtifactList<AutomationStudioFlowDocument>(projectId, "flows")
     ]);
+    const configs = allConfigs.filter((config) => config.metadata?.generated !== true);
     return { tasks, routines, configs, flows };
   }
 
@@ -2516,6 +2577,44 @@ export class AutomationStudioService {
       nextTasks.push(nextTask);
     }
     return nextTasks;
+  }
+
+  private async writeGeneratedFlowConfig(projectId: string, flow: AutomationStudioFlowArtifact): Promise<AutomationStudioConfigArtifact> {
+    const configId = flowConfigArtifactId(flow.flowId);
+    const existing = await this.getProjectArtifact(projectId, "config", configId).then((artifact) => artifact as AutomationStudioConfigArtifact).catch(() => null);
+    const values: JsonObject = {
+      flowId: flow.flowId,
+      name: flow.name,
+      scope: flow.scope as unknown as JsonObject,
+      source: flow.source as unknown as JsonObject,
+      interface: flow.interface as unknown as JsonObject,
+      errors: flow.errors as unknown as JsonObject,
+      variables: flow.variables as unknown as JsonObject,
+      executionDefaults: flow.executionDefaults as unknown as JsonObject,
+      publication: flow.publication as unknown as JsonObject,
+      declaredDependencies: (flow.source.mode === "code" ? flow.source.declaredDependencies ?? [] : []) as unknown as JsonObject
+    };
+    if (flow.description !== undefined) values.description = flow.description;
+    const relativePath = `configs/${safeSegment(configId)}/${projectArtifactDocumentFileName("configs")}`;
+    const config: AutomationStudioConfigArtifact = {
+      schemaVersion: "0.1",
+      configId,
+      name: `${flow.name} config`,
+      description: `Generated configuration for Flow ${flow.flowId}.`,
+      values,
+      createdAt: existing?.createdAt ?? flow.createdAt,
+      updatedAt: flow.updatedAt,
+      metadata: {
+        ...(existing?.metadata ?? {}),
+        generated: true,
+        generatedKind: "flow.config",
+        ownerKind: "flow",
+        flowId: flow.flowId,
+        projectId,
+        relativePath
+      }
+    };
+    return await this.saveProjectArtifact({ projectId, kind: "config", artifact: config }) as AutomationStudioConfigArtifact;
   }
 
   private projectArtifactFile(projectId: string, kind: AutomationStudioProjectArtifactKind, artifactId: string): string {
@@ -2698,6 +2797,10 @@ function projectArtifactDocumentFileName(folder: "tasks" | "routines" | "configs
   return "flow.json";
 }
 
+function flowConfigArtifactId(flowId: string): string {
+  return `flow.${flowId}.config`;
+}
+
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
 }
@@ -2802,6 +2905,7 @@ function createEvidenceObservations(fact: EvidenceFact): EvidenceObservation[] {
     subject: compactJsonObject({
       type: fact.kind,
       ...(fact.domain?.eventType ? { eventType: fact.domain.eventType } : {}),
+      ...(typeof fact.data?.actionType === "string" ? { actionType: fact.data.actionType } : {}),
       ...(typeof fact.data?.outputId === "string" ? { outputId: fact.data.outputId } : {}),
       ...(typeof fact.data?.confirmationInputId === "string" ? { confirmationInputId: fact.data.confirmationInputId, confirmationTimeoutMs: typeof fact.data.confirmationTimeoutMs === "number" ? fact.data.confirmationTimeoutMs : 5_000 } : {}),
       ...(fact.data?.parameters && typeof fact.data.parameters === "object" && !Array.isArray(fact.data.parameters) ? { parameters: fact.data.parameters } : {}),
@@ -3133,6 +3237,12 @@ function recordingEntryPayload(entry: RecordingSession["timeline"][number]): Jso
   return structuredClone(payload) as unknown as JsonObject;
 }
 
+function countRecordingEntryTypes(entries: RecordingSession["timeline"]): string {
+  const counts = new Map<string, number>();
+  for (const entry of entries) counts.set(entry.type, (counts.get(entry.type) ?? 0) + 1);
+  return [...counts.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([type, count]) => `${type}: ${count}`).join(", ") || "no entries";
+}
+
 function clampConfidence(value: number | undefined): number {
   return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0.5;
 }
@@ -3301,6 +3411,37 @@ function legacyArtifactsDigest(artifacts: AutomationStudioProjectArtifacts): str
 function canonicalFlowDigest(flow: AutomationStudioFlowArtifact): string {
   const { updatedAt: _updatedAt, ...stable } = flow;
   return createHash("sha256").update(stableJson(stable)).digest("hex");
+}
+
+function withFlowSourceFileMetadata(flow: AutomationStudioFlowArtifact): AutomationStudioFlowArtifact {
+  if (flow.source.mode === "code") return flow;
+  const moduleId = flowSourceModuleId(flow);
+  return {
+    ...flow,
+    metadata: {
+      ...(flow.metadata ?? {}),
+      generatedSource: {
+        moduleId,
+        relativePath: `source/${safeRelativePathParts(moduleId).join("/")}`,
+        authoritative: false
+      }
+    }
+  };
+}
+
+function flowSourceModuleId(flow: AutomationStudioFlowArtifact): string {
+  return flow.source.mode === "code" && flow.source.moduleId.trim()
+    ? flow.source.moduleId
+    : `flows/${safeSegment(flow.flowId)}.flow.ts`;
+}
+
+function safeRelativePathParts(moduleId: string): string[] {
+  const parts = moduleId
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((part) => safeSegment(part))
+    .filter((part) => part && part !== "." && part !== "..");
+  return parts.length ? parts : ["flows", "flow.flow.ts"];
 }
 
 function stableJson(value: unknown): string {

@@ -117,7 +117,7 @@ export function proposalHierarchyNodes(recordings: any[], proposals: any[]): Aut
     }
     nodes.push({
       id: `proposal-${stableNodeId(proposal.proposalId)}`,
-      label: proposal.mapper?.id ? `${recordingDateTimeLabel(recording)} · ${proposal.mapper.id}` : recordingDateTimeLabel(recording),
+      label: proposal.mapper?.id ? `${recordingDateTimeLabel(recording)} - ${proposal.mapper.id}` : recordingDateTimeLabel(recording),
       kind: "proposal",
       category: "proposal",
       parentId: folderId,

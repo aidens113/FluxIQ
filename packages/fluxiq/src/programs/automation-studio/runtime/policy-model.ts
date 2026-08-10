@@ -184,11 +184,16 @@ export function policyGraphToAutomationStudioFlow(policy: PolicyGraph, input: { 
 export function createTaskProposalModelFromMiningRun(miningRun: SignalMiningResult, taskId?: string): LearnedTaskModel {
   const resolvedTaskId = taskId ?? String(miningRun.metadata?.taskId ?? miningRun.metadata?.recordingId ?? "task.learned");
   const actionClaims = (miningRun.claims ?? []).filter((claim) => claim.claimType === "action_effect");
-  // Only output-bound recorded actions are candidates. Domain events, state
-  // inputs, telemetry, unmapped interactions, and legacy opaque action types
-  // are evidence only and can never become executable policy actions.
+  // Output-bound recorded actions are candidates. Legacy action entries without
+  // an explicit outputId fall back to actionType for compatibility when no
+  // importer mapper is involved. Domain events, state inputs, telemetry, and
+  // unmapped interactions remain evidence only.
   const actionObservations = (miningRun.observations ?? []).filter((observation) =>
-    observation.kind === "action_performed" && typeof observation.subject?.outputId === "string" && Boolean(observation.subject.outputId.trim())
+    observation.kind === "action_performed"
+      && (
+        (typeof observation.subject?.outputId === "string" && Boolean(observation.subject.outputId.trim()))
+        || (typeof observation.subject?.actionType === "string" && Boolean(observation.subject.actionType.trim()))
+      )
   );
   const factsById = new Map((miningRun.facts ?? []).map((fact) => [fact.factId, fact]));
   const windows = miningRun.windows.filter((window) => window.actionEntryId);
@@ -207,7 +212,7 @@ export function createTaskProposalModelFromMiningRun(miningRun: SignalMiningResu
       ...matchingActionClaims.map((candidate) => ({ layer: "evidence_claim" as const, artifactId: candidate.claimId, relationship: candidate.claimType })),
       ...primaryEvidence
     ], (evidence) => `${evidence.layer}:${evidence.artifactId}`);
-    const outputId = observation.subject!.outputId!;
+    const outputId = observation.subject!.outputId ?? observation.subject!.actionType!;
     const actionType = outputId;
     return {
       id: `cluster.${index + 1}`,

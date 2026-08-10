@@ -2,8 +2,8 @@
 
 import { Search } from "lucide-react";
 import type { JsonObject } from "../../programs/program-api";
-import { KeyValue } from "../../programs/shared-ui";
-import type { AutomationSelection } from "../types";
+import { KeyValue, SummaryStrip } from "../../programs/shared-ui";
+import type { AutomationInspectorWidget, AutomationSelection } from "../types";
 import { formatAutomationPorts } from "../graph/ports";
 import { buildTimelineInspectorSections, conditionSummary } from "../timeline/view-model";
 import { AutomationNodeParameterEditor } from "../parameters/ParameterEditor";
@@ -59,7 +59,8 @@ export function AutomationInspector(props: { entries: any[]; selection: Automati
         <input aria-label="Search inspector fields" placeholder="Search fields" />
       </div>
       {props.selection?.kind === "editor-mode" ? <>
-        <InspectorSection title="Mode" rows={[["Editor", "Flow editor"], ["Compatibility source", props.selection.editor === "task" ? "Legacy policy" : "Legacy orchestration"], ["Mode", props.selection.label], ["Purpose", props.selection.description]]} />
+        <InspectorSection title="Mode" rows={[["Editor", props.selection.editor === "flow" ? "Flow editor" : "Routine editor"], ["Compatibility source", props.selection.editor === "flow" ? "Canonical Flow / legacy policy adapter" : "Legacy orchestration"], ["Mode", props.selection.label], ["Purpose", props.selection.description]]} />
+        {props.selection.widgets?.map((widget, widgetIndex) => <InspectorWidget key={`${widget.kind}:${widget.title}:${widgetIndex}`} widget={widget} />)}
         {props.selection.sections.map((section, sectionIndex) => <InspectorSection key={`${section.title}:${sectionIndex}`} title={section.title} rows={section.rows} />)}
       </> : null}
       {props.selection?.kind === "proposal-step" ? <>
@@ -96,7 +97,7 @@ export function AutomationInspector(props: { entries: any[]; selection: Automati
         <InspectorSection title="Ports" rows={[["Inputs", formatAutomationPorts(props.node.inputs)], ["Outputs", formatAutomationPorts(props.node.outputs)], ["Privileged", props.node.privileged ? "Yes" : "No"], ["Actions", (props.node.actionTypes ?? []).join(", ") || "-"]]} />
       </> : null}
       {props.selection?.kind === "flow" && props.flow ? <>
-        <InspectorSection title="Flow Identity" rows={[["Name", props.flow.name], ["ID", props.flow.flowId], ["Scope", props.flow.scope?.kind === "domain" ? `domain:${props.flow.scope.domainId}` : "global"], ["Origin", props.flow.origin ?? "-"], ["Source owner", props.flow.source?.mode ?? "legacy"], ["Visibility", props.flow.visibility ?? "private"]]} />
+        <InspectorSection title="Flow Identity" rows={[["Name", props.flow.name], ["ID", props.flow.flowId], ["Scope", props.flow.scope?.kind === "domain" ? `domain:${props.flow.scope.domainId}` : "global"], ["Origin", props.flow.origin ?? "-"], ["Source owner", props.flow.source?.mode ?? "legacy"], ["Source file", flowSourcePath(props.flow)], ["Visibility", props.flow.visibility ?? "private"]]} />
         <InspectorSection title="Interface" rows={[["Inputs", String(props.flow.interface?.inputs?.length ?? 0)], ["Outputs", String(props.flow.interface?.outputs?.length ?? 0)], ["Errors", String(props.flow.errors?.length ?? 0)], ["Variables", String(props.flow.variables?.length ?? 0)]]} />
         <InspectorSection title="Publication and Dependencies" rows={[["Current state", props.flow.publication?.status ?? "draft"], ["Published versions", String(props.flowPublications.length)], ["Dependencies", String(props.flowDependencyInfo?.dependencies?.length ?? 0)], ["Used by", String(props.flowDependencyInfo?.usedBy?.length ?? 0)], ["Available upgrades", String(props.flowDependencyInfo?.availableUpgrades?.length ?? 0)], ["Compatibility warnings", String(props.flow.metadata?.recordingProposalWarnings?.length ?? 0)]]} />
       </> : null}
@@ -125,6 +126,31 @@ export function InspectorSection(props: { title: string; rows: Array<[string, st
   );
 }
 
+function InspectorWidget(props: { widget: AutomationInspectorWidget }) {
+  if (props.widget.kind === "summary") {
+    return (
+      <section className="automation-inspector-widget">
+        <strong>{props.widget.title}</strong>
+        <SummaryStrip items={props.widget.items} />
+      </section>
+    );
+  }
+  return (
+    <section className="automation-inspector-widget">
+      <strong>{props.widget.title}</strong>
+      <div className="automation-inspector-card-list">
+        {props.widget.items.map((item) => (
+          <article key={`${item.title}:${item.meta ?? ""}`}>
+            <span>{item.meta ?? "Item"}</span>
+            <strong>{item.title}</strong>
+            <p>{item.detail}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function listRows(items: string[]): Array<[string, string]> {
   return items.length ? items.map((item, index) => [String(index + 1), item]) : [["Items", "-"]];
 }
@@ -132,6 +158,11 @@ function listRows(items: string[]): Array<[string, string]> {
 function callFlowInspectorRows(value: any): Array<[string, string]> {
   const target = value?.target ?? {};
   return [["Flow", String(target.flowId ?? "-")], ["Version", String(target.version ?? "-")], ["Scope", target.scope?.kind === "domain" ? `domain:${target.scope.domainId}` : String(target.scope?.kind ?? "-")], ["Inputs", String(value?.inputBindings?.length ?? 0)], ["Outputs", String(value?.outputBindings?.length ?? 0)], ["Error routes", String(value?.errorBindings?.length ?? 0)]];
+}
+
+function flowSourcePath(flow: any): string {
+  if (flow?.source?.mode === "code" && flow.source.moduleId) return `source/${flow.source.moduleId}`;
+  return flow?.metadata?.generatedSource?.relativePath ?? (flow?.flowId ? `source/flows/${flow.flowId}.flow.ts` : "-");
 }
 
 function InspectorProvenance(props: { current: string; source: string }) {

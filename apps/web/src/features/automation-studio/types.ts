@@ -79,10 +79,29 @@ export type AutomationSelection =
   | { kind: "proposal-step"; id: string; proposalId: string; recordingId?: string; step: { label: string; description: string; actions: string[]; requirements: string[]; expectedEffects: string[]; confidence: string; occurrenceCount: number; transition?: string; evidence: Array<{ id: string; title: string; relation: string }> }; node?: { label: string; description: string; customDescription?: string } }
   | { kind: "node"; id: string }
   | { kind: "editor-node"; id: string; node: { label: string; nodeType: string; family: string; description: string; customDescription?: string; nodeDefinitionId?: string; icon?: string; inputs: AutomationNodePort[]; outputs: AutomationNodePort[]; parameters: AutomationNodeParameter[]; parameterValues: JsonObject; metadata?: JsonObject; privileged?: boolean; actionTypes?: string[] } }
-  | { kind: "editor-mode"; id: string; editor: "task" | "routine"; label: string; description: string; sections: Array<{ title: string; rows: Array<[string, string]> }> }
+  | { kind: "editor-mode"; id: string; editor: "flow" | "routine"; label: string; description: string; sections: Array<{ title: string; rows: Array<[string, string]> }>; widgets?: AutomationInspectorWidget[] }
   | { kind: "recording"; id: string }
   | { kind: "timeline"; id: string }
   | { kind: "signal"; id: string };
+
+export type AutomationInspectorWidget =
+  | { kind: "summary"; title: string; items: Array<[string, string | number]> }
+  | { kind: "cards"; title: string; items: Array<{ title: string; detail: string; meta?: string }> };
+
+export type AutomationFlowConfigExtension = {
+  id: string;
+  title: string;
+  owner: "global" | "node";
+  nodeDefinitionId?: string;
+  description: string;
+  fields: Array<{
+    id: string;
+    label: string;
+    valueType: "string" | "number" | "boolean" | "json";
+    description?: string;
+    defaultValue?: unknown;
+  }>;
+};
 
 export type AutomationPolicyNodeData = {
   nodeDefinitionId?: string;

@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ComponentRegistry } from "../components/index.ts";
 import { createEnvelope } from "../io/index.ts";
+import { AutomationStudioNativeNodeRuntime, type AutomationStudioImporterSdkManifest, type AutomationStudioNodeDefinition } from "../programs/index.ts";
 import { FluxIQ } from "./index.ts";
 
 const ENV_KEYS = [
@@ -197,6 +198,52 @@ describe("FluxIQ", () => {
 
     expect(fluxiq.createAutomationStudioIoRecorder()).toBeDefined();
     expect(() => FluxIQ.create({ loadEnv: false }).createAutomationStudioIoRecorder()).toThrow("domainId is required");
+  });
+
+  it("binds Automation Studio native runtimes through framework options and host modules", async () => {
+    const root = await tempRoot();
+    try {
+      const definition: AutomationStudioNodeDefinition = {
+        schemaVersion: "0.1",
+        id: "example.echo",
+        version: "1.0.0",
+        label: "Echo",
+        description: "Returns a fixed value.",
+        category: "Tests",
+        source: { kind: "code", moduleId: "nodes/echo.ts", implementationKey: "echo", trust: "trusted-local" },
+        availability: { kind: "domain", domainId: "example" },
+        capabilities: { executable: true, codeBacked: true },
+        inputs: [],
+        outputs: [{ id: "value", label: "Value", valueType: "string" }],
+        parameters: []
+      };
+      const manifest: AutomationStudioImporterSdkManifest = {
+        schemaVersion: "0.1",
+        sdkVersion: "0.1",
+        packageId: "example.package",
+        packageVersion: "1.0.0",
+        domainId: "example",
+        nodes: [definition]
+      };
+      const nativeRuntime = new AutomationStudioNativeNodeRuntime().register(manifest, {
+        packageId: "example.package",
+        packageVersion: "1.0.0",
+        implementations: { echo: () => ({ outputs: { value: "ok" } }) }
+      });
+      const fluxiq = FluxIQ.create({ rootDir: root, loadEnv: false, domainId: "example", nativeNodeRuntime: nativeRuntime });
+      await fluxiq.setup();
+      const project = await fluxiq.programs.automationStudio.createProject({ name: "Native project", domainId: "example" });
+
+      await expect(fluxiq.programs.automationStudio.listNativeNodeDefinitions(project.id)).resolves.toContainEqual(expect.objectContaining({ id: "example.echo" }));
+
+      const lateBound = FluxIQ.create({ rootDir: root, loadEnv: false, domainId: "example" });
+      await lateBound.setup();
+      const lateProject = await lateBound.programs.automationStudio.createProject({ name: "Late native project", domainId: "example" });
+      lateBound.bindAutomationStudioNativeNodeRuntime(nativeRuntime);
+      await expect(lateBound.programs.automationStudio.listNativeNodeDefinitions(lateProject.id)).resolves.toContainEqual(expect.objectContaining({ id: "example.echo" }));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("validates component IO requirements", () => {

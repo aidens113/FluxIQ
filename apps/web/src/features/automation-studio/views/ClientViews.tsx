@@ -2,8 +2,10 @@
 
 import { QrCode, Radio, RefreshCcw, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { generateFlowTypeScript } from "fluxiq/automation-studio/dsl/generator";
 import { useProgramApi } from "../../programs/program-api";
 import { Field, KeyValue, StatusBadge, StatusText, VisualAlert } from "../../programs/shared-ui";
+import type { AutomationFlowConfigExtension } from "../types";
 import { InspectorSection } from "./InspectorView";
 import { digits, formatTime, uniqueStrings } from "./view-utils";
 export function AutomationAssistantView(props: { node: any; recording: any; signals: any[] }) {
@@ -29,12 +31,125 @@ export function AutomationAssistantView(props: { node: any; recording: any; sign
   );
 }
 
-export function AutomationConfigView(props: { policy: any }) {
+const pendingFlowConfigExtensions: AutomationFlowConfigExtension[] = [
+  {
+    id: "runtime-defaults",
+    title: "Runtime defaults",
+    owner: "global",
+    description: "Global Flow execution knobs that apply unless a node overrides them.",
+    fields: [
+      { id: "timeoutMs", label: "Timeout", valueType: "number", description: "Maximum milliseconds before the Flow times out." },
+      { id: "maxConcurrency", label: "Maximum concurrency", valueType: "number", description: "How many runs may execute at once." }
+    ]
+  }
+];
+
+export function AutomationConfigView(props: { configs?: any[]; flow: any; policy: any; projectId: string | null; onRefresh?(): Promise<void> }) {
+  const api = useProgramApi("automation-studio");
+  const flow = props.flow;
+  const [name, setName] = useState(flow?.name ?? "");
+  const [description, setDescription] = useState(flow?.description ?? "");
+  const [visibility, setVisibility] = useState(flow?.visibility ?? "private");
+  const [timeoutMs, setTimeoutMs] = useState(flow?.executionDefaults?.timeoutMs ? String(flow.executionDefaults.timeoutMs) : "");
+  const [maxConcurrency, setMaxConcurrency] = useState(flow?.executionDefaults?.maxConcurrency ? String(flow.executionDefaults.maxConcurrency) : "");
+  const [moduleId, setModuleId] = useState(flow?.source?.mode === "code" ? flow.source.moduleId : `flows/${flow?.flowId ?? "flow"}.flow.ts`);
+  const [sourceText, setSourceText] = useState(flow?.flowId ? generateFlowTypeScript(flow) : "");
+  const [status, setStatus] = useState("");
+  useEffect(() => {
+    setName(flow?.name ?? "");
+    setDescription(flow?.description ?? "");
+    setVisibility(flow?.visibility ?? "private");
+    setTimeoutMs(flow?.executionDefaults?.timeoutMs ? String(flow.executionDefaults.timeoutMs) : "");
+    setMaxConcurrency(flow?.executionDefaults?.maxConcurrency ? String(flow.executionDefaults.maxConcurrency) : "");
+    setModuleId(flow?.source?.mode === "code" ? flow.source.moduleId : `flows/${flow?.flowId ?? "flow"}.flow.ts`);
+    setSourceText(flow?.flowId ? generateFlowTypeScript(flow) : "");
+    setStatus("");
+  }, [flow?.flowId, flow?.updatedAt, flow?.source?.mode]);
+  const configId = flow?.flowId ? `flow.${flow.flowId}.config` : props.policy?.policyId ? `policy.${props.policy.policyId}.config` : "project.default.config";
+  const generatedConfig = (props.configs ?? []).find((config: any) => config?.metadata?.ownerKind === "flow" && config?.metadata?.flowId === flow?.flowId)
+    ?? (props.configs ?? []).find((config: any) => config?.configId === configId);
+  const configPath = generatedConfig?.metadata?.relativePath
+    ?? (flow?.source?.mode === "code" && flow.source.moduleId ? flow.source.moduleId : `configs/${configId}/config.json`);
+  const sourcePath = flow?.source?.mode === "code"
+    ? `source/${flow.source.moduleId}`
+    : flow?.metadata?.generatedSource?.relativePath ?? (flow?.flowId ? `source/flows/${flow.flowId}.flow.ts` : "-");
+  const sourceMode = flow?.source?.mode ?? "visual";
+  const saveFlowSettings = async () => {
+    if (!props.projectId || !flow?.flowId) return;
+    const authorizationPin = window.prompt("Enter PIN to save Flow config") ?? "";
+    if (authorizationPin.length < 4) { setStatus("PIN is required before saving Flow config."); return; }
+    setStatus("Saving Flow config...");
+    const executionDefaults = {
+      ...(flow.executionDefaults ?? {}),
+      ...(timeoutMs.trim() ? { timeoutMs: Number(timeoutMs) } : {}),
+      ...(maxConcurrency.trim() ? { maxConcurrency: Number(maxConcurrency) } : {})
+    };
+    if (!timeoutMs.trim()) delete (executionDefaults as any).timeoutMs;
+    if (!maxConcurrency.trim()) delete (executionDefaults as any).maxConcurrency;
+    const nextFlow = {
+      ...flow,
+      name: name.trim() || flow.name,
+      ...(description.trim() ? { description: description.trim() } : { description: undefined }),
+      visibility,
+      executionDefaults
+    };
+    const result = await api.post<{ flow: any }>("save-flow", { projectId: props.projectId, flow: nextFlow, authorizationPin });
+    setStatus(result.ok ? "Flow config saved." : result.error ?? "Flow config could not be saved.");
+    if (result.ok) await props.onRefresh?.();
+  };
+  const makeCodeAuthoritative = async () => {
+    if (!props.projectId || !flow?.flowId) return;
+    const authorizationPin = window.prompt("Enter PIN to make code authoritative") ?? "";
+    if (authorizationPin.length < 4) { setStatus("PIN is required before changing source ownership."); return; }
+    setStatus("Compiling Flow source...");
+    const result = await api.post<any>("compile-flow-source", { projectId: props.projectId, flowId: flow.flowId, moduleId, sourceText, authorizationPin });
+    if (!result.ok || !result.payload?.compilation?.ok) {
+      setStatus(result.error ?? result.payload?.compilation?.diagnostics?.map((item: any) => `${item.location ? `${item.location.moduleId}:${item.location.line}:${item.location.column} ` : ""}${item.code}: ${item.message}`).join("; ") ?? "Flow source could not be compiled.");
+      return;
+    }
+    setStatus("Code is now authoritative for this Flow.");
+    await props.onRefresh?.();
+  };
+  const makeVisualAuthoritative = async () => {
+    if (!props.projectId || !flow?.flowId) return;
+    const authorizationPin = window.prompt("Enter PIN to make visual graph authoritative") ?? "";
+    if (authorizationPin.length < 4) { setStatus("PIN is required before changing source ownership."); return; }
+    setStatus("Converting Flow to visual ownership...");
+    const result = await api.post<any>("convert-flow-to-visual", { projectId: props.projectId, flowId: flow.flowId, authorizationPin });
+    setStatus(result.ok ? "Visual graph is now authoritative." : result.error ?? "Flow could not be converted.");
+    if (result.ok) await props.onRefresh?.();
+  };
   return (
     <section className="automation-config-view">
-      <InspectorSection title="Flow Inputs" rows={[["target_item", "item reference"], ["retry_count", "integer, default 3"], ["runtime_editable", "true"]]} />
-      <InspectorSection title="Flow Outputs" rows={[["completion_status", "runtime statistic"], ["elapsed_time", "runtime statistic"], ["failure_reason", "error path"]]} />
-      <InspectorSection title="Configuration" rows={[["Policy", props.policy?.policyId ?? "-"], ["Environment overrides", "None"], ["Runtime limits", "Default"]]} />
+      <header className="automation-config-editor-header">
+        <div><strong>Flow Configuration</strong><span>{flow?.name ?? "No Flow selected"}</span></div>
+        <button className="button button-primary" disabled={!flow?.flowId || sourceMode === "code"} onClick={() => void saveFlowSettings()} type="button">Save Config</button>
+      </header>
+      <StatusText value={status} />
+      <section className="automation-config-form">
+        <label><span>Name</span><input disabled={sourceMode === "code"} value={name} onChange={(event) => setName(event.target.value)} /></label>
+        <label><span>Description</span><textarea disabled={sourceMode === "code"} rows={3} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
+        <label><span>Visibility</span><select disabled={sourceMode === "code"} value={visibility} onChange={(event) => setVisibility(event.target.value)}><option value="private">Private draft</option><option value="public" disabled={flow?.publication?.status !== "published" && flow?.publication?.status !== "deprecated"}>Public published</option></select></label>
+        <label><span>Timeout (ms)</span><input disabled={sourceMode === "code"} inputMode="numeric" value={timeoutMs} onChange={(event) => setTimeoutMs(event.target.value.replace(/[^\d]/g, ""))} placeholder="Default" /></label>
+        <label><span>Maximum concurrency</span><input disabled={sourceMode === "code"} inputMode="numeric" value={maxConcurrency} onChange={(event) => setMaxConcurrency(event.target.value.replace(/[^\d]/g, ""))} placeholder="Default" /></label>
+      </section>
+      {sourceMode === "code" ? <VisualAlert tone="warning" title="Code authoritative" message="Flow config is compiled from the source module. Convert to visual ownership before editing these fields here." /> : null}
+      <section className="automation-config-source-editor">
+        <header><div><strong>Source Ownership</strong><span>{sourceMode === "code" ? "Code module is authoritative." : "Visual graph is authoritative; generated source is reviewable."}</span></div></header>
+        <InspectorSection title="Config File" rows={[["Config", generatedConfig?.configId ?? configId], ["Generated path", configPath], ["Source file", sourcePath], ["Owner", flow?.flowId ?? props.policy?.policyId ?? "default"], ["Scope", flow?.scope?.kind === "domain" ? `domain:${flow.scope.domainId}` : flow?.scope?.kind ?? "project"], ["Status", generatedConfig ? "Generated" : "Pending next Flow save"]]} />
+        <label><span>Module ID</span><input value={moduleId} onChange={(event) => setModuleId(event.target.value)} /></label>
+        <label><span>Flow DSL Source</span><textarea rows={12} value={sourceText} onChange={(event) => setSourceText(event.target.value)} /></label>
+        <div className="inline-actions">
+          <button className="button button-primary" disabled={!flow?.flowId || sourceMode === "code"} onClick={() => void makeCodeAuthoritative()} type="button">Make Code Authoritative</button>
+          <button className="button" disabled={!flow?.flowId || sourceMode !== "code"} onClick={() => void makeVisualAuthoritative()} type="button">Make Visual Authoritative</button>
+        </div>
+      </section>
+      <InspectorSection title="Flow Inputs" rows={(flow?.interface?.inputs ?? []).map((input: any) => [input.name ?? input.id, input.valueType?.kind ?? input.valueType ?? "unknown"]).concat((flow?.interface?.inputs ?? []).length ? [] : [["None", "No declared inputs"]])} />
+      <InspectorSection title="Flow Outputs" rows={(flow?.interface?.outputs ?? []).map((output: any) => [output.name ?? output.id, output.valueType?.kind ?? output.valueType ?? "unknown"]).concat((flow?.interface?.outputs ?? []).length ? [] : [["None", "No declared outputs"]])} />
+      <section className="automation-config-extension-list">
+        <header><strong>Config Extensions</strong><span>Nodes will be able to register extra config fields here without adding an inspector inside the canvas.</span></header>
+        {pendingFlowConfigExtensions.map((extension) => <article key={extension.id}><strong>{extension.title}</strong><span>{extension.owner}</span><p>{extension.description}</p><small>{extension.fields.map((field) => field.label).join(", ")}</small></article>)}
+      </section>
     </section>
   );
 }
@@ -135,6 +250,13 @@ export function AutomationClientGatewayView(props: { projectId: string | null })
         <section className="automation-client-panel">
           <header><QrCode size={14} aria-hidden /><strong>Approval</strong></header>
           {snapshot.webRuntime?.clientGatewayError ? <VisualAlert tone="warning" title="Gateway port issue" message={snapshot.webRuntime.clientGatewayError} /> : null}
+          {snapshot.webRuntime?.automationStudio?.nativeImporterRuntimeBound === false
+            ? <VisualAlert
+                tone="warning"
+                title="Importer runtime not bound"
+                message={`Recording mapper proposals cannot run until the host module binds an AutomationStudioNativeNodeRuntime. Host module loaded: ${snapshot.webRuntime.hostModuleLoaded ? "yes" : "no"}. Native nodes: ${snapshot.webRuntime.automationStudio.nativeNodeDefinitionCount ?? 0}. Recording mappers: ${snapshot.webRuntime.automationStudio.recordingMapperCount ?? 0}.`}
+              />
+            : null}
           <p className="muted-text">Open the extension and click connect. Approve pending requests from the global web-panel popup.</p>
           <div className="automation-client-pairings">
             {pairings.slice(0, 4).map((pairing: any) => (

@@ -78,8 +78,8 @@ This plan also introduces domain-scoped private/public exports, reusable composi
 | Native node | A framework or importer-provided node implemented programmatically. |
 | Recording-derived node | A reviewed Flow fragment or definition derived from recording evidence. |
 | Policy region | A bounded Flow area that uses state eligibility, action ranking, expectations, and recovery. It is not a top-level Task. |
-| Visual-owned Flow | Canonical source is stored Flow IR; FluxIQ may generate a read-only/exportable TypeScript view. |
-| Code-owned Flow | Canonical source is constrained TypeScript FluxIQ DSL that constructs validated Flow IR. |
+| Visual-owned Flow | Canonical source is stored Flow IR; FluxIQ also writes a durable generated TypeScript DSL file for review/export, but that file is not authoritative. |
+| Code-owned Flow | Canonical source is constrained TypeScript FluxIQ DSL stored as the authoritative module; compilation constructs validated Flow IR. |
 
 ## Target architecture
 
@@ -245,7 +245,7 @@ Migration starts with an inspection/dry-run, writes backup/export metadata, conv
 
 The project hierarchy becomes Flows, Recordings/Evidence, Proposals, Configurations/Connections, and Node Library. Legacy adapters display a migration badge but no new Task/Routine controls. The existing editor remains the single Flow editor.
 
-Creation presets configure one Flow model: Blank Flow, Deterministic Workflow, Recorded Automation, Integration Flow, Scheduled Flow, API Endpoint, and Reusable Component. The editor gains Flow interfaces, source ownership, visibility/publication/version state, and dependency warnings.
+Creation presets configure one Flow model: Blank Flow, Deterministic Workflow, Recorded Automation, Integration Flow, Scheduled Flow, API Endpoint, and Reusable Component. The editor gains Flow interfaces, config/source ownership controls, visibility/publication/version state, and dependency warnings.
 
 ### Work
 
@@ -253,7 +253,7 @@ Creation presets configure one Flow model: Blank Flow, Deterministic Workflow, R
 2. Add preset creation templates.
 3. Add Flow panels for ports, scope, visibility, origin, and versions.
 4. Organize palette sections: built-in, integrations, domain nodes, public flows, project nodes, code, policy/evidence.
-5. Preserve unsaved-change protection for graph, interface, publication, and source-mode edits.
+5. Preserve unsaved-change protection for graph edits and config/source ownership edits.
 6. Redirect legacy deep links to adapted Flows.
 7. Update architecture/user docs and UI tests.
 
@@ -331,7 +331,7 @@ Policy actions remain output-native. IO dispatches a registered output ID. Runti
 
 The public `defineFlow` DSL constructs canonical Flow IR: inputs/outputs, registered nodes, edges, Call Flow, regions, and policy declarations. It is declarative. Runtime scheduling, fingerprint scoring, retries, recovery, subscriptions, persistence, and tracing remain runtime responsibilities.
 
-Visual-owned Flows generate readable TypeScript for inspection/export, not direct arbitrary editing. A deliberate conversion creates a code-owned Flow: its constrained DSL source is authoritative, FluxIQ loads it through a controlled build path, obtains IR, validates it, then renders the graph. Visual editing is disabled for a code-owned Flow unless a reviewed conversion back occurs.
+Visual-owned Flows generate readable TypeScript for inspection/export, not direct arbitrary editing. The generated module is written under the project `.fluxiq` source tree even when visual IR remains authoritative. A deliberate conversion creates a code-owned Flow: its constrained DSL source is authoritative, FluxIQ stores the module under the project source tree, loads it through a controlled build path, obtains IR, validates it, then renders the graph. Visual editing is disabled for a code-owned Flow unless a reviewed conversion back occurs.
 
 Compiler output is normalized and deterministic: identical IR and pinned dependencies yield identical plan/digest, enabling source review and CI.
 
@@ -343,7 +343,7 @@ Compiler output is normalized and deterministic: identical IR and pinned depende
 4. Generate formatted code view/export for visual-owned Flows.
 5. Implement code-owned metadata, source loading, and validation.
 6. Define controlled module resolution: approved SDK imports and declared dependencies only; never implied host filesystem access.
-7. Add source-mode UI, generated-code inspection, conversion warnings, and CI/compiler commands.
+7. Add config/source ownership UI, generated-code inspection, conversion warnings, and CI/compiler commands.
 
 ### Acceptance criteria
 
@@ -560,15 +560,20 @@ binding, capability enforcement, and recording-derived definitions.
   label and offer migration guidance.
 - Flow creation presets map to the same artifact: blank visual, deterministic,
   recorded, integration, scheduled, API endpoint, and reusable component. Code
-  ownership is entered through the explicit reviewed source-mode conversion. A
-  preset supplies only safe default metadata/nodes; it does not bypass
-  validation or grant capabilities.
-- The editor owns one dirty state spanning graph, interface, visibility,
-  publication intent, source mode, and node configuration. Navigation, project
-  switch, close, refresh, or run must prompt when any part is dirty.
-- The inspector exposes Flow identity, scope, source owner, origin, interface,
-  visibility, publication history, dependencies, and compatibility warnings.
-  The graph canvas remains shared by conventional, policy, and composite nodes.
+  ownership is entered through the editable config/source ownership surface,
+  not through a Flow canvas tab. A preset supplies only safe default
+  metadata/nodes; it does not bypass validation or grant capabilities.
+- The editor owns one dirty state spanning graph and node configuration. Flow
+  identity, interface, visibility, publication intent, runtime defaults, source
+  ownership, and node-contributed configuration belong to the config surface.
+  Navigation, project switch, close, refresh, or run must prompt when any part
+  is dirty.
+- The inspector exposes Flow identity, scope, source owner, source file,
+  origin, interface, visibility, publication history, dependencies, and
+  compatibility warnings. The global inspector is the only properties/detail
+  surface for Flow editor selections; mode-specific custom widgets must extend
+  it rather than adding a second inspector inside the canvas. The graph canvas
+  remains shared by conventional, policy, and composite nodes.
 - Palette order is: framework built-ins, integrations/importer nodes,
   domain nodes, public Flows, project-local nodes, code, then policy/evidence.
   It is resolved from scope/capability/permissions rather than static client
@@ -644,10 +649,11 @@ scope authorization, and nested execution are active.
 - `defineFlow` is a declarative SDK that constructs canonical IR; it is not a
   general script runner. It supports interface declarations, nodes, edges,
   Call Flow pins, regions, policy declarations, and declared dependencies.
-- A visual-owned Flow is stored IR and may generate read-only/exportable TypeScript.
+- A visual-owned Flow is stored IR and writes read-only/exportable TypeScript.
   A code-owned Flow stores a constrained module reference and generated IR;
-  conversion between ownership modes is explicit, reviewed, and lossy only
-  where disclosed. There is never two mutable authorities.
+  conversion between ownership modes happens through Flow configuration, is
+  explicit, reviewed, and lossy only where disclosed. There is never two
+  mutable authorities.
 - Compilation normalizes IR deterministically, resolves pinned composites,
   validates scopes/capabilities/ports/regions, and emits a digestable execution
   plan. Same source plus same dependency pins must produce the same plan.

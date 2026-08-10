@@ -77,7 +77,7 @@ export default async function HomePage() {
             {domains.map((domain) => (
               <a className="program-card" href={domain.route} key={domain.id}>
                 <span className="program-icon" aria-hidden>{(() => { const Icon = domainIcons[domain.icon] ?? Blocks; return <Icon size={18} />; })()}</span>
-                <span className="program-card-copy"><strong>{domain.title}</strong><span>{domain.category} · {domain.status}</span><p>{domain.description}</p></span>
+                <span className="program-card-copy"><strong>{domain.title}</strong><span>{domain.category} - {domain.status}</span><p>{domain.description}</p></span>
               </a>
             ))}
           </div> : <p className="muted-text">No domains are registered by this host yet.</p>}

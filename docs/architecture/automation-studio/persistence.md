@@ -84,16 +84,18 @@ draft canonical copies whose ledger provenance and backup digest still match.
 
 The proposal UI is the user-facing surface for generated policy/Flow proposals. It
 shows the source recording, proposal status, generated time, summary counts,
-and an embedded policy graph editor. The editor uses the same React Flow node
-renderer as the Flow editor through a small embeddable graph API and includes a
-proposal-local node palette. In proposal-review mode, existing/locked graph
+and an embedded graph editor that uses the same React Flow node renderer as
+the Flow editor through a small embeddable graph API. Policy proposals may
+include a proposal-local node palette. Mapper-generated recording Flow
+proposals are also rendered as proposed action nodes instead of a separate
+text-only review surface. In proposal-review mode, existing/locked graph
 content can be shown differently from proposed nodes, while proposal edits are
 cached in workspace preferences until the user applies or saves. Selecting a
-proposed node opens a compact inspector with editable node label/description,
-action summaries, requirements, expected state results, and readable supporting
-state signals. Proposal actions apply the current edited proposal to the last open
-valid canonical Flow, save it as a new Flow, regenerate it from the recording, or process
-it with an LLM.
+proposed node publishes its action, parameter, confirmation, observation, and
+evidence details to the global inspector. Proposal actions apply the current
+edited policy proposal to the last open valid canonical Flow, save it as a new
+Flow, regenerate it from the recording, process it with an LLM, or approve a
+mapper-generated recording proposal into a Flow or reviewed node definition.
 
 When a recording is finalized from the timeline, the web UI runs the recording
 authoring stages in order: normalize, mine evidence, propose a Policy Flow, and run any

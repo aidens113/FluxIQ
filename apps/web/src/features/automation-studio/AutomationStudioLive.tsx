@@ -399,7 +399,33 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     if (view.id === "proposal-workbench") return `Proposal: ${proposal?.policy?.taskId ?? proposal?.proposalId ?? "Proposal"}`;
     if (view.id === "timeline-evidence-inspector") return `Evidence: ${entryId ?? "Timeline Item"}`;
     if (view.id === "policy-primary") return selectedFlow ? `Flow: ${selectedFlow.name}` : "Flow: None";
+    if (view.id === "config-default") return `Config: ${configNameForSelection(source)}`;
     return view.label;
+  }
+  function configNameForSelection(source: AutomationSelection | null | undefined): string {
+    const flow = flowForSelection(source);
+    if (flow?.flowId) {
+      const generatedConfig = (projectArtifacts.configs ?? []).find((config: any) => config?.metadata?.ownerKind === "flow" && config?.metadata?.flowId === flow.flowId)
+        ?? (projectArtifacts.configs ?? []).find((config: any) => config?.configId === `flow.${flow.flowId}.config`);
+      return generatedConfig?.name ?? `${flow.name ?? flow.flowId} config`;
+    }
+    const task = taskForSelection(source);
+    if (task) return `${task.name ?? task.taskId} config`;
+    return "Default";
+  }
+  function flowForSelection(source: AutomationSelection | null | undefined) {
+    if (source?.kind === "flow") {
+      return projectFlows.find((entry: any) => entry.flow?.flowId === source.id)?.flow
+        ?? (projectArtifacts.flows ?? []).find((flow: any) => flow.flowId === source.id)
+        ?? selectedFlow;
+    }
+    const task = taskForSelection(source);
+    return task
+      ? (projectArtifacts.flows ?? []).find((flow: any) => (task.graphId || task.policyFlowId) && flow.flowId === (task.graphId ?? task.policyFlowId))
+        ?? (projectArtifacts.flows ?? []).find((flow: any) => flow.ownerKind === "task" && flow.ownerId === task.taskId)
+        ?? task.graph
+        ?? selectedFlow
+      : selectedFlow;
   }
   function recordingForSelection(source: AutomationSelection | null | undefined) {
     const timelineRecordingId = source?.kind === "timeline"
@@ -454,7 +480,10 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     if (next.kind === "flow") openView("policy-primary", "preview");
   };
   const openRecordingProposal = (recordingId: string) => {
-    const proposal = latestByGeneratedAt<any>(proposals.filter((item: any) => item.metadata?.recordingId === recordingId));
+    const proposal = latestByGeneratedAt<any>([
+      ...proposals.filter((item: any) => item.metadata?.recordingId === recordingId),
+      ...recordingFlowProposals.filter((item: any) => item.recordingId === recordingId)
+    ]);
     setSelection(proposal ? { kind: "proposal", id: proposal.proposalId, recordingId } : { kind: "recording", id: recordingId });
     setRecordingTreePrimaryKind("proposal");
     openView("proposal-workbench", "preview");
@@ -485,7 +514,10 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     for (let attempt = 0; attempt < 75; attempt += 1) {
       const refreshed = await refreshProjectRuntimeState(activeProjectId);
       const artifacts = refreshed?.pipelineArtifacts;
-      const proposal = latestByGeneratedAt<any>((artifacts?.policyProposals ?? []).filter((item: any) => item.metadata?.recordingId === recordingId));
+      const proposal = latestByGeneratedAt<any>([
+        ...(artifacts?.policyProposals ?? []).filter((item: any) => item.metadata?.recordingId === recordingId),
+        ...(artifacts?.recordingFlowProposals ?? []).filter((item: any) => item.recordingId === recordingId)
+      ]);
       if (proposal) {
         setSelection({ kind: "proposal", id: proposal.proposalId, recordingId });
         setRecordingTreePrimaryKind("proposal");
@@ -1043,7 +1075,10 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   }
 
   function selectProposalForRecording(recordingId: string, artifacts = pipelineArtifacts) {
-    const proposal = latestByGeneratedAt<any>((artifacts?.policyProposals ?? []).filter((item: any) => item.metadata?.recordingId === recordingId));
+    const proposal = latestByGeneratedAt<any>([
+      ...(artifacts?.policyProposals ?? []).filter((item: any) => item.metadata?.recordingId === recordingId),
+      ...(artifacts?.recordingFlowProposals ?? []).filter((item: any) => item.recordingId === recordingId)
+    ]);
     if (!proposal) return false;
     setSelection({ kind: "proposal", id: proposal.proposalId, recordingId });
     setRecordingTreePrimaryKind("proposal");
@@ -1115,31 +1150,65 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       progress: 82
     });
     const proposalResult = await api.post<{ proposal: any }>("propose-policy-from-model", { projectId: activeProjectId, recordingId, miningRunId: miningResult.payload.miningRun.miningRunId, authorizationPin });
+    if (proposalResult.ok && proposalResult.payload?.proposal) {
+      applyPipelineActionPayload("propose-policy-from-model", proposalResult.payload);
+      setSelection({ kind: "proposal", id: proposalResult.payload.proposal.proposalId, recordingId });
+      setRecordingTreePrimaryKind("proposal");
+      openView("proposal-workbench", "preview");
+      setRecordingProcessing({
+        recordingId,
+        label: "Proposal ready",
+        detail: "The Policy Flow proposal has been generated and is waiting for review.",
+        progress: 100
+      });
+      setAutomationActionStatus("Policy Flow proposal generated.");
+      window.setTimeout(() => setRecordingProcessing((current) => current?.recordingId === recordingId && current.progress >= 100 ? null : current), 1_200);
+      void refreshProjectRuntimeState(activeProjectId);
+      return true;
+    }
+    setRecordingProcessing({
+      recordingId,
+      label: "Creating mapped Flow proposals",
+      detail: "No direct Policy Flow graph was generated. Checking registered extension mappers for reviewable Flow actions.",
+      progress: 90
+    });
+    const recordingFlowResult = await api.post<{ proposals: any[]; issues?: string[] }>("create-recording-flow-proposals", { projectId: activeProjectId, recordingId, authorizationPin });
+    if (recordingFlowResult.ok && recordingFlowResult.payload?.proposals?.length) {
+      applyPipelineActionPayload("create-recording-flow-proposals", recordingFlowResult.payload);
+      const proposal = recordingFlowResult.payload.proposals[0]!;
+      setSelection({ kind: "proposal", id: proposal.proposalId, recordingId });
+      setRecordingTreePrimaryKind("proposal");
+      openView("proposal-workbench", "preview");
+      setRecordingProcessing({
+        recordingId,
+        label: "Mapped proposal ready",
+        detail: "Extension mapper proposals were generated and are waiting for review.",
+        progress: 100
+      });
+      setAutomationActionStatus("Recording Flow proposal generated.");
+      window.setTimeout(() => setRecordingProcessing((current) => current?.recordingId === recordingId && current.progress >= 100 ? null : current), 1_200);
+      void refreshProjectRuntimeState(activeProjectId);
+      return true;
+    }
+    const importerRuntimeHint = recordingFlowResult.error?.includes("bound importer runtime")
+      ? " The web runtime has no importer runtime bound. Restart the web panel after setting FLUXIQ_HOST_MODULE, and ensure registerFluxIQHost() calls fluxiq.bindAutomationStudioNativeNodeRuntime(nativeRuntime)."
+      : "";
+    const recordingFlowError = recordingFlowResult.error ? `${recordingFlowResult.error}${importerRuntimeHint}` : undefined;
+    const recordingFlowIssue = recordingFlowError
+      ?? recordingFlowResult.payload?.issues?.filter(Boolean).join(" ")
+      ?? (recordingFlowResult.ok ? "No registered extension mapper emitted valid action candidates for this recording." : undefined);
     if (!proposalResult.ok || !proposalResult.payload?.proposal) {
-      setAutomationActionStatus(proposalResult.error ?? "Policy Flow proposal could not be generated.");
+      setAutomationActionStatus(recordingFlowIssue ?? proposalResult.error ?? "No proposal could be generated from this recording.");
       setRecordingProcessing({
         recordingId,
         label: "Proposal generation failed",
-        detail: proposalResult.error ?? "Policy Flow proposal could not be generated.",
+        detail: recordingFlowIssue ?? proposalResult.error ?? "No output-bound policy actions or extension mapper proposals were found.",
         progress: 100
       });
       await refreshProjectRuntimeState(activeProjectId);
       return false;
     }
-    applyPipelineActionPayload("propose-policy-from-model", proposalResult.payload);
-    setSelection({ kind: "proposal", id: proposalResult.payload.proposal.proposalId, recordingId });
-    setRecordingTreePrimaryKind("proposal");
-    openView("proposal-workbench", "preview");
-    setRecordingProcessing({
-      recordingId,
-      label: "Proposal ready",
-      detail: "The Policy Flow proposal has been generated and is waiting for review.",
-      progress: 100
-    });
-    setAutomationActionStatus("Policy Flow proposal generated.");
-    window.setTimeout(() => setRecordingProcessing((current) => current?.recordingId === recordingId && current.progress >= 100 ? null : current), 1_200);
-    void refreshProjectRuntimeState(activeProjectId);
-    return true;
+    return false;
   }
 
   async function normalizeProjectRecording(recordingId: string) {
@@ -1241,7 +1310,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     await refreshProjectRuntimeState(activeProjectId);
   }
 
-  async function saveSelectedTaskGraph(graph: { nodes: any[]; edges: any[]; regions: any[]; regionHandoffs: any[]; flowPatch?: any }) {
+  async function saveSelectedTaskGraph(graph: { nodes: any[]; edges: any[] }) {
     if (activeProjectId && selectedFlowEntry?.source === "canonical" && selectedFlow) {
       const authorizationPin = window.prompt("Enter PIN to save this flow") ?? "";
       if (authorizationPin.length < 4) {
@@ -1255,10 +1324,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         existingFlow: { ...selectedFlow, ownerKind: "flow", ownerId: selectedFlow.flowId } as any,
         graph
       });
+      const { regions: _regions, regionHandoffs: _regionHandoffs, ...flowWithoutEditorRegions } = selectedFlow;
       const result = await api.post<{ flow: any }>("save-flow", {
         projectId: activeProjectId,
         authorizationPin,
-        flow: { ...selectedFlow, ...(graph.flowPatch ?? {}), nodes: serializedGraph.nodes, edges: serializedGraph.edges, regions: graph.regions, regionHandoffs: graph.regionHandoffs }
+        flow: { ...flowWithoutEditorRegions, nodes: serializedGraph.nodes, edges: serializedGraph.edges }
       });
       if (!result.ok) {
         setAutomationActionStatus(result.error ?? "Flow could not be saved.");
@@ -1290,24 +1360,6 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     const result = await api.post<any>("deprecate-flow-publication", { projectId: activeProjectId, flowId: selectedFlow.flowId, version, reason, authorizationPin });
     if (!result.ok) { setAutomationActionStatus(result.error ?? "Published Flow version could not be deprecated."); return false; }
     await refreshProjectRuntimeState(activeProjectId); setAutomationActionStatus(`Deprecated ${selectedFlow.name}@${version}.`); return true;
-  }
-
-  async function convertSelectedFlowToCode(moduleId: string, sourceText: string) {
-    if (!activeProjectId || !selectedFlow) return false;
-    const authorizationPin = window.prompt("Enter PIN to make code authoritative") ?? "";
-    if (authorizationPin.length < 4) return false;
-    const result = await api.post<any>("compile-flow-source", { projectId: activeProjectId, flowId: selectedFlow.flowId, moduleId, sourceText, authorizationPin });
-    if (!result.ok || !result.payload?.compilation?.ok) { setAutomationActionStatus(result.error ?? result.payload?.compilation?.diagnostics?.map((item: any) => `${item.location ? `${item.location.moduleId}:${item.location.line}:${item.location.column} ` : ""}${item.code}: ${item.message}`).join("; ") ?? "Flow source could not be compiled."); return false; }
-    await refreshProjectRuntimeState(activeProjectId); setAutomationActionStatus("Flow is now code-owned and the visual graph is read-only."); return true;
-  }
-
-  async function convertSelectedFlowToVisual() {
-    if (!activeProjectId || !selectedFlow || !window.confirm("Convert this Flow to visual ownership? Future module edits will no longer be authoritative.")) return false;
-    const authorizationPin = window.prompt("Enter PIN to convert this Flow") ?? "";
-    if (authorizationPin.length < 4) return false;
-    const result = await api.post<any>("convert-flow-to-visual", { projectId: activeProjectId, flowId: selectedFlow.flowId, authorizationPin });
-    if (!result.ok) { setAutomationActionStatus(result.error ?? "Flow could not be converted."); return false; }
-    await refreshProjectRuntimeState(activeProjectId); setAutomationActionStatus("Flow converted to visual ownership."); return true;
   }
 
   function applyPipelineActionPayload(endpoint: string, payload: any) {
@@ -2151,10 +2203,9 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                       policies={policies}
                       pipelineArtifacts={pipelineArtifacts}
                       policy={selectedPolicy}
+                      configs={projectArtifacts.configs ?? []}
                       taskGraph={selectedTaskGraph}
                       flowEditable={selectedFlowEntry?.source === "canonical"}
-                      regions={selectedFlow?.regions}
-                      regionHandoffs={selectedFlow?.regionHandoffs}
                       nativeNodeDefinitions={[...nativeNodeDefinitions, ...publishedFlowDefinitions]}
                       flowPublications={flowPublications}
                       flowDependencyInfo={flowDependencyInfo}
@@ -2190,8 +2241,6 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                       onPipelineAction={runRecordingPipelineStep}
                       onProposalReviewChange={updateProposalReview}
                       onSaveTaskGraph={saveSelectedTaskGraph}
-                      onConvertFlowToCode={convertSelectedFlowToCode}
-                      onConvertFlowToVisual={convertSelectedFlowToVisual}
                       onPublishFlow={publishSelectedFlow}
                       onDeprecateFlow={deprecateSelectedFlow}
                       onTaskGraphDirtyChange={setHasDirtyTaskGraph}
@@ -2472,7 +2521,7 @@ function automationFlowPreset(flow: any, preset: AutomationFlowPreset) {
   const end = { id: "end", definitionId: "builtin.control.end", position: { x: 500, y: 140 } };
   const base = { ...flow, origin: preset === "recorded" ? "recorded" : "manual", metadata: { ...(flow.metadata ?? {}), preset } };
   if (preset === "blank") return base;
-  if (preset === "recorded") return { ...base, regions: [{ id: "region.policy", name: "Policy", kind: "policy", nodeIds: [], entryPorts: [], exitPorts: [] }] };
+  if (preset === "recorded") return base;
   if (preset === "scheduled") return { ...base, nodes: [start, { id: "wait", definitionId: "builtin.timing.wait", position: { x: 290, y: 140 } }, end], edges: [{ id: "start.wait", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "wait", targetPortId: "in" }, { id: "wait.end", sourceNodeId: "wait", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }], metadata: { ...base.metadata, trigger: "schedule" } };
   if (preset === "api-endpoint") return { ...base, nodes: [start, end], edges: [{ id: "start.end", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }], interface: { inputs: [{ id: "request", name: "Request", valueType: { kind: "json" } }], outputs: [{ id: "response", name: "Response", valueType: { kind: "json" } }] }, metadata: { ...base.metadata, trigger: "api" } };
   if (preset === "reusable") return { ...base, nodes: [start, end], edges: [{ id: "start.end", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }], publication: { status: "publishable" } };

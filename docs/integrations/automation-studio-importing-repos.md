@@ -312,6 +312,40 @@ const nativeRuntime = new AutomationStudioNativeNodeRuntime({
 automationStudio.bindNativeNodeRuntime(nativeRuntime);
 ```
 
+When the web panel is serving Automation Studio, bind the same runtime from the
+host module loaded through `FLUXIQ_HOST_MODULE`. The registration must be
+synchronous:
+
+```ts
+import {
+  AutomationStudioNativeNodeRuntime,
+  type FluxIQ
+} from "fluxiq";
+
+export function registerFluxIQHost(fluxiq: FluxIQ): void {
+  const nativeRuntime = new AutomationStudioNativeNodeRuntime({
+    permissions: ["checkout.calculate"],
+    secretHandles: ["tax-service"]
+  }).register(manifest, {
+    packageId: "example.checkout",
+    packageVersion: "1.0.0",
+    implementations: {
+      "calculate-total": calculateTotal
+    },
+    recordingMappers: {
+      "checkout-click-mapper": mapRecordedCheckoutClick
+    }
+  });
+
+  fluxiq.bindAutomationStudioNativeNodeRuntime(nativeRuntime);
+}
+```
+
+If proposal generation reports that it needs a bound importer runtime, the web
+runtime loaded the recording and IO registry but did not receive this native
+runtime binding. Check `FLUXIQ_HOST_MODULE` and the runtime status panel before
+debugging mapper output IDs.
+
 The implementation receives only declared input-port values, immutable
 parameters, an abort signal, declared grants, and a redacted logger. Timeout is
 configured on the node instance with `metadata.timeoutMs` and defaults to 30

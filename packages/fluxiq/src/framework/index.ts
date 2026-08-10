@@ -12,7 +12,7 @@ import {
   validateDomainIo,
   validateIoRequirements
 } from "../io/index.ts";
-import { AutomationStudioIoRecorder, buildProgramDirectory, createGlobalProgramRuntime, registerHostDocumentationGenerators, type GlobalProgramRuntime, type ProgramDirectory } from "../programs/index.ts";
+import { AutomationStudioIoRecorder, buildProgramDirectory, createGlobalProgramRuntime, registerHostDocumentationGenerators, type AutomationStudioNativeNodeRuntime, type GlobalProgramRuntime, type ProgramDirectory } from "../programs/index.ts";
 import { initializeFluxIQStorage, inspectFluxIQStorage, type FluxIQStorageInspection } from "./storage-layout.ts";
 import { migrateFluxIQStorage, rollbackFluxIQStorageMigration, type FluxIQStorageMigrationResult } from "./storage-migration.ts";
 
@@ -73,6 +73,7 @@ export type FluxIQOptions = {
   tempDir?: string;
   domains?: DomainRegistration[];
   io?: IoRegistration[];
+  nativeNodeRuntime?: AutomationStudioNativeNodeRuntime;
   loadEnv?: boolean;
   envFiles?: string[];
 };
@@ -172,6 +173,7 @@ export class FluxIQ {
     };
     this.programs = createGlobalProgramRuntime(this.paths);
     this.programs.automationStudio.bindIoRuntime(this.io, activeDomainId);
+    if (options.nativeNodeRuntime) this.programs.automationStudio.bindNativeNodeRuntime(options.nativeNodeRuntime);
     this.programs.automationStudioClientGateway.bindIoRegistry(this.io);
 
     for (const domain of options.domains ?? []) {
@@ -205,6 +207,11 @@ export class FluxIQ {
 
   registerDomainIo(registration: DomainIoRegistration): this {
     this.io.register(registration);
+    return this;
+  }
+
+  bindAutomationStudioNativeNodeRuntime(runtime: AutomationStudioNativeNodeRuntime): this {
+    this.programs.automationStudio.bindNativeNodeRuntime(runtime);
     return this;
   }
 

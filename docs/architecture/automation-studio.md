@@ -268,14 +268,18 @@ Tasks and Routines. Blank, deterministic, recorded, integration, scheduled,
 API-endpoint, and reusable presets all create the same canonical artifact with
 safe initial metadata and graph content.
 
-The shared editor owns the Flow name, description, typed input/output
-interfaces, declared errors, variables, timeout/concurrency defaults,
-publication intent, authorized domain grants, regions, and graph under one
-dirty-state boundary. Saving validates and persists these details with the
-graph. Running, switching Flows, closing the project, browser
-navigation, and window close all protect unsaved edits. The palette is grouped
-by built-ins, importer integrations, domain nodes, published public Flows,
-project nodes, trusted-local code nodes, and policy/evidence nodes.
+The shared visual editor owns graph node and edge edits. Flow-level settings
+such as name, description, typed input/output interfaces, declared errors,
+variables, timeout/concurrency defaults, publication intent, and authorized
+domain grants belong to generated Flow configuration/source artifacts instead
+of the canvas header. Each canonical Flow save materializes a generated config
+artifact under the project `configs/` artifact folder and keeps that artifact
+out of legacy backup/digest calculations. Flow and task rows expose a gear
+action in the hierarchy sidebar that opens the corresponding configuration
+view. Running, switching Flows, closing the project, browser navigation, and
+window close protect unsaved visual graph edits. The palette is grouped by
+built-ins, importer integrations, domain nodes, published public Flows, project
+nodes, trusted-local code nodes, and policy/evidence nodes.
 
 Existing Task and Routine artifacts are exposed through the Flow compatibility
 catalog as labelled legacy entries. They are intentionally read-only in the

@@ -28,9 +28,10 @@ export function AutomationProposalView(props: {
   const selectedArtifact = props.selectedProposal;
   const recording = props.selectedRecording ?? props.recordings.find((item) => item.recordingId === (selectedArtifact?.recordingId ?? selectedArtifact?.metadata?.recordingId));
   const proposal = selectedArtifact?.policy ? selectedArtifact : (props.pipelineArtifacts?.policyProposals ?? []).find((item: any) => item.metadata?.recordingId === recording?.recordingId);
+  const recordingFlowProposal = selectedArtifact?.candidates ? selectedArtifact : null;
   const model = buildProposalViewModel({ artifacts: props.pipelineArtifacts, proposal, recording });
-  const recordingFlowProposals = (props.pipelineArtifacts?.recordingFlowProposals ?? []).filter((item: any) => !recording || item.recordingId === recording.recordingId);
   const [selectedGraphNodeId, setSelectedGraphNodeId] = useState("");
+  const recordingFlowGraph = useMemo(() => recordingFlowProposalToGraph(recordingFlowProposal), [recordingFlowProposal]);
   const baseGraph = useMemo(() => {
     const next = policyToReactFlowGraph(proposal?.policy, "");
     const proposedIds = new Set((proposal?.patch?.nodes ?? proposal?.policy?.nodes ?? []).map((node: any) => String(node.id)));
@@ -139,43 +140,64 @@ export function AutomationProposalView(props: {
     const override = reactFlowGraphToPolicyOverride(proposal.policy, graphRef.current, proposal.policy?.taskId ?? proposal.proposalId);
     void props.onPipelineAction("approve-policy-proposal", { proposalId: proposal.proposalId, targetFlowId, policyOverride: override as unknown as JsonObject }, "Proposal saved as Flow.");
   };
+  const approveRecordingProposalToFlow = () => {
+    if (!recordingFlowProposal) return;
+    const flowId = window.prompt("Existing destination Flow ID (leave blank to create a new Flow)", "")?.trim();
+    void props.onPipelineAction("review-recording-flow-proposal", {
+      proposalId: recordingFlowProposal.proposalId,
+      decision: "approved",
+      destination: { kind: "flow", ...(flowId ? { flowId } : { name: `Recorded flow ${recordingFlowProposal.mapper.id}` }) }
+    }, "Recording proposal approved into a Flow.");
+  };
   return (
     <section className="automation-proposal-workspace">
       <header className="automation-proposal-header">
         <div>
-          <strong>{model ? `Policy Flow Proposal: ${model.title}` : "Recording Proposals"}</strong>
-          <span>{model ? `Source recording ${model.source}` : "Select a generated proposal from the sidebar."}</span>
+          <strong>{recordingFlowProposal ? `Recording Flow Proposal: ${recordingFlowProposal.mapper.id}` : model ? `Policy Flow Proposal: ${model.title}` : "Recording Proposals"}</strong>
+          <span>{recordingFlowProposal ? `${recordingFlowProposal.candidates.length} proposed action nodes from ${recordingFlowProposal.recordingId}` : model ? `Source recording ${model.source}` : "Select a generated proposal from the sidebar."}</span>
         </div>
         <div className="automation-pipeline-controls">
           <button className="button" disabled={!recording} onClick={() => recording && props.onOpenRecording(recording.recordingId)} type="button"><Link2 size={13} aria-hidden />Open Source Recording</button>
           <button className="button" disabled={!recording} onClick={() => recording && void props.onProcessFinalizedRecording(recording.recordingId, true)} type="button"><RefreshCcw size={13} aria-hidden />Regenerate Proposal</button>
-          <button className="button button-primary" disabled={!proposal} onClick={applyToExistingFlow} type="button"><CheckCircle2 size={13} aria-hidden />Apply to Open Flow</button>
-          <button className="button" disabled={!proposal} onClick={saveAsNewFlow} type="button"><Save size={13} aria-hidden />Save as New Flow</button>
+          <button className="button button-primary" disabled={recordingFlowProposal ? recordingFlowProposal.status !== "proposed" : !proposal} onClick={recordingFlowProposal ? approveRecordingProposalToFlow : applyToExistingFlow} type="button"><CheckCircle2 size={13} aria-hidden />{recordingFlowProposal ? "Approve to Flow" : "Apply to Open Flow"}</button>
+          <button className="button" disabled={!proposal || Boolean(recordingFlowProposal)} onClick={saveAsNewFlow} type="button"><Save size={13} aria-hidden />Save as New Flow</button>
           <button className="button" disabled={!proposal} onClick={() => proposal && props.onProcessProposalWithLlm(proposal.proposalId)} type="button"><Sparkles size={13} aria-hidden />Process With LLM</button>
         </div>
         {props.actionStatus ? <StatusText value={props.actionStatus} /> : null}
       </header>
       <section className="automation-proposal-body">
-        {recordingFlowProposals.map((item: any) => <section className="automation-proposal-summary-panel" key={item.proposalId}>
-          <div>
-            <span>Recording mapper · {item.mapper.id} {item.mapper.version}</span>
-            <strong>{item.candidates.length} reviewed action candidate{item.candidates.length === 1 ? "" : "s"}</strong>
-            <p>{item.candidates.map((candidate: any) => `${candidate.label ?? candidate.outputId} · ${Math.round(candidate.confidence * 100)}% · confirmation ${candidate.expectedConfirmation?.inputId ?? "none"} · evidence ${candidate.evidence?.length ?? 0}`).join(" | ")}</p>
-            <details><summary>Review mapper output and evidence</summary>{item.candidates.map((candidate: any) => <div key={candidate.candidateId}><strong>{candidate.label ?? candidate.outputId}</strong><p>Output: {candidate.outputId} · Parameters: {JSON.stringify(candidate.parameters)} · Confirmation: {candidate.expectedConfirmation?.inputId ?? "none"} · Mapper state eligibility: never</p><p>Observations: {(candidate.sourceObservationIds ?? []).join(", ")} · Evidence: {(candidate.evidence ?? []).map((evidence: any) => `${evidence.layer}:${evidence.artifactId}${evidence.entryId ? `#${evidence.entryId}` : ""}`).join(", ")}</p></div>)}</details>
-            {item.invalidation?.reasons?.length ? <p>{item.invalidation.reasons.join(" ")}</p> : null}
-          </div>
-          <div className="automation-pipeline-controls">
-            <StatusBadge value={item.status} />
-            <button className="button button-primary" disabled={item.status !== "proposed"} onClick={() => {
-              const flowId = window.prompt("Existing destination Flow ID (leave blank to create a new Flow)", "")?.trim();
-              void props.onPipelineAction("review-recording-flow-proposal", { proposalId: item.proposalId, decision: "approved", destination: { kind: "flow", ...(flowId ? { flowId } : { name: `Recorded flow ${item.mapper.id}` }) } }, "Recording proposal approved into a Flow.");
-            }} type="button">Approve to Flow</button>
-            <button className="button" disabled={item.status !== "proposed"} onClick={() => void props.onPipelineAction("review-recording-flow-proposal", { proposalId: item.proposalId, decision: "approved", destination: { kind: "node", visibility: "private" } }, "Private recording node approved.")} type="button">Private Node</button>
-            <button className="button" disabled={item.status !== "proposed"} onClick={() => void props.onPipelineAction("review-recording-flow-proposal", { proposalId: item.proposalId, decision: "approved", destination: { kind: "node", visibility: "public" } }, "Public recording node approved.")} type="button">Public Node</button>
-            <button className="button" disabled={item.status !== "proposed"} onClick={() => void props.onPipelineAction("review-recording-flow-proposal", { proposalId: item.proposalId, decision: "rejected" }, "Recording proposal rejected.")} type="button">Reject</button>
-          </div>
-        </section>)}
-        {!model ? <div className="automation-project-empty compact"><strong>No proposal selected</strong><span>Finalized recordings generate proposals automatically. Regenerate from a source recording if needed.</span></div> : null}
+        {recordingFlowProposal ? <>
+          <section className="automation-proposal-summary-panel">
+            <div>
+              <span>Recording mapper - {recordingFlowProposal.mapper.id} {recordingFlowProposal.mapper.version}</span>
+              <strong>{recordingFlowProposal.candidates.length} proposed action nodes</strong>
+              <p>Select a node to inspect output parameters, confirmation, observations, and evidence in the global inspector.</p>
+              {recordingFlowProposal.invalidation?.reasons?.length ? <p>{recordingFlowProposal.invalidation.reasons.join(" ")}</p> : null}
+            </div>
+            <div className="automation-pipeline-controls">
+              <StatusBadge value={recordingFlowProposal.status} />
+              <button className="button" disabled={recordingFlowProposal.status !== "proposed"} onClick={() => void props.onPipelineAction("review-recording-flow-proposal", { proposalId: recordingFlowProposal.proposalId, decision: "approved", destination: { kind: "node", visibility: "private" } }, "Private recording node approved.")} type="button">Private Node</button>
+              <button className="button" disabled={recordingFlowProposal.status !== "proposed"} onClick={() => void props.onPipelineAction("review-recording-flow-proposal", { proposalId: recordingFlowProposal.proposalId, decision: "approved", destination: { kind: "node", visibility: "public" } }, "Public recording node approved.")} type="button">Public Node</button>
+              <button className="button" disabled={recordingFlowProposal.status !== "proposed"} onClick={() => void props.onPipelineAction("review-recording-flow-proposal", { proposalId: recordingFlowProposal.proposalId, decision: "rejected" }, "Recording proposal rejected.")} type="button">Reject</button>
+            </div>
+          </section>
+          <section className="automation-proposal-graph-review">
+            <AutomationPolicyGraphEditor
+              className="proposal-review"
+              editableNodeIds={recordingFlowGraph.nodes.map((node) => node.id)}
+              edges={recordingFlowGraph.edges}
+              mode="proposal-review"
+              nodes={recordingFlowGraph.nodes}
+              selectedNodeId={selectedGraphNodeId}
+              onNodeSelect={(node) => {
+                setSelectedGraphNodeId(node.id);
+                const candidate = recordingFlowProposal.candidates[recordingFlowGraph.nodes.findIndex((item) => item.id === node.id)];
+                publishRecordingCandidateSelection(props.setSelection, recordingFlowProposal, candidate, node);
+              }}
+            />
+          </section>
+        </> : null}
+        {!model && !recordingFlowProposal ? <div className="automation-project-empty compact"><strong>No proposal selected</strong><span>Finalized recordings generate proposals automatically. Regenerate from a source recording if needed.</span></div> : null}
         {model ? <>
           <section className="automation-proposal-summary-panel">
             <div>
@@ -207,6 +229,96 @@ export function AutomationProposalView(props: {
       </section>
     </section>
   );
+}
+
+function recordingFlowProposalToGraph(proposal: any): { nodes: Array<Node<AutomationPolicyNodeData>>; edges: Edge[] } {
+  if (!proposal?.candidates?.length) return { nodes: [], edges: [] };
+  const policy = {
+    nodes: proposal.candidates.map((candidate: any, index: number) => ({
+      id: recordingCandidateNodeId(candidate, index),
+      label: candidate.label ?? candidate.outputId,
+      description: `Recorded action for ${candidate.outputId}.`,
+      actions: [{
+        id: `action.${index + 1}`,
+        actionType: candidate.outputId,
+        outputId: candidate.outputId,
+        parameters: candidate.parameters ?? {}
+      }],
+      sourceEvidence: candidate.evidence ?? [],
+      timeout: { timeoutMs: candidate.expectedConfirmation?.timeoutMs ?? 5_000 },
+      retry: { maxAttempts: 1, backoffMs: 500 },
+      recovery: { strategy: "pause" },
+      successConditions: { type: "all", conditions: [] },
+      failureConditions: { type: "none", conditions: [] },
+      generatedMetadata: { generatedBy: "recording_mapper", generatedAt: proposal.generatedAt ?? Date.now(), confidence: candidate.confidence ?? 0.5 },
+      metadata: {
+        parameterValues: {
+          outputId: candidate.outputId,
+          parameters: candidate.parameters ?? {},
+          ...(candidate.expectedConfirmation ? { confirmationInputId: candidate.expectedConfirmation.inputId, confirmationTimeoutMs: candidate.expectedConfirmation.timeoutMs ?? 5_000 } : {})
+        },
+        recordingProposalId: proposal.proposalId,
+        recordingCandidateId: candidate.candidateId,
+        mapperId: proposal.mapper?.id,
+        sourceObservationIds: candidate.sourceObservationIds ?? [],
+        evidence: candidate.evidence ?? [],
+        policyStateEligible: false
+      }
+    })),
+    edges: proposal.candidates.slice(1).map((candidate: any, index: number) => ({
+      id: `edge.recorded.${index + 1}`,
+      fromNodeId: recordingCandidateNodeId(proposal.candidates[index], index),
+      toNodeId: recordingCandidateNodeId(candidate, index + 1),
+      label: "Next"
+    }))
+  };
+  const graph = policyToReactFlowGraph(policy, "");
+  return {
+    nodes: graph.nodes.map((node) => ({ ...node, data: { ...node.data, reviewTone: "proposed" as const } })),
+    edges: graph.edges
+  };
+}
+
+function publishRecordingCandidateSelection(setSelection: (selection: AutomationSelection) => void, proposal: any, candidate: any, node: Node<AutomationPolicyNodeData>): void {
+  if (!candidate) return;
+  setSelection({
+    kind: "editor-node",
+    id: node.id,
+    node: {
+      label: candidate.label ?? candidate.outputId,
+      nodeType: "policy",
+      family: "recording-proposal",
+      description: `Recorded action candidate from mapper ${proposal.mapper?.id ?? "unknown"}.`,
+      actionTypes: [candidate.outputId],
+      inputs: node.data.inputs,
+      outputs: node.data.outputs,
+      parameters: node.data.parameters,
+      parameterValues: {
+        outputId: candidate.outputId,
+        parameters: candidate.parameters ?? {},
+        ...(candidate.expectedConfirmation ? { confirmationInputId: candidate.expectedConfirmation.inputId, confirmationTimeoutMs: candidate.expectedConfirmation.timeoutMs ?? 5_000 } : {})
+      },
+      metadata: {
+        recordingProposalId: proposal.proposalId,
+        recordingId: proposal.recordingId,
+        candidateId: candidate.candidateId,
+        confidence: candidate.confidence,
+        outputId: candidate.outputId,
+        expectedConfirmation: candidate.expectedConfirmation ?? null,
+        sourceObservationIds: candidate.sourceObservationIds ?? [],
+        evidence: candidate.evidence ?? [],
+        policyStateEligible: false
+      }
+    }
+  });
+}
+
+function recordingCandidateNodeId(candidate: any, index: number): string {
+  return `recorded.${safeNodeSegment(candidate?.candidateId ?? String(index + 1))}`;
+}
+
+function safeNodeSegment(value: string): string {
+  return value.trim().replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "candidate";
 }
 
 function reactFlowGraphToPolicyOverride(basePolicy: any, graph: { nodes: Array<Node<AutomationPolicyNodeData>>; edges: Edge[] }, targetTaskId: string) {

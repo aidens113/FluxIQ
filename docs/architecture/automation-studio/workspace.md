@@ -143,29 +143,64 @@ Model learning and replay/validation are not recording pipeline stages in the
 current product surface. Model-shaped artifacts may still be used internally as
 compatibility data, and replay belongs to a separate runtime view.
 
-Flow editor modes are:
+Flow editor modes are intentionally conservative. A mode must change how the
+canvas is interpreted; it must not create a second properties sidebar inside
+the Flow editor. Detailed controls, evidence cards, previews, and future custom
+widgets belong in the global inspector so selection behavior stays consistent
+across graph, timeline, proposal, recording, and signal views.
+
+Current Flow editor modes are:
 
 - `Flow`: the default editable policy graph for adding, moving, connecting, and
   deleting nodes and edges.
-- `State`: read/inspect mode for policy signals, state entries, deltas,
-  volatility, and condition coverage.
-- `Evidence`: read/inspect mode for recordings, timeline entries, notes,
-  checkpoints, and raw/normalized evidence links.
-- `Test Run`: read/inspect preview for replaying or simulating the policy
-  against selected recording/state data.
+- `State`: read/inspect mode for answering "what state signals and condition
+  coverage does this graph depend on?" It should highlight and summarize state
+  dependencies for selected nodes/edges through the global inspector.
+- `Evidence`: read/inspect mode for answering "why does this node or route
+  exist?" It should highlight recording/proposal support, missing support, and
+  evidence provenance for selected nodes/edges through the global inspector.
 
-Only `Flow` mode is directly editable in the current implementation. Other
-modes keep the same canvas visible for context but disable graph edits and show
-their mode-specific details through the global inspector selection model until
-deeper inspectors/simulators are connected.
+Only `Flow` mode is directly editable in the current implementation. `State`
+and `Evidence` are candidate inspection modes, not permanent conceptual layers
+by default. They should remain only if they make relationships easier to audit
+than a normal selected-node or selected-recording inspector. Other runtime,
+replay, or simulation work belongs in separate runtime/debug workspace views,
+not as a `Test Run` layer inside the Flow editor.
 
 Automation Studio node editors follow the FluxBot v1 flow editor direction:
 metadata-first node definitions, grouped palettes, explicit input/output ports,
 custom React Flow cards, minimap/controls, draggable node placement, palette
 insertion, selectable edges, keyboard deletion, and explicit delete-selected
-controls. Deterministic, orchestration, evidence, and policy nodes share the
-same scope-aware node registry; policy regions retain evidence and state layers
-without becoming a separate Task editor.
+controls. Deterministic, orchestration, evidence, and policy-like behavior is
+modeled through ordinary nodes and runtime/source metadata, not through a
+region authoring toolbar in the visual canvas.
+
+Flow-level configuration is not edited at the top of the canvas. Name,
+description, typed inputs/outputs, declared errors, variables, publication
+intent, authorized domains, and runtime defaults belong to the generated Flow
+configuration/source artifact. Every canonical Flow save writes a generated
+config artifact at `configs/<flow-config-id>/config.json` with ownership
+metadata linking it back to the Flow and a durable TypeScript DSL source file
+under `source/flows/<flow-id>.flow.ts` inside the project `.fluxiq` tree. The
+generated source file exists even when visual IR remains authoritative, so code
+review, export, and future CI checks have a stable file to inspect. Explicit
+code-owned conversion writes the authoritative module under `source/<moduleId>`
+and records the module through `flow.source.moduleId`.
+
+Source ownership is configuration, not a Flow canvas mode. The Flow editor mode
+tabs are for graph/node/state/evidence viewing behavior only. The config view
+is the editable surface for Flow identity, runtime defaults, source ownership,
+and future global or node-contributed configuration fields. Node-contributed
+configuration must register through a Flow config extension contract and render
+in the config/global inspector surfaces rather than creating another inspector
+inside the canvas.
+
+Generated Flow configs are excluded from legacy task/routine migration backups
+so they do not make legacy source data appear dirty. Flow and task rows in the
+left hierarchy expose a gear action before the delete action; clicking it opens
+the configuration view for the selected automation item. The visual editor
+dirty state therefore tracks graph node/edge edits, while Flow configuration
+changes are handled by the config/source surface.
 
 The visual node language is backed by the same node registry definitions used
 by execution. Palette-created nodes store their definition ID, icon,
@@ -513,6 +548,10 @@ edits can still be cached in the project's `workspace/preferences.json` until
 the user explicitly applies the proposal to an existing Flow or saves it
 as a new Flow, and the web panel installs a browser leave-page warning while
 proposal review edits are dirty.
+The Flow canvas persists visual graph nodes and edges only. It does not create,
+modify, or preserve hidden execution region records. Older Flow artifacts that
+still carry region metadata are treated as model/source configuration rather
+than as inline visual editor state.
 Pointer movement uses transient pixel geometry while a window or section is
 being dragged/resized. The persisted percentage geometry is written back to
 workspace preferences only once the pointer interaction ends, preventing config

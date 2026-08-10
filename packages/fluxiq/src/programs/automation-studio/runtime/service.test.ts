@@ -47,7 +47,8 @@ describe("AutomationStudioService recording persistence", () => {
     const project = await service.createProject({ name: "Mapped recording", domainId: "example" });
     const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.mapped", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
     await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" } } });
-    const [proposal] = await service.createRecordingFlowProposals({ projectId: project.id, recordingId: recording.recordingId });
+    const { proposals: [proposal], issues } = await service.createRecordingFlowProposals({ projectId: project.id, recordingId: recording.recordingId });
+    expect(issues).toEqual([]);
     expect(proposal?.candidates[0]).toMatchObject({ outputId: "click", sourceInputIds: ["clicked"], policyStateEligible: false, expectedConfirmation: { inputId: "clicked" } });
     expect(proposal?.review).toBeUndefined();
     const reviewed = await service.reviewRecordingFlowProposal({ projectId: project.id, proposalId: proposal!.proposalId, decision: "approved", destination: { kind: "flow", name: "Approved clicks" } });
@@ -70,6 +71,44 @@ describe("AutomationStudioService recording persistence", () => {
     service.bindNativeNodeRuntime(changedRuntime);
     const invalidated = (await service.listPipelineArtifacts(project.id)).recordingFlowProposals.find((item) => item.proposalId === proposal!.proposalId);
     expect(invalidated).toMatchObject({ status: "invalidated", invalidation: { affectedFlowIds: [reviewed.flow!.flowId] } });
+  });
+
+  it("processes extension recordings into recording Flow proposals instead of blank policy proposals", async () => {
+    const io = new IoRegistry();
+    io.registerInput("example", { definition: { id: "clicked", title: "Clicked", role: "action", outputId: "click" }, mode: "stream", subscribe: () => () => undefined });
+    io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
+    const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "click-mapper", version: "1.0.0", description: "Maps recorded clicks", outputIds: ["click"] }] };
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingMappers: { "click-mapper": (observation) => observation.type === "observation" ? { outputId: "click", parameters: { target: "submit" }, sourceInputIds: ["clicked"], expectedConfirmation: { inputId: "clicked", timeoutMs: 100 }, confidence: 0.9 } : null } });
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const project = await service.createProject({ name: "Extension Process", domainId: "example" });
+    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.extension-process", domainId: "example", startedAt: 100, initialState: { timestamp: 100, namespaces: {} } });
+    await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" }, timestamp: 200, monotonicOffsetMs: 100 } });
+    await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId, endedAt: 300 });
+
+    const processed = await service.processFinalizedRecording({ projectId: project.id, recordingId: recording.recordingId });
+    const artifacts = await service.listPipelineArtifacts(project.id);
+
+    expect(processed.status).toBe("processed");
+    expect(processed.proposal).toBeUndefined();
+    expect(processed.recordingFlowProposals?.[0]?.candidates[0]).toMatchObject({ outputId: "click", policyStateEligible: false });
+    expect(artifacts.policyProposals.filter((proposal) => proposal.metadata?.recordingId === recording.recordingId)).toEqual([]);
+    expect(artifacts.recordingFlowProposals.filter((proposal) => proposal.recordingId === recording.recordingId)).toHaveLength(1);
+  });
+
+  it("explains mapper miss diagnostics when no recording Flow candidates are accepted", async () => {
+    const io = new IoRegistry();
+    io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
+    const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "empty-mapper", version: "1.0.0", description: "Does not map this recording", outputIds: ["click"] }] };
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingMappers: { "empty-mapper": () => null } });
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const project = await service.createProject({ name: "Mapper Miss", domainId: "example" });
+    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.mapper-miss", domainId: "example", startedAt: 100, initialState: { timestamp: 100, namespaces: {} } });
+    await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" }, timestamp: 200, monotonicOffsetMs: 100 } });
+
+    const result = await service.createRecordingFlowProposals({ projectId: project.id, recordingId: recording.recordingId });
+
+    expect(result.proposals).toEqual([]);
+    expect(result.issues[0]).toContain("saw 1 entries (observation: 1), matched 0, emitted 0 raw candidates");
   });
 
   it("stores project recordings and normalized timelines in project folders", async () => {
@@ -245,13 +284,13 @@ describe("AutomationStudioService recording persistence", () => {
     await service.appendRecordingEvent({
       projectId: project.id,
       recordingId: recording.recordingId,
-      entry: { type: "domain_event", eventType: "step.started", timestamp: 300, payload: { step: 1 } }
+      entry: { type: "action", actionType: "output.step-started", outputId: "output.step-started", parameters: { step: 1 }, origin: "operator", startedAt: 300, timestamp: 300 }
     });
     await service.appendRecordingMarkerEntry({ projectId: project.id, recordingId: recording.recordingId, label: "Goal", monotonicOffsetMs: 1000 });
     await service.appendRecordingEvent({
       projectId: project.id,
       recordingId: recording.recordingId,
-      entry: { type: "domain_event", eventType: "step.completed", timestamp: 1300, payload: { step: 1 } }
+      entry: { type: "action", actionType: "output.step-completed", outputId: "output.step-completed", parameters: { step: 1 }, origin: "operator", startedAt: 1300, timestamp: 1300 }
     });
     await service.normalizeRecording({ projectId: project.id, recordingId: recording.recordingId });
 
@@ -345,12 +384,9 @@ describe("AutomationStudioService recording persistence", () => {
     await service.normalizeRecording({ projectId: project.id, recordingId: recording.recordingId });
     const miningRun = await service.mineRecordingEvidence({ projectId: project.id, recordingId: recording.recordingId });
 
-    const proposal = await service.proposePolicyFromModel({ projectId: project.id, recordingId: recording.recordingId });
+    await expect(service.proposePolicyFromModel({ projectId: project.id, recordingId: recording.recordingId })).rejects.toThrow(/No executable output-bound actions/);
     const projectArtifacts = await service.listProjectArtifacts(project.id);
 
-    expect(proposal.metadata).toMatchObject({ source: "mined_evidence", recordingId: recording.recordingId, miningRunId: miningRun.miningRunId });
-    expect(proposal.policy.sourceEvidence[0]).toMatchObject({ layer: "signal_mining", artifactId: miningRun.miningRunId });
-    expect(proposal.policy.nodes).toEqual([]);
     expect(miningRun.correlations?.[0]).toMatchObject({ statePath: "task.status", elementKind: "status", descriptor: { label: "Task status" } });
     expect(projectArtifacts.tasks).toEqual([]);
     expect(projectArtifacts.flows).toEqual([]);
@@ -361,7 +397,7 @@ describe("AutomationStudioService recording persistence", () => {
     await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.direct-proposal", "derived", "evidence", "observations", `${miningRun.evidenceObservationIds![0]}.json`), "utf8")).resolves.toContain("\"observationId\"");
     await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.direct-proposal", "derived", "evidence", "correlations", `${miningRun.stateActionCorrelationIds![0]}.json`), "utf8")).resolves.toContain("\"correlationId\"");
     await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.direct-proposal", "derived", "evidence", "claims", `${miningRun.evidenceClaimIds![0]}.json`), "utf8")).resolves.toContain("\"claimId\"");
-    await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.direct-proposal", "derived", "proposal", "proposal.json"), "utf8")).resolves.toContain("\"proposalId\"");
+    await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.direct-proposal", "derived", "proposal", "proposal.json"), "utf8")).rejects.toThrow();
   });
 
   it("merges proposals from multiple recordings into one canonical Flow", async () => {
@@ -506,13 +542,14 @@ describe("AutomationStudioService recording persistence", () => {
     const processed = await service.processFinalizedRecording({ projectId: project.id, recordingId: recording.recordingId });
     const skipped = await service.processFinalizedRecording({ projectId: project.id, recordingId: recording.recordingId });
 
-    expect(processed.status).toBe("processed");
+    expect(processed.status).toBe("partial");
     expect(processed.normalizedTimeline?.recordingId).toBe(recording.recordingId);
     expect(processed.miningRun?.metadata).toMatchObject({ recordingId: recording.recordingId });
-    expect(processed.proposal?.metadata).toMatchObject({ recordingId: recording.recordingId, miningRunId: processed.miningRun?.miningRunId });
+    expect(processed.proposal).toBeUndefined();
+    expect(processed.issues).toEqual(expect.arrayContaining([expect.stringMatching(/No executable output-bound actions/)]));
     await expect(service.listProjectArtifacts(project.id)).resolves.toMatchObject({ tasks: [], flows: [] });
-    expect(skipped.status).toBe("skipped");
-    expect(skipped.proposal?.proposalId).toBe(processed.proposal?.proposalId);
+    expect(skipped.status).toBe("partial");
+    expect(skipped.proposal).toBeUndefined();
   });
 
   it("keeps finalized recording proposals stable and persisted", async () => {
@@ -533,15 +570,15 @@ describe("AutomationStudioService recording persistence", () => {
     await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId, endedAt: 300 });
 
     const first = await service.processFinalizedRecording({ projectId: project.id, recordingId: recording.recordingId });
-    const second = await service.proposePolicyFromModel({ projectId: project.id, recordingId: recording.recordingId });
+    await expect(service.proposePolicyFromModel({ projectId: project.id, recordingId: recording.recordingId })).rejects.toThrow(/No executable output-bound actions/);
     const artifacts = await service.listPipelineArtifacts(project.id);
     const projectRoot = path.join(tempRoot, "programs", "automation-studio", "projects", project.id);
-    const sessionFiles = await readdir(path.join(projectRoot, "recordings", "sessions", recording.recordingId, "derived", "proposal"));
 
-    expect(second.proposalId).toBe(first.proposal?.proposalId);
-    expect(artifacts.policyProposals.filter((proposal) => proposal.metadata?.recordingId === recording.recordingId)).toHaveLength(1);
-    expect(sessionFiles.filter((file) => file.endsWith(".json"))).toEqual(["proposal.json"]);
-    await expect(readFile(path.join(projectRoot, "recordings", "sessions", recording.recordingId, "derived", "proposal", "proposal.json"), "utf8")).resolves.toContain("\"proposalId\"");
+    expect(first.status).toBe("partial");
+    expect(first.proposal).toBeUndefined();
+    expect(artifacts.policyProposals.filter((proposal) => proposal.metadata?.recordingId === recording.recordingId)).toEqual([]);
+    await expect(readdir(path.join(projectRoot, "recordings", "sessions", recording.recordingId, "derived", "proposal"))).rejects.toThrow();
+    await expect(readFile(path.join(projectRoot, "recordings", "sessions", recording.recordingId, "derived", "proposal", "proposal.json"), "utf8")).rejects.toThrow();
 
     await service.deleteRecording({ projectId: project.id, recordingId: recording.recordingId });
     expect((await service.listPipelineArtifacts(project.id)).policyProposals.filter((proposal) => proposal.metadata?.recordingId === recording.recordingId)).toEqual([]);
@@ -712,13 +749,33 @@ describe("AutomationStudioService canonical Flow persistence", () => {
     const service = new AutomationStudioService({ dataDir: tempRoot, repositories: createCanonicalAutomationStudioSQLiteRepositories(path.join(tempRoot, "databases")), seedFixture: false });
     const project = await service.createProject({ name: "Source ownership" });
     const blank = await service.createFlow({ projectId: project.id, flowId: "flow.source", name: "Source" });
+    const generatedSourcePath = path.join(tempRoot, "programs", "automation-studio", "projects", project.id, "source", "flows", "flow.source.flow.ts");
+    await expect(readFile(generatedSourcePath, "utf8")).resolves.toContain('flowId": "flow.source"');
+    expect(blank.metadata).toMatchObject({ generatedSource: { moduleId: "flows/flow.source.flow.ts", relativePath: "source/flows/flow.source.flow.ts", authoritative: false } });
+    await expect(service.getProjectArtifact(project.id, "config", "flow.flow.source.config")).resolves.toMatchObject({
+      configId: "flow.flow.source.config",
+      metadata: { generated: true, ownerKind: "flow", flowId: "flow.source" },
+      values: { flowId: "flow.source", name: "Source", source: { mode: "visual" } }
+    });
     const visual = await service.saveFlow({ projectId: project.id, flow: { ...blank, nodes: [{ id: "value", definitionId: "builtin.data.constant", parameterValues: { value: "ok" } }] } });
+    await expect(service.getProjectArtifact(project.id, "config", "flow.flow.source.config")).resolves.toMatchObject({
+      values: { flowId: "flow.source", source: { mode: "visual" } }
+    });
     const converted = await service.compileAndSaveFlowSource({ projectId: project.id, flowId: visual.flowId, moduleId: "flows/source.flow.ts", sourceText: generateFlowTypeScript(visual) });
     expect(converted.compilation.ok).toBe(true);
     expect(converted.flow?.source).toMatchObject({ mode: "code", moduleId: "flows/source.flow.ts", compilerVersion: "0.1" });
+    await expect(readFile(path.join(tempRoot, "programs", "automation-studio", "projects", project.id, "source", "flows", "source.flow.ts"), "utf8")).resolves.toContain('flowId": "flow.source"');
+    await expect(service.getProjectArtifact(project.id, "config", "flow.flow.source.config")).resolves.toMatchObject({
+      values: { flowId: "flow.source", source: { mode: "code", moduleId: "flows/source.flow.ts" } }
+    });
     await expect(service.saveFlow({ projectId: project.id, flow: { ...converted.flow!, nodes: [...converted.flow!.nodes, { id: "tampered", definitionId: "builtin.control.end" }] } })).rejects.toThrow("compiler digest");
     await expect(service.saveFlow({ projectId: project.id, flow: { ...converted.flow!, source: { mode: "visual" } } })).rejects.toThrow("explicit conversion");
     await expect(service.convertFlowToVisual({ projectId: project.id, flowId: visual.flowId })).resolves.toMatchObject({ source: { mode: "visual" }, publication: { status: "draft" } });
+    await expect(service.getProjectArtifact(project.id, "config", "flow.flow.source.config")).resolves.toMatchObject({
+      values: { flowId: "flow.source", source: { mode: "visual" } }
+    });
+    await expect(service.deleteFlow({ projectId: project.id, flowId: visual.flowId })).resolves.toMatchObject({ deletedFlowId: visual.flowId });
+    await expect(service.getProjectArtifact(project.id, "config", "flow.flow.source.config")).rejects.toThrow("Unknown Automation Studio config");
   });
 
   it("exposes and executes explicitly bound domain-native nodes only in their project scope", async () => {

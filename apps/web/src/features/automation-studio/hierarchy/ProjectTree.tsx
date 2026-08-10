@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, ChevronRight, FileText, FolderOpen, GitBranch, History, Plus, Radio, SlidersHorizontal, Trash2, Workflow } from "lucide-react";
+import { ChevronDown, ChevronRight, FileText, FolderOpen, GitBranch, History, Plus, Radio, Settings, SlidersHorizontal, Trash2, Workflow } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { AutomationHierarchyAction, AutomationHierarchyCategory, AutomationHierarchyKind, AutomationHierarchyNode } from "./model";
 import { automationHierarchyCategories, automationHierarchyCategoryLabel, collectHierarchyAncestorIds, sortAutomationHierarchyNodes } from "./model";
@@ -62,6 +62,13 @@ export function AutomationProjectTree(props: {
     }
     open();
   };
+  const openConfigFromTree = (node: AutomationHierarchyNode) => {
+    cancelPendingOpen();
+    if (!node.sourceId || (node.kind !== "flow" && node.kind !== "task")) return;
+    setPrimaryTreeNodeId(node.id);
+    props.setSelection(node.kind === "flow" ? { kind: "flow", id: node.sourceId } : { kind: "policy", id: node.sourceId });
+    props.openView("config-default", "preview");
+  };
   useEffect(() => {
     if (!primaryTreeNodeId) return;
     const primaryNode = props.nodes.find((node) => node.id === primaryTreeNodeId);
@@ -96,7 +103,7 @@ export function AutomationProjectTree(props: {
               {canCreate ? <button className="tree-row-action" onClick={(event) => { event.preventDefault(); event.stopPropagation(); requestTreeAction({ action: "create", category: category.id, parentId: null }); }} onPointerDown={(event) => event.stopPropagation()} title={`Add inside ${category.label}`} aria-label={`Add inside ${category.label}`} type="button"><Plus size={13} aria-hidden /></button> : null}
             </div>
             {!collapsed ? <div className="automation-tree-children root-children">
-              <AutomationHierarchyChildren nodes={sortAutomationHierarchyNodes(rootNodes)} allNodes={props.nodes} visibleIds={visibleIds} collapsedFolderIds={collapsedFolderIds} primaryTreeNodeId={primaryTreeNodeId} recordingPrimaryKind={props.recordingPrimaryKind} selection={props.selection} openNode={openFromTree} requestAction={requestTreeAction} toggleFolder={toggleFolder} />
+              <AutomationHierarchyChildren nodes={sortAutomationHierarchyNodes(rootNodes)} allNodes={props.nodes} visibleIds={visibleIds} collapsedFolderIds={collapsedFolderIds} primaryTreeNodeId={primaryTreeNodeId} recordingPrimaryKind={props.recordingPrimaryKind} selection={props.selection} openConfig={openConfigFromTree} openNode={openFromTree} requestAction={requestTreeAction} toggleFolder={toggleFolder} />
               {!rootNodes.length ? <div className="automation-tree-empty">No {category.label.toLowerCase()} match the current filter.</div> : null}
             </div> : null}
           </section>
@@ -114,6 +121,7 @@ export function AutomationHierarchyTreeNode(props: {
   primaryTreeNodeId: string | null;
   recordingPrimaryKind: "recording" | "proposal" | null;
   selection: AutomationSelection | null;
+  openConfig(node: AutomationHierarchyNode): void;
   openNode(node: AutomationHierarchyNode, mode: "preview" | "new-window"): void;
   requestAction(action: NonNullable<AutomationHierarchyAction>): void;
   toggleFolder(folderId: string): void;
@@ -147,6 +155,18 @@ export function AutomationHierarchyTreeNode(props: {
           aria-label={`Add inside ${props.node.label}`}
           type="button"
         ><Plus size={13} aria-hidden /></button> : null}
+        {(props.node.kind === "flow" || props.node.kind === "task") && props.node.sourceId ? <button
+          className="tree-row-action config"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            props.openConfig(props.node);
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          title={`Open ${props.node.label} config`}
+          aria-label={`Open ${props.node.label} config`}
+          type="button"
+        ><Settings size={13} aria-hidden /></button> : null}
         {!isStaticWorkspaceNode && !isProposalHierarchyNode ? <button
           className="tree-row-action danger"
           onClick={(event) => {
@@ -160,7 +180,7 @@ export function AutomationHierarchyTreeNode(props: {
           type="button"
         ><Trash2 size={13} aria-hidden /></button> : null}
       </div>
-      {children.length && !collapsed ? <div className="automation-tree-children"><AutomationHierarchyChildren nodes={sortAutomationHierarchyNodes(children)} allNodes={props.nodes} visibleIds={props.visibleIds} collapsedFolderIds={props.collapsedFolderIds} primaryTreeNodeId={props.primaryTreeNodeId} recordingPrimaryKind={props.recordingPrimaryKind} selection={props.selection} openNode={props.openNode} requestAction={props.requestAction} toggleFolder={props.toggleFolder} /></div> : null}
+      {children.length && !collapsed ? <div className="automation-tree-children"><AutomationHierarchyChildren nodes={sortAutomationHierarchyNodes(children)} allNodes={props.nodes} visibleIds={props.visibleIds} collapsedFolderIds={props.collapsedFolderIds} primaryTreeNodeId={props.primaryTreeNodeId} recordingPrimaryKind={props.recordingPrimaryKind} selection={props.selection} openConfig={props.openConfig} openNode={props.openNode} requestAction={props.requestAction} toggleFolder={props.toggleFolder} /></div> : null}
     </div>
   );
 }
@@ -173,6 +193,7 @@ export function AutomationHierarchyChildren(props: {
   primaryTreeNodeId: string | null;
   recordingPrimaryKind: "recording" | "proposal" | null;
   selection: AutomationSelection | null;
+  openConfig(node: AutomationHierarchyNode): void;
   openNode(node: AutomationHierarchyNode, mode: "preview" | "new-window"): void;
   requestAction(action: NonNullable<AutomationHierarchyAction>): void;
   toggleFolder(folderId: string): void;
@@ -189,6 +210,7 @@ export function AutomationHierarchyChildren(props: {
           primaryTreeNodeId={props.primaryTreeNodeId}
           recordingPrimaryKind={props.recordingPrimaryKind}
           selection={props.selection}
+          openConfig={props.openConfig}
           openNode={props.openNode}
           requestAction={props.requestAction}
           toggleFolder={props.toggleFolder}
