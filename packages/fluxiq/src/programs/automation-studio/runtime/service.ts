@@ -604,7 +604,21 @@ export class AutomationStudioService {
       endOffsetMs: actions[index + 1]?.monotonicOffsetMs ?? timeline.timeline[timeline.timeline.length - 1]?.monotonicOffsetMs ?? entry.monotonicOffsetMs,
       sourceEvidence: [{ layer: "normalized_timeline" as const, artifactId: timeline.normalizedTimelineId, entryId: entry.id }]
     }));
-    const actionEffects = actions.flatMap((action) => deltas
+    const correlationEffects = correlations
+      .filter((correlation) => correlation.relation.includes("after") || correlation.relation === "changed_between_actions")
+      .map((correlation) => ({
+        actionOccurrenceId: correlation.actionEntryId,
+        signalPath: correlation.statePath,
+        relationship: "likely_effect" as const,
+        probability: confidenceForCorrelation(correlation),
+        delayMs: {
+          min: correlation.timing.afterMs ?? 0,
+          median: correlation.timing.afterMs ?? 0,
+          max: correlation.timing.afterMs ?? 0
+        },
+        evidence: [{ layer: "state_action_correlation" as const, artifactId: correlation.correlationId, signalPath: correlation.statePath, relationship: correlation.relation }]
+      }));
+    const rawDeltaEffects = actions.flatMap((action) => deltas
       .filter((delta) => delta.monotonicOffsetMs >= action.monotonicOffsetMs)
       .slice(0, 3)
       .flatMap((delta) => (delta as any).deltas?.map((stateDelta: any) => ({
@@ -615,12 +629,16 @@ export class AutomationStudioService {
         delayMs: { min: Math.max(0, delta.monotonicOffsetMs - action.monotonicOffsetMs), median: Math.max(0, delta.monotonicOffsetMs - action.monotonicOffsetMs), max: Math.max(0, delta.monotonicOffsetMs - action.monotonicOffsetMs) },
         evidence: [{ layer: "normalized_timeline" as const, artifactId: timeline.normalizedTimelineId, entryId: delta.id, signalPath: formatStatePath(stateDelta.namespace, stateDelta.path) }]
       })) ?? []));
-    const conditionCandidates = [...new Map(actionEffects.map((effect) => [effect.signalPath, effect])).values()].map((effect) => ({
-      signalPath: effect.signalPath,
-      role: "context_signal" as const,
-      probability: 0.5,
-      evidence: effect.evidence
-    }));
+    const actionEffects = uniqueBy([...correlationEffects, ...rawDeltaEffects], (effect) => `${effect.actionOccurrenceId}:${effect.signalPath}:${effect.relationship}`);
+    const conditionCandidates = correlations
+      .filter((correlation) => !correlation.relation.includes("after") && correlation.relation !== "changed_between_actions")
+      .map((correlation) => ({
+        signalPath: correlation.statePath,
+        role: correlation.relation === "became_enabled_before_action" ? "eligibility_signal" as const : "context_signal" as const,
+        probability: confidenceForCorrelation(correlation),
+        evidence: [{ layer: "state_action_correlation" as const, artifactId: correlation.correlationId, signalPath: correlation.statePath, relationship: correlation.relation }],
+        metadata: { actionEntryId: correlation.actionEntryId, relation: correlation.relation }
+      }));
     const claims = [
       ...correlations.map((correlation, index) => createCorrelationClaim(miningRunId, timeline, correlation, index, observations)),
       ...createTransitionClaims(miningRunId, timeline, actions, factsByEntryId, observationsByFactId)
@@ -689,7 +707,7 @@ export class AutomationStudioService {
       const outputId = cluster.actionTemplate.outputId;
       return Boolean(outputId) && (!this.ioRuntime || this.ioRuntime.io.hasOutput(this.ioRuntime.domainId, outputId!));
     });
-    if (!executableClusters.length) {
+    if (!model.actionClusters.length) {
       throw new Error("No executable output-bound actions were found in mined evidence. For extension/domain recordings, generate recording Flow proposals from registered recording mappers instead.");
     }
     const executableClusterIds = new Set(executableClusters.map((cluster) => cluster.id));
@@ -705,7 +723,7 @@ export class AutomationStudioService {
       retry: { maxAttempts: 1, backoffMs: 500 },
       recovery: { strategy: "pause" },
       outgoingEdges: [],
-      sourceEvidence: cluster.actionTemplate.sourceEvidence ?? [],
+      sourceEvidence: uniqueEvidenceReferences([...(cluster.actionTemplate.sourceEvidence ?? []), ...cluster.expectedEffects.flatMap((effect) => effect.evidence)]),
       generatedMetadata: { generatedBy: "signal_miner", generatedAt: Date.now(), confidence: cluster.confidence }
     }));
     const edges = model.transitions
@@ -1213,10 +1231,10 @@ export class AutomationStudioService {
     notes?: string;
     reviewerId?: string;
     destination?: { kind: "flow"; flowId?: string; name?: string } | { kind: "node"; visibility: "private" | "public" };
+    policyOverride?: PolicyGraph;
   }): Promise<{ proposal: RecordingFlowProposalArtifact; flow?: AutomationStudioFlowArtifact }> {
     const original = await this.readPipelineArtifact<RecordingFlowProposalArtifact>(input.projectId, "recordingFlowProposals", input.proposalId);
     if (!original) throw new Error(`Unknown recording Flow proposal: ${input.proposalId}`);
-    if (original.status !== "proposed") throw new Error(`Recording Flow proposal has already been reviewed (${original.status}).`);
     const checked = await this.validateRecordingFlowProposal(input.projectId, original);
     if (checked.status === "invalidated") throw new Error(`Recording Flow proposal is invalidated: ${checked.invalidation?.reasons.join(", ")}`);
     const now = Date.now();
@@ -1234,7 +1252,31 @@ export class AutomationStudioService {
       flow = input.destination.flowId
         ? await this.getFlow(input.projectId, input.destination.flowId)
         : await this.createFlow({ projectId: input.projectId, name: input.destination.name?.trim() || `Recorded flow ${new Date(original.generatedAt).toLocaleString()}` });
-      flow = await this.saveFlow({ projectId: input.projectId, flow: appendRecordingProposalToFlow(flow, checked) });
+      if (input.policyOverride) {
+        const projected = policyGraphToAutomationStudioFlow(withPolicyOutgoingEdges(input.policyOverride), {
+          flowId: flow.flowId,
+          existingFlow: canonicalFlowDocument(flow),
+          proposalId: checked.proposalId,
+          recordingId: checked.recordingId
+        });
+        flow = await this.saveFlow({ projectId: input.projectId, flow: {
+          ...flow,
+          nodes: projected.nodes,
+          edges: projected.edges,
+          evidenceReferences: uniqueEvidenceReferences([...(flow.evidenceReferences ?? []), ...(input.policyOverride.sourceEvidence ?? [])]),
+          publication: { status: "draft" },
+          metadata: {
+            ...(flow.metadata ?? {}),
+            source: "recording_flow_proposal",
+            lastProposalId: checked.proposalId,
+            lastRecordingId: checked.recordingId,
+            mapperId: checked.mapper.id,
+            mapperVersion: checked.mapper.version
+          }
+        } });
+      } else {
+        flow = await this.saveFlow({ projectId: input.projectId, flow: appendRecordingProposalToFlow(flow, checked) });
+      }
       destination = { kind: "flow", flowId: flow.flowId, created };
     } else {
       const nodeDestination = input.destination;
@@ -2805,6 +2847,18 @@ function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
 }
 
+function uniqueBy<T>(values: T[], keyFor: (value: T) => string): T[] {
+  const seen = new Set<string>();
+  const output: T[] = [];
+  for (const value of values) {
+    const key = keyFor(value);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    output.push(value);
+  }
+  return output;
+}
+
 function flowPublicationId(flowId: string, version: string): string {
   return `${flowId}@${version}`;
 }
@@ -3321,10 +3375,21 @@ function recordingCandidateDefinition(proposal: RecordingFlowProposalArtifact, c
     outputAction: { fixedOutputId: candidate.outputId },
     inputs: [{ id: "ready", label: "Ready", valueType: "any", role: "control" }],
     outputs: [{ id: "success", label: "Success", valueType: "any", role: "success" }, { id: "failed", label: "Failed", valueType: "any", role: "failure" }],
-    parameters: [],
+    parameters: recordingCandidateParameters(candidate),
     icon: "wand-sparkles",
     metadata: { visibility, candidateId: candidate.candidateId, outputId: candidate.outputId, parameters: candidate.parameters, ...(candidate.expectedConfirmation ? { expectedConfirmation: candidate.expectedConfirmation } : {}), evidence: candidate.evidence, sourceObservationIds: candidate.sourceObservationIds, policyStateEligible: false }
   };
+}
+
+function recordingCandidateParameters(candidate: RecordingFlowActionCandidate): AutomationStudioNodeDefinition["parameters"] {
+  const payload = candidate.parameters && typeof candidate.parameters === "object" && !Array.isArray(candidate.parameters) ? candidate.parameters as JsonObject : {};
+  return [
+    { id: "parameters", label: "Output payload", description: "Values passed to this recorded output action.", valueType: "object" as const, defaultValue: payload },
+    ...(candidate.expectedConfirmation ? [
+      { id: "confirmationInputId", label: "Confirmation input", description: "Action input stream that confirms the output occurred.", valueType: "string" as const, defaultValue: candidate.expectedConfirmation.inputId ?? "", ui: { control: "identifier" as const, placeholder: "Registered action input ID" } },
+      { id: "confirmationTimeoutMs", label: "Confirmation timeout", description: "How long to wait for confirmation.", valueType: "number" as const, defaultValue: candidate.expectedConfirmation.timeoutMs ?? 5_000 }
+    ] : [])
+  ];
 }
 
 function materializeRecordingNode<T extends { definitionId: string; parameterValues?: JsonObject; metadata?: JsonObject }>(node: T, definition: AutomationStudioNodeDefinition | undefined): T {

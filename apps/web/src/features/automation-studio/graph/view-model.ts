@@ -3,7 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import type { AutomationNodeParameter, AutomationNodePort } from "fluxiq/automation-studio/nodes";
 import type { JsonObject } from "../../programs/program-api";
 import type { AutomationDragSelectBox } from "../workspace/layout";
-import { automationEditorPalette, type AutomationPolicyNodeData, type AutomationRoutineNodeData } from "../types";
+import { automationEditorPalette, type AutomationEditorNodeSpec, type AutomationPolicyNodeData, type AutomationRoutineNodeData } from "../types";
 import { automationConnectionIsValid, automationPortColor, automationPortDisplayLabel, automationPortIdFromLabel, automationPortLabelFromId, automationPortTone, uniqueAutomationPorts } from "./ports";
 
 export function defaultAutomationParameterValues(parameters: AutomationNodeParameter[]): JsonObject {
@@ -445,34 +445,41 @@ export function policyToReactFlowGraph(policy: any, selectedNodeId = ""): { node
   const policyNodes = policy?.nodes ?? [];
   const policyEdges = policy?.edges ?? [];
   const positions = layoutAutomationPolicyNodes(policyNodes, policyEdges);
-  const nodes: Node<AutomationPolicyNodeData>[] = policyNodes.map((node: any, index: number) => ({
-    id: node.id,
-    type: "policyNode",
-    position: node.metadata?.position && typeof node.metadata.position === "object"
-      ? { x: Number(node.metadata.position.x ?? 0), y: Number(node.metadata.position.y ?? 0) }
-      : positions.get(node.id) ?? { x: index * 340, y: 160 },
-    selected: node.id === selectedNodeId,
-    data: {
-      label: node.label ?? node.id,
-      description: generatedPolicyNodeDescription(node),
-      customDescription: node.metadata?.customDescription,
-      nodeDefinitionId: node.metadata?.nodeDefinitionId,
-      nodeDefinitionVersion: node.metadata?.nodeDefinitionVersion,
-      icon: generatedPolicyNodeIcon(node, index),
-      actionTypes: (node.actions ?? []).map((action: any) => action.actionType),
-      recovery: node.recovery?.strategy ?? "ready",
-      evidenceCount: node.sourceEvidence?.length ?? 0,
-      readinessCount: countConditionLeaves(node.readinessConditions),
-      successCount: countConditionLeaves(node.successConditions),
-      inputs: generatedPolicyInputPorts(node, index),
-      outputs: generatedPolicyOutputPorts(node, policyEdges),
-      parameters: Array.isArray(node.metadata?.parameters) ? node.metadata.parameters : [],
-      parameterValues: node.metadata?.parameterValues && typeof node.metadata.parameterValues === "object" ? node.metadata.parameterValues : {},
-      isStart: index === 0,
-      confidence: node.generatedMetadata?.confidence,
-      timeoutMs: node.timeout?.timeoutMs ?? node.timeoutMs
-    }
-  }));
+  const nodes: Node<AutomationPolicyNodeData>[] = policyNodes.map((node: any, index: number) => {
+    const actionDefinition = (node.actions ?? []).length ? automationNodeSpecForDefinition("builtin.policy.action") : undefined;
+    const parameterValues = node.metadata?.parameterValues && typeof node.metadata.parameterValues === "object"
+      ? node.metadata.parameterValues
+      : generatedPolicyParameterValues(node);
+    return {
+      id: node.id,
+      type: "policyNode",
+      position: node.metadata?.position && typeof node.metadata.position === "object"
+        ? { x: Number(node.metadata.position.x ?? 0), y: Number(node.metadata.position.y ?? 0) }
+        : positions.get(node.id) ?? { x: index * 340, y: 160 },
+      selected: node.id === selectedNodeId,
+      data: {
+        label: node.label ?? node.id,
+        description: generatedPolicyNodeDescription(node),
+        customDescription: node.metadata?.customDescription,
+        nodeDefinitionId: node.metadata?.nodeDefinitionId ?? actionDefinition?.id,
+        nodeDefinitionVersion: node.metadata?.nodeDefinitionVersion ?? actionDefinition?.version,
+        icon: generatedPolicyNodeIcon(node, index),
+        actionTypes: (node.actions ?? []).map((action: any) => action.actionType),
+        recovery: node.recovery?.strategy ?? "ready",
+        evidenceCount: (node.sourceEvidence?.length ?? 0) + (Array.isArray(node.metadata?.evidence) ? node.metadata.evidence.length : 0),
+        readinessCount: countConditionLeaves(node.eligibility) + countConditionLeaves(node.readinessConditions),
+        successCount: countConditionLeaves(node.successConditions),
+        inputs: generatedPolicyInputPorts(node, index),
+        outputs: generatedPolicyOutputPorts(node, policyEdges),
+        parameters: Array.isArray(node.metadata?.parameters) ? node.metadata.parameters : actionDefinition?.parameters ?? [],
+        parameterValues,
+        isStart: index === 0,
+        confidence: node.generatedMetadata?.confidence,
+        timeoutMs: node.timeout?.timeoutMs ?? node.timeoutMs,
+        metadata: node.metadata ?? {}
+      }
+    };
+  });
   const outgoingCounts = new Map<string, number>();
   const edges: Edge[] = [];
   for (const [index, edge] of policyEdges.entries()) {
@@ -509,7 +516,7 @@ export function policyToReactFlowGraph(policy: any, selectedNodeId = ""): { node
   return { nodes, edges };
 }
 
-export function taskFlowToReactFlowGraph(flow: any, selectedNodeId = ""): { nodes: Node<AutomationPolicyNodeData>[]; edges: Edge[] } {
+export function taskFlowToReactFlowGraph(flow: any, selectedNodeId = "", nodeDefinitions: any[] = []): { nodes: Node<AutomationPolicyNodeData>[]; edges: Edge[] } {
   if (!flow) return { nodes: [], edges: [] };
   const flowNodes = flow.nodes ?? [];
   const flowEdges = flow.edges ?? [];
@@ -518,7 +525,7 @@ export function taskFlowToReactFlowGraph(flow: any, selectedNodeId = ""): { node
     flowEdges.map((edge: any) => ({ fromNodeId: edge.sourceNodeId, toNodeId: edge.targetNodeId }))
   );
   const nodes: Node<AutomationPolicyNodeData>[] = flowNodes.map((node: any, index: number) => {
-    const definition = automationNodeSpecForDefinition(node.definitionId);
+    const definition = automationNodeSpecForDefinition(node.definitionId, nodeDefinitions);
     const parameterValues = node.parameterValues && typeof node.parameterValues === "object" ? node.parameterValues : {};
     const inputs = automationVisualInputPorts(definition?.inputs ?? [], node.definitionId);
     const outputs = flowNodeOutputPorts(node, flowEdges, definition?.outputs ?? []);
@@ -580,8 +587,43 @@ export function taskFlowToReactFlowGraph(flow: any, selectedNodeId = ""): { node
   return { nodes, edges };
 }
 
-function automationNodeSpecForDefinition(definitionId: string | undefined) {
-  return automationEditorPalette.flatMap((group) => group.nodes).find((node) => node.id === definitionId);
+function automationNodeSpecForDefinition(definitionId: string | undefined, nodeDefinitions: any[] = []): AutomationEditorNodeSpec | undefined {
+  if (!definitionId) return undefined;
+  const builtin = automationEditorPalette.flatMap((group) => group.nodes).find((node) => node.id === definitionId);
+  if (builtin) return builtin;
+  const dynamic = nodeDefinitions.find((definition) => definition?.id === definitionId);
+  if (!dynamic) return undefined;
+  return {
+    id: dynamic.id,
+    version: dynamic.version ?? "1.0.0",
+    label: dynamic.label ?? dynamic.id,
+    description: dynamic.description ?? "Custom automation node",
+    family: dynamic.category ?? "custom",
+    scope: dynamic.legacyScope ?? "both",
+    nodeType: "custom",
+    inputs: dynamic.inputs ?? [],
+    outputs: dynamic.outputs ?? [],
+    parameters: dynamic.parameters ?? [],
+    ...(dynamic.icon ? { icon: dynamic.icon } : {}),
+    ...(dynamic.safety?.privileged === true ? { privileged: true } : {}),
+    ...(dynamic.outputAction ? { actionTypes: ["action"] } : {}),
+    source: dynamic.source,
+    availability: dynamic.availability
+  };
+}
+
+function generatedPolicyParameterValues(node: any): JsonObject {
+  const action = (node.actions ?? [])[0] ?? {};
+  if (!action.outputId && !action.actionType) return {};
+  return {
+    outputId: action.outputId ?? action.actionType ?? "",
+    parameters: action.parameters ?? {},
+    confirmationInputId: action.confirmationInputId ?? "",
+    confirmationTimeoutMs: action.confirmationTimeoutMs ?? 5_000,
+    timeoutMs: node.timeout?.timeoutMs ?? node.timeoutMs ?? 5_000,
+    requiresApproval: action.metadata?.requiresApproval === true,
+    failureRoute: "failed"
+  } as JsonObject;
 }
 
 function flowNodeOutputPorts(node: any, flowEdges: any[], definitionOutputs: AutomationNodePort[]): AutomationNodePort[] {
@@ -734,8 +776,11 @@ export function edgeVisuals(edge: any): { color: string; style: Edge["style"] } 
 }
 
 export function countConditionLeaves(group: any): number {
-  if (!group?.conditions) return 0;
-  return group.conditions.reduce((total: number, condition: any) => total + (condition.signalPath ? 1 : countConditionLeaves(condition)), 0);
+  if (!group) return 0;
+  if (Array.isArray(group)) return group.reduce((total: number, condition: any) => total + countConditionLeaves(condition), 0);
+  if (group.signalPath) return 1;
+  if (!group.conditions) return 0;
+  return group.conditions.reduce((total: number, condition: any) => total + countConditionLeaves(condition), 0);
 }
 
 export function formatDbCell(value: unknown): string {

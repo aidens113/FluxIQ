@@ -143,7 +143,7 @@ export function policyGraphToAutomationStudioFlow(policy: PolicyGraph, input: { 
       definitionId: "builtin.policy.action",
       label: node.label,
       ...(node.description !== undefined ? { description: node.description } : {}),
-      position: { x: index * 340, y: index % 2 === 0 ? 120 : 280 },
+      position: policyNodeFlowPosition(node, index),
       parameterValues: compactJsonObject({
         outputId: node.actions[0]?.outputId ?? "",
         confirmationInputId: node.actions[0]?.confirmationInputId ?? "",
@@ -179,6 +179,16 @@ export function policyGraphToAutomationStudioFlow(policy: PolicyGraph, input: { 
       ...(input.recordingId !== undefined ? { lastRecordingId: input.recordingId } : {})
     }
   };
+}
+
+function policyNodeFlowPosition(node: PolicyNode, index: number): { x: number; y: number } {
+  const position = node.metadata?.position;
+  if (position && typeof position === "object" && !Array.isArray(position)) {
+    const x = Number((position as Record<string, unknown>).x);
+    const y = Number((position as Record<string, unknown>).y);
+    if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+  }
+  return { x: index * 340, y: 160 };
 }
 
 export function createTaskProposalModelFromMiningRun(miningRun: SignalMiningResult, taskId?: string): LearnedTaskModel {
@@ -226,7 +236,7 @@ export function createTaskProposalModelFromMiningRun(miningRun: SignalMiningResu
         sourceEvidence: claimEvidence
       },
       positiveRequirements: uniqueBy((miningRun.claims ?? [])
-        .filter((candidate) => candidate.claimType === "candidate_condition")
+        .filter((candidate) => candidate.claimType === "candidate_condition" && candidate.statement.subject.entryId === actionEntryId)
         .map((candidate) => ({ signalPath: String(candidate.statement.object?.signalPath ?? candidate.statement.subject.signalPath ?? ""), operator: "exists" as const, weight: candidate.confidence.score }))
         .filter((condition) => condition.signalPath)
         .slice(0, 3), (condition) => condition.signalPath),
@@ -235,9 +245,12 @@ export function createTaskProposalModelFromMiningRun(miningRun: SignalMiningResu
         signalPath: effect.signalPath,
         condition: { signalPath: effect.signalPath, operator: "changed" as const },
         probability: actionClaims.find((candidate) => candidate.statement.object?.signalPath === effect.signalPath && candidate.statement.subject.entryId === actionEntryId)?.confidence.score ?? effect.probability,
-        evidence: matchingActionClaims
+        evidence: uniqueBy([
+          ...effect.evidence,
+          ...matchingActionClaims
           .filter((candidate) => candidate.statement.object?.signalPath === effect.signalPath)
           .map((candidate) => ({ layer: "evidence_claim" as const, artifactId: candidate.claimId, relationship: candidate.claimType }))
+        ], (evidence) => `${evidence.layer}:${evidence.artifactId}:${evidence.relationship ?? ""}`)
       })),
       possibleSideEffects: [],
       confidence: Math.min(0.85, 0.55 + matchingEffects.length * 0.05),

@@ -11,7 +11,6 @@ import { automationEditorPalette } from "../types";
 import type { AutomationDragSelectBox } from "../workspace/layout";
 import { automationConnectionIsValid, automationPortCaption, automationPortDisplayLabel, automationPortTitle, automationPortTone, uniqueAutomationPorts } from "../graph/ports";
 import { automationEdgeRoute, automationLaneEdgePath, automationLoopEdgePath, automationVisualInputPorts, createAutomationConnectionEdge, defaultAutomationParameterValues, flattenRunLogs, policyToReactFlowGraph, rebalanceAutomationEdgeLanes, reconnectAutomationEdge, roundedAutomationPosition, routineToReactFlowGraph, spawnAutomationNodePosition, startAutomationNodeMarquee, syncGraphNodes, taskFlowToReactFlowGraph } from "../graph/view-model";
-import { timelineEntrySummary } from "../timeline/view-model";
 import { groupByNamespace, sameStringList } from "./view-utils";
 
 type TabButton<T extends string> = { id: T; label: string; count?: number };
@@ -142,14 +141,7 @@ function policyEditorSelection(id: string, data: AutomationPolicyNodeData): Auto
   };
 }
 
-type AutomationTaskEditorMode = "flow" | "state" | "evidence";
 type AutomationRoutineEditorMode = "flow" | "data" | "plan";
-
-const automationTaskEditorModes: Array<{ id: AutomationTaskEditorMode; label: string; description: string }> = [
-  { id: "flow", label: "Flow", description: "Edit policy nodes, routes, conditions, actions, retries, and recovery." },
-  { id: "state", label: "State", description: "Inspect state signal coverage for the selected graph without changing graph structure." },
-  { id: "evidence", label: "Evidence", description: "Inspect recording/proposal support for the selected graph without changing graph structure." }
-];
 
 const automationRoutineEditorModes: Array<{ id: AutomationRoutineEditorMode; label: string; description: string }> = [
   { id: "flow", label: "Flow", description: "Edit routine orchestration nodes, routes, branches, waits, approvals, and recovery." },
@@ -310,7 +302,16 @@ export function AutomationRoutineView(props: { models: any[]; policies: any[]; s
     function handleUpdateParameters(event: Event) {
       const detail = (event as CustomEvent<{ nodeId?: string; parameterValues?: JsonObject; customDescription?: string }>).detail;
       if (!detail?.nodeId) return;
-      setRoutineNodes((nodes) => nodes.map((node) => node.id === detail.nodeId ? { ...node, data: { ...node.data, ...(detail.parameterValues ? { parameterValues: detail.parameterValues } : {}), ...(detail.customDescription !== undefined ? { customDescription: detail.customDescription } : {}) } } : node));
+      setRoutineNodes((nodes) => {
+        const nextNodes = nodes.map((node) => {
+          if (node.id !== detail.nodeId) return node;
+          const data = { ...node.data, ...(detail.parameterValues ? { parameterValues: detail.parameterValues } : {}), ...(detail.customDescription !== undefined ? { customDescription: detail.customDescription } : {}) };
+          if (routineSelectionRef.current === `node:${node.id}`) props.setSelection(routineEditorSelection(node.id, data));
+          return { ...node, data };
+        });
+        routineNodesRef.current = nextNodes;
+        return nextNodes;
+      });
     }
     window.addEventListener("automation-studio:delete-node", handleDeleteNode);
     window.addEventListener("automation-studio:delete-edge", handleDeleteEdge);
@@ -322,7 +323,7 @@ export function AutomationRoutineView(props: { models: any[]; policies: any[]; s
       window.removeEventListener("automation-studio:select-edge", handleSelectEdge);
       window.removeEventListener("automation-studio:update-node-parameters", handleUpdateParameters);
     };
-  }, [isFlowMode]);
+  }, [isFlowMode, props.setSelection]);
   return (
     <section className="automation-policy-canvas routine-canvas">
       <div className="automation-editor-mode-bar">
@@ -399,7 +400,7 @@ export function AutomationRoutineView(props: { models: any[]; policies: any[]; s
                 return nextEdges;
               });
             }}
-            onNodeDragStop={(_event, _node, nodes) => setRoutineEdges((edges) => rebalanceAutomationEdgeLanes(edges, nodes))}
+            onNodeDragStop={() => setRoutineEdges((edges) => rebalanceAutomationEdgeLanes(edges, routineNodesRef.current))}
             onNodeClick={(_event, node) => {
               setSelectedRoutineNodeId((current) => current === node.id ? current : node.id);
               const key = `node:${node.id}`;
@@ -432,59 +433,6 @@ export function AutomationRoutineView(props: { models: any[]; policies: any[]; s
       </div>
     </section>
   );
-}
-
-function taskEditorModeSelection(props: { entries: any[]; mode: AutomationTaskEditorMode; policy: any; recordings: any[]; selectedTimeline: any; signals: any[] }): AutomationSelection {
-  const modeDefinition = automationTaskEditorModes.find((item) => item.id === props.mode) ?? automationTaskEditorModes[0]!;
-  const stateEntries = props.entries.filter((entry) => entry.type === "state_delta" || entry.type === "state_checkpoint");
-  const actionEntries = props.entries.filter((entry) => entry.type === "action");
-  const noteEntries = props.entries.filter((entry) => entry.type === "note");
-  const stateDeltas = stateEntries.reduce((total, entry) => total + (entry.deltas?.length ?? 0), 0);
-  const policyConditions = props.policy?.nodes?.reduce((total: number, node: any) => total + (node.readiness?.length ?? 0) + (node.successConditions?.length ?? 0), 0) ?? 0;
-  if (props.mode === "state") {
-    return {
-      kind: "editor-mode",
-      id: "task:state",
-      editor: "flow",
-      label: modeDefinition.label,
-      description: modeDefinition.description,
-      sections: [
-        { title: "State Summary", rows: [["Signals", String(props.signals.length)], ["State timeline entries", String(stateEntries.length)], ["State deltas", String(stateDeltas)], ["Policy conditions", String(policyConditions)]] },
-        { title: "Visible Signals", rows: topSignalRows(props.signals) }
-      ]
-    };
-  }
-  if (props.mode === "evidence") {
-    return {
-      kind: "editor-mode",
-      id: "task:evidence",
-      editor: "flow",
-      label: modeDefinition.label,
-      description: modeDefinition.description,
-      sections: [
-        { title: "Evidence Summary", rows: [["Recordings", String(props.recordings.length)], ["Timeline entries", String(props.selectedTimeline?.timeline?.length ?? props.entries.length)], ["Actions", String(actionEntries.length)], ["Notes", String(noteEntries.length)]] },
-        { title: "Recent Evidence", rows: topTimelineRows(props.entries) }
-      ],
-      widgets: [
-        { kind: "summary", title: "Evidence Coverage", items: [["Recordings", props.recordings.length], ["Timeline entries", props.selectedTimeline?.timeline?.length ?? props.entries.length], ["Actions", actionEntries.length], ["Notes", noteEntries.length]] },
-        { kind: "cards", title: "Layer Re-evaluation", items: [
-          { title: "Evidence", detail: "Keep only if it helps audit why nodes and routes exist.", meta: "Candidate layer" },
-          { title: "State", detail: "Keep only if it explains signal coverage and condition quality better than the inspector alone.", meta: "Candidate layer" }
-        ] }
-      ]
-    };
-  }
-  return {
-    kind: "editor-mode",
-    id: "task:evidence",
-    editor: "flow",
-    label: modeDefinition.label,
-    description: modeDefinition.description,
-    sections: [
-      { title: "Evidence Summary", rows: [["Recordings", String(props.recordings.length)], ["Timeline entries", String(props.selectedTimeline?.timeline?.length ?? props.entries.length)], ["Actions", String(actionEntries.length)], ["Notes", String(noteEntries.length)]] },
-      { title: "Recent Evidence", rows: topTimelineRows(props.entries) }
-    ]
-  };
 }
 
 function routineEditorModeSelection(props: { mode: AutomationRoutineEditorMode; nodes: Array<Node<AutomationRoutineNodeData>>; edges: Edge[]; models: any[]; policies: any[] }): AutomationSelection {
@@ -528,16 +476,6 @@ function routineEditorModeSelection(props: { mode: AutomationRoutineEditorMode; 
   };
 }
 
-function topSignalRows(signals: any[]): Array<[string, string]> {
-  if (!signals.length) return [["Signals", "No state signals loaded yet."]];
-  return signals.slice(0, 6).map((signal) => [signal.path ?? "Signal", `${signal.type ?? "unknown"} | ${signal.volatility ?? "normal"}`]);
-}
-
-function topTimelineRows(entries: any[]): Array<[string, string]> {
-  if (!entries.length) return [["Evidence", "No recording evidence loaded for this task."]];
-  return entries.slice(0, 5).map((entry, index) => [`${index + 1}. ${entry.type ?? "Entry"}`, timelineEntrySummary(entry)]);
-}
-
 function topRoutineNodeRows(nodes: Array<Node<AutomationRoutineNodeData>>): Array<[string, string]> {
   if (!nodes.length) return [["Routine graph", "Add routine nodes in Flow mode to define data handoffs."]];
   return nodes.slice(0, 6).map((node) => [node.data.label, `${node.data.inputs.length} inputs | ${node.data.outputs.length} outputs`]);
@@ -553,8 +491,8 @@ export function AutomationStateExplorerView(props: { signals: any[]; entries: an
       <div className="segmented-control">{(["Tree", "Table", "Diff", "Graph", "Raw"] as const).map((item) => <button className={mode === item ? "selected" : ""} key={item} onClick={() => setMode(item)} type="button">{item}</button>)}</div>
       <div className="automation-state-list">
         {mode === "Diff" ? stateDeltas.map((delta, index) => (
-          <button key={`${delta.path?.namespace ?? "state"}:${delta.path?.path ?? index}:${index}`} type="button">
-            <strong>{statePathLabel(delta.path)}</strong>
+          <button key={`${delta.namespace ?? delta.path?.namespace ?? "state"}:${delta.path?.path ?? delta.path ?? index}:${index}`} type="button">
+            <strong>{statePathLabel(delta)}</strong>
             <span>{delta.change} | {stateValueLabel(delta.previous)} {"->"} {stateValueLabel(delta.current)}</span>
           </button>
         )) : Object.entries(namespaces).map(([namespace, namespaceSignals]) => (
@@ -577,7 +515,13 @@ export function AutomationStateExplorerView(props: { signals: any[]; entries: an
 
 function statePathLabel(pathValue: any): string {
   if (!pathValue) return "state";
-  return `${pathValue.namespace ?? "state"}.${pathValue.path ?? ""}`;
+  if (typeof pathValue === "string") return pathValue;
+  if (pathValue.namespace || pathValue.path) {
+    const namespace = pathValue.namespace ?? pathValue.path?.namespace ?? "state";
+    const path = typeof pathValue.path === "string" ? pathValue.path : pathValue.path?.path ?? "";
+    return `${namespace}.${path}`.replace(/\.$/, "");
+  }
+  return "state";
 }
 
 function stateValueLabel(value: any): string {
@@ -637,8 +581,7 @@ export function AutomationWorkspaceDock(props: { activeTab: AutomationDockTab; p
   );
 }
 
-export function AutomationPolicyCanvas(props: { active: boolean; editable: boolean; entries: any[]; policy: any; taskGraph?: any; nativeNodeDefinitions: any[]; recordings: any[]; selectedNode: any; selectedTimeline: any; signals: any[]; onSaveGraph(graph: { nodes: Array<Node<AutomationPolicyNodeData>>; edges: Edge[] }): Promise<boolean | void>; onDirtyChange(dirty: boolean): void; setSelection(selection: AutomationSelection): void }) {
-  const [mode, setMode] = useState<AutomationTaskEditorMode>("flow");
+export function AutomationPolicyCanvas(props: { active: boolean; editable: boolean; entries: any[]; policy: any; taskGraph?: any; taskGraphDraft?: { nodes: Array<Node<AutomationPolicyNodeData>>; edges: Edge[] } | null; nativeNodeDefinitions: any[]; recordings: any[]; selectedNode: any; selectedTimeline: any; signals: any[]; onSaveGraph(graph: { nodes: Array<Node<AutomationPolicyNodeData>>; edges: Edge[] }): Promise<boolean | void>; onGraphDraftChange(graph: { nodes: Array<Node<AutomationPolicyNodeData>>; edges: Edge[] } | null): void; onDirtyChange(dirty: boolean): void; setSelection(selection: AutomationSelection): void }) {
   const [selectedPolicyNodeId, setSelectedPolicyNodeId] = useState(props.selectedNode?.id ?? "");
   const [selectedPolicyEdgeIds, setSelectedPolicyEdgeIds] = useState<string[]>([]);
   const [paletteCollapsed, setPaletteCollapsed] = useState(false);
@@ -653,10 +596,14 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
   const recentlyConnectedPolicyEdgeIdsRef = useRef<Set<string>>(new Set());
   const taskGraphSignature = props.taskGraph ? automationTaskGraphSourceSignature(props.taskGraph) : "";
   const policyGraphSignature = props.taskGraph ? "" : automationPolicySourceSignature(props.policy);
-  const graph = useMemo(() => props.taskGraph ? taskFlowToReactFlowGraph(props.taskGraph, "") : policyToReactFlowGraph(props.policy, ""), [taskGraphSignature, policyGraphSignature]);
+  const nativeNodeDefinitionSignature = JSON.stringify(props.nativeNodeDefinitions.map((definition) => ({ id: definition.id, version: definition.version, parameters: definition.parameters, inputs: definition.inputs, outputs: definition.outputs })));
+  const taskGraphDraftSignature = props.taskGraphDraft ? graphSignature(props.taskGraphDraft.nodes, props.taskGraphDraft.edges) : "";
+  const graph = useMemo(() => props.taskGraphDraft ?? (props.taskGraph ? taskFlowToReactFlowGraph(props.taskGraph, "", props.nativeNodeDefinitions) : policyToReactFlowGraph(props.policy, "")), [taskGraphSignature, policyGraphSignature, nativeNodeDefinitionSignature, taskGraphDraftSignature]);
   const [policyNodes, setPolicyNodes] = useState(graph.nodes);
   const [policyEdges, setPolicyEdges] = useState(graph.edges);
   const policyNodeDragActiveRef = useRef(false);
+  const pendingPolicyGraphDraftRef = useRef<{ nodes: Array<Node<AutomationPolicyNodeData>>; edges: Edge[] } | null>(null);
+  const policyGraphDraftFlushQueuedRef = useRef(false);
   useEffect(() => {
     const nextEdges = rebalanceAutomationEdgeLanes(graph.edges, graph.nodes);
     setPolicyNodes((current) => syncGraphNodes(current, graph.nodes));
@@ -664,9 +611,9 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
     policyNodesRef.current = graph.nodes;
     policyEdgesRef.current = nextEdges;
     savedGraphSignatureRef.current = graphSignature(graph.nodes, nextEdges);
-    if (props.active) props.onDirtyChange(false);
+    if (props.active) props.onDirtyChange(Boolean(props.taskGraphDraft));
     setSelectedPolicyEdgeIds([]);
-  }, [taskGraphSignature, policyGraphSignature]);
+  }, [taskGraphSignature, policyGraphSignature, taskGraphDraftSignature]);
   useEffect(() => {
     if (props.active) props.onDirtyChange(graphSignature(policyNodes, policyEdges) !== savedGraphSignatureRef.current);
   }, [policyNodes, policyEdges, props.active, props.onDirtyChange]);
@@ -706,12 +653,24 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
     dynamicGroup("Code", (node) => node.source?.kind === "code"),
     ...automationEditorPalette.map((group) => ({ ...group, nodes: group.nodes.filter((node) => (node.scope === "policy" || node.scope === "both") && node.family === "policy") }))
   ].filter((group) => group.nodes.length > 0);
-  const activeMode = automationTaskEditorModes.find((item) => item.id === mode) ?? { id: "flow", label: "Flow", description: "Edit policy nodes, routes, conditions, actions, retries, and recovery." };
   const codeOwned = props.taskGraph?.source?.mode === "code";
-  const isFlowMode = mode === "flow" && !codeOwned && props.editable;
-  const selectTaskMode = (nextMode: AutomationTaskEditorMode) => {
-    setMode(nextMode);
-    if (nextMode !== "flow") props.setSelection(taskEditorModeSelection({ entries: props.entries, mode: nextMode, policy: props.policy, recordings: props.recordings, selectedTimeline: props.selectedTimeline, signals: props.signals }));
+  const isFlowMode = !codeOwned && props.editable;
+  const policyCanvasSelectionForNode = (node: Node<AutomationPolicyNodeData>): AutomationSelection => {
+    if (props.taskGraph) return policyEditorSelection(node.id, node.data);
+    return props.policy?.nodes?.some((policyNode: any) => policyNode.id === node.id) ? { kind: "node", id: node.id } : policyEditorSelection(node.id, node.data);
+  };
+  const publishPolicyGraphDraft = (nodes: Array<Node<AutomationPolicyNodeData>>, edges: Edge[]) => {
+    if (!props.taskGraph || !isFlowMode) return;
+    pendingPolicyGraphDraftRef.current = { nodes, edges };
+    if (policyGraphDraftFlushQueuedRef.current) return;
+    policyGraphDraftFlushQueuedRef.current = true;
+    queueMicrotask(() => {
+      policyGraphDraftFlushQueuedRef.current = false;
+      const draft = pendingPolicyGraphDraftRef.current;
+      if (!draft) return;
+      pendingPolicyGraphDraftRef.current = null;
+      props.onGraphDraftChange(draft);
+    });
   };
   useEffect(() => {
     async function handleGlobalSave(event: Event) {
@@ -759,11 +718,10 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
       position: roundedAutomationPosition(spawnAutomationNodePosition(selectedPolicyNodeId, policyNodes, policyEdges, policyFlow, policyFrameRef.current)),
       data
     };
-    setPolicyNodes((nodes) => {
-      const nextNodes = [...nodes, node];
-      policyNodesRef.current = nextNodes;
-      return nextNodes;
-    });
+    const nextNodes = [...policyNodesRef.current, node];
+    policyNodesRef.current = nextNodes;
+    setPolicyNodes(nextNodes);
+    publishPolicyGraphDraft(nextNodes, policyEdgesRef.current);
     setSelectedPolicyNodeId(id);
     setSelectedPolicyEdgeIds([]);
     props.setSelection(policyEditorSelection(id, data));
@@ -772,8 +730,13 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
   const deletePolicySelection = () => {
     const nodeIds = new Set(selectedPolicyNodeId ? [selectedPolicyNodeId] : []);
     const edgeIds = new Set(selectedPolicyEdgeIds);
-    setPolicyNodes((nodes) => nodes.filter((node) => !nodeIds.has(node.id)));
-    setPolicyEdges((edges) => rebalanceAutomationEdgeLanes(edges.filter((edge) => !edgeIds.has(edge.id) && !nodeIds.has(edge.source) && !nodeIds.has(edge.target)), policyNodes));
+    const nextNodes = policyNodesRef.current.filter((node) => !nodeIds.has(node.id));
+    const nextEdges = rebalanceAutomationEdgeLanes(policyEdgesRef.current.filter((edge) => !edgeIds.has(edge.id) && !nodeIds.has(edge.source) && !nodeIds.has(edge.target)), nextNodes);
+    policyNodesRef.current = nextNodes;
+    policyEdgesRef.current = nextEdges;
+    setPolicyNodes(nextNodes);
+    setPolicyEdges(nextEdges);
+    publishPolicyGraphDraft(nextNodes, nextEdges);
     setSelectedPolicyNodeId("");
     setSelectedPolicyEdgeIds([]);
   };
@@ -792,7 +755,7 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
         setSelectedPolicyNodeId(primaryNode?.id ?? "");
         setSelectedPolicyEdgeIds([]);
         policySelectionRef.current = primaryNode ? `node:${primaryNode.id}` : "";
-        if (primaryNode) props.setSelection(props.policy?.nodes?.some((policyNode: any) => policyNode.id === primaryNode.id) ? { kind: "node", id: primaryNode.id } : policyEditorSelection(primaryNode.id, primaryNode.data));
+        if (primaryNode) props.setSelection(policyCanvasSelectionForNode(primaryNode));
       }
     });
   };
@@ -801,23 +764,25 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
       if (!isFlowMode) return;
       const nodeId = (event as CustomEvent<{ nodeId?: string }>).detail?.nodeId;
       if (!nodeId) return;
-      setPolicyNodes((nodes) => {
-        const nextNodes = nodes.filter((node) => node.id !== nodeId);
-        policyNodesRef.current = nextNodes;
-        return nextNodes;
-      });
-      setPolicyEdges((edges) => {
-        const nextEdges = rebalanceAutomationEdgeLanes(edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId), policyNodesRef.current);
-        policyEdgesRef.current = nextEdges;
-        return nextEdges;
-      });
+      const nextNodes = policyNodesRef.current.filter((node) => node.id !== nodeId);
+      const nextEdges = rebalanceAutomationEdgeLanes(policyEdgesRef.current.filter((edge) => edge.source !== nodeId && edge.target !== nodeId), nextNodes);
+      policyNodesRef.current = nextNodes;
+      policyEdgesRef.current = nextEdges;
+      setPolicyNodes(nextNodes);
+      setPolicyEdges(nextEdges);
+      publishPolicyGraphDraft(nextNodes, nextEdges);
       setSelectedPolicyNodeId((current: string) => current === nodeId ? "" : current);
     }
     function handleDeleteEdge(event: Event) {
       if (!isFlowMode) return;
       const edgeId = (event as CustomEvent<{ edgeId?: string }>).detail?.edgeId;
       if (!edgeId) return;
-      setPolicyEdges((edges) => rebalanceAutomationEdgeLanes(edges.filter((edge) => edge.id !== edgeId), policyNodes));
+      setPolicyEdges((edges) => {
+        const nextEdges = rebalanceAutomationEdgeLanes(edges.filter((edge) => edge.id !== edgeId), policyNodesRef.current);
+        policyEdgesRef.current = nextEdges;
+        publishPolicyGraphDraft(policyNodesRef.current, nextEdges);
+        return nextEdges;
+      });
       setSelectedPolicyEdgeIds((ids) => ids.filter((id) => id !== edgeId));
     }
     function handleSelectEdge(event: Event) {
@@ -833,7 +798,15 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
     function handleUpdateParameters(event: Event) {
       const detail = (event as CustomEvent<{ nodeId?: string; parameterValues?: JsonObject; customDescription?: string }>).detail;
       if (!detail?.nodeId) return;
-      setPolicyNodes((nodes) => nodes.map((node) => node.id === detail.nodeId ? { ...node, data: { ...node.data, ...(detail.parameterValues ? { parameterValues: detail.parameterValues } : {}), ...(detail.customDescription !== undefined ? { customDescription: detail.customDescription } : {}) } } : node));
+      const nextNodes = policyNodesRef.current.map((node) => {
+        if (node.id !== detail.nodeId) return node;
+        const data = { ...node.data, ...(detail.parameterValues ? { parameterValues: detail.parameterValues } : {}), ...(detail.customDescription !== undefined ? { customDescription: detail.customDescription } : {}) };
+        if (policySelectionRef.current === `node:${node.id}`) props.setSelection(policyCanvasSelectionForNode({ ...node, data }));
+        return { ...node, data };
+      });
+      policyNodesRef.current = nextNodes;
+      setPolicyNodes(nextNodes);
+      publishPolicyGraphDraft(nextNodes, policyEdgesRef.current);
     }
     window.addEventListener("automation-studio:delete-node", handleDeleteNode);
     window.addEventListener("automation-studio:delete-edge", handleDeleteEdge);
@@ -845,18 +818,10 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
       window.removeEventListener("automation-studio:select-edge", handleSelectEdge);
       window.removeEventListener("automation-studio:update-node-parameters", handleUpdateParameters);
     };
-  }, [isFlowMode]);
+  }, [isFlowMode, props.setSelection, props.taskGraph, props.policy]);
   return (
     <section className="automation-policy-canvas">
-      <div className="automation-editor-mode-bar">
-        <div className="automation-layer-tabs" role="tablist" aria-label="Flow editor modes">
-          {automationTaskEditorModes.map((item) => (
-            <button className={mode === item.id ? "selected" : ""} key={item.id} onClick={() => selectTaskMode(item.id)} title={item.description} type="button">{item.label}</button>
-          ))}
-        </div>
-        <span>{activeMode.description}</span>
-      </div>
-      {codeOwned && mode === "flow" ? <div className="automation-source-warning"><strong>Code-owned Flow</strong><span>The compiled graph is read-only. Change its module and recompile, or explicitly convert it back to visual ownership.</span></div> : null}
+      {codeOwned ? <div className="automation-source-warning"><strong>Code-owned Flow</strong><span>The compiled graph is read-only. Change its module and recompile, or explicitly convert it back to visual ownership.</span></div> : null}
       <div className={paletteCollapsed ? "automation-policy-editor-grid palette-collapsed" : "automation-policy-editor-grid"}>
         <div className="automation-react-flow-frame" onContextMenu={(event) => event.preventDefault()} onPointerDownCapture={startPolicyDragSelect} ref={policyFrameRef}>
           <ReactFlow<Node<AutomationPolicyNodeData>, Edge>
@@ -883,6 +848,7 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
               setPolicyEdges((edges) => {
                 const nextEdges = rebalanceAutomationEdgeLanes(addEdge(nextEdge, edges), policyNodesRef.current);
                 policyEdgesRef.current = nextEdges;
+                publishPolicyGraphDraft(policyNodesRef.current, nextEdges);
                 return nextEdges;
               });
             }}
@@ -891,6 +857,7 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
               setPolicyEdges((edges) => {
                 const nextEdges = reconnectAutomationEdge(oldEdge, connection, edges, policyNodesRef.current);
                 policyEdgesRef.current = nextEdges;
+                publishPolicyGraphDraft(policyNodesRef.current, nextEdges);
                 return nextEdges;
               });
             }}
@@ -901,6 +868,7 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
               setPolicyEdges((edges) => {
                 const nextEdges = rebalanceAutomationEdgeLanes(applyEdgeChanges(allowedChanges, edges), policyNodesRef.current);
                 policyEdgesRef.current = nextEdges;
+                publishPolicyGraphDraft(policyNodesRef.current, nextEdges);
                 return nextEdges;
               });
             }}
@@ -910,15 +878,24 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
               setPolicyEdges((edges) => {
                 const nextEdges = rebalanceAutomationEdgeLanes(edges.filter((edge) => !deletedIds.has(edge.source) && !deletedIds.has(edge.target)), policyNodesRef.current);
                 policyEdgesRef.current = nextEdges;
+                publishPolicyGraphDraft(policyNodesRef.current.filter((node) => !deletedIds.has(node.id)), nextEdges);
                 return nextEdges;
               });
               if (deletedIds.has(selectedPolicyNodeId)) setSelectedPolicyNodeId("");
             }}
-            onNodesChange={(changes: NodeChange<Node<AutomationPolicyNodeData>>[]) => isFlowMode ? setPolicyNodes((nodes) => {
-              const nextNodes = applyNodeChanges(changes, nodes);
+            onNodesChange={(changes: NodeChange<Node<AutomationPolicyNodeData>>[]) => {
+              if (!isFlowMode) return;
+              const nextNodes = applyNodeChanges(changes, policyNodesRef.current);
               policyNodesRef.current = nextNodes;
-              return nextNodes;
-            }) : undefined}
+              const removedNodeIds = new Set(changes.filter((change) => change.type === "remove").map((change) => change.id));
+              if (removedNodeIds.size) {
+                const nextEdges = rebalanceAutomationEdgeLanes(policyEdgesRef.current.filter((edge) => !removedNodeIds.has(edge.source) && !removedNodeIds.has(edge.target)), nextNodes);
+                policyEdgesRef.current = nextEdges;
+                setPolicyEdges(nextEdges);
+                publishPolicyGraphDraft(nextNodes, nextEdges);
+              }
+              setPolicyNodes(nextNodes);
+            }}
             onEdgeClick={(_event, edge) => {
               setSelectedPolicyNodeId("");
               setSelectedPolicyEdgeIds([edge.id]);
@@ -931,12 +908,13 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
             onNodeDragStart={() => {
               policyNodeDragActiveRef.current = true;
             }}
-            onNodeDragStop={(_event, _node, nodes) => {
+            onNodeDragStop={() => {
               policyNodeDragActiveRef.current = false;
-              policyNodesRef.current = nodes;
+              const nodes = policyNodesRef.current;
               setPolicyEdges((edges) => {
                 const nextEdges = rebalanceAutomationEdgeLanes(edges, nodes);
                 policyEdgesRef.current = nextEdges;
+                publishPolicyGraphDraft(nodes, nextEdges);
                 return nextEdges;
               });
             }}
@@ -945,7 +923,7 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
               const key = `node:${node.id}`;
               if (policySelectionRef.current !== key) {
                 policySelectionRef.current = key;
-                props.setSelection(props.policy?.nodes?.some((policyNode: any) => policyNode.id === node.id) ? { kind: "node", id: node.id } : policyEditorSelection(node.id, node.data));
+                props.setSelection(policyCanvasSelectionForNode(node));
               }
             }}
             onSelectionChange={({ nodes, edges }) => {
@@ -957,7 +935,7 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
               const key = selectedNode ? `node:${selectedNode.id}` : edgeIds.length ? `edges:${edgeIds.join(",")}` : "";
               if (selectedNode && policySelectionRef.current !== key) {
                 policySelectionRef.current = key;
-                props.setSelection(props.policy?.nodes?.some((policyNode: any) => policyNode.id === selectedNode.id) ? { kind: "node", id: selectedNode.id } : policyEditorSelection(selectedNode.id, selectedNode.data));
+                props.setSelection(policyCanvasSelectionForNode(selectedNode));
               } else if (!selectedNode) {
                 policySelectionRef.current = key;
               }

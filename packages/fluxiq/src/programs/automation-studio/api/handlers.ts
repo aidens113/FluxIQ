@@ -562,7 +562,8 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
       await authorizeProgramPin(identityAccess, payload);
       const decision = payload.decision === "rejected" ? "rejected" as const : "approved" as const;
       const destination = payload.destination && typeof payload.destination === "object" && !Array.isArray(payload.destination) ? payload.destination as any : undefined;
-      return { ok: true, payload: await service.reviewRecordingFlowProposal({ projectId: String(payload.projectId ?? ""), proposalId: String(payload.proposalId ?? ""), decision, ...(typeof payload.notes === "string" ? { notes: payload.notes } : {}), ...(typeof payload.reviewerId === "string" ? { reviewerId: payload.reviewerId } : {}), ...(destination ? { destination } : {}) }) };
+      const policyOverride = payload.policyOverride && typeof payload.policyOverride === "object" && !Array.isArray(payload.policyOverride) ? payload.policyOverride as any : undefined;
+      return { ok: true, payload: await service.reviewRecordingFlowProposal({ projectId: String(payload.projectId ?? ""), proposalId: String(payload.proposalId ?? ""), decision, ...(typeof payload.notes === "string" ? { notes: payload.notes } : {}), ...(typeof payload.reviewerId === "string" ? { reviewerId: payload.reviewerId } : {}), ...(destination ? { destination } : {}), ...(policyOverride ? { policyOverride } : {}) }) };
     }
   });
   registry.register({

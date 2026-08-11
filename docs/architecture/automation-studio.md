@@ -14,6 +14,10 @@ Automation Studio separates evidence from interpretation:
 Raw Recording
   -> Normalized Timeline
   -> Signal Mining
+     -> facts
+     -> observations
+     -> state/action correlations
+     -> evidence claims
   -> Learned Task Model
   -> Generated Policy Graph
   -> Runtime Execution + Training Data
@@ -23,6 +27,14 @@ The raw recording is immutable evidence. Normalization, mining, policy
 generation, AI proposals, and runtime training create new artifacts that point
 back to earlier evidence with stable references. This lets a host project
 improve miners or regenerate policies without recapturing the task.
+
+State and evidence are intentionally distinct in the proposal pipeline.
+Reducers and state observations describe factual values; mining decides whether
+those values were present before an action, changed after it, or merely provide
+context. Generated policy nodes then surface pre-action evidence as
+eligibility/readiness signals and post-action evidence as success expectations.
+Recording mapper action inputs are preserved as action evidence and are not
+promoted into policy state.
 
 ## Folder Ownership
 

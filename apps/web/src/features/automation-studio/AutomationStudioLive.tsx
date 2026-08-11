@@ -107,6 +107,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [hasDirtyTaskGraph, setHasDirtyTaskGraph] = useState(false);
+  const [taskGraphDrafts, setTaskGraphDrafts] = useState<Record<string, { nodes: any[]; edges: any[] }>>({});
   const [projectModal, setProjectModal] = useState<AutomationProjectModal>(null);
   const [projectTarget, setProjectTarget] = useState<AutomationStudioProject | null>(null);
   const [categoryTarget, setCategoryTarget] = useState<AutomationStudioProjectCategory | null>(null);
@@ -280,7 +281,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const problems = snapshot?.payload?.problems ?? [];
   const signals = registries.flatMap((registry: any) => (registry.definitions ?? []).map((signal: any) => ({ ...signal, registryId: registry.registryId })));
   const projectTasks = projectArtifacts.tasks ?? [];
+  const flowViewState = workspacePrefs.viewStates?.["policy-primary"] ?? {};
+  const lastOpenFlowId = typeof flowViewState.lastOpenFlowId === "string" ? flowViewState.lastOpenFlowId : null;
+  const validLastOpenFlowEntry = lastOpenFlowId ? projectFlows.find((entry: any) => entry.source === "canonical" && entry.flow?.flowId === lastOpenFlowId) : null;
   const selectedFlowEntry = projectFlows.find((entry: any) => selection?.kind === "flow" && entry.flow?.flowId === selection.id)
+    ?? validLastOpenFlowEntry
     ?? projectFlows.find((entry: any) => entry.source === "canonical")
     ?? projectFlows[0]
     ?? null;
@@ -304,8 +309,9 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const lastOpenTaskId = typeof proposalViewState.lastOpenTaskId === "string" ? proposalViewState.lastOpenTaskId : null;
   const validLastOpenTask = lastOpenTaskId ? projectTasks.find((task: any) => task.taskId === lastOpenTaskId) : null;
   const selectedProposal = hierarchyProposals.find((proposal: any) => selection?.kind === "proposal" && proposal.proposalId === selection.id)
+    ?? hierarchyProposals.find((proposal: any) => selection?.kind === "proposal-step" && proposal.proposalId === selection.proposalId)
     ?? proposals.find((proposal: any) => selection?.kind === "recording" && proposal.metadata?.recordingId === selection.id)
-    ?? proposals[0];
+    ?? hierarchyProposals[0];
   const selectedTask = projectTasks.find((task: any) => selection?.kind === "policy" && (task.metadata?.policyId === selection.id || task.taskId === selection.id))
     ?? validLastOpenTask
     ?? projectTasks[0]
@@ -316,6 +322,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       ?? null
     : null;
   const selectedTaskGraph = selectedFlow ?? selectedTask?.graph ?? selectedTaskFlow;
+  const selectedTaskGraphDraftKey = taskGraphDraftKey(selectedTaskGraph);
+  const selectedTaskGraphDraft = selectedTaskGraphDraftKey ? taskGraphDrafts[selectedTaskGraphDraftKey] ?? null : null;
   const selectedCanonicalPolicy = selectedTask
     ? policies.find((policy: any) => selectedTask.metadata?.policyId && policy.policyId === selectedTask.metadata.policyId)
       ?? policies.find((policy: any) => policy.taskId === selectedTask.taskId)
@@ -329,7 +337,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     ? timelines.find((timeline: any) => timeline.timeline?.some((entry: any) => entry.id === selection.id))?.recordingId
       ?? recordings.find((recording: any) => recording.timeline?.some((entry: any) => entry.id === selection.id))?.recordingId
     : null;
-  const proposalSelectionRecordingId = selection?.kind === "proposal" ? selection.recordingId ?? selectedProposal?.metadata?.recordingId : null;
+  const proposalSelectionRecordingId = selection?.kind === "proposal"
+    ? selection.recordingId ?? selectedProposal?.metadata?.recordingId ?? selectedProposal?.recordingId
+    : selection?.kind === "proposal-step"
+      ? selection.recordingId ?? selectedProposal?.metadata?.recordingId ?? selectedProposal?.recordingId
+      : null;
   const selectedRecording = recordings.find((recording: any) => selection?.kind === "recording" ? recording.recordingId === selection.id : recording.recordingId === (timelineSelectionRecordingId ?? proposalSelectionRecordingId)) ?? recordings[0];
   const selectedTimeline = selectedRecording ? timelines.find((timeline: any) => timeline.recordingId === selectedRecording.recordingId) : timelines[0];
   const selectedNode = selection?.kind === "editor-node"
@@ -433,14 +445,17 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         ?? recordings.find((recording: any) => recording.timeline?.some((entry: any) => entry.id === source.id))?.recordingId
       : null;
     const proposalRecordingId = source?.kind === "proposal"
-      ? source.recordingId ?? proposals.find((proposal: any) => proposal.proposalId === source.id)?.metadata?.recordingId
+      ? source.recordingId ?? hierarchyProposals.find((proposal: any) => proposal.proposalId === source.id)?.metadata?.recordingId ?? hierarchyProposals.find((proposal: any) => proposal.proposalId === source.id)?.recordingId
+      : source?.kind === "proposal-step"
+        ? source.recordingId ?? hierarchyProposals.find((proposal: any) => proposal.proposalId === source.proposalId)?.metadata?.recordingId ?? hierarchyProposals.find((proposal: any) => proposal.proposalId === source.proposalId)?.recordingId
       : null;
     if (source?.kind === "recording") return recordings.find((recording: any) => recording.recordingId === source.id) ?? selectedRecording;
     return recordings.find((recording: any) => recording.recordingId === (timelineRecordingId ?? proposalRecordingId)) ?? selectedRecording;
   }
   function proposalForSelection(source: AutomationSelection | null | undefined) {
-    return proposals.find((proposal: any) => source?.kind === "proposal" && proposal.proposalId === source.id)
-      ?? proposals.find((proposal: any) => source?.kind === "recording" && proposal.metadata?.recordingId === source.id)
+    return hierarchyProposals.find((proposal: any) => source?.kind === "proposal" && proposal.proposalId === source.id)
+      ?? hierarchyProposals.find((proposal: any) => source?.kind === "proposal-step" && proposal.proposalId === source.proposalId)
+      ?? hierarchyProposals.find((proposal: any) => source?.kind === "recording" && (proposal.metadata?.recordingId === source.id || proposal.recordingId === source.id))
       ?? selectedProposal;
   }
   function taskForSelection(source: AutomationSelection | null | undefined) {
@@ -477,7 +492,25 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     }
     if (next.kind === "signal") openView("signals-web", "preview");
     if (next.kind === "policy") openView("policy-primary", "preview");
-    if (next.kind === "flow") openView("policy-primary", "preview");
+    if (next.kind === "flow") {
+      const flowEntry = projectFlows.find((entry: any) => entry.source === "canonical" && entry.flow?.flowId === next.id);
+      if (flowEntry) {
+        updateWorkspacePrefs((current) => {
+          const currentState = current.viewStates?.["policy-primary"] ?? {};
+          return normalizeAutomationWorkspacePrefs({
+            ...current,
+            viewStates: {
+              ...(current.viewStates ?? {}),
+              "policy-primary": {
+                ...currentState,
+                lastOpenFlowId: next.id
+              }
+            }
+          });
+        });
+      }
+      openView("policy-primary", "preview");
+    }
   };
   const openRecordingProposal = (recordingId: string) => {
     const proposal = latestByGeneratedAt<any>([
@@ -683,6 +716,26 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     window.dispatchEvent(new CustomEvent("automation-studio:dirty-state", { detail: { dirty: hasDirtyTaskGraph } }));
     return () => { window.dispatchEvent(new CustomEvent("automation-studio:dirty-state", { detail: { dirty: false } })); };
   }, [hasDirtyTaskGraph]);
+
+  useEffect(() => {
+    if (!activeProjectId || selection?.kind !== "flow") return;
+    const flowEntry = projectFlows.find((entry: any) => entry.source === "canonical" && entry.flow?.flowId === selection.id);
+    if (!flowEntry) return;
+    setWorkspacePrefs((current) => {
+      const currentState = current.viewStates?.["policy-primary"] ?? {};
+      if (currentState.lastOpenFlowId === selection.id) return current;
+      return normalizeAutomationWorkspacePrefs({
+        ...current,
+        viewStates: {
+          ...(current.viewStates ?? {}),
+          "policy-primary": {
+            ...currentState,
+            lastOpenFlowId: selection.id
+          }
+        }
+      });
+    });
+  }, [activeProjectId, projectFlows, selection]);
 
   useEffect(() => {
     if (!selectedTask?.taskId || !projectArtifacts.tasks?.some((task: any) => task.taskId === selectedTask.taskId)) return;
@@ -1335,11 +1388,27 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         return false;
       }
       await refreshProjectRuntimeState(activeProjectId);
+      setTaskGraphDrafts((current) => {
+        if (!selectedTaskGraphDraftKey) return current;
+        const { [selectedTaskGraphDraftKey]: _saved, ...rest } = current;
+        return rest;
+      });
       setAutomationActionStatus("Flow saved.");
       return true;
     }
     setAutomationActionStatus("Legacy Task/Routine sources are read-only. Migrate this entry to a canonical Flow before editing.");
     return false;
+  }
+
+  function updateSelectedTaskGraphDraft(graph: { nodes: any[]; edges: any[] } | null) {
+    if (!selectedTaskGraphDraftKey) return;
+    setTaskGraphDrafts((current) => {
+      if (!graph) {
+        const { [selectedTaskGraphDraftKey]: _removed, ...rest } = current;
+        return rest;
+      }
+      return { ...current, [selectedTaskGraphDraftKey]: graph };
+    });
   }
 
   async function publishSelectedFlow(version: string, changelog: string) {
@@ -1434,9 +1503,32 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           }
         } : current);
         await refreshProjectRuntimeState(activeProjectId);
+        if (typeof approvedFlowId === "string") clearTaskGraphDraftsForFlow(approvedFlowId);
         setSelection(typeof approvedFlowId === "string" ? { kind: "flow", id: approvedFlowId } : { kind: "policy", id: approvedPolicy.taskId });
         openView("policy-primary", "preview", "main");
         setAutomationActionStatus("Proposal applied and Flow opened.");
+        return true;
+      }
+      if (endpoint === "review-recording-flow-proposal" && result.payload.flow?.flowId) {
+        const flowId = String(result.payload.flow.flowId);
+        await refreshProjectRuntimeState(activeProjectId);
+        clearTaskGraphDraftsForFlow(flowId);
+        setSelection({ kind: "flow", id: flowId });
+        updateWorkspacePrefs((current) => {
+          const policyPrimaryState = current.viewStates?.["policy-primary"] ?? {};
+          return normalizeAutomationWorkspacePrefs({
+            ...current,
+            viewStates: {
+              ...(current.viewStates ?? {}),
+              "policy-primary": {
+                ...policyPrimaryState,
+                lastOpenFlowId: flowId
+              }
+            }
+          });
+        });
+        openView("policy-primary", "preview", "main");
+        setAutomationActionStatus("Recording proposal approved and Flow opened.");
         return true;
       }
     }
@@ -1447,6 +1539,10 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
 
   function processPipelineProposalWithLlm(_proposalId: string) {
     setAutomationActionStatus("LLM task processing is not connected yet.");
+  }
+
+  function clearTaskGraphDraftsForFlow(flowId: string) {
+    setTaskGraphDrafts((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(`${flowId}:`))));
   }
 
   async function runRecordingPipeline(recordingId: string) {
@@ -1642,6 +1738,29 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       };
     });
   }
+  function ensureGlobalInspectorAvailable() {
+    updateWorkspacePrefs((current) => {
+      const existing = current.windows.find((item) => item.tabs.includes("global-inspector") || item.activeViewId === "global-inspector");
+      if (existing) {
+        return {
+          ...captureActiveViewState(current),
+          rightSidebarCollapsed: (existing.area ?? "main") === "right" ? false : current.rightSidebarCollapsed,
+          activeWindowId: existing.id,
+          windows: current.windows.map((item) => item.id === existing.id
+            ? { ...item, activeViewId: "global-inspector", tabs: item.tabs.includes("global-inspector") ? item.tabs : [...item.tabs, "global-inspector"], zIndex: nextAutomationZIndex(current.windows) }
+            : item)
+        };
+      }
+      const id = `window-global-inspector-${Date.now()}`;
+      return {
+        ...captureActiveViewState(current),
+        rightSidebarCollapsed: false,
+        activeWindowId: id,
+        maximizedWindowId: null,
+        windows: [...current.windows, { id, activeViewId: "global-inspector", tabs: ["global-inspector"], area: "right", ...fullAutomationWindowGeometry(), zIndex: nextAutomationZIndex(current.windows) }]
+      };
+    });
+  }
   function addWorkspaceWindow(viewId: string, area: AutomationWorkspaceArea, targetWindowId?: string) {
     if (targetWindowId) {
       updateWorkspacePrefs((current) => ({
@@ -1687,7 +1806,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     if (!isAutomationSelection(selectionValue)) return false;
     if (selectionValue.kind === "policy") return refs.taskIds.has(selectionValue.id);
     if (selectionValue.kind === "recording") return refs.recordingIds.has(selectionValue.id);
-    if (selectionValue.kind === "proposal" || selectionValue.kind === "proposal-step") return refs.proposalIds.has(selectionValue.id) || (selectionValue.recordingId ? refs.recordingIds.has(selectionValue.recordingId) : false);
+    if (selectionValue.kind === "proposal") return refs.proposalIds.has(selectionValue.id) || (selectionValue.recordingId ? refs.recordingIds.has(selectionValue.recordingId) : false);
+    if (selectionValue.kind === "proposal-step") return refs.proposalIds.has(selectionValue.proposalId) || (selectionValue.recordingId ? refs.recordingIds.has(selectionValue.recordingId) : false);
     return false;
   }
   function viewStateMatchesDeletedHierarchy(viewId: string, state: JsonObject | undefined, refs: { taskIds: Set<string>; routineIds: Set<string>; configIds: Set<string>; recordingIds: Set<string>; proposalIds: Set<string> }): boolean {
@@ -2205,6 +2325,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                       policy={selectedPolicy}
                       configs={projectArtifacts.configs ?? []}
                       taskGraph={selectedTaskGraph}
+                      taskGraphDraft={selectedTaskGraphDraft}
                       flowEditable={selectedFlowEntry?.source === "canonical"}
                       nativeNodeDefinitions={[...nativeNodeDefinitions, ...publishedFlowDefinitions]}
                       flowPublications={flowPublications}
@@ -2231,6 +2352,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                       viewActive={workspacePrefs.activeWindowId === windowItem.id && windowItem.activeViewId === view.id}
                       onDeleteRecording={deleteProjectRecording}
                       onFinalizeRecording={finalizeProjectRecording}
+                      onEnsureInspectorAvailable={ensureGlobalInspectorAvailable}
                       onInspectTimelineEntry={openTimelineEvidenceInspector}
                       onOpenPipeline={openRecordingProposal}
                       onOpenProposal={openRecordingProposal}
@@ -2241,6 +2363,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                       onPipelineAction={runRecordingPipelineStep}
                       onProposalReviewChange={updateProposalReview}
                       onSaveTaskGraph={saveSelectedTaskGraph}
+                      onTaskGraphDraftChange={updateSelectedTaskGraphDraft}
                       onPublishFlow={publishSelectedFlow}
                       onDeprecateFlow={deprecateSelectedFlow}
                       onTaskGraphDirtyChange={setHasDirtyTaskGraph}
@@ -2568,6 +2691,24 @@ function yesNo(value: unknown): string {
 function formatTime(value: unknown): string {
   return typeof value === "number" && value > 0 ? new Date(value).toLocaleString() : "-";
 }
+
+function taskGraphDraftKey(graph: any): string {
+  if (!graph) return "";
+  const id = graph.flowId ?? graph.graphId ?? graph.taskId ?? "";
+  if (!id) return "";
+  const shape = JSON.stringify({
+    nodes: (graph.nodes ?? []).map((node: any) => ({ id: node.id, definitionId: node.definitionId, label: node.label, position: node.position, parameterValues: node.parameterValues })),
+    edges: (graph.edges ?? []).map((edge: any) => ({ id: edge.id, sourceNodeId: edge.sourceNodeId, targetNodeId: edge.targetNodeId, sourcePortId: edge.sourcePortId, targetPortId: edge.targetPortId, label: edge.label }))
+  });
+  return `${id}:${graph.updatedAt ?? graph.createdAt ?? graph.metadata?.savedAt ?? "draft"}:${stableStringHash(shape)}`;
+}
+
+function stableStringHash(value: string): string {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  return hash.toString(36);
+}
+
 function isSensitiveDatabaseStore(kind: string): boolean {
   return kind.trim().toLowerCase() === "identity.users";
 }

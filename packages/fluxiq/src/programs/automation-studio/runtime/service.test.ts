@@ -51,7 +51,12 @@ describe("AutomationStudioService recording persistence", () => {
     expect(issues).toEqual([]);
     expect(proposal?.candidates[0]).toMatchObject({ outputId: "click", sourceInputIds: ["clicked"], policyStateEligible: false, expectedConfirmation: { inputId: "clicked" } });
     expect(proposal?.review).toBeUndefined();
-    const reviewed = await service.reviewRecordingFlowProposal({ projectId: project.id, proposalId: proposal!.proposalId, decision: "approved", destination: { kind: "flow", name: "Approved clicks" } });
+    const reviewed = await service.reviewRecordingFlowProposal({
+      projectId: project.id,
+      proposalId: proposal!.proposalId,
+      decision: "approved",
+      destination: { kind: "flow", name: "Approved clicks" }
+    });
     expect(reviewed.flow?.nodes[0]).toMatchObject({ definitionId: "builtin.policy.action", parameterValues: { outputId: "click", confirmationInputId: "clicked" }, metadata: { rawEvidenceImmutable: true } });
     const savedEdit = await service.saveFlow({ projectId: project.id, flow: { ...reviewed.flow!, nodes: reviewed.flow!.nodes.map((node) => ({ ...node, label: "Edited click", metadata: { ...(node.metadata ?? {}), sourceObservationIds: ["forged"] } })) } });
     expect(savedEdit.nodes[0]).toMatchObject({ label: "Edited click", metadata: { sourceObservationIds: proposal!.candidates[0]!.sourceObservationIds, manualProvenance: [{ changedFields: ["label"] }] } });
@@ -93,6 +98,86 @@ describe("AutomationStudioService recording persistence", () => {
     expect(processed.recordingFlowProposals?.[0]?.candidates[0]).toMatchObject({ outputId: "click", policyStateEligible: false });
     expect(artifacts.policyProposals.filter((proposal) => proposal.metadata?.recordingId === recording.recordingId)).toEqual([]);
     expect(artifacts.recordingFlowProposals.filter((proposal) => proposal.recordingId === recording.recordingId)).toHaveLength(1);
+  });
+
+  it("approves edited recording Flow proposal graphs into Flows", async () => {
+    const io = new IoRegistry();
+    io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
+    const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "click-mapper", version: "1.0.0", description: "Maps recorded clicks", outputIds: ["click"] }] };
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingMappers: { "click-mapper": (observation) => observation.type === "observation" ? { outputId: "click", parameters: { target: "submit" }, confidence: 0.9 } : null } });
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const project = await service.createProject({ name: "Edited Mapper Approval", domainId: "example" });
+    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.edited-mapper", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
+    await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" } } });
+    const { proposals: [proposal] } = await service.createRecordingFlowProposals({ projectId: project.id, recordingId: recording.recordingId });
+
+    const reviewed = await service.reviewRecordingFlowProposal({
+      projectId: project.id,
+      proposalId: proposal!.proposalId,
+      decision: "approved",
+      destination: { kind: "flow", name: "Edited mapped flow" },
+      policyOverride: {
+        schemaVersion: "0.1",
+        version: "1.0.0",
+        policyId: "policy.edited-recording-proposal",
+        taskId: "task.edited-recording-proposal",
+        sourceEvidence: [{ layer: "raw_recording", artifactId: recording.recordingId }],
+        generatedMetadata: { generatedBy: "user", generatedAt: 2, confidence: 0.8 },
+        nodes: [{
+          id: "node.edited-click",
+          label: "Edited click proposal",
+          description: "Edited before approval.",
+          eligibility: { type: "all", conditions: [] },
+          actions: [{ id: "action.edited-click", actionType: "click", outputId: "click", parameters: { target: "submit" } }],
+          successConditions: { type: "all", conditions: [] },
+          failureConditions: { type: "none", conditions: [] },
+          timeout: { timeoutMs: 5000 },
+          retry: { maxAttempts: 1, backoffMs: 500 },
+          recovery: { strategy: "pause" },
+          outgoingEdges: [],
+          sourceEvidence: [{ layer: "raw_recording", artifactId: recording.recordingId, entryId: "entry.1" }],
+          generatedMetadata: { generatedBy: "user", generatedAt: 2, confidence: 0.8 }
+        }],
+        edges: []
+      }
+    });
+
+    expect(reviewed.flow?.nodes[0]).toMatchObject({ label: "Edited click proposal", definitionId: "builtin.policy.action", parameterValues: { outputId: "click" } });
+
+    const reapplied = await service.reviewRecordingFlowProposal({
+      projectId: project.id,
+      proposalId: proposal!.proposalId,
+      decision: "approved",
+      destination: { kind: "flow", flowId: reviewed.flow!.flowId },
+      policyOverride: {
+        schemaVersion: "0.1",
+        version: "1.0.0",
+        policyId: "policy.edited-recording-proposal",
+        taskId: "task.edited-recording-proposal",
+        sourceEvidence: [{ layer: "raw_recording", artifactId: recording.recordingId }],
+        generatedMetadata: { generatedBy: "user", generatedAt: 3, confidence: 0.8 },
+        nodes: [{
+          id: "node.reapplied-click",
+          label: "Reapplied click proposal",
+          description: "Reapplied without regenerating.",
+          eligibility: { type: "all", conditions: [] },
+          actions: [{ id: "action.reapplied-click", actionType: "click", outputId: "click", parameters: { target: "submit" } }],
+          successConditions: { type: "all", conditions: [] },
+          failureConditions: { type: "none", conditions: [] },
+          timeout: { timeoutMs: 5000 },
+          retry: { maxAttempts: 1, backoffMs: 500 },
+          recovery: { strategy: "pause" },
+          outgoingEdges: [],
+          sourceEvidence: [{ layer: "raw_recording", artifactId: recording.recordingId, entryId: "entry.1" }],
+          generatedMetadata: { generatedBy: "user", generatedAt: 3, confidence: 0.8 }
+        }],
+        edges: []
+      }
+    });
+
+    expect(reapplied.proposal.status).toBe("approved");
+    expect(reapplied.flow?.flowId).toBe(reviewed.flow!.flowId);
+    expect(reapplied.flow?.nodes[0]).toMatchObject({ label: "Reapplied click proposal", definitionId: "builtin.policy.action" });
   });
 
   it("explains mapper miss diagnostics when no recording Flow candidates are accepted", async () => {
@@ -398,6 +483,82 @@ describe("AutomationStudioService recording persistence", () => {
     await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.direct-proposal", "derived", "evidence", "correlations", `${miningRun.stateActionCorrelationIds![0]}.json`), "utf8")).resolves.toContain("\"correlationId\"");
     await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.direct-proposal", "derived", "evidence", "claims", `${miningRun.evidenceClaimIds![0]}.json`), "utf8")).resolves.toContain("\"claimId\"");
     await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.direct-proposal", "derived", "proposal", "proposal.json"), "utf8")).rejects.toThrow();
+  });
+
+  it("turns state evidence around an output action into eligibility and success conditions", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    service.registerRecordingDomain({
+      domainId: "example.state-evidence",
+      label: "State evidence domain",
+      schemaVersion: "0.1",
+      events: [{
+        eventType: "status.changed",
+        label: "Status changed",
+        payloadSchema: { type: "object" },
+        stateReducer: ({ event, previousState }) => ({
+          state: {
+            timestamp: event.timestamp ?? Date.now(),
+            namespaces: {
+              ...previousState.namespaces,
+              task: {
+                schemaId: "example.state-evidence",
+                schemaVersion: "0.1",
+                values: {
+                  status: stateValue("string", String(event.payload?.status ?? "unknown"), event.timestamp ?? Date.now())
+                }
+              }
+            }
+          }
+        })
+      }],
+      statePaths: [{
+        namespace: "task",
+        path: "status",
+        type: "string",
+        elementKind: "status",
+        label: "Task status"
+      }]
+    });
+    const project = await service.createProject({ name: "State Evidence Project" });
+    const recording = await service.createRecording({
+      projectId: project.id,
+      recordingId: "recording.state-evidence",
+      taskId: "task.state-evidence",
+      startedAt: 100,
+      initialState: { timestamp: 100, namespaces: {} }
+    });
+    await service.appendRecordingDomainEvent({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      domainId: "example.state-evidence",
+      eventType: "status.changed",
+      timestamp: 150,
+      payload: { status: "ready" }
+    });
+    await service.appendRecordingEvent({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entry: { type: "action", actionType: "output.submit", outputId: "output.submit", parameters: {}, origin: "operator", startedAt: 200, timestamp: 200 }
+    });
+    await service.appendRecordingDomainEvent({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      domainId: "example.state-evidence",
+      eventType: "status.changed",
+      timestamp: 250,
+      payload: { status: "completed" }
+    });
+    await service.normalizeRecording({ projectId: project.id, recordingId: recording.recordingId });
+
+    const miningRun = await service.mineRecordingEvidence({ projectId: project.id, recordingId: recording.recordingId });
+    const proposal = await service.proposePolicyFromModel({ projectId: project.id, recordingId: recording.recordingId });
+    const node = proposal.policy.nodes[0]!;
+
+    expect(miningRun.conditionCandidates.some((candidate) => candidate.signalPath === "task.status" && candidate.metadata?.actionEntryId === "entry.3")).toBe(true);
+    expect(miningRun.actionEffects.some((effect) => effect.actionOccurrenceId === "entry.3" && effect.signalPath === "task.status")).toBe(true);
+    expect(node.eligibility.conditions.length).toBeGreaterThan(0);
+    expect(node.successConditions.conditions.length).toBeGreaterThan(0);
+    expect(node.sourceEvidence.some((item) => item.layer === "state_action_correlation")).toBe(true);
   });
 
   it("merges proposals from multiple recordings into one canonical Flow", async () => {

@@ -125,6 +125,20 @@ Policy Flow proposals
   policy regions linked back to supporting claims
 ```
 
+Proposal generation treats state evidence as a separate layer from action
+mapping:
+
+- state present before an executable output action can become node
+  `eligibility`;
+- state that appears, disappears, or changes after that action can become
+  `successConditions`;
+- proposal nodes keep references to the action observation, mined claim, and
+  underlying state-action correlation so reviewers can trace why a condition
+  exists;
+- action-role inputs from recording mappers are never reclassified as policy
+  state. They remain raw action evidence, while importer reducers and
+  state-role observations supply the state evidence.
+
 Finalized recordings are processed automatically by the framework when the
 recording has a project owner. Automation Studio normalizes the recording,
 mines evidence, and creates a Policy Flow proposal unless a current proposal already

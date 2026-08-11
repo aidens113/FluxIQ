@@ -19,6 +19,7 @@ export function AutomationViewRenderer(props: {
   policy: any;
   configs?: any[];
   taskGraph: any;
+  taskGraphDraft?: { nodes: any[]; edges: any[] } | null;
   flowEditable: boolean;
   nativeNodeDefinitions?: any[];
   flowPublications?: any[];
@@ -49,12 +50,14 @@ export function AutomationViewRenderer(props: {
   onOpenProposal(recordingId: string): void;
   onOpenRecording(recordingId: string): void;
   onInspectTimelineEntry(recordingId: string, entryId: string): void;
+  onEnsureInspectorAvailable(): void;
   onAppendRecordingMarker(recordingId: string, linkedEntryId?: string, monotonicOffsetMs?: number): Promise<void>;
   onAppendRecordingNote(recordingId: string, linkedEntryId?: string): Promise<void>;
   onNormalizeRecording(recordingId: string): Promise<boolean | void>;
   onPipelineAction(endpoint: string, payload: JsonObject, success: string): Promise<boolean | void>;
   onProposalReviewChange(proposalId: string, review: JsonObject): void;
   onSaveTaskGraph(graph: { nodes: any[]; edges: any[] }): Promise<boolean | void>;
+  onTaskGraphDraftChange(graph: { nodes: any[]; edges: any[] } | null): void;
   onPublishFlow(version: string, changelog: string): Promise<boolean | void>;
   onDeprecateFlow(version: string): Promise<boolean | void>;
   onTaskGraphDirtyChange(dirty: boolean): void;
@@ -66,9 +69,9 @@ export function AutomationViewRenderer(props: {
   setDockTab(tab: AutomationDockTab): void;
   setSelection(selection: AutomationSelection): void;
 }) {
-  if (props.view.type === "design") return <AutomationPolicyCanvas active={props.viewActive} editable={props.flowEditable} entries={props.entries} policy={props.policy} taskGraph={props.taskGraph} nativeNodeDefinitions={props.nativeNodeDefinitions ?? []} recordings={props.recordings} selectedNode={props.selectedNode} selectedTimeline={props.selectedTimeline} signals={props.signals} onSaveGraph={props.onSaveTaskGraph} onDirtyChange={props.onTaskGraphDirtyChange} setSelection={props.setSelection} />;
+  if (props.view.type === "design") return <AutomationPolicyCanvas active={props.viewActive} editable={props.flowEditable} entries={props.entries} policy={props.policy} taskGraph={props.taskGraph} taskGraphDraft={props.taskGraphDraft ?? null} nativeNodeDefinitions={props.nativeNodeDefinitions ?? []} recordings={props.recordings} selectedNode={props.selectedNode} selectedTimeline={props.selectedTimeline} signals={props.signals} onSaveGraph={props.onSaveTaskGraph} onGraphDraftChange={props.onTaskGraphDraftChange} onDirtyChange={props.onTaskGraphDirtyChange} setSelection={props.setSelection} />;
   if (props.view.type === "recordings") return <AutomationTimelineView actionStatus={props.actionStatus} entries={props.entries} notes={props.notes} recordings={props.recordings} recordingProcessing={props.recordingProcessing} selectedEntry={props.selectedEntry} selectedRecording={props.selectedRecording} selectedTimeline={props.selectedTimeline} timelines={props.timelines} onAppendRecordingMarker={props.onAppendRecordingMarker} onAppendRecordingNote={props.onAppendRecordingNote} onDeleteRecording={props.onDeleteRecording} onFinalizeRecording={props.onFinalizeRecording} onInspectTimelineEntry={props.onInspectTimelineEntry} onOpenProposal={props.onOpenProposal} onProcessFinalizedRecording={props.onProcessFinalizedRecording} onRefreshRecordings={props.onRefreshRecordings} onUpdateRecording={props.onUpdateRecording} setSelection={props.setSelection} />;
-  if (props.view.type === "proposal") return <AutomationProposalView actionStatus={props.actionStatus} pipelineArtifacts={props.pipelineArtifacts} proposalReview={props.proposalReview} proposalTargetFlowId={props.proposalTargetFlowId} recordings={props.recordings} selectedProposal={props.selectedProposal} selectedRecording={props.selectedRecording} onOpenRecording={props.onOpenRecording} onPipelineAction={props.onPipelineAction} onProposalReviewChange={props.onProposalReviewChange} onProcessFinalizedRecording={props.onProcessFinalizedRecording} onProcessProposalWithLlm={props.onProcessProposalWithLlm} setSelection={props.setSelection} />;
+  if (props.view.type === "proposal") return <AutomationProposalView actionStatus={props.actionStatus} pipelineArtifacts={props.pipelineArtifacts} proposalReview={props.proposalReview} proposalTargetFlowId={props.proposalTargetFlowId} recordings={props.recordings} selectedProposal={props.selectedProposal} selectedRecording={props.selectedRecording} onEnsureInspectorAvailable={props.onEnsureInspectorAvailable} onOpenRecording={props.onOpenRecording} onPipelineAction={props.onPipelineAction} onProposalReviewChange={props.onProposalReviewChange} onProcessFinalizedRecording={props.onProcessFinalizedRecording} onProcessProposalWithLlm={props.onProcessProposalWithLlm} setSelection={props.setSelection} />;
   if (props.view.type === "timeline-inspector") return <AutomationTimelineEvidenceInspectorView pipelineArtifacts={props.pipelineArtifacts} recordings={props.recordings} selectedEntry={props.selectedEntry} selectedRecording={props.selectedRecording} selectedTimeline={props.selectedTimeline} onOpenRecording={props.onOpenRecording} />;
   if (props.view.type === "signals") return <AutomationSignalWorkspace domains={props.recordingDomains} signals={props.signals} setSelection={props.setSelection} />;
   if (props.view.type === "runtime") return <AutomationRuntimeWorkspace pipelineArtifacts={props.pipelineArtifacts} timelines={props.selectedTimeline ? [props.selectedTimeline] : []} models={props.models} policies={props.policies} runtimeSessions={props.runtimeSessions} />;

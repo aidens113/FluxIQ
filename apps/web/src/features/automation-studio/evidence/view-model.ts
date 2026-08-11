@@ -118,6 +118,7 @@ export function buildProposalViewModel(input: {
 }): ProposalViewModel | null {
   const proposal = input.proposal;
   if (!proposal) return null;
+  const recording = input.recording;
   const recordingId = input.recording?.recordingId ?? proposal.metadata?.recordingId;
   const evidence = collectEvidenceArtifacts(input.artifacts, recordingId, null);
   const allSignals = buildEvidenceSignals({ observations: evidence.observations, correlations: evidence.correlations, claims: evidence.claims });
@@ -125,8 +126,8 @@ export function buildProposalViewModel(input: {
   const nodes = proposal.policy?.nodes ?? [];
   const edges = proposal.policy?.edges ?? [];
   const rawSteps = nodes.map((node: any): ProposalStepViewModel => {
-    const sourceIds: string[] = (node.sourceEvidence ?? []).map((source: any) => source.artifactId).filter((id: unknown): id is string => typeof id === "string" && id.length > 0);
-    const nodeEvidence = uniqueById(sourceIds.map((id) => signalsById.get(id)).filter(Boolean) as EvidenceSignalViewModel[]);
+    const sources = uniqueEvidenceSources([...(node.sourceEvidence ?? []), ...(Array.isArray(node.metadata?.evidence) ? node.metadata.evidence : [])]);
+    const nodeEvidence = uniqueById(sources.flatMap((source) => resolveEvidenceSourceSignal(source, { evidence, signalsById, recording })));
     const edge = edges.find((candidate: any) => candidate.fromNodeId === node.id);
     const step: ProposalStepViewModel = {
       id: node.id,
@@ -214,6 +215,119 @@ function buildEvidenceSignals(input: { observations: any[]; correlations: any[];
       };
     });
   return [...correlationSignals, ...observationSignals];
+}
+
+function resolveEvidenceSourceSignal(source: any, context: { evidence: ReturnType<typeof collectEvidenceArtifacts>; signalsById: Map<string, EvidenceSignalViewModel>; recording: any }): EvidenceSignalViewModel[] {
+  const artifactId = typeof source?.artifactId === "string" ? source.artifactId : "";
+  if (!artifactId) return [];
+  const direct = context.signalsById.get(artifactId);
+  if (direct) return [direct];
+  if (source.layer === "recording") {
+    const entry = context.recording?.timeline?.find((item: any) => item.id === source.entryId || item.id === source.observationId);
+    if (entry) return [timelineEntrySignal(entry, source)];
+  }
+  if (source.layer === "normalized_timeline") {
+    const fact = context.evidence.facts.find((item: any) => item.source?.entryId === source.entryId || item.source?.artifactId === artifactId);
+    if (fact) return [factSignal(fact, source)];
+  }
+  if (source.layer === "evidence_observation" || source.layer === "evidence") {
+    const observation = context.evidence.observations.find((item: any) => item.observationId === artifactId || item.observationId === source.observationId);
+    if (observation) return [observationFallbackSignal(observation)];
+  }
+  if (source.layer === "evidence_claim") {
+    const claim = context.evidence.claims.find((item: any) => item.claimId === artifactId);
+    if (claim) return [claimFallbackSignal(claim)];
+  }
+  if (source.layer === "state_action_correlation") {
+    const correlation = context.evidence.correlations.find((item: any) => item.correlationId === artifactId);
+    if (correlation) return [correlationFallbackSignal(correlation)];
+  }
+  return [];
+}
+
+function timelineEntrySignal(entry: any, source: any): EvidenceSignalViewModel {
+  return {
+    id: `recording:${entry.id}`,
+    title: timelineEntryTitle(entry),
+    kind: readableToken(entry.type ?? "recording"),
+    relation: readableToken(source.relationship ?? "recorded"),
+    timing: `${entry.monotonicOffsetMs ?? 0}ms`,
+    summary: timelineEntrySummary(entry),
+    before: "-",
+    after: "-",
+    value: valueSummary(entry.payload ?? entry.parameters ?? entry.target ?? entry.signals),
+    supportCount: 1,
+    claimIds: [],
+    sourceEntryIds: [entry.id]
+  };
+}
+
+function factSignal(fact: any, source: any): EvidenceSignalViewModel {
+  return {
+    id: fact.factId,
+    title: fact.title ?? "Evidence fact",
+    kind: readableToken(fact.kind ?? "fact"),
+    relation: readableToken(source.relationship ?? "supports"),
+    timing: `${fact.offsetMs ?? 0}ms`,
+    summary: fact.summary ?? "-",
+    before: "-",
+    after: "-",
+    value: valueSummary(fact.data),
+    supportCount: 1,
+    claimIds: [],
+    sourceEntryIds: [fact.source?.entryId].filter(Boolean)
+  };
+}
+
+function observationFallbackSignal(observation: any): EvidenceSignalViewModel {
+  return {
+    id: observation.observationId,
+    title: observation.title ?? readableToken(observation.kind ?? "observation"),
+    kind: readableToken(observation.subject?.type ?? observation.kind ?? "observation"),
+    relation: readableToken(observation.kind ?? "observed"),
+    timing: "Recorded evidence",
+    summary: observation.summary ?? readableObjectSummary(observation.subject),
+    before: valueSummary(observation.before),
+    after: valueSummary(observation.after),
+    value: valueSummary(observation.after ?? observation.before ?? observation.subject),
+    supportCount: observation.factIds?.length ?? 0,
+    claimIds: [],
+    sourceEntryIds: []
+  };
+}
+
+function claimFallbackSignal(claim: any): EvidenceSignalViewModel {
+  return {
+    id: claim.claimId,
+    title: claim.title ?? readableToken(claim.claimType ?? "claim"),
+    kind: readableToken(claim.claimType ?? "claim"),
+    relation: readableToken(claim.statement?.relationship ?? "supports"),
+    timing: "Mined claim",
+    summary: claim.summary ?? "-",
+    before: "-",
+    after: "-",
+    value: typeof claim.confidence?.score === "number" ? `${Math.round(claim.confidence.score * 100)}% confidence` : "-",
+    supportCount: (claim.observationIds?.length ?? 0) + (claim.factIds?.length ?? 0),
+    claimIds: [claim.claimId],
+    sourceEntryIds: []
+  };
+}
+
+function correlationFallbackSignal(correlation: any): EvidenceSignalViewModel {
+  return {
+    id: correlation.correlationId,
+    title: correlation.descriptor?.label ?? readableStatePath(correlation.statePath),
+    kind: readableToken(correlation.elementKind ?? "state"),
+    relation: readableToken(correlation.relation ?? "correlated"),
+    timing: correlationTiming(correlation),
+    summary: correlationSummary(correlation),
+    before: valueSummary(correlation.before),
+    after: valueSummary(correlation.after),
+    value: valueSummary(correlation.after ?? correlation.before),
+    supportCount: correlation.support?.length ?? 0,
+    claimIds: [],
+    sourceEntryIds: uniqueStrings([correlation.actionEntryId, ...(correlation.support ?? []).map((item: any) => item.entryId)])
+  };
 }
 
 function summarizeConditions(group: any): string[] {
@@ -309,6 +423,18 @@ function uniqueById<T extends { id: string }>(items: T[]): T[] {
   for (const item of items) {
     if (seen.has(item.id)) continue;
     seen.add(item.id);
+    output.push(item);
+  }
+  return output;
+}
+
+function uniqueEvidenceSources(items: any[]): any[] {
+  const seen = new Set<string>();
+  const output: any[] = [];
+  for (const item of items) {
+    const key = `${item?.layer ?? ""}:${item?.artifactId ?? ""}:${item?.entryId ?? ""}:${item?.observationId ?? ""}:${item?.relationship ?? ""}`;
+    if (!item?.artifactId || seen.has(key)) continue;
+    seen.add(key);
     output.push(item);
   }
   return output;

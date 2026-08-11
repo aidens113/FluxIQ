@@ -93,6 +93,11 @@ export function AutomationInspector(props: { entries: any[]; selection: Automati
       {props.selection?.kind === "editor-node" && props.node ? <>
         <AutomationNodeParameterEditor node={props.node} onChange={updateEditorNodeParameters} onDescriptionChange={updateEditorNodeDescription} />
         <InspectorSection title="Metadata" rows={[["Node", props.node.label], ["ID", props.node.id], ["Type", props.node.nodeType ?? "-"], ["Family", props.node.family ?? "-"], ["Default description", props.node.description ?? "-"]]} />
+        {props.node.metadata?.proposalStep ? <InspectorSection title="Proposal Step" rows={proposalStepRows(props.node.metadata.proposalStep)} /> : null}
+        {proposalStepArray(props.node.metadata?.proposalStep?.actions).length ? <InspectorSection title="Actions" rows={listRows(proposalStepArray(props.node.metadata.proposalStep.actions))} /> : null}
+        {proposalStepArray(props.node.metadata?.proposalStep?.requirements).length ? <InspectorSection title="Requirements" rows={listRows(proposalStepArray(props.node.metadata.proposalStep.requirements))} /> : null}
+        {proposalStepArray(props.node.metadata?.proposalStep?.expectedEffects).length ? <InspectorSection title="Expected Result" rows={listRows(proposalStepArray(props.node.metadata.proposalStep.expectedEffects))} /> : null}
+        {proposalStepEvidenceRows(props.node.metadata?.proposalStep?.evidence).length ? <InspectorSection title="Evidence" rows={proposalStepEvidenceRows(props.node.metadata.proposalStep.evidence)} /> : null}
         {props.node.metadata?.["fluxiq.callFlow"] ? <InspectorSection title="Pinned Call Flow" rows={callFlowInspectorRows(props.node.metadata["fluxiq.callFlow"])} /> : null}
         <InspectorSection title="Ports" rows={[["Inputs", formatAutomationPorts(props.node.inputs)], ["Outputs", formatAutomationPorts(props.node.outputs)], ["Privileged", props.node.privileged ? "Yes" : "No"], ["Actions", (props.node.actionTypes ?? []).join(", ") || "-"]]} />
       </> : null}
@@ -158,6 +163,26 @@ function listRows(items: string[]): Array<[string, string]> {
 function callFlowInspectorRows(value: any): Array<[string, string]> {
   const target = value?.target ?? {};
   return [["Flow", String(target.flowId ?? "-")], ["Version", String(target.version ?? "-")], ["Scope", target.scope?.kind === "domain" ? `domain:${target.scope.domainId}` : String(target.scope?.kind ?? "-")], ["Inputs", String(value?.inputBindings?.length ?? 0)], ["Outputs", String(value?.outputBindings?.length ?? 0)], ["Error routes", String(value?.errorBindings?.length ?? 0)]];
+}
+
+function proposalStepRows(value: any): Array<[string, string]> {
+  if (!value || typeof value !== "object") return [];
+  return [
+    ["Confidence", String(value.confidence ?? "-")],
+    ["Event", String(value.label ?? "-")],
+    ["Transition", String(value.transition ?? "-")],
+    ["Occurrences", Number(value.occurrenceCount ?? 1) > 1 ? `${value.occurrenceCount} grouped occurrences` : "1 occurrence"],
+    ["Description", String(value.description ?? "-")]
+  ];
+}
+
+function proposalStepArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(String).filter(Boolean) : [];
+}
+
+function proposalStepEvidenceRows(value: unknown): Array<[string, string]> {
+  if (!Array.isArray(value)) return [];
+  return value.map((signal: any) => [String(signal.title ?? signal.id ?? "Evidence"), String(signal.relation ?? "-")]);
 }
 
 function flowSourcePath(flow: any): string {

@@ -75,14 +75,14 @@ map. Routine nodes are static base/custom node types such as start, task policy,
 decision, approval, recovery, end, and custom extension nodes. Routine views do
 not expose recording, evidence, or state-signal layers.
 
-The single Flow editor uses concise modes instead of broad abstract layers. A
-mode changes what the canvas is doing; supporting views such as
-timeline, signals, recordings, runtime, problems, assistant, state explorer, and
-inspector remain ordinary addable windows. The node palette is the exception:
-it stays embedded as the collapsible right rail inside the policy/routine node
-editor because it is part of direct node editing, not a separate workspace
-window. Legacy Task/Routine documents may still open through a clearly marked
-read-only compatibility view, but they are not independent authoring modes.
+The single Flow editor is the editable graph canvas. Supporting views such as
+timeline, signals, recordings, runtime, problems, assistant, state explorer,
+timeline evidence inspector, proposal review, and inspector remain ordinary
+addable windows. The node palette is the exception: it stays embedded as the
+collapsible right rail inside the policy/routine node editor because it is part
+of direct node editing, not a separate workspace window. Legacy Task/Routine
+documents may still open through a clearly marked read-only compatibility view,
+but they are not independent authoring modes.
 
 The recording timeline window follows a video-editor-style horizontal layout.
 Recording selection belongs to the project hierarchy sidebar under the
@@ -143,29 +143,13 @@ Model learning and replay/validation are not recording pipeline stages in the
 current product surface. Model-shaped artifacts may still be used internally as
 compatibility data, and replay belongs to a separate runtime view.
 
-Flow editor modes are intentionally conservative. A mode must change how the
-canvas is interpreted; it must not create a second properties sidebar inside
-the Flow editor. Detailed controls, evidence cards, previews, and future custom
-widgets belong in the global inspector so selection behavior stays consistent
-across graph, timeline, proposal, recording, and signal views.
-
-Current Flow editor modes are:
-
-- `Flow`: the default editable policy graph for adding, moving, connecting, and
-  deleting nodes and edges.
-- `State`: read/inspect mode for answering "what state signals and condition
-  coverage does this graph depend on?" It should highlight and summarize state
-  dependencies for selected nodes/edges through the global inspector.
-- `Evidence`: read/inspect mode for answering "why does this node or route
-  exist?" It should highlight recording/proposal support, missing support, and
-  evidence provenance for selected nodes/edges through the global inspector.
-
-Only `Flow` mode is directly editable in the current implementation. `State`
-and `Evidence` are candidate inspection modes, not permanent conceptual layers
-by default. They should remain only if they make relationships easier to audit
-than a normal selected-node or selected-recording inspector. Other runtime,
-replay, or simulation work belongs in separate runtime/debug workspace views,
-not as a `Test Run` layer inside the Flow editor.
+The Flow editor must not expose State/Evidence tabs or other non-editing
+canvas modes unless they materially change a real workflow. State and evidence
+inspection belongs in dedicated workspace views and the global inspector, where
+recording timelines, proposal evidence chains, state explorer rows, and signal
+relationships can show enough context to be useful. Other runtime, replay, or
+simulation work belongs in separate runtime/debug workspace views, not as a
+`Test Run` layer inside the Flow editor.
 
 Automation Studio node editors follow the FluxBot v1 flow editor direction:
 metadata-first node definitions, grouped palettes, explicit input/output ports,
@@ -187,10 +171,11 @@ review, export, and future CI checks have a stable file to inspect. Explicit
 code-owned conversion writes the authoritative module under `source/<moduleId>`
 and records the module through `flow.source.moduleId`.
 
-Source ownership is configuration, not a Flow canvas mode. The Flow editor mode
-tabs are for graph/node/state/evidence viewing behavior only. The config view
-is the editable surface for Flow identity, runtime defaults, source ownership,
-and future global or node-contributed configuration fields. Node-contributed
+Source ownership is configuration, not a Flow canvas mode. The config view is
+the editable surface for Flow identity, runtime defaults, source ownership, and
+future global or node-contributed configuration fields. State and evidence
+inspection belongs in the state explorer, timeline evidence inspector, proposal
+view, and global inspector rather than inside the graph canvas. Node-contributed
 configuration must register through a Flow config extension contract and render
 in the config/global inspector surfaces rather than creating another inspector
 inside the canvas.

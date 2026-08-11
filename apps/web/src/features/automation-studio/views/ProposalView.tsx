@@ -18,6 +18,7 @@ export function AutomationProposalView(props: {
   recordings: any[];
   selectedProposal: any;
   selectedRecording: any;
+  onEnsureInspectorAvailable(): void;
   onOpenRecording(recordingId: string): void;
   onPipelineAction(endpoint: string, payload: JsonObject, success: string): Promise<boolean | void>;
   onProposalReviewChange(proposalId: string, review: JsonObject): void;
@@ -27,11 +28,10 @@ export function AutomationProposalView(props: {
 }) {
   const selectedArtifact = props.selectedProposal;
   const recording = props.selectedRecording ?? props.recordings.find((item) => item.recordingId === (selectedArtifact?.recordingId ?? selectedArtifact?.metadata?.recordingId));
-  const proposal = selectedArtifact?.policy ? selectedArtifact : (props.pipelineArtifacts?.policyProposals ?? []).find((item: any) => item.metadata?.recordingId === recording?.recordingId);
   const recordingFlowProposal = selectedArtifact?.candidates ? selectedArtifact : null;
+  const proposal = recordingFlowProposal ? recordingFlowProposalToPolicyProposal(recordingFlowProposal) : selectedArtifact?.policy ? selectedArtifact : (props.pipelineArtifacts?.policyProposals ?? []).find((item: any) => item.metadata?.recordingId === recording?.recordingId);
   const model = buildProposalViewModel({ artifacts: props.pipelineArtifacts, proposal, recording });
   const [selectedGraphNodeId, setSelectedGraphNodeId] = useState("");
-  const recordingFlowGraph = useMemo(() => recordingFlowProposalToGraph(recordingFlowProposal), [recordingFlowProposal]);
   const baseGraph = useMemo(() => {
     const next = policyToReactFlowGraph(proposal?.policy, "");
     const proposedIds = new Set((proposal?.patch?.nodes ?? proposal?.policy?.nodes ?? []).map((node: any) => String(node.id)));
@@ -68,25 +68,50 @@ export function AutomationProposalView(props: {
   }, [baseGraph, proposal?.generatedAt, proposal?.proposalId, props.proposalReview]);
   const selectedStep = model?.steps.find((step) => step.id === selectedGraphNodeId || `node.${step.id}` === selectedGraphNodeId) ?? model?.steps[0];
   const selectedGraphNode = graph.nodes.find((node) => node.id === selectedGraphNodeId) ?? graph.nodes[0];
-  const publishProposalStepSelection = (node: Node<AutomationPolicyNodeData> | undefined, step: ProposalStepViewModel | undefined) => {
-    if (!proposal?.proposalId || !step) return;
+  const publishProposalNodeSelection = (node: Node<AutomationPolicyNodeData> | undefined, step: ProposalStepViewModel | undefined) => {
+    if (!proposal?.proposalId || !node) return;
     props.setSelection({
-      kind: "proposal-step",
-      id: step.id,
-      proposalId: proposal.proposalId,
-      ...(recording?.recordingId ? { recordingId: recording.recordingId } : {}),
-      step: {
-        label: step.label,
-        description: step.description,
-        actions: step.actions,
-        requirements: step.requirements,
-        expectedEffects: step.expectedEffects,
-        confidence: step.confidence,
-        occurrenceCount: step.occurrenceCount,
-        ...(step.transition ? { transition: step.transition } : {}),
-        evidence: step.evidence.map((signal) => ({ id: signal.id, title: signal.title, relation: signal.relation }))
-      },
-      ...(node ? { node: { label: node.data.label, description: node.data.description, ...(node.data.customDescription !== undefined ? { customDescription: node.data.customDescription } : {}) } } : {})
+      kind: "editor-node",
+      id: node.id,
+      node: {
+        label: node.data.label,
+        nodeType: node.data.isStart ? "start" : "policy",
+        family: node.data.recovery,
+        description: node.data.description,
+        ...(node.data.customDescription !== undefined ? { customDescription: node.data.customDescription } : {}),
+        ...(node.data.nodeDefinitionId !== undefined ? { nodeDefinitionId: node.data.nodeDefinitionId } : {}),
+        ...(node.data.icon !== undefined ? { icon: node.data.icon } : {}),
+        inputs: node.data.inputs,
+        outputs: node.data.outputs,
+        parameters: node.data.parameters,
+        parameterValues: node.data.parameterValues,
+        metadata: {
+          ...(node.data.metadata ?? {}),
+          proposalId: proposal.proposalId,
+          ...(recording?.recordingId ? { recordingId: recording.recordingId } : {}),
+          proposalStep: step ? {
+            label: step.label,
+            description: step.description,
+            actions: step.actions,
+            requirements: step.requirements,
+            expectedEffects: step.expectedEffects,
+            confidence: step.confidence,
+            occurrenceCount: step.occurrenceCount,
+            ...(step.transition ? { transition: step.transition } : {}),
+            evidence: step.evidence.map((signal) => ({ id: signal.id, title: signal.title, relation: signal.relation }))
+          } : {
+            label: node.data.label,
+            description: node.data.description,
+            actions: node.data.actionTypes.length ? node.data.actionTypes : ["No action configured"],
+            requirements: [],
+            expectedEffects: [],
+            confidence: typeof node.data.confidence === "number" ? `${Math.round(node.data.confidence * 100)}%` : "-",
+            occurrenceCount: 1,
+            evidence: []
+          }
+        },
+        actionTypes: node.data.actionTypes
+      }
     });
   };
   const updateGraph = (next: { nodes: Array<Node<AutomationPolicyNodeData>>; edges: Edge[] }) => {
@@ -112,21 +137,26 @@ export function AutomationProposalView(props: {
   };
   useEffect(() => {
     const onProposalNodeUpdate = (event: Event) => {
-      const detail = (event as CustomEvent<{ nodeId?: string; label?: string; customDescription?: string }>).detail;
+      const detail = (event as CustomEvent<{ nodeId?: string; label?: string; customDescription?: string; parameterValues?: JsonObject }>).detail;
       if (!detail?.nodeId || detail.nodeId !== selectedGraphNode?.id) return;
       updateSelectedNode({
         ...(detail.label !== undefined ? { label: detail.label } : {}),
-        ...(detail.customDescription !== undefined ? { customDescription: detail.customDescription } : {})
+        ...(detail.customDescription !== undefined ? { customDescription: detail.customDescription } : {}),
+        ...(detail.parameterValues !== undefined ? { parameterValues: detail.parameterValues } : {})
       });
     };
     window.addEventListener("automation-studio:update-proposal-node", onProposalNodeUpdate);
-    return () => window.removeEventListener("automation-studio:update-proposal-node", onProposalNodeUpdate);
+    window.addEventListener("automation-studio:update-node-parameters", onProposalNodeUpdate);
+    return () => {
+      window.removeEventListener("automation-studio:update-proposal-node", onProposalNodeUpdate);
+      window.removeEventListener("automation-studio:update-node-parameters", onProposalNodeUpdate);
+    };
   }, [selectedGraphNode?.id, graph.nodes, graph.edges]);
   const policyOverride = () => proposal ? reactFlowGraphToPolicyOverride(proposal.policy, graphRef.current, proposal.policy?.taskId ?? proposal.proposalId) : null;
   const applyToExistingFlow = () => {
     if (!proposal) return;
     if (!props.proposalTargetFlowId) {
-      window.alert("Open an existing canonical Flow before applying this proposal, or use Save as New Flow.");
+      window.alert("Open a canonical Flow at least once before applying this proposal, or use Save as New Flow.");
       return;
     }
     const override = policyOverride();
@@ -134,6 +164,18 @@ export function AutomationProposalView(props: {
   };
   const saveAsNewFlow = () => {
     if (!proposal) return;
+    if (recordingFlowProposal) {
+      const name = window.prompt("Name for the new Flow", `Recorded flow ${recordingFlowProposal.mapper.id}`)?.trim();
+      if (!name) return;
+      const override = reactFlowGraphToPolicyOverride(proposal.policy, graphRef.current, proposal.policy?.taskId ?? proposal.proposalId);
+      void props.onPipelineAction("review-recording-flow-proposal", {
+        proposalId: recordingFlowProposal.proposalId,
+        decision: "approved",
+        destination: { kind: "flow", name },
+        policyOverride: override as unknown as JsonObject
+      }, "Recording proposal saved as a new Flow.");
+      return;
+    }
     const raw = window.prompt("Flow ID for the new saved Flow", `flow.${proposal.policy?.taskId ?? proposal.proposalId}`);
     const targetFlowId = raw?.trim();
     if (!targetFlowId) return;
@@ -141,12 +183,17 @@ export function AutomationProposalView(props: {
     void props.onPipelineAction("approve-policy-proposal", { proposalId: proposal.proposalId, targetFlowId, policyOverride: override as unknown as JsonObject }, "Proposal saved as Flow.");
   };
   const approveRecordingProposalToFlow = () => {
-    if (!recordingFlowProposal) return;
-    const flowId = window.prompt("Existing destination Flow ID (leave blank to create a new Flow)", "")?.trim();
+    if (!recordingFlowProposal || !proposal) return;
+    if (!props.proposalTargetFlowId) {
+      window.alert("Open a canonical Flow at least once before approving this recording proposal.");
+      return;
+    }
+    const override = reactFlowGraphToPolicyOverride(proposal.policy, graphRef.current, proposal.policy?.taskId ?? proposal.proposalId);
     void props.onPipelineAction("review-recording-flow-proposal", {
       proposalId: recordingFlowProposal.proposalId,
       decision: "approved",
-      destination: { kind: "flow", ...(flowId ? { flowId } : { name: `Recorded flow ${recordingFlowProposal.mapper.id}` }) }
+      destination: { kind: "flow", flowId: props.proposalTargetFlowId },
+      policyOverride: override as unknown as JsonObject
     }, "Recording proposal approved into a Flow.");
   };
   return (
@@ -159,44 +206,13 @@ export function AutomationProposalView(props: {
         <div className="automation-pipeline-controls">
           <button className="button" disabled={!recording} onClick={() => recording && props.onOpenRecording(recording.recordingId)} type="button"><Link2 size={13} aria-hidden />Open Source Recording</button>
           <button className="button" disabled={!recording} onClick={() => recording && void props.onProcessFinalizedRecording(recording.recordingId, true)} type="button"><RefreshCcw size={13} aria-hidden />Regenerate Proposal</button>
-          <button className="button button-primary" disabled={recordingFlowProposal ? recordingFlowProposal.status !== "proposed" : !proposal} onClick={recordingFlowProposal ? approveRecordingProposalToFlow : applyToExistingFlow} type="button"><CheckCircle2 size={13} aria-hidden />{recordingFlowProposal ? "Approve to Flow" : "Apply to Open Flow"}</button>
-          <button className="button" disabled={!proposal || Boolean(recordingFlowProposal)} onClick={saveAsNewFlow} type="button"><Save size={13} aria-hidden />Save as New Flow</button>
-          <button className="button" disabled={!proposal} onClick={() => proposal && props.onProcessProposalWithLlm(proposal.proposalId)} type="button"><Sparkles size={13} aria-hidden />Process With LLM</button>
+          <button className="button button-primary" disabled={!proposal} onClick={recordingFlowProposal ? approveRecordingProposalToFlow : applyToExistingFlow} type="button"><CheckCircle2 size={13} aria-hidden />{recordingFlowProposal ? "Approve to Open Flow" : "Apply to Open Flow"}</button>
+          <button className="button" disabled={!proposal} onClick={saveAsNewFlow} type="button"><Save size={13} aria-hidden />Save as New Flow</button>
+          <button className="button" disabled={!proposal || Boolean(recordingFlowProposal)} onClick={() => proposal && props.onProcessProposalWithLlm(proposal.proposalId)} type="button"><Sparkles size={13} aria-hidden />Process With LLM</button>
         </div>
         {props.actionStatus ? <StatusText value={props.actionStatus} /> : null}
       </header>
       <section className="automation-proposal-body">
-        {recordingFlowProposal ? <>
-          <section className="automation-proposal-summary-panel">
-            <div>
-              <span>Recording mapper - {recordingFlowProposal.mapper.id} {recordingFlowProposal.mapper.version}</span>
-              <strong>{recordingFlowProposal.candidates.length} proposed action nodes</strong>
-              <p>Select a node to inspect output parameters, confirmation, observations, and evidence in the global inspector.</p>
-              {recordingFlowProposal.invalidation?.reasons?.length ? <p>{recordingFlowProposal.invalidation.reasons.join(" ")}</p> : null}
-            </div>
-            <div className="automation-pipeline-controls">
-              <StatusBadge value={recordingFlowProposal.status} />
-              <button className="button" disabled={recordingFlowProposal.status !== "proposed"} onClick={() => void props.onPipelineAction("review-recording-flow-proposal", { proposalId: recordingFlowProposal.proposalId, decision: "approved", destination: { kind: "node", visibility: "private" } }, "Private recording node approved.")} type="button">Private Node</button>
-              <button className="button" disabled={recordingFlowProposal.status !== "proposed"} onClick={() => void props.onPipelineAction("review-recording-flow-proposal", { proposalId: recordingFlowProposal.proposalId, decision: "approved", destination: { kind: "node", visibility: "public" } }, "Public recording node approved.")} type="button">Public Node</button>
-              <button className="button" disabled={recordingFlowProposal.status !== "proposed"} onClick={() => void props.onPipelineAction("review-recording-flow-proposal", { proposalId: recordingFlowProposal.proposalId, decision: "rejected" }, "Recording proposal rejected.")} type="button">Reject</button>
-            </div>
-          </section>
-          <section className="automation-proposal-graph-review">
-            <AutomationPolicyGraphEditor
-              className="proposal-review"
-              editableNodeIds={recordingFlowGraph.nodes.map((node) => node.id)}
-              edges={recordingFlowGraph.edges}
-              mode="proposal-review"
-              nodes={recordingFlowGraph.nodes}
-              selectedNodeId={selectedGraphNodeId}
-              onNodeSelect={(node) => {
-                setSelectedGraphNodeId(node.id);
-                const candidate = recordingFlowProposal.candidates[recordingFlowGraph.nodes.findIndex((item) => item.id === node.id)];
-                publishRecordingCandidateSelection(props.setSelection, recordingFlowProposal, candidate, node);
-              }}
-            />
-          </section>
-        </> : null}
         {!model && !recordingFlowProposal ? <div className="automation-project-empty compact"><strong>No proposal selected</strong><span>Finalized recordings generate proposals automatically. Regenerate from a source recording if needed.</span></div> : null}
         {model ? <>
           <section className="automation-proposal-summary-panel">
@@ -221,7 +237,8 @@ export function AutomationProposalView(props: {
               onNodeSelect={(node) => {
                 setSelectedGraphNodeId(node.id);
                 const step = model.steps.find((candidate) => candidate.id === node.id || `node.${candidate.id}` === node.id);
-                publishProposalStepSelection(node, step);
+                publishProposalNodeSelection(node, step);
+                props.onEnsureInspectorAvailable();
               }}
             />
           </section>
@@ -231,10 +248,13 @@ export function AutomationProposalView(props: {
   );
 }
 
-function recordingFlowProposalToGraph(proposal: any): { nodes: Array<Node<AutomationPolicyNodeData>>; edges: Edge[] } {
-  if (!proposal?.candidates?.length) return { nodes: [], edges: [] };
+function recordingFlowProposalToPolicyProposal(proposal: any): any {
   const policy = {
-    nodes: proposal.candidates.map((candidate: any, index: number) => ({
+    schemaVersion: "0.1",
+    policyId: `policy.${proposal?.proposalId ?? "recording-proposal"}`,
+    taskId: proposal?.recordingId ?? proposal?.proposalId ?? "recording-proposal",
+    sourceEvidence: [{ layer: "recording", artifactId: proposal?.recordingId ?? "" }],
+    nodes: (proposal?.candidates ?? []).map((candidate: any, index: number) => ({
       id: recordingCandidateNodeId(candidate, index),
       label: candidate.label ?? candidate.outputId,
       description: `Recorded action for ${candidate.outputId}.`,
@@ -252,6 +272,7 @@ function recordingFlowProposalToGraph(proposal: any): { nodes: Array<Node<Automa
       failureConditions: { type: "none", conditions: [] },
       generatedMetadata: { generatedBy: "recording_mapper", generatedAt: proposal.generatedAt ?? Date.now(), confidence: candidate.confidence ?? 0.5 },
       metadata: {
+        parameters: recordingCandidateParameters(candidate),
         parameterValues: {
           outputId: candidate.outputId,
           parameters: candidate.parameters ?? {},
@@ -265,56 +286,44 @@ function recordingFlowProposalToGraph(proposal: any): { nodes: Array<Node<Automa
         policyStateEligible: false
       }
     })),
-    edges: proposal.candidates.slice(1).map((candidate: any, index: number) => ({
+    edges: (proposal?.candidates ?? []).slice(1).map((candidate: any, index: number) => ({
       id: `edge.recorded.${index + 1}`,
       fromNodeId: recordingCandidateNodeId(proposal.candidates[index], index),
       toNodeId: recordingCandidateNodeId(candidate, index + 1),
       label: "Next"
-    }))
-  };
-  const graph = policyToReactFlowGraph(policy, "");
-  return {
-    nodes: graph.nodes.map((node) => ({ ...node, data: { ...node.data, reviewTone: "proposed" as const } })),
-    edges: graph.edges
-  };
-}
-
-function publishRecordingCandidateSelection(setSelection: (selection: AutomationSelection) => void, proposal: any, candidate: any, node: Node<AutomationPolicyNodeData>): void {
-  if (!candidate) return;
-  setSelection({
-    kind: "editor-node",
-    id: node.id,
-    node: {
-      label: candidate.label ?? candidate.outputId,
-      nodeType: "policy",
-      family: "recording-proposal",
-      description: `Recorded action candidate from mapper ${proposal.mapper?.id ?? "unknown"}.`,
-      actionTypes: [candidate.outputId],
-      inputs: node.data.inputs,
-      outputs: node.data.outputs,
-      parameters: node.data.parameters,
-      parameterValues: {
-        outputId: candidate.outputId,
-        parameters: candidate.parameters ?? {},
-        ...(candidate.expectedConfirmation ? { confirmationInputId: candidate.expectedConfirmation.inputId, confirmationTimeoutMs: candidate.expectedConfirmation.timeoutMs ?? 5_000 } : {})
-      },
-      metadata: {
-        recordingProposalId: proposal.proposalId,
-        recordingId: proposal.recordingId,
-        candidateId: candidate.candidateId,
-        confidence: candidate.confidence,
-        outputId: candidate.outputId,
-        expectedConfirmation: candidate.expectedConfirmation ?? null,
-        sourceObservationIds: candidate.sourceObservationIds ?? [],
-        evidence: candidate.evidence ?? [],
-        policyStateEligible: false
-      }
+    })),
+    metadata: {
+      source: "recording_flow_proposal",
+      recordingProposalId: proposal?.proposalId,
+      recordingId: proposal?.recordingId,
+      mapperId: proposal?.mapper?.id,
+      mapperVersion: proposal?.mapper?.version
     }
-  });
+  };
+  return {
+    proposalId: proposal?.proposalId,
+    status: proposal?.status,
+    generatedAt: proposal?.generatedAt,
+    recordingId: proposal?.recordingId,
+    policy,
+    patch: { targetTaskId: policy.taskId, mergeStrategy: "append_or_branch", nodes: policy.nodes, edges: policy.edges },
+    metadata: policy.metadata
+  };
 }
 
 function recordingCandidateNodeId(candidate: any, index: number): string {
   return `recorded.${safeNodeSegment(candidate?.candidateId ?? String(index + 1))}`;
+}
+
+function recordingCandidateParameters(candidate: any) {
+  const payload = candidate?.parameters && typeof candidate.parameters === "object" && !Array.isArray(candidate.parameters) ? candidate.parameters : {};
+  return [
+    { id: "parameters", label: "Output payload", description: "Values passed to this recorded output action.", valueType: "object", defaultValue: payload },
+    ...(candidate?.expectedConfirmation ? [
+      { id: "confirmationInputId", label: "Confirmation input", description: "Action input stream that confirms the output occurred.", valueType: "string", defaultValue: candidate.expectedConfirmation.inputId ?? "", ui: { control: "identifier", placeholder: "Registered action input ID" } },
+      { id: "confirmationTimeoutMs", label: "Confirmation timeout", description: "How long to wait for confirmation.", valueType: "number", defaultValue: candidate.expectedConfirmation.timeoutMs ?? 5_000 }
+    ] : [])
+  ];
 }
 
 function safeNodeSegment(value: string): string {
@@ -328,13 +337,13 @@ function reactFlowGraphToPolicyOverride(basePolicy: any, graph: { nodes: Array<N
     : `policy.${targetTaskId}.proposal`;
   const nodes = graph.nodes.map((node, index) => {
     const existing = baseNodesById.get(node.id) as any;
+    const actions = proposalPolicyActionsFromNode(node, existing);
     return {
       ...(existing ?? {
         id: node.id,
         label: node.data.label,
         description: node.data.description,
         eligibility: { type: "all", conditions: [] },
-        actions: node.data.actionTypes.length ? node.data.actionTypes.map((actionType, actionIndex) => ({ id: `action.${node.id}.${actionIndex + 1}`, actionType, parameters: {} })) : [],
         successConditions: { type: "all", conditions: [] },
         failureConditions: { type: "none", conditions: [] },
         timeout: { timeoutMs: node.data.timeoutMs ?? 5000 },
@@ -347,8 +356,15 @@ function reactFlowGraphToPolicyOverride(basePolicy: any, graph: { nodes: Array<N
       id: node.id,
       label: node.data.label,
       description: node.data.customDescription || node.data.description,
+      actions,
+      timeout: { ...((existing as any)?.timeout ?? {}), timeoutMs: Number(node.data.parameterValues?.timeoutMs ?? node.data.timeoutMs ?? (existing as any)?.timeout?.timeoutMs ?? 5000) },
       metadata: {
         ...((existing as any)?.metadata ?? {}),
+        ...(node.data.customDescription !== undefined ? { customDescription: node.data.customDescription } : {}),
+        ...(node.data.nodeDefinitionId !== undefined ? { nodeDefinitionId: node.data.nodeDefinitionId } : {}),
+        ...(node.data.nodeDefinitionVersion !== undefined ? { nodeDefinitionVersion: node.data.nodeDefinitionVersion } : {}),
+        parameters: node.data.parameters as unknown as JsonObject[],
+        parameterValues: node.data.parameterValues,
         position: node.position,
         proposalEdited: true,
         order: index
@@ -376,6 +392,23 @@ function reactFlowGraphToPolicyOverride(basePolicy: any, graph: { nodes: Array<N
   };
 }
 
+function proposalPolicyActionsFromNode(node: Node<AutomationPolicyNodeData>, existing: any): any[] {
+  const values = node.data.parameterValues ?? {};
+  const outputId = typeof values.outputId === "string" && values.outputId.trim()
+    ? values.outputId
+    : existing?.actions?.[0]?.outputId ?? existing?.actions?.[0]?.actionType ?? node.data.actionTypes[0] ?? "";
+  if (!outputId && !node.data.actionTypes.length) return [];
+  const actionTypes = node.data.actionTypes.length ? node.data.actionTypes : [String(outputId)];
+  return actionTypes.map((actionType, actionIndex) => ({
+    ...(existing?.actions?.[actionIndex] ?? {}),
+    id: existing?.actions?.[actionIndex]?.id ?? `action.${node.id}.${actionIndex + 1}`,
+    actionType,
+    outputId: actionIndex === 0 ? outputId : existing?.actions?.[actionIndex]?.outputId,
+    parameters: actionIndex === 0 ? values.parameters ?? existing?.actions?.[actionIndex]?.parameters ?? {} : existing?.actions?.[actionIndex]?.parameters ?? {},
+    ...(actionIndex === 0 && typeof values.confirmationInputId === "string" && values.confirmationInputId ? { confirmationInputId: values.confirmationInputId, confirmationTimeoutMs: Number(values.confirmationTimeoutMs ?? 5_000) } : {})
+  }));
+}
+
 function proposalGraphSignature(graph: { nodes: Array<Node<AutomationPolicyNodeData>>; edges: Edge[] }, proposalId: string, generatedAt: number): string {
   return JSON.stringify({
     proposalId,
@@ -386,7 +419,8 @@ function proposalGraphSignature(graph: { nodes: Array<Node<AutomationPolicyNodeD
       y: Math.round(node.position.y),
       label: node.data.label,
       description: node.data.description,
-      customDescription: node.data.customDescription
+      customDescription: node.data.customDescription,
+      parameterValues: node.data.parameterValues
     })),
     edges: graph.edges.map((edge) => ({
       id: edge.id,
