@@ -1,15 +1,17 @@
 "use client";
 
-import { Search } from "lucide-react";
+import { ListChecks, Search } from "lucide-react";
+import type { NodeStatePhase } from "fluxiq/automation-studio";
 import type { JsonObject } from "../../programs/program-api";
 import { KeyValue, SummaryStrip } from "../../programs/shared-ui";
 import type { AutomationInspectorWidget, AutomationSelection } from "../types";
 import { formatAutomationPorts } from "../graph/ports";
 import { buildTimelineInspectorSections, conditionSummary } from "../timeline/view-model";
 import { AutomationNodeParameterEditor } from "../parameters/ParameterEditor";
-export function AutomationInspector(props: { entries: any[]; selection: AutomationSelection | null; policy: any; flow: any; flowPublications: any[]; flowDependencyInfo: any; node: any; recording: any; entry: any; signal: any; setSelection(selection: AutomationSelection): void }) {
+export function AutomationInspector(props: { entries: any[]; selection: AutomationSelection | null; policy: any; flow: any; flowPublications: any[]; flowDependencyInfo: any; node: any; recording: any; entry: any; signal: any; onOpenState(request: { nodeId?: string; sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; proposalId?: string; timelineEntryId?: string }): void; setSelection(selection: AutomationSelection): void }) {
   const title = props.selection?.kind === "flow" ? "Flow" : props.selection?.kind === "signal" ? "Signal" : props.selection?.kind === "timeline" ? "Timeline Entry" : props.selection?.kind === "recording" ? "Recording" : props.selection?.kind === "policy" ? "Policy Graph" : props.selection?.kind === "proposal-step" ? "Proposal Step" : props.selection?.kind === "editor-node" ? "Editor Node" : props.selection?.kind === "editor-mode" ? `${props.selection.label} Mode` : "Node Inspector";
   const timelineInspector = props.selection?.kind === "timeline" && props.entry ? buildTimelineInspectorSections(props.entry, props.entries, props.recording) : [];
+  const stateNodeId = inspectorStateNodeId(props.selection, props.node);
   const updateEditorNodeParameters = (parameterValues: JsonObject) => {
     if (props.selection?.kind !== "editor-node") return;
     const nextSelection: AutomationSelection = {
@@ -58,6 +60,7 @@ export function AutomationInspector(props: { entries: any[]; selection: Automati
         <Search size={14} aria-hidden />
         <input aria-label="Search inspector fields" placeholder="Search fields" />
       </div>
+      {stateNodeId ? <button className="button automation-inspector-action" onClick={() => props.onOpenState({ nodeId: stateNodeId, ...(props.selection?.kind === "proposal-step" ? { proposalId: props.selection.proposalId } : {}), phase: "input" })} type="button"><ListChecks size={14} aria-hidden />Open State</button> : null}
       {props.selection?.kind === "editor-mode" ? <>
         <InspectorSection title="Mode" rows={[["Editor", props.selection.editor === "flow" ? "Flow editor" : "Routine editor"], ["Compatibility source", props.selection.editor === "flow" ? "Canonical Flow / legacy policy adapter" : "Legacy orchestration"], ["Mode", props.selection.label], ["Purpose", props.selection.description]]} />
         {props.selection.widgets?.map((widget, widgetIndex) => <InspectorWidget key={`${widget.kind}:${widget.title}:${widgetIndex}`} widget={widget} />)}
@@ -188,6 +191,13 @@ function proposalStepEvidenceRows(value: unknown): Array<[string, string]> {
 function flowSourcePath(flow: any): string {
   if (flow?.source?.mode === "code" && flow.source.moduleId) return `source/${flow.source.moduleId}`;
   return flow?.metadata?.generatedSource?.relativePath ?? (flow?.flowId ? `source/flows/${flow.flowId}.flow.ts` : "-");
+}
+
+function inspectorStateNodeId(selection: AutomationSelection | null, node: any): string {
+  if (selection?.kind === "editor-node" || selection?.kind === "node") return selection.id;
+  if (selection?.kind === "proposal-step") return selection.id;
+  if (selection?.kind === "state" && selection.nodeId) return selection.nodeId;
+  return typeof node?.id === "string" ? node.id : "";
 }
 
 function InspectorProvenance(props: { current: string; source: string }) {

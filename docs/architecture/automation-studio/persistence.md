@@ -60,8 +60,12 @@ The Automation Studio API exposes these as first-class framework endpoints:
 `publish-flow`, `list-flow-publications`, `deprecate-flow-publication`, and
 `inspect-flow-dependencies`. Compatibility endpoints for learned task models
 and replay results remain available for non-UI/runtime work. Mutating endpoints
-are privileged and should use the same shared PIN authorization path as project
-and category edits.
+that apply, execute, publish, delete, or edit user-authored state are
+privileged and should use the same shared PIN authorization path as project and
+category edits. Proposal-generation endpoints such as normalization, evidence
+mining, policy proposal creation, and recording Flow proposal creation write
+derived inert artifacts and require the caller's `flows.write` permission, but
+do not require a PIN recheck.
 
 Publication records are append-oriented standalone documents in
 `automation.flow_publications`. Each record holds the immutable snapshot,

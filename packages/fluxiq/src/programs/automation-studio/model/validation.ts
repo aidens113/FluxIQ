@@ -2,17 +2,38 @@ import type {
   AutomationConditionExpression,
 } from "./conditions.ts";
 import type {
+  EvidenceComparator,
+  EvidenceReference,
+  NodeEvidenceBinding,
+  StateFact,
+  StateFactReference
+} from "./evidence.ts";
+import type {
   PolicyGraph,
 } from "./policies.ts";
 import type {
   RecordingSession,
 } from "./recordings.ts";
 import type {
+  NodeStateRuntimeComparison,
+  NodeStateSource,
+  NodeStateViewSelection
+} from "./node-state.ts";
+import type {
   SignalRegistry,
 } from "./signals.ts";
 import type {
   TimelineEntry
 } from "./timeline.ts";
+import type {
+  EvidenceAnchor,
+  StateBounds,
+  StateCoordinateSpace,
+  StatePresentationMetadata,
+  StateSnapshot,
+  StateVisualFrame,
+  StateVisualLayer
+} from "./state.ts";
 import type {
   AutomationStudioFlowArtifact,
   AutomationStudioFlowInterface,
@@ -167,6 +188,167 @@ export function validatePolicyGraph(policy: PolicyGraph): AutomationStudioValida
   }
 
   return result(issues);
+}
+
+export function validateStateSnapshot(snapshot: StateSnapshot): AutomationStudioValidationResult {
+  const issues: AutomationStudioValidationIssue[] = [];
+  if (snapshot.id !== undefined && !snapshot.id.trim()) {
+    addIssue(issues, "error", "state.snapshot_empty_id", "State snapshot id cannot be empty when provided.", "id");
+  }
+  if (!Number.isFinite(snapshot.timestamp)) {
+    addIssue(issues, "error", "state.snapshot_invalid_timestamp", "State snapshot timestamp must be finite.", "timestamp");
+  }
+  for (const [namespace, stateNamespace] of Object.entries(snapshot.namespaces)) {
+    const namespacePath = `namespaces.${namespace}`;
+    if (!namespace.trim()) addIssue(issues, "error", "state.namespace_empty_id", "State namespace id cannot be empty.", namespacePath);
+    for (const [valuePath, value] of Object.entries(stateNamespace.values)) {
+      if (!valuePath.trim()) addIssue(issues, "error", "state.value_empty_path", "State value path cannot be empty.", `${namespacePath}.values`);
+      if (!Number.isFinite(value.observedAt)) addIssue(issues, "error", "state.value_invalid_observed_at", "State value observedAt must be finite.", `${namespacePath}.values.${valuePath}.observedAt`);
+      if (value.confidence !== undefined && (value.confidence < 0 || value.confidence > 1)) addIssue(issues, "error", "state.value_invalid_confidence", "State value confidence must be between 0 and 1.", `${namespacePath}.values.${valuePath}.confidence`);
+      if (value.presentation) validateStatePresentationMetadata(value.presentation, issues, `${namespacePath}.values.${valuePath}.presentation`);
+    }
+  }
+  const frames = snapshot.presentation?.visualFrames ?? [];
+  const frameIds = new Set<string>();
+  for (const [index, frame] of frames.entries()) {
+    const path = `presentation.visualFrames.${index}`;
+    validateStateVisualFrame(frame, issues, path);
+    if (frameIds.has(frame.id)) addIssue(issues, "error", "state.visual_frame_duplicate_id", `Duplicate state visual frame id "${frame.id}".`, `${path}.id`);
+    frameIds.add(frame.id);
+  }
+  if (snapshot.presentation?.defaultFrameId && !frameIds.has(snapshot.presentation.defaultFrameId)) {
+    addIssue(issues, "error", "state.visual_frame_missing_default", `Default visual frame "${snapshot.presentation.defaultFrameId}" is not present.`, "presentation.defaultFrameId");
+  }
+  return result(issues);
+}
+
+export function validateStateFactReference(fact: StateFactReference): AutomationStudioValidationResult;
+export function validateStateFactReference(fact: StateFactReference, issues: AutomationStudioValidationIssue[], path: string): void;
+export function validateStateFactReference(fact: StateFactReference, issues?: AutomationStudioValidationIssue[], path = "fact"): AutomationStudioValidationResult | void {
+  const localIssues = issues ?? [];
+  if (fact.snapshotId !== undefined && !fact.snapshotId.trim()) addIssue(localIssues, "error", "evidence.fact_empty_snapshot_id", "State fact snapshotId cannot be empty when provided.", `${path}.snapshotId`);
+  if (!fact.namespace.trim()) addIssue(localIssues, "error", "evidence.fact_missing_namespace", "State fact reference must include a namespace.", `${path}.namespace`);
+  if (!fact.path.trim()) addIssue(localIssues, "error", "evidence.fact_missing_path", "State fact reference must include a path.", `${path}.path`);
+  if (fact.observedAt !== undefined && !Number.isFinite(fact.observedAt)) addIssue(localIssues, "error", "evidence.fact_invalid_observed_at", "State fact observedAt must be finite.", `${path}.observedAt`);
+  if (fact.evidence) validateEvidenceReference(fact.evidence, localIssues, `${path}.evidence`);
+  if (!issues) return result(localIssues);
+}
+
+export function validateStateFact(fact: StateFact): AutomationStudioValidationResult {
+  const issues: AutomationStudioValidationIssue[] = [];
+  validateStateFactReference(fact, issues, "fact");
+  if (fact.id !== undefined && !fact.id.trim()) addIssue(issues, "error", "evidence.fact_empty_id", "State fact id cannot be empty when provided.", "fact.id");
+  if (fact.confidence !== undefined && (fact.confidence < 0 || fact.confidence > 1)) addIssue(issues, "error", "evidence.fact_invalid_confidence", "State fact confidence must be between 0 and 1.", "fact.confidence");
+  if (fact.anchor) validateEvidenceAnchor(fact.anchor, issues, "fact.anchor");
+  return result(issues);
+}
+
+export function validateNodeEvidenceBinding(binding: NodeEvidenceBinding): AutomationStudioValidationResult {
+  const issues: AutomationStudioValidationIssue[] = [];
+  if (!binding.id.trim()) addIssue(issues, "error", "evidence.binding_missing_id", "Node evidence binding must have an id.", "id");
+  if (!binding.nodeId.trim()) addIssue(issues, "error", "evidence.binding_missing_node_id", "Node evidence binding must have a nodeId.", "nodeId");
+  validateStateFactReference(binding.fact, issues, "fact");
+  validateEvidenceComparator(binding.comparator, issues, "comparator");
+  if (binding.weight !== undefined && (binding.weight < 0 || binding.weight > 1)) addIssue(issues, "error", "evidence.binding_invalid_weight", "Node evidence binding weight must be between 0 and 1.", "weight");
+  if (binding.confidence !== undefined && (binding.confidence < 0 || binding.confidence > 1)) addIssue(issues, "error", "evidence.binding_invalid_confidence", "Node evidence binding confidence must be between 0 and 1.", "confidence");
+  if (binding.anchor) validateEvidenceAnchor(binding.anchor, issues, "anchor");
+  binding.provenance?.forEach((reference, index) => validateEvidenceReference(reference, issues, `provenance.${index}`));
+  return result(issues);
+}
+
+export function validateNodeStateSource(source: NodeStateSource): AutomationStudioValidationResult {
+  const issues: AutomationStudioValidationIssue[] = [];
+  if (!source.id.trim()) addIssue(issues, "error", "node_state.source_missing_id", "Node state source must have an id.", "id");
+  if (!source.label.trim()) addIssue(issues, "error", "node_state.source_missing_label", "Node state source must have a label.", "label");
+  if (source.kind === "learned") {
+    if (!source.nodeId.trim()) addIssue(issues, "error", "node_state.learned_missing_node_id", "Learned node state source must include a nodeId.", "nodeId");
+    if (source.modelId !== undefined && !source.modelId.trim()) addIssue(issues, "error", "node_state.learned_empty_model_id", "Learned node state modelId cannot be empty when provided.", "modelId");
+    if (!source.recordingIds.length) addIssue(issues, "warning", "node_state.learned_without_recordings", "Learned node state source should retain contributing recording IDs.", "recordingIds");
+    source.recordingIds.forEach((recordingId, index) => {
+      if (!recordingId.trim()) addIssue(issues, "error", "node_state.learned_empty_recording_id", "Learned node state recordingIds cannot contain empty IDs.", `recordingIds.${index}`);
+    });
+    if (source.confidence !== undefined && (source.confidence < 0 || source.confidence > 1)) addIssue(issues, "error", "node_state.learned_invalid_confidence", "Learned node state confidence must be between 0 and 1.", "confidence");
+  } else if (source.kind === "observed") {
+    if (!source.recordingId.trim()) addIssue(issues, "error", "node_state.observed_missing_recording_id", "Observed node state source must include a recordingId.", "recordingId");
+    if (source.timelineEntryId !== undefined && !source.timelineEntryId.trim()) addIssue(issues, "error", "node_state.observed_empty_timeline_entry_id", "Observed node state timelineEntryId cannot be empty when provided.", "timelineEntryId");
+    if (!Number.isFinite(source.timestamp)) addIssue(issues, "error", "node_state.observed_invalid_timestamp", "Observed node state source timestamp must be finite.", "timestamp");
+  } else if (source.kind === "runtime") {
+    if (source.sessionId !== undefined && !source.sessionId.trim()) addIssue(issues, "error", "node_state.runtime_empty_session_id", "Runtime node state sessionId cannot be empty when provided.", "sessionId");
+    if (!Number.isFinite(source.timestamp)) addIssue(issues, "error", "node_state.runtime_invalid_timestamp", "Runtime node state source timestamp must be finite.", "timestamp");
+  }
+  return result(issues);
+}
+
+export function validateNodeStateViewSelection(selection: NodeStateViewSelection): AutomationStudioValidationResult {
+  const issues: AutomationStudioValidationIssue[] = [];
+  if (selection.sourceId !== undefined && !selection.sourceId.trim()) addIssue(issues, "error", "node_state.selection_empty_source_id", "Node state view sourceId cannot be empty when provided.", "sourceId");
+  return result(issues);
+}
+
+export function validateNodeStateRuntimeComparison(comparison: NodeStateRuntimeComparison): AutomationStudioValidationResult {
+  const issues: AutomationStudioValidationIssue[] = [];
+  if (!comparison.expectedSourceId.trim()) addIssue(issues, "error", "node_state.comparison_missing_expected_source", "Runtime comparison must include an expectedSourceId.", "expectedSourceId");
+  if (!comparison.actualSourceId.trim()) addIssue(issues, "error", "node_state.comparison_missing_actual_source", "Runtime comparison must include an actualSourceId.", "actualSourceId");
+  if (!comparison.nodeId.trim()) addIssue(issues, "error", "node_state.comparison_missing_node_id", "Runtime comparison must include a nodeId.", "nodeId");
+  if (comparison.phase !== "actual_output") addIssue(issues, "error", "node_state.comparison_invalid_phase", "Runtime comparison phase must be actual_output.", "phase");
+  comparison.matches.forEach((item, index) => {
+    validateRuntimeComparisonPath(item.evidenceId, issues, `matches.${index}.evidenceId`, "node_state.comparison_match_missing_evidence", "Runtime comparison match must include an evidenceId.");
+    validateRuntimeComparisonPath(item.factPath, issues, `matches.${index}.factPath`, "node_state.comparison_match_missing_fact", "Runtime comparison match must include a factPath.");
+    if (item.score !== undefined && (item.score < 0 || item.score > 1)) addIssue(issues, "error", "node_state.comparison_match_invalid_score", "Runtime comparison match score must be between 0 and 1.", `matches.${index}.score`);
+  });
+  comparison.mismatches.forEach((item, index) => {
+    validateRuntimeComparisonPath(item.evidenceId, issues, `mismatches.${index}.evidenceId`, "node_state.comparison_mismatch_missing_evidence", "Runtime comparison mismatch must include an evidenceId.");
+    validateRuntimeComparisonPath(item.factPath, issues, `mismatches.${index}.factPath`, "node_state.comparison_mismatch_missing_fact", "Runtime comparison mismatch must include a factPath.");
+    if (item.severity !== "warning" && item.severity !== "error") addIssue(issues, "error", "node_state.comparison_mismatch_invalid_severity", "Runtime comparison mismatch severity must be warning or error.", `mismatches.${index}.severity`);
+  });
+  if (comparison.confidence !== undefined && (comparison.confidence < 0 || comparison.confidence > 1)) addIssue(issues, "error", "node_state.comparison_invalid_confidence", "Runtime comparison confidence must be between 0 and 1.", "confidence");
+  return result(issues);
+}
+
+export function validateStateVisualFrame(frame: StateVisualFrame): AutomationStudioValidationResult;
+export function validateStateVisualFrame(frame: StateVisualFrame, issues: AutomationStudioValidationIssue[], path: string): void;
+export function validateStateVisualFrame(frame: StateVisualFrame, issues?: AutomationStudioValidationIssue[], path = "visualFrame"): AutomationStudioValidationResult | void {
+  const localIssues = issues ?? [];
+  if (!frame.id.trim()) addIssue(localIssues, "error", "state.visual_frame_missing_id", "State visual frame must have an id.", `${path}.id`);
+  if (frame.rendererId !== undefined && !frame.rendererId.trim()) addIssue(localIssues, "error", "state.visual_frame_empty_renderer", "State visual frame rendererId cannot be empty.", `${path}.rendererId`);
+  validateStateCoordinateSpace(frame.coordinateSpace, localIssues, `${path}.coordinateSpace`);
+  const layerIds = new Set<string>();
+  for (const [index, layer] of frame.layers.entries()) {
+    const layerPath = `${path}.layers.${index}`;
+    validateStateVisualLayer(layer, localIssues, layerPath);
+    if (layerIds.has(layer.id)) addIssue(localIssues, "error", "state.visual_layer_duplicate_id", `Duplicate state visual layer id "${layer.id}".`, `${layerPath}.id`);
+    layerIds.add(layer.id);
+  }
+  if (frame.presentation) validateStatePresentationMetadata(frame.presentation, localIssues, `${path}.presentation`);
+  if (!issues) return result(localIssues);
+}
+
+export function validateEvidenceAnchor(anchor: EvidenceAnchor): AutomationStudioValidationResult;
+export function validateEvidenceAnchor(anchor: EvidenceAnchor, issues: AutomationStudioValidationIssue[], path: string): void;
+export function validateEvidenceAnchor(anchor: EvidenceAnchor, issues?: AutomationStudioValidationIssue[], path = "anchor"): AutomationStudioValidationResult | void {
+  const localIssues = issues ?? [];
+  if (anchor.type === "point") {
+    validateFiniteCoordinate(anchor.x, localIssues, `${path}.x`);
+    validateFiniteCoordinate(anchor.y, localIssues, `${path}.y`);
+  } else if (anchor.type === "bounds") {
+    validateStateBounds(anchor.bounds, localIssues, `${path}.bounds`);
+  } else if (anchor.type === "element" && !anchor.elementId.trim()) {
+    addIssue(localIssues, "error", "state.anchor_missing_element", "Element anchor must have an elementId.", `${path}.elementId`);
+  } else if (anchor.type === "entity" && !anchor.entityId.trim()) {
+    addIssue(localIssues, "error", "state.anchor_missing_entity", "Entity anchor must have an entityId.", `${path}.entityId`);
+  } else if (anchor.type === "region" && !anchor.regionId.trim()) {
+    addIssue(localIssues, "error", "state.anchor_missing_region", "Region anchor must have a regionId.", `${path}.regionId`);
+  } else if (anchor.type === "path") {
+    if (anchor.points.length < 2) addIssue(localIssues, "error", "state.anchor_path_too_short", "Path anchor must have at least two points.", `${path}.points`);
+    anchor.points.forEach((point, index) => {
+      validateFiniteCoordinate(point.x, localIssues, `${path}.points.${index}.x`);
+      validateFiniteCoordinate(point.y, localIssues, `${path}.points.${index}.y`);
+    });
+  }
+  if ("rendererId" in anchor && anchor.rendererId !== undefined && !anchor.rendererId.trim()) {
+    addIssue(localIssues, "error", "state.anchor_empty_renderer", "Anchor rendererId cannot be empty.", `${path}.rendererId`);
+  }
+  if (!issues) return result(localIssues);
 }
 
 /**
@@ -374,6 +556,92 @@ function validateTimelineEntry(
   if (entry.type === "state_delta" && entry.deltas.length === 0) {
     addIssue(issues, "warning", "timeline.empty_state_delta", "State delta entries should contain at least one delta.", `${path}.deltas`);
   }
+}
+
+function validateStateCoordinateSpace(space: StateCoordinateSpace, issues: AutomationStudioValidationIssue[], path: string): void {
+  validatePositiveFinite(space.width, issues, `${path}.width`, "State coordinate space width must be a positive finite number.");
+  validatePositiveFinite(space.height, issues, `${path}.height`, "State coordinate space height must be a positive finite number.");
+  if (space.scale !== undefined) validatePositiveFinite(space.scale, issues, `${path}.scale`, "State coordinate space scale must be a positive finite number.");
+}
+
+function validateStateVisualLayer(layer: StateVisualLayer, issues: AutomationStudioValidationIssue[], path: string): void {
+  if (!layer.id.trim()) addIssue(issues, "error", "state.visual_layer_missing_id", "State visual layer must have an id.", `${path}.id`);
+  if (layer.kind === "image") {
+    if (!isAllowedStateContentRef(layer.contentRef)) {
+      addIssue(issues, "error", "state.visual_layer_unsafe_content_ref", "Image layer contentRef must be an Automation Studio object or API reference.", `${path}.contentRef`);
+    }
+    validateStateBounds(layer.bounds, issues, `${path}.bounds`);
+    if (layer.opacity !== undefined && (layer.opacity < 0 || layer.opacity > 1)) {
+      addIssue(issues, "error", "state.visual_layer_invalid_opacity", "Image layer opacity must be between 0 and 1.", `${path}.opacity`);
+    }
+    return;
+  }
+  if (layer.kind === "text") {
+    if (layer.bounds) validateStateBounds(layer.bounds, issues, `${path}.bounds`);
+    if (layer.anchor) validateEvidenceAnchor(layer.anchor, issues, `${path}.anchor`);
+    return;
+  }
+  if (layer.kind === "region") {
+    validateStateBounds(layer.bounds, issues, `${path}.bounds`);
+    if (layer.anchor) validateEvidenceAnchor(layer.anchor, issues, `${path}.anchor`);
+    return;
+  }
+  if (layer.kind === "element") {
+    if (layer.bounds) validateStateBounds(layer.bounds, issues, `${path}.bounds`);
+    if (layer.anchor) validateEvidenceAnchor(layer.anchor, issues, `${path}.anchor`);
+  }
+}
+
+function validateStatePresentationMetadata(presentation: StatePresentationMetadata, issues: AutomationStudioValidationIssue[], path: string): void {
+  if (presentation.order !== undefined && !Number.isFinite(presentation.order)) {
+    addIssue(issues, "error", "state.presentation_invalid_order", "State presentation order must be finite.", `${path}.order`);
+  }
+  if (presentation.anchor) validateEvidenceAnchor(presentation.anchor, issues, `${path}.anchor`);
+}
+
+function validateEvidenceComparator(comparator: EvidenceComparator, issues: AutomationStudioValidationIssue[], path: string): void {
+  if (comparator.kind === "numeric" && !Number.isFinite(comparator.value)) {
+    addIssue(issues, "error", "evidence.comparator_invalid_numeric_value", "Numeric evidence comparator value must be finite.", `${path}.value`);
+  }
+  if (comparator.kind === "custom" && !comparator.comparatorId.trim()) {
+    addIssue(issues, "error", "evidence.comparator_missing_custom_id", "Custom evidence comparator must have a comparatorId.", `${path}.comparatorId`);
+  }
+}
+
+function validateEvidenceReference(reference: EvidenceReference, issues: AutomationStudioValidationIssue[], path: string): void {
+  if (!reference.artifactId.trim()) addIssue(issues, "error", "evidence.reference_missing_artifact", "Evidence reference must have an artifactId.", `${path}.artifactId`);
+  if (reference.entryId !== undefined && !reference.entryId.trim()) addIssue(issues, "error", "evidence.reference_empty_entry", "Evidence reference entryId cannot be empty when provided.", `${path}.entryId`);
+  if (reference.signalPath !== undefined && !reference.signalPath.trim()) addIssue(issues, "error", "evidence.reference_empty_signal_path", "Evidence reference signalPath cannot be empty when provided.", `${path}.signalPath`);
+  if (reference.noteId !== undefined && !reference.noteId.trim()) addIssue(issues, "error", "evidence.reference_empty_note", "Evidence reference noteId cannot be empty when provided.", `${path}.noteId`);
+  if (reference.relationship !== undefined && !reference.relationship.trim()) addIssue(issues, "error", "evidence.reference_empty_relationship", "Evidence reference relationship cannot be empty when provided.", `${path}.relationship`);
+  if (reference.confidence !== undefined && (reference.confidence < 0 || reference.confidence > 1)) addIssue(issues, "error", "evidence.reference_invalid_confidence", "Evidence reference confidence must be between 0 and 1.", `${path}.confidence`);
+}
+
+function validateStateBounds(bounds: StateBounds, issues: AutomationStudioValidationIssue[], path: string): void {
+  validateFiniteCoordinate(bounds.x, issues, `${path}.x`);
+  validateFiniteCoordinate(bounds.y, issues, `${path}.y`);
+  validatePositiveFinite(bounds.width, issues, `${path}.width`, "State bounds width must be a positive finite number.");
+  validatePositiveFinite(bounds.height, issues, `${path}.height`, "State bounds height must be a positive finite number.");
+}
+
+function validateFiniteCoordinate(value: number, issues: AutomationStudioValidationIssue[], path: string): void {
+  if (!Number.isFinite(value)) addIssue(issues, "error", "state.coordinate_not_finite", "State coordinates must be finite numbers.", path);
+}
+
+function validatePositiveFinite(value: number, issues: AutomationStudioValidationIssue[], path: string, message: string): void {
+  if (!Number.isFinite(value) || value <= 0) addIssue(issues, "error", "state.dimension_not_positive", message, path);
+}
+
+function isAllowedStateContentRef(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.startsWith("automation-object://")
+    || trimmed.startsWith("fluxiq-object://")
+    || trimmed.startsWith("object://")
+    || trimmed.startsWith("/api/");
+}
+
+function validateRuntimeComparisonPath(value: string, issues: AutomationStudioValidationIssue[], path: string, code: string, message: string): void {
+  if (!value.trim()) addIssue(issues, "error", code, message, path);
 }
 
 function validateConditionExpression(

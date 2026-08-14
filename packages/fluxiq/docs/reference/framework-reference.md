@@ -7,11 +7,11 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 705
+- Public declarations: 742
 - Class: 31
-- Object: 42
-- Type: 517
-- Value: 115
+- Object: 43
+- Type: 539
+- Value: 129
 
 ## Public Declarations
 
@@ -32,18 +32,18 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `adaptPolicyGraphToPolicyRegion` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/region-compiler.ts:26` | - |
 | `adminRole` | Object | `packages/fluxiq/src/programs/identity-access/runtime/roles.ts:3` | - |
 | `AdvanceProductionRunRequest` | Type | `packages/fluxiq/src/programs/production-runner/api/contracts.ts:30` | - |
-| `AppendRecordingDomainEventRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:235` | - |
+| `AppendRecordingDomainEventRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:236` | - |
 | `appendRecordingEntry` | Value | `packages/fluxiq/src/programs/automation-studio/model/recording-framework.ts:50` | - |
 | `AppendRecordingEntryInput` | Type | `packages/fluxiq/src/programs/automation-studio/model/recording-framework.ts:19` | - |
-| `AppendRecordingEntryRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:199` | - |
-| `AppendRecordingMarkerRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:222` | - |
+| `AppendRecordingEntryRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:200` | - |
+| `AppendRecordingMarkerRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:223` | - |
 | `appendRecordingNote` | Value | `packages/fluxiq/src/programs/automation-studio/model/recording-framework.ts:89` | - |
-| `AppendRecordingNoteRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:214` | - |
+| `AppendRecordingNoteRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:215` | - |
 | `appendRecordingStateCheckpoint` | Value | `packages/fluxiq/src/programs/automation-studio/model/recording-framework.ts:65` | - |
 | `appendRecordingStateDelta` | Value | `packages/fluxiq/src/programs/automation-studio/model/recording-framework.ts:77` | - |
 | `applyStateDeltas` | Value | `packages/fluxiq/src/programs/automation-studio/model/state-diff.ts:32` | - |
 | `ApprovalStatus` | Type | `packages/fluxiq/src/programs/automation-studio/types.ts:3` | - |
-| `ApprovePolicyProposalRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:272` | - |
+| `ApprovePolicyProposalRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:273` | - |
 | `atomicWriteJson` | Value | `packages/fluxiq/src/framework/storage-layout.ts:101` | - |
 | `authorizeProgramPin` | Value | `packages/fluxiq/src/programs/_shared/authorization.ts:8` | - |
 | `AUTOMATION_STUDIO_ENDPOINTS` | Object | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:19` | - |
@@ -70,7 +70,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationNodePort` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/contracts.ts:30` | - |
 | `AutomationNodeScope` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/contracts.ts:3` | - |
 | `AutomationNodeValueType` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/contracts.ts:19` | - |
-| `AutomationPipelineArtifacts` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:207` | - |
+| `AutomationPipelineArtifacts` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:226` | - |
 | `AutomationRecording` | Type | `packages/fluxiq/src/programs/automation-studio/types.ts:63` | - |
 | `AutomationStage` | Type | `packages/fluxiq/src/programs/automation-studio/types.ts:32` | - |
 | `AutomationStateStore` | Type | `packages/fluxiq/src/programs/automation-studio/model/state-store.ts:14` | - |
@@ -80,10 +80,10 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioCallFlowBinding` | Type | `packages/fluxiq/src/programs/automation-studio/model/composites.ts:45` | - |
 | `AutomationStudioCallFlowConfiguration` | Type | `packages/fluxiq/src/programs/automation-studio/model/composites.ts:46` | - |
 | `AutomationStudioCallFlowTarget` | Type | `packages/fluxiq/src/programs/automation-studio/model/composites.ts:44` | - |
-| `AutomationStudioClientGatewayBridge` | Class | `packages/fluxiq/src/programs/automation-studio/client-gateway/bridge.ts:43` | - |
+| `AutomationStudioClientGatewayBridge` | Class | `packages/fluxiq/src/programs/automation-studio/client-gateway/bridge.ts:56` | - |
 | `AutomationStudioClientGatewayBridgeOptions` | Type | `packages/fluxiq/src/programs/automation-studio/client-gateway/bridge.ts:18` | - |
 | `AutomationStudioComparatorDefinition` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:31` | - |
-| `AutomationStudioComparatorImplementation` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:59` | - |
+| `AutomationStudioComparatorImplementation` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:70` | - |
 | `AutomationStudioCompiledFlowPlan` | Type | `packages/fluxiq/src/programs/automation-studio/dsl/contracts.ts:35` | - |
 | `AutomationStudioConfigArtifact` | Type | `packages/fluxiq/src/programs/automation-studio/model/artifacts.ts:76` | - |
 | `automationStudioCustomNodeFolders` | Object | `packages/fluxiq/src/programs/automation-studio/nodes/layout.ts:9` | - |
@@ -102,7 +102,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioFlowExecutionDefaults` | Type | `packages/fluxiq/src/programs/automation-studio/model/flows.ts:63` | - |
 | `AutomationStudioFlowInterface` | Type | `packages/fluxiq/src/programs/automation-studio/model/flows.ts:43` | - |
 | `AutomationStudioFlowLegacyProvenance` | Type | `packages/fluxiq/src/programs/automation-studio/model/flows.ts:85` | Retains source identity when a legacy task or routine is later adapted/migrated. |
-| `AutomationStudioFlowMigrationInspection` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:122` | - |
+| `AutomationStudioFlowMigrationInspection` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:141` | - |
 | `AutomationStudioFlowMigrationLedger` | Type | `packages/fluxiq/src/programs/automation-studio/model/flows.ts:136` | Durable audit record for an explicit, non-destructive legacy Flow migration. |
 | `AutomationStudioFlowMigrationOutcome` | Type | `packages/fluxiq/src/programs/automation-studio/model/flows.ts:125` | - |
 | `AutomationStudioFlowMigrationRollbackPlan` | Type | `packages/fluxiq/src/programs/automation-studio/model/legacy-retirement.ts:81` | - |
@@ -126,11 +126,11 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioGraphExecutionTrace` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor.ts:28` | - |
 | `AutomationStudioGraphRunStatus` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor.ts:7` | - |
 | `AutomationStudioHierarchyNode` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:115` | - |
-| `AutomationStudioImporterImplementationBundle` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:61` | - |
+| `AutomationStudioImporterImplementationBundle` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:72` | - |
 | `AutomationStudioImporterNodeManifest` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/definitions.ts:91` | Plain registration boundary importers can expose from their configured source root. |
 | `AutomationStudioImporterSchema` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:7` | - |
-| `AutomationStudioImporterSdkManifest` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:33` | - |
-| `AutomationStudioImporterSdkRegistry` | Class | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:71` | Explicit manifest registry. FluxIQ never scans or imports host modules from display metadata. |
+| `AutomationStudioImporterSdkManifest` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:43` | - |
+| `AutomationStudioImporterSdkRegistry` | Class | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:82` | Explicit manifest registry. FluxIQ never scans or imports host modules from display metadata. |
 | `AutomationStudioIoRecorder` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/io-bridge.ts:10` | Converts importer-owned IO input events into recording evidence. Only action inputs with an explicit output binding become executable policy evidence. |
 | `AutomationStudioLegacyBackup` | Type | `packages/fluxiq/src/programs/automation-studio/model/legacy-retirement.ts:64` | - |
 | `AutomationStudioLegacyDeferredArtifact` | Type | `packages/fluxiq/src/programs/automation-studio/model/legacy-retirement.ts:15` | - |
@@ -145,9 +145,9 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioMemoryRepository` | Class | `packages/fluxiq/src/programs/automation-studio/storage/memory-repository.ts:19` | - |
 | `AutomationStudioMemoryRepositoryOptions` | Type | `packages/fluxiq/src/programs/automation-studio/storage/memory-repository.ts:15` | - |
 | `AutomationStudioNativeExecution` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/native-node-runtime.ts:15` | - |
-| `AutomationStudioNativeLogEntry` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:48` | - |
-| `AutomationStudioNativeNodeContext` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:49` | - |
-| `AutomationStudioNativeNodeImplementation` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:56` | - |
+| `AutomationStudioNativeLogEntry` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:59` | - |
+| `AutomationStudioNativeNodeContext` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:60` | - |
+| `AutomationStudioNativeNodeImplementation` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:67` | - |
 | `AutomationStudioNativeNodeRuntime` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/native-node-runtime.ts:21` | Explicit trusted-local implementation binder. This is an authorization and tracing boundary, not a security sandbox or containment mechanism. |
 | `AutomationStudioNativeRuntimeGrants` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/native-node-runtime.ts:6` | - |
 | `AutomationStudioNodeAttemptTrace` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor.ts:9` | - |
@@ -161,8 +161,12 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioNodeRuntimeRequirements` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/definitions.ts:42` | - |
 | `AutomationStudioNodeSafety` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/definitions.ts:35` | - |
 | `AutomationStudioNodeSource` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/definitions.ts:16` | - |
+| `automationStudioObjectApiPath` | Value | `packages/fluxiq/src/programs/automation-studio/storage/object-store.ts:233` | - |
+| `AutomationStudioObjectAsset` | Type | `packages/fluxiq/src/programs/automation-studio/storage/object-store.ts:19` | - |
+| `automationStudioObjectContentRef` | Value | `packages/fluxiq/src/programs/automation-studio/storage/object-store.ts:229` | - |
 | `AutomationStudioObjectReference` | Type | `packages/fluxiq/src/programs/automation-studio/storage/object-store.ts:9` | - |
-| `AutomationStudioObjectStore` | Class | `packages/fluxiq/src/programs/automation-studio/storage/object-store.ts:18` | - |
+| `AutomationStudioObjectStore` | Class | `packages/fluxiq/src/programs/automation-studio/storage/object-store.ts:41` | - |
+| `AutomationStudioObjectWriteOptions` | Type | `packages/fluxiq/src/programs/automation-studio/storage/object-store.ts:36` | - |
 | `AutomationStudioObservation` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/adapters.ts:4` | - |
 | `AutomationStudioPanel` | Type | `packages/fluxiq/src/programs/automation-studio/ui/contracts.ts:1` | - |
 | `AutomationStudioProblem` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:146` | - |
@@ -178,7 +182,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioRecordingControllerOptions` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recording-controller.ts:13` | - |
 | `AutomationStudioRecordingMapperCandidate` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:18` | - |
 | `AutomationStudioRecordingMapperDefinition` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:8` | - |
-| `AutomationStudioRecordingMapperImplementation` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:57` | - |
+| `AutomationStudioRecordingMapperImplementation` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:68` | - |
 | `AutomationStudioRecordingMapperObservation` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:9` | - |
 | `AutomationStudioRecordingMapperResult` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:29` | - |
 | `AutomationStudioRegionExecutionPlan` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/region-compiler.ts:4` | - |
@@ -189,19 +193,22 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioRuntimeContext` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/contracts.ts:4` | - |
 | `AutomationStudioRuntimeSession` | Type | `packages/fluxiq/src/programs/automation-studio/model/runtime.ts:28` | - |
 | `AutomationStudioRuntimeSessionStatus` | Type | `packages/fluxiq/src/programs/automation-studio/model/runtime.ts:20` | - |
-| `AutomationStudioSchemaVersion` | Type | `packages/fluxiq/src/programs/automation-studio/model/evidence.ts:3` | - |
-| `AutomationStudioService` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:224` | - |
-| `AutomationStudioServiceOptions` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:114` | - |
+| `AutomationStudioSchemaVersion` | Type | `packages/fluxiq/src/programs/automation-studio/model/evidence.ts:4` | - |
+| `AutomationStudioService` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:243` | - |
+| `AutomationStudioServiceOptions` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:117` | - |
 | `AutomationStudioSnapshot` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:132` | - |
 | `automationStudioSourceNodeRoot` | Object | `packages/fluxiq/src/programs/automation-studio/nodes/layout.ts:3` | - |
+| `AutomationStudioStateVisualizerDefinition` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:32` | - |
 | `AutomationStudioTargetResolverDefinition` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:30` | - |
-| `AutomationStudioTargetResolverImplementation` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:58` | - |
+| `AutomationStudioTargetResolverImplementation` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:69` | - |
 | `AutomationStudioTaskArtifact` | Type | `packages/fluxiq/src/programs/automation-studio/model/artifacts.ts:48` | - |
 | `automationStudioTraceSummary` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor.ts:343` | - |
-| `AutomationStudioValidationIssue` | Type | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:28` | - |
-| `AutomationStudioValidationResult` | Type | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:35` | - |
-| `AutomationStudioValidationSeverity` | Type | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:26` | - |
+| `AutomationStudioValidationIssue` | Type | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:49` | - |
+| `AutomationStudioValidationResult` | Type | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:56` | - |
+| `AutomationStudioValidationSeverity` | Type | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:47` | - |
 | `AutomationStudioViewState` | Type | `packages/fluxiq/src/programs/automation-studio/ui/contracts.ts:8` | - |
+| `AutomationStudioWriteProjectObjectAssetInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:125` | - |
+| `AutomationStudioWriteProjectObjectAssetResult` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:133` | - |
 | `AutomationTask` | Type | `packages/fluxiq/src/programs/automation-studio/types.ts:42` | - |
 | `BACKGROUND_TASKS_ENDPOINTS` | Object | `packages/fluxiq/src/programs/background-tasks/api/contracts.ts:4` | - |
 | `BACKGROUND_TASKS_PROGRAM` | Object | `packages/fluxiq/src/programs/background-tasks/metadata.ts:3` | - |
@@ -224,7 +231,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `CanonicalAutomationStudioArtifactKind` | Type | `packages/fluxiq/src/programs/automation-studio/storage/ids.ts:15` | - |
 | `CanonicalAutomationStudioRepositories` | Type | `packages/fluxiq/src/programs/automation-studio/storage/contracts.ts:19` | - |
 | `canonicalBuiltinAutomationNodeDefinitions` | Object | `packages/fluxiq/src/programs/automation-studio/nodes/canonical-registry.ts:51` | - |
-| `CaptureClientSnapshotRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:310` | - |
+| `CaptureClientSnapshotRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:311` | - |
 | `CheckpointPolicy` | Type | `packages/fluxiq/src/programs/automation-studio/normalization/contracts.ts:15` | - |
 | `chooseNextEdge` | Value | `packages/fluxiq/src/engine/index.ts:186` | - |
 | `CLIENT_GATEWAY_PROTOCOL_VERSION` | Object | `packages/contracts/src/client-gateway.ts:3` | - |
@@ -257,8 +264,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ClientGatewayTrustedClientStore` | Type | `packages/fluxiq/src/client-gateway/service.ts:33` | - |
 | `ClientGatewayTrustedClientView` | Type | `packages/contracts/src/client-gateway.ts:160` | - |
 | `ClientGatewayUnknownPayload` | Type | `packages/contracts/src/client-gateway.ts:244` | - |
-| `ClientRecordingContext` | Type | `packages/fluxiq/src/programs/automation-studio/client-gateway/bridge.ts:25` | - |
-| `ClientRecordingContextProvider` | Type | `packages/fluxiq/src/programs/automation-studio/client-gateway/bridge.ts:29` | - |
+| `ClientRecordingContext` | Type | `packages/fluxiq/src/programs/automation-studio/client-gateway/bridge.ts:26` | - |
+| `ClientRecordingContextProvider` | Type | `packages/fluxiq/src/programs/automation-studio/client-gateway/bridge.ts:30` | - |
 | `Clock` | Type | `packages/fluxiq/src/core/index.ts:11` | - |
 | `ComparatorDefinition` | Type | `packages/fluxiq/src/programs/automation-studio/model/signals.ts:12` | - |
 | `comparatorForStateType` | Value | `packages/fluxiq/src/programs/automation-studio/model/signal-registry.ts:68` | - |
@@ -287,7 +294,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ComputeStatus` | Type | `packages/fluxiq/src/programs/compute-control/types.ts:3` | - |
 | `Condition` | Type | `packages/fluxiq/src/programs/automation-studio/types.ts:5` | - |
 | `ConditionSet` | Type | `packages/fluxiq/src/programs/automation-studio/types.ts:11` | - |
-| `ConservativeTimelineNormalizer` | Class | `packages/fluxiq/src/programs/automation-studio/normalization/default-normalizer.ts:5` | - |
+| `ConservativeTimelineNormalizer` | Class | `packages/fluxiq/src/programs/automation-studio/normalization/default-normalizer.ts:7` | - |
 | `ControlBackgroundTaskRequest` | Type | `packages/fluxiq/src/programs/background-tasks/api/contracts.ts:38` | - |
 | `convertCodeOwnedFlowToVisual` | Value | `packages/fluxiq/src/programs/automation-studio/dsl/source.ts:28` | - |
 | `createAutomationStudioFixture` | Value | `packages/fluxiq/src/programs/automation-studio/model/fixtures.ts:15` | - |
@@ -297,15 +304,15 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `createCanonicalAutomationStudioMemoryRepositories` | Value | `packages/fluxiq/src/programs/automation-studio/storage/memory-repository.ts:61` | - |
 | `createCanonicalAutomationStudioSQLiteRepositories` | Value | `packages/fluxiq/src/programs/automation-studio/storage/sqlite-repository.ts:59` | - |
 | `createEnvelope` | Value | `packages/fluxiq/src/io/index.ts:400` | - |
-| `CreateFlowRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:173` | - |
+| `CreateFlowRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:174` | - |
 | `createGlobalProgramRuntime` | Value | `packages/fluxiq/src/programs/_shared/runtime.ts:31` | - |
 | `createId` | Value | `packages/fluxiq/src/core/index.ts:21` | - |
 | `CreateIdentityUserRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts:20` | - |
 | `createIoPolicyEffectDispatcher` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/io-policy.ts:45` | - |
 | `createPublishedFlowSnapshot` | Value | `packages/fluxiq/src/programs/automation-studio/model/composites.ts:50` | - |
 | `createRecord` | Value | `packages/fluxiq/src/programs/database-manager/storage/sqlite-repository.ts:179` | - |
-| `CreateRecordingFlowProposalsResult` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:202` | - |
-| `CreateRecordingRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:197` | - |
+| `CreateRecordingFlowProposalsResult` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:221` | - |
+| `CreateRecordingRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:198` | - |
 | `createRecordingSession` | Value | `packages/fluxiq/src/programs/automation-studio/model/recording-framework.ts:25` | - |
 | `CreateRecordingSessionInput` | Type | `packages/fluxiq/src/programs/automation-studio/model/recording-framework.ts:8` | - |
 | `createRuntimeInputs` | Value | `packages/fluxiq/src/engine/index.ts:199` | - |
@@ -335,7 +342,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `defineFlow` | Value | `packages/fluxiq/src/programs/automation-studio/dsl/compiler.ts:10` | - |
 | `defineInput` | Value | `packages/fluxiq/src/io/index.ts:102` | - |
 | `defineOutput` | Value | `packages/fluxiq/src/io/index.ts:107` | - |
-| `DeleteRecordingRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:210` | - |
+| `DeleteRecordingRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:211` | - |
 | `DEPLOYMENT_SYNC_ENDPOINTS` | Object | `packages/fluxiq/src/programs/deployment-sync/api/contracts.ts:3` | - |
 | `DEPLOYMENT_SYNC_PROGRAM` | Object | `packages/fluxiq/src/programs/deployment-sync/metadata.ts:3` | - |
 | `DeploymentArtifact` | Type | `packages/fluxiq/src/programs/deployment-sync/types.ts:15` | - |
@@ -356,7 +363,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `DeploymentSyncStore` | Type | `packages/fluxiq/src/programs/deployment-sync/storage/contracts.ts:3` | - |
 | `DeploymentSyncViewState` | Type | `packages/fluxiq/src/programs/deployment-sync/ui/contracts.ts:3` | - |
 | `DeploymentTarget` | Type | `packages/fluxiq/src/programs/deployment-sync/types.ts:6` | - |
-| `DeprecateFlowPublicationRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:195` | - |
+| `DeprecateFlowPublicationRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:196` | - |
 | `diffStateSnapshots` | Value | `packages/fluxiq/src/programs/automation-studio/model/state-diff.ts:7` | - |
 | `discoverSignalDefinitions` | Value | `packages/fluxiq/src/programs/automation-studio/model/signal-registry.ts:18` | - |
 | `dispatchPolicyOutput` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/io-policy.ts:7` | - |
@@ -393,19 +400,21 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `DynamicPolicyNode` | Type | `packages/fluxiq/src/programs/automation-studio/types.ts:73` | - |
 | `emptyStateSnapshot` | Value | `packages/fluxiq/src/programs/automation-studio/model/state-store.ts:95` | - |
 | `EnvironmentDescriptor` | Type | `packages/fluxiq/src/programs/automation-studio/model/descriptors.ts:3` | - |
+| `EvidenceAnchor` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:67` | - |
 | `EvidenceClaim` | Type | `packages/fluxiq/src/programs/automation-studio/mining/contracts.ts:87` | - |
 | `EvidenceClaimConfidence` | Type | `packages/fluxiq/src/programs/automation-studio/mining/contracts.ts:80` | - |
 | `EvidenceClaimType` | Type | `packages/fluxiq/src/programs/automation-studio/mining/contracts.ts:72` | - |
+| `EvidenceComparator` | Type | `packages/fluxiq/src/programs/automation-studio/model/evidence.ts:56` | - |
 | `EvidenceFact` | Type | `packages/fluxiq/src/programs/automation-studio/mining/contracts.ts:15` | - |
 | `EvidenceFactKind` | Type | `packages/fluxiq/src/programs/automation-studio/mining/contracts.ts:6` | - |
-| `EvidenceLayer` | Type | `packages/fluxiq/src/programs/automation-studio/model/evidence.ts:5` | - |
+| `EvidenceLayer` | Type | `packages/fluxiq/src/programs/automation-studio/model/evidence.ts:6` | - |
 | `EvidenceObservation` | Type | `packages/fluxiq/src/programs/automation-studio/mining/contracts.ts:45` | - |
 | `EvidenceObservationKind` | Type | `packages/fluxiq/src/programs/automation-studio/mining/contracts.ts:36` | - |
-| `EvidenceReference` | Type | `packages/fluxiq/src/programs/automation-studio/model/evidence.ts:17` | - |
-| `ExecuteClientActionRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:316` | - |
+| `EvidenceReference` | Type | `packages/fluxiq/src/programs/automation-studio/model/evidence.ts:18` | - |
+| `ExecuteClientActionRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:317` | - |
 | `Expectation` | Type | `packages/fluxiq/src/programs/automation-studio/model/policies.ts:38` | - |
 | `FileRepository` | Class | `packages/fluxiq/src/programs/database-manager/storage/file-repository.ts:11` | - |
-| `FinalizeRecordingRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:237` | - |
+| `FinalizeRecordingRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:238` | - |
 | `finalizeRecordingSession` | Value | `packages/fluxiq/src/programs/automation-studio/model/recording-framework.ts:105` | - |
 | `FingerprintCandidateScore` | Type | `packages/fluxiq/src/programs/automation-studio/fingerprinting/contracts.ts:12` | - |
 | `FingerprintScorer` | Type | `packages/fluxiq/src/programs/automation-studio/fingerprinting/contracts.ts:30` | - |
@@ -413,12 +422,12 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `FlowDocument` | Type | `packages/fluxiq/src/flows/index.ts:31` | - |
 | `flowDocumentId` | Value | `packages/fluxiq/src/programs/automation-studio/storage/ids.ts:36` | - |
 | `FlowEdge` | Type | `packages/fluxiq/src/flows/index.ts:21` | - |
-| `FlowIdProjectRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:183` | - |
+| `FlowIdProjectRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:184` | - |
 | `flowMigrationLedgerDocumentId` | Value | `packages/fluxiq/src/programs/automation-studio/storage/ids.ts:40` | - |
 | `FlowNode` | Type | `packages/fluxiq/src/flows/index.ts:4` | - |
 | `FlowNodeContext` | Type | `packages/fluxiq/src/flows/index.ts:48` | - |
 | `FlowNodeHandler` | Type | `packages/fluxiq/src/flows/index.ts:56` | - |
-| `FlowProjectRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:169` | - |
+| `FlowProjectRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:170` | - |
 | `flowPublicationDocumentId` | Value | `packages/fluxiq/src/programs/automation-studio/storage/ids.ts:44` | - |
 | `FlowRetry` | Type | `packages/fluxiq/src/flows/index.ts:15` | - |
 | `FlowState` | Type | `packages/fluxiq/src/flows/index.ts:41` | - |
@@ -443,7 +452,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `FluxIQThemeColorToken` | Type | `packages/fluxiq/src/ui/index.ts:21` | - |
 | `FrameworkResult` | Type | `packages/fluxiq/src/core/index.ts:3` | - |
 | `GeneratedDocumentationPage` | Type | `packages/fluxiq/src/programs/docs/types.ts:24` | - |
-| `GeneratedMetadata` | Type | `packages/fluxiq/src/programs/automation-studio/model/evidence.ts:28` | - |
+| `GeneratedMetadata` | Type | `packages/fluxiq/src/programs/automation-studio/model/evidence.ts:78` | - |
 | `generateFlowTypeScript` | Value | `packages/fluxiq/src/programs/automation-studio/dsl/generator.ts:7` | - |
 | `GeneratePolicyRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:154` | - |
 | `GeneratePolicyResponse` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:160` | - |
@@ -464,11 +473,12 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `IdentityAccessStore` | Type | `packages/fluxiq/src/programs/identity-access/storage/contracts.ts:3` | - |
 | `IdentityAccessViewState` | Type | `packages/fluxiq/src/programs/identity-access/ui/contracts.ts:3` | - |
 | `initializeFluxIQStorage` | Value | `packages/fluxiq/src/framework/storage-layout.ts:74` | - |
+| `initialNodeStatePhases` | Object | `packages/fluxiq/src/programs/automation-studio/model/node-state.ts:67` | - |
 | `InputAdapter` | Type | `packages/fluxiq/src/io/index.ts:54` | - |
 | `InputOutputBinding` | Type | `packages/fluxiq/src/io/index.ts:69` | - |
 | `InputReadRequest` | Type | `packages/fluxiq/src/io/index.ts:16` | - |
 | `inspectFluxIQStorage` | Value | `packages/fluxiq/src/framework/storage-layout.ts:49` | - |
-| `InspectStateDiffRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:287` | - |
+| `InspectStateDiffRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:288` | - |
 | `IoAdapterSummary` | Type | `packages/fluxiq/src/io/index.ts:128` | - |
 | `IoEnvelope` | Type | `packages/fluxiq/src/io/index.ts:6` | - |
 | `IoInputRole` | Type | `packages/fluxiq/src/io/index.ts:67` | - |
@@ -478,7 +488,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `IoSnapshot` | Type | `packages/fluxiq/src/io/index.ts:140` | - |
 | `IoUnsubscribe` | Type | `packages/fluxiq/src/io/index.ts:38` | - |
 | `IoValidationIssue` | Type | `packages/fluxiq/src/io/index.ts:119` | - |
-| `isAutomationStudioObjectReference` | Value | `packages/fluxiq/src/programs/automation-studio/storage/object-store.ts:56` | - |
+| `isAutomationStudioObjectReference` | Value | `packages/fluxiq/src/programs/automation-studio/storage/object-store.ts:224` | - |
 | `JsonObject` | Type | `packages/contracts/src/core.ts:3` | - |
 | `JsonPrimitive` | Type | `packages/contracts/src/core.ts:1` | - |
 | `JsonValue` | Type | `packages/contracts/src/core.ts:2` | - |
@@ -491,35 +501,43 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `learnedTaskModelDocumentId` | Value | `packages/fluxiq/src/programs/automation-studio/storage/ids.ts:56` | - |
 | `LearnedTransition` | Type | `packages/fluxiq/src/programs/automation-studio/learning/contracts.ts:34` | - |
 | `LearningUncertainty` | Type | `packages/fluxiq/src/programs/automation-studio/learning/contracts.ts:5` | - |
-| `LearnTaskModelRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:261` | - |
-| `ListRecordingDomainsResponse` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:229` | - |
+| `LearnTaskModelRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:262` | - |
+| `ListRecordingDomainsResponse` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:230` | - |
 | `loadFluxIQEnv` | Value | `packages/fluxiq/src/framework/index.ts:395` | - |
 | `LoadFluxIQEnvOptions` | Type | `packages/fluxiq/src/framework/index.ts:389` | - |
 | `MarkerEntry` | Type | `packages/fluxiq/src/programs/automation-studio/model/timeline.ts:61` | - |
 | `migrateFluxIQStorage` | Value | `packages/fluxiq/src/framework/storage-migration.ts:53` | - |
 | `Migration` | Type | `packages/fluxiq/src/programs/database-manager/types.ts:23` | - |
 | `MigrationRun` | Type | `packages/fluxiq/src/programs/database-manager/types.ts:30` | - |
-| `MineRecordingEvidenceRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:256` | - |
+| `MineRecordingEvidenceRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:257` | - |
 | `MiningWindow` | Type | `packages/fluxiq/src/programs/automation-studio/mining/contracts.ts:144` | - |
 | `MiningWindowKind` | Type | `packages/fluxiq/src/programs/automation-studio/mining/contracts.ts:142` | - |
 | `MockClientGatewayClient` | Class | `packages/fluxiq/src/client-gateway/testing/mock-client.ts:4` | - |
 | `NavigationItem` | Type | `packages/fluxiq/src/ui/index.ts:13` | - |
+| `NodeEvidenceBinding` | Type | `packages/fluxiq/src/programs/automation-studio/model/evidence.ts:64` | - |
+| `NodeEvidenceRole` | Type | `packages/fluxiq/src/programs/automation-studio/model/evidence.ts:46` | - |
+| `NodeStatePhase` | Type | `packages/fluxiq/src/programs/automation-studio/model/node-state.ts:34` | - |
+| `NodeStateRuntimeComparison` | Type | `packages/fluxiq/src/programs/automation-studio/model/node-state.ts:46` | - |
+| `NodeStateSource` | Type | `packages/fluxiq/src/programs/automation-studio/model/node-state.ts:5` | - |
+| `NodeStateSourceKind` | Type | `packages/fluxiq/src/programs/automation-studio/model/node-state.ts:3` | - |
+| `NodeStateViewSelection` | Type | `packages/fluxiq/src/programs/automation-studio/model/node-state.ts:40` | - |
 | `NormalizationIssue` | Type | `packages/fluxiq/src/programs/automation-studio/normalization/contracts.ts:6` | - |
 | `NormalizationIssueSeverity` | Type | `packages/fluxiq/src/programs/automation-studio/normalization/contracts.ts:4` | - |
 | `NormalizationOptions` | Type | `packages/fluxiq/src/programs/automation-studio/normalization/contracts.ts:22` | - |
-| `NormalizationReviewArtifact` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:164` | - |
+| `NormalizationReviewArtifact` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:183` | - |
 | `normalizeAutomationStudioFlow` | Value | `packages/fluxiq/src/programs/automation-studio/dsl/compiler.ts:38` | - |
 | `normalizeDomainId` | Value | `packages/fluxiq/src/domains/index.ts:112` | - |
-| `NormalizedTimeline` | Type | `packages/fluxiq/src/programs/automation-studio/normalization/contracts.ts:29` | - |
+| `NormalizedTimeline` | Type | `packages/fluxiq/src/programs/automation-studio/normalization/contracts.ts:36` | - |
 | `normalizedTimelineDocumentId` | Value | `packages/fluxiq/src/programs/automation-studio/storage/ids.ts:48` | - |
-| `NormalizeRecordingRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:247` | - |
-| `normalizeRecordingTimeline` | Value | `packages/fluxiq/src/programs/automation-studio/normalization/default-normalizer.ts:67` | - |
+| `NormalizeRecordingRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:248` | - |
+| `normalizeRecordingTimeline` | Value | `packages/fluxiq/src/programs/automation-studio/normalization/default-normalizer.ts:96` | - |
 | `NoteEntry` | Type | `packages/fluxiq/src/programs/automation-studio/model/timeline.ts:56` | - |
 | `ObservationEntry` | Type | `packages/fluxiq/src/programs/automation-studio/model/timeline.ts:43` | - |
 | `OutputAdapter` | Type | `packages/fluxiq/src/io/index.ts:81` | - |
 | `OutputDispatchRequest` | Type | `packages/fluxiq/src/io/index.ts:22` | - |
 | `OutputDispatchResult` | Type | `packages/fluxiq/src/io/index.ts:29` | - |
 | `ParameterDefinition` | Type | `packages/fluxiq/src/programs/automation-studio/model/actions.ts:6` | - |
+| `parseAutomationStudioObjectContentRef` | Value | `packages/fluxiq/src/programs/automation-studio/storage/object-store.ts:237` | - |
 | `parseConstrainedFlowModule` | Value | `packages/fluxiq/src/programs/automation-studio/dsl/source.ts:19` | - |
 | `pathSize` | Value | `packages/fluxiq/src/framework/storage-layout.ts:113` | - |
 | `Permission` | Type | `packages/fluxiq/src/programs/identity-access/types.ts:1` | - |
@@ -533,8 +551,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `PolicyRunner` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/contracts.ts:16` | - |
 | `PollComputeCommandsRequest` | Type | `packages/fluxiq/src/programs/compute-control/api/contracts.ts:28` | - |
 | `PreflightDefinition` | Type | `packages/fluxiq/src/programs/automation-studio/model/actions.ts:15` | - |
-| `ProcessFinalizedRecordingRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:242` | - |
-| `ProcessFinalizedRecordingResult` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:189` | - |
+| `ProcessFinalizedRecordingRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:243` | - |
+| `ProcessFinalizedRecordingResult` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:208` | - |
 | `processRecordingDomainEvent` | Value | `packages/fluxiq/src/programs/automation-studio/model/recording-domain.ts:172` | - |
 | `PRODUCTION_RUNNER_ENDPOINTS` | Object | `packages/fluxiq/src/programs/production-runner/api/contracts.ts:4` | - |
 | `PRODUCTION_RUNNER_PROGRAM` | Object | `packages/fluxiq/src/programs/production-runner/metadata.ts:3` | - |
@@ -567,8 +585,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ProgramSummaryContract` | Type | `packages/contracts/src/program-api.ts:39` | - |
 | `programSummarySchema` | Object | `packages/contracts/src/program-api.ts:7` | - |
 | `projectPublishedFlowSnapshotToNodeDefinition` | Value | `packages/fluxiq/src/programs/automation-studio/model/composites.ts:71` | - |
-| `ProposePolicyFromModelRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:266` | - |
-| `PublishFlowRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:187` | - |
+| `ProposePolicyFromModelRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:267` | - |
+| `PublishFlowRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:188` | - |
 | `readMigrationJournal` | Value | `packages/fluxiq/src/framework/storage-layout.ts:89` | - |
 | `readStorageConfig` | Value | `packages/fluxiq/src/framework/storage-layout.ts:40` | - |
 | `RecordEnvelope` | Type | `packages/fluxiq/src/programs/database-manager/types.ts:7` | - |
@@ -590,15 +608,15 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `RecordingFlowProposalArtifact` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recording-flow-proposal.ts:38` | - |
 | `RecordingFlowProposalDestination` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recording-flow-proposal.ts:26` | - |
 | `RecordingFlowProposalReview` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recording-flow-proposal.ts:30` | - |
-| `RecordingIdProjectRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:252` | - |
+| `RecordingIdProjectRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:253` | - |
 | `RecordingNote` | Type | `packages/fluxiq/src/programs/automation-studio/model/recordings.ts:7` | - |
 | `RecordingProjectRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:165` | - |
 | `recordingProposalDefinitionId` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recording-flow-proposal.ts:55` | - |
 | `RecordingProposalEvidenceReference` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recording-flow-proposal.ts:4` | - |
 | `RecordingSession` | Type | `packages/fluxiq/src/programs/automation-studio/model/recordings.ts:20` | - |
 | `recordingSessionDocumentId` | Value | `packages/fluxiq/src/programs/automation-studio/storage/ids.ts:32` | - |
-| `RecordingSummaryItem` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:145` | - |
-| `RecordingSummaryList` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:157` | - |
+| `RecordingSummaryItem` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:164` | - |
+| `RecordingSummaryList` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:176` | - |
 | `RecoveryPolicy` | Type | `packages/fluxiq/src/programs/automation-studio/model/policies.ts:16` | - |
 | `registerAutomationStudioApi` | Value | `packages/fluxiq/src/programs/automation-studio/api/handlers.ts:41` | - |
 | `registerBackgroundTasksApi` | Value | `packages/fluxiq/src/programs/background-tasks/api/handlers.ts:12` | - |
@@ -615,15 +633,15 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `registerProductionRunnerApi` | Value | `packages/fluxiq/src/programs/production-runner/api/handlers.ts:11` | - |
 | `RegisterProductionTargetRequest` | Type | `packages/fluxiq/src/programs/production-runner/api/contracts.ts:24` | - |
 | `ReleaseComputeLeaseRequest` | Type | `packages/fluxiq/src/programs/compute-control/api/contracts.ts:47` | - |
-| `ReplayPolicyAgainstRecordingRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:282` | - |
-| `ReplayResultArtifact` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:175` | - |
+| `ReplayPolicyAgainstRecordingRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:283` | - |
+| `ReplayResultArtifact` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts:194` | - |
 | `Repository` | Type | `packages/fluxiq/src/programs/database-manager/types.ts:16` | - |
 | `RepositoryScope` | Type | `packages/fluxiq/src/programs/database-manager/types.ts:3` | - |
 | `resolveAutomationStudioFlowCatalog` | Value | `packages/fluxiq/src/programs/automation-studio/model/flow-compatibility.ts:31` | - |
 | `ResolveAutomationStudioFlowCatalogInput` | Type | `packages/fluxiq/src/programs/automation-studio/model/flow-compatibility.ts:17` | - |
 | `ResultState` | Type | `packages/fluxiq/src/core/index.ts:1` | - |
 | `RetryPolicy` | Type | `packages/fluxiq/src/programs/automation-studio/model/policies.ts:11` | - |
-| `RevokeClientTrustRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:293` | - |
+| `RevokeClientTrustRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:294` | - |
 | `RevokeSessionRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts:60` | - |
 | `Role` | Type | `packages/fluxiq/src/programs/identity-access/types.ts:10` | - |
 | `rollbackFluxIQStorageMigration` | Value | `packages/fluxiq/src/framework/storage-migration.ts:27` | - |
@@ -640,7 +658,9 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `RuntimeSession` | Type | `packages/fluxiq/src/engine/index.ts:13` | - |
 | `RuntimeSessionOptions` | Type | `packages/fluxiq/src/engine/index.ts:22` | - |
 | `SaveBackgroundTaskScheduleRequest` | Type | `packages/fluxiq/src/programs/background-tasks/api/contracts.ts:30` | - |
-| `SaveFlowRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:179` | - |
+| `SaveFlowRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:180` | - |
+| `selectActionContextStateCheckpointIds` | Value | `packages/fluxiq/src/programs/automation-studio/normalization/default-normalizer.ts:100` | - |
+| `selectActionContextStateEntryIds` | Value | `packages/fluxiq/src/programs/automation-studio/normalization/default-normalizer.ts:105` | - |
 | `Session` | Type | `packages/fluxiq/src/programs/identity-access/types.ts:37` | - |
 | `SessionRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts:55` | - |
 | `SetBackgroundTaskEnabledRequest` | Type | `packages/fluxiq/src/programs/background-tasks/api/contracts.ts:25` | - |
@@ -660,31 +680,39 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `SQLiteRepository` | Class | `packages/fluxiq/src/programs/database-manager/storage/sqlite-repository.ts:19` | - |
 | `SQLiteRepositoryOptions` | Type | `packages/fluxiq/src/programs/database-manager/storage/sqlite-repository.ts:7` | - |
 | `SQLiteTransaction` | Type | `packages/fluxiq/src/programs/database-manager/storage/sqlite-repository.ts:13` | - |
-| `StartClientRecordingInput` | Type | `packages/fluxiq/src/programs/automation-studio/client-gateway/bridge.ts:34` | - |
-| `StartClientRecordingRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:298` | - |
+| `StartClientRecordingInput` | Type | `packages/fluxiq/src/programs/automation-studio/client-gateway/bridge.ts:35` | - |
+| `StartClientRecordingRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:299` | - |
 | `StartProductionRunRequest` | Type | `packages/fluxiq/src/programs/production-runner/api/contracts.ts:13` | - |
 | `StateActionCorrelation` | Type | `packages/fluxiq/src/programs/automation-studio/mining/contracts.ts:118` | - |
 | `StateActionCorrelationRelation` | Type | `packages/fluxiq/src/programs/automation-studio/mining/contracts.ts:108` | - |
+| `StateBounds` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:60` | - |
 | `StateChangeEvent` | Type | `packages/fluxiq/src/programs/automation-studio/model/state-store.ts:5` | - |
 | `StateCheckpointEntry` | Type | `packages/fluxiq/src/programs/automation-studio/model/timeline.ts:38` | - |
-| `StateDelta` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:114` | - |
+| `StateCoordinateSpace` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:51` | - |
+| `StateDelta` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:209` | - |
 | `StateDeltaEntry` | Type | `packages/fluxiq/src/programs/automation-studio/model/timeline.ts:33` | - |
 | `StateDiffOptions` | Type | `packages/fluxiq/src/programs/automation-studio/model/state-diff.ts:3` | - |
 | `StateElementDescriptor` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:37` | - |
 | `StateElementKind` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:19` | - |
-| `StateNamespace` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:64` | - |
-| `StateNamespaceId` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:77` | - |
-| `StatePath` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:86` | - |
-| `StatePathPermissions` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:91` | - |
-| `StatePathSchema` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:97` | - |
-| `StateSnapshot` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:71` | - |
+| `StateFact` | Type | `packages/fluxiq/src/programs/automation-studio/model/evidence.ts:37` | - |
+| `StateFactReference` | Type | `packages/fluxiq/src/programs/automation-studio/model/evidence.ts:29` | - |
+| `StateNamespace` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:156` | - |
+| `StateNamespaceId` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:171` | - |
+| `StatePath` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:180` | - |
+| `StatePathPermissions` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:185` | - |
+| `StatePathSchema` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:191` | - |
+| `StatePresentationMetadata` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:76` | - |
+| `StateSnapshot` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:163` | - |
+| `StateSnapshotPresentation` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:135` | - |
 | `StateUnsubscribe` | Type | `packages/fluxiq/src/programs/automation-studio/model/state-store.ts:12` | - |
 | `stateValue` | Value | `packages/fluxiq/src/programs/automation-studio/model/state-store.ts:99` | - |
-| `StateValue` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:50` | - |
+| `StateValue` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:141` | - |
 | `StateValueType` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:4` | - |
+| `StateVisualFrame` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:125` | - |
+| `StateVisualLayer` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:88` | - |
 | `StateVolatility` | Type | `packages/fluxiq/src/programs/automation-studio/model/state.ts:17` | - |
 | `stepFlow` | Value | `packages/fluxiq/src/engine/index.ts:108` | - |
-| `StopClientRecordingRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:306` | - |
+| `StopClientRecordingRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:307` | - |
 | `StopProductionRunRequest` | Type | `packages/fluxiq/src/programs/production-runner/api/contracts.ts:26` | - |
 | `summarizeStateDeltas` | Value | `packages/fluxiq/src/programs/automation-studio/model/state-diff.ts:47` | - |
 | `SurfaceTone` | Type | `packages/fluxiq/src/ui/index.ts:1` | - |
@@ -692,29 +720,38 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `TaskModelLearner` | Type | `packages/fluxiq/src/programs/automation-studio/learning/contracts.ts:58` | - |
 | `TimelineBase` | Type | `packages/fluxiq/src/programs/automation-studio/model/timeline.ts:5` | - |
 | `TimelineEntry` | Type | `packages/fluxiq/src/programs/automation-studio/model/timeline.ts:66` | - |
-| `TimelineNormalizer` | Type | `packages/fluxiq/src/programs/automation-studio/normalization/contracts.ts:42` | - |
+| `TimelineNormalizer` | Type | `packages/fluxiq/src/programs/automation-studio/normalization/contracts.ts:49` | - |
 | `TimeoutPolicy` | Type | `packages/fluxiq/src/programs/automation-studio/model/policies.ts:6` | - |
 | `TotpConfirmRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts:50` | - |
 | `TotpRequiredError` | Class | `packages/fluxiq/src/programs/identity-access/runtime/service.ts:44` | - |
 | `UpdateIdentityUserRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts:29` | - |
-| `UpdateRecordingRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:204` | - |
+| `UpdateRecordingRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:205` | - |
 | `UpsertDeploymentArtifactRequest` | Type | `packages/fluxiq/src/programs/deployment-sync/api/contracts.ts:18` | - |
 | `UpsertDeploymentTargetRequest` | Type | `packages/fluxiq/src/programs/deployment-sync/api/contracts.ts:17` | - |
 | `User` | Type | `packages/fluxiq/src/programs/identity-access/types.ts:15` | - |
 | `UserCredential` | Type | `packages/fluxiq/src/programs/identity-access/types.ts:28` | - |
-| `validateAutomationStudioFlow` | Value | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:177` | - |
+| `validateAutomationStudioFlow` | Value | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:359` | - |
 | `validateAutomationStudioFlowRegions` | Value | `packages/fluxiq/src/programs/automation-studio/model/regions.ts:27` | - |
 | `validateAutomationStudioImporterNodeManifest` | Value | `packages/fluxiq/src/programs/automation-studio/nodes/definitions.ts:149` | - |
-| `validateAutomationStudioImporterSdkManifest` | Value | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:89` | - |
+| `validateAutomationStudioImporterSdkManifest` | Value | `packages/fluxiq/src/programs/automation-studio/nodes/importer-sdk.ts:100` | - |
 | `validateAutomationStudioNodeDefinition` | Value | `packages/fluxiq/src/programs/automation-studio/nodes/definitions.ts:124` | - |
 | `validateDomainIo` | Value | `packages/fluxiq/src/io/index.ts:308` | - |
+| `validateEvidenceAnchor` | Value | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:326` | - |
 | `validateFlow` | Value | `packages/fluxiq/src/flows/index.ts:68` | - |
 | `validateFlowComposition` | Value | `packages/fluxiq/src/programs/automation-studio/model/composites.ts:101` | - |
 | `validateIoRequirements` | Value | `packages/fluxiq/src/io/index.ts:359` | - |
-| `validatePolicyGraph` | Value | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:112` | - |
-| `ValidateRecordingDomainEventRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:233` | - |
-| `validateRecordingSession` | Value | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:40` | - |
-| `validateSignalRegistry` | Value | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:88` | - |
+| `validateNodeEvidenceBinding` | Value | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:246` | - |
+| `validateNodeStateRuntimeComparison` | Value | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:288` | - |
+| `validateNodeStateSource` | Value | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:259` | - |
+| `validateNodeStateViewSelection` | Value | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:282` | - |
+| `validatePolicyGraph` | Value | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:133` | - |
+| `ValidateRecordingDomainEventRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts.ts:234` | - |
+| `validateRecordingSession` | Value | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:61` | - |
+| `validateSignalRegistry` | Value | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:109` | - |
+| `validateStateFact` | Value | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:237` | - |
+| `validateStateFactReference` | Value | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:225` | - |
+| `validateStateSnapshot` | Value | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:193` | - |
+| `validateStateVisualFrame` | Value | `packages/fluxiq/src/programs/automation-studio/model/validation.ts:308` | - |
 | `VaultRecord` | Type | `packages/fluxiq/src/programs/identity-access/types.ts:58` | - |
 | `VaultStatus` | Type | `packages/fluxiq/src/programs/identity-access/types.ts:43` | - |
 | `VaultUnlockRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts:64` | - |

@@ -1,6 +1,6 @@
 "use client";
 
-import { Link2, Route } from "lucide-react";
+import { Link2, ListChecks, Route } from "lucide-react";
 import type { ReactNode } from "react";
 import { SummaryStrip } from "../../programs/shared-ui";
 import { buildTimelineEvidenceViewModel, type EvidenceSignalViewModel } from "../evidence/view-model";
@@ -12,6 +12,7 @@ export function AutomationTimelineEvidenceInspectorView(props: {
   selectedRecording: any;
   selectedTimeline: any;
   onOpenRecording(recordingId: string): void;
+  onOpenStateForTimelineEntry(recordingId: string, entryId: string): void;
 }) {
   const recording = props.selectedRecording;
   const model = buildTimelineEvidenceViewModel({
@@ -20,6 +21,7 @@ export function AutomationTimelineEvidenceInspectorView(props: {
     recording,
     timeline: props.selectedTimeline
   });
+  const hasStateMoment = Boolean(model.selectedMoment && props.selectedEntry && (props.selectedEntry.type === "state_checkpoint" || props.selectedEntry.type === "state_delta" || String(model.selectedMoment.type).includes("state")));
   return (
     <section className="automation-evidence-inspector-workspace">
       <header className="automation-proposal-header">
@@ -29,6 +31,7 @@ export function AutomationTimelineEvidenceInspectorView(props: {
         </div>
         <div className="automation-pipeline-controls">
           <button className="button" disabled={!recording} onClick={() => recording && props.onOpenRecording(recording.recordingId)} type="button"><Link2 size={13} aria-hidden />Open Recording Timeline</button>
+          <button className="button" disabled={!recording || !props.selectedEntry || !hasStateMoment} onClick={() => recording && props.selectedEntry && props.onOpenStateForTimelineEntry(recording.recordingId, props.selectedEntry.id)} type="button"><ListChecks size={13} aria-hidden />Open State</button>
         </div>
       </header>
       <section className="automation-evidence-inspector-body">

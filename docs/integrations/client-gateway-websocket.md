@@ -162,6 +162,18 @@ After `server.session_ready`, clients may send:
 - `client.action_result`
 - `client.error`
 
+Clients may stream `client.snapshot` state frames at screenshot cadence when a
+recording is active. FluxIQ batches those recording appends internally and
+flushes the batch before finalizing the recording. Raw checkpoints remain
+available for State View reconstruction, while proposal generation and importer
+recording mappers receive compacted action-context state entries, including
+`client.state_snapshot` observations, instead of every background frame.
+
+Host UIs should use recording-summary listing for sidebars, project refreshes,
+and proposal polling, then fetch one full recording only when a timeline,
+inspector, or State View needs raw entries. Full recording payloads can include
+many visual frame references and should not be part of routine refresh loops.
+
 FluxIQ may send:
 
 - `server.start_recording`

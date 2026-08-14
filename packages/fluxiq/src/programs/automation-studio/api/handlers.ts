@@ -163,7 +163,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     permission: "programs.read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as RecordingProjectRequest : {};
-      return { ok: true, payload: { recordings: await service.listRecordingSessions(payload.projectId) } };
+      return { ok: true, payload: { recordings: payload.summaries ? await service.listRecordingSessionSummaries(payload.projectId) : await service.listRecordingSessions(payload.projectId) } };
     }
   });
   registry.register({
@@ -436,7 +436,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as FinalizeRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
-      return { ok: true, payload: { recording: await service.finalizeRecording(payload) } };
+      return { ok: true, payload: { recording: service.summarizeRecordingSession(await service.finalizeRecording(payload)) } };
     }
   });
   registry.register({
@@ -445,7 +445,6 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     permission: "flows.write",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ProcessFinalizedRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
-      await authorizeProgramPin(identityAccess, payload);
       return { ok: true, payload: { result: await service.processFinalizedRecording({ projectId: String(payload.projectId ?? ""), recordingId: String(payload.recordingId ?? ""), force: payload.force === true }) } };
     }
   });
@@ -455,7 +454,6 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     permission: "flows.write",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as NormalizeRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
-      await authorizeProgramPin(identityAccess, payload);
       return { ok: true, payload: { normalizedTimeline: await service.normalizeRecording(payload) } };
     }
   });
@@ -465,7 +463,6 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     permission: "flows.write",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as RecordingIdProjectRequest & { authSessionId?: unknown; authorizationPin?: unknown };
-      await authorizeProgramPin(identityAccess, payload);
       return { ok: true, payload: { review: await service.createNormalizationReview({ projectId: String(payload.projectId ?? ""), recordingId: String(payload.recordingId ?? "") }) } };
     }
   });
@@ -493,7 +490,6 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     permission: "flows.write",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as MineRecordingEvidenceRequest & { authSessionId?: unknown; authorizationPin?: unknown };
-      await authorizeProgramPin(identityAccess, payload);
       const input: Parameters<AutomationStudioService["mineRecordingEvidence"]>[0] = { projectId: String(payload.projectId ?? "") };
       if (payload.recordingId !== undefined) input.recordingId = payload.recordingId;
       if (payload.normalizedTimelineId !== undefined) input.normalizedTimelineId = payload.normalizedTimelineId;
@@ -506,7 +502,6 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     permission: "flows.write",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as LearnTaskModelRequest & { authSessionId?: unknown; authorizationPin?: unknown };
-      await authorizeProgramPin(identityAccess, payload);
       const input: Parameters<AutomationStudioService["learnTaskModel"]>[0] = { projectId: String(payload.projectId ?? "") };
       if (payload.taskId !== undefined) input.taskId = payload.taskId;
       if (payload.miningRunId !== undefined) input.miningRunId = payload.miningRunId;
@@ -519,7 +514,6 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     permission: "flows.write",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ProposePolicyFromModelRequest & { authSessionId?: unknown; authorizationPin?: unknown };
-      await authorizeProgramPin(identityAccess, payload);
       const input: Parameters<AutomationStudioService["proposePolicyFromModel"]>[0] = { projectId: String(payload.projectId ?? "") };
       if (payload.learnedTaskModelId !== undefined) input.learnedTaskModelId = payload.learnedTaskModelId;
       if (payload.miningRunId !== undefined) input.miningRunId = payload.miningRunId;
@@ -549,8 +543,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     permission: "flows.write",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Record<string, unknown>;
-      await authorizeProgramPin(identityAccess, payload);
-      return { ok: true, payload: await service.createRecordingFlowProposals({ projectId: String(payload.projectId ?? ""), recordingId: String(payload.recordingId ?? ""), ...(typeof payload.mapperId === "string" ? { mapperId: payload.mapperId } : {}) }) };
+      return { ok: true, payload: await service.createRecordingFlowProposals({ projectId: String(payload.projectId ?? ""), recordingId: String(payload.recordingId ?? ""), ...(typeof payload.mapperId === "string" ? { mapperId: payload.mapperId } : {}), ...(payload.force === true ? { force: true } : {}) }) };
     }
   });
   registry.register({
@@ -696,7 +689,8 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
       if (!clientGatewayBridge) return { ok: false, error: "Client gateway bridge is not available." };
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as StopClientRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
-      return { ok: true, payload: { recording: await clientGatewayBridge.stopRecording(String(payload.sessionId ?? "")) } };
+      const recording = await clientGatewayBridge.stopRecording(String(payload.sessionId ?? ""));
+      return { ok: true, payload: { recording: recording ? service.summarizeRecordingSession(recording) : null } };
     }
   });
   registry.register({

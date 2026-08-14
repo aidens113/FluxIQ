@@ -164,6 +164,7 @@ export type GeneratePolicyResponse = {
 
 export type RecordingProjectRequest = {
   projectId?: string | null;
+  summaries?: boolean;
 };
 
 export type FlowProjectRequest = {

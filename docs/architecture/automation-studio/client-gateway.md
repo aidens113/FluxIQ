@@ -52,6 +52,40 @@ The bridge converts client messages into canonical Studio artifacts:
 - `server.start_recording` and `server.stop_recording` are mirrored to the
   client while the canonical `RecordingSession` remains owned by FluxIQ.
 
+The bridge buffers high-frequency recording timeline writes before persisting
+them. State snapshots captured at screenshot cadence are flushed in bounded
+batches and are synchronously drained before recording finalization, so Stop
+Recording does not wait on one read/append/write cycle per frame. Raw recording
+data remains complete; derived normalization, evidence mining, and recording
+mapper proposal input compact background state entries, including
+`client.state_snapshot` observations, to action-adjacent context.
+When the web panel initiates stop, the bridge also allows a short post-stop
+drain window before finalization. This gives websocket clients time to send
+their final action-adjacent screenshots or state observations after receiving
+`server.stop_recording`, so automatic proposal generation sees the same
+completed recording that manual generation would see after a refresh.
+
+While a recording is active, Core updates in-memory state and cheap recording
+index counts instead of rewriting the full screenshot-heavy recording document
+for every append batch. Finalization writes the full recording and event
+timeline once. Stop/finalize API responses return recording summaries; clients
+should call `get-recording` only when they need the full raw timeline.
+
+Project refreshes and proposal polling should request recording summaries
+instead of full recording sessions. Summaries include IDs, timestamps, status,
+and event/note counts without replaying screenshot-heavy timeline entries.
+Views that need the raw timeline or State View source data load the selected
+recording through `get-recording`.
+The client gateway view must route automatic post-stop proposal generation
+through the same workspace handler as the manual Generate Proposal button. That
+handler updates proposal state, opens the proposal workspace, and uses the
+mapper-first fast path before falling back to generic evidence mining.
+The workspace-level gateway monitor follows the same rule for client-initiated
+stops: when a session's active recording disappears, it refreshes the finalized
+recording once and invokes the shared proposal-generation handler. It must not
+only poll for proposal artifacts, because no artifact exists until generation
+has actually been requested.
+
 The protocol starts with:
 
 ```text

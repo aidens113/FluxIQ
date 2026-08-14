@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { automationCompositeCallMetadata } from "./GraphEditorViews";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { AutomationWorkspaceDock, automationCompositeCallMetadata } from "./GraphEditorViews";
 import { policyToReactFlowGraph, taskFlowToReactFlowGraph } from "../graph/view-model";
 
 describe("Automation Studio composite palette nodes", () => {
@@ -59,5 +61,38 @@ describe("Automation Studio policy graph view model", () => {
       { id: "parameters", label: "Output payload", valueType: "object", defaultValue: { target: "confirm" } }
     ]);
     expect(graph.nodes[0]?.data.parameterValues).toMatchObject({ parameters: { target: "confirm" } });
+  });
+});
+
+describe("Automation Studio workspace dock", () => {
+  it("renders the real State View in the dock state tab", () => {
+    const html = renderToStaticMarkup(
+      createElement(AutomationWorkspaceDock, {
+        activeTab: "state",
+        problems: [],
+        signals: [],
+        models: [],
+        selectedNode: { id: "node.deposit", label: "Deposit" },
+        stateInput: {
+          selection: { kind: "node", id: "node.deposit" },
+          selectedNode: { id: "node.deposit", label: "Deposit" },
+          selectedRecording: null,
+          selectedTimeline: null,
+          policy: null,
+          taskGraph: null,
+          pipelineArtifacts: {},
+          recordings: [],
+          timelines: [],
+          runtimeSessions: [],
+          signals: []
+        },
+        setActiveTab: () => undefined,
+        setSelection: () => undefined
+      })
+    );
+
+    expect(html).toContain("State View");
+    expect(html).toContain("Node State: Deposit");
+    expect(html).not.toContain("State Signals");
   });
 });

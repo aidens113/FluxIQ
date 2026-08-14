@@ -154,7 +154,7 @@ export function AutomationConfigView(props: { configs?: any[]; flow: any; policy
   );
 }
 
-export function AutomationClientGatewayView(props: { projectId: string | null }) {
+export function AutomationClientGatewayView(props: { projectId: string | null; onProcessFinalizedRecording(recordingId: string, force?: boolean, authorizationPin?: string): Promise<boolean | void> }) {
   const api = useProgramApi("automation-studio");
   const [snapshot, setSnapshot] = useState<any>({ enabled: false, sessions: [], pairings: [], auditLog: [] });
   const [selectedSessionId, setSelectedSessionId] = useState("");
@@ -200,9 +200,16 @@ export function AutomationClientGatewayView(props: { projectId: string | null })
   const stopRecording = async () => {
     if (!selectedSession) return;
     setStatus("Stopping client recording...");
-    const result = await api.post<any>("stop-client-recording", { sessionId: selectedSession.sessionId, authorizationPin: pin });
+    const authorizationPin = pin;
+    const result = await api.post<any>("stop-client-recording", { sessionId: selectedSession.sessionId, authorizationPin });
     setStatus(result.ok ? `Recording ${result.payload?.recording?.recordingId ?? "stopped"}.` : result.error ?? "Recording could not stop.");
     if (result.ok) {
+      const recordingId = result.payload?.recording?.recordingId;
+      if (props.projectId && recordingId) {
+        setStatus(`Recording ${recordingId} stopped. Generating proposal...`);
+        const processed = await props.onProcessFinalizedRecording(recordingId, false, authorizationPin);
+        setStatus(processed ? `Recording ${recordingId} proposal ready.` : `Recording ${recordingId} stopped. Proposal generation did not complete.`);
+      }
       setPin("");
       await refreshGateway();
     }

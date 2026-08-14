@@ -84,6 +84,89 @@ Domain repository records use `.fluxiq/domains/<domainId>/domain.sqlite`.
 Domain IDs are normalized path/storage keys; user-facing identity still comes
 from the importer's registered manifest.
 
+## Automation Studio State Presentation
+
+Automation Studio state snapshots are factual runtime evidence. They may also
+carry optional presentation metadata for the State View: labels, groups, visual
+kinds, evidence anchors, and declarative visual frames. These fields describe
+how to reconstruct what the importer saw; they do not encode whether a value is
+eligible, critical, or expected for a node.
+
+Visual frames are JSON metadata. Small frames can live with the snapshot or
+derived recording artifact. Large screenshots, images, and binary payloads must
+live in the owning project's object storage and be referenced by an Automation
+Studio object/API reference. Framework code must reject arbitrary filesystem
+paths and must not commit importing-repo visual assets into the public FluxIQ
+repository.
+
+Project object storage is digest-addressed and physically scoped by ownership.
+Binary visual assets are written under the owning Automation Studio project,
+indexed by SHA-256, content type, size, and storage path, and read back only
+through a project-plus-digest lookup. Uploads tied to an active client-gateway
+recording are stored under:
+
+```text
+.fluxiq/artifacts/automation-studio/projects/<projectId>/recordings/sessions/<recordingId>/objects/
+```
+
+Large shared/generated objects that are not owned by a recording are stored
+under:
+
+```text
+.fluxiq/artifacts/automation-studio/projects/<projectId>/objects/shared/
+```
+
+The small project object index remains project-scoped so the authenticated
+`projectId` plus digest route can resolve both recording-owned and shared
+objects without exposing filesystem paths.
+State snapshots should store `automation-object://project/<projectId>/<sha256>`
+references, or the corresponding authenticated API path when data is already
+being prepared for the web client. They should never store absolute paths,
+`file://` URLs, or untrusted remote image URLs.
+
+The web State View resolves project object references through:
+
+```text
+/api/programs/automation-studio/state-assets/<projectId>/<sha256>
+```
+
+That route validates the user's session, requires `programs.read`, checks the
+project and object index membership, preserves the asset content type and
+length, and returns `404` for missing, unauthorized, or non-renderable objects.
+Broken references remain visible as placeholders in the State View instead of
+silently rendering arbitrary local or remote content.
+
+The same digest route accepts screenshot uploads with `PUT`. Upload callers must
+already know the SHA-256 digest and send raw image bytes with `Content-Type`
+`image/png`, `image/jpeg`, `image/webp`, or `image/gif`. The write path requires
+either a web session with `programs.write` or a paired client-gateway bearer
+token. Uploads made with a paired client that has an active recording are
+stored in that recording's object folder. It caps uploads at 20 MiB, stores
+bytes in the project object store, verifies that the stored digest matches the
+URL digest, and returns the
+canonical `automation-object://project/<projectId>/<sha256>` reference plus the
+authenticated API path. This lets importers use screenshots as optional visual
+backgrounds while FluxIQ keeps element bounds, labels, anchors, and evidence
+overlays as structured, selectable state data.
+
+Recording deletion prunes project object-store entries that are no longer
+referenced by any remaining project recording or derived Automation Studio
+artifact. This removes screenshot objects from the deleted recording and also
+cleans up older orphaned project objects the next time a recording is deleted.
+Before pruning, FluxIQ also organizes existing indexed objects into
+recording-owned folders when a single live recording owns them, or into
+`objects/shared/` when ownership is ambiguous. Shared digest objects stay in
+place until the last live reference is removed. Recording deletion also removes
+the recording session directory itself after any still-live shared digest has
+been moved out of that directory, so unindexed screenshots, stale derived JSON,
+and other physical leftovers under the deleted recording are not retained.
+Pipeline cleanup is ownership-based: artifacts indexed to the deleted recording
+or whose JSON payload identifies that recording are removed from both
+recording-owned and legacy shared locations. After each recording deletion,
+FluxIQ also sweeps physical recording session folders that no longer correspond
+to a live recording, which removes leftovers from recordings deleted before the
+stricter cleanup logic existed.
+
 ## Identity State
 
 Users, roles, credentials, sessions, and identity vault status are stored in

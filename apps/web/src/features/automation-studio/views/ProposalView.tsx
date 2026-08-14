@@ -1,6 +1,7 @@
 "use client";
 
-import { CheckCircle2, Link2, RefreshCcw, Save, Sparkles } from "lucide-react";
+import { CheckCircle2, Link2, ListChecks, RefreshCcw, Save, Sparkles } from "lucide-react";
+import type { NodeStatePhase } from "fluxiq/automation-studio";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Edge, Node } from "@xyflow/react";
 import type { JsonObject } from "../../programs/program-api";
@@ -20,6 +21,7 @@ export function AutomationProposalView(props: {
   selectedRecording: any;
   onEnsureInspectorAvailable(): void;
   onOpenRecording(recordingId: string): void;
+  onOpenState(request: { nodeId?: string; sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; proposalId?: string; timelineEntryId?: string }): void;
   onPipelineAction(endpoint: string, payload: JsonObject, success: string): Promise<boolean | void>;
   onProposalReviewChange(proposalId: string, review: JsonObject): void;
   onProcessFinalizedRecording(recordingId: string, force?: boolean): Promise<boolean | void>;
@@ -209,6 +211,7 @@ export function AutomationProposalView(props: {
           <button className="button button-primary" disabled={!proposal} onClick={recordingFlowProposal ? approveRecordingProposalToFlow : applyToExistingFlow} type="button"><CheckCircle2 size={13} aria-hidden />{recordingFlowProposal ? "Approve to Open Flow" : "Apply to Open Flow"}</button>
           <button className="button" disabled={!proposal} onClick={saveAsNewFlow} type="button"><Save size={13} aria-hidden />Save as New Flow</button>
           <button className="button" disabled={!proposal || Boolean(recordingFlowProposal)} onClick={() => proposal && props.onProcessProposalWithLlm(proposal.proposalId)} type="button"><Sparkles size={13} aria-hidden />Process With LLM</button>
+          <button className="button" disabled={!proposal || !selectedGraphNodeId} onClick={() => proposal && selectedGraphNodeId && props.onOpenState({ nodeId: selectedGraphNodeId, ...(proposal.proposalId ? { proposalId: proposal.proposalId } : {}), phase: "input" })} type="button"><ListChecks size={13} aria-hidden />Open Node State</button>
         </div>
         {props.actionStatus ? <StatusText value={props.actionStatus} /> : null}
       </header>

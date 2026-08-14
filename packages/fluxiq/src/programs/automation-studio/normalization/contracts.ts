@@ -21,6 +21,13 @@ export type CheckpointPolicy = {
 
 export type NormalizationOptions = {
   checkpointPolicy?: CheckpointPolicy;
+  /**
+   * High-frequency visual/state captures are retained in the raw recording, but
+   * normalized timelines should usually keep only action-adjacent checkpoints so
+   * mining and proposal generation stay proportional to recorded behavior.
+   */
+  compactStateCheckpoints?: boolean;
+  stateCheckpointContextWindowMs?: number;
   collapseDuplicateStateDeltas?: boolean;
   preserveRawEntryIds?: boolean;
   metadata?: JsonObject;

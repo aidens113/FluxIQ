@@ -137,7 +137,10 @@ recording ends, Automation Studio normalizes it, writes normalization details,
 mines evidence, and creates a Policy Flow proposal if evidence exists. Users navigate
 to the resulting proposal through the Proposals sidebar root rather than a
 Pipeline root. Manual stage endpoints remain available for debugging and
-advanced tooling, but they are not the primary product surface.
+advanced tooling, but they are not the primary product surface. Generating
+these proposal artifacts does not require a PIN recheck because proposals are
+inert until review. Applying or approving a generated proposal remains a
+privileged mutation and still requires PIN authorization.
 
 Model learning and replay/validation are not recording pipeline stages in the
 current product surface. Model-shaped artifacts may still be used internally as
@@ -150,6 +153,81 @@ recording timelines, proposal evidence chains, state explorer rows, and signal
 relationships can show enough context to be useful. Other runtime, replay, or
 simulation work belongs in separate runtime/debug workspace views, not as a
 `Test Run` layer inside the Flow editor.
+
+The State View is the dedicated reconstructed-state window. It uses importer
+supplied `StateSnapshot` presentation metadata, visual frames, coordinates, and
+anchors to render what the automation saw, then FluxIQ overlays state facts and
+node evidence. Core rendering remains generic and domain-neutral: importers own
+domain content and visual semantics, while FluxIQ owns validation, fallback
+structured/raw views, selection, provenance, and common overlays.
+
+State facts and node evidence bindings are separate. A state fact identifies an
+observed namespace/path/value and its source evidence. A node evidence binding
+identifies the selected node's role for that fact, such as eligibility,
+readiness, expectation, failure, context, or invariant. This lets the State View
+show "what was observed" separately from "why this node cares" and lets the
+same fact appear in different roles for different nodes.
+
+The State View also distinguishes source families. Observed state is a concrete
+recording moment or checkpoint. Learned state is an aggregate for a node across
+one or more recordings and must not be presented as one literal screenshot.
+Runtime state is the current live or run-session view. The initial phases are
+input, action, and expected output. Runtime sources also enable actual output,
+where the State View compares the node's expected facts with the runtime facts
+that were actually observed.
+
+State View derivation belongs in a pure web view-model module rather than in
+React component state. The model resolves selected-node titles, sources,
+phases, visual frames, normalized facts, evidence bindings, overlays,
+structured rows, diff rows, raw fallback data, summaries, and empty-state
+messages without DOM access or API calls. UI components consume that model
+instead of re-deriving evidence or mutating recording artifacts.
+
+The `"state"` workspace view is implemented as the dedicated State View rather
+than a graph-editor placeholder. It appears in the add-window palette as
+`State View`, renders importer-supplied visual frames in a scaled aspect-ratio
+canvas, draws FluxIQ evidence overlays above image/text/region/element layers,
+and always provides Structured, Diff, and Raw modes as fallbacks. Clicking an
+overlay or fact routes selection through the global Automation Studio selection
+system so the inspector can show the selected evidence/fact context.
+
+Large visual frame image layers are not embedded in source or read from local
+paths. Importers write screenshots and binary visuals to the owning project's
+Automation Studio object storage and store digest references such as
+`automation-object://project/<projectId>/<sha256>` in the snapshot. The web
+State View resolves those references to the authenticated
+`/api/programs/automation-studio/state-assets/<projectId>/<sha256>` route,
+which checks the session, `programs.read`, project membership, object index,
+digest format, and renderable media type before returning the asset. Broken or
+unauthorized references render as visible placeholders.
+
+The state asset route also supports importer screenshot ingestion with `PUT`.
+Writers send raw image bytes to the same project-plus-digest URL, require
+either `programs.write` from the web session or a paired client-gateway bearer
+token, and receive the canonical object reference to use in an image layer.
+Screenshots are only the optional background layer: the importer should continue
+sending element bounds, labels, control metadata, and fact anchors so the State
+View can draw FluxIQ-owned overlays above the image and keep them selectable,
+filterable, and connected to the inspector.
+
+Runtime comparison is modeled with `NodeStateRuntimeComparison`. A comparison
+names the expected source, actual runtime source, node, `actual_output` phase,
+matched evidence/fact pairs, mismatched evidence/fact pairs, and optional
+confidence. When an explicit comparison artifact is not present, the web view
+can derive a basic comparison from expectation and invariant evidence bindings
+against the active runtime snapshot. Visual overlays use green for matched
+expectations, red for mismatches, and gray for unbound runtime facts. Selecting
+a mismatch still routes through the global selection model so the inspector can
+show the evidence/fact details without changing the Flow graph.
+
+State explanation is reachable without changing the Flow graph. The inspector
+shows `Open State` for selected policy, editor, proposal, and state-backed
+nodes; selected policy node cards expose an icon-only state action; the timeline
+evidence inspector can open state for checkpoint/delta entries; and proposal
+review can open state for the selected generated node. These entry points set a
+`kind: "state"` selection and activate the `state-explorer` workspace view in
+the main area. Source and phase choices are kept in that selection so existing
+per-view workspace persistence restores them when users switch tabs/windows.
 
 Automation Studio node editors follow the FluxBot v1 flow editor direction:
 metadata-first node definitions, grouped palettes, explicit input/output ports,
@@ -645,6 +723,12 @@ The recording/state bridge includes a controller that can subscribe to an
 `RecordingSession`. This is the core pattern for live recording: host adapters
 observe external systems, write normalized state, and the controller turns those
 changes into durable evidence.
+
+State checkpoints may include optional presentation frames. These frames are
+safe JSON descriptions of images, text, regions, and elements in a declared
+coordinate space. Large visual content is referenced from project object
+storage or authorized API routes rather than embedded in framework source or
+stored as local filesystem paths.
 
 New Flow editors open as blank canvases until a user adds nodes from the palette.
 They do not seed fake orchestration or policy nodes merely because a tab opens.

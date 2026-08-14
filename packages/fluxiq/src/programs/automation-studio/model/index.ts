@@ -8,6 +8,7 @@ export * from "./fixtures.ts";
 export * from "./flow-compatibility.ts";
 export * from "./flows.ts";
 export * from "./legacy-retirement.ts";
+export * from "./node-state.ts";
 export * from "./policies.ts";
 export * from "./recordings.ts";
 export * from "./regions.ts";

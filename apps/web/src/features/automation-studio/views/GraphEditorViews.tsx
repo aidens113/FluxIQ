@@ -9,9 +9,11 @@ import { DataTable, KeyValue, Segmented, StatusBadge, SummaryStrip } from "../..
 import type { AutomationDockTab, AutomationEditorNodeSpec, AutomationEditorPaletteGroup, AutomationPolicyNodeData, AutomationRoutineNodeData, AutomationSelection } from "../types";
 import { automationEditorPalette } from "../types";
 import type { AutomationDragSelectBox } from "../workspace/layout";
+import type { BuildNodeStateViewModelInput } from "../state/view-model";
 import { automationConnectionIsValid, automationPortCaption, automationPortDisplayLabel, automationPortTitle, automationPortTone, uniqueAutomationPorts } from "../graph/ports";
 import { automationEdgeRoute, automationLaneEdgePath, automationLoopEdgePath, automationVisualInputPorts, createAutomationConnectionEdge, defaultAutomationParameterValues, flattenRunLogs, policyToReactFlowGraph, rebalanceAutomationEdgeLanes, reconnectAutomationEdge, roundedAutomationPosition, routineToReactFlowGraph, spawnAutomationNodePosition, startAutomationNodeMarquee, syncGraphNodes, taskFlowToReactFlowGraph } from "../graph/view-model";
-import { groupByNamespace, sameStringList } from "./view-utils";
+import { sameStringList } from "./view-utils";
+import { AutomationStateView } from "./StateView";
 
 type TabButton<T extends string> = { id: T; label: string; count?: number };
 
@@ -481,66 +483,16 @@ function topRoutineNodeRows(nodes: Array<Node<AutomationRoutineNodeData>>): Arra
   return nodes.slice(0, 6).map((node) => [node.data.label, `${node.data.inputs.length} inputs | ${node.data.outputs.length} outputs`]);
 }
 
-export function AutomationStateExplorerView(props: { signals: any[]; entries: any[]; setSelection(selection: AutomationSelection): void }) {
-  const [mode, setMode] = useState<"Tree" | "Table" | "Diff" | "Graph" | "Raw">("Tree");
-  const stateEntries = props.entries.filter((entry) => entry.type === "state_delta" || entry.type === "state_checkpoint");
-  const stateDeltas = stateEntries.flatMap((entry) => entry.deltas ?? []);
-  const namespaces = groupByNamespace(props.signals);
-  return (
-    <section className="automation-state-explorer-view">
-      <div className="segmented-control">{(["Tree", "Table", "Diff", "Graph", "Raw"] as const).map((item) => <button className={mode === item ? "selected" : ""} key={item} onClick={() => setMode(item)} type="button">{item}</button>)}</div>
-      <div className="automation-state-list">
-        {mode === "Diff" ? stateDeltas.map((delta, index) => (
-          <button key={`${delta.namespace ?? delta.path?.namespace ?? "state"}:${delta.path?.path ?? delta.path ?? index}:${index}`} type="button">
-            <strong>{statePathLabel(delta)}</strong>
-            <span>{delta.change} | {stateValueLabel(delta.previous)} {"->"} {stateValueLabel(delta.current)}</span>
-          </button>
-        )) : Object.entries(namespaces).map(([namespace, namespaceSignals]) => (
-          <div className="automation-state-namespace" key={namespace}>
-            <strong>{namespace}</strong>
-            {namespaceSignals.map((signal) => (
-              <button key={signal.path} onClick={() => props.setSelection({ kind: "signal", id: signal.path })} type="button">
-                <strong>{signal.path}</strong>
-                <span>{mode}: {signal.type} | {signal.comparator?.kind ?? "exact"} | weight {signal.defaultWeight}</span>
-              </button>
-            ))}
-          </div>
-        ))}
-        {!props.signals.length ? <span>No state signals available.</span> : null}
-      </div>
-      <div className="automation-range-summary"><strong>State Framework</strong><span>Signals {props.signals.length}</span><span>State entries {stateEntries.length}</span><span>Deltas {stateDeltas.length}</span></div>
-    </section>
-  );
-}
-
-function statePathLabel(pathValue: any): string {
-  if (!pathValue) return "state";
-  if (typeof pathValue === "string") return pathValue;
-  if (pathValue.namespace || pathValue.path) {
-    const namespace = pathValue.namespace ?? pathValue.path?.namespace ?? "state";
-    const path = typeof pathValue.path === "string" ? pathValue.path : pathValue.path?.path ?? "";
-    return `${namespace}.${path}`.replace(/\.$/, "");
-  }
-  return "state";
-}
-
-function stateValueLabel(value: any): string {
-  if (!value) return "unset";
-  if (value.value === undefined) return "unset";
-  if (typeof value.value === "object") return value.type ?? "object";
-  return String(value.value);
-}
-
 function EmptyAutomationView(props: { title: string; message: string }) {
   return <section className="automation-empty-view"><strong>{props.title}</strong><span>{props.message}</span></section>;
 }
 
-export function AutomationWorkspaceDock(props: { activeTab: AutomationDockTab; problems: any[]; signals: any[]; models: any[]; selectedNode: any; setActiveTab(tab: AutomationDockTab): void }) {
+export function AutomationWorkspaceDock(props: { activeTab: AutomationDockTab; problems: any[]; signals: any[]; models: any[]; selectedNode: any; stateInput: BuildNodeStateViewModelInput; setActiveTab(tab: AutomationDockTab): void; setSelection(selection: AutomationSelection): void }) {
   const tabs: Array<{ id: AutomationDockTab; label: string; count?: number }> = [
     { id: "assistant", label: "Assistant" },
     { id: "problems", label: "Problems", count: props.problems.length },
     { id: "history", label: "History" },
-    { id: "state", label: "State Explorer", count: props.signals.length }
+    { id: "state", label: "State View", count: props.signals.length }
   ];
   return (
     <footer className="automation-bottom-dock">
@@ -572,10 +524,7 @@ export function AutomationWorkspaceDock(props: { activeTab: AutomationDockTab; p
         </section>
       </div> : null}
       {props.activeTab === "state" ? <div className="automation-dock-panel-grid single">
-        <section className="automation-history-strip">
-          <header><ListChecks size={14} aria-hidden /><strong>State Signals</strong></header>
-          <div className="context-chip-row">{props.signals.slice(0, 8).map((signal) => <span key={signal.path}>{signal.path}</span>)}</div>
-        </section>
+        <AutomationStateView input={props.stateInput} setSelection={props.setSelection} />
       </div> : null}
     </footer>
   );
@@ -1192,6 +1141,7 @@ function AutomationPolicyNode({ id, data, selected }: NodeProps) {
   return (
     <div className={selected ? `automation-flow-node selected${toneClass}` : `automation-flow-node${toneClass}`}>
       {selected ? <SelectedNodeDeleteButton nodeId={id} /> : null}
+      {selected ? <SelectedNodeStateButton nodeId={id} /> : null}
       <div className="node-badges">
         {node.isStart ? <span className="node-badge start">Start</span> : null}
         <span className="node-badge category">{node.nodeDefinitionId ? "Base" : "Generated"}</span>
@@ -1377,6 +1327,23 @@ function SelectedNodeDeleteButton(props: { nodeId: string }) {
       type="button"
     >
       <Trash2 size={13} aria-hidden />
+    </button>
+  );
+}
+
+function SelectedNodeStateButton(props: { nodeId: string }) {
+  return (
+    <button
+      className="automation-node-state-button nodrag nopan"
+      onClick={(event) => {
+        event.stopPropagation();
+        window.dispatchEvent(new CustomEvent("automation-studio:open-node-state", { detail: { nodeId: props.nodeId } }));
+      }}
+      title="Open state"
+      aria-label="Open state"
+      type="button"
+    >
+      <ListChecks size={13} aria-hidden />
     </button>
   );
 }

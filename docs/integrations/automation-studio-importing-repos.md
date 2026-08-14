@@ -14,6 +14,8 @@ Importing repositories define:
 - reducers that turn domain events into state snapshots;
 - factual state element descriptors for text, static IDs, selectors, statuses,
   routes, counts, visibility flags, and other observable values;
+- optional state presentation hints and visual frames that reconstruct what
+  the automation saw using importer-owned content, coordinates, and bounds;
 - optional observation extractors for additional raw observations.
 
 FluxIQ defines:
@@ -108,6 +110,154 @@ Use descriptors for stable, inspectable values. Avoid pointer movement, hover
 state, volatile animation positions, raw timestamps, and private/sensitive
 values unless they are explicitly needed.
 
+Descriptors and observed `StateValue` records may include optional
+presentation metadata. Presentation metadata can provide labels, grouping,
+icons, display ordering, a generic visual kind, and an evidence anchor. Anchors
+are domain-neutral references such as points, bounds, element IDs, entity IDs,
+regions, or paths. They tell the State View where a fact appears in the
+reconstructed world; they do not tell FluxIQ whether that fact is important.
+
+## State Visual Frames
+
+Importers can attach visual frames to a `StateSnapshot` so the State View can
+render what the automation saw. A visual frame declares a coordinate space and
+JSON-safe layers such as images, text, regions, and elements. The importing
+repo owns the content and semantics; FluxIQ validates the frame, renders a
+generic reconstruction, and overlays mined evidence.
+
+Image layers must use Automation Studio object or API references. The preferred
+portable form for project-owned images is
+`automation-object://project/<projectId>/<sha256>`. The web State View resolves
+that reference to
+`/api/programs/automation-studio/state-assets/<projectId>/<sha256>`, which
+authenticates the user, requires `programs.read`, checks that the object belongs
+to the requested project, and serves only renderable asset media types. Broken,
+missing, or unauthorized refs appear as placeholders. Do not put absolute
+filesystem paths, `file://` URLs, private screenshots, untrusted remote image
+URLs, or domain assets into the FluxIQ framework repository.
+
+Importers that capture screenshots should upload them before storing the
+snapshot. Compute the SHA-256 digest of the image bytes and `PUT` the bytes to
+`/api/programs/automation-studio/state-assets/<projectId>/<sha256>` with a
+`Content-Type` of `image/png`, `image/jpeg`, `image/webp`, or `image/gif`. The
+route accepts either an authenticated web session with `programs.write` or a
+paired client-gateway bearer token. It rejects uploads larger than 20 MiB,
+verifies that the uploaded bytes match the digest in the URL, and returns:
+
+```json
+{
+  "ok": true,
+  "payload": {
+    "sha256": "<sha256>",
+    "size": 12345,
+    "mediaType": "image/png",
+    "contentRef": "automation-object://project/<projectId>/<sha256>",
+    "apiPath": "/api/programs/automation-studio/state-assets/<projectId>/<sha256>"
+  }
+}
+```
+
+Use the returned `contentRef` as an optional background image layer. Element
+boxes, labels, controls, and evidence anchors should still be sent as structured
+facts and frame layers so FluxIQ can draw selectable overlays, filter evidence
+roles, and style matches/mismatches independently of the screenshot pixels.
+The uploaded bytes are stored in the importing repository's FluxIQ state root,
+under the Automation Studio project. When the upload is authenticated with a
+paired client-gateway token for an active recording, the bytes are stored under
+`.fluxiq/artifacts/automation-studio/projects/<projectId>/recordings/sessions/<recordingId>/objects/`.
+Objects that are not owned by a recording are stored under
+`.fluxiq/artifacts/automation-studio/projects/<projectId>/objects/shared/`.
+Recordings and snapshots keep only the digest reference; the project object
+index maps that digest to the current storage path.
+When a recording is deleted, FluxIQ prunes project digest objects that no
+remaining project recording or derived artifact still references. This removes
+screenshots from the deleted recording and cleans up older orphaned project
+objects on the next recording deletion. During pruning, FluxIQ also organizes
+older indexed flat objects into recording-owned folders when one live recording
+owns the digest, or into `objects/shared/` when the digest is shared or
+project-level. Reused screenshots or other shared objects are kept until their
+last live reference is removed. FluxIQ also removes the deleted recording's
+session directory after moving any still-live shared digest out of it, and it
+cleans recording-owned pipeline artifacts from both recording-scoped and legacy
+shared JSON locations. Importers should still pass `recordingId` on screenshot
+uploads because that gives FluxIQ precise ownership before this deletion sweep
+runs. Each recording deletion also sweeps old physical recording session folders
+that no longer correspond to a live recording, so leftovers from earlier delete
+behavior are removed on the next delete.
+
+High-frequency screenshots or state snapshots may be sent during recording so
+the State View can choose the best visual reconstruction for each node. Core
+preserves those raw timeline state entries and object references, including
+`client.state_snapshot` observations. Normalization, evidence mining, and
+importer recording mappers do not process every background frame by default:
+FluxIQ compacts derived proposal input to the nearest state entries before and
+after each action, plus boundary context. This keeps proposal generation
+proportional to the number of recorded actions rather than the screenshot
+cadence. Importer mappers should therefore treat received state entries as
+action context, not as a guarantee that every raw visual frame will be replayed
+through the mapper.
+
+When a finalized recording belongs to a domain with registered importer
+recording mappers, FluxIQ generates reviewer-gated Recording Flow proposals
+from those mappers before running the generic normalization/mining/policy
+proposal pipeline. The generic evidence pipeline remains available for
+recordings without mapper support, but extension/importer recordings should not
+pay the mining cost just to reach mapped Flow proposals.
+Proposal generation is idempotent by default: if the recording has not changed
+since the latest mapper proposal, FluxIQ returns the existing proposal instead
+of replaying the mapper over the timeline again. Pass `force: true` only when
+the operator explicitly requests regeneration.
+
+```ts
+const state = {
+  id: "snapshot.checkout.1",
+  timestamp: Date.now(),
+  namespaces: {
+    order: {
+      schemaId: "example.checkout",
+      schemaVersion: "0.1",
+      values: {
+        status: {
+          type: "string",
+          value: "ready",
+          observedAt: Date.now(),
+          presentation: {
+            label: "Order status",
+            anchor: {
+              type: "bounds",
+              bounds: { x: 24, y: 42, width: 180, height: 28 }
+            }
+          }
+        }
+      }
+    }
+  },
+  presentation: {
+    defaultFrameId: "checkout.screen",
+    visualFrames: [{
+      id: "checkout.screen",
+      coordinateSpace: { width: 1280, height: 720, unit: "px" },
+      layers: [{
+        id: "screen",
+        kind: "image",
+        contentRef:
+          "automation-object://project/example/0000000000000000000000000000000000000000000000000000000000000000",
+        bounds: { x: 0, y: 0, width: 1280, height: 720 }
+      }]
+    }]
+  }
+};
+```
+
+Importer SDK manifests may also declare `stateVisualizers`. A visualizer
+definition is declarative metadata: ID, semantic version, label, optional
+description, and optional supported namespaces, state kinds, or renderer IDs.
+It does not register executable UI code, grant storage access, or authorize
+runtime capabilities. The first State View implementation uses these
+declarations to describe what an importer can supply, while actual rendering
+comes from `StateSnapshot.presentation.visualFrames` plus FluxIQ's generic
+fallback views.
+
 ## Mining Behavior
 
 FluxIQ mines each normalized recording as:
@@ -138,6 +288,30 @@ mapping:
 - action-role inputs from recording mappers are never reclassified as policy
   state. They remain raw action evidence, while importer reducers and
   state-role observations supply the state evidence.
+
+FluxIQ stores the observation and the node's use of that observation as
+separate concepts. A state fact reference names the snapshot namespace/path,
+time, and source evidence for what was observed. A node evidence binding names
+how one node uses that fact: eligibility, negative eligibility, readiness,
+expectation, failure, context, invariant, or ignored evidence. The same state
+fact can therefore be eligibility for one node and an expected effect for
+another without duplicating or rewriting the original observation.
+
+State inspection can show observed, learned, or runtime sources. Importers
+should keep observed recording snapshots literal and timestamped. FluxIQ may
+derive learned sources by aggregating multiple recordings for one node, and
+runtime sources by reading current execution/client state. Importer reducers do
+not need to synthesize learned state themselves.
+
+Runtime debugging compares expected node state with actual runtime state in
+the State View's actual-output phase. Importers can provide an explicit
+`NodeStateRuntimeComparison` artifact when their runtime has already scored a
+node outcome, or they can simply expose current runtime facts with stable
+namespace/path IDs and anchors. FluxIQ can derive a basic comparison from
+`expectation` and `invariant` evidence bindings: matched expectations render
+green, mismatches render red, and unbound runtime facts render gray as
+irrelevant context. This comparison is explanatory state, not Flow graph
+editing state.
 
 Finalized recordings are processed automatically by the framework when the
 recording has a project owner. Automation Studio normalizes the recording,

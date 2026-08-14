@@ -82,6 +82,99 @@ describe("automation studio state, signals, and recording framework", () => {
     expect(normalized.timeline.some((entry) => entry.type === "state_delta")).toBe(true);
   });
 
+  it("compacts high-frequency state checkpoints to action context during normalization", () => {
+    let recording = createRecordingSession({
+      recordingId: "recording.high-frequency-state",
+      taskId: "task.high-frequency-state",
+      startedAt: 0,
+      initialState: {
+        timestamp: 0,
+        namespaces: {
+          web: { schemaId: "web", schemaVersion: "0.1", values: { frame: stateValue("integer", 0, 0) } }
+        }
+      }
+    });
+    for (const offset of [100, 500, 900]) {
+      recording = appendRecordingStateCheckpoint(recording, {
+        timestamp: offset,
+        namespaces: {
+          web: { schemaId: "web", schemaVersion: "0.1", values: { frame: stateValue("integer", offset, offset) } }
+        }
+      }, { timestamp: offset });
+    }
+    recording = appendRecordingEntry(recording, {
+      id: "action.click",
+      type: "action",
+      actionType: "click",
+      parameters: {},
+      origin: "operator",
+      timestamp: 1_000,
+      monotonicOffsetMs: 1_000,
+      startedAt: 1_000,
+      sourceId: "operator"
+    });
+    for (const offset of [1_100, 1_500, 2_000]) {
+      recording = appendRecordingStateCheckpoint(recording, {
+        timestamp: offset,
+        namespaces: {
+          web: { schemaId: "web", schemaVersion: "0.1", values: { frame: stateValue("integer", offset, offset) } }
+        }
+      }, { timestamp: offset });
+    }
+
+    const normalized = normalizeRecordingTimeline(recording);
+    const rawCheckpointCount = recording.timeline.filter((entry) => entry.type === "state_checkpoint").length;
+    const normalizedCheckpoints = normalized.timeline.filter((entry) => entry.type === "state_checkpoint");
+
+    expect(rawCheckpointCount).toBe(6);
+    expect(normalizedCheckpoints.map((entry) => entry.monotonicOffsetMs)).toEqual([100, 900, 1_100, 2_000]);
+    expect(normalized.issues).toContainEqual(expect.objectContaining({ code: "normalization.state_checkpoints_compacted" }));
+  });
+
+  it("compacts high-frequency client state snapshot observations during normalization", () => {
+    let recording = createRecordingSession({
+      recordingId: "recording.high-frequency-snapshots",
+      taskId: "task.high-frequency-snapshots",
+      startedAt: 0,
+      initialState: { timestamp: 0, namespaces: {} }
+    });
+    for (const offset of [100, 500, 900]) {
+      recording = appendRecordingEntry(recording, {
+        id: `snapshot.${offset}`,
+        type: "observation",
+        observationType: "client.state_snapshot",
+        timestamp: offset,
+        payload: { state: { timestamp: offset, namespaces: { web: { schemaId: "web", schemaVersion: "0.1", values: { frame: { type: "integer", value: offset, observedAt: offset } } } } } }
+      });
+    }
+    recording = appendRecordingEntry(recording, {
+      id: "action.click.snapshot",
+      type: "action",
+      actionType: "click",
+      parameters: {},
+      origin: "operator",
+      timestamp: 1_000,
+      monotonicOffsetMs: 1_000,
+      startedAt: 1_000,
+      sourceId: "operator"
+    });
+    for (const offset of [1_100, 1_500, 2_000]) {
+      recording = appendRecordingEntry(recording, {
+        id: `snapshot.${offset}`,
+        type: "observation",
+        observationType: "client.state_snapshot",
+        timestamp: offset,
+        payload: { state: { timestamp: offset, namespaces: { web: { schemaId: "web", schemaVersion: "0.1", values: { frame: { type: "integer", value: offset, observedAt: offset } } } } } }
+      });
+    }
+
+    const normalized = normalizeRecordingTimeline(recording);
+
+    expect(recording.timeline.filter((entry) => entry.type === "observation" && entry.observationType === "client.state_snapshot")).toHaveLength(6);
+    expect(normalized.timeline.filter((entry) => entry.type === "observation").map((entry) => entry.monotonicOffsetMs)).toEqual([100, 900, 1_100, 2_000]);
+    expect(normalized.issues).toContainEqual(expect.objectContaining({ code: "normalization.state_observations_compacted" }));
+  });
+
   it("suffixes duplicate timeline entry ids while preserving the first id", () => {
     const initial = { timestamp: 1, namespaces: {} };
     const first = appendRecordingEntry(createRecordingSession({

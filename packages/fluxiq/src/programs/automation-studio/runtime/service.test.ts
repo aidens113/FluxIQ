@@ -1,4 +1,5 @@
-import { mkdir, readFile, readdir, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createCallFlowNode, stateValue, type StateSnapshot } from "../model/index.ts";
@@ -78,6 +79,61 @@ describe("AutomationStudioService recording persistence", () => {
     expect(invalidated).toMatchObject({ status: "invalidated", invalidation: { affectedFlowIds: [reviewed.flow!.flowId] } });
   });
 
+  it("compacts high-frequency state entries before invoking recording mappers", async () => {
+    const io = new IoRegistry();
+    io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
+    const seenObservationIds: string[] = [];
+    const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "click-mapper", version: "1.0.0", description: "Maps recorded clicks", outputIds: ["click"] }] };
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, {
+      packageId: "example.importer",
+      packageVersion: "1.0.0",
+      implementations: {},
+      recordingMappers: {
+        "click-mapper": (observation) => {
+          seenObservationIds.push(observation.observationId);
+          return observation.type === "action"
+            ? { outputId: "click", parameters: { target: "submit" }, confidence: 0.9 }
+            : null;
+        }
+      }
+    });
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const project = await service.createProject({ name: "Compacted mapper recording", domainId: "example" });
+    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.mapper-compaction", domainId: "example", startedAt: 0, initialState: { timestamp: 0, namespaces: {} } });
+    await service.appendRecordingEvents({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entries: [
+        ...[100, 500, 900].map((offset) => ({
+          id: `snapshot.${offset}`,
+          type: "observation",
+          observationType: "client.state_snapshot",
+          timestamp: offset,
+          payload: { state: { timestamp: offset, namespaces: { web: { schemaId: "web", schemaVersion: "0.1", values: { frame: stateValue("integer", offset, offset) } } } } }
+        } as any)),
+        { id: "action.click", type: "action", actionType: "click", parameters: {}, origin: "operator", timestamp: 1_000, monotonicOffsetMs: 1_000, startedAt: 1_000 } as any,
+        ...[1_100, 1_500, 2_000].map((offset) => ({
+          id: `snapshot.${offset}`,
+          type: "observation",
+          observationType: "client.state_snapshot",
+          timestamp: offset,
+          payload: { state: { timestamp: offset, namespaces: { web: { schemaId: "web", schemaVersion: "0.1", values: { frame: stateValue("integer", offset, offset) } } } } }
+        } as any))
+      ]
+    });
+
+    const { proposals, issues } = await service.createRecordingFlowProposals({ projectId: project.id, recordingId: recording.recordingId });
+    await service.normalizeRecording({ projectId: project.id, recordingId: recording.recordingId });
+    const review = await service.createNormalizationReview({ projectId: project.id, recordingId: recording.recordingId });
+
+    expect(proposals).toHaveLength(1);
+    expect(seenObservationIds).toEqual(["snapshot.100", "snapshot.900", "action.click", "snapshot.1100", "snapshot.2000"]);
+    expect(issues).toContain("Compacted 2 high-frequency state entries before mapper proposal generation. Raw recording data was preserved.");
+    expect(review.mappings).toHaveLength(6);
+    expect(review.mappings).toContainEqual(expect.objectContaining({ rawEntryId: `compacted.high-frequency-state.${recording.recordingId}`, status: "dropped" }));
+    await expect(service.getRecordingSession(recording.recordingId, project.id)).resolves.toMatchObject({ timeline: expect.arrayContaining([expect.objectContaining({ id: "snapshot.500" }), expect.objectContaining({ id: "snapshot.1500" })]) });
+  });
+
   it("processes extension recordings into recording Flow proposals instead of blank policy proposals", async () => {
     const io = new IoRegistry();
     io.registerInput("example", { definition: { id: "clicked", title: "Clicked", role: "action", outputId: "click" }, mode: "stream", subscribe: () => () => undefined });
@@ -98,6 +154,225 @@ describe("AutomationStudioService recording persistence", () => {
     expect(processed.recordingFlowProposals?.[0]?.candidates[0]).toMatchObject({ outputId: "click", policyStateEligible: false });
     expect(artifacts.policyProposals.filter((proposal) => proposal.metadata?.recordingId === recording.recordingId)).toEqual([]);
     expect(artifacts.recordingFlowProposals.filter((proposal) => proposal.recordingId === recording.recordingId)).toHaveLength(1);
+    expect(artifacts.normalizationReviews.filter((review) => review.recordingId === recording.recordingId)).toEqual([]);
+    expect(artifacts.miningRuns.filter((run) => run.metadata?.recordingId === recording.recordingId)).toEqual([]);
+  });
+
+  it("reuses current recording Flow proposals without remapping unchanged recordings", async () => {
+    const io = new IoRegistry();
+    io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
+    let mapperCalls = 0;
+    const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "click-mapper", version: "1.0.0", description: "Maps recorded clicks", outputIds: ["click"] }] };
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, {
+      packageId: "example.importer",
+      packageVersion: "1.0.0",
+      implementations: {},
+      recordingMappers: {
+        "click-mapper": (observation) => {
+          mapperCalls += 1;
+          return observation.type === "observation" ? { outputId: "click", parameters: { target: "submit" }, confidence: 0.9 } : null;
+        }
+      }
+    });
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const project = await service.createProject({ name: "Cached mapper proposal", domainId: "example" });
+    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.cached-mapper", domainId: "example", startedAt: 100, initialState: { timestamp: 100, namespaces: {} } });
+    await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" }, timestamp: 200, monotonicOffsetMs: 100 } });
+    await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId, endedAt: 300 });
+
+    const first = await service.createRecordingFlowProposals({ projectId: project.id, recordingId: recording.recordingId });
+    const callsAfterFirst = mapperCalls;
+    const second = await service.createRecordingFlowProposals({ projectId: project.id, recordingId: recording.recordingId });
+    const callsAfterSecond = mapperCalls;
+    const forced = await service.createRecordingFlowProposals({ projectId: project.id, recordingId: recording.recordingId, force: true });
+
+    expect(first.proposals).toHaveLength(1);
+    expect(second.proposals.map((proposal) => proposal.proposalId)).toEqual(first.proposals.map((proposal) => proposal.proposalId));
+    expect(callsAfterSecond).toBe(callsAfterFirst);
+    expect(mapperCalls - callsAfterSecond).toBe(1);
+    expect(forced.proposals[0]?.proposalId).not.toBe(first.proposals[0]?.proposalId);
+  });
+
+  it("stores project state image assets as digest-addressed object references", async () => {
+    await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
+    const service = new AutomationStudioService({
+      dataDir: tempRoot,
+      storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
+      seedFixture: false
+    });
+    const project = await service.createProject({ name: "State assets" });
+    const content = Buffer.from("png-bytes");
+    const sha256 = createHash("sha256").update(content).digest("hex");
+
+    const asset = await service.writeProjectObjectAsset({
+      projectId: project.id,
+      recordingId: "recording.capture",
+      content,
+      mediaType: "image/png",
+      expectedSha256: sha256
+    });
+
+    expect(asset).toEqual({
+      sha256,
+      size: content.byteLength,
+      mediaType: "image/png",
+      contentRef: `automation-object://project/${encodeURIComponent(project.id)}/${sha256}`,
+      apiPath: `/api/programs/automation-studio/state-assets/${encodeURIComponent(project.id)}/${sha256}`
+    });
+    await expect(service.readProjectObjectAsset(project.id, sha256)).resolves.toMatchObject({
+      sha256,
+      size: content.byteLength,
+      mediaType: "image/png",
+      content
+    });
+    await expect(readFile(path.join(tempRoot, "artifacts", "automation-studio", "projects", project.id, "recordings", "sessions", "recording.capture", "objects", `${sha256}.png`))).resolves.toEqual(content);
+  });
+
+  it("rejects state image assets whose bytes do not match the requested digest", async () => {
+    await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
+    const service = new AutomationStudioService({
+      dataDir: tempRoot,
+      storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
+      seedFixture: false
+    });
+    const project = await service.createProject({ name: "State asset mismatch" });
+
+    await expect(service.writeProjectObjectAsset({
+      projectId: project.id,
+      content: Buffer.from("different-bytes"),
+      mediaType: "image/png",
+      expectedSha256: "0".repeat(64)
+    })).rejects.toThrow("digest does not match");
+  });
+
+  it("deletes recording-owned state image assets when no remaining recording references them", async () => {
+    await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
+    const service = new AutomationStudioService({
+      dataDir: tempRoot,
+      storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
+      seedFixture: false
+    });
+    const project = await service.createProject({ name: "Recording asset cleanup" });
+    const content = Buffer.from("recording-screenshot");
+    const sha256 = createHash("sha256").update(content).digest("hex");
+    const asset = await service.writeProjectObjectAsset({ projectId: project.id, recordingId: "recording.with-screenshot", content, mediaType: "image/png", expectedSha256: sha256 });
+    const orphanContent = Buffer.from("old-orphan-screenshot");
+    const orphanSha256 = createHash("sha256").update(orphanContent).digest("hex");
+    await service.writeProjectObjectAsset({ projectId: project.id, recordingId: "recording.with-screenshot", content: orphanContent, mediaType: "image/png", expectedSha256: orphanSha256 });
+    const state = {
+      timestamp: 1,
+      namespaces: {},
+      presentation: {
+        defaultFrameId: "screen",
+        visualFrames: [{
+          id: "screen",
+          coordinateSpace: { width: 100, height: 100, unit: "px" },
+          layers: [{ id: "image", kind: "image", contentRef: asset.contentRef, bounds: { x: 0, y: 0, width: 100, height: 100 } }]
+        }]
+      }
+    } satisfies StateSnapshot;
+    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.with-screenshot", initialState: { timestamp: 0, namespaces: {} } });
+    await service.appendRecordingEvent({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entry: { type: "observation", observationType: "client.state_snapshot", payload: { state } }
+    });
+
+    await service.deleteRecording({ projectId: project.id, recordingId: recording.recordingId });
+
+    await expect(service.readProjectObjectAsset(project.id, sha256)).rejects.toThrow("not found");
+    await expect(service.readProjectObjectAsset(project.id, orphanSha256)).rejects.toThrow("not found");
+    await expect(readFile(path.join(tempRoot, "artifacts", "automation-studio", "projects", project.id, "recordings", "sessions", recording.recordingId, "objects", `${sha256}.png`))).rejects.toThrow();
+  });
+
+  it("deletes unindexed files left under the recording session directory", async () => {
+    await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
+    const service = new AutomationStudioService({
+      dataDir: tempRoot,
+      storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
+      seedFixture: false
+    });
+    const project = await service.createProject({ name: "Recording directory cleanup" });
+    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.with-leftovers", initialState: { timestamp: 0, namespaces: {} } });
+    const sessionDir = path.join(tempRoot, "artifacts", "automation-studio", "projects", project.id, "recordings", "sessions", recording.recordingId);
+    await mkdir(path.join(sessionDir, "objects"), { recursive: true });
+    await mkdir(path.join(sessionDir, "derived", "custom"), { recursive: true });
+    await writeFile(path.join(sessionDir, "objects", "unindexed.png"), "stale image", "utf8");
+    await writeFile(path.join(sessionDir, "derived", "custom", "leftover.json"), JSON.stringify({ recordingId: recording.recordingId }), "utf8");
+    const oldDeletedSessionDir = path.join(tempRoot, "artifacts", "automation-studio", "projects", project.id, "recordings", "sessions", "recording.old-deleted");
+    await mkdir(path.join(oldDeletedSessionDir, "objects"), { recursive: true });
+    await writeFile(path.join(oldDeletedSessionDir, "objects", "leftover.png"), "old stale image", "utf8");
+
+    await service.deleteRecording({ projectId: project.id, recordingId: recording.recordingId });
+
+    await expect(readdir(sessionDir)).rejects.toThrow();
+    await expect(readdir(oldDeletedSessionDir)).rejects.toThrow();
+  });
+
+  it("deletes stale shared pipeline artifacts owned by the deleted recording", async () => {
+    await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
+    const service = new AutomationStudioService({
+      dataDir: tempRoot,
+      storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
+      seedFixture: false
+    });
+    const project = await service.createProject({ name: "Shared pipeline cleanup" });
+    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.shared-artifacts", initialState: { timestamp: 0, namespaces: {} } });
+    const projectDir = path.join(tempRoot, "artifacts", "automation-studio", "projects", project.id);
+    const sharedFact = path.join(projectDir, "pipeline", "shared", "evidence", "facts", "fact.stale.json");
+    const pipelineIndex = path.join(projectDir, "indexes", "pipeline.json");
+    await mkdir(path.dirname(sharedFact), { recursive: true });
+    await mkdir(path.dirname(pipelineIndex), { recursive: true });
+    await writeFile(sharedFact, JSON.stringify({ factId: "fact.stale", recordingId: recording.recordingId, value: true }), "utf8");
+    await writeFile(pipelineIndex, JSON.stringify({
+      pipelines: [],
+      normalizationReviews: [],
+      miningRuns: [],
+      evidenceFacts: [{ factId: "fact.stale", generatedAt: 1, recordingId: recording.recordingId }],
+      evidenceObservations: [],
+      stateActionCorrelations: [],
+      evidenceClaims: [],
+      learnedTaskModels: [],
+      policyProposals: [],
+      recordingFlowProposals: [],
+      replayResults: []
+    }, null, 2), "utf8");
+
+    await service.deleteRecording({ projectId: project.id, recordingId: recording.recordingId });
+
+    await expect(readFile(sharedFact, "utf8")).rejects.toThrow();
+    const index = JSON.parse(await readFile(pipelineIndex, "utf8")) as { evidenceFacts: unknown[] };
+    expect(index.evidenceFacts).toEqual([]);
+  });
+
+  it("keeps deleted recording assets that are still referenced by another recording", async () => {
+    await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
+    const service = new AutomationStudioService({
+      dataDir: tempRoot,
+      storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
+      seedFixture: false
+    });
+    const project = await service.createProject({ name: "Shared asset cleanup" });
+    const content = Buffer.from("shared-screenshot");
+    const sha256 = createHash("sha256").update(content).digest("hex");
+    const asset = await service.writeProjectObjectAsset({ projectId: project.id, content, mediaType: "image/png", expectedSha256: sha256 });
+    const state = {
+      timestamp: 1,
+      namespaces: {},
+      presentation: {
+        visualFrames: [{
+          id: "screen",
+          coordinateSpace: { width: 100, height: 100, unit: "px" },
+          layers: [{ id: "image", kind: "image", contentRef: asset.contentRef, bounds: { x: 0, y: 0, width: 100, height: 100 } }]
+        }]
+      }
+    } satisfies StateSnapshot;
+    const deleted = await service.createRecording({ projectId: project.id, recordingId: "recording.deleted", initialState: state });
+    await service.createRecording({ projectId: project.id, recordingId: "recording.kept", initialState: state });
+
+    await service.deleteRecording({ projectId: project.id, recordingId: deleted.recordingId });
+
+    await expect(service.readProjectObjectAsset(project.id, sha256)).resolves.toMatchObject({ sha256, content });
   });
 
   it("approves edited recording Flow proposal graphs into Flows", async () => {
@@ -272,6 +547,55 @@ describe("AutomationStudioService recording persistence", () => {
     const stored = await service.getRecordingSession(recording.recordingId, project.id);
 
     expect(stored.timeline).toHaveLength(32);
+  });
+
+  it("lists project recording summaries without returning screenshot-heavy timelines", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Recording summaries" });
+    const recording = await service.createRecording({
+      projectId: project.id,
+      recordingId: "recording.summary-list",
+      taskId: "task.summary-list",
+      initialState: { timestamp: 1, namespaces: {} }
+    });
+    await service.appendRecordingEvents({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entries: Array.from({ length: 8 }, (_, index) => ({
+        id: `snapshot.${index}`,
+        type: "observation",
+        observationType: "client.state_snapshot",
+        payload: {
+          state: {
+            timestamp: index + 2,
+            namespaces: {},
+            presentation: {
+              visualFrames: [{
+                id: "screen",
+                coordinateSpace: { width: 100, height: 100, unit: "px" },
+                layers: [{ id: "image", kind: "image", contentRef: `automation-object://project/${project.id}/${String(index).padStart(64, "0")}`, bounds: { x: 0, y: 0, width: 100, height: 100 } }]
+              }]
+            }
+          }
+        }
+      }))
+    });
+    const projectRoot = path.join(tempRoot, "programs", "automation-studio", "projects", project.id);
+    const recordingFile = path.join(projectRoot, "recordings", "sessions", recording.recordingId, "recording.json");
+    const activePersisted = JSON.parse(await readFile(recordingFile, "utf8")) as any;
+
+    const summaries = await service.listRecordingSessionSummaries(project.id);
+    const full = await service.getRecordingSession(recording.recordingId, project.id);
+
+    expect(activePersisted.recording?.timeline ?? activePersisted.timeline ?? []).toHaveLength(0);
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toMatchObject({ recordingId: recording.recordingId, metadata: { summaryOnly: true, eventCount: 8 } });
+    expect(summaries[0]?.timeline).toEqual([]);
+    expect(full.timeline).toHaveLength(8);
+
+    await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId, endedAt: 20 });
+    const finalizedTimeline = JSON.parse(await readFile(path.join(projectRoot, "recordings", "sessions", recording.recordingId, "events", "timeline.json"), "utf8")) as any;
+    expect(finalizedTimeline.data?.timeline ?? finalizedTimeline.timeline ?? finalizedTimeline).toHaveLength(8);
   });
 
   it("stores project artifacts and runtime sessions in project folders", async () => {

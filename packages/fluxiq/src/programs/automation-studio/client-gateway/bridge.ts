@@ -20,6 +20,7 @@ export type AutomationStudioClientGatewayBridgeOptions = {
   automationStudio: AutomationStudioService;
   io?: IoRegistry;
   clientRecordingContextProvider?: ClientRecordingContextProvider;
+  stopDrainMs?: number;
 };
 
 export type ClientRecordingContext =
@@ -40,16 +41,31 @@ export type StartClientRecordingInput = {
   metadata?: JsonObject;
 };
 
+type RecordingAppendQueueItem = {
+  projectId?: string | null;
+  recordingId: string;
+  entry: Parameters<AutomationStudioService["appendRecordingEvent"]>[0]["entry"];
+};
+
+type RecordingAppendQueue = {
+  entries: RecordingAppendQueueItem[];
+  timer?: ReturnType<typeof setTimeout> | undefined;
+  flushing?: Promise<void> | undefined;
+};
+
 export class AutomationStudioClientGatewayBridge {
   private readonly gateway: ClientGatewayService;
   private readonly automationStudio: AutomationStudioService;
+  private readonly stopDrainMs: number;
   private readonly activeRecordings = new Map<string, { projectId?: string | null; recordingId: string; domainId?: string | null }>();
+  private readonly appendQueues = new Map<string, RecordingAppendQueue>();
   private clientRecordingContextProvider: ClientRecordingContextProvider | undefined;
   private io: IoRegistry | undefined;
 
   constructor(options: AutomationStudioClientGatewayBridgeOptions) {
     this.gateway = options.gateway;
     this.automationStudio = options.automationStudio;
+    this.stopDrainMs = Math.max(0, options.stopDrainMs ?? 250);
     this.io = options.io;
     this.clientRecordingContextProvider = options.clientRecordingContextProvider;
     this.gateway.onEvent((event) => this.handleGatewayEvent(event));
@@ -125,9 +141,11 @@ export class AutomationStudioClientGatewayBridge {
     const active = this.activeRecordings.get(ownerKey);
     await this.gateway.stopRecording(sessionId, active?.recordingId);
     if (!active) return null;
+    await delay(this.stopDrainMs);
+    await this.flushRecordingEntries(ownerKey);
     const recording = await this.automationStudio.finalizeRecording({ ...(active.projectId !== undefined ? { projectId: active.projectId } : {}), recordingId: active.recordingId });
-    if (active.projectId) await this.automationStudio.processFinalizedRecording({ projectId: active.projectId, recordingId: active.recordingId });
     this.activeRecordings.delete(ownerKey);
+
     return recording;
   }
 
@@ -149,7 +167,8 @@ export class AutomationStudioClientGatewayBridge {
     }
     if (event.type === "client.recording_entry") {
       const active = this.activeRecordings.get(this.recordingOwnerKey(event.session));
-      await this.automationStudio.appendRecordingEvent({
+      if (!active) return;
+      this.enqueueRecordingEntry(this.recordingOwnerKey(event.session), {
         ...(event.message.payload.projectId !== undefined ? { projectId: event.message.payload.projectId } : active?.projectId !== undefined ? { projectId: active.projectId } : {}),
         recordingId: event.message.payload.recordingId,
         entry: event.message.payload.entry as unknown as Parameters<AutomationStudioService["appendRecordingEvent"]>[0]["entry"]
@@ -244,12 +263,13 @@ export class AutomationStudioClientGatewayBridge {
     const ownerKey = this.recordingOwnerKey(session);
     const active = this.activeRecordings.get(ownerKey);
     const projectId = input.projectId ?? active?.projectId;
+    await delay(this.stopDrainMs);
+    await this.flushRecordingEntries(ownerKey);
     const recording = await this.automationStudio.finalizeRecording({
       ...(projectId !== undefined ? { projectId } : {}),
       recordingId: input.recordingId,
       ...(input.endedAt !== undefined ? { endedAt: input.endedAt } : {})
     });
-    if (projectId) await this.automationStudio.processFinalizedRecording({ projectId, recordingId: input.recordingId });
     this.activeRecordings.delete(ownerKey);
     return recording;
   }
@@ -257,6 +277,7 @@ export class AutomationStudioClientGatewayBridge {
   private async appendRecordingEvent(session: ClientGatewaySession, event: ClientGatewayRecordingEvent, messageId: string): Promise<void> {
     const active = this.activeRecordings.get(this.recordingOwnerKey(session));
     if (!active) return;
+    await this.flushRecordingEntries(this.recordingOwnerKey(session));
     const domainId = event.domainId ?? active.domainId ?? stringMetadataValue(event.metadata, "domainId");
     const inputId = stringMetadataValue(event.metadata, "inputId");
     if (domainId && inputId && await this.recordGatewayInput({
@@ -320,7 +341,7 @@ export class AutomationStudioClientGatewayBridge {
     const active = this.activeRecordings.get(this.recordingOwnerKey(session));
     if (!active) return;
     if (snapshot.kind === "state" && snapshot.state) {
-      await this.automationStudio.appendRecordingEvent({
+      this.enqueueRecordingEntry(this.recordingOwnerKey(session), {
         ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
         recordingId: active.recordingId,
         entry: {
@@ -334,7 +355,7 @@ export class AutomationStudioClientGatewayBridge {
       });
       return;
     }
-    await this.automationStudio.appendRecordingEvent({
+    this.enqueueRecordingEntry(this.recordingOwnerKey(session), {
       ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
       recordingId: active.recordingId,
       entry: {
@@ -356,16 +377,19 @@ export class AutomationStudioClientGatewayBridge {
     if (!active) return;
     const domainId = active.domainId ?? stringMetadataValue(stateUpdate.metadata as JsonObject | undefined, "domainId");
     const inputId = stringMetadataValue(stateUpdate.metadata as JsonObject | undefined, "inputId");
-    if (domainId && inputId && await this.recordGatewayInput({
-      active,
-      domainId,
-      inputId,
-      payload: stateUpdate.state && typeof stateUpdate.state === "object" && !Array.isArray(stateUpdate.state) ? stateUpdate.state as JsonObject : stateUpdate,
-      sourceId: `client.${session.clientId}.observations`,
-      messageId,
-      ...(stateUpdate.metadata && typeof stateUpdate.metadata === "object" && !Array.isArray(stateUpdate.metadata) ? { metadata: stateUpdate.metadata as JsonObject } : {})
-    })) return;
-    await this.automationStudio.appendRecordingEvent({
+    if (domainId && inputId) {
+      await this.flushRecordingEntries(this.recordingOwnerKey(session));
+      if (await this.recordGatewayInput({
+        active,
+        domainId,
+        inputId,
+        payload: stateUpdate.state && typeof stateUpdate.state === "object" && !Array.isArray(stateUpdate.state) ? stateUpdate.state as JsonObject : stateUpdate,
+        sourceId: `client.${session.clientId}.observations`,
+        messageId,
+        ...(stateUpdate.metadata && typeof stateUpdate.metadata === "object" && !Array.isArray(stateUpdate.metadata) ? { metadata: stateUpdate.metadata as JsonObject } : {})
+      })) return;
+    }
+    this.enqueueRecordingEntry(this.recordingOwnerKey(session), {
       ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
       recordingId: active.recordingId,
       entry: {
@@ -403,6 +427,55 @@ export class AutomationStudioClientGatewayBridge {
       metadata: compactJsonObject({ sourceId: input.sourceId, clientGatewayMessageId: input.messageId, ...(input.metadata ?? {}) })
     }));
     return true;
+  }
+
+  private enqueueRecordingEntry(ownerKey: string, item: RecordingAppendQueueItem): void {
+    const queue = this.appendQueues.get(ownerKey) ?? { entries: [] };
+    queue.entries.push(item);
+    this.appendQueues.set(ownerKey, queue);
+    if (queue.entries.length >= 50) {
+      void this.flushRecordingEntries(ownerKey);
+      return;
+    }
+    if (!queue.timer) {
+      queue.timer = setTimeout(() => {
+        queue.timer = undefined;
+        void this.flushRecordingEntries(ownerKey);
+      }, 25);
+    }
+  }
+
+  private async flushRecordingEntries(ownerKey: string): Promise<void> {
+    const queue = this.appendQueues.get(ownerKey);
+    if (!queue) return;
+    if (queue.timer) {
+      clearTimeout(queue.timer);
+      queue.timer = undefined;
+    }
+    if (queue.flushing) {
+      await queue.flushing;
+      if (queue.entries.length) await this.flushRecordingEntries(ownerKey);
+      return;
+    }
+    queue.flushing = (async () => {
+      while (queue.entries.length) {
+        const batch = queue.entries.splice(0, 100);
+        const groups = new Map<string, { projectId?: string | null; recordingId: string; entries: RecordingAppendQueueItem["entry"][] }>();
+        for (const item of batch) {
+          const key = `${item.projectId ?? ""}\n${item.recordingId}`;
+          const group = groups.get(key) ?? { ...(item.projectId !== undefined ? { projectId: item.projectId } : {}), recordingId: item.recordingId, entries: [] };
+          group.entries.push(item.entry);
+          groups.set(key, group);
+        }
+        for (const group of groups.values()) await this.automationStudio.appendRecordingEvents(group);
+      }
+    })();
+    try {
+      await queue.flushing;
+    } finally {
+      queue.flushing = undefined;
+      if (!queue.entries.length && !queue.timer) this.appendQueues.delete(ownerKey);
+    }
   }
 
   private async appendActionResult(sessionId: string, command: ClientGatewayActionCommand, result: ClientGatewayActionResult): Promise<void> {
@@ -466,3 +539,9 @@ function stringMetadataValue(metadata: JsonObject | undefined, key: string): str
   const value = metadata?.[key];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
+
+function delay(ms: number): Promise<void> {
+  return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
+}
+
+

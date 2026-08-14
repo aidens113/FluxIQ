@@ -1,4 +1,5 @@
 import type { Blocks } from "lucide-react";
+import type { NodeStatePhase } from "fluxiq/automation-studio";
 import {
   automationNodeClassGroups,
   getAutomationNodeDefinitions,
@@ -82,7 +83,8 @@ export type AutomationSelection =
   | { kind: "editor-mode"; id: string; editor: "flow" | "routine"; label: string; description: string; sections: Array<{ title: string; rows: Array<[string, string]> }>; widgets?: AutomationInspectorWidget[] }
   | { kind: "recording"; id: string }
   | { kind: "timeline"; id: string }
-  | { kind: "signal"; id: string };
+  | { kind: "signal"; id: string }
+  | { kind: "state"; id: string; nodeId?: string; sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; recordingId?: string; proposalId?: string; timelineEntryId?: string };
 
 export type AutomationInspectorWidget =
   | { kind: "summary"; title: string; items: Array<[string, string | number]> }

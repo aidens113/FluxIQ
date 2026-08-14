@@ -1,6 +1,6 @@
 import { rm } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CLIENT_GATEWAY_PROTOCOL_VERSION, ClientGatewayService, type ClientGatewayClientMessage } from "../../../client-gateway/index.ts";
 import { defineInput, defineOutput, IoRegistry } from "../../../io/index.ts";
 import { stateValue } from "../model/index.ts";
@@ -203,6 +203,44 @@ describe("AutomationStudioClientGatewayBridge", () => {
     expect(stored.environment.domainId).toBe("example.lifecycle");
     expect(stored.timeline).toHaveLength(1);
     expect(stored.endedAt).toBe(10);
+  });
+
+  it("batches high-frequency client snapshots before finalizing", async () => {
+    const gateway = new ClientGatewayService();
+    const automationStudio = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const appendBatchSpy = vi.spyOn(automationStudio, "appendRecordingEvents");
+    const project = await automationStudio.createProject({ name: "Buffered Project" });
+    new AutomationStudioClientGatewayBridge({
+      gateway,
+      automationStudio,
+      clientRecordingContextProvider: () => ({ ok: true, projectId: project.id })
+    });
+    const session = gateway.connect();
+    await gateway.receive(session.sessionId, clientMessage("client.hello", { clientId: "recorder.buffered", clientType: "custom", name: "Buffered Recorder" }));
+    await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "", { approvedByUserId: "user.test" });
+
+    await gateway.receive(session.sessionId, clientMessage("client.start_recording", {
+      recordingId: "recording.buffered",
+      startedAt: 1,
+      initialState: { timestamp: 1, namespaces: {} }
+    }));
+    for (let index = 0; index < 20; index += 1) {
+      await gateway.receive(session.sessionId, clientMessage("client.snapshot", {
+        kind: "state",
+        timestamp: index + 2,
+        state: { timestamp: index + 2, namespaces: { web: { schemaId: "web", schemaVersion: "0.1", values: { index: { type: "integer", value: index, observedAt: index + 2 } } } } }
+      }));
+    }
+    await gateway.receive(session.sessionId, clientMessage("client.stop_recording", {
+      recordingId: "recording.buffered",
+      endedAt: 50
+    }));
+
+    const stored = await automationStudio.getRecordingSession("recording.buffered", project.id);
+    expect(stored.timeline).toHaveLength(20);
+    expect(stored.endedAt).toBe(50);
+    expect(appendBatchSpy).toHaveBeenCalledTimes(1);
+    expect(appendBatchSpy.mock.calls[0]?.[0].entries).toHaveLength(20);
   });
 
   it("rejects client-initiated recording starts when no project is open", async () => {

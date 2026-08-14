@@ -17,6 +17,7 @@ export function viewTitle(view: AutomationViewInstance): string {
   if (view.type === "assistant") return "AI Assistant";
   if (view.type === "clients") return "Connected Clients";
   if (view.type === "runs") return "Runs";
+  if (view.type === "state") return "State View";
   if (view.type === "inspector") return "Inspector";
   if (view.type === "dock") return "Workspace Dock";
   if (view.type === "routine") return "Legacy Routine (read-only)";
@@ -28,7 +29,7 @@ export function AutomationWindowAdderPalette(props: { area: AutomationWorkspaceA
   const groups = [
     { title: "Workflow", ids: ["client-gateway", "timeline-recording", "proposal-workbench", "policy-primary", "runs-history"] },
     { title: "Editors", ids: ["config-default"] },
-    { title: "Evidence", ids: ["timeline-evidence-inspector", "signals-web", "runtime-debug", "problems-view"] },
+    { title: "Evidence", ids: ["state-explorer", "timeline-evidence-inspector", "signals-web", "runtime-debug", "problems-view"] },
     { title: "Tools", ids: ["global-inspector", "workspace-dock", "ai-assistant"] }
   ];
   const byId = new Map(props.views.map((view) => [view.id, view]));
@@ -120,6 +121,7 @@ export function automationWindowDescription(view: AutomationViewInstance): strin
   if (view.type === "signals") return "Browse mined state signals.";
   if (view.type === "runtime") return "Inspect live/debug execution state.";
   if (view.type === "runs") return "Inspect replay and validation history.";
+  if (view.type === "state") return "Reconstruct selected node state and evidence.";
   if (view.type === "clients") return "Pair remote recorder and action clients.";
   if (view.type === "problems") return "Review validation and authoring issues.";
   if (view.type === "inspector") return "Inspect the current global selection.";
@@ -206,11 +208,11 @@ export function AutomationViewContainer(props: {
           <button className="icon-button" onClick={(event) => { event.stopPropagation(); props.onClose(); }} title="Close window" aria-label="Close window" type="button"><XCircle size={13} aria-hidden /></button>
         </div>
       </header>
-      <div className="automation-window-tabs" role="tablist" aria-label={`Window ${props.windowIndex + 1} tabs`}>
+      <div className="automation-window-tabs" onMouseDown={(event) => event.stopPropagation()} role="tablist" aria-label={`Window ${props.windowIndex + 1} tabs`}>
         {props.tabs.map((tab) => {
           const TabIcon = tab.icon;
           return (
-            <button className={tab.id === props.activeViewId ? "selected" : ""} key={tab.id} onClick={() => props.onTabSelect(tab.id)} role="tab" title={tab.label} aria-selected={tab.id === props.activeViewId} type="button">
+            <button className={tab.id === props.activeViewId ? "selected" : ""} key={tab.id} onClick={(event) => { event.stopPropagation(); props.onTabSelect(tab.id); }} role="tab" title={tab.label} aria-selected={tab.id === props.activeViewId} type="button">
               <TabIcon size={13} aria-hidden />
               <span>{tab.label}</span>
               <span className="tab-close" onClick={(event) => { event.stopPropagation(); props.onCloseTab(tab.id); }}>x</span>

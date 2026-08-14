@@ -1,13 +1,15 @@
 "use client";
 
 import type { JsonObject } from "../../programs/program-api";
+import type { NodeStatePhase } from "fluxiq/automation-studio";
 import type { AutomationDockTab, AutomationSelection, AutomationViewInstance, RecordingProcessingStatus } from "../types";
 import { AutomationAssistantView, AutomationClientGatewayView, AutomationConfigView } from "./ClientViews";
 import { AutomationProposalView } from "./ProposalView";
 import { AutomationTimelineEvidenceInspectorView } from "./TimelineEvidenceInspectorView";
 import { AutomationTimelineView } from "./TimelineView";
 import { AutomationInspector } from "./InspectorView";
-import { AutomationPolicyCanvas, AutomationStateExplorerView, AutomationWorkspaceDock } from "./GraphEditorViews";
+import { AutomationPolicyCanvas, AutomationWorkspaceDock } from "./GraphEditorViews";
+import { AutomationStateView } from "./StateView";
 import { AutomationProblemsWorkspace, AutomationRecordingWorkspace, AutomationRunsWorkspace, AutomationRuntimeWorkspace, AutomationSignalWorkspace } from "./WorkspaceViews";
 export function AutomationViewRenderer(props: {
   actionStatus: string;
@@ -49,6 +51,7 @@ export function AutomationViewRenderer(props: {
   onOpenPipeline(recordingId: string): void;
   onOpenProposal(recordingId: string): void;
   onOpenRecording(recordingId: string): void;
+  onOpenState(request: { nodeId?: string; sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; proposalId?: string; timelineEntryId?: string }): void;
   onInspectTimelineEntry(recordingId: string, entryId: string): void;
   onEnsureInspectorAvailable(): void;
   onAppendRecordingMarker(recordingId: string, linkedEntryId?: string, monotonicOffsetMs?: number): Promise<void>;
@@ -61,7 +64,7 @@ export function AutomationViewRenderer(props: {
   onPublishFlow(version: string, changelog: string): Promise<boolean | void>;
   onDeprecateFlow(version: string): Promise<boolean | void>;
   onTaskGraphDirtyChange(dirty: boolean): void;
-  onProcessFinalizedRecording(recordingId: string, force?: boolean): Promise<boolean | void>;
+  onProcessFinalizedRecording(recordingId: string, force?: boolean, authorizationPin?: string): Promise<boolean | void>;
   onRunRecordingPipeline(recordingId: string): Promise<void>;
   onProcessProposalWithLlm(proposalId: string): void;
   onRefreshRecordings(): Promise<void>;
@@ -71,17 +74,18 @@ export function AutomationViewRenderer(props: {
 }) {
   if (props.view.type === "design") return <AutomationPolicyCanvas active={props.viewActive} editable={props.flowEditable} entries={props.entries} policy={props.policy} taskGraph={props.taskGraph} taskGraphDraft={props.taskGraphDraft ?? null} nativeNodeDefinitions={props.nativeNodeDefinitions ?? []} recordings={props.recordings} selectedNode={props.selectedNode} selectedTimeline={props.selectedTimeline} signals={props.signals} onSaveGraph={props.onSaveTaskGraph} onGraphDraftChange={props.onTaskGraphDraftChange} onDirtyChange={props.onTaskGraphDirtyChange} setSelection={props.setSelection} />;
   if (props.view.type === "recordings") return <AutomationTimelineView actionStatus={props.actionStatus} entries={props.entries} notes={props.notes} recordings={props.recordings} recordingProcessing={props.recordingProcessing} selectedEntry={props.selectedEntry} selectedRecording={props.selectedRecording} selectedTimeline={props.selectedTimeline} timelines={props.timelines} onAppendRecordingMarker={props.onAppendRecordingMarker} onAppendRecordingNote={props.onAppendRecordingNote} onDeleteRecording={props.onDeleteRecording} onFinalizeRecording={props.onFinalizeRecording} onInspectTimelineEntry={props.onInspectTimelineEntry} onOpenProposal={props.onOpenProposal} onProcessFinalizedRecording={props.onProcessFinalizedRecording} onRefreshRecordings={props.onRefreshRecordings} onUpdateRecording={props.onUpdateRecording} setSelection={props.setSelection} />;
-  if (props.view.type === "proposal") return <AutomationProposalView actionStatus={props.actionStatus} pipelineArtifacts={props.pipelineArtifacts} proposalReview={props.proposalReview} proposalTargetFlowId={props.proposalTargetFlowId} recordings={props.recordings} selectedProposal={props.selectedProposal} selectedRecording={props.selectedRecording} onEnsureInspectorAvailable={props.onEnsureInspectorAvailable} onOpenRecording={props.onOpenRecording} onPipelineAction={props.onPipelineAction} onProposalReviewChange={props.onProposalReviewChange} onProcessFinalizedRecording={props.onProcessFinalizedRecording} onProcessProposalWithLlm={props.onProcessProposalWithLlm} setSelection={props.setSelection} />;
-  if (props.view.type === "timeline-inspector") return <AutomationTimelineEvidenceInspectorView pipelineArtifacts={props.pipelineArtifacts} recordings={props.recordings} selectedEntry={props.selectedEntry} selectedRecording={props.selectedRecording} selectedTimeline={props.selectedTimeline} onOpenRecording={props.onOpenRecording} />;
+  if (props.view.type === "proposal") return <AutomationProposalView actionStatus={props.actionStatus} pipelineArtifacts={props.pipelineArtifacts} proposalReview={props.proposalReview} proposalTargetFlowId={props.proposalTargetFlowId} recordings={props.recordings} selectedProposal={props.selectedProposal} selectedRecording={props.selectedRecording} onEnsureInspectorAvailable={props.onEnsureInspectorAvailable} onOpenRecording={props.onOpenRecording} onOpenState={props.onOpenState} onPipelineAction={props.onPipelineAction} onProposalReviewChange={props.onProposalReviewChange} onProcessFinalizedRecording={props.onProcessFinalizedRecording} onProcessProposalWithLlm={props.onProcessProposalWithLlm} setSelection={props.setSelection} />;
+  if (props.view.type === "timeline-inspector") return <AutomationTimelineEvidenceInspectorView pipelineArtifacts={props.pipelineArtifacts} recordings={props.recordings} selectedEntry={props.selectedEntry} selectedRecording={props.selectedRecording} selectedTimeline={props.selectedTimeline} onOpenRecording={props.onOpenRecording} onOpenStateForTimelineEntry={(recordingId, entryId) => props.onOpenState({ timelineEntryId: entryId, sourceId: `observed:${recordingId}:${entryId}`, phase: "input" })} />;
   if (props.view.type === "signals") return <AutomationSignalWorkspace domains={props.recordingDomains} signals={props.signals} setSelection={props.setSelection} />;
   if (props.view.type === "runtime") return <AutomationRuntimeWorkspace pipelineArtifacts={props.pipelineArtifacts} timelines={props.selectedTimeline ? [props.selectedTimeline] : []} models={props.models} policies={props.policies} runtimeSessions={props.runtimeSessions} />;
   if (props.view.type === "runs") return <AutomationRunsWorkspace pipelineArtifacts={props.pipelineArtifacts} runtimeSessions={props.runtimeSessions} />;
-  if (props.view.type === "clients") return <AutomationClientGatewayView projectId={props.projectId} />;
+  if (props.view.type === "state") return <AutomationStateView input={{ selection: props.selection, selectedNode: props.selectedNode, selectedRecording: props.selectedRecording, selectedTimeline: props.selectedTimeline, policy: props.policy, taskGraph: props.taskGraph, pipelineArtifacts: props.pipelineArtifacts, recordings: props.recordings, timelines: props.timelines, runtimeSessions: props.runtimeSessions, signals: props.signals }} setSelection={props.setSelection} />;
+  if (props.view.type === "clients") return <AutomationClientGatewayView projectId={props.projectId} onProcessFinalizedRecording={props.onProcessFinalizedRecording} />;
   if (props.view.type === "problems") return <AutomationProblemsWorkspace problems={props.problems} />;
   if (props.view.type === "assistant") return <AutomationAssistantView node={props.selectedNode} recording={props.selectedRecording} signals={props.signals} />;
-  if (props.view.type === "inspector") return <AutomationInspector entries={props.entries} selection={props.selection} policy={props.policy} flow={props.taskGraph} flowPublications={props.flowPublications ?? []} flowDependencyInfo={props.flowDependencyInfo ?? {}} node={props.selectedNode} recording={props.selectedRecording} entry={props.selectedEntry} signal={props.selectedSignal} setSelection={props.setSelection} />;
-  if (props.view.type === "dock") return <AutomationWorkspaceDock activeTab={props.dockTab} problems={props.problems} signals={props.signals} models={props.models} selectedNode={props.selectedNode} setActiveTab={props.setDockTab} />;
+  if (props.view.type === "inspector") return <AutomationInspector entries={props.entries} selection={props.selection} policy={props.policy} flow={props.taskGraph} flowPublications={props.flowPublications ?? []} flowDependencyInfo={props.flowDependencyInfo ?? {}} node={props.selectedNode} recording={props.selectedRecording} entry={props.selectedEntry} signal={props.selectedSignal} onOpenState={props.onOpenState} setSelection={props.setSelection} />;
+  if (props.view.type === "dock") return <AutomationWorkspaceDock activeTab={props.dockTab} problems={props.problems} signals={props.signals} models={props.models} selectedNode={props.selectedNode} stateInput={{ selection: props.selection, selectedNode: props.selectedNode, selectedRecording: props.selectedRecording, selectedTimeline: props.selectedTimeline, policy: props.policy, taskGraph: props.taskGraph, pipelineArtifacts: props.pipelineArtifacts, recordings: props.recordings, timelines: props.timelines, runtimeSessions: props.runtimeSessions, signals: props.signals }} setActiveTab={props.setDockTab} setSelection={props.setSelection} />;
   if (props.view.type === "routine") return <section className="automation-project-empty"><strong>Legacy Routine is read-only</strong><span>Migrate this project to canonical Flows. Routine orchestration is now represented by ordinary Flow nodes and published composites.</span></section>;
   if (props.view.type === "config") return <AutomationConfigView configs={props.configs ?? []} flow={props.taskGraph} policy={props.policy} projectId={props.projectId} onRefresh={props.onRefreshRecordings} />;
-  return <AutomationStateExplorerView signals={props.signals} entries={props.entries} setSelection={props.setSelection} />;
+  return <AutomationStateView input={{ selection: props.selection, selectedNode: props.selectedNode, selectedRecording: props.selectedRecording, selectedTimeline: props.selectedTimeline, policy: props.policy, taskGraph: props.taskGraph, pipelineArtifacts: props.pipelineArtifacts, recordings: props.recordings, timelines: props.timelines, runtimeSessions: props.runtimeSessions, signals: props.signals }} setSelection={props.setSelection} />;
 }

@@ -44,6 +44,97 @@ export type StateElementDescriptor = {
   entityKind?: string;
   stableAcrossSessions?: boolean;
   sensitive?: boolean;
+  presentation?: StatePresentationMetadata;
+  metadata?: JsonObject;
+};
+
+export type StateCoordinateSpace = {
+  width: number;
+  height: number;
+  unit: "px" | "world" | "cell" | "normalized";
+  origin?: "top-left" | "bottom-left" | "center";
+  scale?: number;
+  metadata?: JsonObject;
+};
+
+export type StateBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type EvidenceAnchor =
+  | { type: "none"; metadata?: JsonObject }
+  | { type: "point"; x: number; y: number; rendererId?: string; metadata?: JsonObject }
+  | { type: "bounds"; bounds: StateBounds; rendererId?: string; metadata?: JsonObject }
+  | { type: "element"; elementId: string; rendererId?: string; metadata?: JsonObject }
+  | { type: "entity"; entityId: string; entityKind?: string; rendererId?: string; metadata?: JsonObject }
+  | { type: "region"; regionId: string; rendererId?: string; metadata?: JsonObject }
+  | { type: "path"; points: Array<{ x: number; y: number }>; rendererId?: string; metadata?: JsonObject };
+
+export type StatePresentationMetadata = {
+  label?: string;
+  description?: string;
+  group?: string;
+  icon?: string;
+  order?: number;
+  anchor?: EvidenceAnchor;
+  visualKind?: "image" | "text" | "bounds" | "table" | "tree" | "metric" | "badge" | "json";
+  sensitive?: boolean;
+  metadata?: JsonObject;
+};
+
+export type StateVisualLayer =
+  | {
+      id: string;
+      kind: "image";
+      contentRef: string;
+      bounds: StateBounds;
+      opacity?: number;
+      metadata?: JsonObject;
+    }
+  | {
+      id: string;
+      kind: "text";
+      content: string;
+      bounds?: StateBounds;
+      anchor?: EvidenceAnchor;
+      style?: { tone?: string; size?: "xs" | "sm" | "md" | "lg" };
+      metadata?: JsonObject;
+    }
+  | {
+      id: string;
+      kind: "region";
+      bounds: StateBounds;
+      label?: string;
+      statePath?: string;
+      anchor?: EvidenceAnchor;
+      metadata?: JsonObject;
+    }
+  | {
+      id: string;
+      kind: "element";
+      label?: string;
+      bounds?: StateBounds;
+      statePath?: string;
+      anchor?: EvidenceAnchor;
+      metadata?: JsonObject;
+    };
+
+export type StateVisualFrame = {
+  id: string;
+  rendererId?: string;
+  label?: string;
+  coordinateSpace: StateCoordinateSpace;
+  layers: StateVisualLayer[];
+  presentation?: StatePresentationMetadata;
+  metadata?: JsonObject;
+};
+
+export type StateSnapshotPresentation = {
+  visualFrames?: StateVisualFrame[];
+  defaultFrameId?: string;
   metadata?: JsonObject;
 };
 
@@ -57,6 +148,7 @@ export type StateValue<T = unknown> = {
   semanticRole?: string;
   comparable?: boolean;
   sensitive?: boolean;
+  presentation?: StatePresentationMetadata;
   provenance?: SignalProvenance;
   metadata?: JsonObject;
 };
@@ -69,8 +161,10 @@ export type StateNamespace = {
 };
 
 export type StateSnapshot = {
+  id?: string;
   timestamp: number;
   namespaces: Record<string, StateNamespace>;
+  presentation?: StateSnapshotPresentation;
   metadata?: JsonObject;
 };
 
@@ -105,6 +199,7 @@ export type StatePathSchema = {
   entityKind?: string;
   stableAcrossSessions?: boolean;
   sensitive?: boolean;
+  presentation?: StatePresentationMetadata;
   persistence?: "snapshot" | "session" | "task" | "environment";
   volatility?: StateVolatility;
   permissions?: StatePathPermissions;
