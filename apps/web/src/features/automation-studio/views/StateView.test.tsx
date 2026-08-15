@@ -199,6 +199,195 @@ describe("AutomationStateView", () => {
     expect(html).toContain("automation-state-overlay tone-positive visual-input");
   });
 
+  it("stacks smaller visual bounding boxes above larger ones", () => {
+    const html = renderToStaticMarkup(
+      <AutomationStateView
+        input={{
+          selection: { kind: "state", id: "state:node.search", nodeId: "node.search", factPath: "web.elements.panel.visible" },
+          selectedNode: { id: "node.search", label: "Search" },
+          selectedRecording: {
+            recordingId: "recording.one",
+            timeline: [{
+              id: "entry.state",
+              type: "state_checkpoint",
+              timestamp: 100,
+              state: {
+                id: "snapshot.one",
+                timestamp: 100,
+                namespaces: {
+                  web: {
+                    values: {
+                      "elements.panel.visible": { value: true, observedAt: 100 },
+                      "elements.search.value": { value: "fluxiq", observedAt: 100 }
+                    }
+                  }
+                },
+                presentation: {
+                  defaultFrameId: "frame.one",
+                  visualFrames: [{
+                    id: "frame.one",
+                    coordinateSpace: { width: 400, height: 240, unit: "px" },
+                    layers: [
+                      { id: "panel", kind: "region", label: "Panel", bounds: { x: 10, y: 10, width: 300, height: 180 }, statePath: "web.elements.panel.visible" },
+                      { id: "input", kind: "element", label: "Search", bounds: { x: 20, y: 20, width: 120, height: 30 }, statePath: "web.elements.search.value", metadata: { tagName: "input" } }
+                    ]
+                  }]
+                }
+              }
+            }]
+          },
+          selectedTimeline: null,
+          policy: null,
+          taskGraph: null,
+          pipelineArtifacts: {
+            nodeEvidenceBindings: [{
+              id: "evidence.panel",
+              nodeId: "node.search",
+              fact: { namespace: "web", path: "elements.panel.visible" },
+              role: "eligibility",
+              comparator: { kind: "exists" },
+              anchor: { type: "bounds", bounds: { x: 10, y: 10, width: 300, height: 180 } },
+              confidence: 0.9
+            }]
+          },
+          recordings: [],
+          timelines: [],
+          runtimeSessions: [],
+          signals: []
+        }}
+        setSelection={() => undefined}
+      />
+    );
+    const panelZ = zIndexForLabel(html, "Panel");
+    const inputZ = zIndexForLabel(html, "Search");
+    const evidenceZ = zIndexForLabelIncludes(html, "Eligibility: Web / Elements / Panel / Visible");
+
+    expect(inputZ).toBeGreaterThan(panelZ);
+    expect(inputZ).toBeGreaterThan(evidenceZ);
+  });
+
+  it("renders state-path bounding boxes as selectable visual controls", () => {
+    const html = renderToStaticMarkup(
+      <AutomationStateView
+        input={{
+          selection: { kind: "state", id: "state:node.search", nodeId: "node.search", factPath: "web.elements.search.value" },
+          selectedNode: { id: "node.search", label: "Search" },
+          selectedRecording: {
+            recordingId: "recording.one",
+            timeline: [{
+              id: "entry.state",
+              type: "state_checkpoint",
+              timestamp: 100,
+              state: {
+                id: "snapshot.one",
+                timestamp: 100,
+                namespaces: {
+                  web: {
+                    values: {
+                      "elements.search.value": {
+                        value: "fluxiq",
+                        observedAt: 100,
+                        presentation: { label: "Search value", anchor: { type: "bounds", bounds: { x: 20, y: 20, width: 160, height: 32 } } }
+                      }
+                    }
+                  }
+                },
+                presentation: {
+                  defaultFrameId: "frame.one",
+                  visualFrames: [{
+                    id: "frame.one",
+                    coordinateSpace: { width: 400, height: 240, unit: "px" },
+                    layers: [
+                      { id: "screen", kind: "image", contentRef: "/api/programs/project.one/state-assets/screen", bounds: { x: 0, y: 0, width: 400, height: 240 } },
+                      { id: "input", kind: "region", label: "Search", bounds: { x: 20, y: 20, width: 160, height: 32 }, statePath: "web.elements.search.value", metadata: { tagName: "input", type: "search" } }
+                    ]
+                  }]
+                }
+              }
+            }]
+          },
+          selectedTimeline: null,
+          policy: null,
+          taskGraph: null,
+          pipelineArtifacts: { nodeEvidenceBindings: [] },
+          recordings: [],
+          timelines: [],
+          runtimeSessions: [],
+          signals: []
+        }}
+        setSelection={() => undefined}
+      />
+    );
+
+    expect(html).toContain('<button aria-label="Search" class="automation-state-layer automation-state-layer-region visual-input selected interactive"');
+    expect(html).toContain('<button class="selected"');
+    expect(html).toContain("web.elements.search.value");
+  });
+
+  it("keeps the selected visual element in list order for scrolling", () => {
+    const values = Object.fromEntries(Array.from({ length: 140 }, (_, index) => [
+      `elements.item${index}.text`,
+      {
+        value: `Item ${index}`,
+        observedAt: 100,
+        presentation: { label: `Item ${index}`, anchor: { type: "bounds", bounds: { x: 10, y: 10 + index, width: 80, height: 20 } } }
+      }
+    ]));
+    const html = renderToStaticMarkup(
+      <AutomationStateView
+        input={{
+          selection: { kind: "state", id: "state:node.search", nodeId: "node.search", factPath: "web.elements.item139.text" },
+          selectedNode: { id: "node.search", label: "Search" },
+          selectedRecording: {
+            recordingId: "recording.one",
+            timeline: [{
+              id: "entry.state",
+              type: "state_checkpoint",
+              timestamp: 100,
+              state: {
+                id: "snapshot.one",
+                timestamp: 100,
+                namespaces: { web: { values } },
+                presentation: {
+                  defaultFrameId: "frame.one",
+                  visualFrames: [{
+                    id: "frame.one",
+                    coordinateSpace: { width: 400, height: 240, unit: "px" },
+                    layers: [
+                      { id: "late-item", kind: "element", label: "Item 139", bounds: { x: 10, y: 149, width: 80, height: 20 }, statePath: "web.elements.item139.text" }
+                    ]
+                  }]
+                }
+              }
+            }]
+          },
+          selectedTimeline: null,
+          policy: null,
+          taskGraph: null,
+          pipelineArtifacts: {
+            nodeEvidenceBindings: [{
+              id: "evidence.item139",
+              nodeId: "node.search",
+              fact: { namespace: "web", path: "elements.item139.text" },
+              role: "eligibility",
+              comparator: { kind: "exists" },
+              confidence: 0.92
+            }]
+          },
+          recordings: [],
+          timelines: [],
+          runtimeSessions: [],
+          signals: []
+        }}
+        setSelection={() => undefined}
+      />
+    );
+
+    expect(html).toContain('class="selected" type="button"><strong>Eligibility: Web / Elements / Item139 / Text</strong>');
+    expect(html).toContain('class="selected" type="button"><strong>Item 139</strong><span>web.elements.item139.text</span>');
+    expect(html.indexOf("<strong>Item 138</strong>")).toBeLessThan(html.indexOf('<strong>Item 139</strong><span>web.elements.item139.text</span>'));
+  });
+
   it("shows runtime comparison controls and mismatch summary", () => {
     const html = renderToStaticMarkup(
       <AutomationStateView
@@ -297,3 +486,17 @@ describe("AutomationStateView", () => {
     expect(html).toContain("No visual frame exists");
   });
 });
+
+function zIndexForLabel(html: string, label: string): number {
+  const pattern = new RegExp(`aria-label="${label}"[^>]*style="[^"]*z-index:([^;"]+)`);
+  const match = pattern.exec(html);
+  if (!match?.[1]) throw new Error(`No z-index found for ${label}`);
+  return Number(match[1]);
+}
+
+function zIndexForLabelIncludes(html: string, label: string): number {
+  const pattern = new RegExp(`aria-label="[^"]*${label}[^"]*"[^>]*style="[^"]*z-index:([^;"]+)`);
+  const match = pattern.exec(html);
+  if (!match?.[1]) throw new Error(`No z-index found for ${label}`);
+  return Number(match[1]);
+}

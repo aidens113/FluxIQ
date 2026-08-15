@@ -1,8 +1,8 @@
 "use client";
 
 import { AlertCircle, Braces, GitCompare, ImageIcon, ListChecks } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import type { CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, KeyboardEvent, MutableRefObject } from "react";
 import type { EvidenceAnchor, NodeStatePhase, StateVisualLayer } from "fluxiq/automation-studio";
 import type { AutomationSelection } from "../types";
 import { buildNodeStateViewModel, type BuildNodeStateViewModelInput, type NodeEvidenceBindingViewModel, type NodeStateViewModel, type StateFactViewModel, type StateOverlayViewModel, type StateVisualTone } from "../state/view-model";
@@ -46,6 +46,7 @@ export function AutomationStateView(props: { input: BuildNodeStateViewModelInput
   }
 
   function selectFact(path: string) {
+    setSelectedEvidenceId(undefined);
     setSelectedFactPath(path);
     props.setSelection(stateAutomationSelection(model, props.input, compactStateSelection({ factPath: path, sourceId, phase })));
   }
@@ -74,30 +75,25 @@ export function AutomationStateView(props: { input: BuildNodeStateViewModelInput
           setPhase(nextPhase);
           props.setSelection(stateAutomationSelection(model, props.input, compactStateSelection({ sourceId, phase: nextPhase, evidenceId: selectedEvidenceId, factPath: selectedFactPath })));
         }}
-        onSourceChange={(nextSourceId) => {
-          setSourceId(nextSourceId);
-          props.setSelection(stateAutomationSelection(model, props.input, compactStateSelection({ sourceId: nextSourceId, phase, evidenceId: selectedEvidenceId, factPath: selectedFactPath })));
-        }}
       />
       {model.emptyState ? <div className="automation-state-empty"><AlertCircle size={16} aria-hidden /><strong>{model.emptyState.title}</strong><span>{model.emptyState.message}</span></div> : null}
       <div className="automation-state-workspace">
         <main className="automation-state-primary">
-          {activeMode === "visual" ? <StateVisualCanvas model={model} onSelectEvidence={selectEvidence} onSelectFact={selectFact} /> : null}
+          {activeMode === "visual" ? <StateVisualCanvas model={model} selectedFactPath={selectedFactPath} onSelectEvidence={selectEvidence} onSelectFact={selectFact} /> : null}
           {activeMode === "structured" ? <StateStructuredPanel rows={model.structuredRows} onSelectFact={selectFact} /> : null}
           {activeMode === "diff" ? <StateDiffPanel model={model} /> : null}
           {activeMode === "compare" ? <StateComparePanel model={model} onSelectEvidence={selectEvidence} onSelectFact={selectFact} /> : null}
           {activeMode === "raw" ? <StateRawPanel model={model} /> : null}
         </main>
         <aside className="automation-state-side">
-          <StateEvidenceList evidence={model.evidence} facts={model.facts} onSelectEvidence={selectEvidence} onSelectFact={selectFact} />
+          <StateEvidenceList evidence={model.evidence} facts={model.facts} selectedEvidenceId={selectedEvidenceId} selectedFactPath={selectedFactPath} onSelectEvidence={selectEvidence} onSelectFact={selectFact} />
         </aside>
       </div>
-      <StateSourceStrip model={model} />
     </section>
   );
 }
 
-function StateViewToolbar(props: { model: NodeStateViewModel; mode: StateViewMode; onSourceChange(id: string): void; onPhaseChange(phase: NodeStatePhase): void; onModeChange(mode: StateViewMode): void }) {
+function StateViewToolbar(props: { model: NodeStateViewModel; mode: StateViewMode; onPhaseChange(phase: NodeStatePhase): void; onModeChange(mode: StateViewMode): void }) {
   const modes: Array<{ id: StateViewMode; label: string; icon: typeof ImageIcon }> = [
     { id: "visual", label: "Visual", icon: ImageIcon },
     { id: "structured", label: "Structured", icon: ListChecks },
@@ -107,13 +103,6 @@ function StateViewToolbar(props: { model: NodeStateViewModel; mode: StateViewMod
   ];
   return (
     <div className="automation-state-toolbar">
-      <div className="automation-state-control">
-        <span>Source</span>
-        <div className="segmented-control">
-          {props.model.sources.map((source) => <button className={props.model.activeSource?.id === source.id ? "selected" : ""} key={source.id} onClick={() => props.onSourceChange(source.id)} type="button">{source.label}</button>)}
-          {!props.model.sources.length ? <button className="selected" disabled type="button">None</button> : null}
-        </div>
-      </div>
       <div className="automation-state-control">
         <span>Phase</span>
         <div className="segmented-control">
@@ -133,7 +122,7 @@ function StateViewToolbar(props: { model: NodeStateViewModel; mode: StateViewMod
   );
 }
 
-function StateVisualCanvas(props: { model: NodeStateViewModel; onSelectEvidence(id: string): void; onSelectFact(path: string): void }) {
+function StateVisualCanvas(props: { model: NodeStateViewModel; selectedFactPath: string | undefined; onSelectEvidence(id: string): void; onSelectFact(path: string): void }) {
   const frame = props.model.visualFrame;
   if (!frame) {
     return (
@@ -148,15 +137,16 @@ function StateVisualCanvas(props: { model: NodeStateViewModel; onSelectEvidence(
   return (
     <div className="automation-state-canvas-shell">
       <div className="automation-state-canvas" style={{ aspectRatio: `${width} / ${height}` }}>
-        {frame.layers.map((layer, index) => <StateVisualLayerView height={height} key={stateVisualChildKey("layer", layer.id, index)} layer={layer} width={width} />)}
+        {frame.layers.map((layer, index) => <StateVisualLayerView height={height} key={stateVisualChildKey("layer", layer.id, index)} layer={layer} selectedFactPath={props.selectedFactPath} width={width} onSelectFact={props.onSelectFact} />)}
         {props.model.overlays.map((overlay, index) => <StateOverlay height={height} key={stateVisualChildKey("overlay", overlay.id, index)} overlay={overlay} width={width} onSelectEvidence={props.onSelectEvidence} onSelectFact={props.onSelectFact} />)}
       </div>
     </div>
   );
 }
 
-function StateVisualLayerView(props: { layer: StateVisualLayer; width: number; height: number }) {
-  const style = layerBoundsStyle(layerBounds(props.layer), props.width, props.height);
+function StateVisualLayerView(props: { layer: StateVisualLayer; width: number; height: number; selectedFactPath: string | undefined; onSelectFact(path: string): void }) {
+  const bounds = layerBounds(props.layer);
+  const style = visualLayerStyle(props.layer, bounds, props.width, props.height, layerStatePath(props.layer) === props.selectedFactPath);
   if (props.layer.kind === "image") {
     const imageSrc = stateLayerImageSrc(props.layer.contentRef);
     return imageSrc
@@ -164,8 +154,24 @@ function StateVisualLayerView(props: { layer: StateVisualLayer; width: number; h
       : <div className="automation-state-layer automation-state-layer-placeholder" style={style}><ImageIcon size={16} aria-hidden /><span>{props.layer.contentRef}</span></div>;
   }
   if (props.layer.kind === "text") return <div className={`automation-state-layer automation-state-layer-text tone-${props.layer.style?.tone ?? "default"} size-${props.layer.style?.size ?? "sm"}`} style={style}>{props.layer.content}</div>;
-  if (props.layer.kind === "region") return <div aria-label={props.layer.label} className={`automation-state-layer automation-state-layer-region visual-${visualToneForLayer(props.layer)}`} style={style} title={props.layer.label} />;
-  if (props.layer.kind === "element") return <div aria-label={props.layer.label} className={`automation-state-layer automation-state-layer-element visual-${visualToneForLayer(props.layer)}`} style={style} title={props.layer.label} />;
+  if (props.layer.kind === "region" || props.layer.kind === "element") {
+    const statePath = layerStatePath(props.layer);
+    const className = `automation-state-layer automation-state-layer-${props.layer.kind} visual-${visualToneForLayer(props.layer)}${statePath && statePath === props.selectedFactPath ? " selected" : ""}${statePath ? " interactive" : ""}`;
+    if (statePath) {
+      return (
+        <button
+          aria-label={props.layer.label ?? statePath}
+          className={className}
+          onClick={() => props.onSelectFact(statePath)}
+          onKeyDown={(event) => handleStateLayerKeyDown(event, () => props.onSelectFact(statePath))}
+          style={style}
+          title={props.layer.label ?? statePath}
+          type="button"
+        />
+      );
+    }
+    return <div aria-label={props.layer.label} className={className} style={style} title={props.layer.label} />;
+  }
   return null;
 }
 
@@ -183,7 +189,7 @@ function StateImageLayer(props: { contentRef: string; imageSrc: string; opacity:
 }
 
 function StateOverlay(props: { overlay: StateOverlayViewModel; width: number; height: number; onSelectEvidence(id: string): void; onSelectFact(path: string): void }) {
-  const style = anchorStyle(props.overlay.anchor, props.width, props.height);
+  const style = overlayStyle(props.overlay.anchor, props.width, props.height, props.overlay.selected === true);
   if (!style) return null;
   const label = props.overlay.confidence === undefined ? props.overlay.label : `${props.overlay.label} (${Math.round(props.overlay.confidence * 100)}%)`;
   return (
@@ -198,24 +204,49 @@ function StateOverlay(props: { overlay: StateOverlayViewModel; width: number; he
   );
 }
 
-function StateEvidenceList(props: { evidence: NodeEvidenceBindingViewModel[]; facts: StateFactViewModel[]; onSelectEvidence(id: string): void; onSelectFact(path: string): void }) {
+function layerStatePath(layer: StateVisualLayer): string | undefined {
+  if (layer.kind !== "region" && layer.kind !== "element") return undefined;
+  const statePath = typeof layer.statePath === "string" && layer.statePath.trim() ? layer.statePath.trim() : undefined;
+  if (statePath) return statePath;
+  const metadata = objectMetadata(layer.metadata);
+  return stringMetadata(metadata.statePath) ?? stringMetadata(metadata.factPath);
+}
+
+function handleStateLayerKeyDown(event: KeyboardEvent<HTMLButtonElement>, action: () => void): void {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  event.preventDefault();
+  action();
+}
+
+function StateEvidenceList(props: { evidence: NodeEvidenceBindingViewModel[]; facts: StateFactViewModel[]; selectedEvidenceId: string | undefined; selectedFactPath: string | undefined; onSelectEvidence(id: string): void; onSelectFact(path: string): void }) {
+  const listRef = useRef<HTMLElement | null>(null);
+  const evidenceRefs = useRef(new Map<string, HTMLButtonElement>());
+  const factRefs = useRef(new Map<string, HTMLButtonElement>());
+  const activeEvidenceId = props.selectedEvidenceId ?? props.evidence.find((item) => item.factPath === props.selectedFactPath)?.id;
+
+  useEffect(() => {
+    const target = props.selectedFactPath ? factRefs.current.get(props.selectedFactPath) : activeEvidenceId ? evidenceRefs.current.get(activeEvidenceId) : undefined;
+    if (target) scrollStateListItemIntoView(listRef.current, target);
+  }, [activeEvidenceId, props.selectedFactPath]);
+
   return (
-    <section className="automation-state-evidence-list">
+    <section className="automation-state-evidence-list" ref={listRef}>
       <header><strong>Evidence / Facts</strong><span>{props.evidence.length || props.facts.length}</span></header>
       {props.evidence.map((evidence) => (
-        <button className={evidence.selected ? "selected" : ""} key={evidence.id} onClick={() => props.onSelectEvidence(evidence.id)} type="button">
+        <button className={evidence.id === activeEvidenceId ? "selected" : evidence.factPath === props.selectedFactPath ? "related" : ""} key={evidence.id} onClick={() => props.onSelectEvidence(evidence.id)} ref={stateListButtonRef(evidenceRefs, evidence.id)} type="button">
           <strong>{evidence.label}</strong>
           <span>{evidence.comparator}{evidence.expectedValue ? ` -> ${evidence.expectedValue}` : ""}</span>
           <small>{evidence.role} | weight {formatOptional(evidence.weight)} | confidence {formatOptional(evidence.confidence)}</small>
         </button>
       ))}
-      {!props.evidence.length ? props.facts.slice(0, 24).map((fact) => (
-        <button key={fact.id} onClick={() => props.onSelectFact(fact.fullPath)} type="button">
+      {props.evidence.length && props.facts.length ? <header className="automation-state-list-subheader"><strong>Elements</strong><span>{props.facts.length}</span></header> : null}
+      {props.facts.map((fact) => (
+        <button className={props.selectedFactPath === fact.fullPath ? "selected" : ""} key={fact.id} onClick={() => props.onSelectFact(fact.fullPath)} ref={stateListButtonRef(factRefs, fact.fullPath)} type="button">
           <strong>{fact.label}</strong>
           <span>{fact.fullPath}</span>
           <small>{fact.value}</small>
         </button>
-      )) : null}
+      ))}
       {!props.evidence.length && !props.facts.length ? <span className="automation-state-muted">No evidence or facts are attached to this state source.</span> : null}
     </section>
   );
@@ -268,15 +299,6 @@ function StateComparePanel(props: { model: NodeStateViewModel; onSelectEvidence(
 
 function StateRawPanel(props: { model: NodeStateViewModel }) {
   return <pre className="automation-state-raw">{JSON.stringify(props.model.raw, null, 2)}</pre>;
-}
-
-function StateSourceStrip(props: { model: NodeStateViewModel }) {
-  return (
-    <div className="automation-state-source-strip">
-      {props.model.sources.map((source) => <span className={props.model.activeSource?.id === source.id ? "active" : ""} key={source.id}>{source.kind}: {source.label}</span>)}
-      {!props.model.sources.length ? <span>No source</span> : null}
-    </div>
-  );
 }
 
 function stateSelection(selection: AutomationSelection | null): { sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; recordingId?: string; proposalId?: string; timelineEntryId?: string } {
@@ -357,6 +379,20 @@ function anchorStyle(anchor: EvidenceAnchor, width: number, height: number): CSS
   return layerBoundsStyle(anchorBounds(anchor), width, height);
 }
 
+function visualLayerStyle(layer: StateVisualLayer, bounds: { x: number; y: number; width: number; height: number } | null, width: number, height: number, selected: boolean): CSSProperties {
+  const style = layerBoundsStyle(bounds, width, height);
+  if (layer.kind === "region" || layer.kind === "element") return { ...style, zIndex: bboxZIndex(bounds, width, height, selected) };
+  if (layer.kind === "text") return { ...style, zIndex: 20 };
+  if (layer.kind === "image") return { ...style, zIndex: 1 };
+  return style;
+}
+
+function overlayStyle(anchor: EvidenceAnchor, width: number, height: number, selected: boolean): CSSProperties | null {
+  const bounds = anchorBounds(anchor);
+  const style = anchorStyle(anchor, width, height);
+  return style ? { ...style, zIndex: bboxZIndex(bounds, width, height, selected) } : null;
+}
+
 function layerBoundsStyle(bounds: { x: number; y: number; width: number; height: number } | null, width: number, height: number): CSSProperties {
   if (!bounds) return { left: "2%", top: "2%", maxWidth: "96%" };
   const clipped = clipBounds(bounds, width, height);
@@ -366,6 +402,15 @@ function layerBoundsStyle(bounds: { x: number; y: number; width: number; height:
     width: `${(clipped.width / width) * 100}%`,
     height: `${(clipped.height / height) * 100}%`
   };
+}
+
+function bboxZIndex(bounds: { x: number; y: number; width: number; height: number } | null, frameWidth: number, frameHeight: number, selected: boolean): number {
+  if (!bounds) return selected ? 101 : 100;
+  const clipped = clipBounds(bounds, frameWidth, frameHeight);
+  const frameArea = Math.max(1, frameWidth * frameHeight);
+  const areaRatio = clampNumber((clipped.width * clipped.height) / frameArea, 0, 1);
+  const inverseAreaRank = Math.round((1 - areaRatio) * 1_000_000);
+  return 100 + (inverseAreaRank * 2) + (selected ? 1 : 0);
 }
 
 function clipBounds(bounds: { x: number; y: number; width: number; height: number }, frameWidth: number, frameHeight: number): { x: number; y: number; width: number; height: number } {
@@ -425,6 +470,25 @@ function formatOptional(value: number | undefined): string {
 
 function stateVisualChildKey(kind: string, id: string, index: number): string {
   return `${kind}:${id}:${index}`;
+}
+
+function stateListButtonRef(refs: MutableRefObject<Map<string, HTMLButtonElement>>, id: string) {
+  return (element: HTMLButtonElement | null) => {
+    if (element) refs.current.set(id, element);
+    else refs.current.delete(id);
+  };
+}
+
+function scrollStateListItemIntoView(container: HTMLElement | null, target: HTMLElement): void {
+  if (!container) {
+    target.scrollIntoView({ block: "center", behavior: "smooth" });
+    return;
+  }
+  const containerRect = container.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const targetTop = targetRect.top - containerRect.top + container.scrollTop;
+  const targetCenter = targetTop - (container.clientHeight / 2) + (target.clientHeight / 2);
+  container.scrollTo({ top: Math.max(0, targetCenter), behavior: "smooth" });
 }
 
 function compactStateViewState(value: { sourceId?: string | undefined; phase?: NodeStatePhase | undefined; selectedEvidenceId?: string | undefined; selectedFactPath?: string | undefined }): NonNullable<BuildNodeStateViewModelInput["viewState"]> {

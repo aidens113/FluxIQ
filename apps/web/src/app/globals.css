@@ -5408,27 +5408,19 @@ select {
   font-size: 12px;
 }
 
-.automation-state-summary,
-.automation-state-source-strip {
+.automation-state-summary {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.automation-state-summary span,
-.automation-state-source-strip span {
+.automation-state-summary span {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-surface);
   padding: 4px 7px;
   color: var(--color-text-muted);
   font-size: 12px;
-}
-
-.automation-state-source-strip span.active {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  font-weight: 700;
 }
 
 .automation-state-toolbar {
@@ -5601,6 +5593,26 @@ select {
   pointer-events: none;
 }
 
+.automation-state-layer-region.interactive,
+.automation-state-layer-element.interactive {
+  padding: 0;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.automation-state-layer-region.interactive:hover,
+.automation-state-layer-element.interactive:hover {
+  border-width: 2px;
+  box-shadow: 0 0 0 2px rgba(36, 99, 235, 0.18);
+}
+
+.automation-state-layer-region.selected,
+.automation-state-layer-element.selected {
+  z-index: 7;
+  border-width: 4px;
+  box-shadow: 0 0 0 3px rgba(36, 99, 235, 0.24), 0 6px 18px rgba(15, 23, 42, 0.2);
+}
+
 .automation-state-overlay {
   border: 2px solid var(--color-primary);
   border-radius: 4px;
@@ -5627,7 +5639,9 @@ select {
 }
 
 .automation-state-overlay.selected {
-  box-shadow: 0 0 0 3px rgba(36, 99, 235, 0.24);
+  z-index: 8;
+  border-width: 4px;
+  box-shadow: 0 0 0 3px rgba(36, 99, 235, 0.24), 0 6px 18px rgba(15, 23, 42, 0.2);
 }
 
 .automation-state-layer-region.visual-control,
@@ -5733,8 +5747,26 @@ select {
 }
 
 .automation-state-evidence-list button:hover,
-.automation-state-evidence-list button.selected {
+.automation-state-evidence-list button.selected,
+.automation-state-evidence-list button.related {
   border-color: var(--color-primary);
+}
+
+.automation-state-evidence-list button.selected {
+  border-width: 2px;
+  background: rgba(36, 99, 235, 0.08);
+  box-shadow: inset 3px 0 0 var(--color-primary);
+}
+
+.automation-state-evidence-list button.related {
+  background: rgba(36, 99, 235, 0.04);
+  box-shadow: inset 2px 0 0 rgba(36, 99, 235, 0.55);
+}
+
+.automation-state-list-subheader {
+  margin-top: 6px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
 }
 
 .automation-state-compare-list button:hover {
