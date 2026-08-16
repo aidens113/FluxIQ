@@ -256,6 +256,7 @@ export class AutomationStudioService {
   private readonly memoryLegacyRetirementStates = new Map<string, AutomationStudioLegacyRetirementState>();
   private readonly memoryLegacyBackups = new Map<string, AutomationStudioLegacyBackup>();
   private readonly memoryLegacyAudit = new Map<string, AutomationStudioLegacyRetirementAuditEvent[]>();
+  private readonly legacyProjectArtifactReads = new Map<string, Promise<AutomationStudioProjectArtifacts>>();
 
   constructor(options: AutomationStudioServiceOptions = {}) {
     this.repositories = options.repositories ?? createCanonicalAutomationStudioMemoryRepositories();
@@ -372,6 +373,11 @@ export class AutomationStudioService {
 
   async getRecordingSession(recordingId: string, projectId?: string | null): Promise<RecordingSession> {
     await this.ready;
+    const recording = await this.getRawRecordingSession(recordingId, projectId);
+    return await this.hydrateRecordingStateSnapshotRefs(recording, projectId);
+  }
+
+  private async getRawRecordingSession(recordingId: string, projectId?: string | null): Promise<RecordingSession> {
     if (projectId) await this.loadProjectRecording(projectId, recordingId);
     const recording = await this.repositories.recordingSessions.get(recordingId);
     if (!recording) throw new Error(`Unknown Automation Studio recording: ${recordingId}`);
@@ -430,13 +436,15 @@ export class AutomationStudioService {
 
   async appendRecordingEvents(input: { projectId?: string | null; recordingId: string; entries: AppendRecordingEntryInput[] }): Promise<RecordingSession> {
     return await this.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
-      const recording = await this.getRecordingSession(input.recordingId, input.projectId);
-      const next = input.entries.reduce((current, entry) => appendRecordingEntry(current, entry), recording);
-      await this.repositories.recordingSessions.put(next);
+      const recording = await this.getRawRecordingSession(input.recordingId, input.projectId);
+      const preparedEntries = await this.prepareRecordingEntriesForStorage(input.projectId, input.recordingId, input.entries);
+      const next = preparedEntries.reduce((current, entry) => appendRecordingEntry(current, entry), recording);
+      const stored = await this.dehydrateRecordingStateSnapshotRefs(next, input.projectId);
+      await this.repositories.recordingSessions.put(stored);
       if (input.projectId && next.endedAt !== undefined) {
-        await this.writeProjectRecordingSession(input.projectId, next);
+        await this.writeProjectRecordingSession(input.projectId, stored);
       } else if (input.projectId) {
-        await this.writeProjectRecordingIndexSummary(input.projectId, next);
+        await this.writeProjectRecordingIndexSummary(input.projectId, stored);
       }
       return next;
     });
@@ -448,10 +456,11 @@ export class AutomationStudioService {
 
   async finalizeRecording(input: { projectId?: string | null; recordingId: string; endedAt?: number }): Promise<RecordingSession> {
     return await this.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
-      const recording = await this.getRecordingSession(input.recordingId, input.projectId);
+      const recording = await this.getRawRecordingSession(input.recordingId, input.projectId);
       const finalized = finalizeRecordingSession(recording, input.endedAt);
-      await this.repositories.recordingSessions.put(finalized);
-      if (input.projectId) await this.writeProjectRecordingSession(input.projectId, finalized);
+      const stored = await this.dehydrateRecordingStateSnapshotRefs(finalized, input.projectId);
+      await this.repositories.recordingSessions.put(stored);
+      if (input.projectId) await this.writeProjectRecordingSession(input.projectId, stored);
       return finalized;
     });
   }
@@ -1099,7 +1108,7 @@ export class AutomationStudioService {
       canonicalFlows,
       legacyArtifacts
     });
-    const invalidated = (await this.readRecordingFlowProposals(projectId, true)).filter((proposal) => proposal.status === "invalidated");
+    const invalidated = (await this.readRecordingFlowProposals(projectId, false)).filter((proposal) => proposal.status === "invalidated");
     return catalog.map((entry) => {
       const warnings = invalidated.filter((proposal) => proposal.invalidation?.affectedFlowIds.includes(entry.flow.flowId)).map((proposal) => ({ proposalId: proposal.proposalId, reasons: proposal.invalidation?.reasons ?? [] }));
       return warnings.length ? { ...entry, flow: { ...entry.flow, metadata: { ...(entry.flow.metadata ?? {}), recordingProposalWarnings: warnings } } } : entry;
@@ -2764,6 +2773,87 @@ export class AutomationStudioService {
     await new ProgramJsonStore<JsonObject>(filePath, () => ({})).write(stored);
   }
 
+  private async prepareRecordingEntriesForStorage(projectId: string | null | undefined, recordingId: string, entries: AppendRecordingEntryInput[]): Promise<AppendRecordingEntryInput[]> {
+    if (!projectId || !this.objectStore) return entries;
+    return await Promise.all(entries.map((entry) => this.dehydrateRecordingEntryStateSnapshot(entry, projectId, recordingId)));
+  }
+
+  private async dehydrateRecordingStateSnapshotRefs(recording: RecordingSession, projectId: string | null | undefined): Promise<RecordingSession> {
+    if (!projectId || !this.objectStore) return recording;
+    const timeline = await Promise.all(recording.timeline.map((entry) => this.dehydrateRecordingEntryStateSnapshot(entry, projectId, recording.recordingId)));
+    return { ...recording, timeline: timeline as RecordingSession["timeline"] };
+  }
+
+  private async dehydrateRecordingEntryStateSnapshot<TEntry extends AppendRecordingEntryInput | RecordingSession["timeline"][number]>(entry: TEntry, projectId: string, recordingId: string): Promise<TEntry> {
+    if (!this.objectStore || entry.type !== "observation" || entry.observationType !== "client.state_snapshot") return entry;
+    const payload = entry.payload;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return entry;
+    const state = payload.state;
+    if (!isStateSnapshotObject(state) || typeof payload.stateRef === "string") return entry;
+    const content = Buffer.from(JSON.stringify(state), "utf8");
+    const reference = await this.objectStore.putBytes(projectId, content, "application/vnd.fluxiq.state-snapshot+json", { recordingId, extension: "json" });
+    const stateRef = this.objectStore.contentRef(projectId, reference);
+    const snapshotId = typeof state.id === "string" && state.id.trim() ? state.id.trim() : undefined;
+    const nextPayload = compactJsonObject({
+      stateRef,
+      ...(snapshotId ? { snapshotId } : {}),
+      metadata: compactJsonObject({
+        ...(typeof payload.metadata === "object" && payload.metadata && !Array.isArray(payload.metadata) ? payload.metadata as JsonObject : {}),
+        stateSnapshotSha256: reference.$fluxiqObject.sha256,
+        stateSnapshotSize: reference.$fluxiqObject.size
+      })
+    });
+    return { ...entry, correlationId: entry.correlationId ?? snapshotId ?? reference.$fluxiqObject.sha256, payload: nextPayload } as TEntry;
+  }
+
+  private async hydrateRecordingStateSnapshotRefs(recording: RecordingSession, projectId: string | null | undefined): Promise<RecordingSession> {
+    if (!projectId || !this.objectStore) return recording;
+    const timeline = await Promise.all(recording.timeline.map((entry) => this.hydrateRecordingEntryStateSnapshot(entry, projectId)));
+    return { ...recording, timeline };
+  }
+
+  private async hydrateRecordingEntryStateSnapshot(entry: RecordingSession["timeline"][number], projectId: string): Promise<RecordingSession["timeline"][number]> {
+    if (!this.objectStore || entry.type !== "observation" || entry.observationType !== "client.state_snapshot") return entry;
+    const payload = entry.payload;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload) || isStateSnapshotObject(payload.state)) return entry;
+    const stateRef = typeof payload.stateRef === "string" ? payload.stateRef : undefined;
+    if (!stateRef) return entry;
+    const parsed = parseAutomationStudioObjectContentRef(stateRef);
+    if (!parsed) return entry;
+    if (parsed.projectId !== projectId) {
+      return {
+        ...entry,
+        payload: {
+          ...payload,
+          metadata: compactJsonObject({
+            ...(typeof payload.metadata === "object" && payload.metadata && !Array.isArray(payload.metadata) ? payload.metadata as JsonObject : {}),
+            stateRefProjectMismatch: { expectedProjectId: projectId, actualProjectId: parsed.projectId },
+            missingStateRef: stateRef
+          })
+        }
+      };
+    }
+    let asset;
+    try {
+      asset = await this.objectStore.readProjectObject(projectId, parsed.sha256);
+    } catch (error) {
+      return {
+        ...entry,
+        payload: {
+          ...payload,
+          metadata: compactJsonObject({
+            ...(typeof payload.metadata === "object" && payload.metadata && !Array.isArray(payload.metadata) ? payload.metadata as JsonObject : {}),
+            stateRefHydrationError: errorMessage(error, "State snapshot object could not be read."),
+            missingStateRef: stateRef
+          })
+        }
+      };
+    }
+    const state = JSON.parse(asset.content.toString("utf8")) as unknown;
+    if (!isStateSnapshotObject(state)) return entry;
+    return { ...entry, payload: { ...payload, state: state as unknown as JsonObject } };
+  }
+
   private async prepareArtifactDocument(projectId: string, artifact: JsonObject): Promise<JsonObject> {
     const size = Buffer.byteLength(JSON.stringify(artifact), "utf8");
     return this.objectStore && size >= AUTOMATION_STUDIO_OBJECT_THRESHOLD_BYTES
@@ -2780,45 +2870,11 @@ export class AutomationStudioService {
 
   private async pruneUnreferencedProjectObjects(projectId: string): Promise<void> {
     if (!this.objectStore) return;
-    await this.organizeProjectObjects(projectId);
     const candidates = new Set(await this.objectStore.listProjectObjectSha256s(projectId));
     if (!candidates.size) return;
     const live = await this.collectLiveProjectObjectReferences(projectId);
     const orphaned = [...candidates].filter((sha256) => !live.has(sha256));
     if (orphaned.length) await this.objectStore.deleteProjectObjects(projectId, orphaned);
-  }
-
-  private async organizeProjectObjects(projectId: string): Promise<void> {
-    if (!this.objectStore) return;
-    const owners = await this.collectProjectObjectRecordingOwners(projectId);
-    for (const sha256 of await this.objectStore.listProjectObjectSha256s(projectId)) {
-      const recordingOwners = owners.get(sha256);
-      if (recordingOwners?.size === 1) {
-        const recordingId = [...recordingOwners][0]!;
-        await this.objectStore.moveProjectObject(projectId, sha256, { recordingId });
-      } else {
-        await this.objectStore.moveProjectObject(projectId, sha256);
-      }
-    }
-  }
-
-  private async collectProjectObjectRecordingOwners(projectId: string): Promise<Map<string, Set<string>>> {
-    const owners = new Map<string, Set<string>>();
-    const addOwner = (recordingId: string | undefined, value: unknown) => {
-      if (!recordingId) return;
-      for (const sha256 of collectAutomationStudioObjectSha256s(value, projectId)) {
-        const current = owners.get(sha256) ?? new Set<string>();
-        current.add(recordingId);
-        owners.set(sha256, current);
-      }
-    };
-    for (const recording of await this.repositories.recordingSessions.list()) {
-      if (recording.metadata?.projectId === projectId) addOwner(recording.recordingId, recording);
-    }
-    for (const timeline of await this.repositories.normalizedTimelines.list()) {
-      if (timeline.metadata?.projectId === projectId) addOwner(timeline.recordingId, timeline);
-    }
-    return owners;
   }
 
   private async collectLiveProjectObjectReferences(projectId: string): Promise<Set<string>> {
@@ -2878,6 +2934,18 @@ export class AutomationStudioService {
 
   /** Reads legacy project documents without the historical task-graph embedding side effect. */
   private async readLegacyProjectArtifacts(projectId: string): Promise<AutomationStudioProjectArtifacts> {
+    const pending = this.legacyProjectArtifactReads.get(projectId);
+    if (pending) return pending;
+    const read = this.readLegacyProjectArtifactsUncached(projectId);
+    this.legacyProjectArtifactReads.set(projectId, read);
+    try {
+      return await read;
+    } finally {
+      if (this.legacyProjectArtifactReads.get(projectId) === read) this.legacyProjectArtifactReads.delete(projectId);
+    }
+  }
+
+  private async readLegacyProjectArtifactsUncached(projectId: string): Promise<AutomationStudioProjectArtifacts> {
     await this.findProject(projectId);
     const [tasks, routines, allConfigs, flows] = await Promise.all([
       this.readProjectArtifactList<AutomationStudioTaskArtifact>(projectId, "tasks"),
@@ -3190,10 +3258,9 @@ function recordingUpdatedAt(recording: RecordingSession): number {
 }
 
 function recordingTimelineForProposalMapping(timeline: RecordingSession["timeline"]): RecordingSession["timeline"] {
-  const selectedStateEntryIds = selectActionContextStateEntryIds(timeline);
   return timeline.filter((entry) => {
-    if (entry.type === "state_checkpoint") return selectedStateEntryIds.has(entry.id);
-    if (entry.type === "observation" && (entry.observationType === "client.state_snapshot" || entry.observationType === "client.state_update")) return selectedStateEntryIds.has(entry.id);
+    if (entry.type === "state_checkpoint") return false;
+    if (entry.type === "observation" && (entry.observationType === "client.state_snapshot" || entry.observationType === "client.state_update")) return false;
     return true;
   });
 }
@@ -3950,6 +4017,15 @@ function safeRelativePathParts(moduleId: string): string[] {
 function isAutomationStudioRenderableAssetMediaType(mediaType: string): boolean {
   const normalized = mediaType.trim().toLowerCase();
   return normalized === "image/png" || normalized === "image/jpeg" || normalized === "image/webp" || normalized === "image/gif";
+}
+
+function isStateSnapshotObject(value: unknown): value is StateSnapshot {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.timestamp === "number"
+    && Boolean(record.namespaces)
+    && typeof record.namespaces === "object"
+    && !Array.isArray(record.namespaces);
 }
 
 function collectAutomationStudioObjectSha256s(value: unknown, projectId: string): Set<string> {

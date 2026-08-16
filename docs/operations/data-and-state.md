@@ -149,17 +149,34 @@ authenticated API path. This lets importers use screenshots as optional visual
 backgrounds while FluxIQ keeps element bounds, labels, anchors, and evidence
 overlays as structured, selectable state data.
 
+Project object index updates are serialized per project in the framework
+object store. Index replacement uses a temporary file plus retry/backoff for
+Windows `EPERM`/`EBUSY` filesystem locks before falling back to a direct index
+write. This protects high-frequency screenshot uploads from losing index
+entries or failing recording append when a local watcher or antivirus briefly
+locks `objects/index.json`.
+
+State rendering treats screenshot pixels and document reconstruction as
+different coordinate kinds in one combined canvas. Screenshot image layers and
+screenshot BBoxes use viewport coordinates (`boundsKind: "screenshot"` and
+usually `renderKind: "screenshot-bbox"`), then render at the current
+`scrollX`/`scrollY` position inside the document canvas when document metadata
+is available. Full-page structured element state uses document coordinates
+(`boundsKind: "document"` and optionally `renderKind: "direct-rendered"`). The
+web State View can therefore show a reliable viewport screenshot and reconstruct
+known elements outside the screenshot without scroll-stitched images.
+
 Recording deletion prunes project object-store entries that are no longer
 referenced by any remaining project recording or derived Automation Studio
 artifact. This removes screenshot objects from the deleted recording and also
 cleans up older orphaned project objects the next time a recording is deleted.
-Before pruning, FluxIQ also organizes existing indexed objects into
-recording-owned folders when a single live recording owns them, or into
-`objects/shared/` when ownership is ambiguous. Shared digest objects stay in
-place until the last live reference is removed. Recording deletion also removes
-the recording session directory itself after any still-live shared digest has
-been moved out of that directory, so unindexed screenshots, stale derived JSON,
-and other physical leftovers under the deleted recording are not retained.
+Recording-owned uploads are already written under the owning recording's session
+folder, while ambiguous uploads live under `objects/shared/`; delete avoids a
+full-project object reorganization on the hot path. Shared digest objects stay
+in place until the last live reference is removed. Recording deletion also
+removes the recording session directory itself, so unindexed screenshots, stale
+derived JSON, and other physical leftovers under the deleted recording are not
+retained.
 Pipeline cleanup is ownership-based: artifacts indexed to the deleted recording
 or whose JSON payload identifies that recording are removed from both
 recording-owned and legacy shared locations. After each recording deletion,

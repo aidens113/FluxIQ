@@ -66,6 +66,8 @@ describe("AutomationStateView", () => {
     expect(html).toContain("Visual");
     expect(html).toContain("Eligibility: Ui / Bank / Visible");
     expect(html).toContain("automation-state-overlay");
+    expect(html).toContain('class="automation-state-zoom-controls"');
+    expect(html).toContain('aria-label="Canvas zoom">100%</span>');
   });
 
   it("renders visual bounding boxes without visible canvas labels", () => {
@@ -199,6 +201,363 @@ describe("AutomationStateView", () => {
     expect(html).toContain("automation-state-overlay tone-positive visual-input");
   });
 
+  it("uses frame coordinate space for the visual canvas and bbox percentages", () => {
+    const html = renderToStaticMarkup(
+      <AutomationStateView
+        input={{
+          selection: { kind: "editor-node", id: "node.screen", node: { label: "Screen", nodeType: "generated", family: "policy", description: "Screen", inputs: [], outputs: [], parameters: [], parameterValues: {} } },
+          selectedNode: { id: "node.screen", label: "Screen" },
+          selectedRecording: {
+            recordingId: "recording.one",
+            timeline: [{
+              id: "entry.state",
+              type: "state_checkpoint",
+              timestamp: 100,
+              state: {
+                id: "snapshot.one",
+                timestamp: 100,
+                namespaces: { web: { values: {} } },
+                presentation: {
+                  defaultFrameId: "frame.one",
+                  visualFrames: [{
+                    id: "frame.one",
+                    coordinateSpace: { width: 1600, height: 900, unit: "px" },
+                    layers: [
+                      { id: "screen", kind: "image", contentRef: "/api/programs/project.one/state-assets/screen", bounds: { x: 0, y: 0, width: 1600, height: 900 } },
+                      { id: "button", kind: "element", label: "Button", bounds: { x: 800, y: 450, width: 160, height: 90 }, statePath: "web.elements.button.visible" }
+                    ]
+                  }]
+                }
+              }
+            }]
+          },
+          selectedTimeline: null,
+          policy: null,
+          taskGraph: null,
+          pipelineArtifacts: { nodeEvidenceBindings: [] },
+          recordings: [],
+          timelines: [],
+          runtimeSessions: [],
+          signals: []
+        }}
+        setSelection={() => undefined}
+      />
+    );
+
+    expect(html).toContain('class="automation-state-canvas surface-screenshot" style="aspect-ratio:1600 / 900;width:100%"');
+    expect(html).toContain('class="automation-state-layer automation-state-layer-image"');
+    expect(html).toContain("width:100%;height:100%");
+    expect(html).toContain('aria-label="Button" class="automation-state-layer automation-state-layer-element visual-control interactive" style="left:50%;top:50%;width:10%;height:10%');
+  });
+
+  it("positions full-page bounding boxes against document coordinate space", () => {
+    const html = renderToStaticMarkup(
+      <AutomationStateView
+        input={{
+          selection: { kind: "editor-node", id: "node.screen", node: { label: "Screen", nodeType: "generated", family: "policy", description: "Screen", inputs: [], outputs: [], parameters: [], parameterValues: {} } },
+          selectedNode: { id: "node.screen", label: "Screen" },
+          selectedRecording: {
+            recordingId: "recording.one",
+            timeline: [{
+              id: "entry.state",
+              type: "state_checkpoint",
+              timestamp: 100,
+              state: {
+                id: "snapshot.one",
+                timestamp: 100,
+                namespaces: { web: { values: {} } },
+                presentation: {
+                  defaultFrameId: "frame.one",
+                  visualFrames: [{
+                    id: "frame.one",
+                    coordinateSpace: { width: 800, height: 1800, unit: "px" },
+                    layers: [
+                      { id: "screen", kind: "image", contentRef: "/api/programs/project.one/state-assets/screen", bounds: { x: 0, y: 0, width: 800, height: 1800 } },
+                      { id: "button", kind: "element", label: "Button", bounds: { x: 400, y: 900, width: 80, height: 180 }, statePath: "web.elements.button.visible" }
+                    ]
+                  }]
+                }
+              }
+            }]
+          },
+          selectedTimeline: null,
+          policy: null,
+          taskGraph: null,
+          pipelineArtifacts: { nodeEvidenceBindings: [] },
+          recordings: [],
+          timelines: [],
+          runtimeSessions: [],
+          signals: []
+        }}
+        setSelection={() => undefined}
+      />
+    );
+
+    expect(html).toContain('class="automation-state-canvas surface-screenshot" style="aspect-ratio:800 / 1800;width:100%"');
+    expect(html).toContain('aria-label="Button" class="automation-state-layer automation-state-layer-element visual-control interactive" style="left:50%;top:50%;width:10%;height:10%');
+  });
+
+  it("combines the viewport screenshot with document-space rendered elements", () => {
+    const html = renderToStaticMarkup(
+      <AutomationStateView
+        input={{
+          selection: { kind: "editor-node", id: "node.screen", node: { label: "Screen", nodeType: "generated", family: "policy", description: "Screen", inputs: [], outputs: [], parameters: [], parameterValues: {} } },
+          selectedNode: { id: "node.screen", label: "Screen" },
+          selectedRecording: {
+            recordingId: "recording.one",
+            timeline: [{
+              id: "entry.state",
+              type: "state_checkpoint",
+              timestamp: 100,
+              state: {
+                id: "snapshot.one",
+                timestamp: 100,
+                namespaces: {
+                  web: {
+                    values: {
+                      "viewport.bounds": { value: { x: 0, y: 0, width: 800, height: 450 }, observedAt: 100 },
+                      "elements.outside.visible": {
+                        value: { text: "Outside content", tagName: "button" },
+                        observedAt: 100,
+                        presentation: { label: "Outside element", anchor: { type: "bounds", boundsKind: "document", bounds: { x: 600, y: 1400, width: 120, height: 60 } } }
+                      },
+                      "elements.inside.visible": {
+                        value: { text: "Inside document content", tagName: "button" },
+                        observedAt: 100,
+                        presentation: { label: "Inside document element", anchor: { type: "bounds", boundsKind: "document", bounds: { x: 120, y: 800, width: 120, height: 60 } } }
+                      },
+                      "elements.directFact.visible": {
+                        value: { text: "Direct fact content", tagName: "button", renderKind: "direct-rendered" },
+                        observedAt: 100,
+                        presentation: { label: "Direct fact element", anchor: { type: "bounds", boundsKind: "document", bounds: { x: 780, y: 1500, width: 160, height: 60 } } }
+                      }
+                    }
+                  }
+                },
+                presentation: {
+                  defaultFrameId: "frame.one",
+                  visualFrames: [{
+                    id: "frame.one",
+                    coordinateSpace: { width: 800, height: 450, unit: "px" },
+                    metadata: { frameKind: "viewport-screenshot", scrollY: 700, documentWidth: 1200, documentHeight: 1800 },
+                    layers: [
+                      { id: "screen", kind: "image", contentRef: "/api/programs/project.one/state-assets/screen", bounds: { x: 0, y: 0, width: 800, height: 450 } },
+                      { id: "button", kind: "element", label: "Button", boundsKind: "screenshot", renderKind: "screenshot-bbox", isVisibleOnViewport: true, bounds: { x: 400, y: 225, width: 80, height: 45 }, statePath: "web.elements.button.visible" },
+                      { id: "direct-button", kind: "element", label: "Direct button", boundsKind: "document", renderKind: "direct-rendered", bounds: { x: 240, y: 1300, width: 160, height: 50 }, statePath: "web.elements.direct.visible", metadata: { text: "Direct content", tagName: "button" } }
+                    ]
+                  }]
+                }
+              }
+            }]
+          },
+          selectedTimeline: null,
+          policy: null,
+          taskGraph: null,
+          pipelineArtifacts: { nodeEvidenceBindings: [] },
+          recordings: [],
+          timelines: [],
+          runtimeSessions: [],
+          signals: []
+        }}
+        setSelection={() => undefined}
+      />
+    );
+
+    expect(html).not.toContain("automation-state-surface-tabs");
+    expect(html).toContain('class="automation-state-canvas surface-document" style="aspect-ratio:1200 / 1800;width:100%"');
+    expect(html).toContain('class="automation-state-layer automation-state-layer-image" src="/api/programs/project.one/state-assets/screen" style="left:0%;top:38.88888888888889%;width:66.66666666666666%;height:25%;z-index:1;opacity:1"');
+    expect(html).toContain('aria-label="Button" class="automation-state-layer automation-state-layer-element visual-control interactive" style="left:33.33333333333333%;top:51.388888888888886%;width:6.666666666666667%;height:2.5%');
+    expect(html).toContain('aria-label="Direct button" class="automation-state-layer automation-state-layer-element visual-control direct-rendered interactive"');
+    expect(html).toContain("--state-direct-fit-width:");
+    expect(html).toContain("<span>Direct content</span>");
+    expect(html).toContain('aria-label="Outside element" class="automation-state-layer automation-state-layer-element visual-control direct-rendered interactive" style="left:50%;top:77.77777777777779%;width:10%;height:3.3333333333333335%');
+    expect(html).toContain("<span>Outside content</span>");
+    expect(html).toContain('aria-label="Inside document element" class="automation-state-layer automation-state-layer-element visual-control interactive"');
+    expect(html).not.toContain("<span>Inside document content</span>");
+    expect(html).toContain('aria-label="Direct fact element" class="automation-state-layer automation-state-layer-element visual-control direct-rendered interactive"');
+    expect(html).toContain("<span>Direct fact content</span>");
+    expect(html).not.toContain("<span>Button</span>");
+  });
+
+  it("renders a document map from document bounds without a screenshot", () => {
+    const html = renderToStaticMarkup(
+      <AutomationStateView
+        input={{
+          selection: { kind: "editor-node", id: "node.screen", node: { label: "Screen", nodeType: "generated", family: "policy", description: "Screen", inputs: [], outputs: [], parameters: [], parameterValues: {} } },
+          selectedNode: { id: "node.screen", label: "Screen" },
+          selectedRecording: {
+            recordingId: "recording.one",
+            timeline: [{
+              id: "entry.state",
+              type: "state_checkpoint",
+              timestamp: 100,
+              state: {
+                id: "snapshot.one",
+                timestamp: 100,
+                namespaces: {
+                  web: {
+                    values: {
+                      "elements.button.visible": {
+                        value: { text: "Button content", tagName: "button" },
+                        observedAt: 100,
+                        presentation: { label: "Button fact", anchor: { type: "bounds", boundsKind: "document", bounds: { x: 600, y: 1200, width: 120, height: 60 }, metadata: { renderKind: "direct-rendered" } } }
+                      }
+                    }
+                  }
+                },
+                presentation: {
+                  defaultFrameId: "frame.one",
+                  visualFrames: [{
+                    id: "frame.one",
+                    coordinateSpace: { width: 1200, height: 1800, unit: "px" },
+                    metadata: { frameKind: "document-map", scrollY: 700, documentWidth: 1200, documentHeight: 1800, viewportWidth: 800, viewportHeight: 450 },
+                    layers: [
+                      { id: "button", kind: "element", label: "Button", boundsKind: "document", renderKind: "direct-rendered", bounds: { x: 400, y: 900, width: 80, height: 180 }, statePath: "web.elements.button.visible" }
+                    ]
+                  }]
+                }
+              }
+            }]
+          },
+          selectedTimeline: null,
+          policy: null,
+          taskGraph: null,
+          pipelineArtifacts: { nodeEvidenceBindings: [] },
+          recordings: [],
+          timelines: [],
+          runtimeSessions: [],
+          signals: []
+        }}
+        setSelection={() => undefined}
+      />
+    );
+
+    expect(html).not.toContain("automation-state-surface-tabs");
+    expect(html).toContain('class="automation-state-canvas surface-document" style="aspect-ratio:1200 / 1800;width:100%"');
+    expect(html).toContain('aria-label="Current viewport" class="automation-state-viewport-rect" style="left:0%;top:38.88888888888889%;width:66.66666666666666%;height:25%;z-index:30"');
+    expect(html).toContain('aria-label="Button" class="automation-state-layer automation-state-layer-element visual-control direct-rendered interactive" style="left:33.33333333333333%;top:50%;width:6.666666666666667%;height:10%');
+    expect(html).toContain('<span>Button content</span>');
+  });
+
+  it("does not render parent direct text when a contained child renders that text", () => {
+    const html = renderToStaticMarkup(
+      <AutomationStateView
+        input={{
+          selection: { kind: "editor-node", id: "node.screen", node: { label: "Screen", nodeType: "generated", family: "policy", description: "Screen", inputs: [], outputs: [], parameters: [], parameterValues: {} } },
+          selectedNode: { id: "node.screen", label: "Screen" },
+          selectedRecording: {
+            recordingId: "recording.one",
+            timeline: [{
+              id: "entry.state",
+              type: "state_checkpoint",
+              timestamp: 100,
+              state: {
+                id: "snapshot.one",
+                timestamp: 100,
+                namespaces: {
+                  web: {
+                    values: {
+                      "elements.parent.visible": {
+                        value: { text: "Submit", tagName: "div" },
+                        observedAt: 100,
+                        presentation: { label: "Parent container", anchor: { type: "bounds", boundsKind: "document", bounds: { x: 100, y: 100, width: 220, height: 80 } } }
+                      },
+                      "elements.child.visible": {
+                        value: { text: "Submit", tagName: "button" },
+                        observedAt: 100,
+                        presentation: { label: "Submit button", anchor: { type: "bounds", boundsKind: "document", bounds: { x: 140, y: 120, width: 80, height: 30 } } }
+                      }
+                    }
+                  }
+                },
+                presentation: {
+                  defaultFrameId: "frame.one",
+                  visualFrames: [{
+                    id: "frame.one",
+                    coordinateSpace: { width: 500, height: 360, unit: "px" },
+                    metadata: { frameKind: "document-map", documentWidth: 500, documentHeight: 360 },
+                    layers: []
+                  }]
+                }
+              }
+            }]
+          },
+          selectedTimeline: null,
+          policy: null,
+          taskGraph: null,
+          pipelineArtifacts: { nodeEvidenceBindings: [] },
+          recordings: [],
+          timelines: [],
+          runtimeSessions: [],
+          signals: []
+        }}
+        setSelection={() => undefined}
+      />
+    );
+
+    expect(html).toContain('aria-label="Parent container"');
+    expect(html).toContain('aria-label="Submit button"');
+    expect(html.match(/<span>Submit<\/span>/g)).toHaveLength(1);
+  });
+
+  it("assigns distinct visual colors for common direct-rendered element types", () => {
+    const html = renderToStaticMarkup(
+      <AutomationStateView
+        input={{
+          selection: { kind: "editor-node", id: "node.screen", node: { label: "Screen", nodeType: "generated", family: "policy", description: "Screen", inputs: [], outputs: [], parameters: [], parameterValues: {} } },
+          selectedNode: { id: "node.screen", label: "Screen" },
+          selectedRecording: {
+            recordingId: "recording.one",
+            timeline: [{
+              id: "entry.state",
+              type: "state_checkpoint",
+              timestamp: 100,
+              state: {
+                id: "snapshot.one",
+                timestamp: 100,
+                namespaces: {
+                  web: {
+                    values: {
+                      "elements.nav.visible": { value: { text: "Menu", tagName: "nav" }, observedAt: 100, presentation: { label: "Navigation", anchor: { type: "bounds", boundsKind: "document", bounds: { x: 10, y: 10, width: 180, height: 40 } } } },
+                      "elements.image.visible": { value: { text: "Hero", tagName: "img" }, observedAt: 100, presentation: { label: "Image", anchor: { type: "bounds", boundsKind: "document", bounds: { x: 10, y: 60, width: 180, height: 90 } } } },
+                      "elements.list.visible": { value: { text: "Item", role: "listitem" }, observedAt: 100, presentation: { label: "List item", anchor: { type: "bounds", boundsKind: "document", bounds: { x: 10, y: 160, width: 180, height: 30 } } } },
+                      "elements.status.visible": { value: { text: "Warning", role: "alert" }, observedAt: 100, presentation: { label: "Status", anchor: { type: "bounds", boundsKind: "document", bounds: { x: 10, y: 200, width: 180, height: 30 } } } },
+                      "elements.copy.visible": { value: { text: "Copy", tagName: "span" }, observedAt: 100, presentation: { label: "Copy", anchor: { type: "bounds", boundsKind: "document", bounds: { x: 10, y: 240, width: 180, height: 30 } } } }
+                    }
+                  }
+                },
+                presentation: {
+                  defaultFrameId: "frame.one",
+                  visualFrames: [{
+                    id: "frame.one",
+                    coordinateSpace: { width: 400, height: 320, unit: "px" },
+                    metadata: { frameKind: "document-map", documentWidth: 400, documentHeight: 320 },
+                    layers: []
+                  }]
+                }
+              }
+            }]
+          },
+          selectedTimeline: null,
+          policy: null,
+          taskGraph: null,
+          pipelineArtifacts: { nodeEvidenceBindings: [] },
+          recordings: [],
+          timelines: [],
+          runtimeSessions: [],
+          signals: []
+        }}
+        setSelection={() => undefined}
+      />
+    );
+
+    expect(html).toContain("visual-navigation");
+    expect(html).toContain("visual-media");
+    expect(html).toContain("visual-list");
+    expect(html).toContain("visual-status");
+    expect(html).toContain("visual-text");
+  });
+
   it("stacks smaller visual bounding boxes above larger ones", () => {
     const html = renderToStaticMarkup(
       <AutomationStateView
@@ -320,11 +679,76 @@ describe("AutomationStateView", () => {
     );
 
     expect(html).toContain('<button aria-label="Search" class="automation-state-layer automation-state-layer-region visual-input selected interactive"');
-    expect(html).toContain('<button class="selected"');
-    expect(html).toContain("web.elements.search.value");
+    expect(html).not.toContain("automation-state-evidence-list");
+    expect(html).not.toContain("web.elements.search.value");
   });
 
-  it("keeps the selected visual element in list order for scrolling", () => {
+  it("highlights a visual bounding box when the selected sidebar fact matches its bounds", () => {
+    const html = renderToStaticMarkup(
+      <AutomationStateView
+        input={{
+          selection: { kind: "state", id: "state:node.search", nodeId: "node.search", factPath: "web.elements.search.value" },
+          selectedNode: { id: "node.search", label: "Search" },
+          selectedRecording: {
+            recordingId: "recording.one",
+            timeline: [{
+              id: "entry.state",
+              type: "state_checkpoint",
+              timestamp: 100,
+              state: {
+                id: "snapshot.one",
+                timestamp: 100,
+                namespaces: {
+                  web: {
+                    values: {
+                      "elements.search.value": {
+                        value: "fluxiq",
+                        observedAt: 100,
+                        presentation: { label: "Search value", anchor: { type: "bounds", bounds: { x: 20, y: 20, width: 160, height: 32 } } }
+                      }
+                    }
+                  }
+                },
+                presentation: {
+                  defaultFrameId: "frame.one",
+                  visualFrames: [{
+                    id: "frame.one",
+                    coordinateSpace: { width: 400, height: 240, unit: "px" },
+                    layers: [
+                      { id: "unmapped-input", kind: "region", label: "Search box", bounds: { x: 20, y: 20, width: 160, height: 32 }, metadata: { tagName: "input", type: "search" } }
+                    ]
+                  }]
+                }
+              }
+            }]
+          },
+          selectedTimeline: null,
+          policy: null,
+          taskGraph: null,
+          pipelineArtifacts: {
+            nodeEvidenceBindings: [{
+              id: "evidence.search",
+              nodeId: "node.search",
+              fact: { namespace: "web", path: "elements.search.value" },
+              role: "eligibility",
+              comparator: { kind: "exists" },
+              confidence: 0.9
+            }]
+          },
+          recordings: [],
+          timelines: [],
+          runtimeSessions: [],
+          signals: []
+        }}
+        setSelection={() => undefined}
+      />
+    );
+
+    expect(html).toContain('aria-label="Search box" class="automation-state-layer automation-state-layer-region visual-input selected"');
+    expect(html).not.toContain("automation-state-evidence-list");
+  });
+
+  it("keeps the selected visual element highlighted without a local evidence list", () => {
     const values = Object.fromEntries(Array.from({ length: 140 }, (_, index) => [
       `elements.item${index}.text`,
       {
@@ -383,9 +807,9 @@ describe("AutomationStateView", () => {
       />
     );
 
-    expect(html).toContain('class="selected" type="button"><strong>Eligibility: Web / Elements / Item139 / Text</strong>');
-    expect(html).toContain('class="selected" type="button"><strong>Item 139</strong><span>web.elements.item139.text</span>');
-    expect(html.indexOf("<strong>Item 138</strong>")).toBeLessThan(html.indexOf('<strong>Item 139</strong><span>web.elements.item139.text</span>'));
+    expect(html).toContain('aria-label="Item 139" class="automation-state-layer automation-state-layer-element visual-text selected interactive"');
+    expect(html).not.toContain("automation-state-evidence-list");
+    expect(html).not.toContain("<strong>Item 138</strong>");
   });
 
   it("shows runtime comparison controls and mismatch summary", () => {

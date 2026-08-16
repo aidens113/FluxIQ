@@ -20,7 +20,7 @@ export function AutomationTimelineView(props: {
   onAppendRecordingNote(recordingId: string, linkedEntryId?: string): Promise<void>;
   onDeleteRecording(recordingId: string): Promise<void>;
   onFinalizeRecording(recordingId: string): Promise<void>;
-  onInspectTimelineEntry(recordingId: string, entryId: string): void;
+  onOpenTimelineEntryState(recordingId: string, entryId: string): void;
   onOpenProposal(recordingId: string): void;
   onProcessFinalizedRecording(recordingId: string, force?: boolean): Promise<boolean | void>;
   onRefreshRecordings(): Promise<void>;
@@ -132,7 +132,7 @@ export function AutomationTimelineView(props: {
                         note={note}
                         selected={props.selectedEntry?.id === step.entry.id}
                         onSelect={() => props.setSelection({ kind: "timeline", id: step.entry.id })}
-                        onInspect={() => props.selectedRecording && props.onInspectTimelineEntry(props.selectedRecording.recordingId, step.entry.id)}
+                        onOpenState={() => props.selectedRecording && props.onOpenTimelineEntryState(props.selectedRecording.recordingId, step.entry.id)}
                       /> : null}
                     </div>
                   );
@@ -162,10 +162,10 @@ export function AutomationTimelineView(props: {
   );
 }
 
-function TimelineClip(props: { entry: any; index: number; note?: any; selected: boolean; onInspect(): void; onSelect(): void }) {
+function TimelineClip(props: { entry: any; index: number; note?: any; selected: boolean; onOpenState(): void; onSelect(): void }) {
   const Icon = timelineEntryIcon(props.entry.type);
   return (
-    <button className={props.selected ? `automation-timeline-clip selected ${props.entry.type}` : `automation-timeline-clip ${props.entry.type}`} onClick={props.onSelect} onDoubleClick={props.onInspect} type="button">
+    <button className={props.selected ? `automation-timeline-clip selected ${props.entry.type}` : `automation-timeline-clip ${props.entry.type}`} onClick={props.onSelect} onDoubleClick={props.onOpenState} type="button">
       <span><Icon size={13} aria-hidden />{props.index + 1}</span>
       <strong>{timelineEntryTitle(props.entry, props.note)}</strong>
       <small>{props.note?.text ?? timelineEntrySummary(props.entry)}</small>

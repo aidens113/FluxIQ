@@ -55,10 +55,16 @@ The bridge converts client messages into canonical Studio artifacts:
 The bridge buffers high-frequency recording timeline writes before persisting
 them. State snapshots captured at screenshot cadence are flushed in bounded
 batches and are synchronously drained before recording finalization, so Stop
-Recording does not wait on one read/append/write cycle per frame. Raw recording
-data remains complete; derived normalization, evidence mining, and recording
-mapper proposal input compact background state entries, including
-`client.state_snapshot` observations, to action-adjacent context.
+Recording does not wait on one read/append/write cycle per frame. The bridge
+does not drain the snapshot queue before ingesting a `client.recording_event`;
+actions and domain events are accepted immediately, while adjacent state remains
+correlated by timestamp, sequence, snapshot ID, or correlation ID.
+
+Raw recording data remains complete, but full `client.state_snapshot` payloads
+are stored as recording-owned project objects when object storage is enabled.
+The timeline observation keeps a lightweight `payload.stateRef` plus metadata,
+and `get-recording` hydrates the referenced `StateSnapshot` only when the full
+recording is opened.
 When the web panel initiates stop, the bridge also allows a short post-stop
 drain window before finalization. This gives websocket clients time to send
 their final action-adjacent screenshots or state observations after receiving

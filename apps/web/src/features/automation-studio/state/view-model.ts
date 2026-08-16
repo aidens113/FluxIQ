@@ -63,7 +63,7 @@ export type NodeEvidenceBindingViewModel = {
 };
 
 export type StateOverlayTone = "positive" | "weak" | "negative" | "mismatch" | "neutral";
-export type StateVisualTone = "control" | "link" | "input" | "text" | "region" | "selected" | "disabled" | "unknown";
+export type StateVisualTone = "control" | "link" | "input" | "text" | "region" | "media" | "navigation" | "list" | "status" | "selected" | "disabled" | "unknown";
 
 export type StateOverlayViewModel = {
   id: string;
@@ -173,9 +173,12 @@ export function buildNodeStateViewModel(input: BuildNodeStateViewModelInput): No
   const sourceRecords = collectStateSources(input, nodeId);
   const sources = sourceRecords.map((record) => record.source);
   const bindings = collectEvidenceBindings(input, nodeId);
-  const preferredSourceId = input.viewState?.sourceId
+  const requestedSourceId = input.viewState?.sourceId
     ?? selectionRecord(input.selection).sourceId
-    ?? inferPreferredObservedSourceId(input, sourceRecords, bindings, nodeId);
+    ?? undefined;
+  const preferredSourceId = requestedSourceId && sourceRecords.some((record) => record.source.id === requestedSourceId)
+    ? requestedSourceId
+    : inferPreferredObservedSourceId(input, sourceRecords, bindings, nodeId) ?? requestedSourceId;
   const activeRecord = sourceRecords.find((record) => record.source.id === preferredSourceId) ?? sourceRecords[0] ?? null;
   const activeSource = activeRecord?.source ?? null;
   const activePhase = phaseFrom(input.viewState?.phase ?? selectionRecord(input.selection).phase, activeSource);
@@ -492,6 +495,16 @@ function selectVisualFrame(snapshot: StateSnapshot | null): StateVisualFrame | u
 function inferPreferredObservedSourceId(input: BuildNodeStateViewModelInput, sourceRecords: StateSourceRecord[], bindings: NodeEvidenceBinding[], nodeId: string): string | undefined {
   const observedSources = sourceRecords.filter((record) => record.source.kind === "observed" && record.snapshot);
   if (!observedSources.length) return undefined;
+  const selectedEntryId = selectedTimelineEntryId(input.selection);
+  if (selectedEntryId) {
+    const exact = observedSources.find((record) => record.source.kind === "observed" && record.source.timelineEntryId === selectedEntryId);
+    if (exact) return exact.source.id;
+    const timing = timelineEntryTiming(input, selectedEntryId);
+    if (timing) {
+      const nearest = nearestObservedSourceForTiming(observedSources, timing);
+      if (nearest) return nearest.source.id;
+    }
+  }
   const references = collectNodeStateEntryReferences(input, bindings);
   for (const entryId of references.snapshotEntryIds) {
     const exact = observedSources.find((record) => record.source.kind === "observed" && record.source.timelineEntryId === entryId);
@@ -610,6 +623,12 @@ function timelineEntryTiming(input: BuildNodeStateViewModelInput, entryId: strin
   if (offset !== undefined) result.offset = offset;
   if (timestamp !== undefined) result.timestamp = timestamp;
   return result;
+}
+
+function selectedTimelineEntryId(selection: AutomationSelection | null): string | undefined {
+  if (selection?.kind === "timeline") return selection.id;
+  if (selection?.kind === "state") return selection.timelineEntryId;
+  return undefined;
 }
 
 function inferNodeOrderActionTiming(input: BuildNodeStateViewModelInput, nodeId: string): { offset?: number; timestamp?: number } | null {
@@ -918,8 +937,13 @@ function overlayTone(role: NodeEvidenceRole, confidence = 1): StateOverlayTone {
 function visualToneFromStatePath(path: string): StateVisualTone {
   const normalized = path.toLowerCase();
   if (normalized.endsWith(".href") || normalized.includes(".url")) return "link";
+  if (normalized.includes(".image") || normalized.includes(".img") || normalized.includes(".video") || normalized.includes(".canvas") || normalized.includes(".media")) return "media";
+  if (normalized.includes(".nav") || normalized.includes(".menu") || normalized.includes(".tab") || normalized.includes(".breadcrumb")) return "navigation";
+  if (normalized.includes(".list") || normalized.includes(".item") || normalized.includes(".row") || normalized.includes(".cell") || normalized.includes(".option")) return "list";
+  if (normalized.includes(".status") || normalized.includes(".alert") || normalized.includes(".error") || normalized.includes(".warning") || normalized.includes(".toast")) return "status";
   if (normalized.includes(".value") || normalized.includes(".input")) return "input";
   if (normalized.includes(".text") || normalized.includes(".label") || normalized.includes(".title")) return "text";
+  if (normalized.includes(".button") || normalized.includes(".control") || normalized.includes(".action")) return "control";
   if (normalized.includes(".enabled") || normalized.includes(".visible") || normalized.includes(".bounds")) return "region";
   if (normalized.includes(".selected") || normalized.includes(".focus")) return "selected";
   return "unknown";

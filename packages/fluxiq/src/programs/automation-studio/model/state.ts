@@ -64,10 +64,13 @@ export type StateBounds = {
   height: number;
 };
 
+export type StateBoundsKind = "screenshot" | "document";
+export type StateRenderKind = "screenshot-bbox" | "direct-rendered";
+
 export type EvidenceAnchor =
   | { type: "none"; metadata?: JsonObject }
   | { type: "point"; x: number; y: number; rendererId?: string; metadata?: JsonObject }
-  | { type: "bounds"; bounds: StateBounds; rendererId?: string; metadata?: JsonObject }
+  | { type: "bounds"; bounds: StateBounds; boundsKind?: StateBoundsKind; rendererId?: string; metadata?: JsonObject }
   | { type: "element"; elementId: string; rendererId?: string; metadata?: JsonObject }
   | { type: "entity"; entityId: string; entityKind?: string; rendererId?: string; metadata?: JsonObject }
   | { type: "region"; regionId: string; rendererId?: string; metadata?: JsonObject }
@@ -92,6 +95,7 @@ export type StateVisualLayer =
       contentRef: string;
       bounds: StateBounds;
       opacity?: number;
+      boundsKind?: StateBoundsKind;
       metadata?: JsonObject;
     }
   | {
@@ -101,6 +105,9 @@ export type StateVisualLayer =
       bounds?: StateBounds;
       anchor?: EvidenceAnchor;
       style?: { tone?: string; size?: "xs" | "sm" | "md" | "lg" };
+      boundsKind?: StateBoundsKind;
+      renderKind?: StateRenderKind;
+      isVisibleOnViewport?: boolean;
       metadata?: JsonObject;
     }
   | {
@@ -110,6 +117,9 @@ export type StateVisualLayer =
       label?: string;
       statePath?: string;
       anchor?: EvidenceAnchor;
+      boundsKind?: StateBoundsKind;
+      renderKind?: StateRenderKind;
+      isVisibleOnViewport?: boolean;
       metadata?: JsonObject;
     }
   | {
@@ -119,6 +129,9 @@ export type StateVisualLayer =
       bounds?: StateBounds;
       statePath?: string;
       anchor?: EvidenceAnchor;
+      boundsKind?: StateBoundsKind;
+      renderKind?: StateRenderKind;
+      isVisibleOnViewport?: boolean;
       metadata?: JsonObject;
     };
 

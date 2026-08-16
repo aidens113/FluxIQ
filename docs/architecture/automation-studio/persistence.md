@@ -109,6 +109,21 @@ happens. When the proposal is written, Automation Studio opens the proposal
 view and highlights the generated proposal in the left hierarchy. This does not
 approve or apply the proposal.
 
+Recording Flow proposal generation treats action and domain-event entries as
+the primary mapper inputs. High-frequency `client.state_snapshot` and
+`client.state_update` observations remain raw recording context for State View,
+timeline inspection, normalization review summaries, and state-before/after
+correlation, but they are not surfaced to importer recording mappers as
+independent top-level observations. This keeps one click from becoming many
+duplicate action/evidence candidates.
+
+When project object storage is enabled, full `client.state_snapshot` payloads
+are moved out of timeline entries before storage. The recording observation
+keeps `payload.stateRef`, `payload.snapshotId` when available, and metadata such
+as the snapshot digest/size; the JSON `StateSnapshot` itself is stored as a
+recording-owned project object. `get-recording` hydrates those refs back into
+`payload.state` for UI surfaces that explicitly open the full recording.
+
 Each recording has one current proposal artifact. Regenerating the
 proposal overwrites that recording-owned proposal instead of creating additional
 proposal rows for the same source recording. The proposal is persisted under
@@ -131,16 +146,13 @@ active-recording-to-stopped transition from gateway snapshots, refreshes the
 final timeline automatically, and keeps the timeline covered with a progress
 overlay until the generated proposal artifact appears.
 
-The timeline evidence inspector is a separate addable inner-window view. A
-timeline clip can be double-clicked to open the inspector for that recording
-entry. The inspector is entry-centered and intentionally product-facing: it
-shows the selected moment, useful state signals connected to that moment, and
-proposal steps that consume those signals. Internal artifact layers such as
-facts, observations, correlations, and claims remain storage/framework concepts;
-the main inspector UI collapses them into readable signals like text, static
-IDs, labels, before/after values, and action timing. This view explains why a
-proposal used a piece of evidence without turning the global inspector into a
-pipeline debugger.
+Timeline clips open reconstructed state directly. A timeline clip can be
+double-clicked to open the State View for that recording entry, using the
+entry-specific observed source when available and adjacent observed state when
+the entry itself is an action. Internal artifact layers such as facts,
+observations, correlations, and claims remain storage/framework concepts; the
+user-facing UI explains them through the State View, proposal review, and the
+global inspector rather than through a separate timeline evidence window.
 
 The internal evidence/task pipeline has three stages, followed by an optional
 importer mapper stage for reviewed Flow/node candidates:

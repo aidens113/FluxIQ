@@ -30,26 +30,6 @@ export type ProposalStepViewModel = {
   transition?: string;
 };
 
-export type TimelineEvidenceViewModel = {
-  selectedMoment: {
-    title: string;
-    summary: string;
-    type: string;
-    source: string;
-    offset: string;
-    event: string;
-    recordedData: Array<[string, string]>;
-  } | null;
-  signals: EvidenceSignalViewModel[];
-  proposalUsage: Array<{
-    proposalId: string;
-    stepId: string;
-    stepLabel: string;
-    summary: string;
-    signalCount: number;
-  }>;
-};
-
 export type ProposalViewModel = {
   title: string;
   source: string;
@@ -60,56 +40,6 @@ export type ProposalViewModel = {
   rawStepCount: number;
   evidenceCount: number;
 };
-
-export function buildTimelineEvidenceViewModel(input: {
-  artifacts: any;
-  entry: any;
-  recording: any;
-  timeline: any;
-}): TimelineEvidenceViewModel {
-  const entry = input.entry;
-  const recordingId = input.recording?.recordingId;
-  const timelineId = input.timeline?.normalizedTimelineId;
-  const evidence = collectEvidenceArtifacts(input.artifacts, recordingId, timelineId);
-  const entryId = entry?.id;
-  const facts = evidence.facts.filter((fact) => !entryId || fact.source?.entryId === entryId);
-  const factIds = new Set(facts.map((fact) => fact.factId));
-  const observations = evidence.observations.filter((observation) => observation.factIds?.some((factId: string) => factIds.has(factId)));
-  const observationIds = new Set(observations.map((observation) => observation.observationId));
-  const correlations = evidence.correlations.filter((correlation) => correlation.actionEntryId === entryId || correlation.support?.some((support: any) => support.entryId === entryId));
-  const correlationIds = new Set(correlations.map((correlation) => correlation.correlationId));
-  const claims = evidence.claims.filter((claim) =>
-    claim.factIds?.some((factId: string) => factIds.has(factId)) ||
-    claim.observationIds?.some((observationId: string) => observationIds.has(observationId)) ||
-    claim.sourceEvidence?.some((source: any) => correlationIds.has(source.artifactId) || source.entryId === entryId)
-  );
-  const signals = buildEvidenceSignals({ observations, correlations, claims });
-  const signalIds = new Set(signals.flatMap((signal) => [signal.id, ...signal.claimIds]));
-  const proposalUsage = evidence.proposals.flatMap((proposal: any) => (proposal.policy?.nodes ?? [])
-    .filter((node: any) => node.sourceEvidence?.some((source: any) => signalIds.has(source.artifactId)))
-    .map((node: any) => ({
-      proposalId: proposal.proposalId,
-      stepId: node.id,
-      stepLabel: node.label ?? node.id,
-      summary: node.description ?? actionListSummary(node.actions),
-      signalCount: node.sourceEvidence?.filter((source: any) => signalIds.has(source.artifactId)).length ?? 0
-    })));
-  return {
-    selectedMoment: entry ? {
-      title: timelineEntryTitle(entry),
-      summary: timelineEntrySummary(entry),
-      type: readableToken(entry.type ?? "entry"),
-      source: entry.sourceId ?? "unknown",
-      offset: `${entry.monotonicOffsetMs ?? 0}ms`,
-      event: entry.eventType ?? entry.actionType ?? "-",
-      recordedData: Object.entries(flatObject(entry.payload ?? entry.data ?? entry.state ?? entry.diff ?? entry.target ?? {}))
-        .slice(0, 10)
-        .map(([key, value]) => [readableToken(key), valueSummary(value)])
-    } : null,
-    signals,
-    proposalUsage
-  };
-}
 
 export function buildProposalViewModel(input: {
   artifacts: any;

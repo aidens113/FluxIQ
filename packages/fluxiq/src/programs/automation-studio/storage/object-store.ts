@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { JsonObject } from "../../../core/index.ts";
 import { safeSegment } from "../../_shared/storage.ts";
 
@@ -39,6 +40,8 @@ export type AutomationStudioObjectWriteOptions = {
 };
 
 export class AutomationStudioObjectStore {
+  private readonly projectIndexLocks = new Map<string, Promise<void>>();
+
   constructor(readonly rootDir: string) {}
 
   async putJson(projectId: string, value: JsonObject): Promise<AutomationStudioObjectReference> {
@@ -122,16 +125,20 @@ export class AutomationStudioObjectStore {
   async deleteProjectObjects(projectId: string, sha256s: Iterable<string>): Promise<{ deleted: string[] }> {
     const requested = new Set([...sha256s].map((sha256) => sha256.toLowerCase()).filter(isSha256));
     if (!requested.size) return { deleted: [] };
-    const index = await this.readProjectObjectIndex(projectId);
     const deleted: string[] = [];
-    for (const sha256 of requested) {
-      const entry = index.objects[sha256];
-      if (!entry) continue;
-      await rm(this.resolveReferencePath({ $fluxiqObject: entry }), { force: true });
-      delete index.objects[sha256];
-      deleted.push(sha256);
-    }
-    if (deleted.length) await this.writeProjectObjectIndex(projectId, index);
+    await this.withProjectIndexLock(projectId, async () => {
+      const index = await this.readProjectObjectIndex(projectId);
+      const paths: string[] = [];
+      for (const sha256 of requested) {
+        const entry = index.objects[sha256];
+        if (!entry) continue;
+        paths.push(this.resolveReferencePath({ $fluxiqObject: entry }));
+        delete index.objects[sha256];
+        deleted.push(sha256);
+      }
+      await Promise.all(paths.map((filePath) => rm(filePath, { force: true })));
+      if (deleted.length) await this.writeProjectObjectIndex(projectId, index);
+    });
     return { deleted };
   }
 
@@ -152,32 +159,34 @@ export class AutomationStudioObjectStore {
 
   async moveProjectObject(projectId: string, sha256: string, scope: { recordingId?: string } = {}): Promise<AutomationStudioObjectReference | null> {
     if (!isSha256(sha256)) return null;
-    const index = await this.readProjectObjectIndex(projectId);
-    const entry = index.objects[sha256.toLowerCase()];
-    if (!entry) return null;
-    const extension = path.extname(entry.relativePath).slice(1) || extensionForMediaType(entry.mediaType);
-    const nextRelativePath = objectRelativePath(projectId, entry.sha256, safeObjectExtension(extension), scope.recordingId).replaceAll("\\", "/");
-    const currentRelativePath = entry.relativePath.replaceAll("\\", "/");
-    const nextEntry = {
-      ...entry,
-      relativePath: nextRelativePath,
-      ...(scope.recordingId ? { recordingId: scope.recordingId } : {})
-    };
-    if (!scope.recordingId) delete nextEntry.recordingId;
-    if (currentRelativePath !== nextRelativePath) {
-      const currentPath = this.resolveReferencePath({ $fluxiqObject: entry });
-      const nextPath = path.join(this.rootDir, nextRelativePath);
-      await mkdir(path.dirname(nextPath), { recursive: true });
-      try {
-        await rename(currentPath, nextPath);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-        await stat(nextPath);
+    return this.withProjectIndexLock(projectId, async () => {
+      const index = await this.readProjectObjectIndex(projectId);
+      const entry = index.objects[sha256.toLowerCase()];
+      if (!entry) return null;
+      const extension = path.extname(entry.relativePath).slice(1) || extensionForMediaType(entry.mediaType);
+      const nextRelativePath = objectRelativePath(projectId, entry.sha256, safeObjectExtension(extension), scope.recordingId).replaceAll("\\", "/");
+      const currentRelativePath = entry.relativePath.replaceAll("\\", "/");
+      const nextEntry = {
+        ...entry,
+        relativePath: nextRelativePath,
+        ...(scope.recordingId ? { recordingId: scope.recordingId } : {})
+      };
+      if (!scope.recordingId) delete nextEntry.recordingId;
+      if (currentRelativePath !== nextRelativePath) {
+        const currentPath = this.resolveReferencePath({ $fluxiqObject: entry });
+        const nextPath = path.join(this.rootDir, nextRelativePath);
+        await mkdir(path.dirname(nextPath), { recursive: true });
+        try {
+          await rename(currentPath, nextPath);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          await stat(nextPath);
+        }
       }
-    }
-    index.objects[entry.sha256] = nextEntry;
-    await this.writeProjectObjectIndex(projectId, index);
-    return { $fluxiqObject: nextEntry };
+      index.objects[entry.sha256] = nextEntry;
+      await this.writeProjectObjectIndex(projectId, index);
+      return { $fluxiqObject: nextEntry };
+    });
   }
 
   contentRef(projectId: string, reference: AutomationStudioObjectReference): string {
@@ -206,10 +215,11 @@ export class AutomationStudioObjectStore {
   }
 
   private async upsertProjectObjectIndex(projectId: string, reference: AutomationStudioObjectReference): Promise<void> {
-    const filePath = path.join(this.rootDir, "projects", safeSegment(projectId), "objects", "index.json");
-    const index = await this.readProjectObjectIndex(projectId);
-    index.objects[reference.$fluxiqObject.sha256] = reference.$fluxiqObject;
-    await this.writeProjectObjectIndex(projectId, index);
+    await this.withProjectIndexLock(projectId, async () => {
+      const index = await this.readProjectObjectIndex(projectId);
+      index.objects[reference.$fluxiqObject.sha256] = reference.$fluxiqObject;
+      await this.writeProjectObjectIndex(projectId, index);
+    });
   }
 
   private async writeProjectObjectIndex(projectId: string, index: AutomationStudioObjectIndex): Promise<void> {
@@ -217,7 +227,48 @@ export class AutomationStudioObjectStore {
     await mkdir(path.dirname(filePath), { recursive: true });
     const temporary = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(temporary, JSON.stringify(index, null, 2));
-    await rename(temporary, filePath);
+    await replaceFileWithRetry(temporary, filePath);
+  }
+
+  private async withProjectIndexLock<T>(projectId: string, operation: () => Promise<T>): Promise<T> {
+    const key = safeSegment(projectId);
+    const previous = this.projectIndexLocks.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const next = new Promise<void>((resolve) => { release = resolve; });
+    const chained = previous.then(() => next, () => next);
+    this.projectIndexLocks.set(key, chained);
+    await previous.catch(() => undefined);
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.projectIndexLocks.get(key) === chained) this.projectIndexLocks.delete(key);
+    }
+  }
+}
+
+async function replaceFileWithRetry(source: string, destination: string): Promise<void> {
+  const retryableCodes = new Set(["EPERM", "EBUSY", "EACCES"]);
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      await rename(source, destination);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!retryableCodes.has((error as NodeJS.ErrnoException).code ?? "")) {
+        await rm(source, { force: true }).catch(() => undefined);
+        throw error;
+      }
+      await sleep(25 * (attempt + 1));
+    }
+  }
+  try {
+    await writeFile(destination, await readFile(source));
+    await rm(source, { force: true });
+  } catch {
+    await rm(source, { force: true }).catch(() => undefined);
+    throw lastError;
   }
 }
 

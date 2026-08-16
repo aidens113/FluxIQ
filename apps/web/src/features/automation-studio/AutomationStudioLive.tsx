@@ -373,7 +373,6 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     { id: "client-gateway", label: "Connected Clients", type: "clients", icon: Radio, state: "live" },
     { id: "timeline-recording", label: `Timeline: ${selectedRecording?.name ?? selectedRecording?.recordingId ?? "Recording"}`, type: "recordings", icon: Radio, state: "live" },
     { id: "proposal-workbench", label: `Proposal: ${selectedProposal?.policy?.taskId ?? selectedProposal?.proposalId ?? "Proposal"}`, type: "proposal", icon: Sparkles },
-    { id: "timeline-evidence-inspector", label: `Evidence: ${selectedEntry?.id ?? "Timeline Item"}`, type: "timeline-inspector", icon: Search },
     { id: "policy-primary", label: selectedFlow ? `Flow: ${selectedFlow.name}` : "Flow: None", type: "design", icon: GitBranch },
     { id: "state-explorer", label: selectedNode?.label ? `State: ${selectedNode.label}` : "State View", type: "state", icon: ListChecks },
     { id: "runs-history", label: "Runs", type: "runs", icon: History },
@@ -424,10 +423,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     const proposal = proposalForSelection(source);
     const policy = policyForSelection(source);
     const task = taskForSelection(source);
-    const entryId = source?.kind === "timeline" ? source.id : selectedEntry?.id;
     if (view.id === "timeline-recording") return `Timeline: ${recording?.name ?? recording?.recordingId ?? "Recording"}`;
     if (view.id === "proposal-workbench") return `Proposal: ${proposal?.policy?.taskId ?? proposal?.proposalId ?? "Proposal"}`;
-    if (view.id === "timeline-evidence-inspector") return `Evidence: ${entryId ?? "Timeline Item"}`;
     if (view.id === "policy-primary") return selectedFlow ? `Flow: ${selectedFlow.name}` : "Flow: None";
     if (view.id === "state-explorer") return `State: ${selectedNode?.label ?? source?.id ?? "View"}`;
     if (view.id === "config-default") return `Config: ${configNameForSelection(source)}`;
@@ -553,11 +550,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setRecordingTreePrimaryKind("recording");
     openView("timeline-recording", "preview");
   };
-  const openTimelineEvidenceInspector = (recordingId: string, entryId: string) => {
-    setSelection({ kind: "timeline", id: entryId });
-    setRecordingTreePrimaryKind("recording");
-    openView("timeline-evidence-inspector", "preview");
-  };
+  const openTimelineEntryState = (recordingId: string, entryId: string) => openStateView({ timelineEntryId: entryId, sourceId: `observed:${recordingId}:${entryId}`, phase: "input" });
   const openStateView = (request: { nodeId?: string; sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; proposalId?: string; timelineEntryId?: string }) => {
     const nodeId = request.nodeId ?? selectedNode?.id;
     const sourceId = request.sourceId ?? (request.timelineEntryId && selectedRecording?.recordingId ? `observed:${selectedRecording.recordingId}:${request.timelineEntryId}` : undefined);
@@ -1031,27 +1024,38 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
 
   async function refreshProjectRuntimeState(projectId = activeProjectId) {
     if (!projectId) return;
+    const recordingPromise = api.post<{ recordings: any[] }>("list-recordings", { projectId, summaries: true });
+    const timelinePromise = api.post<{ normalizedTimelines: any[] }>("list-normalized-timelines", { projectId });
+    const runtimePromise = api.post<{ runtimeSessions: any[] }>("list-runtime-sessions", { projectId });
+    const pipelinePromise = api.post<any>("list-pipeline-artifacts", { projectId });
+    const artifactPromise = api.post<{ artifacts: any }>("list-project-artifacts", { projectId });
+    const flowPromise = api.post<{ flows: any[] }>("list-flows", { projectId });
+    const domainPromise = api.post<{ domains: any[] }>("list-recording-domains", { projectId });
+    const nativeNodesPromise = api.post<{ nodes: any[] }>("list-native-node-definitions", { projectId });
+    const publishedNodesPromise = api.post<{ nodes: any[] }>("list-published-flow-nodes", { projectId });
+    void recordingPromise.then((result) => { if (result.ok) setProjectRecordings((current) => mergeRecordingSummaries(current, result.payload?.recordings ?? [])); });
+    void timelinePromise.then((result) => { if (result.ok) setProjectTimelines(result.payload?.normalizedTimelines ?? []); });
+    void runtimePromise.then((result) => { if (result.ok) setRuntimeSessions(result.payload?.runtimeSessions ?? []); });
+    void artifactPromise.then((result) => { if (result.ok) setProjectArtifacts(result.payload?.artifacts ?? { tasks: [], routines: [], configs: [], flows: [] }); });
+    void flowPromise.then((result) => { if (result.ok) setProjectFlows(result.payload?.flows ?? []); });
+    void domainPromise.then((result) => { if (result.ok) setRecordingDomains(result.payload?.domains ?? []); });
+    void nativeNodesPromise.then((result) => { if (result.ok) setNativeNodeDefinitions(result.payload?.nodes ?? []); });
+    void publishedNodesPromise.then((result) => { if (result.ok) setPublishedFlowDefinitions(result.payload?.nodes ?? []); });
+    void pipelinePromise.then((result) => {
+      if (result.ok) setPipelineArtifacts(result.payload ?? { normalizationReviews: [], miningRuns: [], evidenceFacts: [], evidenceObservations: [], stateActionCorrelations: [], evidenceClaims: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
+      else setAutomationActionStatus(result.error ?? "Pipeline artifacts could not be loaded.");
+    });
     const [recordingResult, timelineResult, runtimeResult, pipelineResult, artifactResult, flowResult, domainResult, nativeNodesResult, publishedNodesResult] = await Promise.all([
-      api.post<{ recordings: any[] }>("list-recordings", { projectId, summaries: true }),
-      api.post<{ normalizedTimelines: any[] }>("list-normalized-timelines", { projectId }),
-      api.post<{ runtimeSessions: any[] }>("list-runtime-sessions", { projectId }),
-      api.post<any>("list-pipeline-artifacts", { projectId }),
-      api.post<{ artifacts: any }>("list-project-artifacts", { projectId }),
-      api.post<{ flows: any[] }>("list-flows", { projectId }),
-      api.post<{ domains: any[] }>("list-recording-domains", { projectId }),
-      api.post<{ nodes: any[] }>("list-native-node-definitions", { projectId }),
-      api.post<{ nodes: any[] }>("list-published-flow-nodes", { projectId })
+      recordingPromise,
+      timelinePromise,
+      runtimePromise,
+      pipelinePromise,
+      artifactPromise,
+      flowPromise,
+      domainPromise,
+      nativeNodesPromise,
+      publishedNodesPromise
     ]);
-    if (recordingResult.ok) setProjectRecordings((current) => mergeRecordingSummaries(current, recordingResult.payload?.recordings ?? []));
-    if (timelineResult.ok) setProjectTimelines(timelineResult.payload?.normalizedTimelines ?? []);
-    if (runtimeResult.ok) setRuntimeSessions(runtimeResult.payload?.runtimeSessions ?? []);
-    if (pipelineResult.ok) setPipelineArtifacts(pipelineResult.payload ?? { normalizationReviews: [], miningRuns: [], evidenceFacts: [], evidenceObservations: [], stateActionCorrelations: [], evidenceClaims: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
-    if (artifactResult.ok) setProjectArtifacts(artifactResult.payload?.artifacts ?? { tasks: [], routines: [], configs: [], flows: [] });
-    if (flowResult.ok) setProjectFlows(flowResult.payload?.flows ?? []);
-    if (!pipelineResult.ok) setAutomationActionStatus(pipelineResult.error ?? "Pipeline artifacts could not be loaded.");
-    if (domainResult.ok) setRecordingDomains(domainResult.payload?.domains ?? []);
-    if (nativeNodesResult.ok) setNativeNodeDefinitions(nativeNodesResult.payload?.nodes ?? []);
-    if (publishedNodesResult.ok) setPublishedFlowDefinitions(publishedNodesResult.payload?.nodes ?? []);
     return {
       recordings: recordingResult.ok ? recordingResult.payload?.recordings ?? [] : null,
       timelines: timelineResult.ok ? timelineResult.payload?.normalizedTimelines ?? [] : null,
@@ -2422,7 +2426,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                       onDeleteRecording={deleteProjectRecording}
                       onFinalizeRecording={finalizeProjectRecording}
                       onEnsureInspectorAvailable={ensureGlobalInspectorAvailable}
-                      onInspectTimelineEntry={openTimelineEvidenceInspector}
+                      onOpenTimelineEntryState={openTimelineEntryState}
                       onOpenPipeline={openRecordingProposal}
                       onOpenProposal={openRecordingProposal}
                       onOpenRecording={openRecordingTimeline}

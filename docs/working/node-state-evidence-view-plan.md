@@ -47,8 +47,8 @@ window framework.
 - Raw recordings and normalized state remain immutable evidence sources.
   Editing a Flow or node must not rewrite raw evidence.
 - The Flow editor remains the editable graph canvas. State/evidence
-  explanation belongs in the State View, timeline evidence inspector, proposal
-  view, runtime/debug view, and global inspector.
+  explanation belongs in the State View, proposal view, runtime/debug view, and
+  global inspector.
 - Declarative presentation data comes before custom React renderers. A simple
   importer should be able to provide bounds, coordinates, text, image
   references, and facts without shipping web UI code.
@@ -61,8 +61,9 @@ window framework.
 | Concept | Meaning |
 | --- | --- |
 | State Snapshot | A timestamped set of observed namespaces and values. This is what FluxIQ or an importer observed. |
-| State Fact | A single addressable observed value inside a snapshot, including path, value, confidence, source, provenance, and optional presentation metadata. |
-| Evidence Binding | A node's use of a state fact: role, comparator, expected value, weight, confidence, and provenance. |
+| State Entity | A reconstructed thing in the observed world, such as a UI element, document region, game object, API resource, or imported domain entity. |
+| State Fact | A single addressable observed attribute/value inside a snapshot, including path, value, confidence, source, provenance, and optional presentation metadata. A fact may describe an entity or global state. |
+| Node Evidence | A node's use of a state fact: role, comparator, expected value, weight, confidence, and provenance. |
 | Evidence Anchor | A spatial or semantic target that lets a renderer highlight where a fact or binding appears in the reconstructed world. |
 | State Visual Frame | Importer-supplied declarative render data such as coordinate space, image layers, text layers, regions, elements, and entity references. |
 | State Source | The selected state family: learned node state, observed recording state, or live runtime state. |
@@ -80,19 +81,19 @@ Source: [Learned] [Recording 1] [Recording 2] [Live]
 Phase:  [Input] [Action] [Expected Output]
 View:   [Visual] [Structured] [Diff] [Raw]
 
-+---------------------------------------------------+----------------------+
-| Reconstructed world                               | Evidence / Facts     |
-|                                                   |                      |
-| importer image/text/region layers                 | eligibility true     |
-| with FluxIQ overlays                              | expectation change   |
-|                                                   | context values       |
-+---------------------------------------------------+----------------------+
++--------------------------------------------------------------------------+
+| Reconstructed world                                                       |
+|                                                                          |
+| importer image/text/region layers with FluxIQ overlays                    |
+|                                                                          |
++--------------------------------------------------------------------------+
 | compact evidence timeline / source strip                                  |
 +--------------------------------------------------------------------------+
 ```
 
 The reconstructed world is the primary visual. Evidence lists and raw JSON are
-supporting explanations.
+supporting explanations. Selected state entity, state fact, and node evidence
+details appear in the global inspector instead of a local State View sidebar.
 
 ## 1. Define state presentation and anchor contracts
 
@@ -629,8 +630,8 @@ Add entry points in this order:
 
 1. Selected node inspector: `Open State`.
 2. Policy/Flow node card selected action if space allows.
-3. Timeline evidence inspector link when a timeline entry has checkpoint or
-   state delta data.
+3. Timeline entry double-click/open action when an entry has checkpoint or state
+   delta data.
 4. Proposal step evidence panel when a generated node has source evidence.
 
 ### Behavior
@@ -936,8 +937,9 @@ observed state paths are stable.
   `kind: "state"` with node/source/phase/evidence/fact context. The live
   workspace opens `state-explorer` in the main area for state selections, node
   cards dispatch Open State, the inspector exposes Open State for selected
-  nodes/proposal steps, the timeline evidence inspector opens checkpoint/delta
-  state, and proposal review can open the selected generated node's state.
+  nodes/proposal steps, timeline state/action clips open the corresponding
+  recording state directly, and proposal review can open the selected generated
+  node's state.
   Source/phase choices update selection so existing view-state persistence can
   restore them.
 - 2026-08-12: Step 7 implemented. Importer SDK manifests now support

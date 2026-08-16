@@ -103,14 +103,18 @@ describe("automation studio canonical model", () => {
                 id: "layer.screenshot",
                 kind: "image" as const,
                 contentRef: "automation-object://project/project.test/sha256.test",
-                bounds: { x: 0, y: 0, width: 800, height: 600 }
+                bounds: { x: 0, y: 0, width: 800, height: 600 },
+                boundsKind: "screenshot" as const
               },
               {
                 id: "layer.panel",
                 kind: "region" as const,
                 label: "Panel",
                 statePath: "app.panel.visible",
-                bounds: { x: 12, y: 18, width: 180, height: 64 }
+                bounds: { x: 12, y: 18, width: 180, height: 64 },
+                boundsKind: "document" as const,
+                renderKind: "direct-rendered" as const,
+                isVisibleOnViewport: true
               }
             ]
           }
@@ -133,22 +137,26 @@ describe("automation studio canonical model", () => {
           kind: "image" as const,
           contentRef: "C:\\private\\screenshot.png",
           bounds: { x: 0, y: Number.NaN, width: -1, height: 20 },
-          opacity: 2
+          opacity: 2,
+          boundsKind: "screen" as const
         },
         {
           id: "layer.bad-path",
           kind: "text" as const,
           content: "bad",
-          anchor: { type: "path" as const, points: [{ x: 1, y: 1 }] }
+          anchor: { type: "path" as const, points: [{ x: 1, y: 1 }] },
+          renderKind: "painted" as const
         }
       ]
     };
 
-    expect(validateStateVisualFrame(invalidFrame).issues.map((issue) => issue.code)).toEqual(expect.arrayContaining([
+    expect(validateStateVisualFrame(invalidFrame as any).issues.map((issue) => issue.code)).toEqual(expect.arrayContaining([
       "state.dimension_not_positive",
       "state.visual_layer_unsafe_content_ref",
       "state.coordinate_not_finite",
       "state.visual_layer_invalid_opacity",
+      "state.invalid_bounds_kind",
+      "state.invalid_render_kind",
       "state.anchor_path_too_short"
     ]));
   });

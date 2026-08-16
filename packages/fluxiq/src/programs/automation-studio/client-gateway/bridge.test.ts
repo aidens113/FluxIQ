@@ -171,6 +171,47 @@ describe("AutomationStudioClientGatewayBridge", () => {
     expect(stored.timeline.map((entry) => entry.type)).toEqual(["domain_event", "state_delta", "state_checkpoint"]);
   });
 
+  it("does not flush queued snapshots before ingesting a recording action", async () => {
+    vi.useFakeTimers();
+    try {
+      const gateway = new ClientGatewayService();
+      const automationStudio = new AutomationStudioService({ seedFixture: false });
+      const appendBatchSpy = vi.spyOn(automationStudio, "appendRecordingEvents");
+      automationStudio.registerRecordingDomain({
+        domainId: "example.remote",
+        label: "Example remote domain",
+        schemaVersion: "0.1",
+        events: [{ eventType: "clicked", label: "Clicked" }]
+      });
+      const bridge = new AutomationStudioClientGatewayBridge({ gateway, automationStudio });
+      const session = gateway.connect();
+      await gateway.receive(session.sessionId, clientMessage("client.hello", { clientId: "extension.domain", clientType: "extension", name: "Domain extension" }));
+      await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "", { approvedByUserId: "user.test" });
+      const recording = await bridge.startRecording({ sessionId: session.sessionId });
+
+      await gateway.receive(session.sessionId, clientMessage("client.snapshot", {
+        kind: "state",
+        timestamp: 2,
+        state: { timestamp: 2, namespaces: { web: { schemaId: "web", schemaVersion: "0.1", values: { ready: { type: "boolean", value: true, observedAt: 2 } } } } }
+      }));
+      await gateway.receive(session.sessionId, clientMessage("client.recording_event", {
+        domainId: "example.remote",
+        eventType: "clicked",
+        timestamp: 3,
+        payload: { target: "button.save" }
+      }));
+
+      expect(appendBatchSpy).not.toHaveBeenCalled();
+      expect((await automationStudio.getRecordingSession(recording.recordingId)).timeline.map((entry) => entry.type)).toEqual(["domain_event"]);
+
+      await vi.advanceTimersByTimeAsync(25);
+      expect(appendBatchSpy).toHaveBeenCalledTimes(1);
+      expect((await automationStudio.getRecordingSession(recording.recordingId)).timeline.map((entry) => entry.type)).toEqual(["domain_event", "observation"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("creates and finalizes recordings from client-initiated websocket lifecycle messages", async () => {
     const gateway = new ClientGatewayService();
     const automationStudio = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });

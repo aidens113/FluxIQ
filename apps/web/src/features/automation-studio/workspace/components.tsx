@@ -10,7 +10,6 @@ export function viewTitle(view: AutomationViewInstance): string {
   if (view.type === "design") return "Flow Editor";
   if (view.type === "recordings") return "Timeline";
   if (view.type === "proposal") return "Proposal";
-  if (view.type === "timeline-inspector") return "Timeline Evidence";
   if (view.type === "signals") return "Relationship Web";
   if (view.type === "runtime") return "Runtime Debug";
   if (view.type === "problems") return "Problems";
@@ -29,7 +28,7 @@ export function AutomationWindowAdderPalette(props: { area: AutomationWorkspaceA
   const groups = [
     { title: "Workflow", ids: ["client-gateway", "timeline-recording", "proposal-workbench", "policy-primary", "runs-history"] },
     { title: "Editors", ids: ["config-default"] },
-    { title: "Evidence", ids: ["state-explorer", "timeline-evidence-inspector", "signals-web", "runtime-debug", "problems-view"] },
+    { title: "Evidence", ids: ["state-explorer", "signals-web", "runtime-debug", "problems-view"] },
     { title: "Tools", ids: ["global-inspector", "workspace-dock", "ai-assistant"] }
   ];
   const byId = new Map(props.views.map((view) => [view.id, view]));
@@ -117,7 +116,6 @@ export function automationWindowDescription(view: AutomationViewInstance): strin
   if (view.type === "config") return "Edit project configuration values.";
   if (view.type === "recordings") return "Review raw timeline evidence and notes.";
   if (view.type === "proposal") return "Review and apply generated proposals.";
-  if (view.type === "timeline-inspector") return "Inspect facts, evidence, and claims for a timeline item.";
   if (view.type === "signals") return "Browse mined state signals.";
   if (view.type === "runtime") return "Inspect live/debug execution state.";
   if (view.type === "runs") return "Inspect replay and validation history.";

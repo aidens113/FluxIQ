@@ -161,6 +161,66 @@ Use the returned `contentRef` as an optional background image layer. Element
 boxes, labels, controls, and evidence anchors should still be sent as structured
 facts and frame layers so FluxIQ can draw selectable overlays, filter evidence
 roles, and style matches/mismatches independently of the screenshot pixels.
+Screenshots and full-document state use different coordinate kinds inside one
+combined State View canvas. Screenshot frames should describe the visible
+viewport and use viewport pixel coordinates:
+
+```ts
+{
+  id: "screen",
+  label: "Viewport Screenshot",
+  coordinateSpace: { width: viewportWidth, height: viewportHeight, unit: "px", origin: "top-left" },
+  metadata: {
+    frameKind: "viewport-screenshot",
+    scrollX,
+    scrollY,
+    documentWidth,
+    documentHeight
+  },
+  layers: [
+    {
+      id: "screenshot",
+      kind: "image",
+      contentRef,
+      boundsKind: "screenshot",
+      bounds: { x: 0, y: 0, width: viewportWidth, height: viewportHeight }
+    },
+    {
+      id: "element.deposit.viewport",
+      kind: "region",
+      statePath: "web.elements.deposit",
+      boundsKind: "screenshot",
+      renderKind: "screenshot-bbox",
+      isVisibleOnViewport: true,
+      bounds: { x: 412, y: 240, width: 93, height: 38 }
+    }
+  ]
+}
+```
+
+Facts that represent page elements may also carry full-document anchors. Those
+anchors use document pixels and remain valid even when the element is outside
+the current screenshot:
+
+```ts
+presentation: {
+  label: "Deposit",
+  anchor: {
+    type: "bounds",
+    boundsKind: "document",
+    bounds: { x: 412, y: 1240, width: 93, height: 38 }
+  }
+}
+```
+
+When document-space layers are available, the State View uses `documentWidth`
+and `documentHeight` for the full visual canvas. It places the viewport
+screenshot at `{ x: scrollX, y: scrollY, width: viewportWidth, height:
+viewportHeight }`, shifts screenshot BBoxes into that document canvas, and draws
+direct-rendered boxes from document bounds for known elements outside the
+screenshot. Both screenshot BBoxes and document-space boxes should point to the
+same `statePath`, such as `web.elements.deposit`, so selection bridges to the
+same Evidence/Facts row.
 The uploaded bytes are stored in the importing repository's FluxIQ state root,
 under the Automation Studio project. When the upload is authenticated with a
 paired client-gateway token for an active recording, the bytes are stored under
@@ -188,14 +248,19 @@ behavior are removed on the next delete.
 High-frequency screenshots or state snapshots may be sent during recording so
 the State View can choose the best visual reconstruction for each node. Core
 preserves those raw timeline state entries and object references, including
-`client.state_snapshot` observations. Normalization, evidence mining, and
-importer recording mappers do not process every background frame by default:
-FluxIQ compacts derived proposal input to the nearest state entries before and
-after each action, plus boundary context. This keeps proposal generation
-proportional to the number of recorded actions rather than the screenshot
-cadence. Importer mappers should therefore treat received state entries as
-action context, not as a guarantee that every raw visual frame will be replayed
-through the mapper.
+`client.state_snapshot` observations. When object storage is enabled, Core
+stores the full JSON `StateSnapshot` as a recording-owned object and keeps only
+a lightweight `payload.stateRef` plus metadata in the raw timeline entry.
+`get-recording` hydrates that reference only when a UI or tool opens the full
+recording.
+
+Importer recording mappers receive action/domain-event observations as the
+primary proposal inputs. State snapshots remain linked context for State View,
+timeline inspection, normalization review summaries, and state-before/after
+correlation; they are not replayed through mappers as independent top-level
+observations. This keeps proposal generation proportional to the number of
+recorded actions rather than the screenshot cadence and prevents one user click
+from becoming many duplicate evidence candidates.
 
 When a finalized recording belongs to a domain with registered importer
 recording mappers, FluxIQ generates reviewer-gated Recording Flow proposals
@@ -354,8 +419,8 @@ The importer should expose enough factual state for the framework to compare:
 ## Storage
 
 Pipeline artifacts are internal recording-owned derived files. The user-facing
-UI exposes generated proposals and timeline evidence inspection, but FluxIQ
-stores the underlying evidence as:
+UI exposes generated proposals and reconstructed State View entry points, but
+FluxIQ stores the underlying evidence as:
 
 ```text
 recordings/sessions/{recordingId}/derived/

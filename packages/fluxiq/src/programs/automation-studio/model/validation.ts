@@ -332,6 +332,7 @@ export function validateEvidenceAnchor(anchor: EvidenceAnchor, issues?: Automati
     validateFiniteCoordinate(anchor.y, localIssues, `${path}.y`);
   } else if (anchor.type === "bounds") {
     validateStateBounds(anchor.bounds, localIssues, `${path}.bounds`);
+    validateOptionalStateBoundsKind(anchor.boundsKind, localIssues, `${path}.boundsKind`);
   } else if (anchor.type === "element" && !anchor.elementId.trim()) {
     addIssue(localIssues, "error", "state.anchor_missing_element", "Element anchor must have an elementId.", `${path}.elementId`);
   } else if (anchor.type === "entity" && !anchor.entityId.trim()) {
@@ -566,6 +567,11 @@ function validateStateCoordinateSpace(space: StateCoordinateSpace, issues: Autom
 
 function validateStateVisualLayer(layer: StateVisualLayer, issues: AutomationStudioValidationIssue[], path: string): void {
   if (!layer.id.trim()) addIssue(issues, "error", "state.visual_layer_missing_id", "State visual layer must have an id.", `${path}.id`);
+  validateOptionalStateBoundsKind(layer.boundsKind, issues, `${path}.boundsKind`);
+  if ("renderKind" in layer) validateOptionalStateRenderKind(layer.renderKind, issues, `${path}.renderKind`);
+  if ("isVisibleOnViewport" in layer && layer.isVisibleOnViewport !== undefined && typeof layer.isVisibleOnViewport !== "boolean") {
+    addIssue(issues, "error", "state.visual_layer_invalid_viewport_visibility", "State visual layer isVisibleOnViewport must be boolean.", `${path}.isVisibleOnViewport`);
+  }
   if (layer.kind === "image") {
     if (!isAllowedStateContentRef(layer.contentRef)) {
       addIssue(issues, "error", "state.visual_layer_unsafe_content_ref", "Image layer contentRef must be an Automation Studio object or API reference.", `${path}.contentRef`);
@@ -622,6 +628,16 @@ function validateStateBounds(bounds: StateBounds, issues: AutomationStudioValida
   validateFiniteCoordinate(bounds.y, issues, `${path}.y`);
   validatePositiveFinite(bounds.width, issues, `${path}.width`, "State bounds width must be a positive finite number.");
   validatePositiveFinite(bounds.height, issues, `${path}.height`, "State bounds height must be a positive finite number.");
+}
+
+function validateOptionalStateBoundsKind(value: unknown, issues: AutomationStudioValidationIssue[], path: string): void {
+  if (value === undefined || value === "screenshot" || value === "document") return;
+  addIssue(issues, "error", "state.invalid_bounds_kind", "State boundsKind must be screenshot or document.", path);
+}
+
+function validateOptionalStateRenderKind(value: unknown, issues: AutomationStudioValidationIssue[], path: string): void {
+  if (value === undefined || value === "screenshot-bbox" || value === "direct-rendered") return;
+  addIssue(issues, "error", "state.invalid_render_kind", "State renderKind must be screenshot-bbox or direct-rendered.", path);
 }
 
 function validateFiniteCoordinate(value: number, issues: AutomationStudioValidationIssue[], path: string): void {

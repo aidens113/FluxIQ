@@ -47,6 +47,21 @@ describe("AutomationStudioObjectStore", () => {
     await expect(store.readProjectObject("project.1", reference.$fluxiqObject.sha256)).resolves.toMatchObject({ content: Buffer.from("recording-image") });
   });
 
+  it("serializes concurrent project index updates", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-object-store-"));
+    roots.push(root);
+    const store = new AutomationStudioObjectStore(root);
+    const references = await Promise.all(Array.from({ length: 12 }, (_, index) =>
+      store.putBytes("project.1", Buffer.from(`image-${index}`), "image/png", { recordingId: "recording.1" })
+    ));
+
+    await Promise.all(references.map((reference, index) =>
+      expect(store.readProjectObject("project.1", reference.$fluxiqObject.sha256)).resolves.toMatchObject({ content: Buffer.from(`image-${index}`) })
+    ));
+    const index = JSON.parse(await readFile(path.join(root, "projects", "project.1", "objects", "index.json"), "utf8")) as { objects: Record<string, unknown> };
+    expect(Object.keys(index.objects).sort()).toEqual(references.map((reference) => reference.$fluxiqObject.sha256).sort());
+  });
+
   it("deletes selected project objects from the index and storage", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-object-store-"));
     roots.push(root);

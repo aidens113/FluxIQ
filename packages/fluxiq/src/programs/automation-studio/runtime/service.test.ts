@@ -79,7 +79,7 @@ describe("AutomationStudioService recording persistence", () => {
     expect(invalidated).toMatchObject({ status: "invalidated", invalidation: { affectedFlowIds: [reviewed.flow!.flowId] } });
   });
 
-  it("compacts high-frequency state entries before invoking recording mappers", async () => {
+  it("uses action events as mapper inputs and leaves state snapshots as linked context", async () => {
     const io = new IoRegistry();
     io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
     const seenObservationIds: string[] = [];
@@ -127,10 +127,14 @@ describe("AutomationStudioService recording persistence", () => {
     const review = await service.createNormalizationReview({ projectId: project.id, recordingId: recording.recordingId });
 
     expect(proposals).toHaveLength(1);
-    expect(seenObservationIds).toEqual(["snapshot.100", "snapshot.900", "action.click", "snapshot.1100", "snapshot.2000"]);
-    expect(issues).toContain("Compacted 2 high-frequency state entries before mapper proposal generation. Raw recording data was preserved.");
-    expect(review.mappings).toHaveLength(6);
-    expect(review.mappings).toContainEqual(expect.objectContaining({ rawEntryId: `compacted.high-frequency-state.${recording.recordingId}`, status: "dropped" }));
+    expect(seenObservationIds).toEqual(["action.click"]);
+    expect(issues).not.toContain("Compacted 2 high-frequency state entries before mapper proposal generation. Raw recording data was preserved.");
+    expect(review.mappings).toHaveLength(2);
+    expect(review.mappings).toContainEqual(expect.objectContaining({
+      rawEntryId: `compacted.high-frequency-state.${recording.recordingId}`,
+      status: "dropped",
+      reason: "6 high-frequency state entries were preserved in the raw recording but omitted from proposal review mappings."
+    }));
     await expect(service.getRecordingSession(recording.recordingId, project.id)).resolves.toMatchObject({ timeline: expect.arrayContaining([expect.objectContaining({ id: "snapshot.500" }), expect.objectContaining({ id: "snapshot.1500" })]) });
   });
 
@@ -596,6 +600,96 @@ describe("AutomationStudioService recording persistence", () => {
     await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId, endedAt: 20 });
     const finalizedTimeline = JSON.parse(await readFile(path.join(projectRoot, "recordings", "sessions", recording.recordingId, "events", "timeline.json"), "utf8")) as any;
     expect(finalizedTimeline.data?.timeline ?? finalizedTimeline.timeline ?? finalizedTimeline).toHaveLength(8);
+  });
+
+  it("stores client state snapshots as recording-scoped object refs and hydrates them when opened", async () => {
+    await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
+    const service = new AutomationStudioService({
+      dataDir: tempRoot,
+      storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
+      seedFixture: false
+    });
+    const project = await service.createProject({ name: "Snapshot refs" });
+    const recording = await service.createRecording({
+      projectId: project.id,
+      recordingId: "recording.snapshot-refs",
+      initialState: { timestamp: 1, namespaces: {} }
+    });
+    const state = {
+      id: "snapshot.large",
+      timestamp: 2,
+      namespaces: {
+        web: {
+          schemaId: "web",
+          schemaVersion: "0.1",
+          values: { title: { type: "string", value: "Dashboard", observedAt: 2 } }
+        }
+      }
+    } satisfies StateSnapshot;
+
+    await service.appendRecordingEvent({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entry: {
+        type: "observation",
+        observationType: "client.state_snapshot",
+        correlationId: "snapshot.large",
+        payload: { state, metadata: { viewportWidth: 1280 } }
+      }
+    });
+
+    const raw = await service.listRecordingSessions(project.id);
+    const rawEntry = raw.find((item) => item.recordingId === recording.recordingId)?.timeline[0];
+    const rawPayload = rawEntry?.type === "observation" ? rawEntry.payload as any : null;
+    const hydrated = await service.getRecordingSession(recording.recordingId, project.id);
+    const hydratedPayload = hydrated.timeline[0]?.type === "observation" ? hydrated.timeline[0].payload as any : null;
+
+    expect(rawPayload?.state).toBeUndefined();
+    expect(rawPayload?.stateRef).toMatch(/^automation-object:\/\/project\//);
+    expect(rawPayload?.metadata).toMatchObject({ viewportWidth: 1280, stateSnapshotSize: expect.any(Number) });
+    expect(hydratedPayload?.state).toMatchObject({ id: "snapshot.large", namespaces: { web: { values: { title: { value: "Dashboard" } } } } });
+  });
+
+  it("does not hydrate missing state refs while appending to recordings", async () => {
+    await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
+    const service = new AutomationStudioService({
+      dataDir: tempRoot,
+      storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
+      seedFixture: false
+    });
+    const project = await service.createProject({ name: "Missing state refs" });
+    const recording = await service.createRecording({
+      projectId: project.id,
+      recordingId: "recording.missing-state-ref",
+      initialState: { timestamp: 1, namespaces: {} }
+    });
+    const state = {
+      id: "snapshot.missing",
+      timestamp: 2,
+      namespaces: { web: { schemaId: "web", schemaVersion: "0.1", values: { ready: { type: "boolean", value: true, observedAt: 2 } } } }
+    } satisfies StateSnapshot;
+
+    await service.appendRecordingEvent({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entry: { type: "observation", observationType: "client.state_snapshot", payload: { state } }
+    });
+    const raw = await service.listRecordingSessions(project.id);
+    const rawEntry = raw.find((item) => item.recordingId === recording.recordingId)?.timeline[0];
+    const stateRef = rawEntry?.type === "observation" && typeof rawEntry.payload?.stateRef === "string" ? rawEntry.payload.stateRef : "";
+    const sha256 = /\/([a-f0-9]{64})$/i.exec(stateRef)?.[1] ?? "";
+    await rm(path.join(tempRoot, "artifacts", "automation-studio", "projects", project.id, "recordings", "sessions", recording.recordingId, "objects", `${sha256}.json`), { force: true });
+
+    await expect(service.appendRecordingEvent({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" } }
+    })).resolves.toMatchObject({ timeline: expect.arrayContaining([expect.objectContaining({ observationType: "clicked" })]) });
+
+    const hydrated = await service.getRecordingSession(recording.recordingId, project.id);
+    const payload = hydrated.timeline[0]?.type === "observation" ? hydrated.timeline[0].payload as any : null;
+    expect(payload?.state).toBeUndefined();
+    expect(payload?.metadata).toMatchObject({ missingStateRef: stateRef, stateRefHydrationError: expect.any(String) });
   });
 
   it("stores project artifacts and runtime sessions in project folders", async () => {

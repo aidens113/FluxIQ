@@ -23,10 +23,10 @@ apps/web/src/features/automation-studio/
   hierarchy/                 Project tree/modal components, generated recording nodes, and hierarchy signatures.
   parameters/                Node parameter inspector controls and value coercion helpers.
   runtime/                   Small UI-triggered runtime payload builders and execution helpers.
-  timeline/                  Timeline titles, summaries, icons, durations, and inspector view models.
+  timeline/                  Timeline titles, summaries, icons, and durations.
   types.ts                   Shared Automation Studio UI/view/editor types.
   views/                     Named workspace pane modules: renderer, timeline, proposal,
-                             timeline evidence inspector, client/config/assistant, graph editors, workspaces, inspector,
+                             state, client/config/assistant, graph editors, workspaces, inspector,
                              dock, and shared view utilities.
   workspace/                 Inner-window desktop components, defaults, geometry, snapping, and layout math.
 
@@ -77,12 +77,19 @@ not expose recording, evidence, or state-signal layers.
 
 The single Flow editor is the editable graph canvas. Supporting views such as
 timeline, signals, recordings, runtime, problems, assistant, state explorer,
-timeline evidence inspector, proposal review, and inspector remain ordinary
-addable windows. The node palette is the exception: it stays embedded as the
+proposal review, and inspector remain ordinary addable windows. The node
+palette is the exception: it stays embedded as the
 collapsible right rail inside the policy/routine node editor because it is part
 of direct node editing, not a separate workspace window. Legacy Task/Routine
 documents may still open through a clearly marked read-only compatibility view,
 but they are not independent authoring modes.
+
+Project refresh should treat the left hierarchy as a critical path. Flow,
+project artifact, and recording-summary results are committed as each request
+finishes instead of waiting for heavier runtime, pipeline, or validation data.
+The Flow catalog endpoint reads current proposal warning status but does not
+revalidate every recording-derived proposal during sidebar load; deeper
+proposal/pipeline views own that heavier validation work.
 
 The recording timeline window follows a video-editor-style horizontal layout.
 Recording selection belongs to the project hierarchy sidebar under the
@@ -149,7 +156,7 @@ compatibility data, and replay belongs to a separate runtime view.
 The Flow editor must not expose State/Evidence tabs or other non-editing
 canvas modes unless they materially change a real workflow. State and evidence
 inspection belongs in dedicated workspace views and the global inspector, where
-recording timelines, proposal evidence chains, state explorer rows, and signal
+recording timelines, proposal evidence chains, selected state facts, and signal
 relationships can show enough context to be useful. Other runtime, replay, or
 simulation work belongs in separate runtime/debug workspace views, not as a
 `Test Run` layer inside the Flow editor.
@@ -161,12 +168,15 @@ node evidence. Core rendering remains generic and domain-neutral: importers own
 domain content and visual semantics, while FluxIQ owns validation, fallback
 structured/raw views, selection, provenance, and common overlays.
 
-State facts and node evidence bindings are separate. A state fact identifies an
-observed namespace/path/value and its source evidence. A node evidence binding
-identifies the selected node's role for that fact, such as eligibility,
-readiness, expectation, failure, context, or invariant. This lets the State View
-show "what was observed" separately from "why this node cares" and lets the
-same fact appear in different roles for different nodes.
+State entities, state facts, and node evidence bindings are separate. A state
+entity is the thing being reconstructed or highlighted, such as a UI element,
+document region, game object, API resource, or imported domain entity. A state
+fact is an addressable attribute/value observed about that entity or about the
+global state. A node evidence binding identifies the selected node's role for a
+fact, such as eligibility, readiness, expectation, failure, context, or
+invariant. This lets the State View show "what was observed" separately from
+"what thing it belongs to" and "why this node cares," and lets the same fact
+appear in different roles for different nodes.
 
 The State View also distinguishes source families. Observed state is a concrete
 recording moment or checkpoint. Learned state is an aggregate for a node across
@@ -189,7 +199,19 @@ than a graph-editor placeholder. It appears in the add-window palette as
 canvas, draws FluxIQ evidence overlays above image/text/region/element layers,
 and always provides Structured, Diff, and Raw modes as fallbacks. Clicking an
 overlay or fact routes selection through the global Automation Studio selection
-system so the inspector can show the selected evidence/fact context.
+system so the global inspector can show the selected evidence/fact context.
+State View does not keep a separate inner Evidence/Facts list; the reconstructed
+state surface gets the available space, and selected state entity, state fact,
+and node evidence details belong in the global right sidebar.
+
+Visual mode combines screenshot and document reconstruction into one state
+canvas when the snapshot supplies enough metadata. Screenshot image layers and
+`boundsKind: "screenshot"` / `renderKind: "screenshot-bbox"` overlays use
+viewport pixel coordinates, then render at the viewport's scroll position inside
+the document canvas. `boundsKind: "document"` / `renderKind: "direct-rendered"`
+boxes use document pixel coordinates and can render known elements outside the
+screenshot. Both coordinate kinds use the same `statePath` values so selecting
+any box selects the same state fact and derived state entity.
 
 Large visual frame image layers are not embedded in source or read from local
 paths. Importers write screenshots and binary visuals to the owning project's
@@ -222,12 +244,13 @@ show the evidence/fact details without changing the Flow graph.
 
 State explanation is reachable without changing the Flow graph. The inspector
 shows `Open State` for selected policy, editor, proposal, and state-backed
-nodes; selected policy node cards expose an icon-only state action; the timeline
-evidence inspector can open state for checkpoint/delta entries; and proposal
-review can open state for the selected generated node. These entry points set a
-`kind: "state"` selection and activate the `state-explorer` workspace view in
-the main area. Source and phase choices are kept in that selection so existing
-per-view workspace persistence restores them when users switch tabs/windows.
+nodes; selected policy node cards expose an icon-only state action; timeline
+state/action clips can be double-clicked to open the corresponding recording
+state; and proposal review can open state for the selected generated node.
+These entry points set a `kind: "state"` selection and activate the
+`state-explorer` workspace view in the main area. Source and phase choices are
+kept in that selection so existing per-view workspace persistence restores them
+when users switch tabs/windows.
 
 Automation Studio node editors follow the FluxBot v1 flow editor direction:
 metadata-first node definitions, grouped palettes, explicit input/output ports,
@@ -252,8 +275,8 @@ and records the module through `flow.source.moduleId`.
 Source ownership is configuration, not a Flow canvas mode. The config view is
 the editable surface for Flow identity, runtime defaults, source ownership, and
 future global or node-contributed configuration fields. State and evidence
-inspection belongs in the state explorer, timeline evidence inspector, proposal
-view, and global inspector rather than inside the graph canvas. Node-contributed
+inspection belongs in the state explorer, proposal view, and global inspector
+rather than inside the graph canvas. Node-contributed
 configuration must register through a Flow config extension contract and render
 in the config/global inspector surfaces rather than creating another inspector
 inside the canvas.

@@ -1,13 +1,21 @@
 "use client";
 
-import { AlertCircle, Braces, GitCompare, ImageIcon, ListChecks } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, KeyboardEvent, MutableRefObject } from "react";
+import { AlertCircle, Braces, GitCompare, ImageIcon, ListChecks, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import type { CSSProperties, KeyboardEvent } from "react";
 import type { EvidenceAnchor, NodeStatePhase, StateVisualLayer } from "fluxiq/automation-studio";
 import type { AutomationSelection } from "../types";
-import { buildNodeStateViewModel, type BuildNodeStateViewModelInput, type NodeEvidenceBindingViewModel, type NodeStateViewModel, type StateFactViewModel, type StateOverlayViewModel, type StateVisualTone } from "../state/view-model";
+import { buildNodeStateViewModel, type BuildNodeStateViewModelInput, type NodeStateViewModel, type StateFactViewModel, type StateOverlayViewModel, type StateVisualTone } from "../state/view-model";
 
 export type StateViewMode = "visual" | "structured" | "diff" | "compare" | "raw";
+type StateVisualSurfaceMode = "screenshot" | "document";
+type StateBoundsKind = "screenshot" | "document";
+type StateRenderKind = "screenshot-bbox" | "direct-rendered";
+type StateBounds = { x: number; y: number; width: number; height: number };
+type StateSize = Pick<StateBounds, "width" | "height">;
+type StateVisualMetrics = { surface: StateVisualSurfaceMode; coordinate: StateSize; image: StateSize; aspect: StateSize; scroll: { x: number; y: number }; viewport?: StateBounds | undefined };
+type DirectRenderedTextCandidate = { id: string; bounds: StateBounds; content: string; area: number };
+const stateCanvasZoomLevels = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4] as const;
 
 export function AutomationStateView(props: { input: BuildNodeStateViewModelInput; setSelection(selection: AutomationSelection): void }) {
   const initialSelection = stateSelection(props.input.selection);
@@ -85,9 +93,6 @@ export function AutomationStateView(props: { input: BuildNodeStateViewModelInput
           {activeMode === "compare" ? <StateComparePanel model={model} onSelectEvidence={selectEvidence} onSelectFact={selectFact} /> : null}
           {activeMode === "raw" ? <StateRawPanel model={model} /> : null}
         </main>
-        <aside className="automation-state-side">
-          <StateEvidenceList evidence={model.evidence} facts={model.facts} selectedEvidenceId={selectedEvidenceId} selectedFactPath={selectedFactPath} onSelectEvidence={selectEvidence} onSelectFact={selectFact} />
-        </aside>
       </div>
     </section>
   );
@@ -124,7 +129,10 @@ function StateViewToolbar(props: { model: NodeStateViewModel; mode: StateViewMod
 
 function StateVisualCanvas(props: { model: NodeStateViewModel; selectedFactPath: string | undefined; onSelectEvidence(id: string): void; onSelectFact(path: string): void }) {
   const frame = props.model.visualFrame;
-  if (!frame) {
+  const activeSurface = visualCanvasSurface(props.model);
+  const [zoom, setZoom] = useState(1);
+
+  if (!activeSurface) {
     return (
       <div className="automation-state-visual-fallback">
         <div><ImageIcon size={16} aria-hidden /><strong>No visual frame exists</strong><span>This state source has structured facts, but no importer-provided visual reconstruction.</span></div>
@@ -132,21 +140,45 @@ function StateVisualCanvas(props: { model: NodeStateViewModel; selectedFactPath:
       </div>
     );
   }
-  const width = Math.max(1, frame.coordinateSpace.width);
-  const height = Math.max(1, frame.coordinateSpace.height);
+  const metrics = visualFrameMetrics(frame, props.model.facts, activeSurface);
+  const selectedBounds = selectedVisualBounds(props.model, props.selectedFactPath, metrics);
+  const visibleLayers = frame ? visualLayersForSurface(frame, activeSurface) : [];
+  const hasImageLayer = visibleLayers.some((layer) => layer.kind === "image");
+  const layerPaths = new Set(visibleLayers.map(layerStatePath).filter((path): path is string => Boolean(path)));
+  const factLayers = factBoundsForSurface(props.model.facts, activeSurface, metrics, hasImageLayer).filter((fact) => !layerPaths.has(fact.fact.fullPath));
+  const directTextCandidates = directRenderedTextCandidates(visibleLayers, factLayers, props.model.facts, metrics);
   return (
     <div className="automation-state-canvas-shell">
-      <div className="automation-state-canvas" style={{ aspectRatio: `${width} / ${height}` }}>
-        {frame.layers.map((layer, index) => <StateVisualLayerView height={height} key={stateVisualChildKey("layer", layer.id, index)} layer={layer} selectedFactPath={props.selectedFactPath} width={width} onSelectFact={props.onSelectFact} />)}
-        {props.model.overlays.map((overlay, index) => <StateOverlay height={height} key={stateVisualChildKey("overlay", overlay.id, index)} overlay={overlay} width={width} onSelectEvidence={props.onSelectEvidence} onSelectFact={props.onSelectFact} />)}
+      <StateCanvasZoomControls zoom={zoom} onZoomChange={setZoom} />
+      <div className={`automation-state-canvas surface-${activeSurface}`} style={{ aspectRatio: `${metrics.aspect.width} / ${metrics.aspect.height}`, width: `${zoom * 100}%` }}>
+        {activeSurface === "document" && metrics.viewport && !hasImageLayer ? <StateViewportRect metrics={metrics} /> : null}
+        {visibleLayers.map((layer, index) => <StateVisualLayerView directTextCandidates={directTextCandidates} facts={props.model.facts} key={stateVisualChildKey("layer", layer.id, index)} layer={layer} metrics={metrics} selectedBounds={selectedBounds} selectedFactPath={props.selectedFactPath} onSelectFact={props.onSelectFact} />)}
+        {factLayers.map(({ fact, bounds, directRendered }, index) => <StateFactBoundsLayer bounds={bounds} directRendered={directRendered} directTextCandidates={directTextCandidates} fact={fact} key={stateVisualChildKey("fact", fact.id, index)} metrics={metrics} selected={fact.fullPath === props.selectedFactPath || boundsEqual(bounds, selectedBounds)} onSelectFact={props.onSelectFact} />)}
+        {props.model.overlays.map((overlay, index) => <StateOverlay key={stateVisualChildKey("overlay", overlay.id, index)} metrics={metrics} overlay={overlay} onSelectEvidence={props.onSelectEvidence} onSelectFact={props.onSelectFact} />)}
       </div>
     </div>
   );
 }
 
-function StateVisualLayerView(props: { layer: StateVisualLayer; width: number; height: number; selectedFactPath: string | undefined; onSelectFact(path: string): void }) {
-  const bounds = layerBounds(props.layer);
-  const style = visualLayerStyle(props.layer, bounds, props.width, props.height, layerStatePath(props.layer) === props.selectedFactPath);
+function StateCanvasZoomControls(props: { zoom: number; onZoomChange(zoom: number): void }) {
+  const zoomIndex = nearestZoomIndex(props.zoom);
+  return (
+    <div className="automation-state-zoom-controls" aria-label="Canvas zoom controls">
+      <button disabled={zoomIndex <= 0} onClick={() => props.onZoomChange(stateCanvasZoomLevels[Math.max(0, zoomIndex - 1)]!)} title="Zoom out" type="button"><ZoomOut size={14} aria-hidden /></button>
+      <span aria-label="Canvas zoom">{Math.round(props.zoom * 100)}%</span>
+      <button disabled={zoomIndex >= stateCanvasZoomLevels.length - 1} onClick={() => props.onZoomChange(stateCanvasZoomLevels[Math.min(stateCanvasZoomLevels.length - 1, zoomIndex + 1)]!)} title="Zoom in" type="button"><ZoomIn size={14} aria-hidden /></button>
+      <button disabled={props.zoom === 1} onClick={() => props.onZoomChange(1)} title="Reset zoom" type="button"><RotateCcw size={14} aria-hidden /></button>
+    </div>
+  );
+}
+
+function StateVisualLayerView(props: { layer: StateVisualLayer; facts: StateFactViewModel[]; metrics: StateVisualMetrics; selectedFactPath: string | undefined; selectedBounds: StateBounds | null; directTextCandidates: DirectRenderedTextCandidate[]; onSelectFact(path: string): void }) {
+  const bounds = props.layer.kind === "image"
+    ? imageLayerBoundsForSurface(props.layer, props.metrics)
+    : boundsForSurface(layerBounds(props.layer), layerBoundsKind(props.layer, props.metrics.surface), props.metrics);
+  const statePath = layerStatePath(props.layer);
+  const selected = (statePath !== undefined && statePath === props.selectedFactPath) || boundsEqual(bounds, props.selectedBounds);
+  const style = visualLayerStyle(props.layer, bounds, props.metrics, selected);
   if (props.layer.kind === "image") {
     const imageSrc = stateLayerImageSrc(props.layer.contentRef);
     return imageSrc
@@ -155,8 +187,11 @@ function StateVisualLayerView(props: { layer: StateVisualLayer; width: number; h
   }
   if (props.layer.kind === "text") return <div className={`automation-state-layer automation-state-layer-text tone-${props.layer.style?.tone ?? "default"} size-${props.layer.style?.size ?? "sm"}`} style={style}>{props.layer.content}</div>;
   if (props.layer.kind === "region" || props.layer.kind === "element") {
-    const statePath = layerStatePath(props.layer);
-    const className = `automation-state-layer automation-state-layer-${props.layer.kind} visual-${visualToneForLayer(props.layer)}${statePath && statePath === props.selectedFactPath ? " selected" : ""}${statePath ? " interactive" : ""}`;
+    const directRendered = layerRenderKind(props.layer) === "direct-rendered";
+    const rawContent = directRendered ? directRenderedLayerContent(props.layer, props.facts) : undefined;
+    const content = rawContent && shouldRenderDirectText(directRenderedLayerCandidateId(props.layer), bounds, rawContent, props.directTextCandidates) ? rawContent : undefined;
+    const className = `automation-state-layer automation-state-layer-${props.layer.kind} visual-${visualToneForLayer(props.layer)}${directRendered ? " direct-rendered" : ""}${selected ? " selected" : ""}${statePath ? " interactive" : ""}`;
+    const directStyle = content ? directRenderedTextStyle(style, bounds, content) : style;
     if (statePath) {
       return (
         <button
@@ -164,15 +199,46 @@ function StateVisualLayerView(props: { layer: StateVisualLayer; width: number; h
           className={className}
           onClick={() => props.onSelectFact(statePath)}
           onKeyDown={(event) => handleStateLayerKeyDown(event, () => props.onSelectFact(statePath))}
-          style={style}
+          style={directStyle}
           title={props.layer.label ?? statePath}
           type="button"
-        />
+        >
+          {content ? <span>{content}</span> : null}
+        </button>
       );
     }
-    return <div aria-label={props.layer.label} className={className} style={style} title={props.layer.label} />;
+    return <div aria-label={props.layer.label} className={className} style={directStyle} title={props.layer.label}>{content ? <span>{content}</span> : null}</div>;
   }
   return null;
+}
+
+function StateFactBoundsLayer(props: { fact: StateFactViewModel; bounds: StateBounds; directRendered: boolean; metrics: StateVisualMetrics; selected: boolean; directTextCandidates: DirectRenderedTextCandidate[]; onSelectFact(path: string): void }) {
+  const rawContent = props.directRendered ? directRenderedFactContent(props.fact) : undefined;
+  const content = rawContent && shouldRenderDirectText(directRenderedFactCandidateId(props.fact), props.bounds, rawContent, props.directTextCandidates) ? rawContent : undefined;
+  const style = {
+    ...layerBoundsStyle(props.bounds, props.metrics),
+    zIndex: bboxZIndex(props.bounds, props.metrics.coordinate.width, props.metrics.coordinate.height, props.selected)
+  };
+  const fittedStyle = content ? directRenderedTextStyle(style, props.bounds, content) : style;
+  return (
+    <button
+      aria-label={props.fact.label}
+      className={`automation-state-layer automation-state-layer-element visual-${visualToneFromFact(props.fact)}${props.directRendered ? " direct-rendered" : ""}${props.selected ? " selected" : ""} interactive`}
+      onClick={() => props.onSelectFact(props.fact.fullPath)}
+      onKeyDown={(event) => handleStateLayerKeyDown(event, () => props.onSelectFact(props.fact.fullPath))}
+      style={fittedStyle}
+      title={props.fact.label}
+      type="button"
+    >
+      {content ? <span>{content}</span> : null}
+    </button>
+  );
+}
+
+function StateViewportRect(props: { metrics: StateVisualMetrics }) {
+  const viewport = props.metrics.viewport;
+  if (!viewport) return null;
+  return <div aria-label="Current viewport" className="automation-state-viewport-rect" style={{ ...layerBoundsStyle(viewport, props.metrics), zIndex: 30 }} title="Current viewport" />;
 }
 
 function StateImageLayer(props: { contentRef: string; imageSrc: string; opacity: number; style: CSSProperties }) {
@@ -188,8 +254,8 @@ function StateImageLayer(props: { contentRef: string; imageSrc: string; opacity:
   return <img alt="" className="automation-state-layer automation-state-layer-image" onError={() => setFailed(true)} src={props.imageSrc} style={{ ...props.style, opacity: props.opacity }} />;
 }
 
-function StateOverlay(props: { overlay: StateOverlayViewModel; width: number; height: number; onSelectEvidence(id: string): void; onSelectFact(path: string): void }) {
-  const style = overlayStyle(props.overlay.anchor, props.width, props.height, props.overlay.selected === true);
+function StateOverlay(props: { overlay: StateOverlayViewModel; metrics: StateVisualMetrics; onSelectEvidence(id: string): void; onSelectFact(path: string): void }) {
+  const style = overlayStyle(props.overlay.anchor, props.metrics, props.overlay.selected === true);
   if (!style) return null;
   const label = props.overlay.confidence === undefined ? props.overlay.label : `${props.overlay.label} (${Math.round(props.overlay.confidence * 100)}%)`;
   return (
@@ -204,6 +270,26 @@ function StateOverlay(props: { overlay: StateOverlayViewModel; width: number; he
   );
 }
 
+function visualFrameMetrics(frame: NodeStateViewModel["visualFrame"], facts: StateFactViewModel[] = [], surface: StateVisualSurfaceMode): StateVisualMetrics {
+  const metadata = objectMetadata(frame?.metadata);
+  const viewport = viewportBoundsFromFacts(facts) ?? viewportBoundsFromFrame(frame);
+  const scroll = { x: nonNegativeNumber(metadata.scrollX), y: nonNegativeNumber(metadata.scrollY) };
+  const frameSize = frame ? { width: Math.max(1, frame.coordinateSpace.width), height: Math.max(1, frame.coordinateSpace.height) } : { width: 1, height: 1 };
+  const image = imageBoundsFromFrame(frame) ?? frameSize;
+  const documentSize = documentSizeFromFrame(frame, facts, viewport);
+  const coordinate = surface === "document"
+    ? documentSize
+    : { width: viewport?.width ?? image.width, height: viewport?.height ?? image.height };
+  return {
+    surface,
+    coordinate,
+    image,
+    aspect: coordinate,
+    scroll,
+    ...(viewport ? { viewport: surface === "document" ? { ...viewport, x: scroll.x, y: scroll.y } : { ...viewport, x: 0, y: 0 } } : {})
+  };
+}
+
 function layerStatePath(layer: StateVisualLayer): string | undefined {
   if (layer.kind !== "region" && layer.kind !== "element") return undefined;
   const statePath = typeof layer.statePath === "string" && layer.statePath.trim() ? layer.statePath.trim() : undefined;
@@ -216,40 +302,6 @@ function handleStateLayerKeyDown(event: KeyboardEvent<HTMLButtonElement>, action
   if (event.key !== "Enter" && event.key !== " ") return;
   event.preventDefault();
   action();
-}
-
-function StateEvidenceList(props: { evidence: NodeEvidenceBindingViewModel[]; facts: StateFactViewModel[]; selectedEvidenceId: string | undefined; selectedFactPath: string | undefined; onSelectEvidence(id: string): void; onSelectFact(path: string): void }) {
-  const listRef = useRef<HTMLElement | null>(null);
-  const evidenceRefs = useRef(new Map<string, HTMLButtonElement>());
-  const factRefs = useRef(new Map<string, HTMLButtonElement>());
-  const activeEvidenceId = props.selectedEvidenceId ?? props.evidence.find((item) => item.factPath === props.selectedFactPath)?.id;
-
-  useEffect(() => {
-    const target = props.selectedFactPath ? factRefs.current.get(props.selectedFactPath) : activeEvidenceId ? evidenceRefs.current.get(activeEvidenceId) : undefined;
-    if (target) scrollStateListItemIntoView(listRef.current, target);
-  }, [activeEvidenceId, props.selectedFactPath]);
-
-  return (
-    <section className="automation-state-evidence-list" ref={listRef}>
-      <header><strong>Evidence / Facts</strong><span>{props.evidence.length || props.facts.length}</span></header>
-      {props.evidence.map((evidence) => (
-        <button className={evidence.id === activeEvidenceId ? "selected" : evidence.factPath === props.selectedFactPath ? "related" : ""} key={evidence.id} onClick={() => props.onSelectEvidence(evidence.id)} ref={stateListButtonRef(evidenceRefs, evidence.id)} type="button">
-          <strong>{evidence.label}</strong>
-          <span>{evidence.comparator}{evidence.expectedValue ? ` -> ${evidence.expectedValue}` : ""}</span>
-          <small>{evidence.role} | weight {formatOptional(evidence.weight)} | confidence {formatOptional(evidence.confidence)}</small>
-        </button>
-      ))}
-      {props.evidence.length && props.facts.length ? <header className="automation-state-list-subheader"><strong>Elements</strong><span>{props.facts.length}</span></header> : null}
-      {props.facts.map((fact) => (
-        <button className={props.selectedFactPath === fact.fullPath ? "selected" : ""} key={fact.id} onClick={() => props.onSelectFact(fact.fullPath)} ref={stateListButtonRef(factRefs, fact.fullPath)} type="button">
-          <strong>{fact.label}</strong>
-          <span>{fact.fullPath}</span>
-          <small>{fact.value}</small>
-        </button>
-      ))}
-      {!props.evidence.length && !props.facts.length ? <span className="automation-state-muted">No evidence or facts are attached to this state source.</span> : null}
-    </section>
-  );
 }
 
 function StateStructuredPanel(props: { rows: NodeStateViewModel["structuredRows"]; onSelectFact(path: string): void }) {
@@ -362,39 +414,158 @@ function stateLayerImageSrc(contentRef: string): string {
   return match ? `/api/programs/automation-studio/state-assets/${encodeURIComponent(decodeURIComponent(match[1]!))}/${match[2]!.toLowerCase()}` : "";
 }
 
-function layerBounds(layer: StateVisualLayer): { x: number; y: number; width: number; height: number } | null {
+function visualCanvasSurface(model: NodeStateViewModel): StateVisualSurfaceMode | null {
+  if (hasDocumentSurface(model)) return "document";
+  if (hasScreenshotSurface(model.visualFrame)) return "screenshot";
+  return null;
+}
+
+function hasScreenshotSurface(frame: NodeStateViewModel["visualFrame"]): boolean {
+  return Boolean(frame?.layers.some((layer) => layer.kind === "image" || layerBoundsKind(layer, "screenshot") === "screenshot"));
+}
+
+function hasDocumentSurface(model: NodeStateViewModel): boolean {
+  if (model.visualFrame?.layers.some((layer) => layer.kind !== "image" && (layerBoundsKind(layer, "screenshot") === "document" || layerRenderKind(layer) === "direct-rendered"))) return true;
+  if (model.facts.some((fact) => anchorBounds(fact.anchor) && anchorBoundsKind(fact.anchor, "screenshot") === "document")) return true;
+  const metadata = objectMetadata(model.visualFrame?.metadata);
+  return Boolean(firstPositiveNumber(metadata.documentWidth) && firstPositiveNumber(metadata.documentHeight));
+}
+
+function visualLayersForSurface(frame: NonNullable<NodeStateViewModel["visualFrame"]>, surface: StateVisualSurfaceMode): StateVisualLayer[] {
+  return frame.layers.filter((layer) => {
+    if (layer.kind === "image") return true;
+    const renderKind = layerRenderKind(layer);
+    const boundsKind = layerBoundsKind(layer, surface);
+    if (surface === "screenshot") return boundsKind === "screenshot" && renderKind !== "direct-rendered" && layerVisibleOnViewport(layer) !== false;
+    return boundsKind === "document" || boundsKind === "screenshot" || renderKind === "direct-rendered";
+  });
+}
+
+function factBoundsForSurface(facts: StateFactViewModel[], surface: StateVisualSurfaceMode, metrics: StateVisualMetrics, hasImageLayer: boolean): Array<{ fact: StateFactViewModel; bounds: StateBounds; directRendered: boolean }> {
+  return facts.flatMap((fact) => {
+    const rawBounds = anchorBounds(fact.anchor);
+    if (!rawBounds) return [];
+    const boundsKind = anchorBoundsKind(fact.anchor, surface);
+    if (surface === "screenshot" && boundsKind !== "screenshot" && !boundsIntersectsViewport(rawBounds, boundsKind, metrics)) return [];
+    const bounds = boundsForSurface(rawBounds, boundsKind, metrics);
+    const outsideScreenshot = surface === "document" && boundsKind === "document" && (!hasImageLayer || !documentBoundsIntersectViewport(rawBounds, metrics));
+    const directRendered = factRenderKind(fact) === "direct-rendered" || outsideScreenshot;
+    return bounds ? [{ fact, bounds, directRendered }] : [];
+  });
+}
+
+function selectedVisualBounds(model: NodeStateViewModel, selectedFactPath: string | undefined, metrics: StateVisualMetrics): StateBounds | null {
+  if (!selectedFactPath) return null;
+  const selectedOverlay = model.overlays.find((overlay) => overlay.selected || overlay.factPath === selectedFactPath);
+  const overlayBounds = boundsForSurface(anchorBounds(selectedOverlay?.anchor), anchorBoundsKind(selectedOverlay?.anchor, metrics.surface), metrics);
+  if (overlayBounds) return overlayBounds;
+  const anchor = model.facts.find((fact) => fact.fullPath === selectedFactPath)?.anchor;
+  return boundsForSurface(anchorBounds(anchor), anchorBoundsKind(anchor, metrics.surface), metrics);
+}
+
+function layerBounds(layer: StateVisualLayer): StateBounds | null {
   if ("bounds" in layer && layer.bounds) return layer.bounds;
   if ("anchor" in layer) return anchorBounds(layer.anchor);
   return null;
 }
 
-function anchorBounds(anchor: EvidenceAnchor | undefined): { x: number; y: number; width: number; height: number } | null {
+function imageLayerBoundsForSurface(layer: StateVisualLayer, metrics: StateVisualMetrics): StateBounds | null {
+  const bounds = layerBounds(layer) ?? { x: 0, y: 0, width: metrics.image.width, height: metrics.image.height };
+  return boundsForSurface(bounds, layerBoundsKind(layer, "screenshot"), metrics);
+}
+
+function layerBoundsKind(layer: StateVisualLayer, fallback: StateBoundsKind): StateBoundsKind {
+  const explicit = "boundsKind" in layer ? boundsKindValue(layer.boundsKind) : undefined;
+  const metadata = objectMetadata(layer.metadata);
+  return explicit ?? boundsKindValue(metadata.boundsKind) ?? fallback;
+}
+
+function layerRenderKind(layer: StateVisualLayer): StateRenderKind | undefined {
+  const explicit = "renderKind" in layer ? renderKindValue(layer.renderKind) : undefined;
+  const metadata = objectMetadata(layer.metadata);
+  return explicit ?? renderKindValue(metadata.renderKind);
+}
+
+function layerVisibleOnViewport(layer: StateVisualLayer): boolean | undefined {
+  const explicit = "isVisibleOnViewport" in layer ? booleanValue(layer.isVisibleOnViewport) : undefined;
+  const metadata = objectMetadata(layer.metadata);
+  return explicit ?? booleanValue(metadata.isVisibleOnViewport);
+}
+
+function anchorBounds(anchor: EvidenceAnchor | undefined): StateBounds | null {
   if (!anchor) return null;
   if (anchor.type === "bounds") return anchor.bounds;
   if (anchor.type === "point") return { x: anchor.x - 6, y: anchor.y - 6, width: 12, height: 12 };
   return null;
 }
 
-function anchorStyle(anchor: EvidenceAnchor, width: number, height: number): CSSProperties | null {
-  return layerBoundsStyle(anchorBounds(anchor), width, height);
+function anchorBoundsKind(anchor: EvidenceAnchor | undefined, fallback: StateBoundsKind): StateBoundsKind {
+  if (!anchor) return fallback;
+  const explicit = anchor.type === "bounds" ? boundsKindValue(anchor.boundsKind) : undefined;
+  const metadata = objectMetadata(anchor.metadata);
+  return explicit ?? boundsKindValue(metadata.boundsKind) ?? fallback;
 }
 
-function visualLayerStyle(layer: StateVisualLayer, bounds: { x: number; y: number; width: number; height: number } | null, width: number, height: number, selected: boolean): CSSProperties {
-  const style = layerBoundsStyle(bounds, width, height);
-  if (layer.kind === "region" || layer.kind === "element") return { ...style, zIndex: bboxZIndex(bounds, width, height, selected) };
+function factRenderKind(fact: StateFactViewModel): StateRenderKind | undefined {
+  const anchorMetadata = objectMetadata(fact.anchor?.metadata);
+  const rawMetadata = objectMetadata(fact.rawValue);
+  return renderKindValue(anchorMetadata.renderKind) ?? renderKindValue(rawMetadata.renderKind);
+}
+
+function boundsForSurface(bounds: StateBounds | null, boundsKind: StateBoundsKind, metrics: StateVisualMetrics): StateBounds | null {
+  if (!bounds) return null;
+  if (boundsKind === metrics.surface) return bounds;
+  if (boundsKind === "document" && metrics.surface === "screenshot") {
+    return { ...bounds, x: bounds.x - metrics.scroll.x, y: bounds.y - metrics.scroll.y };
+  }
+  if (boundsKind === "screenshot" && metrics.surface === "document") {
+    return { ...bounds, x: bounds.x + metrics.scroll.x, y: bounds.y + metrics.scroll.y };
+  }
+  return bounds;
+}
+
+function boundsIntersectsViewport(bounds: StateBounds, boundsKind: StateBoundsKind, metrics: StateVisualMetrics): boolean {
+  const surfaceBounds = boundsForSurface(bounds, boundsKind, metrics);
+  if (!surfaceBounds) return false;
+  return surfaceBounds.x + surfaceBounds.width > 0
+    && surfaceBounds.y + surfaceBounds.height > 0
+    && surfaceBounds.x < metrics.coordinate.width
+    && surfaceBounds.y < metrics.coordinate.height;
+}
+
+function documentBoundsIntersectViewport(bounds: StateBounds, metrics: StateVisualMetrics): boolean {
+  const viewport = metrics.viewport;
+  if (!viewport) return false;
+  return bounds.x + bounds.width > viewport.x
+    && bounds.y + bounds.height > viewport.y
+    && bounds.x < viewport.x + viewport.width
+    && bounds.y < viewport.y + viewport.height;
+}
+
+function anchorStyle(anchor: EvidenceAnchor, metrics: StateVisualMetrics): CSSProperties | null {
+  return layerBoundsStyle(boundsForSurface(anchorBounds(anchor), anchorBoundsKind(anchor, metrics.surface), metrics), metrics);
+}
+
+function visualLayerStyle(layer: StateVisualLayer, bounds: StateBounds | null, metrics: StateVisualMetrics, selected: boolean): CSSProperties {
+  const space = metrics.coordinate;
+  const style = layerBoundsStyle(bounds, { ...metrics, coordinate: space });
+  if (layer.kind === "region" || layer.kind === "element") return { ...style, zIndex: bboxZIndex(bounds, space.width, space.height, selected) };
   if (layer.kind === "text") return { ...style, zIndex: 20 };
   if (layer.kind === "image") return { ...style, zIndex: 1 };
   return style;
 }
 
-function overlayStyle(anchor: EvidenceAnchor, width: number, height: number, selected: boolean): CSSProperties | null {
-  const bounds = anchorBounds(anchor);
-  const style = anchorStyle(anchor, width, height);
-  return style ? { ...style, zIndex: bboxZIndex(bounds, width, height, selected) } : null;
+function overlayStyle(anchor: EvidenceAnchor, metrics: StateVisualMetrics, selected: boolean): CSSProperties | null {
+  const bounds = boundsForSurface(anchorBounds(anchor), anchorBoundsKind(anchor, metrics.surface), metrics);
+  const space = metrics.coordinate;
+  const style = anchorStyle(anchor, { ...metrics, coordinate: space });
+  return style ? { ...style, zIndex: bboxZIndex(bounds, space.width, space.height, selected) } : null;
 }
 
-function layerBoundsStyle(bounds: { x: number; y: number; width: number; height: number } | null, width: number, height: number): CSSProperties {
+function layerBoundsStyle(bounds: StateBounds | null, metrics: Pick<StateVisualMetrics, "coordinate">): CSSProperties {
   if (!bounds) return { left: "2%", top: "2%", maxWidth: "96%" };
+  const width = metrics.coordinate.width;
+  const height = metrics.coordinate.height;
   const clipped = clipBounds(bounds, width, height);
   return {
     left: `${(clipped.x / width) * 100}%`,
@@ -404,7 +575,36 @@ function layerBoundsStyle(bounds: { x: number; y: number; width: number; height:
   };
 }
 
-function bboxZIndex(bounds: { x: number; y: number; width: number; height: number } | null, frameWidth: number, frameHeight: number, selected: boolean): number {
+function directRenderedTextStyle(style: CSSProperties, bounds: StateBounds | null, content: string): CSSProperties {
+  const fit = fittedTextStyle(bounds, content);
+  return {
+    ...style,
+    "--state-direct-fit-width": fit.fitWidth,
+    "--state-direct-fit-height": fit.fitHeight,
+    "--state-direct-line-height": fit.lineHeight.toFixed(2),
+    "--state-direct-padding-x": `${fit.paddingX}px`
+  } as CSSProperties;
+}
+
+function fittedTextStyle(bounds: StateBounds | null, content: string): { fitWidth: string; fitHeight: string; lineHeight: number; paddingX: number } {
+  if (!bounds) return { fitWidth: "10px", fitHeight: "80cqh", lineHeight: 1.15, paddingX: 4 };
+  const textLength = Math.max(1, content.trim().length);
+  const lineHeight = bounds.height < 14 ? 1 : 1.12;
+  const fitPercent = clampNumber(Math.sqrt(10000 / (textLength * 0.62 * lineHeight)), 3, 36);
+  return {
+    fitWidth: `${fitPercent.toFixed(3)}cqw`,
+    fitHeight: bounds.height < 12 ? "72cqh" : bounds.height < 28 ? "48cqh" : "34cqh",
+    lineHeight,
+    paddingX: bounds.width < 16 ? 1 : bounds.width < 32 ? 2 : 5
+  };
+}
+
+function offsetBounds(bounds: StateBounds | null, offset: { x: number; y: number }): StateBounds | null {
+  if (!bounds || (!offset.x && !offset.y)) return bounds;
+  return { ...bounds, x: bounds.x + offset.x, y: bounds.y + offset.y };
+}
+
+function bboxZIndex(bounds: StateBounds | null, frameWidth: number, frameHeight: number, selected: boolean): number {
   if (!bounds) return selected ? 101 : 100;
   const clipped = clipBounds(bounds, frameWidth, frameHeight);
   const frameArea = Math.max(1, frameWidth * frameHeight);
@@ -413,7 +613,7 @@ function bboxZIndex(bounds: { x: number; y: number; width: number; height: numbe
   return 100 + (inverseAreaRank * 2) + (selected ? 1 : 0);
 }
 
-function clipBounds(bounds: { x: number; y: number; width: number; height: number }, frameWidth: number, frameHeight: number): { x: number; y: number; width: number; height: number } {
+function clipBounds(bounds: StateBounds, frameWidth: number, frameHeight: number): StateBounds {
   const left = clampNumber(bounds.x, 0, frameWidth);
   const top = clampNumber(bounds.y, 0, frameHeight);
   const right = clampNumber(bounds.x + Math.max(0, bounds.width), 0, frameWidth);
@@ -431,6 +631,27 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function nearestZoomIndex(zoom: number): number {
+  let bestIndex = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  stateCanvasZoomLevels.forEach((level, index) => {
+    const distance = Math.abs(level - zoom);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = index;
+    }
+  });
+  return bestIndex;
+}
+
+function boundsEqual(left: StateBounds | null, right: StateBounds | null): boolean {
+  if (!left || !right) return false;
+  return Math.abs(left.x - right.x) < 0.5
+    && Math.abs(left.y - right.y) < 0.5
+    && Math.abs(left.width - right.width) < 0.5
+    && Math.abs(left.height - right.height) < 0.5;
+}
+
 function visualToneForLayer(layer: StateVisualLayer): StateVisualTone {
   const metadata = objectMetadata(layer.metadata);
   return visualToneFromMetadata({
@@ -442,17 +663,135 @@ function visualToneForLayer(layer: StateVisualLayer): StateVisualTone {
   });
 }
 
+function visualToneFromFact(fact: StateFactViewModel): StateVisualTone {
+  const metadata = objectMetadata(fact.rawValue);
+  return visualToneFromMetadata({
+    tagName: stringMetadata(metadata.tagName),
+    role: stringMetadata(metadata.role),
+    type: stringMetadata(metadata.type),
+    statePath: fact.fullPath,
+    disabled: metadata.disabled === true || metadata.disabled === "true" || metadata["aria-disabled"] === "true"
+  });
+}
+
+function directRenderedTextCandidates(layers: StateVisualLayer[], factLayers: Array<{ fact: StateFactViewModel; bounds: StateBounds; directRendered: boolean }>, facts: StateFactViewModel[], metrics: StateVisualMetrics): DirectRenderedTextCandidate[] {
+  const layerCandidates = layers.flatMap((layer): DirectRenderedTextCandidate[] => {
+    if (layer.kind !== "region" && layer.kind !== "element") return [];
+    if (layerRenderKind(layer) !== "direct-rendered") return [];
+    const bounds = boundsForSurface(layerBounds(layer), layerBoundsKind(layer, metrics.surface), metrics);
+    const content = directRenderedLayerContent(layer, facts);
+    return bounds && content ? [directRenderedTextCandidate(directRenderedLayerCandidateId(layer), bounds, content)] : [];
+  });
+  const factCandidates = factLayers.flatMap(({ fact, bounds, directRendered }): DirectRenderedTextCandidate[] => {
+    if (!directRendered) return [];
+    const content = directRenderedFactContent(fact);
+    return content ? [directRenderedTextCandidate(directRenderedFactCandidateId(fact), bounds, content)] : [];
+  });
+  return [...layerCandidates, ...factCandidates];
+}
+
+function directRenderedTextCandidate(id: string, bounds: StateBounds, content: string): DirectRenderedTextCandidate {
+  return { id, bounds, content, area: Math.max(0, bounds.width) * Math.max(0, bounds.height) };
+}
+
+function directRenderedLayerCandidateId(layer: StateVisualLayer): string {
+  return `layer:${layer.id}:${layerStatePath(layer) ?? ""}`;
+}
+
+function directRenderedFactCandidateId(fact: StateFactViewModel): string {
+  return `fact:${fact.fullPath}`;
+}
+
+function shouldRenderDirectText(id: string, bounds: StateBounds | null, content: string, candidates: DirectRenderedTextCandidate[]): boolean {
+  if (!bounds) return true;
+  const area = Math.max(0, bounds.width) * Math.max(0, bounds.height);
+  return !candidates.some((candidate) =>
+    candidate.id !== id
+    && candidate.area < area
+    && boundsContains(bounds, candidate.bounds)
+    && directTextOverlaps(content, candidate.content)
+  );
+}
+
+function boundsContains(parent: StateBounds, child: StateBounds): boolean {
+  const tolerance = 1;
+  return child.x >= parent.x - tolerance
+    && child.y >= parent.y - tolerance
+    && child.x + child.width <= parent.x + parent.width + tolerance
+    && child.y + child.height <= parent.y + parent.height + tolerance;
+}
+
+function directTextOverlaps(parent: string, child: string): boolean {
+  const left = normalizeDirectText(parent);
+  const right = normalizeDirectText(child);
+  if (!left || !right) return false;
+  return left === right || left.includes(right) || right.includes(left);
+}
+
+function normalizeDirectText(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function directRenderedLayerContent(layer: StateVisualLayer, facts: StateFactViewModel[]): string | undefined {
+  if (layer.kind !== "region" && layer.kind !== "element") return undefined;
+  const metadata = objectMetadata(layer.metadata);
+  const fact = layerStatePath(layer) ? facts.find((item) => item.fullPath === layerStatePath(layer)) : undefined;
+  return firstDisplayString(
+    metadata.text,
+    metadata.content,
+    metadata.value,
+    metadata.label,
+    metadata.name,
+    metadata.ariaLabel,
+    metadata["aria-label"],
+    metadata.title,
+    metadata.placeholder,
+    fact ? directRenderedFactContent(fact) : undefined,
+    layer.label
+  );
+}
+
+function directRenderedFactContent(fact: StateFactViewModel): string {
+  const raw = objectMetadata(fact.rawValue);
+  return firstDisplayString(
+    raw.text,
+    raw.content,
+    raw.value,
+    raw.label,
+    raw.name,
+    raw.ariaLabel,
+    raw["aria-label"],
+    raw.title,
+    raw.placeholder,
+    typeof fact.rawValue === "string" || typeof fact.rawValue === "number" ? fact.rawValue : undefined,
+    fact.label
+  ) ?? fact.label;
+}
+
+function firstDisplayString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const text = typeof value === "string" ? value.trim() : typeof value === "number" ? String(value) : "";
+    if (text) return text;
+  }
+  return undefined;
+}
+
 function visualToneFromMetadata(input: { tagName?: string | undefined; role?: string | undefined; type?: string | undefined; statePath?: string | undefined; disabled?: boolean | undefined }): StateVisualTone {
   if (input.disabled) return "disabled";
   const tag = input.tagName?.toLowerCase();
   const role = input.role?.toLowerCase();
   const type = input.type?.toLowerCase();
   const path = input.statePath?.toLowerCase() ?? "";
-  if (tag === "a" || role === "link" || path.endsWith(".href")) return "link";
-  if (tag === "input" || tag === "textarea" || tag === "select" || role === "textbox" || role === "combobox" || type === "text" || type === "search" || path.includes(".value")) return "input";
-  if (tag === "button" || role === "button" || role === "menuitem" || role === "tab" || role === "switch" || role === "checkbox" || role === "radio") return "control";
-  if (path.includes(".text") || path.includes(".label") || tag === "label") return "text";
-  if (path.includes(".bounds") || path.includes(".visible")) return "region";
+  if (tag === "a" || role === "link" || path.endsWith(".href") || path.includes(".url")) return "link";
+  if (tag === "img" || tag === "picture" || tag === "video" || tag === "canvas" || role === "img" || path.includes(".image") || path.includes(".media")) return "media";
+  if (tag === "nav" || role === "navigation" || role === "menubar" || role === "menu" || role === "tablist" || role === "tab" || path.includes(".nav") || path.includes(".menu") || path.includes(".tab")) return "navigation";
+  if (tag === "ul" || tag === "ol" || tag === "li" || tag === "table" || tag === "tr" || tag === "td" || tag === "th" || role === "list" || role === "listitem" || role === "grid" || role === "row" || role === "cell" || role === "option" || path.includes(".list") || path.includes(".row") || path.includes(".cell") || path.includes(".option")) return "list";
+  if (role === "status" || role === "alert" || role === "progressbar" || tag === "progress" || tag === "meter" || path.includes(".status") || path.includes(".alert") || path.includes(".error") || path.includes(".warning")) return "status";
+  if (tag === "input" || tag === "textarea" || tag === "select" || role === "textbox" || role === "combobox" || role === "searchbox" || type === "text" || type === "search" || type === "email" || type === "password" || type === "number" || path.includes(".value") || path.includes(".input")) return "input";
+  if (tag === "button" || role === "button" || role === "switch" || role === "checkbox" || role === "radio" || tag === "summary" || path.includes(".button") || path.includes(".control") || path.includes(".action")) return "control";
+  if (path.includes(".text") || path.includes(".label") || path.includes(".title") || tag === "label" || tag === "span" || tag === "p" || tag === "strong" || tag === "em" || tag === "h1" || tag === "h2" || tag === "h3" || role === "heading") return "text";
+  if (path.includes(".selected") || path.includes(".focus") || role === "dialog") return "selected";
+  if (path.includes(".bounds") || path.includes(".visible") || tag === "section" || tag === "article" || tag === "main" || tag === "header" || tag === "footer" || tag === "aside") return "region";
   return "unknown";
 }
 
@@ -460,35 +799,103 @@ function objectMetadata(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
+function viewportBoundsFromFacts(facts: StateFactViewModel[]): StateBounds | undefined {
+  const value = facts.find((fact) => fact.fullPath === "web.viewport.bounds")?.rawValue;
+  const bounds = objectMetadata(value);
+  const width = firstPositiveNumber(bounds.width);
+  const height = firstPositiveNumber(bounds.height);
+  if (!width || !height) return undefined;
+  return {
+    x: nonNegativeNumber(bounds.x),
+    y: nonNegativeNumber(bounds.y),
+    width,
+    height
+  };
+}
+
+function viewportBoundsFromFrame(frame: NodeStateViewModel["visualFrame"]): StateBounds | undefined {
+  if (!frame) return undefined;
+  const metadata = objectMetadata(frame.metadata);
+  const image = imageBoundsFromFrame(frame);
+  const width = firstPositiveNumber(metadata.viewportWidth, image?.width, frame.coordinateSpace.width);
+  const height = firstPositiveNumber(metadata.viewportHeight, image?.height, frame.coordinateSpace.height);
+  if (!width || !height) return undefined;
+  return { x: 0, y: 0, width, height };
+}
+
+function imageBoundsFromFrame(frame: NodeStateViewModel["visualFrame"]): StateSize | undefined {
+  const imageLayer = frame?.layers.find((layer) => layer.kind === "image");
+  const bounds = imageLayer ? layerBounds(imageLayer) : null;
+  const width = firstPositiveNumber(bounds?.width);
+  const height = firstPositiveNumber(bounds?.height);
+  return width && height ? { width, height } : undefined;
+}
+
+function documentSizeFromFrame(frame: NodeStateViewModel["visualFrame"], facts: StateFactViewModel[], viewport: StateBounds | undefined): StateSize {
+  const metadata = objectMetadata(frame?.metadata);
+  const frameWidth = firstPositiveNumber(frame?.coordinateSpace.width);
+  const frameHeight = firstPositiveNumber(frame?.coordinateSpace.height);
+  const documentWidth = firstPositiveNumber(metadata.documentWidth, frameBoundsKind(frame) === "document" ? frameWidth : undefined);
+  const documentHeight = firstPositiveNumber(metadata.documentHeight, frameBoundsKind(frame) === "document" ? frameHeight : undefined);
+  const maxFactBounds = maxAnchorBounds(facts);
+  return {
+    width: Math.max(1, documentWidth ?? maxFactBounds?.width ?? viewport?.width ?? frameWidth ?? 1),
+    height: Math.max(1, documentHeight ?? maxFactBounds?.height ?? viewport?.height ?? frameHeight ?? 1)
+  };
+}
+
+function maxAnchorBounds(facts: StateFactViewModel[]): StateSize | undefined {
+  const bounds = facts.map((fact) => anchorBounds(fact.anchor)).filter((item): item is StateBounds => Boolean(item));
+  if (!bounds.length) return undefined;
+  return {
+    width: Math.max(...bounds.map((item) => item.x + item.width)),
+    height: Math.max(...bounds.map((item) => item.y + item.height))
+  };
+}
+
+function frameBoundsKind(frame: NodeStateViewModel["visualFrame"]): StateBoundsKind | undefined {
+  const metadata = objectMetadata(frame?.metadata);
+  const frameKind = stringMetadata(metadata.frameKind)?.toLowerCase();
+  const screenCoordinateSpace = stringMetadata(metadata.screenCoordinateSpace)?.toLowerCase();
+  if (frameKind?.includes("document") || screenCoordinateSpace === "document") return "document";
+  if (frameKind?.includes("screenshot") || frameKind?.includes("viewport") || screenCoordinateSpace === "viewport") return "screenshot";
+  return undefined;
+}
+
+function boundsKindValue(value: unknown): StateBoundsKind | undefined {
+  return value === "screenshot" || value === "document" ? value : undefined;
+}
+
+function renderKindValue(value: unknown): StateRenderKind | undefined {
+  return value === "screenshot-bbox" || value === "direct-rendered" ? value : undefined;
+}
+
+function booleanValue(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return undefined;
+}
+
 function stringMetadata(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
 
-function formatOptional(value: number | undefined): string {
-  return value === undefined ? "-" : value.toFixed(2);
+function firstPositiveNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return undefined;
+}
+
+function nonNegativeNumber(value: unknown): number {
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
 function stateVisualChildKey(kind: string, id: string, index: number): string {
   return `${kind}:${id}:${index}`;
-}
-
-function stateListButtonRef(refs: MutableRefObject<Map<string, HTMLButtonElement>>, id: string) {
-  return (element: HTMLButtonElement | null) => {
-    if (element) refs.current.set(id, element);
-    else refs.current.delete(id);
-  };
-}
-
-function scrollStateListItemIntoView(container: HTMLElement | null, target: HTMLElement): void {
-  if (!container) {
-    target.scrollIntoView({ block: "center", behavior: "smooth" });
-    return;
-  }
-  const containerRect = container.getBoundingClientRect();
-  const targetRect = target.getBoundingClientRect();
-  const targetTop = targetRect.top - containerRect.top + container.scrollTop;
-  const targetCenter = targetTop - (container.clientHeight / 2) + (target.clientHeight / 2);
-  container.scrollTo({ top: Math.max(0, targetCenter), behavior: "smooth" });
 }
 
 function compactStateViewState(value: { sourceId?: string | undefined; phase?: NodeStatePhase | undefined; selectedEvidenceId?: string | undefined; selectedFactPath?: string | undefined }): NonNullable<BuildNodeStateViewModelInput["viewState"]> {

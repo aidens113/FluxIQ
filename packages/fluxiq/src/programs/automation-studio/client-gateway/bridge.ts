@@ -277,7 +277,6 @@ export class AutomationStudioClientGatewayBridge {
   private async appendRecordingEvent(session: ClientGatewaySession, event: ClientGatewayRecordingEvent, messageId: string): Promise<void> {
     const active = this.activeRecordings.get(this.recordingOwnerKey(session));
     if (!active) return;
-    await this.flushRecordingEntries(this.recordingOwnerKey(session));
     const domainId = event.domainId ?? active.domainId ?? stringMetadataValue(event.metadata, "domainId");
     const inputId = stringMetadataValue(event.metadata, "inputId");
     if (domainId && inputId && await this.recordGatewayInput({

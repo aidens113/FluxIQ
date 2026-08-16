@@ -243,6 +243,68 @@ describe("node state view model", () => {
     expect(model.visualFrame?.layers[0]).toMatchObject({ kind: "image", contentRef: "automation-object://project/test/second" });
   });
 
+  it("opens an action timeline selection on its adjacent observed snapshot", () => {
+    const firstSnapshot = snapshotWithImage("snapshot.first", 100, "automation-object://project/test/first");
+    const secondSnapshot = snapshotWithImage("snapshot.second", 900, "automation-object://project/test/second");
+    const recording = {
+      recordingId: "recording.client",
+      timeline: [{
+        id: "entry.state.first",
+        type: "observation",
+        observationType: "client.state_snapshot",
+        recordingId: "recording.client",
+        timestamp: 100,
+        monotonicOffsetMs: 100,
+        payload: { state: firstSnapshot }
+      }, {
+        id: "entry.action.first",
+        type: "action",
+        actionType: "web.dom.click",
+        recordingId: "recording.client",
+        timestamp: 180,
+        monotonicOffsetMs: 180
+      }, {
+        id: "entry.state.second",
+        type: "observation",
+        observationType: "client.state_snapshot",
+        recordingId: "recording.client",
+        timestamp: 900,
+        monotonicOffsetMs: 900,
+        payload: { state: secondSnapshot }
+      }, {
+        id: "entry.action.second",
+        type: "action",
+        actionType: "web.dom.click",
+        recordingId: "recording.client",
+        timestamp: 960,
+        monotonicOffsetMs: 960
+      }]
+    };
+
+    const model = buildNodeStateViewModel({
+      selection: {
+        kind: "state",
+        id: "state:timeline:entry.action.second",
+        sourceId: "observed:recording.client:entry.action.second",
+        recordingId: "recording.client",
+        timelineEntryId: "entry.action.second"
+      },
+      selectedNode: null,
+      selectedRecording: recording,
+      selectedTimeline: null,
+      policy: null,
+      taskGraph: null,
+      pipelineArtifacts: {},
+      recordings: [recording],
+      timelines: [],
+      runtimeSessions: [],
+      signals: []
+    });
+
+    expect(model.activeSource).toMatchObject({ kind: "observed", timelineEntryId: "entry.state.second" });
+    expect(model.visualFrame?.layers[0]).toMatchObject({ kind: "image", contentRef: "automation-object://project/test/second" });
+  });
+
   it("falls back to node order when proposal nodes do not carry explicit state evidence", () => {
     const firstSnapshot = snapshotWithImage("snapshot.first", 100, "automation-object://project/test/first");
     const secondSnapshot = snapshotWithImage("snapshot.second", 900, "automation-object://project/test/second");

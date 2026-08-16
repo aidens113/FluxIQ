@@ -8,10 +8,34 @@ import type { AutomationInspectorWidget, AutomationSelection } from "../types";
 import { formatAutomationPorts } from "../graph/ports";
 import { buildTimelineInspectorSections, conditionSummary } from "../timeline/view-model";
 import { AutomationNodeParameterEditor } from "../parameters/ParameterEditor";
-export function AutomationInspector(props: { entries: any[]; selection: AutomationSelection | null; policy: any; flow: any; flowPublications: any[]; flowDependencyInfo: any; node: any; recording: any; entry: any; signal: any; onOpenState(request: { nodeId?: string; sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; proposalId?: string; timelineEntryId?: string }): void; setSelection(selection: AutomationSelection): void }) {
-  const title = props.selection?.kind === "flow" ? "Flow" : props.selection?.kind === "signal" ? "Signal" : props.selection?.kind === "timeline" ? "Timeline Entry" : props.selection?.kind === "recording" ? "Recording" : props.selection?.kind === "policy" ? "Policy Graph" : props.selection?.kind === "proposal-step" ? "Proposal Step" : props.selection?.kind === "editor-node" ? "Editor Node" : props.selection?.kind === "editor-mode" ? `${props.selection.label} Mode` : "Node Inspector";
+import { buildNodeStateViewModel } from "../state/view-model";
+export function AutomationInspector(props: { entries: any[]; selection: AutomationSelection | null; policy: any; flow: any; flowPublications: any[]; flowDependencyInfo: any; node: any; recording: any; entry: any; signal: any; pipelineArtifacts: any; selectedTimeline: any; recordings: any[]; timelines: any[]; runtimeSessions: any[]; signals: any[]; onOpenState(request: { nodeId?: string; sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; proposalId?: string; timelineEntryId?: string }): void; setSelection(selection: AutomationSelection): void }) {
+  const title = props.selection?.kind === "state" ? "State Detail" : props.selection?.kind === "flow" ? "Flow" : props.selection?.kind === "signal" ? "Signal" : props.selection?.kind === "timeline" ? "Timeline Entry" : props.selection?.kind === "recording" ? "Recording" : props.selection?.kind === "policy" ? "Policy Graph" : props.selection?.kind === "proposal-step" ? "Proposal Step" : props.selection?.kind === "editor-node" ? "Editor Node" : props.selection?.kind === "editor-mode" ? `${props.selection.label} Mode` : "Node Inspector";
   const timelineInspector = props.selection?.kind === "timeline" && props.entry ? buildTimelineInspectorSections(props.entry, props.entries, props.recording) : [];
   const stateNodeId = inspectorStateNodeId(props.selection, props.node);
+  const stateSelectionValue = props.selection?.kind === "state" ? props.selection : null;
+  const stateInspector = stateSelectionValue ? buildNodeStateViewModel({
+    selection: stateSelectionValue,
+    selectedNode: props.node,
+    selectedRecording: props.recording,
+    selectedTimeline: props.selectedTimeline,
+    policy: props.policy,
+    taskGraph: props.flow,
+    pipelineArtifacts: props.pipelineArtifacts,
+    recordings: props.recordings,
+    timelines: props.timelines,
+    runtimeSessions: props.runtimeSessions,
+    signals: props.signals,
+    viewState: compactInspectorStateViewState({
+      sourceId: stateSelectionValue.sourceId,
+      phase: stateSelectionValue.phase,
+      selectedEvidenceId: stateSelectionValue.evidenceId,
+      selectedFactPath: stateSelectionValue.factPath
+    })
+  }) : null;
+  const selectedStateEvidence = stateInspector && stateSelectionValue?.evidenceId ? stateInspector.evidence.find((item) => item.id === stateSelectionValue.evidenceId) : undefined;
+  const selectedStateFact = stateInspector && stateSelectionValue?.factPath ? stateInspector.facts.find((item) => item.fullPath === stateSelectionValue.factPath) : undefined;
+  const selectedStateEntity = selectedStateFact ? stateEntityFromFact(selectedStateFact) : undefined;
   const updateEditorNodeParameters = (parameterValues: JsonObject) => {
     if (props.selection?.kind !== "editor-node") return;
     const nextSelection: AutomationSelection = {
@@ -61,6 +85,42 @@ export function AutomationInspector(props: { entries: any[]; selection: Automati
         <input aria-label="Search inspector fields" placeholder="Search fields" />
       </div>
       {stateNodeId ? <button className="button automation-inspector-action" onClick={() => props.onOpenState({ nodeId: stateNodeId, ...(props.selection?.kind === "proposal-step" ? { proposalId: props.selection.proposalId } : {}), phase: "input" })} type="button"><ListChecks size={14} aria-hidden />Open State</button> : null}
+      {props.selection?.kind === "state" && stateInspector ? <>
+        {selectedStateEntity ? <InspectorSection title="Selected State Entity" rows={[
+          ["Entity", selectedStateEntity.label],
+          ["Entity path", selectedStateEntity.path],
+          ["Entity type", selectedStateEntity.type],
+          ["Anchor", selectedStateFact?.anchor ? stateAnchorSummary(selectedStateFact.anchor) : "-"],
+          ["Source", selectedStateFact?.source ?? "-"]
+        ]} /> : null}
+        {selectedStateFact ? <InspectorSection title="Selected State Fact" rows={[
+          ["Fact label", selectedStateFact.label],
+          ["Attribute", selectedStateEntity?.attribute ?? selectedStateFact.label],
+          ["Fact path", selectedStateFact.fullPath],
+          ["Value", selectedStateFact.value],
+          ["Observed", selectedStateFact.observedAt !== undefined ? String(selectedStateFact.observedAt) : "-"],
+          ["Confidence", formatInspectorNumber(selectedStateFact.confidence)]
+        ]} /> : null}
+        {selectedStateEvidence ? <InspectorSection title="Selected Node Evidence" rows={[
+          ["Label", selectedStateEvidence.label],
+          ["Role", selectedStateEvidence.role],
+          ["Fact", selectedStateEvidence.factPath],
+          ["Comparator", selectedStateEvidence.comparator],
+          ["Expected", selectedStateEvidence.expectedValue ?? "-"],
+          ["Weight", formatInspectorNumber(selectedStateEvidence.weight)],
+          ["Confidence", formatInspectorNumber(selectedStateEvidence.confidence)],
+          ["Provenance", String(selectedStateEvidence.provenanceCount)]
+        ]} /> : null}
+        <InspectorSection title="State Selection" rows={[
+          ["Source", stateInspector.activeSource ? `${stateInspector.activeSource.label} (${stateInspector.activeSource.id})` : "-"],
+          ["Phase", stateInspector.activePhase],
+          ["Facts", String(stateInspector.summary.facts)],
+          ["Evidence", String(stateInspector.summary.evidence)],
+          ["Selected fact", props.selection.factPath ?? "-"],
+          ["Selected evidence", props.selection.evidenceId ?? "-"]
+        ]} />
+        {!selectedStateEvidence && !selectedStateFact ? <InspectorSection title="State" rows={[["Selection", "Click a bbox or structured fact to inspect it here."], ["Active source", stateInspector.activeSource?.id ?? "-"]]} /> : null}
+      </> : null}
       {props.selection?.kind === "editor-mode" ? <>
         <InspectorSection title="Mode" rows={[["Editor", props.selection.editor === "flow" ? "Flow editor" : "Routine editor"], ["Compatibility source", props.selection.editor === "flow" ? "Canonical Flow / legacy policy adapter" : "Legacy orchestration"], ["Mode", props.selection.label], ["Purpose", props.selection.description]]} />
         {props.selection.widgets?.map((widget, widgetIndex) => <InspectorWidget key={`${widget.kind}:${widget.title}:${widgetIndex}`} widget={widget} />)}
@@ -161,6 +221,44 @@ function InspectorWidget(props: { widget: AutomationInspectorWidget }) {
 
 function listRows(items: string[]): Array<[string, string]> {
   return items.length ? items.map((item, index) => [String(index + 1), item]) : [["Items", "-"]];
+}
+
+function compactInspectorStateViewState(value: { sourceId?: string | undefined; phase?: NodeStatePhase | undefined; selectedEvidenceId?: string | undefined; selectedFactPath?: string | undefined }) {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as { sourceId?: string; phase?: NodeStatePhase; selectedEvidenceId?: string; selectedFactPath?: string };
+}
+
+function formatInspectorNumber(value: number | undefined): string {
+  return value === undefined ? "-" : value.toFixed(2);
+}
+
+function stateAnchorSummary(anchor: any): string {
+  if (!anchor || typeof anchor !== "object") return "-";
+  if (anchor.type === "bounds" && anchor.bounds) {
+    const bounds = anchor.bounds;
+    return `bounds ${bounds.x ?? 0}, ${bounds.y ?? 0}, ${bounds.width ?? 0} x ${bounds.height ?? 0}${anchor.boundsKind ? ` (${anchor.boundsKind})` : ""}`;
+  }
+  if (anchor.type === "point") return `point ${anchor.x ?? 0}, ${anchor.y ?? 0}`;
+  return String(anchor.type ?? "-");
+}
+
+function stateEntityFromFact(fact: { namespace: string; path: string; fullPath: string; label: string; anchor?: any }): { label: string; path: string; type: string; attribute: string } {
+  const segments = fact.path.split(".").filter(Boolean);
+  const collection = segments[0] ?? "state";
+  const entityId = segments[1];
+  const entityPath = entityId ? `${fact.namespace}.${collection}.${entityId}` : fact.namespace;
+  const attribute = entityId && segments.length > 2 ? segments.slice(2).join(".") : segments.slice(1).join(".") || fact.path;
+  const anchorType = typeof fact.anchor?.type === "string" ? fact.anchor.type : "";
+  const type = anchorType === "entity" || anchorType === "region" ? titleCase(anchorType) : titleCase(singularize(collection));
+  const label = entityId ? titleCase(entityId.replace(/[-_]/g, " ")) : fact.label;
+  return { label, path: entityPath, type, attribute };
+}
+
+function singularize(value: string): string {
+  return value.endsWith("ies") ? `${value.slice(0, -3)}y` : value.endsWith("s") ? value.slice(0, -1) : value;
+}
+
+function titleCase(value: string): string {
+  return value.split(/[\s.]+/).filter(Boolean).map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`).join(" ") || "-";
 }
 
 function callFlowInspectorRows(value: any): Array<[string, string]> {
