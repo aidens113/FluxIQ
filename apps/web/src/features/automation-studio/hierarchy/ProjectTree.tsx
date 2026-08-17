@@ -167,7 +167,7 @@ export function AutomationHierarchyTreeNode(props: {
           aria-label={`Open ${props.node.label} config`}
           type="button"
         ><Settings size={13} aria-hidden /></button> : null}
-        {!isStaticWorkspaceNode && !isProposalHierarchyNode ? <button
+        {!isStaticWorkspaceNode && (!isProposalHierarchyNode || props.node.kind === "proposal") ? <button
           className="tree-row-action danger"
           onClick={(event) => {
             event.preventDefault();

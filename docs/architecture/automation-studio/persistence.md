@@ -51,6 +51,7 @@ The Automation Studio API exposes these as first-class framework endpoints:
 `create-normalization-review`, `list-pipeline-artifacts`,
 `mine-recording-evidence`, `propose-policy-from-model`,
 `approve-policy-proposal`, `create-recording-flow-proposals`,
+`generate-recording-proposal`, `delete-proposal`,
 `review-recording-flow-proposal`, `inspect-legacy-retirement`,
 `record-legacy-retirement-evidence`, `export-legacy-project`,
 `verify-legacy-backup`, `seal-legacy-writes`,
@@ -101,13 +102,14 @@ edited policy proposal to the last open valid canonical Flow, save it as a new
 Flow, regenerate it from the recording, process it with an LLM, or approve a
 mapper-generated recording proposal into a Flow or reviewed node definition.
 
-When a recording is finalized from the timeline, the web UI runs the recording
-authoring stages in order: normalize, mine evidence, propose a Policy Flow, and run any
-registered importer recording mappers to produce separate Flow proposals. The
-timeline pane shows an overlay with the active stage and progress while this
-happens. When the proposal is written, Automation Studio opens the proposal
-view and highlights the generated proposal in the left hierarchy. This does not
-approve or apply the proposal.
+When a recording is finalized from the timeline, the web UI stops at the raw
+recording boundary and refreshes the timeline. Proposal creation is explicit:
+the `Generate Proposal` action opens the Proposal Generator workspace view.
+That view can run LLM-assisted generation with stored user instructions or
+direct deterministic generation from importer mappers/mining. When a proposal
+is written, Automation Studio opens the proposal review view and highlights the
+generated proposal in the left hierarchy. This does not approve or apply the
+proposal.
 
 Recording Flow proposal generation treats action and domain-event entries as
 the primary mapper inputs. High-frequency `client.state_snapshot` and
@@ -117,6 +119,15 @@ correlation, but they are not surfaced to importer recording mappers as
 independent top-level observations. This keeps one click from becoming many
 duplicate action/evidence candidates.
 
+Pipeline artifact listing is a read path, not a validation/mutation path.
+`list-pipeline-artifacts` reads the project pipeline index and artifact
+documents without revalidating every recording Flow proposal against currently
+registered mapper/output definitions. Callers that need proposal health checks
+must request explicit recording Flow proposal revalidation in service code or
+use a dedicated validation/review operation. This keeps project refresh and the
+left hierarchy from doing mapper scans and canonical Flow scans just to display
+recordings, proposals, and flows.
+
 When project object storage is enabled, full `client.state_snapshot` payloads
 are moved out of timeline entries before storage. The recording observation
 keeps `payload.stateRef`, `payload.snapshotId` when available, and metadata such
@@ -124,27 +135,32 @@ as the snapshot digest/size; the JSON `StateSnapshot` itself is stored as a
 recording-owned project object. `get-recording` hydrates those refs back into
 `payload.state` for UI surfaces that explicitly open the full recording.
 
-Each recording has one current proposal artifact. Regenerating the
-proposal overwrites that recording-owned proposal instead of creating additional
-proposal rows for the same source recording. The proposal is persisted under
-the source recording's derived artifact folder. Deleting the source recording
-deletes its proposal artifact and removes it from the project pipeline index.
+Each generation request creates a new proposal attempt unless the caller
+explicitly supplies `replaceProposalId`. Replacement deletes only the selected
+target after the new proposal has been successfully written. Proposal attempts
+are persisted under the source recording's derived artifact folder:
 
-Importer recording mappers may additionally write multiple immutable-history
-Flow proposals beneath `derived/proposal/flows/{proposalId}.json`. The pipeline
-index stores their status and recording ownership. These proposals retain mapper
-and package versions, observation IDs, evidence links, output/parameter data,
-confirmation expectations, confidence, and the review decision. They are not
-executable before approval. Approval writes either provenance-bearing policy
-action nodes to a selected Flow or reviewed node definitions; raw evidence is
-never edited. Listing revalidates active mapper, output, and action-input
-contracts and records invalidation reasons plus affected Flow IDs.
+```text
+recordings/sessions/{recordingId}/derived/proposals/{proposalId}/proposal.json
+recordings/sessions/{recordingId}/derived/proposals/{proposalId}/flow.json
+```
 
-When a connected client stops a recording, the client gateway finalizes and
-processes the recording in the framework service. The web UI detects the
+The pipeline index stores every active proposal attempt with recording
+ownership and status. Proposals retain generation mode, optional user title,
+instructions/constraints, mapper or LLM metadata, mapper/package versions,
+observation IDs, evidence links, output/parameter data, confirmation
+expectations, confidence, and review decision. They are not executable before
+approval. Approval writes either provenance-bearing policy action nodes to a
+selected Flow or reviewed node definitions; raw evidence is never edited.
+Deleting a proposal removes its artifact documents and derived proposal folder
+without deleting the source recording. Deleting a recording deletes its session
+folder, derived evidence, and recording-owned proposals.
+
+When a connected client stops a recording, the client gateway finalizes the
+recording in the framework service. The web UI detects the
 active-recording-to-stopped transition from gateway snapshots, refreshes the
-final timeline automatically, and keeps the timeline covered with a progress
-overlay until the generated proposal artifact appears.
+final timeline automatically, and leaves proposal creation to the explicit
+Proposal Generator action.
 
 Timeline clips open reconstructed state directly. A timeline clip can be
 double-clicked to open the State View for that recording entry, using the

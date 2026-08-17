@@ -401,6 +401,23 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   });
   registry.register({
     programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProposal,
+    permission: "runtime.control",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as { projectId?: unknown; proposalId?: unknown; kind?: unknown; authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return {
+        ok: true,
+        payload: await service.deleteProposal({
+          projectId: String(payload.projectId ?? ""),
+          proposalId: String(payload.proposalId ?? ""),
+          kind: payload.kind === "policy" || payload.kind === "recording_flow" ? payload.kind : "auto"
+        })
+      };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendRecordingEntry,
     permission: "runtime.control",
     handler: async (request) => {
@@ -446,6 +463,28 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ProcessFinalizedRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       return { ok: true, payload: { result: await service.processFinalizedRecording({ projectId: String(payload.projectId ?? ""), recordingId: String(payload.recordingId ?? ""), force: payload.force === true }) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateRecordingProposal,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as { projectId?: unknown; recordingId?: unknown; mode?: unknown; title?: unknown; instructions?: unknown; constraints?: unknown; replaceProposalId?: unknown };
+      return {
+        ok: true,
+        payload: {
+          result: await service.generateRecordingProposal({
+            projectId: String(payload.projectId ?? ""),
+            recordingId: String(payload.recordingId ?? ""),
+            mode: payload.mode === "llm_assisted" ? "llm_assisted" : "direct",
+            ...(typeof payload.title === "string" ? { title: payload.title } : {}),
+            ...(typeof payload.instructions === "string" ? { instructions: payload.instructions } : {}),
+            ...(typeof payload.constraints === "string" ? { constraints: payload.constraints } : {}),
+            ...(typeof payload.replaceProposalId === "string" ? { replaceProposalId: payload.replaceProposalId } : {})
+          })
+        }
+      };
     }
   });
   registry.register({

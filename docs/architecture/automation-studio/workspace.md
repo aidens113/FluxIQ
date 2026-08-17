@@ -139,15 +139,16 @@ The recording-to-Policy-Flow pipeline is intentionally staged internally:
    generated node and edge linking back to evidence.
 6. Apply the proposed Policy Flow only after explicit approval.
 
-In the normal UI, finalized recordings are processed automatically. When a
-recording ends, Automation Studio normalizes it, writes normalization details,
-mines evidence, and creates a Policy Flow proposal if evidence exists. Users navigate
-to the resulting proposal through the Proposals sidebar root rather than a
-Pipeline root. Manual stage endpoints remain available for debugging and
+In the normal UI, finalized recordings remain raw source material until the
+user explicitly asks to generate proposals. When a recording ends, Automation
+Studio refreshes the timeline and offers `Generate Proposal`, which opens the
+Proposal Generator workspace view. That generator can create an LLM-assisted
+attempt with user instructions or a direct deterministic attempt from importer
+mappers/mining. Manual stage endpoints remain available for debugging and
 advanced tooling, but they are not the primary product surface. Generating
-these proposal artifacts does not require a PIN recheck because proposals are
-inert until review. Applying or approving a generated proposal remains a
-privileged mutation and still requires PIN authorization.
+proposal artifacts does not require a PIN recheck because proposals are inert
+until review. Applying or approving a generated proposal remains a privileged
+mutation and still requires PIN authorization.
 
 Model learning and replay/validation are not recording pipeline stages in the
 current product surface. Model-shaped artifacts may still be used internally as

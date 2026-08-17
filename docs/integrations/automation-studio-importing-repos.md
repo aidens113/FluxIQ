@@ -263,15 +263,13 @@ recorded actions rather than the screenshot cadence and prevents one user click
 from becoming many duplicate evidence candidates.
 
 When a finalized recording belongs to a domain with registered importer
-recording mappers, FluxIQ generates reviewer-gated Recording Flow proposals
-from those mappers before running the generic normalization/mining/policy
-proposal pipeline. The generic evidence pipeline remains available for
-recordings without mapper support, but extension/importer recordings should not
-pay the mining cost just to reach mapped Flow proposals.
-Proposal generation is idempotent by default: if the recording has not changed
-since the latest mapper proposal, FluxIQ returns the existing proposal instead
-of replaying the mapper over the timeline again. Pass `force: true` only when
-the operator explicitly requests regeneration.
+recording mappers, FluxIQ can use those mappers from the explicit Proposal
+Generator workflow to create reviewer-gated Recording Flow proposals. The
+generic evidence pipeline remains available for recordings without mapper
+support, but extension/importer recordings should not pay the mining cost just
+to reach mapped Flow proposals. The default Proposal Generator behavior creates
+a new attempt each time; callers should pass `replaceProposalId` only when the
+operator explicitly chooses to replace one existing proposal.
 
 ```ts
 const state = {
@@ -378,11 +376,11 @@ green, mismatches render red, and unbound runtime facts render gray as
 irrelevant context. This comparison is explanatory state, not Flow graph
 editing state.
 
-Finalized recordings are processed automatically by the framework when the
-recording has a project owner. Automation Studio normalizes the recording,
-mines evidence, and creates a Policy Flow proposal unless a current proposal already
-exists. Importers should focus on factual event/state quality; they do not need
-to call each mining stage directly in normal operation.
+Finalized recordings are not processed into proposals automatically. Automation
+Studio refreshes the raw recording timeline, then the operator opens Proposal
+Generator when they are ready to create one or more attempts. Importers should
+focus on factual event/state quality; they do not need to call each mining
+stage directly in normal operation.
 
 Recordings that are meant to contribute to the same policy should use the same
 compatibility `taskId` when the recording session is created. FluxIQ carries
@@ -393,12 +391,13 @@ Flow, the framework reuses
 matching leading steps and branches at the first divergent proposed step.
 
 In the web panel, stopping or finalizing a recording refreshes the timeline
-automatically and shows stage progress while derived data is being created. The
-generated proposal appears under Proposals in the project hierarchy and remains
-a draft until the user explicitly approves or applies it. Regeneration keeps
-one current proposal per recording and rewrites that proposal artifact rather
-than adding duplicate proposal rows. Deleting a recording deletes its generated
-proposal.
+automatically and leaves the recording ready for explicit generation. The
+`Generate Proposal` action opens the Proposal Generator, where the operator can
+create an LLM-assisted attempt with instructions or a direct deterministic
+attempt. Generated proposals appear under Proposals in a folder named after
+their source recording and remain drafts until the user explicitly approves or
+applies them. Deleting a proposal removes only that attempt; deleting a
+recording deletes its generated proposals.
 
 Each proposal contains a preview policy graph and a mergeable graph patch. The
 importing repo does not define patch criticality, confidence, or merge rules;
@@ -434,13 +433,15 @@ recordings/sessions/{recordingId}/derived/
     observations/{observationId}.json
     correlations/{correlationId}.json
     claims/{claimId}.json
-  proposal/
-    proposal.json
-    flows/{proposalId}.json
+  proposals/
+    {proposalId}/proposal.json
+    {proposalId}/flow.json
 ```
 
 Project indexes live under `indexes/` and contain references only. Deleting a
-recording removes its session folder, derived evidence, and generated proposal.
+proposal removes its per-proposal derived folder and index entries. Deleting a
+recording removes its session folder, derived evidence, and generated
+proposals.
 
 ## Practical Guidance
 

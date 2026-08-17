@@ -21,6 +21,19 @@ describe("AutomationStudioObjectStore", () => {
     expect(JSON.parse(raw)).toEqual({ payload: "value" });
   });
 
+  it("rewrites an indexed object when its backing file is missing", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-object-store-"));
+    roots.push(root);
+    const store = new AutomationStudioObjectStore(root);
+    const first = await store.putJson("project.1", { payload: "value" });
+    await rm(path.join(root, first.$fluxiqObject.relativePath), { force: true });
+
+    const second = await store.putJson("project.1", { payload: "value" });
+
+    expect(second).toEqual(first);
+    await expect(store.readJson(second)).resolves.toEqual({ payload: "value" });
+  });
+
   it("stores binary visual assets with project-scoped digest lookup", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-object-store-"));
     roots.push(root);

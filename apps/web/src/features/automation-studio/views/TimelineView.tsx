@@ -22,6 +22,7 @@ export function AutomationTimelineView(props: {
   onFinalizeRecording(recordingId: string): Promise<void>;
   onOpenTimelineEntryState(recordingId: string, entryId: string): void;
   onOpenProposal(recordingId: string): void;
+  onOpenProposalGenerator(recordingId: string): void;
   onProcessFinalizedRecording(recordingId: string, force?: boolean): Promise<boolean | void>;
   onRefreshRecordings(): Promise<void>;
   onUpdateRecording(recordingId: string, changes: JsonObject): Promise<void>;
@@ -77,8 +78,8 @@ export function AutomationTimelineView(props: {
           <span>{props.selectedRecording ? `${props.selectedRecording.endedAt ? "Finalized" : "Open"} | ${formatTimelineDuration(selectedDuration)} | ${props.entries.length} events | ${selectedIsNormalized ? "normalized" : "raw"}` : "Select a recording from the project hierarchy."}</span>
         </div>
         <div className="automation-timeline-toolbar-actions">
-          <button className="button" disabled={!props.selectedRecording} onClick={() => props.selectedRecording && props.onOpenProposal(props.selectedRecording.recordingId)} type="button"><Link2 size={13} aria-hidden />Open Corresponding Proposal</button>
-          <button className="button" disabled={!props.selectedRecording || !props.selectedRecording.endedAt || Boolean(processing)} onClick={() => props.selectedRecording && void props.onProcessFinalizedRecording(props.selectedRecording.recordingId)} type="button"><Sparkles size={13} aria-hidden />Generate Proposal</button>
+          <button className="button" disabled={!props.selectedRecording} onClick={() => props.selectedRecording && props.onOpenProposal(props.selectedRecording.recordingId)} type="button"><Link2 size={13} aria-hidden />Open Existing Proposal</button>
+          <button className="button" disabled={!props.selectedRecording || !props.selectedRecording.endedAt || Boolean(processing)} onClick={() => props.selectedRecording && props.onOpenProposalGenerator(props.selectedRecording.recordingId)} type="button"><Sparkles size={13} aria-hidden />Generate Proposal</button>
           <button className="button" onClick={() => void props.onRefreshRecordings()} type="button"><RefreshCcw size={13} aria-hidden />Refresh</button>
           <button className="button" disabled={!props.selectedRecording} onClick={() => {
             const name = window.prompt("Recording name", props.selectedRecording?.metadata?.name ?? props.selectedRecording?.recordingId ?? "") ?? "";

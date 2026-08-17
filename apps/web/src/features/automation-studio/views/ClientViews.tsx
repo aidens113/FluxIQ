@@ -206,9 +206,7 @@ export function AutomationClientGatewayView(props: { projectId: string | null; o
     if (result.ok) {
       const recordingId = result.payload?.recording?.recordingId;
       if (props.projectId && recordingId) {
-        setStatus(`Recording ${recordingId} stopped. Generating proposal...`);
-        const processed = await props.onProcessFinalizedRecording(recordingId, false, authorizationPin);
-        setStatus(processed ? `Recording ${recordingId} proposal ready.` : `Recording ${recordingId} stopped. Proposal generation did not complete.`);
+        setStatus(`Recording ${recordingId} stopped. Open Proposal Generator when ready.`);
       }
       setPin("");
       await refreshGateway();

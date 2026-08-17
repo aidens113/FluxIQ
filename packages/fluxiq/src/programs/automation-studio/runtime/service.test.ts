@@ -68,15 +68,135 @@ describe("AutomationStudioService recording persistence", () => {
     const withoutConfirmation = new IoRegistry();
     withoutConfirmation.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
     service.bindIoRuntime(withoutConfirmation, "example");
-    const confirmationInvalidated = (await service.listPipelineArtifacts(project.id)).recordingFlowProposals.find((item) => item.proposalId === proposal!.proposalId);
+    const confirmationInvalidated = (await service.listPipelineArtifacts(project.id, { revalidateRecordingFlowProposals: true })).recordingFlowProposals.find((item) => item.proposalId === proposal!.proposalId);
     expect(confirmationInvalidated?.status).toBe("invalidated");
     expect(confirmationInvalidated?.invalidation?.reasons).toEqual(expect.arrayContaining([expect.stringContaining("Confirmation input clicked")]));
 
     const changedManifest = { ...manifest, packageVersion: "2.0.0", recordingMappers: [{ ...manifest.recordingMappers![0]!, version: "2.0.0" }] };
     const changedRuntime = new AutomationStudioNativeNodeRuntime().register(changedManifest, { packageId: "example.importer", packageVersion: "2.0.0", implementations: {}, recordingMappers: { "click-mapper": () => null } });
     service.bindNativeNodeRuntime(changedRuntime);
-    const invalidated = (await service.listPipelineArtifacts(project.id)).recordingFlowProposals.find((item) => item.proposalId === proposal!.proposalId);
+    const invalidated = (await service.listPipelineArtifacts(project.id, { revalidateRecordingFlowProposals: true })).recordingFlowProposals.find((item) => item.proposalId === proposal!.proposalId);
     expect(invalidated).toMatchObject({ status: "invalidated", invalidation: { affectedFlowIds: [reviewed.flow!.flowId] } });
+  });
+
+  it("generates multiple proposal attempts and deletes one without deleting the recording", async () => {
+    const io = new IoRegistry();
+    io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
+    const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "click-mapper", version: "1.0.0", description: "Maps clicks", outputIds: ["click"] }] };
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingMappers: { "click-mapper": () => ({ outputId: "click", parameters: { target: "submit" }, confidence: 0.9 }) } });
+    const service = new AutomationStudioService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const project = await service.createProject({ name: "Proposal attempts", domainId: "example" });
+    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.attempts", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
+    await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" } } });
+    await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId });
+
+    const first = await service.generateRecordingProposal({ projectId: project.id, recordingId: recording.recordingId, mode: "direct" });
+    const second = await service.generateRecordingProposal({ projectId: project.id, recordingId: recording.recordingId, mode: "llm_assisted", title: "Clean checkout", instructions: "Prefer one reusable click action." });
+    const firstProposalId = first.recordingFlowProposals![0]!.proposalId;
+    const secondProposalId = second.recordingFlowProposals![0]!.proposalId;
+
+    expect(firstProposalId).not.toBe(secondProposalId);
+    expect(second.recordingFlowProposals![0]!.metadata).toMatchObject({ generationMode: "llm_assisted", title: "Clean checkout", instructions: "Prefer one reusable click action." });
+    expect((await service.listPipelineArtifacts(project.id)).recordingFlowProposals.map((proposal) => proposal.proposalId)).toEqual(expect.arrayContaining([firstProposalId, secondProposalId]));
+
+    await service.deleteProposal({ projectId: project.id, proposalId: firstProposalId });
+
+    const artifacts = await service.listPipelineArtifacts(project.id);
+    expect(artifacts.recordingFlowProposals.map((proposal) => proposal.proposalId)).toContain(secondProposalId);
+    expect(artifacts.recordingFlowProposals.map((proposal) => proposal.proposalId)).not.toContain(firstProposalId);
+    await expect(service.getRecordingSession(recording.recordingId, project.id)).resolves.toMatchObject({ recordingId: recording.recordingId });
+  });
+
+  it("ignores stale object-backed proposal artifacts during proposal refresh", async () => {
+    const io = new IoRegistry();
+    io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
+    const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "click-mapper", version: "1.0.0", description: "Maps clicks", outputIds: ["click"] }] };
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingMappers: { "click-mapper": () => ({ outputId: "click", parameters: { target: "submit", payload: "x".repeat(300_000) }, confidence: 0.9 }) } });
+    const service = new AutomationStudioService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const project = await service.createProject({ name: "Stale proposal object", domainId: "example" });
+    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.stale-proposal-object", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
+    await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" } } });
+    await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId });
+    const generated = await service.generateRecordingProposal({ projectId: project.id, recordingId: recording.recordingId, mode: "direct" });
+    const staleProposalId = generated.recordingFlowProposals![0]!.proposalId;
+    const sharedObjectDir = path.join(tempRoot, "artifacts", "automation-studio", "projects", project.id, "objects", "shared");
+    const sharedObjects = await readdir(sharedObjectDir).catch(() => []);
+    await Promise.all(sharedObjects.map((fileName) => rm(path.join(sharedObjectDir, fileName), { force: true })));
+
+    const artifacts = await service.listPipelineArtifacts(project.id);
+    expect(artifacts.recordingFlowProposals.map((proposal) => proposal.proposalId)).toContain(staleProposalId);
+
+    const regenerated = await service.generateRecordingProposal({ projectId: project.id, recordingId: recording.recordingId, mode: "direct" });
+    expect(regenerated.recordingFlowProposals?.[0]?.proposalId).toBeTruthy();
+  });
+
+  it("reports when direct generation produces no proposal artifact", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot });
+    const project = await service.createProject({ name: "Empty proposal generation", domainId: "example" });
+    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.empty-proposal", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
+    await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId });
+
+    const result = await service.generateRecordingProposal({ projectId: project.id, recordingId: recording.recordingId, mode: "direct" });
+
+    expect(result.proposal).toBeUndefined();
+    expect(result.recordingFlowProposals).toBeUndefined();
+    expect(result.issues.length).toBeGreaterThan(0);
+  });
+
+  it("reports when proposal mapping has state snapshots but no actions", async () => {
+    const io = new IoRegistry();
+    io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
+    const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "click-mapper", version: "1.0.0", description: "Maps clicks", outputIds: ["click"] }] };
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingMappers: { "click-mapper": () => null } });
+    const service = new AutomationStudioService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const project = await service.createProject({ name: "State-only proposal generation", domainId: "example" });
+    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.state-only-proposal", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
+    await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "client.state_snapshot", payload: { state: { timestamp: 2, namespaces: {} } } } });
+    await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId });
+
+    const result = await service.generateRecordingProposal({ projectId: project.id, recordingId: recording.recordingId, mode: "direct" });
+
+    expect(result.recordingFlowProposals).toBeUndefined();
+    expect(result.issues).toEqual(expect.arrayContaining([
+      expect.stringContaining("No mapper-visible entries remained"),
+      expect.stringContaining("No proposal artifact was generated")
+    ]));
+  });
+
+  it("creates proposal candidates directly from normalized action entries when mapper does not remap them", async () => {
+    const io = new IoRegistry();
+    io.registerInput("example", { definition: { id: "clicked", title: "Clicked", role: "action", outputId: "click" }, mode: "stream", subscribe: () => () => undefined });
+    io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
+    const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "click-mapper", version: "1.0.0", description: "Maps clicks", outputIds: ["click"] }] };
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingMappers: { "click-mapper": () => null } });
+    const service = new AutomationStudioService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const project = await service.createProject({ name: "Direct action proposals", domainId: "example" });
+    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.direct-action-proposal", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
+    await service.appendRecordingEvent({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entry: {
+        type: "action",
+        actionType: "click",
+        outputId: "click",
+        confirmationInputId: "clicked",
+        parameters: { target: "submit" },
+        origin: "operator",
+        startedAt: 2,
+        completedAt: 2,
+        metadata: { inputId: "clicked", policyEligible: true }
+      }
+    });
+    await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId });
+
+    const result = await service.generateRecordingProposal({ projectId: project.id, recordingId: recording.recordingId, mode: "direct" });
+
+    expect(result.recordingFlowProposals?.[0]?.candidates[0]).toMatchObject({
+      outputId: "click",
+      parameters: { target: "submit" },
+      sourceInputIds: ["clicked"],
+      expectedConfirmation: { inputId: "clicked" }
+    });
   });
 
   it("uses action events as mapper inputs and leaves state snapshots as linked context", async () => {
@@ -822,13 +942,13 @@ describe("AutomationStudioService recording persistence", () => {
     await expect(readFile(path.join(projectRoot, "indexes", "pipeline.json"), "utf8")).resolves.toContain(proposal.proposalId);
     await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.pipeline-test", "derived", "index.json"), "utf8")).resolves.toContain(proposal.proposalId);
     await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.pipeline-test", "derived", "evidence", "claims", `${artifacts.evidenceClaims[0]!.claimId}.json`), "utf8")).resolves.toContain("\"claimId\"");
-    await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.pipeline-test", "derived", "proposal", "proposal.json"), "utf8")).resolves.toContain("\"proposalId\"");
+    await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.pipeline-test", "derived", "proposals", proposal.proposalId, "proposal.json"), "utf8")).resolves.toContain("\"proposalId\"");
     await expect(readFile(path.join(projectRoot, "policies", `${approved.policy.policyId}.json`), "utf8")).resolves.toContain("\"policyId\"");
     await expect(readFile(path.join(projectRoot, "tasks", "task.pipeline", "task.json"), "utf8")).rejects.toThrow();
 
     await service.deleteRecording({ projectId: project.id, recordingId: recording.recordingId });
     await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.pipeline-test", "derived", "index.json"), "utf8")).rejects.toThrow();
-    await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.pipeline-test", "derived", "proposal", "proposal.json"), "utf8")).rejects.toThrow();
+    await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.pipeline-test", "derived", "proposals", proposal.proposalId, "proposal.json"), "utf8")).rejects.toThrow();
     await expect(readFile(path.join(projectRoot, "recordings", "sessions", "recording.pipeline-test", "derived", "evidence", "claims", `${artifacts.evidenceClaims[0]!.claimId}.json`), "utf8")).rejects.toThrow();
     expect((await service.listPipelineArtifacts(project.id)).policyProposals).toEqual([]);
   });

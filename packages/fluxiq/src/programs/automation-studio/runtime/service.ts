@@ -147,7 +147,7 @@ export type AutomationStudioFlowMigrationInspection = {
 
 type AutomationStudioProjectRecord = AutomationStudioProject & AutomationStudioProjectHierarchy;
 
-const PIPELINE_ARTIFACT_WRITE_CONCURRENCY = 16;
+const PIPELINE_ARTIFACT_IO_CONCURRENCY = 16;
 const MAX_PRE_ACTION_STATE_CORRELATIONS = 12;
 const MAX_POST_ACTION_STATE_DELTAS = 12;
 
@@ -212,6 +212,27 @@ export type ProcessFinalizedRecordingResult = {
   normalizedTimeline?: NormalizedTimeline;
   review?: NormalizationReviewArtifact;
   miningRun?: SignalMiningResult;
+  proposal?: PolicyProposalArtifact;
+  recordingFlowProposals?: RecordingFlowProposalArtifact[];
+  issues: string[];
+  generatedAt: number;
+};
+
+export type GenerateRecordingProposalInput = {
+  projectId: string;
+  recordingId: string;
+  mode: "direct" | "llm_assisted";
+  title?: string;
+  instructions?: string;
+  constraints?: string;
+  replaceProposalId?: string;
+};
+
+export type GenerateRecordingProposalResult = {
+  schemaVersion: "0.1";
+  recordingId: string;
+  mode: "direct" | "llm_assisted";
+  status: "processed" | "skipped" | "partial";
   proposal?: PolicyProposalArtifact;
   recordingFlowProposals?: RecordingFlowProposalArtifact[];
   issues: string[];
@@ -579,6 +600,94 @@ export class AutomationStudioService {
     };
   }
 
+  async generateRecordingProposal(input: GenerateRecordingProposalInput): Promise<GenerateRecordingProposalResult> {
+    const mode = input.mode === "llm_assisted" ? "llm_assisted" : "direct";
+    const replaceProposalId = input.replaceProposalId?.trim();
+    const generationMetadata = compactJsonObject({
+      recordingId: input.recordingId,
+      generationMode: mode,
+      ...(input.title?.trim() ? { title: input.title.trim() } : {}),
+      ...(input.instructions?.trim() ? { instructions: input.instructions.trim() } : {}),
+      ...(input.constraints?.trim() ? { constraints: input.constraints.trim() } : {}),
+      createdFromView: "proposal-generator",
+      generatedBy: mode === "llm_assisted" ? "llm_assistant" : "recording_mapper",
+      ...(mode === "llm_assisted" ? { llm: { provider: "pending", model: "deterministic-fallback", promptVersion: "proposal-generator.v1" } } : {})
+    });
+    let flowResult: CreateRecordingFlowProposalsResult = { proposals: [], issues: [] };
+    try {
+      flowResult = await this.createRecordingFlowProposals({ projectId: input.projectId, recordingId: input.recordingId, force: true });
+    } catch (error) {
+      flowResult = { proposals: [], issues: [errorMessage(error, "Recording Flow proposals could not be created.")] };
+    }
+    if (flowResult.proposals.length) {
+      const proposals: RecordingFlowProposalArtifact[] = [];
+      for (const proposal of flowResult.proposals) {
+        const next = {
+          ...proposal,
+          metadata: compactJsonObject({
+            ...(proposal.metadata ?? {}),
+            ...generationMetadata,
+            generatedBy: mode === "llm_assisted" ? "llm_assistant" : "recording_mapper"
+          })
+        };
+        await this.writePipelineArtifact(input.projectId, "recordingFlowProposals", next.proposalId, next as unknown as JsonObject);
+        proposals.push(next);
+      }
+      if (replaceProposalId) await this.deleteProposal({ projectId: input.projectId, proposalId: replaceProposalId, kind: "auto" });
+      return {
+        schemaVersion: "0.1",
+        recordingId: input.recordingId,
+        mode,
+        status: "processed",
+        recordingFlowProposals: proposals,
+        issues: flowResult.issues,
+        generatedAt: Date.now()
+      };
+    }
+    const processed = await this.processFinalizedRecording({ projectId: input.projectId, recordingId: input.recordingId, force: true });
+    let proposal = processed.proposal;
+    if (proposal) {
+      proposal = {
+        ...proposal,
+        metadata: compactJsonObject({
+          ...(proposal.metadata ?? {}),
+          ...generationMetadata,
+          generatedBy: mode === "llm_assisted" ? "llm_assistant" : "evidence_miner"
+        })
+      };
+      await this.writePipelineArtifact(input.projectId, "policyProposals", proposal.proposalId, proposal as unknown as JsonObject);
+    }
+    const recordingFlowProposals = processed.recordingFlowProposals?.length
+      ? await Promise.all(processed.recordingFlowProposals.map(async (item) => {
+        const next = {
+          ...item,
+          metadata: compactJsonObject({
+            ...(item.metadata ?? {}),
+            ...generationMetadata,
+            generatedBy: mode === "llm_assisted" ? "llm_assistant" : "recording_mapper"
+          })
+        };
+        await this.writePipelineArtifact(input.projectId, "recordingFlowProposals", next.proposalId, next as unknown as JsonObject);
+        return next;
+      }))
+      : undefined;
+    if (replaceProposalId && (proposal || recordingFlowProposals?.length)) await this.deleteProposal({ projectId: input.projectId, proposalId: replaceProposalId, kind: "auto" });
+    const issues = [...flowResult.issues, ...processed.issues];
+    if (!proposal && !recordingFlowProposals?.length) {
+      issues.push("No proposal artifact was generated from this recording.");
+    }
+    return {
+      schemaVersion: "0.1",
+      recordingId: input.recordingId,
+      mode,
+      status: proposal || recordingFlowProposals?.length ? "processed" : processed.status,
+      ...(proposal ? { proposal } : {}),
+      ...(recordingFlowProposals?.length ? { recordingFlowProposals } : {}),
+      issues,
+      generatedAt: Date.now()
+    };
+  }
+
   async normalizeRecording(input: { projectId?: string | null; recordingId: string; options?: NormalizationOptions }): Promise<NormalizedTimeline> {
     const recording = await this.getRecordingSession(input.recordingId, input.projectId);
     const generated = normalizeRecordingTimeline(recording, input.options);
@@ -632,6 +741,27 @@ export class AutomationStudioService {
       }
       return { deletedRecordingId: input.recordingId };
     });
+  }
+
+  async deleteProposal(input: { projectId: string; proposalId: string; kind?: "policy" | "recording_flow" | "auto" }): Promise<{ deletedProposalId: string; kind: "policy" | "recording_flow"; recordingId?: string }> {
+    const requestedKind = input.kind === "policy" ? "policyProposals" : input.kind === "recording_flow" ? "recordingFlowProposals" : null;
+    const kinds: Array<"policyProposals" | "recordingFlowProposals"> = requestedKind ? [requestedKind] : ["policyProposals", "recordingFlowProposals"];
+    for (const kind of kinds) {
+      const artifact = await this.readPipelineArtifact<JsonObject>(input.projectId, kind, input.proposalId);
+      if (!artifact) continue;
+      const recordingId = await this.pipelineArtifactRecordingId(input.projectId, kind, artifact);
+      if (!recordingId) throw new Error("Proposal is not associated with a recording.");
+      await this.deletePipelineArtifactDocuments(input.projectId, recordingId, kind, input.proposalId);
+      await this.removeRecordingPipelineArtifactId(input.projectId, recordingId, kind, input.proposalId);
+      await new ProgramJsonStore<PipelineIndex>(this.projectFile(input.projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => ({
+        ...index,
+        policyProposals: kind === "policyProposals" ? (index.policyProposals ?? []).filter((item) => item.proposalId !== input.proposalId) : index.policyProposals,
+        recordingFlowProposals: kind === "recordingFlowProposals" ? (index.recordingFlowProposals ?? []).filter((item) => item.proposalId !== input.proposalId) : index.recordingFlowProposals
+      }));
+      if (this.objectStore) await this.pruneUnreferencedProjectObjects(input.projectId);
+      return { deletedProposalId: input.proposalId, kind: kind === "policyProposals" ? "policy" : "recording_flow", recordingId };
+    }
+    throw new Error("Unknown proposal.");
   }
 
   async appendRecordingNoteEntry(input: { projectId?: string | null; recordingId: string; text?: unknown; linkedEntryIds?: unknown; startOffsetMs?: unknown; endOffsetMs?: unknown }): Promise<RecordingSession> {
@@ -916,7 +1046,7 @@ export class AutomationStudioService {
     };
     const proposal: PolicyProposalArtifact = {
       schemaVersion: "0.1",
-      proposalId: `proposal.${safeSegment(input.recordingId ?? model.sourceRecordings[0] ?? model.learnedTaskModelId)}`,
+      proposalId: `proposal.${safeSegment(input.recordingId ?? model.sourceRecordings[0] ?? model.learnedTaskModelId)}.${randomUUID()}`,
       learnedTaskModelId: model.learnedTaskModelId,
       policy,
       patch,
@@ -929,8 +1059,6 @@ export class AutomationStudioService {
         miningRunId: model.sourceMiningRuns[0] ?? null
       }
     };
-    const proposalRecordingId = typeof proposal.metadata?.recordingId === "string" ? proposal.metadata.recordingId : null;
-    if (proposalRecordingId) await this.deleteProjectRecordingPolicyProposals(input.projectId, proposalRecordingId, proposal.proposalId);
     await this.writePipelineArtifact(input.projectId, "policyProposals", proposal.proposalId, proposal as unknown as JsonObject);
     return proposal;
   }
@@ -1332,6 +1460,9 @@ export class AutomationStudioService {
     if (mapperTimeline.length !== recording.timeline.length) {
       issues.push(`Compacted ${recording.timeline.length - mapperTimeline.length} high-frequency state entries before mapper proposal generation. Raw recording data was preserved.`);
     }
+    if (!mapperTimeline.length) {
+      issues.push(`No mapper-visible entries remained after compacting high-frequency state. The recording contains ${entryCounts}.`);
+    }
     for (const mapper of mappers) {
       const controller = new AbortController();
       const candidates: RecordingFlowActionCandidate[] = [];
@@ -1354,7 +1485,12 @@ export class AutomationStudioService {
             mappedEntryCount += 1;
             emittedCandidateCount += mappedCandidates.length;
           }
-          for (const candidate of mappedCandidates) {
+          const candidateInputs = mappedCandidates.length ? mappedCandidates : entry.type === "action" ? [recordingActionEntryCandidate(entry)].filter(Boolean) as AutomationStudioRecordingMapperCandidate[] : [];
+          if (!mappedCandidates.length && candidateInputs.length) {
+            mappedEntryCount += 1;
+            emittedCandidateCount += candidateInputs.length;
+          }
+          for (const candidate of candidateInputs) {
             candidates.push(this.validateRecordingCandidate({ candidate, entryId: entry.id, recordingId: recording.recordingId, domainId, ...(mapper.definition.outputIds ? { mapperOutputIds: mapper.definition.outputIds } : {}) }));
           }
         } catch (error) {
@@ -1934,7 +2070,7 @@ export class AutomationStudioService {
     return { ...flow, nodes: flow.nodes.map((node) => materializeRecordingNode(node, byId.get(node.definitionId))) };
   }
 
-  async listPipelineArtifacts(projectId: string): Promise<AutomationPipelineArtifacts> {
+  async listPipelineArtifacts(projectId: string, options: { revalidateRecordingFlowProposals?: boolean } = {}): Promise<AutomationPipelineArtifacts> {
     const index = await this.readPipelineIndex(projectId);
     const normalizationReviews = await this.readPipelineArtifactList<NormalizationReviewArtifact>(projectId, "normalizationReviews", index.normalizationReviews.map((item) => item.reviewId));
     const miningRuns = await this.readPipelineArtifactList<SignalMiningResult>(projectId, "miningRuns", index.miningRuns.map((item) => item.miningRunId));
@@ -1948,7 +2084,7 @@ export class AutomationStudioService {
     const evidenceClaims = embeddedClaims.length ? embeddedClaims : await this.readPipelineArtifactList<EvidenceClaim>(projectId, "evidenceClaims", (index.evidenceClaims ?? []).map((item) => item.claimId));
     const learnedTaskModels = await this.readPipelineArtifactList<LearnedTaskModel>(projectId, "learnedTaskModels", (index.learnedTaskModels ?? []).map((item) => item.learnedTaskModelId));
     const policyProposals = await this.readPipelineArtifactList<PolicyProposalArtifact>(projectId, "policyProposals", (index.policyProposals ?? []).map((item) => item.proposalId));
-    const recordingFlowProposals = await this.readRecordingFlowProposals(projectId, true);
+    const recordingFlowProposals = await this.readRecordingFlowProposals(projectId, options.revalidateRecordingFlowProposals === true);
     const replayResults = await this.readPipelineArtifactList<ReplayResultArtifact>(projectId, "replayResults", (index.replayResults ?? []).map((item) => item.replayId));
     return { normalizationReviews, miningRuns, evidenceFacts, evidenceObservations, stateActionCorrelations, evidenceClaims, learnedTaskModels, policyProposals, recordingFlowProposals, replayResults };
   }
@@ -2411,8 +2547,8 @@ export class AutomationStudioService {
   }
 
   private recordingPipelineArtifactFile(projectId: string, recordingId: string, kind: PipelineArtifactKind, id: string): string {
-    if (kind === "policyProposals") return this.recordingDerivedFile(projectId, recordingId, "proposal", "proposal.json");
-    if (kind === "recordingFlowProposals") return this.recordingDerivedFile(projectId, recordingId, "proposal", "flows", `${safeSegment(id)}.json`);
+    if (kind === "policyProposals") return this.recordingDerivedFile(projectId, recordingId, "proposals", safeSegment(id), "proposal.json");
+    if (kind === "recordingFlowProposals") return this.recordingDerivedFile(projectId, recordingId, "proposals", safeSegment(id), "flow.json");
     return this.recordingDerivedFile(projectId, recordingId, this.recordingPipelineArtifactFolder(kind), `${safeSegment(id)}.json`);
   }
 
@@ -2469,7 +2605,7 @@ export class AutomationStudioService {
       });
       return;
     }
-    await mapWithConcurrency(aggregateArtifacts, PIPELINE_ARTIFACT_WRITE_CONCURRENCY, async (item) => this.writeArtifactDocument(
+    await mapWithConcurrency(aggregateArtifacts, PIPELINE_ARTIFACT_IO_CONCURRENCY, async (item) => this.writeArtifactDocument(
       projectId,
       this.projectFile(projectId, "pipeline", "shared", this.pipelineFolder(item.kind), `${safeSegment(item.id)}.json`),
       item.artifact
@@ -2528,7 +2664,7 @@ export class AutomationStudioService {
     const recording = await this.repositories.recordingSessions.get(recordingId) ?? await this.getRecordingSession(recordingId, projectId).catch(() => null);
     if (!recording || !artifacts.length) return;
     await this.ensureProjectRecordingPipeline(projectId, recording);
-    await mapWithConcurrency(artifacts, PIPELINE_ARTIFACT_WRITE_CONCURRENCY, async (item) => this.writeArtifactDocument(projectId, this.recordingPipelineArtifactFile(projectId, recordingId, item.kind, item.id), item.artifact));
+    await mapWithConcurrency(artifacts, PIPELINE_ARTIFACT_IO_CONCURRENCY, async (item) => this.writeArtifactDocument(projectId, this.recordingPipelineArtifactFile(projectId, recordingId, item.kind, item.id), item.artifact));
     await this.updateRecordingPipeline(projectId, recordingId, (pipeline) => artifacts.reduce((next, item) => addRecordingPipelineArtifactId(next, item.kind, item.id), pipeline));
   }
 
@@ -2653,10 +2789,34 @@ export class AutomationStudioService {
       this.recordingPipelineArtifactFile(projectId, recordingId, kind, id),
       this.projectFile(projectId, "pipeline", "shared", this.pipelineFolder(kind), `${safeSegment(id)}.json`)
     ];
+    const legacyPath = this.legacyRecordingPipelineArtifactFile(projectId, recordingId, kind, id);
+    if (legacyPath) paths.push(legacyPath);
     for (const filePath of paths) {
       if (this.objectStore) await ProgramJsonStore.deletePath(filePath);
       await rm(filePath, { recursive: true, force: true });
     }
+    if (kind === "policyProposals" || kind === "recordingFlowProposals") {
+      const proposalDirectory = path.dirname(this.recordingPipelineArtifactFile(projectId, recordingId, kind, id));
+      if (this.objectStore) await ProgramJsonStore.deletePath(proposalDirectory);
+      await rm(proposalDirectory, { recursive: true, force: true });
+    }
+  }
+
+  private async removeRecordingPipelineArtifactId(projectId: string, recordingId: string, kind: "policyProposals" | "recordingFlowProposals", id: string): Promise<void> {
+    const key = kind === "policyProposals" ? "policyProposalIds" : "recordingFlowProposalIds";
+    const store = new ProgramJsonStore<RecordingPipelineDocument>(
+      this.recordingPipelineFile(projectId, recordingId),
+      () => createRecordingPipelineDocument({ recordingId, startedAt: Date.now() })
+    );
+    const pipeline = await store.read();
+    await store.write({
+      ...pipeline,
+      updatedAt: Date.now(),
+      artifacts: {
+        ...pipeline.artifacts,
+        [key]: (pipeline.artifacts[key] ?? []).filter((item) => item !== id)
+      }
+    });
   }
 
   private async deletePhysicalSharedPipelineArtifactsForRecording(projectId: string, recordingId: string): Promise<void> {
@@ -2764,8 +2924,18 @@ export class AutomationStudioService {
     const filePath = recordingId
       ? this.recordingPipelineArtifactFile(projectId, recordingId, kind, id)
       : this.projectFile(projectId, "pipeline", "shared", this.pipelineFolder(kind), `${safeSegment(id)}.json`);
-    const artifact = await this.readArtifactDocument(filePath);
+    let artifact = await this.readArtifactDocument(filePath);
+    if (!Object.keys(artifact).length && recordingId) {
+      const legacyFilePath = this.legacyRecordingPipelineArtifactFile(projectId, recordingId, kind, id);
+      if (legacyFilePath && legacyFilePath !== filePath) artifact = await this.readArtifactDocument(legacyFilePath);
+    }
     return Object.keys(artifact).length ? artifact as unknown as TArtifact : null;
+  }
+
+  private legacyRecordingPipelineArtifactFile(projectId: string, recordingId: string, kind: PipelineArtifactKind, id: string): string | null {
+    if (kind === "policyProposals") return this.recordingDerivedFile(projectId, recordingId, "proposal", "proposal.json");
+    if (kind === "recordingFlowProposals") return this.recordingDerivedFile(projectId, recordingId, "proposal", "flows", `${safeSegment(id)}.json`);
+    return null;
   }
 
   private async writeArtifactDocument(projectId: string, filePath: string, artifact: JsonObject): Promise<void> {
@@ -2863,9 +3033,13 @@ export class AutomationStudioService {
 
   private async readArtifactDocument(filePath: string): Promise<JsonObject> {
     const stored = await new ProgramJsonStore<JsonObject>(filePath, () => ({})).read();
-    return this.objectStore && isAutomationStudioObjectReference(stored)
-      ? await this.objectStore.readJson(stored)
-      : stored;
+    if (!this.objectStore || !isAutomationStudioObjectReference(stored)) return stored;
+    try {
+      return await this.objectStore.readJson(stored);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+      throw error;
+    }
   }
 
   private async pruneUnreferencedProjectObjects(projectId: string): Promise<void> {
@@ -2901,12 +3075,8 @@ export class AutomationStudioService {
   }
 
   private async readPipelineArtifactList<TArtifact>(projectId: string, kind: PipelineArtifactKind, ids: string[]): Promise<TArtifact[]> {
-    const artifacts: TArtifact[] = [];
-    for (const id of ids) {
-      const artifact = await this.readPipelineArtifact<TArtifact>(projectId, kind, id);
-      if (artifact) artifacts.push(artifact);
-    }
-    return artifacts;
+    const artifacts = await mapWithConcurrency(ids, PIPELINE_ARTIFACT_IO_CONCURRENCY, async (id) => this.readPipelineArtifact<TArtifact>(projectId, kind, id));
+    return artifacts.filter((artifact): artifact is TArtifact => Boolean(artifact));
   }
 
   private async readProjectArtifactList<TArtifact>(projectId: string, folder: "tasks" | "routines" | "configs" | "flows"): Promise<TArtifact[]> {
@@ -3263,6 +3433,31 @@ function recordingTimelineForProposalMapping(timeline: RecordingSession["timelin
     if (entry.type === "observation" && (entry.observationType === "client.state_snapshot" || entry.observationType === "client.state_update")) return false;
     return true;
   });
+}
+
+function recordingActionEntryCandidate(entry: RecordingSession["timeline"][number]): AutomationStudioRecordingMapperCandidate | null {
+  if (entry.type !== "action") return null;
+  const outputId = typeof entry.outputId === "string" && entry.outputId.trim()
+    ? entry.outputId.trim()
+    : typeof entry.actionType === "string" && entry.actionType.trim()
+      ? entry.actionType.trim()
+      : "";
+  if (!outputId) return null;
+  const metadata = entry.metadata && typeof entry.metadata === "object" && !Array.isArray(entry.metadata) ? entry.metadata as JsonObject : {};
+  if (metadata.policyEligible === false) return null;
+  const inputId = typeof metadata.inputId === "string" && metadata.inputId.trim()
+    ? metadata.inputId.trim()
+    : typeof entry.confirmationInputId === "string" && entry.confirmationInputId.trim()
+      ? entry.confirmationInputId.trim()
+      : undefined;
+  return {
+    outputId,
+    parameters: entry.parameters && typeof entry.parameters === "object" && !Array.isArray(entry.parameters) ? entry.parameters as JsonObject : {},
+    ...(inputId ? { sourceInputIds: [inputId] } : {}),
+    ...(entry.confirmationInputId ? { expectedConfirmation: { inputId: entry.confirmationInputId, timeoutMs: entry.confirmationTimeoutMs ?? 5_000 } } : {}),
+    confidence: 0.95,
+    label: readableTokenValue(outputId)
+  };
 }
 
 function errorMessage(error: unknown, fallback: string): string {

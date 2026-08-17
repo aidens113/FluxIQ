@@ -96,6 +96,7 @@ export function recordingHierarchyNodes(recordings: any[]): AutomationHierarchyN
 
 export function proposalHierarchyNodes(recordings: any[], proposals: any[]): AutomationHierarchyNode[] {
   const clientFolders = new Map<string, AutomationHierarchyNode>();
+  const recordingFolders = new Map<string, AutomationHierarchyNode>();
   const nodes: AutomationHierarchyNode[] = [];
   const recordingsById = new Map(recordings.map((recording) => [recording.recordingId, recording]));
   for (const proposal of proposals) {
@@ -115,18 +116,39 @@ export function proposalHierarchyNodes(recordings: any[], proposals: any[]): Aut
       clientFolders.set(folderId, folder);
       nodes.push(folder);
     }
+    const recordingFolderId = `proposals-recording-${stableNodeId(recording.recordingId)}`;
+    if (!recordingFolders.has(recordingFolderId)) {
+      const folder: AutomationHierarchyNode = {
+        id: recordingFolderId,
+        label: recordingDateTimeLabel(recording),
+        kind: "folder",
+        category: "proposal",
+        parentId: folderId,
+        sourceId: recording.recordingId
+      };
+      recordingFolders.set(recordingFolderId, folder);
+      nodes.push(folder);
+    }
     nodes.push({
       id: `proposal-${stableNodeId(proposal.proposalId)}`,
-      label: proposal.mapper?.id ? `${recordingDateTimeLabel(recording)} - ${proposal.mapper.id}` : recordingDateTimeLabel(recording),
+      label: proposalHierarchyLabel(proposal),
       kind: "proposal",
       category: "proposal",
-      parentId: folderId,
+      parentId: recordingFolderId,
       viewId: "proposal-workbench",
       sourceId: proposal.proposalId,
       recordingId: recording.recordingId
     });
   }
   return nodes;
+}
+
+function proposalHierarchyLabel(proposal: any): string {
+  const metadata = proposal?.metadata ?? {};
+  if (typeof metadata.title === "string" && metadata.title.trim()) return metadata.title.trim();
+  const mode = metadata.generationMode === "llm_assisted" ? "Assisted" : metadata.generationMode === "direct" ? "Direct" : "Proposal";
+  const detail = proposal?.mapper?.id ?? metadata.generatedBy ?? (proposal?.generatedAt ? new Date(proposal.generatedAt).toLocaleString() : proposal?.proposalId);
+  return `${mode}: ${detail}`;
 }
 
 export function recordingClientName(recording: any): string {

@@ -57,7 +57,7 @@ export class AutomationStudioObjectStore {
     if (existingReference) {
       const existing = await stat(this.resolveReferencePath(existingReference)).catch(() => null);
       if (existing?.size === bytes.length) return existingReference;
-      throw new Error(`Object hash collision for project ${projectId}: ${sha256}`);
+      if (existing) throw new Error(`Object hash collision for project ${projectId}: ${sha256}`);
     }
     const extension = writeOptions.extension ?? extensionForMediaType(mediaType);
     const relativePath = objectRelativePath(projectId, sha256, safeObjectExtension(extension), writeOptions.recordingId);

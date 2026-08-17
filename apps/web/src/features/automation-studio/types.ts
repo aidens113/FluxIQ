@@ -10,7 +10,7 @@ import {
 import type { JsonObject } from "../programs/program-api";
 
 export type AutomationStudioView = "design" | "recordings" | "proposal" | "signals" | "runtime" | "runs" | "problems";
-export type AutomationViewType = AutomationStudioView | "assistant" | "clients" | "config" | "routine" | "state" | "inspector" | "dock";
+export type AutomationViewType = AutomationStudioView | "assistant" | "clients" | "config" | "routine" | "state" | "inspector" | "dock" | "proposal-generator";
 export type AutomationDockTab = "assistant" | "problems" | "history" | "state";
 export type RecordingProcessingStatus = {
   recordingId: string;

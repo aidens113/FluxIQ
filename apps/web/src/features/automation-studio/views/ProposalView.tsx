@@ -11,6 +11,16 @@ import { policyToReactFlowGraph } from "../graph/view-model";
 import { AutomationPolicyGraphEditor } from "./GraphEditorViews";
 import type { AutomationPolicyNodeData, AutomationSelection } from "../types";
 
+type ProposalNodeStateRequest = {
+  nodeId?: string;
+  sourceId?: string;
+  phase?: NodeStatePhase;
+  evidenceId?: string;
+  factPath?: string;
+  proposalId?: string;
+  timelineEntryId?: string;
+};
+
 export function AutomationProposalView(props: {
   actionStatus: string;
   pipelineArtifacts: any;
@@ -21,10 +31,11 @@ export function AutomationProposalView(props: {
   selectedRecording: any;
   onEnsureInspectorAvailable(): void;
   onOpenRecording(recordingId: string): void;
-  onOpenState(request: { nodeId?: string; sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; proposalId?: string; timelineEntryId?: string }): void;
+  onOpenState(request: ProposalNodeStateRequest): void;
   onPipelineAction(endpoint: string, payload: JsonObject, success: string): Promise<boolean | void>;
   onProposalReviewChange(proposalId: string, review: JsonObject): void;
   onProcessFinalizedRecording(recordingId: string, force?: boolean): Promise<boolean | void>;
+  onGenerateDirectProposal(recordingId: string, replaceProposalId?: string): Promise<boolean | void>;
   onProcessProposalWithLlm(proposalId: string): void;
   setSelection(selection: AutomationSelection): void;
 }) {
@@ -72,6 +83,7 @@ export function AutomationProposalView(props: {
   const selectedGraphNode = graph.nodes.find((node) => node.id === selectedGraphNodeId) ?? graph.nodes[0];
   const publishProposalNodeSelection = (node: Node<AutomationPolicyNodeData> | undefined, step: ProposalStepViewModel | undefined) => {
     if (!proposal?.proposalId || !node) return;
+    const stateRequest = proposalNodeStateRequest({ node, step, proposal, recording, phase: "input" });
     props.setSelection({
       kind: "editor-node",
       id: node.id,
@@ -91,6 +103,8 @@ export function AutomationProposalView(props: {
           ...(node.data.metadata ?? {}),
           proposalId: proposal.proposalId,
           ...(recording?.recordingId ? { recordingId: recording.recordingId } : {}),
+          ...(stateRequest.timelineEntryId ? { timelineEntryId: stateRequest.timelineEntryId } : {}),
+          ...(stateRequest.sourceId ? { sourceId: stateRequest.sourceId } : {}),
           proposalStep: step ? {
             label: step.label,
             description: step.description,
@@ -207,16 +221,17 @@ export function AutomationProposalView(props: {
         </div>
         <div className="automation-pipeline-controls">
           <button className="button" disabled={!recording} onClick={() => recording && props.onOpenRecording(recording.recordingId)} type="button"><Link2 size={13} aria-hidden />Open Source Recording</button>
-          <button className="button" disabled={!recording} onClick={() => recording && void props.onProcessFinalizedRecording(recording.recordingId, true)} type="button"><RefreshCcw size={13} aria-hidden />Regenerate Proposal</button>
+          <button className="button" disabled={!recording} onClick={() => recording && void props.onGenerateDirectProposal(recording.recordingId)} type="button"><RefreshCcw size={13} aria-hidden />Regenerate as New Attempt</button>
+          <button className="button" disabled={!recording || !selectedArtifact?.proposalId} onClick={() => recording && selectedArtifact?.proposalId && void props.onGenerateDirectProposal(recording.recordingId, selectedArtifact.proposalId)} type="button"><RefreshCcw size={13} aria-hidden />Replace This Proposal</button>
           <button className="button button-primary" disabled={!proposal} onClick={recordingFlowProposal ? approveRecordingProposalToFlow : applyToExistingFlow} type="button"><CheckCircle2 size={13} aria-hidden />{recordingFlowProposal ? "Approve to Open Flow" : "Apply to Open Flow"}</button>
           <button className="button" disabled={!proposal} onClick={saveAsNewFlow} type="button"><Save size={13} aria-hidden />Save as New Flow</button>
           <button className="button" disabled={!proposal || Boolean(recordingFlowProposal)} onClick={() => proposal && props.onProcessProposalWithLlm(proposal.proposalId)} type="button"><Sparkles size={13} aria-hidden />Process With LLM</button>
-          <button className="button" disabled={!proposal || !selectedGraphNodeId} onClick={() => proposal && selectedGraphNodeId && props.onOpenState({ nodeId: selectedGraphNodeId, ...(proposal.proposalId ? { proposalId: proposal.proposalId } : {}), phase: "input" })} type="button"><ListChecks size={13} aria-hidden />Open Node State</button>
+          <button className="button" disabled={!proposal || !selectedGraphNodeId} onClick={() => proposal && selectedGraphNodeId && props.onOpenState(proposalNodeStateRequest({ node: selectedGraphNode, step: selectedStep, proposal, recording, phase: "input" }))} type="button"><ListChecks size={13} aria-hidden />Open Node State</button>
         </div>
         {props.actionStatus ? <StatusText value={props.actionStatus} /> : null}
       </header>
       <section className="automation-proposal-body">
-        {!model && !recordingFlowProposal ? <div className="automation-project-empty compact"><strong>No proposal selected</strong><span>Finalized recordings generate proposals automatically. Regenerate from a source recording if needed.</span></div> : null}
+        {!model && !recordingFlowProposal ? <div className="automation-project-empty compact"><strong>No proposal selected</strong><span>Select a proposal from the sidebar, or open Proposal Generator from a source recording.</span></div> : null}
         {model ? <>
           <section className="automation-proposal-summary-panel">
             <div>
@@ -249,6 +264,40 @@ export function AutomationProposalView(props: {
       </section>
     </section>
   );
+}
+
+export function proposalNodeStateRequest(input: {
+  node?: Node<AutomationPolicyNodeData> | undefined;
+  step?: ProposalStepViewModel | undefined;
+  proposal?: any;
+  recording?: any;
+  phase?: NodeStatePhase | undefined;
+}): ProposalNodeStateRequest {
+  const nodeId = stringValue(input.node?.id) ?? stringValue(input.step?.id);
+  const proposalId = stringValue(input.proposal?.proposalId) ?? stringValue(input.node?.data.metadata?.proposalId);
+  const recordingId = stringValue(input.recording?.recordingId)
+    ?? stringValue(input.proposal?.recordingId)
+    ?? stringValue(input.proposal?.metadata?.recordingId)
+    ?? stringValue(input.node?.data.metadata?.recordingId);
+  const timelineEntryId = firstStateTimelineEntryId(input.node, input.step);
+  return {
+    ...(nodeId ? { nodeId } : {}),
+    ...(proposalId ? { proposalId } : {}),
+    ...(timelineEntryId ? { timelineEntryId } : {}),
+    ...(recordingId && timelineEntryId ? { sourceId: `observed:${recordingId}:${timelineEntryId}` } : {}),
+    phase: input.phase ?? "input"
+  };
+}
+
+function firstStateTimelineEntryId(node: Node<AutomationPolicyNodeData> | undefined, step: ProposalStepViewModel | undefined): string | undefined {
+  const metadata = node?.data.metadata;
+  return firstNonEmptyString([
+    ...arrayValue(metadata?.sourceObservationIds),
+    metadata?.timelineEntryId,
+    metadata?.sourceObservationId,
+    ...arrayValue(metadata?.evidence).flatMap((item) => [objectRecord(item)?.entryId, objectRecord(item)?.observationId]),
+    ...arrayValue(step?.evidence).flatMap((signal) => arrayValue(objectRecord(signal)?.sourceEntryIds))
+  ]);
 }
 
 function recordingFlowProposalToPolicyProposal(proposal: any): any {
@@ -331,6 +380,26 @@ function recordingCandidateParameters(candidate: any) {
 
 function safeNodeSegment(value: string): string {
   return value.trim().replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "candidate";
+}
+
+function firstNonEmptyString(values: unknown[]): string | undefined {
+  for (const value of values) {
+    const text = stringValue(value);
+    if (text) return text;
+  }
+  return undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function arrayValue(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
 function reactFlowGraphToPolicyOverride(basePolicy: any, graph: { nodes: Array<Node<AutomationPolicyNodeData>>; edges: Edge[] }, targetTaskId: string) {
