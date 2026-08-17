@@ -10,6 +10,7 @@ export type RecordingProposalEvidenceReference = {
 
 export type RecordingFlowActionCandidate = {
   candidateId: string;
+  actionEntryId: string;
   sourceObservationIds: string[];
   sourceInputIds: string[];
   outputId: string;

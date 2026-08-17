@@ -3,6 +3,54 @@ import { describe, expect, it } from "vitest";
 import { AutomationStateView } from "./StateView";
 
 describe("AutomationStateView", () => {
+  it("opens an action state request on the nearest snapshot from the requested recording", () => {
+    const html = renderToStaticMarkup(
+      <AutomationStateView
+        input={{
+          selection: {
+            kind: "state",
+            id: "state.recording.target.action.click",
+            recordingId: "recording.target",
+            timelineEntryId: "action.click",
+            sourceId: "observed:recording.target:action.click",
+            phase: "input"
+          },
+          selectedNode: { id: "node.click", label: "Click" },
+          selectedRecording: {
+            recordingId: "recording.stale",
+            timeline: [{
+              id: "snapshot.stale",
+              type: "observation",
+              observationType: "client.state_snapshot",
+              timestamp: 100,
+              payload: { state: stateWithImage("snapshot.stale", 100, "/stale.png") }
+            }]
+          },
+          selectedTimeline: null,
+          policy: null,
+          taskGraph: null,
+          pipelineArtifacts: {},
+          recordings: [{
+            recordingId: "recording.target",
+            timeline: [
+              { id: "snapshot.before", type: "observation", observationType: "client.state_snapshot", timestamp: 100, payload: { state: stateWithImage("snapshot.before", 100, "/before.png") } },
+              { id: "action.click", type: "action", actionType: "click", timestamp: 1_000 },
+              { id: "snapshot.after", type: "observation", observationType: "client.state_snapshot", timestamp: 1_040, payload: { state: stateWithImage("snapshot.after", 1_040, "/after.png") } }
+            ]
+          }],
+          timelines: [],
+          runtimeSessions: [],
+          signals: []
+        }}
+        setSelection={() => undefined}
+      />
+    );
+
+    expect(html).toContain("/after.png");
+    expect(html).not.toContain("/stale.png");
+    expect(html).not.toContain("/before.png");
+  });
+
   it("renders the reconstructed visual state view with evidence overlays", () => {
     const html = renderToStaticMarkup(
       <AutomationStateView
@@ -910,6 +958,31 @@ describe("AutomationStateView", () => {
     expect(html).toContain("No visual frame exists");
   });
 });
+
+function stateWithImage(id: string, timestamp: number, contentRef: string) {
+  return {
+    id,
+    timestamp,
+    namespaces: {
+      ui: {
+        schemaId: "ui",
+        schemaVersion: "0.1",
+        values: {
+          title: { type: "string", value: id, observedAt: timestamp }
+        }
+      }
+    },
+    presentation: {
+      defaultFrameId: "screen",
+      visualFrames: [{
+        id: "screen",
+        label: "Screen",
+        coordinateSpace: { width: 100, height: 100, unit: "px" },
+        layers: [{ id: `image.${id}`, kind: "image", contentRef, bounds: { x: 0, y: 0, width: 100, height: 100 } }]
+      }]
+    }
+  };
+}
 
 function zIndexForLabel(html: string, label: string): number {
   const pattern = new RegExp(`aria-label="${label}"[^>]*style="[^"]*z-index:([^;"]+)`);

@@ -18,6 +18,7 @@ type ProposalNodeStateRequest = {
   evidenceId?: string;
   factPath?: string;
   proposalId?: string;
+  recordingId?: string;
   timelineEntryId?: string;
 };
 
@@ -41,8 +42,10 @@ export function AutomationProposalView(props: {
 }) {
   const selectedArtifact = props.selectedProposal;
   const recording = props.selectedRecording ?? props.recordings.find((item) => item.recordingId === (selectedArtifact?.recordingId ?? selectedArtifact?.metadata?.recordingId));
-  const recordingFlowProposal = selectedArtifact?.candidates ? selectedArtifact : null;
+  const recordingFlowProposal = Array.isArray(selectedArtifact?.candidates) ? selectedArtifact : null;
+  const recordingFlowCandidates = arrayValue(recordingFlowProposal?.candidates);
   const proposal = recordingFlowProposal ? recordingFlowProposalToPolicyProposal(recordingFlowProposal) : selectedArtifact?.policy ? selectedArtifact : (props.pipelineArtifacts?.policyProposals ?? []).find((item: any) => item.metadata?.recordingId === recording?.recordingId);
+  const proposalIsSummaryOnly = proposal?.metadata?.summaryOnly === true || recordingFlowProposal?.metadata?.summaryOnly === true;
   const model = buildProposalViewModel({ artifacts: props.pipelineArtifacts, proposal, recording });
   const [selectedGraphNodeId, setSelectedGraphNodeId] = useState("");
   const baseGraph = useMemo(() => {
@@ -63,15 +66,19 @@ export function AutomationProposalView(props: {
   const graphRef = useRef(graph);
   const lastRestoredGraphSignatureRef = useRef("");
   useEffect(() => {
-    const nextGraph = (
+    const reviewNodes = Array.isArray(props.proposalReview?.nodes) ? props.proposalReview.nodes as Array<Node<AutomationPolicyNodeData>> : null;
+    const reviewEdges = Array.isArray(props.proposalReview?.edges) ? props.proposalReview.edges as Edge[] : null;
+    const canRestoreReview = Boolean(
       proposal?.proposalId
       && props.proposalReview
       && props.proposalReview.proposalId === proposal.proposalId
       && props.proposalReview.sourceGeneratedAt === proposal.generatedAt
-      && Array.isArray(props.proposalReview.nodes)
-      && Array.isArray(props.proposalReview.edges)
-    )
-      ? { nodes: props.proposalReview.nodes as Array<Node<AutomationPolicyNodeData>>, edges: props.proposalReview.edges as Edge[] }
+      && reviewNodes
+      && reviewEdges
+      && !(reviewNodes.length === 0 && baseGraph.nodes.length > 0)
+    );
+    const nextGraph = canRestoreReview
+      ? { nodes: reviewNodes!, edges: reviewEdges! }
       : baseGraph;
     const signature = proposalGraphSignature(nextGraph, proposal?.proposalId ?? "", proposal?.generatedAt ?? 0);
     if (signature === lastRestoredGraphSignatureRef.current) return;
@@ -79,8 +86,12 @@ export function AutomationProposalView(props: {
     graphRef.current = nextGraph;
     setGraph(nextGraph);
   }, [baseGraph, proposal?.generatedAt, proposal?.proposalId, props.proposalReview]);
-  const selectedStep = model?.steps.find((step) => step.id === selectedGraphNodeId || `node.${step.id}` === selectedGraphNodeId) ?? model?.steps[0];
-  const selectedGraphNode = graph.nodes.find((node) => node.id === selectedGraphNodeId) ?? graph.nodes[0];
+  const selectedStep = model?.steps.find((step) => step.id === selectedGraphNodeId || `node.${step.id}` === selectedGraphNodeId);
+  const selectedGraphNode = graph.nodes.find((node) => node.id === selectedGraphNodeId);
+  const editableNodeIds = (proposal?.patch?.nodes ?? proposal?.policy?.nodes ?? [])
+    .map((node: any) => stringValue(objectRecord(node)?.id))
+    .filter((id: string | undefined): id is string => Boolean(id));
+  const recordingFlowMapperLabel = stringValue(recordingFlowProposal?.mapper?.id) ?? "unknown mapper";
   const publishProposalNodeSelection = (node: Node<AutomationPolicyNodeData> | undefined, step: ProposalStepViewModel | undefined) => {
     if (!proposal?.proposalId || !node) return;
     const stateRequest = proposalNodeStateRequest({ node, step, proposal, recording, phase: "input" });
@@ -181,7 +192,7 @@ export function AutomationProposalView(props: {
   const saveAsNewFlow = () => {
     if (!proposal) return;
     if (recordingFlowProposal) {
-      const name = window.prompt("Name for the new Flow", `Recorded flow ${recordingFlowProposal.mapper.id}`)?.trim();
+      const name = window.prompt("Name for the new Flow", `Recorded flow ${recordingFlowMapperLabel}`)?.trim();
       if (!name) return;
       const override = reactFlowGraphToPolicyOverride(proposal.policy, graphRef.current, proposal.policy?.taskId ?? proposal.proposalId);
       void props.onPipelineAction("review-recording-flow-proposal", {
@@ -216,8 +227,8 @@ export function AutomationProposalView(props: {
     <section className="automation-proposal-workspace">
       <header className="automation-proposal-header">
         <div>
-          <strong>{recordingFlowProposal ? `Recording Flow Proposal: ${recordingFlowProposal.mapper.id}` : model ? `Policy Flow Proposal: ${model.title}` : "Recording Proposals"}</strong>
-          <span>{recordingFlowProposal ? `${recordingFlowProposal.candidates.length} proposed action nodes from ${recordingFlowProposal.recordingId}` : model ? `Source recording ${model.source}` : "Select a generated proposal from the sidebar."}</span>
+          <strong>{recordingFlowProposal ? `Recording Flow Proposal: ${recordingFlowMapperLabel}` : model ? `Policy Flow Proposal: ${model.title}` : "Recording Proposals"}</strong>
+          <span>{recordingFlowProposal ? `${recordingFlowCandidates.length} proposed action nodes from ${recordingFlowProposal.recordingId}` : model ? `Source recording ${model.source}` : "Select a generated proposal from the sidebar."}</span>
         </div>
         <div className="automation-pipeline-controls">
           <button className="button" disabled={!recording} onClick={() => recording && props.onOpenRecording(recording.recordingId)} type="button"><Link2 size={13} aria-hidden />Open Source Recording</button>
@@ -226,13 +237,14 @@ export function AutomationProposalView(props: {
           <button className="button button-primary" disabled={!proposal} onClick={recordingFlowProposal ? approveRecordingProposalToFlow : applyToExistingFlow} type="button"><CheckCircle2 size={13} aria-hidden />{recordingFlowProposal ? "Approve to Open Flow" : "Apply to Open Flow"}</button>
           <button className="button" disabled={!proposal} onClick={saveAsNewFlow} type="button"><Save size={13} aria-hidden />Save as New Flow</button>
           <button className="button" disabled={!proposal || Boolean(recordingFlowProposal)} onClick={() => proposal && props.onProcessProposalWithLlm(proposal.proposalId)} type="button"><Sparkles size={13} aria-hidden />Process With LLM</button>
-          <button className="button" disabled={!proposal || !selectedGraphNodeId} onClick={() => proposal && selectedGraphNodeId && props.onOpenState(proposalNodeStateRequest({ node: selectedGraphNode, step: selectedStep, proposal, recording, phase: "input" }))} type="button"><ListChecks size={13} aria-hidden />Open Node State</button>
+          <button className="button" disabled={!proposal || !selectedGraphNode} onClick={() => proposal && selectedGraphNode && props.onOpenState(proposalNodeStateRequest({ node: selectedGraphNode, step: selectedStep, proposal, recording, phase: "input" }))} type="button"><ListChecks size={13} aria-hidden />Open Node State</button>
         </div>
         {props.actionStatus ? <StatusText value={props.actionStatus} /> : null}
       </header>
       <section className="automation-proposal-body">
         {!model && !recordingFlowProposal ? <div className="automation-project-empty compact"><strong>No proposal selected</strong><span>Select a proposal from the sidebar, or open Proposal Generator from a source recording.</span></div> : null}
-        {model ? <>
+        {proposalIsSummaryOnly ? <div className="automation-project-empty compact"><strong>Loading full proposal</strong><span>The proposal index is loaded. Waiting for the full proposal graph.</span></div> : null}
+        {model && !proposalIsSummaryOnly ? <>
           <section className="automation-proposal-summary-panel">
             <div>
               <span>Proposal</span>
@@ -245,11 +257,11 @@ export function AutomationProposalView(props: {
           <section className="automation-proposal-graph-review">
             <AutomationPolicyGraphEditor
               className="proposal-review"
-              editableNodeIds={(proposal?.patch?.nodes ?? proposal?.policy?.nodes ?? []).map((node: any) => String(node.id))}
+              editableNodeIds={editableNodeIds}
               edges={graph.edges}
               mode="proposal-review"
               nodes={graph.nodes}
-              selectedNodeId={selectedGraphNodeId}
+              selectedNodeId={selectedGraphNode?.id ?? ""}
               showPalette
               onGraphChange={updateGraph}
               onNodeSelect={(node) => {
@@ -280,11 +292,13 @@ export function proposalNodeStateRequest(input: {
     ?? stringValue(input.proposal?.metadata?.recordingId)
     ?? stringValue(input.node?.data.metadata?.recordingId);
   const timelineEntryId = firstStateTimelineEntryId(input.node, input.step);
+  const sourceId = stringValue(input.node?.data.metadata?.sourceId);
   return {
     ...(nodeId ? { nodeId } : {}),
     ...(proposalId ? { proposalId } : {}),
+    ...(recordingId ? { recordingId } : {}),
     ...(timelineEntryId ? { timelineEntryId } : {}),
-    ...(recordingId && timelineEntryId ? { sourceId: `observed:${recordingId}:${timelineEntryId}` } : {}),
+    ...(sourceId ? { sourceId } : {}),
     phase: input.phase ?? "input"
   };
 }
@@ -292,9 +306,10 @@ export function proposalNodeStateRequest(input: {
 function firstStateTimelineEntryId(node: Node<AutomationPolicyNodeData> | undefined, step: ProposalStepViewModel | undefined): string | undefined {
   const metadata = node?.data.metadata;
   return firstNonEmptyString([
-    ...arrayValue(metadata?.sourceObservationIds),
+    metadata?.actionEntryId,
     metadata?.timelineEntryId,
     metadata?.sourceObservationId,
+    ...arrayValue(metadata?.sourceObservationIds),
     ...arrayValue(metadata?.evidence).flatMap((item) => [objectRecord(item)?.entryId, objectRecord(item)?.observationId]),
     ...arrayValue(step?.evidence).flatMap((signal) => arrayValue(objectRecord(signal)?.sourceEntryIds))
   ]);
@@ -333,6 +348,8 @@ function recordingFlowProposalToPolicyProposal(proposal: any): any {
         recordingProposalId: proposal.proposalId,
         recordingCandidateId: candidate.candidateId,
         mapperId: proposal.mapper?.id,
+        actionEntryId: candidate.actionEntryId ?? firstNonEmptyString(candidate.sourceObservationIds ?? []),
+        timelineEntryId: candidate.actionEntryId ?? firstNonEmptyString(candidate.sourceObservationIds ?? []),
         sourceObservationIds: candidate.sourceObservationIds ?? [],
         evidence: candidate.evidence ?? [],
         policyStateEligible: false

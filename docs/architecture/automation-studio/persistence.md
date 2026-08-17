@@ -3,27 +3,70 @@
 [Back to the Automation Studio overview](../automation-studio.md)
 
 
-Automation Studio canonical artifacts use a shared repository contract with
-stable document IDs:
+Automation Studio project artifacts are owned by the project file tree under
+`.fluxiq/artifacts/automation-studio/projects/{projectId}`. Runtime
+repositories are caches used by service code and tests; they are not the source
+of truth for recordings, proposals, Flows, state assets, or runtime runs.
 
-| Artifact | Repository | Document ID |
+The canonical project layout is:
+
+```text
+projects/{projectId}/
+  project.json
+  hierarchy.json
+  workspace.json
+  indexes/
+    recordings.json
+    proposals.json
+    flows.json
+    runtime.json
+    objects.json
+    pipeline.json
+  recordings/{recordingId}/
+    recording.json
+    timeline.jsonl
+    snapshots/
+    objects/
+    derived/
+  proposals/{recordingId}/{proposalId}/
+    proposal.json
+    generation.json
+    review.json
+    objects/
+  flows/{flowId}/
+    flow.json
+    source/
+    publications/
+  runtime/runs/{runId}/
+    run.json
+    trace.json
+  objects/shared/
+```
+
+Indexes are lightweight navigation summaries. List/sidebar reads use them
+without hydrating timelines, proposal graphs, screenshots, or state snapshot
+objects. Full documents are loaded only when a tab or operation requests them.
+The proposal workbench uses `get-proposal` to hydrate one selected proposal by
+ID; project refresh must not call the broad `list-pipeline-artifacts` endpoint
+just to make proposal rows clickable.
+
+Stable file document IDs are:
+
+| Artifact | Full document | Summary index |
 | --- | --- | --- |
-| `RecordingSession` | `recordingSessions` | `recordingId` |
-| `NormalizedTimeline` | `normalizedTimelines` | `normalizedTimelineId` |
-| `SignalRegistry` | `signalRegistries` | `registryId` |
-| `LearnedTaskModel` | `learnedTaskModels` | `learnedTaskModelId` |
-| `PolicyGraph` | `policyGraphs` | `policyId` |
-| `AutomationStudioFlowPublicationRecord` | `flowPublications` | `publicationId` |
+| `RecordingSession` | `recordings/{recordingId}/recording.json` plus `timeline.jsonl` | `indexes/recordings.json` |
+| State snapshot/object | `recordings/{recordingId}/objects/` or `objects/shared/` | `indexes/objects.json` |
+| Policy proposal | `proposals/{recordingId}/{proposalId}/proposal.json` | `indexes/pipeline.json` and proposal summaries |
+| Recording Flow proposal | `proposals/{recordingId}/{proposalId}/proposal.json` | `indexes/pipeline.json` and proposal summaries |
+| Canonical Flow | `flows/{flowId}/flow.json` | `indexes/flows.json` |
+| Flow source | `flows/{flowId}/source/` | Flow metadata |
+| Runtime run | `runtime/runs/{runId}/run.json` | runtime index |
 
-Framework tests can use the in-memory repository implementation. Host runtimes
-use canonical SQLite repositories in `.fluxiq/global.sqlite`; domain IDs are
-document metadata/filter keys and do not select a different database.
-
-Repository reads return cloned documents. Callers should modify a document by
-loading it, creating the next version or edited artifact, and writing it back
-explicitly. This matters because recordings are evidence, while normalized
-timelines, learned models, policies, and runtime training data are derived
-artifacts.
+Project-file reads return cloned documents through the service boundary.
+Callers should modify a document by loading it, creating the next version or
+edited artifact, and writing it back explicitly. This matters because
+recordings are evidence, while normalized timelines, learned models, policies,
+and runtime training data are derived artifacts.
 
 The state and recording framework now includes:
 
@@ -48,7 +91,7 @@ The Automation Studio API exposes these as first-class framework endpoints:
 `list-recordings`, `get-recording`, `create-recording`, `update-recording`,
 `delete-recording`, `append-recording-entry`, `append-recording-note`,
 `append-recording-marker`, `finalize-recording`, `normalize-recording`,
-`create-normalization-review`, `list-pipeline-artifacts`,
+`create-normalization-review`, `get-proposal`, `list-pipeline-artifacts`,
 `mine-recording-evidence`, `propose-policy-from-model`,
 `approve-policy-proposal`, `create-recording-flow-proposals`,
 `generate-recording-proposal`, `delete-proposal`,
@@ -68,12 +111,10 @@ mining, policy proposal creation, and recording Flow proposal creation write
 derived inert artifacts and require the caller's `flows.write` permission, but
 do not require a PIN recheck.
 
-Publication records are append-oriented standalone documents in
-`automation.flow_publications`. Each record holds the immutable snapshot,
-dependency digests, publisher/changelog metadata, and lifecycle status.
-Deprecation changes the record lifecycle without rewriting the published
-snapshot. Readers merge historical artifact publication events for backward
-compatibility, while all new publications write the standalone index.
+Publication snapshots are stored with the Flow document and project Flow files.
+Each snapshot holds the immutable interface, dependency digests,
+publisher/changelog metadata, and lifecycle status. Deprecation changes the
+current publication lifecycle without rewriting the published snapshot.
 
 Legacy Task/Routine write endpoints are deprecated compatibility surfaces.
 Their responses include either `legacy.compatibility_write` or
@@ -118,6 +159,14 @@ timeline inspection, normalization review summaries, and state-before/after
 correlation, but they are not surfaced to importer recording mappers as
 independent top-level observations. This keeps one click from becoming many
 duplicate action/evidence candidates.
+
+Recording Flow candidates carry explicit action identity. `actionEntryId`
+points to the raw recording action/domain event that produced the candidate.
+`sourceObservationIds` and `evidence` may include supporting state snapshots,
+confirmation observations, or other context, but those support references must
+not replace the candidate's action identity. Proposal review, approved Flow
+node metadata, and State View opening use `actionEntryId` for action-adjacent
+state lookup.
 
 Pipeline artifact listing is a read path, not a validation/mutation path.
 `list-pipeline-artifacts` reads the project pipeline index and artifact

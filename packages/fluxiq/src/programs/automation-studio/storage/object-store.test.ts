@@ -49,13 +49,13 @@ describe("AutomationStudioObjectStore", () => {
     await expect(store.readProjectObject("project.2", reference.$fluxiqObject.sha256)).rejects.toThrow("not found");
   });
 
-  it("stores recording-owned visual assets under the recording session folder", async () => {
+  it("stores recording-owned visual assets under the recording folder", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-object-store-"));
     roots.push(root);
     const store = new AutomationStudioObjectStore(root);
     const reference = await store.putBytes("project.1", Buffer.from("recording-image"), "image/png", { recordingId: "recording.1" });
 
-    expect(reference.$fluxiqObject.relativePath).toBe(`projects/project.1/recordings/sessions/recording.1/objects/${reference.$fluxiqObject.sha256}.png`);
+    expect(reference.$fluxiqObject.relativePath).toBe(`projects/project.1/recordings/recording.1/objects/${reference.$fluxiqObject.sha256}.png`);
     expect(reference.$fluxiqObject.recordingId).toBe("recording.1");
     await expect(store.readProjectObject("project.1", reference.$fluxiqObject.sha256)).resolves.toMatchObject({ content: Buffer.from("recording-image") });
   });
@@ -71,8 +71,9 @@ describe("AutomationStudioObjectStore", () => {
     await Promise.all(references.map((reference, index) =>
       expect(store.readProjectObject("project.1", reference.$fluxiqObject.sha256)).resolves.toMatchObject({ content: Buffer.from(`image-${index}`) })
     ));
-    const index = JSON.parse(await readFile(path.join(root, "projects", "project.1", "objects", "index.json"), "utf8")) as { objects: Record<string, unknown> };
-    expect(Object.keys(index.objects).sort()).toEqual(references.map((reference) => reference.$fluxiqObject.sha256).sort());
+    const index = JSON.parse(await readFile(path.join(root, "projects", "project.1", "indexes", "objects.json"), "utf8")) as { objects: Array<{ sha256: string; owner: unknown }> };
+    expect(index.objects.map((entry) => entry.sha256).sort()).toEqual(references.map((reference) => reference.$fluxiqObject.sha256).sort());
+    expect(index.objects[0]?.owner).toEqual({ kind: "recording", recordingId: "recording.1" });
   });
 
   it("deletes selected project objects from the index and storage", async () => {

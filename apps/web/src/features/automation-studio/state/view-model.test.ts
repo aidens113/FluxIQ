@@ -243,6 +243,130 @@ describe("node state view model", () => {
     expect(model.visualFrame?.layers[0]).toMatchObject({ kind: "image", contentRef: "automation-object://project/test/second" });
   });
 
+  it("uses action start and snapshot event timestamps before monotonic offsets when pairing state", () => {
+    const correctSnapshot = snapshotWithImage("snapshot.correct", 1786949472021, "automation-object://project/test/correct");
+    const laterSnapshot = snapshotWithImage("snapshot.later", 1786949473725, "automation-object://project/test/later");
+    const recording = {
+      recordingId: "recording.client",
+      initialState: { timestamp: 1, namespaces: {} },
+      timeline: [{
+        id: "entry.action.target",
+        type: "action",
+        actionType: "web.dom.click",
+        recordingId: "recording.client",
+        startedAt: 1786949472021,
+        timestamp: 1786949473115,
+        monotonicOffsetMs: 14338
+      }, {
+        id: "entry.state.correct",
+        type: "observation",
+        observationType: "client.state_snapshot",
+        recordingId: "recording.client",
+        timestamp: 1786949472021,
+        monotonicOffsetMs: 13244,
+        payload: {
+          state: correctSnapshot,
+          metadata: {
+            eventTimestampMs: 1786949472021,
+            stateTimestampMs: 1786949472021
+          }
+        }
+      }, {
+        id: "entry.state.later",
+        type: "observation",
+        observationType: "client.state_snapshot",
+        recordingId: "recording.client",
+        timestamp: 1786949473725,
+        monotonicOffsetMs: 14948,
+        payload: {
+          state: laterSnapshot,
+          metadata: {
+            eventTimestampMs: 1786949473725,
+            stateTimestampMs: 1786949473725
+          }
+        }
+      }]
+    };
+
+    const model = buildNodeStateViewModel({
+      selection: { kind: "node", id: "node.target" },
+      selectedNode: {
+        id: "node.target",
+        label: "Target Action",
+        metadata: { evidence: [{ layer: "recording", artifactId: "recording.client", entryId: "entry.action.target" }] }
+      },
+      selectedRecording: recording,
+      selectedTimeline: null,
+      policy: null,
+      taskGraph: null,
+      pipelineArtifacts: {},
+      recordings: [recording],
+      timelines: [],
+      runtimeSessions: [],
+      signals: []
+    });
+
+    expect(model.activeSource).toMatchObject({ kind: "observed", timelineEntryId: "entry.state.correct" });
+    expect(model.visualFrame?.layers[0]).toMatchObject({ kind: "image", contentRef: "automation-object://project/test/correct" });
+  });
+
+  it("prefers action-adjacent state over repeated support snapshot evidence", () => {
+    const sharedSnapshot = snapshotWithImage("snapshot.shared", 100, "automation-object://project/test/shared");
+    const actionSnapshot = snapshotWithImage("snapshot.action", 500, "automation-object://project/test/action");
+    const recording = {
+      recordingId: "recording.client",
+      initialState: { timestamp: 1, namespaces: {} },
+      timeline: [{
+        id: "entry.state.shared",
+        type: "observation",
+        observationType: "client.state_snapshot",
+        recordingId: "recording.client",
+        timestamp: 100,
+        payload: { state: sharedSnapshot, metadata: { eventTimestampMs: 100 } }
+      }, {
+        id: "entry.action.target",
+        type: "action",
+        actionType: "web.dom.click",
+        recordingId: "recording.client",
+        startedAt: 500,
+        timestamp: 540
+      }, {
+        id: "entry.state.action",
+        type: "observation",
+        observationType: "client.state_snapshot",
+        recordingId: "recording.client",
+        timestamp: 500,
+        payload: { state: actionSnapshot, metadata: { eventTimestampMs: 500 } }
+      }]
+    };
+
+    const model = buildNodeStateViewModel({
+      selection: { kind: "node", id: "node.target" },
+      selectedNode: {
+        id: "node.target",
+        label: "Target Action",
+        metadata: {
+          evidence: [
+            { layer: "recording", artifactId: "recording.client", entryId: "entry.state.shared", observationId: "entry.state.shared" },
+            { layer: "recording", artifactId: "recording.client", entryId: "entry.action.target" }
+          ]
+        }
+      },
+      selectedRecording: recording,
+      selectedTimeline: null,
+      policy: null,
+      taskGraph: null,
+      pipelineArtifacts: {},
+      recordings: [recording],
+      timelines: [],
+      runtimeSessions: [],
+      signals: []
+    });
+
+    expect(model.activeSource).toMatchObject({ kind: "observed", timelineEntryId: "entry.state.action" });
+    expect(model.visualFrame?.layers[0]).toMatchObject({ kind: "image", contentRef: "automation-object://project/test/action" });
+  });
+
   it("opens an action timeline selection on its adjacent observed snapshot", () => {
     const firstSnapshot = snapshotWithImage("snapshot.first", 100, "automation-object://project/test/first");
     const secondSnapshot = snapshotWithImage("snapshot.second", 900, "automation-object://project/test/second");
@@ -286,6 +410,58 @@ describe("node state view model", () => {
         kind: "state",
         id: "state:timeline:entry.action.second",
         sourceId: "observed:recording.client:entry.action.second",
+        recordingId: "recording.client",
+        timelineEntryId: "entry.action.second"
+      },
+      selectedNode: null,
+      selectedRecording: recording,
+      selectedTimeline: null,
+      policy: null,
+      taskGraph: null,
+      pipelineArtifacts: {},
+      recordings: [recording],
+      timelines: [],
+      runtimeSessions: [],
+      signals: []
+    });
+
+    expect(model.activeSource).toMatchObject({ kind: "observed", timelineEntryId: "entry.state.second" });
+    expect(model.visualFrame?.layers[0]).toMatchObject({ kind: "image", contentRef: "automation-object://project/test/second" });
+  });
+
+  it("opens action state selections without requiring a fake observed action source id", () => {
+    const firstSnapshot = snapshotWithImage("snapshot.first", 100, "automation-object://project/test/first");
+    const secondSnapshot = snapshotWithImage("snapshot.second", 900, "automation-object://project/test/second");
+    const recording = {
+      recordingId: "recording.client",
+      timeline: [{
+        id: "entry.state.first",
+        type: "observation",
+        observationType: "client.state_snapshot",
+        recordingId: "recording.client",
+        timestamp: 100,
+        payload: { state: firstSnapshot }
+      }, {
+        id: "entry.action.second",
+        type: "action",
+        actionType: "web.dom.click",
+        recordingId: "recording.client",
+        startedAt: 900,
+        timestamp: 960
+      }, {
+        id: "entry.state.second",
+        type: "observation",
+        observationType: "client.state_snapshot",
+        recordingId: "recording.client",
+        timestamp: 900,
+        payload: { state: secondSnapshot, metadata: { eventTimestampMs: 900 } }
+      }]
+    };
+
+    const model = buildNodeStateViewModel({
+      selection: {
+        kind: "state",
+        id: "state:timeline:entry.action.second",
         recordingId: "recording.client",
         timelineEntryId: "entry.action.second"
       },

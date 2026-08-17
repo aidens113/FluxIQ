@@ -15,6 +15,7 @@ import {
   type FlowProjectRequest,
   type ExecuteClientActionRequest,
   type FinalizeRecordingRequest,
+  type GetProposalRequest,
   type ProcessFinalizedRecordingRequest,
   type InspectStateDiffRequest,
   type LearnTaskModelRequest,
@@ -155,6 +156,15 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
             : { customHierarchyNodes: [], deletedHierarchyIds: [], workspacePrefs: {} })
         }
       };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProjectWorkspaceSummary,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown } : {};
+      return { ok: true, payload: { summary: await service.getProjectWorkspaceSummary(String(payload.projectId ?? "")) } };
     }
   });
   registry.register({
@@ -409,6 +419,22 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
       return {
         ok: true,
         payload: await service.deleteProposal({
+          projectId: String(payload.projectId ?? ""),
+          proposalId: String(payload.proposalId ?? ""),
+          kind: payload.kind === "policy" || payload.kind === "recording_flow" ? payload.kind : "auto"
+        })
+      };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProposal,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<GetProposalRequest> : {};
+      return {
+        ok: true,
+        payload: await service.getProposal({
           projectId: String(payload.projectId ?? ""),
           proposalId: String(payload.proposalId ?? ""),
           kind: payload.kind === "policy" || payload.kind === "recording_flow" ? payload.kind : "auto"

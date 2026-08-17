@@ -174,15 +174,13 @@ model for the later UI migration.
 
 ## Canonical Flow Persistence and Migration
 
-Canonical Flows now persist through the Automation Studio repository family as
-`automation.flows` records in the global framework database. They retain their
-own `projectId` and Flow scope; domain scope is filtering metadata, not a
-reason to move a global Automation Studio project catalog into a domain
-database. Flow migration ledgers persist separately as
-`automation.flow_migration_ledgers` records. Published versions also have a
-standalone durable index in `automation.flow_publications`; publication
-lifecycle metadata is therefore not coupled to the mutable Flow draft or only
-discoverable by scanning artifact history.
+Canonical Flows now persist as project-owned files under
+`.fluxiq/artifacts/automation-studio/projects/{projectId}/flows/{flowId}`.
+`flow.json` is the authoritative Flow document, `source/` contains generated or
+code-owned Flow source, and `indexes/flows.json` is the lightweight list view.
+The runtime may cache Flows in memory, but it reloads from project files after a
+restart. SQLite-backed framework repositories are not the ownership layer for
+Automation Studio Flows, recordings, proposals, or visual state assets.
 
 `AutomationStudioService` exposes dedicated Flow operations:
 
@@ -191,7 +189,7 @@ discoverable by scanning artifact history.
 - `listFlows` combines canonical Flows with explicitly read-only legacy
   compatibility entries;
 - `publishFlow` records an immutable published interface/version snapshot and
-  its dependency digests in the publication index;
+  its dependency digests with the project-owned Flow document;
 - `listFlowPublications`, `deprecateFlowPublication`, and
   `inspectFlowDependencies` expose version history, non-destructive
   deprecation, callers, dependencies, and explicit upgrade candidates;
@@ -201,10 +199,8 @@ discoverable by scanning artifact history.
   every legacy source artifact unchanged.
 
 The corresponding API endpoints use `programs.read` for list/get and
-`flows.write` for authoring, publishing, deprecation, inspection, and
-migration. Mutating operations retain the existing authorization-PIN recheck.
-The old generic project-artifact endpoints remain available for legacy callers
-during the compatibility period.
+`flows.write` for authoring, publishing, deprecation, and inspection. Mutating
+operations retain the existing authorization-PIN recheck.
 
 Legacy compatibility is governed per project. Projects begin at schema `0.1`
 in `compatibility`; Task/Routine writes return structured deprecation

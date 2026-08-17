@@ -28,6 +28,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   reorderProjectCategories: "reorder-project-categories",
   getProjectHierarchy: "get-project-hierarchy",
   saveProjectHierarchy: "save-project-hierarchy",
+  getProjectWorkspaceSummary: "get-project-workspace-summary",
   listRecordings: "list-recordings",
   listProjectArtifacts: "list-project-artifacts",
   listFlows: "list-flows",
@@ -61,6 +62,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   updateRecording: "update-recording",
   deleteRecording: "delete-recording",
   deleteProposal: "delete-proposal",
+  getProposal: "get-proposal",
   appendRecordingEntry: "append-recording-entry",
   appendRecordingNote: "append-recording-note",
   appendRecordingMarker: "append-recording-marker",
@@ -212,6 +214,11 @@ export type UpdateRecordingRequest = RecordingProjectRequest & {
 
 export type DeleteRecordingRequest = RecordingProjectRequest & {
   recordingId: string;
+};
+
+export type GetProposalRequest = RecordingProjectRequest & {
+  proposalId: string;
+  kind?: "policy" | "recording_flow" | "auto";
 };
 
 export type AppendRecordingNoteRequest = RecordingProjectRequest & {

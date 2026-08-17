@@ -254,50 +254,77 @@ function collectStateSources(input: BuildNodeStateViewModelInput, nodeId: string
   };
 
   for (const learned of learnedSources(input.pipelineArtifacts, nodeId)) add(learned);
-  const selectedTimeline = objectRecord(input.selectedTimeline);
-  const selectedRecording = objectRecord(input.selectedRecording);
-  const timelineEntries = arrayValue(selectedTimeline?.timeline ?? selectedRecording?.timeline);
-  for (const [index, entry] of timelineEntries.entries()) {
-    const entryRecord = objectRecord(entry);
-    const snapshot = stateSnapshotFromTimelineEntry(entryRecord);
-    if (snapshot && entryRecord) {
-      const recordingId = stringValue(entryRecord.recordingId) ?? stringValue(selectedRecording?.recordingId) ?? "recording";
-      const entryId = stringValue(entryRecord.id);
+  for (const source of observedTimelineSources(input)) {
+    const timelineEntries = arrayValue(source.timeline?.timeline ?? source.recording?.timeline);
+    for (const [index, entry] of timelineEntries.entries()) {
+      const entryRecord = objectRecord(entry);
+      const snapshot = stateSnapshotFromTimelineEntry(entryRecord);
+      if (snapshot && entryRecord) {
+        const recordingId = stringValue(entryRecord.recordingId) ?? source.recordingId;
+        const entryId = stringValue(entryRecord.id);
+        add({
+          source: {
+            kind: "observed",
+            id: `observed:${recordingId}:${entryId ?? index}`,
+            label: entryId ? `Recording ${shortId(recordingId)} @ ${shortId(entryId)}` : `Recording ${shortId(recordingId)}`,
+            recordingId,
+            ...(entryId ? { timelineEntryId: entryId } : {}),
+            timestamp: numberValue(entryRecord.timestamp) ?? snapshot.timestamp
+          },
+          snapshot,
+          deltas: [],
+          raw: entryRecord
+        });
+      }
+    }
+    const initialState = source.timeline && isStateSnapshot(source.timeline.initialState)
+      ? source.timeline.initialState
+      : source.recording && isStateSnapshot(source.recording.initialState) ? source.recording.initialState : null;
+    if (initialState) {
       add({
         source: {
           kind: "observed",
-          id: `observed:${recordingId}:${entryId ?? index}`,
-          label: entryId ? `Recording ${shortId(recordingId)} @ ${shortId(entryId)}` : `Recording ${shortId(recordingId)}`,
-          recordingId,
-          ...(entryId ? { timelineEntryId: entryId } : {}),
-          timestamp: numberValue(entryRecord.timestamp) ?? snapshot.timestamp
+          id: `observed:${source.recordingId}:initial`,
+          label: `Recording ${shortId(source.recordingId)} initial`,
+          recordingId: source.recordingId,
+          timestamp: initialState.timestamp
         },
-        snapshot,
+        snapshot: initialState,
         deltas: [],
-        raw: entryRecord
+        raw: source.recording ?? source.timeline
       });
     }
   }
-  const initialState = selectedTimeline && isStateSnapshot(selectedTimeline.initialState)
-    ? selectedTimeline.initialState
-    : selectedRecording && isStateSnapshot(selectedRecording.initialState) ? selectedRecording.initialState : null;
-  if (initialState) {
-    const recordingId = stringValue(selectedRecording?.recordingId) ?? stringValue(selectedTimeline?.recordingId) ?? "recording";
-    add({
-      source: {
-        kind: "observed",
-        id: `observed:${recordingId}:initial`,
-        label: `Recording ${shortId(recordingId)} initial`,
-        recordingId,
-        timestamp: initialState.timestamp
-      },
-      snapshot: initialState,
-      deltas: [],
-      raw: selectedRecording ?? selectedTimeline
-    });
-  }
   for (const runtime of runtimeSources(input.runtimeSessions)) add(runtime);
   return records;
+}
+
+function observedTimelineSources(input: BuildNodeStateViewModelInput): Array<{ recordingId: string; recording?: Record<string, unknown>; timeline?: Record<string, unknown> }> {
+  const requestedRecordingIds = new Set<string>();
+  const selection = selectionRecord(input.selection);
+  const sourceRecordingId = recordingIdFromObservedSourceId(input.viewState?.sourceId ?? selection.sourceId);
+  if (selection.recordingId) requestedRecordingIds.add(selection.recordingId);
+  if (sourceRecordingId) requestedRecordingIds.add(sourceRecordingId);
+
+  const selectedRecording = objectRecord(input.selectedRecording);
+  const selectedTimeline = objectRecord(input.selectedTimeline);
+  const selectedRecordingId = stringValue(selectedRecording?.recordingId) ?? stringValue(selectedTimeline?.recordingId);
+  if (!requestedRecordingIds.size && selectedRecordingId) requestedRecordingIds.add(selectedRecordingId);
+
+  const recordings = arrayValue(input.recordings).map(objectRecord).filter((record): record is Record<string, unknown> => Boolean(record));
+  const timelines = arrayValue(input.timelines).map(objectRecord).filter((record): record is Record<string, unknown> => Boolean(record));
+  const candidates: Array<{ recordingId: string; recording?: Record<string, unknown>; timeline?: Record<string, unknown> }> = [];
+  const add = (recordingId: string | undefined, recording?: Record<string, unknown>, timeline?: Record<string, unknown>) => {
+    if (!recordingId || candidates.some((candidate) => candidate.recordingId === recordingId)) return;
+    candidates.push(compactObject({ recordingId, recording, timeline }) as { recordingId: string; recording?: Record<string, unknown>; timeline?: Record<string, unknown> });
+  };
+
+  for (const recordingId of requestedRecordingIds) {
+    add(recordingId, recordings.find((recording) => stringValue(recording.recordingId) === recordingId) ?? (selectedRecordingId === recordingId ? selectedRecording ?? undefined : undefined), timelines.find((timeline) => stringValue(timeline.recordingId) === recordingId) ?? (selectedRecordingId === recordingId ? selectedTimeline ?? undefined : undefined));
+  }
+  add(selectedRecordingId, selectedRecording ?? undefined, selectedTimeline ?? undefined);
+  if (!candidates.length && (selectedRecording || selectedTimeline)) add(selectedRecordingId ?? "recording", selectedRecording ?? undefined, selectedTimeline ?? undefined);
+  return candidates;
 }
 
 function learnedSources(artifacts: unknown, nodeId: string): StateSourceRecord[] {
@@ -506,6 +533,13 @@ function inferPreferredObservedSourceId(input: BuildNodeStateViewModelInput, sou
     }
   }
   const references = collectNodeStateEntryReferences(input, bindings);
+  const actionOffsets = [...references.actionEntryIds]
+    .map((entryId) => timelineEntryTiming(input, entryId))
+    .filter((timing): timing is { offset?: number; timestamp?: number } => Boolean(timing));
+  for (const timing of actionOffsets) {
+    const nearest = nearestObservedSourceForTiming(observedSources, timing);
+    if (nearest) return nearest.source.id;
+  }
   for (const entryId of references.snapshotEntryIds) {
     const exact = observedSources.find((record) => record.source.kind === "observed" && record.source.timelineEntryId === entryId);
     if (exact) return exact.source.id;
@@ -513,13 +547,6 @@ function inferPreferredObservedSourceId(input: BuildNodeStateViewModelInput, sou
   for (const entryId of references.supportEntryIds) {
     const exact = observedSources.find((record) => record.source.kind === "observed" && record.source.timelineEntryId === entryId);
     if (exact) return exact.source.id;
-  }
-  const actionOffsets = [...references.actionEntryIds]
-    .map((entryId) => timelineEntryTiming(input, entryId))
-    .filter((timing): timing is { offset?: number; timestamp?: number } => Boolean(timing));
-  for (const timing of actionOffsets) {
-    const nearest = nearestObservedSourceForTiming(observedSources, timing);
-    if (nearest) return nearest.source.id;
   }
   const orderedActionTiming = inferNodeOrderActionTiming(input, nodeId);
   if (orderedActionTiming) {
@@ -543,11 +570,13 @@ function collectNodeStateEntryReferences(input: BuildNodeStateViewModelInput, bi
     const layer = stringValue(record.layer);
     if (artifactId?.startsWith("corr.")) correlationIds.add(artifactId);
     if (layer === "state_action_correlation" && artifactId) correlationIds.add(artifactId);
+    if (observationId && timelineEntryIsStateSnapshot(input, observationId)) snapshotEntryIds.add(observationId);
     if (entryId) {
-      if (layer === "recording" || layer === "raw_recording" || observationId) actionEntryIds.add(entryId);
+      if (timelineEntryIsStateSnapshot(input, entryId)) snapshotEntryIds.add(entryId);
+      else if (layer === "recording" || layer === "raw_recording" || observationId) actionEntryIds.add(entryId);
       else supportEntryIds.add(entryId);
     }
-    if (observationId) snapshotEntryIds.add(observationId);
+    if (observationId && !timelineEntryIsStateSnapshot(input, observationId)) snapshotEntryIds.add(observationId);
   };
 
   const selectedNode = objectRecord(input.selectedNode);
@@ -586,43 +615,60 @@ function nearestObservedSourceForTiming(observedSources: StateSourceRecord[], ti
   const scored = observedSources
     .map((record) => {
       const recordTiming = sourceRecordTiming(record);
-      const delta = timing.offset !== undefined && recordTiming.offset !== undefined
-        ? timing.offset - recordTiming.offset
-        : timing.timestamp !== undefined && recordTiming.timestamp !== undefined ? timing.timestamp - recordTiming.timestamp : Number.POSITIVE_INFINITY;
+      const delta = timing.timestamp !== undefined && recordTiming.timestamp !== undefined
+        ? timing.timestamp - recordTiming.timestamp
+        : timing.offset !== undefined && recordTiming.offset !== undefined ? timing.offset - recordTiming.offset : Number.POSITIVE_INFINITY;
       return { record, delta };
     })
     .filter((item) => Number.isFinite(item.delta))
     .sort((left, right) => {
+      const distance = Math.abs(left.delta) - Math.abs(right.delta);
+      if (distance !== 0) return distance;
       const leftBefore = left.delta >= 0;
       const rightBefore = right.delta >= 0;
       if (leftBefore !== rightBefore) return leftBefore ? -1 : 1;
-      return Math.abs(left.delta) - Math.abs(right.delta);
+      return 0;
     });
   return scored[0]?.record;
 }
 
 function sourceRecordTiming(record: StateSourceRecord): { offset?: number; timestamp?: number } {
   const raw = objectRecord(record.raw);
+  const payload = objectRecord(raw?.payload);
+  const metadata = objectRecord(payload?.metadata);
   const result: { offset?: number; timestamp?: number } = {};
   const offset = numberValue(raw?.monotonicOffsetMs);
-  const timestamp = numberValue(raw?.timestamp) ?? record.snapshot?.timestamp ?? (record.source.kind !== "learned" ? record.source.timestamp : undefined);
+  const timestamp = numberValue(metadata?.eventTimestampMs)
+    ?? numberValue(metadata?.stateTimestampMs)
+    ?? numberValue(raw?.startedAt)
+    ?? numberValue(raw?.timestamp)
+    ?? record.snapshot?.timestamp
+    ?? (record.source.kind !== "learned" ? record.source.timestamp : undefined);
   if (offset !== undefined) result.offset = offset;
   if (timestamp !== undefined) result.timestamp = timestamp;
   return result;
 }
 
 function timelineEntryTiming(input: BuildNodeStateViewModelInput, entryId: string): { offset?: number; timestamp?: number } | null {
-  const selectedTimeline = objectRecord(input.selectedTimeline);
-  const selectedRecording = objectRecord(input.selectedRecording);
-  const timelineEntries = arrayValue(selectedTimeline?.timeline ?? selectedRecording?.timeline);
-  const entry = timelineEntries.map(objectRecord).find((record) => record?.id === entryId);
+  const entry = timelineEntryRecord(input, entryId);
   if (!entry) return null;
   const result: { offset?: number; timestamp?: number } = {};
   const offset = numberValue(entry.monotonicOffsetMs);
-  const timestamp = numberValue(entry.timestamp);
+  const timestamp = numberValue(entry.startedAt) ?? numberValue(entry.completedAt) ?? numberValue(entry.timestamp);
   if (offset !== undefined) result.offset = offset;
   if (timestamp !== undefined) result.timestamp = timestamp;
   return result;
+}
+
+function timelineEntryRecord(input: BuildNodeStateViewModelInput, entryId: string): Record<string, unknown> | null {
+  return observedTimelineSources(input)
+    .flatMap((source) => arrayValue(source.timeline?.timeline ?? source.recording?.timeline))
+    .map(objectRecord)
+    .find((record) => record?.id === entryId) ?? null;
+}
+
+function timelineEntryIsStateSnapshot(input: BuildNodeStateViewModelInput, entryId: string): boolean {
+  return Boolean(stateSnapshotFromTimelineEntry(timelineEntryRecord(input, entryId)));
 }
 
 function selectedTimelineEntryId(selection: AutomationSelection | null): string | undefined {
@@ -671,7 +717,7 @@ function isActionLikeTimelineEntry(entry: Record<string, unknown>): boolean {
 function timingFromRecord(record: Record<string, unknown>): { offset?: number; timestamp?: number } | null {
   const result: { offset?: number; timestamp?: number } = {};
   const offset = numberValue(record.monotonicOffsetMs);
-  const timestamp = numberValue(record.timestamp);
+  const timestamp = numberValue(record.startedAt) ?? numberValue(record.completedAt) ?? numberValue(record.timestamp);
   if (offset !== undefined) result.offset = offset;
   if (timestamp !== undefined) result.timestamp = timestamp;
   return result.offset !== undefined || result.timestamp !== undefined ? result : null;
@@ -897,12 +943,21 @@ function phaseFrom(value: unknown, source: NodeStateSource | null): NodeStatePha
   return "input";
 }
 
-function selectionRecord(selection: AutomationSelection | null): { sourceId?: string; phase?: NodeStatePhase } {
+function selectionRecord(selection: AutomationSelection | null): { sourceId?: string; phase?: NodeStatePhase; recordingId?: string; proposalId?: string; timelineEntryId?: string } {
   const record = objectRecord(selection);
   return compactObject({
     sourceId: stringValue(record?.sourceId),
-    phase: phaseFrom(record?.phase, null)
-  }) as { sourceId?: string; phase?: NodeStatePhase };
+    phase: phaseFrom(record?.phase, null),
+    recordingId: stringValue(record?.recordingId),
+    proposalId: stringValue(record?.proposalId),
+    timelineEntryId: stringValue(record?.timelineEntryId)
+  }) as { sourceId?: string; phase?: NodeStatePhase; recordingId?: string; proposalId?: string; timelineEntryId?: string };
+}
+
+function recordingIdFromObservedSourceId(sourceId: string | undefined): string | undefined {
+  if (!sourceId) return undefined;
+  const match = /^observed:([^:]+):/.exec(sourceId);
+  return match?.[1];
 }
 
 function selectedNodeId(selection: AutomationSelection | null, selectedNode: unknown): string {

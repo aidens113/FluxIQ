@@ -84,7 +84,7 @@ import {
 
 type TabButton<T extends string> = { id: T; label: string; count?: number };
 type AutomationFlowPreset = "blank" | "deterministic" | "recorded" | "integration" | "scheduled" | "api-endpoint" | "reusable";
-type DeletedHierarchyRefs = { taskIds: Set<string>; routineIds: Set<string>; configIds: Set<string>; recordingIds: Set<string>; proposalIds: Set<string>; timelineEntryIds: Set<string> };
+type DeletedHierarchyRefs = { taskIds: Set<string>; routineIds: Set<string>; configIds: Set<string>; flowIds: Set<string>; recordingIds: Set<string>; proposalIds: Set<string>; timelineEntryIds: Set<string> };
 
 export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const api = useProgramApi("automation-studio");
@@ -322,7 +322,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           : undefined;
   const selectedProposal = hierarchyProposals.find((proposal: any) => selectionProposalId && proposal.proposalId === selectionProposalId)
     ?? proposals.find((proposal: any) => selection?.kind === "recording" && proposal.metadata?.recordingId === selection.id)
-    ?? hierarchyProposals[0];
+    ?? (selection ? null : hierarchyProposals[0] ?? null);
   const selectedTask = projectTasks.find((task: any) => selection?.kind === "policy" && (task.metadata?.policyId === selection.id || task.taskId === selection.id))
     ?? validLastOpenTask
     ?? projectTasks[0]
@@ -359,8 +359,12 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       : selection?.kind === "state"
         ? selection.recordingId ?? (selection.proposalId ? hierarchyProposals.find((proposal: any) => proposal.proposalId === selection.proposalId)?.metadata?.recordingId ?? hierarchyProposals.find((proposal: any) => proposal.proposalId === selection.proposalId)?.recordingId : undefined)
       : null;
-  const selectedRecording = recordings.find((recording: any) => selection?.kind === "recording" ? recording.recordingId === selection.id : recording.recordingId === (timelineSelectionRecordingId ?? proposalSelectionRecordingId)) ?? recordings[0];
-  const selectedTimeline = selectedRecording ? timelines.find((timeline: any) => timeline.recordingId === selectedRecording.recordingId) : timelines[0];
+  const selectedRecordingId = timelineSelectionRecordingId ?? proposalSelectionRecordingId;
+  const selectedRecording = recordings.find((recording: any) => selection?.kind === "recording" ? recording.recordingId === selection.id : recording.recordingId === selectedRecordingId)
+    ?? (selection ? null : recordings[0] ?? null);
+  const selectedTimeline = selectedRecording
+    ? timelines.find((timeline: any) => timeline.recordingId === selectedRecording.recordingId) ?? null
+    : selection ? null : timelines[0] ?? null;
   const selectedNode = selection?.kind === "editor-node"
     ? { id: selection.id, ...selection.node, actions: (selection.node.actionTypes ?? []).map((actionType) => ({ actionType })), recovery: { strategy: selection.node.family } }
     : selectedProposal?.policy?.nodes?.find((node: any) => selection?.kind === "state" && selection.proposalId && selection.nodeId && selection.nodeId === node.id)
@@ -368,7 +372,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       ?? selectedProposal?.policy?.nodes?.find((node: any) => selection?.kind === "proposal-step" && `node.${selection.id}` === node.id)
       ?? selectedPolicy?.nodes?.find((node: any) => selection?.kind === "node" && selection.id === node.id)
       ?? selectedPolicy?.nodes?.find((node: any) => selection?.kind === "state" && selection.nodeId && selection.nodeId === node.id)
-      ?? selectedPolicy?.nodes?.[0];
+      ?? (selection ? null : selectedPolicy?.nodes?.[0] ?? null);
   const selectedEntry = selectedTimeline?.timeline?.find((entry: any) => selection?.kind === "timeline" && selection.id === entry.id) ?? selectedRecording?.timeline?.find((entry: any) => selection?.kind === "timeline" && selection.id === entry.id);
   const selectedSignal = signals.find((signal: any) => selection?.kind === "signal" && selection.id === signal.path);
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
@@ -378,6 +382,21 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     if (!["recording", "timeline", "state"].includes(selection?.kind ?? "")) return;
     void loadRecordingDetails(selectedRecording.recordingId);
   }, [activeProjectId, selectedRecording?.recordingId, selectedRecording?.metadata?.summaryOnly, selection?.kind]);
+  useEffect(() => {
+    if (!activeProjectId || !selectedProposal?.proposalId || selectedProposal.metadata?.summaryOnly !== true) return;
+    if (!["proposal", "proposal-step", "editor-node", "state"].includes(selection?.kind ?? "")) return;
+    void loadProposalDetails(selectedProposal.proposalId, proposalArtifactKind(selectedProposal));
+  }, [activeProjectId, selectedProposal?.proposalId, selectedProposal?.metadata?.summaryOnly, selection?.kind]);
+  useEffect(() => {
+    if (!activeProjectId || !selection || !selectedRecordingId || selectedRecording?.recordingId === selectedRecordingId) return;
+    if (!["proposal", "proposal-step", "editor-node", "state", "timeline"].includes(selection.kind)) return;
+    void loadRecordingDetails(selectedRecordingId);
+  }, [activeProjectId, selectedRecordingId, selectedRecording?.recordingId, selection?.kind]);
+  useEffect(() => {
+    if (!activeProjectId || !selectionProposalId || selectedProposal?.proposalId === selectionProposalId) return;
+    if (!["proposal", "proposal-step", "editor-node", "state"].includes(selection?.kind ?? "")) return;
+    void loadProposalDetails(selectionProposalId);
+  }, [activeProjectId, selectionProposalId, selectedProposal?.proposalId, selection?.kind]);
 
   const viewInstances: AutomationViewInstance[] = [
     { id: "client-gateway", label: "Connected Clients", type: "clients", icon: Radio, state: "live" },
@@ -481,14 +500,20 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         : source?.kind === "state"
           ? source.recordingId ?? (source.proposalId ? hierarchyProposals.find((proposal: any) => proposal.proposalId === source.proposalId)?.metadata?.recordingId ?? hierarchyProposals.find((proposal: any) => proposal.proposalId === source.proposalId)?.recordingId : undefined)
         : null;
-    if (source?.kind === "recording") return recordings.find((recording: any) => recording.recordingId === source.id) ?? selectedRecording;
-    return recordings.find((recording: any) => recording.recordingId === (timelineRecordingId ?? proposalRecordingId)) ?? selectedRecording;
+    if (source?.kind === "recording") return recordings.find((recording: any) => recording.recordingId === source.id) ?? null;
+    const requestedRecordingId = timelineRecordingId ?? proposalRecordingId;
+    const exact = recordings.find((recording: any) => recording.recordingId === requestedRecordingId);
+    if (source?.kind === "timeline" || source?.kind === "proposal" || source?.kind === "proposal-step" || source?.kind === "editor-node" || source?.kind === "state") return exact ?? null;
+    return exact ?? selectedRecording;
   }
   function proposalForSelection(source: AutomationSelection | null | undefined) {
-    return hierarchyProposals.find((proposal: any) => source?.kind === "proposal" && proposal.proposalId === source.id)
+    const exact = hierarchyProposals.find((proposal: any) => source?.kind === "proposal" && proposal.proposalId === source.id)
       ?? hierarchyProposals.find((proposal: any) => source?.kind === "proposal-step" && proposal.proposalId === source.proposalId)
       ?? hierarchyProposals.find((proposal: any) => source?.kind === "recording" && (proposal.metadata?.recordingId === source.id || proposal.recordingId === source.id))
-      ?? selectedProposal;
+      ?? hierarchyProposals.find((proposal: any) => source?.kind === "state" && source.proposalId && proposal.proposalId === source.proposalId)
+      ?? null;
+    if (source?.kind === "proposal" || source?.kind === "proposal-step" || source?.kind === "editor-node" || source?.kind === "state" || source?.kind === "recording") return exact;
+    return exact ?? selectedProposal;
   }
   function taskForSelection(source: AutomationSelection | null | undefined) {
     return projectTasks.find((task: any) => source?.kind === "policy" && (task.metadata?.policyId === source.id || task.taskId === source.id))
@@ -559,6 +584,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       setAutomationActionStatus("No proposal exists for this recording yet. Use Generate Proposal to create one.");
       return;
     }
+    if (proposal.metadata?.summaryOnly === true) void loadProposalDetails(proposal.proposalId, proposalArtifactKind(proposal));
     setSelection({ kind: "proposal", id: proposal.proposalId, recordingId });
     setRecordingTreePrimaryKind("proposal");
     openView("proposal-workbench", "preview");
@@ -575,10 +601,20 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setRecordingTreePrimaryKind("recording");
     openView("timeline-recording", "preview");
   };
-  const openTimelineEntryState = (recordingId: string, entryId: string) => openStateView({ timelineEntryId: entryId, sourceId: `observed:${recordingId}:${entryId}`, phase: "input" });
-  const openStateView = (request: { nodeId?: string; sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; proposalId?: string; timelineEntryId?: string }) => {
+  const openTimelineEntryState = (recordingId: string, entryId: string) => {
+    void loadRecordingDetails(recordingId);
+    void openStateView({ recordingId, timelineEntryId: entryId, phase: "input" });
+  };
+  const openStateView = async (request: { nodeId?: string; sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; proposalId?: string; recordingId?: string; timelineEntryId?: string }) => {
     const nodeId = request.nodeId ?? selectedNode?.id;
-    const sourceId = request.sourceId ?? (request.timelineEntryId && selectedRecording?.recordingId ? `observed:${selectedRecording.recordingId}:${request.timelineEntryId}` : undefined);
+    const recordingId = request.recordingId ?? selectedRecording?.recordingId ?? selectedProposal?.metadata?.recordingId ?? selectedProposal?.recordingId ?? recordingIdFromStateSourceId(request.sourceId);
+    const loadedRecording = recordingId
+      ? recordings.find((recording: any) => recording.recordingId === recordingId && Array.isArray(recording.timeline))
+        ?? await loadRecordingDetails(recordingId)
+        ?? recordings.find((recording: any) => recording.recordingId === recordingId)
+      : null;
+    const resolvedStateEntryId = request.timelineEntryId ? resolveObservedStateEntryId(loadedRecording, request.timelineEntryId) : null;
+    const sourceId = resolvedStateEntryId && recordingId ? `observed:${recordingId}:${resolvedStateEntryId}` : request.sourceId;
     const proposalId = request.proposalId
       ?? (selection?.kind === "proposal" ? selection.id : undefined)
       ?? (selection?.kind === "proposal-step" ? selection.proposalId : undefined)
@@ -591,7 +627,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       phase: request.phase ?? "input",
       evidenceId: request.evidenceId,
       factPath: request.factPath,
-      recordingId: selectedRecording?.recordingId ?? selectedProposal?.metadata?.recordingId ?? selectedProposal?.recordingId,
+      recordingId,
       proposalId,
       timelineEntryId: request.timelineEntryId
     });
@@ -1050,15 +1086,35 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
 
   async function refreshProjectRuntimeState(projectId = activeProjectId) {
     if (!projectId) return;
+    const workspaceSummaryPromise = api.post<{ summary: any }>("get-project-workspace-summary", { projectId });
     const recordingPromise = api.post<{ recordings: any[] }>("list-recordings", { projectId, summaries: true });
     const timelinePromise = api.post<{ normalizedTimelines: any[] }>("list-normalized-timelines", { projectId });
     const runtimePromise = api.post<{ runtimeSessions: any[] }>("list-runtime-sessions", { projectId });
-    const pipelinePromise = api.post<any>("list-pipeline-artifacts", { projectId });
     const artifactPromise = api.post<{ artifacts: any }>("list-project-artifacts", { projectId });
     const flowPromise = api.post<{ flows: any[] }>("list-flows", { projectId });
     const domainPromise = api.post<{ domains: any[] }>("list-recording-domains", { projectId });
     const nativeNodesPromise = api.post<{ nodes: any[] }>("list-native-node-definitions", { projectId });
     const publishedNodesPromise = api.post<{ nodes: any[] }>("list-published-flow-nodes", { projectId });
+    void workspaceSummaryPromise.then((result) => {
+      if (!result.ok || !result.payload?.summary) return;
+      const summary = result.payload.summary;
+      setProjectRecordings((current) => mergeRecordingSummaries(current, recordingSummariesToRecordingStubs(summary.recordings ?? [])));
+      setPipelineArtifacts((current: any) => ({
+        ...emptyPipelineArtifacts(),
+        policyProposals: mergeById(
+          (current?.policyProposals ?? []).filter((proposal: any) => (summary.proposals ?? []).some((item: any) => item.proposalId === proposal.proposalId)),
+          proposalSummariesToPolicyArtifacts(summary.proposals ?? []),
+          "proposalId"
+        ),
+        recordingFlowProposals: mergeById(
+          (current?.recordingFlowProposals ?? []).filter((proposal: any) => (summary.proposals ?? []).some((item: any) => item.proposalId === proposal.proposalId)),
+          proposalSummariesToRecordingFlowArtifacts(summary.proposals ?? []),
+          "proposalId"
+        )
+      }));
+      setProjectFlows(flowSummariesToCatalogEntries(summary.flows ?? []));
+      setRuntimeSessions((summary.runtime ?? []).map(runtimeSummaryToSessionStub));
+    });
     void recordingPromise.then((result) => { if (result.ok) setProjectRecordings((current) => mergeRecordingSummaries(current, result.payload?.recordings ?? [])); });
     void timelinePromise.then((result) => { if (result.ok) setProjectTimelines(result.payload?.normalizedTimelines ?? []); });
     void runtimePromise.then((result) => { if (result.ok) setRuntimeSessions(result.payload?.runtimeSessions ?? []); });
@@ -1067,15 +1123,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     void domainPromise.then((result) => { if (result.ok) setRecordingDomains(result.payload?.domains ?? []); });
     void nativeNodesPromise.then((result) => { if (result.ok) setNativeNodeDefinitions(result.payload?.nodes ?? []); });
     void publishedNodesPromise.then((result) => { if (result.ok) setPublishedFlowDefinitions(result.payload?.nodes ?? []); });
-    void pipelinePromise.then((result) => {
-      if (result.ok) setPipelineArtifacts(result.payload ?? { normalizationReviews: [], miningRuns: [], evidenceFacts: [], evidenceObservations: [], stateActionCorrelations: [], evidenceClaims: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
-      else setAutomationActionStatus(result.error ?? "Pipeline artifacts could not be loaded.");
-    });
-    const [recordingResult, timelineResult, runtimeResult, pipelineResult, artifactResult, flowResult, domainResult, nativeNodesResult, publishedNodesResult] = await Promise.all([
+    const [workspaceSummaryResult, recordingResult, timelineResult, runtimeResult, artifactResult, flowResult, domainResult, nativeNodesResult, publishedNodesResult] = await Promise.all([
+      workspaceSummaryPromise,
       recordingPromise,
       timelinePromise,
       runtimePromise,
-      pipelinePromise,
       artifactPromise,
       flowPromise,
       domainPromise,
@@ -1083,10 +1135,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       publishedNodesPromise
     ]);
     return {
+      workspaceSummary: workspaceSummaryResult.ok ? workspaceSummaryResult.payload?.summary ?? null : null,
       recordings: recordingResult.ok ? recordingResult.payload?.recordings ?? [] : null,
       timelines: timelineResult.ok ? timelineResult.payload?.normalizedTimelines ?? [] : null,
       runtimeSessions: runtimeResult.ok ? runtimeResult.payload?.runtimeSessions ?? [] : null,
-      pipelineArtifacts: pipelineResult.ok ? pipelineResult.payload ?? emptyPipelineArtifacts() : null,
+      pipelineArtifacts: null,
       projectArtifacts: artifactResult.ok ? artifactResult.payload?.artifacts ?? { tasks: [], routines: [], configs: [], flows: [] } : null,
       flows: flowResult.ok ? flowResult.payload?.flows ?? [] : null,
       domains: domainResult.ok ? domainResult.payload?.domains ?? [] : null
@@ -1099,6 +1152,20 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     if (!result.ok || !result.payload?.recording) return null;
     setProjectRecordings((current) => [result.payload!.recording, ...current.filter((recording) => recording.recordingId !== recordingId)]);
     return result.payload.recording;
+  }
+
+  async function loadProposalDetails(proposalId: string, kind: "policy" | "recording_flow" | "auto" = "auto") {
+    if (!activeProjectId || !proposalId) return null;
+    const result = await api.post<{ proposal: any; kind: "policy" | "recording_flow" } | null>("get-proposal", { projectId: activeProjectId, proposalId, kind });
+    if (!result.ok || !result.payload?.proposal) return null;
+    const proposal = result.payload.proposal;
+    setPipelineArtifacts((current: any) => {
+      const base = { ...emptyPipelineArtifacts(), ...(current ?? {}) };
+      return result.payload?.kind === "recording_flow"
+        ? { ...base, recordingFlowProposals: upsertById([proposal, ...base.recordingFlowProposals], "proposalId") }
+        : { ...base, policyProposals: upsertById([proposal, ...base.policyProposals], "proposalId") };
+    });
+    return proposal;
   }
 
   async function runCurrentAutomationFlow() {
@@ -1382,10 +1449,10 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       setAutomationActionStatus("PIN is required to delete a recording.");
       return;
     }
-    const result = await api.post("delete-recording", { projectId: activeProjectId, recordingId, authorizationPin: pin });
+    const result = await api.post<{ deletedRecordingId: string; deletedProposalIds?: string[] }>("delete-recording", { projectId: activeProjectId, recordingId, authorizationPin: pin });
     setAutomationActionStatus(result.ok ? "Recording deleted." : result.error ?? "Recording could not be deleted.");
     if (!result.ok) return;
-    removeDeletedRecordingsFromWorkspace([recordingId]);
+    removeDeletedRecordingsFromWorkspace([recordingId], result.payload?.deletedProposalIds ?? []);
     await refreshProjectRuntimeState(activeProjectId);
   }
 
@@ -1393,16 +1460,18 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     if (!activeProjectId || !recordingIds.length) return true;
     const uniqueIds = [...new Set(recordingIds)];
     let deletedCount = 0;
+    const deletedProposalIds: string[] = [];
     for (const recordingId of uniqueIds) {
-      const result = await api.post("delete-recording", { projectId: activeProjectId, recordingId, authorizationPin });
+      const result = await api.post<{ deletedRecordingId: string; deletedProposalIds?: string[] }>("delete-recording", { projectId: activeProjectId, recordingId, authorizationPin });
       if (!result.ok) {
         setAutomationActionStatus(result.error ?? `Recording ${recordingId} could not be deleted.`);
         return false;
       }
+      deletedProposalIds.push(...(result.payload?.deletedProposalIds ?? []));
       deletedCount += 1;
     }
     setAutomationActionStatus(`${deletedCount} recording${deletedCount === 1 ? "" : "s"} deleted.`);
-    removeDeletedRecordingsFromWorkspace(uniqueIds);
+    removeDeletedRecordingsFromWorkspace(uniqueIds, deletedProposalIds);
     await refreshProjectRuntimeState(activeProjectId);
     return true;
   }
@@ -1435,12 +1504,15 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     return true;
   }
 
-  function removeDeletedRecordingsFromWorkspace(recordingIds: string[]) {
+  function removeDeletedRecordingsFromWorkspace(recordingIds: string[], proposalIds: string[] = []) {
     const deletedRecordingIds = new Set(recordingIds);
-    const deletedProposalIds = new Set(hierarchyProposals
+    const deletedProposalIds = new Set([
+      ...proposalIds,
+      ...hierarchyProposals
       .filter((proposal: any) => deletedRecordingIds.has(String(proposal.recordingId ?? proposal.metadata?.recordingId ?? "")))
       .map((proposal: any) => String(proposal.proposalId ?? ""))
-      .filter(Boolean));
+      .filter(Boolean)
+    ]);
     const deletingNodes: AutomationHierarchyNode[] = [
       ...[...deletedRecordingIds].map((recordingId) => ({ id: recordingId, kind: "recording" as const, category: "recording" as const, label: recordingId, parentId: null, sourceId: recordingId })),
       ...[...deletedProposalIds].map((proposalId) => ({ id: proposalId, kind: "proposal" as const, category: "proposal" as const, label: proposalId, parentId: null, sourceId: proposalId }))
@@ -2000,6 +2072,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   function selectionMatchesDeletedHierarchy(selectionValue: unknown, refs: DeletedHierarchyRefs): boolean {
     if (!isAutomationSelection(selectionValue)) return false;
     if (selectionValue.kind === "policy") return refs.taskIds.has(selectionValue.id);
+    if (selectionValue.kind === "flow") return refs.flowIds.has(selectionValue.id);
     if (selectionValue.kind === "recording") return refs.recordingIds.has(selectionValue.id);
     if (selectionValue.kind === "proposal") return refs.proposalIds.has(selectionValue.id) || (selectionValue.recordingId ? refs.recordingIds.has(selectionValue.recordingId) : false);
     if (selectionValue.kind === "proposal-step") return refs.proposalIds.has(selectionValue.proposalId) || (selectionValue.recordingId ? refs.recordingIds.has(selectionValue.recordingId) : false);
@@ -2025,6 +2098,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       taskIds: new Set(deletingNodes.filter((node) => node.kind === "task" && node.sourceId).map((node) => node.sourceId!)),
       routineIds: new Set(deletingNodes.filter((node) => node.kind === "routine" && node.sourceId).map((node) => node.sourceId!)),
       configIds: new Set(deletingNodes.filter((node) => node.kind === "config" && node.sourceId).map((node) => node.sourceId!)),
+      flowIds: new Set(deletingNodes.filter((node) => node.kind === "flow" && node.sourceId).map((node) => node.sourceId!)),
       recordingIds: new Set(deletingNodes.filter((node) => node.kind === "recording" && node.sourceId).map((node) => node.sourceId!)),
       proposalIds: new Set(deletingNodes.filter((node) => node.kind === "proposal" && node.sourceId).map((node) => node.sourceId!)),
       timelineEntryIds: new Set(recordings
@@ -2408,6 +2482,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
             return;
           }
         }
+        closeDeletedHierarchyViews(flowNodes);
         await refreshProjectRuntimeState(activeProjectId);
         if (selection?.kind === "flow" && flowNodes.some((node) => node.sourceId === selection.id)) setSelection(null);
       }
@@ -2861,6 +2936,114 @@ function emptyPipelineArtifacts() {
   };
 }
 
+function recordingSummariesToRecordingStubs(summaries: any[]): any[] {
+  return summaries.map((summary) => ({
+    recordingId: summary.recordingId,
+    ...(summary.taskId ? { taskId: summary.taskId } : {}),
+    startedAt: summary.startedAt ?? 0,
+    ...(summary.endedAt !== undefined ? { endedAt: summary.endedAt } : {}),
+    environment: {
+      id: summary.domainId ?? "environment.unspecified",
+      label: summary.domainId ?? "Local Studio",
+      kind: "summary",
+      domainId: summary.domainId ?? null
+    },
+    sources: [],
+    actionChannels: [],
+    initialState: { timestamp: summary.startedAt ?? 0, namespaces: {} },
+    timeline: [],
+    notes: [],
+    metadata: {
+      summaryOnly: true,
+      ...(summary.name ? { name: summary.name } : {}),
+      eventCount: summary.eventCount ?? 0,
+      actionCount: summary.actionCount ?? 0,
+      stateSnapshotCount: summary.stateSnapshotCount ?? 0,
+      proposalCount: summary.proposalCount ?? 0
+    }
+  }));
+}
+
+function proposalSummariesToPolicyArtifacts(summaries: any[]): any[] {
+  return summaries
+    .filter((summary) => summary.kind === "policy" || summary.kind === "direct" || summary.kind === "llm_assisted")
+    .map((summary) => ({
+      proposalId: summary.proposalId,
+      recordingId: summary.recordingId,
+      status: summary.status === "approved" ? "approved" : "proposed",
+      generatedAt: summary.generatedAt,
+      metadata: {
+        recordingId: summary.recordingId,
+        summaryOnly: true,
+        ...(summary.name ? { title: summary.name } : {}),
+        ...(summary.mode ? { generationMode: summary.mode } : {})
+      }
+    }));
+}
+
+function proposalSummariesToRecordingFlowArtifacts(summaries: any[]): any[] {
+  return summaries
+    .filter((summary) => summary.kind === "recording_flow")
+    .map((summary) => ({
+      proposalId: summary.proposalId,
+      recordingId: summary.recordingId,
+      status: summary.status === "generated" ? "proposed" : summary.status,
+      generatedAt: summary.generatedAt,
+      updatedAt: summary.updatedAt ?? summary.generatedAt,
+      candidates: [],
+      metadata: {
+        summaryOnly: true,
+        ...(summary.name ? { title: summary.name } : {})
+      }
+    }));
+}
+
+function flowSummariesToCatalogEntries(summaries: any[]): any[] {
+  return summaries.map((summary) => ({
+    source: "canonical",
+    readOnly: false,
+    flow: {
+      flowId: summary.flowId,
+      projectId: summary.projectId,
+      name: summary.name ?? summary.flowId,
+      ...(summary.description ? { description: summary.description } : {}),
+      scope: summary.scope ?? { kind: "global" },
+      visibility: "private",
+      origin: "manual",
+      source: { mode: summary.sourceMode ?? "visual" },
+      interface: { inputs: [], outputs: [] },
+      errors: [],
+      variables: [],
+      nodes: [],
+      edges: [],
+      publication: summary.publicationStatus && summary.publicationStatus !== "draft" && summary.version
+        ? { status: summary.publicationStatus, version: summary.version, publishedAt: 0, interface: { inputs: [], outputs: [] }, flowDigest: "" }
+        : { status: summary.publicationStatus ?? "draft" },
+      createdAt: summary.updatedAt ?? Date.now(),
+      updatedAt: summary.updatedAt ?? Date.now(),
+      metadata: { summaryOnly: true, ...(summary.recordingProposalIds ? { recordingProposalIds: summary.recordingProposalIds } : {}) }
+    }
+  }));
+}
+
+function runtimeSummaryToSessionStub(summary: any): any {
+  return {
+    runId: summary.runId,
+    targetKind: summary.targetKind,
+    targetId: summary.targetId,
+    status: summary.status,
+    updatedAt: summary.updatedAt,
+    metadata: { summaryOnly: true }
+  };
+}
+
+function proposalArtifactKind(proposal: any): "policy" | "recording_flow" | "auto" {
+  if (Array.isArray(proposal?.candidates)) return "recording_flow";
+  if (proposal?.policy) return "policy";
+  if (proposal?.metadata?.summaryOnly === true && proposal?.metadata?.generationMode) return "policy";
+  return "auto";
+}
+
 function mergeRecordingSummaries(current: any[], incoming: any[]) {
   const loadedById = new Map(current
     .filter((recording) => recording?.recordingId && recording.metadata?.summaryOnly !== true)
@@ -2925,6 +3108,51 @@ function compactStateSelection(value: { kind: "state"; id: string; nodeId?: stri
 function recordingIdFromStateSourceId(sourceId: string | undefined): string | undefined {
   const match = /^observed:([^:]+):/.exec(sourceId ?? "");
   return match?.[1];
+}
+
+export function resolveObservedStateEntryId(recording: any, timelineEntryId: string): string | null {
+  const entries = Array.isArray(recording?.timeline) ? recording.timeline.filter((entry: any) => entry && typeof entry === "object") : [];
+  if (!entries.length) return null;
+  const requested = entries.find((entry: any) => entry.id === timelineEntryId);
+  if (isStateSnapshotTimelineEntry(requested)) return String(requested.id);
+  const targetTiming = timelineEntryComparableTimestamp(requested);
+  if (targetTiming === null) return null;
+  const candidates = entries
+    .filter(isStateSnapshotTimelineEntry)
+    .map((entry: any) => ({ entry, delta: targetTiming - (timelineEntryComparableTimestamp(entry) ?? Number.POSITIVE_INFINITY) }))
+    .filter((item: { entry: any; delta: number }) => Number.isFinite(item.delta))
+    .sort((left: { entry: any; delta: number }, right: { entry: any; delta: number }) => {
+      const distance = Math.abs(left.delta) - Math.abs(right.delta);
+      if (distance !== 0) return distance;
+      const leftBefore = left.delta >= 0;
+      const rightBefore = right.delta >= 0;
+      if (leftBefore !== rightBefore) return leftBefore ? -1 : 1;
+      return 0;
+    });
+  return candidates[0]?.entry?.id ? String(candidates[0].entry.id) : null;
+}
+
+function isStateSnapshotTimelineEntry(entry: any): boolean {
+  return Boolean(entry && typeof entry === "object" && (
+    entry.type === "state_checkpoint"
+    || (entry.type === "observation" && entry.observationType === "client.state_snapshot")
+  ));
+}
+
+function timelineEntryComparableTimestamp(entry: any): number | null {
+  if (!entry || typeof entry !== "object") return null;
+  const metadata = entry.payload && typeof entry.payload === "object" ? entry.payload.metadata : null;
+  for (const value of [
+    metadata && typeof metadata === "object" ? metadata.eventTimestampMs : undefined,
+    metadata && typeof metadata === "object" ? metadata.stateTimestampMs : undefined,
+    entry.startedAt,
+    entry.completedAt,
+    entry.timestamp,
+    entry.monotonicOffsetMs
+  ]) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return null;
 }
 
 function pipelineActionRunningMessage(endpoint: string): string {

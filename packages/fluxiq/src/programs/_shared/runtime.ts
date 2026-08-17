@@ -2,7 +2,7 @@ import path from "node:path";
 import { ClientGatewayService, type ClientGatewayTrustedClient, type ClientGatewayTrustedClientStore } from "../../client-gateway/index.ts";
 import type { JsonObject } from "../../core/index.ts";
 import type { FluxIQHostPaths } from "../../framework/index.ts";
-import { AutomationStudioClientGatewayBridge, AutomationStudioService, createCanonicalAutomationStudioSQLiteRepositories, registerAutomationStudioApi } from "../automation-studio/index.ts";
+import { AutomationStudioClientGatewayBridge, AutomationStudioService, registerAutomationStudioApi } from "../automation-studio/index.ts";
 import { BackgroundTasksService, registerBackgroundTasksApi } from "../background-tasks/index.ts";
 import { ComputeControlService, registerComputeControlApi } from "../compute-control/index.ts";
 import { DatabaseManagerService, registerDatabaseManagerApi, SQLiteRepository } from "../database-manager/index.ts";
@@ -33,9 +33,8 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
   const storageLayoutVersion = paths && path.basename(paths.config) === "config.json" ? 2 : 1;
   const storageOptions = paths ? { dataDir: paths.data } : {};
   const automationStudio = new AutomationStudioService(paths && storageLayoutVersion === 2
-    ? {
+      ? {
         storageRootDir: paths.recordings,
-        repositories: createCanonicalAutomationStudioSQLiteRepositories(paths.databases),
         customNodeRootDir: path.join(paths.domainPrograms, "automation-studio", "nodes")
       }
     : storageOptions);

@@ -45,18 +45,19 @@ export function AutomationStateView(props: { input: BuildNodeStateViewModelInput
     viewState
   }), [props.input, viewState]);
   const activeMode = mode;
+  const resolvedSourceId = model.activeSource?.id ?? sourceId;
 
   function selectEvidence(id: string) {
     const evidence = model.evidence.find((item) => item.id === id);
     setSelectedEvidenceId(id);
     if (evidence?.factPath) setSelectedFactPath(evidence.factPath);
-    props.setSelection(stateAutomationSelection(model, props.input, compactStateSelection({ evidenceId: id, factPath: evidence?.factPath, sourceId, phase })));
+    props.setSelection(stateAutomationSelection(model, props.input, compactStateSelection({ evidenceId: id, factPath: evidence?.factPath, sourceId: resolvedSourceId, phase })));
   }
 
   function selectFact(path: string) {
     setSelectedEvidenceId(undefined);
     setSelectedFactPath(path);
-    props.setSelection(stateAutomationSelection(model, props.input, compactStateSelection({ factPath: path, sourceId, phase })));
+    props.setSelection(stateAutomationSelection(model, props.input, compactStateSelection({ factPath: path, sourceId: resolvedSourceId, phase })));
   }
 
   return (
@@ -81,7 +82,7 @@ export function AutomationStateView(props: { input: BuildNodeStateViewModelInput
         onModeChange={setMode}
         onPhaseChange={(nextPhase) => {
           setPhase(nextPhase);
-          props.setSelection(stateAutomationSelection(model, props.input, compactStateSelection({ sourceId, phase: nextPhase, evidenceId: selectedEvidenceId, factPath: selectedFactPath })));
+          props.setSelection(stateAutomationSelection(model, props.input, compactStateSelection({ sourceId: resolvedSourceId, phase: nextPhase, evidenceId: selectedEvidenceId, factPath: selectedFactPath })));
         }}
       />
       {model.emptyState ? <div className="automation-state-empty"><AlertCircle size={16} aria-hidden /><strong>{model.emptyState.title}</strong><span>{model.emptyState.message}</span></div> : null}

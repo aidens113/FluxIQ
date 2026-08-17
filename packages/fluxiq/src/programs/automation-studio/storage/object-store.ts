@@ -4,6 +4,7 @@ import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { JsonObject } from "../../../core/index.ts";
 import { safeSegment } from "../../_shared/storage.ts";
+import type { AutomationStudioObjectIndex, AutomationStudioObjectOwner, AutomationStudioObjectSummary } from "./file-store.ts";
 
 export const AUTOMATION_STUDIO_OBJECT_THRESHOLD_BYTES = 256 * 1024;
 
@@ -24,14 +25,8 @@ export type AutomationStudioObjectAsset = {
   content: Buffer;
 };
 
-type AutomationStudioObjectIndex = {
-  objects: Record<string, {
-    sha256: string;
-    size: number;
-    mediaType: string;
-    relativePath: string;
-    recordingId?: string;
-  }>;
+type AutomationStudioObjectIndexEntry = AutomationStudioObjectSummary & {
+  recordingId?: string;
 };
 
 export type AutomationStudioObjectWriteOptions = {
@@ -112,14 +107,14 @@ export class AutomationStudioObjectStore {
   async readProjectObject(projectId: string, sha256: string): Promise<AutomationStudioObjectAsset> {
     if (!isSha256(sha256)) throw new Error("Automation Studio object digest is invalid.");
     const index = await this.readProjectObjectIndex(projectId);
-    const entry = index.objects[sha256];
+    const entry = objectEntry(index, sha256);
     if (!entry) throw new Error("Automation Studio object was not found for this project.");
-    return this.readBytes({ $fluxiqObject: entry });
+    return this.readBytes(compactObjectReference(entry));
   }
 
   async listProjectObjectSha256s(projectId: string): Promise<string[]> {
     const index = await this.readProjectObjectIndex(projectId);
-    return Object.keys(index.objects).sort();
+    return index.objects.map((entry) => entry.sha256).sort();
   }
 
   async deleteProjectObjects(projectId: string, sha256s: Iterable<string>): Promise<{ deleted: string[] }> {
@@ -130,12 +125,12 @@ export class AutomationStudioObjectStore {
       const index = await this.readProjectObjectIndex(projectId);
       const paths: string[] = [];
       for (const sha256 of requested) {
-        const entry = index.objects[sha256];
+        const entry = objectEntry(index, sha256);
         if (!entry) continue;
         paths.push(this.resolveReferencePath({ $fluxiqObject: entry }));
-        delete index.objects[sha256];
         deleted.push(sha256);
       }
+      index.objects = index.objects.filter((entry) => !requested.has(entry.sha256));
       await Promise.all(paths.map((filePath) => rm(filePath, { force: true })));
       if (deleted.length) await this.writeProjectObjectIndex(projectId, index);
     });
@@ -146,8 +141,8 @@ export class AutomationStudioObjectStore {
     const protectedSet = new Set([...protectedSha256s].map((sha256) => sha256.toLowerCase()).filter(isSha256));
     const index = await this.readProjectObjectIndex(projectId);
     const prefix = recordingObjectRelativePrefix(projectId, recordingId).replaceAll("\\", "/");
-    const scoped = Object.values(index.objects)
-      .filter((entry) => entry.recordingId === recordingId || entry.relativePath.replaceAll("\\", "/").startsWith(prefix));
+    const scoped = (index.objects as AutomationStudioObjectIndexEntry[])
+      .filter((entry) => entry.owner.kind === "recording" && entry.owner.recordingId === recordingId || entry.recordingId === recordingId || entry.relativePath.replaceAll("\\", "/").startsWith(prefix));
     for (const entry of scoped) {
       if (protectedSet.has(entry.sha256)) await this.moveProjectObject(projectId, entry.sha256);
     }
@@ -161,7 +156,7 @@ export class AutomationStudioObjectStore {
     if (!isSha256(sha256)) return null;
     return this.withProjectIndexLock(projectId, async () => {
       const index = await this.readProjectObjectIndex(projectId);
-      const entry = index.objects[sha256.toLowerCase()];
+      const entry = objectEntry(index, sha256.toLowerCase());
       if (!entry) return null;
       const extension = path.extname(entry.relativePath).slice(1) || extensionForMediaType(entry.mediaType);
       const nextRelativePath = objectRelativePath(projectId, entry.sha256, safeObjectExtension(extension), scope.recordingId).replaceAll("\\", "/");
@@ -169,11 +164,12 @@ export class AutomationStudioObjectStore {
       const nextEntry = {
         ...entry,
         relativePath: nextRelativePath,
+        owner: objectOwner(scope.recordingId),
         ...(scope.recordingId ? { recordingId: scope.recordingId } : {})
       };
       if (!scope.recordingId) delete nextEntry.recordingId;
       if (currentRelativePath !== nextRelativePath) {
-        const currentPath = this.resolveReferencePath({ $fluxiqObject: entry });
+        const currentPath = this.resolveReferencePath(compactObjectReference(entry));
         const nextPath = path.join(this.rootDir, nextRelativePath);
         await mkdir(path.dirname(nextPath), { recursive: true });
         try {
@@ -183,9 +179,9 @@ export class AutomationStudioObjectStore {
           await stat(nextPath);
         }
       }
-      index.objects[entry.sha256] = nextEntry;
+      index.objects = upsertObjectEntry(index.objects, nextEntry);
       await this.writeProjectObjectIndex(projectId, index);
-      return { $fluxiqObject: nextEntry };
+      return compactObjectReference(nextEntry);
     });
   }
 
@@ -201,29 +197,36 @@ export class AutomationStudioObjectStore {
   }
 
   private async readProjectObjectIndex(projectId: string): Promise<AutomationStudioObjectIndex> {
-    const filePath = path.join(this.rootDir, "projects", safeSegment(projectId), "objects", "index.json");
+    const filePath = path.join(this.rootDir, "projects", safeSegment(projectId), "indexes", "objects.json");
     const content = await readFile(filePath, "utf8").catch(() => "");
-    if (!content) return { objects: {} };
+    if (!content) return { schemaVersion: "0.1", objects: [] };
     const parsed = JSON.parse(content) as Partial<AutomationStudioObjectIndex>;
-    return parsed.objects && typeof parsed.objects === "object" && !Array.isArray(parsed.objects) ? { objects: parsed.objects } : { objects: {} };
+    return parsed.schemaVersion === "0.1" && Array.isArray(parsed.objects)
+      ? { schemaVersion: "0.1", objects: parsed.objects }
+      : { schemaVersion: "0.1", objects: [] };
   }
 
   private async projectObjectReference(projectId: string, sha256: string): Promise<AutomationStudioObjectReference | null> {
     const index = await this.readProjectObjectIndex(projectId);
-    const entry = index.objects[sha256];
-    return entry ? { $fluxiqObject: entry } : null;
+    const entry = objectEntry(index, sha256);
+    return entry ? compactObjectReference(entry) : null;
   }
 
   private async upsertProjectObjectIndex(projectId: string, reference: AutomationStudioObjectReference): Promise<void> {
     await this.withProjectIndexLock(projectId, async () => {
       const index = await this.readProjectObjectIndex(projectId);
-      index.objects[reference.$fluxiqObject.sha256] = reference.$fluxiqObject;
+      const entry: AutomationStudioObjectIndexEntry = {
+        ...reference.$fluxiqObject,
+        owner: objectOwner(reference.$fluxiqObject.recordingId),
+        createdAt: Date.now()
+      };
+      index.objects = upsertObjectEntry(index.objects, entry);
       await this.writeProjectObjectIndex(projectId, index);
     });
   }
 
   private async writeProjectObjectIndex(projectId: string, index: AutomationStudioObjectIndex): Promise<void> {
-    const filePath = path.join(this.rootDir, "projects", safeSegment(projectId), "objects", "index.json");
+    const filePath = path.join(this.rootDir, "projects", safeSegment(projectId), "indexes", "objects.json");
     await mkdir(path.dirname(filePath), { recursive: true });
     const temporary = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(temporary, JSON.stringify(index, null, 2));
@@ -325,5 +328,29 @@ function objectRelativePath(projectId: string, sha256: string, extension: string
 }
 
 function recordingObjectRelativePrefix(projectId: string, recordingId: string): string {
-  return path.join("projects", safeSegment(projectId), "recordings", "sessions", safeSegment(recordingId), "objects");
+  return path.join("projects", safeSegment(projectId), "recordings", safeSegment(recordingId), "objects");
+}
+
+function objectEntry(index: AutomationStudioObjectIndex, sha256: string): AutomationStudioObjectIndexEntry | undefined {
+  return index.objects.find((entry) => entry.sha256 === sha256.toLowerCase()) as AutomationStudioObjectIndexEntry | undefined;
+}
+
+function compactObjectReference(entry: AutomationStudioObjectIndexEntry): AutomationStudioObjectReference {
+  return {
+    $fluxiqObject: {
+      sha256: entry.sha256,
+      size: entry.size,
+      mediaType: entry.mediaType,
+      relativePath: entry.relativePath,
+      ...(entry.recordingId ? { recordingId: entry.recordingId } : {})
+    }
+  };
+}
+
+function upsertObjectEntry(entries: AutomationStudioObjectSummary[], entry: AutomationStudioObjectIndexEntry): AutomationStudioObjectIndexEntry[] {
+  return [...entries.filter((item) => item.sha256 !== entry.sha256), entry].sort((left, right) => left.sha256.localeCompare(right.sha256)) as AutomationStudioObjectIndexEntry[];
+}
+
+function objectOwner(recordingId?: string): AutomationStudioObjectOwner {
+  return recordingId ? { kind: "recording", recordingId } : { kind: "shared" };
 }

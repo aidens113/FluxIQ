@@ -27,6 +27,11 @@ services such as identity, background tasks, task queues, auth/session state,
 or small framework indexes. Automation Studio user artifacts should be
 inspectable and portable as project-owned files under `.fluxiq`.
 
+No migration or backward-compatibility layer is required for this refactor.
+Existing mixed-layout Automation Studio artifacts may be deleted, ignored, or
+handled manually. New code should target the new file layout directly and
+should not preserve old SQLite/path fallbacks.
+
 ## Current Problems
 
 ### Split Ownership
@@ -226,8 +231,8 @@ Canonical Automation Studio project layout:
               <sha256>.<ext>
 ```
 
-Compatibility paths can be read during migration, but all new writes should use
-this layout.
+All Automation Studio artifact reads and writes should use this layout after
+the refactor. Do not add compatibility reads for the old mixed storage model.
 
 ## Index Contracts
 
@@ -671,79 +676,19 @@ Deletion must be deterministic and centralized in `DeletionCascadeService`.
 5. Preserve migration backups unless the delete request explicitly includes
    backups.
 
-## Migration Plan
+## Cutover Plan
 
-Migration should be non-destructive first.
+This refactor intentionally does not migrate old Automation Studio data. The
+cutover is:
 
-### Step 1: Inspect
+1. Implement the new file-backed stores and endpoints.
+2. Stop wiring Automation Studio to SQLite-backed canonical repositories.
+3. Stop reading old proposal, recording, Flow, and pipeline locations.
+4. Start new projects/recordings/proposals/Flows in the new layout.
+5. Remove obsolete old-layout code once the new path is green.
 
-Read:
-
-- current project indexes;
-- SQLite-backed Automation Studio canonical repositories if present;
-- current recording folders;
-- current pipeline artifact folders;
-- current object indexes/folders;
-- legacy project artifacts.
-
-Produce:
-
-- counts by artifact kind;
-- duplicated IDs;
-- missing files;
-- orphaned objects;
-- artifacts without project/recording owners.
-
-### Step 2: Stage
-
-Write the new layout under:
-
-```text
-.fluxiq/.migration/automation-studio-file-store/<timestamp>/
-```
-
-Do not modify the active runtime layout yet.
-
-### Step 3: Convert
-
-For each current artifact:
-
-- write new canonical file;
-- write summary index entry;
-- rewrite object refs if ownership path changes;
-- preserve original IDs;
-- record source path/database record ID;
-- compute digest.
-
-### Step 4: Verify
-
-Verify:
-
-- before/after counts match;
-- every index entry points to an existing file;
-- every object ref points to an existing object;
-- every proposal has a recording owner;
-- every Flow has a project owner;
-- every recording timeline can be opened;
-- key generated proposals/Flows round-trip through existing readers.
-
-### Step 5: Switch
-
-After verification:
-
-- write a migration marker;
-- switch runtime wiring to file-backed stores;
-- keep old SQLite Automation Studio records read-only for one release window,
-  or archive them under `.fluxiq/legacy`.
-
-### Step 6: Cleanup
-
-Only after successful active use:
-
-- remove old compatibility write paths;
-- remove SQLite-backed Automation Studio repository wiring;
-- remove shared pipeline proposal paths;
-- remove hydration side effects from list endpoints.
+Existing local `.fluxiq` Automation Studio data can be cleared manually when
+the new storage path is ready. Repair tools should target the new layout only.
 
 ## Implementation Phases
 
@@ -869,21 +814,7 @@ Exit criteria:
 - explicit validation updates status/lastValidatedAt;
 - repair can rebuild indexes from files.
 
-### Phase 9: Migration
-
-- Implement inspection.
-- Implement staged conversion.
-- Implement verification.
-- Implement runtime switch.
-- Keep compatibility reads temporarily.
-
-Exit criteria:
-
-- existing projects migrate without data loss;
-- rollback/archive path exists;
-- tests cover mixed old/new data.
-
-### Phase 10: Remove Old Paths
+### Phase 9: Remove Old Paths
 
 - Remove Automation Studio SQLite repository wiring.
 - Remove old shared proposal layout writes.
@@ -931,15 +862,6 @@ Exit criteria:
 - delete Flow removes Flow folder and generated source/config;
 - interrupted delete can be repaired.
 
-### Migration Tests
-
-- SQLite-backed canonical Flow exports to file-backed Flow;
-- old proposal paths migrate to per-recording proposal folders;
-- old recording folders migrate without losing timeline events;
-- object refs remain resolvable;
-- migrated project reloads without SQLite-backed Automation Studio
-  repositories.
-
 ### Performance Tests
 
 - project summary load time scales with index size, not artifact size;
@@ -964,7 +886,6 @@ Exit criteria:
   sequence/time once they exceed a threshold?
 - Should state snapshots live as named JSON files under `snapshots/` or as
   content-addressed objects with a snapshot index?
-- How long should compatibility readers for old SQLite/path layouts remain?
 - Should published Flow snapshots be immutable files only, or also exported to
   a package cache?
 - Should project summary endpoint include native node summary counts, or should
@@ -978,5 +899,23 @@ Exit criteria:
 4. Implement file-backed `ProposalStore`.
 5. Implement file-backed `RecordingStore`.
 6. Implement file-backed `FlowStore`.
-7. Add migration inspection for current SQLite/file mixed state.
+7. Remove old Automation Studio SQLite/path fallback wiring.
 
+## Implementation Log
+
+This section is updated as implementation steps complete.
+
+| Step | Status | Completed | Notes | Remaining |
+| --- | --- | --- | --- | --- |
+| Status ledger | Done | 2026-08-16 | Added this implementation log so the working doc tracks execution, not just intent. | Continue with contracts/path helpers. |
+| No migration/backcompat scope | Done | 2026-08-16 | Clarified the refactor is a hard cutover. Old SQLite/path compatibility and migration work are out of scope. | Continue with new-layout contracts and stores only. |
+| Summary contracts and path helpers | Done | 2026-08-16 | Added `storage/file-store.ts` with new-layout summary/index/object contracts and canonical project-owned path helpers. Added focused tests and exported the module. | Implement the workspace summary endpoint against these contracts. |
+| Project workspace summary endpoint | Done | 2026-08-16 | Added `get-project-workspace-summary`, service assembly for lightweight project/recording/proposal/Flow/runtime summaries, API handler, and tests. Listing does not hydrate full pipeline artifacts or revalidate proposals. | Move the web project/sidebar refresh path to this endpoint. |
+| Sidebar summary seed | Done | 2026-08-16 | Web project refresh now calls `get-project-workspace-summary` and immediately seeds recording, proposal, Flow, and runtime sidebar state with lightweight stubs. Full detail refresh remains temporary until file-backed stores replace the old paths. | Implement file-backed proposal storage and then remove the full pipeline refresh dependency. |
+| File-backed proposal path | Done | 2026-08-16 | Policy and recording-flow proposal documents now write/read/delete from `projects/<projectId>/proposals/<recordingId>/<proposalId>/proposal.json`; old recording-derived proposal fallback was removed. Recording deletion removes the per-recording proposal folder. | Split this path behind a dedicated `ProposalStore` class when pipeline cleanup begins. |
+| File-backed RecordingStore cutover | Done | 2026-08-16 | Recording summaries now use `indexes/recordings.json`; recording documents now write under `recordings/<recordingId>/recording.json` with append-updated `timeline.jsonl`; object-store mode no longer skips project recording file writes/loads. Tests now enforce the new layout. | Implement file-backed Flow storage and remove SQLite ownership for Automation Studio Flows. |
+| File-backed FlowStore cutover | Done | 2026-08-16 | Canonical Flows now save/load/delete through `flows/<flowId>/flow.json` and `indexes/flows.json`; Flow source files now live under `flows/<flowId>/source/`; runtime execution resolves canonical Flows through file-backed `getFlow()`. | Add object ownership indexes and tighten deletion cascades around project-owned objects. |
+| Object ownership index cutover | Done | 2026-08-16 | Object storage now indexes ownership at `indexes/objects.json` with structured summaries and writes recording-owned assets under `recordings/<recordingId>/objects/`; compact object references remain stable for hydration/content refs. | Centralize recording/proposal/Flow deletion cascades so indexes, tabs, and folders stay aligned. |
+| Deletion cascade cleanup | Done | 2026-08-16 | Recording deletion now returns server-owned related proposal IDs for workspace cleanup; Flow deletion removes file-backed Flow folders/index entries and closes Flow tabs through the shared deleted-view helper. | Remove Automation Studio SQLite active ownership wiring and update authored docs. |
+| SQLite ownership wiring removal | Done | 2026-08-16 | Shared runtime construction no longer injects Automation Studio SQLite repositories; canonical Flow tests now validate project-file persistence/reload with the default service. SQLite-backed global services remain unchanged. | Run final validation and update authored architecture docs to describe the hard-cutover layout. |
+| Final validation and docs | Done | 2026-08-16 | Updated authored persistence/architecture docs and regenerated framework reference. Validation passed for focused core tests, core typecheck, web typecheck, and docs check. | Broader package build can be run before release packaging. |
