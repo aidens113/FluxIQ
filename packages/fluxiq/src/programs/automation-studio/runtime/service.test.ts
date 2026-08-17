@@ -8,8 +8,23 @@ import { AutomationStudioService } from "./service.ts";
 import { AutomationStudioNativeNodeRuntime } from "./native-node-runtime.ts";
 import type { AutomationStudioImporterSdkManifest } from "../nodes/index.ts";
 import { IoRegistry, createEnvelope } from "../../../io/index.ts";
+import type { JsonObject } from "../../../core/index.ts";
 
 const tempRoot = path.join(process.cwd(), ".tmp", "automation-studio-service-test");
+
+function stateFixture(id: string, timestamp: number, title: string): StateSnapshot {
+  return {
+    id,
+    timestamp,
+    namespaces: {
+      web: {
+        schemaId: "web",
+        schemaVersion: "0.1",
+        values: { title: { type: "string", value: title, observedAt: timestamp } }
+      }
+    }
+  };
+}
 
 describe("AutomationStudioService recording persistence", () => {
   beforeEach(async () => {
@@ -794,6 +809,168 @@ describe("AutomationStudioService recording persistence", () => {
     expect(rawPayload?.stateRef).toMatch(/^automation-object:\/\/project\//);
     expect(rawPayload?.metadata).toMatchObject({ viewportWidth: 1280, stateSnapshotSize: expect.any(Number) });
     expect(hydratedPayload?.state).toMatchObject({ id: "snapshot.large", namespaces: { web: { values: { title: { value: "Dashboard" } } } } });
+  });
+
+  it("writes recording state indexes with distinct action state links", async () => {
+    await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
+    const service = new AutomationStudioService({
+      dataDir: tempRoot,
+      storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
+      seedFixture: false
+    });
+    const project = await service.createProject({ name: "Indexed states" });
+    const recording = await service.createRecording({
+      projectId: project.id,
+      recordingId: "recording.indexed-states",
+      initialState: { timestamp: 1, namespaces: {} }
+    });
+
+    await service.appendRecordingEvents({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entries: [
+        { type: "observation", observationType: "client.state_snapshot", payload: { state: stateFixture("state.one", 10, "Before") as unknown as JsonObject } },
+        { type: "action", actionType: "click", outputId: "click.first", parameters: {}, timestamp: 11, startedAt: 11, origin: "operator" },
+        { type: "observation", observationType: "client.state_snapshot", payload: { state: stateFixture("state.two", 20, "After") as unknown as JsonObject } },
+        { type: "action", actionType: "click", outputId: "click.second", parameters: {}, timestamp: 21, startedAt: 21, origin: "operator" }
+      ]
+    });
+
+    const indexPath = path.join(tempRoot, "artifacts", "automation-studio", "projects", project.id, "recordings", recording.recordingId, "index.json");
+    const index = JSON.parse(await readFile(indexPath, "utf8")) as any;
+    expect(Object.keys(index.states)).toEqual(["state.one", "state.two"]);
+    expect(Object.values(index.actions).map((action: any) => action.stateAtActionId)).toEqual(["state.one", "state.two"]);
+    expect(index.states["state.one"].stateRef).not.toEqual(index.states["state.two"].stateRef);
+  });
+
+  it("uses referenced action entries for mapper candidate state links", async () => {
+    await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
+    const io = new IoRegistry();
+    io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
+    const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "click-mapper", version: "1.0.0", description: "Maps observed clicks", outputIds: ["click"] }] };
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, {
+      packageId: "example.importer",
+      packageVersion: "1.0.0",
+      implementations: {},
+      recordingMappers: {
+        "click-mapper": (observation) => observation.observationId === "entry.mapper"
+          ? { outputId: "click", parameters: { target: "submit" }, sourceObservationIds: ["entry.action"], confidence: 0.9 }
+          : null
+      }
+    });
+    const service = new AutomationStudioService({
+      dataDir: tempRoot,
+      storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
+      seedFixture: false
+    }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const project = await service.createProject({ name: "Mapper action state", domainId: "example" });
+    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.mapper-action-state", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
+    await service.appendRecordingEvents({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entries: [
+        { id: "entry.state.before", type: "observation", observationType: "client.state_snapshot", timestamp: 1, payload: { state: stateFixture("state.before", 1, "Before") as unknown as JsonObject } },
+        { id: "entry.action", type: "action", actionType: "click", outputId: "click", parameters: {}, timestamp: 50, startedAt: 50, origin: "operator", metadata: { policyEligible: false } },
+        { id: "entry.state.after", type: "observation", observationType: "client.state_snapshot", timestamp: 51, payload: { state: stateFixture("state.after", 51, "After") as unknown as JsonObject } },
+        { id: "entry.mapper", type: "observation", observationType: "input.event", timestamp: 52, payload: { latestEvidence: true } }
+      ]
+    });
+
+    const result = await service.createRecordingFlowProposals({ projectId: project.id, recordingId: recording.recordingId });
+    const candidate = result.proposals[0]?.candidates[0];
+
+    expect(candidate).toMatchObject({
+      actionEntryId: "entry.action",
+      sourceObservationIds: ["entry.mapper", "entry.action"],
+      stateLink: { actionEntryId: "entry.action", stateSnapshotId: "state.after" }
+    });
+  });
+
+  it("resolves recording entry state from the recording index without guessing another state", async () => {
+    await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
+    const service = new AutomationStudioService({
+      dataDir: tempRoot,
+      storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
+      seedFixture: false
+    });
+    const project = await service.createProject({ name: "Indexed state lookup" });
+    const recording = await service.createRecording({
+      projectId: project.id,
+      recordingId: "recording.indexed-state-lookup",
+      initialState: { timestamp: 1, namespaces: {} }
+    });
+
+    await service.appendRecordingEvents({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entries: [
+        { type: "observation", observationType: "client.state_snapshot", payload: { state: stateFixture("state.lookup", 10, "Lookup") as unknown as JsonObject } },
+        { type: "action", actionType: "click", outputId: "click.lookup", parameters: {}, timestamp: 11, startedAt: 11, origin: "operator" }
+      ]
+    });
+
+    const raw = await service.listRecordingSessions(project.id);
+    const actionEntry = raw.find((item) => item.recordingId === recording.recordingId)?.timeline.find((entry) => entry.type === "action");
+    expect(actionEntry).toBeDefined();
+    const resolved = await service.getRecordingEntryState({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entryId: actionEntry!.id,
+      includeState: true
+    });
+
+    expect(resolved.resolved).toMatchObject({ stateSnapshotId: "state.lookup", stateRef: expect.stringMatching(/^automation-object:\/\//) });
+    expect(resolved.state).toMatchObject({ id: "state.lookup", namespaces: { web: { values: { title: { value: "Lookup" } } } } });
+    await expect(service.getRecordingEntryState({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entryId: "entry.missing"
+    })).resolves.toMatchObject({ resolved: null, reason: "Entry entry.missing is not indexed for recording recording.indexed-state-lookup." });
+  });
+
+  it("repairs stale prior-state links before indexed state lookup", async () => {
+    await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
+    const service = new AutomationStudioService({
+      dataDir: tempRoot,
+      storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
+      seedFixture: false
+    });
+    const project = await service.createProject({ name: "Repair stale state links" });
+    const recording = await service.createRecording({
+      projectId: project.id,
+      recordingId: "recording.stale-state-link",
+      initialState: { timestamp: 1, namespaces: {} }
+    });
+
+    await service.appendRecordingEvents({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entries: [
+        { type: "observation", observationType: "client.state_snapshot", timestamp: 1, payload: { state: stateFixture("state.old", 1, "Old") as unknown as JsonObject } },
+        { type: "action", actionType: "click", outputId: "click.target", parameters: {}, timestamp: 50, startedAt: 50, origin: "operator" },
+        { type: "observation", observationType: "client.state_snapshot", timestamp: 51, payload: { state: stateFixture("state.closest", 51, "Closest") as unknown as JsonObject } }
+      ]
+    });
+
+    const raw = await service.listRecordingSessions(project.id);
+    const actionEntry = raw.find((item) => item.recordingId === recording.recordingId)?.timeline.find((entry) => entry.type === "action");
+    expect(actionEntry).toBeDefined();
+    const indexPath = path.join(tempRoot, "artifacts", "automation-studio", "projects", project.id, "recordings", recording.recordingId, "index.json");
+    const poisoned = JSON.parse(await readFile(indexPath, "utf8")) as any;
+    const action = Object.values(poisoned.actions)[0] as any;
+    action.stateAtActionId = "state.old";
+    poisoned.entries[action.entryId].stateSnapshotId = "state.old";
+    await writeFile(indexPath, JSON.stringify(poisoned, null, 2), "utf8");
+
+    const resolved = await service.getRecordingEntryState({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entryId: actionEntry!.id,
+      includeState: true
+    });
+
+    expect(resolved.resolved?.stateSnapshotId).toBe("state.closest");
+    expect(resolved.state).toMatchObject({ id: "state.closest" });
   });
 
   it("does not hydrate missing state refs while appending to recordings", async () => {

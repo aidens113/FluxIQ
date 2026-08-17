@@ -86,6 +86,10 @@ type TabButton<T extends string> = { id: T; label: string; count?: number };
 type AutomationFlowPreset = "blank" | "deterministic" | "recorded" | "integration" | "scheduled" | "api-endpoint" | "reusable";
 type DeletedHierarchyRefs = { taskIds: Set<string>; routineIds: Set<string>; configIds: Set<string>; flowIds: Set<string>; recordingIds: Set<string>; proposalIds: Set<string>; timelineEntryIds: Set<string> };
 
+function shortAutomationId(value: string): string {
+  return value.length > 18 ? `${value.slice(0, 8)}...${value.slice(-6)}` : value;
+}
+
 export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   const api = useProgramApi("automation-studio");
   const pathname = usePathname();
@@ -102,6 +106,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const [flowPublications, setFlowPublications] = useState<any[]>([]);
   const [flowDependencyInfo, setFlowDependencyInfo] = useState<any>({ dependencies: [], usedBy: [], availableUpgrades: [] });
   const [runtimeSessions, setRuntimeSessions] = useState<any[]>([]);
+  const [indexedStateSources, setIndexedStateSources] = useState<Record<string, { source: any; snapshot: any; raw?: any }>>({});
   const [pipelineArtifacts, setPipelineArtifacts] = useState<any>({ normalizationReviews: [], miningRuns: [], evidenceFacts: [], evidenceObservations: [], stateActionCorrelations: [], evidenceClaims: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
   const [recordingDomains, setRecordingDomains] = useState<any[]>([]);
   const [automationActionStatus, setAutomationActionStatus] = useState("");
@@ -176,14 +181,25 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
 
   const refresh = useCallback(async () => setSnapshot(await api.get("snapshot")), [api]);
   const refreshProjectData = useCallback(async (projectId: string) => {
-    const [recordingResult, timelineResult, runtimeResult] = await Promise.all([
-      api.post<{ recordings: any[] }>("list-recordings", { projectId, summaries: true }),
-      api.post<{ normalizedTimelines: any[] }>("list-normalized-timelines", { projectId }),
-      api.post<{ runtimeSessions: any[] }>("list-runtime-sessions", { projectId })
-    ]);
-    if (recordingResult.ok) setProjectRecordings((current) => mergeRecordingSummaries(current, recordingResult.payload?.recordings ?? []));
-    if (timelineResult.ok) setProjectTimelines(timelineResult.payload?.normalizedTimelines ?? []);
-    if (runtimeResult.ok) setRuntimeSessions(runtimeResult.payload?.runtimeSessions ?? []);
+    const result = await api.post<{ summary: any }>("get-project-workspace-summary", { projectId });
+    if (!result.ok || !result.payload?.summary) return;
+    const summary = result.payload.summary;
+    setProjectRecordings((current) => mergeRecordingSummaries(current, recordingSummariesToRecordingStubs(summary.recordings ?? [])));
+    setPipelineArtifacts((current: any) => ({
+      ...emptyPipelineArtifacts(),
+      policyProposals: mergeById(
+        (current?.policyProposals ?? []).filter((proposal: any) => (summary.proposals ?? []).some((item: any) => item.proposalId === proposal.proposalId)),
+        proposalSummariesToPolicyArtifacts(summary.proposals ?? []),
+        "proposalId"
+      ),
+      recordingFlowProposals: mergeById(
+        (current?.recordingFlowProposals ?? []).filter((proposal: any) => (summary.proposals ?? []).some((item: any) => item.proposalId === proposal.proposalId)),
+        proposalSummariesToRecordingFlowArtifacts(summary.proposals ?? []),
+        "proposalId"
+      )
+    }));
+    setProjectFlows(flowSummariesToCatalogEntries(summary.flows ?? []));
+    setRuntimeSessions((summary.runtime ?? []).map(runtimeSummaryToSessionStub));
   }, [api]);
   const refreshProjects = useCallback(async () => {
     setProjectStatus("");
@@ -605,23 +621,94 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     void loadRecordingDetails(recordingId);
     void openStateView({ recordingId, timelineEntryId: entryId, phase: "input" });
   };
-  const openStateView = async (request: { nodeId?: string; sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; proposalId?: string; recordingId?: string; timelineEntryId?: string }) => {
+  const openStateView = async (request: { nodeId?: string; sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; proposalId?: string; recordingId?: string; timelineEntryId?: string; stateSnapshotId?: string; repairAttempted?: boolean }) => {
     const nodeId = request.nodeId ?? selectedNode?.id;
-    const recordingId = request.recordingId ?? selectedRecording?.recordingId ?? selectedProposal?.metadata?.recordingId ?? selectedProposal?.recordingId ?? recordingIdFromStateSourceId(request.sourceId);
-    const loadedRecording = recordingId
-      ? recordings.find((recording: any) => recording.recordingId === recordingId && Array.isArray(recording.timeline))
-        ?? await loadRecordingDetails(recordingId)
-        ?? recordings.find((recording: any) => recording.recordingId === recordingId)
-      : null;
-    const resolvedStateEntryId = request.timelineEntryId ? resolveObservedStateEntryId(loadedRecording, request.timelineEntryId) : null;
-    const sourceId = resolvedStateEntryId && recordingId ? `observed:${recordingId}:${resolvedStateEntryId}` : request.sourceId;
+    const nodeMetadata = stateOpenNodeMetadata(nodeId, selectedNode);
+    const metadataStateSnapshotId = stringRecordValue(nodeMetadata, "stateSnapshotId");
+    const metadataTimelineEntryId = stringRecordValue(nodeMetadata, "actionEntryId") ?? stringRecordValue(nodeMetadata, "timelineEntryId");
+    const metadataStateRef = stringRecordValue(nodeMetadata, "stateRef");
+    const recordingId = request.recordingId
+      ?? stringRecordValue(nodeMetadata, "recordingId")
+      ?? selectedRecording?.recordingId
+      ?? selectedProposal?.metadata?.recordingId
+      ?? selectedProposal?.recordingId
+      ?? recordingIdFromStateSourceId(request.sourceId);
+    const timelineEntryId = request.timelineEntryId ?? ((request.stateSnapshotId ?? metadataStateSnapshotId) ? undefined : metadataTimelineEntryId);
+    let sourceId = request.sourceId;
+    let resolvedStateSnapshotId = request.stateSnapshotId ?? metadataStateSnapshotId;
+    let resolvedStateRef: string | undefined = metadataStateRef;
+    if (activeProjectId && recordingId && (timelineEntryId || resolvedStateSnapshotId)) {
+      const endpoint = resolvedStateSnapshotId ? "get-state-snapshot" : "get-recording-entry-state";
+      const payload = {
+        projectId: activeProjectId,
+        recordingId,
+        ...(timelineEntryId ? { entryId: timelineEntryId } : {}),
+        ...(resolvedStateSnapshotId ? { stateSnapshotId: resolvedStateSnapshotId } : {}),
+        includeState: true
+      };
+      const result = await api.post<{
+        resolved: { stateSnapshotId: string; entryId: string; stateRef: string; screenshotRef?: string } | null;
+        state?: any;
+        reason?: string;
+      }>(endpoint, payload);
+      if (result.ok && result.payload?.resolved) {
+        const resolved = result.payload.resolved;
+        resolvedStateSnapshotId = resolved.stateSnapshotId;
+        resolvedStateRef = resolved.stateRef;
+        sourceId = `observed:${recordingId}:${resolved.entryId}`;
+        const resolvedState = result.payload.state;
+        if (resolvedState) {
+          setIndexedStateSources((current) => ({
+            ...current,
+            [sourceId!]: {
+              source: {
+                kind: "observed",
+                id: sourceId,
+                label: `Recording ${shortAutomationId(recordingId)} @ ${shortAutomationId(resolved.entryId)}`,
+                recordingId,
+                timelineEntryId: resolved.entryId,
+                stateSnapshotId: resolved.stateSnapshotId,
+                stateRef: resolved.stateRef,
+                timestamp: resolvedState.timestamp
+              },
+              snapshot: resolvedState,
+              raw: { resolved, state: resolvedState }
+            }
+          }));
+        }
+      } else {
+        const reason = result.payload?.reason ?? result.error ?? "No linked state snapshot exists for this item.";
+        setAutomationActionStatus(reason);
+        if (!request.repairAttempted && window.confirm(`${reason}\n\nRepair this recording's state index and retry?`)) {
+          const authorizationPin = window.prompt("Enter PIN to repair this recording state index") ?? "";
+          if (authorizationPin.length >= 4) {
+            const repair = await api.post<{ warnings?: string[] }>("repair-recording-state-index", {
+              projectId: activeProjectId,
+              recordingId,
+              mode: "write",
+              authorizationPin
+            });
+            if (repair.ok) {
+              setAutomationActionStatus((repair.payload?.warnings ?? []).length ? `State index repaired with warnings: ${(repair.payload?.warnings ?? []).join("; ")}` : "State index repaired.");
+              await openStateView({ ...request, repairAttempted: true });
+              return;
+            }
+            setAutomationActionStatus(repair.error ?? "State index repair failed.");
+          } else {
+            setAutomationActionStatus("PIN is required to repair the recording state index.");
+          }
+        }
+      }
+    } else if ((timelineEntryId || resolvedStateSnapshotId) && recordingId) {
+      setAutomationActionStatus("No indexed state lookup is available for this project.");
+    }
     const proposalId = request.proposalId
       ?? (selection?.kind === "proposal" ? selection.id : undefined)
       ?? (selection?.kind === "proposal-step" ? selection.proposalId : undefined)
       ?? (selection?.kind === "state" ? selection.proposalId : undefined);
     const selectionValue: AutomationSelection = compactStateSelection({
       kind: "state",
-      id: stateSelectionId(compactStateSelectionId({ nodeId, flowId: selectedFlow?.flowId, proposalId, timelineEntryId: request.timelineEntryId })),
+      id: stateSelectionId(compactStateSelectionId({ nodeId, flowId: selectedFlow?.flowId, proposalId, timelineEntryId, stateSnapshotId: resolvedStateSnapshotId })),
       nodeId,
       sourceId,
       phase: request.phase ?? "input",
@@ -629,10 +716,12 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       factPath: request.factPath,
       recordingId,
       proposalId,
-      timelineEntryId: request.timelineEntryId
+      timelineEntryId,
+      stateSnapshotId: resolvedStateSnapshotId,
+      stateRef: resolvedStateRef
     });
     setSelection(selectionValue);
-    if (request.timelineEntryId) setRecordingTreePrimaryKind("recording");
+    if (timelineEntryId) setRecordingTreePrimaryKind("recording");
     openView("state-explorer", "preview", "main");
   };
   useEffect(() => {
@@ -1496,6 +1585,10 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setAutomationActionStatus(`${deletedCount} proposal${deletedCount === 1 ? "" : "s"} deleted.`);
     setPipelineArtifacts((current: any) => removeDeletedRecordingArtifacts(current, new Set(), deletedProposalIds));
     setSnapshot((current: any) => removeDeletedRecordingSnapshotData(current, new Set(), deletedProposalIds));
+    setIndexedStateSources((current) => Object.fromEntries(Object.entries(current).filter(([, value]) => {
+      const source = value.source ?? {};
+      return !deletedProposalIds.has(String(source.proposalId ?? ""));
+    })));
     const deletingNodes = [...deletedProposalIds].map((proposalId) => ({ id: proposalId, kind: "proposal" as const, category: "proposal" as const, label: proposalId, parentId: null, sourceId: proposalId }));
     closeDeletedHierarchyViews(deletingNodes);
     if (selection?.kind === "proposal" && deletedProposalIds.has(selection.id)) setSelection(fallbackRecordingId ? { kind: "recording", id: fallbackRecordingId } : null);
@@ -1521,6 +1614,10 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setProjectTimelines((current) => current.filter((timeline) => !deletedRecordingIds.has(String(timeline.recordingId ?? ""))));
     setPipelineArtifacts((current: any) => removeDeletedRecordingArtifacts(current, deletedRecordingIds, deletedProposalIds));
     setSnapshot((current: any) => removeDeletedRecordingSnapshotData(current, deletedRecordingIds, deletedProposalIds));
+    setIndexedStateSources((current) => Object.fromEntries(Object.entries(current).filter(([, value]) => {
+      const source = value.source ?? {};
+      return !deletedRecordingIds.has(String(source.recordingId ?? "")) && !deletedProposalIds.has(String(source.proposalId ?? ""));
+    })));
     setRecordingProcessing((current) => current && deletedRecordingIds.has(current.recordingId) ? null : current);
     setRecordingTreePrimaryKind((current) => current && selectionReferencesDeletedRecording(selection, deletedRecordingIds, deletedProposalIds) ? null : current);
     if (selectionReferencesDeletedRecording(selection, deletedRecordingIds, deletedProposalIds)) setSelection(null);
@@ -2630,6 +2727,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                       recordings={recordings}
                       recordingDomains={recordingDomains}
                       runtimeSessions={runtimeSessions}
+                      indexedStateSources={Object.values(indexedStateSources)}
                       dockTab={dockTab}
                       selectedEntry={selectedEntry}
                       selectedNode={selectedNode}
@@ -3090,24 +3188,37 @@ function isAutomationSelection(value: unknown): value is AutomationSelection {
   return typeof selection.kind === "string" && typeof selection.id === "string";
 }
 
-function stateSelectionId(parts: { nodeId?: string; flowId?: string; proposalId?: string; timelineEntryId?: string }): string {
+function stateSelectionId(parts: { nodeId?: string; flowId?: string; proposalId?: string; timelineEntryId?: string; stateSnapshotId?: string }): string {
   if (parts.proposalId && parts.nodeId) return `state:${parts.proposalId}:${parts.nodeId}`;
   if (parts.flowId && parts.nodeId) return `state:${parts.flowId}:${parts.nodeId}`;
+  if (parts.stateSnapshotId) return `state:snapshot:${parts.stateSnapshotId}`;
   if (parts.timelineEntryId) return `state:timeline:${parts.timelineEntryId}`;
   return `state:${parts.nodeId ?? "workspace"}`;
 }
 
-function compactStateSelectionId(value: { nodeId?: string | undefined; flowId?: string | undefined; proposalId?: string | undefined; timelineEntryId?: string | undefined }): { nodeId?: string; flowId?: string; proposalId?: string; timelineEntryId?: string } {
-  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as { nodeId?: string; flowId?: string; proposalId?: string; timelineEntryId?: string };
+function compactStateSelectionId(value: { nodeId?: string | undefined; flowId?: string | undefined; proposalId?: string | undefined; timelineEntryId?: string | undefined; stateSnapshotId?: string | undefined }): { nodeId?: string; flowId?: string; proposalId?: string; timelineEntryId?: string; stateSnapshotId?: string } {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as { nodeId?: string; flowId?: string; proposalId?: string; timelineEntryId?: string; stateSnapshotId?: string };
 }
 
-function compactStateSelection(value: { kind: "state"; id: string; nodeId?: string | undefined; sourceId?: string | undefined; phase?: NodeStatePhase | undefined; evidenceId?: string | undefined; factPath?: string | undefined; recordingId?: string | undefined; proposalId?: string | undefined; timelineEntryId?: string | undefined }): AutomationSelection {
+function compactStateSelection(value: { kind: "state"; id: string; nodeId?: string | undefined; sourceId?: string | undefined; phase?: NodeStatePhase | undefined; evidenceId?: string | undefined; factPath?: string | undefined; recordingId?: string | undefined; proposalId?: string | undefined; timelineEntryId?: string | undefined; stateSnapshotId?: string | undefined; stateRef?: string | undefined }): AutomationSelection {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as AutomationSelection;
 }
 
 function recordingIdFromStateSourceId(sourceId: string | undefined): string | undefined {
   const match = /^observed:([^:]+):/.exec(sourceId ?? "");
   return match?.[1];
+}
+
+function stateOpenNodeMetadata(nodeId: string | undefined, selectedNode: any): Record<string, unknown> | null {
+  if (!selectedNode || typeof selectedNode !== "object" || Array.isArray(selectedNode)) return null;
+  if (nodeId && typeof selectedNode.id === "string" && selectedNode.id !== nodeId) return null;
+  const metadata = selectedNode.metadata;
+  return metadata && typeof metadata === "object" && !Array.isArray(metadata) ? metadata as Record<string, unknown> : null;
+}
+
+function stringRecordValue(record: Record<string, unknown> | null | undefined, key: string): string | undefined {
+  const value = record?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 export function resolveObservedStateEntryId(recording: any, timelineEntryId: string): string | null {

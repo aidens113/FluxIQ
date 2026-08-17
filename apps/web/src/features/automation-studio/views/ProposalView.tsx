@@ -20,6 +20,7 @@ type ProposalNodeStateRequest = {
   proposalId?: string;
   recordingId?: string;
   timelineEntryId?: string;
+  stateSnapshotId?: string;
 };
 
 export function AutomationProposalView(props: {
@@ -115,6 +116,7 @@ export function AutomationProposalView(props: {
           proposalId: proposal.proposalId,
           ...(recording?.recordingId ? { recordingId: recording.recordingId } : {}),
           ...(stateRequest.timelineEntryId ? { timelineEntryId: stateRequest.timelineEntryId } : {}),
+          ...(stateRequest.stateSnapshotId ? { stateSnapshotId: stateRequest.stateSnapshotId } : {}),
           ...(stateRequest.sourceId ? { sourceId: stateRequest.sourceId } : {}),
           proposalStep: step ? {
             label: step.label,
@@ -291,27 +293,26 @@ export function proposalNodeStateRequest(input: {
     ?? stringValue(input.proposal?.recordingId)
     ?? stringValue(input.proposal?.metadata?.recordingId)
     ?? stringValue(input.node?.data.metadata?.recordingId);
-  const timelineEntryId = firstStateTimelineEntryId(input.node, input.step);
+  const stateSnapshotId = stringValue(input.node?.data.metadata?.stateSnapshotId);
+  const timelineEntryId = stateSnapshotId ? undefined : firstStateTimelineEntryId(input.node, input.step);
   const sourceId = stringValue(input.node?.data.metadata?.sourceId);
-  return {
+  const request = {
     ...(nodeId ? { nodeId } : {}),
     ...(proposalId ? { proposalId } : {}),
     ...(recordingId ? { recordingId } : {}),
     ...(timelineEntryId ? { timelineEntryId } : {}),
+    ...(stateSnapshotId ? { stateSnapshotId } : {}),
     ...(sourceId ? { sourceId } : {}),
     phase: input.phase ?? "input"
   };
+  return request;
 }
 
 function firstStateTimelineEntryId(node: Node<AutomationPolicyNodeData> | undefined, step: ProposalStepViewModel | undefined): string | undefined {
   const metadata = node?.data.metadata;
   return firstNonEmptyString([
     metadata?.actionEntryId,
-    metadata?.timelineEntryId,
-    metadata?.sourceObservationId,
-    ...arrayValue(metadata?.sourceObservationIds),
-    ...arrayValue(metadata?.evidence).flatMap((item) => [objectRecord(item)?.entryId, objectRecord(item)?.observationId]),
-    ...arrayValue(step?.evidence).flatMap((signal) => arrayValue(objectRecord(signal)?.sourceEntryIds))
+    metadata?.timelineEntryId
   ]);
 }
 
@@ -348,8 +349,13 @@ function recordingFlowProposalToPolicyProposal(proposal: any): any {
         recordingProposalId: proposal.proposalId,
         recordingCandidateId: candidate.candidateId,
         mapperId: proposal.mapper?.id,
-        actionEntryId: candidate.actionEntryId ?? firstNonEmptyString(candidate.sourceObservationIds ?? []),
-        timelineEntryId: candidate.actionEntryId ?? firstNonEmptyString(candidate.sourceObservationIds ?? []),
+        ...(candidate.actionEntryId ? { actionEntryId: candidate.actionEntryId, timelineEntryId: candidate.actionEntryId } : {}),
+        ...(candidate.stateLink ? {
+          stateLink: candidate.stateLink,
+          stateSnapshotId: candidate.stateLink.stateSnapshotId,
+          stateRef: candidate.stateLink.stateRef,
+          ...(candidate.stateLink.screenshotRef ? { screenshotRef: candidate.stateLink.screenshotRef } : {})
+        } : {}),
         sourceObservationIds: candidate.sourceObservationIds ?? [],
         evidence: candidate.evidence ?? [],
         policyStateEligible: false

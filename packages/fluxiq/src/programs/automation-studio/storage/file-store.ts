@@ -135,6 +135,7 @@ export type AutomationStudioFileStorePaths = {
   workspaceFile(projectId: string): string;
   indexFile(projectId: string, kind: "recordings" | "proposals" | "flows" | "runtime" | "objects" | "pipeline"): string;
   recordingRoot(projectId: string, recordingId: string): string;
+  recordingIndexFile(projectId: string, recordingId: string): string;
   recordingFile(projectId: string, recordingId: string): string;
   recordingTimelineFile(projectId: string, recordingId: string): string;
   recordingSnapshotRoot(projectId: string, recordingId: string): string;
@@ -167,6 +168,7 @@ export function createAutomationStudioFileStorePaths(rootDir: string): Automatio
     workspaceFile: (projectId) => path.join(projectRoot(projectId), "workspace.json"),
     indexFile: (projectId, kind) => path.join(projectRoot(projectId), "indexes", `${kind}.json`),
     recordingRoot,
+    recordingIndexFile: (projectId, recordingId) => path.join(recordingRoot(projectId, recordingId), "index.json"),
     recordingFile: (projectId, recordingId) => path.join(recordingRoot(projectId, recordingId), "recording.json"),
     recordingTimelineFile: (projectId, recordingId) => path.join(recordingRoot(projectId, recordingId), "timeline.jsonl"),
     recordingSnapshotRoot: (projectId, recordingId) => path.join(recordingRoot(projectId, recordingId), "snapshots"),

@@ -25,8 +25,14 @@ export type BuildNodeStateViewModelInput = {
   timelines: unknown[];
   runtimeSessions: unknown[];
   signals: unknown[];
+  indexedStateSources?: Array<{
+    source: NodeStateSource;
+    snapshot: StateSnapshot;
+    raw?: unknown;
+  }>;
   viewState?: {
     sourceId?: string;
+    stateSnapshotId?: string;
     phase?: NodeStatePhase;
     selectedEvidenceId?: string;
     selectedFactPath?: string;
@@ -173,13 +179,21 @@ export function buildNodeStateViewModel(input: BuildNodeStateViewModelInput): No
   const sourceRecords = collectStateSources(input, nodeId);
   const sources = sourceRecords.map((record) => record.source);
   const bindings = collectEvidenceBindings(input, nodeId);
+  const selection = selectionRecord(input.selection);
   const requestedSourceId = input.viewState?.sourceId
-    ?? selectionRecord(input.selection).sourceId
+    ?? selection.sourceId
     ?? undefined;
+  const requestedStateSnapshotId = input.viewState?.stateSnapshotId ?? selection.stateSnapshotId;
+  const exactStateRequested = Boolean(requestedSourceId || requestedStateSnapshotId || selection.timelineEntryId);
+  const sourceIdForRequestedSnapshot = requestedStateSnapshotId
+    ? sourceRecords.find((record) => stateSourceSnapshotId(record.source) === requestedStateSnapshotId)?.source.id
+    : undefined;
   const preferredSourceId = requestedSourceId && sourceRecords.some((record) => record.source.id === requestedSourceId)
     ? requestedSourceId
-    : inferPreferredObservedSourceId(input, sourceRecords, bindings, nodeId) ?? requestedSourceId;
-  const activeRecord = sourceRecords.find((record) => record.source.id === preferredSourceId) ?? sourceRecords[0] ?? null;
+    : sourceIdForRequestedSnapshot
+      ?? (!exactStateRequested ? inferPreferredObservedSourceId(input, sourceRecords, bindings, nodeId) : undefined)
+      ?? requestedSourceId;
+  const activeRecord = sourceRecords.find((record) => record.source.id === preferredSourceId) ?? (!exactStateRequested ? sourceRecords[0] ?? null : null);
   const activeSource = activeRecord?.source ?? null;
   const activePhase = phaseFrom(input.viewState?.phase ?? selectionRecord(input.selection).phase, activeSource);
   const snapshot = activeRecord?.snapshot ?? null;
@@ -214,7 +228,9 @@ export function buildNodeStateViewModel(input: BuildNodeStateViewModelInput): No
     runtimeComparison,
     deltas: activeRecord?.deltas ?? []
   };
-  const emptyState = sources.length
+  const emptyState = exactStateRequested && !activeRecord
+    ? { title: "Requested state is not loaded", message: "The selected timeline entry or proposal node has an exact state link, but that state source is not available in this view yet." }
+    : sources.length
     ? facts.length || bindings.length || visualFrame ? undefined : { title: "No state facts", message: "The selected source has no inspectable state values yet." }
     : { title: "No state source", message: nodeId ? "No observed, learned, or runtime state is linked to this node yet." : "Select a node or recording moment to inspect state." };
 
@@ -253,6 +269,9 @@ function collectStateSources(input: BuildNodeStateViewModelInput, nodeId: string
     records.push(record);
   };
 
+  for (const source of input.indexedStateSources ?? []) {
+    add({ source: source.source, snapshot: source.snapshot, deltas: [], raw: source.raw ?? source.snapshot });
+  }
   for (const learned of learnedSources(input.pipelineArtifacts, nodeId)) add(learned);
   for (const source of observedTimelineSources(input)) {
     const timelineEntries = arrayValue(source.timeline?.timeline ?? source.recording?.timeline);
@@ -943,15 +962,21 @@ function phaseFrom(value: unknown, source: NodeStateSource | null): NodeStatePha
   return "input";
 }
 
-function selectionRecord(selection: AutomationSelection | null): { sourceId?: string; phase?: NodeStatePhase; recordingId?: string; proposalId?: string; timelineEntryId?: string } {
+function selectionRecord(selection: AutomationSelection | null): { sourceId?: string; phase?: NodeStatePhase; recordingId?: string; proposalId?: string; timelineEntryId?: string; stateSnapshotId?: string } {
   const record = objectRecord(selection);
   return compactObject({
     sourceId: stringValue(record?.sourceId),
     phase: phaseFrom(record?.phase, null),
     recordingId: stringValue(record?.recordingId),
     proposalId: stringValue(record?.proposalId),
-    timelineEntryId: stringValue(record?.timelineEntryId)
-  }) as { sourceId?: string; phase?: NodeStatePhase; recordingId?: string; proposalId?: string; timelineEntryId?: string };
+    timelineEntryId: stringValue(record?.timelineEntryId),
+    stateSnapshotId: stringValue(record?.stateSnapshotId)
+  }) as { sourceId?: string; phase?: NodeStatePhase; recordingId?: string; proposalId?: string; timelineEntryId?: string; stateSnapshotId?: string };
+}
+
+function stateSourceSnapshotId(source: NodeStateSource): string | undefined {
+  const record = source as unknown as Record<string, unknown>;
+  return stringValue(record.stateSnapshotId);
 }
 
 function recordingIdFromObservedSourceId(sourceId: string | undefined): string | undefined {
@@ -964,6 +989,7 @@ function selectedNodeId(selection: AutomationSelection | null, selectedNode: unk
   const nodeRecord = objectRecord(selectedNode);
   return stringValue(nodeRecord?.id)
     ?? stringValue(objectRecord(nodeRecord?.node)?.id)
+    ?? (selection?.kind === "state" ? selection.nodeId ?? "" : "")
     ?? (selection?.kind === "node" || selection?.kind === "editor-node" ? selection.id : "")
     ?? "";
 }

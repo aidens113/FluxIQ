@@ -15,7 +15,9 @@ import {
   type FlowProjectRequest,
   type ExecuteClientActionRequest,
   type FinalizeRecordingRequest,
+  type GetRecordingEntryStateRequest,
   type GetProposalRequest,
+  type GetStateSnapshotRequest,
   type ProcessFinalizedRecordingRequest,
   type InspectStateDiffRequest,
   type LearnTaskModelRequest,
@@ -26,6 +28,7 @@ import {
   type RecordingProjectRequest,
   type RecordingIdProjectRequest,
   type ReplayPolicyAgainstRecordingRequest,
+  type RepairRecordingStateIndexRequest,
   type RevokeClientTrustRequest,
   type StartClientRecordingRequest,
   type StopClientRecordingRequest,
@@ -377,6 +380,59 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as RecordingProjectRequest & { recordingId?: unknown } : {};
       return { ok: true, payload: { recording: await service.getRecordingSession(String(payload.recordingId ?? ""), payload.projectId) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRecordingEntryState,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<GetRecordingEntryStateRequest> : {};
+      return {
+        ok: true,
+        payload: await service.getRecordingEntryState({
+          projectId: String(payload.projectId ?? ""),
+          recordingId: String(payload.recordingId ?? ""),
+          ...(typeof payload.entryId === "string" ? { entryId: payload.entryId } : {}),
+          ...(typeof payload.actionId === "string" ? { actionId: payload.actionId } : {}),
+          ...(typeof payload.stateSnapshotId === "string" ? { stateSnapshotId: payload.stateSnapshotId } : {}),
+          includeState: payload.includeState === true
+        })
+      };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getStateSnapshot,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<GetStateSnapshotRequest> : {};
+      return {
+        ok: true,
+        payload: await service.getStateSnapshot({
+          projectId: String(payload.projectId ?? ""),
+          recordingId: String(payload.recordingId ?? ""),
+          stateSnapshotId: String(payload.stateSnapshotId ?? ""),
+          includeState: payload.includeState === true
+        })
+      };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.repairRecordingStateIndex,
+    permission: "runtime.control",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<RepairRecordingStateIndexRequest> & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return {
+        ok: true,
+        payload: await service.repairRecordingStateIndex({
+          projectId: String(payload.projectId ?? ""),
+          recordingId: String(payload.recordingId ?? ""),
+          mode: payload.mode === "write" ? "write" : "dry_run"
+        })
+      };
     }
   });
   registry.register({

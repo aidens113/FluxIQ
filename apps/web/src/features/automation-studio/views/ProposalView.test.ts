@@ -100,6 +100,8 @@ describe("AutomationProposalView state linking", () => {
           parameterValues: {},
           isStart: true,
           metadata: {
+            actionEntryId: "entry.action.submit",
+            timelineEntryId: "entry.action.submit",
             sourceObservationIds: ["entry.action.submit"],
             recordingId: "recording.web"
           }
@@ -184,7 +186,41 @@ describe("AutomationProposalView state linking", () => {
     expect(request.sourceId).toBeUndefined();
   });
 
-  it("falls back to metadata evidence entry IDs when sourceObservationIds are absent", () => {
+  it("uses explicit state snapshot ids without also sending timeline ids", () => {
+    const request = proposalNodeStateRequest({
+      node: {
+        id: "recorded.candidate-state-linked",
+        data: {
+          label: "Click linked",
+          description: "Click linked",
+          actionTypes: ["web.dom.click"],
+          recovery: "pause",
+          evidenceCount: 1,
+          readinessCount: 0,
+          successCount: 0,
+          inputs: [],
+          outputs: [],
+          parameters: [],
+          parameterValues: {},
+          isStart: false,
+          metadata: {
+            actionEntryId: "entry.action.linked",
+            timelineEntryId: "entry.action.linked",
+            stateSnapshotId: "web.snapshot.linked",
+            stateRef: "automation-object://project/demo/state",
+            sourceObservationIds: ["entry.state.shared", "entry.action.linked"]
+          }
+        },
+        position: { x: 0, y: 0 }
+      } as any,
+      proposal: { proposalId: "proposal.web", recordingId: "recording.web" }
+    });
+
+    expect(request.stateSnapshotId).toBe("web.snapshot.linked");
+    expect(request.timelineEntryId).toBeUndefined();
+  });
+
+  it("does not use evidence entry IDs as state navigation", () => {
     const request = proposalNodeStateRequest({
       node: {
         id: "recorded.candidate-two",
@@ -210,7 +246,7 @@ describe("AutomationProposalView state linking", () => {
       proposal: { proposalId: "proposal.web", metadata: { recordingId: "recording.web" } }
     });
 
-    expect(request.timelineEntryId).toBe("entry.action.cancel");
+    expect(request.timelineEntryId).toBeUndefined();
     expect(request.sourceId).toBeUndefined();
   });
 });

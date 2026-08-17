@@ -58,6 +58,9 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   saveProjectArtifact: "save-project-artifact",
   deleteProjectArtifact: "delete-project-artifact",
   getRecording: "get-recording",
+  getRecordingEntryState: "get-recording-entry-state",
+  getStateSnapshot: "get-state-snapshot",
+  repairRecordingStateIndex: "repair-recording-state-index",
   createRecording: "create-recording",
   updateRecording: "update-recording",
   deleteRecording: "delete-recording",
@@ -214,6 +217,28 @@ export type UpdateRecordingRequest = RecordingProjectRequest & {
 
 export type DeleteRecordingRequest = RecordingProjectRequest & {
   recordingId: string;
+};
+
+export type GetRecordingEntryStateRequest = {
+  projectId: string;
+  recordingId: string;
+  entryId?: string;
+  actionId?: string;
+  stateSnapshotId?: string;
+  includeState?: boolean;
+};
+
+export type GetStateSnapshotRequest = {
+  projectId: string;
+  recordingId: string;
+  stateSnapshotId: string;
+  includeState?: boolean;
+};
+
+export type RepairRecordingStateIndexRequest = {
+  projectId: string;
+  recordingId: string;
+  mode: "dry_run" | "write";
 };
 
 export type GetProposalRequest = RecordingProjectRequest & {

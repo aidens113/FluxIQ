@@ -36,6 +36,7 @@ export function AutomationStateView(props: { input: BuildNodeStateViewModelInput
 
   const viewState = compactStateViewState({
     sourceId,
+    stateSnapshotId: initialSelection.stateSnapshotId,
     phase,
     selectedEvidenceId,
     selectedFactPath
@@ -354,7 +355,7 @@ function StateRawPanel(props: { model: NodeStateViewModel }) {
   return <pre className="automation-state-raw">{JSON.stringify(props.model.raw, null, 2)}</pre>;
 }
 
-function stateSelection(selection: AutomationSelection | null): { sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; recordingId?: string; proposalId?: string; timelineEntryId?: string } {
+function stateSelection(selection: AutomationSelection | null): { sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; recordingId?: string; proposalId?: string; timelineEntryId?: string; stateSnapshotId?: string; stateRef?: string } {
   if (selection?.kind !== "state") return {};
   return compactStateSelection({
     sourceId: selection.sourceId,
@@ -363,7 +364,9 @@ function stateSelection(selection: AutomationSelection | null): { sourceId?: str
     factPath: selection.factPath,
     recordingId: selection.recordingId,
     proposalId: selection.proposalId,
-    timelineEntryId: selection.timelineEntryId
+    timelineEntryId: selection.timelineEntryId,
+    stateSnapshotId: selection.stateSnapshotId,
+    stateRef: selection.stateRef
   });
 }
 
@@ -379,7 +382,9 @@ function stateSelectionKey(selection: AutomationSelection | null): string {
     selection.factPath ?? "",
     selection.recordingId ?? "",
     selection.proposalId ?? "",
-    selection.timelineEntryId ?? ""
+    selection.timelineEntryId ?? "",
+    selection.stateSnapshotId ?? "",
+    selection.stateRef ?? ""
   ].join("|");
 }
 
@@ -396,7 +401,9 @@ function stateAutomationSelection(model: NodeStateViewModel, input: BuildNodeSta
     ...(next.factPath ? { factPath: next.factPath } : {}),
     ...(input.selection?.kind === "state" && input.selection.recordingId ? { recordingId: input.selection.recordingId } : {}),
     ...(input.selection?.kind === "state" && input.selection.proposalId ? { proposalId: input.selection.proposalId } : {}),
-    ...(input.selection?.kind === "state" && input.selection.timelineEntryId ? { timelineEntryId: input.selection.timelineEntryId } : {})
+    ...(input.selection?.kind === "state" && input.selection.timelineEntryId ? { timelineEntryId: input.selection.timelineEntryId } : {}),
+    ...(input.selection?.kind === "state" && input.selection.stateSnapshotId ? { stateSnapshotId: input.selection.stateSnapshotId } : {}),
+    ...(input.selection?.kind === "state" && input.selection.stateRef ? { stateRef: input.selection.stateRef } : {})
   };
 }
 
@@ -899,10 +906,10 @@ function stateVisualChildKey(kind: string, id: string, index: number): string {
   return `${kind}:${id}:${index}`;
 }
 
-function compactStateViewState(value: { sourceId?: string | undefined; phase?: NodeStatePhase | undefined; selectedEvidenceId?: string | undefined; selectedFactPath?: string | undefined }): NonNullable<BuildNodeStateViewModelInput["viewState"]> {
+function compactStateViewState(value: { sourceId?: string | undefined; stateSnapshotId?: string | undefined; phase?: NodeStatePhase | undefined; selectedEvidenceId?: string | undefined; selectedFactPath?: string | undefined }): NonNullable<BuildNodeStateViewModelInput["viewState"]> {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as NonNullable<BuildNodeStateViewModelInput["viewState"]>;
 }
 
-function compactStateSelection(value: { sourceId?: string | undefined; phase?: NodeStatePhase | undefined; evidenceId?: string | undefined; factPath?: string | undefined; recordingId?: string | undefined; proposalId?: string | undefined; timelineEntryId?: string | undefined }) {
-  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as { sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; recordingId?: string; proposalId?: string; timelineEntryId?: string };
+function compactStateSelection(value: { sourceId?: string | undefined; phase?: NodeStatePhase | undefined; evidenceId?: string | undefined; factPath?: string | undefined; recordingId?: string | undefined; proposalId?: string | undefined; timelineEntryId?: string | undefined; stateSnapshotId?: string | undefined; stateRef?: string | undefined }) {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as { sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; recordingId?: string; proposalId?: string; timelineEntryId?: string; stateSnapshotId?: string; stateRef?: string };
 }

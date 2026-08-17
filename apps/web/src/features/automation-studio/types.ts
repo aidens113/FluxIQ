@@ -84,7 +84,7 @@ export type AutomationSelection =
   | { kind: "recording"; id: string }
   | { kind: "timeline"; id: string }
   | { kind: "signal"; id: string }
-  | { kind: "state"; id: string; nodeId?: string; sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; recordingId?: string; proposalId?: string; timelineEntryId?: string };
+  | { kind: "state"; id: string; nodeId?: string; sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; recordingId?: string; proposalId?: string; timelineEntryId?: string; stateSnapshotId?: string; stateRef?: string };
 
 export type AutomationInspectorWidget =
   | { kind: "summary"; title: string; items: Array<[string, string | number]> }

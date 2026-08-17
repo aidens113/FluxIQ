@@ -5,7 +5,11 @@ export function selectionReferencesDeletedRecording(selection: AutomationSelecti
   if (selection.kind === "recording") return recordingIds.has(selection.id);
   if (selection.kind === "proposal") return proposalIds.has(selection.id) || (selection.recordingId ? recordingIds.has(selection.recordingId) : false);
   if (selection.kind === "proposal-step") return proposalIds.has(selection.proposalId) || (selection.recordingId ? recordingIds.has(selection.recordingId) : false);
-  if (selection.kind === "state") return selection.sourceId ? [...recordingIds].some((recordingId) => selection.sourceId === `observed:${recordingId}:initial` || selection.sourceId?.startsWith(`observed:${recordingId}:`)) : false;
+  if (selection.kind === "state") {
+    if (selection.recordingId && recordingIds.has(selection.recordingId)) return true;
+    if (selection.proposalId && proposalIds.has(selection.proposalId)) return true;
+    return selection.sourceId ? [...recordingIds].some((recordingId) => selection.sourceId === `observed:${recordingId}:initial` || selection.sourceId?.startsWith(`observed:${recordingId}:`)) : false;
+  }
   return false;
 }
 

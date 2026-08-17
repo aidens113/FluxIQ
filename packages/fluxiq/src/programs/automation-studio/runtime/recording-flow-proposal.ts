@@ -1,5 +1,6 @@
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioNodeDefinition } from "../nodes/index.ts";
+import type { ProposalNodeStateLink } from "../storage/state-index.ts";
 
 export type RecordingProposalEvidenceReference = {
   layer: "recording" | "normalized_timeline" | "evidence";
@@ -18,6 +19,7 @@ export type RecordingFlowActionCandidate = {
   expectedConfirmation?: { inputId: string; timeoutMs?: number; description?: string };
   confidence: number;
   evidence: RecordingProposalEvidenceReference[];
+  stateLink?: ProposalNodeStateLink;
   /** Action-mapped input events remain observable confirmation, never policy state. */
   policyStateEligible: false;
   label?: string;

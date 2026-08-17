@@ -65,6 +65,7 @@ import { normalizeRecordingTimeline, selectActionContextStateEntryIds, type Norm
 import { runAutomationStudioGraph } from "./executor.ts";
 import { runCanonicalAutomationStudioFlow } from "./composite-executor.ts";
 import type { AutomationStudioNativeNodeRuntime } from "./native-node-runtime.ts";
+import { finalizeRecordingStateLinks } from "./state-linker.ts";
 import {
   recordingProposalDefinitionId,
   type RecordingFlowActionCandidate,
@@ -119,8 +120,16 @@ import {
   type AutomationStudioRecordingSummary,
   type AutomationStudioRuntimeRunSummary,
   type AutomationStudioWorkspaceSummary,
+  RecordingStateIndexStore,
   emptyFlowSummaryIndex
 } from "../storage/index.ts";
+import {
+  emptyRecordingIndex,
+  recordingIndexStateObjectRefs,
+  sortRecordingIndex,
+  type RecordingIndex as RecordingStateIndex,
+  type RecordingStateIndexItem
+} from "../storage/state-index.ts";
 
 export type AutomationStudioServiceOptions = {
   dataDir?: string;
@@ -144,6 +153,39 @@ export type AutomationStudioWriteProjectObjectAssetResult = {
   mediaType: string;
   contentRef: string;
   apiPath: string;
+};
+
+export type RecordingEntryStateLookupInput = {
+  projectId: string;
+  recordingId: string;
+  entryId?: string;
+  actionId?: string;
+  stateSnapshotId?: string;
+  includeState?: boolean;
+};
+
+export type RecordingEntryStateLookupResult = {
+  recordingId: string;
+  requested: {
+    entryId?: string;
+    actionId?: string;
+    stateSnapshotId?: string;
+  };
+  resolved: {
+    stateSnapshotId: string;
+    entryId: string;
+    stateRef: string;
+    screenshotRef?: string;
+  } | null;
+  state?: StateSnapshot;
+  reason?: string;
+};
+
+export type RepairRecordingStateIndexResult = {
+  recordingId: string;
+  mode: "dry_run" | "write";
+  index: RecordingStateIndex;
+  warnings: string[];
 };
 
 export type AutomationStudioFlowMigrationInspection = {
@@ -277,7 +319,9 @@ export class AutomationStudioService {
   private readonly nodeRootDir?: string;
   private readonly recordingDomains = new RecordingDomainRegistry();
   private readonly objectStore?: AutomationStudioObjectStore;
+  private readonly recordingStateIndexes?: RecordingStateIndexStore;
   private readonly recordingMutationLocks = new Map<string, Promise<void>>();
+  private readonly repairedRecordingStateIndexReads = new Set<string>();
   private readonly ready: Promise<void>;
   private storageReady?: Promise<void>;
   private ioRuntime?: { io: IoRegistry; domainId: string | null };
@@ -291,7 +335,10 @@ export class AutomationStudioService {
     this.repositories = options.repositories ?? createCanonicalAutomationStudioMemoryRepositories();
     if (options.dataDir || options.storageRootDir) {
       const automationDataDir = options.storageRootDir ?? path.join(options.dataDir!, "programs", "automation-studio");
-      if (options.storageRootDir) this.objectStore = new AutomationStudioObjectStore(automationDataDir);
+      if (options.storageRootDir) {
+        this.objectStore = new AutomationStudioObjectStore(automationDataDir);
+        this.recordingStateIndexes = new RecordingStateIndexStore(automationDataDir);
+      }
       this.projectRootDir = path.join(automationDataDir, "projects");
       const nodeRootDir = options.customNodeRootDir ?? (options.storageRootDir ? undefined : path.join(automationDataDir, "nodes"));
       if (nodeRootDir) this.nodeRootDir = nodeRootDir;
@@ -406,6 +453,51 @@ export class AutomationStudioService {
     return await this.hydrateRecordingStateSnapshotRefs(recording, projectId);
   }
 
+  async getRecordingEntryState(input: RecordingEntryStateLookupInput): Promise<RecordingEntryStateLookupResult> {
+    await this.ready;
+    await this.ensureRecordingStateIndexCurrent(input.projectId, input.recordingId);
+    const index = await this.readRecordingStateIndex(input.projectId, input.recordingId);
+    if (!index) {
+      return missingRecordingStateLookup(input, "Recording state index does not exist for this recording.");
+    }
+    const resolved = resolveRecordingStateIndexItem(index, input);
+    if (!resolved.state) return missingRecordingStateLookup(input, resolved.reason);
+    const result: RecordingEntryStateLookupResult = {
+      recordingId: input.recordingId,
+      requested: compactJsonObject({ entryId: input.entryId, actionId: input.actionId, stateSnapshotId: input.stateSnapshotId }) as RecordingEntryStateLookupResult["requested"],
+      resolved: {
+        stateSnapshotId: resolved.state.stateSnapshotId,
+        entryId: resolved.state.entryId,
+        stateRef: resolved.state.stateRef,
+        ...(resolved.state.screenshotRef ? { screenshotRef: resolved.state.screenshotRef } : {})
+      }
+    };
+    if (input.includeState) {
+      result.state = await this.readIndexedStateSnapshot(input.projectId, resolved.state.stateRef);
+    }
+    return result;
+  }
+
+  async getStateSnapshot(input: { projectId: string; recordingId: string; stateSnapshotId: string; includeState?: boolean }): Promise<RecordingEntryStateLookupResult> {
+    return await this.getRecordingEntryState(input);
+  }
+
+  async repairRecordingStateIndex(input: { projectId: string; recordingId: string; mode: "dry_run" | "write" }): Promise<RepairRecordingStateIndexResult> {
+    await this.ready;
+    await this.loadProjectRecording(input.projectId, input.recordingId);
+    const rawRecording = await this.getRawRecordingSession(input.recordingId, input.projectId);
+    const recording = await this.hydrateRecordingStateSnapshotRefs(rawRecording, input.projectId);
+    const index = buildRecordingStateIndex(input.projectId, recording);
+    if (input.mode === "write" && this.recordingStateIndexes) await this.recordingStateIndexes.write(index);
+    const relinked = finalizeRecordingStateLinks(index);
+    return {
+      recordingId: input.recordingId,
+      mode: input.mode,
+      index: relinked.index,
+      warnings: relinked.warnings.map((warning) => warning.message)
+    };
+  }
+
   private async getRawRecordingSession(recordingId: string, projectId?: string | null): Promise<RecordingSession> {
     if (projectId) await this.loadProjectRecording(projectId, recordingId);
     const recording = await this.repositories.recordingSessions.get(recordingId);
@@ -469,6 +561,7 @@ export class AutomationStudioService {
         await this.writeProjectRecordingSession(input.projectId, stored);
       } else if (input.projectId) {
         await this.writeRecordingTimeline(input.projectId, stored.recordingId, stored.timeline);
+        await this.writeRecordingStateIndex(input.projectId, stored);
         await this.writeProjectRecordingIndexSummary(input.projectId, stored);
       }
       return next;
@@ -1571,6 +1664,7 @@ export class AutomationStudioService {
     const issues: string[] = [];
     const entryCounts = countRecordingEntryTypes(recording.timeline);
     const mapperTimeline = recordingTimelineForProposalMapping(recording.timeline);
+    const recordingStateIndex = await this.readRecordingStateIndex(project.id, recording.recordingId);
     if (mapperTimeline.length !== recording.timeline.length) {
       issues.push(`Compacted ${recording.timeline.length - mapperTimeline.length} high-frequency state entries before mapper proposal generation. Raw recording data was preserved.`);
     }
@@ -1605,7 +1699,17 @@ export class AutomationStudioService {
             emittedCandidateCount += candidateInputs.length;
           }
           for (const candidate of candidateInputs) {
-            candidates.push(this.validateRecordingCandidate({ candidate, entryId: entry.id, recordingId: recording.recordingId, domainId, ...(mapper.definition.outputIds ? { mapperOutputIds: mapper.definition.outputIds } : {}) }));
+            const actionEntryId = resolveCandidateActionEntryId(recordingStateIndex, entry.id, candidate);
+            const stateLink = recordingStateIndex ? proposalNodeStateLinkFromIndex(recordingStateIndex, actionEntryId) : undefined;
+            candidates.push(this.validateRecordingCandidate({
+              candidate,
+              actionEntryId,
+              sourceEntryId: entry.id,
+              recordingId: recording.recordingId,
+              domainId,
+              ...(stateLink ? { stateLink } : {}),
+              ...(mapper.definition.outputIds ? { mapperOutputIds: mapper.definition.outputIds } : {})
+            }));
           }
         } catch (error) {
           issues.push(`Mapper ${mapper.definition.id} could not map entry ${entry.id}: ${errorMessage(error, "Unknown mapper error.")}`);
@@ -2100,7 +2204,7 @@ export class AutomationStudioService {
     return sessions.sort((left, right) => (right.startedAt ?? right.queuedAt) - (left.startedAt ?? left.queuedAt));
   }
 
-  private validateRecordingCandidate(input: { candidate: AutomationStudioRecordingMapperCandidate; entryId: string; recordingId: string; domainId: string; mapperOutputIds?: string[] }): RecordingFlowActionCandidate {
+  private validateRecordingCandidate(input: { candidate: AutomationStudioRecordingMapperCandidate; actionEntryId: string; sourceEntryId: string; recordingId: string; domainId: string; stateLink?: RecordingFlowActionCandidate["stateLink"]; mapperOutputIds?: string[] }): RecordingFlowActionCandidate {
     const outputId = input.candidate.outputId?.trim();
     if (!outputId) throw new Error("Recording mapper candidates must declare an outputId.");
     if (input.mapperOutputIds?.length && !input.mapperOutputIds.includes(outputId)) throw new Error(`Recording mapper emitted undeclared output ${outputId}.`);
@@ -2117,10 +2221,10 @@ export class AutomationStudioService {
       if (!adapter) throw new Error(`Recording mapper referenced unregistered confirmation input ${confirmation.inputId}.`);
       if ((adapter.definition.role ?? "state") !== "action") throw new Error(`Confirmation input ${confirmation.inputId} must be an action-role observation.`);
     }
-    const sourceObservationIds = uniqueStrings([input.entryId, ...(input.candidate.sourceObservationIds ?? [])]);
+    const sourceObservationIds = uniqueStrings([input.sourceEntryId, input.actionEntryId, ...(input.candidate.sourceObservationIds ?? [])]);
     return {
-      candidateId: `candidate.${safeSegment(input.entryId)}.${randomUUID()}`,
-      actionEntryId: input.entryId,
+      candidateId: `candidate.${safeSegment(input.actionEntryId)}.${randomUUID()}`,
+      actionEntryId: input.actionEntryId,
       sourceObservationIds,
       sourceInputIds,
       outputId,
@@ -2128,6 +2232,7 @@ export class AutomationStudioService {
       ...(confirmation ? { expectedConfirmation: { ...confirmation } } : {}),
       confidence: clampConfidence(input.candidate.confidence),
       evidence: input.candidate.evidence?.length ? structuredClone(input.candidate.evidence) : sourceObservationIds.map((entryId) => ({ layer: "recording" as const, artifactId: input.recordingId, entryId })),
+      ...(input.stateLink ? { stateLink: input.stateLink } : {}),
       policyStateEligible: false,
       ...(input.candidate.label ? { label: input.candidate.label } : {}),
       ...(input.candidate.description ? { description: input.candidate.description } : {})
@@ -3106,13 +3211,16 @@ export class AutomationStudioService {
     const reference = await this.objectStore.putBytes(projectId, content, "application/vnd.fluxiq.state-snapshot+json", { recordingId, extension: "json" });
     const stateRef = this.objectStore.contentRef(projectId, reference);
     const snapshotId = typeof state.id === "string" && state.id.trim() ? state.id.trim() : undefined;
+    const visualSummary = stateSnapshotVisualSummary(state);
     const nextPayload = compactJsonObject({
       stateRef,
       ...(snapshotId ? { snapshotId } : {}),
       metadata: compactJsonObject({
         ...(typeof payload.metadata === "object" && payload.metadata && !Array.isArray(payload.metadata) ? payload.metadata as JsonObject : {}),
+        stateSnapshotTimestamp: state.timestamp,
         stateSnapshotSha256: reference.$fluxiqObject.sha256,
-        stateSnapshotSize: reference.$fluxiqObject.size
+        stateSnapshotSize: reference.$fluxiqObject.size,
+        ...visualSummary
       })
     });
     return { ...entry, correlationId: entry.correlationId ?? snapshotId ?? reference.$fluxiqObject.sha256, payload: nextPayload } as TEntry;
@@ -3195,6 +3303,17 @@ export class AutomationStudioService {
 
   private async collectLiveProjectObjectReferences(projectId: string): Promise<Set<string>> {
     const refs = new Set<string>();
+    if (this.recordingStateIndexes) {
+      const recordingIndex = await this.readRecordingIndex(projectId).catch(() => ({ recordings: [], normalizedTimelines: [] }));
+      for (const item of recordingIndex.recordings ?? []) {
+        const stateIndex = await this.readRecordingStateIndex(projectId, item.recordingId).catch(() => null);
+        if (!stateIndex) continue;
+        for (const ref of recordingIndexStateObjectRefs(stateIndex)) {
+          const parsed = parseAutomationStudioObjectContentRef(ref);
+          if (parsed?.projectId === projectId) refs.add(parsed.sha256);
+        }
+      }
+    }
     for (const recording of await this.repositories.recordingSessions.list()) {
       if (recording.metadata?.projectId === projectId) addAutomationStudioObjectSha256s(refs, recording, projectId);
     }
@@ -3444,6 +3563,7 @@ export class AutomationStudioService {
     const recordingDocument = { ...recording, timeline: [] };
     await new ProgramJsonStore<JsonObject>(path.join(sessionDir, "recording.json"), () => ({ recording: recordingDocument as unknown as JsonObject })).write({ recording: recordingDocument as unknown as JsonObject });
     await this.writeRecordingTimeline(projectId, recording.recordingId, recording.timeline);
+    await this.writeRecordingStateIndex(projectId, recording);
     await new ProgramJsonStore<JsonObject>(path.join(sessionDir, "snapshots", "initial-state.json"), () => ({ initialState: recording.initialState as unknown as JsonObject })).write({ initialState: recording.initialState as unknown as JsonObject });
     await this.ensureProjectRecordingPipeline(projectId, recording);
     await this.writeRecordingIndex(projectId, (index) => ({
@@ -3520,6 +3640,39 @@ export class AutomationStudioService {
       const timeline = storedTimeline.length ? storedTimeline : recording.timeline;
       await this.repositories.recordingSessions.put({ ...recording, timeline });
     }
+  }
+
+  private async writeRecordingStateIndex(projectId: string, recording: RecordingSession): Promise<void> {
+    if (!this.recordingStateIndexes) return;
+    await this.recordingStateIndexes.write(buildRecordingStateIndex(projectId, recording));
+  }
+
+  private async ensureRecordingStateIndexCurrent(projectId: string, recordingId: string): Promise<void> {
+    if (!this.recordingStateIndexes) return;
+    const key = `${projectId}:${recordingId}`;
+    if (this.repairedRecordingStateIndexReads.has(key)) return;
+    this.repairedRecordingStateIndexReads.add(key);
+    await this.loadProjectRecording(projectId, recordingId);
+    const rawRecording = await this.getRawRecordingSession(recordingId, projectId).catch(() => null);
+    if (!rawRecording) return;
+    const recording = await this.hydrateRecordingStateSnapshotRefs(rawRecording, projectId);
+    await this.recordingStateIndexes.write(buildRecordingStateIndex(projectId, recording));
+  }
+
+  private async readRecordingStateIndex(projectId: string, recordingId: string): Promise<RecordingStateIndex | null> {
+    if (!this.recordingStateIndexes) return null;
+    if (!await this.recordingStateIndexes.exists(projectId, recordingId)) return null;
+    return await this.recordingStateIndexes.read(projectId, recordingId);
+  }
+
+  private async readIndexedStateSnapshot(projectId: string, stateRef: string): Promise<StateSnapshot> {
+    if (!this.objectStore) throw new Error("Automation Studio object storage is not enabled.");
+    const parsed = parseAutomationStudioObjectContentRef(stateRef);
+    if (!parsed || parsed.projectId !== projectId) throw new Error("State snapshot ref does not belong to this project.");
+    const asset = await this.objectStore.readProjectObject(projectId, parsed.sha256);
+    const state = JSON.parse(asset.content.toString("utf8")) as unknown;
+    if (!isStateSnapshotObject(state)) throw new Error("Indexed state snapshot object is invalid.");
+    return state;
   }
 
   private async readRecordingTimeline(projectId: string, recordingId: string): Promise<RecordingSession["timeline"]> {
@@ -4228,6 +4381,7 @@ function appendRecordingProposalToFlow(flow: AutomationStudioFlowArtifact, propo
         mapperVersion: proposal.mapper.version,
         actionEntryId: candidate.actionEntryId,
         timelineEntryId: candidate.actionEntryId,
+        ...recordingCandidateStateLinkMetadata(candidate),
         sourceObservationIds: candidate.sourceObservationIds,
         evidence: candidate.evidence,
         rawEvidenceImmutable: true,
@@ -4281,8 +4435,17 @@ function recordingCandidateDefinition(proposal: RecordingFlowProposalArtifact, c
     outputs: [{ id: "success", label: "Success", valueType: "any", role: "success" }, { id: "failed", label: "Failed", valueType: "any", role: "failure" }],
     parameters: recordingCandidateParameters(candidate),
     icon: "wand-sparkles",
-    metadata: { visibility, candidateId: candidate.candidateId, outputId: candidate.outputId, parameters: candidate.parameters, ...(candidate.expectedConfirmation ? { expectedConfirmation: candidate.expectedConfirmation } : {}), evidence: candidate.evidence, sourceObservationIds: candidate.sourceObservationIds, policyStateEligible: false }
+    metadata: { visibility, candidateId: candidate.candidateId, outputId: candidate.outputId, parameters: candidate.parameters, ...(candidate.expectedConfirmation ? { expectedConfirmation: candidate.expectedConfirmation } : {}), evidence: candidate.evidence, sourceObservationIds: candidate.sourceObservationIds, ...recordingCandidateStateLinkMetadata(candidate), policyStateEligible: false }
   };
+}
+
+function recordingCandidateStateLinkMetadata(candidate: RecordingFlowActionCandidate): JsonObject {
+  return candidate.stateLink ? compactJsonObject({
+    stateLink: candidate.stateLink as unknown as JsonObject,
+    stateSnapshotId: candidate.stateLink.stateSnapshotId,
+    stateRef: candidate.stateLink.stateRef,
+    screenshotRef: candidate.stateLink.screenshotRef
+  }) : {};
 }
 
 function recordingCandidateParameters(candidate: RecordingFlowActionCandidate): AutomationStudioNodeDefinition["parameters"] {
@@ -4441,6 +4604,293 @@ function isStateSnapshotObject(value: unknown): value is StateSnapshot {
     && Boolean(record.namespaces)
     && typeof record.namespaces === "object"
     && !Array.isArray(record.namespaces);
+}
+
+function buildRecordingStateIndex(projectId: string, recording: RecordingSession): RecordingStateIndex {
+  const now = Date.now();
+  const index = emptyRecordingIndex({
+    projectId,
+    recordingId: recording.recordingId,
+    startedAt: recording.startedAt,
+    ...(recording.endedAt !== undefined ? { endedAt: recording.endedAt } : {}),
+    updatedAt: now
+  });
+  index.summary = {
+    ...index.summary,
+    eventCount: recording.timeline.length,
+    actionCount: recording.timeline.filter(recordingEntryIsActionLike).length,
+    stateSnapshotCount: recording.timeline.filter(recordingEntryIsStateSnapshot).length,
+    proposalCount: 0,
+    updatedAt: now
+  };
+  index.timeline = {
+    timelineRef: "timeline.jsonl",
+    ...(recording.timeline[0]?.id ? { firstEntryId: recording.timeline[0].id } : {}),
+    ...(recording.timeline.at(-1)?.id ? { lastEntryId: recording.timeline.at(-1)!.id } : {})
+  };
+
+  for (const [sequence, entry] of recording.timeline.entries()) {
+    const actionId = recordingEntryActionId(entry);
+    const indexedTimestamp = recordingEntryIndexedTimestamp(entry);
+    index.entries[entry.id] = {
+      entryId: entry.id,
+      type: entry.type,
+      ...(indexedTimestamp !== undefined ? { timestamp: indexedTimestamp } : {}),
+      ...(typeof (entry as { startedAt?: unknown }).startedAt === "number" ? { startedAt: (entry as { startedAt: number }).startedAt } : {}),
+      ...(typeof (entry as { completedAt?: unknown }).completedAt === "number" ? { completedAt: (entry as { completedAt: number }).completedAt } : {}),
+      ...(typeof (entry as { monotonicOffsetMs?: unknown }).monotonicOffsetMs === "number" ? { monotonicOffsetMs: (entry as { monotonicOffsetMs: number }).monotonicOffsetMs } : {}),
+      sequence,
+      ...(actionId ? { actionId } : {}),
+      objectRefs: recordingEntryObjectRefs(projectId, entry)
+    };
+
+    let stateSnapshotId = recordingEntryStateSnapshotId(entry);
+    if (recordingEntryIsStateSnapshot(entry) && stateSnapshotId) {
+      const stateItem = recordingEntryStateIndexItem(projectId, entry, stateSnapshotId);
+      if (stateItem) {
+        index.states[stateSnapshotId] = stateItem;
+        index.entries[entry.id] = { ...index.entries[entry.id]!, stateSnapshotId };
+      } else {
+        stateSnapshotId = undefined;
+      }
+    }
+
+    if (actionId) {
+      const actionStateId = recordingEntryExplicitStateSnapshotId(entry);
+      index.actions[actionId] = {
+        actionId,
+        entryId: entry.id,
+        actionType: recordingEntryActionType(entry),
+        ...(typeof (entry as { outputId?: unknown }).outputId === "string" ? { outputId: (entry as { outputId: string }).outputId } : {}),
+        ...(typeof (entry as { startedAt?: unknown }).startedAt === "number" ? { startedAt: (entry as { startedAt: number }).startedAt } : {}),
+        ...(typeof (entry as { completedAt?: unknown }).completedAt === "number" ? { completedAt: (entry as { completedAt: number }).completedAt } : {}),
+        ...(actionStateId ? { stateAtActionId: actionStateId } : {}),
+        sourceObjectRefs: recordingEntryObjectRefs(projectId, entry)
+      };
+      if (actionStateId) {
+        index.entries[entry.id] = { ...index.entries[entry.id]!, stateSnapshotId: actionStateId };
+        if (index.states[actionStateId] && !index.states[actionStateId]!.linkedActionIds.includes(actionId)) {
+          index.states[actionStateId] = {
+            ...index.states[actionStateId]!,
+            linkedActionIds: [...index.states[actionStateId]!.linkedActionIds, actionId].sort()
+          };
+        }
+      }
+    }
+  }
+
+  return finalizeRecordingStateLinks(sortRecordingIndex(index)).index;
+}
+
+function resolveRecordingStateIndexItem(index: RecordingStateIndex, input: RecordingEntryStateLookupInput): { state?: RecordingStateIndexItem; reason: string } {
+  if (input.stateSnapshotId) {
+    const state = index.states[input.stateSnapshotId];
+    return state ? { state, reason: "" } : { reason: `State snapshot ${input.stateSnapshotId} is not indexed for recording ${input.recordingId}.` };
+  }
+  if (input.actionId) {
+    const action = index.actions[input.actionId];
+    if (!action) return { reason: `Action ${input.actionId} is not indexed for recording ${input.recordingId}.` };
+    if (!action.stateAtActionId) return { reason: `Action ${input.actionId} has no linked state snapshot.` };
+    const state = index.states[action.stateAtActionId];
+    return state ? { state, reason: "" } : { reason: `Action ${input.actionId} points to missing state snapshot ${action.stateAtActionId}.` };
+  }
+  if (input.entryId) {
+    const entry = index.entries[input.entryId];
+    if (!entry) return { reason: `Entry ${input.entryId} is not indexed for recording ${input.recordingId}.` };
+    if (entry.stateSnapshotId) {
+      const state = index.states[entry.stateSnapshotId];
+      return state ? { state, reason: "" } : { reason: `Entry ${input.entryId} points to missing state snapshot ${entry.stateSnapshotId}.` };
+    }
+    if (entry.actionId) {
+      const action = index.actions[entry.actionId];
+      const state = action?.stateAtActionId ? index.states[action.stateAtActionId] : undefined;
+      if (state) return { state, reason: "" };
+    }
+    return { reason: `Entry ${input.entryId} has no linked state snapshot.` };
+  }
+  return { reason: "State lookup requires stateSnapshotId, actionId, or entryId." };
+}
+
+function proposalNodeStateLinkFromIndex(index: RecordingStateIndex, actionEntryId: string): RecordingFlowActionCandidate["stateLink"] | undefined {
+  const entry = index.entries[actionEntryId];
+  const action = entry?.actionId ? index.actions[entry.actionId] : undefined;
+  const stateSnapshotId = action?.stateAtActionId ?? entry?.stateSnapshotId;
+  const state = stateSnapshotId ? index.states[stateSnapshotId] : undefined;
+  const stateLink = entry && state ? {
+    recordingId: index.recordingId,
+    actionEntryId,
+    ...(entry.actionId ? { actionId: entry.actionId } : {}),
+    stateSnapshotId: state.stateSnapshotId,
+    stateRef: state.stateRef,
+    ...(state.screenshotRef ? { screenshotRef: state.screenshotRef } : {})
+  } : undefined;
+  return stateLink;
+}
+
+function resolveCandidateActionEntryId(index: RecordingStateIndex | null, sourceEntryId: string, candidate: AutomationStudioRecordingMapperCandidate): string {
+  if (!index) return sourceEntryId;
+  for (const entryId of uniqueStrings([sourceEntryId, ...(candidate.sourceObservationIds ?? [])])) {
+    const entry = index.entries[entryId];
+    if (entry?.actionId || entry?.type === "action") return entryId;
+  }
+  return sourceEntryId;
+}
+
+function missingRecordingStateLookup(input: RecordingEntryStateLookupInput, reason: string): RecordingEntryStateLookupResult {
+  return {
+    recordingId: input.recordingId,
+    requested: compactJsonObject({ entryId: input.entryId, actionId: input.actionId, stateSnapshotId: input.stateSnapshotId }) as RecordingEntryStateLookupResult["requested"],
+    resolved: null,
+    reason
+  };
+}
+
+function recordingEntryStateIndexItem(projectId: string, entry: RecordingSession["timeline"][number], stateSnapshotId: string): RecordingStateIndexItem | null {
+  const payload = recordingEntryObservationPayload(entry);
+  const stateRef = typeof payload.stateRef === "string" ? payload.stateRef : undefined;
+  if (!stateRef) return null;
+  const metadata = isJsonRecord(payload.metadata) ? payload.metadata : {};
+  const screenshotRef = firstString(metadata.screenshotRef, payload.screenshotRef);
+  const visualFrameId = firstString(metadata.visualFrameId, payload.visualFrameId);
+  const coordinateSpace = coordinateSpaceFromValue(metadata.coordinateSpace);
+  const refs = new Set<string>([stateRef, ...recordingEntryObjectRefs(projectId, entry)]);
+  if (screenshotRef) refs.add(screenshotRef);
+  return {
+    stateSnapshotId,
+    entryId: entry.id,
+    timestamp: recordingEntryIndexedTimestamp(entry) ?? Date.now(),
+    ...(typeof (entry as { monotonicOffsetMs?: unknown }).monotonicOffsetMs === "number" ? { monotonicOffsetMs: (entry as { monotonicOffsetMs: number }).monotonicOffsetMs } : {}),
+    stateRef,
+    ...(screenshotRef ? { screenshotRef } : {}),
+    ...(visualFrameId ? { visualFrameId } : {}),
+    ...(coordinateSpace ? { coordinateSpace } : {}),
+    objectRefs: [...refs].sort(),
+    linkedActionIds: []
+  };
+}
+
+function recordingEntryIsStateSnapshot(entry: RecordingSession["timeline"][number]): boolean {
+  return entry.type === "observation" && entry.observationType === "client.state_snapshot";
+}
+
+function recordingEntryStateSnapshotId(entry: RecordingSession["timeline"][number]): string | undefined {
+  if (!recordingEntryIsStateSnapshot(entry)) {
+    return recordingEntryExplicitStateSnapshotId(entry);
+  }
+  const payload = recordingEntryObservationPayload(entry);
+  const metadata = isJsonRecord(payload.metadata) ? payload.metadata : {};
+  return firstString(payload.snapshotId, metadata.stateSnapshotId, metadata.snapshotId, entry.correlationId, `state.${entry.id}`);
+}
+
+function recordingEntryExplicitStateSnapshotId(entry: RecordingSession["timeline"][number]): string | undefined {
+  const metadata = isJsonRecord((entry as { metadata?: unknown }).metadata) ? (entry as { metadata: JsonObject }).metadata : {};
+  return firstString(metadata.stateSnapshotId, metadata.stateAtActionId);
+}
+
+function recordingEntryIndexedTimestamp(entry: RecordingSession["timeline"][number]): number | undefined {
+  const payload = recordingEntryObservationPayload(entry);
+  const payloadMetadata = isJsonRecord(payload.metadata) ? payload.metadata : {};
+  const entryMetadata = isJsonRecord((entry as { metadata?: unknown }).metadata) ? (entry as { metadata: JsonObject }).metadata : {};
+  const payloadState = isStateSnapshotObject(payload.state) ? payload.state : undefined;
+  return firstFiniteNumber(
+    entryMetadata.eventTimestampMs,
+    entryMetadata.actionTimestampMs,
+    entryMetadata.stateTimestampMs,
+    payloadMetadata.eventTimestampMs,
+    payloadMetadata.actionTimestampMs,
+    payloadMetadata.stateTimestampMs,
+    payloadMetadata.stateSnapshotTimestamp,
+    payload.eventTimestampMs,
+    payload.actionTimestampMs,
+    payload.stateTimestampMs,
+    payload.stateSnapshotTimestamp,
+    payloadState?.timestamp,
+    entry.timestamp
+  );
+}
+
+function recordingEntryActionId(entry: RecordingSession["timeline"][number]): string | undefined {
+  return recordingEntryIsActionLike(entry) ? `action.${entry.id}` : undefined;
+}
+
+function recordingEntryActionType(entry: RecordingSession["timeline"][number]): string {
+  if (typeof (entry as { actionType?: unknown }).actionType === "string" && (entry as { actionType: string }).actionType.trim()) return (entry as { actionType: string }).actionType.trim();
+  if (typeof (entry as { eventType?: unknown }).eventType === "string" && (entry as { eventType: string }).eventType.trim()) return (entry as { eventType: string }).eventType.trim();
+  if (typeof (entry as { outputId?: unknown }).outputId === "string" && (entry as { outputId: string }).outputId.trim()) return (entry as { outputId: string }).outputId.trim();
+  return entry.type;
+}
+
+function recordingEntryObjectRefs(projectId: string, entry: RecordingSession["timeline"][number]): string[] {
+  const refs = new Set<string>();
+  const addRef = (value: unknown) => {
+    if (typeof value !== "string") return;
+    const parsed = parseAutomationStudioObjectContentRef(value);
+    if (parsed?.projectId === projectId) refs.add(value);
+  };
+  const payload = recordingEntryObservationPayload(entry);
+  addRef(payload.stateRef);
+  addRef(payload.screenshotRef);
+  const metadata = isJsonRecord(payload.metadata) ? payload.metadata : {};
+  addRef(metadata.screenshotRef);
+  addRefsFromValue(refs, payload, projectId);
+  addRefsFromValue(refs, (entry as { metadata?: unknown }).metadata, projectId);
+  return [...refs].sort();
+}
+
+function recordingEntryObservationPayload(entry: RecordingSession["timeline"][number]): JsonObject {
+  return entry.type === "observation" && isJsonRecord(entry.payload) ? entry.payload : {};
+}
+
+function addRefsFromValue(refs: Set<string>, value: unknown, projectId: string, seen = new Set<unknown>()): void {
+  if (value === null || value === undefined) return;
+  if (typeof value === "string") {
+    const parsed = parseAutomationStudioObjectContentRef(value);
+    if (parsed?.projectId === projectId) refs.add(value);
+    return;
+  }
+  if (typeof value !== "object" || seen.has(value)) return;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    for (const item of value) addRefsFromValue(refs, item, projectId, seen);
+    return;
+  }
+  for (const item of Object.values(value)) addRefsFromValue(refs, item, projectId, seen);
+}
+
+function stateSnapshotVisualSummary(state: StateSnapshot): JsonObject {
+  const frames = state.presentation?.visualFrames ?? [];
+  const defaultFrame = frames.find((frame) => frame.id === state.presentation?.defaultFrameId) ?? frames[0];
+  const imageLayer = defaultFrame?.layers.find((layer) => layer.kind === "image");
+  return compactJsonObject({
+    ...(defaultFrame?.id ? { visualFrameId: defaultFrame.id } : {}),
+    ...(defaultFrame?.coordinateSpace ? { coordinateSpace: defaultFrame.coordinateSpace as unknown as JsonObject } : {}),
+    ...(imageLayer?.kind === "image" ? { screenshotRef: imageLayer.contentRef } : {})
+  });
+}
+
+function coordinateSpaceFromValue(value: unknown): RecordingStateIndexItem["coordinateSpace"] | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  return typeof record.width === "number"
+    && typeof record.height === "number"
+    && record.unit === "px"
+    && record.origin === "top-left"
+    ? { width: record.width, height: record.height, unit: "px", origin: "top-left" }
+    : undefined;
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) if (typeof value === "string" && value.trim()) return value.trim();
+  return undefined;
+}
+
+function firstFiniteNumber(...values: unknown[]): number | undefined {
+  for (const value of values) if (typeof value === "number" && Number.isFinite(value)) return value;
+  return undefined;
+}
+
+function isJsonRecord(value: unknown): value is JsonObject {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function collectAutomationStudioObjectSha256s(value: unknown, projectId: string): Set<string> {

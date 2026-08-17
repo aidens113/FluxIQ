@@ -327,9 +327,11 @@ This is allowed to be slower because it is exceptional.
 
 1. Flush any pending state objects.
 2. Run state-link finalization:
-   - exact `eventTimestampMs` match wins;
-   - explicit client correlation id wins over timestamp;
-   - nearest prior/current snapshot wins over later snapshot when tied;
+   - explicit valid client state links can be preserved only when the caller
+     requests preservation;
+   - otherwise closest capture/event timestamp wins;
+   - prior/current snapshot wins over later snapshot only when the distance is
+     tied;
    - never link across recordings.
 3. Write `recording/index.json`.
 4. Update `indexes/recordings.json` summary counts.
@@ -339,12 +341,20 @@ This is allowed to be slower because it is exceptional.
 1. Load `recording/index.json`.
 2. Stream mapper-visible timeline entries from `timeline.jsonl`.
 3. For each action candidate:
-   - set `actionEntryId`;
+   - resolve `actionEntryId` to the real indexed action entry, even when the
+     mapper emitted the candidate from a supporting observation entry;
    - set `stateLink` from `entries[actionEntryId].stateSnapshotId`;
    - copy `stateSnapshotId`, `stateRef`, and `screenshotRef` into proposal
      node metadata.
 4. Store support evidence separately.
 5. Write `proposal/index.json` for quick proposal/node lookup.
+
+Important rule: `sourceObservationIds` are provenance only. They can explain
+which mapper observation, state fact, or domain event supported the candidate,
+but they must not become the State View target unless that referenced entry is
+also the resolved action entry. Otherwise many proposal nodes can accidentally
+cluster around the same early state observation even though the recording index
+contains distinct action-state links.
 
 Proposal node metadata should include:
 
@@ -529,6 +539,23 @@ Done when:
 - Unit tests reject missing state refs, cross-recording refs, and missing
   action links.
 
+Status:
+
+- Done on 2026-08-17.
+- Added `RecordingIndex`, entry/action/state/proposal index item contracts, and
+  `ProposalNodeStateLink`.
+- Added validation for missing entry/action/state links, invalid object refs,
+  cross-project object refs, and proposal/recording mismatches.
+- Added deterministic sorting and object-ref collection helpers.
+- Added `state-index.test.ts`.
+- Validation run:
+  - `pnpm --filter fluxiq test -- state-index.test.ts`
+  - `pnpm --filter fluxiq check`
+
+Next:
+
+- Step 2 builds the recording-local index store around these contracts.
+
 ### Step 2: Build Recording State Index Store
 
 Files:
@@ -547,6 +574,26 @@ Done when:
 
 - Creating, updating, and deleting index entries is tested.
 - Writes are deterministic and sorted.
+
+Status:
+
+- Done on 2026-08-17.
+- Added `RecordingStateIndexStore` for
+  `projects/<projectId>/recordings/<recordingId>/index.json`.
+- Added validated read/write/update/delete operations with deterministic sort
+  order and Windows-tolerant atomic replace behavior.
+- Added per-recording write locks so concurrent append/finalize operations do
+  not interleave index writes.
+- Added `recordingIndexFile()` to canonical file-store paths.
+- Added `recording-index-store.test.ts` and updated file-store path tests.
+- Validation run:
+  - `pnpm --filter fluxiq test -- state-index.test.ts recording-index-store.test.ts file-store.test.ts`
+  - `pnpm --filter fluxiq check`
+
+Next:
+
+- Step 3 wires this store into recording append/finalize so new recordings
+  write the index as timeline entries arrive.
 
 ### Step 3: Write Index During Recording Append
 
@@ -568,6 +615,30 @@ Done when:
   hydration.
 - Tests prove timeline and index stay consistent.
 
+Status:
+
+- Done on 2026-08-17.
+- Preserved visual summary metadata while dehydrating state snapshots:
+  `stateRef`, `screenshotRef`, `visualFrameId`, and coordinate space can now be
+  indexed without hydrating the full state object.
+- Added runtime writing of
+  `projects/<projectId>/recordings/<recordingId>/index.json` after append and
+  finalized/full recording writes.
+- Added `buildRecordingStateIndex()` so stored timeline entries produce
+  deterministic entry/action/state index items.
+- Guarded against dangling links when an old or broken snapshot observation has
+  no usable `stateRef`.
+- Added a regression test proving two action entries link to two distinct
+  state snapshot refs in the on-disk recording index.
+- Validation run:
+  - `pnpm --filter fluxiq test -- state-index.test.ts recording-index-store.test.ts service.test.ts`
+  - `pnpm --filter fluxiq check`
+
+Next:
+
+- Step 4 extracts deterministic state linking into a dedicated linker so
+  finalize/repair can relink actions intentionally and report ambiguity.
+
 ### Step 4: Finalize State Links
 
 Files:
@@ -586,6 +657,36 @@ Done when:
 
 - Known action/snapshot timelines produce exact expected `stateAtActionId`.
 - Ambiguous cases produce warnings, not silent wrong links.
+
+Status:
+
+- Done on 2026-08-17.
+- Added `runtime/state-linker.ts` with deterministic finalization of
+  action-to-state links.
+- Existing explicit valid links are preserved only when the caller opts into
+  preservation; normal index rebuilds recompute the closest state so stale
+  poisoned links do not survive forever.
+- Missing links resolve by closest capture/event timestamp; prior/current state
+  wins over later state only when the distance is tied.
+- The linker clears/rebuilds `linkedActionIds` so reverse links stay in sync.
+- Ambiguous same-timestamp state candidates produce warnings.
+- `buildRecordingStateIndex()` now routes through the shared linker before
+  writing the on-disk index.
+- State snapshot dehydration now preserves `stateSnapshotTimestamp` in the
+  lightweight timeline payload, and repair/open-state index refresh hydrates
+  stored state objects so existing dehydrated recordings can recover the real
+  capture timestamp.
+- Added `state-linker.test.ts`.
+- Validation run:
+  - `pnpm --filter fluxiq test -- state-linker.test.ts state-index.test.ts recording-index-store.test.ts service.test.ts`
+  - `pnpm --filter fluxiq check`
+  - `pnpm --filter @fluxiq/web test -- AutomationStudioLive.test.ts ProposalView.test.ts StateView.test.tsx`
+  - `pnpm --filter @fluxiq/web check`
+
+Next:
+
+- Step 5 exposes deterministic lookup/repair service methods and API commands
+  so the web UI no longer scans recordings to open one state.
 
 ### Step 5: Add State Lookup APIs
 
@@ -606,6 +707,34 @@ Done when:
 - Timeline open state calls one deterministic endpoint.
 - Missing link returns clear reason.
 - State View no longer needs full recording to open one state.
+
+Status:
+
+- Done on 2026-08-17.
+- Added service methods:
+  - `getRecordingEntryState()`
+  - `getStateSnapshot()`
+  - `repairRecordingStateIndex()`
+- Added API commands:
+  - `get-recording-entry-state`
+  - `get-state-snapshot`
+  - `repair-recording-state-index`
+- Normal lookup resolves in strict order: `stateSnapshotId`, then `actionId`,
+  then `entryId`.
+- Missing links return `resolved: null` plus a specific reason instead of
+  falling back to another state.
+- `includeState=true` dereferences only the selected state object.
+- Repair is explicit and can run as `dry_run` or `write`.
+- Added service regression coverage for exact state lookup and missing-entry
+  behavior.
+- Validation run:
+  - `pnpm --filter fluxiq test -- state-linker.test.ts state-index.test.ts recording-index-store.test.ts service.test.ts`
+  - `pnpm --filter fluxiq check`
+
+Next:
+
+- Step 6 refactors the web State View open paths to call these lookup APIs and
+  stop computing nearest/first state locally.
 
 ### Step 6: Refactor State View Input
 
@@ -628,6 +757,47 @@ Done when:
 - State View cannot fall back to first source.
 - Tests fail if a wrong state id is opened.
 
+Status:
+
+- Done on 2026-08-17 for the timeline/state-view input path.
+- Added indexed state sources to the State View model input.
+- `AutomationStudioLive.openStateView()` now calls:
+  - `get-recording-entry-state` for timeline entry opens;
+  - `get-state-snapshot` when an explicit `stateSnapshotId` is supplied.
+- Resolved state snapshots are cached as exact observed State View sources with
+  `stateSnapshotId` and `stateRef` metadata.
+- Missing links now set a visible status message instead of opening a nearby
+  or first state.
+- State View no longer falls back to the first available source when an exact
+  `sourceId`, `stateSnapshotId`, or `timelineEntryId` is requested but the
+  indexed source is not loaded.
+- Proposal node open-state requests no longer derive navigation targets from
+  `sourceObservationIds` or evidence entry ids; those remain support context
+  only.
+- Bare node open requests now derive `stateSnapshotId`, `stateRef`,
+  `recordingId`, and action/timeline entry ids from selected node metadata
+  before calling Core lookup.
+- Added detailed State View debugging:
+  - browser console prefix: `[FluxIQ State Debug]`;
+  - browser history buffer: `window.__fluxiqStateDebug`;
+  - proposal node request creation logs compact node metadata and request;
+  - State View open logs derived request, Core response, cached source, and
+    final state selection;
+  - State View model logs every available source, selected source, state ids,
+    timestamps, and image refs;
+  - Core logs lookup input, resolved index entry/action/state, object SHAs,
+    screenshot SHAs, and hydrated state summary.
+- Extended state selections with `stateSnapshotId` and `stateRef`.
+- Validation run:
+  - `pnpm --filter @fluxiq/web test -- AutomationStudioLive.test.ts view-model.test.ts StateView.test.tsx`
+  - `pnpm --filter @fluxiq/web check`
+  - `pnpm --filter @fluxiq/web test -- AutomationStudioLive.test.ts ProposalView.test.ts StateView.test.tsx view-model.test.ts`
+
+Next:
+
+- Step 7 copies indexed state links into proposal candidates/nodes so proposal
+  node Open State can use the same exact lookup path.
+
 ### Step 7: Refactor Proposal Generation
 
 Files:
@@ -649,6 +819,31 @@ Done when:
   `stateSnapshotId`s where the source actions have distinct state.
 - Tests prove `sourceObservationIds` cannot override `actionEntryId`.
 
+Status:
+
+- Done on 2026-08-17.
+- Added `stateLink?: ProposalNodeStateLink` to
+  `RecordingFlowActionCandidate`.
+- Proposal generation now reads `recording/index.json` and copies the indexed
+  state link for each mapped action entry.
+- Generated policy nodes and recording-derived node definitions now include
+  `stateLink`, `stateSnapshotId`, `stateRef`, and optional `screenshotRef`
+  metadata.
+- The web proposal adapter also preserves candidate state links when presenting
+  recording-flow proposals as policy proposals.
+- Proposal node Open State requests now forward `stateSnapshotId` directly
+  when present.
+- Validation run:
+  - `pnpm --filter fluxiq test -- service.test.ts state-linker.test.ts recording-index-store.test.ts`
+  - `pnpm --filter fluxiq check`
+  - `pnpm --filter @fluxiq/web test -- ProposalView.test.ts AutomationStudioLive.test.ts view-model.test.ts StateView.test.tsx`
+  - `pnpm --filter @fluxiq/web check`
+
+Next:
+
+- Step 8 trims project/sidebar loading toward summary indexes so refresh does
+  not hydrate recordings, proposals, state objects, or images.
+
 ### Step 8: Refactor Project/Sidebar Loading
 
 Files:
@@ -668,6 +863,28 @@ Done when:
 
 - Refreshing the page with one large recording does not read state objects.
 - Loading time is bounded by index size.
+
+Status:
+
+- Done on 2026-08-17 for the sidebar/project refresh path.
+- Confirmed `getProjectWorkspaceSummary()` reads summary/index methods for
+  recordings, proposals, flows, and runtime summaries.
+- Changed `AutomationStudioLive.refreshProjectData()` to call only
+  `get-project-workspace-summary` and hydrate local sidebar/catalog state from
+  summary rows.
+- Removed the lightweight refresh fan-out to `list-recordings`,
+  `list-normalized-timelines`, and `list-runtime-sessions`.
+- The heavier `refreshProjectRuntimeState()` path remains for explicit
+  post-mutation refreshes that need artifacts, domains, and node definitions.
+- Validation run:
+  - `pnpm --filter @fluxiq/web test -- AutomationStudioLive.test.ts`
+  - `pnpm --filter @fluxiq/web check`
+
+Next:
+
+- Step 9 tightens delete cascade around recording/proposal indexes and object
+  refs so screenshots, state JSON, derived artifacts, and tabs do not survive
+  deletion.
 
 ### Step 9: Deterministic Delete Cascade
 
@@ -690,6 +907,29 @@ Done when:
   evidence, and tabs without refresh.
 - Tests inspect filesystem after delete.
 
+Status:
+
+- Done on 2026-08-17 for deterministic indexed-ref cleanup.
+- `collectLiveProjectObjectReferences()` now includes object refs from every
+  live `recording/index.json`, so object pruning understands state JSON and
+  screenshot refs that are no longer embedded in timelines.
+- Recording deletion continues to delete recording-owned objects and the
+  recording folder, then prunes unreferenced project objects.
+- Web deletion cleanup now treats state selections with `recordingId` or
+  deleted `proposalId` as deleted-object references.
+- Web deletion cleanup clears cached indexed State View sources for deleted
+  recordings/proposals.
+- Validation run:
+  - `pnpm --filter fluxiq test -- service.test.ts object-store.test.ts recording-index-store.test.ts state-index.test.ts`
+  - `pnpm --filter fluxiq check`
+  - `pnpm --filter @fluxiq/web test -- AutomationStudioLive.test.ts`
+  - `pnpm --filter @fluxiq/web check`
+
+Next:
+
+- Step 10 adds visible diagnostics/repair affordances when indexed state
+  lookup fails or a recording index needs rebuilding.
+
 ### Step 10: Repair and Diagnostics UI
 
 Deliverables:
@@ -705,6 +945,59 @@ Done when:
 
 - Broken artifacts fail loudly and can be repaired intentionally.
 - Normal State View open path never repairs/scans implicitly.
+
+Status:
+
+- Done on 2026-08-17.
+- Missing indexed state lookups now show the precise Core reason in the UI.
+- The UI asks before running repair, requires PIN, calls
+  `repair-recording-state-index` in `write` mode, and retries the same exact
+  state lookup once.
+- Repair remains explicit; normal State View open still does not scan or
+  silently fall back.
+- Validation run:
+  - `pnpm --filter @fluxiq/web test -- AutomationStudioLive.test.ts StateView.test.tsx`
+  - `pnpm --filter @fluxiq/web check`
+  - `pnpm --filter fluxiq check`
+
+### Post-Step Fix: Proposal Node State Link Ownership
+
+Status:
+
+- Done on 2026-08-17.
+- Audited a real extension `.fluxiq` recording and confirmed the recording
+  index contained distinct action-state links and distinct screenshot refs.
+- Fixed Core proposal generation so mapper-emitted candidates resolve their
+  `actionEntryId` from referenced indexed action entries before copying the
+  `ProposalNodeStateLink`.
+- Kept the mapper/source observation entry in `sourceObservationIds` and
+  generated evidence as provenance only.
+- Fixed State View model selection so state selections preserve the selected
+  proposal node id instead of building the view model with `nodeId: ""`.
+- Fixed proposal-node open-state requests so explicit `stateSnapshotId` links
+  are routed as exact snapshot opens and do not also send `timelineEntryId`.
+  State View selection ids now include exact `stateSnapshotId` when no
+  proposal/Flow node id is available, preventing state tabs from being keyed
+  only by stale timeline-entry context.
+- Added regression coverage for an observation-emitted mapper candidate that
+  points at a later action-adjacent state.
+- Gated server-side state debug logs behind `FLUXIQ_STATE_DEBUG=1`.
+- Pre-fix proposal documents can still contain wrong candidate/node state
+  metadata. Regenerate proposals from the existing recording after this fix;
+  a new recording is not required when the recording index already has the
+  correct state links.
+
+Validation run:
+
+- `pnpm --filter fluxiq test -- service.test.ts state-linker.test.ts`
+- `pnpm --filter @fluxiq/web test -- view-model.test.ts StateView.test.tsx ProposalView.test.ts AutomationStudioLive.test.ts`
+- `pnpm --filter @fluxiq/web check`
+
+Next:
+
+- Run package checks and docs validation.
+- Keep exact-source missing-state behavior strict so async source hydration
+  never falls back to the first observed state.
 
 ## Test Matrix
 

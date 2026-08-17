@@ -20,6 +20,7 @@ describe("Automation Studio file-store contracts", () => {
     expect(paths.rootIndex()).toBe(path.join("root", "automation-studio", "index.json"));
     expect(paths.projectFile("Project One")).toBe(path.join("root", "automation-studio", "projects", "project_one", "project.json"));
     expect(paths.indexFile("Project One", "proposals")).toBe(path.join("root", "automation-studio", "projects", "project_one", "indexes", "proposals.json"));
+    expect(paths.recordingIndexFile("Project One", "client recording/1")).toBe(path.join("root", "automation-studio", "projects", "project_one", "recordings", "client_recording_1", "index.json"));
     expect(paths.recordingFile("Project One", "client recording/1")).toBe(path.join("root", "automation-studio", "projects", "project_one", "recordings", "client_recording_1", "recording.json"));
     expect(paths.recordingTimelineFile("Project One", "client recording/1")).toBe(path.join("root", "automation-studio", "projects", "project_one", "recordings", "client_recording_1", "timeline.jsonl"));
     expect(paths.recordingSnapshotFile("Project One", "client recording/1", "snapshot:42")).toBe(path.join("root", "automation-studio", "projects", "project_one", "recordings", "client_recording_1", "snapshots", "snapshot_42.json"));

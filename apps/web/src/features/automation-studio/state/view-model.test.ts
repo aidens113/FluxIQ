@@ -409,9 +409,10 @@ describe("node state view model", () => {
       selection: {
         kind: "state",
         id: "state:timeline:entry.action.second",
-        sourceId: "observed:recording.client:entry.action.second",
+        sourceId: "observed:recording.client:entry.state.second",
         recordingId: "recording.client",
-        timelineEntryId: "entry.action.second"
+        timelineEntryId: "entry.action.second",
+        stateSnapshotId: "snapshot.second"
       },
       selectedNode: null,
       selectedRecording: recording,
@@ -422,14 +423,26 @@ describe("node state view model", () => {
       recordings: [recording],
       timelines: [],
       runtimeSessions: [],
-      signals: []
+      signals: [],
+      indexedStateSources: [{
+        source: {
+          kind: "observed",
+          id: "observed:recording.client:entry.state.second",
+          label: "Recording client @ entry.state.second",
+          recordingId: "recording.client",
+          timelineEntryId: "entry.state.second",
+          stateSnapshotId: "snapshot.second",
+          timestamp: secondSnapshot.timestamp
+        } as any,
+        snapshot: secondSnapshot as any
+      }]
     });
 
     expect(model.activeSource).toMatchObject({ kind: "observed", timelineEntryId: "entry.state.second" });
     expect(model.visualFrame?.layers[0]).toMatchObject({ kind: "image", contentRef: "automation-object://project/test/second" });
   });
 
-  it("opens action state selections without requiring a fake observed action source id", () => {
+  it("does not fall back to the first observed source when exact action state is not loaded", () => {
     const firstSnapshot = snapshotWithImage("snapshot.first", 100, "automation-object://project/test/first");
     const secondSnapshot = snapshotWithImage("snapshot.second", 900, "automation-object://project/test/second");
     const recording = {
@@ -477,8 +490,8 @@ describe("node state view model", () => {
       signals: []
     });
 
-    expect(model.activeSource).toMatchObject({ kind: "observed", timelineEntryId: "entry.state.second" });
-    expect(model.visualFrame?.layers[0]).toMatchObject({ kind: "image", contentRef: "automation-object://project/test/second" });
+    expect(model.activeSource).toBeNull();
+    expect(model.emptyState).toMatchObject({ title: "Requested state is not loaded" });
   });
 
   it("falls back to node order when proposal nodes do not carry explicit state evidence", () => {

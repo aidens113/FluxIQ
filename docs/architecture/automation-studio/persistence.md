@@ -23,6 +23,7 @@ projects/{projectId}/
     objects.json
     pipeline.json
   recordings/{recordingId}/
+    index.json
     recording.json
     timeline.jsonl
     snapshots/
@@ -55,7 +56,7 @@ Stable file document IDs are:
 | Artifact | Full document | Summary index |
 | --- | --- | --- |
 | `RecordingSession` | `recordings/{recordingId}/recording.json` plus `timeline.jsonl` | `indexes/recordings.json` |
-| State snapshot/object | `recordings/{recordingId}/objects/` or `objects/shared/` | `indexes/objects.json` |
+| State snapshot/object | `recordings/{recordingId}/objects/` or `objects/shared/` | `recordings/{recordingId}/index.json` and `indexes/objects.json` |
 | Policy proposal | `proposals/{recordingId}/{proposalId}/proposal.json` | `indexes/pipeline.json` and proposal summaries |
 | Recording Flow proposal | `proposals/{recordingId}/{proposalId}/proposal.json` | `indexes/pipeline.json` and proposal summaries |
 | Canonical Flow | `flows/{flowId}/flow.json` | `indexes/flows.json` |
@@ -90,7 +91,9 @@ The state and recording framework now includes:
 The Automation Studio API exposes these as first-class framework endpoints:
 `list-recordings`, `get-recording`, `create-recording`, `update-recording`,
 `delete-recording`, `append-recording-entry`, `append-recording-note`,
-`append-recording-marker`, `finalize-recording`, `normalize-recording`,
+`append-recording-marker`, `finalize-recording`,
+`get-recording-entry-state`, `get-state-snapshot`,
+`repair-recording-state-index`, `normalize-recording`,
 `create-normalization-review`, `get-proposal`, `list-pipeline-artifacts`,
 `mine-recording-evidence`, `propose-policy-from-model`,
 `approve-policy-proposal`, `create-recording-flow-proposals`,
@@ -166,7 +169,10 @@ points to the raw recording action/domain event that produced the candidate.
 confirmation observations, or other context, but those support references must
 not replace the candidate's action identity. Proposal review, approved Flow
 node metadata, and State View opening use `actionEntryId` for action-adjacent
-state lookup.
+state lookup. If an importer mapper emits a candidate while processing a
+supporting observation, Core resolves the candidate's `actionEntryId` from the
+referenced indexed action entry before copying the proposal state link; the
+observation entry remains provenance only.
 
 Pipeline artifact listing is a read path, not a validation/mutation path.
 `list-pipeline-artifacts` reads the project pipeline index and artifact
@@ -183,6 +189,46 @@ keeps `payload.stateRef`, `payload.snapshotId` when available, and metadata such
 as the snapshot digest/size; the JSON `StateSnapshot` itself is stored as a
 recording-owned project object. `get-recording` hydrates those refs back into
 `payload.state` for UI surfaces that explicitly open the full recording.
+
+Each object-store-backed recording also writes
+`recordings/{recordingId}/index.json`. This recording-local index contains
+lightweight entry, action, state, and proposal references. Action entries keep
+`stateAtActionId`; state entries keep `stateRef`, optional `screenshotRef`, and
+visual coordinate-space metadata. New dehydrated snapshot entries also retain
+the original `stateSnapshotTimestamp` so queued timeline append time cannot
+replace capture time. State View opens use
+`get-recording-entry-state` or `get-state-snapshot` to resolve one explicit
+state snapshot from this index. If the link is missing, the UI reports the
+missing link and can call `repair-recording-state-index` only after explicit
+user confirmation and authorization; normal State View opening does not scan
+timelines or fall back to the first/nearest state in the browser.
+
+Recording index repair and open-state index refresh rebuild action-state links
+from the hydrated recording when necessary, so object-stored snapshots can
+contribute their real `StateSnapshot.timestamp`. During rebuild, Core recomputes
+the closest action-adjacent state by capture/event timestamp; a prior/current
+snapshot only beats a later snapshot when both are equally close. This prevents
+stale prior-state links from surviving after proposal regeneration or page
+refresh.
+
+Recording Flow proposal candidates and generated proposal nodes copy the
+indexed `ProposalNodeStateLink` from the recording index. `actionEntryId`
+remains the action identity; `stateSnapshotId`, `stateRef`, and optional
+`screenshotRef` are state navigation/provenance fields. Evidence arrays are
+supporting context and must not override the indexed action/state link.
+Likewise, `sourceObservationIds` are support/provenance context only; the web
+proposal adapter must not promote them into `timelineEntryId` or
+`actionEntryId` for State View navigation. State selections also keep their
+selected proposal node id so the State View model can bind the exact node
+context while rendering the exact indexed state snapshot. When proposal node
+metadata already contains `stateSnapshotId`, the web open-state request is a
+snapshot-id request; it does not also route through the action timeline entry.
+
+State View treats an exact `sourceId`, `stateSnapshotId`, or `timelineEntryId`
+request as strict. If that exact indexed source is not available yet, the view
+shows a missing-state message instead of rendering the first observed source in
+the recording. This prevents asynchronous open-state requests from flashing or
+settling on the first recording snapshot.
 
 Each generation request creates a new proposal attempt unless the caller
 explicitly supplies `replaceProposalId`. Replacement deletes only the selected
@@ -204,6 +250,11 @@ selected Flow or reviewed node definitions; raw evidence is never edited.
 Deleting a proposal removes its artifact documents and derived proposal folder
 without deleting the source recording. Deleting a recording deletes its session
 folder, derived evidence, and recording-owned proposals.
+
+Object pruning includes refs from live recording indexes before deleting
+unreferenced project objects. This keeps shared/live screenshots and state JSON
+safe while allowing deleted recording-owned objects to be removed without
+filesystem-wide guessing.
 
 When a connected client stops a recording, the client gateway finalizes the
 recording in the framework service. The web UI detects the

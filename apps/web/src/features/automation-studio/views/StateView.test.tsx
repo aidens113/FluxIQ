@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { AutomationStateView } from "./StateView";
 
 describe("AutomationStateView", () => {
-  it("opens an action state request on the nearest snapshot from the requested recording", () => {
+  it("opens an action state request from the indexed state source", () => {
+    const afterState = stateWithImage("snapshot.after", 1_040, "/after.png");
     const html = renderToStaticMarkup(
       <AutomationStateView
         input={{
@@ -12,7 +13,8 @@ describe("AutomationStateView", () => {
             id: "state.recording.target.action.click",
             recordingId: "recording.target",
             timelineEntryId: "action.click",
-            sourceId: "observed:recording.target:action.click",
+            sourceId: "observed:recording.target:snapshot.after",
+            stateSnapshotId: "snapshot.after",
             phase: "input"
           },
           selectedNode: { id: "node.click", label: "Click" },
@@ -35,12 +37,24 @@ describe("AutomationStateView", () => {
             timeline: [
               { id: "snapshot.before", type: "observation", observationType: "client.state_snapshot", timestamp: 100, payload: { state: stateWithImage("snapshot.before", 100, "/before.png") } },
               { id: "action.click", type: "action", actionType: "click", timestamp: 1_000 },
-              { id: "snapshot.after", type: "observation", observationType: "client.state_snapshot", timestamp: 1_040, payload: { state: stateWithImage("snapshot.after", 1_040, "/after.png") } }
+              { id: "snapshot.after", type: "observation", observationType: "client.state_snapshot", timestamp: 1_040, payload: { state: afterState } }
             ]
           }],
           timelines: [],
           runtimeSessions: [],
-          signals: []
+          signals: [],
+          indexedStateSources: [{
+            source: {
+              kind: "observed",
+              id: "observed:recording.target:snapshot.after",
+              label: "Recording target @ snapshot.after",
+              recordingId: "recording.target",
+              timelineEntryId: "snapshot.after",
+              stateSnapshotId: "snapshot.after",
+              timestamp: 1_040
+            } as any,
+            snapshot: afterState as any
+          }]
         }}
         setSelection={() => undefined}
       />
