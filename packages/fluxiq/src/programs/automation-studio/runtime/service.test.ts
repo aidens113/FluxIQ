@@ -928,6 +928,51 @@ describe("AutomationStudioService recording persistence", () => {
     })).resolves.toMatchObject({ resolved: null, reason: "Entry entry.missing is not indexed for recording recording.indexed-state-lookup." });
   });
 
+  it("resolves unlinked timeline events to the latest prior state snapshot", async () => {
+    await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
+    const service = new AutomationStudioService({
+      dataDir: tempRoot,
+      storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
+      seedFixture: false
+    });
+    const project = await service.createProject({ name: "Timeline event state lookup" });
+    const recording = await service.createRecording({
+      projectId: project.id,
+      recordingId: "recording.timeline-event-state",
+      initialState: { timestamp: 1, namespaces: {} }
+    });
+
+    await service.appendRecordingEvents({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entries: [
+        { id: "entry.state.before", type: "observation", observationType: "client.state_snapshot", timestamp: 10, payload: { state: stateFixture("state.before", 10, "Before") as unknown as JsonObject } },
+        { id: "entry.event.middle", type: "observation", observationType: "input.event", timestamp: 15, payload: { event: "middle" } },
+        { id: "entry.state.after", type: "observation", observationType: "client.state_snapshot", timestamp: 20, payload: { state: stateFixture("state.after", 20, "After") as unknown as JsonObject } },
+        { id: "entry.event.later", type: "observation", observationType: "input.event", timestamp: 25, payload: { event: "later" } }
+      ]
+    });
+
+    await expect(service.getRecordingEntryState({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entryId: "entry.event.middle",
+      includeState: true
+    })).resolves.toMatchObject({
+      resolved: { stateSnapshotId: "state.before" },
+      state: { id: "state.before" }
+    });
+    await expect(service.getRecordingEntryState({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entryId: "entry.event.later",
+      includeState: true
+    })).resolves.toMatchObject({
+      resolved: { stateSnapshotId: "state.after" },
+      state: { id: "state.after" }
+    });
+  });
+
   it("repairs stale prior-state links before indexed state lookup", async () => {
     await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
     const service = new AutomationStudioService({

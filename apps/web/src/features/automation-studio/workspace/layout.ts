@@ -31,6 +31,22 @@ export type AutomationSharedResizePartner = {
 export type AutomationDragSelectBox = { left: number; top: number; width: number; height: number };
 export type AutomationSnapRegion = "left" | "right" | "top" | "bottom";
 export type AutomationLayoutPreset = "single" | "two-columns" | "two-rows" | "main-sidebar" | "three-columns" | "quad";
+export type AutomationStrictMainLayoutPreset = "single" | "two-even" | "two-main-side" | "three-even" | "three-main-two" | "two-rows";
+export type AutomationWorkspaceRegion = "main" | "right" | "bottom";
+export type AutomationWorkspacePane = {
+  id: string;
+  activeViewId: string;
+  tabs: string[];
+};
+export type AutomationRightSidebarPrefs = {
+  activeViewId: string;
+  tabs: string[];
+  collapsed: boolean;
+};
+export type AutomationBottomDockPrefs = {
+  activeViewId: "recording-action-preview";
+  expanded: boolean;
+};
 export type AutomationLayoutPresetOption = {
   id: AutomationLayoutPreset;
   label: string;
@@ -38,11 +54,21 @@ export type AutomationLayoutPresetOption = {
   cells: Array<{ x: number; y: number; w: number; h: number }>;
 };
 export type AutomationWorkspacePrefs = {
+  layoutVersion: 2;
   windows: AutomationWorkspaceWindow[];
   activeWindowId: string;
+  activePaneId: string;
+  activeViewId: string;
   maximizedWindowId: string | null;
   sidebarWidth: number;
   inspectorWidth: number;
+  bottomTimelineHeight: number;
+  bottomTimelineCollapsed: boolean;
+  mainLayoutPreset: AutomationStrictMainLayoutPreset;
+  mainSplitRatios: number[];
+  panes: AutomationWorkspacePane[];
+  rightSidebar: AutomationRightSidebarPrefs;
+  bottomDock: AutomationBottomDockPrefs;
   utilityWindowsMigrated: boolean;
   rightSidebarCollapsed: boolean;
   viewStates: Record<string, Record<string, unknown>>;
@@ -57,6 +83,65 @@ export const automationLayoutPresetOptions: AutomationLayoutPresetOption[] = [
   { id: "quad", label: "Grid", title: "Four quadrant grid", cells: [{ x: 0, y: 0, w: 0.5, h: 0.5 }, { x: 0.5, y: 0, w: 0.5, h: 0.5 }, { x: 0, y: 0.5, w: 0.5, h: 0.5 }, { x: 0.5, y: 0.5, w: 0.5, h: 0.5 }] }
 ];
 
+export const automationStrictMainLayoutPresets: Array<{ id: AutomationStrictMainLayoutPreset; label: string; title: string }> = [
+  { id: "single", label: "Full", title: "One main editor pane" },
+  { id: "two-even", label: "1/2", title: "Two equal editor panes" },
+  { id: "two-main-side", label: "2/3", title: "Large editor plus side pane" },
+  { id: "three-even", label: "1/3", title: "Three equal editor panes" },
+  { id: "three-main-two", label: "1/2 + 1/4", title: "Large editor plus two side panes" },
+  { id: "two-rows", label: "Rows", title: "Two stacked editor panes" }
+];
+
+const bottomDockViewIds = new Set(["recording-action-preview"]);
+const rightSidebarViewIds = new Set(["global-inspector", "workspace-dock", "ai-assistant", "problems-view"]);
+export const automationBottomDockMinHeight = 165;
+export const automationBottomDockDefaultHeight = 220;
+export const automationBottomDockMaxHeight = 420;
+
+export function automationWorkspaceRegionForView(viewId: string): AutomationWorkspaceRegion {
+  if (bottomDockViewIds.has(viewId)) return "bottom";
+  if (rightSidebarViewIds.has(viewId)) return "right";
+  return "main";
+}
+
+export function automationMainPaneCount(preset: AutomationStrictMainLayoutPreset): number {
+  if (preset === "single") return 1;
+  if (preset === "three-even" || preset === "three-main-two") return 3;
+  return 2;
+}
+
+export function defaultAutomationMainSplitRatios(preset: AutomationStrictMainLayoutPreset): number[] {
+  if (preset === "two-main-side") return [0.67, 0.33];
+  if (preset === "three-even") return [1 / 3, 1 / 3, 1 / 3];
+  if (preset === "three-main-two") return [0.5, 0.25, 0.25];
+  if (preset === "two-rows") return [0.5, 0.5];
+  if (preset === "two-even") return [0.5, 0.5];
+  return [1];
+}
+
+export function normalizeAutomationMainSplitRatios(value: unknown, preset: AutomationStrictMainLayoutPreset): number[] {
+  const count = automationMainPaneCount(preset);
+  const fallback = defaultAutomationMainSplitRatios(preset);
+  if (!Array.isArray(value)) return fallback;
+  const raw = value.slice(0, count).map((item) => Number(item)).filter((item) => Number.isFinite(item) && item > 0.05);
+  if (raw.length !== count) return fallback;
+  const total = raw.reduce((sum, item) => sum + item, 0);
+  if (total <= 0) return fallback;
+  return raw.map((item) => item / total);
+}
+
+export function defaultAutomationWorkspacePanes(): AutomationWorkspacePane[] {
+  return [{ id: "pane-main-1", activeViewId: "policy-primary", tabs: ["policy-primary"] }];
+}
+
+export function defaultAutomationRightSidebarPrefs(collapsed = false): AutomationRightSidebarPrefs {
+  return { activeViewId: "global-inspector", tabs: ["global-inspector"], collapsed };
+}
+
+export function defaultAutomationBottomDockPrefs(expanded = false): AutomationBottomDockPrefs {
+  return { activeViewId: "recording-action-preview", expanded };
+}
+
 export function defaultAutomationWorkspaceWindows(): AutomationWorkspaceWindow[] {
   return [
     { id: "window-policy", activeViewId: "policy-primary", tabs: ["policy-primary"], area: "main", xPct: 0, yPct: 0, widthPct: 100, heightPct: 100, zIndex: 1 },
@@ -66,11 +151,21 @@ export function defaultAutomationWorkspaceWindows(): AutomationWorkspaceWindow[]
 
 export function defaultAutomationWorkspacePrefs(): AutomationWorkspacePrefs {
   return {
+    layoutVersion: 2,
     windows: defaultAutomationWorkspaceWindows(),
     activeWindowId: "window-policy",
+    activePaneId: "pane-main-1",
+    activeViewId: "policy-primary",
     maximizedWindowId: null,
     sidebarWidth: 280,
     inspectorWidth: 320,
+    bottomTimelineHeight: automationBottomDockDefaultHeight,
+    bottomTimelineCollapsed: true,
+    mainLayoutPreset: "single",
+    mainSplitRatios: [1],
+    panes: defaultAutomationWorkspacePanes(),
+    rightSidebar: defaultAutomationRightSidebarPrefs(false),
+    bottomDock: defaultAutomationBottomDockPrefs(false),
     utilityWindowsMigrated: true,
     rightSidebarCollapsed: false,
     viewStates: {}
@@ -79,6 +174,7 @@ export function defaultAutomationWorkspacePrefs(): AutomationWorkspacePrefs {
 
 export function normalizeAutomationWorkspacePrefs(value: AutomationWorkspacePrefs): AutomationWorkspacePrefs {
   const fallback = defaultAutomationWorkspacePrefs();
+  const sourceValue = value as AutomationWorkspacePrefs & Partial<Record<keyof AutomationWorkspacePrefs, unknown>>;
   const legacyColumnWidths = (value as AutomationWorkspacePrefs & { columnWidths?: number[] }).columnWidths;
   const sourceWindows = Array.isArray(value.windows) ? value.windows : fallback.windows;
   const normalizedWindows = sourceWindows
@@ -125,17 +221,139 @@ export function normalizeAutomationWorkspacePrefs(value: AutomationWorkspacePref
       ...utilityMigrationWindows.map((item, index) => ({ ...item, zIndex: nextAutomationZIndex(normalizedWindows) + index }))
     ]
     : normalizedWindows;
+  const rightSidebarCollapsed = Boolean(value.rightSidebarCollapsed ?? value.rightSidebar?.collapsed);
+  const mainLayoutPreset = normalizeAutomationStrictMainLayoutPreset(sourceValue.mainLayoutPreset, windows);
+  const panes = normalizeAutomationWorkspacePanes(sourceValue.panes, windows, value.activeWindowId, mainLayoutPreset);
+  const activePaneId = panes.some((item) => item.id === value.activePaneId)
+    ? value.activePaneId
+    : panes.find((item) => item.tabs.includes(String(value.activeViewId ?? "")))?.id ?? panes[0]?.id ?? "";
+  const activePane = panes.find((item) => item.id === activePaneId) ?? panes[0];
+  const activeViewId = activePane?.activeViewId ?? fallback.activeViewId;
+  const rightSidebar = normalizeAutomationRightSidebarPrefs(sourceValue.rightSidebar, windows, rightSidebarCollapsed);
+  const bottomDock = normalizeAutomationBottomDockPrefs(sourceValue.bottomDock, windows);
   return {
     ...fallback,
     ...value,
+    layoutVersion: 2,
     windows,
     activeWindowId: windows.some((item) => item.id === value.activeWindowId) ? value.activeWindowId : windows[0]?.id ?? "",
+    activePaneId,
+    activeViewId,
     maximizedWindowId: value.maximizedWindowId && windows.some((item) => item.id === value.maximizedWindowId) ? value.maximizedWindowId : null,
     sidebarWidth: clampNumber(value.sidebarWidth, 220, 420, fallback.sidebarWidth),
     inspectorWidth: clampNumber(value.inspectorWidth, 260, 620, fallback.inspectorWidth),
+    bottomTimelineHeight: clampNumber(value.bottomTimelineHeight, automationBottomDockMinHeight, automationBottomDockMaxHeight, fallback.bottomTimelineHeight),
+    bottomTimelineCollapsed: Boolean(value.bottomTimelineCollapsed ?? !bottomDock.expanded),
+    mainLayoutPreset,
+    mainSplitRatios: normalizeAutomationMainSplitRatios(sourceValue.mainSplitRatios, mainLayoutPreset),
+    panes,
+    rightSidebar,
+    bottomDock,
     utilityWindowsMigrated: true,
-    rightSidebarCollapsed: Boolean(value.rightSidebarCollapsed),
+    rightSidebarCollapsed,
     viewStates: value.viewStates && typeof value.viewStates === "object" && !Array.isArray(value.viewStates) ? value.viewStates : {}
+  };
+}
+
+function normalizeAutomationStrictMainLayoutPreset(value: unknown, windows: AutomationWorkspaceWindow[]): AutomationStrictMainLayoutPreset {
+  if (value === "single" || value === "two-even" || value === "two-main-side" || value === "three-even" || value === "three-main-two" || value === "two-rows") return value;
+  const mainWindowCount = windows.filter((item) => (item.area ?? "main") === "main" && item.tabs.some((tab) => automationWorkspaceRegionForView(tab) === "main")).length;
+  if (mainWindowCount >= 3) return "three-main-two";
+  if (mainWindowCount === 2) return "two-main-side";
+  return "single";
+}
+
+function normalizeAutomationWorkspacePanes(
+  candidatePanes: unknown,
+  windows: AutomationWorkspaceWindow[],
+  activeWindowId: string,
+  preset: AutomationStrictMainLayoutPreset
+): AutomationWorkspacePane[] {
+  const fromPanes = Array.isArray(candidatePanes)
+    ? candidatePanes.map((item, index) => normalizePaneCandidate(item, index)).filter((item): item is AutomationWorkspacePane => Boolean(item))
+    : [];
+  const sourcePanes = fromPanes.length ? fromPanes : windows
+    .filter((item) => (item.area ?? "main") === "main")
+    .sort((left, right) => {
+      if (left.id === activeWindowId) return -1;
+      if (right.id === activeWindowId) return 1;
+      return (left.zIndex ?? 0) - (right.zIndex ?? 0) || left.id.localeCompare(right.id);
+    })
+    .map((item, index) => {
+      const tabs = uniqueMainTabs(item.tabs);
+      const activeViewId = tabs.includes(item.activeViewId) ? item.activeViewId : tabs[0] ?? "";
+      return tabs.length ? { id: `pane-main-${index + 1}`, activeViewId, tabs } : null;
+    })
+    .filter((item): item is AutomationWorkspacePane => Boolean(item));
+  const sanitized = sourcePanes
+    .map((item, index) => {
+      const tabs = uniqueMainTabs(item.tabs);
+      if (!tabs.length) return null;
+      return {
+        id: item.id || `pane-main-${index + 1}`,
+        activeViewId: tabs.includes(item.activeViewId) ? item.activeViewId : tabs[0]!,
+        tabs
+      };
+    })
+    .filter((item): item is AutomationWorkspacePane => Boolean(item));
+  const fallback = defaultAutomationWorkspacePanes();
+  const count = automationMainPaneCount(preset);
+  const base = sanitized.length ? sanitized : fallback;
+  const panes = base.slice(0, count);
+  const extras = base.slice(count).flatMap((item) => item.tabs);
+  while (panes.length < count) {
+    const fallbackPane = fallback[0]!;
+    panes.push({ id: `pane-main-${panes.length + 1}`, activeViewId: fallbackPane.activeViewId, tabs: [...fallbackPane.tabs] });
+  }
+  if (extras.length && panes.length) {
+    const last = panes[panes.length - 1]!;
+    const tabs = [...last.tabs, ...extras.filter((tab) => !last.tabs.includes(tab))];
+    panes[panes.length - 1] = { ...last, tabs, activeViewId: tabs.includes(last.activeViewId) ? last.activeViewId : tabs[0]! };
+  }
+  return panes.map((item, index) => ({ ...item, id: item.id || `pane-main-${index + 1}` }));
+}
+
+function normalizePaneCandidate(item: unknown, index: number): AutomationWorkspacePane | null {
+  if (!item || typeof item !== "object") return null;
+  const source = item as Partial<AutomationWorkspacePane>;
+  const tabs = uniqueMainTabs(source.tabs ?? []);
+  if (!tabs.length) return null;
+  return {
+    id: String(source.id ?? `pane-main-${index + 1}`),
+    activeViewId: tabs.includes(String(source.activeViewId ?? "")) ? String(source.activeViewId) : tabs[0]!,
+    tabs
+  };
+}
+
+function uniqueMainTabs(tabs: unknown): string[] {
+  if (!Array.isArray(tabs)) return [];
+  return tabs
+    .map((tab) => String(tab))
+    .filter((tab) => tab && automationWorkspaceRegionForView(tab) === "main")
+    .filter((tab, index, allTabs) => allTabs.indexOf(tab) === index);
+}
+
+function normalizeAutomationRightSidebarPrefs(value: unknown, windows: AutomationWorkspaceWindow[], collapsed: boolean): AutomationRightSidebarPrefs {
+  const source = value && typeof value === "object" ? value as Partial<AutomationRightSidebarPrefs> : {};
+  const fromWindows = windows.flatMap((item) => item.tabs).filter((tab) => automationWorkspaceRegionForView(tab) === "right");
+  const tabs = [
+    ...(Array.isArray(source.tabs) ? source.tabs.map((tab) => String(tab)) : []),
+    ...fromWindows,
+    "global-inspector"
+  ].filter((tab, index, allTabs) => automationWorkspaceRegionForView(tab) === "right" && allTabs.indexOf(tab) === index);
+  return {
+    activeViewId: tabs.includes(String(source.activeViewId ?? "")) ? String(source.activeViewId) : "global-inspector",
+    tabs,
+    collapsed
+  };
+}
+
+function normalizeAutomationBottomDockPrefs(value: unknown, windows: AutomationWorkspaceWindow[]): AutomationBottomDockPrefs {
+  const source = value && typeof value === "object" ? value as Partial<AutomationBottomDockPrefs> : {};
+  const hasTimeline = windows.some((item) => item.tabs.includes("timeline-recording") || item.activeViewId === "timeline-recording");
+  return {
+    activeViewId: "recording-action-preview",
+    expanded: Boolean(source.expanded ?? hasTimeline)
   };
 }
 

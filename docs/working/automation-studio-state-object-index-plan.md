@@ -379,10 +379,13 @@ metadata: {
 ```text
 double-click timeline clip
   -> get-recording-entry-state(projectId, recordingId, entryId)
+  -> Core resolves entry.stateSnapshotId, action stateAtActionId, or the latest
+     indexed state snapshot at or before the entry timestamp/sequence
   -> open State View with resolved stateSnapshotId
 ```
 
-No UI code should compute nearest snapshots.
+No UI code should compute nearest snapshots or latest prior state. Timeline
+"state as of event" resolution is an indexed Core lookup.
 
 ### From Proposal Node
 

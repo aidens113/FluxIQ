@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveObservedStateEntryId } from "./AutomationStudioLive";
+import { resolveActionPreviewEntryId, resolveObservedStateEntryId } from "./AutomationStudioLive";
 
 describe("AutomationStudioLive state opening", () => {
   it("resolves action timeline entries to the exact action-adjacent state snapshot", () => {
@@ -45,5 +45,32 @@ describe("AutomationStudioLive state opening", () => {
     };
 
     expect(resolveObservedStateEntryId(recording, "entry.state.target")).toBe("entry.state.target");
+  });
+
+  it("resolves state snapshot entries to the corresponding action preview entry", () => {
+    const recording = {
+      timeline: [{
+        id: "entry.action.target",
+        type: "action",
+        startedAt: 500,
+        timestamp: 500
+      }, {
+        id: "entry.state.target",
+        type: "observation",
+        observationType: "client.state_snapshot",
+        timestamp: 510,
+        payload: { metadata: { eventTimestampMs: 510 } }
+      }]
+    };
+
+    expect(resolveActionPreviewEntryId(recording, "entry.state.target")).toBe("entry.action.target");
+  });
+
+  it("keeps action entries as action preview entries", () => {
+    const recording = {
+      timeline: [{ id: "entry.action.target", type: "domain_event", timestamp: 500 }]
+    };
+
+    expect(resolveActionPreviewEntryId(recording, "entry.action.target")).toBe("entry.action.target");
   });
 });

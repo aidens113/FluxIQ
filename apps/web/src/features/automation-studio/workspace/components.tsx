@@ -4,7 +4,7 @@ import { Columns3, Maximize2, Minimize2, Plus, RefreshCcw, XCircle } from "lucid
 import type { MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import type { Blocks } from "lucide-react";
 import type { AutomationViewInstance } from "../types";
-import { automationLayoutPresetOptions, defaultAutomationWorkspacePrefs, type AutomationLayoutPickerState, type AutomationLayoutPreset, type AutomationLayoutPresetOption, type AutomationWindowAdderState, type AutomationWindowResizeEdge, type AutomationWorkspaceArea, type AutomationWorkspacePrefs } from "./layout";
+import { automationBottomDockMaxHeight, automationBottomDockMinHeight, automationLayoutPresetOptions, automationStrictMainLayoutPresets, defaultAutomationMainSplitRatios, defaultAutomationWorkspacePrefs, type AutomationLayoutPickerState, type AutomationLayoutPreset, type AutomationLayoutPresetOption, type AutomationWindowAdderState, type AutomationWindowResizeEdge, type AutomationWorkspaceArea, type AutomationWorkspacePrefs, type AutomationStrictMainLayoutPreset } from "./layout";
 
 export function viewTitle(view: AutomationViewInstance): string {
   if (view.type === "design") return "Flow Editor";
@@ -131,7 +131,12 @@ export function automationWindowDescription(view: AutomationViewInstance): strin
 }
 
 export function AutomationWorkspacePreferences(props: { prefs: AutomationWorkspacePrefs; setPrefs(updater: (current: AutomationWorkspacePrefs) => AutomationWorkspacePrefs): void }) {
-  const setNumber = (key: "sidebarWidth" | "inspectorWidth", value: number) => props.setPrefs((current) => ({ ...current, [key]: value }));
+  const setNumber = (key: "sidebarWidth" | "inspectorWidth" | "bottomTimelineHeight", value: number) => props.setPrefs((current) => ({ ...current, [key]: value }));
+  const setPreset = (preset: AutomationStrictMainLayoutPreset) => props.setPrefs((current) => ({
+    ...current,
+    mainLayoutPreset: preset,
+    mainSplitRatios: defaultAutomationMainSplitRatios(preset)
+  }));
   const resetLayout = () => props.setPrefs(() => defaultAutomationWorkspacePrefs());
   return (
     <section className="automation-preferences-panel">
@@ -141,12 +146,27 @@ export function AutomationWorkspacePreferences(props: { prefs: AutomationWorkspa
       </header>
       <div className="automation-preference-group">
         <strong>Frame</strong>
-        <PreferenceSlider label="Sidebar" max={420} min={220} unit="px" value={props.prefs.sidebarWidth} onChange={(value) => setNumber("sidebarWidth", value)} />
-        <PreferenceSlider label="Right area" max={620} min={260} unit="px" value={props.prefs.inspectorWidth} onChange={(value) => setNumber("inspectorWidth", value)} />
+        <PreferenceSlider label="Left hierarchy" max={420} min={220} unit="px" value={props.prefs.sidebarWidth} onChange={(value) => setNumber("sidebarWidth", value)} />
+        <PreferenceSlider label="Right inspector" max={620} min={260} unit="px" value={props.prefs.inspectorWidth} onChange={(value) => setNumber("inspectorWidth", value)} />
       </div>
       <div className="automation-preference-group">
-        <strong>Window Canvas</strong>
-        <p className="muted-text">Drag window title bars to move panes. Drag edges or corners to resize them. Reset restores the default single-window layout.</p>
+        <strong>Main Editor</strong>
+        <label className="automation-preference-row">
+          <span>Preset</span>
+          <select value={props.prefs.mainLayoutPreset} onChange={(event) => setPreset(event.target.value as AutomationStrictMainLayoutPreset)}>
+            {automationStrictMainLayoutPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.label} - {preset.title}</option>)}
+          </select>
+          <output>{props.prefs.mainLayoutPreset}</output>
+        </label>
+      </div>
+      <div className="automation-preference-group">
+        <strong>Timeline Dock</strong>
+        <PreferenceSlider label="Height" max={automationBottomDockMaxHeight} min={automationBottomDockMinHeight} unit="px" value={props.prefs.bottomTimelineHeight} onChange={(value) => setNumber("bottomTimelineHeight", value)} />
+        <label className="automation-preference-row">
+          <span>Collapsed</span>
+          <input checked={props.prefs.bottomTimelineCollapsed} onChange={(event) => props.setPrefs((current) => ({ ...current, bottomTimelineCollapsed: event.target.checked, bottomDock: { ...current.bottomDock, expanded: !event.target.checked } }))} type="checkbox" />
+          <output>{props.prefs.bottomTimelineCollapsed ? "Hidden" : "Visible"}</output>
+        </label>
       </div>
     </section>
   );
@@ -168,7 +188,11 @@ export function AutomationViewContainer(props: {
   canPageFullscreen: boolean;
   children: ReactNode;
   icon: typeof Blocks;
+  frameLabel?: string;
+  movable?: boolean;
   pageFullscreen: boolean;
+  resizable?: boolean;
+  showResetSize?: boolean;
   tabs: AutomationViewInstance[];
   windowId: string;
   windowIndex: number;
@@ -185,12 +209,16 @@ export function AutomationViewContainer(props: {
   onTabSelect(viewId: string): void;
 }) {
   const Icon = props.icon;
+  const frameLabel = props.frameLabel ?? "Window";
+  const movable = props.movable ?? true;
+  const resizable = props.resizable ?? true;
+  const showResetSize = props.showResetSize ?? true;
   return (
     <section className={props.active ? "automation-view-container active" : "automation-view-container"} data-automation-window-id={props.windowId} onMouseDown={props.onActivate}>
-      <header onPointerDown={props.onMoveStart}>
+      <header className={movable ? "" : "not-movable"} onPointerDown={movable ? props.onMoveStart : undefined}>
         <div>
           <Icon size={15} aria-hidden />
-          <span><strong>{props.title}</strong><small>Window {props.windowIndex + 1} - {props.subtitle}</small></span>
+          <span><strong>{props.title}</strong><small>{frameLabel} {props.windowIndex + 1} - {props.subtitle}</small></span>
         </div>
         <div className="automation-pane-actions">
           <button className="icon-button" onClick={(event) => { event.stopPropagation(); props.onAddTab(event); }} title="Add tab" aria-label="Add tab" type="button"><Plus size={13} aria-hidden /></button>
@@ -204,7 +232,7 @@ export function AutomationViewContainer(props: {
             aria-label={props.pageFullscreen ? "Exit full page" : "Fill page"}
             type="button"
           >{props.pageFullscreen ? <Minimize2 size={13} aria-hidden /> : <Maximize2 size={13} aria-hidden />}</button> : null}
-          <button className="icon-button" onClick={(event) => { event.stopPropagation(); props.onResetSize(); }} title="Reset window size" aria-label="Reset window size" type="button"><RefreshCcw size={13} aria-hidden /></button>
+          {showResetSize ? <button className="icon-button" onClick={(event) => { event.stopPropagation(); props.onResetSize(); }} title="Reset window size" aria-label="Reset window size" type="button"><RefreshCcw size={13} aria-hidden /></button> : null}
           <button className="icon-button" onClick={(event) => { event.stopPropagation(); props.onClose(); }} title="Close window" aria-label="Close window" type="button"><XCircle size={13} aria-hidden /></button>
         </div>
       </header>
@@ -221,14 +249,16 @@ export function AutomationViewContainer(props: {
         })}
       </div>
       <div className="automation-view-body">{props.children}</div>
-      <button className="automation-window-resize-edge top" onPointerDown={(event) => props.onResizeStart("north", event)} title="Resize height" aria-label="Resize height from top" type="button" />
-      <button className="automation-window-resize-edge right" onPointerDown={(event) => props.onResizeStart("east", event)} title="Resize width" aria-label="Resize width from right" type="button" />
-      <button className="automation-window-resize-edge bottom" onPointerDown={(event) => props.onResizeStart("south", event)} title="Resize height" aria-label="Resize height from bottom" type="button" />
-      <button className="automation-window-resize-edge left" onPointerDown={(event) => props.onResizeStart("west", event)} title="Resize width" aria-label="Resize width from left" type="button" />
-      <button className="automation-window-resize-corner top-left" onPointerDown={(event) => props.onResizeStart("north-west", event)} title="Resize window" aria-label="Resize window from top left" type="button" />
-      <button className="automation-window-resize-corner top-right" onPointerDown={(event) => props.onResizeStart("north-east", event)} title="Resize window" aria-label="Resize window from top right" type="button" />
-      <button className="automation-window-resize-corner bottom-left" onPointerDown={(event) => props.onResizeStart("south-west", event)} title="Resize window" aria-label="Resize window from bottom left" type="button" />
-      <button className="automation-window-resize-corner bottom-right" onPointerDown={(event) => props.onResizeStart("south-east", event)} title="Resize window" aria-label="Resize window from bottom right" type="button" />
+      {resizable ? <>
+        <button className="automation-window-resize-edge top" onPointerDown={(event) => props.onResizeStart("north", event)} title="Resize height" aria-label="Resize height from top" type="button" />
+        <button className="automation-window-resize-edge right" onPointerDown={(event) => props.onResizeStart("east", event)} title="Resize width" aria-label="Resize width from right" type="button" />
+        <button className="automation-window-resize-edge bottom" onPointerDown={(event) => props.onResizeStart("south", event)} title="Resize height" aria-label="Resize height from bottom" type="button" />
+        <button className="automation-window-resize-edge left" onPointerDown={(event) => props.onResizeStart("west", event)} title="Resize width" aria-label="Resize width from left" type="button" />
+        <button className="automation-window-resize-corner top-left" onPointerDown={(event) => props.onResizeStart("north-west", event)} title="Resize window" aria-label="Resize window from top left" type="button" />
+        <button className="automation-window-resize-corner top-right" onPointerDown={(event) => props.onResizeStart("north-east", event)} title="Resize window" aria-label="Resize window from top right" type="button" />
+        <button className="automation-window-resize-corner bottom-left" onPointerDown={(event) => props.onResizeStart("south-west", event)} title="Resize window" aria-label="Resize window from bottom left" type="button" />
+        <button className="automation-window-resize-corner bottom-right" onPointerDown={(event) => props.onResizeStart("south-east", event)} title="Resize window" aria-label="Resize window from bottom right" type="button" />
+      </> : null}
     </section>
   );
 }

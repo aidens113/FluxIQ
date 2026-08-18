@@ -127,6 +127,7 @@ import {
   emptyRecordingIndex,
   recordingIndexStateObjectRefs,
   sortRecordingIndex,
+  type RecordingEntryIndexItem,
   type RecordingIndex as RecordingStateIndex,
   type RecordingStateIndexItem
 } from "../storage/state-index.ts";
@@ -4706,9 +4707,35 @@ function resolveRecordingStateIndexItem(index: RecordingStateIndex, input: Recor
       const state = action?.stateAtActionId ? index.states[action.stateAtActionId] : undefined;
       if (state) return { state, reason: "" };
     }
+    const priorState = latestStateAtOrBeforeEntry(index, entry);
+    if (priorState) return { state: priorState, reason: "" };
     return { reason: `Entry ${input.entryId} has no linked state snapshot.` };
   }
   return { reason: "State lookup requires stateSnapshotId, actionId, or entryId." };
+}
+
+function latestStateAtOrBeforeEntry(index: RecordingStateIndex, entry: RecordingEntryIndexItem): RecordingStateIndexItem | undefined {
+  const targetTime = firstFiniteNumber(entry.startedAt, entry.timestamp, entry.completedAt, entry.monotonicOffsetMs);
+  const targetSequence = entry.sequence;
+  const states = Object.values(index.states).filter((state) => {
+    const stateEntry = index.entries[state.entryId];
+    if (targetTime !== undefined) {
+      const stateTime = firstFiniteNumber(state.timestamp, stateEntry?.timestamp, stateEntry?.startedAt, state.monotonicOffsetMs, stateEntry?.monotonicOffsetMs);
+      if (stateTime !== undefined) return stateTime <= targetTime;
+    }
+    return targetSequence !== undefined && stateEntry?.sequence !== undefined && stateEntry.sequence <= targetSequence;
+  });
+  return states.sort((left, right) => {
+    const leftEntry = index.entries[left.entryId];
+    const rightEntry = index.entries[right.entryId];
+    const leftTime = firstFiniteNumber(left.timestamp, leftEntry?.timestamp, leftEntry?.startedAt, left.monotonicOffsetMs, leftEntry?.monotonicOffsetMs) ?? Number.NEGATIVE_INFINITY;
+    const rightTime = firstFiniteNumber(right.timestamp, rightEntry?.timestamp, rightEntry?.startedAt, right.monotonicOffsetMs, rightEntry?.monotonicOffsetMs) ?? Number.NEGATIVE_INFINITY;
+    if (leftTime !== rightTime) return rightTime - leftTime;
+    const leftSequence = leftEntry?.sequence ?? Number.NEGATIVE_INFINITY;
+    const rightSequence = rightEntry?.sequence ?? Number.NEGATIVE_INFINITY;
+    if (leftSequence !== rightSequence) return rightSequence - leftSequence;
+    return right.stateSnapshotId.localeCompare(left.stateSnapshotId);
+  })[0];
 }
 
 function proposalNodeStateLinkFromIndex(index: RecordingStateIndex, actionEntryId: string): RecordingFlowActionCandidate["stateLink"] | undefined {

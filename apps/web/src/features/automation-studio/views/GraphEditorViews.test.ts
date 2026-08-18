@@ -92,7 +92,8 @@ describe("Automation Studio workspace dock", () => {
     );
 
     expect(html).toContain("State View");
-    expect(html).toContain("Node State: Deposit");
+    expect(html).toContain("No state source");
+    expect(html).not.toContain("Node State: Deposit");
     expect(html).not.toContain("State Signals");
   });
 });

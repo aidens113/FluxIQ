@@ -28,7 +28,7 @@ apps/web/src/features/automation-studio/
   views/                     Named workspace pane modules: renderer, timeline, proposal,
                              state, client/config/assistant, graph editors, workspaces, inspector,
                              dock, and shared view utilities.
-  workspace/                 Inner-window desktop components, defaults, geometry, snapping, and layout math.
+  workspace/                 Strict workbench layout, pane/sidebar/dock defaults, and sizing math.
 
 apps/web/src/features/programs/
   live-views.tsx             Compatibility export facade for non-Automation live workspaces.
@@ -40,7 +40,7 @@ apps/web/src/features/programs/
 ```
 
 `ProgramLiveViews.tsx` must remain a switchboard and must not grow program
-implementation logic. New inner-window behavior belongs in
+implementation logic. New workspace layout behavior belongs in
 `automation-studio/workspace/`; project organization UI belongs in
 `automation-studio/hierarchy/`; React Flow port, edge, node, layout, and
 connection rules belong in `automation-studio/graph/`; timeline interpretation
@@ -76,9 +76,9 @@ decision, approval, recovery, end, and custom extension nodes. Routine views do
 not expose recording, evidence, or state-signal layers.
 
 The single Flow editor is the editable graph canvas. Supporting views such as
-timeline, signals, recordings, runtime, problems, assistant, state explorer,
-proposal review, and inspector remain ordinary addable windows. The node
-palette is the exception: it stays embedded as the
+signals, recordings, runtime, problems, assistant, state explorer, proposal
+review, and inspector are routed into fixed workbench regions rather than
+arbitrary floating windows. The node palette stays embedded as the
 collapsible right rail inside the policy/routine node editor because it is part
 of direct node editing, not a separate workspace window. Legacy Task/Routine
 documents may still open through a clearly marked read-only compatibility view,
@@ -91,11 +91,11 @@ The Flow catalog endpoint reads current proposal warning status but does not
 revalidate every recording-derived proposal during sidebar load; deeper
 proposal/pipeline views own that heavier validation work.
 
-The recording timeline window follows a video-editor-style horizontal layout.
+The recording timeline dock follows a video-editor-style horizontal layout.
 Recording selection belongs to the project hierarchy sidebar under the
 Recordings root. Recording rows are auto-grouped by client folder, and each
 recording child is labeled by its recording start date/time. The timeline
-window itself is the editor/review surface for the selected recording: it has
+dock itself is the editor/review surface for the selected recording: it has
 selected-recording controls, a selected-event detail strip above the editor,
 lane labels, horizontally and vertically scrollable clips, and a compact
 overview strip below the editor. Clicking an overview preview snaps the editor
@@ -461,36 +461,63 @@ slices should add deeper routine editing, command palette support,
 lockable synchronized views, provenance overlays, and history/change tracking
 without collapsing these concerns into one generic dashboard.
 
-The current web shell implements the first workspace foundation pass:
+The current web shell uses a stricter workbench layout:
 
-- a main command bar for undo, redo, save, record, run, pause, stop, step, and
-  debug commands;
-- editor-style view instance tabs rather than a single mode switcher;
+```text
+left hierarchy | main editor panes | right inspector
+               | bottom action preview dock
+```
+
+The shell provides:
+
+- a top workbar for project and workspace actions;
 - a searchable project hierarchy with real folder rows and object-type visual
-  treatment for tasks, routines, folders, and configurations;
-- a default side-by-side task workspace with policy graph on the left and
-  timeline on the right;
-- reusable view containers with direct move, resize, reset, and close controls;
-- a contextual right inspector organized into schema-like sections with value
-  provenance.
+  treatment for flows, recordings, proposals, folders, tasks, routines, and
+  configurations;
+- preset main editor panes for Flow, Recording Timeline, Proposal, Proposal
+  Generator, State View, configuration, runtime, runs, clients, signals, and
+  debug surfaces;
+- a fixed right sidebar for the global inspector and utility tabs;
+- a fixed bottom dock for selected-recording action preview.
 
-The workspace shell now treats these as interactive editor systems rather than
-static placeholders. Subwindows own their own tabs and the top workbar no
-longer opens every view by default. The default task/routine workspace starts
-with a single policy graph tab. A single project-tree click previews the
-corresponding view in the active subwindow; a double click opens that view in a
-new subwindow. Subwindows and tabs can be closed, reset to default size, moved
-by dragging the title bar, resized directly from any side or corner, and
-assigned independent canvas geometry.
+The main editor is no longer a draggable inner-window desktop. Pane slots are
+chosen from presets such as full, halves, large-plus-side, three-pane, and two
+rows. Users can resize split handles to persist editor ratios, but panes do not
+overlap, stack by z-index, or move by dragging title bars. A pane owns a tab
+strip; adding a view adds it to a pane slot rather than creating a floating
+subwindow.
 
-Subwindow chrome should stay minimal. Pinning, locking, and arbitrary maximize
-controls were removed from the window header. The current header actions are
-reset window size and close window; advanced layout changes belong in direct
-resizing, snap gestures, or topbar layout presets, not a per-window overflow
-menu.
-Workspace preferences should control frame-level dimensions such as sidebar and
-inspector sizes. Window layout itself belongs to direct manipulation inside the
-canvas.
+The right inspector is a fixed sidebar region. It can be resized horizontally,
+collapsed, and switched between utility tabs, but it does not float in the main
+workspace. The global inspector remains the default tab and follows the global
+selection for nodes, edges, signals, timeline entries, policies, recordings,
+state facts, and proposal steps.
+
+Recording review is split into two surfaces. The bottom dock is a lightweight
+action preview rail for the selected recording; it shows action/domain-event
+markers only, so high-frequency state observations do not crowd the preview.
+The rail uses compact markers and short labels to stay readable when resized
+small, while selected actions receive the strongest visual emphasis. Selecting
+a preview marker updates global selection, and explicit open-state actions
+route to the main State View using Core's indexed state lookup. The full
+Recording Timeline is a main editor view. It contains the complete event
+timeline, state observations, note/marker controls, proposal-generation entry
+points, and in-depth recording inspection. The action preview dock can be
+resized vertically or collapsed.
+
+View routing is fixed by region:
+
+- Recording selection shows the bottom action preview dock.
+- Timeline event selection updates global selection and inspector.
+- Opening a recording timeline opens the full Recording Timeline in the main
+  editor.
+- Generate Proposal opens Proposal Generator in the main editor, preferring a
+  secondary pane when a Flow is already open.
+- Opening an existing proposal opens Proposal Review in the main editor,
+  preferring a secondary pane when available.
+- Opening State opens State View in the main editor.
+- Inspector, AI Assistant, Problems, and Workspace Dock route to the right
+  sidebar.
 
 The left hierarchy editor is limited to recording-owned pipelines, folders,
 tasks, routines, configurations, and recordings. Interfaces are no longer
@@ -555,80 +582,23 @@ is intentionally global so later programs can use the same PIN authorization
 path for their own privileged edit or destructive actions.
 
 Project-owned state includes the custom hierarchy, deleted hierarchy IDs,
-subwindow tabs, active subwindow, maximized subwindow, sidebar width, right
-sidebar dimensions, and per-subwindow canvas geometry. The editor has two
-semi-hard inner-window areas: main and right sidebar. Each section is its own
-bounded desktop with its own add-window control, window placement, dragging,
-resizing, snapping, and layout behavior. The right sidebar spans the full editor
-height, can be resized horizontally, and can be collapsed. Collapsing the right
-sidebar must not mutate, minimize, or reflow the windows inside that section; it
-only hides or reveals the owning section.
-
-Inner-window sections are bounded desktops rather than scrollable pages, a
-fixed inspector layout, or a forced row grid. They do not scroll horizontally or
-vertically, and subwindows are clamped inside their owning inner-window region
-while moving, resizing, snapping, applying a layout preset, or when that section
-resizes. Full-size subwindows use their full visible section canvas without an
-extra inset, and child editor content must not force the shell to spill past its
-saved geometry. Each subwindow has saved `area`, `xPct`, `yPct`, `widthPct`,
-`heightPct`, and z-order values. Runtime drag, resize, snap, and preset math
-uses pixels for pointer accuracy, then normalizes the result back into owning
-section percentages before persistence. Older layouts that stored `x`, `y`,
-`widthPx`, and `heightPx` are migrated on load.
-
-Inspector and dock-style content are utility window views rather than fixed
-rails. The inspector is present in the default right sidebar, but can be moved,
-resized, closed, and reopened like any other inner window. The dedicated bottom
-bar has been removed to preserve main workspace height; saved legacy bottom-bar
-windows migrate into the main inner-window area. Each inner-window section has
-an add-window plus button; its palette groups editor, evidence, and tool windows
-with icon, name, and description so views that are not directly represented in
-the left project hierarchy can still be opened. Generic opens from the project
-hierarchy and selection-follow behavior target the main inner-window area. The
-only way to add new windows directly into the right sidebar is through that
-section's own plus button, and those windows fill the sidebar by default.
-Section resize grips remain above full-size inner windows so the right sidebar
-can still be resized while occupied.
-Each inner window also has its own plus button. That button opens the same view
-palette, but selecting a view adds it as a tab inside the existing window rather
-than creating another subwindow.
-When a new subwindow is opened, Automation Studio tries to fill remaining space
-to the right of the active window in the target section, then below it, and
-finally falls back to a clamped offset window inside that section.
-
-When two subwindow sides are close and their ranges overlap, dragging that side
-acts like a shared split boundary: the active window and the adjacent window
-resize together until either one reaches its minimum useful size or the canvas
-edge.
-
-Dragging a full-section subwindow restores it to a default floating size before
-moving, preserving the pointer's relative grab position so users can pull a
-maximized window out of fullscreen without first pressing reset.
-
-Dragging a subwindow to the left, right, top, bottom, or any corner of the
-inner-window region shows a snap preview. The snap is triggered by the mouse
-crossing the region threshold, and it only applies when the user releases the
-mouse. Left/right snaps fill half of the visible region horizontally, top/bottom
-snaps fill half vertically, and corner snaps maximize the dragged window to the
-full owning inner-window section.
-Each inner-window section header provides a layout widget beside the section
-controls. Section headers are icon-first and do not need visible section title
-text. The widget opens as a fixed floating panel, flipping left or upward when
-near the viewport edge. Presets apply only to windows inside that section,
-distributing extra windows within the selected regions instead of arranging only
-the active window. The main area exposes the broader layout set; the right
-sidebar exposes fullscreen and vertical 1:1 rows.
+strict pane tabs, active pane, active view, main layout preset, main split
+ratios, sidebar width, right inspector width/collapse state, bottom action
+preview height/collapse state, right-sidebar tabs, and per-view state. Older
+saved floating-window preferences normalize into the strict model on load:
+full timeline views remain main editor views, inspector/utility views move to
+the right sidebar, and remaining main views become deterministic pane slots.
 
 Workspace persistence is debounced and signature-based. Loading a project seeds
 the last-saved hierarchy signature, and `save-project-hierarchy` should only be
 sent after real hierarchy or workspace changes, not continuously for equivalent
 state.
-Workspace preferences include each inner window's active tab, geometry, active
-window, sidebar sizing, and a `viewStates` map keyed by view ID. A view state
+Workspace preferences include strict pane tabs, the active pane/view, region
+sizing, main split ratios, and a `viewStates` map keyed by view ID. A view state
 stores the last relevant selection context for that tab, plus view-local values
-such as the workspace dock subtab. Switching between inner-window tabs saves
-the outgoing view state and restores the incoming view state so timeline,
-proposal, inspector, and editor panes return to the item they were showing.
+such as the workspace dock subtab. Switching between tabs saves the outgoing
+view state and restores the incoming view state so proposal, inspector, state,
+timeline, and editor surfaces return to the item they were showing.
 Flow editor tabs render canonical Flow/policy data. Automation Studio does not
 maintain a hidden legacy Task graph in workspace preferences. Proposal review
 edits can still be cached in the project's `workspace/preferences.json` until

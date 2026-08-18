@@ -294,7 +294,7 @@ export function proposalNodeStateRequest(input: {
     ?? stringValue(input.proposal?.metadata?.recordingId)
     ?? stringValue(input.node?.data.metadata?.recordingId);
   const stateSnapshotId = stringValue(input.node?.data.metadata?.stateSnapshotId);
-  const timelineEntryId = stateSnapshotId ? undefined : firstStateTimelineEntryId(input.node, input.step);
+  const timelineEntryId = firstStateTimelineEntryId(input.node, input.step);
   const sourceId = stringValue(input.node?.data.metadata?.sourceId);
   const request = {
     ...(nodeId ? { nodeId } : {}),

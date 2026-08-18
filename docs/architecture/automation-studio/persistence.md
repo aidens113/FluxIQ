@@ -198,10 +198,14 @@ visual coordinate-space metadata. New dehydrated snapshot entries also retain
 the original `stateSnapshotTimestamp` so queued timeline append time cannot
 replace capture time. State View opens use
 `get-recording-entry-state` or `get-state-snapshot` to resolve one explicit
-state snapshot from this index. If the link is missing, the UI reports the
-missing link and can call `repair-recording-state-index` only after explicit
-user confirmation and authorization; normal State View opening does not scan
-timelines or fall back to the first/nearest state in the browser.
+state snapshot from this index. Timeline entry opens use the entry's direct
+state link when it exists; otherwise Core resolves the latest indexed state
+snapshot at or before that entry's timestamp/sequence. This lets arbitrary
+recording events, notes, markers, and domain observations open the state the
+bot had most recently seen at that point. If no prior indexed state exists, the
+UI reports the missing link and can call `repair-recording-state-index` only
+after explicit user confirmation and authorization; normal State View opening
+does not scan timelines or fall back to the first/nearest state in the browser.
 
 Recording index repair and open-state index refresh rebuild action-state links
 from the hydrated recording when necessary, so object-stored snapshots can
@@ -224,11 +228,13 @@ context while rendering the exact indexed state snapshot. When proposal node
 metadata already contains `stateSnapshotId`, the web open-state request is a
 snapshot-id request; it does not also route through the action timeline entry.
 
-State View treats an exact `sourceId`, `stateSnapshotId`, or `timelineEntryId`
-request as strict. If that exact indexed source is not available yet, the view
-shows a missing-state message instead of rendering the first observed source in
-the recording. This prevents asynchronous open-state requests from flashing or
-settling on the first recording snapshot.
+State View treats an exact `sourceId`, `stateSnapshotId`, or resolved
+`timelineEntryId` request as strict. For timeline entries without direct state
+links, the service first resolves an exact state snapshot by the "latest state
+at or before this entry" rule. If that resolved indexed source is not available
+yet, the view shows a missing-state message instead of rendering the first
+observed source in the recording. This prevents asynchronous open-state
+requests from flashing or settling on the first recording snapshot.
 
 Each generation request creates a new proposal attempt unless the caller
 explicitly supplies `replaceProposalId`. Replacement deletes only the selected

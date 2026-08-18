@@ -293,7 +293,7 @@ function flowSourcePath(flow: any): string {
 
 function inspectorStateNodeId(selection: AutomationSelection | null, node: any): string {
   if (selection?.kind === "editor-node" || selection?.kind === "node") return selection.id;
-  if (selection?.kind === "proposal-step") return selection.id;
+  if (selection?.kind === "proposal-step") return typeof node?.id === "string" ? node.id : selection.id;
   if (selection?.kind === "state" && selection.nodeId) return selection.nodeId;
   return typeof node?.id === "string" ? node.id : "";
 }

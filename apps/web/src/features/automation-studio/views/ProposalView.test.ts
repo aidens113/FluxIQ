@@ -217,7 +217,7 @@ describe("AutomationProposalView state linking", () => {
     });
 
     expect(request.stateSnapshotId).toBe("web.snapshot.linked");
-    expect(request.timelineEntryId).toBeUndefined();
+    expect(request.timelineEntryId).toBe("entry.action.linked");
   });
 
   it("does not use evidence entry IDs as state navigation", () => {

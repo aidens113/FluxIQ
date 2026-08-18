@@ -1,7 +1,8 @@
 "use client";
 
 import { CheckCircle2, CircleDot, Clock, FileText, Link2, RefreshCcw, Sparkles, Trash2 } from "lucide-react";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import type { MouseEvent, PointerEvent } from "react";
 import type { JsonObject } from "../../programs/program-api";
 import { StatusText } from "../../programs/shared-ui";
 import type { AutomationSelection, RecordingProcessingStatus } from "../types";
@@ -29,6 +30,7 @@ export function AutomationTimelineView(props: {
   setSelection(selection: AutomationSelection): void;
 }) {
   const timelineEditorRef = useRef<HTMLDivElement>(null);
+  const suppressOverviewClickRef = useRef(false);
   const noteById = useMemo(() => new Map(props.notes.map((note) => [note.id, note])), [props.notes]);
   const sortedEntries = useMemo(() => props.entries.filter((entry) => !isRejectedRecordingMarker(entry)).sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0) || (left.monotonicOffsetMs ?? 0) - (right.monotonicOffsetMs ?? 0)), [props.entries]);
   const totalMs = Math.max(0, ...sortedEntries.map((entry) => entry.monotonicOffsetMs ?? 0));
@@ -53,8 +55,7 @@ export function AutomationTimelineView(props: {
     : 0;
   const selectedIsNormalized = props.selectedRecording ? props.timelines.some((timeline) => timeline.recordingId === props.selectedRecording.recordingId) : false;
   const processing = props.selectedRecording && props.recordingProcessing?.recordingId === props.selectedRecording.recordingId ? props.recordingProcessing : null;
-  const selectPreviewStep = (entryId: string, index: number) => {
-    props.setSelection({ kind: "timeline", id: entryId });
+  const scrollToTimelineStep = (index: number, behavior: ScrollBehavior = "smooth") => {
     window.requestAnimationFrame(() => {
       const editor = timelineEditorRef.current;
       if (!editor) return;
@@ -66,10 +67,32 @@ export function AutomationTimelineView(props: {
       const maxScrollLeft = Math.max(0, editor.scrollWidth - editor.clientWidth);
       editor.scrollTo({
         left: Math.min(maxScrollLeft, Math.max(0, targetCenter - editor.clientWidth / 2)),
-        behavior: "smooth"
+        behavior
       });
     });
   };
+  const selectPreviewStep = (entryId: string, index: number) => {
+    if (suppressOverviewClickRef.current) {
+      suppressOverviewClickRef.current = false;
+      return;
+    }
+    props.setSelection({ kind: "timeline", id: entryId });
+    scrollToTimelineStep(index);
+  };
+  const handleOverviewPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    suppressOverviewClickRef.current = event.clientY >= bounds.bottom - 18;
+  };
+  const handleOverviewClickCapture = (event: MouseEvent<HTMLDivElement>) => {
+    if (!suppressOverviewClickRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    suppressOverviewClickRef.current = false;
+  };
+  useEffect(() => {
+    if (selectedStepIndex < 0) return;
+    scrollToTimelineStep(selectedStepIndex);
+  }, [selectedStepIndex]);
   return (
     <section className="automation-timeline-view">
       <header className="automation-timeline-toolbar">
@@ -145,7 +168,11 @@ export function AutomationTimelineView(props: {
         </div>
         <footer className="automation-timeline-overview">
           <span>0ms</span>
-          <div style={{ gridTemplateColumns: `repeat(${Math.max(1, timelineSteps.length)}, minmax(18px, 1fr))` }}>
+          <div
+            onClickCapture={handleOverviewClickCapture}
+            onPointerDown={handleOverviewPointerDown}
+            style={{ gridTemplateColumns: `repeat(${Math.max(1, timelineSteps.length)}, minmax(18px, 1fr))` }}
+          >
             {timelineSteps.map((step, index) => (
               <button
                 className={props.selectedEntry?.id === step.entry.id ? `selected ${step.entry.type}` : step.entry.type}
@@ -166,7 +193,13 @@ export function AutomationTimelineView(props: {
 function TimelineClip(props: { entry: any; index: number; note?: any; selected: boolean; onOpenState(): void; onSelect(): void }) {
   const Icon = timelineEntryIcon(props.entry.type);
   return (
-    <button className={props.selected ? `automation-timeline-clip selected ${props.entry.type}` : `automation-timeline-clip ${props.entry.type}`} onClick={props.onSelect} onDoubleClick={props.onOpenState} type="button">
+    <button
+      className={props.selected ? `automation-timeline-clip selected ${props.entry.type}` : `automation-timeline-clip ${props.entry.type}`}
+      onClick={props.onSelect}
+      onDoubleClick={props.onOpenState}
+      onMouseDown={(event) => event.stopPropagation()}
+      type="button"
+    >
       <span><Icon size={13} aria-hidden />{props.index + 1}</span>
       <strong>{timelineEntryTitle(props.entry, props.note)}</strong>
       <small>{props.note?.text ?? timelineEntrySummary(props.entry)}</small>

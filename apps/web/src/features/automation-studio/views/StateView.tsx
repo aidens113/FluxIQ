@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Braces, GitCompare, ImageIcon, ListChecks, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
+import { AlertCircle, ImageIcon, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, KeyboardEvent } from "react";
 import type { EvidenceAnchor, NodeStatePhase, StateVisualLayer } from "fluxiq/automation-studio";
@@ -17,11 +17,10 @@ type StateVisualMetrics = { surface: StateVisualSurfaceMode; coordinate: StateSi
 type DirectRenderedTextCandidate = { id: string; bounds: StateBounds; content: string; area: number };
 const stateCanvasZoomLevels = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4] as const;
 
-export function AutomationStateView(props: { input: BuildNodeStateViewModelInput; setSelection(selection: AutomationSelection): void }) {
+export function AutomationStateView(props: { input: BuildNodeStateViewModelInput; loading?: { recordingId?: string; timelineEntryId?: string; stateSnapshotId?: string; phase?: NodeStatePhase } | null | undefined; setSelection(selection: AutomationSelection): void }) {
   const initialSelection = stateSelection(props.input.selection);
   const [sourceId, setSourceId] = useState<string | undefined>(initialSelection.sourceId);
   const [phase, setPhase] = useState<NodeStatePhase>(initialSelection.phase ?? "input");
-  const [mode, setMode] = useState<StateViewMode>("visual");
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | undefined>(initialSelection.evidenceId);
   const [selectedFactPath, setSelectedFactPath] = useState<string | undefined>(initialSelection.factPath);
   const selectionKey = stateSelectionKey(props.input.selection);
@@ -45,7 +44,6 @@ export function AutomationStateView(props: { input: BuildNodeStateViewModelInput
     ...props.input,
     viewState
   }), [props.input, viewState]);
-  const activeMode = mode;
   const resolvedSourceId = model.activeSource?.id ?? sourceId;
 
   function selectEvidence(id: string) {
@@ -63,69 +61,20 @@ export function AutomationStateView(props: { input: BuildNodeStateViewModelInput
 
   return (
     <section className="automation-state-view">
-      <header className="automation-state-view-header">
-        <div>
-          <strong>{model.title}</strong>
-          <span>{model.subtitle}</span>
-        </div>
-        <div className="automation-state-summary" aria-label="State summary">
-          <span>{model.summary.facts} facts</span>
-          <span>{model.summary.evidence} evidence</span>
-          <span>{model.summary.strong} strong</span>
-          <span>{model.summary.weak} weak</span>
-          <span>{model.summary.negative} negative</span>
-          {model.runtimeComparison ? <span>{model.summary.mismatches ?? 0} mismatches</span> : null}
-        </div>
-      </header>
-      <StateViewToolbar
-        model={model}
-        mode={activeMode}
-        onModeChange={setMode}
-        onPhaseChange={(nextPhase) => {
-          setPhase(nextPhase);
-          props.setSelection(stateAutomationSelection(model, props.input, compactStateSelection({ sourceId: resolvedSourceId, phase: nextPhase, evidenceId: selectedEvidenceId, factPath: selectedFactPath })));
-        }}
-      />
       {model.emptyState ? <div className="automation-state-empty"><AlertCircle size={16} aria-hidden /><strong>{model.emptyState.title}</strong><span>{model.emptyState.message}</span></div> : null}
       <div className="automation-state-workspace">
         <main className="automation-state-primary">
-          {activeMode === "visual" ? <StateVisualCanvas model={model} selectedFactPath={selectedFactPath} onSelectEvidence={selectEvidence} onSelectFact={selectFact} /> : null}
-          {activeMode === "structured" ? <StateStructuredPanel rows={model.structuredRows} onSelectFact={selectFact} /> : null}
-          {activeMode === "diff" ? <StateDiffPanel model={model} /> : null}
-          {activeMode === "compare" ? <StateComparePanel model={model} onSelectEvidence={selectEvidence} onSelectFact={selectFact} /> : null}
-          {activeMode === "raw" ? <StateRawPanel model={model} /> : null}
+          <StateVisualCanvas model={model} selectedFactPath={selectedFactPath} onSelectEvidence={selectEvidence} onSelectFact={selectFact} />
+          {props.loading ? <div className="automation-state-loading" role="status" aria-live="polite">
+            <div>
+              <span className="automation-state-loading-spinner" aria-hidden />
+              <strong>Opening state</strong>
+              <small>{props.loading.timelineEntryId ? `Loading state for ${props.loading.timelineEntryId}` : "Loading state data"}</small>
+            </div>
+          </div> : null}
         </main>
       </div>
     </section>
-  );
-}
-
-function StateViewToolbar(props: { model: NodeStateViewModel; mode: StateViewMode; onPhaseChange(phase: NodeStatePhase): void; onModeChange(mode: StateViewMode): void }) {
-  const modes: Array<{ id: StateViewMode; label: string; icon: typeof ImageIcon }> = [
-    { id: "visual", label: "Visual", icon: ImageIcon },
-    { id: "structured", label: "Structured", icon: ListChecks },
-    { id: "diff", label: "Diff", icon: GitCompare },
-    { id: "compare", label: "Compare", icon: GitCompare },
-    { id: "raw", label: "Raw", icon: Braces }
-  ];
-  return (
-    <div className="automation-state-toolbar">
-      <div className="automation-state-control">
-        <span>Phase</span>
-        <div className="segmented-control">
-          {props.model.phases.map((phase) => <button className={props.model.activePhase === phase.id ? "selected" : ""} disabled={!phase.available} key={phase.id} onClick={() => props.onPhaseChange(phase.id)} type="button">{phase.label}</button>)}
-        </div>
-      </div>
-      <div className="automation-state-control">
-        <span>View</span>
-        <div className="segmented-control">
-          {modes.filter((mode) => mode.id !== "compare" || props.model.runtimeComparison).map((mode) => {
-            const Icon = mode.icon;
-            return <button className={props.mode === mode.id ? "selected" : ""} key={mode.id} onClick={() => props.onModeChange(mode.id)} title={mode.label} type="button"><Icon size={14} aria-hidden />{mode.label}</button>;
-          })}
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -151,13 +100,15 @@ function StateVisualCanvas(props: { model: NodeStateViewModel; selectedFactPath:
   const directTextCandidates = directRenderedTextCandidates(visibleLayers, factLayers, props.model.facts, metrics);
   return (
     <div className="automation-state-canvas-shell">
-      <StateCanvasZoomControls zoom={zoom} onZoomChange={setZoom} />
-      <div className={`automation-state-canvas surface-${activeSurface}`} style={{ aspectRatio: `${metrics.aspect.width} / ${metrics.aspect.height}`, width: `${zoom * 100}%` }}>
-        {activeSurface === "document" && metrics.viewport && !hasImageLayer ? <StateViewportRect metrics={metrics} /> : null}
-        {visibleLayers.map((layer, index) => <StateVisualLayerView directTextCandidates={directTextCandidates} facts={props.model.facts} key={stateVisualChildKey("layer", layer.id, index)} layer={layer} metrics={metrics} selectedBounds={selectedBounds} selectedFactPath={props.selectedFactPath} onSelectFact={props.onSelectFact} />)}
-        {factLayers.map(({ fact, bounds, directRendered }, index) => <StateFactBoundsLayer bounds={bounds} directRendered={directRendered} directTextCandidates={directTextCandidates} fact={fact} key={stateVisualChildKey("fact", fact.id, index)} metrics={metrics} selected={fact.fullPath === props.selectedFactPath || boundsEqual(bounds, selectedBounds)} onSelectFact={props.onSelectFact} />)}
-        {props.model.overlays.map((overlay, index) => <StateOverlay key={stateVisualChildKey("overlay", overlay.id, index)} metrics={metrics} overlay={overlay} onSelectEvidence={props.onSelectEvidence} onSelectFact={props.onSelectFact} />)}
+      <div className="automation-state-canvas-scroll">
+        <div className={`automation-state-canvas surface-${activeSurface}`} style={{ aspectRatio: `${metrics.aspect.width} / ${metrics.aspect.height}`, width: `${zoom * 100}%` }}>
+          {activeSurface === "document" && metrics.viewport && !hasImageLayer ? <StateViewportRect metrics={metrics} /> : null}
+          {visibleLayers.map((layer, index) => <StateVisualLayerView directTextCandidates={directTextCandidates} facts={props.model.facts} key={stateVisualChildKey("layer", layer.id, index)} layer={layer} metrics={metrics} selectedBounds={selectedBounds} selectedFactPath={props.selectedFactPath} onSelectFact={props.onSelectFact} />)}
+          {factLayers.map(({ fact, bounds, directRendered }, index) => <StateFactBoundsLayer bounds={bounds} directRendered={directRendered} directTextCandidates={directTextCandidates} fact={fact} key={stateVisualChildKey("fact", fact.id, index)} metrics={metrics} selected={fact.fullPath === props.selectedFactPath || boundsEqual(bounds, selectedBounds)} onSelectFact={props.onSelectFact} />)}
+          {props.model.overlays.map((overlay, index) => <StateOverlay key={stateVisualChildKey("overlay", overlay.id, index)} metrics={metrics} overlay={overlay} onSelectEvidence={props.onSelectEvidence} onSelectFact={props.onSelectFact} />)}
+        </div>
       </div>
+      <StateCanvasZoomControls zoom={zoom} onZoomChange={setZoom} />
     </div>
   );
 }

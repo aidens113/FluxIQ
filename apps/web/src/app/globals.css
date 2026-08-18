@@ -2539,6 +2539,9 @@ select {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   padding: 0;
 }
 
@@ -2853,6 +2856,17 @@ select {
   width: 100%;
 }
 
+.automation-preference-row select {
+  min-width: 0;
+  width: 100%;
+}
+
+.automation-preference-row input[type="checkbox"] {
+  justify-self: start;
+  width: 16px;
+  height: 16px;
+}
+
 .automation-preference-row output {
   text-align: right;
   color: var(--color-text);
@@ -2969,7 +2983,12 @@ select {
 
 .automation-studio-workspace > .automation-workspace-section.right {
   grid-column: 2;
-  grid-row: 1;
+  grid-row: 1 / 3;
+}
+
+.automation-studio-workspace > .automation-bottom-timeline-region {
+  grid-column: 1;
+  grid-row: 2;
 }
 
 .automation-studio-workspace.page-window-fullscreen {
@@ -3031,6 +3050,14 @@ select {
   left: 0;
   width: 8px;
   cursor: ew-resize;
+}
+
+.automation-section-resize-handle.bottom {
+  top: -4px;
+  right: 0;
+  left: 0;
+  height: 8px;
+  cursor: ns-resize;
 }
 
 .automation-section-resize-handle:hover {
@@ -3103,6 +3130,57 @@ select {
   overflow: hidden;
 }
 
+.automation-strict-pane-layout {
+  position: relative;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  gap: 8px;
+  padding: 8px;
+  overflow: hidden;
+}
+
+.automation-main-split-handle {
+  position: absolute;
+  z-index: 12;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  opacity: 0;
+  outline: 0;
+  box-shadow: none;
+}
+
+.automation-main-split-handle.vertical {
+  top: 8px;
+  bottom: 8px;
+  width: 12px;
+  margin-left: -6px;
+  cursor: ew-resize;
+}
+
+.automation-main-split-handle.horizontal {
+  right: 8px;
+  left: 8px;
+  height: 12px;
+  margin-top: -6px;
+  cursor: ns-resize;
+}
+
+.automation-main-split-handle:hover,
+.automation-main-split-handle:focus-visible {
+  background: rgb(9 114 211 / 10%);
+  opacity: 1;
+}
+
+.automation-pane-slot {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .automation-window-shell {
   position: absolute;
   min-width: 0;
@@ -3155,6 +3233,10 @@ select {
   background: var(--color-surface);
   padding: 6px 8px;
   cursor: move;
+}
+
+.automation-view-container > header.not-movable {
+  cursor: default;
 }
 
 .automation-view-container > header > div:first-child {
@@ -3811,7 +3893,16 @@ select {
   border-color: var(--color-primary);
 }
 
+.automation-dock-scroll button.selected {
+  border-color: var(--color-primary);
+  background: #f1f8ff;
+  box-shadow: 0 0 0 2px rgb(9 114 211 / 12%);
+}
+
 .automation-dock-scroll strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   grid-row: span 2;
   color: var(--color-primary);
 }
@@ -4512,6 +4603,270 @@ select {
   right: -13px;
 }
 
+.automation-bottom-timeline-region {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+}
+
+.automation-bottom-timeline-region.collapsed {
+  grid-template-rows: 1fr;
+}
+
+.automation-bottom-timeline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  padding: 5px 8px;
+}
+
+.automation-bottom-timeline-region.collapsed .automation-bottom-timeline-header {
+  border-bottom: 0;
+}
+
+.automation-bottom-timeline-header > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.automation-bottom-timeline-header span {
+  display: grid;
+  min-width: 0;
+}
+
+.automation-bottom-timeline-header strong,
+.automation-bottom-timeline-header small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-dock-empty {
+  display: grid;
+  align-content: center;
+  flex: 1 1 auto;
+  min-width: 240px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
+  padding: 12px;
+}
+
+.automation-dock-empty strong {
+  color: var(--color-text);
+}
+
+.automation-action-preview-dock {
+  display: block;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+.automation-action-preview-rail {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+  border-radius: var(--radius-control);
+  background:
+    linear-gradient(90deg, transparent 0, transparent 10px, rgb(84 102 122 / 24%) 10px, rgb(84 102 122 / 24%) calc(100% - 10px), transparent calc(100% - 10px)) 0 28px / 100% 1px no-repeat,
+    var(--color-surface);
+  padding: 6px 6px 10px;
+}
+
+.automation-action-preview-rail button {
+  position: relative;
+  --action-preview-accent: #5c7288;
+  container-type: inline-size;
+  display: grid;
+  grid-template-rows: 26px minmax(0, 1fr);
+  justify-items: center;
+  align-content: stretch;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+  padding: 4px 8px 8px;
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.automation-action-preview-marker {
+  z-index: 1;
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  align-self: end;
+  border: 1px solid color-mix(in srgb, var(--action-preview-accent) 42%, white);
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgb(16 35 55 / 12%);
+}
+
+.automation-action-preview-marker > svg {
+  color: var(--action-preview-accent);
+}
+
+.automation-action-preview-order {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  display: grid;
+  min-width: 17px;
+  height: 17px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: rgb(16 35 55 / 56%);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.automation-action-preview-label {
+  display: grid;
+  width: 100%;
+  min-height: 25px;
+  max-width: 100%;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid rgb(16 35 55 / 10%);
+  border-top: 2px solid var(--action-preview-accent);
+  border-radius: 4px;
+  background: rgb(255 255 255 / 72%);
+  color: rgb(16 35 55 / 74%);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.15;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 6px;
+}
+
+.automation-action-preview-rail button:hover {
+  border-color: color-mix(in srgb, var(--action-preview-accent) 28%, transparent);
+  background: color-mix(in srgb, var(--action-preview-accent) 8%, transparent);
+}
+
+.automation-action-preview-rail button.selected {
+  border-color: color-mix(in srgb, var(--action-preview-accent) 48%, transparent);
+  background: color-mix(in srgb, var(--action-preview-accent) 10%, white);
+  box-shadow: inset 0 0 0 1px #ffffff, 0 0 0 1px color-mix(in srgb, var(--action-preview-accent) 28%, transparent);
+}
+
+.automation-action-preview-rail button.selected .automation-action-preview-marker {
+  background: var(--action-preview-accent);
+  box-shadow: 0 0 0 3px #ffffff, 0 0 0 5px color-mix(in srgb, var(--action-preview-accent) 24%, transparent);
+}
+
+.automation-action-preview-rail button.selected .automation-action-preview-marker > svg {
+  color: #ffffff;
+}
+
+.automation-action-preview-rail button.action {
+  --action-preview-accent: #386f99;
+}
+
+.automation-action-preview-rail button.domain_event {
+  --action-preview-accent: #8a6d2f;
+}
+
+@container (max-width: 124px) {
+  .automation-action-preview-label {
+    min-height: 20px;
+    padding: 3px 4px;
+  }
+
+  .automation-action-preview-rail button {
+    padding-inline: 5px;
+  }
+}
+
+@container (max-width: 72px) {
+  .automation-action-preview-order {
+    font-size: 10px;
+  }
+
+  .automation-action-preview-label {
+    display: none;
+  }
+
+  .automation-action-preview-rail button {
+    grid-template-rows: 1fr;
+    align-items: center;
+  }
+}
+
+.automation-action-preview-empty {
+  display: grid;
+  place-content: center;
+  gap: 3px;
+  height: 100%;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.automation-action-preview-empty strong {
+  color: var(--color-text);
+}
+
+.automation-bottom-timeline-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.automation-bottom-timeline-actions .button {
+  min-height: 26px;
+  padding: 3px 8px;
+}
+
+.automation-bottom-timeline-header small {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.automation-bottom-timeline-region .automation-timeline-view {
+  min-height: 0;
+  height: 100%;
+  border: 0;
+}
+
 .automation-node-state-button {
   position: absolute;
   z-index: 10;
@@ -5122,9 +5477,13 @@ select {
 .automation-timeline-overview > div {
   display: grid;
   gap: 3px;
+  grid-template-rows: 18px;
+  align-content: start;
   min-width: 0;
   overflow-x: auto;
-  padding: 2px 0;
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+  padding: 2px 0 16px;
 }
 
 .automation-timeline-overview button {
@@ -5381,7 +5740,11 @@ select {
 }
 
 .automation-state-view {
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
+  align-content: normal;
+  gap: 8px;
+  overflow: hidden;
 }
 
 .automation-state-view-header {
@@ -5473,14 +5836,73 @@ select {
 }
 
 .automation-state-workspace {
-  display: block;
+  display: flex;
+  flex: 1 1 auto;
   min-height: 0;
+  height: 100%;
 }
 
 .automation-state-primary {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   height: 100%;
+}
+
+.automation-state-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 4000000;
+  display: grid;
+  place-items: center;
+  background: rgb(248 250 252 / 58%);
+  backdrop-filter: blur(1px);
+  pointer-events: none;
+}
+
+.automation-state-loading > div {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  max-width: min(320px, calc(100% - 32px));
+  border: 1px solid rgb(16 35 55 / 16%);
+  border-radius: var(--radius-panel);
+  background: rgb(255 255 255 / 94%);
+  padding: 16px 18px;
+  box-shadow: 0 16px 36px rgb(16 35 55 / 16%);
+  text-align: center;
+}
+
+.automation-state-loading strong {
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.automation-state-loading small {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-state-loading-spinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid rgb(16 35 55 / 14%);
+  border-top-color: var(--color-primary);
+  border-radius: 999px;
+  animation: automation-state-loading-spin 720ms linear infinite;
+}
+
+@keyframes automation-state-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .automation-state-canvas-shell,
@@ -5488,33 +5910,46 @@ select {
 .automation-state-table-wrap,
 .automation-state-raw,
 .automation-state-diff-list {
+  flex: 1 1 auto;
   height: 100%;
   min-height: 0;
-  overflow: auto;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-panel);
   background: var(--color-surface);
 }
 
 .automation-state-canvas-shell {
-  display: grid;
-  grid-template-rows: auto min-content;
-  gap: 8px;
-  align-items: start;
-  justify-items: center;
-  padding: 10px;
+  position: relative;
+  display: flex;
+  overflow: hidden;
+}
+
+.automation-state-visual-fallback,
+.automation-state-table-wrap,
+.automation-state-raw,
+.automation-state-diff-list {
+  overflow: auto;
+}
+
+.automation-state-canvas-scroll {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: flex-start;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 6px 46px;
 }
 
 .automation-state-zoom-controls {
-  position: sticky;
-  top: 10px;
+  position: absolute;
+  bottom: 10px;
   left: 10px;
   z-index: 3000000;
   display: inline-flex;
   width: max-content;
   max-width: calc(100% - 20px);
-  align-self: start;
-  justify-self: start;
   align-items: center;
   gap: 4px;
   border: 1px solid var(--color-border);

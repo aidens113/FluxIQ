@@ -124,8 +124,9 @@ describe("AutomationStateView", () => {
       />
     );
 
-    expect(html).toContain("Node State: Deposit");
-    expect(html).toContain("Visual");
+    expect(html).not.toContain("Node State: Deposit");
+    expect(html).not.toContain("Phase");
+    expect(html).not.toContain('title="Visual"');
     expect(html).toContain("Eligibility: Ui / Bank / Visible");
     expect(html).toContain("automation-state-overlay");
     expect(html).toContain('class="automation-state-zoom-controls"');
@@ -931,8 +932,8 @@ describe("AutomationStateView", () => {
       />
     );
 
-    expect(html).toContain("Compare");
-    expect(html).toContain("1 mismatches");
+    expect(html).not.toContain("Compare");
+    expect(html).not.toContain("1 mismatches");
     expect(html).toContain("tone-mismatch");
   });
 
@@ -968,7 +969,7 @@ describe("AutomationStateView", () => {
       />
     );
 
-    expect(html).toContain('class="selected" title="Visual"');
+    expect(html).not.toContain('title="Visual"');
     expect(html).toContain("No visual frame exists");
   });
 });

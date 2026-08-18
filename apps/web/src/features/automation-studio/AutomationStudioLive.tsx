@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Blocks, Bug, ChevronLeft, ChevronRight, Columns3, FolderOpen, FolderPlus, GitBranch, GripVertical, History, ListChecks, Network, Plus, Radio, Search, SlidersHorizontal, Sparkles, Trash2 } from "lucide-react";
+import { AlertTriangle, Blocks, Bug, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns3, FileSearch, FolderOpen, FolderPlus, GitBranch, GripVertical, History, ListChecks, Network, Plus, Radio, Search, SlidersHorizontal, Sparkles, Trash2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import type { NodeStatePhase } from "fluxiq/automation-studio";
@@ -30,17 +30,21 @@ import type {
 } from "./types";
 import {
   automationLayoutPresetOptions,
+  automationBottomDockMaxHeight,
+  automationBottomDockMinHeight,
+  defaultAutomationMainSplitRatios,
   automationPixelsToRelativeGeometry,
   automationRangesOverlap,
   automationSnapGeometry,
   automationWindowFillsCanvas,
   automationWindowGeometrySignature,
+  automationWorkspaceRegionForView,
+  automationMainPaneCount,
   automationWindowToPixels,
   clampAutomationWindowPixelGeometry,
   clampNumber,
   constrainAutomationResizeDelta,
   defaultAutomationWorkspacePrefs,
-  defaultAutomationWorkspaceWindows,
   findAutomationSharedResizePartners,
   fullAutomationWindowGeometry,
   layoutAutomationWindowsInPreset,
@@ -128,19 +132,12 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const [pendingCategoryMove, setPendingCategoryMove] = useState<{ categoryId: string; targetCategoryId: string } | null>(null);
   const [dragOverCategoryId, setDragOverCategoryId] = useState<string | null>(null);
   const [loadedProjectHierarchyId, setLoadedProjectHierarchyId] = useState<string | null>(null);
-  const [workspacePrefs, setWorkspacePrefs] = useState<AutomationWorkspacePrefs>({
-    windows: defaultAutomationWorkspaceWindows(),
-    activeWindowId: "window-policy",
-    maximizedWindowId: null,
-    sidebarWidth: 280,
-    inspectorWidth: 320,
-    utilityWindowsMigrated: true,
-    rightSidebarCollapsed: false,
-    viewStates: {}
-  });
+  const [workspacePrefs, setWorkspacePrefs] = useState<AutomationWorkspacePrefs>(() => defaultAutomationWorkspacePrefs());
   const [dockTab, setDockTab] = useState<AutomationDockTab>("assistant");
   const [liveWindowGeometries, setLiveWindowGeometries] = useState<Record<string, AutomationWindowPixelGeometry>>({});
   const [liveInspectorWidth, setLiveInspectorWidth] = useState<number | null>(null);
+  const [liveBottomTimelineHeight, setLiveBottomTimelineHeight] = useState<number | null>(null);
+  const [liveMainSplitRatios, setLiveMainSplitRatios] = useState<number[] | null>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [windowAdderOpen, setWindowAdderOpen] = useState<AutomationWindowAdderState | null>(null);
   const [layoutPickerOpen, setLayoutPickerOpen] = useState<AutomationLayoutPickerState | null>(null);
@@ -150,6 +147,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const [projectSearch, setProjectSearch] = useState("");
   const [projectTypeFilter, setProjectTypeFilter] = useState<"all" | AutomationHierarchyKind>("all");
   const [selection, setSelection] = useState<AutomationSelection | null>(null);
+  const [pendingStateOpen, setPendingStateOpen] = useState<{ key: string; recordingId?: string; timelineEntryId?: string; stateSnapshotId?: string; phase: NodeStatePhase } | null>(null);
+  const [bottomPreviewEntryId, setBottomPreviewEntryId] = useState<string | null>(null);
   const [recordingTreePrimaryKind, setRecordingTreePrimaryKind] = useState<"recording" | "proposal" | null>(null);
   const [recordingProcessing, setRecordingProcessing] = useState<RecordingProcessingStatus | null>(null);
   const [gatewaySnapshot, setGatewaySnapshot] = useState<any>({ enabled: false, sessions: [], pairings: [], auditLog: [] });
@@ -173,6 +172,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const lastActiveGatewayRecordingRef = useRef<string | null>(null);
   const processedStoppedGatewayRecordingsRef = useRef<Set<string>>(new Set());
   const lastRecordingBlockedAuditRef = useRef("");
+  const pendingStateOpenKeyRef = useRef<string | null>(null);
   const windowShellRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const pendingLiveWindowGeometriesRef = useRef<Record<string, AutomationWindowPixelGeometry>>({});
   const liveWindowGeometryFrameRef = useRef<number | null>(null);
@@ -390,6 +390,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       ?? selectedPolicy?.nodes?.find((node: any) => selection?.kind === "state" && selection.nodeId && selection.nodeId === node.id)
       ?? (selection ? null : selectedPolicy?.nodes?.[0] ?? null);
   const selectedEntry = selectedTimeline?.timeline?.find((entry: any) => selection?.kind === "timeline" && selection.id === entry.id) ?? selectedRecording?.timeline?.find((entry: any) => selection?.kind === "timeline" && selection.id === entry.id);
+  const activePreviewSourceEntryId = pendingStateOpen?.timelineEntryId
+    ?? bottomPreviewEntryId
+    ?? (selection?.kind === "state" && selection.timelineEntryId ? selection.timelineEntryId : undefined);
+  const activePreviewEntryId = selectedEntry?.id
+    ?? resolveActionPreviewEntryId(selectedTimeline ?? selectedRecording, activePreviewSourceEntryId);
   const selectedSignal = signals.find((signal: any) => selection?.kind === "signal" && selection.id === signal.path);
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
   const restoringUrlProject = Boolean(urlProjectId && !activeProject && !projectStatus && (!projectsLoaded || activeProjectId === urlProjectId || urlProjectOpenAttemptRef.current === urlProjectId));
@@ -545,9 +550,10 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         ?? selectedPolicy
       : selectedPolicy;
   }
-  const visibleWindows = pageFullscreenWindowId
+  const visibleWindows = (pageFullscreenWindowId
     ? workspacePrefs.windows.filter((item) => item.id === pageFullscreenWindowId && (item.area ?? "main") === "main")
-    : workspacePrefs.maximizedWindowId ? workspacePrefs.windows.filter((item) => item.id === workspacePrefs.maximizedWindowId) : workspacePrefs.windows;
+    : workspacePrefs.maximizedWindowId ? workspacePrefs.windows.filter((item) => item.id === workspacePrefs.maximizedWindowId) : workspacePrefs.windows)
+    .filter((item) => automationWorkspaceRegionForView(item.activeViewId) !== "bottom" && item.tabs.some((tab) => automationWorkspaceRegionForView(tab) !== "bottom"));
   const activeWindow = workspacePrefs.windows.find((item) => item.id === workspacePrefs.activeWindowId) ?? workspacePrefs.windows[0];
   const activeViewId = activeWindow?.activeViewId ?? "policy-primary";
   const selectedProposalReview = selectedProposal?.proposalId ? proposalReviews[selectedProposal.proposalId] ?? null : null;
@@ -556,14 +562,27 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     : selectedFlowEntry?.source === "canonical" ? selectedFlow?.flowId ?? null : null;
   const windowsByArea = (area: AutomationWorkspaceArea) => visibleWindows.filter((item) => (item.area ?? "main") === area);
   const canvasForArea = (area: AutomationWorkspaceArea) => area === "right" ? rightWorkspaceCanvasRef.current : mainWorkspaceCanvasRef.current;
+  const showRecordingActionPreview = () => {
+    updateWorkspacePrefs((current) => ({
+      ...current,
+      bottomDock: { ...current.bottomDock, activeViewId: "recording-action-preview", expanded: true },
+      bottomTimelineCollapsed: false
+    }));
+  };
   const setSelectionAndFollow = (next: AutomationSelection) => {
     if (hasDirtyTaskGraph && next.kind === "flow" && next.id !== selectedFlow?.flowId && !window.confirm("This Flow has unsaved changes. Discard them and open another Flow?")) return;
+    if (next.kind !== "state") {
+      pendingStateOpenKeyRef.current = null;
+      setPendingStateOpen(null);
+    }
+    if (next.kind === "timeline") setBottomPreviewEntryId(next.id);
+    else if (next.kind !== "state") setBottomPreviewEntryId(null);
     setSelection(next);
     if (next.kind === "recording" || next.kind === "timeline") {
       const recordingId = next.kind === "recording" ? next.id : recordings.find((recording: any) => recording.timeline?.some((entry: any) => entry.id === next.id))?.recordingId;
       if (recordingId) void loadRecordingDetails(recordingId);
       setRecordingTreePrimaryKind("recording");
-      openView("timeline-recording", "preview");
+      showRecordingActionPreview();
     }
     if (next.kind === "signal") openView("signals-web", "preview");
     if (next.kind === "state") openView("state-explorer", "preview", "main");
@@ -615,11 +634,37 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setSelection({ kind: "recording", id: recordingId });
     void loadRecordingDetails(recordingId);
     setRecordingTreePrimaryKind("recording");
+    showRecordingActionPreview();
     openView("timeline-recording", "preview");
   };
   const openTimelineEntryState = (recordingId: string, entryId: string) => {
     void loadRecordingDetails(recordingId);
     void openStateView({ recordingId, timelineEntryId: entryId, phase: "input" });
+  };
+  const handleBottomPreviewActionClick = (entryId: string) => {
+    const recordingId = selectedRecording?.recordingId
+      ?? recordings.find((recording: any) => recording.timeline?.some((entry: any) => entry.id === entryId))?.recordingId;
+    const activePane = workspacePrefs.panes.find((pane) => pane.id === workspacePrefs.activePaneId) ?? workspacePrefs.panes[0];
+    const activeView = activePane?.activeViewId;
+    if (activeView === "state-explorer" && recordingId) {
+      openTimelineEntryState(recordingId, entryId);
+      return;
+    }
+    if (activeView === "timeline-recording") {
+      setSelectionAndFollow({ kind: "timeline", id: entryId });
+      return;
+    }
+    const openTimelinePane = workspacePrefs.panes.find((pane) => pane.activeViewId === "timeline-recording");
+    if (openTimelinePane) {
+      setSelectionAndFollow({ kind: "timeline", id: entryId });
+      return;
+    }
+    const openStatePane = workspacePrefs.panes.find((pane) => pane.activeViewId === "state-explorer");
+    if (openStatePane && recordingId) {
+      openTimelineEntryState(recordingId, entryId);
+      return;
+    }
+    setSelectionAndFollow({ kind: "timeline", id: entryId });
   };
   const openStateView = async (request: { nodeId?: string; sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; proposalId?: string; recordingId?: string; timelineEntryId?: string; stateSnapshotId?: string; repairAttempted?: boolean }) => {
     const nodeId = request.nodeId ?? selectedNode?.id;
@@ -633,10 +678,46 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       ?? selectedProposal?.metadata?.recordingId
       ?? selectedProposal?.recordingId
       ?? recordingIdFromStateSourceId(request.sourceId);
-    const timelineEntryId = request.timelineEntryId ?? ((request.stateSnapshotId ?? metadataStateSnapshotId) ? undefined : metadataTimelineEntryId);
+    const timelineEntryId = request.timelineEntryId ?? metadataTimelineEntryId;
     let sourceId = request.sourceId;
     let resolvedStateSnapshotId = request.stateSnapshotId ?? metadataStateSnapshotId;
     let resolvedStateRef: string | undefined = metadataStateRef;
+    const phase = request.phase ?? "input";
+    const pendingKey = recordingId && (timelineEntryId || resolvedStateSnapshotId)
+      ? [recordingId, timelineEntryId ?? "", resolvedStateSnapshotId ?? "", phase].join("::")
+      : "";
+    const proposalId = request.proposalId
+      ?? (selection?.kind === "proposal" ? selection.id : undefined)
+      ?? (selection?.kind === "proposal-step" ? selection.proposalId : undefined)
+      ?? (selection?.kind === "state" ? selection.proposalId : undefined);
+    if (pendingKey) {
+      pendingStateOpenKeyRef.current = pendingKey;
+      if (timelineEntryId) setBottomPreviewEntryId(resolveActionPreviewEntryId(selectedTimeline ?? selectedRecording, timelineEntryId));
+      setPendingStateOpen({
+        key: pendingKey,
+        recordingId,
+        phase,
+        ...(timelineEntryId ? { timelineEntryId } : {}),
+        ...(resolvedStateSnapshotId ? { stateSnapshotId: resolvedStateSnapshotId } : {})
+      });
+      setSelection(compactStateSelection({
+        kind: "state",
+        id: stateSelectionId(compactStateSelectionId({ nodeId, flowId: selectedFlow?.flowId, proposalId, timelineEntryId, stateSnapshotId: resolvedStateSnapshotId })),
+        nodeId,
+        sourceId,
+        phase,
+        evidenceId: request.evidenceId,
+        factPath: request.factPath,
+        recordingId,
+        proposalId,
+        timelineEntryId,
+        stateSnapshotId: resolvedStateSnapshotId,
+        stateRef: resolvedStateRef
+      }));
+      if (timelineEntryId) setRecordingTreePrimaryKind("recording");
+      openView("state-explorer", "preview", "main");
+    }
+    try {
     if (activeProjectId && recordingId && (timelineEntryId || resolvedStateSnapshotId)) {
       const endpoint = resolvedStateSnapshotId ? "get-state-snapshot" : "get-recording-entry-state";
       const payload = {
@@ -656,6 +737,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         resolvedStateSnapshotId = resolved.stateSnapshotId;
         resolvedStateRef = resolved.stateRef;
         sourceId = `observed:${recordingId}:${resolved.entryId}`;
+        setBottomPreviewEntryId(resolveActionPreviewEntryId(selectedTimeline ?? selectedRecording, timelineEntryId ?? resolved.entryId));
         const resolvedState = result.payload.state;
         if (resolvedState) {
           setIndexedStateSources((current) => ({
@@ -702,16 +784,12 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     } else if ((timelineEntryId || resolvedStateSnapshotId) && recordingId) {
       setAutomationActionStatus("No indexed state lookup is available for this project.");
     }
-    const proposalId = request.proposalId
-      ?? (selection?.kind === "proposal" ? selection.id : undefined)
-      ?? (selection?.kind === "proposal-step" ? selection.proposalId : undefined)
-      ?? (selection?.kind === "state" ? selection.proposalId : undefined);
     const selectionValue: AutomationSelection = compactStateSelection({
       kind: "state",
       id: stateSelectionId(compactStateSelectionId({ nodeId, flowId: selectedFlow?.flowId, proposalId, timelineEntryId, stateSnapshotId: resolvedStateSnapshotId })),
       nodeId,
       sourceId,
-      phase: request.phase ?? "input",
+      phase,
       evidenceId: request.evidenceId,
       factPath: request.factPath,
       recordingId,
@@ -720,9 +798,16 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       stateSnapshotId: resolvedStateSnapshotId,
       stateRef: resolvedStateRef
     });
+    if (pendingKey && pendingStateOpenKeyRef.current !== pendingKey) return;
     setSelection(selectionValue);
     if (timelineEntryId) setRecordingTreePrimaryKind("recording");
     openView("state-explorer", "preview", "main");
+    } finally {
+      if (pendingKey) {
+        setPendingStateOpen((current) => current?.key === pendingKey ? null : current);
+        if (pendingStateOpenKeyRef.current === pendingKey) pendingStateOpenKeyRef.current = null;
+      }
+    }
   };
   useEffect(() => {
     function handleOpenNodeState(event: Event) {
@@ -1973,7 +2058,9 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setWorkspacePrefs((current) => normalizeAutomationWorkspacePrefs(updater(current)));
   }
   function captureActiveViewState(current: AutomationWorkspacePrefs): AutomationWorkspacePrefs {
-    const activeViewId = current.windows.find((item) => item.id === current.activeWindowId)?.activeViewId;
+    const activeViewId = current.panes.find((item) => item.id === current.activePaneId)?.activeViewId
+      ?? current.rightSidebar.activeViewId
+      ?? current.windows.find((item) => item.id === current.activeWindowId)?.activeViewId;
     if (!activeViewId) return current;
     return {
       ...current,
@@ -2064,8 +2151,42 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     }));
   }
   function openView(viewId: string, mode: "preview" | "new-window" = "preview", area: AutomationWorkspaceArea = "main") {
+    const region = automationWorkspaceRegionForView(viewId);
     updateWorkspacePrefs((current) => {
       current = captureActiveViewState(current);
+      if (region === "bottom") {
+        return {
+          ...current,
+          bottomDock: { ...current.bottomDock, activeViewId: "recording-action-preview", expanded: true },
+          bottomTimelineCollapsed: false,
+          maximizedWindowId: null
+        };
+      }
+      if (region === "main") {
+        const targetPane = chooseMainPaneForView(current, viewId);
+        if (!targetPane) return current;
+        return {
+          ...current,
+          activePaneId: targetPane.id,
+          activeViewId: viewId,
+          maximizedWindowId: null,
+          panes: current.panes.map((item) => item.id === targetPane.id
+            ? { ...item, activeViewId: viewId, tabs: item.tabs.includes(viewId) ? item.tabs : [...item.tabs, viewId] }
+            : item)
+        };
+      }
+      if (region === "right") {
+        return {
+          ...current,
+          rightSidebarCollapsed: false,
+          rightSidebar: {
+            ...current.rightSidebar,
+            activeViewId: viewId,
+            collapsed: false,
+            tabs: current.rightSidebar.tabs.includes(viewId) ? current.rightSidebar.tabs : [...current.rightSidebar.tabs, viewId]
+          }
+        };
+      }
       if (mode === "new-window") {
         const id = `window-${viewId}-${Date.now()}`;
         const bounds = canvasForArea(area)?.getBoundingClientRect();
@@ -2102,31 +2223,57 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       };
     });
   }
+  function chooseMainPaneForView(current: AutomationWorkspacePrefs, viewId: string) {
+    const existingPane = current.panes.find((item) => item.tabs.includes(viewId));
+    if (existingPane) return existingPane;
+    if (viewId === "policy-primary") return current.panes[0] ?? null;
+    const flowFirst = current.panes[0]?.tabs.includes("policy-primary") || current.panes[0]?.activeViewId === "policy-primary";
+    const prefersSecondary = viewId === "proposal-workbench" || viewId === "proposal-generator" || viewId === "state-explorer" || viewId === "runtime-debug";
+    if (prefersSecondary && flowFirst && current.panes[1]) return current.panes[1];
+    return current.panes.find((item) => item.id === current.activePaneId) ?? current.panes[0] ?? null;
+  }
   function ensureGlobalInspectorAvailable() {
     updateWorkspacePrefs((current) => {
-      const existing = current.windows.find((item) => item.tabs.includes("global-inspector") || item.activeViewId === "global-inspector");
-      if (existing) {
-        return {
-          ...captureActiveViewState(current),
-          rightSidebarCollapsed: (existing.area ?? "main") === "right" ? false : current.rightSidebarCollapsed,
-          activeWindowId: existing.id,
-          windows: current.windows.map((item) => item.id === existing.id
-            ? { ...item, activeViewId: "global-inspector", tabs: item.tabs.includes("global-inspector") ? item.tabs : [...item.tabs, "global-inspector"], zIndex: nextAutomationZIndex(current.windows) }
-            : item)
-        };
-      }
-      const id = `window-global-inspector-${Date.now()}`;
       return {
         ...captureActiveViewState(current),
         rightSidebarCollapsed: false,
-        activeWindowId: id,
-        maximizedWindowId: null,
-        windows: [...current.windows, { id, activeViewId: "global-inspector", tabs: ["global-inspector"], area: "right", ...fullAutomationWindowGeometry(), zIndex: nextAutomationZIndex(current.windows) }]
+        rightSidebar: {
+          ...current.rightSidebar,
+          activeViewId: "global-inspector",
+          collapsed: false,
+          tabs: current.rightSidebar.tabs.includes("global-inspector") ? current.rightSidebar.tabs : ["global-inspector", ...current.rightSidebar.tabs]
+        }
       };
     });
   }
   function addWorkspaceWindow(viewId: string, area: AutomationWorkspaceArea, targetWindowId?: string) {
     if (targetWindowId) {
+      if (targetWindowId === "right-sidebar") {
+        updateWorkspacePrefs((current) => ({
+          ...captureActiveViewState(current),
+          rightSidebarCollapsed: false,
+          rightSidebar: {
+            ...current.rightSidebar,
+            activeViewId: viewId,
+            collapsed: false,
+            tabs: current.rightSidebar.tabs.includes(viewId) ? current.rightSidebar.tabs : [...current.rightSidebar.tabs, viewId]
+          }
+        }));
+        setWindowAdderOpen(null);
+        return;
+      }
+      if (workspacePrefs.panes.some((item) => item.id === targetWindowId)) {
+        updateWorkspacePrefs((current) => ({
+          ...captureActiveViewState(current),
+          activePaneId: targetWindowId,
+          activeViewId: viewId,
+          panes: current.panes.map((item) => item.id === targetWindowId
+            ? { ...item, activeViewId: viewId, tabs: item.tabs.includes(viewId) ? item.tabs : [...item.tabs, viewId] }
+            : item)
+        }));
+        setWindowAdderOpen(null);
+        return;
+      }
       updateWorkspacePrefs((current) => ({
         ...captureActiveViewState(current),
         activeWindowId: targetWindowId,
@@ -2214,12 +2361,28 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           return { ...item, tabs, activeViewId: tabs.includes(item.activeViewId) ? item.activeViewId : tabs[0] ?? "" };
         })
         .filter((item) => item.tabs.length > 0);
+      const panes = current.panes.map((item) => {
+        const tabs = item.tabs.filter((tabId) => !viewStateMatchesDeletedHierarchy(tabId, current.viewStates?.[tabId] as JsonObject | undefined, refs));
+        const nextTabs = tabs.length ? tabs : ["policy-primary"];
+        return { ...item, tabs: nextTabs, activeViewId: nextTabs.includes(item.activeViewId) ? item.activeViewId : nextTabs[0] ?? "policy-primary" };
+      });
+      const rightTabs = current.rightSidebar.tabs.filter((tabId) => !viewStateMatchesDeletedHierarchy(tabId, current.viewStates?.[tabId] as JsonObject | undefined, refs));
+      const nextRightTabs = rightTabs.length ? rightTabs : ["global-inspector"];
       const activeWindowId = windows.some((item) => item.id === current.activeWindowId) ? current.activeWindowId : windows[0]?.id ?? "";
+      const activePane = panes.find((item) => item.id === current.activePaneId) ?? panes[0];
       return {
         ...current,
         activeWindowId,
+        activePaneId: activePane?.id ?? "",
+        activeViewId: activePane?.activeViewId ?? "policy-primary",
         maximizedWindowId: current.maximizedWindowId && windows.some((item) => item.id === current.maximizedWindowId) ? current.maximizedWindowId : null,
         windows,
+        panes,
+        rightSidebar: {
+          ...current.rightSidebar,
+          tabs: nextRightTabs,
+          activeViewId: nextRightTabs.includes(current.rightSidebar.activeViewId) ? current.rightSidebar.activeViewId : nextRightTabs[0] ?? "global-inspector"
+        },
         viewStates: nextViewStates
       };
     });
@@ -2227,6 +2390,60 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   function setWindowTab(windowId: string, viewId: string) {
     restoreViewState(viewId);
     updateWorkspacePrefs((current) => ({ ...captureActiveViewState(current), activeWindowId: windowId, windows: current.windows.map((item) => item.id === windowId ? { ...item, activeViewId: viewId } : item) }));
+  }
+  function setPaneTab(paneId: string, viewId: string) {
+    restoreViewState(viewId);
+    updateWorkspacePrefs((current) => ({
+      ...captureActiveViewState(current),
+      activePaneId: paneId,
+      activeViewId: viewId,
+      panes: current.panes.map((item) => item.id === paneId ? { ...item, activeViewId: viewId } : item)
+    }));
+  }
+  function activatePane(paneId: string) {
+    const viewId = workspacePrefs.panes.find((item) => item.id === paneId)?.activeViewId;
+    if (viewId && paneId !== workspacePrefs.activePaneId) restoreViewState(viewId);
+    updateWorkspacePrefs((current) => ({ ...captureActiveViewState(current), activePaneId: paneId, activeViewId: viewId ?? current.activeViewId }));
+  }
+  function closePaneTab(paneId: string, viewId: string) {
+    updateWorkspacePrefs((current) => {
+      current = captureActiveViewState(current);
+      const panes = current.panes.map((item) => {
+        if (item.id !== paneId) return item;
+        const tabs = item.tabs.filter((tab) => tab !== viewId);
+        if (!tabs.length) return { ...item, tabs: ["policy-primary"], activeViewId: "policy-primary" };
+        return { ...item, tabs, activeViewId: item.activeViewId === viewId ? tabs[0] ?? "policy-primary" : item.activeViewId };
+      });
+      const activePane = panes.find((item) => item.id === current.activePaneId) ?? panes[0];
+      return { ...current, activePaneId: activePane?.id ?? "", activeViewId: activePane?.activeViewId ?? "policy-primary", panes };
+    });
+  }
+  function setRightSidebarTab(viewId: string) {
+    restoreViewState(viewId);
+    updateWorkspacePrefs((current) => ({
+      ...captureActiveViewState(current),
+      rightSidebarCollapsed: false,
+      rightSidebar: {
+        ...current.rightSidebar,
+        activeViewId: viewId,
+        collapsed: false
+      }
+    }));
+  }
+  function closeRightSidebarTab(viewId: string) {
+    updateWorkspacePrefs((current) => {
+      current = captureActiveViewState(current);
+      const tabs = current.rightSidebar.tabs.filter((tab) => tab !== viewId);
+      const nextTabs = tabs.length ? tabs : ["global-inspector"];
+      return {
+        ...current,
+        rightSidebar: {
+          ...current.rightSidebar,
+          tabs: nextTabs,
+          activeViewId: current.rightSidebar.activeViewId === viewId ? nextTabs[0] ?? "global-inspector" : current.rightSidebar.activeViewId
+        }
+      };
+    });
   }
   function activateWindow(windowId: string) {
     const viewId = workspacePrefs.windows.find((item) => item.id === windowId)?.activeViewId;
@@ -2421,6 +2638,21 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   }
   function arrangeWindows(preset: AutomationLayoutPreset, area: AutomationWorkspaceArea = "main") {
     const option = automationLayoutPresetOptions.find((item) => item.id === preset) ?? automationLayoutPresetOptions[0]!;
+    if (area === "main") {
+      const strictPreset = preset === "two-columns" ? "two-even"
+        : preset === "main-sidebar" ? "two-main-side"
+          : preset === "three-columns" || preset === "quad" ? "three-main-two"
+            : preset === "two-rows" ? "two-rows"
+              : "single";
+      updateWorkspacePrefs((current) => ({
+        ...current,
+        mainLayoutPreset: strictPreset,
+        mainSplitRatios: defaultAutomationMainSplitRatios(strictPreset),
+        maximizedWindowId: null
+      }));
+      setLayoutPickerOpen(null);
+      return;
+    }
     updateWorkspacePrefs((current) => {
       const bounds = canvasForArea(area)?.getBoundingClientRect();
       const width = Math.max(1, Math.floor(bounds?.width ?? 1120));
@@ -2461,6 +2693,141 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp, { once: true });
+  }
+  function startBottomTimelineResize(event: ReactPointerEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    const startY = event.clientY;
+    const startHeight = workspacePrefs.bottomTimelineHeight;
+    let latestHeight = startHeight;
+    const onMove = (moveEvent: PointerEvent) => {
+      latestHeight = clampNumber(startHeight + startY - moveEvent.clientY, automationBottomDockMinHeight, automationBottomDockMaxHeight, startHeight);
+      setLiveBottomTimelineHeight(latestHeight);
+    };
+    const onUp = () => {
+      updateWorkspacePrefs((current) => ({
+        ...current,
+        bottomTimelineHeight: latestHeight,
+        bottomTimelineCollapsed: false,
+        bottomDock: { ...current.bottomDock, expanded: true }
+      }));
+      setLiveBottomTimelineHeight(null);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp, { once: true });
+  }
+  function startMainSplitResize(splitIndex: number, event: ReactPointerEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    const vertical = workspacePrefs.mainLayoutPreset === "two-rows";
+    const startPoint = vertical ? event.clientY : event.clientX;
+    const bounds = mainWorkspaceCanvasRef.current?.getBoundingClientRect();
+    const totalSize = Math.max(1, vertical ? bounds?.height ?? 1 : bounds?.width ?? 1);
+    const paneCount = automationMainPaneCount(workspacePrefs.mainLayoutPreset);
+    const startRatios = (liveMainSplitRatios ?? workspacePrefs.mainSplitRatios).length === paneCount
+      ? [...(liveMainSplitRatios ?? workspacePrefs.mainSplitRatios)]
+      : Array.from({ length: paneCount }, () => 1 / paneCount);
+    let latestRatios = startRatios;
+    const onMove = (moveEvent: PointerEvent) => {
+      const currentPoint = vertical ? moveEvent.clientY : moveEvent.clientX;
+      const deltaRatio = (currentPoint - startPoint) / totalSize;
+      const left = startRatios[splitIndex] ?? 0;
+      const right = startRatios[splitIndex + 1] ?? 0;
+      const pairTotal = left + right;
+      const minRatio = Math.min(0.24, Math.max(0.12, pairTotal * 0.22));
+      const nextLeft = clampNumber(left + deltaRatio, minRatio, pairTotal - minRatio, left);
+      latestRatios = startRatios.map((ratio, index) => {
+        if (index === splitIndex) return nextLeft;
+        if (index === splitIndex + 1) return pairTotal - nextLeft;
+        return ratio;
+      });
+      setLiveMainSplitRatios(latestRatios);
+    };
+    const onUp = () => {
+      updateWorkspacePrefs((current) => ({
+        ...current,
+        mainSplitRatios: latestRatios
+      }));
+      setLiveMainSplitRatios(null);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp, { once: true });
+  }
+  function renderViewContent(view: AutomationViewInstance, viewActive: boolean) {
+    return (
+      <AutomationViewRenderer
+        entries={selectedTimeline?.timeline ?? selectedRecording?.timeline ?? []}
+        models={models}
+        notes={selectedRecording?.notes ?? []}
+        actionStatus={automationActionStatus}
+        policies={policies}
+        pipelineArtifacts={pipelineArtifacts}
+        policy={view.type === "state" && selection?.kind === "state" && selection.proposalId ? selectedProposal?.policy ?? selectedPolicy : selectedPolicy}
+        configs={projectArtifacts.configs ?? []}
+        taskGraph={selectedTaskGraph}
+        taskGraphDraft={selectedTaskGraphDraft}
+        flowEditable={selectedFlowEntry?.source === "canonical"}
+        nativeNodeDefinitions={[...nativeNodeDefinitions, ...publishedFlowDefinitions]}
+        flowPublications={flowPublications}
+        flowDependencyInfo={flowDependencyInfo}
+        proposalReview={selectedProposalReview}
+        proposalTargetFlowId={proposalTargetFlowId}
+        problems={problems}
+        projectId={activeProjectId}
+        recordings={recordings}
+        recordingDomains={recordingDomains}
+        runtimeSessions={runtimeSessions}
+        indexedStateSources={Object.values(indexedStateSources)}
+        stateLoading={view.type === "state" ? pendingStateOpen : null}
+        dockTab={dockTab}
+        selectedEntry={selectedEntry}
+        selectedNode={selectedNode}
+        selectedProposal={selectedProposal}
+        selectedRecording={selectedRecording}
+        recordingProcessing={recordingProcessing}
+        selectedSignal={selectedSignal}
+        selectedTimeline={selectedTimeline}
+        selection={selection}
+        signals={signals}
+        timelines={timelines}
+        view={view}
+        viewActive={viewActive}
+        onDeleteRecording={deleteProjectRecording}
+        onFinalizeRecording={finalizeProjectRecording}
+        onEnsureInspectorAvailable={ensureGlobalInspectorAvailable}
+        onOpenTimelineEntryState={openTimelineEntryState}
+        onOpenPipeline={openRecordingProposal}
+        onOpenProposal={openRecordingProposal}
+        onOpenProposalGenerator={openRecordingProposalGenerator}
+        onOpenRecording={openRecordingTimeline}
+        onOpenState={openStateView}
+        onAppendRecordingMarker={appendProjectRecordingMarker}
+        onAppendRecordingNote={appendProjectRecordingNote}
+        onNormalizeRecording={normalizeProjectRecording}
+        onPipelineAction={runRecordingPipelineStep}
+        onProposalReviewChange={updateProposalReview}
+        onSaveTaskGraph={saveSelectedTaskGraph}
+        onTaskGraphDraftChange={updateSelectedTaskGraphDraft}
+        onPublishFlow={publishSelectedFlow}
+        onDeprecateFlow={deprecateSelectedFlow}
+        onTaskGraphDirtyChange={setHasDirtyTaskGraph}
+        onProcessFinalizedRecording={processFinalizedRecording}
+        onGenerateDirectProposal={generateDirectProposal}
+        onGenerateAssistedProposal={generateAssistedProposal}
+        onRunRecordingPipeline={runRecordingPipeline}
+        onProcessProposalWithLlm={processPipelineProposalWithLlm}
+        onRefreshRecordings={async () => {
+          await refreshProjectRuntimeState(activeProjectId);
+        }}
+        onUpdateRecording={updateProjectRecording}
+        setDockTab={setDockTabAndPersist}
+        setSelection={setSelectionAndFollow}
+      />
+    );
   }
   function requestHierarchyAction(action: NonNullable<AutomationHierarchyAction>) {
     setHierarchyAction(action);
@@ -2622,7 +2989,200 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setHierarchyName("");
   }
 
+  const renderBottomTimelineDock = () => {
+    const collapsed = workspacePrefs.bottomTimelineCollapsed;
+    return (
+      <section className={collapsed ? "automation-bottom-timeline-region collapsed" : "automation-bottom-timeline-region"}>
+        <button className="automation-section-resize-handle bottom" disabled={collapsed} onPointerDown={startBottomTimelineResize} title="Resize timeline" aria-label="Resize timeline" type="button" />
+        <header className="automation-bottom-timeline-header">
+          <div>
+            <Radio size={14} aria-hidden />
+            <span><strong>Action Preview</strong><small>{selectedRecording?.metadata?.name ?? selectedRecording?.recordingId ?? "No recording selected"}</small></span>
+          </div>
+          <div className="automation-bottom-timeline-actions">
+            {!collapsed ? <button className="button" disabled={!selectedRecording} onClick={() => selectedRecording && openRecordingTimeline(selectedRecording.recordingId)} type="button"><FileSearch size={13} aria-hidden />Full Timeline</button> : null}
+            <button
+              className="icon-button"
+              onClick={() => updateWorkspacePrefs((current) => ({
+                ...current,
+                bottomTimelineCollapsed: !current.bottomTimelineCollapsed,
+                bottomDock: { ...current.bottomDock, expanded: current.bottomTimelineCollapsed }
+              }))}
+              title={collapsed ? "Expand timeline" : "Collapse timeline"}
+              aria-label={collapsed ? "Expand timeline" : "Collapse timeline"}
+              type="button"
+            >{collapsed ? <ChevronUp size={13} aria-hidden /> : <ChevronDown size={13} aria-hidden />}</button>
+          </div>
+        </header>
+        {!collapsed ? <AutomationTimelineDock
+          entries={selectedTimeline?.timeline ?? selectedRecording?.timeline ?? []}
+          selectedEntryId={activePreviewEntryId}
+          selectedRecording={selectedRecording}
+          onSelectAction={handleBottomPreviewActionClick}
+        /> : null}
+      </section>
+    );
+  };
+
   const renderWorkspaceArea = (area: AutomationWorkspaceArea, label: string, ref: RefObject<HTMLDivElement | null>) => {
+    if (area === "main") {
+      const paneCount = automationMainPaneCount(workspacePrefs.mainLayoutPreset);
+      const panes = workspacePrefs.panes.slice(0, paneCount);
+      const ratiosSource = liveMainSplitRatios ?? workspacePrefs.mainSplitRatios;
+      const ratios = ratiosSource.length === paneCount ? ratiosSource : Array.from({ length: paneCount }, () => 1 / paneCount);
+      const paneLayoutStyle = workspacePrefs.mainLayoutPreset === "two-rows"
+        ? { gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: ratios.map((ratio) => `minmax(0, ${ratio}fr)`).join(" ") }
+        : { gridTemplateColumns: ratios.map((ratio) => `minmax(0, ${ratio}fr)`).join(" "), gridTemplateRows: "minmax(0, 1fr)" };
+      let accumulatedRatio = 0;
+      const splitHandles = ratios.slice(0, -1).map((ratio, index) => {
+        accumulatedRatio += ratio;
+        return { index, offsetPct: accumulatedRatio * 100 };
+      });
+      return (
+        <section className="automation-workspace-section main strict">
+          <header className="automation-workspace-section-header">
+            <div className="automation-workspace-section-actions">
+              <button className="icon-button" onClick={(event) => toggleLayoutPicker(area, event)} title={`Arrange ${label}`} aria-label={`Arrange ${label}`} type="button"><Columns3 size={13} aria-hidden /></button>
+            </div>
+          </header>
+          <div className="automation-dock-layout" ref={ref}>
+            <div className={`automation-strict-pane-layout preset-${workspacePrefs.mainLayoutPreset}`} style={paneLayoutStyle}>
+              {panes.map((pane, paneIndex) => {
+                const baseView = viewById.get(pane.activeViewId) ?? viewById.get("policy-primary");
+                if (!baseView) return null;
+                const savedActiveSelection = workspacePrefs.viewStates?.[pane.activeViewId]?.selection;
+                const activeTitleSelection = workspacePrefs.activePaneId === pane.id
+                  ? selection
+                  : isAutomationSelection(savedActiveSelection) ? savedActiveSelection : null;
+                const view = viewWithTitleData(baseView, activeTitleSelection);
+                const tabViews = pane.tabs
+                  .map((tabId) => {
+                    const tabView = viewById.get(tabId);
+                    if (!tabView || automationWorkspaceRegionForView(tabId) !== "main") return null;
+                    const savedTabSelection = workspacePrefs.viewStates?.[tabId]?.selection;
+                    const tabTitleSelection = tabId === pane.activeViewId
+                      ? activeTitleSelection
+                      : isAutomationSelection(savedTabSelection) ? savedTabSelection : null;
+                    return viewWithTitleData(tabView, tabTitleSelection);
+                  })
+                  .filter(Boolean) as AutomationViewInstance[];
+                return (
+                  <div className="automation-pane-slot" key={pane.id}>
+                    <AutomationViewContainer
+                      active={workspacePrefs.activePaneId === pane.id}
+                      activeViewId={pane.activeViewId}
+                      canPageFullscreen={false}
+                      frameLabel="Pane"
+                      icon={view.icon}
+                      movable={false}
+                      pageFullscreen={false}
+                      resizable={false}
+                      showResetSize={false}
+                      tabs={tabViews}
+                      windowId={pane.id}
+                      windowIndex={paneIndex}
+                      subtitle={view.label}
+                      title={viewTitle(view)}
+                      onActivate={() => activatePane(pane.id)}
+                      onClose={() => closePaneTab(pane.id, pane.activeViewId)}
+                      onCloseTab={(viewId) => closePaneTab(pane.id, viewId)}
+                      onAddTab={(event) => toggleWindowAdder("main", event, pane.id)}
+                      onMoveStart={() => undefined}
+                      onPageFullscreen={() => undefined}
+                      onResetSize={() => undefined}
+                      onResizeStart={() => undefined}
+                      onTabSelect={(viewId) => setPaneTab(pane.id, viewId)}
+                    >
+                      {renderViewContent(view, workspacePrefs.activePaneId === pane.id && pane.activeViewId === view.id)}
+                    </AutomationViewContainer>
+                  </div>
+                );
+              })}
+              {splitHandles.map((handle) => (
+                <button
+                  className={workspacePrefs.mainLayoutPreset === "two-rows" ? "automation-main-split-handle horizontal" : "automation-main-split-handle vertical"}
+                  key={`split:${handle.index}`}
+                  onPointerDown={(event) => startMainSplitResize(handle.index, event)}
+                  style={workspacePrefs.mainLayoutPreset === "two-rows" ? { top: `${handle.offsetPct}%` } : { left: `${handle.offsetPct}%` }}
+                  title="Resize panes"
+                  aria-label="Resize panes"
+                  type="button"
+                />
+              ))}
+            </div>
+          </div>
+        </section>
+      );
+    }
+    if (area === "right") {
+      const activeRightViewId = workspacePrefs.rightSidebar.activeViewId || "global-inspector";
+      const baseView = viewById.get(activeRightViewId) ?? viewById.get("global-inspector");
+      const savedActiveSelection = workspacePrefs.viewStates?.[activeRightViewId]?.selection;
+      const activeTitleSelection = isAutomationSelection(savedActiveSelection) ? savedActiveSelection : selection;
+      const view = baseView ? viewWithTitleData(baseView, activeTitleSelection) : null;
+      const tabViews = workspacePrefs.rightSidebar.tabs
+        .map((tabId) => {
+          const tabView = viewById.get(tabId);
+          if (!tabView || automationWorkspaceRegionForView(tabId) !== "right") return null;
+          const savedTabSelection = workspacePrefs.viewStates?.[tabId]?.selection;
+          return viewWithTitleData(tabView, isAutomationSelection(savedTabSelection) ? savedTabSelection : selection);
+        })
+        .filter(Boolean) as AutomationViewInstance[];
+      return (
+        <section className="automation-workspace-section right strict">
+          <button className="automation-section-resize-handle right" onPointerDown={(event) => startWorkspaceSectionResize("right", event)} title="Resize right area" aria-label="Resize right area" type="button" />
+          <header className="automation-workspace-section-header">
+            <div className="automation-workspace-section-actions">
+              <button
+                className="icon-button"
+                onClick={() => updateWorkspacePrefs((current) => ({
+                  ...current,
+                  rightSidebarCollapsed: !current.rightSidebarCollapsed,
+                  rightSidebar: { ...current.rightSidebar, collapsed: !current.rightSidebarCollapsed }
+                }))}
+                title={workspacePrefs.rightSidebarCollapsed ? "Expand right area" : "Collapse right area"}
+                aria-label={workspacePrefs.rightSidebarCollapsed ? "Expand right area" : "Collapse right area"}
+                type="button"
+              >{workspacePrefs.rightSidebarCollapsed ? <ChevronLeft size={13} aria-hidden /> : <ChevronRight size={13} aria-hidden />}</button>
+              <div className="automation-window-adder-anchor area-right">
+                <button className="icon-button" onClick={(event) => toggleWindowAdder(area, event, "right-sidebar")} title="Add sidebar tab" aria-label="Add sidebar tab" type="button"><Plus size={13} aria-hidden /></button>
+              </div>
+            </div>
+          </header>
+          {!workspacePrefs.rightSidebarCollapsed && view ? <div className="automation-dock-layout" ref={ref}>
+            <div className="automation-pane-slot">
+              <AutomationViewContainer
+                active
+                activeViewId={activeRightViewId}
+                canPageFullscreen={false}
+                frameLabel="Sidebar"
+                icon={view.icon}
+                movable={false}
+                pageFullscreen={false}
+                resizable={false}
+                showResetSize={false}
+                tabs={tabViews}
+                windowId="right-sidebar"
+                windowIndex={0}
+                subtitle={view.label}
+                title={viewTitle(view)}
+                onActivate={() => undefined}
+                onClose={() => closeRightSidebarTab(activeRightViewId)}
+                onCloseTab={closeRightSidebarTab}
+                onAddTab={(event) => toggleWindowAdder("right", event, "right-sidebar")}
+                onMoveStart={() => undefined}
+                onPageFullscreen={() => undefined}
+                onResetSize={() => undefined}
+                onResizeStart={() => undefined}
+                onTabSelect={setRightSidebarTab}
+              >
+                {renderViewContent(view, true)}
+              </AutomationViewContainer>
+            </div>
+          </div> : null}
+        </section>
+      );
+    }
     const areaWindows = windowsByArea(area);
     return (
       <section className={`automation-workspace-section ${area}`}>
@@ -2705,78 +3265,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                     onResizeStart={(edge, event) => startWindowResize(windowItem, edge, event)}
                     onTabSelect={(viewId) => setWindowTab(windowItem.id, viewId)}
                   >
-                    <AutomationViewRenderer
-                      entries={selectedTimeline?.timeline ?? selectedRecording?.timeline ?? []}
-                      models={models}
-                      notes={selectedRecording?.notes ?? []}
-                      actionStatus={automationActionStatus}
-                      policies={policies}
-                      pipelineArtifacts={pipelineArtifacts}
-                      policy={view.type === "state" && selection?.kind === "state" && selection.proposalId ? selectedProposal?.policy ?? selectedPolicy : selectedPolicy}
-                      configs={projectArtifacts.configs ?? []}
-                      taskGraph={selectedTaskGraph}
-                      taskGraphDraft={selectedTaskGraphDraft}
-                      flowEditable={selectedFlowEntry?.source === "canonical"}
-                      nativeNodeDefinitions={[...nativeNodeDefinitions, ...publishedFlowDefinitions]}
-                      flowPublications={flowPublications}
-                      flowDependencyInfo={flowDependencyInfo}
-                      proposalReview={selectedProposalReview}
-                      proposalTargetFlowId={proposalTargetFlowId}
-                      problems={problems}
-                      projectId={activeProjectId}
-                      recordings={recordings}
-                      recordingDomains={recordingDomains}
-                      runtimeSessions={runtimeSessions}
-                      indexedStateSources={Object.values(indexedStateSources)}
-                      dockTab={dockTab}
-                      selectedEntry={selectedEntry}
-                      selectedNode={selectedNode}
-                      selectedProposal={selectedProposal}
-                      selectedRecording={selectedRecording}
-                      recordingProcessing={recordingProcessing}
-                      selectedSignal={selectedSignal}
-                      selectedTimeline={selectedTimeline}
-                      selection={selection}
-                      signals={signals}
-                      timelines={timelines}
-                      view={view}
-                      viewActive={workspacePrefs.activeWindowId === windowItem.id && windowItem.activeViewId === view.id}
-                      onDeleteRecording={deleteProjectRecording}
-                      onFinalizeRecording={finalizeProjectRecording}
-                      onEnsureInspectorAvailable={ensureGlobalInspectorAvailable}
-                      onOpenTimelineEntryState={openTimelineEntryState}
-                      onOpenPipeline={openRecordingProposal}
-                      onOpenProposal={openRecordingProposal}
-                      onOpenProposalGenerator={openRecordingProposalGenerator}
-                      onOpenRecording={openRecordingTimeline}
-                      onOpenState={openStateView}
-                      onAppendRecordingMarker={appendProjectRecordingMarker}
-                      onAppendRecordingNote={appendProjectRecordingNote}
-                      onNormalizeRecording={normalizeProjectRecording}
-                      onPipelineAction={runRecordingPipelineStep}
-                      onProposalReviewChange={updateProposalReview}
-                      onSaveTaskGraph={saveSelectedTaskGraph}
-                      onTaskGraphDraftChange={updateSelectedTaskGraphDraft}
-                      onPublishFlow={publishSelectedFlow}
-                      onDeprecateFlow={deprecateSelectedFlow}
-                      onTaskGraphDirtyChange={setHasDirtyTaskGraph}
-                      onProcessFinalizedRecording={processFinalizedRecording}
-                      onGenerateDirectProposal={generateDirectProposal}
-                      onGenerateAssistedProposal={generateAssistedProposal}
-                      onRunRecordingPipeline={runRecordingPipeline}
-                      onProcessProposalWithLlm={processPipelineProposalWithLlm}
-                      onRefreshRecordings={async () => {
-                        await refreshProjectRuntimeState(activeProjectId);
-                      }}
-                      onUpdateRecording={updateProjectRecording}
-                      setDockTab={setDockTabAndPersist}
-                      setSelection={setSelectionAndFollow}
-                    />
+                    {renderViewContent(view, workspacePrefs.activeWindowId === windowItem.id && windowItem.activeViewId === view.id)}
                   </AutomationViewContainer>
                 </div>
               );
             })}
-            {snapPreview && area === snapPreview.area ? <div className="automation-window-snap-preview" style={{ left: snapPreview.x, top: snapPreview.y, width: snapPreview.widthPx, height: snapPreview.heightPx }} /> : null}
           </div>
         </div>
       </section>
@@ -2950,11 +3443,12 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           className={`automation-studio-workspace${workspacePrefs.rightSidebarCollapsed ? " right-collapsed" : ""}${pageFullscreenWindowId ? " page-window-fullscreen" : ""}`}
           style={{
             gridTemplateColumns: `minmax(0, 1fr) ${workspacePrefs.rightSidebarCollapsed ? 38 : (liveInspectorWidth ?? workspacePrefs.inspectorWidth)}px`,
-            gridTemplateRows: "minmax(0, 1fr)"
+            gridTemplateRows: pageFullscreenWindowId ? "minmax(0, 1fr)" : `minmax(0, 1fr) ${workspacePrefs.bottomTimelineCollapsed ? 38 : (liveBottomTimelineHeight ?? workspacePrefs.bottomTimelineHeight)}px`
           }}
         >
           {renderWorkspaceArea("main", "Main", mainWorkspaceCanvasRef)}
           {renderWorkspaceArea("right", "Right Sidebar", rightWorkspaceCanvasRef)}
+          {!pageFullscreenWindowId ? renderBottomTimelineDock() : null}
         </section>
       </div>
       {recordingBlockedAlert ? <Modal title="Recording Cannot Start" onClose={() => setRecordingBlockedAlert(null)}>
@@ -3241,6 +3735,36 @@ export function resolveObservedStateEntryId(recording: any, timelineEntryId: str
       return 0;
     });
   return candidates[0]?.entry?.id ? String(candidates[0].entry.id) : null;
+}
+
+export function resolveActionPreviewEntryId(recordingOrTimeline: any, timelineEntryId: string | null | undefined): string | null {
+  if (!timelineEntryId) return null;
+  const entries = Array.isArray(recordingOrTimeline?.timeline) ? recordingOrTimeline.timeline.filter((entry: any) => entry && typeof entry === "object") : [];
+  if (!entries.length) return timelineEntryId;
+  const requested = entries.find((entry: any) => entry.id === timelineEntryId);
+  if (isActionTimelineEntry(requested)) return String(requested.id);
+  const metadata = requested?.payload && typeof requested.payload === "object" ? requested.payload.metadata : null;
+  const metadataActionEntryId = metadata && typeof metadata === "object" && typeof metadata.actionEntryId === "string" ? metadata.actionEntryId : undefined;
+  if (metadataActionEntryId && entries.some((entry: any) => entry.id === metadataActionEntryId && isActionTimelineEntry(entry))) return metadataActionEntryId;
+  const targetTiming = timelineEntryComparableTimestamp(requested);
+  if (targetTiming === null) return null;
+  const candidates = entries
+    .filter(isActionTimelineEntry)
+    .map((entry: any) => ({ entry, delta: targetTiming - (timelineEntryComparableTimestamp(entry) ?? Number.POSITIVE_INFINITY) }))
+    .filter((item: { entry: any; delta: number }) => Number.isFinite(item.delta))
+    .sort((left: { entry: any; delta: number }, right: { entry: any; delta: number }) => {
+      const distance = Math.abs(left.delta) - Math.abs(right.delta);
+      if (distance !== 0) return distance;
+      const leftBefore = left.delta >= 0;
+      const rightBefore = right.delta >= 0;
+      if (leftBefore !== rightBefore) return leftBefore ? -1 : 1;
+      return 0;
+    });
+  return candidates[0]?.entry?.id ? String(candidates[0].entry.id) : null;
+}
+
+function isActionTimelineEntry(entry: any): boolean {
+  return Boolean(entry && typeof entry === "object" && (entry.type === "action" || entry.type === "domain_event"));
 }
 
 function isStateSnapshotTimelineEntry(entry: any): boolean {
