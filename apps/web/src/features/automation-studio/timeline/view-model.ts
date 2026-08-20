@@ -45,6 +45,7 @@ export function timelineEntryDetailRows(entry: any): Array<[string, string]> {
     ["Action", readableToken(entry.actionType ?? "action")],
     ["Origin", readableToken(entry.origin ?? "-")],
     ["Target", entry.target?.label ?? entry.target?.id ?? "-"],
+    ...actionVisualTargetRows(entry.visualTarget),
     ["Parameters", readableObjectSummary(entry.parameters)],
     ["Started", entry.startedAt ? new Date(entry.startedAt).toLocaleString() : "-"],
     ["Completed", entry.completedAt ? new Date(entry.completedAt).toLocaleString() : "-"],
@@ -70,6 +71,28 @@ export function timelineEntryDetailRows(entry: any): Array<[string, string]> {
   if (entry.type === "note") return [["Note", entry.noteId ?? "-"]];
   if (entry.type === "marker") return [["Marker", entry.label ?? "-"]];
   return [];
+}
+
+function actionVisualTargetRows(target: any): Array<[string, string]> {
+  if (!target || typeof target !== "object") return [];
+  return [
+    ["Visual entity", target.entityKind ? `${target.entityId ?? "-"} (${target.entityKind})` : target.entityId ?? "-"],
+    ["State path", target.statePath?.namespace && target.statePath?.path ? `${target.statePath.namespace}.${target.statePath.path}` : "-"],
+    ["Visual layer", [target.visualFrameId, target.visualLayerId].filter(Boolean).join(" / ") || "-"],
+    ["Target anchor", actionVisualTargetAnchorSummary(target.anchor)],
+    ["Target confidence", typeof target.confidence === "number" ? `${Math.round(target.confidence * 100)}%` : "-"]
+  ];
+}
+
+function actionVisualTargetAnchorSummary(anchor: any): string {
+  if (!anchor || typeof anchor !== "object") return "-";
+  if (anchor.type === "bounds" && anchor.bounds) {
+    const bounds = anchor.bounds;
+    return `bounds ${bounds.x ?? 0}, ${bounds.y ?? 0}, ${bounds.width ?? 0} x ${bounds.height ?? 0}${anchor.boundsKind ? ` (${anchor.boundsKind})` : ""}`;
+  }
+  if (anchor.type === "point") return `point ${anchor.x ?? 0}, ${anchor.y ?? 0}`;
+  if (anchor.type === "entity") return `entity ${anchor.entityId ?? "-"}`;
+  return String(anchor.type ?? "-");
 }
 
 export function sourceLabel(recording: any, sourceId: unknown): string {

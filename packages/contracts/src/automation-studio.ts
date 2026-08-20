@@ -6,6 +6,18 @@ export type StateVolatility = "static" | "slow" | "normal" | "rapid";
 export type StateElementKind = "text" | "static_id" | "internal_id" | "selector" | "label" | "status" | "route" | "url" | "visibility" | "enabled" | "count" | "position" | "bounds" | "collection" | "json" | "unknown";
 export type StateNamespaceId = "app" | "runtime" | "user" | "environment" | "recording" | "custom" | (string & {});
 
+export type StateBounds = { x: number; y: number; width: number; height: number };
+export type StateBoundsKind = "screenshot" | "document";
+export type StatePath = { namespace: StateNamespaceId; path: string };
+export type EvidenceAnchor =
+  | { type: "none"; metadata?: JsonObject }
+  | { type: "point"; x: number; y: number; rendererId?: string; metadata?: JsonObject }
+  | { type: "bounds"; bounds: StateBounds; boundsKind?: StateBoundsKind; rendererId?: string; metadata?: JsonObject }
+  | { type: "element"; elementId: string; rendererId?: string; metadata?: JsonObject }
+  | { type: "entity"; entityId: string; entityKind?: string; rendererId?: string; metadata?: JsonObject }
+  | { type: "region"; regionId: string; rendererId?: string; metadata?: JsonObject }
+  | { type: "path"; points: Array<{ x: number; y: number }>; rendererId?: string; metadata?: JsonObject };
+
 export type SignalProvenance = {
   extractorId: string;
   extractorVersion: string;
@@ -83,6 +95,22 @@ export type ActionTarget = {
   selector?: string;
   bounds?: { x: number; y: number; width: number; height: number };
   relativePosition?: { x: number; y: number };
+  visualTarget?: ActionVisualEntityTarget;
+  metadata?: JsonObject;
+};
+
+export type ActionVisualTargetSource = "importer" | "runtime" | "inferred" | "operator";
+
+export type ActionVisualEntityTarget = {
+  entityId: string;
+  entityKind?: string;
+  statePath?: StatePath;
+  anchor?: EvidenceAnchor;
+  visualFrameId?: string;
+  visualLayerId?: string;
+  stateSnapshotId?: string;
+  confidence?: number;
+  source?: ActionVisualTargetSource;
   metadata?: JsonObject;
 };
 
@@ -106,7 +134,7 @@ export type TimelineBase = {
   metadata?: JsonObject;
 };
 
-export type ActionEntry = TimelineBase & { type: "action"; actionType: string; parameters: Record<string, unknown>; target?: ActionTarget; origin: "operator" | "runtime" | "assistant" | "external"; startedAt: number; completedAt?: number; result?: ActionResult };
+export type ActionEntry = TimelineBase & { type: "action"; actionType: string; parameters: Record<string, unknown>; target?: ActionTarget; visualTarget?: ActionVisualEntityTarget; origin: "operator" | "runtime" | "assistant" | "external"; startedAt: number; completedAt?: number; result?: ActionResult };
 export type StateDeltaEntry = TimelineBase & { type: "state_delta"; deltas: StateDelta[] };
 export type StateCheckpointEntry = TimelineBase & { type: "state_checkpoint"; state: StateSnapshot };
 export type ObservationEntry = TimelineBase & { type: "observation"; observationType: string; signals?: Record<string, StateValue>; payload?: JsonObject };

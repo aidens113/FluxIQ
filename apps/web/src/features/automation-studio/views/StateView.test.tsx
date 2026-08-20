@@ -972,6 +972,51 @@ describe("AutomationStateView", () => {
     expect(html).not.toContain('title="Visual"');
     expect(html).toContain("No visual frame exists");
   });
+
+  it("renders action visual targets as explicit interacted-entity callouts", () => {
+    const snapshot = stateWithImage("snapshot.target", 100, "/target.png");
+    const action = {
+      id: "entry.action.target",
+      type: "action",
+      actionType: "click",
+      timestamp: 100,
+      visualTarget: {
+        entityId: "checkout.submit",
+        anchor: { type: "bounds", bounds: { x: 20, y: 30, width: 30, height: 14 } },
+        confidence: 0.94
+      }
+    };
+    const html = renderToStaticMarkup(
+      <AutomationStateView
+        input={{
+          selection: { kind: "recording", id: "recording.target" },
+          selectedNode: null,
+          selectedEntry: action,
+          selectedRecording: {
+            recordingId: "recording.target",
+            timeline: [
+              { id: "entry.state", type: "state_checkpoint", timestamp: 100, state: snapshot },
+              action
+            ]
+          },
+          selectedTimeline: null,
+          policy: null,
+          taskGraph: null,
+          pipelineArtifacts: {},
+          recordings: [],
+          timelines: [],
+          runtimeSessions: [],
+          signals: []
+        }}
+        setSelection={() => undefined}
+      />
+    );
+
+    expect(html).toContain("tone-action-target");
+    expect(html).toContain("automation-state-overlay-tag");
+    expect(html).toContain("Interacted");
+    expect(html).toContain("automation-state-overlay-corner top-left");
+  });
 });
 
 function stateWithImage(id: string, timestamp: number, contentRef: string) {

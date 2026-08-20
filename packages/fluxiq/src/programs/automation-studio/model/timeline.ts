@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../core/index.ts";
-import type { ActionResult, ActionTarget } from "./actions.ts";
+import type { ActionResult, ActionTarget, ActionVisualEntityTarget } from "./actions.ts";
 import type { StateDelta, StateSnapshot, StateValue } from "./state.ts";
 
 export type TimelineBase = {
@@ -24,6 +24,7 @@ export type ActionEntry = TimelineBase & {
   actionType: string;
   parameters: Record<string, unknown>;
   target?: ActionTarget;
+  visualTarget?: ActionVisualEntityTarget;
   origin: "operator" | "runtime" | "assistant" | "external";
   startedAt: number;
   completedAt?: number;

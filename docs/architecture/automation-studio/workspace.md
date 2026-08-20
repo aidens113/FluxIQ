@@ -497,13 +497,20 @@ Recording review is split into two surfaces. The bottom dock is a lightweight
 action preview rail for the selected recording; it shows action/domain-event
 markers only, so high-frequency state observations do not crowd the preview.
 The rail uses compact markers and short labels to stay readable when resized
-small, while selected actions receive the strongest visual emphasis. Selecting
-a preview marker updates global selection, and explicit open-state actions
+small, while selected actions receive the strongest visual emphasis. Actions
+that declare `visualTarget` show a target marker in their preview box.
+Selecting or previewing one of those actions makes the active preview action
+drive State View resolution, so the interacted entity is highlighted even when
+the global selection is still on the recording. State View resolves the target
+using the linked state snapshot, visual layer, state path, entity anchor, or
+fallback geometry. State selections preserve proposal and recording context so
+split-screen proposal review stays on the generated proposal while operators
+inspect timeline actions or visual state entities. Explicit open-state actions
 route to the main State View using Core's indexed state lookup. The full
-Recording Timeline is a main editor view. It contains the complete event
-timeline, state observations, note/marker controls, proposal-generation entry
-points, and in-depth recording inspection. The action preview dock can be
-resized vertically or collapsed.
+Recording Timeline is a main editor view. It
+contains the complete event timeline, state observations, note/marker controls,
+proposal-generation entry points, and in-depth recording inspection. The action
+preview dock can be resized vertically or collapsed.
 
 View routing is fixed by region:
 

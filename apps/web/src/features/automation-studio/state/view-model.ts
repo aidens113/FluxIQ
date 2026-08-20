@@ -16,6 +16,8 @@ import type { AutomationSelection } from "../types";
 export type BuildNodeStateViewModelInput = {
   selection: AutomationSelection | null;
   selectedNode: unknown;
+  selectedEntry?: unknown;
+  selectedProposal?: unknown;
   selectedRecording: unknown;
   selectedTimeline: unknown;
   policy: unknown;
@@ -68,7 +70,7 @@ export type NodeEvidenceBindingViewModel = {
   selected: boolean;
 };
 
-export type StateOverlayTone = "positive" | "weak" | "negative" | "mismatch" | "neutral";
+export type StateOverlayTone = "positive" | "weak" | "negative" | "mismatch" | "neutral" | "action-target";
 export type StateVisualTone = "control" | "link" | "input" | "text" | "region" | "media" | "navigation" | "list" | "status" | "selected" | "disabled" | "unknown";
 
 export type StateOverlayViewModel = {
@@ -128,6 +130,20 @@ export type NodeStateRuntimeComparisonViewModel = {
   rows: NodeStateRuntimeComparisonRow[];
 };
 
+export type ResolvedActionVisualTargetViewModel = {
+  actionEntryId: string;
+  stateSnapshotId?: string;
+  visualFrameId?: string;
+  visualLayerId?: string;
+  anchor?: EvidenceAnchor;
+  entityId?: string;
+  entityKind?: string;
+  statePath?: { namespace: string; path: string };
+  confidence?: number;
+  resolution: "exact-layer" | "state-path" | "entity" | "anchor" | "missing";
+  issues?: string[];
+};
+
 export type NodeStateViewModel = {
   title: string;
   subtitle: string;
@@ -142,6 +158,7 @@ export type NodeStateViewModel = {
   structuredRows: StateStructuredRow[];
   diffRows: StateDiffRow[];
   runtimeComparison?: NodeStateRuntimeComparisonViewModel;
+  actionVisualTarget?: ResolvedActionVisualTargetViewModel;
   raw: unknown;
   summary: {
     facts: number;
@@ -183,7 +200,10 @@ export function buildNodeStateViewModel(input: BuildNodeStateViewModelInput): No
   const requestedSourceId = input.viewState?.sourceId
     ?? selection.sourceId
     ?? undefined;
-  const requestedStateSnapshotId = input.viewState?.stateSnapshotId ?? selection.stateSnapshotId;
+  const selectedActionTarget = selectedEntryVisualTarget(input.selectedEntry);
+  const requestedStateSnapshotId = input.viewState?.stateSnapshotId
+    ?? selection.stateSnapshotId
+    ?? stringValue(selectedActionTarget?.stateSnapshotId);
   const exactStateRequested = Boolean(requestedSourceId || requestedStateSnapshotId || selection.timelineEntryId);
   const sourceIdForRequestedSnapshot = requestedStateSnapshotId
     ? sourceRecords.find((record) => stateSourceSnapshotId(record.source) === requestedStateSnapshotId)?.source.id
@@ -200,9 +220,13 @@ export function buildNodeStateViewModel(input: BuildNodeStateViewModelInput): No
   const facts = snapshot ? stateFactsFromSnapshot(snapshot) : [];
   const bindingModels = bindings.map((binding) => evidenceBindingViewModel(binding, input.viewState?.selectedEvidenceId));
   const runtimeComparison = buildRuntimeComparison(input, activeRecord, nodeId, bindings, facts, sourceRecords);
+  const actionVisualTarget = resolveSelectedActionVisualTarget(input.selectedEntry, snapshot);
   const overlays = runtimeComparison && activePhase === "actual_output"
     ? buildRuntimeComparisonOverlays(runtimeComparison, input.viewState?.selectedEvidenceId, input.viewState?.selectedFactPath)
-    : buildOverlays(bindingModels, facts, input.viewState?.selectedEvidenceId, input.viewState?.selectedFactPath);
+    : [
+      ...buildOverlays(bindingModels, facts, input.viewState?.selectedEvidenceId, input.viewState?.selectedFactPath),
+      ...buildActionVisualTargetOverlays(actionVisualTarget)
+    ];
   const visualFrame = selectVisualFrame(snapshot);
   const structuredRows = facts.map((fact): StateStructuredRow => {
     const type = stateValueType(fact.rawValue);
@@ -225,6 +249,7 @@ export function buildNodeStateViewModel(input: BuildNodeStateViewModelInput): No
     visualFrame,
     facts: facts.map((fact) => ({ namespace: fact.namespace, path: fact.path, value: fact.rawValue, observedAt: fact.observedAt, confidence: fact.confidence })),
     evidence: bindings,
+    actionVisualTarget,
     runtimeComparison,
     deltas: activeRecord?.deltas ?? []
   };
@@ -248,6 +273,7 @@ export function buildNodeStateViewModel(input: BuildNodeStateViewModelInput): No
     structuredRows,
     diffRows,
     ...(runtimeComparison ? { runtimeComparison } : {}),
+    ...(actionVisualTarget ? { actionVisualTarget } : {}),
     raw,
     summary: {
       facts: facts.length,
@@ -531,6 +557,107 @@ function buildOverlays(bindings: NodeEvidenceBindingViewModel[], facts: StateFac
   });
 }
 
+function buildActionVisualTargetOverlays(target: ResolvedActionVisualTargetViewModel | undefined): StateOverlayViewModel[] {
+  if (!target?.anchor || target.anchor.type === "none") return [];
+  return [compactObject({
+    id: `action-target:${target.actionEntryId}`,
+    label: target.entityId ? `Action target: ${readableToken(target.entityId)}` : "Action target",
+    role: "context" as const,
+    tone: "action-target" as const,
+    anchor: target.anchor,
+    factPath: target.statePath ? `${target.statePath.namespace}.${target.statePath.path}` : undefined,
+    confidence: target.confidence,
+    selected: true,
+    visualTone: "selected" as const
+  }) as StateOverlayViewModel];
+}
+
+function resolveSelectedActionVisualTarget(entry: unknown, snapshot: StateSnapshot | null): ResolvedActionVisualTargetViewModel | undefined {
+  const record = objectRecord(entry);
+  if (!record || !isActionLikeTimelineEntry(record) || !objectRecord(record.visualTarget)) return undefined;
+  const target = objectRecord(record.visualTarget)!;
+  const actionEntryId = stringValue(record.id) ?? "action";
+  const base = compactActionVisualTarget({
+    actionEntryId,
+    stateSnapshotId: stringValue(target.stateSnapshotId) ?? snapshot?.id,
+    entityId: stringValue(target.entityId),
+    entityKind: stringValue(target.entityKind),
+    statePath: statePathValue(target.statePath),
+    anchor: evidenceAnchorValue(target.anchor),
+    confidence: numberValue(target.confidence)
+  });
+  if (!snapshot) return { ...base, resolution: base.anchor ? "anchor" : "missing" };
+  const frames = snapshot.presentation?.visualFrames ?? [];
+  const frame = frames.find((item) => item.id === stringValue(target.visualFrameId)) ?? frames[0];
+  const layerId = stringValue(target.visualLayerId);
+  const layer = layerId ? (frame?.layers.find((item) => item.id === layerId) ?? frames.flatMap((item) => item.layers).find((item) => item.id === layerId)) : undefined;
+  if (layer) return compactActionVisualTarget({ ...base, visualFrameId: frame?.id, visualLayerId: layer.id, anchor: layerAnchorValue(layer) ?? base.anchor, statePath: layerStatePathValue(layer) ?? base.statePath, resolution: "exact-layer" });
+  if (base.statePath) {
+    const pathKey = `${base.statePath.namespace}.${base.statePath.path}`;
+    const pathLayerMatch = frames.flatMap((item) => item.layers.map((layer) => ({ frame: item, layer }))).find((item) => statePathKey(layerStatePathValue(item.layer)) === pathKey);
+    if (pathLayerMatch) return compactActionVisualTarget({ ...base, visualFrameId: pathLayerMatch.frame.id, visualLayerId: pathLayerMatch.layer.id, anchor: layerAnchorValue(pathLayerMatch.layer) ?? base.anchor, resolution: "state-path" });
+    const stateAnchor = snapshot.namespaces[base.statePath.namespace]?.values[base.statePath.path]?.presentation?.anchor;
+    if (stateAnchor) return { ...base, anchor: stateAnchor, resolution: "state-path" };
+  }
+  const entityLayerMatch = frames.flatMap((item) => item.layers.map((layer) => ({ frame: item, layer }))).find((item) => {
+    const identity = layerEntityIdentity(item.layer);
+    return identity.entityId === base.entityId && (!base.entityKind || !identity.entityKind || identity.entityKind === base.entityKind);
+  });
+  if (entityLayerMatch) return compactActionVisualTarget({ ...base, visualFrameId: entityLayerMatch.frame.id, visualLayerId: entityLayerMatch.layer.id, anchor: layerAnchorValue(entityLayerMatch.layer) ?? base.anchor, resolution: "entity" });
+  if (base.anchor && base.anchor.type !== "none") return { ...base, resolution: "anchor" };
+  return { ...base, resolution: "missing", issues: ["No visual layer, state-path anchor, or direct anchor matched the action visual target."] };
+}
+
+function statePathValue(value: unknown): { namespace: string; path: string } | undefined {
+  const record = objectRecord(value);
+  const namespace = stringValue(record?.namespace);
+  const path = stringValue(record?.path);
+  return namespace && path ? { namespace, path } : undefined;
+}
+
+function evidenceAnchorValue(value: unknown): EvidenceAnchor | undefined {
+  const record = objectRecord(value);
+  return stringValue(record?.type) ? value as EvidenceAnchor : undefined;
+}
+
+function layerAnchorValue(layer: StateVisualFrame["layers"][number]): EvidenceAnchor | undefined {
+  if (layer.kind === "image") return compactAnchor({ type: "bounds", bounds: layer.bounds, boundsKind: layer.boundsKind });
+  if ("anchor" in layer && layer.anchor) return layer.anchor;
+  if ("bounds" in layer && layer.bounds) return compactAnchor({ type: "bounds", bounds: layer.bounds, boundsKind: layer.boundsKind });
+  return undefined;
+}
+
+function layerStatePathValue(layer: StateVisualFrame["layers"][number]): { namespace: string; path: string } | undefined {
+  if (layer.kind !== "region" && layer.kind !== "element") return undefined;
+  const raw = layer.statePath ?? stringValue(objectRecord(layer.metadata)?.statePath) ?? stringValue(objectRecord(layer.metadata)?.factPath);
+  if (!raw) return undefined;
+  const [namespace, ...pathParts] = raw.split(".");
+  return namespace && pathParts.length ? { namespace, path: pathParts.join(".") } : undefined;
+}
+
+function layerEntityIdentity(layer: StateVisualFrame["layers"][number]): { entityId?: string; entityKind?: string } {
+  const anchor = "anchor" in layer ? layer.anchor : undefined;
+  if (anchor?.type === "entity") return compactIdentity({ entityId: anchor.entityId, entityKind: anchor.entityKind });
+  const metadata = objectRecord(layer.metadata);
+  return compactIdentity({ entityId: stringValue(metadata?.entityId), entityKind: stringValue(metadata?.entityKind) });
+}
+
+function statePathKey(value: { namespace: string; path: string } | undefined): string {
+  return value ? `${value.namespace}.${value.path}` : "";
+}
+
+function compactActionVisualTarget(value: Record<string, unknown>): ResolvedActionVisualTargetViewModel {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as ResolvedActionVisualTargetViewModel;
+}
+
+function compactAnchor(value: { type: "bounds"; bounds: { x: number; y: number; width: number; height: number }; boundsKind?: "screenshot" | "document" | undefined }): EvidenceAnchor {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as unknown as EvidenceAnchor;
+}
+
+function compactIdentity(value: { entityId?: string | undefined; entityKind?: string | undefined }): { entityId?: string; entityKind?: string } {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as { entityId?: string; entityKind?: string };
+}
+
 function selectVisualFrame(snapshot: StateSnapshot | null): StateVisualFrame | undefined {
   const frames = snapshot?.presentation?.visualFrames ?? [];
   if (!frames.length) return undefined;
@@ -541,7 +668,7 @@ function selectVisualFrame(snapshot: StateSnapshot | null): StateVisualFrame | u
 function inferPreferredObservedSourceId(input: BuildNodeStateViewModelInput, sourceRecords: StateSourceRecord[], bindings: NodeEvidenceBinding[], nodeId: string): string | undefined {
   const observedSources = sourceRecords.filter((record) => record.source.kind === "observed" && record.snapshot);
   if (!observedSources.length) return undefined;
-  const selectedEntryId = selectedTimelineEntryId(input.selection);
+  const selectedEntryId = selectedTimelineEntryId(input.selection) ?? stringValue(objectRecord(input.selectedEntry)?.id);
   if (selectedEntryId) {
     const exact = observedSources.find((record) => record.source.kind === "observed" && record.source.timelineEntryId === selectedEntryId);
     if (exact) return exact.source.id;
@@ -694,6 +821,12 @@ function selectedTimelineEntryId(selection: AutomationSelection | null): string 
   if (selection?.kind === "timeline") return selection.id;
   if (selection?.kind === "state") return selection.timelineEntryId;
   return undefined;
+}
+
+function selectedEntryVisualTarget(entry: unknown): Record<string, unknown> | null {
+  const record = objectRecord(entry);
+  if (!record || !isActionLikeTimelineEntry(record)) return null;
+  return objectRecord(record.visualTarget);
 }
 
 function inferNodeOrderActionTiming(input: BuildNodeStateViewModelInput, nodeId: string): { offset?: number; timestamp?: number } | null {

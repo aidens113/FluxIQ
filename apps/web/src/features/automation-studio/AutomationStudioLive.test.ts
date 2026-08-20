@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveActionPreviewEntryId, resolveObservedStateEntryId } from "./AutomationStudioLive";
+import { latestProposalForRecordingId, resolveActionPreviewEntryId, resolveObservedStateEntryId, selectedNodeActionPreviewEntryId } from "./AutomationStudioLive";
 
 describe("AutomationStudioLive state opening", () => {
   it("resolves action timeline entries to the exact action-adjacent state snapshot", () => {
@@ -72,5 +72,42 @@ describe("AutomationStudioLive state opening", () => {
     };
 
     expect(resolveActionPreviewEntryId(recording, "entry.action.target")).toBe("entry.action.target");
+  });
+
+  it("resolves selected proposal and flow nodes to the matching action preview entry", () => {
+    const recording = {
+      timeline: [{
+        id: "entry.action.target",
+        type: "action",
+        timestamp: 500
+      }, {
+        id: "entry.state.target",
+        type: "observation",
+        observationType: "client.state_snapshot",
+        timestamp: 510,
+        payload: { snapshotId: "snapshot.target", metadata: { actionEntryId: "entry.action.target" } }
+      }]
+    };
+
+    expect(selectedNodeActionPreviewEntryId(recording, { id: "node.proposal", metadata: { timelineEntryId: "entry.state.target" } })).toBe("entry.action.target");
+    expect(selectedNodeActionPreviewEntryId(recording, { id: "node.flow", metadata: { stateSnapshotId: "snapshot.target" } })).toBe("entry.action.target");
+  });
+
+  it("keeps proposal context recoverable from a source recording after timeline or state selection", () => {
+    const proposal = latestProposalForRecordingId("recording.web", [{
+      proposalId: "proposal.old",
+      generatedAt: 100,
+      metadata: { recordingId: "recording.web" }
+    }, {
+      proposalId: "proposal.current",
+      generatedAt: 200,
+      metadata: { recordingId: "recording.web" }
+    }], [{
+      proposalId: "proposal.other",
+      recordingId: "recording.other",
+      generatedAt: 300
+    }]);
+
+    expect(proposal?.proposalId).toBe("proposal.current");
   });
 });

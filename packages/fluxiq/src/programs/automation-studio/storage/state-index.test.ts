@@ -21,13 +21,30 @@ describe("Recording state index contracts", () => {
     expect(recordingIndexStateObjectRefs(index)).toEqual([stateRef, screenshotRef].sort());
   });
 
+  it("accepts action visual target summaries distinct from state links", () => {
+    const index = fixtureIndex();
+    index.actions["action.click"]!.visualTarget = {
+      entityId: "checkout.submit",
+      entityKind: "button",
+      statePath: { namespace: "app", path: "elements.submit.visible" },
+      stateSnapshotId: "state.snapshot",
+      visualFrameId: "viewport",
+      visualLayerId: "element.submit",
+      confidence: 0.9
+    };
+
+    expect(validateRecordingIndex(index)).toEqual([]);
+  });
+
   it("rejects missing state refs and missing action links", () => {
     const index = fixtureIndex();
     index.entries["entry.action"]!.stateSnapshotId = "state.missing";
     index.actions["action.click"]!.stateAtActionId = "state.missing";
+    index.actions["action.click"]!.visualTarget = { entityId: "checkout.submit", stateSnapshotId: "state.missing" };
     index.states["state.snapshot"]!.linkedActionIds = ["action.missing"];
 
     expect(validateRecordingIndex(index).map((issue) => issue.code)).toEqual([
+      "missing_state",
       "missing_state",
       "missing_state",
       "missing_action"

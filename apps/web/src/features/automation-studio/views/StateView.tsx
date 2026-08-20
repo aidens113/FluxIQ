@@ -211,6 +211,7 @@ function StateOverlay(props: { overlay: StateOverlayViewModel; metrics: StateVis
   const style = overlayStyle(props.overlay.anchor, props.metrics, props.overlay.selected === true);
   if (!style) return null;
   const label = props.overlay.confidence === undefined ? props.overlay.label : `${props.overlay.label} (${Math.round(props.overlay.confidence * 100)}%)`;
+  const actionTarget = props.overlay.tone === "action-target";
   return (
     <button
       aria-label={label}
@@ -219,7 +220,15 @@ function StateOverlay(props: { overlay: StateOverlayViewModel; metrics: StateVis
       style={style}
       title={label}
       type="button"
-    />
+    >
+      {actionTarget ? <>
+        <span className="automation-state-overlay-tag">Interacted</span>
+        <span className="automation-state-overlay-corner top-left" aria-hidden />
+        <span className="automation-state-overlay-corner top-right" aria-hidden />
+        <span className="automation-state-overlay-corner bottom-right" aria-hidden />
+        <span className="automation-state-overlay-corner bottom-left" aria-hidden />
+      </> : null}
+    </button>
   );
 }
 
@@ -342,6 +351,8 @@ function stateSelectionKey(selection: AutomationSelection | null): string {
 function stateAutomationSelection(model: NodeStateViewModel, input: BuildNodeStateViewModelInput, next: { sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string }): AutomationSelection {
   const nodeId = inputNodeId(input) ?? (model.activeSource?.kind === "learned" ? model.activeSource.nodeId : undefined);
   const sourceId = next.sourceId ?? model.activeSource?.id;
+  const recordingId = inputSelectionRecordingId(input) ?? (model.activeSource?.kind === "observed" ? model.activeSource.recordingId : undefined);
+  const proposalId = inputSelectionProposalId(input);
   return {
     kind: "state",
     id: `state:${nodeId ?? model.activeSource?.id ?? "workspace"}`,
@@ -350,12 +361,28 @@ function stateAutomationSelection(model: NodeStateViewModel, input: BuildNodeSta
     phase: next.phase ?? model.activePhase,
     ...(next.evidenceId ? { evidenceId: next.evidenceId } : {}),
     ...(next.factPath ? { factPath: next.factPath } : {}),
-    ...(input.selection?.kind === "state" && input.selection.recordingId ? { recordingId: input.selection.recordingId } : {}),
-    ...(input.selection?.kind === "state" && input.selection.proposalId ? { proposalId: input.selection.proposalId } : {}),
+    ...(recordingId ? { recordingId } : {}),
+    ...(proposalId ? { proposalId } : {}),
     ...(input.selection?.kind === "state" && input.selection.timelineEntryId ? { timelineEntryId: input.selection.timelineEntryId } : {}),
     ...(input.selection?.kind === "state" && input.selection.stateSnapshotId ? { stateSnapshotId: input.selection.stateSnapshotId } : {}),
     ...(input.selection?.kind === "state" && input.selection.stateRef ? { stateRef: input.selection.stateRef } : {})
   };
+}
+
+function inputSelectionProposalId(input: BuildNodeStateViewModelInput): string | undefined {
+  if (input.selection?.kind === "proposal") return input.selection.id;
+  if (input.selection?.kind === "proposal-step" || input.selection?.kind === "state") return input.selection.proposalId;
+  if (input.selection?.kind === "editor-node") return stringMetadata(objectMetadata(input.selection.node.metadata).proposalId);
+  return stringMetadata(objectMetadata(input.selectedProposal).proposalId);
+}
+
+function inputSelectionRecordingId(input: BuildNodeStateViewModelInput): string | undefined {
+  if (input.selection?.kind === "recording") return input.selection.id;
+  if (input.selection?.kind === "proposal" || input.selection?.kind === "proposal-step" || input.selection?.kind === "state") return input.selection.recordingId;
+  if (input.selection?.kind === "editor-node") return stringMetadata(objectMetadata(input.selection.node.metadata).recordingId);
+  return stringMetadata(objectMetadata(input.selectedRecording).recordingId)
+    ?? stringMetadata(objectMetadata(input.selectedProposal).recordingId)
+    ?? stringMetadata(objectMetadata(objectMetadata(input.selectedProposal).metadata).recordingId);
 }
 
 function inputNodeId(input: BuildNodeStateViewModelInput): string | undefined {

@@ -336,8 +336,20 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         : selection?.kind === "editor-node" && typeof selection.node.metadata?.proposalId === "string"
           ? selection.node.metadata.proposalId
           : undefined;
+  const selectionRecordingIdForProposal = selection?.kind === "recording"
+    ? selection.id
+    : selection?.kind === "timeline"
+      ? timelines.find((timeline: any) => timeline.timeline?.some((entry: any) => entry.id === selection.id))?.recordingId
+        ?? recordings.find((recording: any) => recording.timeline?.some((entry: any) => entry.id === selection.id))?.recordingId
+      : selection?.kind === "state"
+        ? selection.recordingId ?? recordingIdFromStateSourceId(selection.sourceId)
+        : selection?.kind === "proposal" || selection?.kind === "proposal-step"
+          ? selection.recordingId
+          : selection?.kind === "editor-node" && typeof selection.node.metadata?.recordingId === "string"
+            ? selection.node.metadata.recordingId
+            : undefined;
   const selectedProposal = hierarchyProposals.find((proposal: any) => selectionProposalId && proposal.proposalId === selectionProposalId)
-    ?? proposals.find((proposal: any) => selection?.kind === "recording" && proposal.metadata?.recordingId === selection.id)
+    ?? latestProposalForRecordingId(selectionRecordingIdForProposal, proposals, recordingFlowProposals)
     ?? (selection ? null : hierarchyProposals[0] ?? null);
   const selectedTask = projectTasks.find((task: any) => selection?.kind === "policy" && (task.metadata?.policyId === selection.id || task.taskId === selection.id))
     ?? validLastOpenTask
@@ -392,9 +404,15 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const selectedEntry = selectedTimeline?.timeline?.find((entry: any) => selection?.kind === "timeline" && selection.id === entry.id) ?? selectedRecording?.timeline?.find((entry: any) => selection?.kind === "timeline" && selection.id === entry.id);
   const activePreviewSourceEntryId = pendingStateOpen?.timelineEntryId
     ?? bottomPreviewEntryId
-    ?? (selection?.kind === "state" && selection.timelineEntryId ? selection.timelineEntryId : undefined);
+    ?? (selection?.kind === "state" && selection.timelineEntryId ? selection.timelineEntryId : undefined)
+    ?? selectedNodeActionPreviewEntryId(selectedTimeline ?? selectedRecording, selectedNode);
   const activePreviewEntryId = selectedEntry?.id
     ?? resolveActionPreviewEntryId(selectedTimeline ?? selectedRecording, activePreviewSourceEntryId);
+  const activePreviewEntry = activePreviewEntryId
+    ? (selectedTimeline?.timeline?.find((entry: any) => entry.id === activePreviewEntryId)
+      ?? selectedRecording?.timeline?.find((entry: any) => entry.id === activePreviewEntryId)
+      ?? selectedEntry)
+    : selectedEntry;
   const selectedSignal = signals.find((signal: any) => selection?.kind === "signal" && selection.id === signal.path);
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
   const restoringUrlProject = Boolean(urlProjectId && !activeProject && !projectStatus && (!projectsLoaded || activeProjectId === urlProjectId || urlProjectOpenAttemptRef.current === urlProjectId));
@@ -689,7 +707,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     const proposalId = request.proposalId
       ?? (selection?.kind === "proposal" ? selection.id : undefined)
       ?? (selection?.kind === "proposal-step" ? selection.proposalId : undefined)
-      ?? (selection?.kind === "state" ? selection.proposalId : undefined);
+      ?? (selection?.kind === "state" ? selection.proposalId : undefined)
+      ?? selectedProposal?.proposalId;
     if (pendingKey) {
       pendingStateOpenKeyRef.current = pendingKey;
       if (timelineEntryId) setBottomPreviewEntryId(resolveActionPreviewEntryId(selectedTimeline ?? selectedRecording, timelineEntryId));
@@ -2784,7 +2803,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         indexedStateSources={Object.values(indexedStateSources)}
         stateLoading={view.type === "state" ? pendingStateOpen : null}
         dockTab={dockTab}
-        selectedEntry={selectedEntry}
+        selectedEntry={activePreviewEntry}
         selectedNode={selectedNode}
         selectedProposal={selectedProposal}
         selectedRecording={selectedRecording}
@@ -3715,6 +3734,28 @@ function stringRecordValue(record: Record<string, unknown> | null | undefined, k
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function firstNonEmptyString(values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+export function selectedNodeActionPreviewEntryId(recordingOrTimeline: any, selectedNode: any): string | null {
+  const metadata = selectedNode && typeof selectedNode === "object" && !Array.isArray(selectedNode) && selectedNode.metadata && typeof selectedNode.metadata === "object" && !Array.isArray(selectedNode.metadata)
+    ? selectedNode.metadata as Record<string, unknown>
+    : null;
+  const directEntryId = stringRecordValue(metadata, "actionEntryId") ?? stringRecordValue(metadata, "timelineEntryId");
+  const directPreviewId = resolveActionPreviewEntryId(recordingOrTimeline, directEntryId);
+  if (directPreviewId) return directPreviewId;
+
+  const stateSnapshotId = stringRecordValue(metadata, "stateSnapshotId") ?? stringRecordValue(metadata, "stateAtActionId");
+  if (!stateSnapshotId) return null;
+  const entries = Array.isArray(recordingOrTimeline?.timeline) ? recordingOrTimeline.timeline.filter((entry: any) => entry && typeof entry === "object") : [];
+  const stateEntry = entries.find((entry: any) => timelineEntryStateSnapshotId(entry) === stateSnapshotId);
+  return resolveActionPreviewEntryId(recordingOrTimeline, stateEntry?.id);
+}
+
 export function resolveObservedStateEntryId(recording: any, timelineEntryId: string): string | null {
   const entries = Array.isArray(recording?.timeline) ? recording.timeline.filter((entry: any) => entry && typeof entry === "object") : [];
   if (!entries.length) return null;
@@ -3774,6 +3815,22 @@ function isStateSnapshotTimelineEntry(entry: any): boolean {
   ));
 }
 
+function timelineEntryStateSnapshotId(entry: any): string | null {
+  if (!entry || typeof entry !== "object") return null;
+  const payload = entry.payload && typeof entry.payload === "object" ? entry.payload as Record<string, unknown> : null;
+  const payloadMetadata = payload?.metadata && typeof payload.metadata === "object" && !Array.isArray(payload.metadata) ? payload.metadata as Record<string, unknown> : null;
+  const entryMetadata = entry.metadata && typeof entry.metadata === "object" && !Array.isArray(entry.metadata) ? entry.metadata as Record<string, unknown> : null;
+  return firstNonEmptyString([
+    entry.stateSnapshotId,
+    payload?.stateSnapshotId,
+    payload?.snapshotId,
+    stringRecordValue(payloadMetadata, "stateSnapshotId"),
+    stringRecordValue(payloadMetadata, "snapshotId"),
+    stringRecordValue(entryMetadata, "stateSnapshotId"),
+    stringRecordValue(entryMetadata, "stateAtActionId")
+  ]);
+}
+
 function timelineEntryComparableTimestamp(entry: any): number | null {
   if (!entry || typeof entry !== "object") return null;
   const metadata = entry.payload && typeof entry.payload === "object" ? entry.payload.metadata : null;
@@ -3805,6 +3862,14 @@ function isProposalGenerationEndpoint(endpoint: string): boolean {
     || endpoint === "learn-task-model"
     || endpoint === "propose-policy-from-model"
     || endpoint === "create-recording-flow-proposals";
+}
+
+export function latestProposalForRecordingId(recordingId: string | null | undefined, proposals: any[], recordingFlowProposals: any[]): any | undefined {
+  if (!recordingId) return undefined;
+  return latestByGeneratedAt<any>([
+    ...proposals.filter((item: any) => item.recordingId === recordingId || item.metadata?.recordingId === recordingId),
+    ...recordingFlowProposals.filter((item: any) => item.recordingId === recordingId || item.metadata?.recordingId === recordingId)
+  ]);
 }
 
 function latestByGeneratedAt<TItem extends { generatedAt?: number }>(items: TItem[]): TItem | undefined {

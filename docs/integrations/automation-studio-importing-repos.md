@@ -117,6 +117,54 @@ are domain-neutral references such as points, bounds, element IDs, entity IDs,
 regions, or paths. They tell the State View where a fact appears in the
 reconstructed world; they do not tell FluxIQ whether that fact is important.
 
+## Action Visual Targets
+
+Recorded actions can identify the visual state entity they acted upon with
+`visualTarget`. This is domain-neutral evidence metadata used by Automation
+Studio to highlight the interacted entity in State View and explain the target
+in the timeline inspector. It does not authorize the action, replace output
+bindings, or bypass runtime safety policy.
+
+Prefer stable semantic identity first, then visual hints:
+
+1. `entityId` and optional `entityKind` for the acted-upon entity.
+2. `statePath` for the state fact that represents that entity.
+3. `visualFrameId` and `visualLayerId` when a visual frame layer directly
+   represents the entity.
+4. `anchor` with bounds or point data for fallback highlighting.
+5. `confidence` when the target is inferred rather than directly observed.
+
+```ts
+{
+  type: "action",
+  actionType: "click",
+  parameters: { button: "Submit" },
+  visualTarget: {
+    entityId: "checkout.submit",
+    entityKind: "button",
+    statePath: { namespace: "app", path: "elements.checkout.submit.visible" },
+    visualFrameId: "viewport",
+    visualLayerId: "element.checkout.submit",
+    anchor: {
+      type: "bounds",
+      boundsKind: "screenshot",
+      bounds: { x: 412, y: 240, width: 93, height: 38 }
+    },
+    confidence: 0.98,
+    source: "importer"
+  }
+}
+```
+
+FluxIQ resolves action visual targets in the editor by exact visual layer,
+state path, semantic entity metadata, and finally direct anchor geometry. If a
+target cannot be resolved, the recording still loads; the inspector reports the
+available target identity and the State View falls back to ordinary state
+inspection. The bottom action preview rail marks actions that include
+`visualTarget`; when one of those actions is previewed, State View uses that
+action target to select the matching state snapshot and draw the interacted
+entity overlay.
+
 ## State Visual Frames
 
 Importers can attach visual frames to a `StateSnapshot` so the State View can

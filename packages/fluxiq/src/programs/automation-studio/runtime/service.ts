@@ -126,6 +126,7 @@ import {
 import {
   emptyRecordingIndex,
   recordingIndexStateObjectRefs,
+  recordingActionVisualTargetIndexItem,
   sortRecordingIndex,
   type RecordingEntryIndexItem,
   type RecordingIndex as RecordingStateIndex,
@@ -4658,6 +4659,7 @@ function buildRecordingStateIndex(projectId: string, recording: RecordingSession
 
     if (actionId) {
       const actionStateId = recordingEntryExplicitStateSnapshotId(entry);
+      const visualTargetIndexItem = recordingActionVisualTargetIndexItem((entry as { visualTarget?: any }).visualTarget);
       index.actions[actionId] = {
         actionId,
         entryId: entry.id,
@@ -4666,6 +4668,7 @@ function buildRecordingStateIndex(projectId: string, recording: RecordingSession
         ...(typeof (entry as { startedAt?: unknown }).startedAt === "number" ? { startedAt: (entry as { startedAt: number }).startedAt } : {}),
         ...(typeof (entry as { completedAt?: unknown }).completedAt === "number" ? { completedAt: (entry as { completedAt: number }).completedAt } : {}),
         ...(actionStateId ? { stateAtActionId: actionStateId } : {}),
+        ...(visualTargetIndexItem ? { visualTarget: visualTargetIndexItem } : {}),
         sourceObjectRefs: recordingEntryObjectRefs(projectId, entry)
       };
       if (actionStateId) {

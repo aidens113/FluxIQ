@@ -149,6 +149,118 @@ describe("node state view model", () => {
     expect(model.summary).toMatchObject({ facts: 2, evidence: 1, strong: 1 });
   });
 
+  it("adds a selected action visual target overlay for the acted-upon entity", () => {
+    const action = {
+      id: "entry.action",
+      type: "action",
+      actionType: "click",
+      recordingId: "recording.1",
+      timestamp: 120,
+      visualTarget: {
+        entityId: "bank.panel",
+        entityKind: "region",
+        statePath: { namespace: "app", path: "bank.visible" },
+        visualFrameId: "frame.main",
+        visualLayerId: "bank-region",
+        confidence: 0.93
+      }
+    };
+    const recording = {
+      recordingId: "recording.1",
+      initialState: { timestamp: 1, namespaces: {} },
+      timeline: [{
+        id: "entry.checkpoint",
+        type: "state_checkpoint",
+        recordingId: "recording.1",
+        timestamp: 100,
+        state: visualSnapshot
+      }, action]
+    };
+
+    const model = buildNodeStateViewModel({
+      selection: { kind: "timeline", id: "entry.action" },
+      selectedNode: null,
+      selectedEntry: action,
+      selectedRecording: recording,
+      selectedTimeline: null,
+      policy: null,
+      taskGraph: null,
+      pipelineArtifacts: {},
+      recordings: [recording],
+      timelines: [],
+      runtimeSessions: [],
+      signals: []
+    });
+
+    expect(model.actionVisualTarget).toMatchObject({
+      resolution: "exact-layer",
+      visualLayerId: "bank-region",
+      statePath: { namespace: "app", path: "bank.visible" }
+    });
+    expect(model.overlays).toContainEqual(expect.objectContaining({
+      id: "action-target:entry.action",
+      tone: "action-target",
+      selected: true,
+      factPath: "app.bank.visible",
+      confidence: 0.93
+    }));
+  });
+
+  it("uses the previewed action visual target when the timeline entry is not the global selection", () => {
+    const action = {
+      id: "entry.action.preview",
+      type: "action",
+      actionType: "click",
+      recordingId: "recording.1",
+      startedAt: 110,
+      visualTarget: {
+        entityId: "bank.panel",
+        statePath: { namespace: "app", path: "bank.visible" },
+        confidence: 0.88
+      }
+    };
+    const recording = {
+      recordingId: "recording.1",
+      initialState: { timestamp: 1, namespaces: {} },
+      timeline: [action, {
+        id: "entry.checkpoint.near",
+        type: "state_checkpoint",
+        recordingId: "recording.1",
+        timestamp: 112,
+        state: visualSnapshot
+      }]
+    };
+
+    const model = buildNodeStateViewModel({
+      selection: { kind: "recording", id: "recording.1" },
+      selectedNode: null,
+      selectedEntry: action,
+      selectedRecording: recording,
+      selectedTimeline: null,
+      policy: null,
+      taskGraph: null,
+      pipelineArtifacts: {},
+      recordings: [recording],
+      timelines: [],
+      runtimeSessions: [],
+      signals: []
+    });
+
+    expect(model.activeSource?.id).toBe("observed:recording.1:entry.checkpoint.near");
+    expect(model.actionVisualTarget).toMatchObject({
+      actionEntryId: "entry.action.preview",
+      resolution: "state-path",
+      statePath: { namespace: "app", path: "bank.visible" }
+    });
+    expect(model.overlays).toContainEqual(expect.objectContaining({
+      id: "action-target:entry.action.preview",
+      tone: "action-target",
+      selected: true,
+      factPath: "app.bank.visible",
+      confidence: 0.88
+    }));
+  });
+
   it("builds a visual model from paired client state snapshot observations", () => {
     const recording = {
       recordingId: "recording.client",

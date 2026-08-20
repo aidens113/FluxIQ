@@ -1,4 +1,5 @@
 import type { JsonObject } from "../../../core/index.ts";
+import type { ActionVisualEntityTarget, StatePath } from "../model/index.ts";
 import { parseAutomationStudioObjectContentRef } from "./object-store.ts";
 
 export const RECORDING_STATE_INDEX_SCHEMA_VERSION = "0.2" as const;
@@ -57,7 +58,18 @@ export type RecordingActionIndexItem = {
   stateBeforeId?: string;
   stateAtActionId?: string;
   stateAfterId?: string;
+  visualTarget?: RecordingActionVisualTargetIndexItem;
   sourceObjectRefs?: string[];
+};
+
+export type RecordingActionVisualTargetIndexItem = {
+  entityId?: string;
+  entityKind?: string;
+  statePath?: StatePath;
+  stateSnapshotId?: string;
+  visualFrameId?: string;
+  visualLayerId?: string;
+  confidence?: number;
 };
 
 export type RecordingStateIndexItem = {
@@ -201,6 +213,9 @@ export function validateRecordingIndex(index: RecordingIndex): RecordingStateInd
         issues.push(issue("missing_state", `actions.${actionId}.${field}`, `Action references missing state snapshot ${stateSnapshotId}.`));
       }
     }
+    if (action.visualTarget) {
+      validateActionVisualTargetIndexItem(index, actionId, action.visualTarget, issues);
+    }
     validateObjectRefs(index.projectId, action.sourceObjectRefs ?? [], `actions.${actionId}.sourceObjectRefs`, issues);
   }
 
@@ -258,6 +273,19 @@ export function sortRecordingIndex(index: RecordingIndex): RecordingIndex {
   };
 }
 
+export function recordingActionVisualTargetIndexItem(target: ActionVisualEntityTarget | undefined): RecordingActionVisualTargetIndexItem | undefined {
+  if (!target) return undefined;
+  return compactObject({
+    entityId: target.entityId,
+    entityKind: target.entityKind,
+    statePath: target.statePath,
+    stateSnapshotId: target.stateSnapshotId,
+    visualFrameId: target.visualFrameId,
+    visualLayerId: target.visualLayerId,
+    confidence: target.confidence
+  });
+}
+
 function validateObjectRefs(projectId: string, refs: string[], path: string, issues: RecordingStateIndexValidationIssue[]): void {
   for (const ref of refs) {
     const parsed = parseAutomationStudioObjectContentRef(ref);
@@ -268,6 +296,19 @@ function validateObjectRefs(projectId: string, refs: string[], path: string, iss
     if (parsed.projectId !== projectId) {
       issues.push(issue("cross_project_ref", path, `Object reference points to project ${parsed.projectId}, expected ${projectId}.`));
     }
+  }
+}
+
+function validateActionVisualTargetIndexItem(index: RecordingIndex, actionId: string, target: RecordingActionVisualTargetIndexItem, issues: RecordingStateIndexValidationIssue[]): void {
+  const path = `actions.${actionId}.visualTarget`;
+  if (target.stateSnapshotId && !index.states[target.stateSnapshotId]) {
+    issues.push(issue("missing_state", `${path}.stateSnapshotId`, `Action visual target references missing state snapshot ${target.stateSnapshotId}.`));
+  }
+  if (target.statePath && (!target.statePath.namespace.trim() || !target.statePath.path.trim())) {
+    issues.push(issue("invalid_summary", `${path}.statePath`, "Action visual target statePath must include namespace and path."));
+  }
+  if (target.confidence !== undefined && (target.confidence < 0 || target.confidence > 1)) {
+    issues.push(issue("invalid_summary", `${path}.confidence`, "Action visual target confidence must be between 0 and 1."));
   }
 }
 
@@ -293,4 +334,8 @@ function sortedEntries<T>(record: Record<string, T>): Array<[string, T]> {
 
 function sortRecord<T>(record: Record<string, T>): Record<string, T> {
   return Object.fromEntries(sortedEntries(record));
+}
+
+function compactObject<T extends Record<string, unknown>>(value: T): Partial<T> {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as Partial<T>;
 }

@@ -1,7 +1,7 @@
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationConditionGroup } from "./conditions.ts";
 import type { EvidenceReference } from "./evidence.ts";
-import type { StateValueType } from "./state.ts";
+import type { EvidenceAnchor, StatePath, StateValueType } from "./state.ts";
 
 export type ParameterDefinition = {
   type: StateValueType | "array" | "object";
@@ -35,6 +35,21 @@ export type ActionDefinition = {
   metadata?: JsonObject;
 };
 
+export type ActionVisualTargetSource = "importer" | "runtime" | "inferred" | "operator";
+
+export type ActionVisualEntityTarget = {
+  entityId: string;
+  entityKind?: string;
+  statePath?: StatePath;
+  anchor?: EvidenceAnchor;
+  visualFrameId?: string;
+  visualLayerId?: string;
+  stateSnapshotId?: string;
+  confidence?: number;
+  source?: ActionVisualTargetSource;
+  metadata?: JsonObject;
+};
+
 export type ActionTarget = {
   type: string;
   id?: string;
@@ -42,6 +57,7 @@ export type ActionTarget = {
   selector?: string;
   bounds?: { x: number; y: number; width: number; height: number };
   relativePosition?: { x: number; y: number };
+  visualTarget?: ActionVisualEntityTarget;
   metadata?: JsonObject;
 };
 
@@ -63,6 +79,7 @@ export type PolicyAction = {
   actionType: string;
   parameters: Record<string, unknown>;
   target?: ActionTarget;
+  visualTarget?: ActionVisualEntityTarget;
   sourceEvidence?: EvidenceReference[];
   metadata?: JsonObject;
 };

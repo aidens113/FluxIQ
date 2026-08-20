@@ -1,4 +1,7 @@
 import type {
+  ActionVisualEntityTarget,
+} from "./actions.ts";
+import type {
   AutomationConditionExpression,
 } from "./conditions.ts";
 import type {
@@ -27,6 +30,7 @@ import type {
 } from "./timeline.ts";
 import type {
   EvidenceAnchor,
+  StatePath,
   StateBounds,
   StateCoordinateSpace,
   StatePresentationMetadata,
@@ -220,6 +224,24 @@ export function validateStateSnapshot(snapshot: StateSnapshot): AutomationStudio
     addIssue(issues, "error", "state.visual_frame_missing_default", `Default visual frame "${snapshot.presentation.defaultFrameId}" is not present.`, "presentation.defaultFrameId");
   }
   return result(issues);
+}
+
+export function validateActionVisualEntityTarget(target: ActionVisualEntityTarget): AutomationStudioValidationResult;
+export function validateActionVisualEntityTarget(target: ActionVisualEntityTarget, issues: AutomationStudioValidationIssue[], path: string): void;
+export function validateActionVisualEntityTarget(target: ActionVisualEntityTarget, issues?: AutomationStudioValidationIssue[], path = "visualTarget"): AutomationStudioValidationResult | void {
+  const localIssues = issues ?? [];
+  if (!target.entityId.trim()) addIssue(localIssues, "error", "action.visual_target_missing_entity", "Action visual target must include an entityId.", `${path}.entityId`);
+  if (target.entityKind !== undefined && !target.entityKind.trim()) addIssue(localIssues, "error", "action.visual_target_empty_entity_kind", "Action visual target entityKind cannot be empty when provided.", `${path}.entityKind`);
+  if (target.visualFrameId !== undefined && !target.visualFrameId.trim()) addIssue(localIssues, "error", "action.visual_target_empty_frame", "Action visual target visualFrameId cannot be empty when provided.", `${path}.visualFrameId`);
+  if (target.visualLayerId !== undefined && !target.visualLayerId.trim()) addIssue(localIssues, "error", "action.visual_target_empty_layer", "Action visual target visualLayerId cannot be empty when provided.", `${path}.visualLayerId`);
+  if (target.stateSnapshotId !== undefined && !target.stateSnapshotId.trim()) addIssue(localIssues, "error", "action.visual_target_empty_state", "Action visual target stateSnapshotId cannot be empty when provided.", `${path}.stateSnapshotId`);
+  if (target.confidence !== undefined && (target.confidence < 0 || target.confidence > 1)) addIssue(localIssues, "error", "action.visual_target_invalid_confidence", "Action visual target confidence must be between 0 and 1.", `${path}.confidence`);
+  if (target.source !== undefined && target.source !== "importer" && target.source !== "runtime" && target.source !== "inferred" && target.source !== "operator") {
+    addIssue(localIssues, "error", "action.visual_target_invalid_source", "Action visual target source must be importer, runtime, inferred, or operator.", `${path}.source`);
+  }
+  if (target.statePath) validateStatePath(target.statePath, localIssues, `${path}.statePath`);
+  if (target.anchor) validateEvidenceAnchor(target.anchor, localIssues, `${path}.anchor`);
+  if (!issues) return result(localIssues);
 }
 
 export function validateStateFactReference(fact: StateFactReference): AutomationStudioValidationResult;
@@ -554,9 +576,15 @@ function validateTimelineEntry(
   if (entry.type === "note" && !noteIds.has(entry.noteId)) {
     addIssue(issues, "warning", "timeline.missing_note", `Note entry references missing note "${entry.noteId}".`, `${path}.noteId`);
   }
+  if (entry.type === "action" && entry.visualTarget) validateActionVisualEntityTarget(entry.visualTarget, issues, `${path}.visualTarget`);
   if (entry.type === "state_delta" && entry.deltas.length === 0) {
     addIssue(issues, "warning", "timeline.empty_state_delta", "State delta entries should contain at least one delta.", `${path}.deltas`);
   }
+}
+
+function validateStatePath(statePath: StatePath, issues: AutomationStudioValidationIssue[], path: string): void {
+  if (!statePath.namespace.trim()) addIssue(issues, "error", "state.path_missing_namespace", "State path namespace cannot be empty.", `${path}.namespace`);
+  if (!statePath.path.trim()) addIssue(issues, "error", "state.path_missing_path", "State path path cannot be empty.", `${path}.path`);
 }
 
 function validateStateCoordinateSpace(space: StateCoordinateSpace, issues: AutomationStudioValidationIssue[], path: string): void {
