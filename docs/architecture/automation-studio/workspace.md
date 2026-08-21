@@ -471,6 +471,10 @@ left hierarchy | main editor panes | right inspector
 The shell provides:
 
 - a top workbar for project and workspace actions;
+- a global command bar with the existing play, pause, and stop buttons wired to
+  Automation Studio runtime control. Play preflights the active project and
+  explicitly opened Flow, reports run status through the command center, and
+  opens Runtime Debug when execution starts;
 - a searchable project hierarchy with real folder rows and object-type visual
   treatment for flows, recordings, proposals, folders, tasks, routines, and
   configurations;
@@ -479,6 +483,12 @@ The shell provides:
   debug surfaces;
 - a fixed right sidebar for the global inspector and utility tabs;
 - a fixed bottom dock for selected-recording action preview.
+
+The play command currently calls the Automation Studio runtime session API and
+reports the returned session status and trace message. Pause and stop report
+that cancellable runtime sessions are not wired yet instead of pretending to
+control execution. Detailed step streaming and runtime attempt expansion belong
+in the Runtime Debug and Runs views as the runtime event stream matures.
 
 The main editor is no longer a draggable inner-window desktop. Pane slots are
 chosen from presets such as full, halves, large-plus-side, three-pane, and two

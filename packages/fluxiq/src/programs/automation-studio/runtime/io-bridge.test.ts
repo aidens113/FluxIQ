@@ -3,9 +3,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createEnvelope, defineDomainIo, defineInput, defineOutput, IoRegistry } from "../../../io/index.ts";
+import { RuntimeService } from "../../../runtime/index.ts";
 import { AutomationStudioService } from "./service.ts";
 import { AutomationStudioIoRecorder } from "./io-bridge.ts";
-import { createIoPolicyEffectDispatcher } from "./io-policy.ts";
+import { createIoPolicyEffectDispatcher, createRuntimePolicyEffectDispatcher } from "./io-policy.ts";
 import { runAutomationStudioGraph } from "./executor.ts";
 
 describe("Automation Studio IO bridge", () => {
@@ -74,6 +75,67 @@ describe("Automation Studio IO bridge", () => {
 
     expect(trace.status).toBe("succeeded");
     expect(trace.attempts[0]?.outputs).toMatchObject({ outputId: "activate-element", ok: true });
+  });
+
+  it("routes registered policy outputs through runtime when a matching capability exists", async () => {
+    const io = configuredIo();
+    const runtime = new RuntimeService();
+    runtime.registerAdapter({
+      adapterId: "example.runtime",
+      label: "Example Runtime",
+      transport: "direct",
+      domainId: "example",
+      capabilities: () => [{ id: "example.outputs", kind: "action", domainId: "example", outputIds: ["activate-element"] }],
+      execute: (command) => ({
+        commandId: command.commandId ?? "command.runtime",
+        status: "succeeded",
+        payload: { dispatchedBy: "runtime", parameters: command.parameters ?? {} }
+      })
+    });
+    const flow = {
+      schemaVersion: "0.1" as const,
+      flowId: "flow.runtime-io",
+      ownerKind: "task" as const,
+      ownerId: "task.runtime-io",
+      name: "Runtime IO flow",
+      createdAt: 1,
+      updatedAt: 1,
+      nodes: [{ id: "output", definitionId: "builtin.policy.action", parameterValues: { outputId: "activate-element", parameters: { elementId: "from-runtime" } } }],
+      edges: []
+    };
+
+    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: createRuntimePolicyEffectDispatcher(io, "example", runtime) });
+
+    expect(trace.status).toBe("succeeded");
+    expect(trace.attempts[0]?.outputs).toMatchObject({
+      outputId: "activate-element",
+      ok: true,
+      runtimeStatus: "succeeded",
+      result: { dispatchedBy: "runtime" }
+    });
+    expect(runtime.commandAttemptsList()).toMatchObject([{ adapterId: "example.runtime", status: "succeeded" }]);
+  });
+
+  it("falls back to IO dispatch when runtime has no matching output capability", async () => {
+    const io = configuredIo();
+    const runtime = new RuntimeService();
+    const flow = {
+      schemaVersion: "0.1" as const,
+      flowId: "flow.runtime-fallback",
+      ownerKind: "task" as const,
+      ownerId: "task.runtime-fallback",
+      name: "Runtime fallback flow",
+      createdAt: 1,
+      updatedAt: 1,
+      nodes: [{ id: "output", definitionId: "builtin.policy.action", parameterValues: { outputId: "activate-element", parameters: { elementId: "confirm" } } }],
+      edges: []
+    };
+
+    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: createRuntimePolicyEffectDispatcher(io, "example", runtime) });
+
+    expect(trace.status).toBe("succeeded");
+    expect(trace.attempts[0]?.outputs).toMatchObject({ outputId: "activate-element", ok: true, result: { accepted: true } });
+    expect(runtime.commandAttemptsList()).toEqual([]);
   });
 
   it("uses the bound action input as runtime output confirmation, never as state", async () => {

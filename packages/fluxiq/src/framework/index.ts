@@ -121,6 +121,7 @@ export class FluxIQ {
   readonly domains = new DomainRegistry();
   readonly io = new IoRegistry();
   readonly programs: GlobalProgramRuntime;
+  readonly runtime: GlobalProgramRuntime["runtime"];
   readonly activeDomainId: string | null;
   readonly storage: FluxIQStorageInspection;
 
@@ -172,6 +173,7 @@ export class FluxIQ {
       cache: resolveInside(root, path.join(fluxiqDir, "cache"))
     };
     this.programs = createGlobalProgramRuntime(this.paths);
+    this.runtime = this.programs.runtime;
     this.programs.automationStudio.bindIoRuntime(this.io, activeDomainId);
     if (options.nativeNodeRuntime) this.programs.automationStudio.bindNativeNodeRuntime(options.nativeNodeRuntime);
     this.programs.automationStudioClientGateway.bindIoRegistry(this.io);

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "@xyflow/react/dist/style.css";
 import "./globals.css";
 import { GlobalClientGatewayPairing } from "./GlobalClientGatewayPairing";
+import { GlobalAlertViewport } from "../features/programs/shared-ui";
 
 export const metadata: Metadata = {
   title: "FluxIQ",
@@ -13,6 +14,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en">
       <body>
         {children}
+        <GlobalAlertViewport />
         <GlobalClientGatewayPairing />
       </body>
     </html>

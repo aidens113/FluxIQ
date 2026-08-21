@@ -103,7 +103,8 @@ import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/st
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioNodeDefinition } from "../nodes/index.ts";
 import type { IoRegistry } from "../../../io/index.ts";
-import { createIoPolicyEffectDispatcher } from "./io-policy.ts";
+import type { RuntimeService } from "../../../runtime/index.ts";
+import { createIoPolicyEffectDispatcher, createRuntimePolicyEffectDispatcher } from "./io-policy.ts";
 import {
   type CanonicalAutomationStudioRepositories,
   createCanonicalAutomationStudioMemoryRepositories,
@@ -328,6 +329,7 @@ export class AutomationStudioService {
   private storageReady?: Promise<void>;
   private ioRuntime?: { io: IoRegistry; domainId: string | null };
   private nativeNodeRuntime?: AutomationStudioNativeNodeRuntime;
+  private runtimeService?: RuntimeService;
   private readonly memoryLegacyRetirementStates = new Map<string, AutomationStudioLegacyRetirementState>();
   private readonly memoryLegacyBackups = new Map<string, AutomationStudioLegacyBackup>();
   private readonly memoryLegacyAudit = new Map<string, AutomationStudioLegacyRetirementAuditEvent[]>();
@@ -358,6 +360,8 @@ export class AutomationStudioService {
 
   /** Binds explicitly registered importer and trusted-local Code Node implementations. */
   bindNativeNodeRuntime(runtime: AutomationStudioNativeNodeRuntime): this { this.nativeNodeRuntime = runtime; return this; }
+
+  bindRuntimeService(runtime: RuntimeService): this { this.runtimeService = runtime; return this; }
 
   nativeRuntimeSummary(domainId?: string | null): { bound: boolean; definitionCount: number; recordingMapperCount: number } {
     const runtime = this.nativeNodeRuntime;
@@ -846,6 +850,85 @@ export class AutomationStudioService {
       }
       return { deletedRecordingId: input.recordingId, deletedProposalIds };
     });
+  }
+
+  async deleteRecordings(input: { projectId?: string | null; recordingIds?: string[] }): Promise<{ deletedRecordingIds: string[]; deletedProposalIds: string[] }> {
+    const recordingIds = uniqueStrings((input.recordingIds ?? []).map((recordingId) => String(recordingId)).filter(Boolean));
+    if (!recordingIds.length) return { deletedRecordingIds: [], deletedProposalIds: [] };
+    if (!input.projectId || !this.projectRootDir) {
+      const results = await Promise.all(recordingIds.map((recordingId) => this.deleteRecording({
+        ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
+        recordingId
+      })));
+      return {
+        deletedRecordingIds: results.map((result) => result.deletedRecordingId),
+        deletedProposalIds: uniqueStrings(results.flatMap((result) => result.deletedProposalIds))
+      };
+    }
+
+    const recordingIdSet = new Set(recordingIds);
+    const pipelineIndex = await this.readPipelineIndex(input.projectId).catch(() => emptyPipelineIndex());
+    const artifactIds = emptyPipelineArtifactIdSets();
+    await Promise.all(recordingIds.map(async (recordingId) => {
+      const pipeline = await new ProgramJsonStore<RecordingPipelineDocument>(
+        this.recordingPipelineFile(input.projectId!, recordingId),
+        () => createRecordingPipelineDocument({ recordingId, startedAt: Date.now() })
+      ).read();
+      mergePipelineArtifactIdSets(artifactIds, await this.collectRecordingPipelineArtifactIds(input.projectId!, recordingId, pipeline, pipelineIndex));
+    }));
+    const deletedProposalIds = uniqueStrings([
+      ...(pipelineIndex.policyProposals ?? []).filter((item) => item.recordingId && recordingIdSet.has(item.recordingId)).map((item) => item.proposalId),
+      ...(pipelineIndex.recordingFlowProposals ?? []).filter((item) => item.recordingId && recordingIdSet.has(item.recordingId)).map((item) => item.proposalId),
+      ...artifactIds.policyProposals,
+      ...artifactIds.recordingFlowProposals
+    ]);
+
+    await Promise.all(recordingIds.map((recordingId) => this.repositories.recordingSessions.delete(recordingId)));
+    const timelines = await this.repositories.normalizedTimelines.list();
+    await Promise.all(timelines
+      .filter((timeline) => recordingIdSet.has(timeline.recordingId) || timeline.metadata?.projectId === input.projectId && recordingIdSet.has(timeline.recordingId))
+      .map((timeline) => this.repositories.normalizedTimelines.delete(timeline.normalizedTimelineId)));
+
+    const artifactDeletes: Array<{ recordingId: string; kind: PipelineArtifactKind; id: string }> = [];
+    for (const recordingId of recordingIds) {
+      for (const kind of pipelineArtifactKinds()) {
+        for (const id of artifactIds[kind]) artifactDeletes.push({ recordingId, kind, id });
+      }
+    }
+    await mapWithConcurrency(artifactDeletes, PIPELINE_ARTIFACT_IO_CONCURRENCY, async ({ recordingId, kind, id }) => {
+      await this.deletePipelineArtifactDocuments(input.projectId!, recordingId, kind, id);
+    });
+    await this.deletePhysicalSharedPipelineArtifactsForRecordings(input.projectId, recordingIdSet);
+    await Promise.all(recordingIds.map(async (recordingId) => {
+      const proposalRoot = this.projectFile(input.projectId!, "proposals", safeSegment(recordingId));
+      const derivedDir = this.recordingDerivedDirectory(input.projectId!, recordingId);
+      const sessionDir = this.recordingSessionDirectory(input.projectId!, recordingId);
+      if (this.objectStore) {
+        await Promise.all([
+          ProgramJsonStore.deletePath(proposalRoot),
+          ProgramJsonStore.deletePath(derivedDir),
+          ProgramJsonStore.deletePath(sessionDir)
+        ]);
+      }
+      await Promise.all([
+        rm(proposalRoot, { recursive: true, force: true }),
+        rm(derivedDir, { recursive: true, force: true }),
+        rm(sessionDir, { recursive: true, force: true })
+      ]);
+    }));
+
+    await this.writeRecordingIndex(input.projectId, (index) => ({
+      recordings: (index.recordings ?? []).filter((item) => !recordingIdSet.has(item.recordingId)),
+      normalizedTimelines: (index.normalizedTimelines ?? []).filter((item) => !recordingIdSet.has(item.recordingId))
+    }));
+    await this.writePipelineIndexWithoutRecordings(input.projectId, recordingIdSet, artifactIds);
+    if (this.objectStore) {
+      const live = await this.collectLiveProjectObjectReferences(input.projectId);
+      await this.objectStore.deleteRecordingsObjects(input.projectId, recordingIds, live);
+      await this.pruneUnreferencedProjectObjects(input.projectId);
+    }
+    await this.deleteOrphanedPhysicalRecordingSessionDirectories(input.projectId);
+    return { deletedRecordingIds: recordingIds, deletedProposalIds };
   }
 
   async deleteProposal(input: { projectId: string; proposalId: string; kind?: "policy" | "recording_flow" | "auto" }): Promise<{ deletedProposalId: string; kind: "policy" | "recording_flow"; recordingId?: string }> {
@@ -2162,7 +2245,9 @@ export class AutomationStudioService {
       inputs: (input.inputs ?? session.metadata?.inputs ?? {}) as Record<string, any>
     };
     if (this.ioRuntime) {
-      graphOptions.effectDispatcher = createIoPolicyEffectDispatcher(this.ioRuntime.io, this.ioRuntime.domainId);
+      graphOptions.effectDispatcher = this.runtimeService
+        ? createRuntimePolicyEffectDispatcher(this.ioRuntime.io, this.ioRuntime.domainId, this.runtimeService)
+        : createIoPolicyEffectDispatcher(this.ioRuntime.io, this.ioRuntime.domainId);
       graphOptions.runtimeCapabilities = ["policy-output", "io"];
       const requestedDomainIds = uniqueStrings(input.authorizedDomainIds ?? asStringArray(session.metadata?.authorizedDomainIds));
       if (this.ioRuntime.domainId) graphOptions.authorizedDomainIds = requestedDomainIds.filter((domainId) => domainId === this.ioRuntime!.domainId);
@@ -3003,7 +3088,7 @@ export class AutomationStudioService {
     await this.prunePhysicalPipelineIndex(projectId, recordingId, artifactIds);
   }
 
-  private async collectRecordingPipelineArtifactIds(projectId: string, recordingId: string, pipeline: RecordingPipelineDocument): Promise<Record<PipelineArtifactKind, Set<string>>> {
+  private async collectRecordingPipelineArtifactIds(projectId: string, recordingId: string, pipeline: RecordingPipelineDocument, pipelineIndex?: PipelineIndex): Promise<Record<PipelineArtifactKind, Set<string>>> {
     const ids = emptyPipelineArtifactIdSets();
     for (const id of pipeline.artifacts.normalizationReviewIds ?? []) ids.normalizationReviews.add(id);
     for (const id of pipeline.artifacts.miningRunIds ?? []) ids.miningRuns.add(id);
@@ -3016,7 +3101,7 @@ export class AutomationStudioService {
     for (const id of pipeline.artifacts.recordingFlowProposalIds ?? []) ids.recordingFlowProposals.add(id);
     for (const id of pipeline.artifacts.replayResultIds ?? []) ids.replayResults.add(id);
 
-    const index = await this.readPipelineIndex(projectId);
+    const index = pipelineIndex ?? await this.readPipelineIndex(projectId);
     for (const kind of pipelineArtifactKinds()) {
       const key = pipelineIndexKey(kind);
       for (const item of ((index[kind] as Array<Record<string, unknown>>) ?? [])) {
@@ -3031,6 +3116,30 @@ export class AutomationStudioService {
       }
     }
     return ids;
+  }
+
+  private async writePipelineIndexWithoutRecordings(projectId: string, recordingIds: Set<string>, artifactIds: Record<PipelineArtifactKind, Set<string>>): Promise<void> {
+    const withoutDeleted = (item: { recordingId?: string }, kind: PipelineArtifactKind): boolean => {
+      if (item.recordingId && recordingIds.has(item.recordingId)) return false;
+      const key = pipelineIndexKey(kind);
+      const id = (item as Record<string, unknown>)[key];
+      return typeof id !== "string" || !artifactIds[kind].has(id);
+    };
+    const nextIndex = (index: PipelineIndex): PipelineIndex => ({
+      pipelines: (index.pipelines ?? []).filter((item) => !recordingIds.has(item.recordingId)),
+      normalizationReviews: (index.normalizationReviews ?? []).filter((item) => withoutDeleted(item, "normalizationReviews")),
+      miningRuns: (index.miningRuns ?? []).filter((item) => withoutDeleted(item, "miningRuns")),
+      evidenceFacts: (index.evidenceFacts ?? []).filter((item) => withoutDeleted(item, "evidenceFacts")),
+      evidenceObservations: (index.evidenceObservations ?? []).filter((item) => withoutDeleted(item, "evidenceObservations")),
+      stateActionCorrelations: (index.stateActionCorrelations ?? []).filter((item) => withoutDeleted(item, "stateActionCorrelations")),
+      evidenceClaims: (index.evidenceClaims ?? []).filter((item) => withoutDeleted(item, "evidenceClaims")),
+      learnedTaskModels: (index.learnedTaskModels ?? []).filter((item) => withoutDeleted(item, "learnedTaskModels")),
+      policyProposals: (index.policyProposals ?? []).filter((item) => withoutDeleted(item, "policyProposals")),
+      recordingFlowProposals: (index.recordingFlowProposals ?? []).filter((item) => withoutDeleted(item, "recordingFlowProposals")),
+      replayResults: (index.replayResults ?? []).filter((item) => withoutDeleted(item, "replayResults"))
+    });
+    await new ProgramJsonStore<PipelineIndex>(this.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => nextIndex({ ...emptyPipelineIndex(), ...index }));
+    await this.prunePhysicalPipelineIndexForRecordings(projectId, recordingIds, artifactIds);
   }
 
   private async deletePipelineArtifactDocuments(projectId: string, recordingId: string, kind: PipelineArtifactKind, id: string): Promise<void> {
@@ -3073,6 +3182,16 @@ export class AutomationStudioService {
     await this.deletePhysicalJsonFilesMatching(root, (document) => documentBelongsToRecording(document, recordingId));
   }
 
+  private async deletePhysicalSharedPipelineArtifactsForRecordings(projectId: string, recordingIds: Set<string>): Promise<void> {
+    const root = this.projectFile(projectId, "pipeline", "shared");
+    await this.deletePhysicalJsonFilesMatching(root, (document) => {
+      for (const recordingId of recordingIds) {
+        if (documentBelongsToRecording(document, recordingId)) return true;
+      }
+      return false;
+    });
+  }
+
   private async prunePhysicalPipelineIndex(projectId: string, recordingId: string, artifactIds: Record<PipelineArtifactKind, Set<string>>): Promise<void> {
     const filePath = this.projectFile(projectId, "indexes", "pipeline.json");
     const parsed = await readJsonFileIfPresent(filePath);
@@ -3091,6 +3210,36 @@ export class AutomationStudioService {
       policyProposals: (index.policyProposals ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.policyProposals.has(item.proposalId)),
       recordingFlowProposals: (index.recordingFlowProposals ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.recordingFlowProposals.has(item.proposalId)),
       replayResults: (index.replayResults ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.replayResults.has(item.replayId))
+    };
+    await mkdir(path.dirname(filePath), { recursive: true });
+    const output = isProgramJsonEnvelope(parsed) ? { version: 1, data: next } : next;
+    await writeFile(filePath, JSON.stringify(output, null, 2), "utf8");
+  }
+
+  private async prunePhysicalPipelineIndexForRecordings(projectId: string, recordingIds: Set<string>, artifactIds: Record<PipelineArtifactKind, Set<string>>): Promise<void> {
+    const filePath = this.projectFile(projectId, "indexes", "pipeline.json");
+    const parsed = await readJsonFileIfPresent(filePath);
+    const document = unwrapProgramJsonDocument(parsed);
+    if (!document || typeof document !== "object" || Array.isArray(document)) return;
+    const index = { ...emptyPipelineIndex(), ...document as Partial<PipelineIndex> };
+    const withoutDeleted = (item: { recordingId?: string }, kind: PipelineArtifactKind): boolean => {
+      if (item.recordingId && recordingIds.has(item.recordingId)) return false;
+      const key = pipelineIndexKey(kind);
+      const id = (item as Record<string, unknown>)[key];
+      return typeof id !== "string" || !artifactIds[kind].has(id);
+    };
+    const next: PipelineIndex = {
+      pipelines: (index.pipelines ?? []).filter((item) => !recordingIds.has(item.recordingId)),
+      normalizationReviews: (index.normalizationReviews ?? []).filter((item) => withoutDeleted(item, "normalizationReviews")),
+      miningRuns: (index.miningRuns ?? []).filter((item) => withoutDeleted(item, "miningRuns")),
+      evidenceFacts: (index.evidenceFacts ?? []).filter((item) => withoutDeleted(item, "evidenceFacts")),
+      evidenceObservations: (index.evidenceObservations ?? []).filter((item) => withoutDeleted(item, "evidenceObservations")),
+      stateActionCorrelations: (index.stateActionCorrelations ?? []).filter((item) => withoutDeleted(item, "stateActionCorrelations")),
+      evidenceClaims: (index.evidenceClaims ?? []).filter((item) => withoutDeleted(item, "evidenceClaims")),
+      learnedTaskModels: (index.learnedTaskModels ?? []).filter((item) => withoutDeleted(item, "learnedTaskModels")),
+      policyProposals: (index.policyProposals ?? []).filter((item) => withoutDeleted(item, "policyProposals")),
+      recordingFlowProposals: (index.recordingFlowProposals ?? []).filter((item) => withoutDeleted(item, "recordingFlowProposals")),
+      replayResults: (index.replayResults ?? []).filter((item) => withoutDeleted(item, "replayResults"))
     };
     await mkdir(path.dirname(filePath), { recursive: true });
     const output = isProgramJsonEnvelope(parsed) ? { version: 1, data: next } : next;
@@ -3875,6 +4024,12 @@ function emptyPipelineArtifactIdSets(): Record<PipelineArtifactKind, Set<string>
     recordingFlowProposals: new Set(),
     replayResults: new Set()
   };
+}
+
+function mergePipelineArtifactIdSets(target: Record<PipelineArtifactKind, Set<string>>, source: Record<PipelineArtifactKind, Set<string>>): void {
+  for (const kind of pipelineArtifactKinds()) {
+    for (const id of source[kind]) target[kind].add(id);
+  }
 }
 
 async function readJsonFileIfPresent(filePath: string): Promise<unknown> {

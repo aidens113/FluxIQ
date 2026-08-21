@@ -76,6 +76,7 @@ Global program internals use the layout described in
   - [Client Gateway](automation-studio/client-gateway.md)
 - [Automation Studio Importer Guide](../integrations/automation-studio-importing-repos.md)
 - [Client Gateway WebSocket Integration](../integrations/client-gateway-websocket.md)
+- [Runtime Kernel](runtime-kernel.md)
 - [Documentation System](docs-system.md)
 - [Program Layout](program-layout.md)
 - [Package Boundaries And Distribution](package-boundaries.md)

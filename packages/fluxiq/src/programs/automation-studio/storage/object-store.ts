@@ -152,6 +152,57 @@ export class AutomationStudioObjectStore {
     return result;
   }
 
+  async deleteRecordingsObjects(projectId: string, recordingIds: Iterable<string>, protectedSha256s: Iterable<string> = []): Promise<{ deleted: string[] }> {
+    const recordingIdSet = new Set([...recordingIds].filter(Boolean));
+    if (!recordingIdSet.size) return { deleted: [] };
+    const protectedSet = new Set([...protectedSha256s].map((sha256) => sha256.toLowerCase()).filter(isSha256));
+    const prefixes = [...recordingIdSet].map((recordingId) => recordingObjectRelativePrefix(projectId, recordingId).replaceAll("\\", "/"));
+    const deleted: string[] = [];
+    const folders = prefixes.map((prefix) => path.join(this.rootDir, prefix));
+    await this.withProjectIndexLock(projectId, async () => {
+      const index = await this.readProjectObjectIndex(projectId);
+      const scoped = (index.objects as AutomationStudioObjectIndexEntry[]).filter((entry) => {
+        const relativePath = entry.relativePath.replaceAll("\\", "/");
+        return entry.owner.kind === "recording" && recordingIdSet.has(entry.owner.recordingId)
+          || typeof entry.recordingId === "string" && recordingIdSet.has(entry.recordingId)
+          || prefixes.some((prefix) => relativePath.startsWith(prefix));
+      });
+      const paths: string[] = [];
+      const movedEntries: AutomationStudioObjectIndexEntry[] = [];
+      for (const entry of scoped) {
+        if (protectedSet.has(entry.sha256)) {
+          const extension = path.extname(entry.relativePath).slice(1) || extensionForMediaType(entry.mediaType);
+          const nextRelativePath = objectRelativePath(projectId, entry.sha256, safeObjectExtension(extension)).replaceAll("\\", "/");
+          const nextEntry = { ...entry, relativePath: nextRelativePath, owner: objectOwner() };
+          delete nextEntry.recordingId;
+          if (entry.relativePath.replaceAll("\\", "/") !== nextRelativePath) {
+            const nextPath = path.join(this.rootDir, nextRelativePath);
+            await mkdir(path.dirname(nextPath), { recursive: true });
+            try {
+              await rename(this.resolveReferencePath(compactObjectReference(entry)), nextPath);
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+              await stat(nextPath);
+            }
+          }
+          movedEntries.push(nextEntry);
+          continue;
+        }
+        paths.push(this.resolveReferencePath(compactObjectReference(entry)));
+        deleted.push(entry.sha256);
+      }
+      const deletedSet = new Set(deleted);
+      index.objects = [
+        ...index.objects.filter((entry) => !deletedSet.has(entry.sha256) && !movedEntries.some((moved) => moved.sha256 === entry.sha256)),
+        ...movedEntries
+      ];
+      await Promise.all(paths.map((filePath) => rm(filePath, { force: true })));
+      if (deleted.length || movedEntries.length) await this.writeProjectObjectIndex(projectId, index);
+    });
+    await Promise.all(folders.map((folder) => rm(folder, { recursive: true, force: true })));
+    return { deleted };
+  }
+
   async moveProjectObject(projectId: string, sha256: string, scope: { recordingId?: string } = {}): Promise<AutomationStudioObjectReference | null> {
     if (!isSha256(sha256)) return null;
     return this.withProjectIndexLock(projectId, async () => {

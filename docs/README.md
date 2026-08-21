@@ -13,6 +13,7 @@ Docs program in the control panel.
 - [Program Layout](architecture/program-layout.md)
 - [Package Boundaries And Distribution](architecture/package-boundaries.md)
 - [Client Gateway WebSocket Integration](integrations/client-gateway-websocket.md)
+- [Runtime Kernel](architecture/runtime-kernel.md)
 - [Automation Studio Importer Guide](integrations/automation-studio-importing-repos.md)
 - [Automation Studio Flow Regions](architecture/automation-studio-flow-regions.md)
 - [Automation Studio Flow DSL](architecture/automation-studio-flow-dsl.md)

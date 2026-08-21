@@ -11,6 +11,7 @@ import {
   type CreateFlowRequest,
   type CreateRecordingRequest,
   type DeleteRecordingRequest,
+  type DeleteRecordingsRequest,
   type FlowIdProjectRequest,
   type FlowProjectRequest,
   type ExecuteClientActionRequest,
@@ -463,6 +464,16 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as DeleteRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       await authorizeProgramPin(identityAccess, payload);
       return { ok: true, payload: await service.deleteRecording(payload) };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteRecordings,
+    permission: "runtime.control",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as DeleteRecordingsRequest & { authSessionId?: unknown; authorizationPin?: unknown };
+      await authorizeProgramPin(identityAccess, payload);
+      return { ok: true, payload: await service.deleteRecordings(payload) };
     }
   });
   registry.register({

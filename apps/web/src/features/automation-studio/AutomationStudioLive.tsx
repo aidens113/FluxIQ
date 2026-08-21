@@ -82,6 +82,7 @@ import {
   Field,
   KeyValue,
   Modal,
+  notifyGlobalAlert,
   StatusText,
   VisualAlert
 } from "../programs/shared-ui";
@@ -89,9 +90,22 @@ import {
 type TabButton<T extends string> = { id: T; label: string; count?: number };
 type AutomationFlowPreset = "blank" | "deterministic" | "recorded" | "integration" | "scheduled" | "api-endpoint" | "reusable";
 type DeletedHierarchyRefs = { taskIds: Set<string>; routineIds: Set<string>; configIds: Set<string>; flowIds: Set<string>; recordingIds: Set<string>; proposalIds: Set<string>; timelineEntryIds: Set<string> };
+type AutomationFlowRunState = {
+  phase: "idle" | "starting" | "succeeded" | "failed";
+  message: string;
+  runId?: string;
+  flowId?: string;
+  status?: string;
+  startedAt?: number;
+  finishedAt?: number;
+};
 
 function shortAutomationId(value: string): string {
   return value.length > 18 ? `${value.slice(0, 8)}...${value.slice(-6)}` : value;
+}
+
+function emitAutomationStudioCommandStatus(detail: { state: string; detail: string; running?: boolean; dirty?: boolean }) {
+  window.dispatchEvent(new CustomEvent("automation-studio:command-status", { detail }));
 }
 
 export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
@@ -114,6 +128,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const [pipelineArtifacts, setPipelineArtifacts] = useState<any>({ normalizationReviews: [], miningRuns: [], evidenceFacts: [], evidenceObservations: [], stateActionCorrelations: [], evidenceClaims: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
   const [recordingDomains, setRecordingDomains] = useState<any[]>([]);
   const [automationActionStatus, setAutomationActionStatus] = useState("");
+  const [flowRunState, setFlowRunState] = useState<AutomationFlowRunState>({ phase: "idle", message: "Ready." });
   const [projects, setProjects] = useState<AutomationStudioProject[]>([]);
   const [projectCategories, setProjectCategories] = useState<AutomationStudioProjectCategory[]>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
@@ -152,7 +167,6 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const [recordingTreePrimaryKind, setRecordingTreePrimaryKind] = useState<"recording" | "proposal" | null>(null);
   const [recordingProcessing, setRecordingProcessing] = useState<RecordingProcessingStatus | null>(null);
   const [gatewaySnapshot, setGatewaySnapshot] = useState<any>({ enabled: false, sessions: [], pairings: [], auditLog: [] });
-  const [recordingBlockedAlert, setRecordingBlockedAlert] = useState<{ message: string; clientId?: string; timestamp: number } | null>(null);
   const [hierarchyAction, setHierarchyAction] = useState<AutomationHierarchyAction>(null);
   const [hierarchyCreateStep, setHierarchyCreateStep] = useState<"type" | "details">("type");
   const [hierarchyPin, setHierarchyPin] = useState("");
@@ -309,6 +323,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     ?? projectFlows[0]
     ?? null;
   const selectedFlow = selectedFlowEntry?.flow ?? null;
+  const runnableFlowEntry = selection?.kind === "flow" && selectedFlowEntry?.flow?.flowId === selection.id ? selectedFlowEntry : null;
+  const runnableFlow = runnableFlowEntry?.flow ?? null;
   useEffect(() => {
     if (!activeProjectId || !selectedFlow?.flowId || selectedFlowEntry?.source !== "canonical") { setFlowPublications([]); setFlowDependencyInfo({ dependencies: [], usedBy: [], availableUpgrades: [] }); return; }
     let cancelled = false;
@@ -858,10 +874,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     const blocked = [...(gatewaySnapshot.auditLog ?? [])].reverse().find((entry: any) => entry.type === "recording.project_required");
     if (!blocked || blocked.id === lastRecordingBlockedAuditRef.current) return;
     lastRecordingBlockedAuditRef.current = blocked.id;
-    setRecordingBlockedAlert({
+    notifyGlobalAlert({
+      tone: "warning",
+      title: "Recording cannot start",
       message: blocked.message ?? "Recording cannot start because Automation Studio does not have an open project.",
-      clientId: String(blocked.metadata?.clientId ?? blocked.sessionId ?? ""),
-      timestamp: blocked.timestamp ?? Date.now()
+      id: `recording-blocked:${blocked.id}`
     });
   }, [gatewaySnapshot.auditLog]);
 
@@ -891,6 +908,15 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   useEffect(() => {
     document.title = activeProject ? `${activeProject.name} - Automation Studio` : "Automation Studio";
   }, [activeProject]);
+  useEffect(() => {
+    if (!automationActionStatus) return;
+    notifyGlobalAlert({
+      tone: /failed|cannot|required|could not|no .*available|not connected|read-only/i.test(automationActionStatus) ? "error" : /running|loading|generating|finalizing|normalizing|mining/i.test(automationActionStatus) ? "warning" : "info",
+      title: "Automation Studio",
+      message: automationActionStatus,
+      id: `automation-action:${automationActionStatus}`
+    });
+  }, [automationActionStatus]);
 
   useEffect(() => {
     if (pageFullscreenWindowId && !workspacePrefs.windows.some((item) => item.id === pageFullscreenWindowId && (item.area ?? "main") === "main")) setPageFullscreenWindowId(null);
@@ -1362,27 +1388,81 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   }
 
   async function runCurrentAutomationFlow() {
-    if (!activeProjectId || !selectedFlow) {
-      setAutomationActionStatus("Select a Flow before running.");
+    if (!activeProjectId || !runnableFlow) {
+      const message = !activeProjectId ? "Open a project before running a Flow." : "Open a Flow from the project tree before running.";
+      setAutomationActionStatus(message);
+      setFlowRunState({ phase: "failed", message });
+      emitAutomationStudioCommandStatus({ state: "Run blocked", detail: message, running: false, dirty: hasDirtyTaskGraph });
       return;
     }
-    if (hasDirtyTaskGraph && !window.confirm("This Flow has unsaved changes. Run the last saved version anyway?")) return;
-    const requestedDomainIds = selectedFlow.scope?.kind === "global" && Array.isArray(selectedFlow.executionDefaults?.authorizedDomainIds) ? selectedFlow.executionDefaults.authorizedDomainIds : [];
-    if (requestedDomainIds.length && !window.confirm(`Grant this run permission to execute the following bound domains?\n\n${requestedDomainIds.join("\n")}`)) return;
-    setAutomationActionStatus("Running flow...");
+    if (flowRunState.phase === "starting") return;
+    if (hasDirtyTaskGraph && !window.confirm("This Flow has unsaved changes. Run the last saved version anyway?")) {
+      setFlowRunState({ phase: "idle", message: "Run cancelled. Save the Flow first, or run the last saved version." });
+      emitAutomationStudioCommandStatus({ state: "Run cancelled", detail: "Save the Flow first, or run the last saved version.", running: false, dirty: true });
+      return;
+    }
+    const requestedDomainIds = runnableFlow.scope?.kind === "global" && Array.isArray(runnableFlow.executionDefaults?.authorizedDomainIds) ? runnableFlow.executionDefaults.authorizedDomainIds : [];
+    if (requestedDomainIds.length && !window.confirm(`Grant this run permission to execute the following bound domains?\n\n${requestedDomainIds.join("\n")}`)) {
+      setFlowRunState({ phase: "idle", message: "Run cancelled before domain permissions were granted." });
+      emitAutomationStudioCommandStatus({ state: "Run cancelled", detail: "Domain permission grant was not approved.", running: false, dirty: hasDirtyTaskGraph });
+      return;
+    }
+    const startingState: AutomationFlowRunState = {
+      phase: "starting",
+      message: `Starting ${runnableFlow.name ?? runnableFlow.flowId}...`,
+      flowId: runnableFlow.flowId,
+      startedAt: Date.now()
+    };
+    setFlowRunState(startingState);
+    setAutomationActionStatus(startingState.message);
+    emitAutomationStudioCommandStatus({ state: "Running", detail: startingState.message, running: true, dirty: hasDirtyTaskGraph });
+    openView("runtime-debug", "preview", "main");
     const result = await api.post<{ runtimeSession: any }>("run-runtime-session", {
       projectId: activeProjectId,
-      flowId: selectedFlow.flowId,
+      flowId: runnableFlow.flowId,
       authorizedDomainIds: requestedDomainIds
     });
     if (!result.ok || !result.payload?.runtimeSession) {
-      setAutomationActionStatus(result.error ?? "Run failed.");
+      const message = result.error ?? "Flow run failed before a runtime session was returned.";
+      setAutomationActionStatus(message);
+      setFlowRunState({ phase: "failed", message, flowId: runnableFlow.flowId, ...(startingState.startedAt !== undefined ? { startedAt: startingState.startedAt } : {}), finishedAt: Date.now() });
+      emitAutomationStudioCommandStatus({ state: "Run failed", detail: message, running: false, dirty: hasDirtyTaskGraph });
       return;
     }
-    setRuntimeSessions((current) => [result.payload!.runtimeSession, ...current.filter((session) => session.runId !== result.payload!.runtimeSession.runId)]);
-    setAutomationActionStatus(`Run ${result.payload.runtimeSession.status}.`);
+    const session = result.payload.runtimeSession;
+    setRuntimeSessions((current) => [session, ...current.filter((item) => item.runId !== session.runId)]);
+    const status = String(session.status ?? "unknown");
+    const traceMessage = typeof session.trace?.message === "string" ? session.trace.message : "";
+    const message = `Run ${status}${traceMessage ? `: ${traceMessage}` : "."}`;
+    setAutomationActionStatus(message);
+    setFlowRunState({
+      phase: status === "succeeded" ? "succeeded" : "failed",
+      message,
+      runId: session.runId,
+      flowId: runnableFlow.flowId,
+      status,
+      startedAt: session.startedAt ?? startingState.startedAt,
+      finishedAt: session.finishedAt ?? Date.now()
+    });
+    emitAutomationStudioCommandStatus({ state: status === "succeeded" ? "Run complete" : "Run failed", detail: message, running: false, dirty: hasDirtyTaskGraph });
     openView("runtime-debug", "preview", "main");
   }
+
+  useEffect(() => {
+    const run = () => { void runCurrentAutomationFlow(); };
+    const unavailable = (event: Event) => {
+      const command = (event as CustomEvent<{ command?: string }>).detail?.command ?? "Command";
+      const message = `${command} is not wired to cancellable runtime sessions yet.`;
+      setAutomationActionStatus(message);
+      emitAutomationStudioCommandStatus({ state: `${command} unavailable`, detail: message, running: false, dirty: hasDirtyTaskGraph });
+    };
+    window.addEventListener("automation-studio:run-flow", run);
+    window.addEventListener("automation-studio:runtime-control", unavailable);
+    return () => {
+      window.removeEventListener("automation-studio:run-flow", run);
+      window.removeEventListener("automation-studio:runtime-control", unavailable);
+    };
+  }, [activeProjectId, runnableFlow?.flowId, flowRunState.phase, hasDirtyTaskGraph]);
 
   async function createProjectRecording() {
     if (!activeProjectId || !activeProject) return;
@@ -1652,19 +1732,16 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   async function deleteProjectRecordings(recordingIds: string[], authorizationPin: string) {
     if (!activeProjectId || !recordingIds.length) return true;
     const uniqueIds = [...new Set(recordingIds)];
-    let deletedCount = 0;
-    const deletedProposalIds: string[] = [];
-    for (const recordingId of uniqueIds) {
-      const result = await api.post<{ deletedRecordingId: string; deletedProposalIds?: string[] }>("delete-recording", { projectId: activeProjectId, recordingId, authorizationPin });
-      if (!result.ok) {
-        setAutomationActionStatus(result.error ?? `Recording ${recordingId} could not be deleted.`);
-        return false;
-      }
-      deletedProposalIds.push(...(result.payload?.deletedProposalIds ?? []));
-      deletedCount += 1;
+    setAutomationActionStatus(`Deleting ${uniqueIds.length} recording${uniqueIds.length === 1 ? "" : "s"}...`);
+    const result = await api.post<{ deletedRecordingIds: string[]; deletedProposalIds?: string[] }>("delete-recordings", { projectId: activeProjectId, recordingIds: uniqueIds, authorizationPin });
+    if (!result.ok) {
+      setAutomationActionStatus(result.error ?? "Recordings could not be deleted.");
+      return false;
     }
+    const deletedIds = result.payload?.deletedRecordingIds?.length ? result.payload.deletedRecordingIds : uniqueIds;
+    const deletedCount = deletedIds.length;
     setAutomationActionStatus(`${deletedCount} recording${deletedCount === 1 ? "" : "s"} deleted.`);
-    removeDeletedRecordingsFromWorkspace(uniqueIds, deletedProposalIds);
+    removeDeletedRecordingsFromWorkspace(deletedIds, result.payload?.deletedProposalIds ?? []);
     await refreshProjectRuntimeState(activeProjectId);
     return true;
   }
@@ -3448,7 +3525,6 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           <div className="automation-workspace-actions">
             <button className="button" onClick={closeProject} type="button"><FolderOpen size={14} aria-hidden />Back to Projects</button>
             <span>{workspacePrefs.windows.length} window{workspacePrefs.windows.length === 1 ? "" : "s"}</span>
-            {automationActionStatus ? <span>{automationActionStatus}</span> : null}
           </div>
           <div className="automation-studio-context">
             <div className="automation-preferences-anchor">
@@ -3470,16 +3546,6 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           {!pageFullscreenWindowId ? renderBottomTimelineDock() : null}
         </section>
       </div>
-      {recordingBlockedAlert ? <Modal title="Recording Cannot Start" onClose={() => setRecordingBlockedAlert(null)}>
-        <VisualAlert
-          tone="warning"
-          title="Open a project first"
-          message={recordingBlockedAlert.message}
-        />
-        <div className="automation-modal-actions">
-          <button className="button primary" onClick={() => setRecordingBlockedAlert(null)} type="button">OK</button>
-        </div>
-      </Modal> : null}
       {hierarchyAction ? <Modal title={hierarchyAction.action === "create" && hierarchyCreateStep === "type" ? "Add To Hierarchy" : "Authorize Hierarchy Change"} onClose={() => setHierarchyAction(null)}>
         {hierarchyAction.action === "create" && hierarchyCreateStep === "type" ? <>
           <div className="automation-create-type-grid" role="list" aria-label="Choose item type">

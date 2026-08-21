@@ -64,6 +64,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   createRecording: "create-recording",
   updateRecording: "update-recording",
   deleteRecording: "delete-recording",
+  deleteRecordings: "delete-recordings",
   deleteProposal: "delete-proposal",
   getProposal: "get-proposal",
   appendRecordingEntry: "append-recording-entry",
@@ -217,6 +218,10 @@ export type UpdateRecordingRequest = RecordingProjectRequest & {
 
 export type DeleteRecordingRequest = RecordingProjectRequest & {
   recordingId: string;
+};
+
+export type DeleteRecordingsRequest = RecordingProjectRequest & {
+  recordingIds: string[];
 };
 
 export type GetRecordingEntryStateRequest = {

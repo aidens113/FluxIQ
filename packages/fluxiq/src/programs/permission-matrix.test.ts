@@ -23,6 +23,7 @@ describe("global program endpoint permission matrix", () => {
         "background-tasks",
         "compute-control",
         "deployment-sync",
+        "runtime",
         "docs",
         "production-runner",
       ]),

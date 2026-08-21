@@ -83,8 +83,21 @@ export function ProgramWorkspace({ program, capabilities, domainName, backHref, 
       const dirty = Boolean((event as CustomEvent<{ dirty?: boolean }>).detail?.dirty);
       setAutomationStatus((current) => ({ ...current, dirty, ...(dirty ? { state: "Edited", detail: "Unsaved whiteboard changes" } : {}) }));
     };
+    const onCommandStatus = (event: Event) => {
+      const detail = (event as CustomEvent<{ state?: string; detail?: string; running?: boolean; dirty?: boolean }>).detail ?? {};
+      setAutomationStatus((current) => ({
+        state: detail.state ?? current.state,
+        detail: detail.detail ?? current.detail,
+        running: detail.running ?? current.running,
+        dirty: detail.dirty ?? current.dirty
+      }));
+    };
     window.addEventListener("automation-studio:dirty-state", onDirtyState);
-    return () => window.removeEventListener("automation-studio:dirty-state", onDirtyState);
+    window.addEventListener("automation-studio:command-status", onCommandStatus);
+    return () => {
+      window.removeEventListener("automation-studio:dirty-state", onDirtyState);
+      window.removeEventListener("automation-studio:command-status", onCommandStatus);
+    };
   }, []);
   const confirmLeave = (event: MouseEvent<HTMLAnchorElement>) => {
     if (automationStatus.dirty && !window.confirm("This task has unsaved whiteboard changes. Leave without saving?")) event.preventDefault();
@@ -103,6 +116,13 @@ export function ProgramWorkspace({ program, capabilities, domainName, backHref, 
     window.setTimeout(() => {
       if (!completed) setCommandState("Saved", "Workspace layout saved", false, false);
     }, 1000);
+  };
+  const runAutomationStudio = () => {
+    setCommandState("Starting", "Checking selected Flow", true, automationStatus.dirty);
+    window.dispatchEvent(new CustomEvent("automation-studio:run-flow"));
+  };
+  const runtimeControl = (command: "Pause" | "Stop") => {
+    window.dispatchEvent(new CustomEvent("automation-studio:runtime-control", { detail: { command } }));
   };
 
   if (fullscreen) {
@@ -131,9 +151,9 @@ export function ProgramWorkspace({ program, capabilities, domainName, backHref, 
             <IconCommand label="Save" onClick={saveAutomationStudio}><Save size={15} aria-hidden /></IconCommand>
             <span className="command-divider" />
             <button className="button automation-command-menu" onClick={() => setCommandState("Recording", "Capturing operator timeline", true, true)} type="button" title="Record options"><Circle size={13} aria-hidden />Record<ChevronDown size={13} aria-hidden /></button>
-            <IconCommand className="run-command" label="Run" onClick={() => setCommandState("Running", "Running selected task from start", true)}><Play size={15} aria-hidden /></IconCommand>
-            <IconCommand disabled={!automationStatus.running} label="Pause" onClick={() => setCommandState("Paused", "Execution paused at current node", false)}><Pause size={15} aria-hidden /></IconCommand>
-            <IconCommand disabled={!automationStatus.running && automationStatus.state !== "Paused"} label="Stop" onClick={() => setCommandState("Stopped", "Run stopped by user", false)}><Square size={14} aria-hidden /></IconCommand>
+            <IconCommand className="run-command" disabled={automationStatus.running} label="Run" onClick={runAutomationStudio}><Play size={15} aria-hidden /></IconCommand>
+            <IconCommand disabled={!automationStatus.running} label="Pause" onClick={() => runtimeControl("Pause")}><Pause size={15} aria-hidden /></IconCommand>
+            <IconCommand disabled={!automationStatus.running && automationStatus.state !== "Paused"} label="Stop" onClick={() => runtimeControl("Stop")}><Square size={14} aria-hidden /></IconCommand>
             <IconCommand label="Step" onClick={() => setCommandState("Debug Step", "Advanced one policy action", false)}><StepForward size={15} aria-hidden /></IconCommand>
             <IconCommand label="Debug" onClick={() => setCommandState("Debugging", "Debugger armed for selected node", false)}><Bug size={15} aria-hidden /></IconCommand>
             <span className="command-divider" />

@@ -200,6 +200,64 @@ describe("FluxIQ", () => {
     expect(() => FluxIQ.create({ loadEnv: false }).createAutomationStudioIoRecorder()).toThrow("domainId is required");
   });
 
+  it("exposes a host runtime for direct-import adapters and program API snapshots", async () => {
+    const fluxiq = FluxIQ.create({ loadEnv: false, domainId: "example" });
+    fluxiq.runtime.registerAdapter({
+      adapterId: "example.direct",
+      label: "Example Direct Runtime",
+      transport: "direct",
+      domainId: "example",
+      capabilities: () => [{ id: "example.actions", kind: "action", domainId: "example", actionTypes: ["example.run"] }],
+      execute: (command) => ({ commandId: command.commandId ?? "command.example", status: "succeeded" })
+    });
+
+    const snapshot = await fluxiq.programs.api.call({
+      programId: "runtime",
+      endpoint: "snapshot",
+      scope: { domainId: "example" },
+      actor: {
+        sessionId: "session",
+        userId: "user",
+        roleId: "viewer",
+        permissions: ["programs.read"]
+      }
+    });
+    const run = fluxiq.runtime.createRun({ runId: "run.host", targetKind: "flow", targetId: "flow.host", domainId: "example" });
+    const listRuns = await fluxiq.programs.api.call({
+      programId: "runtime",
+      endpoint: "list-runs",
+      scope: { domainId: "example" },
+      actor: {
+        sessionId: "session",
+        userId: "user",
+        roleId: "viewer",
+        permissions: ["programs.read"]
+      }
+    });
+    const getRun = await fluxiq.programs.api.call({
+      programId: "runtime",
+      endpoint: "get-run",
+      scope: { domainId: "example" },
+      payload: { runId: run.runId },
+      actor: {
+        sessionId: "session",
+        userId: "user",
+        roleId: "viewer",
+        permissions: ["programs.read"]
+      }
+    });
+
+    expect(fluxiq.runtime).toBe(fluxiq.programs.runtime);
+    expect(snapshot.ok).toBe(true);
+    expect(snapshot.payload).toMatchObject({
+      adapters: [{ adapterId: "example.direct", domainId: "example" }],
+      transports: [{ transportId: "client-gateway", kind: "websocket" }],
+      capabilities: [{ id: "example.actions", kind: "action" }]
+    });
+    expect(listRuns.payload).toMatchObject([{ runId: "run.host" }]);
+    expect(getRun.payload).toMatchObject({ runId: "run.host", targetId: "flow.host" });
+  });
+
   it("binds Automation Studio native runtimes through framework options and host modules", async () => {
     const root = await tempRoot();
     try {

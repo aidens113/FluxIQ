@@ -2,6 +2,7 @@ import path from "node:path";
 import { ClientGatewayService, type ClientGatewayTrustedClient, type ClientGatewayTrustedClientStore } from "../../client-gateway/index.ts";
 import type { JsonObject } from "../../core/index.ts";
 import type { FluxIQHostPaths } from "../../framework/index.ts";
+import { ClientGatewayRuntimeTransport, FileRuntimeStore, RuntimeService } from "../../runtime/index.ts";
 import { AutomationStudioClientGatewayBridge, AutomationStudioService, registerAutomationStudioApi } from "../automation-studio/index.ts";
 import { BackgroundTasksService, registerBackgroundTasksApi } from "../background-tasks/index.ts";
 import { ComputeControlService, registerComputeControlApi } from "../compute-control/index.ts";
@@ -10,6 +11,7 @@ import { DeploymentSyncService, registerDeploymentSyncApi } from "../deployment-
 import { DocsService, registerDocsApi } from "../docs/index.ts";
 import { IdentityAccessService, registerIdentityAccessApi } from "../identity-access/index.ts";
 import { ProductionRunnerService, registerProductionRunnerApi } from "../production-runner/index.ts";
+import { registerRuntimeApi } from "../runtime-control/index.ts";
 import { GlobalProgramApiRegistry } from "./api.ts";
 import { registerGlobalDocumentationGenerators } from "./docs-generators.ts";
 import { ProgramJsonStore, programDataFile } from "./storage.ts";
@@ -26,6 +28,7 @@ export type GlobalProgramRuntime = {
   docs: DocsService;
   identityAccess: IdentityAccessService;
   productionRunner: ProductionRunnerService;
+  runtime: RuntimeService;
 };
 
 export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgramRuntime {
@@ -62,6 +65,9 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
   } : storageOptions);
   const identityAccess = new IdentityAccessService(identityUsersRepository ? { repository: identityUsersRepository } : {});
   const productionRunner = new ProductionRunnerService(undefined, storageOptions);
+  const runtime = new RuntimeService(paths ? { store: new FileRuntimeStore({ rootDir: path.join(paths.artifacts ?? path.join(paths.fluxiq, "artifacts"), "runtime") }) } : {});
+  runtime.registerTransport(new ClientGatewayRuntimeTransport({ gateway: clientGateway }));
+  automationStudio.bindRuntimeService(runtime);
 
   if (paths) {
     databaseManager
@@ -108,6 +114,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
   registerDocsApi(api, docs);
   registerIdentityAccessApi(api, identityAccess);
   registerProductionRunnerApi(api, productionRunner);
+  registerRuntimeApi(api, runtime);
 
   if (paths) {
     registerGlobalDocumentationGenerators({
@@ -131,7 +138,8 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
     deploymentSync,
     docs,
     identityAccess,
-    productionRunner
+    productionRunner,
+    runtime
   };
 }
 

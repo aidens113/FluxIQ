@@ -445,7 +445,11 @@ create an LLM-assisted attempt with instructions or a direct deterministic
 attempt. Generated proposals appear under Proposals in a folder named after
 their source recording and remain drafts until the user explicitly approves or
 applies them. Deleting a proposal removes only that attempt; deleting a
-recording deletes its generated proposals.
+recording deletes its generated proposals. When the web panel deletes multiple
+recordings from a project selection, it calls the batch `delete-recordings`
+endpoint so recording folders, generated proposal folders, recording indexes,
+pipeline indexes, object references, and orphaned session directories are
+cleaned in one grouped runtime operation rather than one request per recording.
 
 Each proposal contains a preview policy graph and a mergeable graph patch. The
 importing repo does not define patch criticality, confidence, or merge rules;

@@ -12,3 +12,4 @@ export * from "./deployment-sync/index.ts";
 export * from "./docs/index.ts";
 export * from "./identity-access/index.ts";
 export * from "./production-runner/index.ts";
+export * from "./runtime-control/index.ts";

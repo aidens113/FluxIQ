@@ -18,6 +18,9 @@ a requirement to copy AWS Console navigation or UX patterns.
   structure.
 - Keep card radius at `8px` or less.
 - Do not let individual programs define their own color palettes.
+- Program alerts and action statuses route through the shared global alert
+  viewport in the top-right corner. Views should not render status alerts inline
+  where they resize, cover, or push the working surface.
 
 ## Shared Classes
 
@@ -35,6 +38,11 @@ Global program UI should use the shared app-level classes:
 - `panel`
 - `button`
 - `button-primary`
+
+`StatusText` and `VisualAlert` from shared UI are notification emitters, not
+inline layout blocks. Use them for status/result messages that should appear in
+the global top-right alert stack. Keep modals only for confirmations or flows
+that require explicit user input.
 
 Framework theme tokens are exported from `fluxiq/ui` as
 `fluxiqConsoleTheme`.

@@ -6,6 +6,7 @@ import { DEPLOYMENT_SYNC_PROGRAM } from "../deployment-sync/metadata.ts";
 import { DOCS_PROGRAM } from "../docs/metadata.ts";
 import { IDENTITY_ACCESS_PROGRAM } from "../identity-access/metadata.ts";
 import { PRODUCTION_RUNNER_PROGRAM } from "../production-runner/metadata.ts";
+import { RUNTIME_PROGRAM } from "../runtime-control/metadata.ts";
 import type { GlobalProgramDefinition, ProgramDirectory, ProgramScope, ProgramSummary } from "./types.ts";
 
 export const GLOBAL_PROGRAMS: GlobalProgramDefinition[] = [
@@ -15,6 +16,7 @@ export const GLOBAL_PROGRAMS: GlobalProgramDefinition[] = [
   BACKGROUND_TASKS_PROGRAM,
   COMPUTE_CONTROL_PROGRAM,
   DEPLOYMENT_SYNC_PROGRAM,
+  RUNTIME_PROGRAM,
   DOCS_PROGRAM,
   PRODUCTION_RUNNER_PROGRAM
 ];

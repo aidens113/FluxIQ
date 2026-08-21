@@ -1,10 +1,22 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Info, XCircle } from "lucide-react";
-import type { KeyboardEvent, ReactNode } from "react";
+import { AlertTriangle, CheckCircle2, Info, XCircle, X } from "lucide-react";
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 export type AlertTone = "info" | "success" | "warning" | "error";
+type GlobalAlertPayload = { tone: AlertTone; title?: string; message: string; id?: string; ttlMs?: number };
+type GlobalAlertItem = Required<Pick<GlobalAlertPayload, "tone" | "message">> & {
+  id: string;
+  title?: string;
+  createdAt: number;
+  ttlMs: number;
+};
+
+export function notifyGlobalAlert(payload: GlobalAlertPayload) {
+  if (typeof window === "undefined" || !payload.message.trim()) return;
+  window.dispatchEvent(new CustomEvent<GlobalAlertPayload>("fluxiq:global-alert", { detail: payload }));
+}
 
 export function Panel(props: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
@@ -148,18 +160,71 @@ export function ModalContent(props: { title: string; children: ReactNode; onClos
 }
 
 export function StatusText({ value }: { value: string }) {
-  return value ? <VisualAlert tone={toneFromMessage(value)} title={titleFromTone(toneFromMessage(value))} message={value} /> : null;
+  useEffect(() => {
+    if (!value) return;
+    const tone = toneFromMessage(value);
+    notifyGlobalAlert({ tone, title: titleFromTone(tone), message: value });
+  }, [value]);
+  return null;
 }
 
 export function VisualAlert(props: { tone: AlertTone; title?: string; message: string }) {
-  const Icon = props.tone === "success" ? CheckCircle2 : props.tone === "warning" ? AlertTriangle : props.tone === "error" ? XCircle : Info;
+  useEffect(() => {
+    notifyGlobalAlert(props);
+  }, [props.tone, props.title, props.message]);
+  return null;
+}
+
+export function GlobalAlertViewport() {
+  const [alerts, setAlerts] = useState<GlobalAlertItem[]>([]);
+  useEffect(() => {
+    const onAlert = (event: Event) => {
+      const detail = (event as CustomEvent<GlobalAlertPayload>).detail;
+      if (!detail?.message?.trim()) return;
+      const key = detail.id ?? `${detail.tone}:${detail.title ?? ""}:${detail.message}`;
+      const ttlMs = detail.ttlMs ?? (detail.tone === "error" ? 10_000 : 6_000);
+      const alert: GlobalAlertItem = {
+        id: key,
+        tone: detail.tone,
+        ...(detail.title ? { title: detail.title } : {}),
+        message: detail.message,
+        createdAt: Date.now(),
+        ttlMs
+      };
+      setAlerts((current) => [alert, ...current.filter((item) => item.id !== key)].slice(0, 4));
+    };
+    window.addEventListener("fluxiq:global-alert", onAlert);
+    return () => window.removeEventListener("fluxiq:global-alert", onAlert);
+  }, []);
+  useEffect(() => {
+    if (!alerts.length) return;
+    const timers = alerts.map((alert) => window.setTimeout(() => {
+      setAlerts((current) => current.filter((item) => item.id !== alert.id));
+    }, alert.ttlMs));
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [alerts]);
+  if (!alerts.length) return null;
   return (
-    <div className={`global-alert ${props.tone}`} role={props.tone === "error" ? "alert" : "status"}>
+    <div className="global-alert-viewport" aria-live="polite" aria-label="Notifications">
+      {alerts.map((alert) => (
+        <GlobalAlertCard key={alert.id} alert={alert} onDismiss={() => setAlerts((current) => current.filter((item) => item.id !== alert.id))} />
+      ))}
+    </div>
+  );
+}
+
+function GlobalAlertCard(props: { alert: GlobalAlertItem; onDismiss(): void }) {
+  const Icon = props.alert.tone === "success" ? CheckCircle2 : props.alert.tone === "warning" ? AlertTriangle : props.alert.tone === "error" ? XCircle : Info;
+  return (
+    <div className={`global-alert ${props.alert.tone}`} role={props.alert.tone === "error" ? "alert" : "status"}>
       <Icon size={16} aria-hidden />
       <span>
-        {props.title ? <strong>{props.title}</strong> : null}
-        <small>{props.message}</small>
+        {props.alert.title ? <strong>{props.alert.title}</strong> : null}
+        <small>{props.alert.message}</small>
       </span>
+      <button className="global-alert-dismiss" onClick={props.onDismiss} title="Dismiss notification" aria-label="Dismiss notification" type="button">
+        <X size={13} aria-hidden />
+      </button>
     </div>
   );
 }

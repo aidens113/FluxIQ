@@ -5,6 +5,13 @@ recorders, workers, and other clients that can speak JSON over WebSockets.
 Automation Studio can use connected clients for recordings, snapshots, and
 actions, but pairing is global to the signed-in web panel.
 
+The gateway is also projected into the runtime kernel as a websocket transport.
+Paired sessions appear as runtime clients with the capabilities they advertised
+in `client.hello`, and runtime `execute_action` commands are delivered as
+`server.execute_action` messages. The gateway still owns pairing and trust; the
+runtime kernel owns dispatch selection, command attempts, run status, and
+runtime traces.
+
 ## Development Endpoint
 
 Start the web panel:

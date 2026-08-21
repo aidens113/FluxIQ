@@ -96,6 +96,7 @@ describe("AutomationStudioService recording persistence", () => {
 
   it("generates multiple proposal attempts and deletes one without deleting the recording", async () => {
     const io = new IoRegistry();
+    io.registerInput("example", { definition: { id: "clicked", title: "Clicked", role: "action", outputId: "click" }, mode: "stream", subscribe: (handler) => { queueMicrotask(() => handler(createEnvelope({ domainId: "example", ioId: "clicked", payload: { ok: true } }))); return () => undefined; } });
     io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
     const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "click-mapper", version: "1.0.0", description: "Maps clicks", outputIds: ["click"] }] };
     const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingMappers: { "click-mapper": () => ({ outputId: "click", parameters: { target: "submit" }, sourceObservationIds: ["entry.shared-state"], confidence: 0.9 }) } });
@@ -507,6 +508,33 @@ describe("AutomationStudioService recording persistence", () => {
     await expect(readFile(sharedFact, "utf8")).rejects.toThrow();
     const index = JSON.parse(await readFile(pipelineIndex, "utf8")) as { evidenceFacts: unknown[] };
     expect(index.evidenceFacts).toEqual([]);
+  });
+
+  it("deletes recording batches with one index and pipeline cleanup pass", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Batch cleanup" });
+    const first = await service.createRecording({ projectId: project.id, recordingId: "recording.batch-a", initialState: { timestamp: 0, namespaces: {} } });
+    const second = await service.createRecording({ projectId: project.id, recordingId: "recording.batch-b", initialState: { timestamp: 0, namespaces: {} } });
+    const kept = await service.createRecording({ projectId: project.id, recordingId: "recording.batch-kept", initialState: { timestamp: 0, namespaces: {} } });
+    const projectDir = path.join(tempRoot, "programs", "automation-studio", "projects", project.id);
+    const sharedFactsDir = path.join(projectDir, "pipeline", "shared", "evidence", "facts");
+    await mkdir(sharedFactsDir, { recursive: true });
+    await writeFile(path.join(sharedFactsDir, "fact.batch-a.json"), JSON.stringify({ factId: "fact.batch-a", recordingId: first.recordingId }), "utf8");
+    await writeFile(path.join(sharedFactsDir, "fact.batch-b.json"), JSON.stringify({ factId: "fact.batch-b", recordingId: second.recordingId }), "utf8");
+    await writeFile(path.join(sharedFactsDir, "fact.batch-kept.json"), JSON.stringify({ factId: "fact.batch-kept", recordingId: kept.recordingId }), "utf8");
+
+    const deleted = await service.deleteRecordings({ projectId: project.id, recordingIds: [first.recordingId, second.recordingId] });
+    expect(deleted).toEqual({
+      deletedRecordingIds: [first.recordingId, second.recordingId],
+      deletedProposalIds: []
+    });
+
+    await expect(readdir(path.join(projectDir, "recordings", first.recordingId))).rejects.toThrow();
+    await expect(readdir(path.join(projectDir, "recordings", second.recordingId))).rejects.toThrow();
+    await expect(readdir(path.join(projectDir, "recordings", kept.recordingId))).resolves.toBeTruthy();
+    await expect(readFile(path.join(sharedFactsDir, "fact.batch-a.json"), "utf8")).rejects.toThrow();
+    await expect(readFile(path.join(sharedFactsDir, "fact.batch-b.json"), "utf8")).rejects.toThrow();
+    await expect(readFile(path.join(sharedFactsDir, "fact.batch-kept.json"), "utf8")).resolves.toContain("fact.batch-kept");
   });
 
   it("keeps deleted recording assets that are still referenced by another recording", async () => {

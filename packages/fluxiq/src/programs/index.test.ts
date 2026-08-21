@@ -17,6 +17,7 @@ describe("global programs", () => {
       "background-tasks",
       "compute-control",
       "deployment-sync",
+      "runtime",
       "docs",
       "production-runner"
     ]);

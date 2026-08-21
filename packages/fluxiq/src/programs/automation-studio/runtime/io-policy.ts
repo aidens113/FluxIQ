@@ -1,5 +1,6 @@
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import { IoRegistry } from "../../../io/index.ts";
+import type { RuntimeService } from "../../../runtime/index.ts";
 import type { PolicyAction } from "../model/index.ts";
 import type { AutomationNodeExecutionResult } from "../nodes/contracts.ts";
 
@@ -56,4 +57,67 @@ export function createIoPolicyEffectDispatcher(io: IoRegistry, domainId: string 
     };
     return dispatchPolicyOutput(io, domainId, action, context?.signal);
   };
+}
+
+export function createRuntimePolicyEffectDispatcher(io: IoRegistry, domainId: string | null | undefined, runtime: RuntimeService) {
+  return async (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal }): Promise<AutomationNodeExecutionResult | undefined> => {
+    if (effect.type !== "policy.output.dispatch" || !effect.payload || typeof effect.payload !== "object" || Array.isArray(effect.payload)) return undefined;
+    const payload = effect.payload as JsonObject;
+    const action = policyActionFromPayload(payload);
+    const outputId = action.outputId?.trim();
+    if (!outputId) return { status: "failed", route: "failed", effects: [], outputs: { error: "Policy action has no outputId; legacy actionType execution is not supported by the runtime." } };
+    if (!io.hasOutput(domainId, outputId)) return { status: "failed", route: "failed", effects: [], outputs: { error: `Output is not registered: ${outputId}` } };
+    if (!await runtimeCanDispatchOutput(runtime, domainId, outputId)) return dispatchPolicyOutput(io, domainId, action, context?.signal);
+    const confirmation = action.confirmationInputId
+      ? io.waitForInput({ domainId: domainId ?? null, inputId: action.confirmationInputId, ...(action.confirmationTimeoutMs !== undefined ? { timeoutMs: action.confirmationTimeoutMs } : {}), ...(context?.signal ? { signal: context.signal } : {}) })
+        .then((event) => ({ ok: true as const, event }))
+        .catch((error) => ({ ok: false as const, error: error instanceof Error ? error.message : "Output confirmation failed." }))
+      : null;
+    const result = await runtime.dispatch({
+      kind: "execute_action",
+      domainId: domainId ?? null,
+      outputId,
+      actionType: outputId,
+      parameters: action.parameters as JsonObject,
+      ...(typeof payload.timeoutMs === "number" ? { timeoutMs: payload.timeoutMs } : {}),
+      ...(action.metadata ? { metadata: action.metadata } : {})
+    }, {
+      ...(context?.signal ? { signal: context.signal } : {}),
+      ...(typeof action.metadata?.clientId === "string" ? { preferredClientId: action.metadata.clientId } : {}),
+      ...(typeof action.metadata?.sessionId === "string" ? { preferredSessionId: action.metadata.sessionId } : {})
+    });
+    const confirmationResult = result.status === "succeeded" && confirmation ? await confirmation : null;
+    const outputs: Record<string, JsonValue> = {
+      outputId,
+      ok: result.status === "succeeded",
+      runtimeCommandId: result.commandId,
+      runtimeStatus: result.status,
+      ...(action.confirmationInputId ? { confirmationInputId: action.confirmationInputId, confirmation: confirmationResult?.ok ?? false } : {}),
+      ...(result.error ? { error: result.error } : {}),
+      ...(!confirmationResult?.ok && confirmationResult?.error ? { error: confirmationResult.error } : {}),
+      ...(result.payload !== undefined ? { result: result.payload as JsonValue } : {})
+    };
+    return result.status === "succeeded" && (!confirmationResult || confirmationResult.ok)
+      ? { status: "success", route: "success", outputs }
+      : { status: "failed", route: "failed", outputs };
+  };
+}
+
+function policyActionFromPayload(payload: JsonObject): Pick<PolicyAction, "outputId" | "actionType" | "parameters" | "confirmationInputId" | "confirmationTimeoutMs" | "metadata"> {
+  return {
+    actionType: typeof payload.outputId === "string" ? payload.outputId : "",
+    parameters: payload.parameters && typeof payload.parameters === "object" && !Array.isArray(payload.parameters) ? payload.parameters as JsonObject : {},
+    ...(typeof payload.outputId === "string" ? { outputId: payload.outputId } : {}),
+    ...(typeof payload.confirmationInputId === "string" && payload.confirmationInputId ? { confirmationInputId: payload.confirmationInputId } : {}),
+    ...(typeof payload.confirmationTimeoutMs === "number" ? { confirmationTimeoutMs: payload.confirmationTimeoutMs } : {}),
+    ...(payload.metadata && typeof payload.metadata === "object" && !Array.isArray(payload.metadata) ? { metadata: payload.metadata as JsonObject } : {})
+  };
+}
+
+async function runtimeCanDispatchOutput(runtime: RuntimeService, domainId: string | null | undefined, outputId: string): Promise<boolean> {
+  const capabilities = await runtime.capabilities();
+  return capabilities.some((capability) => {
+    if (capability.domainId !== undefined && capability.domainId !== (domainId ?? null)) return false;
+    return capability.outputIds?.includes(outputId) || capability.actionTypes?.includes(outputId);
+  });
 }
