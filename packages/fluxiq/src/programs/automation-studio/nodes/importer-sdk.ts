@@ -1,4 +1,5 @@
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
+import type { AutomationStudioElementMatcher } from "../fingerprinting/index.ts";
 import type { AutomationNodeExecutionResult } from "./contracts.ts";
 import { AutomationStudioNodeRegistry } from "./canonical-registry.ts";
 import { validateAutomationStudioNodeDefinition, type AutomationStudioNodeDefinition } from "./definitions.ts";
@@ -62,11 +63,13 @@ export type AutomationStudioNativeNodeContext = {
   parameters: Readonly<Record<string, JsonValue>>;
   signal: AbortSignal;
   grants: Readonly<{ permissions: string[]; runtimeCapabilities: string[]; networkDestinations: string[]; secretHandles: string[]; filesystemRoots: string[]; process: boolean; childProcess: boolean }>;
+  elementMatcher: AutomationStudioElementMatcher;
+  resolveTarget(resolverId: string, target: JsonObject): Promise<JsonObject | null>;
   log(entry: AutomationStudioNativeLogEntry): void;
 };
 export type AutomationStudioNativeNodeImplementation = (context: AutomationStudioNativeNodeContext) => AutomationNodeExecutionResult | Promise<AutomationNodeExecutionResult>;
-export type AutomationStudioRecordingMapperImplementation = (observation: AutomationStudioRecordingMapperObservation, context: { signal: AbortSignal }) => AutomationStudioRecordingMapperResult | Promise<AutomationStudioRecordingMapperResult>;
-export type AutomationStudioTargetResolverImplementation = (target: JsonObject, context: { signal: AbortSignal }) => JsonObject | null | Promise<JsonObject | null>;
+export type AutomationStudioRecordingMapperImplementation = (observation: AutomationStudioRecordingMapperObservation, context: { signal: AbortSignal; elementMatcher: AutomationStudioElementMatcher }) => AutomationStudioRecordingMapperResult | Promise<AutomationStudioRecordingMapperResult>;
+export type AutomationStudioTargetResolverImplementation = (target: JsonObject, context: { signal: AbortSignal; elementMatcher: AutomationStudioElementMatcher }) => JsonObject | null | Promise<JsonObject | null>;
 export type AutomationStudioComparatorImplementation = (left: JsonValue, right: JsonValue) => { equal: boolean; score?: number };
 
 export type AutomationStudioImporterImplementationBundle = {

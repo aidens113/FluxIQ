@@ -1,4 +1,5 @@
 import type { JsonObject } from "../../../core/index.ts";
+import type { AutomationStudioElementTarget } from "./action-element-target.ts";
 import type { AutomationConditionGroup } from "./conditions.ts";
 import type { EvidenceReference } from "./evidence.ts";
 import type { EvidenceAnchor, StatePath, StateValueType } from "./state.ts";
@@ -58,6 +59,7 @@ export type ActionTarget = {
   bounds?: { x: number; y: number; width: number; height: number };
   relativePosition?: { x: number; y: number };
   visualTarget?: ActionVisualEntityTarget;
+  elementTarget?: AutomationStudioElementTarget;
   metadata?: JsonObject;
 };
 

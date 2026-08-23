@@ -238,7 +238,8 @@ The first slice also defines contract-only homes for upcoming stages:
   learned effects, transitions, uncertainties, and the `TaskModelLearner`
   interface.
 - `fingerprinting` owns node scoring contributions, candidate scores, scoring
-  context, and the `FingerprintScorer` interface.
+  context, the `FingerprintScorer` interface, and common element fingerprint
+  matching used by recording mappers and native runtime output logic.
 
 ## Validation Boundary
 

@@ -23,6 +23,38 @@ describe("trusted-local native node runtime", () => {
     expect(trace.attempts[0]?.logs).toEqual([{ level: "info", message: "done", data: { token: "[REDACTED]", visible: "yes" } }]);
   });
 
+  it("provides the common element matcher to native implementations", async () => {
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest(), {
+      packageId: "example.package",
+      packageVersion: "1.0.0",
+      implementations: {
+        transform: ({ elementMatcher }) => {
+          const best = elementMatcher.bestCandidate({ visibleText: "Save", id: "save" }, [{ candidateId: "wrong", visibleText: "Cancel" }, { candidateId: "right", visibleText: "Save", id: "save" }]);
+          return { outputs: { result: best?.candidateId === "right" ? 1 : 0 } };
+        }
+      }
+    });
+    await expect(runtime.execute({ id: "native", definitionId: "example.transform" }, {})).resolves.toMatchObject({ result: { outputs: { result: 1 } } });
+  });
+
+  it("provides registered target resolvers to native implementations", async () => {
+    const withResolver = { ...manifest(), targetResolvers: [{ id: "element", version: "1.0.0", description: "Resolves element targets" }] };
+    const runtime = new AutomationStudioNativeNodeRuntime().register(withResolver, {
+      packageId: "example.package",
+      packageVersion: "1.0.0",
+      implementations: {
+        transform: async ({ resolveTarget }) => {
+          const target = await resolveTarget("element", { selector: "#save" });
+          return { outputs: { result: target?.kind === "element" ? 1 : 0 } };
+        }
+      },
+      targetResolvers: {
+        element: (target) => ({ kind: "element", fingerprint: { selector: String(target.selector ?? "") } })
+      }
+    });
+    await expect(runtime.execute({ id: "native", definitionId: "example.transform" }, {})).resolves.toMatchObject({ result: { outputs: { result: 1 } } });
+  });
+
   it("returns traceable denial for least-privilege requirements", async () => {
     const restricted = node({ safety: { requiredPermissions: ["native.execute"], runtime: { networkDestinations: ["https://api.example.test"], secretHandles: ["secret.api"] } } });
     const runtime = new AutomationStudioNativeNodeRuntime({ permissions: ["native.execute"] }).register(manifest([restricted]), { packageId: "example.package", packageVersion: "1.0.0", implementations: { transform: () => ({ outputs: { result: 1 } }) } });

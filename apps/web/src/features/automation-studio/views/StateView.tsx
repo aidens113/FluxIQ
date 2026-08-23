@@ -312,6 +312,14 @@ function StateComparePanel(props: { model: NodeStateViewModel; onSelectEvidence(
 }
 
 function StateRawPanel(props: { model: NodeStateViewModel }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!expanded) {
+    return (
+      <div className="automation-state-raw-placeholder">
+        <button type="button" onClick={() => setExpanded(true)}>Show raw JSON</button>
+      </div>
+    );
+  }
   return <pre className="automation-state-raw">{JSON.stringify(props.model.raw, null, 2)}</pre>;
 }
 

@@ -32,6 +32,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   listRecordings: "list-recordings",
   listProjectArtifacts: "list-project-artifacts",
   listFlows: "list-flows",
+  listFlowSummaries: "list-flow-summaries",
   createFlow: "create-flow",
   getFlow: "get-flow",
   saveFlow: "save-flow",
@@ -76,6 +77,8 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   normalizeRecording: "normalize-recording",
   createNormalizationReview: "create-normalization-review",
   listNormalizedTimelines: "list-normalized-timelines",
+  listNormalizedTimelineSummaries: "list-normalized-timeline-summaries",
+  getNormalizedTimeline: "get-normalized-timeline",
   listPipelineArtifacts: "list-pipeline-artifacts",
   mineRecordingEvidence: "mine-recording-evidence",
   learnTaskModel: "learn-task-model",
@@ -85,6 +88,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   reviewRecordingFlowProposal: "review-recording-flow-proposal",
   replayPolicyAgainstRecording: "replay-policy-against-recording",
   listRuntimeSessions: "list-runtime-sessions",
+  getRuntimeSession: "get-runtime-session",
   startRuntimeSession: "start-runtime-session",
   runRuntimeSession: "run-runtime-session",
   inspectStateDiff: "inspect-state-diff",
@@ -291,6 +295,10 @@ export type NormalizeRecordingRequest = RecordingProjectRequest & {
 
 export type RecordingIdProjectRequest = RecordingProjectRequest & {
   recordingId: string;
+};
+
+export type NormalizedTimelineProjectRequest = RecordingProjectRequest & {
+  normalizedTimelineId: string;
 };
 
 export type MineRecordingEvidenceRequest = RecordingProjectRequest & {

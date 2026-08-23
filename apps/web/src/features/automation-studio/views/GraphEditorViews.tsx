@@ -545,7 +545,13 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
   const recentlyConnectedPolicyEdgeIdsRef = useRef<Set<string>>(new Set());
   const taskGraphSignature = props.taskGraph ? automationTaskGraphSourceSignature(props.taskGraph) : "";
   const policyGraphSignature = props.taskGraph ? "" : automationPolicySourceSignature(props.policy);
-  const nativeNodeDefinitionSignature = JSON.stringify(props.nativeNodeDefinitions.map((definition) => ({ id: definition.id, version: definition.version, parameters: definition.parameters, inputs: definition.inputs, outputs: definition.outputs })));
+  const nativeNodeDefinitionSignature = JSON.stringify(props.nativeNodeDefinitions.map((definition) => ({
+    id: definition.id,
+    version: definition.version,
+    parameters: (definition.parameters ?? []).map((parameter: any) => parameter.id),
+    inputs: (definition.inputs ?? []).map((input: any) => input.id),
+    outputs: (definition.outputs ?? []).map((output: any) => output.id)
+  })));
   const taskGraphDraftSignature = props.taskGraphDraft ? graphSignature(props.taskGraphDraft.nodes, props.taskGraphDraft.edges) : "";
   const graph = useMemo(() => props.taskGraphDraft ?? (props.taskGraph ? taskFlowToReactFlowGraph(props.taskGraph, "", props.nativeNodeDefinitions) : policyToReactFlowGraph(props.policy, "")), [taskGraphSignature, policyGraphSignature, nativeNodeDefinitionSignature, taskGraphDraftSignature]);
   const [policyNodes, setPolicyNodes] = useState(graph.nodes);
@@ -903,7 +909,46 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
 }
 
 function graphSignature(nodes: Array<Node<any>>, edges: Edge[]): string {
-  return JSON.stringify({ nodes: nodes.map(({ id, type, position, data }) => ({ id, type, position, data })), edges: edges.map(({ id, source, target, sourceHandle, targetHandle, data }) => ({ id, source, target, sourceHandle, targetHandle, data })) });
+  return JSON.stringify({
+    nodes: nodes.map(({ id, type, position, data }) => ({
+      id,
+      type,
+      position,
+      data: graphNodeDataSignature(data)
+    })),
+    edges: edges.map(({ id, source, target, sourceHandle, targetHandle, data }) => ({ id, source, target, sourceHandle, targetHandle, data }))
+  });
+}
+
+function graphNodeDataSignature(data: any) {
+  return {
+    nodeDefinitionId: data?.nodeDefinitionId,
+    nodeDefinitionVersion: data?.nodeDefinitionVersion,
+    label: data?.label,
+    description: data?.description,
+    customDescription: data?.customDescription,
+    actionTypes: data?.actionTypes,
+    recovery: data?.recovery,
+    inputs: (data?.inputs ?? []).map((input: any) => input.id),
+    outputs: (data?.outputs ?? []).map((output: any) => output.id),
+    parameters: (data?.parameters ?? []).map((parameter: any) => parameter.id),
+    parameterValues: data?.parameterValues,
+    timeoutMs: data?.timeoutMs,
+    regionId: data?.regionId,
+    metadata: graphMetadataSignature(data?.metadata)
+  };
+}
+
+function graphMetadataSignature(metadata: any) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return metadata;
+  return {
+    ownerKind: metadata.ownerKind,
+    ownerId: metadata.ownerId,
+    proposalId: metadata.proposalId,
+    recordingId: metadata.recordingId,
+    regionId: metadata.regionId,
+    position: metadata.position
+  };
 }
 
 export type AutomationPolicyGraphEditorMode = "full-edit" | "readonly" | "proposal-review";

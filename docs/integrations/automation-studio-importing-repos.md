@@ -508,6 +508,28 @@ Start with a small, factual state surface:
 - visible error/success text;
 - enabled/visible flags for primary controls.
 
+For recorded or runtime element actions, prefer an element fingerprint over a
+single brittle locator. Include visible text, accessible name, label, stable
+IDs/test IDs/automation IDs, role/tag, state path, selector/query path/XPath,
+bounds, and non-sensitive attributes when available. FluxIQ's common
+`elementMatcher` gives stronger weight to semantic and stable identity while
+still using structural paths as supporting evidence.
+
+Element-targeting outputs should mark their output definition metadata so the
+runtime can reject calls that omit a fingerprint:
+
+```ts
+defineOutput({
+  definition: {
+    id: "click-element",
+    title: "Click element",
+    metadata: { elementTarget: true }
+  },
+  mode: "request",
+  dispatch: (request) => clickResolvedElement(request.payload.target)
+});
+```
+
 ## Recording Mappers and Flow Proposals
 
 Recording mappers are optional importer-owned semanticizers. They receive one
@@ -531,14 +553,22 @@ const bundle: AutomationStudioImporterImplementationBundle = {
   packageVersion: manifest.packageVersion,
   implementations: {},
   recordingMappers: {
-    "recorded-click": (observation) => {
+    "recorded-click": (observation, context) => {
       if (observation.type !== "observation" || observation.payload.inputId !== "element-clicked") return null;
+      const best = context.elementMatcher.bestCandidate(
+        {
+          visibleText: String(observation.payload.visibleText ?? ""),
+          testId: String(observation.payload.testId ?? ""),
+          selector: String(observation.payload.selector ?? "")
+        },
+        Array.isArray(observation.payload.elementCandidates) ? observation.payload.elementCandidates : []
+      );
       return {
         outputId: "click-element",
-        parameters: { selector: observation.payload.selector },
+        parameters: { target: best?.candidate ?? { selector: observation.payload.selector } },
         sourceInputIds: ["element-clicked"],
         expectedConfirmation: { inputId: "element-clicked", timeoutMs: 5_000 },
-        confidence: 0.92
+        confidence: best?.confidence ?? 0.65
       };
     }
   }

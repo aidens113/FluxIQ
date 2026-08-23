@@ -51,19 +51,76 @@ describe("AutomationStudioService recording persistence", () => {
     });
   });
 
+  it("normalizes recorded action element targets before storage", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot });
+    const project = await service.createProject({ name: "Element targets", domainId: "example" });
+    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.element-target", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
+    await service.appendRecordingEvent({
+      projectId: project.id,
+      recordingId: recording.recordingId,
+      entry: {
+        type: "action",
+        actionType: "click",
+        parameters: {},
+        target: { type: "client-target", metadata: { visibleText: "Save changes", testId: "save", selector: "button[data-testid='save']", token: "secret" } },
+        origin: "operator",
+        startedAt: 2,
+        timestamp: 2
+      }
+    });
+    const stored = await service.getRecordingSession(recording.recordingId, project.id);
+    const action = stored.timeline.find((entry) => entry.type === "action");
+    expect(action).toMatchObject({
+      type: "action",
+      target: { elementTarget: { kind: "element", fingerprint: { visibleText: "Save changes", testId: "save", selector: "button[data-testid='save']" } } },
+      parameters: { target: { kind: "element", fingerprint: { testId: "save" } } }
+    });
+    expect((action as any)?.target?.elementTarget?.fingerprint?.metadata).toBeUndefined();
+  });
+
+  it("normalizes mapper element targets in recording Flow proposals", async () => {
+    const io = new IoRegistry();
+    io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
+    const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "click-mapper", version: "1.0.0", description: "Maps clicks", outputIds: ["click"] }] };
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, {
+      packageId: "example.importer",
+      packageVersion: "1.0.0",
+      implementations: {},
+      recordingMappers: {
+        "click-mapper": () => ({
+          outputId: "click",
+          parameters: { target: { selector: "button[data-testid='save']", visibleText: "Save", testId: "save" } },
+          confidence: 0.9
+        })
+      }
+    });
+    const service = new AutomationStudioService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const project = await service.createProject({ name: "Mapped element target", domainId: "example" });
+    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.mapper-element-target", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
+    await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: {}, timestamp: 2 } });
+    const { proposals: [proposal] } = await service.createRecordingFlowProposals({ projectId: project.id, recordingId: recording.recordingId });
+    expect(proposal?.candidates[0]?.parameters.target).toMatchObject({
+      kind: "element",
+      source: "mapper",
+      fingerprint: { selector: "button[data-testid='save']", visibleText: "Save", testId: "save" }
+    });
+  });
+
   it("turns mapped observations into reviewed Flow actions without making action inputs policy state", async () => {
     const io = new IoRegistry();
     let dispatches = 0;
     io.registerInput("example", { definition: { id: "clicked", title: "Clicked", role: "action", outputId: "click" }, mode: "stream", subscribe: (handler) => { queueMicrotask(() => handler(createEnvelope({ domainId: "example", ioId: "clicked", payload: { ok: true } }))); return () => undefined; } });
     io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => { dispatches += 1; return { ok: true, domainId: "example", outputId: request.outputId, payload: { done: true } }; } });
     const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "click-mapper", version: "1.0.0", description: "Maps recorded clicks", outputIds: ["click"] }] };
-    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingMappers: { "click-mapper": (observation) => observation.type === "observation" ? { outputId: "click", parameters: { target: "submit" }, sourceInputIds: ["clicked"], expectedConfirmation: { inputId: "clicked", timeoutMs: 100 }, confidence: 0.9 } : null } });
+    let mapperSawElementMatcher = false;
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingMappers: { "click-mapper": (observation, context) => { mapperSawElementMatcher = typeof context.elementMatcher.bestCandidate === "function"; return observation.type === "observation" ? { outputId: "click", parameters: { target: "submit" }, sourceInputIds: ["clicked"], expectedConfirmation: { inputId: "clicked", timeoutMs: 100 }, confidence: 0.9 } : null; } } });
     const service = new AutomationStudioService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
     const project = await service.createProject({ name: "Mapped recording", domainId: "example" });
     const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.mapped", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
     await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" } } });
     const { proposals: [proposal], issues } = await service.createRecordingFlowProposals({ projectId: project.id, recordingId: recording.recordingId });
     expect(issues).toEqual([]);
+    expect(mapperSawElementMatcher).toBe(true);
     expect(proposal?.candidates[0]).toMatchObject({ actionEntryId: proposal?.candidates[0]?.sourceObservationIds[0], outputId: "click", sourceInputIds: ["clicked"], policyStateEligible: false, expectedConfirmation: { inputId: "clicked" } });
     expect(proposal?.candidates[0]?.evidence).toEqual([{ layer: "recording", artifactId: recording.recordingId, entryId: proposal?.candidates[0]?.sourceObservationIds[0] }]);
     expect(proposal?.review).toBeUndefined();
@@ -1118,6 +1175,39 @@ describe("AutomationStudioService recording persistence", () => {
     const projectRoot = path.join(tempRoot, "programs", "automation-studio", "projects", project.id);
     await expect(readFile(path.join(projectRoot, "flows", flow.flowId, "flow.json"), "utf8")).resolves.toContain("\"flowId\"");
     await expect(readFile(path.join(projectRoot, "runtime", "indexes", "sessions.json"), "utf8")).resolves.toContain(run.runId);
+  });
+
+  it("pages runtime run summaries from the runtime SQL index without loading traces", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Runtime Pages" });
+    const flow = await service.createDefaultFlow({ projectId: project.id, ownerKind: "routine", ownerId: "routine.runtime-pages", name: "Runtime Pages Flow" });
+    const runnableFlow = {
+      ...flow,
+      nodes: [
+        { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
+        { id: "constant", definitionId: "builtin.data.constant", parameterValues: { value: "ok" } },
+        { id: "end", definitionId: "builtin.control.end", parameterValues: { status: "success" } }
+      ],
+      edges: [
+        { id: "start.constant", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "constant", targetPortId: "in" },
+        { id: "constant.end", sourceNodeId: "constant", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }
+      ]
+    };
+    await service.saveProjectArtifact({ projectId: project.id, kind: "flow", artifact: runnableFlow });
+    const first = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    const second = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    const third = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
+
+    const page = await service.listRuntimeSessionSummaries(project.id, { limit: 2, offset: 1 });
+
+    expect(page).toMatchObject({ total: 3, limit: 2, offset: 1 });
+    expect(page.runs).toHaveLength(2);
+    expect(page.runs.map((run) => run.runId)).toEqual([second.runId, first.runId]);
+    expect(page.runs[0]).toMatchObject({ status: "succeeded", attemptCount: 3, effectCount: 0 });
+    expect(page.runs[0]).not.toHaveProperty("trace");
+    expect(third.status).toBe("succeeded");
   });
 
   it("deletes saved project artifacts and owned flow files from project folders", async () => {

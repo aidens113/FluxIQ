@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationBottomDockMinHeight, automationWorkspaceRegionForView, normalizeAutomationWorkspacePrefs, type AutomationWorkspacePrefs } from "./layout";
+import { automationBottomDockMinHeight, automationWorkspaceRegionForView, closeAutomationWorkspacePaneTab, moveAutomationWorkspacePaneTab, normalizeAutomationWorkspacePrefs, type AutomationWorkspacePrefs } from "./layout";
 
 describe("Automation Studio strict workspace layout", () => {
   it("classifies fixed workspace regions by view id", () => {
@@ -81,5 +81,79 @@ describe("Automation Studio strict workspace layout", () => {
     } as AutomationWorkspacePrefs);
 
     expect(prefs.bottomTimelineHeight).toBe(automationBottomDockMinHeight);
+  });
+
+  it("closes an empty main pane and switches to the smaller layout", () => {
+    const result = closeAutomationWorkspacePaneTab(
+      [
+        { id: "pane-main-1", activeViewId: "policy-primary", tabs: ["policy-primary"] },
+        { id: "pane-main-2", activeViewId: "state-explorer", tabs: ["state-explorer"] }
+      ],
+      "pane-main-2",
+      "state-explorer",
+      "pane-main-2",
+      "two-main-side"
+    );
+
+    expect(result.panes).toEqual([{ id: "pane-main-1", activeViewId: "policy-primary", tabs: ["policy-primary"] }]);
+    expect(result.activePaneId).toBe("pane-main-1");
+    expect(result.activeViewId).toBe("policy-primary");
+    expect(result.mainLayoutPreset).toBe("single");
+    expect(result.mainSplitRatios).toEqual([1]);
+  });
+
+  it("moves a tab between main panes and closes the emptied source pane", () => {
+    const result = moveAutomationWorkspacePaneTab(
+      [
+        { id: "pane-main-1", activeViewId: "policy-primary", tabs: ["policy-primary"] },
+        { id: "pane-main-2", activeViewId: "state-explorer", tabs: ["state-explorer"] }
+      ],
+      "pane-main-2",
+      "pane-main-1",
+      "state-explorer",
+      "two-main-side"
+    );
+
+    expect(result?.panes).toEqual([{ id: "pane-main-1", activeViewId: "state-explorer", tabs: ["policy-primary", "state-explorer"] }]);
+    expect(result?.activePaneId).toBe("pane-main-1");
+    expect(result?.activeViewId).toBe("state-explorer");
+    expect(result?.mainLayoutPreset).toBe("single");
+  });
+
+  it("reorders tabs within the same main pane", () => {
+    const result = moveAutomationWorkspacePaneTab(
+      [{ id: "pane-main-1", activeViewId: "policy-primary", tabs: ["policy-primary", "state-explorer", "timeline-recording"] }],
+      "pane-main-1",
+      "pane-main-1",
+      "timeline-recording",
+      "single",
+      "state-explorer",
+      "before"
+    );
+
+    expect(result?.panes).toEqual([{ id: "pane-main-1", activeViewId: "timeline-recording", tabs: ["policy-primary", "timeline-recording", "state-explorer"] }]);
+    expect(result?.activePaneId).toBe("pane-main-1");
+    expect(result?.activeViewId).toBe("timeline-recording");
+  });
+
+  it("inserts moved tabs next to the hovered target tab", () => {
+    const result = moveAutomationWorkspacePaneTab(
+      [
+        { id: "pane-main-1", activeViewId: "policy-primary", tabs: ["policy-primary", "timeline-recording"] },
+        { id: "pane-main-2", activeViewId: "state-explorer", tabs: ["state-explorer", "proposal-workbench"] }
+      ],
+      "pane-main-1",
+      "pane-main-2",
+      "timeline-recording",
+      "two-main-side",
+      "state-explorer",
+      "after"
+    );
+
+    expect(result?.panes).toEqual([
+      { id: "pane-main-1", activeViewId: "policy-primary", tabs: ["policy-primary"] },
+      { id: "pane-main-2", activeViewId: "timeline-recording", tabs: ["state-explorer", "timeline-recording", "proposal-workbench"] }
+    ]);
+    expect(result?.mainLayoutPreset).toBe("two-main-side");
   });
 });

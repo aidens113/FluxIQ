@@ -485,17 +485,32 @@ The shell provides:
 - a fixed bottom dock for selected-recording action preview.
 
 The play command currently calls the Automation Studio runtime session API and
-reports the returned session status and trace message. Pause and stop report
-that cancellable runtime sessions are not wired yet instead of pretending to
-control execution. Detailed step streaming and runtime attempt expansion belong
-in the Runtime Debug and Runs views as the runtime event stream matures.
+reports the returned session status and trace message. Play resolves the
+canonical Flow currently opened in the Flow editor workspace state, so a run
+still targets the visible Flow after selection moves to another pane, tab, node,
+timeline item, or inspector context. Pause and stop report that cancellable
+runtime sessions are not wired yet instead of pretending to control execution.
+Runtime Debug and Runs expose stored session traces through two inner pages.
+The first page is a previous-runs list backed by a per-project SQLite summary
+index and loaded with SQL `limit`/`offset` pagination. Rows only carry summary
+fields such as status, timing, action count, and effect count. Each row has a
+`View Log` action that loads exactly one full persisted session and opens its
+action-log page. The action log shows attempts in recorded order with route,
+timing, region, policy decision, and friendly summaries first; inputs, outputs,
+effects, native logs, nested child traces, final effects, and final runtime
+values are expanded as JSON only when requested. Live step streaming can extend
+the same action-log surface as the runtime event stream matures.
 
 The main editor is no longer a draggable inner-window desktop. Pane slots are
 chosen from presets such as full, halves, large-plus-side, three-pane, and two
 rows. Users can resize split handles to persist editor ratios, but panes do not
 overlap, stack by z-index, or move by dragging title bars. A pane owns a tab
 strip; adding a view adds it to a pane slot rather than creating a floating
-subwindow.
+subwindow. Main-pane tabs can be rearranged within a pane by dragging a tab
+before or after another tab. They can also be dragged from one pane's tab strip
+and dropped anywhere over another pane. Closing or dragging the final tab out
+of a pane removes that pane and compacts the main layout preset to match the
+remaining panes instead of reopening a fallback tab in the emptied pane.
 
 The right inspector is a fixed sidebar region. It can be resized horizontally,
 collapsed, and switched between utility tabs, but it does not float in the main
@@ -712,9 +727,13 @@ The executor starts at the `builtin.control.start` node when present, runs
 built-in node executors, carries typed data outputs into later node inputs,
 follows named route ports such as `success`, `failed`, `true`, `false`, and
 records an execution trace with attempts, outputs, effects, status, and a final
-message. This executor is intentionally separate from host-specific automation:
-browser, scraping, lead-generation, desktop, or game adapters plug in later
-through the adapter contract rather than living in FluxIQ core.
+message. Explicit `builtin.control.end` nodes are the preferred terminal point.
+If a non-terminal node completes on a route that has no matching outgoing edge,
+or completes without an outgoing edge while unvisited nodes remain, the runtime
+fails with a route diagnostic instead of reporting a false successful run. This
+executor is intentionally separate from host-specific automation: browser,
+scraping, lead-generation, desktop, or game adapters plug in later through the
+adapter contract rather than living in FluxIQ core.
 
 Runtime sessions persist per project. A session stores the target kind, target
 ID, flow ID, status, queued/started/finished timestamps, the flow snapshot used

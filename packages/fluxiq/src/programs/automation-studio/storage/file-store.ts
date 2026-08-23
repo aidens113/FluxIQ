@@ -111,7 +111,20 @@ export type AutomationStudioRuntimeRunSummary = {
   targetKind: string;
   targetId: string;
   status: string;
+  queuedAt?: number;
+  startedAt?: number;
+  finishedAt?: number;
+  flowId?: string;
+  attemptCount?: number;
+  effectCount?: number;
   updatedAt: number;
+};
+
+export type AutomationStudioRuntimeRunSummaryPage = {
+  runs: AutomationStudioRuntimeRunSummary[];
+  total: number;
+  limit: number;
+  offset: number;
 };
 
 export type AutomationStudioRuntimeSummaryIndex = {

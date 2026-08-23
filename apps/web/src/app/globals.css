@@ -5991,6 +5991,7 @@ select {
 .automation-state-canvas-shell,
 .automation-state-visual-fallback,
 .automation-state-table-wrap,
+.automation-state-raw-placeholder,
 .automation-state-raw,
 .automation-state-diff-list {
   flex: 1 1 auto;
@@ -6009,9 +6010,16 @@ select {
 
 .automation-state-visual-fallback,
 .automation-state-table-wrap,
+.automation-state-raw-placeholder,
 .automation-state-raw,
 .automation-state-diff-list {
   overflow: auto;
+}
+
+.automation-state-raw-placeholder {
+  display: grid;
+  place-items: center;
+  padding: 16px;
 }
 
 .automation-state-canvas-scroll {
@@ -6704,7 +6712,10 @@ select {
 .automation-runtime-stage {
   display: grid;
   gap: 14px;
-  min-width: 760px;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 2px;
 }
 
 .automation-recording-stage > header {
@@ -6800,6 +6811,242 @@ select {
 
 .automation-signal-board small {
   color: var(--color-text-muted);
+}
+
+.automation-runtime-debugger {
+  display: grid;
+  min-width: 0;
+  min-height: 520px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: #f8fafc;
+}
+
+.automation-runtime-list-page,
+.automation-runtime-log-page {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
+.automation-runtime-list-page > header,
+.automation-runtime-log-page > header,
+.automation-runtime-log-section > header,
+.automation-runtime-attempt-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.automation-runtime-list-page > header,
+.automation-runtime-log-page > header {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 10px;
+}
+
+.automation-runtime-list-page > header > div,
+.automation-runtime-log-page > header > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.automation-runtime-list-page > header span,
+.automation-runtime-log-page > header span,
+.automation-runtime-log-section > header span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.automation-runtime-row-action,
+.automation-runtime-back,
+.automation-runtime-pagination button,
+.automation-runtime-log-toolbar button,
+.automation-runtime-json-toggle button {
+  min-height: 28px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.automation-runtime-row-action:hover,
+.automation-runtime-back:hover,
+.automation-runtime-pagination button:hover:not(:disabled),
+.automation-runtime-log-toolbar button:hover:not(:disabled),
+.automation-runtime-json-toggle button:hover {
+  border-color: var(--color-primary);
+  background: #f1f8ff;
+}
+
+.automation-runtime-pagination,
+.automation-runtime-log-toolbar,
+.automation-runtime-log-toolbar > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.automation-runtime-pagination button:disabled,
+.automation-runtime-log-toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.automation-runtime-log-toolbar {
+  justify-content: space-between;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 8px 10px;
+}
+
+.automation-runtime-log-toolbar span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.automation-runtime-action-log {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.automation-runtime-log-page {
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+}
+
+.automation-runtime-message {
+  margin: 0;
+  border: 1px solid #fed7aa;
+  border-radius: var(--radius-control);
+  background: #fff7ed;
+  color: #9a3412;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.automation-runtime-attempt-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: #fbfcfd;
+  padding: 9px;
+}
+
+.automation-runtime-attempt-card header span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.automation-runtime-attempt-card dl {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+
+.automation-runtime-attempt-card dl div {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.automation-runtime-attempt-card dt,
+.automation-runtime-attempt-card dd {
+  margin: 0;
+  font-size: 12px;
+}
+
+.automation-runtime-attempt-card dt {
+  color: var(--color-text-muted);
+  font-weight: 800;
+}
+
+.automation-runtime-attempt-card dd {
+  overflow-wrap: anywhere;
+}
+
+.automation-runtime-attempt-card details {
+  min-width: 0;
+}
+
+.automation-runtime-attempt-card summary {
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.automation-runtime-json-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.automation-runtime-json-toggle {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.automation-runtime-log-section {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 10px;
+}
+
+.automation-runtime-json {
+  max-height: 260px;
+  min-width: 0;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: #0f172a;
+  color: #e5e7eb;
+  padding: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.automation-runtime-empty {
+  margin: 0;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  padding: 12px;
+  font-size: 12px;
 }
 
 .workload-board {
@@ -6973,6 +7220,15 @@ select {
 
   .db-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .automation-runtime-debugger {
+    min-height: 0;
+  }
+
+  .automation-runtime-list-page,
+  .automation-runtime-log-page {
+    max-height: 70vh;
   }
 }
 

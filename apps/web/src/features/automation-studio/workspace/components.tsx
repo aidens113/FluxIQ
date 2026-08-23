@@ -1,7 +1,7 @@
 "use client";
 
 import { Columns3, Maximize2, Minimize2, Plus, RefreshCcw, XCircle } from "lucide-react";
-import type { MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import type { DragEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import type { Blocks } from "lucide-react";
 import type { AutomationViewInstance } from "../types";
 import { automationBottomDockMaxHeight, automationBottomDockMinHeight, automationLayoutPresetOptions, automationStrictMainLayoutPresets, defaultAutomationMainSplitRatios, defaultAutomationWorkspacePrefs, type AutomationLayoutPickerState, type AutomationLayoutPreset, type AutomationLayoutPresetOption, type AutomationWindowAdderState, type AutomationWindowResizeEdge, type AutomationWorkspaceArea, type AutomationWorkspacePrefs, type AutomationStrictMainLayoutPreset } from "./layout";
@@ -202,6 +202,8 @@ export function AutomationViewContainer(props: {
   onAddTab(event: MouseEvent<HTMLButtonElement>): void;
   onClose(): void;
   onCloseTab(viewId: string): void;
+  onTabDragStart?(viewId: string, event: DragEvent<HTMLButtonElement>): void;
+  onTabDrop?(viewId: string | null, placement: "before" | "after" | "end", event: DragEvent<HTMLElement>): void;
   onMoveStart(event: ReactPointerEvent<HTMLElement>): void;
   onPageFullscreen(): void;
   onResetSize(): void;
@@ -213,8 +215,24 @@ export function AutomationViewContainer(props: {
   const movable = props.movable ?? true;
   const resizable = props.resizable ?? true;
   const showResetSize = props.showResetSize ?? true;
+  const handleWindowDragOver = props.onTabDrop
+    ? (event: DragEvent<HTMLElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = "move";
+    }
+    : undefined;
+  const handleWindowDrop = props.onTabDrop
+    ? (event: DragEvent<HTMLElement>) => props.onTabDrop?.(null, "end", event)
+    : undefined;
   return (
-    <section className={props.active ? "automation-view-container active" : "automation-view-container"} data-automation-window-id={props.windowId} onMouseDown={props.onActivate}>
+    <section
+      className={props.active ? "automation-view-container active" : "automation-view-container"}
+      data-automation-window-id={props.windowId}
+      onDragOver={handleWindowDragOver}
+      onDrop={handleWindowDrop}
+      onMouseDown={props.onActivate}
+    >
       <header className={movable ? "" : "not-movable"} onPointerDown={movable ? props.onMoveStart : undefined}>
         <div>
           <Icon size={15} aria-hidden />
@@ -240,10 +258,25 @@ export function AutomationViewContainer(props: {
         {props.tabs.map((tab) => {
           const TabIcon = tab.icon;
           return (
-            <button className={tab.id === props.activeViewId ? "selected" : ""} key={tab.id} onClick={(event) => { event.stopPropagation(); props.onTabSelect(tab.id); }} role="tab" title={tab.label} aria-selected={tab.id === props.activeViewId} type="button">
+            <button
+              className={tab.id === props.activeViewId ? "selected" : ""}
+              draggable={Boolean(props.onTabDragStart)}
+              key={tab.id}
+              onClick={(event) => { event.stopPropagation(); props.onTabSelect(tab.id); }}
+              onDragOver={props.onTabDrop ? (event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; } : undefined}
+              onDragStart={props.onTabDragStart ? (event) => props.onTabDragStart?.(tab.id, event) : undefined}
+              onDrop={props.onTabDrop ? (event) => {
+                const bounds = event.currentTarget.getBoundingClientRect();
+                props.onTabDrop?.(tab.id, event.clientX > bounds.left + bounds.width / 2 ? "after" : "before", event);
+              } : undefined}
+              role="tab"
+              title={tab.label}
+              aria-selected={tab.id === props.activeViewId}
+              type="button"
+            >
               <TabIcon size={13} aria-hidden />
               <span>{tab.label}</span>
-              <span className="tab-close" onClick={(event) => { event.stopPropagation(); props.onCloseTab(tab.id); }}>x</span>
+              <span className="tab-close" draggable={false} onClick={(event) => { event.stopPropagation(); props.onCloseTab(tab.id); }}>x</span>
             </button>
           );
         })}

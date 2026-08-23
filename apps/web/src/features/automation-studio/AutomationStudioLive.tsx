@@ -43,11 +43,13 @@ import {
   automationWindowToPixels,
   clampAutomationWindowPixelGeometry,
   clampNumber,
+  closeAutomationWorkspacePaneTab,
   constrainAutomationResizeDelta,
   defaultAutomationWorkspacePrefs,
   findAutomationSharedResizePartners,
   fullAutomationWindowGeometry,
   layoutAutomationWindowsInPreset,
+  moveAutomationWorkspacePaneTab,
   nextAutomationZIndex,
   normalizeAutomationWorkspacePrefs,
   placeAutomationWindow,
@@ -212,7 +214,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         "proposalId"
       )
     }));
-    setProjectFlows(flowSummariesToCatalogEntries(summary.flows ?? []));
+    setProjectFlows((current) => mergeFlowDetails(flowSummariesToCatalogEntries(summary.flows ?? []), current.filter((entry: any) => entry?.flow?.metadata?.summaryOnly !== true)));
     setRuntimeSessions((summary.runtime ?? []).map(runtimeSummaryToSessionStub));
   }, [api]);
   const refreshProjects = useCallback(async () => {
@@ -323,7 +325,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     ?? projectFlows[0]
     ?? null;
   const selectedFlow = selectedFlowEntry?.flow ?? null;
-  const runnableFlowEntry = selection?.kind === "flow" && selectedFlowEntry?.flow?.flowId === selection.id ? selectedFlowEntry : null;
+  const runnableFlowEntry = selectedFlowEntry?.source === "canonical" ? selectedFlowEntry : null;
   const runnableFlow = runnableFlowEntry?.flow ?? null;
   useEffect(() => {
     if (!activeProjectId || !selectedFlow?.flowId || selectedFlowEntry?.source !== "canonical") { setFlowPublications([]); setFlowDependencyInfo({ dependencies: [], usedBy: [], availableUpgrades: [] }); return; }
@@ -590,6 +592,20 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     .filter((item) => automationWorkspaceRegionForView(item.activeViewId) !== "bottom" && item.tabs.some((tab) => automationWorkspaceRegionForView(tab) !== "bottom"));
   const activeWindow = workspacePrefs.windows.find((item) => item.id === workspacePrefs.activeWindowId) ?? workspacePrefs.windows[0];
   const activeViewId = activeWindow?.activeViewId ?? "policy-primary";
+  useEffect(() => {
+    if (!activeProjectId || !selectedFlow?.flowId || selectedFlowEntry?.source !== "canonical" || selectedFlow.metadata?.summaryOnly !== true) return;
+    if (activeViewId !== "policy-primary" && selection?.kind !== "flow") return;
+    void loadFlowDetails(selectedFlow.flowId);
+  }, [activeProjectId, activeViewId, selectedFlow?.flowId, selectedFlow?.metadata?.summaryOnly, selectedFlowEntry?.source, selection?.kind]);
+  useEffect(() => {
+    if (!activeProjectId || activeViewId !== "policy-primary") return;
+    if (nativeNodeDefinitions.length || publishedFlowDefinitions.length) return;
+    void loadNodeDefinitions(activeProjectId);
+  }, [activeProjectId, activeViewId, nativeNodeDefinitions.length, publishedFlowDefinitions.length]);
+  useEffect(() => {
+    if (!activeProjectId || activeViewId !== "timeline-recording" || !selectedRecording?.recordingId || selectedTimeline) return;
+    void loadLatestNormalizedTimeline(selectedRecording.recordingId);
+  }, [activeProjectId, activeViewId, selectedRecording?.recordingId, selectedTimeline?.normalizedTimelineId]);
   const selectedProposalReview = selectedProposal?.proposalId ? proposalReviews[selectedProposal.proposalId] ?? null : null;
   const proposalTargetFlowId = typeof selectedProposalReview?.targetFlowId === "string" && projectFlows.some((entry: any) => entry.source === "canonical" && entry.flow?.flowId === selectedProposalReview.targetFlowId)
     ? selectedProposalReview.targetFlowId
@@ -624,6 +640,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     if (next.kind === "flow") {
       const flowEntry = projectFlows.find((entry: any) => entry.source === "canonical" && entry.flow?.flowId === next.id);
       if (flowEntry) {
+        if (flowEntry.flow?.metadata?.summaryOnly === true) void loadFlowDetails(next.id);
+        if (!nativeNodeDefinitions.length && !publishedFlowDefinitions.length && activeProjectId) void loadNodeDefinitions(activeProjectId);
         updateWorkspacePrefs((current) => {
           const currentState = current.viewStates?.["policy-primary"] ?? {};
           return normalizeAutomationWorkspacePrefs({
@@ -957,14 +975,15 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     if (signature === lastSavedHierarchySignatureRef.current) return;
     const timeout = window.setTimeout(() => {
       if (signature === lastSavedHierarchySignatureRef.current) return;
-      lastSavedHierarchySignatureRef.current = signature;
       void api.post("save-project-hierarchy", {
-      projectId: activeProjectId,
-      hierarchy: { customHierarchyNodes, deletedHierarchyIds, workspacePrefs }
+        projectId: activeProjectId,
+        hierarchy: { customHierarchyNodes, deletedHierarchyIds, workspacePrefs }
+      }).then((result) => {
+        if (result.ok) lastSavedHierarchySignatureRef.current = signature;
       });
     }, 800);
     return () => window.clearTimeout(timeout);
-  }, [activeProjectId, loadedProjectHierarchyId, customHierarchyNodes, deletedHierarchyIds, workspacePrefs]);
+  }, [activeProjectId, loadedProjectHierarchyId, customHierarchyNodes, deletedHierarchyIds, workspacePrefs, api]);
 
   useEffect(() => {
     if (!activeProjectId || loadedProjectHierarchyId !== activeProjectId) return;
@@ -1307,13 +1326,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     if (!projectId) return;
     const workspaceSummaryPromise = api.post<{ summary: any }>("get-project-workspace-summary", { projectId });
     const recordingPromise = api.post<{ recordings: any[] }>("list-recordings", { projectId, summaries: true });
-    const timelinePromise = api.post<{ normalizedTimelines: any[] }>("list-normalized-timelines", { projectId });
-    const runtimePromise = api.post<{ runtimeSessions: any[] }>("list-runtime-sessions", { projectId });
-    const artifactPromise = api.post<{ artifacts: any }>("list-project-artifacts", { projectId });
-    const flowPromise = api.post<{ flows: any[] }>("list-flows", { projectId });
+    const runtimePromise = api.post<{ runtimeSessions: any[]; page?: any }>("list-runtime-sessions", { projectId, summaries: true, limit: 25, offset: 0 });
     const domainPromise = api.post<{ domains: any[] }>("list-recording-domains", { projectId });
-    const nativeNodesPromise = api.post<{ nodes: any[] }>("list-native-node-definitions", { projectId });
-    const publishedNodesPromise = api.post<{ nodes: any[] }>("list-published-flow-nodes", { projectId });
     void workspaceSummaryPromise.then((result) => {
       if (!result.ok || !result.payload?.summary) return;
       const summary = result.payload.summary;
@@ -1331,38 +1345,58 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           "proposalId"
         )
       }));
-      setProjectFlows(flowSummariesToCatalogEntries(summary.flows ?? []));
+      setProjectFlows((current) => mergeFlowDetails(flowSummariesToCatalogEntries(summary.flows ?? []), current.filter((entry: any) => entry?.flow?.metadata?.summaryOnly !== true)));
       setRuntimeSessions((summary.runtime ?? []).map(runtimeSummaryToSessionStub));
     });
     void recordingPromise.then((result) => { if (result.ok) setProjectRecordings((current) => mergeRecordingSummaries(current, result.payload?.recordings ?? [])); });
-    void timelinePromise.then((result) => { if (result.ok) setProjectTimelines(result.payload?.normalizedTimelines ?? []); });
     void runtimePromise.then((result) => { if (result.ok) setRuntimeSessions(result.payload?.runtimeSessions ?? []); });
-    void artifactPromise.then((result) => { if (result.ok) setProjectArtifacts(result.payload?.artifacts ?? { tasks: [], routines: [], configs: [], flows: [] }); });
-    void flowPromise.then((result) => { if (result.ok) setProjectFlows(result.payload?.flows ?? []); });
     void domainPromise.then((result) => { if (result.ok) setRecordingDomains(result.payload?.domains ?? []); });
-    void nativeNodesPromise.then((result) => { if (result.ok) setNativeNodeDefinitions(result.payload?.nodes ?? []); });
-    void publishedNodesPromise.then((result) => { if (result.ok) setPublishedFlowDefinitions(result.payload?.nodes ?? []); });
-    const [workspaceSummaryResult, recordingResult, timelineResult, runtimeResult, artifactResult, flowResult, domainResult, nativeNodesResult, publishedNodesResult] = await Promise.all([
+    const [workspaceSummaryResult, recordingResult, runtimeResult, domainResult] = await Promise.all([
       workspaceSummaryPromise,
       recordingPromise,
-      timelinePromise,
       runtimePromise,
-      artifactPromise,
-      flowPromise,
-      domainPromise,
-      nativeNodesPromise,
-      publishedNodesPromise
+      domainPromise
     ]);
     return {
       workspaceSummary: workspaceSummaryResult.ok ? workspaceSummaryResult.payload?.summary ?? null : null,
       recordings: recordingResult.ok ? recordingResult.payload?.recordings ?? [] : null,
-      timelines: timelineResult.ok ? timelineResult.payload?.normalizedTimelines ?? [] : null,
+      timelines: null,
       runtimeSessions: runtimeResult.ok ? runtimeResult.payload?.runtimeSessions ?? [] : null,
       pipelineArtifacts: null,
-      projectArtifacts: artifactResult.ok ? artifactResult.payload?.artifacts ?? { tasks: [], routines: [], configs: [], flows: [] } : null,
-      flows: flowResult.ok ? flowResult.payload?.flows ?? [] : null,
+      projectArtifacts: null,
+      flows: workspaceSummaryResult.ok ? flowSummariesToCatalogEntries(workspaceSummaryResult.payload?.summary?.flows ?? []) : null,
       domains: domainResult.ok ? domainResult.payload?.domains ?? [] : null
     };
+  }
+
+  async function loadFlowDetails(flowId: string) {
+    if (!activeProjectId || !flowId) return null;
+    const result = await api.post<{ flow: any }>("get-flow", { projectId: activeProjectId, flowId });
+    if (!result.ok || !result.payload?.flow) return null;
+    setProjectFlows((current) => mergeFlowDetails(current, [{ source: "canonical", readOnly: false, flow: result.payload!.flow }]));
+    return result.payload.flow;
+  }
+
+  async function loadNodeDefinitions(projectId = activeProjectId) {
+    if (!projectId) return;
+    const [nativeResult, publishedResult] = await Promise.all([
+      api.post<{ nodes: any[] }>("list-native-node-definitions", { projectId }),
+      api.post<{ nodes: any[] }>("list-published-flow-nodes", { projectId })
+    ]);
+    if (nativeResult.ok) setNativeNodeDefinitions(nativeResult.payload?.nodes ?? []);
+    if (publishedResult.ok) setPublishedFlowDefinitions(publishedResult.payload?.nodes ?? []);
+  }
+
+  async function loadLatestNormalizedTimeline(recordingId: string) {
+    if (!activeProjectId || !recordingId) return null;
+    const summaryResult = await api.post<{ normalizedTimelines: any[] }>("list-normalized-timeline-summaries", { projectId: activeProjectId });
+    if (!summaryResult.ok) return null;
+    const summary = latestByGeneratedAt((summaryResult.payload?.normalizedTimelines ?? []).filter((timeline) => timeline.recordingId === recordingId));
+    if (!summary?.normalizedTimelineId) return null;
+    const detailResult = await api.post<{ normalizedTimeline: any }>("get-normalized-timeline", { projectId: activeProjectId, normalizedTimelineId: summary.normalizedTimelineId });
+    if (!detailResult.ok || !detailResult.payload?.normalizedTimeline) return null;
+    setProjectTimelines((current) => mergeById([detailResult.payload!.normalizedTimeline], current, "normalizedTimelineId"));
+    return detailResult.payload.normalizedTimeline;
   }
 
   async function loadRecordingDetails(recordingId: string) {
@@ -2504,14 +2538,26 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   function closePaneTab(paneId: string, viewId: string) {
     updateWorkspacePrefs((current) => {
       current = captureActiveViewState(current);
-      const panes = current.panes.map((item) => {
-        if (item.id !== paneId) return item;
-        const tabs = item.tabs.filter((tab) => tab !== viewId);
-        if (!tabs.length) return { ...item, tabs: ["policy-primary"], activeViewId: "policy-primary" };
-        return { ...item, tabs, activeViewId: item.activeViewId === viewId ? tabs[0] ?? "policy-primary" : item.activeViewId };
-      });
-      const activePane = panes.find((item) => item.id === current.activePaneId) ?? panes[0];
-      return { ...current, activePaneId: activePane?.id ?? "", activeViewId: activePane?.activeViewId ?? "policy-primary", panes };
+      return { ...current, ...closeAutomationWorkspacePaneTab(current.panes, paneId, viewId, current.activePaneId, current.mainLayoutPreset) };
+    });
+  }
+  function startPaneTabDrag(paneId: string, viewId: string, event: DragEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-fluxiq-automation-pane-tab", JSON.stringify({ paneId, viewId }));
+    event.dataTransfer.setData("text/plain", viewId);
+  }
+  function dropPaneTab(targetPaneId: string, targetViewId: string | null, placement: "before" | "after" | "end", event: DragEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    const payload = event.dataTransfer.getData("application/x-fluxiq-automation-pane-tab");
+    if (!payload) return;
+    const parsed = parsePaneTabDragPayload(payload);
+    if (!parsed) return;
+    updateWorkspacePrefs((current) => {
+      current = captureActiveViewState(current);
+      const moved = moveAutomationWorkspacePaneTab(current.panes, parsed.paneId, targetPaneId, parsed.viewId, current.mainLayoutPreset, targetViewId, placement);
+      return moved ? { ...current, ...moved } : current;
     });
   }
   function setRightSidebarTab(viewId: string) {
@@ -3067,10 +3113,10 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           }
         }
         closeDeletedHierarchyViews(deletingNodes);
-        const refreshed = await refreshProjectRuntimeState(activeProjectId);
+        await refreshProjectRuntimeState(activeProjectId);
         const deletedTaskIds = new Set(artifactNodes.filter((node) => node.kind === "task").map((node) => node.sourceId));
         if (selection?.kind === "policy" && deletedTaskIds.has(selection.id)) {
-          const nextTask = (refreshed?.projectArtifacts?.tasks ?? []).find((task: any) => !deletedTaskIds.has(task.taskId));
+          const nextTask = (projectArtifacts.tasks ?? []).find((task: any) => !deletedTaskIds.has(task.taskId));
           setSelection(nextTask ? { kind: "policy", id: nextTask.taskId } : null);
         }
       }
@@ -3183,6 +3229,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                       onClose={() => closePaneTab(pane.id, pane.activeViewId)}
                       onCloseTab={(viewId) => closePaneTab(pane.id, viewId)}
                       onAddTab={(event) => toggleWindowAdder("main", event, pane.id)}
+                      onTabDragStart={(viewId, event) => startPaneTabDrag(pane.id, viewId, event)}
+                      onTabDrop={(viewId, placement, event) => dropPaneTab(pane.id, viewId, placement, event)}
                       onMoveStart={() => undefined}
                       onPageFullscreen={() => undefined}
                       onResetSize={() => undefined}
@@ -3733,6 +3781,17 @@ function mergeRecordingSummaries(current: any[], incoming: any[]) {
   });
 }
 
+function mergeFlowDetails(current: any[], incoming: any[]) {
+  const incomingById = new Map(incoming
+    .filter((entry) => entry?.flow?.flowId)
+    .map((entry) => [entry.flow.flowId, entry]));
+  const next = current.map((entry) => incomingById.get(entry?.flow?.flowId) ?? entry);
+  for (const entry of incoming) {
+    if (entry?.flow?.flowId && !next.some((item) => item?.flow?.flowId === entry.flow.flowId)) next.push(entry);
+  }
+  return next;
+}
+
 function automationFlowPreset(flow: any, preset: AutomationFlowPreset) {
   const start = { id: "start", definitionId: "builtin.control.start", position: { x: 80, y: 140 } };
   const end = { id: "end", definitionId: "builtin.control.end", position: { x: 500, y: 140 } };
@@ -3765,6 +3824,17 @@ function isAutomationSelection(value: unknown): value is AutomationSelection {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const selection = value as { kind?: unknown; id?: unknown };
   return typeof selection.kind === "string" && typeof selection.id === "string";
+}
+
+function parsePaneTabDragPayload(value: string): { paneId: string; viewId: string } | null {
+  try {
+    const parsed = JSON.parse(value) as { paneId?: unknown; viewId?: unknown };
+    return typeof parsed.paneId === "string" && typeof parsed.viewId === "string"
+      ? { paneId: parsed.paneId, viewId: parsed.viewId }
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function stateSelectionId(parts: { nodeId?: string; flowId?: string; proposalId?: string; timelineEntryId?: string; stateSnapshotId?: string }): string {

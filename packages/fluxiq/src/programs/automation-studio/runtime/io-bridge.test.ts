@@ -77,6 +77,77 @@ describe("Automation Studio IO bridge", () => {
     expect(trace.attempts[0]?.outputs).toMatchObject({ outputId: "activate-element", ok: true });
   });
 
+  it("matches canonical element targets before output dispatch", async () => {
+    const io = new IoRegistry();
+    let dispatchedTarget: any;
+    io.registerOutput("example", defineOutput({
+      definition: { id: "click-element", title: "Click element", metadata: { elementTarget: true } },
+      mode: "request",
+      dispatch: (request) => {
+        dispatchedTarget = (request.payload as any).target;
+        return { ok: true, outputId: request.outputId, payload: { selected: dispatchedTarget?.selectedCandidate?.candidateId } };
+      }
+    }));
+    const flow = {
+      schemaVersion: "0.1" as const,
+      flowId: "flow.element-match",
+      ownerKind: "task" as const,
+      ownerId: "task.element-match",
+      name: "Element match",
+      createdAt: 1,
+      updatedAt: 1,
+      nodes: [{
+        id: "output",
+        definitionId: "builtin.policy.action",
+        parameterValues: {
+          outputId: "click-element",
+          parameters: {
+            target: {
+              kind: "element",
+              fingerprint: { visibleText: "Save", testId: "save" },
+              candidates: [
+                { candidateId: "cancel", visibleText: "Cancel", testId: "cancel" },
+                { candidateId: "save", visibleText: "Save", testId: "save" }
+              ]
+            }
+          }
+        }
+      }],
+      edges: []
+    };
+
+    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: createIoPolicyEffectDispatcher(io, "example") });
+
+    expect(trace.status).toBe("succeeded");
+    expect(dispatchedTarget?.selectedCandidate).toMatchObject({ candidateId: "save", matchedSignals: expect.arrayContaining(["visibleText", "testId"]) });
+    expect(trace.attempts[0]?.outputs).toMatchObject({ elementTargetResolution: { status: "matched", candidateId: "save" } });
+  });
+
+  it("rejects declared element outputs without an element fingerprint", async () => {
+    const io = new IoRegistry();
+    io.registerOutput("example", defineOutput({
+      definition: { id: "click-element", title: "Click element", metadata: { elementTarget: true } },
+      mode: "request",
+      dispatch: () => ({ ok: true, outputId: "click-element" })
+    }));
+    const flow = {
+      schemaVersion: "0.1" as const,
+      flowId: "flow.element-missing",
+      ownerKind: "task" as const,
+      ownerId: "task.element-missing",
+      name: "Element missing",
+      createdAt: 1,
+      updatedAt: 1,
+      nodes: [{ id: "output", definitionId: "builtin.policy.action", parameterValues: { outputId: "click-element", parameters: {} } }],
+      edges: []
+    };
+
+    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: createIoPolicyEffectDispatcher(io, "example") });
+
+    expect(trace.status).toBe("failed");
+    expect(trace.attempts[0]?.outputs.error).toContain("declares element targeting");
+  });
+
   it("routes registered policy outputs through runtime when a matching capability exists", async () => {
     const io = configuredIo();
     const runtime = new RuntimeService();

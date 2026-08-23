@@ -1,4 +1,5 @@
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
+import { createAutomationStudioElementMatcher } from "../fingerprinting/index.ts";
 import type { AutomationStudioFlowNode } from "../model/index.ts";
 import { AutomationStudioImporterSdkRegistry, type AutomationStudioComparatorImplementation, type AutomationStudioImporterImplementationBundle, type AutomationStudioImporterSdkManifest, type AutomationStudioNativeLogEntry, type AutomationStudioNativeNodeImplementation, type AutomationStudioNodeDefinition, type AutomationStudioRecordingMapperImplementation, type AutomationStudioTargetResolverImplementation } from "../nodes/index.ts";
 import type { AutomationNodeExecutionResult } from "../nodes/contracts.ts";
@@ -25,6 +26,7 @@ export class AutomationStudioNativeNodeRuntime {
   private readonly targetResolvers = new Map<string, AutomationStudioTargetResolverImplementation>();
   private readonly comparators = new Map<string, AutomationStudioComparatorImplementation>();
   private readonly grants: Required<AutomationStudioNativeRuntimeGrants>;
+  readonly elementMatcher = createAutomationStudioElementMatcher();
 
   constructor(grants: AutomationStudioNativeRuntimeGrants = {}) {
     this.grants = { permissions: [...(grants.permissions ?? [])], runtimeCapabilities: [...(grants.runtimeCapabilities ?? [])], networkDestinations: [...(grants.networkDestinations ?? [])], secretHandles: [...(grants.secretHandles ?? [])], filesystemRoots: [...(grants.filesystemRoots ?? [])], process: grants.process === true, childProcess: grants.childProcess === true };
@@ -73,12 +75,18 @@ export class AutomationStudioNativeNodeRuntime {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const isolatedInputs = Object.fromEntries(definition.inputs.flatMap((port) => inputs[port.id] === undefined ? [] : [[port.id, inputs[port.id]]])) as Record<string, JsonValue>;
-      const execution = Promise.resolve(binding.implementation({ inputs: Object.freeze(isolatedInputs), parameters: Object.freeze({ ...(node.parameterValues ?? {}) }), signal: controller.signal, grants: Object.freeze({ ...this.grants, permissions: [...this.grants.permissions], runtimeCapabilities: [...this.grants.runtimeCapabilities], networkDestinations: [...this.grants.networkDestinations], secretHandles: [...this.grants.secretHandles], filesystemRoots: [...this.grants.filesystemRoots] }), log: (entry) => logs.push(redactLog(entry)) }));
+      const execution = Promise.resolve(binding.implementation({ inputs: Object.freeze(isolatedInputs), parameters: Object.freeze({ ...(node.parameterValues ?? {}) }), signal: controller.signal, grants: Object.freeze({ ...this.grants, permissions: [...this.grants.permissions], runtimeCapabilities: [...this.grants.runtimeCapabilities], networkDestinations: [...this.grants.networkDestinations], secretHandles: [...this.grants.secretHandles], filesystemRoots: [...this.grants.filesystemRoots] }), elementMatcher: this.elementMatcher, resolveTarget: (resolverId, target) => this.resolveTarget(binding.manifest.domainId, resolverId, target, controller.signal), log: (entry) => logs.push(redactLog(entry)) }));
       const result = await Promise.race([execution, new Promise<AutomationNodeExecutionResult>((resolve) => { timer = setTimeout(() => { resolve({ status: "failed", route: "failed", outputs: { error: `Native node exceeded ${timeoutMs}ms timeout.` } }); controller.abort(new Error("Native node timeout.")); }, timeoutMs); })]);
       const boundaryError = validateResultBoundary(definition, result); if (boundaryError) return { ...failed(boundaryError), logs };
       return { result, logs };
     } catch (error) { return { ...failed(error instanceof Error ? error.message : "Native node execution failed."), logs }; }
     finally { if (timer) clearTimeout(timer); signal?.removeEventListener("abort", abort); }
+}
+
+  private async resolveTarget(domainId: string, resolverId: string, target: JsonObject, signal: AbortSignal): Promise<JsonObject | null> {
+    const resolver = this.getTargetResolver(domainId, resolverId);
+    if (!resolver) throw new Error(`No target resolver ${resolverId} is registered for domain ${domainId}.`);
+    return await resolver(target, { signal, elementMatcher: this.elementMatcher });
   }
 }
 

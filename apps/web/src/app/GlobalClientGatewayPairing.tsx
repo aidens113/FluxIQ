@@ -28,7 +28,8 @@ export function GlobalClientGatewayPairing() {
   useEffect(() => {
     let cancelled = false;
     async function refresh() {
-      const response = await fetch("/api/client-gateway/snapshot", { cache: "no-store" });
+      const response = await fetch("/api/client-gateway/snapshot", { cache: "no-store" }).catch(() => null);
+      if (!response) return;
       if (response.status === 401) return;
       const result = await response.json().catch(() => undefined) as { ok?: boolean; payload?: ClientGatewaySnapshot } | undefined;
       if (!cancelled && result?.ok) setSnapshot(result.payload ?? {});

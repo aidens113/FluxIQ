@@ -349,6 +349,7 @@ function recordingFlowProposalToPolicyProposal(proposal: any): any {
         recordingProposalId: proposal.proposalId,
         recordingCandidateId: candidate.candidateId,
         mapperId: proposal.mapper?.id,
+        ...(recordingCandidateElementTargetSummary(candidate) ? { elementTargetSummary: recordingCandidateElementTargetSummary(candidate) } : {}),
         ...(candidate.actionEntryId ? { actionEntryId: candidate.actionEntryId, timelineEntryId: candidate.actionEntryId } : {}),
         ...(candidate.stateLink ? {
           stateLink: candidate.stateLink,
@@ -392,8 +393,10 @@ function recordingCandidateNodeId(candidate: any, index: number): string {
 
 function recordingCandidateParameters(candidate: any) {
   const payload = candidate?.parameters && typeof candidate.parameters === "object" && !Array.isArray(candidate.parameters) ? candidate.parameters : {};
+  const elementTargetSummary = recordingCandidateElementTargetSummary(candidate);
   return [
     { id: "parameters", label: "Output payload", description: "Values passed to this recorded output action.", valueType: "object", defaultValue: payload },
+    ...(elementTargetSummary ? [{ id: "elementTarget", label: "Element target", description: "Resolved identity for this recorded element action.", valueType: "object", defaultValue: elementTargetSummary }] : []),
     ...(candidate?.expectedConfirmation ? [
       { id: "confirmationInputId", label: "Confirmation input", description: "Action input stream that confirms the output occurred.", valueType: "string", defaultValue: candidate.expectedConfirmation.inputId ?? "", ui: { control: "identifier", placeholder: "Registered action input ID" } },
       { id: "confirmationTimeoutMs", label: "Confirmation timeout", description: "How long to wait for confirmation.", valueType: "number", defaultValue: candidate.expectedConfirmation.timeoutMs ?? 5_000 }
@@ -401,8 +404,33 @@ function recordingCandidateParameters(candidate: any) {
   ];
 }
 
+function recordingCandidateElementTargetSummary(candidate: any): JsonObject | null {
+  const parameters = candidate?.parameters && typeof candidate.parameters === "object" && !Array.isArray(candidate.parameters) ? candidate.parameters : {};
+  const target = parameters.target && typeof parameters.target === "object" && !Array.isArray(parameters.target) ? parameters.target as any : null;
+  const fingerprint = target?.kind === "element" && target.fingerprint && typeof target.fingerprint === "object" && !Array.isArray(target.fingerprint) ? target.fingerprint : null;
+  if (!fingerprint) return null;
+  const selected = target.selectedCandidate && typeof target.selectedCandidate === "object" ? target.selectedCandidate : null;
+  return compactJsonObject({
+    label: firstNonEmptyString([fingerprint.visibleText, fingerprint.accessibleName, fingerprint.label, fingerprint.testId, fingerprint.id, fingerprint.selector]) ?? "Element",
+    visibleText: stringValue(fingerprint.visibleText),
+    accessibleName: stringValue(fingerprint.accessibleName),
+    id: stringValue(fingerprint.id),
+    testId: stringValue(fingerprint.testId),
+    role: stringValue(fingerprint.role),
+    selector: stringValue(fingerprint.selector),
+    selectedCandidateId: stringValue(selected?.candidateId),
+    confidence: typeof selected?.confidence === "number" ? `${Math.round(selected.confidence * 100)}%` : typeof candidate?.confidence === "number" ? `${Math.round(candidate.confidence * 100)}%` : undefined,
+    matchedSignals: Array.isArray(selected?.matchedSignals) ? selected.matchedSignals : undefined,
+    failedSignals: Array.isArray(selected?.failedSignals) ? selected.failedSignals : undefined
+  });
+}
+
 function safeNodeSegment(value: string): string {
   return value.trim().replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "candidate";
+}
+
+function compactJsonObject(value: Record<string, unknown>): JsonObject {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined && (!Array.isArray(item) || item.length > 0))) as JsonObject;
 }
 
 function firstNonEmptyString(values: unknown[]): string | undefined {

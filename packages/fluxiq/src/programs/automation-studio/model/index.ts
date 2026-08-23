@@ -1,4 +1,5 @@
 export * from "./actions.ts";
+export * from "./action-element-target.ts";
 export * from "./action-visual-target.ts";
 export * from "./artifacts.ts";
 export * from "./conditions.ts";

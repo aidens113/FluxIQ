@@ -29,9 +29,11 @@ marketplace code remains disabled until real process or VM isolation exists.
 ## Runtime boundary
 
 Implementations receive only declared input ports, immutable parameters, a
-cooperative `AbortSignal`, a read-only grant summary, and a logger. Runtime
-checks permissions, runtime capabilities, network destinations, secret
-handles, filesystem roots, process access, and child-process access first.
+cooperative `AbortSignal`, a read-only grant summary, the common element
+matcher, registered target resolver access through `resolveTarget`, and a
+logger. Runtime checks permissions, runtime capabilities, network
+destinations, secret handles, filesystem roots, process access, and
+child-process access first.
 
 The default timeout is 30 seconds and a node may declare `metadata.timeoutMs`.
 Timeout and cancellation abort the cooperative signal and return a traceable
@@ -59,9 +61,40 @@ contract. Their `policy.output.dispatch` effects are validated and then passed
 to the existing IO dispatcher, including registered-output verification and
 optional confirmation inputs.
 
+When an output payload contains a canonical element target, the IO dispatcher
+normalizes it and runs the shared matcher before dispatching. Outputs may
+declare `metadata.elementTarget: true` or `metadata.targetKind: "element"` to
+require an element fingerprint; dispatch fails visibly when such an output is
+called without one. If runtime candidates are supplied, the best candidate and
+match diagnostics are written to dispatch metadata and node outputs. Match
+confidence thresholds default from output safety level and may be overridden by
+`metadata.elementTargetMinConfidence`.
+
 Trusted Code Nodes cannot emit importer output actions. Action-bound input
 events remain confirmation observations and never become policy state through
 this runtime.
+
+## Element Matching
+
+Recording mappers and native importer implementations share the same
+`elementMatcher` context object. The matcher scores an intended element
+fingerprint against runtime candidates using weighted signals. Stable and
+human-readable signals such as visible text, accessible name, labels, IDs,
+test IDs, automation IDs, entity IDs, and state paths carry the most weight.
+Structural paths such as selectors, query paths, and XPath still contribute,
+but they are not allowed to dominate stronger semantic identity.
+
+The matcher can score explicit candidates supplied by an extension, or derive
+candidates from a `StateSnapshot` presentation/state surface. Scores retain
+positive and negative contributions so a failed click or generated proposal can
+explain which signals matched and which ones drifted. Custom output nodes
+should use this matcher before dispatching extension actions that target
+elements, and recording mappers should store the strongest fingerprint
+available rather than persisting only a selector or XPath.
+
+Recording proposal review surfaces this identity as a compact element target
+summary. The summary favors visible text, accessible name, label, ID/test ID,
+role, and confidence, with selectors shown as supporting detail evidence.
 
 ## Recording-derived nodes
 

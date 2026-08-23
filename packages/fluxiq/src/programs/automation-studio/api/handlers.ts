@@ -24,6 +24,7 @@ import {
   type LearnTaskModelRequest,
   type MineRecordingEvidenceRequest,
   type NormalizeRecordingRequest,
+  type NormalizedTimelineProjectRequest,
   type ProposePolicyFromModelRequest,
   type PublishFlowRequest,
   type RecordingProjectRequest,
@@ -196,6 +197,15 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<FlowProjectRequest> : {};
       return { ok: true, payload: { flows: await service.listFlows(String(payload.projectId ?? "")) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowSummaries,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<FlowProjectRequest> : {};
+      return { ok: true, payload: { flows: await service.listAutomationFlowSummaries(String(payload.projectId ?? "")) } };
     }
   });
   registry.register({
@@ -609,6 +619,24 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   });
   registry.register({
     programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listNormalizedTimelineSummaries,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as RecordingProjectRequest : {};
+      return { ok: true, payload: { normalizedTimelines: payload.projectId ? await service.listProjectNormalizedTimelineSummaries(payload.projectId) : [] } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getNormalizedTimeline,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<NormalizedTimelineProjectRequest> : {};
+      return { ok: true, payload: { normalizedTimeline: await service.getProjectNormalizedTimeline(String(payload.projectId ?? ""), String(payload.normalizedTimelineId ?? "")) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listPipelineArtifacts,
     permission: "programs.read",
     handler: async (request) => {
@@ -708,8 +736,22 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRuntimeSessions,
     permission: "programs.read",
     handler: async (request) => {
-      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown } : {};
-      return { ok: true, payload: { runtimeSessions: await service.listRuntimeSessions(String(payload.projectId ?? "")) } };
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; summaries?: unknown; limit?: unknown; offset?: unknown } : {};
+      const projectId = String(payload.projectId ?? "");
+      if (payload.summaries === true) {
+        const page = await service.listRuntimeSessionSummaries(projectId, { limit: payload.limit, offset: payload.offset });
+        return { ok: true, payload: { runtimeSessions: page.runs, page } };
+      }
+      return { ok: true, payload: { runtimeSessions: await service.listRuntimeSessions(projectId) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRuntimeSession,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; runId?: unknown } : {};
+      return { ok: true, payload: { runtimeSession: await service.getRuntimeSession(String(payload.projectId ?? ""), String(payload.runId ?? "")) } };
     }
   });
   registry.register({

@@ -150,7 +150,26 @@ export async function runAutomationStudioGraph(
 
     const nextEdge = chooseAutomationStudioEdge(flow, currentNode.id, attempt.route ?? "success");
     if (!nextEdge) {
-      return { status: "succeeded", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions };
+      const outgoingRoutes = flow.edges
+        .filter((edge) => edge.sourceNodeId === currentNode!.id)
+        .map((edge) => edge.sourcePortId ?? "success")
+        .filter((route, index, routes) => routes.indexOf(route) === index);
+      if (currentNode.definitionId === "builtin.control.end" || !outgoingRoutes.length && !hasUnvisitedAutomationStudioNodes(flow, attempts)) {
+        return { status: "succeeded", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions };
+      }
+      return {
+        status: "failed",
+        startedAt,
+        finishedAt: now(),
+        currentNodeId: currentNode.id,
+        attempts,
+        values,
+        effects,
+        regionTransitions,
+        message: outgoingRoutes.length
+          ? `Node ${currentNode.id} completed on route ${attempt.route ?? "success"}, but no matching outgoing edge exists. Available routes: ${outgoingRoutes.join(", ")}.`
+          : `Node ${currentNode.id} completed without an outgoing edge before the Flow visited every node. Add an edge to continue or an End node to finish explicitly.`
+      };
     }
     const previousRegionId = regionId;
     currentNode = nodesById.get(nextEdge.targetNodeId);
@@ -319,6 +338,11 @@ function chooseAutomationStudioEdge(flow: AutomationStudioFlowDocument, sourceNo
 
 function findStartNode(flow: AutomationStudioFlowDocument): AutomationStudioFlowNode | undefined {
   return flow.nodes.find((node) => node.definitionId === "builtin.control.start") ?? flow.nodes[0];
+}
+
+function hasUnvisitedAutomationStudioNodes(flow: AutomationStudioFlowDocument, attempts: AutomationStudioNodeAttemptTrace[]): boolean {
+  const visited = new Set(attempts.map((attempt) => attempt.nodeId));
+  return flow.nodes.some((node) => !visited.has(node.id));
 }
 
 function missingTargetTrace(

@@ -16,6 +16,20 @@ export type SQLiteTransaction = {
   get<T>(sql: string, params?: unknown[]): Promise<T | undefined>;
 };
 
+export type SQLiteListPageOptions = {
+  limit?: number;
+  offset?: number;
+  orderBy?: "id" | "updated_at_ms" | "created_at_ms";
+  direction?: "asc" | "desc";
+};
+
+export type SQLiteListPage<T extends JsonObject = JsonObject> = {
+  records: Array<RecordEnvelope<T>>;
+  total: number;
+  limit: number;
+  offset: number;
+};
+
 export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repository<T> {
   readonly rootDir: string;
   readonly kind: string;
@@ -34,6 +48,23 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
     return this.withDatabase(scope, async (db, normalizedScope) => {
       const rows = await all<SQLiteRecordRow>(db, `select id, kind, data, created_at_ms as createdAtMs, updated_at_ms as updatedAtMs from ${this.tableName} order by id`);
       return rows.map((row) => rowToRecord<T>(row, normalizedScope));
+    });
+  }
+
+  async listPage(scope: RepositoryScope = {}, options: SQLiteListPageOptions = {}): Promise<SQLiteListPage<T>> {
+    const limit = clampInteger(options.limit, 1, 100, 25);
+    const offset = clampInteger(options.offset, 0, 1_000_000, 0);
+    const orderBy = options.orderBy === "created_at_ms" ? "created_at_ms" : options.orderBy === "id" ? "id" : "updated_at_ms";
+    const direction = options.direction === "asc" ? "asc" : "desc";
+    return this.withDatabase(scope, async (db, normalizedScope) => {
+      const totalRow = await get<{ total: number }>(db, `select count(*) as total from ${this.tableName}`);
+      const rows = await all<SQLiteRecordRow>(db, `select id, kind, data, created_at_ms as createdAtMs, updated_at_ms as updatedAtMs from ${this.tableName} order by ${orderBy} ${direction} limit ? offset ?`, [limit, offset]);
+      return {
+        records: rows.map((row) => rowToRecord<T>(row, normalizedScope)),
+        total: totalRow?.total ?? 0,
+        limit,
+        offset
+      };
     });
   }
 
@@ -256,6 +287,12 @@ function close(db: sqlite3.Database): Promise<void> {
       else resolve();
     });
   });
+}
+
+function clampInteger(value: unknown, min: number, max: number, fallback: number): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(numeric)));
 }
 
 function rowToRecord<T extends JsonObject>(row: SQLiteRecordRow, scope: RepositoryScope): RecordEnvelope<T> {

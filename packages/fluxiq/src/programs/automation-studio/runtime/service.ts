@@ -38,6 +38,7 @@ import {
   type AutomationStudioRuntimeSession,
   type AutomationStudioTaskArtifact,
   type AppendRecordingEntryInput,
+  normalizeAutomationStudioElementTarget,
   type CreateRecordingSessionInput,
   type PolicyGraph,
   type PolicyNode,
@@ -100,6 +101,7 @@ import {
 export type { PolicyGraphPatch, PolicyProposalArtifact } from "./policy-model.ts";
 export type { RecordingFlowActionCandidate, RecordingFlowProposalArtifact, RecordingFlowProposalDestination } from "./recording-flow-proposal.ts";
 import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage.ts";
+import { createRecord, SQLiteRepository } from "../../database-manager/storage/sqlite-repository.ts";
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioNodeDefinition } from "../nodes/index.ts";
 import type { IoRegistry } from "../../../io/index.ts";
@@ -120,6 +122,7 @@ import {
   type AutomationStudioProposalSummary,
   type AutomationStudioRecordingSummary,
   type AutomationStudioRuntimeRunSummary,
+  type AutomationStudioRuntimeRunSummaryPage,
   type AutomationStudioWorkspaceSummary,
   RecordingStateIndexStore,
   emptyFlowSummaryIndex
@@ -1490,7 +1493,7 @@ export class AutomationStudioService {
     return [...policyProposals, ...recordingFlowProposals].sort((left, right) => right.generatedAt - left.generatedAt);
   }
 
-  private async listAutomationFlowSummaries(projectId: string): Promise<AutomationStudioFlowSummary[]> {
+  async listAutomationFlowSummaries(projectId: string): Promise<AutomationStudioFlowSummary[]> {
     const index = await this.readFlowIndex(projectId).catch(() => emptyFlowSummaryIndex());
     return (index.flows ?? []).sort((left, right) => right.updatedAt - left.updatedAt);
   }
@@ -1625,7 +1628,7 @@ export class AutomationStudioService {
   async publishFlow(input: { projectId: string; flowId: string; version: string; flowDigest?: string; publishedBy?: string; changelog?: string }): Promise<AutomationStudioFlowArtifact> {
     const flow = await this.getFlow(input.projectId, input.flowId);
     const now = Date.now();
-    const availablePublications = await this.listFlowPublicationRecords();
+    const availablePublications = await this.listFlowPublicationRecords(input.projectId);
     const dependencyDigests = new Map(availablePublications.map((record) => [`${record.flowId}@${record.version}`, record.snapshot.flowDigest]));
     const registry = this.nativeNodeRuntime?.sdk.nodes ?? new AutomationStudioNodeRegistry();
     const recordingDefinitions = new Map((await this.listRecordingDerivedNodeDefinitions(input.projectId)).map((definition) => [definition.id, definition]));
@@ -1679,13 +1682,13 @@ export class AutomationStudioService {
 
   async listFlowPublications(projectId: string, flowId?: string): Promise<AutomationStudioFlowPublicationRecord[]> {
     await this.findProject(projectId);
-    return (await this.listFlowPublicationRecords()).filter((record) => record.projectId === projectId && (!flowId || record.flowId === flowId)).sort((left, right) => right.createdAt - left.createdAt);
+    return (await this.listFlowPublicationRecords(projectId)).filter((record) => record.projectId === projectId && (!flowId || record.flowId === flowId)).sort((left, right) => right.createdAt - left.createdAt);
   }
 
   async deprecateFlowPublication(input: { projectId: string; flowId: string; version: string; reason?: string }): Promise<AutomationStudioFlowPublicationRecord> {
     const flow = await this.getFlow(input.projectId, input.flowId);
     const publicationId = flowPublicationId(input.flowId, input.version);
-    const records = await this.listFlowPublicationRecords();
+    const records = await this.listFlowPublicationRecords(input.projectId);
     const current = records.find((record) => record.publicationId === publicationId);
     if (!current) throw new Error(`Unknown published Flow version: ${input.flowId}@${input.version}`);
     if (current.projectId !== input.projectId) throw new Error("Published Flow version belongs to another project.");
@@ -1701,11 +1704,11 @@ export class AutomationStudioService {
 
   async inspectFlowDependencies(projectId: string, flowId: string): Promise<{ dependencies: AutomationStudioFlowPublicationRecord[]; usedBy: Array<{ projectId: string; flowId: string; flowName: string; version: string; nodeId: string }>; availableUpgrades: Array<{ nodeId: string; flowId: string; currentVersion: string; versions: string[] }> }> {
     const flow = await this.getFlow(projectId, flowId);
-    const records = await this.listFlowPublicationRecords();
+    const records = await this.listFlowPublicationRecords(projectId);
     const calls = flow.nodes.flatMap((node) => { const call = getCallFlowConfiguration(node); return call ? [{ node, call }] : []; });
     const dependencies = calls.flatMap(({ call }) => records.filter((record) => record.flowId === call.target.flowId && record.version === call.target.version));
-    const allFlows = await this.repositories.flows.list();
-    const usedBy = allFlows.filter((candidate) => sameFlowScope(candidate.scope, flow.scope)).flatMap((candidate) => candidate.nodes.flatMap((node) => { const call = getCallFlowConfiguration(node); return call?.target.flowId === flowId ? [{ projectId: candidate.projectId, flowId: candidate.flowId, flowName: candidate.name, version: call.target.version, nodeId: node.id }] : []; }));
+    const scopedFlows = (await Promise.all((await this.scopedProjectIdsForProject(projectId)).map((scopedProjectId) => this.listCanonicalFlowArtifacts(scopedProjectId)))).flat();
+    const usedBy = scopedFlows.filter((candidate) => sameFlowScope(candidate.scope, flow.scope)).flatMap((candidate) => candidate.nodes.flatMap((node) => { const call = getCallFlowConfiguration(node); return call?.target.flowId === flowId ? [{ projectId: candidate.projectId, flowId: candidate.flowId, flowName: candidate.name, version: call.target.version, nodeId: node.id }] : []; }));
     const availableUpgrades = calls.map(({ node, call }) => ({ nodeId: node.id, flowId: call.target.flowId, currentVersion: call.target.version, versions: records.filter((record) => record.flowId === call.target.flowId && record.status === "published" && record.version !== call.target.version).map((record) => record.version).sort(compareSemanticVersions).reverse() })).filter((item) => item.versions.length);
     return { dependencies, usedBy, availableUpgrades };
   }
@@ -1714,7 +1717,7 @@ export class AutomationStudioService {
   async listPublishedFlowNodes(projectId: string) {
     const project = await this.findProject(projectId);
     const scope = flowScopeForProject(project);
-    return (await this.listFlowPublicationRecords())
+    return (await this.listFlowPublicationRecords(projectId))
       .filter((record) => record.status === "published")
       .map((record) => record.snapshot)
       .filter((snapshot) => sameFlowScope(snapshot.scope, scope) || (scope.kind === "domain" && snapshot.scope.kind === "global" && (snapshot.requiredRuntimeCapabilities ?? []).length === 0))
@@ -1772,7 +1775,7 @@ export class AutomationStudioService {
           metadata: { ...(entry.metadata ?? {}) }
         };
         try {
-          const mapped = await mapper.implementation(observation, { signal: controller.signal });
+          const mapped = await mapper.implementation(observation, { signal: controller.signal, elementMatcher: this.nativeNodeRuntime.elementMatcher });
           const mappedCandidates = !mapped ? [] : "candidates" in mapped ? mapped.candidates : [mapped];
           if (mappedCandidates.length) {
             mappedEntryCount += 1;
@@ -2191,6 +2194,28 @@ export class AutomationStudioService {
     return timelines;
   }
 
+  async listProjectNormalizedTimelineSummaries(projectId: string): Promise<RecordingIndex["normalizedTimelines"]> {
+    const index = await this.readRecordingIndex(projectId);
+    return [...(index.normalizedTimelines ?? [])].sort((left, right) => right.generatedAt - left.generatedAt);
+  }
+
+  async getProjectNormalizedTimeline(projectId: string, normalizedTimelineId: string): Promise<NormalizedTimeline> {
+    const index = await this.readRecordingIndex(projectId);
+    const item = (index.normalizedTimelines ?? []).find((candidate) => candidate.normalizedTimelineId === normalizedTimelineId);
+    if (!item) throw new Error(`Unknown normalized timeline for project ${projectId}: ${normalizedTimelineId}`);
+    const existing = await this.repositories.normalizedTimelines.get(normalizedTimelineId);
+    if (existing && existing.recordingId === item.recordingId) return existing;
+    if (!this.projectRootDir) throw new Error(`Normalized timeline is not loaded: ${normalizedTimelineId}`);
+    const stored = await new ProgramJsonStore<JsonObject>(
+      this.recordingDerivedFile(projectId, item.recordingId, "normalization", "timelines", `${safeSegment(normalizedTimelineId)}.json`),
+      () => ({})
+    ).read();
+    const normalized = stored.normalizedTimeline as unknown as NormalizedTimeline | undefined;
+    if (!normalized?.normalizedTimelineId) throw new Error(`Normalized timeline is missing: ${normalizedTimelineId}`);
+    await this.repositories.normalizedTimelines.put(normalized);
+    return normalized;
+  }
+
   async startRuntimeSession(input: {
     projectId?: string | null;
     targetKind?: AutomationStudioRuntimeSession["targetKind"];
@@ -2291,6 +2316,24 @@ export class AutomationStudioService {
     return sessions.sort((left, right) => (right.startedAt ?? right.queuedAt) - (left.startedAt ?? left.queuedAt));
   }
 
+  async listRuntimeSessionSummaries(projectId: string, options: { limit?: unknown; offset?: unknown } = {}): Promise<AutomationStudioRuntimeRunSummaryPage> {
+    await this.ensureRuntimeSummaryIndex(projectId);
+    const limit = clampInteger(options.limit, 1, 100, 25);
+    const offset = clampInteger(options.offset, 0, 1_000_000, 0);
+    if (!this.projectRootDir) {
+      const sessions = await this.listRuntimeSessions(projectId);
+      const runs = sessions.map((session) => runtimeSummaryFromSession(session)).slice(offset, offset + limit);
+      return { runs, total: sessions.length, limit, offset };
+    }
+    const page = await this.runtimeSummaryRepository(projectId).listPage({}, { limit, offset, orderBy: "updated_at_ms", direction: "desc" });
+    return {
+      runs: page.records.map((record) => record.data as unknown as AutomationStudioRuntimeRunSummary),
+      total: page.total,
+      limit: page.limit,
+      offset: page.offset
+    };
+  }
+
   private validateRecordingCandidate(input: { candidate: AutomationStudioRecordingMapperCandidate; actionEntryId: string; sourceEntryId: string; recordingId: string; domainId: string; stateLink?: RecordingFlowActionCandidate["stateLink"]; mapperOutputIds?: string[] }): RecordingFlowActionCandidate {
     const outputId = input.candidate.outputId?.trim();
     if (!outputId) throw new Error("Recording mapper candidates must declare an outputId.");
@@ -2309,13 +2352,14 @@ export class AutomationStudioService {
       if ((adapter.definition.role ?? "state") !== "action") throw new Error(`Confirmation input ${confirmation.inputId} must be an action-role observation.`);
     }
     const sourceObservationIds = uniqueStrings([input.sourceEntryId, input.actionEntryId, ...(input.candidate.sourceObservationIds ?? [])]);
+    const parameters = normalizeRecordingCandidateElementTargetParameters(input.candidate.parameters ?? {});
     return {
       candidateId: `candidate.${safeSegment(input.actionEntryId)}.${randomUUID()}`,
       actionEntryId: input.actionEntryId,
       sourceObservationIds,
       sourceInputIds,
       outputId,
-      parameters: { ...(input.candidate.parameters ?? {}) },
+      parameters,
       ...(confirmation ? { expectedConfirmation: { ...confirmation } } : {}),
       confidence: clampConfidence(input.candidate.confidence),
       evidence: input.candidate.evidence?.length ? structuredClone(input.candidate.evidence) : sourceObservationIds.map((entryId) => ({ layer: "recording" as const, artifactId: input.recordingId, entryId })),
@@ -2818,6 +2862,27 @@ export class AutomationStudioService {
     return await new ProgramJsonStore<RuntimeIndex>(this.projectFile(projectId, "runtime", "indexes", "sessions.json"), () => ({ sessions: [] })).read();
   }
 
+  private runtimeSummaryRepository(projectId: string): SQLiteRepository<JsonObject> {
+    return new SQLiteRepository<JsonObject>({ rootDir: this.projectFile(projectId, "runtime", "sqlite"), kind: "runtime.sessions", layoutVersion: 1 });
+  }
+
+  private async ensureRuntimeSummaryIndex(projectId: string): Promise<void> {
+    await this.findProject(projectId);
+    if (!this.projectRootDir) return;
+    const index = await this.readRuntimeIndex(projectId).catch(() => ({ sessions: [] }));
+    if (!(index.sessions ?? []).length) {
+      await this.runtimeSummaryRepository(projectId).listPage({}, { limit: 1, offset: 0 }).catch(() => undefined);
+      return;
+    }
+    const repository = this.runtimeSummaryRepository(projectId);
+    const page = await repository.listPage({}, { limit: 1, offset: 0 });
+    if (page.total >= (index.sessions ?? []).length) return;
+    for (const item of index.sessions ?? []) {
+      const session = await this.getRuntimeSession(projectId, item.runId);
+      if (session) await this.writeRuntimeSummary(projectId, session);
+    }
+  }
+
   private async readPipelineIndex(projectId: string): Promise<PipelineIndex> {
     await this.findProject(projectId);
     return await new ProgramJsonStore<PipelineIndex>(this.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).read();
@@ -2834,6 +2899,18 @@ export class AutomationStudioService {
         status: session.status,
         updatedAt: Date.now()
       })
+    }));
+    await this.writeRuntimeSummary(projectId, session);
+  }
+
+  private async writeRuntimeSummary(projectId: string, session: AutomationStudioRuntimeSession): Promise<void> {
+    if (!this.projectRootDir) return;
+    const summary = runtimeSummaryFromSession(session);
+    await this.runtimeSummaryRepository(projectId).put(createRecord({
+      id: session.runId,
+      kind: "runtime.sessions",
+      data: summary as unknown as JsonObject,
+      nowMs: summary.updatedAt
     }));
   }
 
@@ -3342,8 +3419,9 @@ export class AutomationStudioService {
   }
 
   private async prepareRecordingEntriesForStorage(projectId: string | null | undefined, recordingId: string, entries: AppendRecordingEntryInput[]): Promise<AppendRecordingEntryInput[]> {
-    if (!projectId || !this.objectStore) return entries;
-    return await Promise.all(entries.map((entry) => this.dehydrateRecordingEntryStateSnapshot(entry, projectId, recordingId)));
+    const normalized = entries.map((entry) => prepareRecordingEntryElementTarget(entry));
+    if (!projectId || !this.objectStore) return normalized;
+    return await Promise.all(normalized.map((entry) => this.dehydrateRecordingEntryStateSnapshot(entry, projectId, recordingId)));
   }
 
   private async dehydrateRecordingStateSnapshotRefs(recording: RecordingSession, projectId: string | null | undefined): Promise<RecordingSession> {
@@ -3570,19 +3648,36 @@ export class AutomationStudioService {
   }
 
   private async listCanonicalFlowArtifacts(projectId: string): Promise<AutomationStudioFlowArtifact[]> {
-    await this.loadProjectFlows(projectId);
-    return (await this.repositories.flows.list()).filter((flow) => flow.projectId === projectId);
+    if (!this.projectRootDir) return (await this.repositories.flows.list()).filter((flow) => flow.projectId === projectId);
+    const index = await this.readFlowIndex(projectId).catch(() => emptyFlowSummaryIndex());
+    const flows: AutomationStudioFlowArtifact[] = [];
+    for (const item of index.flows ?? []) {
+      await this.loadProjectFlow(projectId, item.flowId);
+      const flow = await this.repositories.flows.get(item.flowId);
+      if (flow?.projectId === projectId) flows.push(flow);
+    }
+    return flows;
   }
 
-  private async listPublishedFlowSnapshots() {
-    return (await this.listFlowPublicationRecords()).map((record) => record.snapshot);
+  private async listPublishedFlowSnapshots(projectId?: string) {
+    return (await this.listFlowPublicationRecords(projectId)).map((record) => record.snapshot);
   }
 
-  private async listFlowPublicationRecords(): Promise<AutomationStudioFlowPublicationRecord[]> {
-    await this.loadAllProjectFlows();
+  private async listFlowPublicationRecords(projectId?: string): Promise<AutomationStudioFlowPublicationRecord[]> {
+    if (projectId) {
+      for (const scopedProjectId of await this.scopedProjectIdsForProject(projectId)) await this.loadProjectFlows(scopedProjectId);
+    } else {
+      await this.loadAllProjectFlows();
+    }
+    const scopedProjectIds = projectId ? new Set(await this.scopedProjectIdsForProject(projectId)) : null;
     const persisted = await this.repositories.flowPublications.list();
-    const byId = new Map(persisted.map((record) => [record.publicationId, record]));
-    for (const flow of await this.repositories.flows.list()) {
+    const byId = new Map(persisted
+      .filter((record) => !scopedProjectIds || scopedProjectIds.has(record.projectId))
+      .map((record) => [record.publicationId, record]));
+    const candidateFlows = scopedProjectIds
+      ? (await Promise.all([...scopedProjectIds].flatMap(async (scopedProjectId) => this.listCanonicalFlowArtifacts(scopedProjectId)))).flat()
+      : await this.repositories.flows.list();
+    for (const flow of candidateFlows) {
       const history = flow.publicationHistory ?? ((flow.publication.status === "published" || flow.publication.status === "deprecated") && flow.publication.snapshot ? [flow.publication.snapshot] : []);
       for (const snapshot of history) {
         const publicationId = flowPublicationId(flow.flowId, snapshot.version);
@@ -3590,6 +3685,13 @@ export class AutomationStudioService {
       }
     }
     return [...byId.values()];
+  }
+
+  private async scopedProjectIdsForProject(projectId: string): Promise<string[]> {
+    const state = await this.readProjectIndex();
+    const project = state.projects.find((candidate) => candidate.id === projectId);
+    const domainId = project?.domainId ?? null;
+    return state.projects.filter((candidate) => (candidate.domainId ?? null) === domainId).map((candidate) => candidate.id);
   }
 
   private async embedTaskGraphs(projectId: string, tasks: AutomationStudioTaskArtifact[], flows: AutomationStudioFlowDocument[]): Promise<AutomationStudioTaskArtifact[]> {
@@ -3933,6 +4035,39 @@ function recordingTimelineForProposalMapping(timeline: RecordingSession["timelin
     if (entry.type === "observation" && (entry.observationType === "client.state_snapshot" || entry.observationType === "client.state_update")) return false;
     return true;
   });
+}
+
+function prepareRecordingEntryElementTarget(entry: AppendRecordingEntryInput): AppendRecordingEntryInput {
+  if (entry.type !== "action") return entry;
+  const parameters = entry.parameters && typeof entry.parameters === "object" && !Array.isArray(entry.parameters) ? entry.parameters as Record<string, unknown> : {};
+  const target = entry.target && typeof entry.target === "object" && !Array.isArray(entry.target) ? entry.target as Record<string, unknown> : undefined;
+  const targetForNormalization = target || entry.visualTarget ? { ...(target ?? {}), ...(entry.visualTarget ? { visualTarget: entry.visualTarget } : {}) } : undefined;
+  const elementTarget = normalizeAutomationStudioElementTarget(target && "elementTarget" in target ? target.elementTarget : undefined, { source: "recording" })
+    ?? normalizeAutomationStudioElementTarget(parameters.target, { source: "recording" })
+    ?? normalizeAutomationStudioElementTarget(targetForNormalization, { source: "recording" });
+  if (!elementTarget) return entry;
+  return {
+    ...entry,
+    parameters: compactJsonObject({ ...parameters, target: elementTarget }),
+    target: compactJsonObject({
+      type: typeof entry.target?.type === "string" && entry.target.type.trim() ? entry.target.type : "ui_element",
+      ...(entry.target?.id ? { id: entry.target.id } : {}),
+      ...(entry.target?.label ? { label: entry.target.label } : {}),
+      ...(entry.target?.selector ? { selector: entry.target.selector } : {}),
+      ...(entry.target?.bounds ? { bounds: entry.target.bounds } : {}),
+      ...(entry.target?.relativePosition ? { relativePosition: entry.target.relativePosition } : {}),
+      ...(entry.target?.visualTarget ? { visualTarget: entry.target.visualTarget } : {}),
+      elementTarget,
+      ...(entry.target?.metadata ? { metadata: entry.target.metadata } : {})
+    }) as NonNullable<Extract<AppendRecordingEntryInput, { type: "action" }>["target"]>
+  };
+}
+
+function normalizeRecordingCandidateElementTargetParameters(parameters: JsonObject): JsonObject {
+  const explicitTarget = normalizeAutomationStudioElementTarget(parameters.target, { source: "mapper" });
+  const topLevelTarget = explicitTarget ?? normalizeAutomationStudioElementTarget(parameters, { source: "mapper" });
+  if (!topLevelTarget) return { ...parameters };
+  return compactJsonObject({ ...parameters, target: topLevelTarget });
 }
 
 function recordingActionEntryCandidate(entry: RecordingSession["timeline"][number]): AutomationStudioRecordingMapperCandidate | null {
@@ -5111,6 +5246,29 @@ function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
   if (value && typeof value === "object") return `{${Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`).join(",")}}`;
   return JSON.stringify(value) ?? "null";
+}
+
+function runtimeSummaryFromSession(session: AutomationStudioRuntimeSession): AutomationStudioRuntimeRunSummary {
+  const updatedAt = session.finishedAt ?? session.startedAt ?? session.queuedAt ?? Date.now();
+  return {
+    runId: session.runId,
+    targetKind: session.targetKind,
+    targetId: session.targetId,
+    status: session.status,
+    queuedAt: session.queuedAt,
+    ...(session.startedAt !== undefined ? { startedAt: session.startedAt } : {}),
+    ...(session.finishedAt !== undefined ? { finishedAt: session.finishedAt } : {}),
+    ...(session.flowId ? { flowId: session.flowId } : {}),
+    attemptCount: session.trace?.attempts?.length ?? 0,
+    effectCount: session.trace?.effects?.length ?? 0,
+    updatedAt
+  };
+}
+
+function clampInteger(value: unknown, min: number, max: number, fallback: number): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(numeric)));
 }
 
 function latestByGeneratedAt<T extends { generatedAt?: number }>(items: T[]): T | undefined {
