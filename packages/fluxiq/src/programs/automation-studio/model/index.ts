@@ -7,6 +7,7 @@ export * from "./composites.ts";
 export * from "./descriptors.ts";
 export * from "./evidence.ts";
 export * from "./fixtures.ts";
+export * from "./flow-adaptation.ts";
 export * from "./flow-compatibility.ts";
 export * from "./flows.ts";
 export * from "./legacy-retirement.ts";

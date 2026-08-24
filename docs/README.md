@@ -20,6 +20,7 @@ Docs program in the control panel.
 - [Automation Studio Native and Code Nodes](architecture/automation-studio-native-nodes.md)
 - [Global Programs](programs/global-programs.md)
 - [Data And State](operations/data-and-state.md)
+- [Automation Studio Adaptive Release Checklist](operations/automation-studio-adaptive-release-checklist.md)
 - [Automation Studio Legacy Retirement Runbook](operations/automation-studio-legacy-retirement.md)
 - [Quality And Dependency Security](operations/quality-and-security.md)
 - [Licensing](legal/licensing.md)

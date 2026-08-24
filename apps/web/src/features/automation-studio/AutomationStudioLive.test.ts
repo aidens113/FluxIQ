@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { latestProposalForRecordingId, resolveActionPreviewEntryId, resolveObservedStateEntryId, selectedNodeActionPreviewEntryId } from "./AutomationStudioLive";
+import {
+  AUTOMATION_STUDIO_PROJECT_OPEN_DETAIL_ENDPOINT_DENYLIST,
+  automationStudioProjectOpenRequests,
+  automationStudioRuntimeSummaryRequests,
+  latestProposalForRecordingId,
+  resolveActionPreviewEntryId,
+  resolveObservedStateEntryId,
+  selectedNodeActionPreviewEntryId
+} from "./AutomationStudioLive";
 
 describe("AutomationStudioLive state opening", () => {
   it("resolves action timeline entries to the exact action-adjacent state snapshot", () => {
@@ -109,5 +117,25 @@ describe("AutomationStudioLive state opening", () => {
     }]);
 
     expect(proposal?.proposalId).toBe("proposal.current");
+  });
+
+  it("opens projects through summary requests without broad detail hydration", () => {
+    const requests = [
+      ...automationStudioProjectOpenRequests("project.fast"),
+      ...automationStudioRuntimeSummaryRequests("project.fast")
+    ];
+    const endpoints = requests.map((request) => request.endpoint);
+
+    for (const bannedEndpoint of AUTOMATION_STUDIO_PROJECT_OPEN_DETAIL_ENDPOINT_DENYLIST) {
+      expect(endpoints).not.toContain(bannedEndpoint);
+    }
+    expect(requests).toContainEqual({
+      endpoint: "list-runtime-sessions",
+      payload: { projectId: "project.fast", summaries: true, limit: 25, offset: 0 }
+    });
+    expect(requests).toContainEqual({
+      endpoint: "list-recordings",
+      payload: { projectId: "project.fast", summaries: true }
+    });
   });
 });

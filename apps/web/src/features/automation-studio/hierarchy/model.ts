@@ -1,13 +1,10 @@
 import type { AutomationWorkspacePrefs } from "../workspace/layout";
 
-export type AutomationHierarchyKind = "folder" | "client" | "proposal" | "flow" | "task" | "routine" | "config" | "recording" | "run";
+export type AutomationHierarchyKind = "folder" | "client" | "proposal" | "flow" | "flow-object" | "subflow" | "instruction" | "change-proposal" | "adaptation" | "task" | "routine" | "config" | "recording" | "run";
 export type AutomationCreatableHierarchyKind = "folder" | "flow";
 export type AutomationHierarchyCategory = "client" | "proposal" | "flow" | "task" | "routine" | "config" | "recording" | "run";
 export const automationHierarchyCategories: Array<{ id: AutomationHierarchyCategory; label: string; description: string; creatable?: boolean }> = [
-  { id: "flow", label: "Flows", description: "Visual, recorded, and programmatic automations", creatable: true },
-  { id: "proposal", label: "Proposals", description: "Generated Flow and policy proposals from recordings" },
-  { id: "recording", label: "Recordings", description: "Raw browser recording sessions", creatable: true },
-  { id: "config", label: "Configurations", description: "Configuration folders and defaults", creatable: true }
+  { id: "flow", label: "Flows", description: "Visual, recorded, and programmatic automations", creatable: true }
 ];
 export type AutomationHierarchyNode = {
   id: string;
@@ -17,6 +14,7 @@ export type AutomationHierarchyNode = {
   parentId: string | null;
   viewId?: string;
   sourceId?: string;
+  flowId?: string;
   recordingId?: string;
 };
 export type AutomationHierarchyAction = {
@@ -25,6 +23,18 @@ export type AutomationHierarchyAction = {
   category?: AutomationHierarchyCategory;
   parentId?: string | null;
 } | null;
+
+export function automationHierarchyNodeIsGeneratedFlowStructure(node: AutomationHierarchyNode): boolean {
+  return Boolean(node.flowId && node.kind !== "flow" && (node.kind === "folder" || node.kind === "flow-object"));
+}
+
+export function automationHierarchyNodeCanDelete(node: AutomationHierarchyNode): boolean {
+  if (node.kind === "client" || (node.kind === "run" && !node.flowId)) return false;
+  if (automationHierarchyNodeIsGeneratedFlowStructure(node)) return false;
+  if (node.category === "proposal" && node.kind !== "proposal") return false;
+  return true;
+}
+
 export type AutomationStudioProject = {
   id: string;
   name: string;
@@ -45,7 +55,7 @@ export type AutomationStudioProjectCategory = {
 export type AutomationProjectModal = "create" | "rename" | "delete" | "move" | "create-category" | "rename-category" | "delete-category" | "move-category" | null;
 
 export function sortAutomationHierarchyNodes(nodes: AutomationHierarchyNode[]): AutomationHierarchyNode[] {
-  const rank: Record<AutomationHierarchyKind, number> = { folder: 0, client: 1, proposal: 1, flow: 1, task: 1, routine: 1, config: 1, recording: 1, run: 1 };
+  const rank: Record<AutomationHierarchyKind, number> = { folder: 0, flow: 1, "flow-object": 2, subflow: 3, instruction: 3, "change-proposal": 3, adaptation: 3, client: 4, proposal: 4, task: 4, routine: 4, config: 4, recording: 4, run: 4 };
   return [...nodes].sort((first, second) => rank[first.kind] - rank[second.kind] || first.label.localeCompare(second.label));
 }
 
@@ -141,6 +151,127 @@ export function proposalHierarchyNodes(recordings: any[], proposals: any[]): Aut
     });
   }
   return nodes;
+}
+
+export function flowHierarchyNodes(flowEntries: any[], options: { recordings?: any[]; proposals?: any[] } = {}): AutomationHierarchyNode[] {
+  const nodes: AutomationHierarchyNode[] = [];
+  const recordings = options.recordings ?? [];
+  const proposals = options.proposals ?? [];
+  for (const entry of flowEntries) {
+    const flow = entry?.flow ?? entry;
+    if (!flow?.flowId) continue;
+    const flowId = String(flow.flowId);
+    const flowNodeId = `flow-${stableNodeId(flowId)}`;
+    const linkedRecordingIds = linkedArtifactIds(flow, "recordingIds");
+    const flowRecordings = linkedRecordingIds.size
+      ? recordings.filter((recording) => linkedRecordingIds.has(String(recording.recordingId ?? "")))
+      : recordings;
+    const flowRecordingIds = new Set(flowRecordings.map((recording) => String(recording.recordingId ?? "")));
+    const linkedProposalIds = linkedArtifactIds(flow, "proposalIds");
+    const flowProposals = proposals.filter((proposal) => {
+      const proposalId = String(proposal.proposalId ?? proposal.id ?? "");
+      const proposalFlowId = proposal.flowId ?? proposal.policy?.flowId ?? proposal.metadata?.flowId;
+      const proposalRecordingId = String(proposal.recordingId ?? proposal.metadata?.recordingId ?? "");
+      if (linkedProposalIds.size && linkedProposalIds.has(proposalId)) return true;
+      if (proposalFlowId === flowId) return true;
+      return Boolean(proposalRecordingId && flowRecordingIds.has(proposalRecordingId));
+    });
+    nodes.push({
+      id: flowNodeId,
+      label: `${flow.name ?? flowId}${entry?.source === "canonical" ? "" : entry?.source ? " (legacy)" : ""}`,
+      kind: "flow",
+      category: "flow",
+      parentId: typeof flow.metadata?.parentId === "string" ? flow.metadata.parentId : null,
+      viewId: "policy-primary",
+      sourceId: flowId,
+      flowId
+    });
+    const expansion = flow.expansion ?? {};
+    const changeProposalIds = Array.isArray(expansion.changeProposalIds) ? expansion.changeProposalIds.map(String).filter(Boolean) : [];
+    const flowProposalIds = flowProposals.map((proposal) => String(proposal.proposalId ?? proposal.id ?? "")).filter(Boolean);
+    const adaptationSourceIds = [
+      ...(Array.isArray(expansion.adaptationIds) ? expansion.adaptationIds.map(String).filter(Boolean) : []),
+      ...flowProposalIds,
+      ...changeProposalIds
+    ].filter((sourceId, index, allIds) => allIds.indexOf(sourceId) === index);
+    const sectionSpecs: Array<{ id: string; label: string; kind: AutomationHierarchyKind; viewId: string; sourceIds?: unknown[] }> = [
+      { id: "router", label: "Router", kind: "flow-object", viewId: "flow-router" },
+      { id: "subflows", label: "Subflows", kind: "folder", viewId: "policy-primary", sourceIds: Array.isArray(expansion.subflowIds) ? expansion.subflowIds : [] },
+      { id: "instructions", label: "Instructions", kind: "flow-object", viewId: "flow-instructions", sourceIds: Array.isArray(expansion.instructionIds) ? expansion.instructionIds : [] },
+      { id: "recordings", label: "Recordings", kind: "folder", viewId: "timeline-recording", sourceIds: flowRecordings.map((recording) => recording.recordingId) },
+      { id: "adaptations", label: "Adaptations", kind: "folder", viewId: "adaptations", sourceIds: adaptationSourceIds },
+      { id: "runs", label: "Runs", kind: "folder", viewId: "runs-history", sourceIds: Array.isArray(expansion.runIds) ? expansion.runIds : [] },
+      { id: "runtime-debug", label: "Runtime Debug", kind: "flow-object", viewId: "runtime-debug" },
+      { id: "settings", label: "Settings", kind: "flow-object", viewId: "flow-settings" }
+    ];
+    for (const section of sectionSpecs) {
+      const sectionId = `flow-${stableNodeId(flowId)}-${section.id}`;
+      nodes.push({
+        id: sectionId,
+        label: section.label,
+        kind: section.kind,
+        category: "flow",
+        parentId: flowNodeId,
+        viewId: section.viewId,
+        sourceId: flowId,
+        flowId
+      });
+      for (const rawId of section.sourceIds ?? []) {
+        const sourceId = String(rawId);
+        const childKind = section.id === "subflows"
+          ? "subflow"
+          : section.id === "instructions"
+            ? "instruction"
+            : section.id === "adaptations"
+              ? "adaptation"
+              : section.id === "recordings"
+                ? "recording"
+                : "run";
+        const viewId = section.viewId;
+        nodes.push({
+          id: `flow-${stableNodeId(flowId)}-${section.id}-${stableNodeId(sourceId)}`,
+          label: hierarchyObjectLabel(childKind, sourceId),
+          kind: childKind,
+          category: "flow",
+          parentId: sectionId,
+          viewId,
+          sourceId,
+          flowId,
+          ...proposalRecordingNodeData(childKind, sourceId, proposals)
+        });
+      }
+    }
+  }
+  return nodes;
+}
+
+function hierarchyObjectLabel(kind: AutomationHierarchyKind, sourceId: string): string {
+  if (kind === "subflow") return sourceId.replace(/^subflow[.:_-]?/, "") || sourceId;
+  if (kind === "instruction") return sourceId.replace(/^instruction[.:_-]?/, "") || sourceId;
+  if (kind === "change-proposal") return sourceId.replace(/^proposal[.:_-]?/, "") || sourceId;
+  if (kind === "adaptation") return sourceId.replace(/^adaptation[.:_-]?/, "") || sourceId;
+  if (kind === "recording") return sourceId.replace(/^recording[.:_-]?/, "") || sourceId;
+  if (kind === "proposal") return sourceId.replace(/^proposal[.:_-]?/, "") || sourceId;
+  if (kind === "run") return sourceId.replace(/^run[.:_-]?/, "") || sourceId;
+  return sourceId;
+}
+
+function linkedArtifactIds(flow: any, key: string): Set<string> {
+  const metadataIds = Array.isArray(flow?.metadata?.[key]) ? flow.metadata[key] : [];
+  const expansionIds = Array.isArray(flow?.expansion?.[key]) ? flow.expansion[key] : [];
+  const directIds = Array.isArray(flow?.[key]) ? flow[key] : [];
+  return new Set([...metadataIds, ...expansionIds, ...directIds].map(String).filter(Boolean));
+}
+
+function proposalRecordingId(proposal: any): string | undefined {
+  const recordingId = proposal?.recordingId ?? proposal?.metadata?.recordingId;
+  return typeof recordingId === "string" && recordingId ? recordingId : undefined;
+}
+
+function proposalRecordingNodeData(kind: AutomationHierarchyKind, sourceId: string, proposals: any[]): { recordingId?: string } {
+  if (kind !== "proposal") return {};
+  const recordingId = proposalRecordingId(proposals.find((proposal) => String(proposal.proposalId ?? proposal.id ?? "") === sourceId));
+  return recordingId ? { recordingId } : {};
 }
 
 function proposalHierarchyLabel(proposal: any): string {

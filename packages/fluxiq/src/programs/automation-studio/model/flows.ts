@@ -2,6 +2,7 @@ import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { EvidenceReference, AutomationStudioSchemaVersion } from "./evidence.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "./artifacts.ts";
 import type { AutomationStudioPublishedFlowSnapshot } from "./composites.ts";
+import type { AutomationStudioFlowExpansionReferences } from "./flow-adaptation.ts";
 import type { AutomationStudioFlowRegion, AutomationStudioFlowRegionHandoff } from "./regions.ts";
 
 /** The workspace in which a canonical Flow is authored and may execute. */
@@ -116,11 +117,59 @@ export type AutomationStudioFlowArtifact = {
   /** Append-only snapshots. `publication` remains the current compatibility view. */
   publicationHistory?: AutomationStudioPublishedFlowSnapshot[];
   evidenceReferences?: EvidenceReference[];
+  expansion?: AutomationStudioFlowExpansionReferences;
   legacyProvenance?: AutomationStudioFlowLegacyProvenance;
   createdAt: number;
   updatedAt: number;
   metadata?: JsonObject;
 };
+
+export function defaultAutomationStudioFlowSettingsMetadata(): JsonObject {
+  const trainingModeSettings = {
+    mode: "normal",
+    trainForRunCount: 3,
+    minimumStabilityScore: 0.9,
+    allowLlmIntervention: false,
+    allowRuntimeRecovery: true,
+    allowAdaptationCreation: false,
+    proposalApprovalMode: "auto",
+    allowPromotion: false,
+    budgets: {
+      maxInterventionsPerRun: 2,
+      maxTokensPerRun: 12000,
+      maxCostUsdPerTrainingWindow: 5,
+      exhaustedBehavior: "ask"
+    }
+  };
+  const adaptationPolicySettings = {
+    preset: "adaptive",
+    proposalMode: "auto",
+    allowRuntimeRecovery: true,
+    allowCreateRecoveryPaths: true,
+    allowModifySubflows: true,
+    allowCreateSubflows: true,
+    allowModifyRouter: true,
+    allowModifyExpectations: true,
+    allowModifyActionTargets: true,
+    allowDeleteOrDisableBehavior: false,
+    allowExternalSideEffects: false,
+    requireApprovalForDestructiveChanges: true,
+    requireApprovalForExternalSideEffects: true,
+    maxInterventionsPerRun: 3,
+    maxEstimatedCostUsdPerRun: 1
+  };
+  return {
+    trainingMode: trainingModeSettings.mode,
+    proposalMode: trainingModeSettings.proposalApprovalMode,
+    proposalApprovalMode: trainingModeSettings.proposalApprovalMode,
+    trainingModeSettings,
+    adaptationPolicySettings,
+    llmProvider: "host",
+    adaptationPolicyId: "policy.default",
+    budgetExhaustedBehavior: "ask",
+    frozenScopeCount: 0
+  };
+}
 
 export type AutomationStudioFlowMigrationOutcome = {
   legacyKind: "task" | "routine";
@@ -175,6 +224,6 @@ export function createBlankAutomationStudioFlowArtifact(input: {
     publication: { status: "draft" },
     createdAt: now,
     updatedAt: now,
-    ...(input.metadata !== undefined ? { metadata: input.metadata } : {})
+    metadata: { ...defaultAutomationStudioFlowSettingsMetadata(), ...(input.metadata ?? {}) }
   };
 }

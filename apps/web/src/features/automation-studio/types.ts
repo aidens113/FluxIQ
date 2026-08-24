@@ -9,7 +9,7 @@ import {
 } from "fluxiq/automation-studio/nodes";
 import type { JsonObject } from "../programs/program-api";
 
-export type AutomationStudioView = "design" | "recordings" | "proposal" | "signals" | "runtime" | "runs" | "problems";
+export type AutomationStudioView = "design" | "recordings" | "proposal" | "signals" | "runtime" | "runs" | "router" | "subflows" | "instructions" | "change-proposals" | "adaptations" | "settings" | "problems";
 export type AutomationViewType = AutomationStudioView | "assistant" | "clients" | "config" | "routine" | "state" | "inspector" | "dock" | "proposal-generator";
 export type AutomationDockTab = "assistant" | "problems" | "history" | "state";
 export type RecordingProcessingStatus = {

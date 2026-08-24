@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createCallFlowNode, stateValue, type StateSnapshot } from "../model/index.ts";
+import { createAutomationStudioFlowExpansionFixture, createAutomationStudioLargeProjectFixture, createCallFlowNode, stateValue, type StateSnapshot } from "../model/index.ts";
 import { generateFlowTypeScript } from "../dsl/index.ts";
 import { AutomationStudioService } from "./service.ts";
 import { AutomationStudioNativeNodeRuntime } from "./native-node-runtime.ts";
@@ -203,6 +203,55 @@ describe("AutomationStudioService recording persistence", () => {
     expect(summary.recordings[0]).not.toHaveProperty("timeline");
     expect(summary.proposals).toEqual([expect.objectContaining({ proposalId: generated.recordingFlowProposals![0]!.proposalId, recordingId: recording.recordingId, kind: "recording_flow" })]);
     expect(summary.flows).toEqual([expect.objectContaining({ flowId: "flow.summary", nodeCount: 0, edgeCount: 0 })]);
+  });
+
+  it("creates Flows with default settings metadata", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Default settings" });
+
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.defaults", name: "Default settings Flow" });
+
+    expect(flow.metadata).toMatchObject({
+      trainingMode: "normal",
+      proposalMode: "auto",
+      proposalApprovalMode: "auto",
+      llmProvider: "host",
+      adaptationPolicyId: "policy.default",
+      budgetExhaustedBehavior: "ask",
+      adaptationPolicySettings: {
+        preset: "adaptive",
+        proposalMode: "auto",
+        allowRuntimeRecovery: true,
+        allowCreateRecoveryPaths: true,
+        allowModifySubflows: true,
+        allowCreateSubflows: true,
+        allowModifyRouter: true,
+        allowModifyExpectations: true,
+        allowModifyActionTargets: true,
+        allowDeleteOrDisableBehavior: false,
+        allowExternalSideEffects: false,
+        requireApprovalForDestructiveChanges: true,
+        requireApprovalForExternalSideEffects: true,
+        maxInterventionsPerRun: 3,
+        maxEstimatedCostUsdPerRun: 1
+      },
+      trainingModeSettings: {
+        mode: "normal",
+        trainForRunCount: 3,
+        minimumStabilityScore: 0.9,
+        allowLlmIntervention: false,
+        allowRuntimeRecovery: true,
+        allowAdaptationCreation: false,
+        proposalApprovalMode: "auto",
+        allowPromotion: false,
+        budgets: {
+          maxInterventionsPerRun: 2,
+          maxTokensPerRun: 12000,
+          maxCostUsdPerTrainingWindow: 5,
+          exhaustedBehavior: "ask"
+        }
+      }
+    });
   });
 
   it("ignores stale object-backed proposal artifacts during proposal refresh", async () => {
@@ -1208,6 +1257,304 @@ describe("AutomationStudioService recording persistence", () => {
     expect(page.runs[0]).toMatchObject({ status: "succeeded", attemptCount: 3, effectCount: 0 });
     expect(page.runs[0]).not.toHaveProperty("trace");
     expect(third.status).toBe("succeeded");
+  });
+
+  it("persists compact action comparisons and recovery ladder records in Flow run detail", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Runtime Recovery Detail" });
+    const flow = await service.createDefaultFlow({ projectId: project.id, ownerKind: "routine", ownerId: "routine.runtime-recovery", name: "Runtime Recovery Flow" });
+    await service.saveProjectArtifact({
+      projectId: project.id,
+      kind: "flow",
+      artifact: {
+        ...flow,
+        nodes: [
+          { id: "divide", definitionId: "builtin.math.divide", parameterValues: {} },
+          { id: "recover", definitionId: "builtin.policy.recovery", parameterValues: { strategy: "retry" } },
+          { id: "end", definitionId: "builtin.control.end", parameterValues: { resultStatus: "success" } }
+        ],
+        edges: [
+          { id: "divide.recover", sourceNodeId: "divide", sourcePortId: "failed", targetNodeId: "recover", targetPortId: "failure" },
+          { id: "recover.end", sourceNodeId: "recover", sourcePortId: "recovered", targetNodeId: "end", targetPortId: "in" }
+        ]
+      }
+    });
+
+    const session = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
+    const detail = await service.getFlowRunDetail(project.id, session.runId);
+
+    expect(detail?.actionAttempts?.[0]).toMatchObject({
+      attemptId: "divide.attempt.1",
+      nodeId: "divide",
+      comparisonStatus: "action_failed"
+    });
+    expect(detail?.recoveryAttempts?.[0]).toMatchObject({
+      attemptId: "divide.attempt.1",
+      selectedKind: "deterministic_path",
+      selectedTargetNodeId: "recover",
+      selectedEdgeId: "divide.recover",
+      status: "selected"
+    });
+    expect(detail?.summary.metadata).toMatchObject({ recoveryAttemptCount: 1 });
+    expect(detail).not.toHaveProperty("trace");
+  });
+
+  it("persists Flow expansion summaries with paged run and adaptation detail reads", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Expansion Pages" });
+    const flow = await service.createDefaultFlow({ projectId: project.id, ownerKind: "routine", ownerId: "routine.expansion-pages", name: "Expansion Pages Flow" });
+    const fixture = createAutomationStudioFlowExpansionFixture(10_000);
+    const subflows = fixture.subflows.map((subflow) => ({ ...subflow, projectId: project.id, flowId: flow.flowId }));
+    await service.saveFlowRouter({ ...fixture.router, projectId: project.id, flowId: flow.flowId, rules: fixture.router.rules.map((rule) => ({ ...rule, target: { kind: "subflow", subflowId: subflows[0]!.subflowId } })) });
+    for (const subflow of subflows) await service.saveFlowSubflow(subflow);
+    await service.saveFlowInstruction(project.id, { ...fixture.instructions[0]!, scope: { kind: "flow", projectId: project.id, flowId: flow.flowId } });
+    await service.saveFlowChangeProposal({ ...fixture.changeProposal, projectId: project.id, flowId: flow.flowId, subflowId: subflows[1]!.subflowId });
+    const { proposalId: _missingProposalId, ...adaptationWithoutProposal } = fixture.adaptation;
+    await expect(service.saveFlowAdaptation({ ...adaptationWithoutProposal, projectId: project.id, flowId: flow.flowId, subflowId: subflows[1]!.subflowId })).rejects.toThrow("Structural adaptation edits must be routed through a change proposal");
+
+    for (let index = 0; index < 35; index += 1) {
+      const runId = `run.expansion.${index}`;
+      await service.saveFlowRunDetail({
+        ...fixture.runDetail,
+        summary: {
+          ...fixture.runSummary,
+          projectId: project.id,
+          flowId: flow.flowId,
+          runId,
+          updatedAt: 20_000 + index,
+          routeDecisionCount: 1,
+          subflowEntryCount: 1,
+          actionAttemptCount: index
+        },
+        routeDecisions: [{ ...fixture.runDetail.routeDecisions[0]!, decisionId: `decision.${index}`, selectedSubflowId: subflows[0]!.subflowId }],
+        subflows: [{ ...fixture.runDetail.subflows[0]!, entryId: `entry.${index}`, subflowId: subflows[0]!.subflowId }],
+        interventions: []
+      });
+    }
+
+    for (let index = 0; index < 12; index += 1) {
+      await service.saveFlowAdaptation({
+        ...fixture.adaptation,
+        projectId: project.id,
+        flowId: flow.flowId,
+        subflowId: subflows[1]!.subflowId,
+        adaptationId: `adaptation.expansion.${index}`,
+        updatedAt: 30_000 + index,
+        trigger: `Observed drift ${index}`
+      });
+    }
+
+    const runPage = await service.listFlowRunSummaries({ projectId: project.id, flowId: flow.flowId, limit: 5, offset: 10 });
+    expect(runPage).toMatchObject({ total: 35, limit: 5, offset: 10 });
+    expect(runPage.runs.map((run) => run.runId)).toEqual(["run.expansion.24", "run.expansion.23", "run.expansion.22", "run.expansion.21", "run.expansion.20"]);
+    expect(runPage.runs[0]).not.toHaveProperty("routeDecisions");
+    const selectedRun = await service.getFlowRunDetail(project.id, "run.expansion.24");
+    expect(selectedRun?.routeDecisions).toEqual([expect.objectContaining({ decisionId: "decision.24" })]);
+
+    const adaptationPage = await service.listFlowAdaptationSummaries({ projectId: project.id, flowId: flow.flowId, subflowId: subflows[1]!.subflowId, limit: 4, offset: 3 });
+    expect(adaptationPage).toMatchObject({ total: 12, limit: 4, offset: 3 });
+    expect(adaptationPage.adaptations.map((adaptation) => adaptation.adaptationId)).toEqual(["adaptation.expansion.8", "adaptation.expansion.7", "adaptation.expansion.6", "adaptation.expansion.5"]);
+    expect(await service.getFlowAdaptation(project.id, flow.flowId, "adaptation.expansion.8")).toMatchObject({ trigger: "Observed drift 8" });
+
+    await expect(service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId })).resolves.toMatchObject({ total: 2 });
+    await expect(service.getFlowInstructionSet({ projectId: project.id, flowId: flow.flowId })).resolves.toHaveLength(1);
+    await expect(service.getFlowChangeProposal(project.id, flow.flowId, fixture.changeProposal.proposalId)).resolves.toMatchObject({ proposalId: fixture.changeProposal.proposalId });
+  });
+
+  it("keeps large project summary pages free of hydrated detail payloads", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Large Summary Guard" });
+    const fixture = createAutomationStudioLargeProjectFixture({
+      projectId: project.id,
+      flowCount: 2,
+      subflowsPerFlow: 6,
+      runsPerFlow: 18,
+      adaptationsPerFlow: 8,
+      instructionsPerFlow: 10,
+      recordingCount: 4,
+      nowMs: 60_000
+    });
+    const [flow] = fixture.flows;
+    if (!flow) throw new Error("Large fixture did not create a flow.");
+
+    for (const artifact of fixture.flows) await service.saveProjectArtifact({ projectId: project.id, kind: "flow", artifact });
+    for (const router of fixture.routers) await service.saveFlowRouter(router);
+    for (const subflow of fixture.subflows) await service.saveFlowSubflow(subflow);
+    for (const instruction of fixture.instructions) await service.saveFlowInstruction(project.id, instruction);
+    for (const proposal of fixture.changeProposals) await service.saveFlowChangeProposal(proposal);
+    for (const adaptation of fixture.adaptations) await service.saveFlowAdaptation(adaptation);
+    for (const detail of fixture.runDetails) await service.saveFlowRunDetail(detail);
+
+    const subflowPage = await service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId, limit: 5, offset: 2 });
+    const instructionPage = await service.listFlowInstructionSummaries({ projectId: project.id, flowId: flow.flowId, limit: 5, offset: 4 });
+    const proposalPage = await service.listFlowChangeProposalSummaries({ projectId: project.id, flowId: flow.flowId, limit: 5, offset: 1 });
+    const runPage = await service.listFlowRunSummaries({ projectId: project.id, flowId: flow.flowId, limit: 5, offset: 10 });
+    const adaptationPage = await service.listFlowAdaptationSummaries({ projectId: project.id, flowId: flow.flowId, limit: 5, offset: 3 });
+
+    expect(subflowPage).toMatchObject({ total: 6, limit: 5, offset: 2 });
+    expect(instructionPage).toMatchObject({ total: 10, limit: 5, offset: 4 });
+    expect(proposalPage).toMatchObject({ limit: 5, offset: 1 });
+    expect(runPage).toMatchObject({ total: 18, limit: 5, offset: 10 });
+    expect(adaptationPage).toMatchObject({ total: 8, limit: 5, offset: 3 });
+
+    expect(subflowPage.subflows[0]).not.toHaveProperty("inputMapping");
+    expect(instructionPage.instructions[0]).not.toHaveProperty("body");
+    expect(proposalPage.changeProposals[0]).not.toHaveProperty("patches");
+    expect(runPage.runs[0]).not.toHaveProperty("routeDecisions");
+    expect(runPage.runs[0]).not.toHaveProperty("interventions");
+    const interventionRun = runPage.runs.find((run) => (run.interventionSummaries ?? []).length > 0);
+    expect(interventionRun?.tokenUsage).toEqual({ inputTokens: 20, outputTokens: 10, totalTokens: 30, estimatedCostUsd: 0.002 });
+    expect(interventionRun?.interventionSummaries?.[0]).toMatchObject({
+      kind: "diagnosis",
+      reason: "Large fixture diagnostic sample.",
+      promptVersion: "diagnosis_only_report.v1",
+      provider: "fixture",
+      model: "fixture",
+      tokenUsage: { totalTokens: 30, estimatedCostUsd: 0.002 }
+    });
+    expect(adaptationPage.adaptations[0]).not.toHaveProperty("patch");
+    expect(adaptationPage.adaptations[0]).not.toHaveProperty("validationResults");
+
+    await expect(service.getFlowInstruction(project.id, instructionPage.instructions[0]!.instructionId)).resolves.toHaveProperty("body");
+    await expect(service.getFlowRunDetail(project.id, runPage.runs[0]!.runId)).resolves.toHaveProperty("routeDecisions");
+    await expect(service.getFlowAdaptation(project.id, flow.flowId, adaptationPage.adaptations[0]!.adaptationId)).resolves.toHaveProperty("patch");
+  });
+
+  it("filters adaptations by status and records review/promotion transitions", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Adaptation Review" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.adaptation-review", name: "Adaptation Review Flow" });
+    const base = {
+      schemaVersion: "0.1" as const,
+      flowId: flow.flowId,
+      projectId: project.id,
+      trigger: "Expected state changed",
+      patch: [{ kind: "edit_expectation" as const, targetId: "expect.ready", summary: "Wait for ready state." }],
+      validationResults: [{ runId: "run.validation.1", status: "succeeded" as const, checkedAt: 20 }],
+      author: "runtime" as const,
+      riskLevel: "low" as const,
+      createdAt: 10,
+      updatedAt: 10
+    };
+    await service.saveFlowAdaptation({ ...base, adaptationId: "adaptation.apply", status: "validated" });
+    await service.saveFlowAdaptation({ ...base, adaptationId: "adaptation.reject", status: "proposed" });
+    await service.saveFlowAdaptation({ ...base, adaptationId: "adaptation.disable", status: "proposed" });
+    await service.saveFlowAdaptation({ ...base, adaptationId: "adaptation.supersede", status: "validated" });
+    await service.saveFlowAdaptation({ ...base, adaptationId: "adaptation.manual", status: "validated" });
+
+    const validated = await service.listFlowAdaptationSummaries({ projectId: project.id, flowId: flow.flowId, status: "validated", limit: 10 });
+    expect(validated.adaptations.map((adaptation) => adaptation.adaptationId).sort()).toEqual(["adaptation.apply", "adaptation.manual", "adaptation.supersede"]);
+
+    await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.apply", action: "apply", reason: "Validation passed." })).resolves.toMatchObject({
+      status: "applied",
+      appliedTo: [{ kind: "expectation", id: "expect.ready" }],
+      metadata: { applicationRecord: { reversible: true } }
+    });
+    await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.apply", action: "revert" })).resolves.toMatchObject({ status: "reverted" });
+    await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.reject", action: "reject", reason: "Conflicts with operator instruction." })).resolves.toMatchObject({ status: "rejected" });
+    await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.disable", action: "disable" })).resolves.toMatchObject({ status: "disabled" });
+    await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.supersede", action: "supersede", supersededByAdaptationId: "adaptation.apply" })).resolves.toMatchObject({ status: "superseded", metadata: { supersededByAdaptationId: "adaptation.apply" } });
+    await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.manual", action: "switch_manual" })).resolves.toMatchObject({ status: "proposed", metadata: { proposalModeOverride: "manual" } });
+    await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.reject", action: "apply" })).rejects.toThrow("rejected adaptations cannot be applied");
+  });
+
+  it("routes canonical Flow runtime sessions through the selected subflow and records run detail", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Routed Runtime" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.routed-runtime", name: "Routed Flow" });
+    await service.saveFlow({
+      projectId: project.id,
+      flow: {
+        ...flow,
+        nodes: [
+          { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
+          { id: "end", definitionId: "builtin.control.end", parameterValues: { status: "success" } }
+        ],
+        edges: [{ id: "start.end", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }]
+      }
+    });
+    const now = 50_000;
+    const subflow = {
+      schemaVersion: "0.1" as const,
+      subflowId: "subflow.routed.primary",
+      flowId: flow.flowId,
+      projectId: project.id,
+      name: "Primary path",
+      role: "primary" as const,
+      status: "active" as const,
+      graphFlowId: flow.flowId,
+      createdAt: now,
+      updatedAt: now
+    };
+    await service.saveFlowSubflow(subflow);
+    await service.saveFlowRouter({
+      schemaVersion: "0.1",
+      routerId: "router.routed",
+      flowId: flow.flowId,
+      projectId: project.id,
+      name: "Routed Flow Router",
+      rules: [{
+        schemaVersion: "0.1",
+        ruleId: "rule.primary",
+        routerId: "router.routed",
+        name: "Primary mode",
+        target: { kind: "subflow", subflowId: subflow.subflowId },
+        order: 1,
+        status: "active",
+        condition: { signalPath: "inputs.mode", operator: "equals", expected: "primary" },
+        createdAt: now,
+        updatedAt: now
+      }],
+      fallback: { kind: "fail", message: "No route." },
+      status: "active",
+      createdAt: now,
+      updatedAt: now
+    });
+
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { mode: "primary" } });
+    const detail = await service.getFlowRunDetail(project.id, run.runId);
+
+    expect(run.status).toBe("succeeded");
+    expect(detail).not.toBeNull();
+    expect(detail?.routeDecisions).toEqual([expect.objectContaining({ selectedRuleId: "rule.primary", selectedSubflowId: subflow.subflowId })]);
+    const routeDecisionId = detail!.routeDecisions[0]?.decisionId;
+    expect(detail?.subflows).toEqual([expect.objectContaining({ subflowId: subflow.subflowId, status: "succeeded", metadata: expect.objectContaining({ graphFlowId: flow.flowId, routeDecisionId }) })]);
+  });
+
+  it("creates, updates, duplicates, disables, and archives Flow subflows", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Subflow CRUD" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.subflow-crud", name: "Subflow CRUD Flow" });
+
+    const created = await service.createFlowSubflow({
+      projectId: project.id,
+      flowId: flow.flowId,
+      name: "Checkout",
+      role: "primary",
+      routeTags: ["checkout", "cart"]
+    });
+    const subflowGraph = await service.getFlow(project.id, created.graphFlowId!);
+    const renamed = await service.renameFlowSubflow({ projectId: project.id, flowId: flow.flowId, subflowId: created.subflowId, name: "Checkout happy path" });
+    const updated = await service.updateFlowSubflow({
+      projectId: project.id,
+      flowId: flow.flowId,
+      subflowId: created.subflowId,
+      inputMapping: [{ flowInputId: "accountId", subflowInputId: "accountId", required: true }],
+      outputMapping: [{ subflowOutputId: "receiptId", flowOutputId: "receiptId" }],
+      localInstructionIds: ["instruction.checkout"]
+    });
+    const duplicated = await service.duplicateFlowSubflow({ projectId: project.id, flowId: flow.flowId, subflowId: created.subflowId, name: "Checkout retry path" });
+    const disabled = await service.disableFlowSubflow({ projectId: project.id, flowId: flow.flowId, subflowId: created.subflowId });
+    const archived = await service.archiveFlowSubflow({ projectId: project.id, flowId: flow.flowId, subflowId: duplicated.subflowId });
+    const page = await service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId });
+
+    expect(subflowGraph).toMatchObject({ flowId: created.graphFlowId, metadata: { parentFlowId: flow.flowId, parentSubflowId: created.subflowId, subflowGraph: true } });
+    expect(renamed.name).toBe("Checkout happy path");
+    expect(updated.inputMapping).toEqual([{ flowInputId: "accountId", subflowInputId: "accountId", required: true }]);
+    expect(duplicated.metadata).toMatchObject({ duplicatedFromSubflowId: created.subflowId });
+    expect(disabled.status).toBe("disabled");
+    expect(archived.status).toBe("archived");
+    expect(page.subflows.map((item) => item.subflowId).sort()).toEqual([created.subflowId, duplicated.subflowId].sort());
   });
 
   it("deletes saved project artifacts and owned flow files from project folders", async () => {

@@ -123,6 +123,121 @@ declarative TypeScript, and explicit conversion makes either visual IR or a
 validated constrained module authoritative. Code-owned graphs are read-only
 in the visual editor and retain compiler/source digests.
 
+## LLM-Assisted Deterministic Automation
+
+The next additive Flow expansion treats a Flow as the complete automation
+object: interface, router, subflows, scoped instructions, runs, adaptations,
+settings, provenance, and publication lifecycle.
+The LLM harness is used to generate, repair, adapt, and improve deterministic
+automation, then successful behavior is compiled back into durable Flow
+structure so token usage scales with novelty rather than execution count.
+
+Recordings remain immutable evidence when users choose to provide them, but
+they are no longer the required center of Flow creation. Text description and
+scoped instructions are first-class inputs. Adaptations are the approval and
+audit surface for generated edits, new subflows, router changes,
+expectation/action-target changes, and runtime learning; they are not
+generated directly from recordings.
+
+The first public contracts for this direction live in
+`model/flow-adaptation.ts`. They are additive and do not change existing Flow
+execution semantics. Compatibility policy and recording-flow proposal artifacts
+remain available internally while adaptation records become the long-term
+review/audit surface.
+
+### Router Runtime
+
+The first execution layer for an expanded Flow is its router. The router
+receives the Flow ID/version, run inputs, current state summary, available
+subflows, route rules, fallback configuration, and adaptation policy context.
+Rules are sorted by explicit order and ID, disabled rules are skipped, and
+missing subflow targets produce deterministic diagnostics.
+
+Router conditions are intentionally conservative. They evaluate explicit
+condition primitives against `inputs.*` and `state.*` paths for equality,
+existence, numeric comparison, text containment, regex matching, boolean
+checks, and normalized text comparison. Operators that require transition
+history fail closed until divergence detection provides that history.
+
+When a canonical Flow has a saved router, `runRuntimeSession` evaluates the
+router before graph execution. A matching route executes the selected subflow's
+`graphFlowId` through the existing canonical Flow executor. Existing single
+graph Flows can be projected as a generated primary default subflow, so current
+execution behavior remains compatible while router/subflow authoring matures.
+
+Route decisions are persisted in Flow run detail. The record includes selected
+rule/subflow, rejected rule IDs, fallback use, decision time, evaluation count,
+and optional reroute source metadata. The summary index stores only counts and
+navigation fields; users open a specific run detail to see the full route and
+subflow boundary trace.
+
+Runtime action attempts now carry deterministic transition comparisons before
+any LLM diagnosis is considered. Each attempt records expected transition
+hints, actual status/route/output/effect data, a normalized comparison status,
+and a compact diff summary. Failed attempts pass through the recovery ladder in
+priority order: configured failed-route path, approved runtime patch, graph
+local recovery reroute, then LLM diagnosis fallback. Recovery budgets can cap
+retries per action, recovery attempts per subflow, reroutes per run, and
+adaptation/LLM attempts per run; exhausted budgets produce terminal failure
+metadata instead of looping.
+
+Subflows are persisted as Flow-owned behavior units with route tags,
+input/output mapping, graph reference, local instruction IDs, proposal-mode
+override, and stability metrics. New subflows receive an isolated graph Flow by
+default so editing a subflow does not mutate the parent Flow/router graph. The
+Subflows workspace reuses the existing Flow graph canvas against that isolated
+graph Flow and keeps its draft state local to the selected subflow detail.
+
+Structural adaptation patches that create or edit subflows, routers, or
+recovery paths must be linked to an adaptation review record before they can be
+saved. This keeps recovery/adaptation behavior auditable through the same
+Adaptations surface used for generated Flow edits.
+
+The LLM harness is a constrained runtime boundary, not an agent with direct
+write authority. Core builds a provider-neutral task request from compact run
+context, resolved instructions, policy gates, subflow inventory, action
+history, and route/state evidence. A host supplies an
+`AutomationStudioLlmProvider` callback and provider/model metadata; Core does
+not embed provider credentials or domain prompts. Prompt versions are stable
+IDs per task family, including runtime diagnosis, runtime patch, router patch,
+subflow patch, expectation/action-target patch, instruction suggestion, change
+proposal generation, and diagnosis-only reporting.
+
+Harness outputs are strict structured records. Diagnosis, runtime patch,
+change proposal, and instruction suggestion responses are validated before they
+become intervention evidence. Runtime patches are temporary run-context
+instructions only, while durable router/subflow/expectation/action-target edits
+must become proposal/adaptation records and pass the existing validation gates.
+Outputs that contain executable code, scripts, function bodies, unsupported
+patch kinds, missing targets, or unsafe broad rewrites are rejected as
+diagnostics rather than applied.
+
+Live patch testing executes temporary fixes against a cloned Flow and current
+run context. It supports bounded action sequences, wait/retry adjustments,
+target overrides, recovery subflow calls, and temporary reroutes. Preflight
+checks adaptation policy and side-effect approval before execution. A
+successful patch can mark the original action retryable and produce a candidate
+adaptation; structural fixes are reviewed through the same adaptation surface
+according to approval mode. Failed patches remain run evidence and rejected
+adaptation candidates.
+
+Adaptations are reviewable change evidence. The Adaptations workspace groups
+them by status, shows trigger/diagnosis/failed action/patch/validation/risk
+detail, and routes review actions through privileged service mutations.
+Promotion is gated by successful validation, risk, structural review links,
+target presence, and disabled/rejected state. Applying an adaptation records a
+reversible application record instead of silently editing Flow JSON; structural
+changes continue through adaptation review.
+
+Training modes make adaptation temporary and explainable. Normal mode keeps
+LLM intervention and adaptation creation off by default. Train-for-N-runs and
+train-until-stable enable adaptive behavior only inside an explicit window,
+while continuous adaptive mode keeps learning open. Stability metrics combine
+deterministic successful runs, LLM interventions per run, unresolved failures,
+repeated triggers, accepted/rejected adaptations, and time since structural
+change. Budgets cap interventions, tokens, and cost, and frozen Flow/route/
+subflow scopes can collect evidence without auto-applying structural changes.
+
 ## Canonical Node Definition Foundation
 
 New Flow authoring uses `AutomationStudioNodeDefinition` and the scope-aware

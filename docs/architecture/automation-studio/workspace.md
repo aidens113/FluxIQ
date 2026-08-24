@@ -75,21 +75,54 @@ map. Routine nodes are static base/custom node types such as start, task policy,
 decision, approval, recovery, end, and custom extension nodes. Routine views do
 not expose recording, evidence, or state-signal layers.
 
-The single Flow editor is the editable graph canvas. Supporting views such as
-signals, recordings, runtime, problems, assistant, state explorer, proposal
-review, and inspector are routed into fixed workbench regions rather than
-arbitrary floating windows. The node palette stays embedded as the
-collapsible right rail inside the policy/routine node editor because it is part
-of direct node editing, not a separate workspace window. Legacy Task/Routine
-documents may still open through a clearly marked read-only compatibility view,
-but they are not independent authoring modes.
+The Flow is the root product object. Its workbench exposes first-class inner
+views for Router, Subflows, Instructions, Runs, Adaptations, Recordings,
+Runtime Debug, and Settings. The State View remains a global
+evidence window that can inspect state for any selected Flow, recording,
+adaptation, node, or previous run. The single Flow editor remains the editable
+graph canvas, while supporting views such as runtime evidence, state
+reconstruction, adaptation review, and inspector detail are routed into fixed
+workbench regions rather than arbitrary floating windows. The node palette
+stays embedded as the collapsible right rail inside the policy/routine node
+editor because it is part of direct node editing, not a separate workspace
+window. Legacy Task/Routine documents may still open through a clearly marked
+read-only compatibility view, but they are not independent authoring modes.
+
+The left project hierarchy is the primary discovery surface for Flow-owned
+objects. It does not render separate visual top-level buckets for recordings,
+proposals, configuration, or other artifact categories. Flows are the product
+roots. A Flow row expands into framework-owned child folders and objects:
+Router, Subflows, Instructions, Recordings, Adaptations, Runs, Runtime Debug,
+and Settings. Subflows appear as child objects inside the Subflows folder for
+their owning Flow; recordings, adaptation/change-review records, and settings
+appear inside the same owning Flow hierarchy rather than in global category
+trees. Flow change proposals and proposal-linked change records are shown as
+adaptation objects inside the Adaptations folder, because Adaptations is the
+single audit/review surface for generated Flow changes. State is intentionally not a Flow-owned sidebar object
+because the State View is a global inner window reused from Flow, recording,
+adaptation, node, and run contexts. Flow-level configuration is reached through
+the Settings object; the Flow row gear action opens that Settings surface
+instead of a separate Config view. Selecting a Flow-owned object keeps the
+owning Flow as context and opens the relevant editor, detail, evidence, or
+debug surface in
+the main workbench. Generic custom folder create/delete controls are not shown
+for generated Flow-owned hierarchy nodes because those objects are managed by
+
+Workbench views must be summary-first. Opening a project or Flow may load
+hierarchy, Flow summaries, recording summaries, paged run summaries, domains,
+and workspace preferences, but it must not hydrate full recordings, run event
+logs, normalized timelines, runtime traces, subflow details, instruction
+details, adaptation details, or change-proposal details until the user opens
+that specific record. Raw JSON, full prompts, traces, and state dumps stay
+behind explicit expansion controls inside the relevant detail view.
 
 Project refresh should treat the left hierarchy as a critical path. Flow,
 project artifact, and recording-summary results are committed as each request
 finishes instead of waiting for heavier runtime, pipeline, or validation data.
-The Flow catalog endpoint reads current proposal warning status but does not
-revalidate every recording-derived proposal during sidebar load; deeper
-proposal/pipeline views own that heavier validation work.
+The Flow catalog endpoint reads compact adaptation/proposal warning status but
+does not revalidate every recording-derived compatibility proposal during
+sidebar load; deeper adaptation or pipeline views own that heavier validation
+work.
 
 The recording timeline dock follows a video-editor-style horizontal layout.
 Recording selection belongs to the project hierarchy sidebar under the
@@ -114,12 +147,11 @@ or a generated recording client folder is a destructive recording operation:
 the UI asks for the user's PIN, then deletes the underlying recording session
 or all recording sessions contained by that client folder.
 
-Proposal rows in the project hierarchy are generated from policy proposals
-linked to finalized recordings. The Proposals root mirrors the Recordings root
-by client folder and recording start date/time. Opening a proposal row selects
-the generated proposal and keeps its source recording correlated with the
-Recordings tree without creating or opening a task until the user applies or
-saves the proposal.
+Recording-derived proposal artifacts remain compatibility data for the staged
+recording pipeline, but they are no longer a primary Flow hierarchy surface.
+When a Flow owns proposal-linked change records, the sidebar shows them under
+Adaptations so users review change history, approval state, and generated edits
+from one place.
 
 Demo recording fixtures such as `Demo Environment` are test fixtures only.
 The Automation Studio service does not seed fixture recordings by default in
@@ -139,15 +171,15 @@ The recording-to-Policy-Flow pipeline is intentionally staged internally:
    generated node and edge linking back to evidence.
 6. Apply the proposed Policy Flow only after explicit approval.
 
-In the normal UI, finalized recordings remain raw source material until the
-user explicitly asks to generate proposals. When a recording ends, Automation
-Studio refreshes the timeline and offers `Generate Proposal`, which opens the
-Proposal Generator workspace view. That generator can create an LLM-assisted
-attempt with user instructions or a direct deterministic attempt from importer
-mappers/mining. Manual stage endpoints remain available for debugging and
-advanced tooling, but they are not the primary product surface. Generating
-proposal artifacts does not require a PIN recheck because proposals are inert
-until review. Applying or approving a generated proposal remains a privileged
+In the normal UI, recordings are optional evidence and demonstration material,
+not a required Flow creation path. A user may still record a specific custom
+scenario when text instructions would be too slow or ambiguous, and finalized
+recordings remain raw source material until explicitly opened or used as
+evidence. Change proposals are generated from run evidence, user instructions,
+adaptations, and Flow/subflow edit needs; proposal approval can be automatic,
+manual, or mixed by scope. Manual recording pipeline endpoints remain available
+for debugging and advanced tooling, but they are not the primary product
+surface. Applying or approving a generated proposal remains a privileged
 mutation and still requires PIN authorization.
 
 Model learning and replay/validation are not recording pipeline stages in the
@@ -494,12 +526,57 @@ Runtime Debug and Runs expose stored session traces through two inner pages.
 The first page is a previous-runs list backed by a per-project SQLite summary
 index and loaded with SQL `limit`/`offset` pagination. Rows only carry summary
 fields such as status, timing, action count, and effect count. Each row has a
-`View Log` action that loads exactly one full persisted session and opens its
+`View Log` action that loads exactly one compact Flow run detail and opens its
 action-log page. The action log shows attempts in recorded order with route,
-timing, region, policy decision, and friendly summaries first; inputs, outputs,
-effects, native logs, nested child traces, final effects, and final runtime
-values are expanded as JSON only when requested. Live step streaming can extend
-the same action-log surface as the runtime event stream matures.
+timing, comparison status, recovery selection, region, policy decision, and
+friendly summaries first. The recovery ladder has its own section showing the
+selected candidate, target, status, reason, and JSON details on demand. Full
+session traces can still be used for deep debugging, but the first run-log
+render must not require hydrating full inputs, outputs, effects, native logs,
+nested child traces, final effects, or final runtime values. Live step
+streaming can extend the same action-log surface as the runtime event stream
+matures.
+
+Subflows are Flow-owned sidebar objects, not a separate global workspace mode.
+The Subflows folder under a Flow can show paged summary children as the list
+grows; selecting a concrete subflow keeps the owning Flow selected and hydrates
+only that subflow's detail, router reverse references, and graph editing
+context. Subflow detail should show mapping, status, stability, raw JSON on
+demand, and the existing Flow graph canvas mounted against the subflow's
+isolated `graphFlowId`. Subflow graph drafts stay local to that selected
+subflow detail and save through `save-flow`; they do not share the parent Flow
+editor's draft state.
+
+LLM-assisted runtime views should display intervention records as audited
+events, not as hidden chat state. The harness resolves active instructions in
+scope order: global, project, Flow, router, subflow, node, on-error, then
+adaptation-review. Higher priority wins within a scope, required conflicts are
+diagnostics, and long instruction bodies are truncated before entering the
+context packet. UI surfaces should show prompt version, provider/model,
+instruction IDs, validation result, and token/cost summary from the persisted
+intervention event.
+
+Live patch attempts should appear in run detail beside the action/recovery
+timeline. The user needs to see the proposed temporary patch kind, preflight
+issues, side-effect approval requirement, patched trace status, whether
+expected state was restored, whether the original action was retried, and any
+candidate adaptation/change proposal IDs. Raw patch and trace JSON should be
+available on demand, but not required for the first run-log render.
+
+The Adaptations workspace is a separate inner view with status tabs for
+proposed, testing, validated, applied, rejected, disabled, reverted, and
+superseded adaptations. The list pane uses status-filtered paged summaries; the
+detail pane hydrates one adaptation and shows trigger, diagnosis, source run,
+proposal link, risk, validations, patch diff rows, review actions, and raw JSON
+on demand. Review actions require PIN authorization and call the adaptation
+review endpoint.
+
+Training status appears with adaptation/review surfaces. It shows the current
+mode, runs completed, stability score, learned changes, pending proposals,
+uncertainty count, and frozen scope count. Later settings controls should edit
+mode, budgets, and frozen scopes, but runtime/review views can already display
+the derived status so users understand whether FluxIQ is training, stable, or
+blocked by budget/freeze gates.
 
 The main editor is no longer a draggable inner-window desktop. Pane slots are
 chosen from presets such as full, halves, large-plus-side, three-pane, and two

@@ -10,7 +10,7 @@ import { AutomationTimelineView } from "./TimelineView";
 import { AutomationInspector } from "./InspectorView";
 import { AutomationPolicyCanvas, AutomationWorkspaceDock } from "./GraphEditorViews";
 import { AutomationStateView } from "./StateView";
-import { AutomationProblemsWorkspace, AutomationRecordingWorkspace, AutomationRunsWorkspace, AutomationRuntimeWorkspace, AutomationSignalWorkspace } from "./WorkspaceViews";
+import { AutomationAdaptationsWorkspace, AutomationChangeProposalsWorkspace, AutomationFlowSettingsWorkspace, AutomationInstructionsWorkspace, AutomationProblemsWorkspace, AutomationRecordingWorkspace, AutomationRouterWorkspace, AutomationRunsWorkspace, AutomationRuntimeWorkspace, AutomationSignalWorkspace, AutomationSubflowsWorkspace } from "./WorkspaceViews";
 export function AutomationViewRenderer(props: {
   actionStatus: string;
   entries: any[];
@@ -84,6 +84,12 @@ export function AutomationViewRenderer(props: {
   if (props.view.type === "signals") return <AutomationSignalWorkspace domains={props.recordingDomains} signals={props.signals} setSelection={props.setSelection} />;
   if (props.view.type === "runtime") return <AutomationRuntimeWorkspace projectId={props.projectId} pipelineArtifacts={props.pipelineArtifacts} timelines={props.selectedTimeline ? [props.selectedTimeline] : []} models={props.models} policies={props.policies} runtimeSessions={props.runtimeSessions} />;
   if (props.view.type === "runs") return <AutomationRunsWorkspace projectId={props.projectId} pipelineArtifacts={props.pipelineArtifacts} runtimeSessions={props.runtimeSessions} />;
+  if (props.view.type === "router") return <AutomationRouterWorkspace flow={props.taskGraph} projectId={props.projectId} />;
+  if (props.view.type === "subflows") return <AutomationSubflowsWorkspace flow={props.taskGraph} nativeNodeDefinitions={props.nativeNodeDefinitions ?? []} projectId={props.projectId} recordings={props.recordings} selectedNode={props.selectedNode} selectedTimeline={props.selectedTimeline} signals={props.signals} setSelection={props.setSelection} />;
+  if (props.view.type === "instructions") return <AutomationInstructionsWorkspace flow={props.taskGraph} projectId={props.projectId} />;
+  if (props.view.type === "change-proposals") return <AutomationChangeProposalsWorkspace flow={props.taskGraph} projectId={props.projectId} />;
+  if (props.view.type === "adaptations") return <AutomationAdaptationsWorkspace flow={props.taskGraph} projectId={props.projectId} />;
+  if (props.view.type === "settings") return <AutomationFlowSettingsWorkspace flow={props.taskGraph} projectId={props.projectId} />;
   if (props.view.type === "state") return <AutomationStateView loading={props.stateLoading} input={{ selection: props.selection, selectedNode: props.selectedNode, selectedEntry: props.selectedEntry, selectedProposal: props.selectedProposal, selectedRecording: props.selectedRecording, selectedTimeline: props.selectedTimeline, policy: props.policy, taskGraph: props.taskGraph, pipelineArtifacts: props.pipelineArtifacts, recordings: props.recordings, timelines: props.timelines, runtimeSessions: props.runtimeSessions, signals: props.signals, indexedStateSources: props.indexedStateSources ?? [] }} setSelection={props.setSelection} />;
   if (props.view.type === "clients") return <AutomationClientGatewayView projectId={props.projectId} onProcessFinalizedRecording={props.onProcessFinalizedRecording} />;
   if (props.view.type === "problems") return <AutomationProblemsWorkspace problems={props.problems} />;

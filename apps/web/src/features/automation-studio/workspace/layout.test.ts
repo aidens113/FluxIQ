@@ -1,7 +1,53 @@
 import { describe, expect, it } from "vitest";
-import { automationBottomDockMinHeight, automationWorkspaceRegionForView, closeAutomationWorkspacePaneTab, moveAutomationWorkspacePaneTab, normalizeAutomationWorkspacePrefs, type AutomationWorkspacePrefs } from "./layout";
+import { automationBottomDockMinHeight, automationWorkspaceRegionForView, closeAutomationWorkspacePaneTab, defaultAutomationWorkspacePrefs, moveAutomationWorkspacePaneTab, normalizeAutomationWorkspacePrefs, type AutomationWorkspacePrefs } from "./layout";
 
 describe("Automation Studio strict workspace layout", () => {
+  it("opens reset/default layouts with the normal Flow editor surface", () => {
+    const prefs = defaultAutomationWorkspacePrefs();
+
+    expect(prefs.mainLayoutPreset).toBe("single");
+    expect(prefs.panes).toEqual([{ id: "pane-main-1", activeViewId: "policy-primary", tabs: ["policy-primary"] }]);
+    expect(prefs.windows.find((windowItem) => windowItem.id === "window-policy")?.tabs).toEqual(["policy-primary"]);
+  });
+
+  it("keeps legacy one-tab Flow layouts as normal editor layouts", () => {
+    const prefs = normalizeAutomationWorkspacePrefs({
+      layoutVersion: 2,
+      windows: [
+        { id: "window-policy", activeViewId: "policy-primary", tabs: ["policy-primary"], area: "main", xPct: 0, yPct: 0, widthPct: 100, heightPct: 100, zIndex: 1 }
+      ],
+      activeWindowId: "window-policy",
+      activePaneId: "pane-main-1",
+      activeViewId: "policy-primary",
+      maximizedWindowId: null,
+      sidebarWidth: 280,
+      inspectorWidth: 320,
+      bottomTimelineHeight: 220,
+      bottomTimelineCollapsed: true,
+      mainLayoutPreset: "single",
+      mainSplitRatios: [1],
+      panes: [{ id: "pane-main-1", activeViewId: "policy-primary", tabs: ["policy-primary"] }],
+      rightSidebar: { activeViewId: "global-inspector", tabs: ["global-inspector"], collapsed: false },
+      bottomDock: { activeViewId: "recording-action-preview", expanded: false },
+      utilityWindowsMigrated: true,
+      rightSidebarCollapsed: false,
+      viewStates: {}
+    });
+
+    expect(prefs.panes).toEqual([{ id: "pane-main-1", activeViewId: "policy-primary", tabs: ["policy-primary"] }]);
+  });
+
+  it("does not inject Flow workbench tabs into custom multi-tab layouts", () => {
+    const prefs = normalizeAutomationWorkspacePrefs({
+      layoutVersion: 2,
+      panes: [{ id: "pane-main-1", activeViewId: "policy-primary", tabs: ["policy-primary", "timeline-recording"] }],
+      rightSidebar: { activeViewId: "global-inspector", tabs: ["global-inspector"], collapsed: false },
+      bottomDock: { activeViewId: "recording-action-preview", expanded: false }
+    } as AutomationWorkspacePrefs);
+
+    expect(prefs.panes[0]?.tabs).toEqual(["policy-primary", "timeline-recording"]);
+  });
+
   it("classifies fixed workspace regions by view id", () => {
     expect(automationWorkspaceRegionForView("recording-action-preview")).toBe("bottom");
     expect(automationWorkspaceRegionForView("timeline-recording")).toBe("main");

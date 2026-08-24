@@ -19,7 +19,13 @@ projects/{projectId}/
     recordings.json
     proposals.json
     flows.json
-    runtime.json
+    routers.json
+    subflows.json
+    instructions.json
+    change-proposals.json
+    runs.json
+    adaptations.json
+    adaptation-policies.json
     objects.json
     pipeline.json
   recordings/{recordingId}/
@@ -36,11 +42,24 @@ projects/{projectId}/
     objects/
   flows/{flowId}/
     flow.json
+    router.json
+    instructions/
+    subflows/{subflowId}/
+      subflow.json
+    change-proposals/{proposalId}/
+      proposal.json
+    adaptations/{adaptationId}/
+      adaptation.json
+    adaptation-policies/{policyId}.json
     source/
     publications/
   runtime/runs/{runId}/
     run.json
-    trace.json
+    route-decisions.jsonl
+    subflows.jsonl
+    interventions.jsonl
+  runtime/sqlite/
+    global.sqlite
   objects/shared/
 ```
 
@@ -60,8 +79,71 @@ Stable file document IDs are:
 | Policy proposal | `proposals/{recordingId}/{proposalId}/proposal.json` | `indexes/pipeline.json` and proposal summaries |
 | Recording Flow proposal | `proposals/{recordingId}/{proposalId}/proposal.json` | `indexes/pipeline.json` and proposal summaries |
 | Canonical Flow | `flows/{flowId}/flow.json` | `indexes/flows.json` |
+| Flow router | `flows/{flowId}/router.json` | `indexes/routers.json` |
+| Flow subflow | `flows/{flowId}/subflows/{subflowId}/subflow.json` | `indexes/subflows.json` |
+| Scoped instruction | `flows/{flowId}/instructions/{instructionId}.json` or `instructions/{instructionId}.json` | `indexes/instructions.json` |
+| Change proposal | `flows/{flowId}/change-proposals/{proposalId}/proposal.json` | `indexes/change-proposals.json` |
+| Flow run detail | `runtime/runs/{runId}/run.json` plus JSONL sequence mirrors | `indexes/runs.json` and SQLite `flow.runs` |
+| Flow adaptation | `flows/{flowId}/adaptations/{adaptationId}/adaptation.json` | `indexes/adaptations.json` and SQLite `flow.adaptations` |
+| Adaptation policy | `flows/{flowId}/adaptation-policies/{policyId}.json` | `indexes/adaptation-policies.json` |
 | Flow source | `flows/{flowId}/source/` | Flow metadata |
 | Runtime run | `runtime/runs/{runId}/run.json` | runtime index |
+
+Newly created subflows receive a dedicated canonical Flow document for their
+internal graph. The subflow stores that Flow ID in `graphFlowId`, and the graph
+Flow records `metadata.subflowGraph`, `metadata.parentFlowId`, and
+`metadata.parentSubflowId`. This keeps subflow graph drafts and saves isolated
+from the parent Flow's router and top-level graph.
+
+Flow expansion run details are deliberately split from run summaries. The
+previous-runs view reads `list-flow-runs` with SQL `limit`/`offset`
+pagination, optional Flow filtering, and summary-only rows. A selected row then
+uses `get-flow-run-detail` to hydrate exactly one detail document. Adaptation
+history follows the same pattern with `list-flow-adaptations` and
+`get-flow-adaptation`; when project storage is enabled, Flow/subflow filters
+are applied in SQLite before rows are returned to the service.
+
+Run detail stores compact action-attempt and recovery-attempt records for the
+runtime debug UI. Action records preserve order, node/definition IDs, status,
+route, timing, comparison status, and small diff metadata. Recovery records
+preserve the selected ladder candidate, target edge/node, status, reason, and
+candidate metadata. Full runtime session traces may still exist for deep
+debugging, but previous-run lists and first run-log renders must not hydrate
+the full trace.
+
+LLM harness invocations are persisted as run interventions. Each intervention
+stores the prompt version, provider/model metadata, instruction IDs, compact
+context summary, structured response, validation result, usage/cost summary,
+and reason for invocation. The intervention is evidence; it does not directly
+mutate canonical Flow, router, subflow, instruction, or adaptation documents.
+Durable changes still pass through change proposals, adaptation records, and
+their validators.
+
+Live patch tests are also evidence-first. Patch execution runs against cloned
+Flow state and records validation results in adaptation candidates. Successful
+temporary fixes may create validated adaptations and, for structural fixes,
+change proposal candidates. Failed patches are stored as rejected adaptations
+or run evidence so reviewers can inspect what was tried without promoting it.
+
+Adaptation summaries support status-filtered pagination so inbox tabs do not
+hydrate detail documents. Review actions update the adaptation document and
+summary index together. Application records live in adaptation metadata with
+the applied patches, actor/reason when available, and a reversible marker.
+Revert changes the adaptation lifecycle to `reverted`; it does not require
+manual Flow JSON edits.
+
+Training mode state is audit metadata on Flow settings and run detail. Runs can
+record the active mode and derived behavior so later review explains why LLM
+intervention, recovery, adaptation creation, proposal approval, or promotion
+was allowed. Stability metrics, uncertainty summaries, budget decisions, and
+frozen scopes are derived summaries; they should be stored as compact settings
+or run metadata rather than hidden provider memory.
+
+Adaptations may point at subflows and recovery edits, but structural patch
+kinds that create or edit subflows, routers, or recovery paths require an
+existing `ChangeProposal` link before the adaptation document is accepted by
+the service. Adaptation records are therefore audit events and proposal
+references, not a side channel for direct Flow rewrites.
 
 Project-file reads return cloned documents through the service boundary.
 Callers should modify a document by loading it, creating the next version or
@@ -103,8 +185,13 @@ The Automation Studio API exposes these as first-class framework endpoints:
 `verify-legacy-backup`, `seal-legacy-writes`,
 `list-legacy-retirement-audit`, `plan-flow-migration-rollback`,
 `rollback-flow-migration`, `inspect-state-diff`, and
-`list-signal-registries`. Canonical Flow publication is exposed through
-`publish-flow`, `list-flow-publications`, `deprecate-flow-publication`, and
+`list-signal-registries`. Flow expansion reads are exposed through
+`list-flow-subflows`, `get-flow-subflow`, `list-flow-instructions`,
+`get-flow-instruction-set`, `list-flow-change-proposals`,
+`get-flow-change-proposal`, `list-flow-runs`, `get-flow-run-detail`,
+`list-flow-adaptations`, `get-flow-adaptation`, and `get-flow-router`.
+Canonical Flow publication is exposed through `publish-flow`,
+`list-flow-publications`, `deprecate-flow-publication`, and
 `inspect-flow-dependencies`. Compatibility endpoints for learned task models
 and replay results remain available for non-UI/runtime work. Mutating endpoints
 that apply, execute, publish, delete, or edit user-authored state are

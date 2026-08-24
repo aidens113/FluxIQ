@@ -102,4 +102,145 @@ describe("Automation Studio graph executor", () => {
     expect(trace.currentNodeId).toBe("start");
     expect(trace.message).toContain("without an outgoing edge");
   });
+
+  it("records transition comparisons for matched action attempts", async () => {
+    const flow: AutomationStudioFlowDocument = {
+      schemaVersion: "0.1",
+      flowId: "flow.comparison",
+      ownerKind: "routine",
+      ownerId: "routine.test",
+      name: "Runtime comparison",
+      createdAt: 1,
+      updatedAt: 1,
+      nodes: [
+        { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
+        { id: "sum", definitionId: "builtin.math.add", parameterValues: { precision: 0, expectedOutputs: { result: 7 } } },
+        { id: "end", definitionId: "builtin.control.end", parameterValues: { resultStatus: "success" } }
+      ],
+      edges: [
+        { id: "start.sum", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "sum", targetPortId: "in" },
+        { id: "sum.end", sourceNodeId: "sum", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }
+      ]
+    };
+
+    const trace = await runAutomationStudioGraph(flow, { inputs: { left: 2, right: 5 } });
+    const sumAttempt = trace.attempts.find((attempt) => attempt.nodeId === "sum");
+
+    expect(sumAttempt?.transitionComparison).toMatchObject({
+      status: "matched",
+      expected: { expectedOutputs: { result: 7 } },
+      actual: { outputs: { result: 7 } },
+      diffSummary: { routeMatched: true, statusMatched: true }
+    });
+  });
+
+  it("normalizes failed, waiting, timeout, and missing-state comparisons", async () => {
+    const flow: AutomationStudioFlowDocument = {
+      schemaVersion: "0.1",
+      flowId: "flow.comparison-statuses",
+      ownerKind: "routine",
+      ownerId: "routine.test",
+      name: "Runtime comparison statuses",
+      createdAt: 1,
+      updatedAt: 1,
+      nodes: [
+        { id: "divide", definitionId: "builtin.math.divide", parameterValues: {} },
+        { id: "wait", definitionId: "builtin.timing.wait", parameterValues: { durationMs: 100 } },
+        { id: "expect", definitionId: "builtin.policy.expectation", parameterValues: { expectedOutputs: { missing: true }, conditions: [{ path: "ready" }] } },
+        { id: "timeout", definitionId: "unknown.timeout", parameterValues: {} }
+      ],
+      edges: []
+    };
+
+    const failed = await runAutomationStudioGraph(flow, { startNodeId: "divide", inputs: { numerator: 1, denominator: 0 } });
+    const waiting = await runAutomationStudioGraph(flow, { startNodeId: "wait" });
+    const missing = await runAutomationStudioGraph(flow, { startNodeId: "expect" });
+    const timeout = await runAutomationStudioGraph(flow, {
+      startNodeId: "timeout",
+      nativeNodeExecutor: async ({ node }) => ({
+        result: {
+          status: "failed",
+          route: "timeout",
+          outputs: {},
+          effects: []
+        },
+        logs: [{ level: "error", message: `Node ${node.id} timed out.` }]
+      })
+    });
+
+    expect(failed.attempts[0]?.transitionComparison?.status).toBe("action_failed");
+    expect(waiting.attempts[0]?.transitionComparison?.status).toBe("tolerated");
+    expect(missing.attempts[0]?.transitionComparison?.status).toBe("missing_expected_state");
+    expect(timeout.attempts[0]?.transitionComparison?.status).toBe("timeout");
+  });
+
+  it("records deterministic recovery decisions before LLM diagnosis fallback", async () => {
+    const flow: AutomationStudioFlowDocument = {
+      schemaVersion: "0.1",
+      flowId: "flow.recovery",
+      ownerKind: "routine",
+      ownerId: "routine.test",
+      name: "Runtime recovery",
+      createdAt: 1,
+      updatedAt: 1,
+      nodes: [
+        { id: "divide", definitionId: "builtin.math.divide", parameterValues: {} },
+        { id: "recover", definitionId: "builtin.policy.recovery", parameterValues: { strategy: "retry" } },
+        { id: "end", definitionId: "builtin.control.end", parameterValues: { resultStatus: "success" } }
+      ],
+      edges: [
+        { id: "divide.recover", sourceNodeId: "divide", sourcePortId: "failed", targetNodeId: "recover", targetPortId: "failure" },
+        { id: "recover.end", sourceNodeId: "recover", sourcePortId: "recovered", targetNodeId: "end", targetPortId: "in" }
+      ]
+    };
+
+    const trace = await runAutomationStudioGraph(flow, { inputs: { numerator: 1, denominator: 0 } });
+
+    expect(trace.status).toBe("succeeded");
+    expect(trace.attempts[0]?.recoveryDecision?.candidates.map((candidate) => candidate.kind)).toEqual([
+      "deterministic_path",
+      "reroute",
+      "llm_diagnosis"
+    ]);
+    expect(trace.attempts[0]?.recoveryDecision?.selected).toMatchObject({
+      kind: "deterministic_path",
+      edgeId: "divide.recover",
+      targetNodeId: "recover"
+    });
+  });
+
+  it("stops the recovery ladder when retry and escalation budgets are exhausted", async () => {
+    const flow: AutomationStudioFlowDocument = {
+      schemaVersion: "0.1",
+      flowId: "flow.recovery-budget",
+      ownerKind: "routine",
+      ownerId: "routine.test",
+      name: "Runtime recovery budget",
+      createdAt: 1,
+      updatedAt: 1,
+      nodes: [
+        { id: "divide", definitionId: "builtin.math.divide", parameterValues: {} },
+        { id: "recover", definitionId: "builtin.policy.recovery", parameterValues: { strategy: "retry" } }
+      ],
+      edges: [
+        { id: "divide.recover", sourceNodeId: "divide", sourcePortId: "failed", targetNodeId: "recover", targetPortId: "failure" }
+      ]
+    };
+
+    const trace = await runAutomationStudioGraph(flow, {
+      inputs: { numerator: 1, denominator: 0 },
+      recoveryBudget: {
+        maxRetriesPerAction: 0,
+        maxRecoveryAttemptsPerSubflow: 0,
+        maxReroutesPerRun: 0,
+        maxAdaptationOrLlmAttemptsPerRun: 0
+      }
+    });
+
+    expect(trace.status).toBe("failed");
+    expect(trace.attempts.map((attempt) => attempt.nodeId)).toEqual(["divide"]);
+    expect(trace.message).toContain("Recovery budget exhausted");
+    expect(trace.attempts[0]?.recoveryDecision?.selected).toBeUndefined();
+    expect(trace.attempts[0]?.recoveryDecision?.candidates).toEqual([]);
+  });
 });

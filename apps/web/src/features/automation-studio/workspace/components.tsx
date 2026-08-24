@@ -14,9 +14,15 @@ export function viewTitle(view: AutomationViewInstance): string {
   if (view.type === "signals") return "Relationship Web";
   if (view.type === "runtime") return "Runtime Debug";
   if (view.type === "problems") return "Problems";
+  if (view.type === "subflows") return "Subflows";
   if (view.type === "assistant") return "AI Assistant";
   if (view.type === "clients") return "Connected Clients";
   if (view.type === "runs") return "Runs";
+  if (view.type === "router") return "Router";
+  if (view.type === "adaptations") return "Adaptations";
+  if (view.type === "instructions") return "Instructions";
+  if (view.type === "change-proposals") return "Change Proposals";
+  if (view.type === "settings") return "Settings";
   if (view.type === "state") return "State View";
   if (view.type === "inspector") return "Inspector";
   if (view.type === "dock") return "Workspace Dock";
@@ -27,8 +33,7 @@ export function viewTitle(view: AutomationViewInstance): string {
 
 export function AutomationWindowAdderPalette(props: { area: AutomationWorkspaceArea; anchor: AutomationWindowAdderState["anchor"]; targetWindowId?: string; views: AutomationViewInstance[]; onAdd(viewId: string, area: AutomationWorkspaceArea, targetWindowId?: string): void }) {
   const groups = [
-    { title: "Workflow", ids: ["client-gateway", "timeline-recording", "proposal-generator", "proposal-workbench", "policy-primary", "runs-history"] },
-    { title: "Editors", ids: ["config-default"] },
+    { title: "Workflow", ids: ["client-gateway", "timeline-recording", "proposal-generator", "proposal-workbench", "policy-primary", "flow-router", "flow-instructions", "adaptations", "runs-history", "flow-settings"] },
     { title: "Evidence", ids: ["state-explorer", "signals-web", "runtime-debug", "problems-view"] },
     { title: "Tools", ids: ["global-inspector", "workspace-dock", "ai-assistant"] }
   ];
@@ -121,6 +126,12 @@ export function automationWindowDescription(view: AutomationViewInstance): strin
   if (view.type === "signals") return "Browse mined state signals.";
   if (view.type === "runtime") return "Inspect live/debug execution state.";
   if (view.type === "runs") return "Inspect replay and validation history.";
+  if (view.type === "router") return "Inspect deterministic route rules and fallback.";
+  if (view.type === "subflows") return "Inspect and manage reusable Flow subflows.";
+  if (view.type === "adaptations") return "Review and promote runtime adaptations.";
+  if (view.type === "instructions") return "Manage scoped LLM instructions.";
+  if (view.type === "change-proposals") return "Review generated Flow edit proposals.";
+  if (view.type === "settings") return "Tune Flow training and approval settings.";
   if (view.type === "state") return "Reconstruct selected node state and evidence.";
   if (view.type === "clients") return "Pair remote recorder and action clients.";
   if (view.type === "problems") return "Review validation and authoring issues.";

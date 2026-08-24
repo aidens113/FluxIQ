@@ -360,13 +360,14 @@ function normalizeAutomationWorkspacePanes(
   const fromPanes = Array.isArray(candidatePanes)
     ? candidatePanes.map((item, index) => normalizePaneCandidate(item, index)).filter((item): item is AutomationWorkspacePane => Boolean(item))
     : [];
-  const sourcePanes = fromPanes.length ? fromPanes : windows
+  const mainWindows = windows
     .filter((item) => (item.area ?? "main") === "main")
     .sort((left, right) => {
       if (left.id === activeWindowId) return -1;
       if (right.id === activeWindowId) return 1;
       return (left.zIndex ?? 0) - (right.zIndex ?? 0) || left.id.localeCompare(right.id);
-    })
+    });
+  const sourcePanes = fromPanes.length ? fromPanes : mainWindows
     .map((item, index) => {
       const tabs = uniqueMainTabs(item.tabs);
       const activeViewId = tabs.includes(item.activeViewId) ? item.activeViewId : tabs[0] ?? "";
@@ -390,7 +391,7 @@ function normalizeAutomationWorkspacePanes(
   const panes = base.slice(0, count);
   const extras = base.slice(count).flatMap((item) => item.tabs);
   while (panes.length < count) {
-    const fallbackPane = fallback[0]!;
+    const fallbackPane = { id: "pane-main-1", activeViewId: "policy-primary", tabs: ["policy-primary"] };
     panes.push({ id: `pane-main-${panes.length + 1}`, activeViewId: fallbackPane.activeViewId, tabs: [...fallbackPane.tabs] });
   }
   if (extras.length && panes.length) {

@@ -7,10 +7,10 @@ import type { NodeStatePhase } from "fluxiq/automation-studio";
 import {
   automationHierarchyCategories,
   automationHierarchyCategoryLabel,
+  automationHierarchyNodeIsGeneratedFlowStructure,
   automationHierarchySignature,
   collectHierarchyDescendantIds,
-  proposalHierarchyNodes,
-  recordingHierarchyNodes,
+  flowHierarchyNodes,
   type AutomationCreatableHierarchyKind,
   type AutomationHierarchyAction,
   type AutomationHierarchyCategory,
@@ -101,6 +101,39 @@ type AutomationFlowRunState = {
   startedAt?: number;
   finishedAt?: number;
 };
+type AutomationStudioApiRequest = { endpoint: string; payload: JsonObject };
+
+export const AUTOMATION_STUDIO_PROJECT_OPEN_DETAIL_ENDPOINT_DENYLIST = [
+  "get-recording",
+  "get-runtime-session",
+  "get-runtime-session-action-log",
+  "get-normalized-timeline",
+  "get-flow",
+  "get-flow-subflow",
+  "get-flow-instruction-set",
+  "get-flow-change-proposal",
+  "get-flow-run-detail",
+  "get-flow-adaptation",
+  "list-runtime-session-events"
+] as const;
+
+export function automationStudioProjectOpenRequests(projectId: string): [AutomationStudioApiRequest] {
+  return [{ endpoint: "get-project-hierarchy", payload: { projectId } }];
+}
+
+export function automationStudioRuntimeSummaryRequests(projectId: string): [
+  AutomationStudioApiRequest,
+  AutomationStudioApiRequest,
+  AutomationStudioApiRequest,
+  AutomationStudioApiRequest
+] {
+  return [
+    { endpoint: "get-project-workspace-summary", payload: { projectId } },
+    { endpoint: "list-recordings", payload: { projectId, summaries: true } },
+    { endpoint: "list-runtime-sessions", payload: { projectId, summaries: true, limit: 25, offset: 0 } },
+    { endpoint: "list-recording-domains", payload: { projectId } }
+  ];
+}
 
 function shortAutomationId(value: string): string {
   return value.length > 18 ? `${value.slice(0, 8)}...${value.slice(-6)}` : value;
@@ -461,6 +494,10 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     { id: "proposal-generator", label: `Proposal Generator: ${selectedRecording?.metadata?.name ?? selectedRecording?.recordingId ?? "Recording"}`, type: "proposal-generator", icon: Sparkles },
     { id: "proposal-workbench", label: `Proposal: ${selectedProposal?.policy?.taskId ?? selectedProposal?.proposalId ?? "Proposal"}`, type: "proposal", icon: Sparkles },
     { id: "policy-primary", label: selectedFlow ? `Flow: ${selectedFlow.name}` : "Flow: None", type: "design", icon: GitBranch },
+    { id: "flow-router", label: "Router", type: "router", icon: GitBranch },
+    { id: "flow-instructions", label: "Instructions", type: "instructions", icon: ListChecks },
+    { id: "adaptations", label: "Adaptations", type: "adaptations", icon: FileSearch },
+    { id: "flow-settings", label: "Settings", type: "settings", icon: SlidersHorizontal },
     { id: "state-explorer", label: selectedNode?.label ? `State: ${selectedNode.label}` : "State View", type: "state", icon: ListChecks },
     { id: "runs-history", label: "Runs", type: "runs", icon: History },
     { id: "signals-web", label: "Signals: Relationship Web", type: "signals", icon: Network, state: "warning" },
@@ -468,34 +505,14 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     { id: "problems-view", label: "Problems", type: "problems", icon: AlertTriangle },
     { id: "ai-assistant", label: "AI Assistant", type: "assistant", icon: Sparkles },
     { id: "global-inspector", label: "Inspector", type: "inspector", icon: SlidersHorizontal },
-    { id: "workspace-dock", label: "Dock: Assistant / Problems / State", type: "dock", icon: ListChecks },
-    { id: "config-default", label: "Config: Default", type: "config", icon: SlidersHorizontal }
+    { id: "workspace-dock", label: "Dock: Assistant / Problems / State", type: "dock", icon: ListChecks }
   ];
-  const recordingNodes = recordingHierarchyNodes(recordings);
-  const proposalNodes = proposalHierarchyNodes(recordings, hierarchyProposals);
-  const generatedRecordingOwnedHierarchyIds = new Set([...recordingNodes, ...proposalNodes].map((node) => node.id));
+  const flowNodes = flowHierarchyNodes(projectFlows, { recordings, proposals: hierarchyProposals });
+  const generatedHierarchyIds = new Set(flowNodes.map((node) => node.id));
   const hierarchyNodes: AutomationHierarchyNode[] = [
-    ...proposalNodes,
-    ...projectFlows.map((entry: any) => ({
-      id: `flow-${entry.flow.flowId}`,
-      label: `${entry.flow.name ?? entry.flow.flowId}${entry.source === "canonical" ? "" : " (legacy)"}`,
-      kind: "flow" as const,
-      category: "flow" as const,
-      parentId: typeof entry.flow.metadata?.parentId === "string" ? entry.flow.metadata.parentId : null,
-      viewId: "policy-primary",
-      sourceId: entry.flow.flowId
-    })),
-    {
-      id: "config-default",
-      label: "Default configuration",
-      kind: "config" as const,
-      category: "config" as const,
-      parentId: null,
-      viewId: "config-default"
-    },
-    ...recordingNodes,
-    ...customHierarchyNodes.filter(isPersistableHierarchyNode)
-  ].filter((node) => generatedRecordingOwnedHierarchyIds.has(node.id) || !deletedHierarchyIds.includes(node.id));
+    ...flowNodes,
+    ...customHierarchyNodes.filter((node) => isPersistableHierarchyNode(node) && node.category === "flow")
+  ].filter((node) => !deletedHierarchyIds.includes(node.id) || (generatedHierarchyIds.has(node.id) && automationHierarchyNodeIsGeneratedFlowStructure(node)));
   const folderOptions = hierarchyNodes.filter((node) => node.kind === "folder" && node.category === hierarchyCategory);
   const viewById = new Map(viewInstances.map((view) => [view.id, view]));
   function viewWithTitleData(view: AutomationViewInstance, sourceSelection?: AutomationSelection | null): AutomationViewInstance {
@@ -515,19 +532,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     if (view.id === "proposal-workbench") return `Proposal: ${proposal?.policy?.taskId ?? proposal?.proposalId ?? "Proposal"}`;
     if (view.id === "policy-primary") return selectedFlow ? `Flow: ${selectedFlow.name}` : "Flow: None";
     if (view.id === "state-explorer") return `State: ${selectedNode?.label ?? source?.id ?? "View"}`;
-    if (view.id === "config-default") return `Config: ${configNameForSelection(source)}`;
     return view.label;
-  }
-  function configNameForSelection(source: AutomationSelection | null | undefined): string {
-    const flow = flowForSelection(source);
-    if (flow?.flowId) {
-      const generatedConfig = (projectArtifacts.configs ?? []).find((config: any) => config?.metadata?.ownerKind === "flow" && config?.metadata?.flowId === flow.flowId)
-        ?? (projectArtifacts.configs ?? []).find((config: any) => config?.configId === `flow.${flow.flowId}.config`);
-      return generatedConfig?.name ?? `${flow.name ?? flow.flowId} config`;
-    }
-    const task = taskForSelection(source);
-    if (task) return `${task.name ?? task.taskId} config`;
-    return "Default";
   }
   function flowForSelection(source: AutomationSelection | null | undefined) {
     if (source?.kind === "flow") {
@@ -591,7 +596,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     : workspacePrefs.maximizedWindowId ? workspacePrefs.windows.filter((item) => item.id === workspacePrefs.maximizedWindowId) : workspacePrefs.windows)
     .filter((item) => automationWorkspaceRegionForView(item.activeViewId) !== "bottom" && item.tabs.some((tab) => automationWorkspaceRegionForView(tab) !== "bottom"));
   const activeWindow = workspacePrefs.windows.find((item) => item.id === workspacePrefs.activeWindowId) ?? workspacePrefs.windows[0];
-  const activeViewId = activeWindow?.activeViewId ?? "policy-primary";
+  const activePane = workspacePrefs.panes.find((item) => item.id === workspacePrefs.activePaneId) ?? workspacePrefs.panes[0];
+  const activeViewId = activePane?.activeViewId ?? workspacePrefs.activeViewId ?? activeWindow?.activeViewId ?? "policy-primary";
   useEffect(() => {
     if (!activeProjectId || !selectedFlow?.flowId || selectedFlowEntry?.source !== "canonical" || selectedFlow.metadata?.summaryOnly !== true) return;
     if (activeViewId !== "policy-primary" && selection?.kind !== "flow") return;
@@ -962,12 +968,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
 
   useEffect(() => {
     if (!activeProjectId || !projectRecordings.length) return;
-    const generatedIds = new Set([...recordingHierarchyNodes(projectRecordings), ...proposalHierarchyNodes(projectRecordings, hierarchyProposals)].map((node) => node.id));
     setDeletedHierarchyIds((current) => {
-      const cleaned = current.filter((id) => !id.startsWith("recordings-client-") && !id.startsWith("proposals-client-") && !generatedIds.has(id));
+      const cleaned = current.filter((id) => !id.startsWith("recordings-client-") && !id.startsWith("proposals-client-") && !id.startsWith("proposals-recording-"));
       return cleaned.length === current.length ? current : cleaned;
     });
-  }, [activeProjectId, projectRecordings, proposals, recordingFlowProposals]);
+  }, [activeProjectId, projectRecordings]);
 
   useEffect(() => {
     if (!activeProjectId || loadedProjectHierarchyId !== activeProjectId) return;
@@ -1299,7 +1304,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
 
   async function openProject(projectId: string, options: { updateUrl?: boolean } = {}) {
     if (projectId !== activeProjectId && hasDirtyTaskGraph && !window.confirm("This Flow has unsaved whiteboard changes. Discard them and switch projects?")) return;
-    const result = await api.post<{ hierarchy: { customHierarchyNodes: AutomationHierarchyNode[]; deletedHierarchyIds: string[]; workspacePrefs?: AutomationWorkspacePrefs } }>("get-project-hierarchy", { projectId });
+    const [hierarchyRequest] = automationStudioProjectOpenRequests(projectId);
+    const result = await api.post<{ hierarchy: { customHierarchyNodes: AutomationHierarchyNode[]; deletedHierarchyIds: string[]; workspacePrefs?: AutomationWorkspacePrefs } }>(hierarchyRequest.endpoint, hierarchyRequest.payload);
     if (!result.ok || !result.payload?.hierarchy) {
       setProjectStatus(result.error ?? "Project could not be opened.");
       if (urlProjectOpenAttemptRef.current === projectId) urlProjectOpenAttemptRef.current = null;
@@ -1324,10 +1330,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
 
   async function refreshProjectRuntimeState(projectId = activeProjectId) {
     if (!projectId) return;
-    const workspaceSummaryPromise = api.post<{ summary: any }>("get-project-workspace-summary", { projectId });
-    const recordingPromise = api.post<{ recordings: any[] }>("list-recordings", { projectId, summaries: true });
-    const runtimePromise = api.post<{ runtimeSessions: any[]; page?: any }>("list-runtime-sessions", { projectId, summaries: true, limit: 25, offset: 0 });
-    const domainPromise = api.post<{ domains: any[] }>("list-recording-domains", { projectId });
+    const [workspaceSummaryRequest, recordingRequest, runtimeRequest, domainRequest] = automationStudioRuntimeSummaryRequests(projectId);
+    const workspaceSummaryPromise = api.post<{ summary: any }>(workspaceSummaryRequest.endpoint, workspaceSummaryRequest.payload);
+    const recordingPromise = api.post<{ recordings: any[] }>(recordingRequest.endpoint, recordingRequest.payload);
+    const runtimePromise = api.post<{ runtimeSessions: any[]; page?: any }>(runtimeRequest.endpoint, runtimeRequest.payload);
+    const domainPromise = api.post<{ domains: any[] }>(domainRequest.endpoint, domainRequest.payload);
     void workspaceSummaryPromise.then((result) => {
       if (!result.ok || !result.payload?.summary) return;
       const summary = result.payload.summary;
@@ -3552,11 +3559,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
             <option value="folder">Folders</option>
             <option value="recording">Recordings</option>
             <option value="proposal">Proposals</option>
-            <option value="config">Configs</option>
           </select>
         </div> : null}
         {!sidebarCollapsed ? <AutomationProjectTree
           nodes={hierarchyNodes}
+          activeViewId={activeViewId}
           selection={selection}
           recordingPrimaryKind={recordingTreePrimaryKind}
           setRecordingPrimaryKind={setRecordingTreePrimaryKind}

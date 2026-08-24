@@ -908,7 +908,7 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
   );
 }
 
-function graphSignature(nodes: Array<Node<any>>, edges: Edge[]): string {
+export function graphSignature(nodes: Array<Node<any>>, edges: Edge[]): string {
   return JSON.stringify({
     nodes: nodes.map(({ id, type, position, data }) => ({
       id,

@@ -16,12 +16,23 @@ import {
   finalizeRecordingSession,
   type AutomationStudioConfigArtifact,
   type AutomationStudioFlowArtifact,
+  type AutomationStudioAdaptationPolicy,
   type AutomationStudioFlowCatalogEntry,
+  type AutomationStudioFlowAdaptation,
+  type AutomationStudioFlowChangeProposal,
   type AutomationStudioFlowDocument,
+  type AutomationStudioFlowInstruction,
+  type AutomationStudioFlowIntervention,
   type AutomationStudioFlowMigrationLedger,
   type AutomationStudioFlowMigrationOutcome,
   type AutomationStudioFlowPublicationRecord,
+  type AutomationStudioFlowRouter,
+  type AutomationStudioFlowRunDetail,
+  type AutomationStudioFlowRunActionAttemptRecord,
+  type AutomationStudioFlowRunRecoveryRecord,
+  type AutomationStudioFlowRunSummary,
   AUTOMATION_STUDIO_FLOW_FIRST_SCHEMA_VERSION,
+  type AutomationStudioFlowSubflow,
   AutomationStudioLegacyWriteDisabledError,
   type AutomationStudioFlowMigrationRollbackPlan,
   type AutomationStudioLegacyBackup,
@@ -55,6 +66,8 @@ import {
   type StateValue,
   processRecordingDomainEvent,
   resolveAutomationStudioFlowCatalog,
+  validateAutomationStudioFlowAdaptation,
+  validateAutomationStudioFlowSubflow,
   projectPublishedFlowSnapshotToNodeDefinition,
   validateFlowComposition,
   validateAutomationStudioFlow
@@ -65,6 +78,7 @@ import type { EvidenceClaim, EvidenceFact, EvidenceObservation, SignalMiningResu
 import { normalizeRecordingTimeline, selectActionContextStateEntryIds, type NormalizationOptions, type NormalizedTimeline } from "../normalization/index.ts";
 import { runAutomationStudioGraph } from "./executor.ts";
 import { runCanonicalAutomationStudioFlow } from "./composite-executor.ts";
+import { runAutomationStudioRouter } from "./router-runtime.ts";
 import type { AutomationStudioNativeNodeRuntime } from "./native-node-runtime.ts";
 import { finalizeRecordingStateLinks } from "./state-linker.ts";
 import {
@@ -215,6 +229,176 @@ type AutomationStudioProjectIndex = {
 type RecordingIndex = {
   recordings: { recordingId: string; taskId?: string; startedAt: number; endedAt?: number; updatedAt: number; eventCount?: number; noteCount?: number }[];
   normalizedTimelines: { normalizedTimelineId: string; recordingId: string; generatedAt: number }[];
+};
+
+export type AutomationStudioSubflowSummary = {
+  subflowId: string;
+  flowId: string;
+  projectId: string;
+  name: string;
+  role: AutomationStudioFlowSubflow["role"];
+  status: AutomationStudioFlowSubflow["status"];
+  updatedAt: number;
+};
+
+export type AutomationStudioInstructionSummary = {
+  instructionId: string;
+  flowId?: string;
+  projectId: string;
+  subflowId?: string;
+  title: string;
+  scopeKind: AutomationStudioFlowInstruction["scope"]["kind"];
+  status: AutomationStudioFlowInstruction["status"];
+  priority: number;
+  updatedAt: number;
+};
+
+export type AutomationStudioChangeProposalSummary = {
+  proposalId: string;
+  flowId: string;
+  projectId: string;
+  subflowId?: string;
+  mode: AutomationStudioFlowChangeProposal["mode"];
+  status: AutomationStudioFlowChangeProposal["status"];
+  riskLevel: AutomationStudioFlowChangeProposal["riskLevel"];
+  patchCount: number;
+  updatedAt: number;
+};
+
+export type AutomationStudioAdaptationSummary = {
+  adaptationId: string;
+  flowId: string;
+  projectId: string;
+  subflowId?: string;
+  status: AutomationStudioFlowAdaptation["status"];
+  riskLevel: AutomationStudioFlowAdaptation["riskLevel"];
+  trigger: string;
+  updatedAt: number;
+};
+
+export type AutomationStudioRouterSummary = {
+  routerId: string;
+  flowId: string;
+  projectId: string;
+  name: string;
+  status: AutomationStudioFlowRouter["status"];
+  ruleCount: number;
+  updatedAt: number;
+};
+
+export type AutomationStudioAdaptationPolicySummary = {
+  policyId: string;
+  flowId: string;
+  projectId: string;
+  subflowId?: string;
+  preset: AutomationStudioAdaptationPolicy["preset"];
+  proposalMode: AutomationStudioAdaptationPolicy["proposalMode"];
+  updatedAt: number;
+};
+
+export type AutomationStudioSubflowSummaryPage = {
+  subflows: AutomationStudioSubflowSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type AutomationStudioInstructionSummaryPage = {
+  instructions: AutomationStudioInstructionSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type AutomationStudioChangeProposalSummaryPage = {
+  changeProposals: AutomationStudioChangeProposalSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type AutomationStudioFlowRunSummaryPage = {
+  runs: AutomationStudioFlowRunSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type AutomationStudioAdaptationSummaryPage = {
+  adaptations: AutomationStudioAdaptationSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type CreateFlowSubflowInput = {
+  projectId: string;
+  flowId: string;
+  name: string;
+  description?: string;
+  role?: AutomationStudioFlowSubflow["role"];
+  graphFlowId?: string;
+  routeTags?: string[];
+};
+
+export type UpdateFlowSubflowInput = {
+  projectId: string;
+  flowId: string;
+  subflowId: string;
+  name?: string;
+  description?: string;
+  role?: AutomationStudioFlowSubflow["role"];
+  routeTags?: string[];
+  inputMapping?: AutomationStudioFlowSubflow["inputMapping"];
+  outputMapping?: AutomationStudioFlowSubflow["outputMapping"];
+  localInstructionIds?: string[];
+  proposalModeOverride?: AutomationStudioFlowSubflow["proposalModeOverride"];
+  graphFlowId?: string;
+};
+
+export type ReviewFlowAdaptationInput = {
+  projectId: string;
+  flowId: string;
+  adaptationId: string;
+  action: "approve" | "reject" | "apply" | "disable" | "revert" | "supersede" | "request_validation" | "switch_manual";
+  actorId?: string;
+  reason?: string;
+  supersededByAdaptationId?: string;
+};
+
+type FlowRouterIndex = {
+  schemaVersion: "0.1";
+  routers: AutomationStudioRouterSummary[];
+};
+
+type FlowSubflowIndex = {
+  schemaVersion: "0.1";
+  subflows: AutomationStudioSubflowSummary[];
+};
+
+type FlowInstructionIndex = {
+  schemaVersion: "0.1";
+  instructions: AutomationStudioInstructionSummary[];
+};
+
+type FlowChangeProposalIndex = {
+  schemaVersion: "0.1";
+  changeProposals: AutomationStudioChangeProposalSummary[];
+};
+
+type FlowRunIndex = {
+  schemaVersion: "0.1";
+  runs: AutomationStudioFlowRunSummary[];
+};
+
+type FlowAdaptationIndex = {
+  schemaVersion: "0.1";
+  adaptations: AutomationStudioAdaptationSummary[];
+};
+
+type FlowAdaptationPolicyIndex = {
+  schemaVersion: "0.1";
+  policies: AutomationStudioAdaptationPolicySummary[];
 };
 
 export type RecordingSummaryItem = {
@@ -2286,6 +2470,57 @@ export class AutomationStudioService {
     if (canonical?.source.mode === "code" && !verifyCodeOwnedFlowCompilation(canonical)) throw new Error("Code-owned Flow compilation is stale or invalid; execution refused.");
     const runtimeCanonical = canonical && input.projectId ? await this.materializeRecordingDerivedFlow(input.projectId, canonical) : canonical;
     const runtimeFlow = input.projectId ? await this.materializeRecordingDerivedDocument(input.projectId, session.flow) : session.flow;
+    if (input.projectId && runtimeCanonical) {
+      const router = await this.getFlowRouter(input.projectId, runtimeCanonical.flowId);
+      if (router) {
+        const subflowPage = await this.listFlowSubflowSummaries({ projectId: input.projectId, flowId: runtimeCanonical.flowId, limit: 100, offset: 0 });
+        const subflows = await Promise.all(subflowPage.subflows.map((item) => this.getFlowSubflow(input.projectId!, runtimeCanonical.flowId, item.subflowId)));
+        const route = runAutomationStudioRouter({
+          projectId: input.projectId,
+          flowId: runtimeCanonical.flowId,
+          router,
+          subflows: subflows.filter((item): item is AutomationStudioFlowSubflow => Boolean(item)),
+          inputs: graphOptions.inputs as JsonObject,
+          currentStateSummary: jsonObjectFromUnknown((graphOptions.inputs as Record<string, unknown>).state) ?? {},
+          now: () => startedAt
+        });
+        const selectedFlowId = route.selectedSubflow?.graphFlowId ?? runtimeCanonical.flowId;
+        const selectedFlow = selectedFlowId === runtimeCanonical.flowId
+          ? runtimeCanonical
+          : await this.getFlow(input.projectId, selectedFlowId).then((flow) => this.materializeRecordingDerivedFlow(input.projectId!, flow)).catch(() => runtimeCanonical);
+        const trace = route.selectedSubflow
+          ? await runCanonicalAutomationStudioFlow(selectedFlow, await this.listPublishedFlowSnapshots(), graphOptions, (await this.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`))
+          : { status: "failed" as const, startedAt, finishedAt: Date.now(), attempts: [], values: {}, effects: [], message: route.diagnostics.map((diagnostic) => diagnostic.message).join(" ") };
+        const next: AutomationStudioRuntimeSession = {
+          ...session,
+          status: trace.status,
+          startedAt: session.startedAt ?? startedAt,
+          ...(trace.finishedAt !== undefined ? { finishedAt: trace.finishedAt } : {}),
+          trace
+        };
+        await this.writeRuntimeSession(input.projectId, next);
+        await this.saveFlowRunDetail({
+          ...runtimeSessionToFlowRunDetail(next, input.projectId),
+          routeDecisions: [route.decision],
+          subflows: route.selectedSubflow ? [{
+            entryId: `subflow-entry.${next.runId}.${route.selectedSubflow.subflowId}`,
+            subflowId: route.selectedSubflow.subflowId,
+            enteredAt: startedAt,
+            ...(trace.finishedAt !== undefined ? { exitedAt: trace.finishedAt } : {}),
+            status: trace.status,
+            metadata: {
+              graphFlowId: selectedFlowId,
+              routeDecisionId: route.decision.decisionId,
+              ...(route.selectedSubflow.inputMapping?.length ? { inputMapping: route.selectedSubflow.inputMapping } : {}),
+              ...(route.selectedSubflow.outputMapping?.length ? { outputMapping: route.selectedSubflow.outputMapping } : {}),
+              ...(trace.finishedAt !== undefined ? { durationMs: trace.finishedAt - startedAt } : {}),
+              ...(trace.status !== "succeeded" && trace.message ? { failureReason: trace.message } : {})
+            }
+          }] : []
+        });
+        return next;
+      }
+    }
     const trace = runtimeCanonical
       ? await runCanonicalAutomationStudioFlow(runtimeCanonical, await this.listPublishedFlowSnapshots(), graphOptions, (await this.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`))
       : await runAutomationStudioGraph(runtimeFlow, graphOptions);
@@ -2332,6 +2567,307 @@ export class AutomationStudioService {
       limit: page.limit,
       offset: page.offset
     };
+  }
+
+  async listFlowSubflowSummaries(input: { projectId: string; flowId?: string; limit?: unknown; offset?: unknown }): Promise<AutomationStudioSubflowSummaryPage> {
+    const limit = clampInteger(input.limit, 1, 100, 25);
+    const offset = clampInteger(input.offset, 0, 1_000_000, 0);
+    const index = await this.readFlowSubflowIndex(input.projectId);
+    const scoped = (index.subflows ?? []).filter((item) => !input.flowId || item.flowId === input.flowId);
+    return { subflows: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
+  }
+
+  async listFlowInstructionSummaries(input: { projectId: string; flowId?: string; subflowId?: string; limit?: unknown; offset?: unknown }): Promise<AutomationStudioInstructionSummaryPage> {
+    const limit = clampInteger(input.limit, 1, 100, 25);
+    const offset = clampInteger(input.offset, 0, 1_000_000, 0);
+    const index = await this.readFlowInstructionIndex(input.projectId);
+    const scoped = (index.instructions ?? []).filter((item) =>
+      (!input.flowId || item.flowId === input.flowId || item.scopeKind === "global" || item.scopeKind === "project")
+      && (!input.subflowId || item.subflowId === input.subflowId || item.scopeKind === "flow" || item.scopeKind === "project" || item.scopeKind === "global")
+    );
+    return { instructions: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
+  }
+
+  async listFlowChangeProposalSummaries(input: { projectId: string; flowId?: string; subflowId?: string; limit?: unknown; offset?: unknown }): Promise<AutomationStudioChangeProposalSummaryPage> {
+    const limit = clampInteger(input.limit, 1, 100, 25);
+    const offset = clampInteger(input.offset, 0, 1_000_000, 0);
+    const index = await this.readFlowChangeProposalIndex(input.projectId);
+    const scoped = (index.changeProposals ?? []).filter((item) => (!input.flowId || item.flowId === input.flowId) && (!input.subflowId || item.subflowId === input.subflowId));
+    return { changeProposals: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
+  }
+
+  async listFlowRunSummaries(input: { projectId: string; flowId?: string; limit?: unknown; offset?: unknown }): Promise<AutomationStudioFlowRunSummaryPage> {
+    const limit = clampInteger(input.limit, 1, 100, 25);
+    const offset = clampInteger(input.offset, 0, 1_000_000, 0);
+    if (!this.projectRootDir) {
+      const index = await this.readFlowRunIndex(input.projectId);
+      const scoped = (index.runs ?? []).filter((item) => !input.flowId || item.flowId === input.flowId);
+      return { runs: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
+    }
+    await this.ensureFlowRunSummaryIndex(input.projectId);
+    return await this.listSqlJsonSummaryPage(this.flowRunSummaryRepository(input.projectId), "runs", input.flowId, limit, offset);
+  }
+
+  async listFlowAdaptationSummaries(input: { projectId: string; flowId?: string; subflowId?: string; status?: string; limit?: unknown; offset?: unknown }): Promise<AutomationStudioAdaptationSummaryPage> {
+    const limit = clampInteger(input.limit, 1, 100, 25);
+    const offset = clampInteger(input.offset, 0, 1_000_000, 0);
+    if (!this.projectRootDir) {
+      const index = await this.readFlowAdaptationIndex(input.projectId);
+      const scoped = (index.adaptations ?? []).filter((item) => (!input.flowId || item.flowId === input.flowId) && (!input.subflowId || item.subflowId === input.subflowId) && (!input.status || item.status === input.status));
+      return { adaptations: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
+    }
+    await this.ensureFlowAdaptationSummaryIndex(input.projectId);
+    return await this.listSqlJsonSummaryPage(this.flowAdaptationSummaryRepository(input.projectId), "adaptations", input.flowId, limit, offset, input.subflowId, input.status);
+  }
+
+  async getFlowRouter(projectId: string, flowId: string): Promise<AutomationStudioFlowRouter | null> {
+    await this.findProject(projectId);
+    const stored = await new ProgramJsonStore<JsonObject>(this.flowRouterFile(projectId, flowId), () => ({})).read();
+    return typeof stored.routerId === "string" ? stored as unknown as AutomationStudioFlowRouter : null;
+  }
+
+  async getFlowSubflow(projectId: string, flowId: string, subflowId: string): Promise<AutomationStudioFlowSubflow | null> {
+    await this.findProject(projectId);
+    const stored = await new ProgramJsonStore<JsonObject>(this.flowSubflowFile(projectId, flowId, subflowId), () => ({})).read();
+    return typeof stored.subflowId === "string" ? stored as unknown as AutomationStudioFlowSubflow : null;
+  }
+
+  async getFlowInstruction(projectId: string, instructionId: string): Promise<AutomationStudioFlowInstruction | null> {
+    const index = await this.readFlowInstructionIndex(projectId);
+    const summary = (index.instructions ?? []).find((item) => item.instructionId === instructionId);
+    if (!summary) return null;
+    const stored = await new ProgramJsonStore<JsonObject>(summary.flowId ? this.flowInstructionFile(projectId, summary.flowId, instructionId) : this.projectInstructionFile(projectId, instructionId), () => ({})).read();
+    return typeof stored.instructionId === "string" ? stored as unknown as AutomationStudioFlowInstruction : null;
+  }
+
+  async getFlowInstructionSet(input: { projectId: string; flowId?: string; subflowId?: string }): Promise<AutomationStudioFlowInstruction[]> {
+    const page = await this.listFlowInstructionSummaries({ ...input, limit: 100, offset: 0 });
+    const instructions = await Promise.all(page.instructions.map((item) => this.getFlowInstruction(input.projectId, item.instructionId)));
+    return instructions.filter((item): item is AutomationStudioFlowInstruction => Boolean(item));
+  }
+
+  async getFlowChangeProposal(projectId: string, flowId: string, proposalId: string): Promise<AutomationStudioFlowChangeProposal | null> {
+    await this.findProject(projectId);
+    const stored = await new ProgramJsonStore<JsonObject>(this.flowChangeProposalFile(projectId, flowId, proposalId), () => ({})).read();
+    return typeof stored.proposalId === "string" ? stored as unknown as AutomationStudioFlowChangeProposal : null;
+  }
+
+  async getFlowRunDetail(projectId: string, runId: string): Promise<AutomationStudioFlowRunDetail | null> {
+    await this.findProject(projectId);
+    const stored = await new ProgramJsonStore<JsonObject>(this.flowRunDetailFile(projectId, runId), () => ({})).read();
+    if (typeof (stored.summary as { runId?: unknown } | undefined)?.runId === "string") return stored as unknown as AutomationStudioFlowRunDetail;
+    const session = await this.getRuntimeSession(projectId, runId);
+    return session ? runtimeSessionToFlowRunDetail(session, projectId) : null;
+  }
+
+  async getFlowAdaptation(projectId: string, flowId: string, adaptationId: string): Promise<AutomationStudioFlowAdaptation | null> {
+    await this.findProject(projectId);
+    const stored = await new ProgramJsonStore<JsonObject>(this.flowAdaptationFile(projectId, flowId, adaptationId), () => ({})).read();
+    return typeof stored.adaptationId === "string" ? stored as unknown as AutomationStudioFlowAdaptation : null;
+  }
+
+  async saveFlowRouter(router: AutomationStudioFlowRouter): Promise<AutomationStudioFlowRouter> {
+    await this.ensureProjectStructure(router.projectId);
+    await new ProgramJsonStore<JsonObject>(this.flowRouterFile(router.projectId, router.flowId), () => ({})).write(router as unknown as JsonObject);
+    await this.writeFlowRouterIndex(router.projectId, (index) => ({ schemaVersion: "0.1", routers: upsertBy(index.routers ?? [], "routerId", routerSummaryFromRouter(router)) }));
+    return router;
+  }
+
+  async saveFlowSubflow(subflow: AutomationStudioFlowSubflow): Promise<AutomationStudioFlowSubflow> {
+    const validation = validateAutomationStudioFlowSubflow(subflow);
+    if (!validation.ok) throw new Error(`Invalid Automation Studio subflow: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
+    await this.ensureProjectStructure(subflow.projectId);
+    await new ProgramJsonStore<JsonObject>(this.flowSubflowFile(subflow.projectId, subflow.flowId, subflow.subflowId), () => ({})).write(subflow as unknown as JsonObject);
+    await this.writeFlowSubflowIndex(subflow.projectId, (index) => ({ schemaVersion: "0.1", subflows: upsertBy(index.subflows ?? [], "subflowId", subflowSummaryFromSubflow(subflow)) }));
+    return subflow;
+  }
+
+  async createFlowSubflow(input: CreateFlowSubflowInput): Promise<AutomationStudioFlowSubflow> {
+    const parentFlow = await this.getFlow(input.projectId, input.flowId);
+    const now = Date.now();
+    const subflowId = `subflow.${randomUUID()}`;
+    const graphFlowId = input.graphFlowId ?? `${input.flowId}.${subflowId}.graph`;
+    if (!input.graphFlowId) {
+      await this.saveFlow({
+        projectId: input.projectId,
+        flow: createBlankAutomationStudioFlowArtifact({
+          flowId: graphFlowId,
+          projectId: input.projectId,
+          name: `${input.name.trim()} Graph`,
+          scope: parentFlow.scope,
+          description: `Isolated graph for subflow ${input.name.trim()}.`,
+          origin: "manual",
+          now,
+          metadata: { parentFlowId: input.flowId, parentSubflowId: subflowId, subflowGraph: true }
+        })
+      });
+    }
+    const subflow: AutomationStudioFlowSubflow = {
+      schemaVersion: "0.1",
+      subflowId,
+      projectId: input.projectId,
+      flowId: input.flowId,
+      name: input.name.trim(),
+      ...(input.description?.trim() ? { description: input.description.trim() } : {}),
+      role: input.role ?? "utility",
+      status: "active",
+      ...(input.routeTags?.length ? { routeTags: uniqueStrings(input.routeTags.map((tag) => tag.trim()).filter(Boolean)) } : {}),
+      graphFlowId,
+      createdAt: now,
+      updatedAt: now,
+      stability: { runCount: 0, successCount: 0, failureCount: 0 }
+    };
+    return await this.saveFlowSubflow(subflow);
+  }
+
+  async updateFlowSubflow(input: UpdateFlowSubflowInput): Promise<AutomationStudioFlowSubflow> {
+    const existing = await this.getFlowSubflow(input.projectId, input.flowId, input.subflowId);
+    if (!existing) throw new Error(`Unknown Automation Studio subflow: ${input.subflowId}`);
+    const next = {
+      ...existing,
+      ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+      ...(input.description !== undefined ? input.description.trim() ? { description: input.description.trim() } : { description: undefined } : {}),
+      ...(input.role !== undefined ? { role: input.role } : {}),
+      ...(input.routeTags !== undefined ? { routeTags: uniqueStrings(input.routeTags.map((tag) => tag.trim()).filter(Boolean)) } : {}),
+      ...(input.inputMapping !== undefined ? { inputMapping: input.inputMapping } : {}),
+      ...(input.outputMapping !== undefined ? { outputMapping: input.outputMapping } : {}),
+      ...(input.localInstructionIds !== undefined ? { localInstructionIds: uniqueStrings(input.localInstructionIds.map((id) => id.trim()).filter(Boolean)) } : {}),
+      ...(input.proposalModeOverride !== undefined ? { proposalModeOverride: input.proposalModeOverride } : {}),
+      ...(input.graphFlowId !== undefined ? { graphFlowId: input.graphFlowId.trim() } : {}),
+      updatedAt: Date.now()
+    };
+    return await this.saveFlowSubflow(removeUndefinedSubflowFields(next as AutomationStudioFlowSubflow));
+  }
+
+  async renameFlowSubflow(input: { projectId: string; flowId: string; subflowId: string; name: string }): Promise<AutomationStudioFlowSubflow> {
+    return await this.updateFlowSubflow(input);
+  }
+
+  async duplicateFlowSubflow(input: { projectId: string; flowId: string; subflowId: string; name?: string }): Promise<AutomationStudioFlowSubflow> {
+    const existing = await this.getFlowSubflow(input.projectId, input.flowId, input.subflowId);
+    if (!existing) throw new Error(`Unknown Automation Studio subflow: ${input.subflowId}`);
+    const now = Date.now();
+    return await this.saveFlowSubflow({
+      ...existing,
+      subflowId: `subflow.${randomUUID()}`,
+      name: input.name?.trim() || `${existing.name} Copy`,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+      stability: { runCount: 0, successCount: 0, failureCount: 0 },
+      metadata: { ...(existing.metadata ?? {}), duplicatedFromSubflowId: existing.subflowId }
+    });
+  }
+
+  async disableFlowSubflow(input: { projectId: string; flowId: string; subflowId: string }): Promise<AutomationStudioFlowSubflow> {
+    const existing = await this.getFlowSubflow(input.projectId, input.flowId, input.subflowId);
+    if (!existing) throw new Error(`Unknown Automation Studio subflow: ${input.subflowId}`);
+    return await this.saveFlowSubflow({ ...existing, status: "disabled", updatedAt: Date.now() });
+  }
+
+  async archiveFlowSubflow(input: { projectId: string; flowId: string; subflowId: string }): Promise<AutomationStudioFlowSubflow> {
+    const existing = await this.getFlowSubflow(input.projectId, input.flowId, input.subflowId);
+    if (!existing) throw new Error(`Unknown Automation Studio subflow: ${input.subflowId}`);
+    return await this.saveFlowSubflow({ ...existing, status: "archived", updatedAt: Date.now() });
+  }
+
+  async saveFlowInstruction(projectId: string, instruction: AutomationStudioFlowInstruction): Promise<AutomationStudioFlowInstruction> {
+    const summary = instructionSummaryFromInstruction(instruction);
+    const filePath = summary.flowId ? this.flowInstructionFile(projectId, summary.flowId, instruction.instructionId) : this.projectInstructionFile(projectId, instruction.instructionId);
+    await this.ensureProjectStructure(projectId);
+    await new ProgramJsonStore<JsonObject>(filePath, () => ({})).write(instruction as unknown as JsonObject);
+    await this.writeFlowInstructionIndex(projectId, (index) => ({ schemaVersion: "0.1", instructions: upsertBy(index.instructions ?? [], "instructionId", { ...summary, projectId }) }));
+    return instruction;
+  }
+
+  async saveFlowChangeProposal(proposal: AutomationStudioFlowChangeProposal): Promise<AutomationStudioFlowChangeProposal> {
+    await this.ensureProjectStructure(proposal.projectId);
+    await new ProgramJsonStore<JsonObject>(this.flowChangeProposalFile(proposal.projectId, proposal.flowId, proposal.proposalId), () => ({})).write(proposal as unknown as JsonObject);
+    await this.writeFlowChangeProposalIndex(proposal.projectId, (index) => ({ schemaVersion: "0.1", changeProposals: upsertBy(index.changeProposals ?? [], "proposalId", changeProposalSummaryFromProposal(proposal)) }));
+    return proposal;
+  }
+
+  async saveFlowRunDetail(detail: AutomationStudioFlowRunDetail): Promise<AutomationStudioFlowRunDetail> {
+    const normalizedDetail = { ...detail, summary: flowRunSummaryWithInterventionSummaries(detail) };
+    const { projectId, runId } = normalizedDetail.summary;
+    await this.ensureProjectStructure(projectId);
+    await new ProgramJsonStore<JsonObject>(this.flowRunDetailFile(projectId, runId), () => ({})).write(normalizedDetail as unknown as JsonObject);
+    await Promise.all([
+      this.writeJsonLines(this.flowRunRouteDecisionsFile(projectId, runId), normalizedDetail.routeDecisions),
+      this.writeJsonLines(this.flowRunSubflowsFile(projectId, runId), normalizedDetail.subflows),
+      this.writeJsonLines(this.flowRunInterventionsFile(projectId, runId), normalizedDetail.interventions)
+    ]);
+    await this.writeFlowRunIndex(projectId, (index) => ({ schemaVersion: "0.1", runs: upsertBy(index.runs ?? [], "runId", normalizedDetail.summary) }));
+    if (this.projectRootDir) await this.writeFlowRunSummary(projectId, normalizedDetail.summary);
+    return normalizedDetail;
+  }
+
+  async saveFlowAdaptation(adaptation: AutomationStudioFlowAdaptation): Promise<AutomationStudioFlowAdaptation> {
+    const validation = validateAutomationStudioFlowAdaptation(adaptation);
+    if (!validation.ok) throw new Error(`Invalid Automation Studio adaptation: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
+    if (adaptationRequiresChangeProposal(adaptation) && !adaptation.proposalId) {
+      throw new Error("Structural adaptation edits must be routed through a change proposal before they can be saved.");
+    }
+    if (adaptation.proposalId && !await this.getFlowChangeProposal(adaptation.projectId, adaptation.flowId, adaptation.proposalId)) {
+      throw new Error(`Unknown change proposal for adaptation: ${adaptation.proposalId}`);
+    }
+    await this.ensureProjectStructure(adaptation.projectId);
+    await new ProgramJsonStore<JsonObject>(this.flowAdaptationFile(adaptation.projectId, adaptation.flowId, adaptation.adaptationId), () => ({})).write(adaptation as unknown as JsonObject);
+    await this.writeFlowAdaptationIndex(adaptation.projectId, (index) => ({ schemaVersion: "0.1", adaptations: upsertBy(index.adaptations ?? [], "adaptationId", adaptationSummaryFromAdaptation(adaptation)) }));
+    if (this.projectRootDir) await this.writeFlowAdaptationSummary(adaptation.projectId, adaptationSummaryFromAdaptation(adaptation));
+    return adaptation;
+  }
+
+  async reviewFlowAdaptation(input: ReviewFlowAdaptationInput): Promise<AutomationStudioFlowAdaptation> {
+    const adaptation = await this.getFlowAdaptation(input.projectId, input.flowId, input.adaptationId);
+    if (!adaptation) throw new Error(`Unknown adaptation: ${input.adaptationId}`);
+    const now = Date.now();
+    const metadata = {
+      ...(adaptation.metadata ?? {}),
+      review: {
+        ...((adaptation.metadata?.review && typeof adaptation.metadata.review === "object" && !Array.isArray(adaptation.metadata.review)) ? adaptation.metadata.review as JsonObject : {}),
+        lastAction: input.action,
+        reviewedAt: now,
+        ...(input.actorId ? { actorId: input.actorId } : {}),
+        ...(input.reason ? { reason: input.reason } : {})
+      },
+      validationCounts: adaptationValidationCounts(adaptation),
+      confidenceScore: adaptationConfidenceScore(adaptation)
+    } as JsonObject;
+    let next: AutomationStudioFlowAdaptation = { ...adaptation, updatedAt: now, metadata };
+    if (input.action === "approve") next = { ...next, status: "validated" };
+    if (input.action === "reject") next = { ...next, status: "rejected" };
+    if (input.action === "disable") next = { ...next, status: "disabled" };
+    if (input.action === "request_validation") next = { ...next, status: "testing" };
+    if (input.action === "switch_manual") next = { ...next, status: "proposed", metadata: { ...metadata, proposalModeOverride: "manual" } };
+    if (input.action === "supersede") next = { ...next, status: "superseded", metadata: { ...metadata, supersededByAdaptationId: input.supersededByAdaptationId ?? "" } };
+    if (input.action === "revert") next = { ...next, status: "reverted", metadata: { ...metadata, revertedAt: now, revertedBy: input.actorId ?? "unknown" } };
+    if (input.action === "apply") {
+      const gates = evaluateFlowAdaptationPromotionGates(next);
+      if (!gates.ok) throw new Error(`Adaptation cannot be applied: ${gates.issues.join("; ")}`);
+      next = {
+        ...next,
+        status: "applied",
+        appliedTo: next.patch.flatMap((patch) => patch.targetId ? [{ kind: appliedTargetKindForPatch(patch.kind), id: patch.targetId }] : []),
+        metadata: {
+          ...metadata,
+          applicationRecord: {
+            appliedAt: now,
+            appliedBy: input.actorId ?? "runtime",
+            reversible: true,
+            patches: next.patch
+          }
+        }
+      };
+    }
+    return await this.saveFlowAdaptation(next);
+  }
+
+  async saveFlowAdaptationPolicy(projectId: string, policy: AutomationStudioAdaptationPolicy): Promise<AutomationStudioAdaptationPolicy> {
+    await this.ensureProjectStructure(projectId);
+    await new ProgramJsonStore<JsonObject>(this.flowAdaptationPolicyFile(projectId, policy.scope.flowId, policy.policyId), () => ({})).write(policy as unknown as JsonObject);
+    await this.writeFlowAdaptationPolicyIndex(projectId, (index) => ({ schemaVersion: "0.1", policies: upsertBy(index.policies ?? [], "policyId", adaptationPolicySummaryFromPolicy(projectId, policy)) }));
+    return policy;
   }
 
   private validateRecordingCandidate(input: { candidate: AutomationStudioRecordingMapperCandidate; actionEntryId: string; sourceEntryId: string; recordingId: string; domainId: string; stateLink?: RecordingFlowActionCandidate["stateLink"]; mapperOutputIds?: string[] }): RecordingFlowActionCandidate {
@@ -2857,6 +3393,76 @@ export class AutomationStudioService {
     return await new ProgramJsonStore<AutomationStudioFlowSummaryIndex>(this.projectFile(projectId, "indexes", "flows.json"), emptyFlowSummaryIndex).update(mutator);
   }
 
+  private async readFlowRouterIndex(projectId: string): Promise<FlowRouterIndex> {
+    await this.findProject(projectId);
+    return await new ProgramJsonStore<FlowRouterIndex>(this.flowRouterIndexFile(projectId), emptyFlowRouterIndex).read();
+  }
+
+  private async writeFlowRouterIndex(projectId: string, mutator: (index: FlowRouterIndex) => FlowRouterIndex): Promise<FlowRouterIndex> {
+    await this.findProject(projectId);
+    return await new ProgramJsonStore<FlowRouterIndex>(this.flowRouterIndexFile(projectId), emptyFlowRouterIndex).update((index) => sortFlowRouterIndex(mutator(index)));
+  }
+
+  private async readFlowSubflowIndex(projectId: string): Promise<FlowSubflowIndex> {
+    await this.findProject(projectId);
+    return await new ProgramJsonStore<FlowSubflowIndex>(this.flowSubflowIndexFile(projectId), emptyFlowSubflowIndex).read();
+  }
+
+  private async writeFlowSubflowIndex(projectId: string, mutator: (index: FlowSubflowIndex) => FlowSubflowIndex): Promise<FlowSubflowIndex> {
+    await this.findProject(projectId);
+    return await new ProgramJsonStore<FlowSubflowIndex>(this.flowSubflowIndexFile(projectId), emptyFlowSubflowIndex).update((index) => sortFlowSubflowIndex(mutator(index)));
+  }
+
+  private async readFlowInstructionIndex(projectId: string): Promise<FlowInstructionIndex> {
+    await this.findProject(projectId);
+    return await new ProgramJsonStore<FlowInstructionIndex>(this.flowInstructionIndexFile(projectId), emptyFlowInstructionIndex).read();
+  }
+
+  private async writeFlowInstructionIndex(projectId: string, mutator: (index: FlowInstructionIndex) => FlowInstructionIndex): Promise<FlowInstructionIndex> {
+    await this.findProject(projectId);
+    return await new ProgramJsonStore<FlowInstructionIndex>(this.flowInstructionIndexFile(projectId), emptyFlowInstructionIndex).update((index) => sortFlowInstructionIndex(mutator(index)));
+  }
+
+  private async readFlowChangeProposalIndex(projectId: string): Promise<FlowChangeProposalIndex> {
+    await this.findProject(projectId);
+    return await new ProgramJsonStore<FlowChangeProposalIndex>(this.flowChangeProposalIndexFile(projectId), emptyFlowChangeProposalIndex).read();
+  }
+
+  private async writeFlowChangeProposalIndex(projectId: string, mutator: (index: FlowChangeProposalIndex) => FlowChangeProposalIndex): Promise<FlowChangeProposalIndex> {
+    await this.findProject(projectId);
+    return await new ProgramJsonStore<FlowChangeProposalIndex>(this.flowChangeProposalIndexFile(projectId), emptyFlowChangeProposalIndex).update((index) => sortFlowChangeProposalIndex(mutator(index)));
+  }
+
+  private async readFlowRunIndex(projectId: string): Promise<FlowRunIndex> {
+    await this.findProject(projectId);
+    return await new ProgramJsonStore<FlowRunIndex>(this.flowRunIndexFile(projectId), emptyFlowRunIndex).read();
+  }
+
+  private async writeFlowRunIndex(projectId: string, mutator: (index: FlowRunIndex) => FlowRunIndex): Promise<FlowRunIndex> {
+    await this.findProject(projectId);
+    return await new ProgramJsonStore<FlowRunIndex>(this.flowRunIndexFile(projectId), emptyFlowRunIndex).update((index) => sortFlowRunIndex(mutator(index)));
+  }
+
+  private async readFlowAdaptationIndex(projectId: string): Promise<FlowAdaptationIndex> {
+    await this.findProject(projectId);
+    return await new ProgramJsonStore<FlowAdaptationIndex>(this.flowAdaptationIndexFile(projectId), emptyFlowAdaptationIndex).read();
+  }
+
+  private async writeFlowAdaptationIndex(projectId: string, mutator: (index: FlowAdaptationIndex) => FlowAdaptationIndex): Promise<FlowAdaptationIndex> {
+    await this.findProject(projectId);
+    return await new ProgramJsonStore<FlowAdaptationIndex>(this.flowAdaptationIndexFile(projectId), emptyFlowAdaptationIndex).update((index) => sortFlowAdaptationIndex(mutator(index)));
+  }
+
+  private async readFlowAdaptationPolicyIndex(projectId: string): Promise<FlowAdaptationPolicyIndex> {
+    await this.findProject(projectId);
+    return await new ProgramJsonStore<FlowAdaptationPolicyIndex>(this.flowAdaptationPolicyIndexFile(projectId), emptyFlowAdaptationPolicyIndex).read();
+  }
+
+  private async writeFlowAdaptationPolicyIndex(projectId: string, mutator: (index: FlowAdaptationPolicyIndex) => FlowAdaptationPolicyIndex): Promise<FlowAdaptationPolicyIndex> {
+    await this.findProject(projectId);
+    return await new ProgramJsonStore<FlowAdaptationPolicyIndex>(this.flowAdaptationPolicyIndexFile(projectId), emptyFlowAdaptationPolicyIndex).update((index) => sortFlowAdaptationPolicyIndex(mutator(index)));
+  }
+
   private async readRuntimeIndex(projectId: string): Promise<RuntimeIndex> {
     await this.findProject(projectId);
     return await new ProgramJsonStore<RuntimeIndex>(this.projectFile(projectId, "runtime", "indexes", "sessions.json"), () => ({ sessions: [] })).read();
@@ -2864,6 +3470,14 @@ export class AutomationStudioService {
 
   private runtimeSummaryRepository(projectId: string): SQLiteRepository<JsonObject> {
     return new SQLiteRepository<JsonObject>({ rootDir: this.projectFile(projectId, "runtime", "sqlite"), kind: "runtime.sessions", layoutVersion: 1 });
+  }
+
+  private flowRunSummaryRepository(projectId: string): SQLiteRepository<JsonObject> {
+    return new SQLiteRepository<JsonObject>({ rootDir: this.projectFile(projectId, "runtime", "sqlite"), kind: "flow.runs", layoutVersion: 1 });
+  }
+
+  private flowAdaptationSummaryRepository(projectId: string): SQLiteRepository<JsonObject> {
+    return new SQLiteRepository<JsonObject>({ rootDir: this.projectFile(projectId, "runtime", "sqlite"), kind: "flow.adaptations", layoutVersion: 1 });
   }
 
   private async ensureRuntimeSummaryIndex(projectId: string): Promise<void> {
@@ -2901,6 +3515,7 @@ export class AutomationStudioService {
       })
     }));
     await this.writeRuntimeSummary(projectId, session);
+    await this.saveFlowRunDetail(runtimeSessionToFlowRunDetail(session, projectId));
   }
 
   private async writeRuntimeSummary(projectId: string, session: AutomationStudioRuntimeSession): Promise<void> {
@@ -2912,6 +3527,118 @@ export class AutomationStudioService {
       data: summary as unknown as JsonObject,
       nowMs: summary.updatedAt
     }));
+  }
+
+  private async ensureFlowRunSummaryIndex(projectId: string): Promise<void> {
+    await this.findProject(projectId);
+    if (!this.projectRootDir) return;
+    const index = await this.readFlowRunIndex(projectId).catch(emptyFlowRunIndex);
+    if (!(index.runs ?? []).length) {
+      const sessions = await this.listRuntimeSessions(projectId).catch(() => []);
+      for (const session of sessions) await this.saveFlowRunDetail(runtimeSessionToFlowRunDetail(session, projectId));
+      await this.flowRunSummaryRepository(projectId).listPage({}, { limit: 1, offset: 0 }).catch(() => undefined);
+      return;
+    }
+    const repository = this.flowRunSummaryRepository(projectId);
+    const page = await repository.listPage({}, { limit: 1, offset: 0 });
+    if (page.total >= (index.runs ?? []).length) return;
+    for (const summary of index.runs ?? []) await this.writeFlowRunSummary(projectId, summary);
+  }
+
+  private async writeFlowRunSummary(projectId: string, summary: AutomationStudioFlowRunSummary): Promise<void> {
+    if (!this.projectRootDir) return;
+    await this.flowRunSummaryRepository(projectId).put(createRecord({
+      id: summary.runId,
+      kind: "flow.runs",
+      data: summary as unknown as JsonObject,
+      nowMs: summary.updatedAt
+    }));
+  }
+
+  private async ensureFlowAdaptationSummaryIndex(projectId: string): Promise<void> {
+    await this.findProject(projectId);
+    if (!this.projectRootDir) return;
+    const index = await this.readFlowAdaptationIndex(projectId).catch(emptyFlowAdaptationIndex);
+    if (!(index.adaptations ?? []).length) {
+      await this.flowAdaptationSummaryRepository(projectId).listPage({}, { limit: 1, offset: 0 }).catch(() => undefined);
+      return;
+    }
+    const repository = this.flowAdaptationSummaryRepository(projectId);
+    const page = await repository.listPage({}, { limit: 1, offset: 0 });
+    if (page.total >= (index.adaptations ?? []).length) return;
+    for (const summary of index.adaptations ?? []) await this.writeFlowAdaptationSummary(projectId, summary);
+  }
+
+  private async writeFlowAdaptationSummary(projectId: string, summary: AutomationStudioAdaptationSummary): Promise<void> {
+    if (!this.projectRootDir) return;
+    await this.flowAdaptationSummaryRepository(projectId).put(createRecord({
+      id: summary.adaptationId,
+      kind: "flow.adaptations",
+      data: summary as unknown as JsonObject,
+      nowMs: summary.updatedAt
+    }));
+  }
+
+  private async listSqlJsonSummaryPage(
+    repository: SQLiteRepository<JsonObject>,
+    field: "runs",
+    flowId: string | undefined,
+    limit: number,
+    offset: number
+  ): Promise<AutomationStudioFlowRunSummaryPage>;
+  private async listSqlJsonSummaryPage(
+    repository: SQLiteRepository<JsonObject>,
+    field: "adaptations",
+    flowId: string | undefined,
+    limit: number,
+    offset: number,
+    subflowId?: string,
+    status?: string
+  ): Promise<AutomationStudioAdaptationSummaryPage>;
+  private async listSqlJsonSummaryPage(
+    repository: SQLiteRepository<JsonObject>,
+    field: "runs" | "adaptations",
+    flowId: string | undefined,
+    limit: number,
+    offset: number,
+    subflowId?: string,
+    status?: string
+  ): Promise<AutomationStudioFlowRunSummaryPage | AutomationStudioAdaptationSummaryPage> {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    if (flowId) {
+      clauses.push("json_extract(data, '$.flowId') = ?");
+      params.push(flowId);
+    }
+    if (subflowId) {
+      clauses.push("json_extract(data, '$.subflowId') = ?");
+      params.push(subflowId);
+    }
+    if (status) {
+      clauses.push("json_extract(data, '$.status') = ?");
+      params.push(status);
+    }
+    const where = clauses.length ? `where ${clauses.join(" and ")}` : "";
+    const result = await repository.transaction({}, async (transaction) => {
+      const totalRow = await transaction.get<{ total: number }>(`select count(*) as total from ${repository.tableName} ${where}`, params);
+      const rows = await transaction.all<{ data: string }>(
+        `select data from ${repository.tableName} ${where} order by updated_at_ms desc, id asc limit ? offset ?`,
+        [...params, limit, offset]
+      );
+      return {
+        total: totalRow?.total ?? 0,
+        items: rows.map((row) => JSON.parse(row.data) as unknown)
+      };
+    });
+    return field === "runs"
+      ? { runs: result.items as unknown as AutomationStudioFlowRunSummary[], total: result.total, limit, offset }
+      : { adaptations: result.items as unknown as AutomationStudioAdaptationSummary[], total: result.total, limit, offset };
+  }
+
+  private async writeJsonLines(filePath: string, rows: unknown[]): Promise<void> {
+    if (!this.projectRootDir) return;
+    await mkdir(path.dirname(filePath), { recursive: true });
+    await writeFile(filePath, rows.map((row) => JSON.stringify(row)).join("\n"), "utf8");
   }
 
   private pipelineFolder(kind: PipelineArtifactKind): string {
@@ -2937,6 +3664,98 @@ export class AutomationStudioService {
 
   private flowFile(projectId: string, flowId: string): string {
     return path.join(this.flowDirectory(projectId, flowId), "flow.json");
+  }
+
+  private flowRouterIndexFile(projectId: string): string {
+    return this.projectFile(projectId, "indexes", "routers.json");
+  }
+
+  private flowSubflowIndexFile(projectId: string): string {
+    return this.projectFile(projectId, "indexes", "subflows.json");
+  }
+
+  private flowInstructionIndexFile(projectId: string): string {
+    return this.projectFile(projectId, "indexes", "instructions.json");
+  }
+
+  private flowChangeProposalIndexFile(projectId: string): string {
+    return this.projectFile(projectId, "indexes", "change-proposals.json");
+  }
+
+  private flowRunIndexFile(projectId: string): string {
+    return this.projectFile(projectId, "indexes", "runs.json");
+  }
+
+  private flowAdaptationIndexFile(projectId: string): string {
+    return this.projectFile(projectId, "indexes", "adaptations.json");
+  }
+
+  private flowAdaptationPolicyIndexFile(projectId: string): string {
+    return this.projectFile(projectId, "indexes", "adaptation-policies.json");
+  }
+
+  private flowRouterFile(projectId: string, flowId: string): string {
+    return path.join(this.flowDirectory(projectId, flowId), "router.json");
+  }
+
+  private flowSubflowDirectory(projectId: string, flowId: string, subflowId: string): string {
+    return path.join(this.flowDirectory(projectId, flowId), "subflows", safeSegment(subflowId));
+  }
+
+  private flowSubflowFile(projectId: string, flowId: string, subflowId: string): string {
+    return path.join(this.flowSubflowDirectory(projectId, flowId, subflowId), "subflow.json");
+  }
+
+  private flowInstructionDirectory(projectId: string, flowId: string): string {
+    return path.join(this.flowDirectory(projectId, flowId), "instructions");
+  }
+
+  private flowInstructionFile(projectId: string, flowId: string, instructionId: string): string {
+    return path.join(this.flowInstructionDirectory(projectId, flowId), `${safeSegment(instructionId)}.json`);
+  }
+
+  private projectInstructionFile(projectId: string, instructionId: string): string {
+    return this.projectFile(projectId, "instructions", `${safeSegment(instructionId)}.json`);
+  }
+
+  private flowChangeProposalDirectory(projectId: string, flowId: string, proposalId: string): string {
+    return path.join(this.flowDirectory(projectId, flowId), "change-proposals", safeSegment(proposalId));
+  }
+
+  private flowChangeProposalFile(projectId: string, flowId: string, proposalId: string): string {
+    return path.join(this.flowChangeProposalDirectory(projectId, flowId, proposalId), "proposal.json");
+  }
+
+  private flowAdaptationDirectory(projectId: string, flowId: string, adaptationId: string): string {
+    return path.join(this.flowDirectory(projectId, flowId), "adaptations", safeSegment(adaptationId));
+  }
+
+  private flowAdaptationFile(projectId: string, flowId: string, adaptationId: string): string {
+    return path.join(this.flowAdaptationDirectory(projectId, flowId, adaptationId), "adaptation.json");
+  }
+
+  private flowAdaptationPolicyFile(projectId: string, flowId: string, policyId: string): string {
+    return path.join(this.flowDirectory(projectId, flowId), "adaptation-policies", `${safeSegment(policyId)}.json`);
+  }
+
+  private flowRunDirectory(projectId: string, runId: string): string {
+    return this.projectFile(projectId, "runtime", "runs", safeSegment(runId));
+  }
+
+  private flowRunDetailFile(projectId: string, runId: string): string {
+    return path.join(this.flowRunDirectory(projectId, runId), "run.json");
+  }
+
+  private flowRunRouteDecisionsFile(projectId: string, runId: string): string {
+    return path.join(this.flowRunDirectory(projectId, runId), "route-decisions.jsonl");
+  }
+
+  private flowRunSubflowsFile(projectId: string, runId: string): string {
+    return path.join(this.flowRunDirectory(projectId, runId), "subflows.jsonl");
+  }
+
+  private flowRunInterventionsFile(projectId: string, runId: string): string {
+    return path.join(this.flowRunDirectory(projectId, runId), "interventions.jsonl");
   }
 
   private recordingTimelineFile(projectId: string, recordingId: string): string {
@@ -3976,6 +4795,192 @@ function upsertBy<TItem, TKey extends keyof TItem>(items: TItem[], key: TKey, it
   const index = items.findIndex((candidate) => candidate[key] === item[key]);
   if (index < 0) return [item, ...items];
   return items.map((candidate, candidateIndex) => candidateIndex === index ? item : candidate);
+}
+
+function emptyFlowRouterIndex(): FlowRouterIndex {
+  return { schemaVersion: "0.1", routers: [] };
+}
+
+function emptyFlowSubflowIndex(): FlowSubflowIndex {
+  return { schemaVersion: "0.1", subflows: [] };
+}
+
+function emptyFlowInstructionIndex(): FlowInstructionIndex {
+  return { schemaVersion: "0.1", instructions: [] };
+}
+
+function emptyFlowChangeProposalIndex(): FlowChangeProposalIndex {
+  return { schemaVersion: "0.1", changeProposals: [] };
+}
+
+function emptyFlowRunIndex(): FlowRunIndex {
+  return { schemaVersion: "0.1", runs: [] };
+}
+
+function emptyFlowAdaptationIndex(): FlowAdaptationIndex {
+  return { schemaVersion: "0.1", adaptations: [] };
+}
+
+function emptyFlowAdaptationPolicyIndex(): FlowAdaptationPolicyIndex {
+  return { schemaVersion: "0.1", policies: [] };
+}
+
+function sortFlowRouterIndex(index: FlowRouterIndex): FlowRouterIndex {
+  return { schemaVersion: "0.1", routers: [...(index.routers ?? [])].sort(compareSummaryByUpdatedAtThenId("routerId")) };
+}
+
+function sortFlowSubflowIndex(index: FlowSubflowIndex): FlowSubflowIndex {
+  return { schemaVersion: "0.1", subflows: [...(index.subflows ?? [])].sort(compareSummaryByUpdatedAtThenId("subflowId")) };
+}
+
+function sortFlowInstructionIndex(index: FlowInstructionIndex): FlowInstructionIndex {
+  return { schemaVersion: "0.1", instructions: [...(index.instructions ?? [])].sort(compareSummaryByUpdatedAtThenId("instructionId")) };
+}
+
+function sortFlowChangeProposalIndex(index: FlowChangeProposalIndex): FlowChangeProposalIndex {
+  return { schemaVersion: "0.1", changeProposals: [...(index.changeProposals ?? [])].sort(compareSummaryByUpdatedAtThenId("proposalId")) };
+}
+
+function sortFlowRunIndex(index: FlowRunIndex): FlowRunIndex {
+  return { schemaVersion: "0.1", runs: [...(index.runs ?? [])].sort(compareSummaryByUpdatedAtThenId("runId")) };
+}
+
+function sortFlowAdaptationIndex(index: FlowAdaptationIndex): FlowAdaptationIndex {
+  return { schemaVersion: "0.1", adaptations: [...(index.adaptations ?? [])].sort(compareSummaryByUpdatedAtThenId("adaptationId")) };
+}
+
+function sortFlowAdaptationPolicyIndex(index: FlowAdaptationPolicyIndex): FlowAdaptationPolicyIndex {
+  return { schemaVersion: "0.1", policies: [...(index.policies ?? [])].sort(compareSummaryByUpdatedAtThenId("policyId")) };
+}
+
+function compareSummaryByUpdatedAtThenId<TItem extends { updatedAt: number }>(idKey: keyof TItem): (left: TItem, right: TItem) => number {
+  return (left, right) => (right.updatedAt - left.updatedAt) || String(left[idKey]).localeCompare(String(right[idKey]));
+}
+
+function routerSummaryFromRouter(router: AutomationStudioFlowRouter): AutomationStudioRouterSummary {
+  return {
+    routerId: router.routerId,
+    flowId: router.flowId,
+    projectId: router.projectId,
+    name: router.name,
+    status: router.status,
+    ruleCount: router.rules.length,
+    updatedAt: router.updatedAt
+  };
+}
+
+function subflowSummaryFromSubflow(subflow: AutomationStudioFlowSubflow): AutomationStudioSubflowSummary {
+  return {
+    subflowId: subflow.subflowId,
+    flowId: subflow.flowId,
+    projectId: subflow.projectId,
+    name: subflow.name,
+    role: subflow.role,
+    status: subflow.status,
+    updatedAt: subflow.updatedAt
+  };
+}
+
+function removeUndefinedSubflowFields(subflow: AutomationStudioFlowSubflow): AutomationStudioFlowSubflow {
+  return Object.fromEntries(Object.entries(subflow).filter(([, value]) => value !== undefined)) as unknown as AutomationStudioFlowSubflow;
+}
+
+function instructionSummaryFromInstruction(instruction: AutomationStudioFlowInstruction): AutomationStudioInstructionSummary {
+  const scope = instruction.scope;
+  return {
+    instructionId: instruction.instructionId,
+    ...(scope.kind !== "global" && "projectId" in scope ? { projectId: scope.projectId } : { projectId: "global" }),
+    ...(scope.kind !== "global" && "flowId" in scope ? { flowId: scope.flowId } : {}),
+    ...(scope.kind !== "global" && "subflowId" in scope && scope.subflowId ? { subflowId: scope.subflowId } : {}),
+    title: instruction.title,
+    scopeKind: scope.kind,
+    status: instruction.status,
+    priority: instruction.priority,
+    updatedAt: instruction.updatedAt
+  };
+}
+
+function changeProposalSummaryFromProposal(proposal: AutomationStudioFlowChangeProposal): AutomationStudioChangeProposalSummary {
+  return {
+    proposalId: proposal.proposalId,
+    flowId: proposal.flowId,
+    projectId: proposal.projectId,
+    ...(proposal.subflowId ? { subflowId: proposal.subflowId } : {}),
+    mode: proposal.mode,
+    status: proposal.status,
+    riskLevel: proposal.riskLevel,
+    patchCount: proposal.patches.length,
+    updatedAt: proposal.updatedAt
+  };
+}
+
+function adaptationSummaryFromAdaptation(adaptation: AutomationStudioFlowAdaptation): AutomationStudioAdaptationSummary {
+  return {
+    adaptationId: adaptation.adaptationId,
+    flowId: adaptation.flowId,
+    projectId: adaptation.projectId,
+    ...(adaptation.subflowId ? { subflowId: adaptation.subflowId } : {}),
+    status: adaptation.status,
+    riskLevel: adaptation.riskLevel,
+    trigger: adaptation.trigger,
+    updatedAt: adaptation.updatedAt
+  };
+}
+
+function adaptationRequiresChangeProposal(adaptation: AutomationStudioFlowAdaptation): boolean {
+  return adaptation.patch.some((patch) => patch.kind === "create_subflow" || patch.kind === "edit_subflow" || patch.kind === "edit_router" || patch.kind === "edit_recovery");
+}
+
+function evaluateFlowAdaptationPromotionGates(adaptation: AutomationStudioFlowAdaptation): { ok: boolean; issues: string[] } {
+  const counts = adaptationValidationCounts(adaptation);
+  const issues: string[] = [];
+  if (counts.succeeded < 1) issues.push("at least one successful validation is required");
+  if (counts.failed > 0 && counts.succeeded === 0) issues.push("recent failures exist without a successful validation");
+  if (adaptation.riskLevel === "destructive") issues.push("destructive adaptations require manual proposal review");
+  if (adaptation.status === "disabled") issues.push("disabled adaptations cannot be applied");
+  if (adaptation.status === "rejected") issues.push("rejected adaptations cannot be applied");
+  if (adaptationRequiresChangeProposal(adaptation) && !adaptation.proposalId) issues.push("structural adaptations require a linked change proposal");
+  for (const patch of adaptation.patch) {
+    if (patch.kind !== "create_subflow" && !patch.targetId?.trim()) issues.push(`patch ${patch.kind} is missing a target`);
+  }
+  return { ok: issues.length === 0, issues };
+}
+
+function adaptationValidationCounts(adaptation: AutomationStudioFlowAdaptation): { succeeded: number; failed: number; total: number } {
+  const results = adaptation.validationResults ?? [];
+  return {
+    succeeded: results.filter((result) => result.status === "succeeded").length,
+    failed: results.filter((result) => result.status === "failed").length,
+    total: results.length
+  };
+}
+
+function adaptationConfidenceScore(adaptation: AutomationStudioFlowAdaptation): number {
+  const counts = adaptationValidationCounts(adaptation);
+  if (!counts.total) return 0;
+  const riskPenalty = adaptation.riskLevel === "low" ? 0 : adaptation.riskLevel === "medium" ? 0.1 : adaptation.riskLevel === "high" ? 0.25 : 0.5;
+  return Math.max(0, Math.min(1, counts.succeeded / counts.total - riskPenalty));
+}
+
+function appliedTargetKindForPatch(kind: AutomationStudioFlowAdaptation["patch"][number]["kind"]): NonNullable<AutomationStudioFlowAdaptation["appliedTo"]>[number]["kind"] {
+  if (kind === "edit_router") return "router";
+  if (kind === "create_subflow" || kind === "edit_subflow") return "subflow";
+  if (kind === "edit_expectation") return "expectation";
+  if (kind === "edit_action_target") return "action_target";
+  if (kind === "edit_instruction") return "instruction";
+  return "instruction";
+}
+
+function adaptationPolicySummaryFromPolicy(projectId: string, policy: AutomationStudioAdaptationPolicy): AutomationStudioAdaptationPolicySummary {
+  return {
+    policyId: policy.policyId,
+    projectId,
+    flowId: policy.scope.flowId,
+    ...(policy.scope.kind === "subflow" ? { subflowId: policy.scope.subflowId } : {}),
+    preset: policy.preset,
+    proposalMode: policy.proposalMode,
+    updatedAt: policy.updatedAt
+  };
 }
 
 function recordingSummaryFromSession(recording: RecordingSession, projectId: string): RecordingSummaryItem {
@@ -5263,6 +6268,178 @@ function runtimeSummaryFromSession(session: AutomationStudioRuntimeSession): Aut
     effectCount: session.trace?.effects?.length ?? 0,
     updatedAt
   };
+}
+
+function flowRunSummaryWithInterventionSummaries(detail: AutomationStudioFlowRunDetail): AutomationStudioFlowRunSummary {
+  type TokenUsageSummary = NonNullable<AutomationStudioFlowRunSummary["tokenUsage"]>;
+  const interventionSummaries = (detail.interventions ?? []).map((intervention) => ({
+    interventionId: intervention.interventionId,
+    kind: intervention.kind,
+    reason: intervention.reason,
+    ...(intervention.promptVersion ? { promptVersion: intervention.promptVersion } : {}),
+    ...(intervention.provider ? { provider: intervention.provider } : {}),
+    ...(intervention.model ? { model: intervention.model } : {}),
+    ...(intervention.tokenUsage ? { tokenUsage: intervention.tokenUsage } : {})
+  }));
+  const tokenUsage: TokenUsageSummary = interventionSummaries.length ? interventionSummaries.reduce<TokenUsageSummary>((sum, intervention) => ({
+    inputTokens: (sum.inputTokens ?? 0) + (intervention.tokenUsage?.inputTokens ?? 0),
+    outputTokens: (sum.outputTokens ?? 0) + (intervention.tokenUsage?.outputTokens ?? 0),
+    totalTokens: (sum.totalTokens ?? 0) + (intervention.tokenUsage?.totalTokens ?? 0),
+    estimatedCostUsd: (sum.estimatedCostUsd ?? 0) + (intervention.tokenUsage?.estimatedCostUsd ?? 0)
+  }), {}) : detail.summary.tokenUsage ?? {};
+  const hasTokenUsage = Object.values(tokenUsage).some((value) => typeof value === "number" && value > 0);
+  return {
+    ...detail.summary,
+    interventionCount: interventionSummaries.length,
+    ...(hasTokenUsage ? { tokenUsage } : {}),
+    ...(interventionSummaries.length ? { interventionSummaries } : {})
+  };
+}
+
+function runtimeSessionToFlowRunDetail(session: AutomationStudioRuntimeSession, projectId: string): AutomationStudioFlowRunDetail {
+  const actionAttempts = runtimeActionAttemptsFromSession(session);
+  const recoveryAttempts = runtimeRecoveryAttemptsFromSession(session);
+  const interventions = runtimeInterventionsFromRecoveryAttempts(session, recoveryAttempts);
+  const terminalFailureReason = runtimeTerminalFailureReason(session, recoveryAttempts);
+  return {
+    schemaVersion: "0.1",
+    summary: runtimeFlowRunSummaryFromSession(session, projectId),
+    inputs: jsonObjectFromUnknown(session.metadata?.inputs) ?? {},
+    routeDecisions: [],
+    subflows: [],
+    actionAttempts,
+    recoveryAttempts,
+    interventions,
+    adaptationIds: [],
+    changeProposalIds: [],
+    metadata: {
+      compatibilitySource: "runtime-session",
+      targetKind: session.targetKind,
+      targetId: session.targetId,
+      recoveryAttemptCount: recoveryAttempts.length,
+      comparisonCount: actionAttempts.filter((attempt) => attempt.comparisonStatus).length,
+      ...(terminalFailureReason ? { terminalFailureReason } : {}),
+      ...(session.trace?.message ? { message: session.trace.message } : {}),
+      ...(session.trace?.currentNodeId ? { currentNodeId: session.trace.currentNodeId } : {})
+    }
+  };
+}
+
+function runtimeFlowRunSummaryFromSession(session: AutomationStudioRuntimeSession, projectId: string): AutomationStudioFlowRunSummary {
+  const recoveryAttemptCount = session.trace?.attempts?.filter((attempt) => attempt.recoveryDecision).length ?? 0;
+  const interventionCount = session.trace?.attempts?.filter((attempt) => attempt.recoveryDecision?.selected?.kind === "llm_diagnosis").length ?? 0;
+  return {
+    schemaVersion: "0.1",
+    runId: session.runId,
+    flowId: session.flowId,
+    projectId,
+    status: session.status,
+    startedAt: session.startedAt ?? session.queuedAt,
+    ...(session.finishedAt !== undefined ? { finishedAt: session.finishedAt } : {}),
+    updatedAt: Math.max(session.finishedAt ?? 0, session.startedAt ?? 0, session.queuedAt),
+    routeDecisionCount: 0,
+    subflowEntryCount: 0,
+    actionAttemptCount: session.trace?.attempts?.length ?? 0,
+    interventionCount,
+    adaptationCount: 0,
+    metadata: {
+      compatibilitySource: "runtime-session",
+      targetKind: session.targetKind,
+      targetId: session.targetId,
+      effectCount: session.trace?.effects?.length ?? 0,
+      recoveryAttemptCount
+    }
+  };
+}
+
+function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSession): AutomationStudioFlowRunActionAttemptRecord[] {
+  return (session.trace?.attempts ?? []).map((attempt, index) => {
+    const durationMs = attempt.finishedAt === undefined ? undefined : Math.max(0, attempt.finishedAt - attempt.startedAt);
+    return {
+      attemptId: attempt.attemptId,
+      nodeId: attempt.nodeId,
+      definitionId: attempt.definitionId,
+      order: index + 1,
+      status: graphStatusToFlowRunStatus(attempt.status),
+      ...(attempt.route ? { route: attempt.route } : {}),
+      startedAt: attempt.startedAt,
+      ...(attempt.finishedAt !== undefined ? { finishedAt: attempt.finishedAt } : {}),
+      ...(durationMs !== undefined ? { durationMs } : {}),
+      ...(attempt.transitionComparison?.status ? { comparisonStatus: attempt.transitionComparison.status } : {}),
+      ...(attempt.message ? { message: attempt.message } : {}),
+      metadata: {
+        ...(attempt.regionId ? { regionId: attempt.regionId } : {}),
+        ...(attempt.transitionComparison?.diffSummary ? { diffSummary: attempt.transitionComparison.diffSummary } : {}),
+        ...(attempt.recoveryDecision?.selected ? { recoverySelected: attempt.recoveryDecision.selected } : {})
+      }
+    };
+  });
+}
+
+function runtimeRecoveryAttemptsFromSession(session: AutomationStudioRuntimeSession): AutomationStudioFlowRunRecoveryRecord[] {
+  const createdAt = session.finishedAt ?? session.startedAt ?? session.queuedAt;
+  return (session.trace?.attempts ?? [])
+    .filter((attempt) => attempt.recoveryDecision)
+    .map((attempt) => {
+      const decision = attempt.recoveryDecision!;
+      const selected = decision.selected;
+      return {
+        recoveryId: `${attempt.attemptId}.recovery`,
+        attemptId: attempt.attemptId,
+        nodeId: attempt.nodeId,
+        ...(selected?.kind ? { selectedKind: selected.kind } : {}),
+        ...(selected?.targetNodeId ? { selectedTargetNodeId: selected.targetNodeId } : {}),
+        ...(selected?.edgeId ? { selectedEdgeId: selected.edgeId } : {}),
+        candidateCount: decision.candidates.length,
+        ...(selected?.reason ? { reason: selected.reason } : {}),
+        status: selected?.kind === "llm_diagnosis" ? "diagnosis_only" : selected ? "selected" : "exhausted",
+        createdAt,
+        metadata: {
+          lookup: decision.lookup,
+          candidates: decision.candidates
+        }
+      };
+    });
+}
+
+function runtimeInterventionsFromRecoveryAttempts(session: AutomationStudioRuntimeSession, recoveryAttempts: AutomationStudioFlowRunRecoveryRecord[]): AutomationStudioFlowIntervention[] {
+  return recoveryAttempts
+    .filter((attempt) => attempt.status === "diagnosis_only")
+    .map((attempt) => ({
+      schemaVersion: "0.1",
+      interventionId: `${attempt.recoveryId}.diagnosis`,
+      runId: session.runId,
+      flowId: session.flowId,
+      projectId: session.projectId ?? "",
+      kind: "diagnosis",
+      reason: attempt.reason ?? "Recovery ladder reached LLM diagnosis fallback.",
+      contextSummary: {
+        attemptId: attempt.attemptId,
+        nodeId: attempt.nodeId,
+        candidateCount: attempt.candidateCount
+      },
+      validation: { ok: false, issues: ["LLM diagnosis provider is not configured in this runtime slice."] },
+      createdAt: attempt.createdAt,
+      metadata: { recoveryId: attempt.recoveryId }
+    }));
+}
+
+function runtimeTerminalFailureReason(session: AutomationStudioRuntimeSession, recoveryAttempts: AutomationStudioFlowRunRecoveryRecord[]): string | undefined {
+  if (session.status !== "failed") return undefined;
+  const latest = recoveryAttempts[recoveryAttempts.length - 1];
+  if (!latest) return session.trace?.message ?? "Run failed before recovery lookup produced a candidate.";
+  if (latest.status === "diagnosis_only") return "Recovery ladder stopped at LLM diagnosis fallback because no deterministic recovery resolved the failure.";
+  if (latest.status === "exhausted") return "Recovery ladder exhausted all known recovery candidates.";
+  return session.trace?.message ?? "Run failed after recovery was selected.";
+}
+
+function graphStatusToFlowRunStatus(status: string): AutomationStudioFlowRunActionAttemptRecord["status"] {
+  if (status === "running" || status === "succeeded" || status === "failed" || status === "waiting" || status === "cancelled") return status;
+  return "unknown";
+}
+
+function jsonObjectFromUnknown(value: unknown): JsonObject | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : null;
 }
 
 function clampInteger(value: unknown, min: number, max: number, fallback: number): number {

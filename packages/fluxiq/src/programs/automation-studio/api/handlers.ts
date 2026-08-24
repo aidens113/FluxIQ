@@ -8,12 +8,20 @@ import {
   type AppendRecordingEntryRequest,
   type ApprovePolicyProposalRequest,
   type CaptureClientSnapshotRequest,
+  type CreateFlowSubflowRequest,
   type CreateFlowRequest,
   type CreateRecordingRequest,
   type DeleteRecordingRequest,
   type DeleteRecordingsRequest,
+  type DuplicateFlowSubflowRequest,
+  type FlowAdaptationRequest,
+  type FlowChangeProposalRequest,
+  type FlowExpansionSummaryRequest,
   type FlowIdProjectRequest,
+  type FlowInstructionSetRequest,
   type FlowProjectRequest,
+  type FlowRunDetailRequest,
+  type FlowSubflowRequest,
   type ExecuteClientActionRequest,
   type FinalizeRecordingRequest,
   type GetRecordingEntryStateRequest,
@@ -32,13 +40,17 @@ import {
   type ReplayPolicyAgainstRecordingRequest,
   type RepairRecordingStateIndexRequest,
   type RevokeClientTrustRequest,
+  type RenameFlowSubflowRequest,
+  type ReviewFlowAdaptationRequest,
+  type SaveFlowInstructionRequest,
   type StartClientRecordingRequest,
   type StopClientRecordingRequest,
   type SaveFlowRequest,
   type UpdateRecordingRequest,
+  type UpdateFlowSubflowRequest,
   type ValidateRecordingDomainEventRequest
 } from "./contracts.ts";
-import type { AutomationStudioFlowDocument, AutomationStudioProjectArtifactKind } from "../model/index.ts";
+import type { AutomationStudioFlowDocument, AutomationStudioFlowInstruction, AutomationStudioInstructionScope, AutomationStudioInstructionTag, AutomationStudioProjectArtifactKind } from "../model/index.ts";
 import type { AutomationStudioService } from "../runtime/service.ts";
 import type { IdentityAccessService } from "../../identity-access/index.ts";
 import type { AutomationStudioClientGatewayBridge } from "../client-gateway/index.ts";
@@ -756,6 +768,263 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   });
   registry.register({
     programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowSubflows,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowExpansionSummaryRequest : {} as FlowExpansionSummaryRequest;
+      const page = await service.listFlowSubflowSummaries({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), limit: payload.limit, offset: payload.offset });
+      return { ok: true, payload: { subflows: page.subflows, page } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowSubflow,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowSubflowRequest : {} as FlowSubflowRequest;
+      return { ok: true, payload: { subflow: await service.getFlowSubflow(String(payload.projectId ?? ""), String(payload.flowId ?? ""), String(payload.subflowId ?? "")) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.createFlowSubflow,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as CreateFlowSubflowRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as CreateFlowSubflowRequest;
+      await authorizeProgramPin(identityAccess, payload as any);
+      const input: Parameters<AutomationStudioService["createFlowSubflow"]>[0] = { projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), name: String(payload.name ?? "") };
+      if (typeof payload.description === "string") input.description = payload.description;
+      if (typeof payload.role === "string") input.role = payload.role as any;
+      if (typeof payload.graphFlowId === "string") input.graphFlowId = payload.graphFlowId;
+      if (Array.isArray(payload.routeTags)) input.routeTags = payload.routeTags.filter((tag): tag is string => typeof tag === "string");
+      return { ok: true, payload: { subflow: await service.createFlowSubflow(input) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateFlowSubflow,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as UpdateFlowSubflowRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as UpdateFlowSubflowRequest;
+      await authorizeProgramPin(identityAccess, payload as any);
+      const input: Parameters<AutomationStudioService["updateFlowSubflow"]>[0] = { projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), subflowId: String(payload.subflowId ?? "") };
+      if (typeof payload.name === "string") input.name = payload.name;
+      if (typeof payload.description === "string") input.description = payload.description;
+      if (typeof payload.role === "string") input.role = payload.role as any;
+      if (typeof payload.graphFlowId === "string") input.graphFlowId = payload.graphFlowId;
+      if (Array.isArray(payload.routeTags)) input.routeTags = payload.routeTags.filter((tag): tag is string => typeof tag === "string");
+      if (Array.isArray(payload.inputMapping)) input.inputMapping = payload.inputMapping;
+      if (Array.isArray(payload.outputMapping)) input.outputMapping = payload.outputMapping;
+      if (Array.isArray(payload.localInstructionIds)) input.localInstructionIds = payload.localInstructionIds.filter((id): id is string => typeof id === "string");
+      if (typeof payload.proposalModeOverride === "string") input.proposalModeOverride = payload.proposalModeOverride as any;
+      return { ok: true, payload: { subflow: await service.updateFlowSubflow(input) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.renameFlowSubflow,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as RenameFlowSubflowRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as RenameFlowSubflowRequest;
+      await authorizeProgramPin(identityAccess, payload as any);
+      return { ok: true, payload: { subflow: await service.renameFlowSubflow({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), subflowId: String(payload.subflowId ?? ""), name: String(payload.name ?? "") }) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.duplicateFlowSubflow,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as DuplicateFlowSubflowRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as DuplicateFlowSubflowRequest;
+      await authorizeProgramPin(identityAccess, payload as any);
+      const input: Parameters<AutomationStudioService["duplicateFlowSubflow"]>[0] = { projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), subflowId: String(payload.subflowId ?? "") };
+      if (typeof payload.name === "string") input.name = payload.name;
+      return { ok: true, payload: { subflow: await service.duplicateFlowSubflow(input) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.disableFlowSubflow,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowSubflowRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as FlowSubflowRequest;
+      await authorizeProgramPin(identityAccess, payload as any);
+      return { ok: true, payload: { subflow: await service.disableFlowSubflow({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), subflowId: String(payload.subflowId ?? "") }) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.archiveFlowSubflow,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowSubflowRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as FlowSubflowRequest;
+      await authorizeProgramPin(identityAccess, payload as any);
+      return { ok: true, payload: { subflow: await service.archiveFlowSubflow({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), subflowId: String(payload.subflowId ?? "") }) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowInstructions,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowExpansionSummaryRequest : {} as FlowExpansionSummaryRequest;
+      const input: Parameters<AutomationStudioService["listFlowInstructionSummaries"]>[0] = { projectId: String(payload.projectId ?? ""), limit: payload.limit, offset: payload.offset };
+      if (typeof payload.flowId === "string") input.flowId = payload.flowId;
+      if (typeof payload.subflowId === "string") input.subflowId = payload.subflowId;
+      const page = await service.listFlowInstructionSummaries(input);
+      return { ok: true, payload: { instructions: page.instructions, page } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowInstructionSet,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowInstructionSetRequest : {} as FlowInstructionSetRequest;
+      const input: Parameters<AutomationStudioService["getFlowInstructionSet"]>[0] = { projectId: String(payload.projectId ?? "") };
+      if (typeof payload.flowId === "string") input.flowId = payload.flowId;
+      if (typeof payload.subflowId === "string") input.subflowId = payload.subflowId;
+      return { ok: true, payload: { instructions: await service.getFlowInstructionSet(input) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowInstruction,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as SaveFlowInstructionRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as SaveFlowInstructionRequest;
+      await authorizeProgramPin(identityAccess, payload as any);
+      const projectId = String(payload.projectId ?? "");
+      const flowId = String(payload.flowId ?? "");
+      const now = Date.now();
+      const title = String(payload.title ?? "").trim();
+      const body = String(payload.body ?? "").trim();
+      if (!projectId || !flowId) return { ok: false, error: "Project and Flow are required." };
+      if (!title || !body) return { ok: false, error: "Instruction title and body are required." };
+      const existing = typeof payload.instructionId === "string" && payload.instructionId.trim()
+        ? await service.getFlowInstruction(projectId, payload.instructionId.trim())
+        : null;
+      const instructionId = existing?.instructionId ?? payload.instructionId?.trim() ?? `instruction.${slugSegment(title)}.${now.toString(36)}`;
+      const instruction: AutomationStudioFlowInstruction = {
+        schemaVersion: "0.1",
+        instructionId,
+        title,
+        body,
+        scope: flowInstructionScopeFromPayload(projectId, flowId, payload),
+        priority: Number.isFinite(Number(payload.priority)) ? Number(payload.priority) : existing?.priority ?? 50,
+        status: payload.status === "disabled" || payload.status === "archived" ? payload.status : existing?.status ?? "active",
+        requirement: payload.requirement === "required" ? "required" : "advisory",
+        tags: Array.isArray(payload.tags) ? payload.tags.filter((tag): tag is AutomationStudioInstructionTag => typeof tag === "string" && ["generation", "runtime", "error", "router", "subflow", "review", "safety"].includes(tag)) : existing?.tags ?? [],
+        linkedRunIds: existing?.linkedRunIds ?? [],
+        linkedAdaptationIds: existing?.linkedAdaptationIds ?? [],
+        linkedRecordingIds: existing?.linkedRecordingIds ?? [],
+        linkedSubflowIds: existing?.linkedSubflowIds ?? [],
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+        metadata: existing?.metadata ?? {}
+      };
+      return { ok: true, payload: { instruction: await service.saveFlowInstruction(projectId, instruction) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowChangeProposals,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowExpansionSummaryRequest : {} as FlowExpansionSummaryRequest;
+      const input: Parameters<AutomationStudioService["listFlowChangeProposalSummaries"]>[0] = { projectId: String(payload.projectId ?? ""), limit: payload.limit, offset: payload.offset };
+      if (typeof payload.flowId === "string") input.flowId = payload.flowId;
+      if (typeof payload.subflowId === "string") input.subflowId = payload.subflowId;
+      const page = await service.listFlowChangeProposalSummaries(input);
+      return { ok: true, payload: { changeProposals: page.changeProposals, page } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowChangeProposal,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowChangeProposalRequest : {} as FlowChangeProposalRequest;
+      return { ok: true, payload: { changeProposal: await service.getFlowChangeProposal(String(payload.projectId ?? ""), String(payload.flowId ?? ""), String(payload.proposalId ?? "")) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowRuns,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowExpansionSummaryRequest : {} as FlowExpansionSummaryRequest;
+      const input: Parameters<AutomationStudioService["listFlowRunSummaries"]>[0] = { projectId: String(payload.projectId ?? ""), limit: payload.limit, offset: payload.offset };
+      if (typeof payload.flowId === "string") input.flowId = payload.flowId;
+      const page = await service.listFlowRunSummaries(input);
+      return { ok: true, payload: { runs: page.runs, page } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRunDetail,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowRunDetailRequest : {} as FlowRunDetailRequest;
+      return { ok: true, payload: { runDetail: await service.getFlowRunDetail(String(payload.projectId ?? ""), String(payload.runId ?? "")) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowAdaptations,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowExpansionSummaryRequest : {} as FlowExpansionSummaryRequest;
+      const input: Parameters<AutomationStudioService["listFlowAdaptationSummaries"]>[0] = { projectId: String(payload.projectId ?? ""), limit: payload.limit, offset: payload.offset };
+      if (typeof payload.flowId === "string") input.flowId = payload.flowId;
+      if (typeof payload.subflowId === "string") input.subflowId = payload.subflowId;
+      if (typeof payload.status === "string") input.status = payload.status;
+      const page = await service.listFlowAdaptationSummaries(input);
+      return { ok: true, payload: { adaptations: page.adaptations, page } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowAdaptation,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowAdaptationRequest : {} as FlowAdaptationRequest;
+      return { ok: true, payload: { adaptation: await service.getFlowAdaptation(String(payload.projectId ?? ""), String(payload.flowId ?? ""), String(payload.adaptationId ?? "")) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.reviewFlowAdaptation,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as ReviewFlowAdaptationRequest : {} as ReviewFlowAdaptationRequest;
+      await authorizeProgramPin(identityAccess, payload);
+      return {
+        ok: true,
+        payload: {
+          adaptation: await service.reviewFlowAdaptation({
+            projectId: String(payload.projectId ?? ""),
+            flowId: String(payload.flowId ?? ""),
+            adaptationId: String(payload.adaptationId ?? ""),
+            action: payload.action,
+            ...(payload.reason ? { reason: payload.reason } : {}),
+            ...(payload.supersededByAdaptationId ? { supersededByAdaptationId: payload.supersededByAdaptationId } : {})
+          })
+        }
+      };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRouter,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowIdProjectRequest : {} as FlowIdProjectRequest;
+      return { ok: true, payload: { router: await service.getFlowRouter(String(payload.projectId ?? ""), String(payload.flowId ?? "")) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.startRuntimeSession,
     permission: "runtime.control",
     handler: async (request) => {
@@ -892,4 +1161,18 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
       return { ok: true, payload: { result: await clientGatewayBridge.executeAction(String(payload.sessionId ?? ""), payload.command) } };
     }
   });
+}
+
+function flowInstructionScopeFromPayload(projectId: string, flowId: string, payload: SaveFlowInstructionRequest): AutomationStudioInstructionScope {
+  if (payload.scopeKind === "router") return { kind: "router", projectId, flowId, routerId: String(payload.routerId ?? "router.default") };
+  if (payload.scopeKind === "subflow") return { kind: "subflow", projectId, flowId, subflowId: String(payload.subflowId ?? "") };
+  if (payload.scopeKind === "node") return { kind: "node", projectId, flowId, nodeId: String(payload.nodeId ?? ""), ...(typeof payload.subflowId === "string" && payload.subflowId ? { subflowId: payload.subflowId } : {}) };
+  if (payload.scopeKind === "on_error") return { kind: "on_error", projectId, flowId, ...(typeof payload.subflowId === "string" && payload.subflowId ? { subflowId: payload.subflowId } : {}), ...(typeof payload.nodeId === "string" && payload.nodeId ? { nodeId: payload.nodeId } : {}) };
+  if (payload.scopeKind === "adaptation_review") return { kind: "adaptation_review", projectId, flowId, ...(typeof payload.subflowId === "string" && payload.subflowId ? { subflowId: payload.subflowId } : {}) };
+  return { kind: "flow", projectId, flowId };
+}
+
+function slugSegment(value: string): string {
+  const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "").slice(0, 48);
+  return slug || "instruction";
 }

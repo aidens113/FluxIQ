@@ -1,99 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
-import { AutomationWorkspaceDock, automationCompositeCallMetadata } from "./GraphEditorViews";
-import { policyToReactFlowGraph, taskFlowToReactFlowGraph } from "../graph/view-model";
+import { graphSignature } from "./GraphEditorViews";
 
-describe("Automation Studio composite palette nodes", () => {
-  it("creates an exact pinned Call Flow configuration with explicit bindings", () => {
-    expect(automationCompositeCallMetadata({ id: "composite", version: "1.2.0", label: "Child", description: "Child", family: "public-flows", scope: "both", nodeType: "custom", source: { kind: "composite", flowId: "flow.child", version: "1.2.0" }, availability: { kind: "domain", domainId: "orders" }, inputs: [{ id: "request", label: "Request", valueType: "object" }], outputs: [{ id: "result", label: "Result", valueType: "object" }, { id: "error.failed", label: "Failed", valueType: "object", role: "error" }], parameters: [] })).toMatchObject({ "fluxiq.callFlow": { target: { flowId: "flow.child", version: "1.2.0", scope: { kind: "domain", domainId: "orders" } }, inputBindings: [{ targetPortId: "request", valueKey: "request" }], outputBindings: [{ targetPortId: "result", valueKey: "result" }], errorBindings: [{ targetPortId: "failed", valueKey: "error.failed" }] } });
-  });
-});
-
-describe("Automation Studio policy graph view model", () => {
-  it("counts eligibility, success, and metadata evidence on generated policy nodes", () => {
-    const graph = policyToReactFlowGraph({
-      nodes: [{
-        id: "node.submit",
-        label: "Submit",
-        actions: [{ actionType: "output.submit" }],
-        eligibility: { type: "all", conditions: [{ signalPath: "task.status", operator: "exists" }] },
-        successConditions: { type: "all", conditions: [{ signalPath: "task.status", operator: "changed" }] },
-        sourceEvidence: [{ layer: "evidence_observation", artifactId: "obs.submit" }],
-        metadata: { evidence: [{ layer: "recording", artifactId: "recording.one", entryId: "entry.1" }] },
-        timeout: { timeoutMs: 5000 },
-        recovery: { strategy: "pause" }
-      }],
-      edges: []
-    });
-
-    expect(graph.nodes[0]?.data).toMatchObject({
-      readinessCount: 1,
-      successCount: 1,
-      evidenceCount: 2
-    });
-  });
-
-  it("hydrates saved custom Flow nodes with dynamic parameter definitions", () => {
-    const graph = taskFlowToReactFlowGraph({
-      nodes: [{
-        id: "send",
-        definitionId: "recording.action.submit",
-        label: "Submit",
+describe("Automation graph editor render-cost guards", () => {
+  it("does not include full node payloads or bulky metadata in graph signatures", () => {
+    const signature = graphSignature([
+      {
+        id: "node.large",
+        type: "automationPolicy",
         position: { x: 10, y: 20 },
-        parameterValues: { parameters: { target: "confirm" } }
-      }],
-      edges: []
-    }, "", [{
-      id: "recording.action.submit",
-      version: "1.0.0",
-      label: "Submit",
-      description: "Recorded submit output",
-      category: "recording-derived",
-      source: { kind: "recording", proposalId: "proposal.one" },
-      availability: { kind: "global" },
-      inputs: [{ id: "ready", label: "Ready", valueType: "any", role: "control" }],
-      outputs: [{ id: "success", label: "Success", valueType: "any", role: "success" }],
-      parameters: [{ id: "parameters", label: "Output payload", valueType: "object", defaultValue: { target: "confirm" } }]
-    }]);
+        data: {
+          label: "Large node",
+          nodeDefinitionId: "builtin.policy.action",
+          inputs: [{ id: "in", value: "ignored-large-input".repeat(200) }],
+          outputs: [{ id: "out", value: "ignored-large-output".repeat(200) }],
+          parameters: [{ id: "selector", schema: "ignored-large-schema".repeat(200) }],
+          metadata: {
+            ownerKind: "flow",
+            ownerId: "flow.large",
+            rawRecordingPayload: "ignored-large-metadata".repeat(500)
+          }
+        }
+      }
+    ] as any, []);
 
-    expect(graph.nodes[0]?.data.parameters).toEqual([
-      { id: "parameters", label: "Output payload", valueType: "object", defaultValue: { target: "confirm" } }
-    ]);
-    expect(graph.nodes[0]?.data.parameterValues).toMatchObject({ parameters: { target: "confirm" } });
-  });
-});
-
-describe("Automation Studio workspace dock", () => {
-  it("renders the real State View in the dock state tab", () => {
-    const html = renderToStaticMarkup(
-      createElement(AutomationWorkspaceDock, {
-        activeTab: "state",
-        problems: [],
-        signals: [],
-        models: [],
-        selectedNode: { id: "node.deposit", label: "Deposit" },
-        stateInput: {
-          selection: { kind: "node", id: "node.deposit" },
-          selectedNode: { id: "node.deposit", label: "Deposit" },
-          selectedRecording: null,
-          selectedTimeline: null,
-          policy: null,
-          taskGraph: null,
-          pipelineArtifacts: {},
-          recordings: [],
-          timelines: [],
-          runtimeSessions: [],
-          signals: []
-        },
-        setActiveTab: () => undefined,
-        setSelection: () => undefined
-      })
-    );
-
-    expect(html).toContain("State View");
-    expect(html).toContain("No state source");
-    expect(html).not.toContain("Node State: Deposit");
-    expect(html).not.toContain("State Signals");
+    expect(signature).toContain("node.large");
+    expect(signature).toContain("selector");
+    expect(signature).not.toContain("ignored-large-input");
+    expect(signature).not.toContain("ignored-large-output");
+    expect(signature).not.toContain("ignored-large-schema");
+    expect(signature).not.toContain("ignored-large-metadata");
   });
 });

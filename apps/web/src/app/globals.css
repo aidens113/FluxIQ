@@ -3473,16 +3473,17 @@ select {
 
 .automation-window-tabs {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
-  min-height: 32px;
-  max-height: 32px;
+  min-height: 42px;
+  max-height: 42px;
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
+  scrollbar-gutter: stable;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface-subtle);
-  padding: 4px 6px;
+  padding: 4px 6px 10px;
   white-space: nowrap;
 }
 
@@ -3493,8 +3494,8 @@ select {
   flex: 0 0 auto;
   max-width: min(240px, 46vw);
   min-width: 0;
-  min-height: 24px;
-  max-height: 24px;
+  min-height: 26px;
+  max-height: 26px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-surface);
@@ -4041,14 +4042,13 @@ select {
 }
 
 .automation-tree-item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 28px 28px;
+  display: flex;
   gap: 4px;
   align-items: stretch;
 }
 
 .automation-tree-item.root-folder {
-  grid-template-columns: minmax(0, 1fr) 28px;
+  display: flex;
 }
 
 .automation-tree-branch {
@@ -4082,6 +4082,19 @@ select {
   cursor: pointer;
 }
 
+.automation-project-tree button svg {
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  max-width: 14px;
+  justify-self: center;
+}
+
+.automation-project-tree button.folder-row {
+  grid-template-columns: 14px 16px minmax(0, 1fr);
+  gap: 6px;
+}
+
 .automation-project-tree .automation-hierarchy-tools button {
   display: inline-flex;
   grid-template-columns: none;
@@ -4090,13 +4103,16 @@ select {
 }
 
 .automation-tree-item > button:first-child {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
 .automation-tree-item .tree-row-action {
   display: grid;
   grid-template-columns: 1fr;
+  flex: 0 0 28px;
   place-items: center;
+  align-self: stretch;
   min-width: 0;
   width: 28px;
   min-height: 36px;
@@ -4104,6 +4120,13 @@ select {
   border-radius: var(--radius-control);
   background: transparent;
   padding: 0;
+  text-align: center;
+}
+
+.automation-tree-item .tree-row-action svg {
+  grid-column: 1;
+  justify-self: center;
+  align-self: center;
 }
 
 .automation-tree-item .tree-row-action:hover {
@@ -4119,13 +4142,19 @@ select {
 }
 
 .automation-tree-item .tree-row-action.danger {
-  grid-column: 3;
+  color: var(--color-danger);
 }
 
 .automation-project-tree button:hover,
 .automation-project-tree button.selected {
   border-color: var(--color-primary);
   background: #f1f8ff;
+}
+
+.automation-project-tree button.selected {
+  box-shadow: inset 3px 0 0 var(--color-primary), 0 0 0 1px rgba(0, 104, 201, 0.12);
+  color: var(--color-primary);
+  font-weight: 800;
 }
 
 .automation-project-tree button.type-routine {
@@ -6826,7 +6855,7 @@ select {
 .automation-runtime-list-page,
 .automation-runtime-log-page {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   align-content: start;
   gap: 10px;
   min-width: 0;
@@ -6837,8 +6866,7 @@ select {
 
 .automation-runtime-list-page > header,
 .automation-runtime-log-page > header,
-.automation-runtime-log-section > header,
-.automation-runtime-attempt-card header {
+.automation-runtime-log-section > header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -6901,10 +6929,418 @@ select {
   gap: 6px;
 }
 
+.automation-runtime-pagination-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 9px 10px;
+}
+
+.automation-runtime-pagination-footer span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .automation-runtime-pagination button:disabled,
 .automation-runtime-log-toolbar button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+.automation-runtime-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 10px;
+}
+
+.automation-runtime-form-grid label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.automation-runtime-form-grid input,
+.automation-runtime-form-grid select,
+.automation-runtime-form-grid textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+.automation-runtime-form-wide {
+  grid-column: 1 / -1;
+}
+
+.automation-runtime-run-list {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-width: 0;
+  overflow: auto;
+}
+
+.automation-runtime-run-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) minmax(150px, 1.2fr) 92px minmax(132px, 0.9fr) minmax(92px, 0.7fr) minmax(86px, 0.65fr) minmax(82px, 0.65fr) 88px;
+  gap: 8px;
+  align-items: center;
+  min-width: 930px;
+  min-height: 34px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 4px 8px;
+}
+
+.automation-runtime-run-row:hover {
+  border-color: #93c5fd;
+  background: #f8fbff;
+}
+
+.automation-runtime-run-row > strong,
+.automation-runtime-run-row > span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-runtime-run-row > strong {
+  color: var(--color-text);
+  font-weight: 800;
+}
+
+.automation-runtime-run-row > span {
+  color: var(--color-text-muted);
+}
+
+.automation-instructions-workspace {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(360px, 1.45fr);
+  gap: 12px;
+  min-width: 0;
+  min-height: 520px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: linear-gradient(180deg, #f8fafc 0%, #eef4f8 100%);
+  padding: 12px;
+}
+
+.automation-instruction-list-pane,
+.automation-instruction-editor-pane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.automation-instruction-list-pane > header,
+.automation-instruction-editor-pane > header,
+.automation-instruction-diagnostics > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  background: #ffffff;
+  padding: 12px;
+}
+
+.automation-instruction-list-pane > header div,
+.automation-instruction-editor-pane > header div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.automation-instruction-list-pane > header span,
+.automation-instruction-editor-pane > header span,
+.automation-instruction-diagnostics > header span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.automation-instruction-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  overflow: auto;
+}
+
+.automation-instruction-list button {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  background: #ffffff;
+  padding: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.automation-instruction-list button:hover,
+.automation-instruction-list button.selected {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px rgba(0, 104, 201, 0.08), 0 8px 18px rgba(15, 23, 42, 0.06);
+  background: #f1f8ff;
+}
+
+.automation-instruction-title {
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-instruction-meta {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.automation-instruction-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.automation-instruction-footer small {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.automation-instruction-editor-pane {
+  overflow: auto;
+}
+
+.automation-instruction-editor-card {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  background: #ffffff;
+  padding: 14px;
+}
+
+.automation-instruction-editor-card label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.automation-instruction-editor-card input,
+.automation-instruction-editor-card select,
+.automation-instruction-editor-card textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: var(--radius-control);
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+  background: #ffffff;
+  color: var(--color-text);
+  padding: 9px 10px;
+  font: inherit;
+}
+
+.automation-instruction-editor-card input:focus,
+.automation-instruction-editor-card select:focus,
+.automation-instruction-editor-card textarea:focus,
+.automation-settings-panel input:focus,
+.automation-settings-panel select:focus,
+.automation-settings-panel textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(0, 104, 201, 0.14);
+}
+
+.automation-instruction-body-field {
+  grid-column: 1 / -1;
+}
+
+.automation-instruction-body-field textarea {
+  min-height: 190px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.automation-instruction-diagnostics {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.automation-instruction-diagnostics article,
+.automation-instruction-diagnostics p {
+  margin: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  background: #ffffff;
+  padding: 9px 10px;
+}
+
+.automation-instruction-diagnostics article {
+  display: grid;
+  gap: 3px;
+}
+
+.automation-instruction-diagnostics article span,
+.automation-instruction-diagnostics p {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.automation-flow-settings-workspace {
+  overflow: auto;
+}
+
+.automation-flow-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.automation-settings-panel {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  background: #ffffff;
+  padding: 14px;
+}
+
+.automation-settings-panel-wide {
+  grid-column: 1 / -1;
+}
+
+.automation-settings-panel > header {
+  display: grid;
+  gap: 3px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.automation-settings-panel > header strong {
+  color: var(--color-text);
+  font-size: 14px;
+}
+
+.automation-settings-panel > header span,
+.automation-settings-panel label span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.automation-settings-panel label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  font-weight: 800;
+}
+
+.automation-settings-panel input,
+.automation-settings-panel select,
+.automation-settings-panel textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: var(--radius-control);
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+  background: #ffffff;
+  color: var(--color-text);
+  padding: 9px 10px;
+  font: inherit;
+}
+
+.automation-settings-panel textarea {
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.automation-settings-inline-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.automation-settings-toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.automation-settings-toggle {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: #f8fafc;
+  padding: 10px;
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+
+.automation-settings-toggle:hover {
+  border-color: var(--color-primary);
+  background: #f1f8ff;
+}
+
+.automation-settings-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-primary);
+}
+
+.automation-settings-toggle span {
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.automation-settings-success {
+  margin: 0;
+  border: 1px solid #bbf7d0;
+  border-radius: var(--radius-control);
+  background: #f0fdf4;
+  color: #166534;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .automation-runtime-log-toolbar {
@@ -6923,9 +7359,10 @@ select {
 
 .automation-runtime-action-log {
   display: grid;
-  gap: 8px;
+  gap: 4px;
   min-width: 0;
   margin: 0;
+  overflow-x: auto;
   padding: 0;
   list-style: none;
 }
@@ -6945,57 +7382,40 @@ select {
   font-weight: 700;
 }
 
-.automation-runtime-attempt-card {
+.automation-runtime-attempt-row {
+  position: relative;
   display: grid;
+  grid-template-columns: 44px minmax(120px, 1.2fr) 92px minmax(150px, 1.25fr) minmax(70px, 0.7fr) minmax(144px, 1fr) minmax(68px, 0.65fr) 104px minmax(104px, 1fr) minmax(180px, 1.4fr) 92px;
+  align-items: center;
   gap: 8px;
   min-width: 0;
+  min-height: 34px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: #fbfcfd;
-  padding: 9px;
+  padding: 4px 8px;
 }
 
-.automation-runtime-attempt-card header span {
-  color: var(--color-text-muted);
-  font-size: 11px;
-  font-weight: 800;
+.automation-runtime-action-log li {
+  min-width: 1180px;
 }
 
-.automation-runtime-attempt-card dl {
-  display: grid;
-  gap: 5px;
-  margin: 0;
-}
-
-.automation-runtime-attempt-card dl div {
-  display: grid;
-  grid-template-columns: 76px minmax(0, 1fr);
-  gap: 8px;
-}
-
-.automation-runtime-attempt-card dt,
-.automation-runtime-attempt-card dd {
-  margin: 0;
-  font-size: 12px;
-}
-
-.automation-runtime-attempt-card dt {
-  color: var(--color-text-muted);
-  font-weight: 800;
-}
-
-.automation-runtime-attempt-card dd {
-  overflow-wrap: anywhere;
-}
-
-.automation-runtime-attempt-card details {
+.automation-runtime-attempt-row > span,
+.automation-runtime-attempt-row > strong {
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
 }
 
-.automation-runtime-attempt-card summary {
-  color: var(--color-primary);
-  cursor: pointer;
-  font-size: 12px;
+.automation-runtime-attempt-row > span {
+  color: var(--color-text-muted);
+}
+
+.automation-runtime-attempt-row > strong,
+.automation-runtime-attempt-index {
+  color: var(--color-text);
   font-weight: 800;
 }
 
@@ -7004,12 +7424,30 @@ select {
   flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
+  justify-content: flex-end;
 }
 
 .automation-runtime-json-toggle {
   display: grid;
   gap: 6px;
   min-width: 0;
+}
+
+.automation-runtime-attempt-row > .automation-runtime-json-toggle {
+  justify-self: end;
+}
+
+.automation-runtime-attempt-row > .automation-runtime-json-toggle > button {
+  min-height: 24px;
+  white-space: nowrap;
+}
+
+.automation-runtime-attempt-row > .automation-runtime-json-toggle > pre {
+  position: absolute;
+  right: 12px;
+  left: 12px;
+  z-index: 5;
+  margin-top: 30px;
 }
 
 .automation-runtime-log-section {
@@ -7230,6 +7668,31 @@ select {
   .automation-runtime-log-page {
     max-height: 70vh;
   }
+
+  .automation-runtime-pagination-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .automation-instructions-workspace {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .automation-instruction-list-pane,
+  .automation-instruction-editor-pane {
+    max-height: 70vh;
+  }
+
+  .automation-instruction-editor-card {
+    grid-template-columns: 1fr;
+  }
+
+  .automation-flow-settings-grid,
+  .automation-settings-inline-fields,
+  .automation-settings-toggle-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .automation-pipeline-workspace,
@@ -7248,6 +7711,11 @@ select {
 
 .automation-runs-workspace {
   grid-template-rows: auto auto minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.automation-runs-workspace.automation-flow-settings-workspace {
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  overflow: auto;
 }
 
 .automation-proposal-workspace,

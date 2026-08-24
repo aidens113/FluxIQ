@@ -89,6 +89,25 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   replayPolicyAgainstRecording: "replay-policy-against-recording",
   listRuntimeSessions: "list-runtime-sessions",
   getRuntimeSession: "get-runtime-session",
+  listFlowSubflows: "list-flow-subflows",
+  getFlowSubflow: "get-flow-subflow",
+  createFlowSubflow: "create-flow-subflow",
+  updateFlowSubflow: "update-flow-subflow",
+  renameFlowSubflow: "rename-flow-subflow",
+  duplicateFlowSubflow: "duplicate-flow-subflow",
+  disableFlowSubflow: "disable-flow-subflow",
+  archiveFlowSubflow: "archive-flow-subflow",
+  listFlowInstructions: "list-flow-instructions",
+  getFlowInstructionSet: "get-flow-instruction-set",
+  saveFlowInstruction: "save-flow-instruction",
+  listFlowChangeProposals: "list-flow-change-proposals",
+  getFlowChangeProposal: "get-flow-change-proposal",
+  listFlowRuns: "list-flow-runs",
+  getFlowRunDetail: "get-flow-run-detail",
+  listFlowAdaptations: "list-flow-adaptations",
+  getFlowAdaptation: "get-flow-adaptation",
+  reviewFlowAdaptation: "review-flow-adaptation",
+  getFlowRouter: "get-flow-router",
   startRuntimeSession: "start-runtime-session",
   runRuntimeSession: "run-runtime-session",
   inspectStateDiff: "inspect-state-diff",
@@ -330,6 +349,84 @@ export type ApprovePolicyProposalRequest = RecordingProjectRequest & {
 export type ReplayPolicyAgainstRecordingRequest = RecordingProjectRequest & {
   recordingId: string;
   policyId?: string;
+};
+
+export type FlowExpansionSummaryRequest = FlowIdProjectRequest & {
+  subflowId?: string;
+  status?: string;
+  limit?: unknown;
+  offset?: unknown;
+};
+
+export type FlowSubflowRequest = FlowIdProjectRequest & {
+  subflowId: string;
+};
+
+export type CreateFlowSubflowRequest = FlowIdProjectRequest & {
+  name: string;
+  description?: string;
+  role?: string;
+  graphFlowId?: string;
+  routeTags?: string[];
+};
+
+export type UpdateFlowSubflowRequest = FlowSubflowRequest & {
+  name?: string;
+  description?: string;
+  role?: string;
+  routeTags?: string[];
+  inputMapping?: Array<{ flowInputId: string; subflowInputId: string; required?: boolean }>;
+  outputMapping?: Array<{ subflowOutputId: string; flowOutputId: string; required?: boolean }>;
+  localInstructionIds?: string[];
+  proposalModeOverride?: string;
+  graphFlowId?: string;
+};
+
+export type RenameFlowSubflowRequest = FlowSubflowRequest & {
+  name: string;
+};
+
+export type DuplicateFlowSubflowRequest = FlowSubflowRequest & {
+  name?: string;
+};
+
+export type FlowInstructionSetRequest = FlowProjectRequest & {
+  flowId?: string;
+  subflowId?: string;
+};
+
+export type SaveFlowInstructionRequest = FlowIdProjectRequest & {
+  instructionId?: string;
+  title: string;
+  body: string;
+  scopeKind?: "flow" | "router" | "subflow" | "node" | "on_error" | "adaptation_review";
+  routerId?: string;
+  subflowId?: string;
+  nodeId?: string;
+  priority?: unknown;
+  status?: string;
+  requirement?: string;
+  tags?: string[];
+};
+
+export type FlowChangeProposalRequest = FlowIdProjectRequest & {
+  proposalId: string;
+};
+
+export type FlowRunDetailRequest = FlowProjectRequest & {
+  runId: string;
+};
+
+export type FlowAdaptationRequest = FlowIdProjectRequest & {
+  adaptationId: string;
+};
+
+export type ReviewFlowAdaptationRequest = FlowAdaptationRequest & {
+  action: "approve" | "reject" | "apply" | "disable" | "revert" | "supersede" | "request_validation" | "switch_manual";
+  reason?: string;
+  supersededByAdaptationId?: string;
+  authSessionId?: string;
+  authorizationPin?: string;
 };
 
 export type InspectStateDiffRequest = {
