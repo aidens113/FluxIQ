@@ -1,11 +1,11 @@
-import { ArrowLeft, Blocks, BookOpen, CalendarClock, CloudUpload, Database, GitBranch, PlayCircle, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Blocks, BookOpen, CalendarClock, CloudUpload, Database, GitBranch, KeyRound, PlayCircle, ShieldCheck } from "lucide-react";
 import { defaultGlobalProgramCatalog, type FluxIQIconName, type ProgramSummary } from "fluxiq";
 import { notFound } from "next/navigation";
 import { AuthStatus, LoginPanel } from "../../AuthShell";
 import { currentFluxIQUser } from "../../../lib/auth";
 import { getFluxIQ } from "../../../lib/fluxiq";
 
-const icons = { blocks: Blocks, "book-open": BookOpen, "calendar-clock": CalendarClock, "cloud-upload": CloudUpload, database: Database, "git-branch": GitBranch, "play-circle": PlayCircle, "shield-check": ShieldCheck } satisfies Record<FluxIQIconName, typeof Blocks>;
+const icons = { blocks: Blocks, "book-open": BookOpen, "calendar-clock": CalendarClock, "cloud-upload": CloudUpload, database: Database, "git-branch": GitBranch, "key-round": KeyRound, "play-circle": PlayCircle, "shield-check": ShieldCheck } satisfies Record<FluxIQIconName, typeof Blocks>;
 const categoryOrder = new Map([["Authoring", 0], ["Domain Control", 1], ["Runtime Control", 2], ["Framework Control", 3]]);
 
 export default async function DomainPage({ params }: { params: Promise<{ domainId: string }> }) {

@@ -17,7 +17,7 @@ Current behavior:
 - every global program endpoint declares a required role permission, enforced
   by the shared API registry before its handler runs;
 - the viewer role is read-only and cannot invoke identity, data, compute,
-  runtime, deployment, or authoring mutations;
+  runtime, deployment, secrets, or authoring mutations;
 - login sessions last 12 hours;
 - first-run credentials default to `admin` / `admin`;
 - no default PIN is created;
@@ -34,6 +34,32 @@ Planned improvements:
 - admin recovery procedure;
 - persistent audit log for privileged identity actions.
 
+
+## Secret Keys
+
+Secret Keys manages framework-owned secrets such as LLM provider keys and
+custom integration tokens.
+
+Current behavior:
+
+- secrets are stored in the `secret.keys` table inside `global.sqlite`;
+- secret values are AES-256-GCM encrypted at rest with `scrypt` password-derived
+  keys, matching the identity credential sealing model;
+- snapshots return only redacted metadata: name, type, provider, scope, enabled
+  state, and rotation/reveal timestamps;
+- create, update, rotate, reveal, and delete operations require the
+  `secrets.manage` permission plus a fresh password/PIN/2FA credential recheck;
+- the Secret Keys UI provides structured forms for LLM and custom keys, rotate
+  and reveal modals, and delete confirmation without exposing raw JSON editing;
+- Database Manager treats `secret.keys` as a sensitive store and requires the
+  same credential recheck before encrypted rows can be viewed.
+
+Planned improvements:
+
+- runtime key resolution for LLM adapters without exposing raw values to logs;
+- audit events for every reveal and rotation;
+- optional host-managed key wrapping for password rotation workflows.
+
 ## Database Manager
 
 Database Manager is the explorer for framework and domain data stores.
@@ -47,8 +73,8 @@ Current behavior:
 - Background Tasks state is visible through the `background.tasks` store.
 - Credential records in `identity.users` are AES-256-GCM encrypted at rest with
   keys derived from user passwords.
-- The `identity.users` store is protected by a modal password/PIN/2FA recheck
-  before encrypted credential records can be viewed.
+- The `identity.users` and `secret.keys` stores are protected by a modal password/PIN/2FA recheck
+  before encrypted credential or secret records can be viewed.
 
 Planned improvements:
 

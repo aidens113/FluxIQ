@@ -110,6 +110,8 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   getFlowRouter: "get-flow-router",
   startRuntimeSession: "start-runtime-session",
   runRuntimeSession: "run-runtime-session",
+  cancelRuntimeSession: "cancel-runtime-session",
+  exportFlowRunAudit: "export-flow-run-audit",
   inspectStateDiff: "inspect-state-diff",
   listSignalRegistries: "list-signal-registries",
   listRecordingDomains: "list-recording-domains",
@@ -415,6 +417,11 @@ export type FlowChangeProposalRequest = FlowIdProjectRequest & {
 
 export type FlowRunDetailRequest = FlowProjectRequest & {
   runId: string;
+};
+
+export type RuntimeSessionControlRequest = FlowProjectRequest & {
+  runId: string;
+  reason?: string;
 };
 
 export type FlowAdaptationRequest = FlowIdProjectRequest & {

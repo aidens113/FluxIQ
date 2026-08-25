@@ -177,7 +177,7 @@ runs.
 Runtime Debug:
 
 - Keep the previous-runs list as the first inner view.
-- Keep `View Log` as the only path that fetches a full runtime session.
+- Keep a single row-click path as the only interaction that fetches a full runtime session.
 - Keep action logs paged or virtualized.
 - Keep detailed JSON behind per-entry expansion.
 

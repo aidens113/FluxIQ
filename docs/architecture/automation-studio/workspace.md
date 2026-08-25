@@ -520,22 +520,38 @@ The play command currently calls the Automation Studio runtime session API and
 reports the returned session status and trace message. Play resolves the
 canonical Flow currently opened in the Flow editor workspace state, so a run
 still targets the visible Flow after selection moves to another pane, tab, node,
-timeline item, or inspector context. Pause and stop report that cancellable
-runtime sessions are not wired yet instead of pretending to control execution.
+timeline item, or inspector context. The runtime service exposes cancellable
+sessions through the runtime control API for queued or running runs;
+cancellation records durable session status and aborts the live executor signal
+when the service still owns that run.
 Runtime Debug and Runs expose stored session traces through two inner pages.
 The first page is a previous-runs list backed by a per-project SQLite summary
 index and loaded with SQL `limit`/`offset` pagination. Rows only carry summary
-fields such as status, timing, action count, and effect count. Each row has a
-`View Log` action that loads exactly one compact Flow run detail and opens its
-action-log page. The action log shows attempts in recorded order with route,
-timing, comparison status, recovery selection, region, policy decision, and
-friendly summaries first. The recovery ladder has its own section showing the
-selected candidate, target, status, reason, and JSON details on demand. Full
-session traces can still be used for deep debugging, but the first run-log
-render must not require hydrating full inputs, outputs, effects, native logs,
-nested child traces, final effects, or final runtime values. Live step
-streaming can extend the same action-log surface as the runtime event stream
-matures.
+fields such as status, timing, action count, and effect count. Each row is clickable and loads exactly one compact Flow run detail before opening its action-log page. The detail page starts with a run story strip that summarizes
+deterministic execution, recovery, LLM intervention, patch tests, adaptation
+creation, and retry outcome before showing raw logs. A compact metrics grid
+shows status, action count, recovery count, LLM calls, tokens, cost,
+adaptations, and whether durable behavior changed. The action log keeps
+attempts in recorded order as single-line rows with route, timing, comparison
+status, recovery selection, region, policy decision, and friendly summaries
+first. Recovery ladder, LLM intervention, adaptation, effect, and final-value
+sections sit below the action rows with JSON details on demand. Full session
+traces can still be used for deep debugging, but the first run-log render must
+not require hydrating full inputs, outputs, effects, native logs, nested child
+traces, final effects, or final runtime values. Live step streaming can extend
+the same action-log surface as the runtime event stream matures. The detail
+page also exposes `Export Audit`, which downloads the service audit bundle for
+that run: compact run detail, intervention summaries, referenced adaptations,
+validation results, mutation before/after/rollback evidence, and retention
+signals.
+
+Runtime control is a product surface, not a raw executor console. The visible
+controls are a run mode selector, one primary `Run` button, declared Flow input
+fields when the Flow defines inputs, and a step limit. If a Flow has no
+declared inputs, the control clearly states that it will run with saved
+defaults. Raw JSON payload editing and per-run authorization switches for
+browser/API effects are not exposed in the normal UI; those remain internal
+runtime policy concerns.
 
 Subflows are Flow-owned sidebar objects, not a separate global workspace mode.
 The Subflows folder under a Flow can show paged summary children as the list

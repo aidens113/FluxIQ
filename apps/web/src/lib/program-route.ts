@@ -1,4 +1,4 @@
-const SESSION_BOUND_PROGRAMS = new Set(["identity-access", "database-manager", "automation-studio"]);
+const SESSION_BOUND_PROGRAMS = new Set(["identity-access", "database-manager", "automation-studio", "secret-keys"]);
 
 export function programResponseStatus(response: { ok: boolean; errorCode?: string }): number {
   if (response.ok) return 200;

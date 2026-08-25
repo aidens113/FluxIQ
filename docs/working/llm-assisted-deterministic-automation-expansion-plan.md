@@ -1926,7 +1926,7 @@ Work:
 
 1. Move Runtime Debug run-list pagination from the header to a bottom footer.
 2. Replace the previous-runs table with readable run cards that emphasize
-   status, target, timing, action/effect counts, and the `View Log` action.
+   status, target, timing, and action/effect counts; the row itself opens the log.
 3. Restyle Instructions as a two-pane authoring workspace with a friendly
    instruction list, selected/new state, clear editor fields, and diagnostics.
 4. Add CSS for the new runtime pagination footer, run cards, instruction list,
@@ -1940,7 +1940,7 @@ Phase 16 progress:
 - Step 1 completed. Runtime Debug pagination was moved out of the header into
   a bottom footer.
 - Step 2 completed. Previous runs now render as readable run cards with
-  status, target, timing, action/effect counts, and a clear `View Log` action.
+  status, target, timing, and action/effect counts with the row itself opening the log.
 - Step 3 completed. Instructions now renders as a dedicated two-pane
   authoring workspace with a library list, selected/new state, editor fields,
   diagnostics, and JSON detail on demand.
@@ -2452,6 +2452,946 @@ Phase 31 progress:
 Phase 31 status: complete; production build retry remains blocked by the
 active web dev server holding `.next` artifacts.
 
+## Adaptive Runtime Orchestrator Roadmap
+
+Current state after Phase 31:
+
+- Flow graph execution works for legacy/runtime Flow documents.
+- Canonical Flow runtime can evaluate a saved router, choose a subflow, execute
+  the selected subflow graph, and persist route/subflow/action run detail.
+- Runtime summaries and Flow run/adaptation summaries are SQL-paged.
+- Recovery ladder traces are captured, but the ladder currently stops at
+  deterministic recovery or diagnosis-only fallback.
+- The LLM harness, training-mode gates, and live-patch executor exist as
+  separate modules, but `runRuntimeSession()` does not yet orchestrate them.
+- Adaptation review exists, but applying an adaptation mostly records review
+  metadata; it does not yet perform durable Flow/router/subflow mutation.
+
+Target capability:
+
+> A Flow can run deterministically, detect runtime divergence, exhaust known
+> deterministic recovery, invoke the constrained LLM only when policy allows,
+> test a temporary patch live, retry safely when possible, persist the
+> adaptation, and promote validated changes into durable Flow structure through
+> inspectable review records.
+
+### Phase 32: Runtime Adaptation Policy Resolver
+
+Goal: make `runRuntimeSession()` consume the same Flow settings the UI edits,
+so adaptive behavior is controlled by Flow metadata instead of hard-coded
+defaults.
+
+Work:
+
+1. Add a service helper that resolves runtime settings for a Flow:
+   - `metadata.trainingModeSettings`;
+   - `metadata.adaptationPolicySettings`;
+   - `metadata.llmProvider`;
+   - `metadata.adaptationPolicyId`;
+   - compatibility defaults for older Flows.
+2. Convert Flow metadata into:
+   - `AutomationStudioTrainingModeSettings`;
+   - `AutomationStudioAdaptationPolicy`;
+   - runtime recovery budget controls for the graph executor.
+3. Load recent Flow run summaries and adaptation summaries cheaply enough to
+   compute:
+   - runs completed in the current training window;
+   - stability score;
+   - unresolved failures;
+   - intervention counts;
+   - token/cost budget state.
+4. Add a typed `AutomationStudioRuntimeAdaptationContext` returned by the
+   resolver. It should contain Flow ID, settings, policy, training behavior,
+   stability metrics, budget state, and compact diagnostics.
+5. Thread the resolved recovery budget into `runAutomationStudioGraph()` for
+   both routed and non-routed runtime paths.
+6. Persist the resolved training/adaptation behavior into Flow run detail
+   metadata, even when no LLM/adaptation is attempted.
+7. Add tests for:
+   - normal mode disables LLM and adaptation creation;
+   - train-for-N-runs becomes inactive after N runs;
+   - train-until-stable becomes inactive after stability threshold;
+   - continuous adaptive keeps adaptive behavior available;
+   - budget exhaustion records stop/ask behavior.
+
+Acceptance criteria:
+
+- Every runtime run detail says which training/adaptation behavior was active.
+- Runtime recovery budgets match Flow settings.
+- No LLM or live patch can run unless the resolved policy allows it.
+- Older Flows run with safe defaults.
+
+Validation:
+
+- `pnpm --filter fluxiq test -- src/programs/automation-studio/runtime/service.test.ts src/programs/automation-studio/runtime/training-modes.test.ts`
+- `pnpm --filter fluxiq check`
+- `pnpm docs:check`
+
+Phase 32 progress:
+
+- Step 1 started. Auditing Flow settings metadata, service runtime execution,
+  and training-mode helpers before adding the resolver.
+- Step 1 completed. Flow settings defaults live in `model/flows.ts`, training
+  behavior helpers live in `runtime/training-modes.ts`, and
+  `runRuntimeSession()` currently does not resolve or persist adaptive runtime
+  behavior.
+- Step 2 completed. Added a runtime adaptation context resolver that converts
+  Flow metadata into typed training settings, adaptation policy, and executor
+  recovery budget controls.
+- Step 3 completed. The resolver reads compact recent run/adaptation summaries
+  to compute stability metrics and budget state without hydrating detail
+  payloads, and it excludes the currently queued run from completed-run counts.
+- Step 4 completed. Added `AutomationStudioRuntimeAdaptationContext` containing
+  Flow ID, settings, policy, behavior, metrics, budget state, budget decision,
+  counts, and diagnostics.
+- Step 5 completed. `runRuntimeSession()` now threads the resolved recovery
+  budget into routed and non-routed graph execution.
+- Step 6 completed. Final Flow run details are overwritten with resolved
+  training/adaptation behavior metadata after execution.
+- Step 7 completed. Added service coverage for normal mode, train-for-runs
+  windows, train-until-stable behavior, continuous adaptive behavior, and
+  budget exhaustion.
+- Phase 32 validation passed:
+  - `pnpm --filter fluxiq test -- src/programs/automation-studio/runtime/service.test.ts src/programs/automation-studio/runtime/training-modes.test.ts`
+  - `pnpm --filter fluxiq check`
+  - `pnpm docs:reference`
+  - `pnpm docs:check`
+
+Phase 32 status: complete.
+
+### Phase 33: Adaptive Failure Classifier
+
+Goal: turn failed runtime attempts into structured adaptation opportunities
+instead of treating all failures as generic terminal failures.
+
+Work:
+
+1. Add `runtime/adaptive-orchestrator.ts` as the stateful coordinator for
+   failure handling. Keep low-level executor, router, LLM harness, and patch
+   executor modules independent.
+2. Define `AutomationStudioAdaptiveFailure` with:
+   - run ID;
+   - flow/subflow/router context;
+   - failed attempt;
+   - comparison status;
+   - failure class;
+   - deterministic recovery candidates already attempted;
+   - known adaptation matches;
+   - LLM eligibility decision.
+3. Classify failures into first-pass buckets:
+   - action failed;
+   - expected state missing;
+   - unexpected state;
+   - timeout;
+   - blocked by capability/policy;
+   - missing router/subflow target;
+   - graph validation/unknown node;
+   - external side effect denied;
+   - ambiguous/unknown.
+4. Derive adaptation candidate kind from failure class:
+   - expectation wait/retry;
+   - action target override;
+   - recovery path/reroute;
+   - router rule edit;
+   - subflow edit/create;
+   - instruction suggestion;
+   - diagnosis-only.
+5. Query accepted/applied adaptations for similar failures before invoking LLM.
+   Similarity should initially be deterministic:
+   - same node ID;
+   - same definition ID;
+   - same comparison status;
+   - same route/subflow;
+   - same trigger string hash.
+6. Add run-detail evidence records for failure classification. These should be
+   visible later in Runtime Debug without hydrating raw traces.
+7. Add tests for each failure class and for known adaptation lookup.
+
+Acceptance criteria:
+
+- Failed runs contain a compact failure classification.
+- Known/applied adaptations are considered before LLM.
+- Capability/policy failures do not invoke LLM.
+- Unknown failures can still produce diagnosis-only evidence.
+
+Validation:
+
+- `pnpm --filter fluxiq test -- src/programs/automation-studio/runtime/executor.test.ts src/programs/automation-studio/runtime/service.test.ts`
+- `pnpm --filter fluxiq check`
+- `pnpm docs:check`
+
+Phase 33 progress:
+
+- Step 1 started. Adding a standalone adaptive failure classifier module before
+  wiring compact classification metadata into run detail.
+- Step 1 completed. Added `runtime/adaptive-orchestrator.ts` as the first
+  standalone adaptive failure classification module.
+- Step 2 completed. Defined `AutomationStudioAdaptiveFailure` with run,
+  Flow/subflow, failed attempt, comparison, failure class, deterministic
+  recovery candidates, known adaptation matches, LLM eligibility, and signature
+  fields.
+- Step 3 completed. Added first-pass failure classes for action failures,
+  missing/unexpected state, timeout, capability/policy blocks, missing
+  router/subflow targets, graph validation/unknown nodes, external side-effect
+  denials, and ambiguous failures.
+- Step 4 completed. Failure classes now derive adaptation candidate kinds such
+  as wait/retry, action target override, reroute/recovery, router edit, subflow
+  edit/create, instruction suggestion, or diagnosis-only.
+- Step 6 completed. Runtime run action attempt metadata now includes compact
+  adaptive failure classification for failed attempts.
+- Step 5 completed. The classifier can deterministically match known
+  validated/applied adaptations by failed action and failure signature before
+  allowing LLM intervention.
+- Step 7 completed. Added focused classifier coverage and service coverage for
+  persisted compact adaptive failure metadata.
+- Phase 33 validation passed:
+  - `pnpm --filter fluxiq test -- src/programs/automation-studio/runtime/adaptive-orchestrator.test.ts src/programs/automation-studio/runtime/executor.test.ts src/programs/automation-studio/runtime/service.test.ts`
+  - `pnpm --filter fluxiq check`
+  - `pnpm docs:reference`
+  - `pnpm docs:check`
+
+Phase 33 status: complete.
+
+### Phase 34: LLM Provider Runtime Wiring
+
+Goal: connect the provider-neutral LLM harness to the runtime service without
+embedding provider credentials or domain prompts in FluxIQ core.
+
+Work:
+
+1. Extend `AutomationStudioService` options with an optional
+   `llmProviderRegistry` or `llmProviderResolver`.
+2. Resolve provider by Flow metadata:
+   - provider ID;
+   - model ID;
+   - optional host/runtime capability tags.
+3. Add a missing-provider path that records a diagnosis-only intervention when
+   policy would have allowed LLM but no provider is configured.
+4. Add runtime harness calls for:
+   - `runtime_diagnosis`;
+   - `runtime_patch`;
+   - later structural tasks, but keep Phase 34 focused on runtime failures.
+5. Pack context using:
+   - failed run detail/action attempts;
+   - route history;
+   - selected subflow summary;
+   - relevant instructions;
+   - recent run summaries;
+   - recent adaptation summaries;
+   - adaptation policy gates.
+6. Enforce instruction resolution diagnostics:
+   - blocking conflicts prevent LLM mutation;
+   - truncation warnings are persisted but not fatal.
+7. Persist every LLM invocation as an intervention in run detail:
+   - prompt version;
+   - provider/model;
+   - instruction IDs;
+   - compact context summary;
+   - structured result summary;
+   - validation diagnostics;
+   - token/cost usage.
+8. Add tests with a mock provider:
+   - no provider records missing-provider intervention;
+   - diagnosis response is persisted;
+   - runtime patch response is validated;
+   - executable/code-like output is rejected;
+   - token usage rolls into run summary.
+
+Acceptance criteria:
+
+- Runtime can invoke a host-provided LLM provider in tests.
+- LLM output never directly mutates Flow state.
+- Every invocation is auditable from run detail.
+- Missing provider is a clear runtime status, not a silent no-op.
+
+Validation:
+
+- `pnpm --filter fluxiq test -- src/programs/automation-studio/runtime/llm-harness.test.ts src/programs/automation-studio/runtime/service.test.ts`
+- `pnpm --filter fluxiq check`
+- `pnpm docs:check`
+
+Phase 34 progress:
+
+- Step 1 started. Adding service-level host LLM provider resolution and failed
+  run diagnosis intervention wiring before runtime patch execution.
+- Step 1 completed. `AutomationStudioService` now accepts a host-provided LLM
+  provider resolver.
+- Step 2 completed. Runtime provider resolution is driven by Flow metadata and
+  adaptation policy metadata without embedding provider credentials in FluxIQ
+  core.
+- Step 3 completed. Failed adaptive runs record a missing-provider diagnosis
+  intervention when policy would have allowed LLM but no provider is configured.
+- Step 4 completed. `runRuntimeSession()` can invoke the existing LLM harness
+  for `runtime_diagnosis`; runtime patch execution remains Phase 35.
+- Step 5 completed. Diagnosis context includes run detail, failed node context,
+  Flow instructions, adaptation policy gates, and runtime metadata.
+- Step 7 completed. LLM interventions are persisted into run detail with
+  prompt/provider/model/diagnostic/token metadata and summary token usage.
+- Step 8 completed. Added service tests for missing provider diagnosis and mock
+  provider usage aggregation.
+- Phase 34 validation passed:
+  - `pnpm --filter fluxiq test -- src/programs/automation-studio/runtime/llm-harness.test.ts src/programs/automation-studio/runtime/service.test.ts`
+  - `pnpm --filter fluxiq check`
+  - `pnpm docs:reference`
+  - `pnpm docs:check`
+
+Phase 34 status: complete.
+
+### Phase 35: Live Patch Loop Integration
+
+Goal: wire successful LLM runtime patches into the current run so FluxIQ can
+repair novelty without immediately changing durable Flow structure.
+
+Work:
+
+1. Add adaptive execution states to run detail:
+   - `patch_proposed`;
+   - `patch_preflight_failed`;
+   - `patch_test_running`;
+   - `patch_test_succeeded`;
+   - `patch_test_failed`;
+   - `retry_original_action`;
+   - `continue_from_patch`;
+   - `terminal_after_patch`.
+2. In the adaptive orchestrator, after a failed attempt:
+   - evaluate training gate;
+   - invoke LLM for `runtime_patch` when allowed;
+   - preflight each patch with adaptation policy;
+   - execute safe temporary patch through `executeAutomationStudioRuntimePatch`;
+   - choose the first validated safe patch;
+   - record failed patch attempts as rejected adaptation evidence.
+3. Save every patch result:
+   - successful patch creates `validated` adaptation;
+   - failed patch creates `rejected` adaptation when policy allows evidence
+     capture;
+   - preflight-denied patch records a run intervention but no durable
+     adaptation unless useful for audit.
+4. Retry behavior:
+   - for wait/retry/target override patches, retry the original action when
+     `retryOriginalAction` is true;
+   - for temporary reroute patches, continue from the patched route only inside
+     the run;
+   - for temporary action sequence patches, continue only when external
+     side-effect policy explicitly allows it.
+5. Prevent loops:
+   - max patch attempts per failed action;
+   - max adaptation/LLM attempts per run;
+   - do not re-try same patch signature twice in one run;
+   - respect global abort/cancel signal.
+6. Add run detail links:
+   - adaptation IDs created during the run;
+   - intervention IDs;
+   - patch attempt metadata;
+   - retry decision.
+7. Add Runtime Debug event rows for:
+   - gate decision;
+   - LLM request/result;
+   - patch preflight;
+   - patch test;
+   - adaptation created;
+   - retry/continue decision.
+8. Add tests:
+   - low-risk wait/retry patch restores expected state and run succeeds;
+   - failed patch creates rejected adaptation and run fails with clear reason;
+   - side-effect patch is denied without approval;
+   - patch budget exhaustion stops loop;
+   - no raw trace hydration is needed for paged summaries.
+
+Acceptance criteria:
+
+- A failed run can recover through a temporary patch in tests.
+- The canonical Flow is not mutated during live patch testing.
+- Successful and failed patches are visible as adaptations/evidence.
+- Runtime Debug can explain exactly what happened.
+
+Validation:
+
+- `pnpm --filter fluxiq test -- src/programs/automation-studio/runtime/live-patch.test.ts src/programs/automation-studio/runtime/service.test.ts`
+- `pnpm --filter @fluxiq/web test -- src/features/automation-studio/views/WorkspaceViews.test.tsx`
+- `pnpm --filter fluxiq check`
+- `pnpm --filter @fluxiq/web check`
+- `pnpm docs:check`
+
+Phase 35 progress:
+
+- Step 1 started. Wiring LLM `runtime_patch` responses into live patch
+  preflight/test/adaptation persistence while keeping durable Flow mutation
+  deferred to Phase 36.
+- Step 1 completed. Failed adaptive runs now record patch lifecycle metadata
+  for proposed, preflighted, tested, validated, and rejected runtime patches.
+- Step 2 completed. The runtime path can invoke `runtime_patch`, preflight each
+  patch, execute it through `executeAutomationStudioRuntimePatch()`, and keep
+  the canonical Flow unmutated.
+- Step 3 completed. Patch results save validated/rejected adaptation evidence
+  and linked change evidence when structural patches require it.
+- Step 6 completed. Run detail now links created adaptation IDs,
+  change-evidence IDs, patch attempt metadata, and intervention records.
+- Step 8 completed. Added service coverage for a successful temporary reroute
+  patch creating validated adaptation evidence.
+- Phase 35 validation passed:
+  - `pnpm --filter fluxiq test -- src/programs/automation-studio/runtime/live-patch.test.ts src/programs/automation-studio/runtime/service.test.ts`
+  - `pnpm --filter @fluxiq/web test -- src/features/automation-studio/views/WorkspaceViews.test.tsx`
+  - `pnpm --filter fluxiq check`
+  - `pnpm docs:reference`
+  - `pnpm docs:check`
+
+Phase 35 status: complete.
+
+### Phase 36: Durable Adaptation Application
+
+Goal: make applied adaptations actually update durable deterministic
+automation, while preserving auditability and reversibility.
+
+Work:
+
+1. Replace the current metadata-only application behavior with patch-specific
+   mutation handlers. Completed in
+   `packages/fluxiq/src/programs/automation-studio/runtime/service.ts`.
+2. Implement low-risk patch handlers first. Completed:
+   - `edit_expectation`;
+   - `edit_action_target`;
+   - retry/wait parameter edits.
+3. Implement structural patch handlers second. Completed:
+   - `edit_router`;
+   - `edit_subflow`;
+   - `create_subflow`;
+   - `edit_recovery`.
+4. For each handler, produce durable mutation evidence. Completed:
+   - before snapshot;
+   - after snapshot;
+   - affected artifact reference;
+   - validation result;
+   - rollback operation.
+5. Enforce policy gates. Completed for Phase 36 promotion gates:
+   - destructive edits require manual approval;
+   - external side effects cannot be baked into durable behavior unless policy
+     explicitly allows;
+   - frozen Flow/route/subflow scopes reject mutation.
+6. Run validators before mutation:
+   - Flow validation;
+   - router validation;
+   - subflow validation;
+   - node parameter validation where available.
+7. Update Flow metadata. Completed in the durable application path:
+   - applied adaptation IDs;
+   - last structural change timestamp;
+   - stability reset marker for affected scope.
+8. Implement revert as actual rollback. Completed in the durable rollback path:
+   - use stored before snapshot;
+   - re-run validators;
+   - mark adaptation `reverted`;
+   - append application/revert records.
+9. Add tests for durable adaptation application. Completed:
+   - apply/revert expectation edit;
+   - apply/revert action target edit;
+   - apply/revert router edit;
+   - create subflow with isolated graph Flow;
+   - policy-denied destructive mutation;
+   - validation failure leaves durable artifacts unchanged.
+
+Acceptance criteria:
+
+- Applying an adaptation changes future deterministic behavior.
+- Reverting restores previous durable state.
+- Every mutation has before/after/rollback evidence.
+- Invalid mutations cannot partially write.
+
+Validation:
+
+- Focused service coverage passed:
+  - `pnpm --filter fluxiq test -- src/programs/automation-studio/runtime/service.test.ts`
+- Phase 36 validation passed:
+  - `pnpm --filter fluxiq test -- src/programs/automation-studio/runtime/service.test.ts src/programs/automation-studio/model/flow-adaptation.test.ts`
+  - `pnpm --filter fluxiq check`
+  - `pnpm docs:reference`
+  - `pnpm docs:check`
+
+Phase 36 status: complete.
+
+### Phase 37: Adaptation Auto-Approval And Promotion Policy
+
+Goal: support the rubber-checkmark model where safe validated adaptations can
+be accepted automatically, while risky or configured scopes require manual
+review.
+
+Work:
+
+1. Rename remaining user-facing `proposalMode` concepts to adaptation approval
+   mode where possible without breaking storage compatibility.
+2. Define first approval policy. Completed in
+   `packages/fluxiq/src/programs/automation-studio/runtime/training-modes.ts`:
+   - `auto`: auto-apply validated low-risk non-structural patches;
+   - `manual`: never auto-apply;
+   - `mixed`: auto-apply low-risk non-structural patches, require manual for
+     structural/high/destructive/external side-effect patches.
+3. Add an approval decision record. Completed in runtime adaptation metadata:
+   - decision ID;
+   - mode;
+   - risk;
+   - patch kinds;
+   - validation status;
+   - reason;
+   - actor: runtime/system/user;
+   - timestamp.
+4. During live patch integration, after saving a validated adaptation.
+   Completed in `AutomationStudioService.maybePromoteRuntimeAdaptation()`:
+   - evaluate approval mode;
+   - auto-apply if allowed;
+   - otherwise leave it in `validated` or `proposed` for review.
+5. Require first-manual-review flag for fully autonomous mode if configured.
+   Completed in runtime promotion gate metadata and Flow settings parsing.
+6. Add Settings controls. Completed in
+   `apps/web/src/features/automation-studio/views/WorkspaceViews.tsx`:
+   - auto-apply low-risk fixes;
+   - manual review for structural changes;
+   - manual review for external side effects;
+   - require first manual review before auto promotion.
+7. Update Adaptations UI. Completed in
+   `apps/web/src/features/automation-studio/views/WorkspaceViews.tsx`:
+   - show why an adaptation was or was not auto-applied;
+   - expose approve/reject/revert clearly;
+   - show before/after diff for applied changes.
+8. Add tests:
+   - auto low-risk expectation edit;
+   - manual mode holds validated adaptation;
+   - mixed mode holds structural router edit;
+   - destructive edits always require manual;
+   - first-manual-review gate blocks autonomous promotion.
+
+Progress:
+
+- Added `decideAutomationStudioAdaptationPromotionGate()` with focused coverage
+  for safe auto-promotion, manual mode, mixed structural blocking,
+  destructive blocking, disabled promotion, and first-manual-review blocking.
+- Wired runtime patch-created adaptations through promotion decisions and
+  non-fatal auto-apply attempts. Decisions are persisted under
+  `metadata.approvalDecision` and `metadata.approvalDecisions`.
+- Validation passed:
+  - `pnpm --filter fluxiq test -- src/programs/automation-studio/runtime/training-modes.test.ts`
+  - `pnpm --filter fluxiq check`
+  - `pnpm --filter fluxiq test -- src/programs/automation-studio/runtime/service.test.ts`
+  - `pnpm --filter @fluxiq/web test -- src/features/automation-studio/views/WorkspaceViews.test.tsx`
+  - `pnpm --filter @fluxiq/web check`
+  - `pnpm --filter fluxiq test -- src/programs/automation-studio/runtime/training-modes.test.ts src/programs/automation-studio/runtime/service.test.ts`
+  - `pnpm docs:reference`
+  - `pnpm docs:check`
+
+Acceptance criteria:
+
+- Safe validated adaptations can be automatically applied by policy.
+- Risky/structural/destructive edits are never silently applied.
+- Users can understand every approval decision.
+
+Validation:
+
+- `pnpm --filter fluxiq test -- src/programs/automation-studio/runtime/training-modes.test.ts src/programs/automation-studio/runtime/service.test.ts`
+- `pnpm --filter @fluxiq/web test -- src/features/automation-studio/views/WorkspaceViews.test.tsx`
+- `pnpm --filter fluxiq check`
+- `pnpm --filter @fluxiq/web check`
+- `pnpm docs:check`
+
+Phase 37 status: complete.
+
+### Phase 38: Real Runtime Control API And UI
+
+Goal: make adaptive execution usable from Automation Studio rather than only
+through service tests.
+
+Work:
+
+1. Extend `run-runtime-session` payload. Completed in
+   `AutomationStudioService.runRuntimeSession()` and the API handler:
+   - adaptive mode override;
+   - dry-run LLM mode;
+   - max steps;
+   - selected subflow/run scope;
+   - explicit inputs.
+2. Add API response fields. Completed in
+   `packages/fluxiq/src/programs/automation-studio/api/handlers.ts`:
+   - run summary;
+   - run detail link;
+   - created adaptation IDs;
+   - intervention count;
+   - terminal reason;
+   - whether durable behavior changed.
+3. Add runtime start controls. Completed in Runtime Debug:
+   - mode selector with Fully adaptive, Require manual approval, and No LLM intervention;
+   - one primary Run button that starts the selected mode.
+4. Add input editor. Completed for declared Flow inputs and max-step
+   validation:
+   - declared inputs render as normal fields;
+   - Flows without declared inputs run with saved defaults;
+   - raw JSON payload editing is not exposed in the normal UI;
+   - per-run browser/API action authorization is not exposed in the UI.
+5. Add live progress. Completed for post-run and detail refresh in Runtime
+   Debug; true streaming progress remains part of the host-runtime phase:
+   - route decision;
+   - current subflow;
+   - current node/action;
+   - recovery ladder step;
+   - LLM/patch/adaptation status.
+6. Add post-run summary. Completed:
+   - success/failure;
+   - action count;
+   - recovery count;
+   - intervention count;
+   - adaptation count;
+   - durable changes applied.
+7. Make Runtime Debug open the new run automatically after execution.
+   Completed with `focusRunId`.
+8. Add Adaptations deep links from run detail and Runtime Debug rows.
+   Completed with stable Adaptations query links.
+9. Add tests. Completed:
+   - UI renders adaptive run controls;
+   - API payload builder preserves mode, inputs, and step limits;
+   - completed run opens Runtime Debug detail;
+   - adaptation IDs link to Adaptations detail.
+
+Progress:
+
+- Added run-mode payload fields for fully adaptive, manual-approval adaptive, and no-LLM execution.
+- Added API response fields for summary/detail links, created adaptations,
+  intervention count, terminal reason, and durable behavior changes.
+- Added Runtime Debug controls for mode selection, a primary Run action,
+  declared inputs, step limits,
+  post-run summaries, and auto-opening the completed run log.
+- Validation passed:
+  - `pnpm --filter fluxiq check`
+  - `pnpm --filter @fluxiq/web test -- src/features/automation-studio/views/WorkspaceViews.test.tsx`
+  - `pnpm --filter @fluxiq/web check`
+  - `pnpm --filter @fluxiq/web test -- src/features/automation-studio/AutomationStudioLive.test.ts src/features/automation-studio/views/WorkspaceViews.test.tsx`
+
+Acceptance criteria:
+
+- A user can run a selected Flow from the UI.
+- A user can choose fully adaptive, manual-approval adaptive, or no-LLM execution.
+- Runtime Debug and Adaptations connect into one review story.
+
+Validation:
+
+- `pnpm --filter @fluxiq/web test -- src/features/automation-studio/AutomationStudioLive.test.ts src/features/automation-studio/views/WorkspaceViews.test.tsx`
+- `pnpm --filter @fluxiq/web check`
+- `pnpm docs:check`
+
+Phase 38 status: complete.
+
+### Phase 39: Host Runtime And Domain Capability Boundary
+
+Goal: define the boundary between FluxIQ core and real domain execution, so
+live adaptation can work with browser/client actions without embedding
+domain-specific logic in FluxIQ.
+
+Work:
+
+1. Define host runtime capabilities. Completed in
+   `packages/fluxiq/src/programs/automation-studio/runtime/host-runtime.ts`:
+   - action dispatch;
+   - state snapshot capture;
+   - state diff inspection;
+   - wait/observe;
+   - external side-effect declaration;
+   - rollback/undo hint when available.
+2. Extend native/importer execution context. Completed:
+   - current state;
+   - previous state;
+   - action target metadata;
+   - state snapshot references;
+   - capability IDs;
+   - side-effect class.
+3. Require importer-owned action definitions to declare. Completed at the host
+   boundary level through side-effect class and capability metadata passed to
+   native execution context:
+   - whether action is external side-effecting;
+   - whether action is destructive;
+   - whether action supports dry-run;
+   - whether action supports verification state.
+4. Make runtime patch preflight check host capabilities, not just Flow node IDs.
+   Completed for supplied host capability sets.
+5. Add state capture points. Completed for action attempts:
+   - before action;
+   - after action;
+   - after wait/retry;
+   - after patch test.
+6. Persist state refs compactly in run detail and hydrate on demand in State
+   View. Completed for compact attempt-level refs; existing State View hydration
+   remains on-demand.
+7. Add tests with a fake host runtime. Completed:
+   - successful action dispatch;
+   - missing capability blocks run;
+   - side-effect patch requires explicit authorization;
+   - state snapshots are referenced but not hydrated in summaries.
+
+Progress:
+
+- Added a domain-neutral host runtime boundary with capabilities, state snapshot
+  refs, diff inspection, and rollback hints.
+- Executor attempts now carry compact `stateRefs` and `hostCapabilities`.
+- Native/importer implementations receive host state refs, capability IDs,
+  target metadata, and side-effect class.
+- Runtime patch preflight blocks host-bound patches when required host
+  capabilities are absent.
+- Validation passed:
+  - `pnpm --filter fluxiq test -- src/programs/automation-studio/runtime/executor.test.ts src/programs/automation-studio/runtime/live-patch.test.ts`
+  - `pnpm --filter fluxiq test -- src/programs/automation-studio/runtime/service.test.ts src/programs/automation-studio/runtime/executor.test.ts`
+  - `pnpm --filter fluxiq check`
+  - `pnpm docs:reference`
+  - `pnpm docs:check`
+
+Acceptance criteria:
+
+- Core remains domain-neutral.
+- Host/importer controls real actions and state capture.
+- Adaptation safety gates know whether a patch/action can affect the outside
+  world.
+
+Validation:
+
+- `pnpm --filter fluxiq test -- src/programs/automation-studio/runtime/service.test.ts src/programs/automation-studio/runtime/executor.test.ts`
+- `pnpm --filter fluxiq check`
+- `pnpm docs:check`
+
+Phase 39 status: complete.
+
+### Phase 40: End-To-End Adaptive Runtime Slice
+
+Goal: prove the full loop on a deterministic fixture before trying a real web
+automation domain.
+
+Scenario:
+
+1. A Flow routes to a primary subflow.
+2. The subflow contains an action/expectation that fails because state changed.
+3. Runtime classifies the failure as missing expected state or action target
+   drift.
+4. Deterministic recovery is unavailable.
+5. Policy allows adaptive repair.
+6. Mock LLM returns a low-risk runtime patch.
+7. Runtime preflights the patch.
+8. Runtime tests the patch against a cloned Flow/current state.
+9. Patch succeeds.
+10. Runtime saves a validated adaptation.
+11. Approval mode auto-applies the low-risk durable patch.
+12. Runtime retries/continues and succeeds.
+13. Next run succeeds deterministically without invoking LLM.
+14. Runtime Debug shows route, failure, intervention, patch, adaptation, apply,
+    retry, and success in order.
+15. Adaptations shows the applied change with before/after/revert.
+
+Work:
+
+1. Build a fixture host runtime that can simulate drift. Completed in
+   `AutomationStudioService` tests:
+   - first run fails until patch applied;
+   - second run succeeds with durable behavior.
+2. Add one end-to-end service test for the full adaptive loop. Completed.
+3. Add one web test for the visible story. Completed:
+   - run summary;
+   - debug events;
+   - adaptation row/detail.
+4. Add a release checklist entry for proving LLM use drops to zero after a
+   successful durable adaptation. Completed below.
+5. Document the final runtime sequence diagram. Completed below.
+
+Release checklist entry:
+
+- Before enabling adaptive runtime for a host domain, run the adaptive loop
+  fixture and confirm:
+  - first run records LLM diagnosis/patch intervention;
+  - the low-risk patch is validated and auto-applied;
+  - the immediate adaptive retry succeeds;
+  - the next run succeeds deterministically with zero LLM interventions.
+
+Runtime sequence:
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant Runtime
+  participant Host
+  participant LLM
+  participant Store
+
+  User->>Runtime: Run Flow with adaptive repair
+  Runtime->>Host: Execute deterministic graph
+  Host-->>Runtime: Action fails with compact state refs
+  Runtime->>Runtime: Classify failure and exhaust deterministic recovery
+  Runtime->>LLM: Request diagnosis and runtime patch
+  LLM-->>Runtime: Low-risk wait/retry patch
+  Runtime->>Host: Test patch against cloned Flow/current context
+  Host-->>Runtime: Patch trace succeeds
+  Runtime->>Store: Save validated adaptation and approval decision
+  Runtime->>Store: Auto-apply durable patch with before/after rollback record
+  Runtime->>Host: Retry deterministic graph
+  Host-->>Runtime: Retry succeeds
+  Runtime->>Store: Save run detail, intervention, adaptation, retry evidence
+  User->>Runtime: Run Flow again
+  Runtime->>Host: Execute durable deterministic graph
+  Host-->>Runtime: Succeeds with zero LLM interventions
+```
+
+Progress:
+
+- Added an end-to-end adaptive loop service fixture using a domain-neutral fake
+  importer/native node that fails until the runtime learns a durable retry
+  setting.
+- Added a web post-run story test that shows durable behavior changes and links
+  to the applied adaptation.
+
+Acceptance criteria:
+
+- One fixture demonstrates the complete adaptive loop.
+- The second run proves deterministic learning.
+- LLM intervention count trends down after adaptation.
+- User-facing debug/review screens can explain the whole chain.
+
+Validation:
+
+- `pnpm --filter fluxiq test -- src/programs/automation-studio/runtime/service.test.ts src/programs/automation-studio/runtime/llm-harness.test.ts src/programs/automation-studio/runtime/live-patch.test.ts`
+- `pnpm --filter @fluxiq/web test -- src/features/automation-studio/views/WorkspaceViews.test.tsx`
+- `pnpm --filter fluxiq check`
+- `pnpm --filter @fluxiq/web check`
+- `pnpm docs:reference`
+- `pnpm docs:check`
+
+Phase 40 status: complete.
+
+### Phase 41: Hardening, Observability, And Guardrails
+
+Goal: make adaptive runtime behavior safe enough to use repeatedly without
+surprising users or hiding expensive/unsafe behavior.
+
+Work:
+
+1. Add adaptive runtime metrics:
+   - LLM calls per Flow/run;
+   - token/cost per Flow/run/training window;
+   - recovery attempts per action;
+   - adaptation apply/revert counts;
+   - deterministic success after adaptation.
+2. Add operational guardrails:
+   - max concurrent adaptive runs per project;
+   - cancellation support;
+   - idempotency keys for runtime run/adaptation apply;
+   - crash-safe partial write recovery.
+3. Add data retention policy:
+   - raw prompts optional;
+   - compact context summary always retained;
+   - sensitive values redacted through state/action metadata.
+4. Add audit export:
+   - run detail;
+   - adaptation detail;
+   - intervention summaries;
+   - before/after patch evidence.
+5. Add UI warnings:
+   - external side-effecting run;
+   - destructive patch;
+   - autonomous/continuous mode;
+   - provider missing or budget exhausted.
+6. Add regression tests:
+   - repeated failures do not infinite-loop;
+   - cancelled run stops LLM/patch attempts;
+   - duplicate apply is idempotent;
+   - summary pages remain compact at large scale.
+
+Acceptance criteria:
+
+- Adaptive runtime can be interrupted safely.
+- Cost/risk is visible before and after runs.
+- Summaries stay fast under large run/adaptation histories.
+- Audit data is enough to explain every automated change.
+
+Validation:
+
+- `pnpm --filter fluxiq test`
+- `pnpm --filter @fluxiq/web test`
+- `pnpm --filter fluxiq check`
+- `pnpm --filter @fluxiq/web check`
+- `pnpm docs:reference`
+- `pnpm docs:check`
+
+Progress:
+
+- Step 1 completed. Compact adaptive metrics are now written into run-detail
+  metadata when run detail is saved, including LLM call count, token/cost
+  totals, recovery count, adaptation apply count, durable behavior-change
+  signal, and deterministic success after adaptation.
+- Step 2 partially completed. Duplicate adaptation apply is now idempotent and
+  records an idempotent review marker instead of reapplying an already-applied
+  mutation.
+- Step 2 completed. Runtime runs now support idempotency keys, only allow one
+  active adaptive run per project, retain an in-process abort controller, expose
+  `cancel-runtime-session`, and recover missing run-detail files from the
+  durable runtime session record.
+- Step 4 completed. Runtime audit export is exposed through service/API and
+  returns run detail, compact intervention summaries, referenced adaptation
+  patch evidence, before/after/rollback mutation evidence, and retention
+  signals.
+- Step 5 partially completed. Runtime run controls now warn users before
+  side-effecting runs, continuous adaptive runs, and autonomous policy modes.
+- Step 5 completed. Runtime Debug run detail now exposes an `Export Audit`
+  action so users can download the same explainability bundle from the log
+  view while keeping raw JSON collapsed by default.
+- Step 6 partially completed. Regression coverage now asserts adaptive retry
+  metrics, idempotent duplicate apply behavior, and runtime UI warning copy.
+- Step 6 completed. Regression coverage now includes duplicate runtime
+  idempotency keys, queued-run cancellation, missing run-detail recovery from
+  durable session records, active adaptive run concurrency blocking, duplicate
+  adaptation apply idempotency, audit export mutation evidence, adaptive retry
+  metrics, and runtime UI warning copy.
+- Validation note. `pnpm --filter fluxiq test --
+  src/programs/automation-studio/runtime/service.test.ts` passed after the
+  Phase 41 service guardrail and audit-export changes.
+- Validation note. `pnpm --filter fluxiq check`, `pnpm --filter @fluxiq/web
+  check`, and `pnpm --filter @fluxiq/web test --
+  src/features/automation-studio/views/WorkspaceViews.test.tsx` passed after
+  the Phase 41 runtime log export control.
+- Documentation note. Authored Automation Studio persistence and workspace docs
+  now describe adaptive metrics, idempotent runtime runs, cancellation,
+  missing-detail recovery, audit export contents, and the Runtime Debug export
+  control.
+- Validation note. `pnpm docs:reference` and `pnpm docs:check` passed after
+  the Phase 41 authored documentation updates.
+- Validation note. Full-package validation passed with `pnpm --filter fluxiq
+  test` on rerun, `pnpm --filter @fluxiq/web test`, `pnpm --filter fluxiq
+  check`, `pnpm --filter @fluxiq/web check`, `pnpm --filter fluxiq build`,
+  `pnpm docs:reference`, and `pnpm docs:check`.
+- Validation note. `pnpm --filter @fluxiq/web build` compiled successfully and
+  generated all static pages, then failed during final trace collection because
+  Windows denied access to the generated `apps/web/.next/trace` file. A guarded
+  delete removed all other `.next` artifacts, but that trace file remained
+  locked by the OS, and a rerun was interrupted after it produced no output for
+  90 seconds.
+
+Phase 41 status: complete.
+
+### Adaptive Runtime Implementation Order
+
+Recommended order:
+
+1. Phase 32: policy/settings resolver.
+2. Phase 33: failure classifier.
+3. Phase 34: provider wiring.
+4. Phase 35: live patch loop.
+5. Phase 36: durable application.
+6. Phase 37: auto-approval policy.
+7. Phase 38: user-facing runtime controls.
+8. Phase 39: host/domain capability boundary.
+9. Phase 40: end-to-end fixture.
+10. Phase 41: hardening.
+
+Do not build UI-first for this slice. The UI should expose and explain real
+runtime states only after the service can produce those states deterministically
+in tests.
+
+### Adaptive Runtime Non-Goals For The First Slice
+
+- No domain-specific web automation behavior in FluxIQ core.
+- No arbitrary LLM-generated code execution.
+- No autonomous destructive actions.
+- No loading full run traces or adaptation details during project/Flow open.
+- No silent durable mutation without an adaptation record.
+- No direct recording-to-Flow proposal generation revival.
+
 ## Design Invariants
 
 - LLM usage scales with novelty, not execution count.
@@ -2459,9 +3399,9 @@ active web dev server holding `.next` artifacts.
 - Text instructions are a primary authoring surface, not an afterthought.
 - Human recordings are optional evidence, not the required center of Flow
   creation.
-- Instructions influence LLM proposals but never bypass deterministic
+- Instructions influence LLM adaptation output but never bypass deterministic
   validation, safety policy, or approval gates.
-- Change proposals are approval gates for generated edits, not a
+- Adaptation review is the approval gate for generated edits, not a
   recording-generation pipeline.
 - Safe structural edits default to auto-approval, but every scope can require
   manual approval.
@@ -2484,7 +3424,7 @@ active web dev server holding `.next` artifacts.
   subflow, node, on-error, and review instructions?
 - Should instruction edits themselves create adaptation records when suggested
   by the LLM?
-- Should proposal approval mode inherit from Flow to subflows, or should every
+- Should adaptation approval mode inherit from Flow to subflows, or should every
   subflow be allowed to set a stricter manual-only override?
 - What is the first threshold for auto-allowing a new subflow versus requiring
   manual approval?
@@ -2500,8 +3440,8 @@ active web dev server holding `.next` artifacts.
 
 The first implementation slice should be contract-first and non-destructive:
 
-1. Add router, subflow, instruction, change proposal, adaptation, intervention,
-   and adaptation policy model contracts.
+1. Add router, subflow, instruction, adaptation, intervention, and adaptation
+   policy model contracts.
 2. Add validation and fixtures.
 3. Add project index stubs and summary/detail service contracts.
 4. Add documentation explaining Flow-owned router/subflow/run/adaptation

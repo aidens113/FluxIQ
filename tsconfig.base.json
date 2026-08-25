@@ -22,6 +22,7 @@
       "fluxiq/automation-studio/nodes": ["packages/fluxiq/src/programs/automation-studio/nodes/index.ts"],
       "fluxiq/automation-studio/dsl": ["packages/fluxiq/src/programs/automation-studio/dsl/index.ts"],
       "fluxiq/automation-studio/dsl/generator": ["packages/fluxiq/src/programs/automation-studio/dsl/generator.ts"],
+      "fluxiq/secret-keys": ["packages/fluxiq/src/programs/secret-keys/index.ts"],
       "fluxiq/*": ["packages/fluxiq/src/*/index.ts"]
     }
   }

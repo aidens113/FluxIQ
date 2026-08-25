@@ -9,6 +9,7 @@ import {
   CloudUpload,
   Database,
   GitBranch,
+  KeyRound,
   Pause,
   Play,
   PlayCircle,
@@ -61,6 +62,7 @@ const icons = {
   "cloud-upload": CloudUpload,
   database: Database,
   "git-branch": GitBranch,
+  "key-round": KeyRound,
   "play-circle": PlayCircle,
   "shield-check": ShieldCheck
 } satisfies Record<FluxIQIconName, typeof Blocks>;

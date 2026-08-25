@@ -78,22 +78,219 @@ export function AutomationSignalWorkspace(props: { domains: any[]; signals: any[
   );
 }
 
-export function AutomationRuntimeWorkspace(props: { projectId: string | null; pipelineArtifacts: any; timelines: any[]; models: any[]; policies: any[]; runtimeSessions: any[] }) {
+export function AutomationRuntimeWorkspace(props: { projectId: string | null; flow?: any; pipelineArtifacts: any; timelines: any[]; models: any[]; policies: any[]; runtimeSessions: any[] }) {
+  const api = useProgramApi("automation-studio");
   const orderedSessions = useMemo(() => sortRuntimeRunsForDebugView(props.runtimeSessions), [props.runtimeSessions]);
+  const [inputText, setInputText] = useState("{}");
+  const [maxSteps, setMaxSteps] = useState("50");
+  const [runningMode, setRunningMode] = useState<string | null>(null);
+  const [runError, setRunError] = useState("");
+  const [lastRun, setLastRun] = useState<any | null>(null);
+  const runFlow = async (mode: AutomationRuntimeRunMode) => {
+    setRunningMode(mode);
+    setRunError("");
+    const payload = buildAutomationRuntimeRunPayload({
+      projectId: props.projectId,
+      flowId: props.flow?.flowId,
+      mode,
+      inputText,
+      maxSteps
+    });
+    if (!payload.ok) {
+      setRunError(payload.error);
+      setRunningMode(null);
+      return;
+    }
+    const result = await api.post<{ runtimeSession?: any; runSummary?: any; createdAdaptationIds?: string[]; interventionCount?: number; terminalReason?: string; durableBehaviorChanged?: boolean }>("run-runtime-session", payload.payload);
+    setRunningMode(null);
+    if (!result.ok || !result.payload?.runtimeSession) {
+      setRunError(result.error ?? "Runtime session could not be started.");
+      return;
+    }
+    setLastRun(result.payload);
+  };
   return (
     <section className="automation-runtime-stage">
       <SummaryStrip items={[
         ["Runs", props.runtimeSessions.length],
         ["Timelines", props.timelines.length],
         ["Models", props.models.length],
-        ["Proposals", props.pipelineArtifacts?.policyProposals?.length ?? 0],
+        ["Adaptations", props.pipelineArtifacts?.policyProposals?.length ?? 0],
         ["Runnable Nodes", props.policies.reduce((total, policy) => total + (policy.nodes?.length ?? 0), 0)]
       ]} />
-      <RuntimeDebugInnerView projectId={props.projectId} initialSessions={orderedSessions} />
+      <RuntimeRunControlPanel
+        disabled={!props.projectId || !props.flow?.flowId || Boolean(runningMode)}
+        flow={props.flow}
+        inputText={inputText}
+        maxSteps={maxSteps}
+        runningMode={runningMode}
+        onInputText={setInputText}
+        onMaxSteps={setMaxSteps}
+        onRun={runFlow}
+      />
+      {runError ? <p className="automation-runtime-message">{runError}</p> : null}
+      {lastRun ? <RuntimePostRunSummary result={lastRun} /> : null}
+      <RuntimeDebugInnerView focusRunId={lastRun?.runtimeSession?.runId} projectId={props.projectId} initialSessions={orderedSessions} />
     </section>
   );
 }
 
+type AutomationRuntimeRunMode = "default" | "manual_approval" | "deterministic";
+
+export function buildAutomationRuntimeRunPayload(input: {
+  projectId: string | null;
+  flowId?: string;
+  mode: AutomationRuntimeRunMode;
+  inputText: string;
+  maxSteps: string;
+}): { ok: true; payload: any } | { ok: false; error: string } {
+  if (!input.projectId || !input.flowId) return { ok: false, error: "Select a Flow before running." };
+  let parsedInputs: any = {};
+  try {
+    parsedInputs = input.inputText.trim() ? JSON.parse(input.inputText) : {};
+  } catch {
+    return { ok: false, error: "Inputs must be valid JSON." };
+  }
+  if (!parsedInputs || typeof parsedInputs !== "object" || Array.isArray(parsedInputs)) return { ok: false, error: "Inputs must be a JSON object." };
+  const maxSteps = input.maxSteps.trim() ? Number(input.maxSteps) : undefined;
+  if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps <= 0)) return { ok: false, error: "Max steps must be a positive whole number." };
+  return {
+    ok: true,
+    payload: {
+      projectId: input.projectId,
+      flowId: input.flowId,
+      inputs: parsedInputs,
+      adaptiveMode: input.mode,
+      ...(maxSteps !== undefined ? { maxSteps } : {})
+    }
+  };
+}
+
+function RuntimeRunControlPanel(props: {
+  disabled: boolean;
+  flow: any;
+  inputText: string;
+  maxSteps: string;
+  runningMode: string | null;
+  onInputText(value: string): void;
+  onMaxSteps(value: string): void;
+  onRun(mode: AutomationRuntimeRunMode): void;
+}) {
+  const [selectedMode, setSelectedMode] = useState<AutomationRuntimeRunMode>("default");
+  const runModes: Array<{ mode: AutomationRuntimeRunMode; label: string }> = [
+    { mode: "default", label: "Fully adaptive" },
+    { mode: "manual_approval", label: "Require manual approval" },
+    { mode: "deterministic", label: "No LLM intervention" }
+  ];
+  const warnings = [
+    props.flow?.metadata?.trainingMode === "continuous_adaptive" ? "Continuous adaptive mode can create runtime adaptations." : "",
+    props.flow?.metadata?.adaptationPolicySettings?.preset === "autonomous" ? "Autonomous policy can promote eligible validated adaptations." : ""
+  ].filter(Boolean);
+  const declaredInputs = runtimeFlowDeclaredInputs(props.flow);
+  return (
+    <section className="automation-runtime-run-panel">
+      <header>
+        <div>
+          <strong>Run This Flow</strong>
+          <span>{props.flow?.name ?? props.flow?.flowId ?? "Select a Flow"}</span>
+        </div>
+      </header>
+      {warnings.length ? <div className="automation-runtime-message">{warnings.join(" ")}</div> : null}
+      <div className="automation-runtime-run-command">
+        <label>
+          <span>Mode</span>
+          <select value={selectedMode} onChange={(event) => setSelectedMode(event.target.value as AutomationRuntimeRunMode)}>
+            {runModes.map((mode) => <option key={mode.mode} value={mode.mode}>{mode.label}</option>)}
+          </select>
+          <small>{runtimeModeDescription(selectedMode)}</small>
+        </label>
+        <button className="button button-primary" disabled={props.disabled} onClick={() => props.onRun(selectedMode)} type="button">
+          {props.runningMode ? "Running..." : "Run"}
+        </button>
+      </div>
+      {declaredInputs.length ? <div className="automation-runtime-input-fields">
+        <header><strong>Run Inputs</strong><span>Values passed into this run</span></header>
+        <div>
+          {declaredInputs.map((inputName) => (
+            <label key={inputName}>
+              <span>{inputName}</span>
+              <input value={runtimeRunInputValues(props.inputText)[inputName] ?? ""} onChange={(event) => props.onInputText(updateRuntimeRunInputText(props.inputText, inputName, event.target.value))} />
+            </label>
+          ))}
+        </div>
+      </div> : <div className="automation-runtime-input-preview">
+        <strong>No run inputs declared</strong>
+        <span>This Flow will run with its saved defaults.</span>
+      </div>}
+      <div className="automation-runtime-advanced-grid">
+        <label><span>Step limit</span><input min={1} type="number" value={props.maxSteps} onChange={(event) => props.onMaxSteps(event.target.value)} /></label>
+      </div>
+    </section>
+  );
+}
+
+function runtimeModeDescription(mode: AutomationRuntimeRunMode): string {
+  if (mode === "manual_approval") return "Use LLM assistance, but keep generated adaptations queued for review.";
+  if (mode === "deterministic") return "Run without LLM intervention or adaptation creation.";
+  return "Use this Flow's adaptive policy and auto-apply safe validated adaptations.";
+}
+
+function runtimeFlowDeclaredInputs(flow: any): string[] {
+  const candidates = [
+    flow?.interface?.inputs,
+    flow?.inputs,
+    flow?.metadata?.inputs,
+    flow?.metadata?.inputSchema?.properties
+  ];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate.map((item) => typeof item === "string" ? item : item?.name ?? item?.id).filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 8);
+    if (candidate && typeof candidate === "object") return Object.keys(candidate).slice(0, 8);
+  }
+  return [];
+}
+
+function runtimeRunInputValues(inputText: string): Record<string, string> {
+  try {
+    const parsed = inputText.trim() ? JSON.parse(inputText) : {};
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, typeof value === "string" ? value : JSON.stringify(value)]));
+  } catch {
+    return {};
+  }
+}
+
+function updateRuntimeRunInputText(inputText: string, key: string, value: string): string {
+  let parsed: Record<string, any> = {};
+  try {
+    const current = inputText.trim() ? JSON.parse(inputText) : {};
+    if (current && typeof current === "object" && !Array.isArray(current)) parsed = current;
+  } catch {
+    parsed = {};
+  }
+  return JSON.stringify({ ...parsed, [key]: value }, null, 2);
+}
+
+export function RuntimePostRunSummary(props: { result: any }) {
+  const session = props.result.runtimeSession ?? {};
+  return (
+    <section className="automation-runtime-log-section">
+      <header><strong>Last Run</strong><span>{session.runId ?? "-"}</span></header>
+      <SummaryStrip items={[
+        ["Status", session.status ?? "-"],
+        ["Actions", props.result.runSummary?.actionAttemptCount ?? session.trace?.attempts?.length ?? 0],
+        ["Recovery", props.result.runSummary?.metadata?.recoveryAttemptCount ?? 0],
+        ["Interventions", props.result.interventionCount ?? 0],
+        ["Adaptations", props.result.createdAdaptationIds?.length ?? 0],
+        ["Durable", props.result.durableBehaviorChanged ? "yes" : "no"]
+      ]} />
+      <DataTable columns={["Field", "Value"]} rows={[
+        ["Terminal reason", props.result.terminalReason ?? session.trace?.message ?? session.status ?? "-"],
+        ["Run detail", props.result.runDetailLink?.runId ?? session.runId ?? "-"],
+        ["Adaptations", props.result.createdAdaptationIds?.length ? props.result.createdAdaptationIds.map((adaptationId: string) => <a className="automation-runtime-row-action" href={adaptationReviewHref(props.result.runSummary?.flowId ?? session.flowId, adaptationId)} key={adaptationId}>{adaptationId}</a>) : "-"]
+      ]} empty="No run result." />
+    </section>
+  );
+}
 
 export function AutomationRunsWorkspace(props: { projectId: string | null; pipelineArtifacts: any; runtimeSessions: any[] }) {
   const replays = props.pipelineArtifacts?.replayResults ?? [];
@@ -543,8 +740,10 @@ type FlowSettingsDraft = {
   trainForRunCount: string;
   minimumStabilityScore: string;
   proposalApprovalMode: "auto" | "manual" | "mixed";
-  adaptationPreset: "locked" | "observe" | "repair" | "adaptive" | "autonomous";
+  requireFirstManualReviewBeforeAutoPromotion: boolean;
+  adaptationPreset: "locked" | "observe" | "adaptive" | "autonomous";
   adaptationProposalMode: "auto" | "manual" | "mixed";
+  manualReviewForStructuralChanges: boolean;
   allowLlmIntervention: boolean;
   allowRuntimeRecovery: boolean;
   allowAdaptationCreation: boolean;
@@ -556,9 +755,7 @@ type FlowSettingsDraft = {
   allowModifyExpectations: boolean;
   allowModifyActionTargets: boolean;
   allowDeleteOrDisableBehavior: boolean;
-  allowExternalSideEffects: boolean;
   requireApprovalForDestructiveChanges: boolean;
-  requireApprovalForExternalSideEffects: boolean;
   maxInterventionsPerRun: string;
   maxTokensPerRun: string;
   maxCostUsdPerTrainingWindow: string;
@@ -623,27 +820,29 @@ export function AutomationFlowSettingsWorkspace(props: { projectId: string | nul
         </section>
         <section className="automation-settings-panel">
           <header><strong>Training Mode</strong><span>How much help the runtime may ask from the LLM</span></header>
-          <label><span>Mode</span><select value={draft.trainingMode} onChange={(event) => updateDraft("trainingMode", event.target.value as FlowSettingsDraft["trainingMode"])}><option value="normal">Normal deterministic</option><option value="train_for_runs">Train for fixed runs</option><option value="train_until_stable">Train until stable</option><option value="continuous_adaptive">Continuous adaptive</option></select></label>
+          <label><span>Mode</span><select value={draft.trainingMode} onChange={(event) => updateDraft("trainingMode", event.target.value as FlowSettingsDraft["trainingMode"])}><option value="normal">No LLM intervention</option><option value="train_for_runs">Train for fixed runs</option><option value="train_until_stable">Train until stable</option><option value="continuous_adaptive">Continuous adaptive</option></select></label>
           <div className="automation-settings-inline-fields">
             <label><span>Train runs</span><input min={0} type="number" value={draft.trainForRunCount} onChange={(event) => updateDraft("trainForRunCount", event.target.value)} /></label>
             <label><span>Stability target</span><input max={1} min={0} step={0.01} type="number" value={draft.minimumStabilityScore} onChange={(event) => updateDraft("minimumStabilityScore", event.target.value)} /></label>
           </div>
-          <label><span>Proposal approval</span><select value={draft.proposalApprovalMode} onChange={(event) => updateDraft("proposalApprovalMode", event.target.value as FlowSettingsDraft["proposalApprovalMode"])}><option value="auto">Auto approve safe edits</option><option value="manual">Manual approval only</option><option value="mixed">Mixed by risk/policy</option></select></label>
+          <label><span>Adaptation approval</span><select value={draft.proposalApprovalMode} onChange={(event) => updateDraft("proposalApprovalMode", event.target.value as FlowSettingsDraft["proposalApprovalMode"])}><option value="auto">Auto-apply safe edits</option><option value="manual">Manual approval only</option><option value="mixed">Manual for risky edits</option></select></label>
         </section>
         <section className="automation-settings-panel">
           <header><strong>Runtime Safety</strong><span>Deterministic gates before learned changes become behavior</span></header>
           <SettingsToggle checked={draft.allowRuntimeRecovery} label="Allow runtime recovery" onChange={(checked) => updateDraft("allowRuntimeRecovery", checked)} />
           <SettingsToggle checked={draft.allowLlmIntervention} label="Allow LLM intervention" onChange={(checked) => updateDraft("allowLlmIntervention", checked)} />
-          <SettingsToggle checked={draft.allowAdaptationCreation} label="Create adaptation proposals" onChange={(checked) => updateDraft("allowAdaptationCreation", checked)} />
-          <SettingsToggle checked={draft.allowPromotion} label="Promote validated adaptations" onChange={(checked) => updateDraft("allowPromotion", checked)} />
+          <SettingsToggle checked={draft.allowAdaptationCreation} label="Create adaptations" onChange={(checked) => updateDraft("allowAdaptationCreation", checked)} />
+          <SettingsToggle checked={draft.allowPromotion} label="Auto-apply low-risk fixes" onChange={(checked) => updateDraft("allowPromotion", checked)} />
+          <SettingsToggle checked={draft.requireFirstManualReviewBeforeAutoPromotion} label="Require first manual review" onChange={(checked) => updateDraft("requireFirstManualReviewBeforeAutoPromotion", checked)} />
         </section>
         <section className="automation-settings-panel automation-settings-panel-wide">
           <header><strong>Adaptations</strong><span>What the runtime may learn, propose, edit, and promote</span></header>
           <div className="automation-settings-inline-fields">
-            <label><span>Policy preset</span><select value={draft.adaptationPreset} onChange={(event) => updateDraft("adaptationPreset", event.target.value as FlowSettingsDraft["adaptationPreset"])}><option value="locked">Locked</option><option value="observe">Observe only</option><option value="repair">Repair</option><option value="adaptive">Adaptive</option><option value="autonomous">Autonomous</option></select></label>
-            <label><span>Adaptation proposal mode</span><select value={draft.adaptationProposalMode} onChange={(event) => updateDraft("adaptationProposalMode", event.target.value as FlowSettingsDraft["adaptationProposalMode"])}><option value="auto">Auto approve safe validated changes</option><option value="manual">Manual approval only</option><option value="mixed">Manual for risky or structural changes</option></select></label>
+            <label><span>Policy preset</span><select value={draft.adaptationPreset} onChange={(event) => updateDraft("adaptationPreset", event.target.value as FlowSettingsDraft["adaptationPreset"])}><option value="locked">Locked</option><option value="observe">Observe only</option><option value="adaptive">Adaptive</option><option value="autonomous">Autonomous</option></select></label>
+            <label><span>Adaptation approval mode</span><select value={draft.adaptationProposalMode} onChange={(event) => updateDraft("adaptationProposalMode", event.target.value as FlowSettingsDraft["adaptationProposalMode"])}><option value="auto">Auto-apply safe validated changes</option><option value="manual">Manual approval only</option><option value="mixed">Manual for risky changes</option></select></label>
           </div>
           <div className="automation-settings-toggle-grid">
+            <SettingsToggle checked={draft.manualReviewForStructuralChanges} label="Manual review for structural changes" onChange={(checked) => updateDraft("manualReviewForStructuralChanges", checked)} />
             <SettingsToggle checked={draft.allowCreateRecoveryPaths} label="Create recovery paths" onChange={(checked) => updateDraft("allowCreateRecoveryPaths", checked)} />
             <SettingsToggle checked={draft.allowModifyRouter} label="Modify router rules" onChange={(checked) => updateDraft("allowModifyRouter", checked)} />
             <SettingsToggle checked={draft.allowModifySubflows} label="Modify subflows" onChange={(checked) => updateDraft("allowModifySubflows", checked)} />
@@ -651,9 +850,7 @@ export function AutomationFlowSettingsWorkspace(props: { projectId: string | nul
             <SettingsToggle checked={draft.allowModifyExpectations} label="Modify expectations" onChange={(checked) => updateDraft("allowModifyExpectations", checked)} />
             <SettingsToggle checked={draft.allowModifyActionTargets} label="Modify action targets" onChange={(checked) => updateDraft("allowModifyActionTargets", checked)} />
             <SettingsToggle checked={draft.allowDeleteOrDisableBehavior} label="Delete or disable behavior" onChange={(checked) => updateDraft("allowDeleteOrDisableBehavior", checked)} />
-            <SettingsToggle checked={draft.allowExternalSideEffects} label="Allow external side effects" onChange={(checked) => updateDraft("allowExternalSideEffects", checked)} />
             <SettingsToggle checked={draft.requireApprovalForDestructiveChanges} label="Require approval for destructive changes" onChange={(checked) => updateDraft("requireApprovalForDestructiveChanges", checked)} />
-            <SettingsToggle checked={draft.requireApprovalForExternalSideEffects} label="Require approval for external side effects" onChange={(checked) => updateDraft("requireApprovalForExternalSideEffects", checked)} />
           </div>
           <div className="automation-settings-inline-fields">
             <label><span>Adaptation interventions/run</span><input min={0} type="number" value={draft.maxAdaptationInterventionsPerRun} onChange={(event) => updateDraft("maxAdaptationInterventionsPerRun", event.target.value)} /></label>
@@ -708,8 +905,10 @@ function flowSettingsDraftFromFlow(flow: any): FlowSettingsDraft {
     trainForRunCount: numberInputValue(trainingSettings.trainForRunCount ?? metadata.trainForRunCount),
     minimumStabilityScore: numberInputValue(trainingSettings.minimumStabilityScore ?? metadata.minimumStabilityScore),
     proposalApprovalMode,
+    requireFirstManualReviewBeforeAutoPromotion: booleanSetting(trainingSettings.requireFirstManualReviewBeforeAutoPromotion ?? metadata.requireFirstManualReviewBeforeAutoPromotion, false),
     adaptationPreset: flowSettingsAdaptationPreset(adaptationSettings.preset),
     adaptationProposalMode,
+    manualReviewForStructuralChanges: booleanSetting(adaptationSettings.manualReviewForStructuralChanges ?? metadata.manualReviewForStructuralChanges, true),
     allowLlmIntervention: booleanSetting(trainingSettings.allowLlmIntervention, trainingMode !== "normal"),
     allowRuntimeRecovery: booleanSetting(trainingSettings.allowRuntimeRecovery, true),
     allowAdaptationCreation: booleanSetting(trainingSettings.allowAdaptationCreation, trainingMode !== "normal"),
@@ -721,9 +920,7 @@ function flowSettingsDraftFromFlow(flow: any): FlowSettingsDraft {
     allowModifyExpectations: booleanSetting(adaptationSettings.allowModifyExpectations, true),
     allowModifyActionTargets: booleanSetting(adaptationSettings.allowModifyActionTargets, true),
     allowDeleteOrDisableBehavior: booleanSetting(adaptationSettings.allowDeleteOrDisableBehavior, false),
-    allowExternalSideEffects: booleanSetting(adaptationSettings.allowExternalSideEffects, false),
     requireApprovalForDestructiveChanges: booleanSetting(adaptationSettings.requireApprovalForDestructiveChanges, true),
-    requireApprovalForExternalSideEffects: booleanSetting(adaptationSettings.requireApprovalForExternalSideEffects, true),
     maxInterventionsPerRun: numberInputValue(budgets.maxInterventionsPerRun ?? metadata.maxInterventionsPerRun),
     maxTokensPerRun: numberInputValue(budgets.maxTokensPerRun ?? metadata.maxTokensPerRun),
     maxCostUsdPerTrainingWindow: numberInputValue(budgets.maxCostUsdPerTrainingWindow ?? metadata.maxCostUsdPerTrainingWindow),
@@ -749,6 +946,7 @@ function buildFlowSettingsSavePayload(flow: any, draft: FlowSettingsDraft) {
     allowAdaptationCreation: draft.allowAdaptationCreation,
     proposalApprovalMode: draft.proposalApprovalMode,
     allowPromotion: draft.allowPromotion,
+    requireFirstManualReviewBeforeAutoPromotion: draft.requireFirstManualReviewBeforeAutoPromotion,
     budgets: {
       ...(numberOrUndefined(draft.maxInterventionsPerRun) !== undefined ? { maxInterventionsPerRun: numberOrUndefined(draft.maxInterventionsPerRun) } : {}),
       ...(numberOrUndefined(draft.maxTokensPerRun) !== undefined ? { maxTokensPerRun: numberOrUndefined(draft.maxTokensPerRun) } : {}),
@@ -759,6 +957,7 @@ function buildFlowSettingsSavePayload(flow: any, draft: FlowSettingsDraft) {
   const adaptationPolicySettings = {
     preset: draft.adaptationPreset,
     proposalMode: draft.adaptationProposalMode,
+    manualReviewForStructuralChanges: draft.manualReviewForStructuralChanges,
     allowRuntimeRecovery: draft.allowRuntimeRecovery,
     allowCreateRecoveryPaths: draft.allowCreateRecoveryPaths,
     allowModifySubflows: draft.allowModifySubflows,
@@ -767,9 +966,7 @@ function buildFlowSettingsSavePayload(flow: any, draft: FlowSettingsDraft) {
     allowModifyExpectations: draft.allowModifyExpectations,
     allowModifyActionTargets: draft.allowModifyActionTargets,
     allowDeleteOrDisableBehavior: draft.allowDeleteOrDisableBehavior,
-    allowExternalSideEffects: draft.allowExternalSideEffects,
     requireApprovalForDestructiveChanges: draft.requireApprovalForDestructiveChanges,
-    requireApprovalForExternalSideEffects: draft.requireApprovalForExternalSideEffects,
     ...(numberOrUndefined(draft.maxAdaptationInterventionsPerRun) !== undefined ? { maxInterventionsPerRun: numberOrUndefined(draft.maxAdaptationInterventionsPerRun) } : {}),
     ...(numberOrUndefined(draft.maxAdaptationCostUsdPerRun) !== undefined ? { maxEstimatedCostUsdPerRun: numberOrUndefined(draft.maxAdaptationCostUsdPerRun) } : {})
   };
@@ -783,6 +980,8 @@ function buildFlowSettingsSavePayload(flow: any, draft: FlowSettingsDraft) {
       trainingMode: draft.trainingMode,
       proposalMode: draft.proposalApprovalMode,
       proposalApprovalMode: draft.proposalApprovalMode,
+      requireFirstManualReviewBeforeAutoPromotion: draft.requireFirstManualReviewBeforeAutoPromotion,
+      manualReviewForStructuralChanges: draft.manualReviewForStructuralChanges,
       trainingModeSettings,
       adaptationPolicySettings,
       budgetExhaustedBehavior: draft.budgetExhaustedBehavior,
@@ -795,14 +994,15 @@ function buildFlowSettingsSavePayload(flow: any, draft: FlowSettingsDraft) {
 function flowSettingsMetadata(flow: any) {
   const existingMetadata = flow?.metadata ?? {};
   const trainingModeSettings = {
-    mode: "normal",
+    mode: "continuous_adaptive",
     trainForRunCount: 3,
     minimumStabilityScore: 0.9,
-    allowLlmIntervention: false,
+    allowLlmIntervention: true,
     allowRuntimeRecovery: true,
-    allowAdaptationCreation: false,
+    allowAdaptationCreation: true,
     proposalApprovalMode: "auto",
-    allowPromotion: false,
+    allowPromotion: true,
+    requireFirstManualReviewBeforeAutoPromotion: false,
     budgets: {
       maxInterventionsPerRun: 2,
       maxTokensPerRun: 12000,
@@ -813,6 +1013,7 @@ function flowSettingsMetadata(flow: any) {
   const adaptationPolicySettings = {
     preset: "adaptive",
     proposalMode: "auto",
+    manualReviewForStructuralChanges: true,
     allowRuntimeRecovery: true,
     allowCreateRecoveryPaths: true,
     allowModifySubflows: true,
@@ -859,7 +1060,7 @@ function flowSettingsProposalMode(value: unknown): FlowSettingsDraft["proposalAp
 }
 
 function flowSettingsAdaptationPreset(value: unknown): FlowSettingsDraft["adaptationPreset"] {
-  return value === "locked" || value === "observe" || value === "repair" || value === "autonomous" ? value : "adaptive";
+  return value === "locked" || value === "observe" || value === "autonomous" ? value : "adaptive";
 }
 
 function booleanSetting(value: unknown, fallback: boolean): boolean {
@@ -966,14 +1167,26 @@ export function AutomationAdaptationsWorkspace(props: { projectId: string | null
               ["Risk", selectedAdaptation.riskLevel ?? "-"],
               ["Author", selectedAdaptation.author ?? "-"],
               ["Validations", selectedAdaptation.validationResults?.length ?? 0],
-              ["Confidence", selectedAdaptation.metadata?.confidenceScore ?? "-"]
+              ["Confidence", selectedAdaptation.metadata?.confidenceScore ?? "-"],
+              ["Auto Apply", selectedAdaptation.metadata?.approvalDecision?.autoApply === true ? "yes" : selectedAdaptation.metadata?.approvalDecision ? "no" : "-"]
             ]} />
             <DataTable columns={["Field", "Value"]} rows={[
               ["Trigger", selectedAdaptation.trigger ?? "-"],
               ["Diagnosis", selectedAdaptation.diagnosis ?? "-"],
               ["Source Run", selectedAdaptation.sourceRunId ?? "-"],
-              ["Proposal", selectedAdaptation.proposalId ?? "-"]
+              ["Proposal", selectedAdaptation.proposalId ?? "-"],
+              ["Approval reason", selectedAdaptation.metadata?.approvalDecision?.reason ?? "-"]
             ]} empty="No detail." />
+            {selectedAdaptation.metadata?.approvalDecision ? <section className="automation-runtime-log-section">
+              <header><strong>Approval Decision</strong><span>{selectedAdaptation.metadata.approvalDecision.decisionId ?? "runtime decision"}</span></header>
+              <DataTable columns={["Mode", "Risk", "Validation", "Manual", "Reason"]} rows={[[
+                selectedAdaptation.metadata.approvalDecision.mode ?? "-",
+                selectedAdaptation.metadata.approvalDecision.risk ?? selectedAdaptation.riskLevel ?? "-",
+                selectedAdaptation.metadata.approvalDecision.validationStatus ?? "-",
+                selectedAdaptation.metadata.approvalDecision.requiresManualApproval ? "required" : "not required",
+                selectedAdaptation.metadata.approvalDecision.reason ?? "-"
+              ]]} empty="No approval decision." />
+            </section> : null}
             <section className="automation-runtime-log-section">
               <header><strong>Patch Diff</strong><span>{selectedAdaptation.patch?.length ?? 0} patches</span></header>
               <DataTable columns={["Kind", "Target", "Summary", "Before", "After"]} rows={(selectedAdaptation.patch ?? []).map((patch: any, index: number) => [
@@ -984,6 +1197,16 @@ export function AutomationAdaptationsWorkspace(props: { projectId: string | null
                 <JsonToggle key={`${index}:after`} label="After JSON" value={patch.after ?? {}} />
               ])} empty="No patches." />
             </section>
+            {selectedAdaptation.metadata?.applicationRecord?.mutations?.length ? <section className="automation-runtime-log-section">
+              <header><strong>Applied Changes</strong><span>{selectedAdaptation.metadata.applicationRecord.mutations.length} durable mutations</span></header>
+              <DataTable columns={["Patch", "Artifact", "Target", "Before", "After"]} rows={selectedAdaptation.metadata.applicationRecord.mutations.map((mutation: any, index: number) => [
+                mutation.patchKind ?? "-",
+                `${mutation.artifactKind ?? "artifact"}:${mutation.artifactId ?? "-"}`,
+                `${mutation.targetKind ?? "target"}:${mutation.targetId ?? "-"}`,
+                <JsonToggle key={`${index}:mutation-before`} label="Before JSON" value={mutation.before ?? {}} />,
+                <JsonToggle key={`${index}:mutation-after`} label="After JSON" value={mutation.after ?? {}} />
+              ])} empty="No durable application record." />
+            </section> : null}
             <section className="automation-runtime-log-section">
               <header><strong>Review Actions</strong><span>PIN required</span></header>
               <div className="automation-runtime-json-actions">
@@ -1015,7 +1238,7 @@ export function AutomationTrainingStatusPanel(props: { status: { mode: string; r
   );
 }
 
-function RuntimeDebugInnerView(props: { projectId: string | null; initialSessions: any[] }) {
+function RuntimeDebugInnerView(props: { projectId: string | null; initialSessions: any[]; focusRunId?: string | null }) {
   const api = useProgramApi("automation-studio");
   const [view, setView] = useState<"list" | "log">("list");
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
@@ -1071,11 +1294,14 @@ function RuntimeDebugInnerView(props: { projectId: string | null; initialSession
     setSelectedRunId(null);
     setSelectedRunDetail(null);
   };
+  useEffect(() => {
+    if (props.focusRunId && props.focusRunId !== selectedRunId) void openLog(props.focusRunId);
+  }, [props.focusRunId]);
   return (
     <section className="automation-runtime-debugger">
       {view === "list"
         ? <RuntimeRunListPage error={error} loading={loadingRuns} page={page} sessions={runs} onOpenLog={openLog} onPage={loadRuns} />
-        : <RuntimeActionLogPage error={error} loading={loadingLog} runId={selectedRunId} runDetail={selectedRunDetail} onBack={closeLog} />}
+        : <RuntimeActionLogPage api={api} error={error} loading={loadingLog} projectId={props.projectId} runId={selectedRunId} runDetail={selectedRunDetail} onBack={closeLog} />}
     </section>
   );
 }
@@ -1119,6 +1345,43 @@ function firstFiniteRuntimeNumber(...values: unknown[]): number | undefined {
   return undefined;
 }
 
+function isRuntimeJsonRecord(value: unknown): value is Record<string, any> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function runtimeStoryHeadline(runDetail: any): string {
+  const summary = runDetail?.summary ?? {};
+  const metrics = isRuntimeJsonRecord(runDetail?.metadata?.adaptiveMetrics) ? runDetail.metadata.adaptiveMetrics : {};
+  if (metrics.deterministicSuccessAfterAdaptation === true) return "FluxIQ adapted the run, retried it, and the deterministic retry succeeded.";
+  if (metrics.durableBehaviorChanged === true) return "FluxIQ created or applied a durable behavior change during this run.";
+  if ((runDetail?.adaptationIds?.length ?? 0) > 0) return "FluxIQ created adaptation evidence for review.";
+  if ((runDetail?.interventions?.length ?? 0) > 0) return "FluxIQ used LLM assistance and preserved the intervention trail.";
+  if (summary.status === "failed") return "The run failed before a durable adaptation was applied.";
+  if (summary.status === "succeeded") return "The run completed deterministically.";
+  return "The run is recorded with compact action and recovery detail.";
+}
+
+function runtimeStoryStatusClass(status: unknown): string {
+  const value = String(status ?? "unknown");
+  if (value === "succeeded" || value === "created" || value === "applied") return "success";
+  if (value === "failed" || value === "rejected") return "failed";
+  if (value === "attempted" || value === "testing" || value === "running") return "active";
+  return "muted";
+}
+
+function runtimeTokenLabel(tokenUsage: any): string {
+  const total = tokenUsage?.totalTokens;
+  if (typeof total === "number" && Number.isFinite(total)) return String(total);
+  const input = tokenUsage?.inputTokens;
+  const output = tokenUsage?.outputTokens;
+  if (typeof input === "number" || typeof output === "number") return `${input ?? 0}/${output ?? 0}`;
+  return "-";
+}
+
+function runtimeCostLabel(value: unknown): string {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? `$${value.toFixed(4)}` : "$0";
+}
+
 function compactConditionLabel(condition: any): string {
   if (!condition) return "Always";
   if (condition.signalPath) return `${condition.signalPath} ${condition.operator ?? "matches"}${condition.expected !== undefined ? ` ${String(condition.expected)}` : ""}`;
@@ -1159,6 +1422,11 @@ function RuntimeRunListPage(props: { sessions: any[]; page: { limit: number; off
   const previousOffset = Math.max(0, props.page.offset - props.page.limit);
   const rangeStart = props.page.total ? props.page.offset + 1 : 0;
   const rangeEnd = Math.min(props.page.total, props.page.offset + props.sessions.length);
+  const statusCounts = props.sessions.reduce((counts, session) => {
+    const status = String(session.status ?? "queued");
+    counts[status] = (counts[status] ?? 0) + 1;
+    return counts;
+  }, {} as Record<string, number>);
   return (
     <section className="automation-runtime-list-page">
       <header>
@@ -1166,11 +1434,36 @@ function RuntimeRunListPage(props: { sessions: any[]; page: { limit: number; off
           <strong>Previous Runs</strong>
           <span>{props.loading ? "Loading runs..." : `${rangeStart}-${rangeEnd} of ${props.page.total} runs`}</span>
         </div>
+        <div className="automation-runtime-list-summary" aria-label="Visible run status summary">
+          <span>{statusCounts.succeeded ?? 0} succeeded</span>
+          <span>{statusCounts.failed ?? 0} failed</span>
+          <span>{statusCounts.cancelled ?? 0} cancelled</span>
+        </div>
       </header>
       {props.error ? <p className="automation-runtime-message">{props.error}</p> : null}
       <div className="automation-runtime-run-list">
+        <div className="automation-runtime-run-header" aria-hidden="true">
+          <span>Run</span>
+          <span>Target</span>
+          <span>Status</span>
+          <span>Started</span>
+          <span>Duration</span>
+          <span>Actions</span>
+          <span>Effects</span>
+        </div>
         {props.sessions.map((session) => (
-          <article className="automation-runtime-run-row" key={session.runId ?? `${session.targetId}:${session.queuedAt}`}>
+          <article
+            className="automation-runtime-run-row"
+            key={session.runId ?? `${session.targetId}:${session.queuedAt}`}
+            onClick={() => session.runId ? props.onOpenLog(session.runId) : undefined}
+            onKeyDown={(event) => {
+              if (!session.runId || (event.key !== "Enter" && event.key !== " ")) return;
+              event.preventDefault();
+              props.onOpenLog(session.runId);
+            }}
+            role="button"
+            tabIndex={session.runId ? 0 : -1}
+          >
             <strong title={session.runId ?? "Run"}>{session.runId ?? "Run"}</strong>
             <span title={`${session.targetKind ?? "flow"}:${session.targetId ?? session.flowId ?? "-"}`}>{session.targetKind ?? "flow"}:{session.targetId ?? session.flowId ?? "-"}</span>
             <StatusBadge value={session.status ?? "queued"} />
@@ -1178,7 +1471,6 @@ function RuntimeRunListPage(props: { sessions: any[]; page: { limit: number; off
             <span>{formatRuntimeDuration(session.startedAt, session.finishedAt)}</span>
             <span>{session.attemptCount ?? session.trace?.attempts?.length ?? 0} actions</span>
             <span>{session.effectCount ?? session.trace?.effects?.length ?? 0} effects</span>
-            <button className="automation-runtime-row-action" onClick={() => props.onOpenLog(session.runId)} type="button">View Log</button>
           </article>
         ))}
         {!props.sessions.length ? <p className="automation-runtime-empty">No runtime sessions have been started for this project.</p> : null}
@@ -1194,18 +1486,42 @@ function RuntimeRunListPage(props: { sessions: any[]; page: { limit: number; off
   );
 }
 
-function RuntimeActionLogPage(props: { runId: string | null; runDetail: any | null; loading: boolean; error: string; onBack(): void }) {
+export function RuntimeActionLogPage(props: { api?: { post<T = any>(endpoint: string, payload?: any): Promise<{ ok: boolean; payload?: T; error?: string }> }; projectId?: string | null; runId: string | null; runDetail: any | null; loading: boolean; error: string; onBack(): void }) {
   const [attemptOffset, setAttemptOffset] = useState(0);
+  const [exportMessage, setExportMessage] = useState("");
   const runDetail = props.runDetail;
   const summary = runDetail?.summary ?? {};
   const trace = runDetail?.trace;
   const attempts = runtimeAttemptsForRunDetail(runDetail);
   const recoveryAttempts = runDetail?.recoveryAttempts ?? [];
+  const interventions = Array.isArray(runDetail?.interventions) ? runDetail.interventions : [];
+  const metrics = isRuntimeJsonRecord(runDetail?.metadata?.adaptiveMetrics) ? runDetail.metadata.adaptiveMetrics : {};
   const nextAttemptOffset = attemptOffset + RUNTIME_ACTION_PAGE_SIZE;
   const visibleAttempts = attempts.slice(attemptOffset, nextAttemptOffset);
   useEffect(() => {
     setAttemptOffset(0);
+    setExportMessage("");
   }, [props.runId]);
+  const exportAudit = async () => {
+    const runId = props.runId;
+    if (!props.api || !props.projectId || !runId) return;
+    setExportMessage("Preparing audit export...");
+    const result = await props.api.post<{ audit?: any }>("export-flow-run-audit", { projectId: props.projectId, runId });
+    if (!result.ok || !result.payload?.audit) {
+      setExportMessage(result.error ?? "Audit export could not be prepared.");
+      return;
+    }
+    const auditJson = JSON.stringify(result.payload.audit, null, 2);
+    if (typeof window !== "undefined" && typeof Blob !== "undefined" && typeof URL !== "undefined") {
+      const url = URL.createObjectURL(new Blob([auditJson], { type: "application/json" }));
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `fluxiq-run-audit-${runId}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    }
+    setExportMessage("Audit export ready.");
+  };
   if (!runDetail) {
     return (
       <section className="automation-runtime-log-page">
@@ -1215,16 +1531,30 @@ function RuntimeActionLogPage(props: { runId: string | null; runDetail: any | nu
   }
   return (
     <section className="automation-runtime-log-page">
-      <header>
-        <button className="automation-runtime-back" onClick={props.onBack} type="button">Back</button>
+      <header className="automation-runtime-log-hero">
+        <div className="automation-runtime-log-title-row">
+          <button className="automation-runtime-back" onClick={props.onBack} type="button">Back</button>
+          <StatusBadge value={summary.status ?? trace?.status ?? "queued"} />
+        </div>
         <div>
           <strong>Action Log</strong>
           <span>{summary.runId ?? props.runId} | flow:{summary.flowId ?? "-"} | {attempts.length} actions | {formatRuntimeDuration(summary.startedAt, summary.finishedAt)}</span>
         </div>
-        <StatusBadge value={summary.status ?? trace?.status ?? "queued"} />
+        <div className="automation-runtime-log-actions">
+          <button className="automation-runtime-row-action" disabled={!props.api || !props.projectId || !props.runId} onClick={exportAudit} type="button">Export Audit</button>
+        </div>
       </header>
+      {exportMessage ? <p className="automation-runtime-message">{exportMessage}</p> : null}
       {runDetail?.metadata?.terminalFailureReason ? <p className="automation-runtime-message">{runDetail.metadata.terminalFailureReason}</p> : null}
       {runDetail?.metadata?.message ? <p className="automation-runtime-message">{runDetail.metadata.message}</p> : null}
+      <section className="automation-runtime-story-panel">
+        <div className="automation-runtime-story-summary">
+          <strong>Run Story</strong>
+          <span>{runtimeStoryHeadline(runDetail)}</span>
+        </div>
+        <RuntimeRunStory runDetail={runDetail} />
+        <RuntimeMetricsPanel summary={summary} metrics={metrics} recoveryCount={recoveryAttempts.length} interventionCount={interventions.length} adaptationCount={runDetail.adaptationIds?.length ?? 0} />
+      </section>
       <div className="automation-runtime-log-toolbar">
         <span>{attempts.length ? `${attemptOffset + 1}-${Math.min(attempts.length, nextAttemptOffset)} of ${attempts.length} actions` : "No actions"}</span>
         <div>
@@ -1252,6 +1582,24 @@ function RuntimeActionLogPage(props: { runId: string | null; runDetail: any | nu
         ])} empty="No recovery or reroute decisions were recorded." />
       </section>
       <section className="automation-runtime-log-section">
+        <header><strong>LLM Interventions</strong><span>{interventions.length} events</span></header>
+        <DataTable columns={["Kind", "Provider", "Model", "Tokens", "Reason", "Details"]} rows={interventions.map((intervention: any, index: number) => [
+          intervention.kind ?? "-",
+          intervention.provider ?? "-",
+          intervention.model ?? "-",
+          runtimeTokenLabel(intervention.tokenUsage),
+          intervention.reason ?? intervention.summary ?? "-",
+          <JsonToggle key={`${intervention.interventionId ?? index}:json`} label="Show Intervention JSON" value={intervention} />
+        ])} empty="No LLM intervention events were recorded." />
+      </section>
+      <section className="automation-runtime-log-section">
+        <header><strong>Adaptations</strong><span>{runDetail.adaptationIds?.length ?? 0} created</span></header>
+        <DataTable columns={["Adaptation", "Review"]} rows={(runDetail.adaptationIds ?? []).map((adaptationId: string) => [
+          adaptationId,
+          <a className="automation-runtime-row-action" href={adaptationReviewHref(summary.flowId, adaptationId)} key={adaptationId}>Open Adaptation</a>
+        ])} empty="No adaptations were created during this run." />
+      </section>
+      <section className="automation-runtime-log-section">
         <header><strong>Runtime Effects</strong><span>{trace?.effects?.length ?? 0} effects</span></header>
         <DataTable columns={["#", "Node", "Type", "Payload"]} rows={(trace?.effects ?? []).slice(0, RUNTIME_ACTION_PAGE_SIZE).map((effect: any, index: number) => [index + 1, effect.nodeId ?? "-", effect.type ?? "-", <JsonToggle key={index} label="Show Payload JSON" value={effect.payload ?? {}} />])} empty="No runtime effects were dispatched." />
       </section>
@@ -1260,6 +1608,82 @@ function RuntimeActionLogPage(props: { runId: string | null; runDetail: any | nu
         <JsonToggle label="Show Final Values JSON" value={trace?.values ?? {}} />
       </section>
     </section>
+  );
+}
+
+function RuntimeRunStory(props: { runDetail: any }) {
+  const detail = props.runDetail;
+  const summary = detail?.summary ?? {};
+  const attempts = runtimeAttemptsForRunDetail(detail);
+  const recoveryAttempts = Array.isArray(detail?.recoveryAttempts) ? detail.recoveryAttempts : [];
+  const interventions = Array.isArray(detail?.interventions) ? detail.interventions : [];
+  const runtimePatchAttempts = Array.isArray(detail?.metadata?.runtimePatchAttempts) ? detail.metadata.runtimePatchAttempts : [];
+  const adaptiveRetry = isRuntimeJsonRecord(detail?.metadata?.adaptiveRetry) ? detail.metadata.adaptiveRetry : null;
+  const steps = [
+    {
+      label: "Deterministic Run",
+      value: `${attempts.length} actions`,
+      status: summary.status ?? detail?.trace?.status ?? "queued"
+    },
+    {
+      label: "Recovery",
+      value: recoveryAttempts.length ? `${recoveryAttempts.length} attempts` : "none",
+      status: recoveryAttempts.some((attempt: any) => attempt.status === "succeeded") ? "succeeded" : recoveryAttempts.length ? "attempted" : "skipped"
+    },
+    {
+      label: "LLM",
+      value: interventions.length ? `${interventions.length} events` : "not used",
+      status: interventions.length ? "attempted" : "skipped"
+    },
+    {
+      label: "Patch Test",
+      value: runtimePatchAttempts.length ? `${runtimePatchAttempts.length} attempts` : "none",
+      status: runtimePatchAttempts.some((attempt: any) => attempt?.patchedTraceStatus === "succeeded" || attempt?.status === "succeeded") ? "succeeded" : runtimePatchAttempts.length ? "attempted" : "skipped"
+    },
+    {
+      label: "Adaptation",
+      value: detail?.adaptationIds?.length ? `${detail.adaptationIds.length} created` : "none",
+      status: detail?.adaptationIds?.length ? "created" : "skipped"
+    },
+    {
+      label: "Retry",
+      value: adaptiveRetry ? String(adaptiveRetry.status ?? "attempted") : "none",
+      status: adaptiveRetry?.status ?? "skipped"
+    }
+  ];
+  return (
+    <ol className="automation-runtime-story-steps" aria-label="Runtime adaptation story">
+      {steps.map((step) => (
+        <li className={`automation-runtime-story-step ${runtimeStoryStatusClass(step.status)}`} key={step.label}>
+          <span>{step.label}</span>
+          <strong>{step.value}</strong>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function RuntimeMetricsPanel(props: { summary: any; metrics: Record<string, any>; recoveryCount: number; interventionCount: number; adaptationCount: number }) {
+  return (
+    <div className="automation-runtime-metrics-grid">
+      <RuntimeMetric label="Status" value={String(props.summary.status ?? "queued")} />
+      <RuntimeMetric label="Actions" value={String(props.summary.actionAttemptCount ?? 0)} />
+      <RuntimeMetric label="Recovery" value={String(props.metrics.recoveryAttemptCount ?? props.recoveryCount)} />
+      <RuntimeMetric label="LLM Calls" value={String(props.metrics.llmCallCount ?? props.interventionCount)} />
+      <RuntimeMetric label="Tokens" value={String(props.metrics.tokenCount ?? props.summary.tokenUsage?.totalTokens ?? 0)} />
+      <RuntimeMetric label="Cost" value={runtimeCostLabel(props.metrics.estimatedCostUsd ?? props.summary.tokenUsage?.estimatedCostUsd)} />
+      <RuntimeMetric label="Adaptations" value={String(props.metrics.adaptationApplyCount ?? props.adaptationCount)} />
+      <RuntimeMetric label="Durable" value={props.metrics.durableBehaviorChanged === true ? "yes" : "no"} />
+    </div>
+  );
+}
+
+function RuntimeMetric(props: { label: string; value: string }) {
+  return (
+    <div className="automation-runtime-metric">
+      <span>{props.label}</span>
+      <strong>{props.value}</strong>
+    </div>
   );
 }
 
@@ -1337,4 +1761,10 @@ function formatRuntimeDuration(startedAt: unknown, finishedAt: unknown): string 
 
 function runtimeAttemptKey(attempt: any, index: number): string {
   return attempt.attemptId ?? `${attempt.nodeId}:${index}`;
+}
+
+export function adaptationReviewHref(flowId: string | undefined, adaptationId: string): string {
+  const params = new URLSearchParams({ view: "adaptations", adaptationId });
+  if (flowId) params.set("flowId", flowId);
+  return `?${params.toString()}`;
 }

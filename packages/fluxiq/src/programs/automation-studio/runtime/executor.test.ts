@@ -30,6 +30,48 @@ describe("Automation Studio graph executor", () => {
     expect(trace.values.result).toBe(7);
   });
 
+  it("records host state refs and passes host context to native nodes", async () => {
+    const flow: AutomationStudioFlowDocument = {
+      schemaVersion: "0.1",
+      flowId: "flow.host-boundary",
+      ownerKind: "routine",
+      ownerId: "routine.host",
+      name: "Host boundary",
+      createdAt: 1,
+      updatedAt: 1,
+      nodes: [{ id: "native", definitionId: "host.action", parameterValues: { target: { selector: "#submit" } }, metadata: { externalSideEffect: true } }],
+      edges: []
+    };
+    const seenHostContexts: any[] = [];
+    const trace = await runAutomationStudioGraph(flow, {
+      hostRuntime: {
+        capabilities: ["action-dispatch", "state-snapshot", "state-diff"],
+        captureStateSnapshot: ({ attemptId, point }) => ({ stateSnapshotId: `${attemptId}.${point}`, stateRef: `state://${attemptId}/${point}`, capturedAt: point === "before_action" ? 10 : 20, summary: { point } }),
+        inspectStateDiff: ({ before, after }) => ({ before: before?.stateSnapshotId ?? "", after: after?.stateSnapshotId ?? "", changed: true })
+      },
+      nativeNodeExecutor: async ({ hostContext }) => {
+        seenHostContexts.push(hostContext);
+        return { result: { status: "success", route: "success", outputs: { done: true }, effects: [] } };
+      }
+    });
+
+    expect(trace.status).toBe("succeeded");
+    expect(trace.attempts[0]).toMatchObject({
+      hostCapabilities: ["action-dispatch", "state-diff", "state-snapshot"],
+      stateRefs: {
+        beforeAction: { stateRef: "state://native.attempt.1/before_action" },
+        afterAction: { stateRef: "state://native.attempt.1/after_action" },
+        stateDiff: { changed: true }
+      }
+    });
+    expect(seenHostContexts[0]).toMatchObject({
+      capabilityIds: ["action-dispatch", "state-diff", "state-snapshot"],
+      sideEffectClass: "external",
+      target: { selector: "#submit" },
+      currentStateRef: { stateRef: "state://native.attempt.1/before_action" }
+    });
+  });
+
   it("fails instead of reporting success when a non-terminal node has no matching route edge", async () => {
     const flow: AutomationStudioFlowDocument = {
       schemaVersion: "0.1",

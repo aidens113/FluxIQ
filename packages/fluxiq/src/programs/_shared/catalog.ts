@@ -7,11 +7,13 @@ import { DOCS_PROGRAM } from "../docs/metadata.ts";
 import { IDENTITY_ACCESS_PROGRAM } from "../identity-access/metadata.ts";
 import { PRODUCTION_RUNNER_PROGRAM } from "../production-runner/metadata.ts";
 import { RUNTIME_PROGRAM } from "../runtime-control/metadata.ts";
+import { SECRET_KEYS_PROGRAM } from "../secret-keys/metadata.ts";
 import type { GlobalProgramDefinition, ProgramDirectory, ProgramScope, ProgramSummary } from "./types.ts";
 
 export const GLOBAL_PROGRAMS: GlobalProgramDefinition[] = [
   AUTOMATION_STUDIO_PROGRAM,
   IDENTITY_ACCESS_PROGRAM,
+  SECRET_KEYS_PROGRAM,
   DATABASE_MANAGER_PROGRAM,
   BACKGROUND_TASKS_PROGRAM,
   COMPUTE_CONTROL_PROGRAM,

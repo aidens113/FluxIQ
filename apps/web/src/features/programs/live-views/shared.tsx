@@ -24,7 +24,8 @@ export function formatTime(value: unknown): string {
   return typeof value === "number" && value > 0 ? new Date(value).toLocaleString() : "-";
 }
 export function isSensitiveDatabaseStore(kind: string): boolean {
-  return kind.trim().toLowerCase() === "identity.users";
+  const key = kind.trim().toLowerCase();
+  return key === "identity.users" || key === "secret.keys";
 }
 
 export function sensitiveStoreKey(kind: string, database: string): string {

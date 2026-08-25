@@ -71,6 +71,7 @@ domain-scoped or file-based artifacts.
 Current global stores include:
 
 - `identity.users`;
+- `secret.keys`;
 - `background.tasks`;
 - `compute.nodes`;
 - `deployment.targets`;
@@ -197,7 +198,8 @@ SQLite records, logs, generated docs, or UI state beyond the active form
 submission.
 
 Database Manager treats the `identity.users` store as sensitive because it can
-contain encrypted credential records. Viewing that store opens a modal
+contain encrypted credential records. It also treats `secret.keys` as sensitive
+because it contains encrypted LLM and custom key payloads. Viewing that store opens a modal
 credential recheck using the current user's configured factors: password
 always, PIN only when configured, and 2FA only when enabled. Non-secret identity
 metadata remains readable so login, session routing, and status displays can
@@ -221,6 +223,35 @@ vault
 
 The first default admin user is created with username `admin` and password
 `admin`. No default PIN is created.
+
+
+## Secret Key State
+
+LLM provider keys and custom framework secrets are stored in the `secret.keys`
+table inside `global.sqlite`.
+
+Each secret key record stores redacted metadata next to a sealed value payload.
+The value payload is encrypted with AES-256-GCM using a key derived from the
+current user's authorization password with `scrypt`, the same at-rest sealing
+model used by identity credential records. Snapshots and list responses do not
+include raw secret values. The only operation that decrypts a value is an
+explicit reveal or runtime resolver call with a fresh credential recheck.
+
+Database Manager treats `secret.keys` as sensitive. Viewing that store opens the
+same modal credential recheck used for `identity.users`: password always, PIN
+only when configured, and 2FA only when enabled.
+
+Record ids follow this shape:
+
+```text
+secret:<uuid>
+```
+
+Secret records include `recordType: "secret-key"`, `encrypted: true`, metadata
+such as `kind`, `provider`, `scope`, and `enabled`, plus a `sealed` envelope
+containing the encryption algorithm, KDF, salt, IV, tag, and ciphertext. Raw LLM
+keys and custom token values must never be written to logs, generated docs,
+runtime debug payloads, or non-secret UI state.
 
 ## Background Tasks State
 

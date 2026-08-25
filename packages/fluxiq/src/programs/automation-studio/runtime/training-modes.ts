@@ -28,6 +28,7 @@ export type AutomationStudioTrainingModeSettings = {
   allowAdaptationCreation: boolean;
   proposalApprovalMode: "auto" | "manual" | "mixed";
   allowPromotion: boolean;
+  requireFirstManualReviewBeforeAutoPromotion?: boolean;
   budgets?: AutomationStudioTrainingBudgetControls;
   frozenScopes?: AutomationStudioFrozenScope[];
   metadata?: JsonObject;
@@ -116,6 +117,23 @@ export type AutomationStudioProposalApprovalGateInput = {
 export type AutomationStudioProposalApprovalGateDecision = {
   createProposal: boolean;
   status?: AutomationStudioChangeProposalStatus;
+  requiresManualApproval: boolean;
+  reason: string;
+};
+
+export type AutomationStudioAdaptationPromotionGateInput = {
+  approvalMode: AutomationStudioChangeProposalMode;
+  riskLevel: AutomationStudioFlowAdaptation["riskLevel"];
+  patchKinds: AutomationStudioChangeProposalKind[];
+  validated: boolean;
+  promoteAdaptations: boolean;
+  requireFirstManualReview?: boolean;
+  priorManualReviewExists?: boolean;
+  hasExternalSideEffects?: boolean;
+};
+
+export type AutomationStudioAdaptationPromotionGateDecision = {
+  autoApply: boolean;
   requiresManualApproval: boolean;
   reason: string;
 };
@@ -278,6 +296,20 @@ export function decideAutomationStudioProposalApprovalGate(input: AutomationStud
     return { createProposal: true, status: "pending", requiresManualApproval: true, reason: "Mixed proposal mode routes major or high-risk changes to manual review." };
   }
   return { createProposal: true, status: "auto_approved", requiresManualApproval: false, reason: "Validated low-risk proposal can proceed automatically." };
+}
+
+export function decideAutomationStudioAdaptationPromotionGate(input: AutomationStudioAdaptationPromotionGateInput): AutomationStudioAdaptationPromotionGateDecision {
+  if (!input.promoteAdaptations) return { autoApply: false, requiresManualApproval: false, reason: "Adaptation promotion is disabled by training mode or settings." };
+  if (!input.validated) return { autoApply: false, requiresManualApproval: true, reason: "Adaptation must pass validation before promotion." };
+  if (input.riskLevel === "destructive") return { autoApply: false, requiresManualApproval: true, reason: "Destructive adaptations always require manual review." };
+  if (input.riskLevel === "high") return { autoApply: false, requiresManualApproval: true, reason: "High-risk adaptations require manual review." };
+  if (input.hasExternalSideEffects) return { autoApply: false, requiresManualApproval: true, reason: "External side effects require manual review before durable promotion." };
+  if (input.requireFirstManualReview && !input.priorManualReviewExists) return { autoApply: false, requiresManualApproval: true, reason: "First automatic promotion is blocked until a manual review has been completed." };
+  if (input.approvalMode === "manual") return { autoApply: false, requiresManualApproval: true, reason: "Manual adaptation approval mode requires explicit review." };
+  const structuralPatch = input.patchKinds.some((kind) => kind === "create_subflow" || kind === "edit_subflow" || kind === "edit_router" || kind === "edit_recovery" || kind === "promote_adaptation");
+  if (structuralPatch) return { autoApply: false, requiresManualApproval: true, reason: "Structural adaptations require manual review before durable promotion." };
+  if (input.riskLevel !== "low") return { autoApply: false, requiresManualApproval: true, reason: "Only low-risk adaptations can be promoted automatically." };
+  return { autoApply: true, requiresManualApproval: false, reason: "Validated low-risk non-structural adaptation can be applied automatically." };
 }
 
 export function automationStudioScopeIsFrozen(settings: AutomationStudioTrainingModeSettings, scope: AutomationStudioFrozenScope): boolean {

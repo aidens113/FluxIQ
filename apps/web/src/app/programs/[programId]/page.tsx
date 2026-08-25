@@ -6,6 +6,7 @@ import {
   CloudUpload,
   Database,
   GitBranch,
+  KeyRound,
   PlayCircle,
   ShieldCheck
 } from "lucide-react";
@@ -23,6 +24,7 @@ const icons = {
   "cloud-upload": CloudUpload,
   database: Database,
   "git-branch": GitBranch,
+  "key-round": KeyRound,
   "play-circle": PlayCircle,
   "shield-check": ShieldCheck
 } satisfies Record<FluxIQIconName, typeof Blocks>;
@@ -63,7 +65,11 @@ const programCapabilities = {
     storage: ["Users", "Roles", "Sessions", "Vault status"],
     runtime: ["Role registry", "Session lifecycle"]
   },
-  "production-runner": {
+  "secret-keys": {
+    api: ["snapshot", "create-key", "update-key", "rotate-key", "reveal-key", "delete-key"],
+    storage: ["Encrypted key records", "Redacted metadata", "Reveal audit timestamps"],
+    runtime: ["Credential recheck", "AES-256-GCM sealing", "Secret resolver"]
+  },  "production-runner": {
     api: ["snapshot", "start", "stop"],
     storage: ["Run records"],
     runtime: ["Dispatcher", "Run lifecycle"]

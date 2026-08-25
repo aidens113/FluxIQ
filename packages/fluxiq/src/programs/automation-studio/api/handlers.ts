@@ -1037,8 +1037,26 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession,
     permission: "runtime.control",
     handler: async (request) => {
-      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[] } : {};
-      return { ok: true, payload: { runtimeSession: await service.runRuntimeSession(payload) } };
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[]; adaptiveMode?: "default" | "manual_approval" | "deterministic"; dryRunLlm?: boolean; authorizedExternalSideEffects?: boolean; subflowId?: string; idempotencyKey?: string } : {};
+      const runtimeSession = await service.runRuntimeSession(payload);
+      const projectId = typeof payload.projectId === "string" ? payload.projectId : null;
+      const runDetail = projectId ? await service.getFlowRunDetail(projectId, runtimeSession.runId).catch(() => null) : null;
+      const durableBehaviorChanged = Boolean(runDetail?.adaptationIds?.length && runDetail.adaptationIds.some((adaptationId) => {
+        const attempt = runDetail.metadata?.runtimePatchAttempts;
+        return Array.isArray(attempt) && attempt.some((item) => typeof item === "object" && item && (item as any).adaptationId === adaptationId && (item as any).approvalDecision?.autoApply === true);
+      }));
+      return {
+        ok: true,
+        payload: {
+          runtimeSession,
+          runSummary: runDetail?.summary,
+          runDetailLink: { endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRunDetail, runId: runtimeSession.runId },
+          createdAdaptationIds: runDetail?.adaptationIds ?? [],
+          interventionCount: runDetail?.summary.interventionCount ?? 0,
+          terminalReason: runtimeSession.trace?.message ?? runtimeSession.status,
+          durableBehaviorChanged
+        }
+      };
     }
   });
   registry.register({

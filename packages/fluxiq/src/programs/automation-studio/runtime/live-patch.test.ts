@@ -69,6 +69,22 @@ describe("Automation Studio live patch testing", () => {
     expect(preflight.issues).toContain("External side-effecting patch requires explicit authorization.");
   });
 
+  it("blocks host-bound patches when the host does not declare required capabilities", () => {
+    const preflight = preflightAutomationStudioRuntimePatch({
+      projectId: "project.patch",
+      flowId: "flow.patch",
+      runId: "run.failed",
+      flow: flowFixture(),
+      failedAttempt: failedAttempt(),
+      patch: { kind: "temporary_wait_retry", targetNodeId: "constant", retryCount: 1, reason: "Retry after state settles." },
+      policy: repairPolicy(),
+      hostCapabilities: []
+    });
+
+    expect(preflight.ok).toBe(false);
+    expect(preflight.issues).toContain("Runtime patch requires host capability wait-observe.");
+  });
+
   it("denies patches blocked by adaptation policy", () => {
     const preflight = preflightAutomationStudioRuntimePatch({
       projectId: "project.patch",

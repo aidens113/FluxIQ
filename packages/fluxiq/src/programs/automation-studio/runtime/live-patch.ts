@@ -36,6 +36,7 @@ export type AutomationStudioRuntimePatchExecutionInput = {
   policy?: AutomationStudioAdaptationPolicy;
   proposalMode?: "auto" | "manual" | "mixed";
   authorizedExternalSideEffects?: boolean;
+  hostCapabilities?: Iterable<string>;
   options?: AutomationStudioGraphExecutionOptions;
   now?: () => number;
 };
@@ -50,6 +51,13 @@ export function preflightAutomationStudioRuntimePatch(input: AutomationStudioRun
   if (input.patch.kind === "temporary_recovery_subflow_call" && policy && !policy.allowCreateRecoveryPaths) issues.push("Recovery subflow calls are disabled by adaptation policy.");
   if (input.patch.kind === "temporary_target_override" && policy && !policy.allowModifyActionTargets) issues.push("Action target overrides are disabled by adaptation policy.");
   if (input.patch.kind === "temporary_reroute" && policy && !policy.allowModifyRouter) issues.push("Temporary reroutes are disabled by adaptation policy.");
+  const suppliedHostCapabilities = input.hostCapabilities ?? input.options?.hostRuntime?.capabilities;
+  if (suppliedHostCapabilities !== undefined) {
+    const hostCapabilities = new Set(suppliedHostCapabilities);
+    for (const capability of requiredHostCapabilitiesForRuntimePatch(input.patch)) {
+      if (!hostCapabilities.has(capability)) issues.push(`Runtime patch requires host capability ${capability}.`);
+    }
+  }
   if (!runtimePatchTargetsFlow(input.flow, input.patch)) issues.push("Runtime patch points at a node or subflow that is not present in this Flow.");
   return {
     ok: issues.length === 0,
@@ -195,6 +203,13 @@ function startNodeForPatch(patch: AutomationStudioRuntimePatch, failedNodeId: st
 
 function requiresChangeProposalForRuntimePatch(patch: AutomationStudioRuntimePatch): boolean {
   return patch.kind === "temporary_reroute" || patch.kind === "temporary_recovery_subflow_call";
+}
+
+function requiredHostCapabilitiesForRuntimePatch(patch: AutomationStudioRuntimePatch): string[] {
+  if (patch.kind === "temporary_wait_retry") return ["wait-observe"];
+  if (patch.kind === "temporary_target_override" || patch.kind === "temporary_action_sequence") return ["action-dispatch"];
+  if (patch.kind === "temporary_recovery_subflow_call") return ["action-dispatch"];
+  return [];
 }
 
 function patchRisk(patch: AutomationStudioRuntimePatch): AutomationStudioFlowAdaptation["riskLevel"] {

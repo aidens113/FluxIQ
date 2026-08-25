@@ -7,6 +7,7 @@ export type FluxIQIconName =
   | "cloud-upload"
   | "database"
   | "git-branch"
+  | "key-round"
   | "play-circle"
   | "shield-check";
 

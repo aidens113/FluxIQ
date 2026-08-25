@@ -9,6 +9,7 @@ import {
   createAutomationStudioFixture,
   createBlankAutomationStudioFlow,
   createBlankAutomationStudioFlowArtifact,
+  defaultAutomationStudioFlowSettingsMetadata,
   createPublishedFlowSnapshot,
   getCallFlowConfiguration,
   createRecordingSession,
@@ -67,6 +68,7 @@ import {
   processRecordingDomainEvent,
   resolveAutomationStudioFlowCatalog,
   validateAutomationStudioFlowAdaptation,
+  validateAutomationStudioFlowRouter,
   validateAutomationStudioFlowSubflow,
   projectPublishedFlowSnapshotToNodeDefinition,
   validateFlowComposition,
@@ -76,9 +78,27 @@ import type { LearnedTaskModel } from "../learning/index.ts";
 import { compileFlowSource, convertCodeOwnedFlowToVisual, generateFlowTypeScript, verifyCodeOwnedFlowCompilation, type AutomationStudioFlowCompilation } from "../dsl/index.ts";
 import type { EvidenceClaim, EvidenceFact, EvidenceObservation, SignalMiningResult, StateActionCorrelation } from "../mining/index.ts";
 import { normalizeRecordingTimeline, selectActionContextStateEntryIds, type NormalizationOptions, type NormalizedTimeline } from "../normalization/index.ts";
-import { runAutomationStudioGraph } from "./executor.ts";
+import { runAutomationStudioGraph, type AutomationStudioRecoveryBudget } from "./executor.ts";
 import { runCanonicalAutomationStudioFlow } from "./composite-executor.ts";
 import { runAutomationStudioRouter } from "./router-runtime.ts";
+import { classifyAutomationStudioAdaptiveFailure, compactAutomationStudioAdaptiveFailure } from "./adaptive-orchestrator.ts";
+import {
+  annotateRunDetailWithTrainingMode,
+  behaviorForAutomationStudioTrainingMode,
+  computeAutomationStudioStabilityMetrics,
+  decideAutomationStudioAdaptationPromotionGate,
+  decideAutomationStudioTrainingBudget,
+  type AutomationStudioStabilityMetrics,
+  type AutomationStudioTrainingBudgetState,
+  type AutomationStudioTrainingModeBehavior,
+  type AutomationStudioTrainingModeSettings
+} from "./training-modes.ts";
+import {
+  runAutomationStudioLlmHarness,
+  type AutomationStudioLlmProvider
+} from "./llm-harness.ts";
+import { executeAutomationStudioRuntimePatch } from "./live-patch.ts";
+import type { AutomationStudioHostRuntimeBoundary } from "./host-runtime.ts";
 import type { AutomationStudioNativeNodeRuntime } from "./native-node-runtime.ts";
 import { finalizeRecordingStateLinks } from "./state-linker.ts";
 import {
@@ -116,7 +136,7 @@ export type { PolicyGraphPatch, PolicyProposalArtifact } from "./policy-model.ts
 export type { RecordingFlowActionCandidate, RecordingFlowProposalArtifact, RecordingFlowProposalDestination } from "./recording-flow-proposal.ts";
 import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage.ts";
 import { createRecord, SQLiteRepository } from "../../database-manager/storage/sqlite-repository.ts";
-import type { JsonObject } from "../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioNodeDefinition } from "../nodes/index.ts";
 import type { IoRegistry } from "../../../io/index.ts";
 import type { RuntimeService } from "../../../runtime/index.ts";
@@ -156,7 +176,17 @@ export type AutomationStudioServiceOptions = {
   storageRootDir?: string;
   customNodeRootDir?: string;
   repositories?: CanonicalAutomationStudioRepositories;
+  llmProviderResolver?: (input: AutomationStudioLlmProviderResolverInput) => AutomationStudioLlmProvider | undefined | Promise<AutomationStudioLlmProvider | undefined>;
+  hostRuntime?: AutomationStudioHostRuntimeBoundary;
   seedFixture?: boolean;
+};
+
+export type AutomationStudioLlmProviderResolverInput = {
+  projectId: string;
+  flowId: string;
+  providerId?: string;
+  modelId?: string;
+  metadata?: JsonObject;
 };
 
 export type AutomationStudioWriteProjectObjectAssetInput = {
@@ -329,6 +359,21 @@ export type AutomationStudioAdaptationSummaryPage = {
   total: number;
   limit: number;
   offset: number;
+};
+
+export type AutomationStudioRuntimeAdaptationContext = {
+  projectId: string;
+  flowId: string;
+  settings: AutomationStudioTrainingModeSettings;
+  policy: AutomationStudioAdaptationPolicy;
+  behavior: AutomationStudioTrainingModeBehavior;
+  metrics: AutomationStudioStabilityMetrics;
+  budgetState: AutomationStudioTrainingBudgetState;
+  budgetDecision: ReturnType<typeof decideAutomationStudioTrainingBudget>;
+  runsCompleted: number;
+  recentRunCount: number;
+  recentAdaptationCount: number;
+  diagnostics: string[];
 };
 
 export type CreateFlowSubflowInput = {
@@ -516,14 +561,19 @@ export class AutomationStudioService {
   private storageReady?: Promise<void>;
   private ioRuntime?: { io: IoRegistry; domainId: string | null };
   private nativeNodeRuntime?: AutomationStudioNativeNodeRuntime;
+  private hostRuntime: AutomationStudioHostRuntimeBoundary | undefined;
   private runtimeService?: RuntimeService;
+  private readonly llmProviderResolver?: AutomationStudioServiceOptions["llmProviderResolver"];
   private readonly memoryLegacyRetirementStates = new Map<string, AutomationStudioLegacyRetirementState>();
   private readonly memoryLegacyBackups = new Map<string, AutomationStudioLegacyBackup>();
   private readonly memoryLegacyAudit = new Map<string, AutomationStudioLegacyRetirementAuditEvent[]>();
   private readonly legacyProjectArtifactReads = new Map<string, Promise<AutomationStudioProjectArtifacts>>();
+  private readonly runtimeAbortControllers = new Map<string, AbortController>();
 
   constructor(options: AutomationStudioServiceOptions = {}) {
     this.repositories = options.repositories ?? createCanonicalAutomationStudioMemoryRepositories();
+    this.llmProviderResolver = options.llmProviderResolver;
+    this.hostRuntime = options.hostRuntime;
     if (options.dataDir || options.storageRootDir) {
       const automationDataDir = options.storageRootDir ?? path.join(options.dataDir!, "programs", "automation-studio");
       if (options.storageRootDir) {
@@ -547,6 +597,8 @@ export class AutomationStudioService {
 
   /** Binds explicitly registered importer and trusted-local Code Node implementations. */
   bindNativeNodeRuntime(runtime: AutomationStudioNativeNodeRuntime): this { this.nativeNodeRuntime = runtime; return this; }
+
+  bindHostRuntime(runtime: AutomationStudioHostRuntimeBoundary): this { this.hostRuntime = runtime; return this; }
 
   bindRuntimeService(runtime: RuntimeService): this { this.runtimeService = runtime; return this; }
 
@@ -2432,6 +2484,303 @@ export class AutomationStudioService {
     return session;
   }
 
+  async resolveRuntimeAdaptationContext(input: { projectId: string; flow: AutomationStudioFlowArtifact; currentRunId?: string }): Promise<AutomationStudioRuntimeAdaptationContext> {
+    const metadata = mergedFlowSettingsMetadata(input.flow.metadata);
+    const settings = trainingModeSettingsFromMetadata(metadata);
+    const policy = adaptationPolicyFromFlowMetadata(input.flow, metadata);
+    const recentRuns = await this.listFlowRunSummaries({ projectId: input.projectId, flowId: input.flow.flowId, limit: 100, offset: 0 }).then((page) => page.runs.filter((run) => run.runId !== input.currentRunId)).catch(() => []);
+    const recentAdaptations = await this.listFlowAdaptationSummaries({ projectId: input.projectId, flowId: input.flow.flowId, limit: 100, offset: 0 }).then((page) => page.adaptations).catch(() => []);
+    const metrics = computeAutomationStudioStabilityMetrics({ runs: recentRuns, adaptations: recentAdaptations, now: Date.now() });
+    const budgetState = runtimeTrainingBudgetStateFromSummaries(recentRuns);
+    const behavior = behaviorForAutomationStudioTrainingMode(settings, recentRuns.length, metrics.stabilityScore);
+    const budgetDecision = decideAutomationStudioTrainingBudget(settings, budgetState);
+    const diagnostics = runtimeAdaptationContextDiagnostics(settings, policy, behavior, budgetDecision);
+    return {
+      projectId: input.projectId,
+      flowId: input.flow.flowId,
+      settings,
+      policy,
+      behavior,
+      metrics,
+      budgetState,
+      budgetDecision,
+      runsCompleted: recentRuns.length,
+      recentRunCount: recentRuns.length,
+      recentAdaptationCount: recentAdaptations.length,
+      diagnostics
+    };
+  }
+
+  private async maybeAnnotateRunDetailWithRuntimeLlm(input: {
+    detail: AutomationStudioFlowRunDetail;
+    context: AutomationStudioRuntimeAdaptationContext | null;
+    runtimeFlow?: AutomationStudioFlowDocument;
+    failedTraceAttempt?: Parameters<typeof executeAutomationStudioRuntimePatch>[0]["failedAttempt"];
+    authorizedExternalSideEffects?: boolean;
+    graphOptions?: Parameters<typeof runAutomationStudioGraph>[1];
+  }): Promise<AutomationStudioFlowRunDetail> {
+    if (!input.context) return input.detail;
+    if (input.detail.summary.status !== "failed") return input.detail;
+    if (!input.context.behavior.invokeLlm || !input.context.budgetDecision.ok) {
+      return {
+        ...input.detail,
+        metadata: {
+          ...(input.detail.metadata ?? {}),
+          llmGate: {
+            invoked: false,
+            reason: !input.context.behavior.invokeLlm ? "Current training mode or settings do not allow LLM intervention." : `Training budget exhausted: ${input.context.budgetDecision.exhausted.join(", ")}.`
+          }
+        }
+      };
+    }
+    const failedAttempt = [...(input.detail.actionAttempts ?? [])].reverse().find((attempt) => attempt.status === "failed" || attempt.status === "unknown");
+    const providerId = stringSetting(input.context.policy.metadata?.llmProvider, stringSetting(input.context.policy.policyId, "host"));
+    const provider = await this.llmProviderResolver?.({
+      projectId: input.context.projectId,
+      flowId: input.context.flowId,
+      providerId,
+      ...(input.context.policy.metadata ? { metadata: input.context.policy.metadata } : {})
+    });
+    const instructions = await this.getFlowInstructionSet({
+      projectId: input.context.projectId,
+      flowId: input.context.flowId
+    }).catch(() => []);
+    const result = await runAutomationStudioLlmHarness({
+      taskKind: "runtime_diagnosis",
+      projectId: input.context.projectId,
+      flowId: input.context.flowId,
+      runId: input.detail.summary.runId,
+      ...(failedAttempt?.nodeId ? { nodeId: failedAttempt.nodeId } : {}),
+      instructions,
+      runDetail: input.detail,
+      policy: input.context.policy,
+      ...(provider ? { provider } : {}),
+      now: () => input.detail.summary.updatedAt || Date.now(),
+      metadata: {
+        source: "runRuntimeSession",
+        expectedOutput: "diagnosis"
+      }
+    });
+    const patchResult = provider && input.runtimeFlow && input.failedTraceAttempt && input.context.behavior.createAdaptations
+      ? await runAutomationStudioLlmHarness({
+        taskKind: "runtime_patch",
+        projectId: input.context.projectId,
+        flowId: input.context.flowId,
+        runId: input.detail.summary.runId,
+        ...(failedAttempt?.nodeId ? { nodeId: failedAttempt.nodeId } : {}),
+        instructions,
+        runDetail: input.detail,
+        policy: input.context.policy,
+        provider,
+        expectedOutput: "runtime_patch",
+        now: () => input.detail.summary.updatedAt || Date.now(),
+        metadata: {
+          source: "runRuntimeSession",
+          expectedOutput: "runtime_patch"
+        }
+      })
+      : null;
+    const runtimePatchAttempts = [];
+    const adaptationIds: string[] = [];
+    const changeProposalIds: string[] = [];
+    if (patchResult?.response?.kind === "runtime_patch" && input.runtimeFlow && input.failedTraceAttempt) {
+      for (const patch of patchResult.response.patches) {
+        const tested = await executeAutomationStudioRuntimePatch({
+          projectId: input.context.projectId,
+          flowId: input.context.flowId,
+          runId: input.detail.summary.runId,
+          flow: input.runtimeFlow,
+          patch,
+          failedAttempt: input.failedTraceAttempt,
+          ...(input.failedTraceAttempt.transitionComparison ? { expectedComparison: input.failedTraceAttempt.transitionComparison } : {}),
+          policy: input.context.policy,
+          proposalMode: input.context.policy.proposalMode,
+          ...(input.authorizedExternalSideEffects !== undefined ? { authorizedExternalSideEffects: input.authorizedExternalSideEffects } : {}),
+          ...(input.graphOptions ? { options: input.graphOptions } : {})
+        });
+        runtimePatchAttempts.push(compactJsonObject({
+          kind: patch.kind,
+          preflightOk: tested.preflight.ok,
+          restoredExpectedState: tested.restoredExpectedState,
+          retryOriginalAction: tested.retryOriginalAction,
+          issues: tested.preflight.issues,
+          traceStatus: tested.trace?.status ?? "not-run",
+          adaptationId: tested.adaptation?.adaptationId,
+          changeProposalId: tested.changeProposal?.proposalId
+        }));
+        if (tested.changeProposal) {
+          await this.saveFlowChangeProposal(tested.changeProposal);
+          changeProposalIds.push(tested.changeProposal.proposalId);
+        }
+        if (tested.adaptation) {
+          const adaptation = tested.changeProposal ? { ...tested.adaptation, proposalId: tested.changeProposal.proposalId } : tested.adaptation;
+          const savedAdaptation = await this.saveFlowAdaptation(adaptation);
+          const promoted = await this.maybePromoteRuntimeAdaptation({
+            adaptation: savedAdaptation,
+            context: input.context
+          });
+          const approvalDecision = isJsonRecord(promoted.metadata?.approvalDecision) ? promoted.metadata.approvalDecision : undefined;
+          if (approvalDecision) runtimePatchAttempts[runtimePatchAttempts.length - 1] = compactJsonObject({ ...runtimePatchAttempts[runtimePatchAttempts.length - 1], approvalDecision });
+          adaptationIds.push(promoted.adaptationId);
+        }
+      }
+    }
+    const withIntervention: AutomationStudioFlowRunDetail = {
+      ...input.detail,
+      interventions: [...input.detail.interventions, result.intervention, ...(patchResult ? [patchResult.intervention] : [])],
+      adaptationIds: [...new Set([...input.detail.adaptationIds, ...adaptationIds])],
+      changeProposalIds: [...new Set([...input.detail.changeProposalIds, ...changeProposalIds])],
+      metadata: {
+        ...(input.detail.metadata ?? {}),
+        llmGate: {
+          invoked: Boolean(provider),
+          providerConfigured: Boolean(provider),
+          ok: result.ok && (patchResult?.ok ?? true),
+          diagnostics: [...result.diagnostics, ...(patchResult?.diagnostics ?? [])].map((diagnostic) => ({ code: diagnostic.code, severity: diagnostic.severity, message: diagnostic.message }))
+        },
+        ...(runtimePatchAttempts.length ? { runtimePatchAttempts: runtimePatchAttempts as unknown as JsonObject[] } : {})
+      }
+    };
+    return {
+      ...withIntervention,
+      summary: flowRunSummaryWithInterventionSummaries(withIntervention)
+    };
+  }
+
+  private async maybePromoteRuntimeAdaptation(input: {
+    adaptation: AutomationStudioFlowAdaptation;
+    context: AutomationStudioRuntimeAdaptationContext;
+  }): Promise<AutomationStudioFlowAdaptation> {
+    const now = Date.now();
+    const patchKinds = input.adaptation.patch.map((patch) => patch.kind);
+    const validated = adaptationValidationCounts(input.adaptation).succeeded > 0;
+    const requireFirstManualReview = input.context.settings.requireFirstManualReviewBeforeAutoPromotion === true
+      || input.context.policy.preset === "autonomous" && booleanSetting(input.context.settings.metadata?.requireFirstManualReviewBeforeAutoPromotion, false);
+    const priorManualReviewExists = requireFirstManualReview
+      ? await this.flowHasPriorManualAdaptationReview(input.adaptation.projectId, input.adaptation.flowId, input.adaptation.adaptationId)
+      : true;
+    const hasExternalSideEffects = input.adaptation.patch.some((patch) => isJsonRecord(patch.metadata) && patch.metadata.externalSideEffect === true);
+    const decision = decideAutomationStudioAdaptationPromotionGate({
+      approvalMode: input.context.policy.proposalMode,
+      riskLevel: input.adaptation.riskLevel,
+      patchKinds,
+      validated,
+      promoteAdaptations: input.context.behavior.promoteAdaptations,
+      requireFirstManualReview,
+      priorManualReviewExists,
+      hasExternalSideEffects
+    });
+    const decisionRecord = compactJsonObject({
+      decisionId: `approval.${randomUUID()}`,
+      mode: input.context.policy.proposalMode,
+      risk: input.adaptation.riskLevel,
+      patchKinds,
+      validationStatus: validated ? "validated" : "unvalidated",
+      reason: decision.reason,
+      actor: "runtime",
+      decidedAt: now,
+      autoApply: decision.autoApply,
+      requiresManualApproval: decision.requiresManualApproval,
+      firstManualReviewRequired: requireFirstManualReview,
+      priorManualReviewExists,
+      externalSideEffects: hasExternalSideEffects
+    });
+    const withDecision = await this.saveFlowAdaptation({
+      ...input.adaptation,
+      updatedAt: now,
+      metadata: {
+        ...(input.adaptation.metadata ?? {}),
+        approvalDecision: decisionRecord,
+        approvalDecisions: [
+          ...approvalDecisionHistory(input.adaptation.metadata),
+          decisionRecord
+        ]
+      }
+    });
+    if (!decision.autoApply) return withDecision;
+    try {
+      return await this.reviewFlowAdaptation({
+        projectId: withDecision.projectId,
+        flowId: withDecision.flowId,
+        adaptationId: withDecision.adaptationId,
+        action: "apply",
+        actorId: "runtime",
+        reason: decision.reason
+      });
+    } catch (error) {
+      return await this.saveFlowAdaptation({
+        ...withDecision,
+        updatedAt: Date.now(),
+        metadata: {
+          ...(withDecision.metadata ?? {}),
+          approvalDecision: compactJsonObject({
+            ...decisionRecord,
+            autoApplyFailed: true,
+            error: error instanceof Error ? error.message : String(error)
+          })
+        }
+      });
+    }
+  }
+
+  private async flowHasPriorManualAdaptationReview(projectId: string, flowId: string, excludeAdaptationId: string): Promise<boolean> {
+    const page = await this.listFlowAdaptationSummaries({ projectId, flowId, limit: 100, offset: 0 }).catch(() => ({ adaptations: [] }));
+    for (const summary of page.adaptations ?? []) {
+      if (summary.adaptationId === excludeAdaptationId) continue;
+      const adaptation = await this.getFlowAdaptation(projectId, flowId, summary.adaptationId).catch(() => null);
+      const review = isJsonRecord(adaptation?.metadata?.review) ? adaptation.metadata.review : undefined;
+      const actorId = typeof review?.actorId === "string" ? review.actorId : "";
+      const lastAction = typeof review?.lastAction === "string" ? review.lastAction : "";
+      if (actorId && actorId !== "runtime" && actorId !== "system" && (lastAction === "approve" || lastAction === "apply")) return true;
+    }
+    return false;
+  }
+
+  private async retryRuntimeSessionAfterAutoAppliedPatch(input: {
+    projectId: string;
+    session: AutomationStudioRuntimeSession;
+    detail: AutomationStudioFlowRunDetail;
+    graphOptions: Parameters<typeof runAutomationStudioGraph>[1];
+    adaptationContext: AutomationStudioRuntimeAdaptationContext;
+  }): Promise<AutomationStudioRuntimeSession | null> {
+    if (input.session.status !== "failed") return null;
+    const attempts = Array.isArray(input.detail.metadata?.runtimePatchAttempts) ? input.detail.metadata.runtimePatchAttempts.filter(isJsonRecord) : [];
+    const shouldRetry = attempts.some((attempt) => attempt.retryOriginalAction === true && isJsonRecord(attempt.approvalDecision) && attempt.approvalDecision.autoApply === true);
+    if (!shouldRetry) return null;
+    const updatedFlow = await this.getFlow(input.projectId, input.session.flowId).catch(() => null);
+    if (!updatedFlow) return null;
+    const retryTrace = await runCanonicalAutomationStudioFlow(updatedFlow, await this.listPublishedFlowSnapshots(), input.graphOptions, (await this.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`));
+    const retrySession: AutomationStudioRuntimeSession = {
+      ...input.session,
+      status: retryTrace.status,
+      finishedAt: retryTrace.finishedAt ?? Date.now(),
+      trace: {
+        ...retryTrace,
+        attempts: [...(input.session.trace?.attempts ?? []), ...retryTrace.attempts],
+        effects: [...(input.session.trace?.effects ?? []), ...retryTrace.effects],
+        message: `Adaptive retry ${retryTrace.status}.${input.session.trace?.message ? ` Initial failure: ${input.session.trace.message}` : ""}`
+      }
+    };
+    await this.writeRuntimeSession(input.projectId, retrySession);
+    const retryDetail = runtimeRunDetailWithAdaptationContext(runtimeSessionToFlowRunDetail(retrySession, input.projectId), input.adaptationContext);
+    await this.saveFlowRunDetail({
+      ...retryDetail,
+      interventions: input.detail.interventions,
+      adaptationIds: input.detail.adaptationIds,
+      changeProposalIds: input.detail.changeProposalIds,
+      metadata: {
+        ...(retryDetail.metadata ?? {}),
+        ...(input.detail.metadata ?? {}),
+        adaptiveRetry: {
+          attempted: true,
+          status: retryTrace.status,
+          attemptCount: retryTrace.attempts.length
+        }
+      }
+    });
+    return retrySession;
+  }
+
   async runRuntimeSession(input: {
     projectId?: string | null;
     runId?: string;
@@ -2440,18 +2789,41 @@ export class AutomationStudioService {
     inputs?: JsonObject;
     maxSteps?: number;
     authorizedDomainIds?: string[];
+    adaptiveMode?: "default" | "manual_approval" | "deterministic";
+    dryRunLlm?: boolean;
+    authorizedExternalSideEffects?: boolean;
+    subflowId?: string;
+    idempotencyKey?: string;
   }): Promise<AutomationStudioRuntimeSession> {
+    const idempotencyKey = typeof input.idempotencyKey === "string" && input.idempotencyKey.trim() ? input.idempotencyKey.trim() : "";
+    if (input.projectId && idempotencyKey) {
+      const matching = (await this.listRuntimeSessions(input.projectId).catch(() => [])).find((candidate) => candidate.metadata?.idempotencyKey === idempotencyKey);
+      if (matching) return matching;
+    }
     const existing = input.projectId && input.runId ? await this.getRuntimeSession(input.projectId, input.runId) : null;
+    if (existing?.status === "cancelled") return existing;
     const startInput: Parameters<AutomationStudioService["startRuntimeSession"]>[0] = {};
     if (input.projectId !== undefined) startInput.projectId = input.projectId;
     if (input.flow !== undefined) startInput.flow = input.flow;
     if (input.flowId !== undefined) startInput.flowId = input.flowId;
     if (input.inputs !== undefined) startInput.inputs = input.inputs;
     if (input.authorizedDomainIds !== undefined) startInput.authorizedDomainIds = input.authorizedDomainIds;
+    if (idempotencyKey) startInput.metadata = { ...(startInput.metadata ?? {}), idempotencyKey };
     const session = existing ?? await this.startRuntimeSession(startInput);
     const startedAt = Date.now();
+    const adaptiveRunRequested = input.adaptiveMode !== "deterministic";
+    if (!existing && input.projectId && adaptiveRunRequested) {
+      const activeAdaptiveRuns = (await this.listRuntimeSessions(input.projectId).catch(() => [])).filter((candidate) =>
+        candidate.runId !== session.runId
+        && (candidate.status === "queued" || candidate.status === "running" || candidate.status === "waiting")
+        && candidate.metadata?.adaptiveRuntime === true
+      );
+      if (activeAdaptiveRuns.length >= 1) throw new Error("Only one adaptive runtime run can be active per project.");
+    }
+    const abortController = new AbortController();
     const graphOptions: Parameters<typeof runAutomationStudioGraph>[1] = {
-      inputs: (input.inputs ?? session.metadata?.inputs ?? {}) as Record<string, any>
+      inputs: (input.inputs ?? session.metadata?.inputs ?? {}) as Record<string, any>,
+      signal: abortController.signal
     };
     if (this.ioRuntime) {
       graphOptions.effectDispatcher = this.runtimeService
@@ -2462,14 +2834,34 @@ export class AutomationStudioService {
       if (this.ioRuntime.domainId) graphOptions.authorizedDomainIds = requestedDomainIds.filter((domainId) => domainId === this.ioRuntime!.domainId);
     }
     if (this.nativeNodeRuntime) graphOptions.runtimeCapabilities = [...new Set([...(graphOptions.runtimeCapabilities ?? []), ...this.nativeNodeRuntime.getRuntimeCapabilities()])];
-    if (this.nativeNodeRuntime) graphOptions.nativeNodeExecutor = ({ node, inputs, signal }) => this.nativeNodeRuntime!.execute(node, inputs, signal);
+    if (this.nativeNodeRuntime) graphOptions.nativeNodeExecutor = ({ node, inputs, signal, hostContext }) => this.nativeNodeRuntime!.execute(node, inputs, signal, hostContext);
+    if (this.hostRuntime) graphOptions.hostRuntime = this.hostRuntime;
     if (input.maxSteps !== undefined) graphOptions.maxSteps = input.maxSteps;
     const canonical = input.projectId && session.metadata?.canonicalFlow === true
       ? await this.getFlow(input.projectId, session.flowId).catch(() => undefined)
       : undefined;
     if (canonical?.source.mode === "code" && !verifyCodeOwnedFlowCompilation(canonical)) throw new Error("Code-owned Flow compilation is stale or invalid; execution refused.");
+    const adaptationContext = input.projectId && canonical
+      ? runtimeAdaptationContextWithRunOverride(await this.resolveRuntimeAdaptationContext({ projectId: input.projectId, flow: canonical, currentRunId: session.runId }), input)
+      : null;
+    if (adaptationContext) graphOptions.recoveryBudget = recoveryBudgetFromRuntimeAdaptationContext(adaptationContext);
+    if (input.projectId) {
+      this.runtimeAbortControllers.set(`${input.projectId}:${session.runId}`, abortController);
+      await this.writeRuntimeSession(input.projectId, {
+        ...session,
+        status: "running",
+        startedAt: session.startedAt ?? startedAt,
+        metadata: {
+          ...(session.metadata ?? {}),
+          adaptiveRuntime: Boolean(adaptationContext),
+          adaptiveMode: input.adaptiveMode ?? "default",
+          ...(idempotencyKey ? { idempotencyKey } : {})
+        }
+      });
+    }
     const runtimeCanonical = canonical && input.projectId ? await this.materializeRecordingDerivedFlow(input.projectId, canonical) : canonical;
     const runtimeFlow = input.projectId ? await this.materializeRecordingDerivedDocument(input.projectId, session.flow) : session.flow;
+    try {
     if (input.projectId && runtimeCanonical) {
       const router = await this.getFlowRouter(input.projectId, runtimeCanonical.flowId);
       if (router) {
@@ -2499,7 +2891,7 @@ export class AutomationStudioService {
           trace
         };
         await this.writeRuntimeSession(input.projectId, next);
-        await this.saveFlowRunDetail({
+        const routedRunDetail = runtimeRunDetailWithAdaptationContext({
           ...runtimeSessionToFlowRunDetail(next, input.projectId),
           routeDecisions: [route.decision],
           subflows: route.selectedSubflow ? [{
@@ -2517,7 +2909,16 @@ export class AutomationStudioService {
               ...(trace.status !== "succeeded" && trace.message ? { failureReason: trace.message } : {})
             }
           }] : []
-        });
+        }, adaptationContext);
+        const routedFailedTraceAttempt = [...trace.attempts].reverse().find((attempt) => attempt.status === "failed");
+        await this.saveFlowRunDetail(await this.maybeAnnotateRunDetailWithRuntimeLlm({
+          detail: routedRunDetail,
+          context: adaptationContext,
+          runtimeFlow: canonicalFlowDocument(selectedFlow),
+          ...(input.authorizedExternalSideEffects !== undefined ? { authorizedExternalSideEffects: input.authorizedExternalSideEffects } : {}),
+          graphOptions,
+          ...(routedFailedTraceAttempt ? { failedTraceAttempt: routedFailedTraceAttempt } : {})
+        }));
         return next;
       }
     }
@@ -2532,7 +2933,60 @@ export class AutomationStudioService {
       trace
     };
     if (input.projectId) await this.writeRuntimeSession(input.projectId, next);
+    if (input.projectId && adaptationContext) {
+      const runDetail = runtimeRunDetailWithAdaptationContext(runtimeSessionToFlowRunDetail(next, input.projectId), adaptationContext);
+      const failedTraceAttempt = [...trace.attempts].reverse().find((attempt) => attempt.status === "failed");
+      const annotatedDetail = await this.maybeAnnotateRunDetailWithRuntimeLlm({
+        detail: runDetail,
+        context: adaptationContext,
+        runtimeFlow: runtimeCanonical ? canonicalFlowDocument(runtimeCanonical) : runtimeFlow,
+        ...(input.authorizedExternalSideEffects !== undefined ? { authorizedExternalSideEffects: input.authorizedExternalSideEffects } : {}),
+        graphOptions,
+        ...(failedTraceAttempt ? { failedTraceAttempt } : {})
+      });
+      const retry = await this.retryRuntimeSessionAfterAutoAppliedPatch({
+        projectId: input.projectId,
+        session: next,
+        detail: annotatedDetail,
+        graphOptions,
+        adaptationContext
+      });
+      if (retry) return retry;
+      await this.saveFlowRunDetail(annotatedDetail);
+    }
     return next;
+    } finally {
+      if (input.projectId) this.runtimeAbortControllers.delete(`${input.projectId}:${session.runId}`);
+    }
+  }
+
+  async cancelRuntimeSession(projectId: string, runId: string, reason = "Cancelled by user."): Promise<AutomationStudioRuntimeSession | null> {
+    const session = await this.getRuntimeSession(projectId, runId);
+    if (!session) return null;
+    if (isTerminalRuntimeSessionStatus(session.status)) return session;
+    const controller = this.runtimeAbortControllers.get(`${projectId}:${runId}`);
+    controller?.abort(reason);
+    const now = Date.now();
+    const cancelled: AutomationStudioRuntimeSession = {
+      ...session,
+      status: "cancelled",
+      finishedAt: session.finishedAt ?? now,
+      metadata: {
+        ...(session.metadata ?? {}),
+        cancellation: { at: now, reason }
+      },
+      trace: session.trace ?? {
+        status: "cancelled",
+        startedAt: session.startedAt ?? session.queuedAt,
+        finishedAt: now,
+        attempts: [],
+        values: {},
+        effects: [],
+        message: reason
+      }
+    };
+    await this.writeRuntimeSession(projectId, cancelled);
+    return cancelled;
   }
 
   async getRuntimeSession(projectId: string, runId: string): Promise<AutomationStudioRuntimeSession | null> {
@@ -2657,7 +3111,52 @@ export class AutomationStudioService {
     const stored = await new ProgramJsonStore<JsonObject>(this.flowRunDetailFile(projectId, runId), () => ({})).read();
     if (typeof (stored.summary as { runId?: unknown } | undefined)?.runId === "string") return stored as unknown as AutomationStudioFlowRunDetail;
     const session = await this.getRuntimeSession(projectId, runId);
-    return session ? runtimeSessionToFlowRunDetail(session, projectId) : null;
+    if (!session) return null;
+    return await this.saveFlowRunDetail({
+      ...runtimeSessionToFlowRunDetail(session, projectId),
+      metadata: {
+        ...(session.metadata ?? {}),
+        partialWriteRecovery: { recoveredAt: Date.now(), source: "runtime-session" }
+      }
+    });
+  }
+
+  async exportFlowRunAudit(projectId: string, runId: string): Promise<JsonObject | null> {
+    const detail = await this.getFlowRunDetail(projectId, runId);
+    if (!detail) return null;
+    const adaptationIds = uniqueStrings(detail.adaptationIds ?? []);
+    const adaptations = (await Promise.all(adaptationIds.map(async (adaptationId) => {
+      const flowId = detail.summary.flowId;
+      const adaptation = await this.getFlowAdaptation(projectId, flowId, adaptationId).catch(() => null);
+      if (!adaptation) return null;
+      return compactJsonObject({
+        adaptationId: adaptation.adaptationId,
+        flowId: adaptation.flowId,
+        trigger: adaptation.trigger,
+        status: adaptation.status,
+        riskLevel: adaptation.riskLevel,
+        createdAt: adaptation.createdAt,
+        updatedAt: adaptation.updatedAt,
+        patch: adaptation.patch,
+        validationResults: adaptation.validationResults,
+        mutationEvidence: adaptationMutationEvidence(adaptation),
+        approvalDecision: adaptation.metadata?.approvalDecision
+      });
+    }))).filter(isJsonRecord);
+    return compactJsonObject({
+      schemaVersion: "0.1",
+      exportedAt: Date.now(),
+      projectId,
+      runId,
+      runDetail: detail,
+      interventionSummaries: flowRunSummaryWithInterventionSummaries(detail).interventionSummaries ?? [],
+      adaptations,
+      retention: {
+        rawPromptsRetained: false,
+        compactContextRetained: true,
+        sensitiveValuesRedacted: true
+      }
+    });
   }
 
   async getFlowAdaptation(projectId: string, flowId: string, adaptationId: string): Promise<AutomationStudioFlowAdaptation | null> {
@@ -2667,6 +3166,14 @@ export class AutomationStudioService {
   }
 
   async saveFlowRouter(router: AutomationStudioFlowRouter): Promise<AutomationStudioFlowRouter> {
+    const subflowIndex = await this.readFlowSubflowIndex(router.projectId);
+    const subflows = (await Promise.all(
+      (subflowIndex.subflows ?? [])
+        .filter((summary) => summary.flowId === router.flowId)
+        .map((summary) => this.getFlowSubflow(router.projectId, router.flowId, summary.subflowId))
+    )).filter((subflow): subflow is AutomationStudioFlowSubflow => Boolean(subflow));
+    const validation = validateAutomationStudioFlowRouter(router, subflows);
+    if (!validation.ok) throw new Error(`Invalid Automation Studio router: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
     await this.ensureProjectStructure(router.projectId);
     await new ProgramJsonStore<JsonObject>(this.flowRouterFile(router.projectId, router.flowId), () => ({})).write(router as unknown as JsonObject);
     await this.writeFlowRouterIndex(router.projectId, (index) => ({ schemaVersion: "0.1", routers: upsertBy(index.routers ?? [], "routerId", routerSummaryFromRouter(router)) }));
@@ -2788,7 +3295,14 @@ export class AutomationStudioService {
   }
 
   async saveFlowRunDetail(detail: AutomationStudioFlowRunDetail): Promise<AutomationStudioFlowRunDetail> {
-    const normalizedDetail = { ...detail, summary: flowRunSummaryWithInterventionSummaries(detail) };
+    const detailWithMetrics: AutomationStudioFlowRunDetail = {
+      ...detail,
+      metadata: {
+        ...(detail.metadata ?? {}),
+        adaptiveMetrics: adaptiveRuntimeMetricsFromRunDetail(detail)
+      }
+    };
+    const normalizedDetail = { ...detailWithMetrics, summary: flowRunSummaryWithInterventionSummaries(detailWithMetrics) };
     const { projectId, runId } = normalizedDetail.summary;
     await this.ensureProjectStructure(projectId);
     await new ProgramJsonStore<JsonObject>(this.flowRunDetailFile(projectId, runId), () => ({})).write(normalizedDetail as unknown as JsonObject);
@@ -2835,32 +3349,378 @@ export class AutomationStudioService {
       confidenceScore: adaptationConfidenceScore(adaptation)
     } as JsonObject;
     let next: AutomationStudioFlowAdaptation = { ...adaptation, updatedAt: now, metadata };
+    if (input.action === "apply" && adaptation.status === "applied") {
+      const reviewMetadata = isJsonRecord(metadata.review) ? metadata.review : {};
+      return await this.saveFlowAdaptation({
+        ...adaptation,
+        updatedAt: now,
+        metadata: {
+          ...(adaptation.metadata ?? {}),
+          review: reviewMetadata,
+          idempotentApply: { at: now, actorId: input.actorId ?? "runtime", reason: "Adaptation was already applied." }
+        }
+      });
+    }
     if (input.action === "approve") next = { ...next, status: "validated" };
     if (input.action === "reject") next = { ...next, status: "rejected" };
     if (input.action === "disable") next = { ...next, status: "disabled" };
     if (input.action === "request_validation") next = { ...next, status: "testing" };
     if (input.action === "switch_manual") next = { ...next, status: "proposed", metadata: { ...metadata, proposalModeOverride: "manual" } };
     if (input.action === "supersede") next = { ...next, status: "superseded", metadata: { ...metadata, supersededByAdaptationId: input.supersededByAdaptationId ?? "" } };
-    if (input.action === "revert") next = { ...next, status: "reverted", metadata: { ...metadata, revertedAt: now, revertedBy: input.actorId ?? "unknown" } };
+    if (input.action === "revert") {
+      next = await this.revertFlowAdaptationDurably(next, metadata, now, input.actorId ?? "unknown");
+      return await this.saveFlowAdaptation(next);
+    }
     if (input.action === "apply") {
       const gates = evaluateFlowAdaptationPromotionGates(next);
       if (!gates.ok) throw new Error(`Adaptation cannot be applied: ${gates.issues.join("; ")}`);
+      const application = await this.applyFlowAdaptationDurably(next, now, input.actorId ?? "runtime");
       next = {
         ...next,
         status: "applied",
-        appliedTo: next.patch.flatMap((patch) => patch.targetId ? [{ kind: appliedTargetKindForPatch(patch.kind), id: patch.targetId }] : []),
+        appliedTo: application.appliedTo,
         metadata: {
           ...metadata,
-          applicationRecord: {
-            appliedAt: now,
-            appliedBy: input.actorId ?? "runtime",
-            reversible: true,
-            patches: next.patch
-          }
+          applicationRecord: application.record
         }
       };
     }
     return await this.saveFlowAdaptation(next);
+  }
+
+  private async applyFlowAdaptationDurably(
+    adaptation: AutomationStudioFlowAdaptation,
+    now: number,
+    appliedBy: string
+  ): Promise<{ appliedTo: NonNullable<AutomationStudioFlowAdaptation["appliedTo"]>; record: JsonObject }> {
+    const mutations: JsonObject[] = [];
+    try {
+      for (const patch of adaptation.patch) {
+        mutations.push(await this.applyFlowAdaptationPatchDurably(adaptation, patch, now));
+      }
+      mutations.push(await this.recordAppliedAdaptationOnFlow(adaptation, now, mutations));
+    } catch (error) {
+      await this.rollbackDurableAdaptationMutations(adaptation.projectId, mutations.slice().reverse());
+      throw error;
+    }
+    const appliedTo = mutations.flatMap((mutation) => {
+      const kind = typeof mutation.targetKind === "string" ? mutation.targetKind : undefined;
+      const id = typeof mutation.targetId === "string" ? mutation.targetId : undefined;
+      if (!kind || !id || kind === "flow") return [];
+      return [{ kind: kind as NonNullable<AutomationStudioFlowAdaptation["appliedTo"]>[number]["kind"], id }];
+    });
+    return {
+      appliedTo,
+      record: compactJsonObject({
+        appliedAt: now,
+        appliedBy,
+        reversible: true,
+        durable: true,
+        patches: structuredClone(adaptation.patch),
+        mutations
+      })
+    };
+  }
+
+  private async revertFlowAdaptationDurably(
+    adaptation: AutomationStudioFlowAdaptation,
+    reviewMetadata: JsonObject,
+    now: number,
+    revertedBy: string
+  ): Promise<AutomationStudioFlowAdaptation> {
+    const record = isJsonRecord(adaptation.metadata?.applicationRecord) ? adaptation.metadata.applicationRecord : undefined;
+    const mutations = Array.isArray(record?.mutations) ? record.mutations.filter(isJsonRecord) : [];
+    if (adaptation.status === "applied" && !mutations.length) throw new Error("Applied adaptation is missing durable rollback metadata.");
+    await this.rollbackDurableAdaptationMutations(adaptation.projectId, mutations.slice().reverse());
+    return {
+      ...adaptation,
+      status: "reverted",
+      updatedAt: now,
+      metadata: compactJsonObject({
+        ...reviewMetadata,
+        applicationRecord: record,
+        revertRecord: compactJsonObject({
+          revertedAt: now,
+          revertedBy,
+          durable: mutations.length > 0,
+          mutationCount: mutations.length
+        })
+      })
+    };
+  }
+
+  private async applyFlowAdaptationPatchDurably(
+    adaptation: AutomationStudioFlowAdaptation,
+    patch: AutomationStudioFlowAdaptation["patch"][number],
+    now: number
+  ): Promise<JsonObject> {
+    if (patch.kind === "edit_expectation" || patch.kind === "edit_action_target" || patch.kind === "edit_recovery") {
+      return await this.applyFlowNodeAdaptationPatch(adaptation, patch, now);
+    }
+    if (patch.kind === "edit_router") return await this.applyRouterAdaptationPatch(adaptation, patch, now);
+    if (patch.kind === "edit_subflow") return await this.applySubflowAdaptationPatch(adaptation, patch, now);
+    if (patch.kind === "create_subflow") return await this.applyCreateSubflowAdaptationPatch(adaptation, patch, now);
+    if (patch.kind === "edit_instruction") throw new Error("Instruction adaptation application is handled by the instruction review surface.");
+    throw new Error(`Unsupported adaptation patch kind: ${patch.kind}`);
+  }
+
+  private async applyFlowNodeAdaptationPatch(
+    adaptation: AutomationStudioFlowAdaptation,
+    patch: AutomationStudioFlowAdaptation["patch"][number],
+    now: number
+  ): Promise<JsonObject> {
+    if (!patch.targetId) throw new Error(`Patch ${patch.kind} is missing a target node.`);
+    const before = await this.getFlow(adaptation.projectId, adaptation.flowId);
+    const nodeIndex = before.nodes.findIndex((node) => node.id === patch.targetId);
+    if (nodeIndex < 0) throw new Error(`Unknown Flow node for adaptation patch: ${patch.targetId}`);
+    const nodes = structuredClone(before.nodes);
+    const node = nodes[nodeIndex]!;
+    const parameterValues = { ...(node.parameterValues ?? {}) };
+    if (patch.kind === "edit_expectation") {
+      if (!isJsonRecord(patch.after)) throw new Error("Expectation adaptation patches must provide an object after value.");
+      node.parameterValues = compactJsonObject({ ...parameterValues, ...patch.after });
+    } else if (patch.kind === "edit_action_target") {
+      if (patch.after === undefined) throw new Error("Action target adaptation patches must provide an after value.");
+      node.parameterValues = compactJsonObject({ ...parameterValues, target: structuredClone(patch.after) });
+    } else {
+      if (!isJsonRecord(patch.after)) throw new Error("Recovery adaptation patches must provide an object after value.");
+      node.parameterValues = compactJsonObject({ ...parameterValues, recovery: { ...(isJsonRecord(parameterValues.recovery) ? parameterValues.recovery : {}), ...patch.after } });
+    }
+    const after = {
+      ...before,
+      nodes,
+      updatedAt: now
+    };
+    assertFlowValidationOk(after, "Flow node adaptation patch");
+    const saved = await this.saveFlow({ projectId: adaptation.projectId, flow: after });
+    return durableAdaptationMutationRecord({
+      patchKind: patch.kind,
+      artifactKind: "flow",
+      artifactId: saved.flowId,
+      targetKind: appliedTargetKindForPatch(patch.kind),
+      targetId: patch.targetId,
+      before,
+      after: saved,
+      validation: validateAutomationStudioFlow(saved)
+    });
+  }
+
+  private async applyRouterAdaptationPatch(
+    adaptation: AutomationStudioFlowAdaptation,
+    patch: AutomationStudioFlowAdaptation["patch"][number],
+    now: number
+  ): Promise<JsonObject> {
+    if (!isJsonRecord(patch.after)) throw new Error("Router adaptation patches must provide an object after value.");
+    const toNodeId = typeof patch.after.toNodeId === "string" ? patch.after.toNodeId.trim() : "";
+    if (toNodeId) {
+      if (!patch.targetId) throw new Error("Router reroute patches must include the source node as targetId.");
+      const before = await this.getFlow(adaptation.projectId, adaptation.flowId);
+      if (!before.nodes.some((node) => node.id === patch.targetId)) throw new Error(`Unknown source node for router reroute patch: ${patch.targetId}`);
+      if (!before.nodes.some((node) => node.id === toNodeId)) throw new Error(`Unknown target node for router reroute patch: ${toNodeId}`);
+      const edgeId = `adaptation.${safeSegment(adaptation.adaptationId)}.${safeSegment(patch.targetId)}.${safeSegment(toNodeId)}`;
+      const edges = before.edges.some((edge) => edge.id === edgeId)
+        ? structuredClone(before.edges)
+        : [...structuredClone(before.edges), { id: edgeId, sourceNodeId: patch.targetId, sourcePortId: "failed", targetNodeId: toNodeId, targetPortId: "in", metadata: { adaptationId: adaptation.adaptationId } }];
+      const after = { ...before, edges, updatedAt: now };
+      assertFlowValidationOk(after, "Router reroute adaptation patch");
+      const saved = await this.saveFlow({ projectId: adaptation.projectId, flow: after });
+      return durableAdaptationMutationRecord({
+        patchKind: patch.kind,
+        artifactKind: "flow",
+        artifactId: saved.flowId,
+        targetKind: "router",
+        targetId: patch.targetId,
+        before,
+        after: saved,
+        validation: validateAutomationStudioFlow(saved)
+      });
+    }
+    const router = await this.getFlowRouter(adaptation.projectId, adaptation.flowId);
+    if (!router) throw new Error(`Unknown Flow router for adaptation: ${adaptation.flowId}`);
+    const after = compactJsonObject({
+      ...router,
+      ...patch.after,
+      schemaVersion: router.schemaVersion,
+      routerId: router.routerId,
+      flowId: router.flowId,
+      projectId: router.projectId,
+      createdAt: router.createdAt,
+      updatedAt: now
+    }) as unknown as AutomationStudioFlowRouter;
+    const subflows = await this.getFlowSubflowsForValidation(adaptation.projectId, adaptation.flowId);
+    assertRouterValidationOk(after, subflows, "Router adaptation patch");
+    const saved = await this.saveFlowRouter(after);
+    return durableAdaptationMutationRecord({
+      patchKind: patch.kind,
+      artifactKind: "router",
+      artifactId: saved.routerId,
+      targetKind: "router",
+      targetId: saved.routerId,
+      before: router,
+      after: saved,
+      validation: validateAutomationStudioFlowRouter(saved, subflows)
+    });
+  }
+
+  private async applySubflowAdaptationPatch(
+    adaptation: AutomationStudioFlowAdaptation,
+    patch: AutomationStudioFlowAdaptation["patch"][number],
+    now: number
+  ): Promise<JsonObject> {
+    if (!patch.targetId) throw new Error("Subflow adaptation patches must include targetId.");
+    if (!isJsonRecord(patch.after)) throw new Error("Subflow adaptation patches must provide an object after value.");
+    const before = await this.getFlowSubflow(adaptation.projectId, adaptation.flowId, patch.targetId);
+    if (!before) throw new Error(`Unknown subflow for adaptation patch: ${patch.targetId}`);
+    const after = removeUndefinedSubflowFields({
+      ...before,
+      ...patch.after,
+      schemaVersion: before.schemaVersion,
+      subflowId: before.subflowId,
+      flowId: before.flowId,
+      projectId: before.projectId,
+      createdAt: before.createdAt,
+      updatedAt: now
+    } as AutomationStudioFlowSubflow);
+    assertSubflowValidationOk(after, "Subflow adaptation patch");
+    const saved = await this.saveFlowSubflow(after);
+    return durableAdaptationMutationRecord({
+      patchKind: patch.kind,
+      artifactKind: "subflow",
+      artifactId: saved.subflowId,
+      targetKind: "subflow",
+      targetId: saved.subflowId,
+      before,
+      after: saved,
+      validation: validateAutomationStudioFlowSubflow(saved)
+    });
+  }
+
+  private async applyCreateSubflowAdaptationPatch(
+    adaptation: AutomationStudioFlowAdaptation,
+    patch: AutomationStudioFlowAdaptation["patch"][number],
+    now: number
+  ): Promise<JsonObject> {
+    const after = isJsonRecord(patch.after) ? patch.after : {};
+    const name = typeof after.name === "string" && after.name.trim() ? after.name.trim() : patch.summary.trim() || "Adapted subflow";
+    const graphFlowId = typeof after.graphFlowId === "string" && after.graphFlowId.trim() ? after.graphFlowId.trim() : undefined;
+    const created = await this.createFlowSubflow({
+      projectId: adaptation.projectId,
+      flowId: adaptation.flowId,
+      name,
+      ...(typeof after.description === "string" ? { description: after.description } : {}),
+      ...(typeof after.role === "string" ? { role: after.role as AutomationStudioFlowSubflow["role"] } : {}),
+      ...(Array.isArray(after.routeTags) ? { routeTags: after.routeTags.filter((tag): tag is string => typeof tag === "string") } : {}),
+      ...(graphFlowId ? { graphFlowId } : {})
+    });
+    const saved = await this.saveFlowSubflow({
+      ...created,
+      metadata: {
+        ...(created.metadata ?? {}),
+        createdByAdaptationId: adaptation.adaptationId,
+        createdGraphFlow: !graphFlowId
+      },
+      updatedAt: Math.max(now, created.createdAt)
+    });
+    return durableAdaptationMutationRecord({
+      patchKind: patch.kind,
+      artifactKind: "subflow",
+      artifactId: saved.subflowId,
+      targetKind: "subflow",
+      targetId: saved.subflowId,
+      before: null,
+      after: saved,
+      validation: validateAutomationStudioFlowSubflow(saved),
+      rollback: compactJsonObject({
+        kind: "delete_created_subflow",
+        artifactKind: "subflow",
+        artifactId: saved.subflowId,
+        graphFlowId: saved.graphFlowId,
+        createdGraphFlow: saved.metadata?.createdGraphFlow === true
+      })
+    });
+  }
+
+  private async recordAppliedAdaptationOnFlow(adaptation: AutomationStudioFlowAdaptation, now: number, mutations: JsonObject[]): Promise<JsonObject> {
+    const before = await this.getFlow(adaptation.projectId, adaptation.flowId);
+    const metadata = before.metadata ?? {};
+    const appliedAdaptationIds = uniqueStrings([
+      ...(Array.isArray(metadata.appliedAdaptationIds) ? metadata.appliedAdaptationIds.filter((id): id is string => typeof id === "string") : []),
+      adaptation.adaptationId
+    ]);
+    const structural = adaptation.patch.some((patch) => adaptationRequiresChangeProposal({ ...adaptation, patch: [patch] }));
+    const scopeKind = mutations.find((mutation) => typeof mutation.targetKind === "string")?.targetKind;
+    const targetId = mutations.find((mutation) => typeof mutation.targetId === "string")?.targetId;
+    const after = {
+      ...before,
+      metadata: compactJsonObject({
+        ...metadata,
+        appliedAdaptationIds,
+        ...(structural ? { lastStructuralChangeAt: now } : {}),
+        stabilityReset: compactJsonObject({
+          at: now,
+          adaptationId: adaptation.adaptationId,
+          ...(typeof scopeKind === "string" ? { scopeKind } : {}),
+          ...(typeof targetId === "string" ? { targetId } : {})
+        })
+      }),
+      updatedAt: now
+    };
+    assertFlowValidationOk(after, "Flow adaptation metadata update");
+    const saved = await this.saveFlow({ projectId: adaptation.projectId, flow: after });
+    return durableAdaptationMutationRecord({
+      patchKind: "promote_adaptation",
+      artifactKind: "flow",
+      artifactId: saved.flowId,
+      targetKind: "flow",
+      targetId: saved.flowId,
+      before,
+      after: saved,
+      validation: validateAutomationStudioFlow(saved)
+    });
+  }
+
+  private async rollbackDurableAdaptationMutations(projectId: string, mutations: JsonObject[]): Promise<void> {
+    for (const mutation of mutations) {
+      const artifactKind = mutation.artifactKind;
+      const artifactId = typeof mutation.artifactId === "string" ? mutation.artifactId : "";
+      const before = mutation.before;
+      if (artifactKind === "flow") {
+        if (!isJsonRecord(before)) {
+          await this.deleteFlow({ projectId, flowId: artifactId });
+        } else {
+          await this.saveFlow({ projectId, flow: before as unknown as AutomationStudioFlowArtifact });
+        }
+      } else if (artifactKind === "router") {
+        if (!isJsonRecord(before)) throw new Error(`Router rollback for ${artifactId} is missing a before snapshot.`);
+        await this.saveFlowRouter(before as unknown as AutomationStudioFlowRouter);
+      } else if (artifactKind === "subflow") {
+        if (!isJsonRecord(before)) {
+          const flowId = typeof mutation.flowId === "string" ? mutation.flowId : "";
+          const after = isJsonRecord(mutation.after) ? mutation.after : undefined;
+          const graphFlowId = typeof after?.graphFlowId === "string" ? after.graphFlowId : undefined;
+          await this.deleteCreatedFlowSubflow(projectId, flowId, artifactId, graphFlowId, isJsonRecord(mutation.rollback) && mutation.rollback.createdGraphFlow === true);
+        } else {
+          await this.saveFlowSubflow(before as unknown as AutomationStudioFlowSubflow);
+        }
+      }
+    }
+  }
+
+  private async deleteCreatedFlowSubflow(projectId: string, flowId: string, subflowId: string, graphFlowId: string | undefined, deleteGraphFlow: boolean): Promise<void> {
+    if (deleteGraphFlow && graphFlowId) await this.deleteFlow({ projectId, flowId: graphFlowId }).catch(() => ({ deletedFlowId: graphFlowId }));
+    if (flowId && subflowId) {
+      await ProgramJsonStore.deletePath(this.flowSubflowFile(projectId, flowId, subflowId));
+      await this.writeFlowSubflowIndex(projectId, (index) => ({ schemaVersion: "0.1", subflows: (index.subflows ?? []).filter((item) => item.subflowId !== subflowId) }));
+    }
+  }
+
+  private async getFlowSubflowsForValidation(projectId: string, flowId: string): Promise<AutomationStudioFlowSubflow[]> {
+    const index = await this.readFlowSubflowIndex(projectId);
+    return (await Promise.all(
+      (index.subflows ?? [])
+        .filter((summary) => summary.flowId === flowId)
+        .map((summary) => this.getFlowSubflow(projectId, flowId, summary.subflowId))
+    )).filter((subflow): subflow is AutomationStudioFlowSubflow => Boolean(subflow));
   }
 
   async saveFlowAdaptationPolicy(projectId: string, policy: AutomationStudioAdaptationPolicy): Promise<AutomationStudioAdaptationPolicy> {
@@ -4927,6 +5787,11 @@ function adaptationSummaryFromAdaptation(adaptation: AutomationStudioFlowAdaptat
   };
 }
 
+function approvalDecisionHistory(metadata: JsonObject | undefined): JsonObject[] {
+  const history = metadata?.approvalDecisions;
+  return Array.isArray(history) ? history.filter(isJsonRecord).slice(-20) : [];
+}
+
 function adaptationRequiresChangeProposal(adaptation: AutomationStudioFlowAdaptation): boolean {
   return adaptation.patch.some((patch) => patch.kind === "create_subflow" || patch.kind === "edit_subflow" || patch.kind === "edit_router" || patch.kind === "edit_recovery");
 }
@@ -4944,6 +5809,50 @@ function evaluateFlowAdaptationPromotionGates(adaptation: AutomationStudioFlowAd
     if (patch.kind !== "create_subflow" && !patch.targetId?.trim()) issues.push(`patch ${patch.kind} is missing a target`);
   }
   return { ok: issues.length === 0, issues };
+}
+
+function durableAdaptationMutationRecord(input: {
+  patchKind: AutomationStudioFlowAdaptation["patch"][number]["kind"] | "promote_adaptation";
+  artifactKind: "flow" | "router" | "subflow";
+  artifactId: string;
+  targetKind: NonNullable<AutomationStudioFlowAdaptation["appliedTo"]>[number]["kind"] | "flow";
+  targetId: string;
+  before: unknown;
+  after: unknown;
+  validation: { ok: boolean; issues: unknown[] };
+  rollback?: JsonObject;
+}): JsonObject {
+  return compactJsonObject({
+    patchKind: input.patchKind,
+    artifactKind: input.artifactKind,
+    artifactId: input.artifactId,
+    flowId: isJsonRecord(input.after) && typeof input.after.flowId === "string" ? input.after.flowId : undefined,
+    targetKind: input.targetKind,
+    targetId: input.targetId,
+    before: structuredClone(input.before) as JsonValue,
+    after: structuredClone(input.after) as JsonValue,
+    validation: structuredClone(input.validation) as JsonValue,
+    rollback: input.rollback ?? compactJsonObject({
+      kind: "restore_artifact",
+      artifactKind: input.artifactKind,
+      artifactId: input.artifactId
+    })
+  });
+}
+
+function assertFlowValidationOk(flow: AutomationStudioFlowArtifact, context: string): void {
+  const validation = validateAutomationStudioFlow(flow);
+  if (!validation.ok) throw new Error(`${context} failed validation: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
+}
+
+function assertRouterValidationOk(router: AutomationStudioFlowRouter, subflows: AutomationStudioFlowSubflow[], context: string): void {
+  const validation = validateAutomationStudioFlowRouter(router, subflows);
+  if (!validation.ok) throw new Error(`${context} failed validation: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
+}
+
+function assertSubflowValidationOk(subflow: AutomationStudioFlowSubflow, context: string): void {
+  const validation = validateAutomationStudioFlowSubflow(subflow);
+  if (!validation.ok) throw new Error(`${context} failed validation: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
 }
 
 function adaptationValidationCounts(adaptation: AutomationStudioFlowAdaptation): { succeeded: number; failed: number; total: number } {
@@ -6214,6 +7123,31 @@ function firstFiniteNumber(...values: unknown[]): number | undefined {
   return undefined;
 }
 
+function finiteNumber(value: unknown): number | undefined {
+  const numeric = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : undefined;
+}
+
+function booleanSetting(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function stringSetting(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function trainingModeValue(value: unknown): AutomationStudioTrainingModeSettings["mode"] {
+  return value === "train_for_runs" || value === "train_until_stable" || value === "continuous_adaptive" ? value : "normal";
+}
+
+function approvalModeValue(value: unknown): AutomationStudioTrainingModeSettings["proposalApprovalMode"] {
+  return value === "manual" || value === "mixed" ? value : "auto";
+}
+
+function adaptationPolicyPresetValue(value: unknown): AutomationStudioAdaptationPolicy["preset"] {
+  return value === "locked" || value === "observe" || value === "repair" || value === "autonomous" ? value : "adaptive";
+}
+
 function isJsonRecord(value: unknown): value is JsonObject {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
@@ -6251,6 +7185,236 @@ function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
   if (value && typeof value === "object") return `{${Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`).join(",")}}`;
   return JSON.stringify(value) ?? "null";
+}
+
+function mergedFlowSettingsMetadata(metadata: JsonObject | undefined): JsonObject {
+  const defaults = defaultAutomationStudioFlowSettingsMetadata();
+  const source = metadata ?? {};
+  return {
+    ...defaults,
+    ...source,
+    trainingModeSettings: {
+      ...(jsonObjectFromUnknown(defaults.trainingModeSettings) ?? {}),
+      ...(jsonObjectFromUnknown(source.trainingModeSettings) ?? {})
+    },
+    adaptationPolicySettings: {
+      ...(jsonObjectFromUnknown(defaults.adaptationPolicySettings) ?? {}),
+      ...(jsonObjectFromUnknown(source.adaptationPolicySettings) ?? {})
+    }
+  };
+}
+
+function trainingModeSettingsFromMetadata(metadata: JsonObject): AutomationStudioTrainingModeSettings {
+  const settings = jsonObjectFromUnknown(metadata.trainingModeSettings) ?? {};
+  const budgets = jsonObjectFromUnknown(settings.budgets) ?? {};
+  const trainForRunCount = finiteNumber(settings.trainForRunCount);
+  const stableRunThreshold = finiteNumber(settings.stableRunThreshold);
+  const minimumStabilityScore = finiteNumber(settings.minimumStabilityScore);
+  const maxInterventionsPerRun = finiteNumber(budgets.maxInterventionsPerRun);
+  const maxTokensPerRun = finiteNumber(budgets.maxTokensPerRun);
+  const maxCostUsdPerTrainingWindow = finiteNumber(budgets.maxCostUsdPerTrainingWindow);
+  return {
+    mode: trainingModeValue(settings.mode ?? metadata.trainingMode),
+    ...(trainForRunCount !== undefined ? { trainForRunCount } : {}),
+    ...(stableRunThreshold !== undefined ? { stableRunThreshold } : {}),
+    ...(minimumStabilityScore !== undefined ? { minimumStabilityScore } : {}),
+    allowLlmIntervention: booleanSetting(settings.allowLlmIntervention, false),
+    allowRuntimeRecovery: booleanSetting(settings.allowRuntimeRecovery, true),
+    allowAdaptationCreation: booleanSetting(settings.allowAdaptationCreation, false),
+    proposalApprovalMode: approvalModeValue(settings.proposalApprovalMode ?? metadata.proposalApprovalMode ?? metadata.proposalMode),
+    allowPromotion: booleanSetting(settings.allowPromotion, false),
+    requireFirstManualReviewBeforeAutoPromotion: booleanSetting(settings.requireFirstManualReviewBeforeAutoPromotion ?? metadata.requireFirstManualReviewBeforeAutoPromotion, false),
+    budgets: {
+      ...(maxInterventionsPerRun !== undefined ? { maxInterventionsPerRun } : {}),
+      ...(maxTokensPerRun !== undefined ? { maxTokensPerRun } : {}),
+      ...(maxCostUsdPerTrainingWindow !== undefined ? { maxCostUsdPerTrainingWindow } : {}),
+      exhaustedBehavior: budgets.exhaustedBehavior === "stop" ? "stop" : "ask"
+    }
+  };
+}
+
+function adaptationPolicyFromFlowMetadata(flow: AutomationStudioFlowArtifact, metadata: JsonObject): AutomationStudioAdaptationPolicy {
+  const settings = jsonObjectFromUnknown(metadata.adaptationPolicySettings) ?? {};
+  const now = flow.updatedAt ?? Date.now();
+  const maxInterventionsPerRun = finiteNumber(settings.maxInterventionsPerRun);
+  const maxEstimatedCostUsdPerRun = finiteNumber(settings.maxEstimatedCostUsdPerRun);
+  return {
+    schemaVersion: "0.1",
+    policyId: stringSetting(metadata.adaptationPolicyId, "policy.default"),
+    scope: { kind: "flow", flowId: flow.flowId },
+    preset: adaptationPolicyPresetValue(settings.preset),
+    proposalMode: approvalModeValue(settings.proposalMode ?? metadata.proposalApprovalMode ?? metadata.proposalMode),
+    allowRuntimeRecovery: booleanSetting(settings.allowRuntimeRecovery, true),
+    allowCreateRecoveryPaths: booleanSetting(settings.allowCreateRecoveryPaths, true),
+    allowModifySubflows: booleanSetting(settings.allowModifySubflows, true),
+    allowCreateSubflows: booleanSetting(settings.allowCreateSubflows, true),
+    allowModifyRouter: booleanSetting(settings.allowModifyRouter, true),
+    allowModifyExpectations: booleanSetting(settings.allowModifyExpectations, true),
+    allowModifyActionTargets: booleanSetting(settings.allowModifyActionTargets, true),
+    allowDeleteOrDisableBehavior: booleanSetting(settings.allowDeleteOrDisableBehavior, false),
+    allowExternalSideEffects: booleanSetting(settings.allowExternalSideEffects, false),
+    requireApprovalForDestructiveChanges: booleanSetting(settings.requireApprovalForDestructiveChanges, true),
+    requireApprovalForExternalSideEffects: booleanSetting(settings.requireApprovalForExternalSideEffects, true),
+    ...(maxInterventionsPerRun !== undefined ? { maxInterventionsPerRun } : {}),
+    ...(maxEstimatedCostUsdPerRun !== undefined ? { maxEstimatedCostUsdPerRun } : {}),
+    createdAt: flow.createdAt,
+    updatedAt: now,
+    metadata: {
+      source: "flow.metadata",
+      ...(stringSetting(metadata.llmProvider, "") ? { llmProvider: stringSetting(metadata.llmProvider, "") } : {})
+    }
+  };
+}
+
+function runtimeTrainingBudgetStateFromSummaries(runs: AutomationStudioFlowRunSummary[]): AutomationStudioTrainingBudgetState {
+  return {
+    interventionsThisRun: 0,
+    tokensThisRun: 0,
+    costUsdThisTrainingWindow: runs.reduce((sum, run) => sum + (run.tokenUsage?.estimatedCostUsd ?? 0), 0)
+  };
+}
+
+function runtimeAdaptationContextDiagnostics(
+  settings: AutomationStudioTrainingModeSettings,
+  policy: AutomationStudioAdaptationPolicy,
+  behavior: AutomationStudioTrainingModeBehavior,
+  budgetDecision: ReturnType<typeof decideAutomationStudioTrainingBudget>
+): string[] {
+  const diagnostics: string[] = [];
+  if (!behavior.invokeLlm) diagnostics.push("LLM intervention is disabled by training mode or settings.");
+  if (!behavior.createAdaptations) diagnostics.push("Adaptation creation is disabled by training mode or settings.");
+  if (!policy.allowRuntimeRecovery) diagnostics.push("Runtime recovery is disabled by adaptation policy.");
+  if (!budgetDecision.ok) diagnostics.push(`Training budget exhausted: ${budgetDecision.exhausted.join(", ")}.`);
+  if (settings.mode === "normal") diagnostics.push("Normal mode records adaptive context without invoking LLM.");
+  return diagnostics;
+}
+
+function runtimeAdaptationContextWithRunOverride(
+  context: AutomationStudioRuntimeAdaptationContext,
+  input: { adaptiveMode?: "default" | "manual_approval" | "deterministic"; dryRunLlm?: boolean }
+): AutomationStudioRuntimeAdaptationContext {
+  const mode = input.adaptiveMode ?? "default";
+  if (mode === "default" && input.dryRunLlm !== true) return context;
+  const behavior = { ...context.behavior };
+  const metadata: JsonObject = { ...(context.settings.metadata ?? {}), runtimeOverrideMode: mode };
+  if (mode === "deterministic") {
+    behavior.invokeLlm = false;
+    behavior.createAdaptations = false;
+    behavior.promoteAdaptations = false;
+  }
+  if (mode === "manual_approval") {
+    behavior.invokeLlm = true;
+    behavior.runRecovery = true;
+    behavior.createAdaptations = true;
+    behavior.promoteAdaptations = false;
+    context = { ...context, policy: { ...context.policy, proposalMode: "manual" } };
+  }
+  if (input.dryRunLlm === true) {
+    behavior.invokeLlm = true;
+    behavior.runRecovery = true;
+    behavior.createAdaptations = true;
+    behavior.promoteAdaptations = false;
+    metadata.dryRunAdaptation = true;
+  }
+  return {
+    ...context,
+    behavior,
+    settings: {
+      ...context.settings,
+      metadata
+    },
+    diagnostics: [
+      ...context.diagnostics,
+      ...(mode !== "default" ? [`Runtime override mode: ${mode}.`] : []),
+      ...(input.dryRunLlm === true ? ["Runtime override enabled dry-run LLM adaptation suggestions."] : [])
+    ]
+  };
+}
+
+function recoveryBudgetFromRuntimeAdaptationContext(context: AutomationStudioRuntimeAdaptationContext): AutomationStudioRecoveryBudget {
+  const maxAdaptationOrLlmAttemptsPerRun = firstFiniteNumber(context.policy.maxInterventionsPerRun, context.settings.budgets?.maxInterventionsPerRun);
+  return {
+    ...(maxAdaptationOrLlmAttemptsPerRun !== undefined ? { maxAdaptationOrLlmAttemptsPerRun } : {})
+  };
+}
+
+function runtimeRunDetailWithAdaptationContext(detail: AutomationStudioFlowRunDetail, context: AutomationStudioRuntimeAdaptationContext | null): AutomationStudioFlowRunDetail {
+  if (!context) return detail;
+  const annotated = annotateRunDetailWithTrainingMode(detail, context.settings, context.behavior);
+  return {
+    ...annotated,
+    metadata: {
+      ...(annotated.metadata ?? {}),
+      runtimeAdaptationContext: runtimeAdaptationContextSummary(context)
+    }
+  };
+}
+
+function adaptiveRuntimeMetricsFromRunDetail(detail: AutomationStudioFlowRunDetail): JsonObject {
+  const runtimePatchAttempts = Array.isArray(detail.metadata?.runtimePatchAttempts) ? detail.metadata.runtimePatchAttempts.filter(isJsonRecord) : [];
+  const durableBehaviorChanged = runtimePatchAttempts.some((attempt) => isJsonRecord(attempt.approvalDecision) && attempt.approvalDecision.autoApply === true);
+  const tokenUsage = detail.summary.tokenUsage ?? flowRunSummaryWithInterventionSummaries(detail).tokenUsage;
+  return compactJsonObject({
+    llmCallCount: detail.interventions.filter((intervention) => intervention.provider || intervention.promptVersion || intervention.kind === "diagnosis" || intervention.kind === "runtime_patch").length,
+    tokenCount: tokenUsage?.totalTokens ?? 0,
+    estimatedCostUsd: tokenUsage?.estimatedCostUsd ?? 0,
+    recoveryAttemptCount: detail.recoveryAttempts?.length ?? 0,
+    adaptationApplyCount: durableBehaviorChanged ? 1 : 0,
+    durableBehaviorChanged,
+    deterministicSuccessAfterAdaptation: detail.metadata?.adaptiveRetry && isJsonRecord(detail.metadata.adaptiveRetry) ? detail.metadata.adaptiveRetry.status === "succeeded" : false
+  });
+}
+
+function adaptationMutationEvidence(adaptation: AutomationStudioFlowAdaptation): JsonObject[] {
+  const record = isJsonRecord(adaptation.metadata?.applicationRecord) ? adaptation.metadata.applicationRecord : undefined;
+  const mutations = Array.isArray(record?.mutations) ? record.mutations.filter(isJsonRecord) : [];
+  return mutations.map((mutation) => compactJsonObject({
+    patchKind: mutation.patchKind,
+    artifactKind: mutation.artifactKind,
+    artifactId: mutation.artifactId,
+    targetKind: mutation.targetKind,
+    targetId: mutation.targetId,
+    before: mutation.before,
+    after: mutation.after,
+    rollback: mutation.rollback,
+    validation: mutation.validation
+  }));
+}
+
+function runtimeAdaptationContextSummary(context: AutomationStudioRuntimeAdaptationContext): JsonObject {
+  return {
+    flowId: context.flowId,
+    mode: context.settings.mode,
+    policyId: context.policy.policyId,
+    policyPreset: context.policy.preset,
+    approvalMode: context.policy.proposalMode,
+    behavior: {
+      invokeLlm: context.behavior.invokeLlm,
+      runRecovery: context.behavior.runRecovery,
+      createAdaptations: context.behavior.createAdaptations,
+      promoteAdaptations: context.behavior.promoteAdaptations
+    },
+    budget: {
+      ok: context.budgetDecision.ok,
+      behavior: context.budgetDecision.behavior,
+      exhausted: context.budgetDecision.exhausted,
+      interventionsThisRun: context.budgetState.interventionsThisRun,
+      tokensThisRun: context.budgetState.tokensThisRun,
+      costUsdThisTrainingWindow: context.budgetState.costUsdThisTrainingWindow
+    },
+    metrics: {
+      stabilityScore: context.metrics.stabilityScore,
+      deterministicSuccessRuns: context.metrics.deterministicSuccessRuns,
+      unresolvedFailures: context.metrics.unresolvedFailures,
+      llmInterventionsPerRun: context.metrics.llmInterventionsPerRun,
+      acceptedAdaptations: context.metrics.acceptedAdaptations,
+      rejectedAdaptations: context.metrics.rejectedAdaptations
+    },
+    runsCompleted: context.runsCompleted,
+    recentRunCount: context.recentRunCount,
+    recentAdaptationCount: context.recentAdaptationCount,
+    diagnostics: context.diagnostics
+  };
 }
 
 function runtimeSummaryFromSession(session: AutomationStudioRuntimeSession): AutomationStudioRuntimeRunSummary {
@@ -6294,6 +7458,10 @@ function flowRunSummaryWithInterventionSummaries(detail: AutomationStudioFlowRun
     ...(hasTokenUsage ? { tokenUsage } : {}),
     ...(interventionSummaries.length ? { interventionSummaries } : {})
   };
+}
+
+function isTerminalRuntimeSessionStatus(status: AutomationStudioRuntimeSession["status"]): boolean {
+  return status === "succeeded" || status === "failed" || status === "cancelled";
 }
 
 function runtimeSessionToFlowRunDetail(session: AutomationStudioRuntimeSession, projectId: string): AutomationStudioFlowRunDetail {
@@ -6355,6 +7523,14 @@ function runtimeFlowRunSummaryFromSession(session: AutomationStudioRuntimeSessio
 function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSession): AutomationStudioFlowRunActionAttemptRecord[] {
   return (session.trace?.attempts ?? []).map((attempt, index) => {
     const durationMs = attempt.finishedAt === undefined ? undefined : Math.max(0, attempt.finishedAt - attempt.startedAt);
+    const adaptiveFailure = attempt.status === "failed"
+      ? compactAutomationStudioAdaptiveFailure(classifyAutomationStudioAdaptiveFailure({
+        projectId: session.projectId ?? "",
+        flowId: session.flowId,
+        runId: session.runId,
+        attempt
+      }))
+      : undefined;
     return {
       attemptId: attempt.attemptId,
       nodeId: attempt.nodeId,
@@ -6370,7 +7546,10 @@ function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSessio
       metadata: {
         ...(attempt.regionId ? { regionId: attempt.regionId } : {}),
         ...(attempt.transitionComparison?.diffSummary ? { diffSummary: attempt.transitionComparison.diffSummary } : {}),
-        ...(attempt.recoveryDecision?.selected ? { recoverySelected: attempt.recoveryDecision.selected } : {})
+        ...(attempt.recoveryDecision?.selected ? { recoverySelected: attempt.recoveryDecision.selected } : {}),
+        ...(attempt.hostCapabilities?.length ? { hostCapabilities: attempt.hostCapabilities } : {}),
+        ...(attempt.stateRefs ? { stateRefs: attempt.stateRefs } : {}),
+        ...(adaptiveFailure ? { adaptiveFailure } : {})
       }
     };
   });

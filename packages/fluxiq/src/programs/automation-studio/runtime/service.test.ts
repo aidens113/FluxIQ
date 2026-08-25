@@ -6,7 +6,7 @@ import { createAutomationStudioFlowExpansionFixture, createAutomationStudioLarge
 import { generateFlowTypeScript } from "../dsl/index.ts";
 import { AutomationStudioService } from "./service.ts";
 import { AutomationStudioNativeNodeRuntime } from "./native-node-runtime.ts";
-import type { AutomationStudioImporterSdkManifest } from "../nodes/index.ts";
+import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioImporterSdkManifest } from "../nodes/index.ts";
 import { IoRegistry, createEnvelope } from "../../../io/index.ts";
 import type { JsonObject } from "../../../core/index.ts";
 
@@ -22,6 +22,64 @@ function stateFixture(id: string, timestamp: number, title: string): StateSnapsh
         schemaVersion: "0.1",
         values: { title: { type: "string", value: title, observedAt: timestamp } }
       }
+    }
+  };
+}
+
+async function createRunnableCanonicalFlow(
+  service: AutomationStudioService,
+  projectId: string,
+  input: { flowId: string; metadata?: JsonObject }
+) {
+  const flow = await service.createFlow({ projectId, flowId: input.flowId, name: input.flowId });
+  const runnable = {
+    ...flow,
+    metadata: { ...(flow.metadata ?? {}), ...(input.metadata ?? {}) },
+    nodes: [
+      { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
+      { id: "constant", definitionId: "builtin.data.constant", parameterValues: { value: "ok" } },
+      { id: "end", definitionId: "builtin.control.end", parameterValues: { status: "success" } }
+    ],
+    edges: [
+      { id: "start.constant", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "constant", targetPortId: "in" },
+      { id: "constant.end", sourceNodeId: "constant", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }
+    ]
+  };
+  await service.saveFlow({ projectId, flow: runnable });
+  return runnable;
+}
+
+async function createFailingCanonicalFlow(
+  service: AutomationStudioService,
+  projectId: string,
+  input: { flowId: string; metadata?: JsonObject }
+) {
+  const flow = await service.createFlow({ projectId, flowId: input.flowId, name: input.flowId });
+  const failing = {
+    ...flow,
+    metadata: { ...(flow.metadata ?? {}), ...(input.metadata ?? {}) },
+    nodes: [
+      { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
+      { id: "divide", definitionId: "builtin.math.divide", parameterValues: {} }
+    ],
+    edges: [
+      { id: "start.divide", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "divide", targetPortId: "in" }
+    ]
+  };
+  await service.saveFlow({ projectId, flow: failing });
+  return failing;
+}
+
+function adaptiveTrainingMetadata(): JsonObject {
+  return {
+    trainingModeSettings: {
+      mode: "continuous_adaptive",
+      allowLlmIntervention: true,
+      allowRuntimeRecovery: true,
+      allowAdaptationCreation: true,
+      proposalApprovalMode: "auto",
+      allowPromotion: true,
+      budgets: { maxInterventionsPerRun: 2, maxTokensPerRun: 12000, maxCostUsdPerTrainingWindow: 5, exhaustedBehavior: "ask" }
     }
   };
 }
@@ -212,7 +270,7 @@ describe("AutomationStudioService recording persistence", () => {
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.defaults", name: "Default settings Flow" });
 
     expect(flow.metadata).toMatchObject({
-      trainingMode: "normal",
+      trainingMode: "continuous_adaptive",
       proposalMode: "auto",
       proposalApprovalMode: "auto",
       llmProvider: "host",
@@ -236,14 +294,14 @@ describe("AutomationStudioService recording persistence", () => {
         maxEstimatedCostUsdPerRun: 1
       },
       trainingModeSettings: {
-        mode: "normal",
+        mode: "continuous_adaptive",
         trainForRunCount: 3,
         minimumStabilityScore: 0.9,
-        allowLlmIntervention: false,
+        allowLlmIntervention: true,
         allowRuntimeRecovery: true,
-        allowAdaptationCreation: false,
+        allowAdaptationCreation: true,
         proposalApprovalMode: "auto",
-        allowPromotion: false,
+        allowPromotion: true,
         budgets: {
           maxInterventionsPerRun: 2,
           maxTokensPerRun: 12000,
@@ -252,6 +310,453 @@ describe("AutomationStudioService recording persistence", () => {
         }
       }
     });
+  });
+
+  it("resolves runtime adaptation behavior into Flow run detail metadata", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Runtime adaptation context" });
+    const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.runtime-context" });
+
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
+    const detail = await service.getFlowRunDetail(project.id, run.runId);
+
+    expect(detail?.metadata).toMatchObject({
+      trainingMode: "continuous_adaptive",
+      trainingBehavior: {
+        invokeLlm: true,
+        runRecovery: true,
+        createAdaptations: true,
+        promoteAdaptations: true
+      },
+      runtimeAdaptationContext: {
+        flowId: flow.flowId,
+        mode: "continuous_adaptive",
+        policyId: "policy.default",
+        policyPreset: "adaptive",
+        approvalMode: "auto",
+        runsCompleted: 0,
+        budget: { ok: true },
+        diagnostics: []
+      }
+    });
+  });
+
+  it("activates train-for-runs only for runs inside the training window", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Train for runs" });
+    const flow = await createRunnableCanonicalFlow(service, project.id, {
+      flowId: "flow.train-for-runs",
+      metadata: {
+        trainingModeSettings: {
+          mode: "train_for_runs",
+          trainForRunCount: 1,
+          allowLlmIntervention: true,
+          allowRuntimeRecovery: true,
+          allowAdaptationCreation: true,
+          proposalApprovalMode: "auto",
+          allowPromotion: true,
+          budgets: { maxInterventionsPerRun: 2, maxTokensPerRun: 12000, maxCostUsdPerTrainingWindow: 5, exhaustedBehavior: "ask" }
+        }
+      }
+    });
+
+    const first = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
+    const second = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
+
+    await expect(service.getFlowRunDetail(project.id, first.runId)).resolves.toMatchObject({
+      metadata: { trainingBehavior: { invokeLlm: true, createAdaptations: true, promoteAdaptations: true }, runtimeAdaptationContext: { runsCompleted: 0 } }
+    });
+    await expect(service.getFlowRunDetail(project.id, second.runId)).resolves.toMatchObject({
+      metadata: { trainingBehavior: { invokeLlm: false, createAdaptations: false, promoteAdaptations: false }, runtimeAdaptationContext: { runsCompleted: 1 } }
+    });
+  });
+
+  it("resolves stable and continuous adaptive modes plus budget exhaustion", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Adaptive modes" });
+    const stableFlow = await createRunnableCanonicalFlow(service, project.id, {
+      flowId: "flow.train-until-stable",
+      metadata: {
+        trainingModeSettings: {
+          mode: "train_until_stable",
+          minimumStabilityScore: 0.5,
+          allowLlmIntervention: true,
+          allowRuntimeRecovery: true,
+          allowAdaptationCreation: true,
+          proposalApprovalMode: "auto",
+          allowPromotion: true,
+          budgets: { maxInterventionsPerRun: 2, maxTokensPerRun: 12000, maxCostUsdPerTrainingWindow: 5, exhaustedBehavior: "ask" }
+        }
+      }
+    });
+    const continuousFlow = await createRunnableCanonicalFlow(service, project.id, {
+      flowId: "flow.continuous",
+      metadata: {
+        trainingModeSettings: {
+          mode: "continuous_adaptive",
+          allowLlmIntervention: true,
+          allowRuntimeRecovery: true,
+          allowAdaptationCreation: true,
+          proposalApprovalMode: "auto",
+          allowPromotion: true,
+          budgets: { maxInterventionsPerRun: 2, maxTokensPerRun: 12000, maxCostUsdPerTrainingWindow: 0.001, exhaustedBehavior: "stop" }
+        }
+      }
+    });
+    await service.saveFlowRunDetail({
+      schemaVersion: "0.1",
+      summary: {
+        schemaVersion: "0.1",
+        projectId: project.id,
+        flowId: stableFlow.flowId,
+        runId: "run.stable.previous",
+        status: "succeeded",
+        startedAt: 1,
+        finishedAt: 2,
+        updatedAt: 2,
+        routeDecisionCount: 0,
+        subflowEntryCount: 0,
+        actionAttemptCount: 0,
+        interventionCount: 0,
+        adaptationCount: 0
+      },
+      routeDecisions: [],
+      subflows: [],
+      interventions: [],
+      adaptationIds: [],
+      changeProposalIds: []
+    });
+    await service.saveFlowRunDetail({
+      schemaVersion: "0.1",
+      summary: {
+        schemaVersion: "0.1",
+        projectId: project.id,
+        flowId: continuousFlow.flowId,
+        runId: "run.cost.previous",
+        status: "succeeded",
+        startedAt: 1,
+        finishedAt: 2,
+        updatedAt: 2,
+        routeDecisionCount: 0,
+        subflowEntryCount: 0,
+        actionAttemptCount: 0,
+        interventionCount: 1,
+        adaptationCount: 0,
+        tokenUsage: { estimatedCostUsd: 0.01 }
+      },
+      routeDecisions: [],
+      subflows: [],
+      interventions: [],
+      adaptationIds: [],
+      changeProposalIds: []
+    });
+
+    const stableRun = await service.runRuntimeSession({ projectId: project.id, flowId: stableFlow.flowId });
+    const continuousRun = await service.runRuntimeSession({ projectId: project.id, flowId: continuousFlow.flowId });
+
+    await expect(service.getFlowRunDetail(project.id, stableRun.runId)).resolves.toMatchObject({
+      metadata: { trainingBehavior: { invokeLlm: false, createAdaptations: false, promoteAdaptations: false }, runtimeAdaptationContext: { runsCompleted: 1 } }
+    });
+    await expect(service.getFlowRunDetail(project.id, continuousRun.runId)).resolves.toMatchObject({
+      metadata: {
+        trainingBehavior: { invokeLlm: true, createAdaptations: true, promoteAdaptations: true },
+        runtimeAdaptationContext: {
+          budget: { ok: false, behavior: "stop", exhausted: ["max cost per training window"] },
+          diagnostics: expect.arrayContaining(["Training budget exhausted: max cost per training window."])
+        }
+      }
+    });
+  });
+
+  it("records a missing-provider runtime diagnosis intervention when adaptive policy allows LLM", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Missing provider" });
+    const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.missing-provider", metadata: adaptiveTrainingMetadata() });
+
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
+    const detail = await service.getFlowRunDetail(project.id, run.runId);
+    const harnessIntervention = detail?.interventions.find((intervention) => intervention.promptVersion === "automation-studio.runtime-diagnosis.v1");
+
+    expect(run.status).toBe("failed");
+    expect(harnessIntervention).toMatchObject({
+      kind: "diagnosis",
+      validation: { ok: true, issues: [expect.stringContaining("llm.provider_missing")] }
+    });
+    expect(detail?.metadata).toMatchObject({
+      llmGate: {
+        invoked: false,
+        providerConfigured: false,
+        ok: false
+      }
+    });
+  });
+
+  it("runs a configured runtime diagnosis provider and rolls usage into run summary", async () => {
+    const service = new AutomationStudioService({
+      dataDir: tempRoot,
+      seedFixture: false,
+      llmProviderResolver: () => ({
+        metadata: { provider: "mock", model: "diagnosis-model" },
+        runTask: async () => ({
+          response: { kind: "diagnosis", summary: "Division failed because denominator is zero.", confidence: 0.9 },
+          usage: { inputTokens: 11, outputTokens: 7, totalTokens: 18, estimatedCostUsd: 0.002 }
+        })
+      })
+    });
+    const project = await service.createProject({ name: "Mock provider" });
+    const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.mock-provider", metadata: adaptiveTrainingMetadata() });
+
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
+    const detail = await service.getFlowRunDetail(project.id, run.runId);
+    const harnessIntervention = detail?.interventions.find((intervention) => intervention.provider === "mock");
+
+    expect(harnessIntervention).toMatchObject({
+      provider: "mock",
+      model: "diagnosis-model",
+      tokenUsage: { totalTokens: 18 },
+      structuredResult: { kind: "diagnosis", summary: "Division failed because denominator is zero." }
+    });
+    expect(detail?.summary).toMatchObject({
+      interventionCount: 3,
+      tokenUsage: { inputTokens: 22, outputTokens: 14, totalTokens: 36, estimatedCostUsd: 0.004 }
+    });
+  });
+
+  it("tests runtime patch responses and persists resulting adaptation evidence", async () => {
+    const service = new AutomationStudioService({
+      dataDir: tempRoot,
+      seedFixture: false,
+      llmProviderResolver: () => ({
+        metadata: { provider: "mock", model: "patch-model" },
+        runTask: async (request) => request.taskKind === "runtime_patch"
+          ? {
+            response: {
+              kind: "runtime_patch",
+              summary: "Route around the broken confirmation node.",
+              riskLevel: "medium",
+              patches: [{ kind: "temporary_reroute", fromNodeId: "broken", toNodeId: "end", reason: "The confirmation node implementation is missing." }]
+            },
+            usage: { inputTokens: 20, outputTokens: 10, totalTokens: 30, estimatedCostUsd: 0.004 }
+          }
+          : {
+            response: { kind: "diagnosis", summary: "The confirmation node has no runtime implementation." },
+            usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12, estimatedCostUsd: 0.001 }
+          }
+      })
+    });
+    const project = await service.createProject({ name: "Runtime patch" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.runtime-patch", name: "Runtime patch Flow" });
+    await service.saveFlow({
+      projectId: project.id,
+      flow: {
+        ...flow,
+        metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() },
+        nodes: [
+          { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
+          { id: "constant", definitionId: "builtin.data.constant", parameterValues: { value: "ok" } },
+          { id: "broken", definitionId: "unknown.confirmation", parameterValues: {} },
+          { id: "end", definitionId: "builtin.control.end", parameterValues: { status: "success" } }
+        ],
+        edges: [
+          { id: "start.constant", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "constant", targetPortId: "in" },
+          { id: "constant.broken", sourceNodeId: "constant", sourcePortId: "success", targetNodeId: "broken", targetPortId: "in" }
+        ]
+      }
+    });
+
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
+    const detail = await service.getFlowRunDetail(project.id, run.runId);
+
+    expect(detail?.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({
+      kind: "temporary_reroute",
+      preflightOk: true,
+      restoredExpectedState: true,
+      adaptationId: expect.stringContaining("adaptation."),
+      changeProposalId: expect.stringContaining("proposal.")
+    })]);
+    expect(detail?.adaptationIds).toHaveLength(1);
+    expect(detail?.changeProposalIds).toHaveLength(1);
+    await expect(service.getFlowAdaptation(project.id, flow.flowId, detail!.adaptationIds[0]!)).resolves.toMatchObject({
+      status: "validated",
+      proposalId: detail?.changeProposalIds[0],
+      patch: [{ kind: "edit_router", targetId: "broken" }],
+      metadata: {
+        approvalDecision: {
+          mode: "auto",
+          autoApply: false,
+          requiresManualApproval: true,
+          reason: "Structural adaptations require manual review before durable promotion."
+        }
+      }
+    });
+  });
+
+  it("auto-applies validated low-risk runtime adaptations and records approval decisions", async () => {
+    const service = new AutomationStudioService({
+      dataDir: tempRoot,
+      seedFixture: false,
+      llmProviderResolver: () => ({
+        metadata: { provider: "mock", model: "patch-model" },
+        runTask: async (request) => request.taskKind === "runtime_patch"
+          ? {
+            response: {
+              kind: "runtime_patch",
+              summary: "Retry after state settles.",
+              riskLevel: "low",
+              patches: [{ kind: "temporary_wait_retry", targetNodeId: "constant", retryCount: 2, timeoutMs: 250, reason: "Retry the stable constant node." }]
+            },
+            usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.002 }
+          }
+          : {
+            response: { kind: "diagnosis", summary: "The divide node failed, but a deterministic retry candidate exists." },
+            usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6, estimatedCostUsd: 0.001 }
+          }
+      })
+    });
+    const project = await service.createProject({ name: "Runtime auto promote" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.runtime-auto-promote", name: "Runtime auto promote Flow" });
+    await service.saveFlow({
+      projectId: project.id,
+      flow: {
+        ...flow,
+        metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() },
+        nodes: [
+          { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
+          { id: "divide", definitionId: "builtin.math.divide", parameterValues: {} },
+          { id: "constant", definitionId: "builtin.data.constant", parameterValues: { value: "ok" } },
+          { id: "end", definitionId: "builtin.control.end", parameterValues: { status: "success" } }
+        ],
+        edges: [
+          { id: "start.divide", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "divide", targetPortId: "in" },
+          { id: "constant.end", sourceNodeId: "constant", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }
+        ]
+      }
+    });
+
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
+    const detail = await service.getFlowRunDetail(project.id, run.runId);
+    const adaptation = await service.getFlowAdaptation(project.id, flow.flowId, detail!.adaptationIds[0]!);
+
+    expect(adaptation).toMatchObject({
+      status: "applied",
+      patch: [{ kind: "edit_expectation", targetId: "constant" }],
+      metadata: {
+        approvalDecision: {
+          autoApply: true,
+          requiresManualApproval: false,
+          reason: "Validated low-risk non-structural adaptation can be applied automatically."
+        },
+        applicationRecord: { durable: true }
+      }
+    });
+    await expect(service.getFlow(project.id, flow.flowId)).resolves.toMatchObject({
+      nodes: expect.arrayContaining([expect.objectContaining({ id: "constant", parameterValues: { value: "ok", timeoutMs: 250, retryCount: 2 } })])
+    });
+    expect(detail?.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({
+      kind: "temporary_wait_retry",
+      approvalDecision: expect.objectContaining({ autoApply: true })
+    })]);
+  });
+
+  it("completes an adaptive runtime loop and makes the next run deterministic", async () => {
+    let llmCalls = 0;
+    const manifest: AutomationStudioImporterSdkManifest = {
+      schemaVersion: "0.1",
+      sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION,
+      packageId: "example.adaptive",
+      packageVersion: "1.0.0",
+      domainId: "example",
+      nodes: [{
+        schemaVersion: "0.1",
+        id: "example.drift-action",
+        version: "1.0.0",
+        label: "Drift Action",
+        description: "Fails until a retry parameter is durably learned.",
+        category: "custom",
+        source: { kind: "importer", domainId: "example", packageId: "example.adaptive", implementationKey: "drift" },
+        availability: { kind: "domain", domainId: "example" },
+        capabilities: { executable: true, retryable: true, stateAware: true },
+        requiredRuntimeCapabilities: ["example.host"],
+        inputs: [],
+        outputs: [{ id: "done", label: "Done", valueType: "boolean" }],
+        parameters: []
+      }]
+    };
+    const nativeRuntime = new AutomationStudioNativeNodeRuntime({ runtimeCapabilities: ["example.host"] }).register(manifest, {
+      packageId: "example.adaptive",
+      packageVersion: "1.0.0",
+      implementations: {
+        drift: ({ parameters }) => parameters.retryCount === 2
+          ? { status: "success", route: "success", outputs: { done: true } }
+          : { status: "failed", route: "failed", outputs: { error: "Target drift was not recovered." } }
+      }
+    });
+    const service = new AutomationStudioService({
+      dataDir: tempRoot,
+      seedFixture: false,
+      llmProviderResolver: () => ({
+        metadata: { provider: "mock", model: "adaptive-loop" },
+        runTask: async (request) => {
+          llmCalls += 1;
+          return request.taskKind === "runtime_patch"
+            ? {
+              response: {
+                kind: "runtime_patch",
+                summary: "Retry the drift action once the state settles.",
+                riskLevel: "low",
+                patches: [{ kind: "temporary_wait_retry", targetNodeId: "drift", retryCount: 2, timeoutMs: 100, reason: "The action succeeds after a deterministic retry setting." }]
+              },
+              usage: { inputTokens: 10, outputTokens: 6, totalTokens: 16, estimatedCostUsd: 0.002 }
+            }
+            : {
+              response: { kind: "diagnosis", summary: "The drift action needs a retry setting." },
+              usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6, estimatedCostUsd: 0.001 }
+            };
+        }
+      })
+    }).bindNativeNodeRuntime(nativeRuntime);
+    const project = await service.createProject({ name: "Adaptive Loop", domainId: "example" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.adaptive-loop", name: "Adaptive Loop Flow" });
+    await service.saveFlow({
+      projectId: project.id,
+      flow: {
+        ...flow,
+        metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() },
+        nodes: [
+          { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
+          { id: "drift", definitionId: "example.drift-action", parameterValues: {} },
+          { id: "end", definitionId: "builtin.control.end", parameterValues: { status: "success" } }
+        ],
+        edges: [
+          { id: "start.drift", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "drift", targetPortId: "in" },
+          { id: "drift.end", sourceNodeId: "drift", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }
+        ]
+      }
+    });
+
+    const first = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
+    const firstDetail = await service.getFlowRunDetail(project.id, first.runId);
+    const learnedFlow = await service.getFlow(project.id, flow.flowId);
+    const second = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
+    const secondDetail = await service.getFlowRunDetail(project.id, second.runId);
+
+    expect(first.status).toBe("succeeded");
+    expect(firstDetail?.metadata).toMatchObject({ adaptiveRetry: { attempted: true, status: "succeeded" } });
+    expect(firstDetail?.metadata?.adaptiveMetrics).toMatchObject({
+      durableBehaviorChanged: true,
+      deterministicSuccessAfterAdaptation: true,
+      adaptationApplyCount: 1
+    });
+    expect(firstDetail?.interventions.map((intervention) => intervention.kind)).toEqual(["diagnosis", "diagnosis", "runtime_patch"]);
+    expect(firstDetail?.adaptationIds).toHaveLength(1);
+    await expect(service.getFlowAdaptation(project.id, flow.flowId, firstDetail!.adaptationIds[0]!)).resolves.toMatchObject({
+      status: "applied",
+      metadata: { approvalDecision: { autoApply: true }, applicationRecord: { durable: true } }
+    });
+    expect(learnedFlow.nodes.find((node) => node.id === "drift")?.parameterValues).toMatchObject({ retryCount: 2, timeoutMs: 100 });
+    expect(second.status).toBe("succeeded");
+    expect(secondDetail?.interventions).toEqual([]);
+    expect(llmCalls).toBe(2);
   });
 
   it("ignores stale object-backed proposal artifacts during proposal refresh", async () => {
@@ -1259,6 +1764,45 @@ describe("AutomationStudioService recording persistence", () => {
     expect(third.status).toBe("succeeded");
   });
 
+  it("idempotently returns the same runtime run for duplicate idempotency keys", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Runtime Idempotency" });
+    const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.runtime-idempotency" });
+
+    const first = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, idempotencyKey: "submit:123" });
+    const second = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, idempotencyKey: "submit:123" });
+
+    expect(first).toMatchObject({ status: "succeeded" });
+    expect(second.runId).toBe(first.runId);
+    expect((await service.listRuntimeSessionSummaries(project.id)).total).toBe(1);
+  });
+
+  it("cancels queued runtime runs and recovers missing run detail from the session record", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Runtime Cancellation" });
+    const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.runtime-cancel" });
+    const queued = await service.startRuntimeSession({ projectId: project.id, flowId: flow.flowId });
+
+    const cancelled = await service.cancelRuntimeSession(project.id, queued.runId, "Operator stopped the run.");
+    const rerun = await service.runRuntimeSession({ projectId: project.id, runId: queued.runId, flowId: flow.flowId });
+    const projectRoot = path.join(tempRoot, "programs", "automation-studio", "projects", project.id);
+    await rm(path.join(projectRoot, "runtime", "runs", queued.runId, "run.json"), { force: true });
+    const recovered = await service.getFlowRunDetail(project.id, queued.runId);
+
+    expect(cancelled).toMatchObject({ status: "cancelled", metadata: { cancellation: { reason: "Operator stopped the run." } } });
+    expect(rerun.status).toBe("cancelled");
+    expect(recovered).toMatchObject({ summary: { runId: queued.runId, status: "cancelled" }, metadata: { partialWriteRecovery: { source: "runtime-session" } } });
+  });
+
+  it("blocks a second active adaptive runtime run in the same project", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Adaptive Runtime Concurrency" });
+    const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.runtime-concurrency", metadata: adaptiveTrainingMetadata() });
+    await service.startRuntimeSession({ projectId: project.id, flowId: flow.flowId, metadata: { adaptiveRuntime: true } });
+
+    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, adaptiveMode: "default" })).rejects.toThrow("Only one adaptive runtime run can be active per project.");
+  });
+
   it("persists compact action comparisons and recovery ladder records in Flow run detail", async () => {
     const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Runtime Recovery Detail" });
@@ -1286,7 +1830,15 @@ describe("AutomationStudioService recording persistence", () => {
     expect(detail?.actionAttempts?.[0]).toMatchObject({
       attemptId: "divide.attempt.1",
       nodeId: "divide",
-      comparisonStatus: "action_failed"
+      comparisonStatus: "action_failed",
+      metadata: {
+        adaptiveFailure: {
+          failureClass: "action_failed",
+          candidateKind: "recovery_path_or_reroute",
+          deterministicRecoveryCandidateCount: 2,
+          llmEligibility: { eligible: false, knownRecoveryAvailable: true }
+        }
+      }
     });
     expect(detail?.recoveryAttempts?.[0]).toMatchObject({
       attemptId: "divide.attempt.1",
@@ -1297,6 +1849,35 @@ describe("AutomationStudioService recording persistence", () => {
     });
     expect(detail?.summary.metadata).toMatchObject({ recoveryAttemptCount: 1 });
     expect(detail).not.toHaveProperty("trace");
+  });
+
+  it("persists host state refs in run detail without hydrating summaries", async () => {
+    const service = new AutomationStudioService({
+      dataDir: tempRoot,
+      seedFixture: false,
+      hostRuntime: {
+        capabilities: ["state-snapshot", "state-diff"],
+        captureStateSnapshot: ({ attemptId, point }) => ({ stateSnapshotId: `${attemptId}.${point}`, stateRef: `state://${attemptId}/${point}`, capturedAt: point === "before_action" ? 10 : 20 }),
+        inspectStateDiff: () => ({ changed: true })
+      }
+    });
+    const project = await service.createProject({ name: "Host State Refs" });
+    const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.host-state-refs" });
+
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
+    const detail = await service.getFlowRunDetail(project.id, run.runId);
+    const page = await service.listFlowRunSummaries({ projectId: project.id, flowId: flow.flowId, limit: 1, offset: 0 });
+
+    expect(detail?.actionAttempts?.[0]?.metadata).toMatchObject({
+      hostCapabilities: ["state-diff", "state-snapshot"],
+      stateRefs: {
+        beforeAction: { stateRef: "state://start.attempt.1/before_action" },
+        afterAction: { stateRef: "state://start.attempt.1/after_action" },
+        stateDiff: { changed: true }
+      }
+    });
+    expect(page.runs[0]).not.toHaveProperty("actionAttempts");
+    expect(JSON.stringify(page.runs[0])).not.toContain("state://");
   });
 
   it("persists Flow expansion summaries with paged run and adaptation detail reads", async () => {
@@ -1424,12 +2005,23 @@ describe("AutomationStudioService recording persistence", () => {
     const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Adaptation Review" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.adaptation-review", name: "Adaptation Review Flow" });
+    await service.saveFlow({
+      projectId: project.id,
+      flow: {
+        ...flow,
+        nodes: [
+          { id: "expect.ready", definitionId: "builtin.policy.expectation", parameterValues: { timeoutMs: 100 } },
+          { id: "action.submit", definitionId: "builtin.policy.action", parameterValues: { target: { selector: "#old" } } }
+        ],
+        edges: []
+      }
+    });
     const base = {
       schemaVersion: "0.1" as const,
       flowId: flow.flowId,
       projectId: project.id,
       trigger: "Expected state changed",
-      patch: [{ kind: "edit_expectation" as const, targetId: "expect.ready", summary: "Wait for ready state." }],
+      patch: [{ kind: "edit_expectation" as const, targetId: "expect.ready", summary: "Wait for ready state.", after: { timeoutMs: 500, retryCount: 3 } }],
       validationResults: [{ runId: "run.validation.1", status: "succeeded" as const, checkedAt: 20 }],
       author: "runtime" as const,
       riskLevel: "low" as const,
@@ -1448,14 +2040,179 @@ describe("AutomationStudioService recording persistence", () => {
     await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.apply", action: "apply", reason: "Validation passed." })).resolves.toMatchObject({
       status: "applied",
       appliedTo: [{ kind: "expectation", id: "expect.ready" }],
-      metadata: { applicationRecord: { reversible: true } }
+      metadata: { applicationRecord: { reversible: true, durable: true } }
+    });
+    await expect(service.getFlow(project.id, flow.flowId)).resolves.toMatchObject({
+      metadata: { appliedAdaptationIds: ["adaptation.apply"] },
+      nodes: expect.arrayContaining([expect.objectContaining({ id: "expect.ready", parameterValues: { timeoutMs: 500, retryCount: 3 } })])
     });
     await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.apply", action: "revert" })).resolves.toMatchObject({ status: "reverted" });
+    await expect(service.getFlow(project.id, flow.flowId)).resolves.toMatchObject({
+      nodes: expect.arrayContaining([expect.objectContaining({ id: "expect.ready", parameterValues: { timeoutMs: 100 } })])
+    });
     await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.reject", action: "reject", reason: "Conflicts with operator instruction." })).resolves.toMatchObject({ status: "rejected" });
     await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.disable", action: "disable" })).resolves.toMatchObject({ status: "disabled" });
     await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.supersede", action: "supersede", supersededByAdaptationId: "adaptation.apply" })).resolves.toMatchObject({ status: "superseded", metadata: { supersededByAdaptationId: "adaptation.apply" } });
     await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.manual", action: "switch_manual" })).resolves.toMatchObject({ status: "proposed", metadata: { proposalModeOverride: "manual" } });
     await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.reject", action: "apply" })).rejects.toThrow("rejected adaptations cannot be applied");
+  });
+
+  it("applies and reverts durable action target and structural adaptation patches", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Durable Adaptations" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.durable-adaptations", name: "Durable Adaptations Flow" });
+    await service.saveFlow({
+      projectId: project.id,
+      flow: {
+        ...flow,
+        nodes: [
+          { id: "action.submit", definitionId: "builtin.policy.action", parameterValues: { target: { selector: "#old" } } },
+          { id: "broken", definitionId: "builtin.math.divide", parameterValues: {} },
+          { id: "end", definitionId: "builtin.control.end", parameterValues: { status: "success" } }
+        ],
+        edges: []
+      }
+    });
+
+    const base = {
+      schemaVersion: "0.1" as const,
+      flowId: flow.flowId,
+      projectId: project.id,
+      trigger: "Runtime drift",
+      validationResults: [{ runId: "run.validation.1", status: "succeeded" as const, checkedAt: 20 }],
+      author: "runtime" as const,
+      riskLevel: "low" as const,
+      createdAt: 10,
+      updatedAt: 10
+    };
+
+    await service.saveFlowAdaptation({
+      ...base,
+      adaptationId: "adaptation.target",
+      status: "validated",
+      patch: [{ kind: "edit_action_target", targetId: "action.submit", summary: "Use the new submit target.", after: { selector: "#new" } }]
+    });
+    await service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.target", action: "apply" });
+    await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.target", action: "apply" })).resolves.toMatchObject({
+      status: "applied",
+      metadata: { idempotentApply: { reason: "Adaptation was already applied." } }
+    });
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, adaptiveMode: "deterministic" });
+    const detail = await service.getFlowRunDetail(project.id, run.runId);
+    expect(detail).toBeTruthy();
+    await service.saveFlowRunDetail({ ...detail!, adaptationIds: ["adaptation.target"] });
+    await expect(service.exportFlowRunAudit(project.id, run.runId)).resolves.toMatchObject({
+      runId: run.runId,
+      retention: { rawPromptsRetained: false, compactContextRetained: true, sensitiveValuesRedacted: true },
+      adaptations: [expect.objectContaining({
+        adaptationId: "adaptation.target",
+        validationResults: [{ runId: "run.validation.1", status: "succeeded", checkedAt: 20 }],
+        mutationEvidence: expect.arrayContaining([expect.objectContaining({
+          patchKind: "edit_action_target",
+          before: expect.any(Object),
+          after: expect.any(Object),
+          rollback: expect.any(Object)
+        })])
+      })]
+    });
+    await expect(service.getFlow(project.id, flow.flowId)).resolves.toMatchObject({
+      nodes: expect.arrayContaining([expect.objectContaining({ id: "action.submit", parameterValues: { target: { selector: "#new" } } })])
+    });
+    await service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.target", action: "revert" });
+    await expect(service.getFlow(project.id, flow.flowId)).resolves.toMatchObject({
+      nodes: expect.arrayContaining([expect.objectContaining({ id: "action.submit", parameterValues: { target: { selector: "#old" } } })])
+    });
+
+    await service.saveFlowChangeProposal({
+      schemaVersion: "0.1",
+      proposalId: "proposal.reroute",
+      flowId: flow.flowId,
+      projectId: project.id,
+      mode: "auto",
+      status: "auto_approved",
+      riskLevel: "low",
+      patches: [{ kind: "edit_router", targetId: "broken", summary: "Route failures to the end node.", after: { toNodeId: "end" } }],
+      createdBy: "runtime",
+      createdAt: 30,
+      updatedAt: 30
+    });
+    await service.saveFlowAdaptation({
+      ...base,
+      adaptationId: "adaptation.reroute",
+      status: "validated",
+      proposalId: "proposal.reroute",
+      patch: [{ kind: "edit_router", targetId: "broken", summary: "Route failures to the end node.", after: { toNodeId: "end" } }]
+    });
+    const appliedRouter = await service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.reroute", action: "apply" });
+    expect(appliedRouter.metadata?.applicationRecord).toMatchObject({ durable: true, mutations: expect.any(Array) });
+    expect((await service.getFlow(project.id, flow.flowId)).edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sourceNodeId: "broken", sourcePortId: "failed", targetNodeId: "end" })
+    ]));
+    await service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.reroute", action: "revert" });
+    expect((await service.getFlow(project.id, flow.flowId)).edges).toEqual([]);
+  });
+
+  it("rolls back created subflows and rejects invalid durable mutations", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Durable Subflow Rollback" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.subflow-rollback", name: "Subflow Rollback Flow" });
+    const base = {
+      schemaVersion: "0.1" as const,
+      flowId: flow.flowId,
+      projectId: project.id,
+      trigger: "Needs recovery path",
+      validationResults: [{ runId: "run.validation.1", status: "succeeded" as const, checkedAt: 20 }],
+      author: "llm" as const,
+      riskLevel: "low" as const,
+      createdAt: 10,
+      updatedAt: 10
+    };
+
+    await service.saveFlowChangeProposal({
+      schemaVersion: "0.1",
+      proposalId: "proposal.create-subflow",
+      flowId: flow.flowId,
+      projectId: project.id,
+      mode: "auto",
+      status: "auto_approved",
+      riskLevel: "low",
+      patches: [{ kind: "create_subflow", summary: "Create a recovery path.", after: { name: "Recovery path", role: "recovery" } }],
+      createdBy: "llm",
+      createdAt: 30,
+      updatedAt: 30
+    });
+    await service.saveFlowAdaptation({
+      ...base,
+      adaptationId: "adaptation.create-subflow",
+      status: "validated",
+      proposalId: "proposal.create-subflow",
+      patch: [{ kind: "create_subflow", summary: "Create a recovery path.", after: { name: "Recovery path", role: "recovery" } }]
+    });
+    const applied = await service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.create-subflow", action: "apply" });
+    const createdSubflowId = applied.appliedTo?.[0]?.id;
+    expect(createdSubflowId).toEqual(expect.stringContaining("subflow."));
+    await expect(service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId })).resolves.toMatchObject({ total: 1 });
+    await service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.create-subflow", action: "revert" });
+    await expect(service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId })).resolves.toMatchObject({ total: 0 });
+
+    await service.saveFlowAdaptation({
+      ...base,
+      adaptationId: "adaptation.invalid-target",
+      status: "validated",
+      author: "runtime",
+      patch: [{ kind: "edit_action_target", targetId: "missing", summary: "Retarget a missing node.", after: { selector: "#nope" } }]
+    });
+    await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.invalid-target", action: "apply" })).rejects.toThrow("Unknown Flow node");
+    await expect(service.getFlow(project.id, flow.flowId)).resolves.toMatchObject({ nodes: [] });
+
+    await service.saveFlowAdaptation({
+      ...base,
+      adaptationId: "adaptation.destructive",
+      status: "validated",
+      riskLevel: "destructive",
+      patch: [{ kind: "edit_expectation", targetId: "missing", summary: "Dangerous edit.", after: { timeoutMs: 1 } }]
+    });
+    await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.destructive", action: "apply" })).rejects.toThrow("destructive adaptations require manual proposal review");
   });
 
   it("routes canonical Flow runtime sessions through the selected subflow and records run detail", async () => {

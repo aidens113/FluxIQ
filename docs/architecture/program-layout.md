@@ -37,6 +37,7 @@ panel composition, but not private color systems.
 
 - `automation-studio`
 - `identity-access`
+- `secret-keys`
 - `database-manager`
 - `background-tasks`
 - `compute-control`

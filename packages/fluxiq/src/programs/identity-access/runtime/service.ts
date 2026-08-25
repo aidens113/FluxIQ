@@ -314,6 +314,17 @@ export class IdentityAccessService {
     return context.user;
   }
 
+  async authorizeSessionPasswordPin(params: { sessionId: string | undefined; password: string | undefined; pin: string | undefined }): Promise<User> {
+    const context = await this.validateSession(params.sessionId);
+    if (!context) throw new Error("Authentication required");
+    this.verifyCredentialGate(context.user.id, {
+      password: params.password ?? "",
+      pin: params.pin ?? "",
+      requireTotp: false
+    });
+    return context.user;
+  }
+
   async authorizeSessionPin(params: { sessionId: string | undefined; pin: string | undefined }): Promise<User> {
     const context = await this.validateSession(params.sessionId);
     if (!context) throw new Error("Authentication required");
@@ -533,11 +544,12 @@ export class IdentityAccessService {
     return credential;
   }
 
-  private verifyCredentialGate(userId: string, params: { password: string; pin: string; totp: string | undefined }): void {
+  private verifyCredentialGate(userId: string, params: { password: string; pin: string; totp?: string | undefined; requireTotp?: boolean }): void {
     const credential = this.unlockCredentialWithPassword(userId, params.password);
     const passwordOk = verifySecret(params.password, credential.passwordHash);
     const pinOk = credential.pinHash ? verifySecret(params.pin, credential.pinHash) : true;
-    const totpOk = credential.totpSecret ? verifyTotp(credential.totpSecret, params.totp ?? "") : true;
+    const requireTotp = params.requireTotp ?? true;
+    const totpOk = requireTotp && credential.totpSecret ? verifyTotp(credential.totpSecret, params.totp ?? "") : true;
     if (!passwordOk || !pinOk || !totpOk) throw new Error("Invalid username or credentials");
   }
 

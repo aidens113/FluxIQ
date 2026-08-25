@@ -63,6 +63,13 @@ export type AutomationStudioNativeNodeContext = {
   parameters: Readonly<Record<string, JsonValue>>;
   signal: AbortSignal;
   grants: Readonly<{ permissions: string[]; runtimeCapabilities: string[]; networkDestinations: string[]; secretHandles: string[]; filesystemRoots: string[]; process: boolean; childProcess: boolean }>;
+  host?: Readonly<{
+    capabilityIds: string[];
+    currentStateRef?: JsonObject;
+    previousStateRef?: JsonObject;
+    sideEffectClass: "none" | "internal" | "external" | "destructive";
+    target?: JsonValue;
+  }>;
   elementMatcher: AutomationStudioElementMatcher;
   resolveTarget(resolverId: string, target: JsonObject): Promise<JsonObject | null>;
   log(entry: AutomationStudioNativeLogEntry): void;

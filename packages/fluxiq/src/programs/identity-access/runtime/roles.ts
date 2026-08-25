@@ -9,7 +9,8 @@ export const adminRole: Role = {
     "runtime.control",
     "compute.control",
     "identity.manage",
-    "data.manage"
+    "data.manage",
+    "secrets.manage"
   ]
 };
 

@@ -22,6 +22,10 @@ describe("global program web route", () => {
       kind: "identity.users",
       authSessionId: "trusted",
     });
+    expect(withProgramAuthSession("secret-keys", { id: "secret:one", authSessionId: "spoofed" }, "trusted")).toEqual({
+      id: "secret:one",
+      authSessionId: "trusted",
+    });
     expect(withProgramAuthSession("background-tasks", { taskId: "one" }, "trusted")).toEqual({ taskId: "one" });
     expect(withProgramAuthSession("automation-studio", ["invalid"], "trusted")).toEqual(["invalid"]);
   });

@@ -5,7 +5,8 @@ export type Permission =
   | "runtime.control"
   | "compute.control"
   | "identity.manage"
-  | "data.manage";
+  | "data.manage"
+  | "secrets.manage";
 
 export type Role = {
   id: string;

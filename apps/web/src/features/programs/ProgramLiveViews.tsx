@@ -9,7 +9,8 @@ import {
   DeploymentSyncLive,
   DocsLive,
   IdentityAccessLive,
-  ProductionRunnerLive
+  ProductionRunnerLive,
+  SecretKeysLive
 } from "./live-views";
 import { Panel } from "./shared-ui";
 
@@ -23,6 +24,7 @@ export function LiveProgramMain({ programId, user }: { programId: string; user: 
     case "deployment-sync": return <DeploymentSyncLive />;
     case "docs": return <DocsLive />;
     case "production-runner": return <ProductionRunnerLive />;
+    case "secret-keys": return <SecretKeysLive currentUser={user} />;
     default: return <Panel title="Workspace"><p className="muted-text">This program is registered but does not expose a live workspace yet.</p></Panel>;
   }
 }

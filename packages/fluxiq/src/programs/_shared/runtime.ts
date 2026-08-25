@@ -12,6 +12,7 @@ import { DocsService, registerDocsApi } from "../docs/index.ts";
 import { IdentityAccessService, registerIdentityAccessApi } from "../identity-access/index.ts";
 import { ProductionRunnerService, registerProductionRunnerApi } from "../production-runner/index.ts";
 import { registerRuntimeApi } from "../runtime-control/index.ts";
+import { registerSecretKeysApi, SecretKeysService } from "../secret-keys/index.ts";
 import { GlobalProgramApiRegistry } from "./api.ts";
 import { registerGlobalDocumentationGenerators } from "./docs-generators.ts";
 import { ProgramJsonStore, programDataFile } from "./storage.ts";
@@ -29,6 +30,7 @@ export type GlobalProgramRuntime = {
   identityAccess: IdentityAccessService;
   productionRunner: ProductionRunnerService;
   runtime: RuntimeService;
+  secretKeys: SecretKeysService;
 };
 
 export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgramRuntime {
@@ -51,6 +53,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
   const automationStudioClientGateway = new AutomationStudioClientGatewayBridge({ gateway: clientGateway, automationStudio });
   const backgroundTasksRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "background.tasks", layoutVersion: storageLayoutVersion }) : undefined;
   const identityUsersRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "identity.users", layoutVersion: storageLayoutVersion }) : undefined;
+  const secretKeysRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: SecretKeysService.storeKind, layoutVersion: storageLayoutVersion }) : undefined;
   const backgroundTasks = new BackgroundTasksService(backgroundTasksRepository ? { repository: backgroundTasksRepository } : {});
   const computeControl = new ComputeControlService(storageOptions);
   const databaseManager = new DatabaseManagerService(storageOptions);
@@ -64,6 +67,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
     allowedSourceRootDirs: [docsRootDir!, runtimeDocsRootDir!]
   } : storageOptions);
   const identityAccess = new IdentityAccessService(identityUsersRepository ? { repository: identityUsersRepository } : {});
+  const secretKeys = new SecretKeysService(secretKeysRepository ? { repository: secretKeysRepository } : {});
   const productionRunner = new ProductionRunnerService(undefined, storageOptions);
   const runtime = new RuntimeService(paths ? { store: new FileRuntimeStore({ rootDir: path.join(paths.artifacts ?? path.join(paths.fluxiq, "artifacts"), "runtime") }) } : {});
   runtime.registerTransport(new ClientGatewayRuntimeTransport({ gateway: clientGateway }));
@@ -72,6 +76,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
   if (paths) {
     databaseManager
       .registerRepository("identity.users", identityUsersRepository!)
+      .registerRepository(SecretKeysService.storeKind, secretKeysRepository!)
       .registerRepository("background.tasks", backgroundTasksRepository!)
       .registerRepository("compute.nodes", new SQLiteRepository({ rootDir: paths.databases, kind: "compute.nodes", layoutVersion: storageLayoutVersion }))
       .registerRepository("deployment.targets", new SQLiteRepository({ rootDir: paths.databases, kind: "deployment.targets", layoutVersion: storageLayoutVersion }))
@@ -113,6 +118,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
   registerDeploymentSyncApi(api, deploymentSync);
   registerDocsApi(api, docs);
   registerIdentityAccessApi(api, identityAccess);
+  registerSecretKeysApi(api, secretKeys, identityAccess);
   registerProductionRunnerApi(api, productionRunner);
   registerRuntimeApi(api, runtime);
 
@@ -139,7 +145,8 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
     docs,
     identityAccess,
     productionRunner,
-    runtime
+    runtime,
+    secretKeys
   };
 }
 

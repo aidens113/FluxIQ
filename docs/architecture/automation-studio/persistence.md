@@ -111,6 +111,16 @@ candidate metadata. Full runtime session traces may still exist for deep
 debugging, but previous-run lists and first run-log renders must not hydrate
 the full trace.
 
+Runtime run detail also carries compact adaptive metrics in metadata: LLM call
+count, token/cost totals, recovery attempts, adaptation application count,
+durable behavior-change signal, and deterministic success after adaptation.
+If a run detail file is missing after a partial write, the service rebuilds and
+re-saves it from the durable runtime session record before returning it.
+Runtime runs accept idempotency keys so duplicate callers receive the same run
+record, and adaptive execution allows only one active adaptive run per project.
+`cancel-runtime-session` aborts an in-process executor signal when available
+and marks queued/running sessions cancelled in durable storage.
+
 LLM harness invocations are persisted as run interventions. Each intervention
 stores the prompt version, provider/model metadata, instruction IDs, compact
 context summary, structured response, validation result, usage/cost summary,
@@ -131,6 +141,13 @@ summary index together. Application records live in adaptation metadata with
 the applied patches, actor/reason when available, and a reversible marker.
 Revert changes the adaptation lifecycle to `reverted`; it does not require
 manual Flow JSON edits.
+
+`export-flow-run-audit` returns the selected run detail, compact intervention
+summaries, referenced adaptation records, patch evidence, mutation
+before/after/rollback evidence, and retention signals. Raw prompts are not
+part of the export by default; compact context summaries, prompt versions,
+provider metadata, validation results, and redacted action/state metadata are
+the durable audit trail.
 
 Training mode state is audit metadata on Flow settings and run detail. Runs can
 record the active mode and derived behavior so later review explains why LLM
@@ -189,7 +206,8 @@ The Automation Studio API exposes these as first-class framework endpoints:
 `list-flow-subflows`, `get-flow-subflow`, `list-flow-instructions`,
 `get-flow-instruction-set`, `list-flow-change-proposals`,
 `get-flow-change-proposal`, `list-flow-runs`, `get-flow-run-detail`,
-`list-flow-adaptations`, `get-flow-adaptation`, and `get-flow-router`.
+`list-flow-adaptations`, `get-flow-adaptation`, `get-flow-router`,
+`cancel-runtime-session`, and `export-flow-run-audit`.
 Canonical Flow publication is exposed through `publish-flow`,
 `list-flow-publications`, `deprecate-flow-publication`, and
 `inspect-flow-dependencies`. Compatibility endpoints for learned task models

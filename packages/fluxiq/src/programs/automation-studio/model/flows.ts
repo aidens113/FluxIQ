@@ -126,14 +126,15 @@ export type AutomationStudioFlowArtifact = {
 
 export function defaultAutomationStudioFlowSettingsMetadata(): JsonObject {
   const trainingModeSettings = {
-    mode: "normal",
+    mode: "continuous_adaptive",
     trainForRunCount: 3,
     minimumStabilityScore: 0.9,
-    allowLlmIntervention: false,
+    allowLlmIntervention: true,
     allowRuntimeRecovery: true,
-    allowAdaptationCreation: false,
+    allowAdaptationCreation: true,
     proposalApprovalMode: "auto",
-    allowPromotion: false,
+    allowPromotion: true,
+    requireFirstManualReviewBeforeAutoPromotion: false,
     budgets: {
       maxInterventionsPerRun: 2,
       maxTokensPerRun: 12000,

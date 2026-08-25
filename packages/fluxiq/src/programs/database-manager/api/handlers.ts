@@ -98,5 +98,6 @@ async function authorizeSensitiveStore(identityAccess: IdentityAccessService | u
 }
 
 function isSensitiveStore(kind: string): boolean {
-  return kind.trim().toLowerCase() === "identity.users";
+  const key = kind.trim().toLowerCase();
+  return key === "identity.users" || key === "secret.keys";
 }

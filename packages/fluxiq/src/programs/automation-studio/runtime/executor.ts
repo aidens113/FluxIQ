@@ -3,6 +3,7 @@ import type { AutomationStudioFlowDocument, AutomationStudioFlowEdge, Automation
 import { getAutomationNodeDefinition } from "../nodes/index.ts";
 import type { AutomationNodeExecutionResult } from "../nodes/contracts.ts";
 import type { AutomationStudioNativeLogEntry } from "../nodes/importer-sdk.ts";
+import { hostRuntimeCapabilityIds, type AutomationStudioHostRuntimeBoundary, type AutomationStudioHostStateSnapshotRef } from "./host-runtime.ts";
 
 export type AutomationStudioGraphRunStatus = "running" | "succeeded" | "failed" | "waiting" | "cancelled";
 
@@ -121,6 +122,12 @@ export type AutomationStudioNodeAttemptTrace = {
   transitionComparison?: AutomationStudioTransitionComparison;
   recoveryDecision?: AutomationStudioRecoveryDecision;
   logs?: AutomationStudioNativeLogEntry[];
+  stateRefs?: {
+    beforeAction?: AutomationStudioHostStateSnapshotRef;
+    afterAction?: AutomationStudioHostStateSnapshotRef;
+    stateDiff?: JsonObject;
+  };
+  hostCapabilities?: string[];
 };
 
 export type AutomationStudioGraphExecutionTrace = {
@@ -150,7 +157,7 @@ export type AutomationStudioGraphExecutionOptions = {
   /** Executes a pinned composite Flow when no built-in implementation exists. */
   compositeExecutor?: (request: { node: AutomationStudioFlowNode; inputs: Record<string, JsonValue>; options: AutomationStudioGraphExecutionOptions }) => Promise<{ result: AutomationNodeExecutionResult; childTrace?: AutomationStudioGraphExecutionTrace; compositeTarget?: { flowId: string; version: string; flowDigest: string } } | undefined>;
   /** Executes explicitly bound importer or trusted-local Code Node implementations. */
-  nativeNodeExecutor?: (request: { node: AutomationStudioFlowNode; inputs: Record<string, JsonValue>; signal?: AbortSignal }) => Promise<{ result: AutomationNodeExecutionResult; logs?: AutomationStudioNativeLogEntry[] } | undefined>;
+  nativeNodeExecutor?: (request: { node: AutomationStudioFlowNode; inputs: Record<string, JsonValue>; signal?: AbortSignal; hostContext?: { currentStateRef?: AutomationStudioHostStateSnapshotRef; previousStateRef?: AutomationStudioHostStateSnapshotRef; capabilityIds: string[]; sideEffectClass: "none" | "internal" | "external" | "destructive"; target?: JsonValue } }) => Promise<{ result: AutomationNodeExecutionResult; logs?: AutomationStudioNativeLogEntry[] } | undefined>;
   nodeRegionIds?: Record<string, string>;
   regionRuntime?: {
     regions: Array<{ id: string; kind?: "deterministic" | "trigger" | "policy"; timeoutMs?: number; requiredRuntimeCapabilities?: string[] }>;
@@ -163,6 +170,7 @@ export type AutomationStudioGraphExecutionOptions = {
   currentSubflowId?: string;
   approvedRuntimePatchNodeIds?: Iterable<string>;
   recoveryBudget?: AutomationStudioRecoveryBudget;
+  hostRuntime?: AutomationStudioHostRuntimeBoundary;
 };
 
 export async function runAutomationStudioGraph(
@@ -344,20 +352,36 @@ async function executeAutomationStudioNode(
   attemptNumber: number
 ): Promise<AutomationStudioNodeAttemptTrace> {
   const startedAt = options.now?.() ?? Date.now();
+  const attemptId = `${node.id}.attempt.${attemptNumber}`;
   const definition = getAutomationNodeDefinition(node.definitionId);
   const inputs = collectNodeInputs(flow, node, values);
+  const hostCapabilities = hostRuntimeCapabilityIds(options.hostRuntime);
+  const beforeAction = await captureHostState(options, { node, attemptId, inputs, point: "before_action" });
   if (definition && node.definitionVersion && node.definitionVersion !== "1.0.0") {
-    return { attemptId: `${node.id}.attempt.${attemptNumber}`, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: options.now?.() ?? Date.now(), status: "failed", route: "failed", inputs, outputs: {}, effects: [], message: `Node ${node.definitionId} pins ${node.definitionVersion}, but built-in version 1.0.0 is available.` };
+    return await enrichAttemptWithHostState({ attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: options.now?.() ?? Date.now(), status: "failed", route: "failed", inputs, outputs: {}, effects: [], message: `Node ${node.definitionId} pins ${node.definitionVersion}, but built-in version 1.0.0 is available.` }, options, beforeAction, hostCapabilities);
   }
   if (!definition?.execute) {
-    const native = await options.nativeNodeExecutor?.({ node, inputs, ...(options.signal ? { signal: options.signal } : {}) });
-    if (native) { const result = await dispatchAutomationStudioEffects(native.result, options); return { ...nodeAttemptFromResult(node, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...(native.logs?.length ? { logs: native.logs } : {}) }; }
+    const native = await options.nativeNodeExecutor?.({
+      node,
+      inputs,
+      ...(options.signal ? { signal: options.signal } : {}),
+      hostContext: {
+        capabilityIds: hostCapabilities,
+        sideEffectClass: sideEffectClassForNode(node),
+        ...(beforeAction ? { currentStateRef: beforeAction, previousStateRef: beforeAction } : {}),
+        ...(node.parameterValues?.target !== undefined ? { target: node.parameterValues.target } : {})
+      }
+    });
+    if (native) {
+      const result = await dispatchAutomationStudioEffects(native.result, options);
+      return await enrichAttemptWithHostState({ ...nodeAttemptFromResult(node, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...(native.logs?.length ? { logs: native.logs } : {}) }, options, beforeAction, hostCapabilities);
+    }
     const composite = await options.compositeExecutor?.({ node, inputs, options });
     if (composite) {
-      return { ...nodeAttemptFromResult(node, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, composite.result), ...(composite.childTrace ? { childTrace: composite.childTrace } : {}), ...(composite.compositeTarget ? { compositeTarget: composite.compositeTarget } : {}) };
+      return await enrichAttemptWithHostState({ ...nodeAttemptFromResult(node, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, composite.result), ...(composite.childTrace ? { childTrace: composite.childTrace } : {}), ...(composite.compositeTarget ? { compositeTarget: composite.compositeTarget } : {}) }, options, beforeAction, hostCapabilities);
     }
-    return {
-      attemptId: `${node.id}.attempt.${attemptNumber}`,
+    return await enrichAttemptWithHostState({
+      attemptId,
       nodeId: node.id,
       definitionId: node.definitionId,
       startedAt,
@@ -368,7 +392,7 @@ async function executeAutomationStudioNode(
       outputs: {},
       effects: [],
       message: `Node definition is not executable: ${node.definitionId}.`
-    };
+    }, options, beforeAction, hostCapabilities);
   }
   try {
     const context = {
@@ -381,10 +405,10 @@ async function executeAutomationStudioNode(
     };
     let result = await definition.execute(context);
     result = await dispatchAutomationStudioEffects(result, options);
-    return nodeAttemptFromResult(node, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result);
+    return await enrichAttemptWithHostState(nodeAttemptFromResult(node, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), options, beforeAction, hostCapabilities);
   } catch (error) {
-    return {
-      attemptId: `${node.id}.attempt.${attemptNumber}`,
+    return await enrichAttemptWithHostState({
+      attemptId,
       nodeId: node.id,
       definitionId: node.definitionId,
       startedAt,
@@ -395,7 +419,7 @@ async function executeAutomationStudioNode(
       outputs: {},
       effects: [],
       message: error instanceof Error ? error.message : "Node execution failed."
-    };
+    }, options, beforeAction, hostCapabilities);
   }
 }
 
@@ -408,6 +432,62 @@ async function dispatchAutomationStudioEffects(initial: AutomationNodeExecutionR
     result = { ...result, outputs };
   }
   return result;
+}
+
+async function captureHostState(
+  options: AutomationStudioGraphExecutionOptions,
+  input: { node: AutomationStudioFlowNode; attemptId: string; inputs: Readonly<Record<string, JsonValue>>; point: "before_action" | "after_action" | "after_wait_retry" | "after_patch_test" }
+): Promise<AutomationStudioHostStateSnapshotRef | undefined> {
+  const capture = options.hostRuntime?.captureStateSnapshot;
+  if (!capture) return undefined;
+  try {
+    return await Promise.resolve(capture(input));
+  } catch {
+    return undefined;
+  }
+}
+
+async function enrichAttemptWithHostState(
+  attempt: AutomationStudioNodeAttemptTrace,
+  options: AutomationStudioGraphExecutionOptions,
+  beforeAction: AutomationStudioHostStateSnapshotRef | undefined,
+  hostCapabilities: string[]
+): Promise<AutomationStudioNodeAttemptTrace> {
+  const node = { id: attempt.nodeId, definitionId: attempt.definitionId, parameterValues: {} };
+  const afterAction = await captureHostState(options, { node, attemptId: attempt.attemptId, inputs: attempt.inputs, point: "after_action" });
+  const inspectStateDiff = options.hostRuntime?.inspectStateDiff;
+  let stateDiff: JsonObject | undefined;
+  if (inspectStateDiff && (beforeAction || afterAction)) {
+    try {
+      stateDiff = await Promise.resolve(inspectStateDiff({
+        ...(beforeAction ? { before: beforeAction } : {}),
+        ...(afterAction ? { after: afterAction } : {}),
+        node,
+        attemptId: attempt.attemptId
+      }));
+    } catch {
+      stateDiff = undefined;
+    }
+  }
+  return {
+    ...attempt,
+    ...(hostCapabilities.length ? { hostCapabilities } : {}),
+    ...((beforeAction || afterAction || stateDiff) ? {
+      stateRefs: {
+        ...(beforeAction ? { beforeAction } : {}),
+        ...(afterAction ? { afterAction } : {}),
+        ...(stateDiff ? { stateDiff } : {})
+      }
+    } : {})
+  };
+}
+
+function sideEffectClassForNode(node: AutomationStudioFlowNode): "none" | "internal" | "external" | "destructive" {
+  if (node.metadata?.destructive === true) return "destructive";
+  if (node.metadata?.externalSideEffect === true) return "external";
+  if (node.definitionId === "builtin.policy.action") return "external";
+  if (node.definitionId.startsWith("builtin.database.")) return node.parameterValues?.dryRun === true ? "internal" : "external";
+  return "none";
 }
 
 function nodeAttemptFromResult(

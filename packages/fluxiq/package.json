@@ -32,6 +32,7 @@
     "./production-runner": { "types": "./dist/programs/production-runner/index.d.ts", "import": "./dist/programs/production-runner/index.js" },
     "./programs": { "types": "./dist/programs/index.d.ts", "import": "./dist/programs/index.js" },
     "./runtime": { "types": "./dist/runtime/index.d.ts", "import": "./dist/runtime/index.js" },
+    "./secret-keys": { "types": "./dist/programs/secret-keys/index.d.ts", "import": "./dist/programs/secret-keys/index.js" },
     "./ui": { "types": "./dist/ui/index.d.ts", "import": "./dist/ui/index.js" }
   },
   "files": ["dist", "docs/reference/framework-reference.md", "README.md", "LICENSE.md"],

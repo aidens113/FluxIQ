@@ -6,6 +6,7 @@ import {
   behaviorForAutomationStudioTrainingMode,
   computeAutomationStudioStabilityMetrics,
   createAutomationStudioTrainingStatus,
+  decideAutomationStudioAdaptationPromotionGate,
   decideAutomationStudioLlmInvocationGate,
   decideAutomationStudioProposalApprovalGate,
   decideAutomationStudioTrainingBudget,
@@ -118,6 +119,57 @@ describe("Automation Studio training modes", () => {
       validated: true,
       sourceKind: "recording"
     })).toMatchObject({ createProposal: false, requiresManualApproval: false });
+  });
+
+  it("decides adaptation auto-promotion policy for safe, manual, structural, destructive, and first-review gates", () => {
+    expect(decideAutomationStudioAdaptationPromotionGate({
+      approvalMode: "auto",
+      riskLevel: "low",
+      patchKinds: ["edit_expectation"],
+      validated: true,
+      promoteAdaptations: true
+    })).toEqual({
+      autoApply: true,
+      requiresManualApproval: false,
+      reason: "Validated low-risk non-structural adaptation can be applied automatically."
+    });
+    expect(decideAutomationStudioAdaptationPromotionGate({
+      approvalMode: "manual",
+      riskLevel: "low",
+      patchKinds: ["edit_expectation"],
+      validated: true,
+      promoteAdaptations: true
+    })).toMatchObject({ autoApply: false, requiresManualApproval: true });
+    expect(decideAutomationStudioAdaptationPromotionGate({
+      approvalMode: "mixed",
+      riskLevel: "low",
+      patchKinds: ["edit_router"],
+      validated: true,
+      promoteAdaptations: true
+    })).toMatchObject({ autoApply: false, requiresManualApproval: true, reason: "Structural adaptations require manual review before durable promotion." });
+    expect(decideAutomationStudioAdaptationPromotionGate({
+      approvalMode: "auto",
+      riskLevel: "destructive",
+      patchKinds: ["edit_action_target"],
+      validated: true,
+      promoteAdaptations: true
+    })).toMatchObject({ autoApply: false, requiresManualApproval: true, reason: "Destructive adaptations always require manual review." });
+    expect(decideAutomationStudioAdaptationPromotionGate({
+      approvalMode: "auto",
+      riskLevel: "low",
+      patchKinds: ["edit_expectation"],
+      validated: true,
+      promoteAdaptations: true,
+      requireFirstManualReview: true,
+      priorManualReviewExists: false
+    })).toMatchObject({ autoApply: false, requiresManualApproval: true, reason: "First automatic promotion is blocked until a manual review has been completed." });
+    expect(decideAutomationStudioAdaptationPromotionGate({
+      approvalMode: "auto",
+      riskLevel: "low",
+      patchKinds: ["edit_expectation"],
+      validated: true,
+      promoteAdaptations: false
+    })).toMatchObject({ autoApply: false, requiresManualApproval: false });
   });
 
   it("detects frozen flow, route, and subflow scopes", () => {
