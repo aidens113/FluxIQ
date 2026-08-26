@@ -93,7 +93,21 @@ Newly created subflows receive a dedicated canonical Flow document for their
 internal graph. The subflow stores that Flow ID in `graphFlowId`, and the graph
 Flow records `metadata.subflowGraph`, `metadata.parentFlowId`, and
 `metadata.parentSubflowId`. This keeps subflow graph drafts and saves isolated
-from the parent Flow's router and top-level graph.
+from the parent Flow's router and top-level graph. Subflow-specific settings are
+stored on the `AutomationStudioFlowSubflow` document: role, route tags, input and
+output mappings, local instruction IDs, and an optional proposal-mode override.
+Clearing that override removes the field so runtime policy inherits from the parent Flow.
+
+The Flow summary index carries subflow ownership plus compact hierarchy metadata
+so workspace navigation can exclude internal graph Flows and reconstruct subflow
+rows, display names, category placement, and nested subflow folders without
+loading every Flow document. The hierarchy summary contains navigation metadata
+only; graph nodes, edges, settings, and other Flow detail remain in `flow.json`.
+Indexes created before ownership or hierarchy fields use missing metadata-version
+markers. The first summary read repairs that legacy index once from canonical
+Flow documents and persists both markers; later reads remain summary-only.
+Partial Flow updates and deletes preserve a missing marker until the complete
+repair runs.
 
 Flow expansion run details are deliberately split from run summaries. The
 previous-runs view reads `list-flow-runs` with SQL `limit`/`offset`

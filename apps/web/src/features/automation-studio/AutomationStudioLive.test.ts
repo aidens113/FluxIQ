@@ -3,11 +3,13 @@ import {
   AUTOMATION_STUDIO_PROJECT_OPEN_DETAIL_ENDPOINT_DENYLIST,
   automationStudioProjectOpenRequests,
   automationStudioRuntimeSummaryRequests,
+  flowSummariesToCatalogEntries,
   latestProposalForRecordingId,
   resolveActionPreviewEntryId,
   resolveObservedStateEntryId,
   selectedNodeActionPreviewEntryId
 } from "./AutomationStudioLive";
+import { flowHierarchyNodes } from "./hierarchy/model";
 
 describe("AutomationStudioLive state opening", () => {
   it("resolves action timeline entries to the exact action-adjacent state snapshot", () => {
@@ -119,6 +121,23 @@ describe("AutomationStudioLive state opening", () => {
     expect(proposal?.proposalId).toBe("proposal.current");
   });
 
+  it("rebuilds subflow rows and nested folders from refreshed Flow summaries", () => {
+    const entries = flowSummariesToCatalogEntries([{
+      flowId: "flow.checkout",
+      projectId: "project.fast",
+      name: "Checkout",
+      updatedAt: 100,
+      hierarchySubflows: [{ subflowId: "subflow.refund", name: "Refund", parentCategoryId: "category.billing" }],
+      subflowCategories: [{ id: "category.billing", name: "Billing" }]
+    }]);
+    const nodes = flowHierarchyNodes(entries);
+
+    expect(nodes).toContainEqual(expect.objectContaining({ kind: "folder", label: "Billing", sourceId: "category.billing" }));
+    expect(nodes).toContainEqual(expect.objectContaining({ kind: "subflow", label: "Refund", sourceId: "subflow.refund" }));
+    const category = nodes.find((node) => node.sourceId === "category.billing");
+    const subflow = nodes.find((node) => node.sourceId === "subflow.refund");
+    expect(subflow?.parentId).toBe(category?.id);
+  });
   it("opens projects through summary requests without broad detail hydration", () => {
     const requests = [
       ...automationStudioProjectOpenRequests("project.fast"),

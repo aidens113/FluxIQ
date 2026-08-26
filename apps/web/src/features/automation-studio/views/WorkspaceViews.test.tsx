@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { AutomationAdaptationsWorkspace, AutomationFlowSettingsWorkspace, AutomationInstructionsWorkspace, AutomationRouterWorkspace, AutomationRuntimeWorkspace, RuntimeActionLogPage, RuntimeAttemptRow, RuntimePostRunSummary, adaptationReviewHref, buildAutomationRuntimeRunPayload, routerReferencesForSubflow, runtimeAttemptsForRunDetail, sortRuntimeRunsForDebugView } from "./WorkspaceViews";
+import { AutomationAdaptationsWorkspace, AutomationFlowSettingsWorkspace, AutomationInstructionsWorkspace, AutomationFlowMapWorkspace, AutomationRuntimeWorkspace, AutomationSubflowsWorkspace, RuntimeActionLogPage, RuntimeAttemptRow, RuntimePostRunSummary, adaptationReviewHref, buildAutomationRuntimeRunPayload, routerReferencesForSubflow, runtimeAttemptsForRunDetail, sortRuntimeRunsForDebugView } from "./WorkspaceViews";
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams()
@@ -68,6 +68,19 @@ describe("Automation Runtime workspace", () => {
     expect(html).toContain("failed");
   });
 
+  it("renders Subflows as a link directory without an embedded editor", () => {
+    const html = renderToStaticMarkup(createElement(AutomationSubflowsWorkspace, {
+      projectId: null,
+      flow: { flowId: "flow.checkout", name: "Checkout" }
+    }));
+
+    expect(html).toContain("automation-subflow-directory");
+    expect(html).toContain("No subflows yet");
+    expect(html).toContain("plus button beside the Subflows folder");
+    expect(html).not.toContain("Subflow Detail");
+    expect(html).not.toContain("Show Subflow JSON");
+    expect(html).not.toContain("automation-policy-canvas");
+  });
   it("derives subflow router reverse references without loading run history", () => {
     const references = routerReferencesForSubflow({
       routerId: "router.checkout",
@@ -230,7 +243,7 @@ describe("Automation Runtime workspace", () => {
     expect(settingsHtml).toContain("Auto-apply low-risk fixes");
     expect(settingsHtml).toContain("Require first manual review");
     expect(settingsHtml).toContain("Manual review for structural changes");
-    expect(settingsHtml).toContain("Modify router rules");
+    expect(settingsHtml).toContain("Modify Flow Map routes");
     expect(settingsHtml).not.toContain("Allow external side effects");
     expect(settingsHtml).not.toContain("Allow browser/API actions");
     expect(settingsHtml).not.toContain("Require approval before browser/API actions");
@@ -307,16 +320,77 @@ describe("Automation Runtime workspace", () => {
     expect(html).toContain("Select a Flow to review adaptations.");
   });
 
-  it("renders router, instructions, adaptations, and settings as first-class Flow views", () => {
+  it("renders dedicated settings for a subflow graph instead of Flow training settings", () => {
+    const html = renderToStaticMarkup(createElement(AutomationFlowSettingsWorkspace, {
+      projectId: null,
+      flow: {
+        flowId: "flow.checkout.subflow.primary.graph",
+        name: "Primary Graph",
+        metadata: {
+          subflowGraph: true,
+          parentFlowId: "flow.checkout",
+          parentSubflowId: "subflow.primary"
+        }
+      }
+    }));
+
+    expect(html).toContain("Subflow Settings");
+    expect(html).toContain("Save Subflow Settings");
+    expect(html).toContain("routing, mappings, instructions, and approval behavior");
+    expect(html).not.toContain("Flow Identity");
+    expect(html).not.toContain("Training Mode");
+    expect(html).not.toContain("Show Flow Settings JSON");
+  });
+  it("renders populated Router routes as one ordered workspace", () => {
+    const html = renderToStaticMarkup(createElement(AutomationFlowMapWorkspace, {
+      projectId: null,
+      flow: { flowId: "flow.checkout", name: "Checkout" },
+      initialSubflows: [
+        { subflowId: "subflow.refund", name: "Refund request", status: "active" },
+        { subflowId: "subflow.checkout", name: "Checkout", status: "active" }
+      ],
+      initialRouter: {
+        name: "Checkout Router",
+        metadata: { routeGroups: [{ groupId: "billing", name: "Billing", order: 10 }] },
+        rules: [{
+          ruleId: "route.refund",
+          name: "Handle refund",
+          order: 10,
+          status: "active",
+          metadata: { groupId: "billing", conditionSummary: "Customer asks for a refund" },
+          target: { kind: "subflow", subflowId: "subflow.refund" }
+        }],
+        fallback: { kind: "subflow", subflowId: "subflow.checkout" }
+      }
+    }));
+
+    expect(html).toContain("automation-router-workbench");
+    expect(html).toContain("Route and condition");
+    expect(html).toContain("Handle refund");
+    expect(html).toContain("Customer asks for a refund");
+    expect(html).toContain("Refund request");
+    expect(html).toContain("Billing");
+    expect(html).toContain("Fallback");
+    expect(html).toContain("Checkout");
+    expect(html).not.toContain("Decision Map");
+    expect(html).not.toContain("Route List");
+    expect(html).not.toContain("Route Inspector");
+    expect(html).not.toContain("Advanced Flow Map Details");
+  });
+  it("renders Router, instructions, adaptations, and settings as first-class Flow views", () => {
     const flow = { flowId: "flow.checkout", metadata: { trainingMode: "normal", proposalMode: "auto" } };
     const views = [
-      renderToStaticMarkup(createElement(AutomationRouterWorkspace, { projectId: null, flow })),
+      renderToStaticMarkup(createElement(AutomationFlowMapWorkspace, { projectId: null, flow })),
       renderToStaticMarkup(createElement(AutomationInstructionsWorkspace, { projectId: null, flow })),
       renderToStaticMarkup(createElement(AutomationAdaptationsWorkspace, { projectId: null, flow })),
       renderToStaticMarkup(createElement(AutomationFlowSettingsWorkspace, { projectId: null, flow }))
     ].join("\n");
 
     expect(views).toContain("Router");
+    expect(views).toContain("Router setup");
+    expect(views).toContain("Add your first subflow");
+    expect(views).toContain("Create subflow");
+    expect(views).toContain("automation-router-first-use");
     expect(views).toContain("Instructions");
     expect(views).toContain("Adaptations");
     expect(views).toContain("Settings");

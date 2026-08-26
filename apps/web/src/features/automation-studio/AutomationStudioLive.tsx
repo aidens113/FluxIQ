@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Blocks, Bug, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns3, FileSearch, FolderOpen, FolderPlus, GitBranch, GripVertical, History, ListChecks, Network, Plus, Radio, Search, SlidersHorizontal, Sparkles, Trash2 } from "lucide-react";
+import { AlertTriangle, Blocks, Bug, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns3, FileSearch, FolderOpen, FolderPlus, GitBranch, GripVertical, History, ListChecks, Network, Plus, Radio, Search, SlidersHorizontal, Sparkles, Trash2, Workflow } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import type { NodeStatePhase } from "fluxiq/automation-studio";
@@ -8,6 +8,8 @@ import {
   automationHierarchyCategories,
   automationHierarchyCategoryLabel,
   automationHierarchyNodeIsGeneratedFlowStructure,
+  automationHierarchyNodeIsSubflowCategory,
+  automationHierarchyNodeIsSubflowRoot,
   automationHierarchySignature,
   collectHierarchyDescendantIds,
   flowHierarchyNodes,
@@ -495,6 +497,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     { id: "proposal-workbench", label: `Proposal: ${selectedProposal?.policy?.taskId ?? selectedProposal?.proposalId ?? "Proposal"}`, type: "proposal", icon: Sparkles },
     { id: "policy-primary", label: selectedFlow ? `Flow: ${selectedFlow.name}` : "Flow: None", type: "design", icon: GitBranch },
     { id: "flow-router", label: "Router", type: "router", icon: GitBranch },
+    { id: "flow-subflows", label: "Subflows", type: "subflows", icon: GitBranch },
     { id: "flow-instructions", label: "Instructions", type: "instructions", icon: ListChecks },
     { id: "adaptations", label: "Adaptations", type: "adaptations", icon: FileSearch },
     { id: "flow-settings", label: "Settings", type: "settings", icon: SlidersHorizontal },
@@ -514,6 +517,10 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     ...customHierarchyNodes.filter((node) => isPersistableHierarchyNode(node) && node.category === "flow")
   ].filter((node) => !deletedHierarchyIds.includes(node.id) || (generatedHierarchyIds.has(node.id) && automationHierarchyNodeIsGeneratedFlowStructure(node)));
   const folderOptions = hierarchyNodes.filter((node) => node.kind === "folder" && node.category === hierarchyCategory);
+  const hierarchySubflowParent = hierarchyAction?.action === "create" ? hierarchySubflowCategoryParent(hierarchyParentId) : null;
+  const hierarchyFolderOptions = hierarchySubflowParent
+    ? hierarchyNodes.filter((node) => node.flowId === hierarchySubflowParent.flowId && (automationHierarchyNodeIsSubflowRoot(node) || automationHierarchyNodeIsSubflowCategory(node)))
+    : folderOptions;
   const viewById = new Map(viewInstances.map((view) => [view.id, view]));
   function viewWithTitleData(view: AutomationViewInstance, sourceSelection?: AutomationSelection | null): AutomationViewInstance {
     return {
@@ -625,8 +632,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       bottomTimelineCollapsed: false
     }));
   };
-  const setSelectionAndFollow = (next: AutomationSelection) => {
-    if (hasDirtyTaskGraph && next.kind === "flow" && next.id !== selectedFlow?.flowId && !window.confirm("This Flow has unsaved changes. Discard them and open another Flow?")) return;
+  const setSelectionAndFollow = (next: AutomationSelection, flowOpenMode: "preview" | "new-window" = "preview"): boolean => {
+    if (hasDirtyTaskGraph && next.kind === "flow" && next.id !== selectedFlow?.flowId && !window.confirm("This Flow has unsaved changes. Discard them and open another Flow?")) return false;
     if (next.kind !== "state") {
       pendingStateOpenKeyRef.current = null;
       setPendingStateOpen(null);
@@ -662,8 +669,9 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           });
         });
       }
-      openView("policy-primary", "preview");
+      openView("policy-primary", flowOpenMode);
     }
+    return true;
   };
   const openRecordingProposal = (recordingId: string) => {
     const proposal = latestByGeneratedAt<any>([
@@ -1384,6 +1392,20 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     return result.payload.flow;
   }
 
+  async function openSubflowInEditor(parentFlowId: string, subflowId: string, mode: "preview" | "new-window" = "preview"): Promise<void> {
+    if (!activeProjectId || !parentFlowId || !subflowId) return;
+    const result = await api.post<{ subflow?: { graphFlowId?: string } }>("get-flow-subflow", {
+      projectId: activeProjectId,
+      flowId: parentFlowId,
+      subflowId
+    });
+    if (!result.ok || !result.payload?.subflow?.graphFlowId) {
+      setAutomationActionStatus(result.error ?? "Subflow graph could not be resolved.");
+      return;
+    }
+    await loadFlowDetails(result.payload.subflow.graphFlowId);
+    setSelectionAndFollow({ kind: "flow", id: result.payload.subflow.graphFlowId }, mode);
+  }
   async function loadNodeDefinitions(projectId = activeProjectId) {
     if (!projectId) return;
     const [nativeResult, publishedResult] = await Promise.all([
@@ -2952,6 +2974,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         onOpenPipeline={openRecordingProposal}
         onOpenProposal={openRecordingProposal}
         onOpenProposalGenerator={openRecordingProposalGenerator}
+        onCreateSubflow={() => {
+          const subflowRoot = hierarchyNodes.find((node) => automationHierarchyNodeIsSubflowRoot(node) && node.flowId === selectedTaskGraph?.flowId);
+          if (subflowRoot) requestHierarchyAction({ action: "create", category: "flow", parentId: subflowRoot.id });
+        }}
+        onOpenSubflow={openSubflowInEditor}
         onOpenRecording={openRecordingTimeline}
         onOpenState={openStateView}
         onAppendRecordingMarker={appendProjectRecordingMarker}
@@ -2978,14 +3005,146 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       />
     );
   }
+  function hierarchySubflowCategoryParent(parentId: string | null): { flowId: string; parentCategoryId: string | null } | null {
+    if (!parentId) return null;
+    const parent = hierarchyNodes.find((node) => node.id === parentId);
+    if (!parent?.flowId) return null;
+    if (automationHierarchyNodeIsSubflowRoot(parent)) return { flowId: parent.flowId, parentCategoryId: null };
+    if (automationHierarchyNodeIsSubflowCategory(parent) && parent.sourceId) return { flowId: parent.flowId, parentCategoryId: parent.sourceId };
+    return null;
+  }
+
+  async function createFlowSubflowFromHierarchy(name: string, flowId: string, parentCategoryId: string | null): Promise<boolean> {
+    if (!activeProjectId) {
+      setHierarchyStatus("Open a project before creating a subflow.");
+      return false;
+    }
+    const result = await api.post<{ subflow: any }>("create-flow-subflow", {
+      projectId: activeProjectId,
+      flowId,
+      authorizationPin: hierarchyPin,
+      name,
+      role: "utility"
+    });
+    if (!result.ok || !result.payload?.subflow) {
+      setHierarchyStatus(result.error ?? "Subflow could not be created.");
+      return false;
+    }
+    await attachSubflowToFlowExpansion(flowId, result.payload.subflow.subflowId, name, parentCategoryId);
+    window.dispatchEvent(new CustomEvent("fluxiq:subflows-changed", { detail: { flowId } }));
+    await refreshProjectRuntimeState(activeProjectId);
+    const graphFlowId = result.payload.subflow.graphFlowId ?? flowId + "." + result.payload.subflow.subflowId + ".graph";
+    await loadFlowDetails(graphFlowId);
+    setSelection({ kind: "flow", id: graphFlowId });
+    openView("policy-primary", "preview", "main");
+    setHierarchyStatus(`${name} subflow created.`);
+    return true;
+  }
+
+  function subflowExpansionEntryId(item: any): string {
+    return typeof item === "string" ? item : String(item?.subflowId ?? item?.id ?? item?.sourceId ?? "");
+  }
+
+  async function attachSubflowToFlowExpansion(flowId: string, subflowId: string, name: string, parentCategoryId: string | null): Promise<void> {
+    const flow = await loadHierarchyFlow(flowId);
+    if (!flow || !activeProjectId) return;
+    const expansion = flow.expansion && typeof flow.expansion === "object" ? flow.expansion : {};
+    const rawSubflowIds = Array.isArray(expansion.subflowIds) ? expansion.subflowIds : [];
+    const existingIndex = rawSubflowIds.findIndex((item: any) => subflowExpansionEntryId(item) === subflowId);
+    const existing = existingIndex >= 0 ? rawSubflowIds[existingIndex] : null;
+    const existingEntry = typeof existing === "object" && existing && !Array.isArray(existing) ? existing : {};
+    const baseMetadata = existingEntry.metadata ?? {};
+    const nextMetadata = parentCategoryId
+      ? { ...baseMetadata, subflowCategoryId: parentCategoryId }
+      : baseMetadata;
+    const nextEntry = {
+      ...existingEntry,
+      subflowId,
+      name,
+      ...(Object.keys(nextMetadata).length ? { metadata: nextMetadata } : {})
+    };
+    const nextSubflowIds = existingIndex >= 0
+      ? rawSubflowIds.map((item: any, index: number) => index === existingIndex ? nextEntry : item)
+      : [...rawSubflowIds, nextEntry];
+    const result = await api.post<{ flow: any }>("save-flow", {
+      projectId: activeProjectId,
+      authorizationPin: hierarchyPin,
+      flow: { ...flow, expansion: { ...expansion, subflowIds: nextSubflowIds } }
+    });
+    if (result.ok && result.payload?.flow) setProjectFlows((current) => mergeFlowDetails(current, [{ source: "canonical", readOnly: false, flow: result.payload!.flow }]));
+  }
+
+  async function createSubflowCategoryFolder(name: string, flowId: string, parentCategoryId: string | null): Promise<boolean> {
+    if (!activeProjectId) {
+      setHierarchyStatus("Open a project before creating a subflow category.");
+      return false;
+    }
+    const flow = await loadHierarchyFlow(flowId);
+    if (!flow) return false;
+    const now = Date.now();
+    const categories = normalizeSubflowCategories(flow.metadata?.subflowCategories);
+    if (categories.some((category) => category.parentId === parentCategoryId && category.name.toLowerCase() === name.toLowerCase())) {
+      setHierarchyStatus("A subflow category with that name already exists in this folder.");
+      return false;
+    }
+    const category = {
+      id: `subflow-category.${typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${now}.${Math.random().toString(36).slice(2)}`}`,
+      name,
+      parentId: parentCategoryId,
+      createdAt: now,
+      updatedAt: now
+    };
+    const nextFlow = {
+      ...flow,
+      metadata: {
+        ...(flow.metadata ?? {}),
+        subflowCategories: [...categories, category]
+      }
+    };
+    const result = await api.post<{ flow: any }>("save-flow", { projectId: activeProjectId, authorizationPin: hierarchyPin, flow: nextFlow });
+    if (!result.ok || !result.payload?.flow) {
+      setHierarchyStatus(result.error ?? "Subflow category could not be saved.");
+      return false;
+    }
+    setProjectFlows((current) => mergeFlowDetails(current, [{ source: "canonical", readOnly: false, flow: result.payload!.flow }]));
+    await refreshProjectRuntimeState(activeProjectId);
+    setHierarchyStatus(`${name} created under Subflows.`);
+    return true;
+  }
+
+  async function loadHierarchyFlow(flowId: string): Promise<any | null> {
+    const local = projectFlows.find((entry: any) => entry.source === "canonical" && entry.flow?.flowId === flowId)?.flow;
+    if (local && local.metadata?.summaryOnly !== true) return local;
+    if (!activeProjectId) return null;
+    const result = await api.post<{ flow: any }>("get-flow", { projectId: activeProjectId, flowId });
+    if (!result.ok || !result.payload?.flow) {
+      setHierarchyStatus(result.error ?? "Flow details could not be loaded.");
+      return null;
+    }
+    setProjectFlows((current) => mergeFlowDetails(current, [{ source: "canonical", readOnly: false, flow: result.payload!.flow }]));
+    return result.payload.flow;
+  }
+
+  function normalizeSubflowCategories(value: unknown): Array<{ id: string; name: string; parentId: string | null; createdAt?: number; updatedAt?: number }> {
+    if (!Array.isArray(value)) return [];
+    const seen = new Set<string>();
+    return value.flatMap((raw: any) => {
+      const id = typeof raw?.id === "string" ? raw.id.trim() : "";
+      const name = typeof raw?.name === "string" ? raw.name.trim() : "";
+      if (!id || !name || seen.has(id)) return [];
+      seen.add(id);
+      return [{ ...raw, id, name, parentId: typeof raw?.parentId === "string" && raw.parentId.trim() ? raw.parentId.trim() : null }];
+    });
+  }
   function requestHierarchyAction(action: NonNullable<AutomationHierarchyAction>) {
     setHierarchyAction(action);
     if (action.action === "create") {
       const parent = action.parentId ? hierarchyNodes.find((node) => node.id === action.parentId) : null;
       const category = action.category ?? parent?.category ?? "flow";
+      const createsSubflowObject = parent ? automationHierarchyNodeIsSubflowRoot(parent) || automationHierarchyNodeIsSubflowCategory(parent) : false;
       setHierarchyCreateStep("type");
       setHierarchyCategory(category);
-      setHierarchyKind(category === "flow" ? "flow" : "folder");
+      setHierarchyKind(createsSubflowObject ? "subflow" : category === "flow" ? "flow" : "folder");
       setHierarchyName("");
       setHierarchyFlowOrigin("blank");
       setHierarchyParentId(action.parentId ?? null);
@@ -3042,15 +3201,23 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         openView("policy-primary", "preview", "main");
         setHierarchyStatus(`${label} saved.`);
       } else {
-        const id = `custom-${hierarchyKind}-${Date.now()}`;
-        setCustomHierarchyNodes((items) => [...items, {
-          id,
-          kind: hierarchyKind,
-          category: hierarchyCategory,
-          label,
-          parentId: hierarchyParentId
-        }]);
-        setHierarchyStatus(`${label} created.`);
+        const subflowParent = hierarchySubflowCategoryParent(hierarchyParentId);
+        if (subflowParent) {
+          const created = hierarchyKind === "subflow"
+            ? await createFlowSubflowFromHierarchy(label, subflowParent.flowId, subflowParent.parentCategoryId)
+            : await createSubflowCategoryFolder(label, subflowParent.flowId, subflowParent.parentCategoryId);
+          if (!created) return;
+        } else {
+          const id = `custom-${hierarchyKind}-${Date.now()}`;
+          setCustomHierarchyNodes((items) => [...items, {
+            id,
+            kind: hierarchyKind,
+            category: hierarchyCategory,
+            label,
+            parentId: hierarchyParentId
+          }]);
+          setHierarchyStatus(`${label} created.`);
+        }
       }
     }
     if (hierarchyAction.action === "delete" && hierarchyAction.node) {
@@ -3570,6 +3737,9 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           search={projectSearch}
           typeFilter={projectTypeFilter}
           setSelection={setSelection}
+          openSubflow={(node, mode) => {
+            if (node.flowId && node.sourceId) void openSubflowInEditor(node.flowId, node.sourceId, mode);
+          }}
           openView={openView}
           requestAction={requestHierarchyAction}
         /> : null}
@@ -3601,12 +3771,19 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           {!pageFullscreenWindowId ? renderBottomTimelineDock() : null}
         </section>
       </div>
-      {hierarchyAction ? <Modal title={hierarchyAction.action === "create" && hierarchyCreateStep === "type" ? "Add To Hierarchy" : "Authorize Hierarchy Change"} onClose={() => setHierarchyAction(null)}>
-        {hierarchyAction.action === "create" && hierarchyCreateStep === "type" ? <>
+      {hierarchyAction ? <Modal title={
+        hierarchyAction.action === "create" && hierarchyCreateStep === "type"
+          ? hierarchySubflowParent ? "Add to Subflows" : "Add to " + automationHierarchyCategoryLabel(hierarchyCategory)
+          : hierarchyAction.action === "create"
+            ? "Create " + (hierarchySubflowParent && hierarchyKind === "folder" ? "Folder" : hierarchyKind === "subflow" ? "Subflow" : hierarchyKind)
+            : "Delete item"
+      } onClose={() => setHierarchyAction(null)}>
+        {hierarchyAction.action === "create" && hierarchyCreateStep === "type" ? <div className="automation-hierarchy-create">
           <div className="automation-create-type-grid" role="list" aria-label="Choose item type">
             {[
-              { kind: "folder" as const, label: "Folder", icon: FolderPlus, detail: `Add a container inside ${automationHierarchyCategoryLabel(hierarchyCategory)}.` },
-              hierarchyCategory === "flow" ? { kind: "flow" as const, label: "Flow", icon: GitBranch, detail: "Add a visual, recorded, or programmatic flow." } : null
+              hierarchySubflowParent ? { kind: "subflow" as const, label: "Subflow", icon: Workflow, detail: "Create an executable workflow that the Router can target." } : null,
+              { kind: "folder" as const, label: "Folder", icon: FolderPlus, detail: "Organize items inside " + (hierarchySubflowParent ? "Subflows" : automationHierarchyCategoryLabel(hierarchyCategory)) + "." },
+              !hierarchySubflowParent && hierarchyCategory === "flow" ? { kind: "flow" as const, label: "Flow", icon: GitBranch, detail: "Create a new top-level automation Flow." } : null
             ].filter((item): item is { kind: AutomationCreatableHierarchyKind; label: string; icon: typeof Blocks; detail: string } => Boolean(item)).map((item) => {
               const Icon = item.icon;
               return (
@@ -3619,32 +3796,44 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                   }}
                   type="button"
                 >
-                  <Icon size={18} aria-hidden />
+                  <span className="automation-create-type-icon"><Icon size={19} aria-hidden /></span>
                   <span><strong>{item.label}</strong><small>{item.detail}</small></span>
+                  <ChevronRight className="automation-create-type-chevron" size={17} aria-hidden />
                 </button>
               );
             })}
           </div>
           <div className="modal-actions"><button className="button" onClick={() => setHierarchyAction(null)} type="button">Cancel</button></div>
-        </> : <>
-          <VisualAlert tone="warning" title="PIN required" message={`${hierarchyAction.action === "create" ? `Creating a ${hierarchyKind}` : "Deleting hierarchy items"} is privileged and requires your PIN.`} />
-          {hierarchyAction.action === "create" ? <>
-            <Field label="Name"><input autoFocus value={hierarchyName} onChange={(event) => setHierarchyName(event.target.value)} /></Field>
+        </div> : hierarchyAction.action === "create" ? <div className="automation-hierarchy-create automation-hierarchy-create-form">
+          <div className="automation-hierarchy-create-heading">
+            <span className="automation-create-type-icon">{hierarchyKind === "subflow" ? <Workflow size={19} aria-hidden /> : hierarchyKind === "folder" ? <FolderPlus size={19} aria-hidden /> : <GitBranch size={19} aria-hidden />}</span>
+            <div>
+              <strong>{hierarchyKind === "subflow" ? "New subflow" : hierarchyKind === "folder" ? "New folder" : "New Flow"}</strong>
+              <span>{hierarchySubflowParent ? "Subflows" : automationHierarchyCategoryLabel(hierarchyCategory)}</span>
+            </div>
+          </div>
+          <div className="automation-hierarchy-create-fields">
+            <Field label="Name"><input autoFocus value={hierarchyName} onChange={(event) => setHierarchyName(event.target.value)} placeholder={hierarchyKind === "subflow" ? "Subflow name" : hierarchyKind === "folder" ? "Folder name" : "Flow name"} /></Field>
             {hierarchyKind === "flow" ? <Field label="Flow preset"><select value={hierarchyFlowOrigin} onChange={(event) => setHierarchyFlowOrigin(event.target.value as AutomationFlowPreset)}><option value="blank">Blank visual Flow</option><option value="deterministic">Deterministic workflow</option><option value="recorded">Recorded automation</option><option value="integration">Integration Flow</option><option value="scheduled">Scheduled Flow</option><option value="api-endpoint">API endpoint</option><option value="reusable">Reusable component</option></select></Field> : null}
-            <Field label="Location"><select value={hierarchyParentId ?? ""} onChange={(event) => setHierarchyParentId(event.target.value || null)}><option value="">{automationHierarchyCategoryLabel(hierarchyCategory)}</option>{folderOptions.map((folder) => <option key={folder.id} value={folder.id}>{folder.label}</option>)}</select></Field>
-            <KeyValue rows={[["Type", hierarchyKind], ["Tree", automationHierarchyCategoryLabel(hierarchyCategory)], ["Parent", folderOptions.find((folder) => folder.id === hierarchyParentId)?.label ?? automationHierarchyCategoryLabel(hierarchyCategory)]]} />
-          </> : null}
-          {hierarchyAction.action === "delete" && hierarchyAction.node ? <KeyValue rows={[["Action", "delete"], ["Item", hierarchyAction.node.label], ["Type", hierarchyAction.node.kind], ["User", currentUser.displayName]]} /> : null}
-          <Field label="PIN"><input autoFocus inputMode="numeric" value={hierarchyPin} onChange={(event) => setHierarchyPin(digits(event.target.value))} /></Field>
+            <Field label="Location"><select value={hierarchyParentId ?? ""} onChange={(event) => setHierarchyParentId(event.target.value || null)}>{hierarchySubflowParent ? null : <option value="">{automationHierarchyCategoryLabel(hierarchyCategory)}</option>}{hierarchyFolderOptions.map((folder) => <option key={folder.id} value={folder.id}>{folder.label}</option>)}</select></Field>
+            <Field label="Security PIN"><input inputMode="numeric" type="password" value={hierarchyPin} onChange={(event) => setHierarchyPin(digits(event.target.value))} placeholder="Enter PIN" /></Field>
+          </div>
           <StatusText value={hierarchyStatus} />
           <div className="modal-actions">
-            {hierarchyAction.action === "create" ? <button className="button" onClick={() => setHierarchyCreateStep("type")} type="button">Back</button> : null}
+            <button className="button" onClick={() => setHierarchyCreateStep("type")} type="button">Back</button>
             <button className="button" onClick={() => setHierarchyAction(null)} type="button">Cancel</button>
-            <button className="button button-primary" disabled={hierarchyPin.length < 4 || (hierarchyAction.action === "create" && !hierarchyName.trim())} onClick={confirmHierarchyAction} type="button">{hierarchyAction.action === "create" ? `Create ${hierarchyKind}` : "Delete"}</button>
+            <button className="button button-primary" disabled={hierarchyPin.length < 4 || !hierarchyName.trim()} onClick={confirmHierarchyAction} type="button">Create</button>
+          </div>
+        </div> : <>
+          {hierarchyAction.node ? <VisualAlert tone="warning" title={"Delete " + hierarchyAction.node.label + "?"} message="This removes the selected item and its contained hierarchy items." /> : null}
+          <Field label="Security PIN"><input autoFocus inputMode="numeric" type="password" value={hierarchyPin} onChange={(event) => setHierarchyPin(digits(event.target.value))} /></Field>
+          <StatusText value={hierarchyStatus} />
+          <div className="modal-actions">
+            <button className="button" onClick={() => setHierarchyAction(null)} type="button">Cancel</button>
+            <button className="button danger" disabled={hierarchyPin.length < 4} onClick={confirmHierarchyAction} type="button">Delete</button>
           </div>
         </>}
-      </Modal> : null}
-      {projectModal ? <AutomationProjectModalView categoryName={categoryName} categoryTarget={categoryTarget} currentUser={currentUser} description={projectDescription} mode={projectModal} name={projectName} pin={projectPin} projectTarget={projectTarget} status={projectStatus} onCategoryNameChange={setCategoryName} onClose={() => setProjectModal(null)} onCreate={() => void createProject()} onCreateCategory={() => void createCategory()} onDelete={() => void deleteProject()} onDeleteCategory={() => void deleteCategory()} onDescriptionChange={setProjectDescription} onMove={() => void moveProject()} onMoveCategory={() => void moveCategory()} onNameChange={setProjectName} onPinChange={(value) => setProjectPin(digits(value))} onRename={() => void renameProject()} onRenameCategory={() => void renameCategory()} /> : null}
+      </Modal> : null}      {projectModal ? <AutomationProjectModalView categoryName={categoryName} categoryTarget={categoryTarget} currentUser={currentUser} description={projectDescription} mode={projectModal} name={projectName} pin={projectPin} projectTarget={projectTarget} status={projectStatus} onCategoryNameChange={setCategoryName} onClose={() => setProjectModal(null)} onCreate={() => void createProject()} onCreateCategory={() => void createCategory()} onDelete={() => void deleteProject()} onDeleteCategory={() => void deleteCategory()} onDescriptionChange={setProjectDescription} onMove={() => void moveProject()} onMoveCategory={() => void moveCategory()} onNameChange={setProjectName} onPinChange={(value) => setProjectPin(digits(value))} onRename={() => void renameProject()} onRenameCategory={() => void renameCategory()} /> : null}
       {windowAdderOpen ? <AutomationWindowAdderPalette area={windowAdderOpen.area} anchor={windowAdderOpen.anchor} {...(windowAdderOpen.targetWindowId ? { targetWindowId: windowAdderOpen.targetWindowId } : {})} views={viewInstances} onAdd={addWorkspaceWindow} /> : null}
       {layoutPickerOpen ? <AutomationLayoutPicker area={layoutPickerOpen.area} anchor={layoutPickerOpen.anchor} onArrange={arrangeWindows} /> : null}
     </section>
@@ -3730,7 +3919,7 @@ function proposalSummariesToRecordingFlowArtifacts(summaries: any[]): any[] {
     }));
 }
 
-function flowSummariesToCatalogEntries(summaries: any[]): any[] {
+export function flowSummariesToCatalogEntries(summaries: any[]): any[] {
   return summaries.map((summary) => ({
     source: "canonical",
     readOnly: false,
@@ -3753,7 +3942,15 @@ function flowSummariesToCatalogEntries(summaries: any[]): any[] {
         : { status: summary.publicationStatus ?? "draft" },
       createdAt: summary.updatedAt ?? Date.now(),
       updatedAt: summary.updatedAt ?? Date.now(),
-      metadata: { summaryOnly: true, ...(summary.recordingProposalIds ? { recordingProposalIds: summary.recordingProposalIds } : {}) }
+      ...(Array.isArray(summary.hierarchySubflows) ? { expansion: { subflowIds: summary.hierarchySubflows.map((subflow: any) => ({ subflowId: subflow.subflowId, ...(subflow.name ? { name: subflow.name } : {}), ...(subflow.parentCategoryId ? { metadata: { subflowCategoryId: subflow.parentCategoryId } } : {}) })) } } : {}),
+      metadata: {
+        summaryOnly: true,
+        ...(Array.isArray(summary.subflowCategories) ? { subflowCategories: summary.subflowCategories.map((category: any) => ({ id: category.id, name: category.name, parentId: category.parentId ?? null })) } : {}),
+        ...(summary.recordingProposalIds ? { recordingProposalIds: summary.recordingProposalIds } : {}),
+        ...(summary.subflowGraph === true ? { subflowGraph: true } : {}),
+        ...(typeof summary.parentFlowId === "string" ? { parentFlowId: summary.parentFlowId } : {}),
+        ...(typeof summary.parentSubflowId === "string" ? { parentSubflowId: summary.parentSubflowId } : {})
+      }
     }
   }));
 }

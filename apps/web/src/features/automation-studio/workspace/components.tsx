@@ -7,7 +7,7 @@ import type { AutomationViewInstance } from "../types";
 import { automationBottomDockMaxHeight, automationBottomDockMinHeight, automationLayoutPresetOptions, automationStrictMainLayoutPresets, defaultAutomationMainSplitRatios, defaultAutomationWorkspacePrefs, type AutomationLayoutPickerState, type AutomationLayoutPreset, type AutomationLayoutPresetOption, type AutomationWindowAdderState, type AutomationWindowResizeEdge, type AutomationWorkspaceArea, type AutomationWorkspacePrefs, type AutomationStrictMainLayoutPreset } from "./layout";
 
 export function viewTitle(view: AutomationViewInstance): string {
-  if (view.type === "design") return "Flow Editor";
+  if (view.type === "design") return "Flow";
   if (view.type === "recordings") return "Timeline";
   if (view.type === "proposal") return "Proposal";
   if (view.type === "proposal-generator") return "Proposal Generator";
@@ -33,7 +33,7 @@ export function viewTitle(view: AutomationViewInstance): string {
 
 export function AutomationWindowAdderPalette(props: { area: AutomationWorkspaceArea; anchor: AutomationWindowAdderState["anchor"]; targetWindowId?: string; views: AutomationViewInstance[]; onAdd(viewId: string, area: AutomationWorkspaceArea, targetWindowId?: string): void }) {
   const groups = [
-    { title: "Workflow", ids: ["client-gateway", "timeline-recording", "proposal-generator", "proposal-workbench", "policy-primary", "flow-router", "flow-instructions", "adaptations", "runs-history", "flow-settings"] },
+    { title: "Workflow", ids: ["client-gateway", "timeline-recording", "proposal-generator", "proposal-workbench", "policy-primary", "flow-router", "flow-subflows", "flow-instructions", "adaptations", "runs-history", "flow-settings"] },
     { title: "Evidence", ids: ["state-explorer", "signals-web", "runtime-debug", "problems-view"] },
     { title: "Tools", ids: ["global-inspector", "workspace-dock", "ai-assistant"] }
   ];
@@ -126,7 +126,7 @@ export function automationWindowDescription(view: AutomationViewInstance): strin
   if (view.type === "signals") return "Browse mined state signals.";
   if (view.type === "runtime") return "Inspect live/debug execution state.";
   if (view.type === "runs") return "Inspect replay and validation history.";
-  if (view.type === "router") return "Inspect deterministic route rules and fallback.";
+  if (view.type === "router") return "Edit route rules, groups, fallback, and targets.";
   if (view.type === "subflows") return "Inspect and manage reusable Flow subflows.";
   if (view.type === "adaptations") return "Review and promote runtime adaptations.";
   if (view.type === "instructions") return "Manage scoped LLM instructions.";

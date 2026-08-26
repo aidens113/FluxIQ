@@ -28,6 +28,8 @@ import {
   type AutomationStudioFlowMigrationOutcome,
   type AutomationStudioFlowPublicationRecord,
   type AutomationStudioFlowRouter,
+  type AutomationStudioFlowRouteGroup,
+  type AutomationStudioFlowRouteRule,
   type AutomationStudioFlowRunDetail,
   type AutomationStudioFlowRunActionAttemptRecord,
   type AutomationStudioFlowRunRecoveryRecord,
@@ -397,8 +399,37 @@ export type UpdateFlowSubflowInput = {
   inputMapping?: AutomationStudioFlowSubflow["inputMapping"];
   outputMapping?: AutomationStudioFlowSubflow["outputMapping"];
   localInstructionIds?: string[];
-  proposalModeOverride?: AutomationStudioFlowSubflow["proposalModeOverride"];
+  proposalModeOverride?: AutomationStudioFlowSubflow["proposalModeOverride"] | null;
   graphFlowId?: string;
+};
+
+export type UpsertFlowMapRouteGroupInput = {
+  projectId: string;
+  flowId: string;
+  groupId?: string;
+  name: string;
+  description?: string;
+  order?: unknown;
+  status?: AutomationStudioFlowRouteGroup["status"];
+  collapsed?: boolean;
+};
+
+export type UpsertFlowMapRouteInput = {
+  projectId: string;
+  flowId: string;
+  ruleId?: string;
+  name: string;
+  description?: string;
+  targetSubflowId: string;
+  order?: unknown;
+  status?: AutomationStudioFlowRouteRule["status"];
+  groupId?: string | null;
+  setAsFallback?: boolean;
+  confidence?: unknown;
+  conditionSummary?: string;
+  conditionSignalPath?: string;
+  conditionOperator?: string;
+  conditionExpected?: unknown;
 };
 
 export type ReviewFlowAdaptationInput = {
@@ -1731,7 +1762,10 @@ export class AutomationStudioService {
 
   async listAutomationFlowSummaries(projectId: string): Promise<AutomationStudioFlowSummary[]> {
     const index = await this.readFlowIndex(projectId).catch(() => emptyFlowSummaryIndex());
-    return (index.flows ?? []).sort((left, right) => right.updatedAt - left.updatedAt);
+    const metadataAwareIndex = index.ownershipMetadataVersion === 1 && index.hierarchyMetadataVersion === 1
+      ? index
+      : await this.repairFlowSummaryMetadataIndex(projectId, index);
+    return (metadataAwareIndex.flows ?? []).sort((left, right) => right.updatedAt - left.updatedAt);
   }
 
   private async listAutomationRuntimeSummaries(projectId: string): Promise<AutomationStudioRuntimeRunSummary[]> {
@@ -1854,7 +1888,12 @@ export class AutomationStudioService {
     await this.repositories.flows.delete(input.flowId);
     await this.deleteProjectArtifactFile(input.projectId, "config", flowConfigArtifactId(input.flowId));
     await this.deleteFlowSourceFile(input.projectId, flow);
-    await this.writeFlowIndex(input.projectId, (index) => ({ schemaVersion: "0.1", flows: (index.flows ?? []).filter((item) => item.flowId !== input.flowId) }));
+    await this.writeFlowIndex(input.projectId, (index) => ({
+      schemaVersion: "0.1",
+      ...(index.ownershipMetadataVersion === 1 ? { ownershipMetadataVersion: 1 as const } : {}),
+      ...(index.hierarchyMetadataVersion === 1 ? { hierarchyMetadataVersion: 1 as const } : {}),
+      flows: (index.flows ?? []).filter((item) => item.flowId !== input.flowId)
+    }));
     await ProgramJsonStore.deletePath(this.flowDirectory(input.projectId, input.flowId));
     await rm(this.flowDirectory(input.projectId, input.flowId), { recursive: true, force: true });
     return { deletedFlowId: input.flowId };
@@ -3180,6 +3219,102 @@ export class AutomationStudioService {
     return router;
   }
 
+  private async ensureFlowRouter(projectId: string, flowId: string): Promise<AutomationStudioFlowRouter> {
+    const existing = await this.getFlowRouter(projectId, flowId);
+    if (existing) return existing;
+    const flow = await this.getFlow(projectId, flowId);
+    const now = Date.now();
+    return await this.saveFlowRouter({
+      schemaVersion: "0.1",
+      routerId: `router.${randomUUID()}`,
+      projectId,
+      flowId,
+      name: `${flow.name} Flow Map`,
+      ...(flow.description ? { description: flow.description } : {}),
+      rules: [],
+      fallback: { kind: "fail", message: "No Flow Map route matched." },
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+      metadata: { routeGroups: [] }
+    });
+  }
+
+  async upsertFlowMapRouteGroup(input: UpsertFlowMapRouteGroupInput): Promise<AutomationStudioFlowRouter> {
+    const router = await this.ensureFlowRouter(input.projectId, input.flowId);
+    const name = input.name.trim();
+    if (!name) throw new Error("Route group name is required.");
+    const now = Date.now();
+    const groups = flowMapRouteGroups(router);
+    const existing = input.groupId ? groups.find((group) => group.groupId === input.groupId) : undefined;
+    const group: AutomationStudioFlowRouteGroup = {
+      schemaVersion: "0.1",
+      groupId: existing?.groupId ?? `route-group.${randomUUID()}`,
+      routerId: router.routerId,
+      name,
+      ...(input.description?.trim() ? { description: input.description.trim() } : {}),
+      order: clampInteger(input.order, 0, 1_000_000, existing?.order ?? nextRouteGroupOrder(groups)),
+      status: flowMapExpansionStatus(input.status, existing?.status ?? "active"),
+      collapsed: input.collapsed ?? existing?.collapsed ?? false,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      ...(existing?.metadata ? { metadata: existing.metadata } : {})
+    };
+    return await this.saveFlowRouter(withFlowMapRouteGroups({ ...router, updatedAt: now }, upsertBy(groups, "groupId", group)));
+  }
+
+  async deleteFlowMapRouteGroup(input: { projectId: string; flowId: string; groupId: string }): Promise<AutomationStudioFlowRouter> {
+    const router = await this.ensureFlowRouter(input.projectId, input.flowId);
+    const groupId = input.groupId.trim();
+    if (!groupId) throw new Error("Route group ID is required.");
+    const now = Date.now();
+    const rules = router.rules.map((rule) => removeUndefinedRouteRuleFields({
+      ...rule,
+      metadata: routeRuleMetadataWithoutGroup(rule.metadata, groupId),
+      updatedAt: rule.metadata?.groupId === groupId ? now : rule.updatedAt
+    }));
+    return await this.saveFlowRouter(withFlowMapRouteGroups({ ...router, rules, updatedAt: now } as AutomationStudioFlowRouter, flowMapRouteGroups(router).filter((group) => group.groupId !== groupId)));
+  }
+
+  async upsertFlowMapRoute(input: UpsertFlowMapRouteInput): Promise<AutomationStudioFlowRouter> {
+    const router = await this.ensureFlowRouter(input.projectId, input.flowId);
+    const name = input.name.trim();
+    const targetSubflowId = input.targetSubflowId.trim();
+    if (!name) throw new Error("Route name is required.");
+    if (!targetSubflowId) throw new Error("Route target subflow is required.");
+    const now = Date.now();
+    const existing = input.ruleId ? router.rules.find((rule) => rule.ruleId === input.ruleId) : undefined;
+    const condition = routeConditionFromInput(input) ?? existing?.condition;
+    const confidence = input.confidence === undefined ? existing?.confidence : clampNumber(input.confidence, 0, 1, 1);
+    const metadata = routeRuleMetadataWithGroup({ ...(existing?.metadata ?? {}), ...(input.conditionSummary?.trim() ? { conditionSummary: input.conditionSummary.trim() } : {}) }, input.groupId);
+    const rule: AutomationStudioFlowRouteRule = removeUndefinedRouteRuleFields({
+      schemaVersion: "0.1",
+      ruleId: existing?.ruleId ?? `route.${randomUUID()}`,
+      routerId: router.routerId,
+      name,
+      ...(input.description?.trim() ? { description: input.description.trim() } : {}),
+      target: { kind: "subflow", subflowId: targetSubflowId },
+      order: clampInteger(input.order, 0, 1_000_000, existing?.order ?? nextRouteOrder(router.rules)),
+      status: flowMapExpansionStatus(input.status, existing?.status ?? "active"),
+      ...(condition ? { condition } : {}),
+      ...(confidence !== undefined ? { confidence } : {}),
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      ...(metadata ? { metadata } : {})
+    });
+    const rules = upsertBy(router.rules ?? [], "ruleId", rule).sort((left, right) => left.order - right.order || left.name.localeCompare(right.name));
+    const nextRouter = { ...router, rules, updatedAt: now } as AutomationStudioFlowRouter;
+    if (input.setAsFallback) nextRouter.fallback = { kind: "subflow", subflowId: targetSubflowId };
+    return await this.saveFlowRouter(nextRouter);
+  }
+
+  async deleteFlowMapRoute(input: { projectId: string; flowId: string; ruleId: string }): Promise<AutomationStudioFlowRouter> {
+    const router = await this.ensureFlowRouter(input.projectId, input.flowId);
+    const ruleId = input.ruleId.trim();
+    if (!ruleId) throw new Error("Route rule ID is required.");
+    const now = Date.now();
+    return await this.saveFlowRouter({ ...router, rules: router.rules.filter((rule) => rule.ruleId !== ruleId), updatedAt: now } as AutomationStudioFlowRouter);
+  }
   async saveFlowSubflow(subflow: AutomationStudioFlowSubflow): Promise<AutomationStudioFlowSubflow> {
     const validation = validateAutomationStudioFlowSubflow(subflow);
     if (!validation.ok) throw new Error(`Invalid Automation Studio subflow: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
@@ -3239,7 +3374,7 @@ export class AutomationStudioService {
       ...(input.inputMapping !== undefined ? { inputMapping: input.inputMapping } : {}),
       ...(input.outputMapping !== undefined ? { outputMapping: input.outputMapping } : {}),
       ...(input.localInstructionIds !== undefined ? { localInstructionIds: uniqueStrings(input.localInstructionIds.map((id) => id.trim()).filter(Boolean)) } : {}),
-      ...(input.proposalModeOverride !== undefined ? { proposalModeOverride: input.proposalModeOverride } : {}),
+      ...(input.proposalModeOverride !== undefined ? input.proposalModeOverride ? { proposalModeOverride: input.proposalModeOverride } : { proposalModeOverride: undefined } : {}),
       ...(input.graphFlowId !== undefined ? { graphFlowId: input.graphFlowId.trim() } : {}),
       updatedAt: Date.now()
     };
@@ -4251,6 +4386,27 @@ export class AutomationStudioService {
   private async writeFlowIndex(projectId: string, mutator: (index: AutomationStudioFlowSummaryIndex) => AutomationStudioFlowSummaryIndex): Promise<AutomationStudioFlowSummaryIndex> {
     await this.findProject(projectId);
     return await new ProgramJsonStore<AutomationStudioFlowSummaryIndex>(this.projectFile(projectId, "indexes", "flows.json"), emptyFlowSummaryIndex).update(mutator);
+  }
+
+  private async repairFlowSummaryMetadataIndex(
+    projectId: string,
+    staleIndex: AutomationStudioFlowSummaryIndex
+  ): Promise<AutomationStudioFlowSummaryIndex> {
+    const repairedByFlowId = new Map<string, AutomationStudioFlowSummary>();
+    await Promise.all((staleIndex.flows ?? []).map(async (summary) => {
+      await this.loadProjectFlow(projectId, summary.flowId);
+      const flow = await this.repositories.flows.get(summary.flowId);
+      if (flow?.projectId === projectId) repairedByFlowId.set(summary.flowId, flowSummaryFromFlow(flow));
+    }));
+    return await this.writeFlowIndex(projectId, (current) => {
+      if (current.ownershipMetadataVersion === 1 && current.hierarchyMetadataVersion === 1) return current;
+      return {
+        schemaVersion: "0.1",
+        ownershipMetadataVersion: 1,
+        hierarchyMetadataVersion: 1,
+        flows: (current.flows ?? []).map((summary) => repairedByFlowId.get(summary.flowId) ?? summary)
+      };
+    });
   }
 
   private async readFlowRouterIndex(projectId: string): Promise<FlowRouterIndex> {
@@ -5276,6 +5432,8 @@ export class AutomationStudioService {
     await new ProgramJsonStore<JsonObject>(this.flowFile(projectId, flow.flowId), () => ({})).write(flow as unknown as JsonObject);
     await this.writeFlowIndex(projectId, (index) => ({
       schemaVersion: "0.1",
+      ...(index.ownershipMetadataVersion === 1 ? { ownershipMetadataVersion: 1 as const } : {}),
+      ...(index.hierarchyMetadataVersion === 1 ? { hierarchyMetadataVersion: 1 as const } : {}),
       flows: upsertBy(index.flows ?? [], "flowId", flowSummaryFromFlow(flow))
     }));
   }
@@ -5741,6 +5899,86 @@ function subflowSummaryFromSubflow(subflow: AutomationStudioFlowSubflow): Automa
   };
 }
 
+function flowMapRouteGroups(router: AutomationStudioFlowRouter): AutomationStudioFlowRouteGroup[] {
+  const rawGroups = router.metadata?.routeGroups;
+  if (!Array.isArray(rawGroups)) return [];
+  const groups = rawGroups.filter(isJsonRecord).map((item, index): AutomationStudioFlowRouteGroup | null => {
+    const now = Date.now();
+    const groupId = typeof item.groupId === "string" ? item.groupId : "";
+    const name = typeof item.name === "string" ? item.name : groupId;
+    if (!groupId.trim() || !name.trim()) return null;
+    return {
+      schemaVersion: "0.1" as const,
+      groupId,
+      routerId: typeof item.routerId === "string" ? item.routerId : router.routerId,
+      name,
+      ...(typeof item.description === "string" && item.description.trim() ? { description: item.description.trim() } : {}),
+      order: Number.isInteger(item.order) ? Number(item.order) : index * 10,
+      status: item.status === "disabled" || item.status === "archived" ? item.status : "active",
+      collapsed: item.collapsed === true,
+      createdAt: typeof item.createdAt === "number" ? item.createdAt : now,
+      updatedAt: typeof item.updatedAt === "number" ? item.updatedAt : now,
+      ...(isJsonRecord(item.metadata) ? { metadata: item.metadata } : {})
+    } satisfies AutomationStudioFlowRouteGroup;
+  }).filter((item): item is AutomationStudioFlowRouteGroup => item !== null);
+  return groups.sort((left, right) => left.order - right.order || left.name.localeCompare(right.name));
+}
+
+function withFlowMapRouteGroups(router: AutomationStudioFlowRouter, groups: AutomationStudioFlowRouteGroup[]): AutomationStudioFlowRouter {
+  return {
+    ...router,
+    metadata: compactJsonObject({
+      ...(router.metadata ?? {}),
+      routeGroups: groups.slice().sort((left, right) => left.order - right.order || left.name.localeCompare(right.name))
+    })
+  };
+}
+
+function nextRouteGroupOrder(groups: AutomationStudioFlowRouteGroup[]): number {
+  return groups.reduce((max, group) => Math.max(max, group.order), -10) + 10;
+}
+
+function nextRouteOrder(rules: AutomationStudioFlowRouteRule[]): number {
+  return rules.reduce((max, rule) => Math.max(max, rule.order), -10) + 10;
+}
+
+function routeRuleMetadataWithGroup(metadata: JsonObject | undefined, groupId: string | null | undefined): JsonObject | undefined {
+  const next: Record<string, unknown> = { ...(metadata ?? {}) };
+  if (typeof groupId === "string" && groupId.trim()) next.groupId = groupId.trim();
+  if (groupId === null || groupId === "") delete next.groupId;
+  return Object.keys(next).length ? next as JsonObject : undefined;
+}
+
+function routeRuleMetadataWithoutGroup(metadata: JsonObject | undefined, groupId: string): JsonObject | undefined {
+  const next: Record<string, unknown> = { ...(metadata ?? {}) };
+  if (next.groupId === groupId) delete next.groupId;
+  return Object.keys(next).length ? next as JsonObject : undefined;
+}
+
+function flowMapExpansionStatus(value: unknown, fallback: AutomationStudioFlowRouteRule["status"]): AutomationStudioFlowRouteRule["status"] {
+  return value === "active" || value === "disabled" || value === "archived" ? value : fallback;
+}
+function routeConditionFromInput(input: UpsertFlowMapRouteInput): AutomationStudioFlowRouteRule["condition"] | undefined {
+  const signalPath = input.conditionSignalPath?.trim();
+  if (!signalPath) return undefined;
+  const allowed = new Set(["equals", "not_equals", "exists", "greater_than", "less_than", "contains", "matches", "similar_to", "changed", "increased", "decreased", "became_true", "became_false", "stable_for"]);
+  const operator = allowed.has(input.conditionOperator ?? "") ? input.conditionOperator! : "exists";
+  return compactJsonObject({
+    signalPath,
+    operator,
+    ...(operator !== "exists" && input.conditionExpected !== undefined ? { expected: input.conditionExpected } : {})
+  }) as AutomationStudioFlowRouteRule["condition"];
+}
+
+function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(max, Math.max(min, numeric));
+}
+
+function removeUndefinedRouteRuleFields(rule: Record<string, unknown>): AutomationStudioFlowRouteRule {
+  return Object.fromEntries(Object.entries(rule).filter(([, value]) => value !== undefined)) as unknown as AutomationStudioFlowRouteRule;
+}
 function removeUndefinedSubflowFields(subflow: AutomationStudioFlowSubflow): AutomationStudioFlowSubflow {
   return Object.fromEntries(Object.entries(subflow).filter(([, value]) => value !== undefined)) as unknown as AutomationStudioFlowSubflow;
 }
@@ -6767,7 +7005,46 @@ function withFlowSourceFileMetadata(flow: AutomationStudioFlowArtifact): Automat
   };
 }
 
+function flowHierarchySubflowsFromFlow(flow: AutomationStudioFlowArtifact): Array<{ subflowId: string; name?: string; parentCategoryId?: string }> {
+  const rawEntries = Array.isArray(flow.expansion?.subflowIds) ? flow.expansion.subflowIds as unknown[] : [];
+  const seen = new Set<string>();
+  return rawEntries.flatMap((raw) => {
+    const entry = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : null;
+    const subflowId = typeof raw === "string" ? raw : String(entry?.subflowId ?? entry?.id ?? entry?.sourceId ?? "");
+    if (!subflowId || seen.has(subflowId)) return [];
+    seen.add(subflowId);
+    const metadata = entry?.metadata && typeof entry.metadata === "object" && !Array.isArray(entry.metadata) ? entry.metadata as Record<string, unknown> : null;
+    const name = typeof entry?.name === "string" && entry.name.trim() ? entry.name.trim() : undefined;
+    const parentCategoryId = typeof metadata?.subflowCategoryId === "string" && metadata.subflowCategoryId.trim()
+      ? metadata.subflowCategoryId.trim()
+      : typeof metadata?.categoryId === "string" && metadata.categoryId.trim()
+        ? metadata.categoryId.trim()
+        : undefined;
+    return [{ subflowId, ...(name ? { name } : {}), ...(parentCategoryId ? { parentCategoryId } : {}) }];
+  });
+}
+
+function flowSubflowCategoriesFromFlow(flow: AutomationStudioFlowArtifact): Array<{ id: string; name: string; parentId?: string }> {
+  const rawCategories = Array.isArray(flow.metadata?.subflowCategories)
+    ? flow.metadata.subflowCategories
+    : Array.isArray(flow.metadata?.subflowFolders)
+      ? flow.metadata.subflowFolders
+      : [];
+  const seen = new Set<string>();
+  return rawCategories.flatMap((raw) => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+    const category = raw as Record<string, unknown>;
+    const id = String(category.id ?? category.categoryId ?? "");
+    const name = typeof category.name === "string" ? category.name.trim() : "";
+    if (!id || !name || seen.has(id)) return [];
+    seen.add(id);
+    const parentId = typeof category.parentId === "string" && category.parentId.trim() && category.parentId !== id ? category.parentId.trim() : undefined;
+    return [{ id, name, ...(parentId ? { parentId } : {}) }];
+  });
+}
 function flowSummaryFromFlow(flow: AutomationStudioFlowArtifact): AutomationStudioFlowSummary {
+  const hierarchySubflows = flowHierarchySubflowsFromFlow(flow);
+  const subflowCategories = flowSubflowCategoriesFromFlow(flow);
   return {
     flowId: flow.flowId,
     name: flow.name,
@@ -6779,7 +7056,12 @@ function flowSummaryFromFlow(flow: AutomationStudioFlowArtifact): AutomationStud
     nodeCount: flow.nodes.length,
     edgeCount: flow.edges.length,
     updatedAt: flow.updatedAt,
-    ...(Array.isArray(flow.metadata?.recordingProposalIds) ? { recordingProposalIds: flow.metadata.recordingProposalIds.map(String) } : {})
+    ...(Array.isArray(flow.metadata?.recordingProposalIds) ? { recordingProposalIds: flow.metadata.recordingProposalIds.map(String) } : {}),
+    ...(flow.metadata?.subflowGraph === true ? { subflowGraph: true } : {}),
+    ...(typeof flow.metadata?.parentFlowId === "string" ? { parentFlowId: flow.metadata.parentFlowId } : {}),
+    ...(typeof flow.metadata?.parentSubflowId === "string" ? { parentSubflowId: flow.metadata.parentSubflowId } : {}),
+    ...(hierarchySubflows.length ? { hierarchySubflows } : {}),
+    ...(subflowCategories.length ? { subflowCategories } : {})
   };
 }
 

@@ -185,9 +185,9 @@ Subflows are persisted as Flow-owned behavior units with route tags,
 input/output mapping, graph reference, local instruction IDs, proposal-mode
 override, and stability metrics. New subflows receive an isolated graph Flow by
 default so editing a subflow does not mutate the parent Flow/router graph. The
-Subflows workspace reuses the existing Flow graph canvas against that isolated
-graph Flow and keeps its draft state local to the selected subflow detail.
-
+Subflows workspace is only a paginated directory; selecting a row resolves the
+subflow's graphFlowId and opens that graph in the normal Flow editor. Backing
+subflow graph Flows are not shown as separate top-level Flows.
 Structural adaptation patches that create or edit subflows, routers, or
 recovery paths must be linked to an adaptation review record before they can be
 saved. This keeps recovery/adaptation behavior auditable through the same

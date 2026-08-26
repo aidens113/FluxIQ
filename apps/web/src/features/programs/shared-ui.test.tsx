@@ -5,7 +5,7 @@ import { ModalContent, titleFromTone, toneFromMessage, VisualAlert } from "./sha
 describe("critical shared UI states", () => {
   it("renders privileged confirmations as an accessible modal", () => {
     const html = renderToStaticMarkup(
-      <ModalContent title="Confirm privileged action" onClose={() => undefined}>
+      <ModalContent className="wide-dialog" title="Confirm privileged action" onClose={() => undefined}>
         <label>
           Password
           <input name="password" type="password" />
@@ -18,6 +18,7 @@ describe("critical shared UI states", () => {
 
     expect(html).toContain('role="dialog"');
     expect(html).toContain('aria-modal="true"');
+    expect(html).toContain('class="modal-panel wide-dialog"');
     expect(html).toContain("Confirm privileged action");
     expect(html).toContain('type="password"');
   });

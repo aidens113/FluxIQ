@@ -124,7 +124,7 @@ export function Segmented(props: { value: string; options: string[]; onChange(va
   );
 }
 
-export function Modal(props: { title: string; children: ReactNode; onClose(): void }) {
+export function Modal(props: { title: string; children: ReactNode; className?: string; onClose(): void }) {
   function submitOnEnter(event: KeyboardEvent<HTMLElement>) {
     if (event.key !== "Enter" || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return;
     const target = event.target as HTMLElement | null;
@@ -145,9 +145,9 @@ export function Modal(props: { title: string; children: ReactNode; onClose(): vo
   );
 }
 
-export function ModalContent(props: { title: string; children: ReactNode; onClose(): void; onKeyDown?(event: KeyboardEvent<HTMLElement>): void }) {
+export function ModalContent(props: { title: string; children: ReactNode; className?: string; onClose(): void; onKeyDown?(event: KeyboardEvent<HTMLElement>): void }) {
   return (
-    <section className="modal-panel" role="dialog" aria-modal="true" onKeyDown={props.onKeyDown}>
+    <section className={`modal-panel${props.className ? ` ${props.className}` : ""}`} role="dialog" aria-modal="true" onKeyDown={props.onKeyDown}>
       <div className="panel-heading">
         <h2 className="panel-title">{props.title}</h2>
         <button className="button" onClick={props.onClose} type="button">

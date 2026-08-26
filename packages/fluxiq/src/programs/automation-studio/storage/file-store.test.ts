@@ -35,7 +35,7 @@ describe("Automation Studio file-store contracts", () => {
     expect(emptyAutomationStudioRootIndex()).toEqual({ schemaVersion: "0.1", projects: [] });
     expect(emptyRecordingSummaryIndex()).toEqual({ schemaVersion: "0.1", recordings: [] });
     expect(emptyProposalSummaryIndex()).toEqual({ schemaVersion: "0.1", proposals: [] });
-    expect(emptyFlowSummaryIndex()).toEqual({ schemaVersion: "0.1", flows: [] });
+    expect(emptyFlowSummaryIndex()).toEqual({ schemaVersion: "0.1", ownershipMetadataVersion: 1, hierarchyMetadataVersion: 1, flows: [] });
     expect(emptyRuntimeSummaryIndex()).toEqual({ schemaVersion: "0.1", runs: [] });
     expect(emptyObjectIndex()).toEqual({ schemaVersion: "0.1", objects: [] });
   });

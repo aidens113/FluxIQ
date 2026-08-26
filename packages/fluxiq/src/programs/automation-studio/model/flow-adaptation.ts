@@ -10,6 +10,20 @@ export type AutomationStudioRouteTarget = {
   subflowId: string;
 };
 
+export type AutomationStudioFlowRouteGroup = {
+  schemaVersion: "0.1";
+  groupId: string;
+  routerId: string;
+  name: string;
+  description?: string;
+  order: number;
+  status: AutomationStudioFlowExpansionStatus;
+  collapsed?: boolean;
+  createdAt: number;
+  updatedAt: number;
+  metadata?: JsonObject;
+};
+
 export type AutomationStudioFlowRouteRule = {
   schemaVersion: "0.1";
   ruleId: string;

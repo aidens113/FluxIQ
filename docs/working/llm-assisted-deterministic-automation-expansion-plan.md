@@ -3451,3 +3451,10 @@ The first implementation slice should be contract-first and non-destructive:
 Do not start by building the LLM provider integration. The system needs the
 durable deterministic artifacts first; otherwise the LLM harness will have
 nowhere safe to compile its work.
+
+## Related Working Plan: Flow Initialization And Router UI
+
+Detailed planning for first-run Flow setup, required instructions, manual
+router/subflow creation, router visual editing, route testing, and readiness
+checks lives in
+[`flow-initialization-router-ui-plan.md`](./flow-initialization-router-ui-plan.md).

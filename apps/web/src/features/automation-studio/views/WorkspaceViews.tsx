@@ -1,13 +1,14 @@
 "use client";
 
-import { DataTable, StatusBadge, SummaryStrip } from "../../programs/shared-ui";
+import { DataTable, Field, Modal, StatusBadge, StatusText, SummaryStrip } from "../../programs/shared-ui";
 import { useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, Pencil, Plus, Route, Trash2, Workflow } from "lucide-react";
 import { useProgramApi } from "../../programs/program-api";
 import type { AutomationDockTab, AutomationSelection } from "../types";
 import { timelineEntrySummary } from "../timeline/view-model";
 import { groupByNamespace } from "./view-utils";
-import { graphToTaskFlow } from "../model/project-artifacts";
-import { AutomationPolicyCanvas } from "./GraphEditorViews";
+
+
 export function AutomationRecordingWorkspace(props: { recordings: any[]; selectedRecording: any; selectedTimeline: any; setSelection(selection: AutomationSelection): void }) {
   const entries = props.selectedTimeline?.timeline ?? props.selectedRecording?.timeline ?? [];
   const checkpoints = entries.filter((entry: any) => entry.type === "state_checkpoint").length;
@@ -316,39 +317,40 @@ export function AutomationRunsWorkspace(props: { projectId: string | null; pipel
 
 const SUBFLOW_PAGE_SIZE = 25;
 
-export function AutomationSubflowsWorkspace(props: { projectId: string | null; flow: any; nativeNodeDefinitions: any[]; recordings: any[]; selectedNode: any; selectedTimeline: any; signals: any[]; setSelection(selection: AutomationSelection): void }) {
+export function AutomationSubflowsWorkspace(props: { projectId: string | null; flow: any; onOpenSubflow?(flowId: string, subflowId: string, mode: "preview" | "new-window"): void }) {
   const api = useProgramApi("automation-studio");
   const flowId = props.flow?.flowId ?? "";
   const [subflows, setSubflows] = useState<any[]>([]);
-  const [selectedSubflow, setSelectedSubflow] = useState<any | null>(null);
-  const [selectedGraph, setSelectedGraph] = useState<any | null>(null);
-  const [selectedGraphDraft, setSelectedGraphDraft] = useState<{ nodes: any[]; edges: any[] } | null>(null);
-  const [graphDirty, setGraphDirty] = useState(false);
-  const [router, setRouter] = useState<any | null>(null);
   const [page, setPage] = useState({ limit: SUBFLOW_PAGE_SIZE, offset: 0, total: 0 });
   const [loading, setLoading] = useState(false);
-  const [loadingGraph, setLoadingGraph] = useState(false);
   const [error, setError] = useState("");
+
   useEffect(() => {
-    setSelectedSubflow(null);
-    setSelectedGraph(null);
-    setSelectedGraphDraft(null);
-    setGraphDirty(false);
-    setRouter(null);
+    setSubflows([]);
+    setPage({ limit: SUBFLOW_PAGE_SIZE, offset: 0, total: 0 });
     if (!props.projectId || !flowId) return;
     void loadSubflows(0);
-    void loadRouter();
   }, [props.projectId, flowId]);
-  const loadRouter = async () => {
-    if (!props.projectId || !flowId) return;
-    const result = await api.post<{ router?: any }>("get-flow-router", { projectId: props.projectId, flowId });
-    if (result.ok) setRouter(result.payload?.router ?? null);
-  };
+
+  useEffect(() => {
+    const refreshSubflows = (event: Event) => {
+      const changedFlowId = (event as CustomEvent<{ flowId?: string }>).detail?.flowId;
+      if (changedFlowId === flowId) void loadSubflows(page.offset);
+    };
+    window.addEventListener("fluxiq:subflows-changed", refreshSubflows);
+    return () => window.removeEventListener("fluxiq:subflows-changed", refreshSubflows);
+  }, [props.projectId, flowId, page.offset]);
+
   const loadSubflows = async (offset: number) => {
     if (!props.projectId || !flowId) return;
     setLoading(true);
     setError("");
-    const result = await api.post<{ subflows?: any[]; page?: { subflows?: any[]; total?: number; limit?: number; offset?: number } }>("list-flow-subflows", { projectId: props.projectId, flowId, limit: SUBFLOW_PAGE_SIZE, offset });
+    const result = await api.post<{ subflows?: any[]; page?: { subflows?: any[]; total?: number; limit?: number; offset?: number } }>("list-flow-subflows", {
+      projectId: props.projectId,
+      flowId,
+      limit: SUBFLOW_PAGE_SIZE,
+      offset
+    });
     setLoading(false);
     if (!result.ok) {
       setError(result.error ?? "Subflows could not be loaded.");
@@ -356,156 +358,61 @@ export function AutomationSubflowsWorkspace(props: { projectId: string | null; f
     }
     const resultPage = result.payload?.page;
     setSubflows(result.payload?.subflows ?? resultPage?.subflows ?? []);
-    setPage({ limit: resultPage?.limit ?? SUBFLOW_PAGE_SIZE, offset: resultPage?.offset ?? offset, total: resultPage?.total ?? result.payload?.subflows?.length ?? 0 });
-  };
-  const openSubflow = async (subflowId: string) => {
-    if (!props.projectId || !flowId) return;
-    setError("");
-    const result = await api.post<{ subflow?: any }>("get-flow-subflow", { projectId: props.projectId, flowId, subflowId });
-    if (!result.ok || !result.payload?.subflow) {
-      setError(result.error ?? "Subflow detail could not be loaded.");
-      return;
-    }
-    setSelectedSubflow(result.payload.subflow);
-    await loadSubflowGraph(result.payload.subflow.graphFlowId ?? flowId);
-  };
-  const loadSubflowGraph = async (graphFlowId: string) => {
-    if (!props.projectId || !graphFlowId) return;
-    setLoadingGraph(true);
-    setSelectedGraph(null);
-    setSelectedGraphDraft(null);
-    setGraphDirty(false);
-    const result = await api.post<{ flow?: any }>("get-flow", { projectId: props.projectId, flowId: graphFlowId });
-    setLoadingGraph(false);
-    if (!result.ok || !result.payload?.flow) {
-      setError(result.error ?? "Subflow graph could not be loaded.");
-      return;
-    }
-    setSelectedGraph(result.payload.flow);
-  };
-  const mutateSubflow = async (endpoint: string, payload: Record<string, unknown>) => {
-    const authorizationPin = window.prompt("Authorization PIN");
-    if (!authorizationPin) return;
-    const result = await api.post<{ subflow?: any }>(endpoint, { ...payload, authorizationPin });
-    if (!result.ok) {
-      setError(result.error ?? "Subflow change failed.");
-      return;
-    }
-    if (result.payload?.subflow) setSelectedSubflow(result.payload.subflow);
-    await loadSubflows(page.offset);
-  };
-  const createSubflow = async () => {
-    if (!props.projectId || !flowId) return;
-    const name = window.prompt("Subflow name");
-    if (!name?.trim()) return;
-    await mutateSubflow("create-flow-subflow", { projectId: props.projectId, flowId, name: name.trim(), role: "utility" });
-  };
-  const renameSubflow = async () => {
-    if (!props.projectId || !flowId || !selectedSubflow?.subflowId) return;
-    const name = window.prompt("Subflow name", selectedSubflow.name ?? "");
-    if (!name?.trim()) return;
-    await mutateSubflow("rename-flow-subflow", { projectId: props.projectId, flowId, subflowId: selectedSubflow.subflowId, name: name.trim() });
-  };
-  const saveSelectedSubflowGraph = async (graph: { nodes: any[]; edges: any[] }) => {
-    if (!props.projectId || !selectedGraph) return false;
-    const authorizationPin = window.prompt("Authorization PIN");
-    if (!authorizationPin) return false;
-    const serializedGraph = graphToTaskFlow({
-      task: { taskId: selectedGraph.flowId, name: selectedGraph.name } as any,
-      existingFlow: { ...selectedGraph, ownerKind: "flow", ownerId: selectedGraph.flowId } as any,
-      graph
+    setPage({
+      limit: resultPage?.limit ?? SUBFLOW_PAGE_SIZE,
+      offset: resultPage?.offset ?? offset,
+      total: resultPage?.total ?? result.payload?.subflows?.length ?? 0
     });
-    const { regions: _regions, regionHandoffs: _regionHandoffs, ...flowWithoutEditorRegions } = selectedGraph;
-    const result = await api.post<{ flow?: any }>("save-flow", {
-      projectId: props.projectId,
-      authorizationPin,
-      flow: { ...flowWithoutEditorRegions, nodes: serializedGraph.nodes, edges: serializedGraph.edges }
-    });
-    if (!result.ok || !result.payload?.flow) {
-      setError(result.error ?? "Subflow graph could not be saved.");
-      return false;
-    }
-    setSelectedGraph(result.payload.flow);
-    setSelectedGraphDraft(null);
-    setGraphDirty(false);
-    return true;
   };
+
   const nextOffset = page.offset + page.limit;
   const previousOffset = Math.max(0, page.offset - page.limit);
-  const routerReferences = selectedSubflow ? routerReferencesForSubflow(router, selectedSubflow.subflowId) : [];
+  const firstVisible = page.total ? page.offset + 1 : 0;
+  const lastVisible = Math.min(page.total, page.offset + subflows.length);
+
   return (
-    <section className="automation-runs-workspace">
+    <section className="automation-runs-workspace automation-subflow-directory">
+      <StatusText value={error} />
       <header>
         <div><strong>Subflows</strong><span>{props.flow?.name ?? "Select a Flow"}</span></div>
-        <button className="automation-runtime-row-action" disabled={!props.projectId || !flowId} onClick={createSubflow} type="button">Create</button>
+        <span className="automation-subflow-directory-count">{loading ? "Loading..." : String(page.total)}</span>
       </header>
-      {error ? <p className="automation-runtime-message">{error}</p> : null}
-      <div className="automation-runtime-debugger">
-        <section className="automation-runtime-list-page">
-          <header>
-            <div><strong>Flow Subflows</strong><span>{loading ? "Loading..." : `${page.total ? page.offset + 1 : 0}-${Math.min(page.total, page.offset + subflows.length)} of ${page.total}`}</span></div>
-            <div className="automation-runtime-pagination">
-              <button disabled={loading || page.offset <= 0} onClick={() => loadSubflows(previousOffset)} type="button">Previous</button>
-              <button disabled={loading || nextOffset >= page.total} onClick={() => loadSubflows(nextOffset)} type="button">Next</button>
-            </div>
-          </header>
-          <DataTable columns={["Name", "Role", "Status", "Updated", "Stability", ""]} rows={subflows.map((subflow) => [
-            <strong key={`${subflow.subflowId}:name`}>{subflow.name ?? subflow.subflowId}</strong>,
-            subflow.role ?? "-",
-            <StatusBadge key={`${subflow.subflowId}:status`} value={subflow.status ?? "active"} />,
-            formatRuntimeTimestamp(subflow.updatedAt),
-            `${subflow.stability?.successCount ?? 0}/${subflow.stability?.runCount ?? 0}`,
-            <button className="automation-runtime-row-action" key={`${subflow.subflowId}:open`} onClick={() => openSubflow(subflow.subflowId)} type="button">Open</button>
-          ])} empty={flowId ? "No subflows are defined for this Flow." : "Select a Flow to manage subflows."} />
-        </section>
-        <section className="automation-runtime-log-page">
-          <header>
-            <div><strong>{selectedSubflow?.name ?? "Subflow Detail"}</strong><span>{selectedSubflow?.subflowId ?? "Open a row to inspect details."}</span></div>
-            <div className="automation-runtime-pagination">
-              <button disabled={!selectedSubflow} onClick={renameSubflow} type="button">Rename</button>
-              <button disabled={!selectedSubflow} onClick={() => mutateSubflow("disable-flow-subflow", { projectId: props.projectId, flowId, subflowId: selectedSubflow?.subflowId })} type="button">Disable</button>
-              <button disabled={!selectedSubflow} onClick={() => mutateSubflow("archive-flow-subflow", { projectId: props.projectId, flowId, subflowId: selectedSubflow?.subflowId })} type="button">Archive</button>
-            </div>
-          </header>
-          {selectedSubflow ? (
-            <>
-              <SummaryStrip items={[["Role", selectedSubflow.role ?? "-"], ["Status", selectedSubflow.status ?? "-"], ["Graph", selectedSubflow.graphFlowId ?? flowId], ["Instructions", selectedSubflow.localInstructionIds?.length ?? 0]]} />
-              <DataTable columns={["Router Reference", "Status", "Order", "Condition"]} rows={routerReferences.map((reference) => [
-                reference.name,
-                <StatusBadge key={`${reference.id}:status`} value={reference.status} />,
-                reference.order,
-                reference.condition
-              ])} empty="No router rules or fallback currently target this subflow." />
-              <DataTable columns={["Mapping", "Source", "Target", "Required"]} rows={[...(selectedSubflow.inputMapping ?? []).map((item: any) => ["Input", item.flowInputId, item.subflowInputId, item.required ? "Yes" : "No"]), ...(selectedSubflow.outputMapping ?? []).map((item: any) => ["Output", item.subflowOutputId, item.flowOutputId, item.required ? "Yes" : "No"])]} empty="No input or output mappings configured." />
-              <section className="automation-runtime-log-section">
-                <header><strong>Graph</strong><span>{loadingGraph ? "Loading graph..." : graphDirty ? "Unsaved subflow graph changes" : selectedGraph?.flowId ?? "No graph loaded"}</span></header>
-                {selectedGraph ? (
-                  <div style={{ minHeight: 520 }}>
-                    <AutomationPolicyCanvas
-                      active
-                      editable={selectedGraph?.source?.mode !== "code"}
-                      entries={[]}
-                      nativeNodeDefinitions={props.nativeNodeDefinitions}
-                      onDirtyChange={setGraphDirty}
-                      onGraphDraftChange={setSelectedGraphDraft}
-                      onSaveGraph={saveSelectedSubflowGraph}
-                      policy={null}
-                      recordings={props.recordings}
-                      selectedNode={props.selectedNode}
-                      selectedTimeline={props.selectedTimeline}
-                      setSelection={props.setSelection}
-                      signals={props.signals}
-                      taskGraph={selectedGraph}
-                      taskGraphDraft={selectedGraphDraft}
-                    />
-                  </div>
-                ) : <p className="automation-runtime-empty">{loadingGraph ? "Loading subflow graph..." : "No graph Flow is linked to this subflow."}</p>}
-              </section>
-              <JsonToggle label="Show Subflow JSON" value={selectedSubflow} />
-            </>
-          ) : <p className="automation-runtime-empty">No subflow selected.</p>}
-        </section>
+      <div className="automation-subflow-directory-list" role="list" aria-label="Flow subflows">
+        {subflows.map((subflow) => (
+          <button
+            aria-label={"Open " + (subflow.name ?? subflow.subflowId) + " in Flow editor"}
+            className="automation-subflow-directory-row"
+            key={subflow.subflowId}
+            onClick={() => props.onOpenSubflow?.(flowId, subflow.subflowId, "preview")}
+            type="button"
+          >
+            <span className="automation-subflow-directory-icon"><Workflow size={17} aria-hidden /></span>
+            <span className="automation-subflow-directory-main">
+              <strong>{subflow.name ?? subflow.subflowId}</strong>
+              <small>{subflow.subflowId}</small>
+            </span>
+            <span className="automation-subflow-directory-meta">
+              <span>{subflow.role ?? "utility"}</span>
+              <StatusBadge value={subflow.status ?? "active"} />
+              <span>{subflow.stability?.successCount ?? 0}/{subflow.stability?.runCount ?? 0} successful</span>
+              <span>{formatRuntimeTimestamp(subflow.updatedAt)}</span>
+            </span>
+            <ChevronRight size={16} aria-hidden />
+          </button>
+        ))}
+        {!loading && !subflows.length ? <div className="automation-subflow-directory-empty">
+          <Workflow size={22} aria-hidden />
+          <strong>{flowId ? "No subflows yet" : "Select a Flow"}</strong>
+          <span>{flowId ? "Add subflows from the plus button beside the Subflows folder." : "Choose a Flow to view its subflows."}</span>
+        </div> : null}
       </div>
+      <footer className="automation-subflow-directory-footer">
+        <span>{firstVisible}-{lastVisible} of {page.total}</span>
+        <div>
+          <button className="icon-button" disabled={loading || page.offset <= 0} onClick={() => loadSubflows(previousOffset)} title="Previous page" aria-label="Previous page" type="button"><ChevronLeft size={14} aria-hidden /></button>
+          <button className="icon-button" disabled={loading || nextOffset >= page.total} onClick={() => loadSubflows(nextOffset)} title="Next page" aria-label="Next page" type="button"><ChevronRight size={14} aria-hidden /></button>
+        </div>
+      </footer>
     </section>
   );
 }
@@ -519,42 +426,322 @@ const ADAPTATION_PAGE_SIZE = 25;
 const ADAPTATION_STATUSES = ["proposed", "testing", "validated", "applied", "rejected", "disabled", "reverted", "superseded"];
 const WORKBENCH_PAGE_SIZE = 25;
 
-export function AutomationRouterWorkspace(props: { projectId: string | null; flow: any }) {
+export function AutomationFlowMapWorkspace(props: { projectId: string | null; flow: any; initialRouter?: any; initialSubflows?: any[]; onCreateSubflow?(): void }) {
   const api = useProgramApi("automation-studio");
   const flowId = props.flow?.flowId;
-  const [router, setRouter] = useState<any | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [flowMap, setFlowMap] = useState<any | null>(() => props.initialRouter ?? null);
+  const [subflows, setSubflows] = useState<any[]>(() => props.initialSubflows ?? []);
+  const [selectedGroupId, setSelectedGroupId] = useState("all");
+  const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
+  const [routeDraft, setRouteDraft] = useState(() => defaultFlowMapRouteDraft());
+  const [groupDraft, setGroupDraft] = useState({ groupId: "", name: "", description: "", order: 0, collapsed: false });
+  const [groupModalOpen, setGroupModalOpen] = useState(false);
+  const [routeModalOpen, setRouteModalOpen] = useState(false);
+  const [authorization, setAuthorization] = useState<null | { action: "save-route" | "delete-route" | "save-group" | "delete-group" }>(null);
+  const [authorizationPin, setAuthorizationPin] = useState("");
+  const [loading, setLoading] = useState(() => Boolean(props.projectId && flowId && !props.initialSubflows?.length));
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const routeGroups = useMemo(() => flowMapRouteGroupsFromRouter(flowMap), [flowMap]);
+  const sortedRoutes = useMemo(() => flowMapRoutes(flowMap), [flowMap]);
+  const visibleRoutes = useMemo(() => sortedRoutes.filter((route) => selectedGroupId === "all" ? true : selectedGroupId === "ungrouped" ? !route.metadata?.groupId : route.metadata?.groupId === selectedGroupId), [sortedRoutes, selectedGroupId]);
+  const selectedRule = useMemo(() => sortedRoutes.find((route) => route.ruleId === selectedRuleId) ?? null, [sortedRoutes, selectedRuleId]);
+  const activeSubflows = useMemo(() => subflows.filter((subflow) => subflow.status !== "archived").sort((left, right) => String(left.name ?? left.subflowId).localeCompare(String(right.name ?? right.subflowId))), [subflows]);
+
   useEffect(() => {
+    setSelectedRuleId(null);
+    setRouteDraft(defaultFlowMapRouteDraft());
+    setRouteModalOpen(false);
     if (!props.projectId || !flowId) return;
     setLoading(true);
-    setError("");
-    void api.post<{ router?: any }>("get-flow-router", { projectId: props.projectId, flowId }).then((result) => {
-      setLoading(false);
-      if (!result.ok) setError(result.error ?? "Router could not be loaded.");
-      else setRouter(result.payload?.router ?? null);
-    });
+    void Promise.all([loadFlowMap(), loadSubflows()]).finally(() => setLoading(false));
   }, [props.projectId, flowId]);
-  return (
-    <section className="automation-runs-workspace">
-      <header><div><strong>Router</strong><span>{loading ? "Loading..." : router?.name ?? "Deterministic Flow routing"}</span></div></header>
-      {error ? <p className="automation-runtime-message">{error}</p> : null}
-      <SummaryStrip items={[["Rules", router?.rules?.length ?? 0], ["Status", router?.status ?? "-"], ["Fallback", routerFallbackLabel(router)], ["Flow", flowId ?? "-"]]} />
-      <section className="automation-runtime-log-section">
-        <header><strong>Route Rules</strong><span>order-first</span></header>
-        <DataTable columns={["Order", "Rule", "Status", "Target", "Condition"]} rows={(router?.rules ?? []).slice().sort((left: any, right: any) => (left.order ?? 0) - (right.order ?? 0)).map((rule: any) => [
-          rule.order ?? "-",
-          rule.name ?? rule.ruleId,
-          <StatusBadge key={`${rule.ruleId}:status`} value={rule.status ?? "active"} />,
-          rule.target?.kind === "subflow" ? rule.target.subflowId : "-",
-          rule.condition ? compactConditionLabel(rule.condition) : "Always"
-        ])} empty={flowId ? "No router rules are defined for this Flow." : "Select a Flow to inspect routing."} />
+
+  useEffect(() => {
+    const refreshSubflows = (event: Event) => {
+      const changedFlowId = (event as CustomEvent<{ flowId?: string }>).detail?.flowId;
+      if (changedFlowId === flowId) void loadSubflows();
+    };
+    window.addEventListener("fluxiq:subflows-changed", refreshSubflows);
+    return () => window.removeEventListener("fluxiq:subflows-changed", refreshSubflows);
+  }, [props.projectId, flowId]);
+
+  useEffect(() => {
+    if (selectedRule) setRouteDraft(flowMapRouteDraftFromRule(selectedRule));
+  }, [selectedRuleId, selectedRule]);
+
+  const loadFlowMap = async () => {
+    if (!props.projectId || !flowId) return;
+    setError("");
+    const result = await api.post<{ router?: any }>("get-flow-router", { projectId: props.projectId, flowId });
+    if (!result.ok) setError(result.error ?? "Flow Map could not be loaded.");
+    else setFlowMap(result.payload?.router ?? null);
+  };
+
+  const loadSubflows = async () => {
+    if (!props.projectId || !flowId) return;
+    const result = await api.post<{ subflows?: any[]; page?: { subflows?: any[] } }>("list-flow-subflows", { projectId: props.projectId, flowId, limit: 100, offset: 0 });
+    if (result.ok) setSubflows(result.payload?.subflows ?? result.payload?.page?.subflows ?? []);
+  };
+
+  const beginNewRoute = () => {
+    setSelectedRuleId(null);
+    setRouteDraft(defaultFlowMapRouteDraft({ targetSubflowId: activeSubflows[0]?.subflowId ?? "", groupId: selectedGroupId !== "all" && selectedGroupId !== "ungrouped" ? selectedGroupId : "" }));
+    setRouteModalOpen(true);
+  };
+
+  const editRoute = (rule: any) => {
+    setSelectedRuleId(rule.ruleId ?? null);
+    setRouteDraft(flowMapRouteDraftFromRule(rule));
+    setRouteModalOpen(true);
+  };
+
+  const beginNewGroup = () => {
+    setGroupDraft({ groupId: "", name: "", description: "", order: nextFlowMapGroupOrder(routeGroups), collapsed: false });
+    setGroupModalOpen(true);
+  };
+
+  const editGroup = (group: any) => {
+    setGroupDraft({ groupId: group.groupId ?? "", name: group.name ?? "", description: group.description ?? "", order: group.order ?? 0, collapsed: group.collapsed === true });
+    setGroupModalOpen(true);
+  };
+
+  const requestAuthorization = (action: "save-route" | "delete-route" | "save-group" | "delete-group") => {
+    setAuthorization({ action });
+    setAuthorizationPin("");
+  };
+
+  const completeAuthorizedAction = async () => {
+    if (!props.projectId || !flowId || !authorization || !authorizationPin.trim()) return;
+    setSaving(true);
+    setError("");
+    const base = { projectId: props.projectId, flowId, authorizationPin: authorizationPin.trim() };
+    const result = authorization.action === "save-route"
+      ? await api.post<{ router?: any }>("save-flow-map-route", { ...base, ...(routeDraft.ruleId ? { ruleId: routeDraft.ruleId } : {}), name: routeDraft.name, description: routeDraft.description, targetSubflowId: routeDraft.targetSubflowId, order: routeDraft.order, status: routeDraft.status, groupId: routeDraft.groupId || null, setAsFallback: routeDraft.setAsFallback, confidence: routeDraft.confidence, conditionSummary: routeDraft.conditionSummary, conditionSignalPath: routeDraft.conditionSignalPath, conditionOperator: routeDraft.conditionOperator, conditionExpected: routeDraft.conditionExpected })
+      : authorization.action === "delete-route"
+        ? await api.post<{ router?: any }>("delete-flow-map-route", { ...base, ruleId: routeDraft.ruleId })
+        : authorization.action === "save-group"
+          ? await api.post<{ router?: any }>("save-flow-map-route-group", { ...base, ...(groupDraft.groupId ? { groupId: groupDraft.groupId } : {}), name: groupDraft.name, description: groupDraft.description, order: groupDraft.order, collapsed: groupDraft.collapsed, status: "active" })
+          : await api.post<{ router?: any }>("delete-flow-map-route-group", { ...base, groupId: groupDraft.groupId });
+    setSaving(false);
+    if (!result.ok || !result.payload?.router) {
+      setError(result.error ?? "Flow Map change could not be saved.");
+      return;
+    }
+    setFlowMap(result.payload.router);
+    setAuthorization(null);
+    setAuthorizationPin("");
+    setGroupModalOpen(false);
+    if (authorization.action === "save-route") {
+      setSelectedRuleId((result.payload.router.rules ?? []).find((rule: any) => rule.name === routeDraft.name)?.ruleId ?? routeDraft.ruleId ?? null);
+      setRouteModalOpen(false);
+    }
+    if (authorization.action === "delete-route") {
+      setSelectedRuleId(null);
+      setRouteDraft(defaultFlowMapRouteDraft());
+      setRouteModalOpen(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <section className="automation-runs-workspace automation-flow-map-workspace">
+        <header>
+          <div><strong>Router</strong><span>Loading route targets...</span></div>
+        </header>
+        <div className="automation-router-loading" aria-label="Loading Router">
+          <span />
+          <span />
+          <span />
+        </div>
       </section>
-      <JsonToggle label="Show Router JSON" value={router ?? {}} />
+    );
+  }
+
+  if (flowId && !activeSubflows.length) {
+    return (
+      <section className="automation-runs-workspace automation-flow-map-workspace">
+        <StatusText value={error} />
+        <header>
+          <div><strong>Router</strong><span>Route traffic into the right subflow</span></div>
+        </header>
+        <section className="automation-router-first-use">
+          <div className="automation-router-first-use-visual" aria-hidden>
+            <span className="automation-router-first-use-node router"><Route size={22} /></span>
+            <span className="automation-router-first-use-connector" />
+            <span className="automation-router-first-use-node subflow"><Workflow size={22} /></span>
+          </div>
+          <div className="automation-router-first-use-copy">
+            <span className="automation-router-first-use-label">Router setup</span>
+            <strong>Add your first subflow</strong>
+            <p>A route needs a subflow target. Create one here, then return to define route conditions and fallback behavior.</p>
+            <button className="button button-primary" onClick={props.onCreateSubflow} type="button">
+              <Plus size={14} aria-hidden />
+              Create subflow
+            </button>
+          </div>
+        </section>
+      </section>
+    );
+  }
+
+  return (
+    <section className="automation-runs-workspace automation-flow-map-workspace">
+      <StatusText value={error} />
+      <header>
+        <div><strong>Router</strong><span>{loading ? "Loading..." : flowMap?.name ?? "Flow Map route orchestration"}</span></div>
+        <div className="automation-runtime-log-toolbar">
+          <button className="button button-primary" onClick={beginNewRoute} disabled={!flowId || !activeSubflows.length} type="button"><Plus size={14} aria-hidden />New Route</button>
+        </div>
+      </header>
+      <section className="automation-router-workbench" aria-label="Router routes">
+        <div className="automation-router-group-bar">
+          <div className="automation-router-group-filters" role="group" aria-label="Filter routes by group">
+            {[{ groupId: "all", name: "All routes", count: sortedRoutes.length }, { groupId: "ungrouped", name: "Ungrouped", count: sortedRoutes.filter((route) => !route.metadata?.groupId).length }, ...routeGroups.map((group) => ({ ...group, count: sortedRoutes.filter((route) => route.metadata?.groupId === group.groupId).length }))].map((group) => (
+              <div className={`automation-router-group-option${selectedGroupId === group.groupId ? " selected" : ""}`} key={group.groupId}>
+                <button aria-pressed={selectedGroupId === group.groupId} onClick={() => setSelectedGroupId(group.groupId)} type="button">
+                  <span>{group.name}</span>
+                  <small>{group.count}</small>
+                </button>
+                {group.groupId !== "all" && group.groupId !== "ungrouped" ? <button aria-label={`Edit ${group.name}`} className="automation-router-group-edit" onClick={() => editGroup(group)} title={`Edit ${group.name}`} type="button"><Pencil size={13} aria-hidden /></button> : null}
+              </div>
+            ))}
+          </div>
+          <button className="button automation-router-new-group" onClick={beginNewGroup} disabled={!flowId} type="button"><Plus size={14} aria-hidden />Group</button>
+        </div>
+
+        <div className="automation-router-route-list-heading" aria-hidden>
+          <span>Order</span>
+          <span>Route and condition</span>
+          <span>Target</span>
+          <span>Group</span>
+          <span>Status</span>
+          <span />
+        </div>
+        <div className="automation-router-route-rows">
+          {visibleRoutes.map((rule, index) => {
+            const group = routeGroups.find((item) => item.groupId === rule.metadata?.groupId);
+            return (
+              <button className="automation-router-route-row" key={rule.ruleId} onClick={() => editRoute(rule)} type="button">
+                <span className="automation-router-route-order">{rule.order ?? index + 1}</span>
+                <span className="automation-router-route-copy"><strong>{rule.name ?? rule.ruleId}</strong><small>{flowMapConditionText(rule)}</small></span>
+                <span className="automation-router-route-target"><Workflow size={14} aria-hidden />{targetSubflowLabel(activeSubflows, rule.target?.subflowId)}</span>
+                <span className="automation-router-route-group">{group?.name ?? "Ungrouped"}</span>
+                <StatusBadge value={rule.status ?? "active"} />
+                <ChevronRight className="automation-router-route-chevron" size={16} aria-hidden />
+              </button>
+            );
+          })}
+          {!visibleRoutes.length ? <div className="automation-router-routes-empty">
+            <Route size={20} aria-hidden />
+            <strong>{sortedRoutes.length ? "No routes in this group" : "No routes yet"}</strong>
+            <span>{sortedRoutes.length ? "Choose another group or add a route here." : "Add the first route to send runtime traffic to a subflow."}</span>
+            <button className="button button-primary" onClick={beginNewRoute} type="button"><Plus size={14} aria-hidden />New Route</button>
+          </div> : null}
+        </div>
+
+        <div className="automation-router-fallback-row">
+          <span className="automation-router-fallback-icon"><Route size={16} aria-hidden /></span>
+          <span><strong>Fallback</strong><small>Used when no route condition matches</small></span>
+          <span className="automation-router-fallback-target">{flowMap?.fallback?.kind === "subflow" ? targetSubflowLabel(activeSubflows, flowMap.fallback.subflowId) : flowMapFallbackLabel(flowMap) === "-" ? "Not configured" : flowMapFallbackLabel(flowMap)}</span>
+        </div>
+      </section>
+      {routeModalOpen ? <Modal className="automation-router-modal" title={routeDraft.ruleId ? "Edit Route" : "New Route"} onClose={() => setRouteModalOpen(false)}>
+        <div className="automation-modal-form automation-router-route-editor">
+          <div className="automation-router-editor-grid">
+            <Field label="Route name"><input autoFocus value={routeDraft.name} onChange={(event) => setRouteDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Describe where this route leads" /></Field>
+            <Field label="Target subflow"><select value={routeDraft.targetSubflowId} onChange={(event) => setRouteDraft((current) => ({ ...current, targetSubflowId: event.target.value }))}><option value="">Select target</option>{activeSubflows.map((subflow) => <option key={subflow.subflowId} value={subflow.subflowId}>{subflow.name ?? subflow.subflowId}</option>)}</select></Field>
+            <Field label="When should it run?"><input value={routeDraft.conditionSummary} onChange={(event) => setRouteDraft((current) => ({ ...current, conditionSummary: event.target.value }))} placeholder="For example: when the request is a refund" /></Field>
+            <Field label="Route group"><select value={routeDraft.groupId} onChange={(event) => setRouteDraft((current) => ({ ...current, groupId: event.target.value }))}><option value="">Ungrouped</option>{routeGroups.map((group) => <option key={group.groupId} value={group.groupId}>{group.name}</option>)}</select></Field>
+            <Field label="Priority"><input type="number" value={routeDraft.order} onChange={(event) => setRouteDraft((current) => ({ ...current, order: Number(event.target.value) }))} /></Field>
+            <Field label="Status"><select value={routeDraft.status} onChange={(event) => setRouteDraft((current) => ({ ...current, status: event.target.value }))}><option value="active">Active</option><option value="disabled">Disabled</option><option value="archived">Archived</option></select></Field>
+          </div>
+          <details className="automation-router-advanced-fields">
+            <summary>Advanced matching</summary>
+            <div className="automation-router-editor-grid">
+              <Field label="Signal path"><input value={routeDraft.conditionSignalPath} onChange={(event) => setRouteDraft((current) => ({ ...current, conditionSignalPath: event.target.value }))} placeholder="inputs.intent" /></Field>
+              <Field label="Operator"><select value={routeDraft.conditionOperator} onChange={(event) => setRouteDraft((current) => ({ ...current, conditionOperator: event.target.value }))}>{FLOW_MAP_CONDITION_OPERATORS.map((operator) => <option key={operator} value={operator}>{operator.replaceAll("_", " ")}</option>)}</select></Field>
+              <Field label="Expected value"><input value={routeDraft.conditionExpected} onChange={(event) => setRouteDraft((current) => ({ ...current, conditionExpected: event.target.value }))} /></Field>
+              <Field label="Confidence"><input max="1" min="0" step="0.01" type="number" value={routeDraft.confidence} onChange={(event) => setRouteDraft((current) => ({ ...current, confidence: Number(event.target.value) }))} /></Field>
+              <Field label="Description"><textarea rows={3} value={routeDraft.description} onChange={(event) => setRouteDraft((current) => ({ ...current, description: event.target.value }))} /></Field>
+              <label className="automation-settings-toggle"><input checked={routeDraft.setAsFallback} onChange={(event) => setRouteDraft((current) => ({ ...current, setAsFallback: event.target.checked }))} type="checkbox" /><span>Use this target when no route matches</span></label>
+            </div>
+          </details>
+          <div className="modal-actions automation-router-editor-actions">
+            {routeDraft.ruleId ? <button className="button danger" onClick={() => requestAuthorization("delete-route")} disabled={saving} type="button"><Trash2 size={14} aria-hidden />Delete</button> : <span />}
+            <div><button className="button" onClick={() => setRouteModalOpen(false)} type="button">Cancel</button><button className="button button-primary" onClick={() => requestAuthorization("save-route")} disabled={!routeDraft.name.trim() || !routeDraft.targetSubflowId || saving} type="button">Save Route</button></div>
+          </div>
+        </div>
+      </Modal> : null}
+      {groupModalOpen ? <Modal title={groupDraft.groupId ? "Edit Route Group" : "New Route Group"} onClose={() => setGroupModalOpen(false)}>
+        <div className="automation-modal-form">
+          <Field label="Name"><input autoFocus value={groupDraft.name} onChange={(event) => setGroupDraft((current) => ({ ...current, name: event.target.value }))} /></Field>
+          <Field label="Description"><input value={groupDraft.description} onChange={(event) => setGroupDraft((current) => ({ ...current, description: event.target.value }))} /></Field>
+          <Field label="Order"><input type="number" value={groupDraft.order} onChange={(event) => setGroupDraft((current) => ({ ...current, order: Number(event.target.value) }))} /></Field>
+          <label className="automation-settings-toggle"><input checked={groupDraft.collapsed} onChange={(event) => setGroupDraft((current) => ({ ...current, collapsed: event.target.checked }))} type="checkbox" /><span>Collapsed by default</span></label>
+          <div className="modal-actions"><button className="button button-primary" onClick={() => requestAuthorization("save-group")} disabled={!groupDraft.name.trim()} type="button">Save Group</button>{groupDraft.groupId ? <button className="button danger" onClick={() => requestAuthorization("delete-group")} type="button">Delete Group</button> : null}</div>
+        </div>
+      </Modal> : null}
+      {authorization ? <Modal title="Authorize Flow Map Change" onClose={() => setAuthorization(null)}>
+        <div className="automation-modal-form">
+          <Field label="Security PIN"><input autoFocus inputMode="numeric" value={authorizationPin} onChange={(event) => setAuthorizationPin(event.target.value.replace(/\D/g, ""))} /></Field>
+          <div className="modal-actions"><button className="button" onClick={() => setAuthorization(null)} type="button">Cancel</button><button className="button button-primary" data-modal-submit disabled={!authorizationPin.trim() || saving} onClick={() => void completeAuthorizedAction()} type="button">{saving ? "Saving..." : "Confirm"}</button></div>
+        </div>
+      </Modal> : null}
     </section>
   );
 }
 
+const FLOW_MAP_CONDITION_OPERATORS = ["exists", "equals", "not_equals", "contains", "greater_than", "less_than", "matches"];
+
+function defaultFlowMapRouteDraft(overrides: Partial<ReturnType<typeof defaultFlowMapRouteDraftShape>> = {}) {
+  return { ...defaultFlowMapRouteDraftShape(), ...overrides };
+}
+
+function defaultFlowMapRouteDraftShape() {
+  return { ruleId: "", name: "", description: "", targetSubflowId: "", order: 0, status: "active", groupId: "", confidence: 1, conditionSummary: "", conditionSignalPath: "", conditionOperator: "exists", conditionExpected: "", setAsFallback: false };
+}
+
+function flowMapRouteDraftFromRule(rule: any) {
+  return defaultFlowMapRouteDraft({
+    ruleId: rule.ruleId ?? "",
+    name: rule.name ?? "",
+    description: rule.description ?? "",
+    targetSubflowId: rule.target?.kind === "subflow" ? rule.target.subflowId ?? "" : "",
+    order: rule.order ?? 0,
+    status: rule.status ?? "active",
+    groupId: typeof rule.metadata?.groupId === "string" ? rule.metadata.groupId : "",
+    confidence: typeof rule.confidence === "number" ? rule.confidence : 1,
+    conditionSummary: typeof rule.metadata?.conditionSummary === "string" ? rule.metadata.conditionSummary : "",
+    conditionSignalPath: typeof rule.condition?.signalPath === "string" ? rule.condition.signalPath : "",
+    conditionOperator: typeof rule.condition?.operator === "string" ? rule.condition.operator : "exists",
+    conditionExpected: rule.condition?.expected === undefined ? "" : String(rule.condition.expected),
+    setAsFallback: false
+  });
+}
+
+function flowMapRouteGroupsFromRouter(router: any | null): any[] {
+  const groups = Array.isArray(router?.metadata?.routeGroups) ? router.metadata.routeGroups : [];
+  return groups.filter((group: any) => group?.groupId && group?.name).slice().sort((left: any, right: any) => (left.order ?? 0) - (right.order ?? 0) || String(left.name).localeCompare(String(right.name)));
+}
+
+function flowMapConditionText(rule: any): string {
+  if (rule?.condition) return compactConditionLabel(rule.condition);
+  if (typeof rule?.metadata?.conditionSummary === "string" && rule.metadata.conditionSummary.trim()) return rule.metadata.conditionSummary.trim();
+  return "Always";
+}
+function flowMapRoutes(router: any | null): any[] {
+  return (Array.isArray(router?.rules) ? router.rules : []).slice().sort((left: any, right: any) => (left.order ?? 0) - (right.order ?? 0) || String(left.name ?? left.ruleId).localeCompare(String(right.name ?? right.ruleId)));
+}
+
+function nextFlowMapGroupOrder(groups: any[]): number {
+  return groups.reduce((max, group) => Math.max(max, Number(group.order ?? 0)), -10) + 10;
+}
+
+function targetSubflowLabel(subflows: any[], subflowId: string | undefined): string {
+  if (!subflowId) return "No target";
+  return subflows.find((subflow) => subflow.subflowId === subflowId)?.name ?? subflowId;
+}
 export function AutomationInstructionsWorkspace(props: { projectId: string | null; flow: any }) {
   const api = useProgramApi("automation-studio");
   const flowId = props.flow?.flowId;
@@ -653,7 +840,7 @@ export function AutomationInstructionsWorkspace(props: { projectId: string | nul
             <label><span>Title</span><input value={draftInstruction.title} onChange={(event) => setDraftInstruction((current) => ({ ...current, title: event.target.value }))} placeholder="Instruction title" /></label>
             <label><span>Scope</span><select value={draftInstruction.scopeKind} onChange={(event) => setDraftInstruction((current) => ({ ...current, scopeKind: event.target.value }))}>
               <option value="flow">Flow</option>
-              <option value="router">Router</option>
+              <option value="router">Flow Map</option>
               <option value="subflow">Subflow</option>
               <option value="node">Node</option>
               <option value="on_error">On Error</option>
@@ -732,6 +919,203 @@ export function AutomationChangeProposalsWorkspace(props: { projectId: string | 
   );
 }
 
+
+type SubflowSettingsDraft = {
+  name: string;
+  description: string;
+  role: "primary" | "site" | "screen" | "integration" | "recovery" | "fallback" | "utility";
+  routeTags: string;
+  localInstructionIds: string;
+  proposalModeOverride: "inherit" | "auto" | "manual" | "mixed";
+  inputMapping: Array<{ flowInputId: string; subflowInputId: string; required?: boolean }>;
+  outputMapping: Array<{ subflowOutputId: string; flowOutputId: string; required?: boolean }>;
+};
+
+export function AutomationFlowSettingsWorkspace(props: { projectId: string | null; flow: any }) {
+  const ownership = subflowSettingsOwnership(props.flow);
+  return ownership
+    ? <AutomationSubflowSettingsWorkspace flow={props.flow} ownership={ownership} projectId={props.projectId} />
+    : <AutomationTopLevelFlowSettingsWorkspace flow={props.flow} projectId={props.projectId} />;
+}
+
+function AutomationSubflowSettingsWorkspace(props: {
+  projectId: string | null;
+  flow: any;
+  ownership: { parentFlowId: string; subflowId: string };
+}) {
+  const api = useProgramApi("automation-studio");
+  const [subflow, setSubflow] = useState<any | null>(null);
+  const [draft, setDraft] = useState<SubflowSettingsDraft | null>(null);
+  const [loading, setLoading] = useState(Boolean(props.projectId));
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    setSubflow(null);
+    setDraft(null);
+    setMessage("");
+    setError("");
+    if (!props.projectId) {
+      setLoading(false);
+      return () => { cancelled = true; };
+    }
+    setLoading(true);
+    void api.post<{ subflow?: any }>("get-flow-subflow", {
+      projectId: props.projectId,
+      flowId: props.ownership.parentFlowId,
+      subflowId: props.ownership.subflowId
+    }).then((result) => {
+      if (cancelled) return;
+      setLoading(false);
+      if (!result.ok || !result.payload?.subflow) {
+        setError(result.error ?? "Subflow settings could not be loaded.");
+        return;
+      }
+      setSubflow(result.payload.subflow);
+      setDraft(subflowSettingsDraft(result.payload.subflow));
+    });
+    return () => { cancelled = true; };
+  }, [props.projectId, props.ownership.parentFlowId, props.ownership.subflowId]);
+  const updateDraft = <K extends keyof SubflowSettingsDraft>(key: K, value: SubflowSettingsDraft[K]) => setDraft((current) => current ? { ...current, [key]: value } : current);
+  const saveSettings = async () => {
+    if (!props.projectId || !draft) return;
+    const authorizationPin = window.prompt("Authorization PIN");
+    if (!authorizationPin) return;
+    setSaving(true);
+    setMessage("");
+    setError("");
+    const result = await api.post<{ subflow?: any }>("update-flow-subflow", {
+      projectId: props.projectId,
+      flowId: props.ownership.parentFlowId,
+      subflowId: props.ownership.subflowId,
+      authorizationPin,
+      name: draft.name,
+      description: draft.description,
+      role: draft.role,
+      routeTags: splitSettingsValues(draft.routeTags),
+      localInstructionIds: splitSettingsValues(draft.localInstructionIds),
+      proposalModeOverride: draft.proposalModeOverride === "inherit" ? null : draft.proposalModeOverride,
+      inputMapping: draft.inputMapping,
+      outputMapping: draft.outputMapping
+    });
+    setSaving(false);
+    if (!result.ok || !result.payload?.subflow) {
+      setError(result.error ?? "Subflow settings could not be saved.");
+      return;
+    }
+    setSubflow(result.payload.subflow);
+    setDraft(subflowSettingsDraft(result.payload.subflow));
+    setMessage("Subflow settings saved.");
+  };
+  return (
+    <section className="automation-runs-workspace automation-flow-settings-workspace automation-subflow-settings-workspace">
+      <header>
+        <div><strong>Subflow Settings</strong><span>{subflow?.name ?? props.flow?.name ?? props.ownership.subflowId} | routing, mappings, instructions, and approval behavior</span></div>
+        <button className="automation-runtime-row-action" disabled={!props.projectId || !draft || saving} onClick={() => void saveSettings()} type="button">{saving ? "Saving..." : "Save Subflow Settings"}</button>
+      </header>
+      {error ? <p className="automation-runtime-message">{error}</p> : null}
+      {message ? <p className="automation-settings-success">{message}</p> : null}
+      {loading ? <div className="automation-runtime-empty">Loading subflow settings...</div> : null}
+      {!loading && !draft ? <div className="automation-runtime-empty">Select a persisted subflow to edit its settings.</div> : null}
+      {draft ? <div className="automation-flow-settings-grid">
+        <section className="automation-settings-panel">
+          <header><strong>Subflow Identity</strong><span>Name, responsibility, and routing role</span></header>
+          <label><span>Name</span><input value={draft.name} onChange={(event) => updateDraft("name", event.target.value)} placeholder="Subflow name" /></label>
+          <label><span>Description</span><textarea rows={4} value={draft.description} onChange={(event) => updateDraft("description", event.target.value)} placeholder="What this subflow is responsible for." /></label>
+          <label><span>Role</span><select value={draft.role} onChange={(event) => updateDraft("role", event.target.value as SubflowSettingsDraft["role"])}><option value="primary">Primary</option><option value="site">Site</option><option value="screen">Screen</option><option value="integration">Integration</option><option value="recovery">Recovery</option><option value="fallback">Fallback</option><option value="utility">Utility</option></select></label>
+        </section>
+        <section className="automation-settings-panel">
+          <header><strong>Routing and Instructions</strong><span>Local matching hints and scoped instruction bindings</span></header>
+          <label><span>Route tags</span><input value={draft.routeTags} onChange={(event) => updateDraft("routeTags", event.target.value)} placeholder="checkout, authenticated, desktop" /></label>
+          <label><span>Local instruction IDs</span><textarea rows={4} value={draft.localInstructionIds} onChange={(event) => updateDraft("localInstructionIds", event.target.value)} placeholder="instruction.checkout&#10;instruction.on-error" /></label>
+          <label><span>Adaptation approval</span><select value={draft.proposalModeOverride} onChange={(event) => updateDraft("proposalModeOverride", event.target.value as SubflowSettingsDraft["proposalModeOverride"])}><option value="inherit">Inherit parent Flow</option><option value="auto">Auto-apply safe validated changes</option><option value="manual">Manual approval only</option><option value="mixed">Manual for risky changes</option></select></label>
+        </section>
+        <SubflowMappingEditor
+          leftKey="flowInputId"
+          leftLabel="Flow input"
+          onChange={(inputMapping) => updateDraft("inputMapping", inputMapping as SubflowSettingsDraft["inputMapping"])}
+          rightKey="subflowInputId"
+          rightLabel="Subflow input"
+          rows={draft.inputMapping}
+          title="Input Mapping"
+        />
+        <SubflowMappingEditor
+          leftKey="subflowOutputId"
+          leftLabel="Subflow output"
+          onChange={(outputMapping) => updateDraft("outputMapping", outputMapping as SubflowSettingsDraft["outputMapping"])}
+          rightKey="flowOutputId"
+          rightLabel="Flow output"
+          rows={draft.outputMapping}
+          title="Output Mapping"
+        />
+        <section className="automation-settings-panel automation-settings-panel-wide">
+          <header><strong>Ownership</strong><span>Framework-managed identity for this subflow</span></header>
+          <DataTable columns={["Setting", "Current"]} rows={[
+            ["Parent Flow", props.ownership.parentFlowId],
+            ["Subflow ID", props.ownership.subflowId],
+            ["Graph Flow", props.flow?.flowId ?? subflow?.graphFlowId ?? "-"],
+            ["Status", subflow?.status ?? "-"],
+            ["Stability runs", subflow?.stability?.runCount ?? 0]
+          ]} empty="No ownership details." />
+        </section>
+      </div> : null}
+    </section>
+  );
+}
+
+function SubflowMappingEditor(props: {
+  title: string;
+  leftLabel: string;
+  rightLabel: string;
+  leftKey: string;
+  rightKey: string;
+  rows: Array<Record<string, any>>;
+  onChange(rows: Array<Record<string, any>>): void;
+}) {
+  const updateRow = (index: number, key: string, value: string | boolean) => props.onChange(props.rows.map((row, rowIndex) => rowIndex === index ? { ...row, [key]: value } : row));
+  const addRow = () => props.onChange([...props.rows, { [props.leftKey]: "", [props.rightKey]: "", required: false }]);
+  return (
+    <section className="automation-settings-panel automation-settings-panel-wide automation-subflow-mapping-panel">
+      <header><strong>{props.title}</strong><span>Map values across the parent Flow and subflow boundary</span></header>
+      <div className="automation-subflow-mapping-list">
+        {props.rows.map((row, index) => <div className="automation-subflow-mapping-row" key={`${props.title}:${index}`}>
+          <label><span>{props.leftLabel}</span><input value={String(row[props.leftKey] ?? "")} onChange={(event) => updateRow(index, props.leftKey, event.target.value)} /></label>
+          <ChevronRight aria-hidden size={16} />
+          <label><span>{props.rightLabel}</span><input value={String(row[props.rightKey] ?? "")} onChange={(event) => updateRow(index, props.rightKey, event.target.value)} /></label>
+          <label className="automation-subflow-mapping-required"><input checked={row.required === true} onChange={(event) => updateRow(index, "required", event.target.checked)} type="checkbox" /><span>Required</span></label>
+          <button className="automation-icon-button" onClick={() => props.onChange(props.rows.filter((_, rowIndex) => rowIndex !== index))} title="Remove mapping" aria-label="Remove mapping" type="button"><Trash2 aria-hidden size={15} /></button>
+        </div>)}
+        {!props.rows.length ? <div className="automation-runtime-empty">No mappings configured.</div> : null}
+      </div>
+      <button className="automation-runtime-row-action automation-subflow-add-mapping" onClick={addRow} type="button"><Plus aria-hidden size={14} /> Add mapping</button>
+    </section>
+  );
+}
+
+function subflowSettingsOwnership(flow: any): { parentFlowId: string; subflowId: string } | null {
+  const metadata = flow?.metadata;
+  return metadata?.subflowGraph === true && typeof metadata.parentFlowId === "string" && typeof metadata.parentSubflowId === "string"
+    ? { parentFlowId: metadata.parentFlowId, subflowId: metadata.parentSubflowId }
+    : null;
+}
+
+function subflowSettingsDraft(subflow: any): SubflowSettingsDraft {
+  return {
+    name: String(subflow?.name ?? ""),
+    description: String(subflow?.description ?? ""),
+    role: ["primary", "site", "screen", "integration", "recovery", "fallback", "utility"].includes(subflow?.role) ? subflow.role : "utility",
+    routeTags: Array.isArray(subflow?.routeTags) ? subflow.routeTags.join(", ") : "",
+    localInstructionIds: Array.isArray(subflow?.localInstructionIds) ? subflow.localInstructionIds.join("\n") : "",
+    proposalModeOverride: subflow?.proposalModeOverride === "auto" || subflow?.proposalModeOverride === "manual" || subflow?.proposalModeOverride === "mixed" ? subflow.proposalModeOverride : "inherit",
+    inputMapping: Array.isArray(subflow?.inputMapping) ? subflow.inputMapping.map((mapping: any) => ({ ...mapping })) : [],
+    outputMapping: Array.isArray(subflow?.outputMapping) ? subflow.outputMapping.map((mapping: any) => ({ ...mapping })) : []
+  };
+}
+
+function splitSettingsValues(value: string): string[] {
+  return [...new Set(value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean))];
+}
 type FlowSettingsDraft = {
   name: string;
   description: string;
@@ -766,7 +1150,7 @@ type FlowSettingsDraft = {
   adaptationPolicyId: string;
 };
 
-export function AutomationFlowSettingsWorkspace(props: { projectId: string | null; flow: any }) {
+function AutomationTopLevelFlowSettingsWorkspace(props: { projectId: string | null; flow: any }) {
   const api = useProgramApi("automation-studio");
   const [savedFlow, setSavedFlow] = useState<any | null>(null);
   const flow = savedFlow?.flowId && savedFlow.flowId === props.flow?.flowId ? savedFlow : props.flow;
@@ -844,7 +1228,7 @@ export function AutomationFlowSettingsWorkspace(props: { projectId: string | nul
           <div className="automation-settings-toggle-grid">
             <SettingsToggle checked={draft.manualReviewForStructuralChanges} label="Manual review for structural changes" onChange={(checked) => updateDraft("manualReviewForStructuralChanges", checked)} />
             <SettingsToggle checked={draft.allowCreateRecoveryPaths} label="Create recovery paths" onChange={(checked) => updateDraft("allowCreateRecoveryPaths", checked)} />
-            <SettingsToggle checked={draft.allowModifyRouter} label="Modify router rules" onChange={(checked) => updateDraft("allowModifyRouter", checked)} />
+            <SettingsToggle checked={draft.allowModifyRouter} label="Modify Flow Map routes" onChange={(checked) => updateDraft("allowModifyRouter", checked)} />
             <SettingsToggle checked={draft.allowModifySubflows} label="Modify subflows" onChange={(checked) => updateDraft("allowModifySubflows", checked)} />
             <SettingsToggle checked={draft.allowCreateSubflows} label="Create subflows" onChange={(checked) => updateDraft("allowCreateSubflows", checked)} />
             <SettingsToggle checked={draft.allowModifyExpectations} label="Modify expectations" onChange={(checked) => updateDraft("allowModifyExpectations", checked)} />
@@ -873,7 +1257,7 @@ export function AutomationFlowSettingsWorkspace(props: { projectId: string | nul
             <label><span>Adaptation policy ID</span><input value={draft.adaptationPolicyId} onChange={(event) => updateDraft("adaptationPolicyId", event.target.value)} placeholder="policy/default" /></label>
           </div>
           <DataTable columns={["Setting", "Current"]} rows={[
-            ["Instruction precedence", "global -> project -> Flow -> router -> subflow -> node -> on-error -> review"],
+            ["Instruction precedence", "global -> project -> Flow -> Flow Map -> subflow -> node -> on-error -> review"],
             ["Source ownership", flow?.source?.mode ?? "visual"],
             ["Publication", flow?.publication?.status ?? "draft"],
             ["Frozen scopes", metadata.frozenScopeCount ?? 0]
@@ -1389,10 +1773,10 @@ function compactConditionLabel(condition: any): string {
   return "Condition";
 }
 
-function routerFallbackLabel(router: any | null): string {
-  if (!router?.fallback) return "-";
-  if (router.fallback.kind === "fail") return router.fallback.message ?? "Fail";
-  if (router.fallback.kind === "subflow") return `Subflow ${router.fallback.subflowId}`;
+function flowMapFallbackLabel(flowMap: any | null): string {
+  if (!flowMap?.fallback) return "-";
+  if (flowMap.fallback.kind === "fail") return flowMap.fallback.message ?? "Fail";
+  if (flowMap.fallback.kind === "subflow") return `Subflow ${flowMap.fallback.subflowId}`;
   return "Fallback";
 }
 

@@ -1880,6 +1880,48 @@ describe("AutomationStudioService recording persistence", () => {
     expect(JSON.stringify(page.runs[0])).not.toContain("state://");
   });
 
+  it("mutates Flow Map route groups and routes through validated router writes", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Flow Map Mutations" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.flow-map-mutations", name: "Flow Map Mutations" });
+    const primary = await service.createFlowSubflow({ projectId: project.id, flowId: flow.flowId, name: "Main Task", role: "primary" });
+    const fallback = await service.createFlowSubflow({ projectId: project.id, flowId: flow.flowId, name: "Fallback Task", role: "fallback" });
+
+    const grouped = await service.upsertFlowMapRouteGroup({ projectId: project.id, flowId: flow.flowId, name: "Checkout", order: 10 });
+    const group = (grouped.metadata?.routeGroups as any[])[0];
+    expect(group).toMatchObject({ name: "Checkout", order: 10, status: "active" });
+
+    const routed = await service.upsertFlowMapRoute({
+      projectId: project.id,
+      flowId: flow.flowId,
+      name: "Primary Checkout",
+      targetSubflowId: primary.subflowId,
+      groupId: group.groupId,
+      order: 5,
+      conditionSummary: "User intent is checkout",
+      conditionSignalPath: "inputs.intent",
+      conditionOperator: "equals",
+      conditionExpected: "checkout"
+    });
+    expect(routed.rules).toHaveLength(1);
+    expect(routed.rules[0]).toMatchObject({
+      name: "Primary Checkout",
+      order: 5,
+      target: { kind: "subflow", subflowId: primary.subflowId },
+      condition: { signalPath: "inputs.intent", operator: "equals", expected: "checkout" },
+      metadata: { groupId: group.groupId, conditionSummary: "User intent is checkout" }
+    });
+
+    const withFallback = await service.upsertFlowMapRoute({ projectId: project.id, flowId: flow.flowId, name: "Fallback Route", targetSubflowId: fallback.subflowId, setAsFallback: true });
+    expect(withFallback.fallback).toEqual({ kind: "subflow", subflowId: fallback.subflowId });
+
+    const ungrouped = await service.deleteFlowMapRouteGroup({ projectId: project.id, flowId: flow.flowId, groupId: group.groupId });
+    expect(ungrouped.metadata?.routeGroups).toEqual([]);
+    expect(ungrouped.rules.find((rule) => rule.name === "Primary Checkout")?.metadata?.groupId).toBeUndefined();
+
+    const withoutRoute = await service.deleteFlowMapRoute({ projectId: project.id, flowId: flow.flowId, ruleId: routed.rules[0]!.ruleId });
+    expect(withoutRoute.rules.map((rule) => rule.name)).toEqual(["Fallback Route"]);
+  });
   it("persists Flow expansion summaries with paged run and adaptation detail reads", async () => {
     const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Expansion Pages" });
@@ -2298,22 +2340,103 @@ describe("AutomationStudioService recording persistence", () => {
       subflowId: created.subflowId,
       inputMapping: [{ flowInputId: "accountId", subflowInputId: "accountId", required: true }],
       outputMapping: [{ subflowOutputId: "receiptId", flowOutputId: "receiptId" }],
-      localInstructionIds: ["instruction.checkout"]
+      localInstructionIds: ["instruction.checkout"],
+      proposalModeOverride: "manual"
     });
+    const inheritedApproval = await service.updateFlowSubflow({ projectId: project.id, flowId: flow.flowId, subflowId: created.subflowId, proposalModeOverride: null });
     const duplicated = await service.duplicateFlowSubflow({ projectId: project.id, flowId: flow.flowId, subflowId: created.subflowId, name: "Checkout retry path" });
     const disabled = await service.disableFlowSubflow({ projectId: project.id, flowId: flow.flowId, subflowId: created.subflowId });
     const archived = await service.archiveFlowSubflow({ projectId: project.id, flowId: flow.flowId, subflowId: duplicated.subflowId });
     const page = await service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId });
+    const flowSummaries = await service.listAutomationFlowSummaries(project.id);
 
     expect(subflowGraph).toMatchObject({ flowId: created.graphFlowId, metadata: { parentFlowId: flow.flowId, parentSubflowId: created.subflowId, subflowGraph: true } });
+    expect(flowSummaries).toContainEqual(expect.objectContaining({
+      flowId: created.graphFlowId,
+      subflowGraph: true,
+      parentFlowId: flow.flowId,
+      parentSubflowId: created.subflowId
+    }));
     expect(renamed.name).toBe("Checkout happy path");
     expect(updated.inputMapping).toEqual([{ flowInputId: "accountId", subflowInputId: "accountId", required: true }]);
+    expect(updated.proposalModeOverride).toBe("manual");
+    expect(inheritedApproval.proposalModeOverride).toBeUndefined();
     expect(duplicated.metadata).toMatchObject({ duplicatedFromSubflowId: created.subflowId });
     expect(disabled.status).toBe("disabled");
     expect(archived.status).toBe("archived");
     expect(page.subflows.map((item) => item.subflowId).sort()).toEqual([created.subflowId, duplicated.subflowId].sort());
   });
 
+  it("repairs stale subflow ownership and hierarchy metadata before returning Flow summaries", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Stale Subflow Summary" });
+    const parent = await service.createFlow({ projectId: project.id, flowId: "flow.stale-parent", name: "Test" });
+    const subflow = await service.createFlowSubflow({
+      projectId: project.id,
+      flowId: parent.flowId,
+      name: "Checkout",
+      role: "primary"
+    });
+    await service.saveFlow({
+      projectId: project.id,
+      flow: {
+        ...parent,
+        expansion: { subflowIds: [{ subflowId: subflow.subflowId, name: "Checkout", metadata: { subflowCategoryId: "category.checkout" } }] },
+        metadata: { ...(parent.metadata ?? {}), subflowCategories: [{ id: "category.checkout", name: "Checkout paths", parentId: null }] }
+      } as any
+    });
+    const indexFile = path.join(tempRoot, "programs", "automation-studio", "projects", project.id, "indexes", "flows.json");
+    const staleEnvelope = JSON.parse(await readFile(indexFile, "utf8")) as {
+      version: 1;
+      data: {
+        schemaVersion: "0.1";
+        ownershipMetadataVersion?: 1;
+        hierarchyMetadataVersion?: 1;
+        flows: Array<Record<string, unknown>>;
+      };
+    };
+    delete staleEnvelope.data.ownershipMetadataVersion;
+    delete staleEnvelope.data.hierarchyMetadataVersion;
+    for (const summary of staleEnvelope.data.flows) {
+      delete summary.subflowGraph;
+      delete summary.parentFlowId;
+      delete summary.parentSubflowId;
+      delete summary.hierarchySubflows;
+      delete summary.subflowCategories;
+    }
+    await writeFile(indexFile, JSON.stringify(staleEnvelope, null, 2), "utf8");
+
+    const reloaded = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const summaries = await reloaded.listAutomationFlowSummaries(project.id);
+    const repairedEnvelope = JSON.parse(await readFile(indexFile, "utf8")) as {
+      data: {
+        ownershipMetadataVersion?: number;
+        hierarchyMetadataVersion?: number;
+        flows: Array<Record<string, unknown>>;
+      };
+    };
+    const repairedIndex = repairedEnvelope.data;
+
+    expect(summaries).toContainEqual(expect.objectContaining({
+      flowId: subflow.graphFlowId,
+      subflowGraph: true,
+      parentFlowId: parent.flowId,
+      parentSubflowId: subflow.subflowId
+    }));
+    expect(summaries).toContainEqual(expect.objectContaining({
+      flowId: parent.flowId,
+      hierarchySubflows: [{ subflowId: subflow.subflowId, name: "Checkout", parentCategoryId: "category.checkout" }],
+      subflowCategories: [{ id: "category.checkout", name: "Checkout paths" }]
+    }));
+    expect(repairedIndex.ownershipMetadataVersion).toBe(1);
+    expect(repairedIndex.hierarchyMetadataVersion).toBe(1);
+    expect(repairedIndex.flows).toContainEqual(expect.objectContaining({
+      flowId: subflow.graphFlowId,
+      subflowGraph: true,
+      parentFlowId: parent.flowId,
+      parentSubflowId: subflow.subflowId
+    }));
+  });
   it("deletes saved project artifacts and owned flow files from project folders", async () => {
     const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Deletion Project" });

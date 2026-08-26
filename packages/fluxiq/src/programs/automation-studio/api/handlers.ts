@@ -9,6 +9,8 @@ import {
   type ApprovePolicyProposalRequest,
   type CaptureClientSnapshotRequest,
   type CreateFlowSubflowRequest,
+  type DeleteFlowMapRouteGroupRequest,
+  type DeleteFlowMapRouteRequest,
   type CreateFlowRequest,
   type CreateRecordingRequest,
   type DeleteRecordingRequest,
@@ -42,6 +44,8 @@ import {
   type RevokeClientTrustRequest,
   type RenameFlowSubflowRequest,
   type ReviewFlowAdaptationRequest,
+  type SaveFlowMapRouteGroupRequest,
+  type SaveFlowMapRouteRequest,
   type SaveFlowInstructionRequest,
   type StartClientRecordingRequest,
   type StopClientRecordingRequest,
@@ -816,7 +820,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
       if (Array.isArray(payload.inputMapping)) input.inputMapping = payload.inputMapping;
       if (Array.isArray(payload.outputMapping)) input.outputMapping = payload.outputMapping;
       if (Array.isArray(payload.localInstructionIds)) input.localInstructionIds = payload.localInstructionIds.filter((id): id is string => typeof id === "string");
-      if (typeof payload.proposalModeOverride === "string") input.proposalModeOverride = payload.proposalModeOverride as any;
+      if (typeof payload.proposalModeOverride === "string" || payload.proposalModeOverride === null) input.proposalModeOverride = payload.proposalModeOverride as any;
       return { ok: true, payload: { subflow: await service.updateFlowSubflow(input) } };
     }
   });
@@ -1024,6 +1028,63 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     }
   });
   registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowMapRouteGroup,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as SaveFlowMapRouteGroupRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as SaveFlowMapRouteGroupRequest;
+      await authorizeProgramPin(identityAccess, payload as any);
+      const input: Parameters<AutomationStudioService["upsertFlowMapRouteGroup"]>[0] = { projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), name: String(payload.name ?? "") };
+      if (typeof payload.groupId === "string") input.groupId = payload.groupId;
+      if (typeof payload.description === "string") input.description = payload.description;
+      input.order = payload.order;
+      if (typeof payload.status === "string") input.status = payload.status as any;
+      if (typeof payload.collapsed === "boolean") input.collapsed = payload.collapsed;
+      return { ok: true, payload: { router: await service.upsertFlowMapRouteGroup(input) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteFlowMapRouteGroup,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as DeleteFlowMapRouteGroupRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as DeleteFlowMapRouteGroupRequest;
+      await authorizeProgramPin(identityAccess, payload as any);
+      return { ok: true, payload: { router: await service.deleteFlowMapRouteGroup({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), groupId: String(payload.groupId ?? "") }) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowMapRoute,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as SaveFlowMapRouteRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as SaveFlowMapRouteRequest;
+      await authorizeProgramPin(identityAccess, payload as any);
+      const input: Parameters<AutomationStudioService["upsertFlowMapRoute"]>[0] = { projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), name: String(payload.name ?? ""), targetSubflowId: String(payload.targetSubflowId ?? "") };
+      if (typeof payload.ruleId === "string") input.ruleId = payload.ruleId;
+      if (typeof payload.description === "string") input.description = payload.description;
+      input.order = payload.order;
+      if (typeof payload.status === "string") input.status = payload.status as any;
+      if (typeof payload.groupId === "string" || payload.groupId === null) input.groupId = payload.groupId;
+      if (typeof payload.setAsFallback === "boolean") input.setAsFallback = payload.setAsFallback;
+      input.confidence = payload.confidence;
+      if (typeof payload.conditionSummary === "string") input.conditionSummary = payload.conditionSummary;
+      if (typeof payload.conditionSignalPath === "string") input.conditionSignalPath = payload.conditionSignalPath;
+      if (typeof payload.conditionOperator === "string") input.conditionOperator = payload.conditionOperator;
+      if (payload.conditionExpected !== undefined) input.conditionExpected = payload.conditionExpected;
+      return { ok: true, payload: { router: await service.upsertFlowMapRoute(input) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteFlowMapRoute,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as DeleteFlowMapRouteRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as DeleteFlowMapRouteRequest;
+      await authorizeProgramPin(identityAccess, payload as any);
+      return { ok: true, payload: { router: await service.deleteFlowMapRoute({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), ruleId: String(payload.ruleId ?? "") }) } };
+    }
+  });  registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.startRuntimeSession,
     permission: "runtime.control",

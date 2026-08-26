@@ -108,6 +108,10 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   getFlowAdaptation: "get-flow-adaptation",
   reviewFlowAdaptation: "review-flow-adaptation",
   getFlowRouter: "get-flow-router",
+  saveFlowMapRouteGroup: "save-flow-map-route-group",
+  deleteFlowMapRouteGroup: "delete-flow-map-route-group",
+  saveFlowMapRoute: "save-flow-map-route",
+  deleteFlowMapRoute: "delete-flow-map-route",
   startRuntimeSession: "start-runtime-session",
   runRuntimeSession: "run-runtime-session",
   cancelRuntimeSession: "cancel-runtime-session",
@@ -380,7 +384,7 @@ export type UpdateFlowSubflowRequest = FlowSubflowRequest & {
   inputMapping?: Array<{ flowInputId: string; subflowInputId: string; required?: boolean }>;
   outputMapping?: Array<{ subflowOutputId: string; flowOutputId: string; required?: boolean }>;
   localInstructionIds?: string[];
-  proposalModeOverride?: string;
+  proposalModeOverride?: string | null;
   graphFlowId?: string;
 };
 
@@ -390,6 +394,39 @@ export type RenameFlowSubflowRequest = FlowSubflowRequest & {
 
 export type DuplicateFlowSubflowRequest = FlowSubflowRequest & {
   name?: string;
+};
+
+export type SaveFlowMapRouteGroupRequest = FlowIdProjectRequest & {
+  groupId?: string;
+  name: string;
+  description?: string;
+  order?: unknown;
+  status?: string;
+  collapsed?: unknown;
+};
+
+export type DeleteFlowMapRouteGroupRequest = FlowIdProjectRequest & {
+  groupId: string;
+};
+
+export type SaveFlowMapRouteRequest = FlowIdProjectRequest & {
+  ruleId?: string;
+  name: string;
+  description?: string;
+  targetSubflowId: string;
+  order?: unknown;
+  status?: string;
+  groupId?: string | null;
+  setAsFallback?: unknown;
+  confidence?: unknown;
+  conditionSummary?: string;
+  conditionSignalPath?: string;
+  conditionOperator?: string;
+  conditionExpected?: unknown;
+};
+
+export type DeleteFlowMapRouteRequest = FlowIdProjectRequest & {
+  ruleId: string;
 };
 
 export type FlowInstructionSetRequest = FlowProjectRequest & {

@@ -87,6 +87,15 @@ stays embedded as the collapsible right rail inside the policy/routine node
 editor because it is part of direct node editing, not a separate workspace
 window. Legacy Task/Routine documents may still open through a clearly marked
 read-only compatibility view, but they are not independent authoring modes.
+The Router view has two deliberate states. Before any subflow exists it shows a
+single setup action because routes cannot have a valid target. Once subflows
+exist, Router becomes an ordered route workspace: one scrollable row list shows
+priority, condition, target, group, and status; compact group controls filter
+that list; and a persistent fallback row explains unmatched behavior. Route
+creation and editing use a focused modal, with ordinary routing fields visible
+first and signal/operator/confidence controls behind an advanced disclosure.
+The populated view does not duplicate routes into a decorative decision canvas,
+keep a permanent inspector open, or expose raw Router JSON as normal authoring UI.
 
 The left project hierarchy is the primary discovery surface for Flow-owned
 objects. It does not render separate visual top-level buckets for recordings,
@@ -94,8 +103,24 @@ proposals, configuration, or other artifact categories. Flows are the product
 roots. A Flow row expands into framework-owned child folders and objects:
 Router, Subflows, Instructions, Recordings, Adaptations, Runs, Runtime Debug,
 and Settings. Subflows appear as child objects inside the Subflows folder for
-their owning Flow; recordings, adaptation/change-review records, and settings
-appear inside the same owning Flow hierarchy rather than in global category
+their owning Flow. Each subflow row is itself an expandable Flow-object container
+backed by its canonical `graphFlowId`; it contains Nodes, Subflows, Instructions,
+Recordings, Adaptations, Runs, Runtime Debug, and Settings with those objects
+scoped to the subflow graph Flow. The Nodes object owns the normal visual Flow
+editor for that subflow. Router is deliberately excluded: routing is owned by the
+top-level Flow, while a subflow is the deterministic graph selected by that Flow
+Router. Internal graph Flows never appear as separate top-level Flow rows. Flow
+containers start expanded, while subflow containers start collapsed. Clicking a
+subflow name expands it and selects Nodes; its disclosure arrow remains an
+independent collapse control. The Settings object is context-sensitive:
+top-level Flows expose runtime training, adaptation, provider, budget, and safety
+policy, while subflows expose their role, route tags, Flow-boundary input/output
+mappings, local instruction bindings, and optional approval-mode override. Subflow
+settings persist the subflow record rather than treating its internal graph Flow
+as an ordinary top-level Flow configuration. Recordings, adaptation/change-review
+records,
+and settings appear inside the same owning Flow hierarchy rather than in global
+category
 trees. Flow change proposals and proposal-linked change records are shown as
 adaptation objects inside the Adaptations folder, because Adaptations is the
 single audit/review surface for generated Flow changes. State is intentionally not a Flow-owned sidebar object
@@ -553,16 +578,15 @@ defaults. Raw JSON payload editing and per-run authorization switches for
 browser/API effects are not exposed in the normal UI; those remain internal
 runtime policy concerns.
 
-Subflows are Flow-owned sidebar objects, not a separate global workspace mode.
-The Subflows folder under a Flow can show paged summary children as the list
-grows; selecting a concrete subflow keeps the owning Flow selected and hydrates
-only that subflow's detail, router reverse references, and graph editing
-context. Subflow detail should show mapping, status, stability, raw JSON on
-demand, and the existing Flow graph canvas mounted against the subflow's
-isolated `graphFlowId`. Subflow graph drafts stay local to that selected
-subflow detail and save through `save-flow`; they do not share the parent Flow
-editor's draft state.
-
+Subflows are Flow-owned sidebar containers, not a separate editor mode. The
+Subflows folder opens a lightweight, SQL-paginated directory of subflow
+summaries. Selecting a concrete subflow from that directory resolves its exact
+`graphFlowId` and opens the normal Flow editor. Clicking the subflow container in
+the project tree expands it and selects its Nodes child, which owns that same
+editor. After refresh, an active subflow graph keeps Nodes visibly selected and
+its parent container expanded. The directory does not mount a graph canvas, own
+graph draft state, expose raw JSON, or duplicate Flow editing controls. Backing
+subflow graph Flows remain hidden from the top-level Flow hierarchy.
 LLM-assisted runtime views should display intervention records as audited
 events, not as hidden chat state. The harness resolves active instructions in
 scope order: global, project, Flow, router, subflow, node, on-error, then

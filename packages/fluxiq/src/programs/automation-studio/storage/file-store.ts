@@ -66,6 +66,17 @@ export type AutomationStudioProposalSummaryIndex = {
   proposals: AutomationStudioProposalSummary[];
 };
 
+export type AutomationStudioFlowHierarchySubflowSummary = {
+  subflowId: string;
+  name?: string;
+  parentCategoryId?: string;
+};
+
+export type AutomationStudioFlowHierarchyCategorySummary = {
+  id: string;
+  name: string;
+  parentId?: string;
+};
 export type AutomationStudioFlowSummary = {
   flowId: string;
   name: string;
@@ -78,10 +89,17 @@ export type AutomationStudioFlowSummary = {
   edgeCount: number;
   updatedAt: number;
   recordingProposalIds?: string[];
+  subflowGraph?: boolean;
+  parentFlowId?: string;
+  parentSubflowId?: string;
+  hierarchySubflows?: AutomationStudioFlowHierarchySubflowSummary[];
+  subflowCategories?: AutomationStudioFlowHierarchyCategorySummary[];
 };
 
 export type AutomationStudioFlowSummaryIndex = {
   schemaVersion: "0.1";
+  ownershipMetadataVersion?: 1;
+  hierarchyMetadataVersion?: 1;
   flows: AutomationStudioFlowSummary[];
 };
 
@@ -214,7 +232,7 @@ export function emptyProposalSummaryIndex(): AutomationStudioProposalSummaryInde
 }
 
 export function emptyFlowSummaryIndex(): AutomationStudioFlowSummaryIndex {
-  return { schemaVersion: "0.1", flows: [] };
+  return { schemaVersion: "0.1", ownershipMetadataVersion: 1, hierarchyMetadataVersion: 1, flows: [] };
 }
 
 export function emptyRuntimeSummaryIndex(): AutomationStudioRuntimeSummaryIndex {
