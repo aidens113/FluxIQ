@@ -1,27 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { automationHierarchyNodeCanCreateChildFolder, automationHierarchyNodeCanDelete, automationHierarchyNodeIsGeneratedFlowStructure, flowHierarchyNodes, proposalHierarchyNodes } from "./model";
-
-describe("proposalHierarchyNodes", () => {
-  it("groups proposal attempts under their source recording folder", () => {
-    const nodes = proposalHierarchyNodes([
-      { recordingId: "recording.one", startedAt: 1, metadata: { clientName: "Browser" } }
-    ], [
-      { proposalId: "proposal.direct", recordingId: "recording.one", metadata: { generationMode: "direct" } },
-      { proposalId: "proposal.assisted", recordingId: "recording.one", metadata: { generationMode: "llm_assisted", title: "Clean checkout" } }
-    ]);
-
-    const client = nodes.find((node) => node.kind === "folder" && node.label === "Browser");
-    const folder = nodes.find((node) => node.kind === "folder" && node.sourceId === "recording.one");
-    const proposals = nodes.filter((node) => node.kind === "proposal");
-
-    expect(client).toMatchObject({ kind: "folder", parentId: null });
-    expect(folder).toMatchObject({ kind: "folder", parentId: client?.id, sourceId: "recording.one" });
-    expect(proposals).toHaveLength(2);
-    expect(proposals.every((node) => node.parentId === folder?.id)).toBe(true);
-    expect(proposals.map((node) => node.label)).toContain("Clean checkout");
-    expect(proposals.map((node) => node.label)).toContain("Direct: proposal.direct");
-  });
-});
+import type { AutomationHierarchyNode } from "./model";
+import { automationHierarchyNodeCanCreateChildFolder, automationHierarchyNodeCanDelete, automationHierarchyNodeIsGeneratedFlowStructure, flowHierarchyNodes, indexAutomationHierarchyNodes, visibleAutomationHierarchyNodeIds } from "./model";
 
 describe("flowHierarchyNodes", () => {
   it("expands Flows into sidebar folders and Flow-owned object rows", () => {
@@ -34,6 +13,7 @@ describe("flowHierarchyNodes", () => {
           routerId: "router.checkout",
           subflowIds: [{ subflowId: "subflow.primary", name: "Primary checkout" }, "subflow.recovery"],
           instructionIds: ["instruction.global"],
+          recordingIds: ["recording.checkout"],
           changeProposalIds: ["proposal.route"],
           adaptationIds: ["adaptation.wait"],
           runIds: ["run.1"]
@@ -52,10 +32,10 @@ describe("flowHierarchyNodes", () => {
       expect.objectContaining({ kind: "flow-object", label: "Instructions", parentId: flow?.id, viewId: "flow-instructions", flowId: "flow.checkout" }),
       expect.objectContaining({ kind: "folder", label: "Recordings", parentId: flow?.id, viewId: "timeline-recording", flowId: "flow.checkout" }),
       expect.objectContaining({ kind: "folder", label: "Adaptations", parentId: flow?.id, viewId: "adaptations", flowId: "flow.checkout" }),
-      expect.objectContaining({ kind: "folder", label: "Runs", parentId: flow?.id, viewId: "runs-history", flowId: "flow.checkout" }),
       expect.objectContaining({ kind: "flow-object", label: "Settings", parentId: flow?.id, viewId: "flow-settings", flowId: "flow.checkout" })
     ]));
     expect(nodes).toContainEqual(expect.objectContaining({ label: "Router", viewId: "flow-router", kind: "flow-object" }));
+    expect(nodes.some((node) => node.label === "Runs" || node.viewId === "runs-history")).toBe(false);
     expect(nodes.some((node) => node.label === "Change Proposals")).toBe(false);
     expect(nodes.some((node) => node.label === "Proposals")).toBe(false);
     expect(nodes.some((node) => node.label === "Config" || node.viewId === "config-default")).toBe(false);
@@ -73,6 +53,22 @@ describe("flowHierarchyNodes", () => {
     expect(subflows).toHaveLength(2);
     expect(subflows.map((node) => node.label)).toContain("Primary checkout");
     expect(subflows.every((node) => node.parentId === subflowsFolder?.id && node.viewId === "policy-primary" && node.flowId === "flow.checkout" && typeof node.metadata?.graphFlowId === "string")).toBe(true);
+  });
+
+  it("does not multiply unlinked recordings across Flow hierarchies", () => {
+    const flowCount = 100;
+    const recordingCount = 500;
+    const flows = Array.from({ length: flowCount }, (_, index) => ({
+      source: "canonical",
+      flow: { flowId: "flow." + index, name: "Flow " + index, expansion: {} }
+    }));
+    const recordings = Array.from({ length: recordingCount }, (_, index) => ({ recordingId: "recording." + index }));
+
+    const nodes = flowHierarchyNodes(flows, { recordings });
+
+    expect(nodes.filter((node) => node.kind === "flow")).toHaveLength(flowCount);
+    expect(nodes.filter((node) => node.kind === "recording")).toHaveLength(0);
+    expect(nodes.length).toBeLessThan(flowCount * 10);
   });
 
 
@@ -183,6 +179,27 @@ describe("flowHierarchyNodes", () => {
     expect(settings && automationHierarchyNodeCanDelete(settings)).toBe(false);
     expect(subflowsFolder && automationHierarchyNodeCanDelete(subflowsFolder)).toBe(false);
     expect(subflow && automationHierarchyNodeCanDelete(subflow)).toBe(true);
-    expect(run && automationHierarchyNodeCanDelete(run)).toBe(true);
+    expect(nodes.some((node) => node.kind === "run" || node.viewId === "runs-history")).toBe(false);
+  });
+});
+describe("hierarchy indexing at scale", () => {
+  it("indexes and filters 10,000 nodes within the interaction budget", () => {
+    const nodes: AutomationHierarchyNode[] = Array.from({ length: 10_000 }, (_, index) => ({
+      id: "node-" + index,
+      label: index === 9_999 ? "Needle" : "Node " + index,
+      kind: index % 7 === 0 ? "folder" : "flow-object",
+      category: "flow",
+      parentId: index === 0 ? null : "node-" + Math.floor((index - 1) / 5)
+    }));
+    const startedAt = performance.now();
+    const hierarchyIndex = indexAutomationHierarchyNodes(nodes);
+    const visible = visibleAutomationHierarchyNodeIds(hierarchyIndex, (node) => node.label === "Needle");
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(hierarchyIndex.byId.size).toBe(10_000);
+    expect(hierarchyIndex.childrenByParentId.get("node-0")?.length).toBe(5);
+    expect(visible.has("node-9999")).toBe(true);
+    expect(visible.has("node-0")).toBe(true);
+    expect(elapsedMs).toBeLessThan(500);
   });
 });

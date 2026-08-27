@@ -198,7 +198,7 @@ export function shortJson(value: unknown): string {
 }
 
 export function sandboxedDocumentationHtml(html: string): string {
-  return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:"></head><body>${html}</body></html>`;
+  return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:"><style>html{font:14px system-ui,sans-serif;color:#17202a;background:#fff}body{margin:0;padding:20px;line-height:1.6;overflow-wrap:anywhere}h1,h2,h3,h4{line-height:1.25}h2{border-top:1px solid #d8dee5;padding-top:18px}a{color:#1859a9}pre{max-width:100%;overflow:auto;border:1px solid #d8dee5;background:#f5f7f9;padding:12px}code{font-family:ui-monospace,monospace}table{max-width:100%;border-collapse:collapse}th,td{border:1px solid #d8dee5;padding:7px;text-align:left}img{height:auto}</style></head><body>${html}</body></html>`;
 }
 
 export function formatDbCell(value: unknown): string {

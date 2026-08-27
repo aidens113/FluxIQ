@@ -2,8 +2,10 @@
 
 import { useMemo } from "react";
 import { useSearchParams } from "next/navigation";
+import { evaluateRequestBudget } from "./ui-performance-budgets";
 
-export type ApiResponse<T = unknown> = { ok: boolean; payload?: T; error?: string };
+export type ApiResponse<T = unknown> = { ok: boolean; payload?: T; error?: string; aborted?: boolean };
+export type ProgramApiRequestOptions = { signal?: AbortSignal };
 export type JsonObject = Record<string, unknown>;
 export type ProgramApiMetric = {
   programId: string;
@@ -24,7 +26,7 @@ export function estimateProgramApiPayloadBytes(value: unknown): number {
 }
 
 export function classifyProgramApiEndpoint(endpoint: string, payload?: JsonObject): ProgramApiMetric["classification"] {
-  if (/^(create|update|save|delete|review|approve|reject|run|finalize|publish|deprecate|repair)-/.test(endpoint)) return "mutation";
+  if (/^(append|apply|approve|create|deprecate|delete|finalize|generate|mine|normalize|propose|publish|reject|repair|reorder|review|run|save|set|start|stop|update)-/.test(endpoint)) return "mutation";
   if (endpoint.startsWith("get-") || endpoint.includes("-detail") || endpoint.endsWith("-detail")) return "detail";
   if (endpoint.startsWith("list-") || endpoint.includes("summary") || endpoint.includes("summaries") || payload?.summaries === true) return "summary";
   return "other";
@@ -41,6 +43,15 @@ export function useProgramApi(programId: string) {
     const emitMetric = (metric: ProgramApiMetric) => {
       if (process.env.NODE_ENV === "production" || typeof window === "undefined") return;
       window.dispatchEvent(new CustomEvent("program-api:metric", { detail: metric }));
+      for (const violation of evaluateRequestBudget(metric)) {
+        window.dispatchEvent(new CustomEvent("ui-performance:budget-violation", { detail: violation }));
+      }
+    };
+    const emitMutation = (endpoint: string, payload: JsonObject | undefined) => {
+      if (typeof window === "undefined" || classifyProgramApiEndpoint(endpoint, payload) !== "mutation") return;
+      window.dispatchEvent(new CustomEvent("program-api:mutation", {
+        detail: { programId, endpoint, projectId: typeof payload?.projectId === "string" ? payload.projectId : undefined }
+      }));
     };
     const readResponse = async <T,>(endpoint: string, method: "GET" | "POST", payload: JsonObject | undefined, request: Promise<Response>): Promise<ApiResponse<T>> => {
       const startedAt = performance.now();
@@ -57,8 +68,10 @@ export function useProgramApi(programId: string) {
           classification: classifyProgramApiEndpoint(endpoint, payload),
           ok: result?.ok === true
         });
+        if (result?.ok) emitMutation(endpoint, payload);
         return result ?? { ok: false, error: "Program response could not be read." };
-      } catch {
+      } catch (error) {
+        const aborted = error instanceof DOMException && error.name === "AbortError";
         emitMetric({
           programId,
           endpoint,
@@ -68,15 +81,17 @@ export function useProgramApi(programId: string) {
           classification: classifyProgramApiEndpoint(endpoint, payload),
           ok: false
         });
-        return { ok: false, error: "Program request could not be completed." };
+        return aborted
+          ? { ok: false, aborted: true, error: "Program request was cancelled." }
+          : { ok: false, error: "Program request could not be completed." };
       }
     };
     return {
-      async get<T = unknown>(endpoint: string): Promise<ApiResponse<T>> {
-        return readResponse<T>(endpoint, "GET", undefined, fetch(endpointUrl(endpoint), { cache: "no-store" }));
+      async get<T = unknown>(endpoint: string, options: ProgramApiRequestOptions = {}): Promise<ApiResponse<T>> {
+        return readResponse<T>(endpoint, "GET", undefined, fetch(endpointUrl(endpoint), { cache: "no-store", ...(options.signal ? { signal: options.signal } : {}) }));
       },
-      async post<T = unknown>(endpoint: string, payload: JsonObject): Promise<ApiResponse<T>> {
-        return readResponse<T>(endpoint, "POST", payload, fetch(endpointUrl(endpoint), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) }));
+      async post<T = unknown>(endpoint: string, payload: JsonObject, options: ProgramApiRequestOptions = {}): Promise<ApiResponse<T>> {
+        return readResponse<T>(endpoint, "POST", payload, fetch(endpointUrl(endpoint), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), ...(options.signal ? { signal: options.signal } : {}) }));
       }
     };
   }, [programId, domainId]);

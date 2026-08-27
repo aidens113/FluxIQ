@@ -141,7 +141,7 @@ export class ComputeControlService {
     await this.load();
     return {
       nodes: [...this.nodes.values()].sort((left, right) => left.label.localeCompare(right.label)),
-      commands: [...this.commands.values()].sort((left, right) => right.createdAtMs - left.createdAtMs),
+      commands: [...this.commands.values()].sort((left, right) => right.createdAtMs - left.createdAtMs).slice(0, 100),
       leases: [...this.leases.values()]
         .filter((lease) => lease.expiresAtMs > nowMs)
         .sort((left, right) => left.expiresAtMs - right.expiresAtMs)

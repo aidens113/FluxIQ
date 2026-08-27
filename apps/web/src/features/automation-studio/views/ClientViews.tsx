@@ -1,36 +1,13 @@
 "use client";
 
 import { QrCode, Radio, RefreshCcw, Zap } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { generateFlowTypeScript } from "fluxiq/automation-studio/dsl/generator";
 import { useProgramApi } from "../../programs/program-api";
-import { Field, KeyValue, StatusBadge, StatusText, VisualAlert } from "../../programs/shared-ui";
+import { AuthorizationDialog, Field, KeyValue, StatusBadge, StatusText, VisualAlert } from "../../programs/shared-ui";
 import type { AutomationFlowConfigExtension } from "../types";
 import { InspectorSection } from "./InspectorView";
-import { digits, formatTime, uniqueStrings } from "./view-utils";
-export function AutomationAssistantView(props: { node: any; recording: any; signals: any[] }) {
-  const [assistantText, setAssistantText] = useState("");
-  const [proposal, setProposal] = useState("No proposal selected.");
-  const propose = (kind: string) => {
-    setProposal(`${kind}: Context includes ${props.node?.label ?? "no node"}, ${props.recording?.recordingId ?? "no recording"}, and ${props.signals.length} signals.`);
-  };
-  return (
-    <section className="automation-assistant-view">
-      <div className="context-chip-row">
-        <span>Node: {props.node?.label ?? "none"}</span>
-        <span>Recording: {props.recording?.recordingId ?? "none"}</span>
-        <span>Signals: {props.signals.length}</span>
-      </div>
-      <textarea aria-label="Assistant request" onChange={(event) => setAssistantText(event.target.value)} placeholder="Ask for an explanation or propose a structured policy edit." value={assistantText} />
-      <div className="assistant-proposal-card">
-        <strong>Proposal Preview</strong>
-        <span>{proposal}</span>
-        <div className="inline-actions"><button className="button" onClick={() => propose("Explain selection")} type="button">Explain Selection</button><button className="button" onClick={() => propose("Compare evidence")} type="button">Compare Evidence</button><button className="button" disabled={!assistantText.trim()} onClick={() => propose("Propose policy edit")} type="button">Propose Edit</button></div>
-      </div>
-    </section>
-  );
-}
-
+import { formatTime, uniqueStrings } from "./view-utils";
 const pendingFlowConfigExtensions: AutomationFlowConfigExtension[] = [
   {
     id: "runtime-defaults",
@@ -55,6 +32,13 @@ export function AutomationConfigView(props: { configs?: any[]; flow: any; policy
   const [moduleId, setModuleId] = useState(flow?.source?.mode === "code" ? flow.source.moduleId : `flows/${flow?.flowId ?? "flow"}.flow.ts`);
   const [sourceText, setSourceText] = useState(flow?.flowId ? generateFlowTypeScript(flow) : "");
   const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{ kind: "start" | "stop" | "execute" | "revoke"; trustedClientId?: string } | null>(null);
+  const [credentials, setCredentials] = useState({ password: "", pin: "", totp: "" });
+  const [authorizationError, setAuthorizationError] = useState("");
+  const [authorizationBusy, setAuthorizationBusy] = useState(false);
+  const [pairingBusyCode, setPairingBusyCode] = useState("");
+  const refreshRequestRef = useRef(0);
   useEffect(() => {
     setName(flow?.name ?? "");
     setDescription(flow?.description ?? "");
@@ -154,17 +138,34 @@ export function AutomationConfigView(props: { configs?: any[]; flow: any; policy
   );
 }
 
-export function AutomationClientGatewayView(props: { projectId: string | null; onProcessFinalizedRecording(recordingId: string, force?: boolean, authorizationPin?: string): Promise<boolean | void> }) {
+export function clientAuthorizationCopy(kind: "start" | "stop" | "execute" | "revoke") {
+  if (kind === "start") return { title: "Start client recording", description: "Authorize a new recording for the selected connected client.", action: "Start recording" };
+  if (kind === "stop") return { title: "Stop client recording", description: "Finalize the selected client's active recording as Flow evidence.", action: "Stop recording" };
+  if (kind === "execute") return { title: "Send client action", description: "Authorize the configured test action on the selected connected client.", action: "Send action" };
+  return { title: "Revoke client trust", description: "Disconnect this trusted client and require a new pairing approval before it can reconnect.", action: "Revoke trust" };
+}
+
+export function AutomationClientGatewayView(props: { active: boolean; projectId: string | null }) {
   const api = useProgramApi("automation-studio");
   const [snapshot, setSnapshot] = useState<any>({ enabled: false, sessions: [], pairings: [], auditLog: [] });
   const [selectedSessionId, setSelectedSessionId] = useState("");
-  const [pin, setPin] = useState("");
   const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{ kind: "start" | "stop" | "execute" | "revoke"; trustedClientId?: string } | null>(null);
+  const [credentials, setCredentials] = useState({ password: "", pin: "", totp: "" });
+  const [authorizationError, setAuthorizationError] = useState("");
+  const [authorizationBusy, setAuthorizationBusy] = useState(false);
+  const [pairingBusyCode, setPairingBusyCode] = useState("");
+  const refreshRequestRef = useRef(0);
   const [actionType, setActionType] = useState("");
   const [selector, setSelector] = useState("");
   const [text, setText] = useState("");
   const refreshGateway = useCallback(async () => {
+    const requestId = ++refreshRequestRef.current;
+    setLoading(true);
     const result = await api.get<any>("client-gateway-snapshot");
+    if (refreshRequestRef.current !== requestId) return;
+    setLoading(false);
     if (!result.ok) {
       setStatus(result.error ?? "Client gateway could not be loaded.");
       return;
@@ -175,10 +176,11 @@ export function AutomationClientGatewayView(props: { projectId: string | null; o
     setSelectedSessionId((current) => sessions.some((session: any) => session.sessionId === current) ? current : sessions[0]?.sessionId ?? "");
   }, [api]);
   useEffect(() => {
+    if (!props.active) return;
     void refreshGateway();
-    const interval = window.setInterval(() => void refreshGateway(), 2500);
+    const interval = window.setInterval(() => void refreshGateway(), 5000);
     return () => window.clearInterval(interval);
-  }, [refreshGateway]);
+  }, [props.active, refreshGateway]);
   const sessions = snapshot.sessions ?? [];
   const selectedSession = sessions.find((session: any) => session.sessionId === selectedSessionId) ?? sessions[0];
   const pairings = snapshot.pairings ?? [];
@@ -187,28 +189,25 @@ export function AutomationClientGatewayView(props: { projectId: string | null; o
   useEffect(() => {
     if (!actionType && actionTypes.length) setActionType(actionTypes[0] ?? "");
   }, [actionType, actionTypes]);
-  const startRecording = async () => {
+  const startRecording = async (authorizationPin: string) => {
     if (!selectedSession) return;
     setStatus("Starting client recording...");
-    const result = await api.post<any>("start-client-recording", { sessionId: selectedSession.sessionId, projectId: props.projectId, authorizationPin: pin });
+    const result = await api.post<any>("start-client-recording", { sessionId: selectedSession.sessionId, projectId: props.projectId, authorizationPin });
     setStatus(result.ok ? `Recording ${result.payload?.recording?.recordingId ?? "started"}.` : result.error ?? "Recording could not start.");
     if (result.ok) {
-      setPin("");
       await refreshGateway();
     }
   };
-  const stopRecording = async () => {
+  const stopRecording = async (authorizationPin: string) => {
     if (!selectedSession) return;
     setStatus("Stopping client recording...");
-    const authorizationPin = pin;
     const result = await api.post<any>("stop-client-recording", { sessionId: selectedSession.sessionId, authorizationPin });
     setStatus(result.ok ? `Recording ${result.payload?.recording?.recordingId ?? "stopped"}.` : result.error ?? "Recording could not stop.");
     if (result.ok) {
       const recordingId = result.payload?.recording?.recordingId;
       if (props.projectId && recordingId) {
-        setStatus(`Recording ${recordingId} stopped. Open Proposal Generator when ready.`);
+        setStatus(`Recording ${recordingId} stopped and is available as Flow evidence.`);
       }
-      setPin("");
       await refreshGateway();
     }
   };
@@ -218,7 +217,7 @@ export function AutomationClientGatewayView(props: { projectId: string | null; o
     setStatus(result.ok ? "Snapshot request queued." : result.error ?? "Snapshot request failed.");
     if (result.ok) await refreshGateway();
   };
-  const executeAction = async () => {
+  const executeAction = async (authorizationPin: string) => {
     if (!selectedSession || !actionType) return;
     setStatus("Sending action...");
     const parameters: Record<string, unknown> = {};
@@ -226,30 +225,51 @@ export function AutomationClientGatewayView(props: { projectId: string | null; o
     if (text) parameters.text = text;
     const command: Record<string, unknown> = { actionType, parameters, timeoutMs: 10_000 };
     if (selector.trim()) command.target = { type: "selector", selector: selector.trim() };
-    const result = await api.post<any>("execute-client-action", { sessionId: selectedSession.sessionId, authorizationPin: pin, command });
+    const result = await api.post<any>("execute-client-action", { sessionId: selectedSession.sessionId, authorizationPin, command });
     setStatus(result.ok ? `Action ${result.payload?.result?.status ?? "completed"}.` : result.error ?? "Action failed.");
     if (result.ok) {
-      setPin("");
       await refreshGateway();
     }
   };
-  const revokeTrust = async (trustedClientId: string) => {
-    if (pin.length < 4) {
-      setStatus("Enter your PIN before revoking client trust.");
-      return;
-    }
-    const result = await api.post("revoke-client-trust", { trustedClientId, authorizationPin: pin });
+  const revokeTrust = async (trustedClientId: string, authorizationPin: string) => {
+    const result = await api.post("revoke-client-trust", { trustedClientId, authorizationPin });
     setStatus(result.ok ? "Client trust revoked." : result.error ?? "Client trust could not be revoked.");
     if (result.ok) {
-      setPin("");
       await refreshGateway();
     }
+  };
+  const requestAuthorization = (kind: "start" | "stop" | "execute" | "revoke", trustedClientId?: string) => {
+    setPendingAction({ kind, ...(trustedClientId ? { trustedClientId } : {}) });
+    setCredentials({ password: "", pin: "", totp: "" });
+    setAuthorizationError("");
+  };
+  const authorizeAction = async () => {
+    if (!pendingAction) return;
+    setAuthorizationBusy(true);
+    setAuthorizationError("");
+    if (pendingAction.kind === "start") await startRecording(credentials.pin);
+    if (pendingAction.kind === "stop") await stopRecording(credentials.pin);
+    if (pendingAction.kind === "execute") await executeAction(credentials.pin);
+    if (pendingAction.kind === "revoke" && pendingAction.trustedClientId) await revokeTrust(pendingAction.trustedClientId, credentials.pin);
+    setAuthorizationBusy(false);
+    setPendingAction(null);
+  };
+  const resolvePairing = async (pairingCode: string, action: "approve" | "reject") => {
+    if (pairingBusyCode) return;
+    setPairingBusyCode(pairingCode);
+    setStatus(action === "approve" ? "Approving client pairing..." : "Rejecting client pairing...");
+    try {
+      const response = await fetch(`/api/client-gateway/${action === "approve" ? "approve-pairing" : "dismiss-pairing"}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pairingCode }) });
+      if (!response.ok) { const result = await response.json().catch(() => undefined) as { error?: string } | undefined; setStatus(result?.error ?? "Pairing request could not be resolved."); return; }
+      setStatus(action === "approve" ? "Client paired." : "Pairing request rejected.");
+      await refreshGateway();
+    } catch { setStatus("The client gateway could not be reached. The pairing request remains pending."); } finally { setPairingBusyCode(""); }
   };
   return (
     <section className="automation-client-gateway-view">
       <header>
-        <div><strong>Client Gateway</strong><span>{snapshot.webRuntime?.clientGatewayPublicUrl ?? snapshot.publicUrl ?? "Host WebSocket URL"} | {snapshot.webRuntime?.clientGatewayListening === false ? "not listening" : `${sessions.length} connected`}</span></div>
-        <button className="button compact" onClick={() => void refreshGateway()} type="button"><RefreshCcw size={13} aria-hidden />Refresh</button>
+        <div><strong>Client Gateway</strong><span>{snapshot.webRuntime?.clientGatewayPublicUrl ?? snapshot.publicUrl ?? "Host WebSocket URL"} | {snapshot.webRuntime?.clientGatewayListening === false ? "not listening" : `${sessions.length} connected`}{loading ? " | refreshing" : ""}</span></div>
+        <button className="button compact" disabled={loading} onClick={() => void refreshGateway()} type="button"><RefreshCcw size={13} aria-hidden />Refresh</button>
       </header>
       <div className="automation-client-gateway-grid">
         <section className="automation-client-panel">
@@ -259,15 +279,16 @@ export function AutomationClientGatewayView(props: { projectId: string | null; o
             ? <VisualAlert
                 tone="warning"
                 title="Importer runtime not bound"
-                message={`Recording mapper proposals cannot run until the host module binds an AutomationStudioNativeNodeRuntime. Host module loaded: ${snapshot.webRuntime.hostModuleLoaded ? "yes" : "no"}. Native nodes: ${snapshot.webRuntime.automationStudio.nativeNodeDefinitionCount ?? 0}. Recording mappers: ${snapshot.webRuntime.automationStudio.recordingMapperCount ?? 0}.`}
+                message={`Legacy recording-mapper compatibility cannot run until the host module binds an AutomationStudioNativeNodeRuntime. Host module loaded: ${snapshot.webRuntime.hostModuleLoaded ? "yes" : "no"}. Native nodes: ${snapshot.webRuntime.automationStudio.nativeNodeDefinitionCount ?? 0}. Recording mappers: ${snapshot.webRuntime.automationStudio.recordingMapperCount ?? 0}.`}
               />
             : null}
-          <p className="muted-text">Open the extension and click connect. Approve pending requests from the global web-panel popup.</p>
+          <p className="muted-text">Open the extension and connect, then verify that the reference code below matches the requesting client.</p>
           <div className="automation-client-pairings">
             {pairings.slice(0, 4).map((pairing: any) => (
               <span key={pairing.pairingCode}>
                 <strong>{pairing.referenceCode ?? pairing.pairingCode}</strong>
                 <small>{pairing.consumedAt ? "Paired" : pairing.requestedByClientName ? `${pairing.requestedByClientName} | expires ${formatTime(pairing.expiresAt)}` : `Expires ${formatTime(pairing.expiresAt)}`}</small>
+                {!pairing.consumedAt ? <span className="inline-actions"><button className="button compact" disabled={Boolean(pairingBusyCode)} onClick={() => void resolvePairing(pairing.pairingCode, "approve")} type="button">Approve</button><button className="button compact" disabled={Boolean(pairingBusyCode)} onClick={() => void resolvePairing(pairing.pairingCode, "reject")} type="button">Reject</button></span> : null}
               </span>
             ))}
             {!pairings.length ? <span><strong>No approval requests</strong><small>Waiting for an extension/client connect request.</small></span> : null}
@@ -277,7 +298,7 @@ export function AutomationClientGatewayView(props: { projectId: string | null; o
               <span key={client.trustedClientId}>
                 <strong>{client.name}</strong>
                 <small>{client.status} | approved {formatTime(client.approvedAt)} | expires {formatTime(client.expiresAt)}</small>
-                {client.status === "active" ? <button className="button compact" onClick={() => void revokeTrust(client.trustedClientId)} type="button">Revoke</button> : null}
+                {client.status === "active" ? <button className="button compact" onClick={() => requestAuthorization("revoke", client.trustedClientId)} type="button">Revoke</button> : null}
               </span>
             ))}
             {!trustedClients.length ? <span><strong>No trusted clients</strong><small>Approved clients will appear here.</small></span> : null}
@@ -297,10 +318,9 @@ export function AutomationClientGatewayView(props: { projectId: string | null; o
         </section>
         <section className="automation-client-panel">
           <header><Radio size={14} aria-hidden /><strong>Recording</strong></header>
-          <Field label="PIN"><input inputMode="numeric" onChange={(event) => setPin(digits(event.target.value))} value={pin} /></Field>
           <div className="inline-actions">
-            <button className="button" disabled={!selectedSession || pin.length < 4} onClick={() => void startRecording()} type="button">Start</button>
-            <button className="button" disabled={!selectedSession || pin.length < 4} onClick={() => void stopRecording()} type="button">Stop</button>
+            <button className="button" disabled={!selectedSession || Boolean(selectedSession?.activeRecordingId)} onClick={() => requestAuthorization("start")} type="button">Start</button>
+            <button className="button" disabled={!selectedSession || !selectedSession?.activeRecordingId} onClick={() => requestAuthorization("stop")} type="button">Stop</button>
             <button className="button" disabled={!selectedSession} onClick={() => void captureSnapshot()} type="button">Snapshot</button>
           </div>
           <KeyValue rows={[
@@ -314,10 +334,11 @@ export function AutomationClientGatewayView(props: { projectId: string | null; o
           <Field label="Action"><select value={actionType} onChange={(event) => setActionType(event.target.value)}>{actionTypes.map((item) => <option key={item} value={item}>{item}</option>)}{!actionTypes.length ? <option value="">No client actions</option> : null}</select></Field>
           <Field label="Selector"><input placeholder="CSS selector or client target selector" value={selector} onChange={(event) => setSelector(event.target.value)} /></Field>
           <Field label="Text"><input value={text} onChange={(event) => setText(event.target.value)} /></Field>
-          <button className="button button-primary" disabled={!selectedSession || !actionType || pin.length < 4} onClick={() => void executeAction()} type="button">Send Action</button>
+          <button className="button button-primary" disabled={!selectedSession || !actionType} onClick={() => requestAuthorization("execute")} type="button">Send Action</button>
         </section>
       </div>
       <StatusText value={status} />
+      {pendingAction ? <AuthorizationDialog actionLabel={clientAuthorizationCopy(pendingAction.kind).action} busy={authorizationBusy} credentials={credentials} description={clientAuthorizationCopy(pendingAction.kind).description} error={authorizationError} requirements={{ pin: true }} title={clientAuthorizationCopy(pendingAction.kind).title} onAuthorize={() => void authorizeAction()} onCancel={() => !authorizationBusy && setPendingAction(null)} onChange={setCredentials} /> : null}
     </section>
   );
 }

@@ -376,3 +376,16 @@ The mock client connects, prints the reference code from
   `apps/web/src/server/client-gateway-websocket.ts`.
 - Hosts can provide their own adapter as long as they attach accepted sockets to
   `ClientGatewayService.connect()` and forward text frames to `receiveRaw()`.
+
+## Web Pairing Queue
+
+The global web pairing surface uses the shared Modal and presents one active
+request at a time. Multiple pending requests remain queued and advance only
+after the current server action succeeds. Approve and reject are not optimistic:
+a network or server failure keeps the request visible with its error.
+
+Snapshot discovery pauses its fast cycle while the document is hidden and backs
+off from one to ten seconds while idle or failing. A visible pending request
+returns to one-second refresh and shows a live expiration countdown. Dismissed
+codes are locally bounded to prevent an already rejected snapshot from flashing
+back before gateway persistence catches up.

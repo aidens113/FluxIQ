@@ -18,6 +18,8 @@ export type RunBackgroundTaskRequest = {
 export type BackgroundTaskDetailRequest = {
   taskId: string;
   limit?: number;
+  offset?: number;
+  status?: BackgroundTaskRun["status"] | "all";
 };
 
 export type RunBackgroundTaskResponse = BackgroundTaskRun;

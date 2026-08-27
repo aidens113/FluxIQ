@@ -1,8 +1,11 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   AUTOMATION_STUDIO_PROJECT_OPEN_DETAIL_ENDPOINT_DENYLIST,
   automationStudioProjectOpenRequests,
   automationStudioRuntimeSummaryRequests,
+  automationStudioGatewayActivitySnapshot,
+  automationStudioFlowNeedsDetail,
   flowSummariesToCatalogEntries,
   latestProposalForRecordingId,
   resolveActionPreviewEntryId,
@@ -12,6 +15,11 @@ import {
 import { flowHierarchyNodes } from "./hierarchy/model";
 
 describe("AutomationStudioLive state opening", () => {
+  it("does not bootstrap through the unbounded legacy snapshot endpoint", () => {
+    const source = readFileSync(new URL("./AutomationStudioLive.tsx", import.meta.url), "utf8");
+    expect(source).not.toContain('api.get("snapshot"');
+    expect(source).not.toContain('runLatest("studio-snapshot"');
+  });
   it("resolves action timeline entries to the exact action-adjacent state snapshot", () => {
     const recording = {
       timeline: [{
@@ -138,6 +146,28 @@ describe("AutomationStudioLive state opening", () => {
     const subflow = nodes.find((node) => node.sourceId === "subflow.refund");
     expect(subflow?.parentId).toBe(category?.id);
   });
+  it("rebuilds recursive Subflow scopes from refreshed compact summaries", () => {
+    const entries = flowSummariesToCatalogEntries([
+      { flowId: "flow.checkout", projectId: "project.fast", name: "Checkout", updatedAt: 100, hierarchySubflows: [{ subflowId: "subflow.pay", name: "Pay" }] },
+      { flowId: "flow.pay.graph", projectId: "project.fast", name: "Pay", updatedAt: 110, subflowGraph: true, parentFlowId: "flow.checkout", parentSubflowId: "subflow.pay", hierarchySubflows: [{ subflowId: "subflow.retry", name: "Retry", parentCategoryId: "category.recovery" }], subflowCategories: [{ id: "category.recovery", name: "Recovery" }] },
+      { flowId: "flow.retry.graph", projectId: "project.fast", name: "Retry", updatedAt: 120, subflowGraph: true, parentFlowId: "flow.pay.graph", parentSubflowId: "subflow.retry" }
+    ]);
+    const nodes = flowHierarchyNodes(entries);
+    const pay = nodes.find((node) => node.kind === "subflow" && node.sourceId === "subflow.pay");
+    const retry = nodes.find((node) => node.kind === "subflow" && node.sourceId === "subflow.retry");
+
+    expect(pay?.metadata).toMatchObject({ graphFlowId: "flow.pay.graph", defaultCollapsed: true });
+    expect(retry?.metadata).toMatchObject({ graphFlowId: "flow.retry.graph", defaultCollapsed: true });
+    const paySubflows = nodes.find((node) => node.label === "Subflows" && node.flowId === "flow.pay.graph");
+    expect(nodes).toContainEqual(expect.objectContaining({ label: "Recovery", parentId: paySubflows?.id }));
+    expect(nodes).toContainEqual(expect.objectContaining({ label: "Nodes", parentId: pay?.id, flowId: "flow.pay.graph" }));
+    expect(nodes).toContainEqual(expect.objectContaining({ label: "Settings", parentId: retry?.id, flowId: "flow.retry.graph" }));
+    expect(nodes.filter((node) => node.viewId === "flow-router")).toHaveLength(1);
+    expect(nodes.filter((node) => node.kind === "flow")).toHaveLength(1);
+    expect(automationStudioFlowNeedsDetail(entries[1]!.flow, "policy-primary", "flow")).toBe(true);
+    expect(automationStudioFlowNeedsDetail({ ...entries[1]!.flow, metadata: { ...entries[1]!.flow.metadata, summaryOnly: false } }, "policy-primary", "flow")).toBe(false);
+  });
+
   it("opens projects through summary requests without broad detail hydration", () => {
     const requests = [
       ...automationStudioProjectOpenRequests("project.fast"),
@@ -156,5 +186,22 @@ describe("AutomationStudioLive state opening", () => {
       endpoint: "list-recordings",
       payload: { projectId: "project.fast", summaries: true }
     });
+  });
+
+  it("keeps only bounded gateway activity needed by the Studio owner", () => {
+    const activity = automationStudioGatewayActivitySnapshot({
+      sessions: [{ sessionId: "client.1", activeRecordingId: "recording.live", largePayload: "discarded" }],
+      auditLog: [
+        { id: "ignored", type: "client.connected", message: "Discard this" },
+        ...Array.from({ length: 25 }, (_, index) => ({ id: "blocked." + index, type: "recording.project_required", message: "Blocked " + index }))
+      ],
+      pairings: Array.from({ length: 100 }, (_, index) => ({ id: index }))
+    });
+
+    expect(activity.sessions).toEqual([{ id: "client.1", activeRecordingId: "recording.live" }]);
+    expect(activity.auditLog).toHaveLength(20);
+    expect(activity.auditLog[0]?.id).toBe("blocked.5");
+    expect(JSON.stringify(activity)).not.toContain("largePayload");
+    expect(JSON.stringify(activity)).not.toContain("pairings");
   });
 });

@@ -96,14 +96,18 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   renameFlowSubflow: "rename-flow-subflow",
   duplicateFlowSubflow: "duplicate-flow-subflow",
   disableFlowSubflow: "disable-flow-subflow",
+  enableFlowSubflow: "enable-flow-subflow",
   archiveFlowSubflow: "archive-flow-subflow",
+  deleteFlowSubflow: "delete-flow-subflow",
   listFlowInstructions: "list-flow-instructions",
+  getFlowInstruction: "get-flow-instruction",
   getFlowInstructionSet: "get-flow-instruction-set",
   saveFlowInstruction: "save-flow-instruction",
   listFlowChangeProposals: "list-flow-change-proposals",
   getFlowChangeProposal: "get-flow-change-proposal",
   listFlowRuns: "list-flow-runs",
   getFlowRunDetail: "get-flow-run-detail",
+  listFlowRunActions: "list-flow-run-actions",
   listFlowAdaptations: "list-flow-adaptations",
   getFlowAdaptation: "get-flow-adaptation",
   reviewFlowAdaptation: "review-flow-adaptation",
@@ -111,6 +115,9 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   saveFlowMapRouteGroup: "save-flow-map-route-group",
   deleteFlowMapRouteGroup: "delete-flow-map-route-group",
   saveFlowMapRoute: "save-flow-map-route",
+  saveFlowMapFallback: "save-flow-map-fallback",
+  mutateFlowMapRoute: "mutate-flow-map-route",
+  testFlowMapRouteCondition: "test-flow-map-route-condition",
   deleteFlowMapRoute: "delete-flow-map-route",
   startRuntimeSession: "start-runtime-session",
   runRuntimeSession: "run-runtime-session",
@@ -202,6 +209,8 @@ export type GeneratePolicyResponse = {
 export type RecordingProjectRequest = {
   projectId?: string | null;
   summaries?: boolean;
+  limit?: number;
+  offset?: number;
 };
 
 export type FlowProjectRequest = {
@@ -216,6 +225,7 @@ export type CreateFlowRequest = FlowProjectRequest & {
 
 export type SaveFlowRequest = FlowProjectRequest & {
   flow: AutomationStudioFlowArtifact;
+  expectedUpdatedAt?: number;
 };
 
 export type FlowIdProjectRequest = FlowProjectRequest & {
@@ -360,12 +370,23 @@ export type ReplayPolicyAgainstRecordingRequest = RecordingProjectRequest & {
 export type FlowExpansionSummaryRequest = FlowIdProjectRequest & {
   subflowId?: string;
   status?: string;
+  risk?: string;
+  role?: string;
+  scopeKind?: string;
+  requirement?: string;
+  search?: string;
+  sort?: "updated" | "started" | "duration" | "actions" | "name" | "title" | "status" | "role" | "scope" | "priority" | "risk" | "trigger";
+  direction?: "asc" | "desc";
   limit?: unknown;
   offset?: unknown;
 };
 
 export type FlowSubflowRequest = FlowIdProjectRequest & {
   subflowId: string;
+};
+
+export type FlowInstructionRequest = FlowProjectRequest & {
+  instructionId: string;
 };
 
 export type CreateFlowSubflowRequest = FlowIdProjectRequest & {
@@ -377,6 +398,7 @@ export type CreateFlowSubflowRequest = FlowIdProjectRequest & {
 };
 
 export type UpdateFlowSubflowRequest = FlowSubflowRequest & {
+  expectedUpdatedAt?: number;
   name?: string;
   description?: string;
   role?: string;
@@ -423,8 +445,24 @@ export type SaveFlowMapRouteRequest = FlowIdProjectRequest & {
   conditionSignalPath?: string;
   conditionOperator?: string;
   conditionExpected?: unknown;
+  clearCondition?: boolean;
 };
 
+export type SaveFlowMapFallbackRequest = FlowIdProjectRequest & {
+  kind: "subflow" | "fail";
+  targetSubflowId?: string;
+  message?: string;
+};
+export type TestFlowMapRouteConditionRequest = FlowIdProjectRequest & {
+  condition?: { signalPath: string; operator: string; expected?: unknown };
+  inputs?: Record<string, unknown>;
+  currentStateSummary?: Record<string, unknown>;
+};
+
+export type MutateFlowMapRouteRequest = FlowIdProjectRequest & {
+  ruleId: string;
+  action: "move_up" | "move_down" | "duplicate" | "toggle" | "delete";
+};
 export type DeleteFlowMapRouteRequest = FlowIdProjectRequest & {
   ruleId: string;
 };
@@ -438,7 +476,7 @@ export type SaveFlowInstructionRequest = FlowIdProjectRequest & {
   instructionId?: string;
   title: string;
   body: string;
-  scopeKind?: "flow" | "router" | "subflow" | "node" | "on_error" | "adaptation_review";
+  scopeKind?: "global" | "project" | "flow" | "router" | "subflow" | "node" | "on_error" | "adaptation_review";
   routerId?: string;
   subflowId?: string;
   nodeId?: string;
@@ -454,6 +492,13 @@ export type FlowChangeProposalRequest = FlowIdProjectRequest & {
 
 export type FlowRunDetailRequest = FlowProjectRequest & {
   runId: string;
+  compact?: boolean;
+};
+
+export type FlowRunActionPageRequest = FlowProjectRequest & {
+  runId: string;
+  limit?: unknown;
+  offset?: unknown;
 };
 
 export type RuntimeSessionControlRequest = FlowProjectRequest & {

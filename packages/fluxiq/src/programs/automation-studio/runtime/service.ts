@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { createInterface } from "node:readline";
 import path from "node:path";
 import type { AutomationStudioSnapshot } from "../api/index.ts";
 import type { AutomationStudioProject, AutomationStudioProjectCategory, AutomationStudioProjectHierarchy } from "../api/contracts.ts";
@@ -265,6 +267,8 @@ type RecordingIndex = {
 
 export type AutomationStudioSubflowSummary = {
   subflowId: string;
+  summaryVersion?: 2;
+  graphFlowId?: string;
   flowId: string;
   projectId: string;
   name: string;
@@ -275,12 +279,14 @@ export type AutomationStudioSubflowSummary = {
 
 export type AutomationStudioInstructionSummary = {
   instructionId: string;
+  summaryVersion?: 2;
   flowId?: string;
   projectId: string;
   subflowId?: string;
   title: string;
   scopeKind: AutomationStudioFlowInstruction["scope"]["kind"];
   status: AutomationStudioFlowInstruction["status"];
+  requirement: AutomationStudioFlowInstruction["requirement"];
   priority: number;
   updatedAt: number;
 };
@@ -349,6 +355,13 @@ export type AutomationStudioChangeProposalSummaryPage = {
   offset: number;
 };
 
+export type AutomationStudioFlowRunActionPage = {
+  actions: AutomationStudioFlowRunActionAttemptRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
 export type AutomationStudioFlowRunSummaryPage = {
   runs: AutomationStudioFlowRunSummary[];
   total: number;
@@ -392,6 +405,7 @@ export type UpdateFlowSubflowInput = {
   projectId: string;
   flowId: string;
   subflowId: string;
+  expectedUpdatedAt?: number;
   name?: string;
   description?: string;
   role?: AutomationStudioFlowSubflow["role"];
@@ -430,6 +444,7 @@ export type UpsertFlowMapRouteInput = {
   conditionSignalPath?: string;
   conditionOperator?: string;
   conditionExpected?: unknown;
+  clearCondition?: boolean;
 };
 
 export type ReviewFlowAdaptationInput = {
@@ -449,11 +464,13 @@ type FlowRouterIndex = {
 
 type FlowSubflowIndex = {
   schemaVersion: "0.1";
+  summaryVersion?: 2;
   subflows: AutomationStudioSubflowSummary[];
 };
 
 type FlowInstructionIndex = {
   schemaVersion: "0.1";
+  summaryVersion?: 2;
   instructions: AutomationStudioInstructionSummary[];
 };
 
@@ -672,18 +689,19 @@ export class AutomationStudioService {
     };
   }
 
-  async snapshot(domainId?: string | null): Promise<AutomationStudioSnapshot> {
+  async snapshot(domainId?: string | null, options: { includeCanonical?: boolean } = { includeCanonical: true }): Promise<AutomationStudioSnapshot> {
     await this.ready;
+    const includeCanonical = options.includeCanonical !== false;
     return {
       tasks: [],
       recordings: [],
       policies: [],
       canonical: {
-        recordingSessions: await this.repositories.recordingSessions.list(domainId),
-        normalizedTimelines: await this.repositories.normalizedTimelines.list(domainId),
-        signalRegistries: await this.repositories.signalRegistries.list(domainId),
-        learnedTaskModels: await this.repositories.learnedTaskModels.list(domainId),
-        policyGraphs: await this.repositories.policyGraphs.list(domainId)
+        recordingSessions: includeCanonical ? await this.repositories.recordingSessions.list(domainId) : [],
+        normalizedTimelines: includeCanonical ? await this.repositories.normalizedTimelines.list(domainId) : [],
+        signalRegistries: includeCanonical ? await this.repositories.signalRegistries.list(domainId) : [],
+        learnedTaskModels: includeCanonical ? await this.repositories.learnedTaskModels.list(domainId) : [],
+        policyGraphs: includeCanonical ? await this.repositories.policyGraphs.list(domainId) : []
       },
       problems: [
         {
@@ -721,6 +739,33 @@ export class AutomationStudioService {
       notes: [],
       metadata: { projectId, summaryOnly: true, eventCount: item.eventCount ?? 0, noteCount: item.noteCount ?? 0 }
     }));
+  }
+
+  async listRecordingSessionSummaryPage(projectId: string | null | undefined, input: { limit: number | undefined; offset: number | undefined }): Promise<{ recordings: RecordingSession[]; page: { limit: number; offset: number; total: number } }> {
+    await this.ready;
+    const limit = Math.min(100, Math.max(1, Math.trunc(input.limit ?? 25)));
+    const offset = Math.max(0, Math.trunc(input.offset ?? 0));
+    if (!projectId || !this.projectRootDir) {
+      const summaries = (await this.listRecordingSessions(projectId)).map(summaryRecordingSession).sort((left, right) => right.startedAt - left.startedAt || left.recordingId.localeCompare(right.recordingId));
+      return { recordings: summaries.slice(offset, offset + limit), page: { limit, offset, total: summaries.length } };
+    }
+    const index = await this.readRecordingIndex(projectId);
+    const ordered = [...(index.recordings ?? [])].sort((left, right) => right.startedAt - left.startedAt || left.recordingId.localeCompare(right.recordingId));
+    const recordings = ordered.slice(offset, offset + limit).map((item) => summaryRecordingSession({
+      schemaVersion: "0.1",
+      recordingId: item.recordingId,
+      ...(item.taskId !== undefined ? { taskId: item.taskId } : {}),
+      startedAt: item.startedAt,
+      ...(item.endedAt !== undefined ? { endedAt: item.endedAt } : {}),
+      environment: { id: "environment.unspecified", label: "Unspecified environment", kind: "unspecified", domainId: null },
+      sources: [],
+      actionChannels: [],
+      initialState: { timestamp: item.startedAt, namespaces: {} },
+      timeline: [],
+      notes: [],
+      metadata: { projectId, summaryOnly: true, eventCount: item.eventCount ?? 0, noteCount: item.noteCount ?? 0 }
+    }));
+    return { recordings, page: { limit, offset, total: ordered.length } };
   }
 
   async getRecordingSession(recordingId: string, projectId?: string | null): Promise<RecordingSession> {
@@ -1824,17 +1869,18 @@ export class AutomationStudioService {
     return flow;
   }
 
-  async saveFlow(input: { projectId: string; flow: AutomationStudioFlowArtifact }): Promise<AutomationStudioFlowArtifact> {
+  async saveFlow(input: { projectId: string; flow: AutomationStudioFlowArtifact; expectedUpdatedAt?: number }): Promise<AutomationStudioFlowArtifact> {
     return await this.saveFlowInternal(input, false);
   }
 
-  private async saveFlowInternal(input: { projectId: string; flow: AutomationStudioFlowArtifact }, allowPublicationMutation: boolean): Promise<AutomationStudioFlowArtifact> {
+  private async saveFlowInternal(input: { projectId: string; flow: AutomationStudioFlowArtifact; expectedUpdatedAt?: number }, allowPublicationMutation: boolean): Promise<AutomationStudioFlowArtifact> {
     const project = await this.findProject(input.projectId);
     if (input.flow.projectId !== project.id) throw new Error("Flow projectId must match the target project.");
     const expectedScope = flowScopeForProject(project);
     if (!sameFlowScope(input.flow.scope, expectedScope)) throw new Error("Flow scope must match the target project scope.");
     const existing = await this.repositories.flows.get(input.flow.flowId);
     if (existing && existing.projectId !== project.id) throw new Error(`Flow ID is already owned by project ${existing.projectId}.`);
+    if (existing && input.expectedUpdatedAt !== undefined && existing.updatedAt !== input.expectedUpdatedAt) throw new Error(`FLOW_SAVE_CONFLICT: Flow changed after this draft began (expected ${input.expectedUpdatedAt}, current ${existing.updatedAt}).`);
     if (existing && existing.source.mode !== input.flow.source.mode) throw new Error("Flow source ownership changes require an explicit conversion endpoint.");
     if (existing) assertPublicationMutationAllowed(existing, input.flow, allowPublicationMutation);
     else if (!allowPublicationMutation && (input.flow.publication.status === "published" || input.flow.publication.status === "deprecated" || input.flow.publicationHistory?.length)) throw new Error("Published Flow state can only be created through publishFlow().");
@@ -3062,25 +3108,86 @@ export class AutomationStudioService {
     };
   }
 
-  async listFlowSubflowSummaries(input: { projectId: string; flowId?: string; limit?: unknown; offset?: unknown }): Promise<AutomationStudioSubflowSummaryPage> {
+  async listFlowSubflowSummaries(input: { projectId: string; flowId?: string; status?: string; role?: string; search?: string; sort?: "updated" | "name" | "status" | "role"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioSubflowSummaryPage> {
     const limit = clampInteger(input.limit, 1, 100, 25);
     const offset = clampInteger(input.offset, 0, 1_000_000, 0);
-    const index = await this.readFlowSubflowIndex(input.projectId);
-    const scoped = (index.subflows ?? []).filter((item) => !input.flowId || item.flowId === input.flowId);
-    return { subflows: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
+    const search = input.search?.trim().toLowerCase();
+    if (!this.projectRootDir) {
+      const index = await this.readFlowSubflowIndex(input.projectId);
+      const scoped = (index.subflows ?? []).filter((item) =>
+        (!input.flowId || item.flowId === input.flowId)
+        && (!input.status || item.status === input.status)
+        && (!input.role || item.role === input.role)
+        && (!search || item.name.toLowerCase().includes(search) || item.subflowId.toLowerCase().includes(search))
+      );
+      return { subflows: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
+    }
+    await this.ensureFlowSubflowSummaryIndex(input.projectId);
+    const repository = this.flowSubflowSummaryRepository(input.projectId);
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    if (input.flowId) { clauses.push("json_extract(data, '$.flowId') = ?"); params.push(input.flowId); }
+    if (input.status) { clauses.push("json_extract(data, '$.status') = ?"); params.push(input.status); }
+    if (input.role) { clauses.push("json_extract(data, '$.role') = ?"); params.push(input.role); }
+    if (search) {
+      clauses.push("(lower(json_extract(data, '$.name')) like ? or lower(json_extract(data, '$.subflowId')) like ?)");
+      params.push("%" + search + "%", "%" + search + "%");
+    }
+    const where = clauses.length ? "where " + clauses.join(" and ") : "";
+    const sortColumn = input.sort === "name" ? "lower(json_extract(data, '$.name'))" : input.sort === "status" ? "json_extract(data, '$.status')" : input.sort === "role" ? "json_extract(data, '$.role')" : "updated_at_ms";
+    const direction = input.direction === "asc" ? "asc" : "desc";
+    const result = await repository.transaction({}, async (transaction) => {
+      const totalRow = await transaction.get<{ total: number }>("select count(*) as total from " + repository.tableName + " " + where, params);
+      const rows = await transaction.all<{ data: string }>("select data from " + repository.tableName + " " + where + " order by " + sortColumn + " " + direction + ", id asc limit ? offset ?", [...params, limit, offset]);
+      return { total: totalRow?.total ?? 0, items: rows.map((row) => JSON.parse(row.data) as unknown as AutomationStudioSubflowSummary) };
+    });
+    return { subflows: result.items, total: result.total, limit, offset };
   }
-
-  async listFlowInstructionSummaries(input: { projectId: string; flowId?: string; subflowId?: string; limit?: unknown; offset?: unknown }): Promise<AutomationStudioInstructionSummaryPage> {
+  async listFlowInstructionSummaries(input: { projectId: string; flowId?: string; subflowId?: string; status?: string; scopeKind?: string; requirement?: string; search?: string; sort?: "updated" | "title" | "status" | "scope" | "priority"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioInstructionSummaryPage> {
     const limit = clampInteger(input.limit, 1, 100, 25);
     const offset = clampInteger(input.offset, 0, 1_000_000, 0);
-    const index = await this.readFlowInstructionIndex(input.projectId);
-    const scoped = (index.instructions ?? []).filter((item) =>
+    const search = input.search?.trim().toLowerCase();
+    const matchesScope = (item: AutomationStudioInstructionSummary) =>
       (!input.flowId || item.flowId === input.flowId || item.scopeKind === "global" || item.scopeKind === "project")
-      && (!input.subflowId || item.subflowId === input.subflowId || item.scopeKind === "flow" || item.scopeKind === "project" || item.scopeKind === "global")
-    );
-    return { instructions: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
+      && (!input.subflowId || item.subflowId === input.subflowId || item.scopeKind === "flow" || item.scopeKind === "project" || item.scopeKind === "global");
+    if (!this.projectRootDir) {
+      const index = await this.readFlowInstructionIndex(input.projectId);
+      const scoped = (index.instructions ?? []).filter((item) => matchesScope(item)
+        && (!input.status || item.status === input.status)
+        && (!input.scopeKind || item.scopeKind === input.scopeKind)
+        && (!input.requirement || item.requirement === input.requirement)
+        && (!search || item.title.toLowerCase().includes(search) || item.instructionId.toLowerCase().includes(search)));
+      const direction = input.direction === "asc" ? 1 : -1;
+      scoped.sort((left, right) => {
+        const comparison = input.sort === "title" ? left.title.localeCompare(right.title)
+          : input.sort === "status" ? left.status.localeCompare(right.status)
+          : input.sort === "scope" ? left.scopeKind.localeCompare(right.scopeKind)
+          : input.sort === "priority" ? left.priority - right.priority
+          : left.updatedAt - right.updatedAt;
+        return comparison * direction || left.instructionId.localeCompare(right.instructionId);
+      });
+      return { instructions: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
+    }
+    await this.ensureFlowInstructionSummaryIndex(input.projectId);
+    const repository = this.flowInstructionSummaryRepository(input.projectId);
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    if (input.flowId) { clauses.push("(json_extract(data, '$.flowId') = ? or json_extract(data, '$.scopeKind') in ('global', 'project'))"); params.push(input.flowId); }
+    if (input.subflowId) { clauses.push("(json_extract(data, '$.subflowId') = ? or json_extract(data, '$.scopeKind') in ('global', 'project', 'flow'))"); params.push(input.subflowId); }
+    if (input.status) { clauses.push("json_extract(data, '$.status') = ?"); params.push(input.status); }
+    if (input.scopeKind) { clauses.push("json_extract(data, '$.scopeKind') = ?"); params.push(input.scopeKind); }
+    if (input.requirement) { clauses.push("json_extract(data, '$.requirement') = ?"); params.push(input.requirement); }
+    if (search) { clauses.push("(lower(json_extract(data, '$.title')) like ? or lower(json_extract(data, '$.instructionId')) like ?)"); params.push("%" + search + "%", "%" + search + "%"); }
+    const where = clauses.length ? "where " + clauses.join(" and ") : "";
+    const sortColumn = input.sort === "title" ? "lower(json_extract(data, '$.title'))" : input.sort === "status" ? "json_extract(data, '$.status')" : input.sort === "scope" ? "json_extract(data, '$.scopeKind')" : input.sort === "priority" ? "cast(json_extract(data, '$.priority') as integer)" : "updated_at_ms";
+    const direction = input.direction === "asc" ? "asc" : "desc";
+    const result = await repository.transaction({}, async (transaction) => {
+      const totalRow = await transaction.get<{ total: number }>("select count(*) as total from " + repository.tableName + " " + where, params);
+      const rows = await transaction.all<{ data: string }>("select data from " + repository.tableName + " " + where + " order by " + sortColumn + " " + direction + ", id asc limit ? offset ?", [...params, limit, offset]);
+      return { total: totalRow?.total ?? 0, items: rows.map((row) => JSON.parse(row.data) as unknown as AutomationStudioInstructionSummary) };
+    });
+    return { instructions: result.items, total: result.total, limit, offset };
   }
-
   async listFlowChangeProposalSummaries(input: { projectId: string; flowId?: string; subflowId?: string; limit?: unknown; offset?: unknown }): Promise<AutomationStudioChangeProposalSummaryPage> {
     const limit = clampInteger(input.limit, 1, 100, 25);
     const offset = clampInteger(input.offset, 0, 1_000_000, 0);
@@ -3089,28 +3196,62 @@ export class AutomationStudioService {
     return { changeProposals: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
   }
 
-  async listFlowRunSummaries(input: { projectId: string; flowId?: string; limit?: unknown; offset?: unknown }): Promise<AutomationStudioFlowRunSummaryPage> {
+  async listFlowRunSummaries(input: { projectId: string; flowId?: string; status?: string; search?: string; sort?: "updated" | "started" | "duration" | "actions" | "status"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioFlowRunSummaryPage> {
     const limit = clampInteger(input.limit, 1, 100, 25);
     const offset = clampInteger(input.offset, 0, 1_000_000, 0);
+    const search = input.search?.trim().toLowerCase();
+    const direction = input.direction === "asc" ? "asc" : "desc";
+    const sort = input.sort ?? "updated";
     if (!this.projectRootDir) {
       const index = await this.readFlowRunIndex(input.projectId);
-      const scoped = (index.runs ?? []).filter((item) => !input.flowId || item.flowId === input.flowId);
+      const scoped = (index.runs ?? []).filter((item) =>
+        (!input.flowId || item.flowId === input.flowId)
+        && (!input.status || item.status === input.status)
+        && (!search || item.runId.toLowerCase().includes(search) || item.flowId.toLowerCase().includes(search))
+      ).sort((left, right) => compareFlowRunSummaries(left, right, sort, direction));
       return { runs: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
     }
     await this.ensureFlowRunSummaryIndex(input.projectId);
-    return await this.listSqlJsonSummaryPage(this.flowRunSummaryRepository(input.projectId), "runs", input.flowId, limit, offset);
+    return await this.listSqlFlowRunSummaryPage(this.flowRunSummaryRepository(input.projectId), {
+      ...(input.flowId ? { flowId: input.flowId } : {}),
+      ...(input.status ? { status: input.status } : {}),
+      ...(search ? { search } : {}),
+      sort,
+      direction,
+      limit,
+      offset
+    });
   }
 
-  async listFlowAdaptationSummaries(input: { projectId: string; flowId?: string; subflowId?: string; status?: string; limit?: unknown; offset?: unknown }): Promise<AutomationStudioAdaptationSummaryPage> {
+  async listFlowAdaptationSummaries(input: { projectId: string; flowId?: string; subflowId?: string; status?: string; risk?: string; search?: string; sort?: "updated" | "status" | "risk" | "trigger"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioAdaptationSummaryPage> {
     const limit = clampInteger(input.limit, 1, 100, 25);
     const offset = clampInteger(input.offset, 0, 1_000_000, 0);
+    const search = input.search?.trim().toLowerCase();
+    const sort = input.sort ?? "updated";
+    const direction = input.direction === "asc" ? "asc" : "desc";
     if (!this.projectRootDir) {
       const index = await this.readFlowAdaptationIndex(input.projectId);
-      const scoped = (index.adaptations ?? []).filter((item) => (!input.flowId || item.flowId === input.flowId) && (!input.subflowId || item.subflowId === input.subflowId) && (!input.status || item.status === input.status));
+      const scoped = (index.adaptations ?? []).filter((item) =>
+        (!input.flowId || item.flowId === input.flowId)
+        && (!input.subflowId || item.subflowId === input.subflowId)
+        && (!input.status || item.status === input.status)
+        && (!input.risk || item.riskLevel === input.risk)
+        && (!search || item.adaptationId.toLowerCase().includes(search) || item.trigger.toLowerCase().includes(search))
+      ).sort((left, right) => compareFlowAdaptationSummaries(left, right, sort, direction));
       return { adaptations: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
     }
     await this.ensureFlowAdaptationSummaryIndex(input.projectId);
-    return await this.listSqlJsonSummaryPage(this.flowAdaptationSummaryRepository(input.projectId), "adaptations", input.flowId, limit, offset, input.subflowId, input.status);
+    return await this.listSqlFlowAdaptationSummaryPage(this.flowAdaptationSummaryRepository(input.projectId), {
+      ...(input.flowId ? { flowId: input.flowId } : {}),
+      ...(input.subflowId ? { subflowId: input.subflowId } : {}),
+      ...(input.status ? { status: input.status } : {}),
+      ...(input.risk ? { risk: input.risk } : {}),
+      ...(search ? { search } : {}),
+      sort,
+      direction,
+      limit,
+      offset
+    });
   }
 
   async getFlowRouter(projectId: string, flowId: string): Promise<AutomationStudioFlowRouter | null> {
@@ -3160,6 +3301,31 @@ export class AutomationStudioService {
     });
   }
 
+  async listFlowRunActions(input: { projectId: string; runId: string; limit?: unknown; offset?: unknown }): Promise<AutomationStudioFlowRunActionPage> {
+    const limit = clampInteger(input.limit, 1, 100, 50);
+    const offset = clampInteger(input.offset, 0, 10_000_000, 0);
+    await this.findProject(input.projectId);
+    if (!this.projectRootDir) {
+      const detail = await this.getFlowRunDetail(input.projectId, input.runId);
+      const actions = detail?.actionAttempts ?? [];
+      return { actions: actions.slice(offset, offset + limit), total: actions.length, limit, offset };
+    }
+    await this.ensureFlowRunSummaryIndex(input.projectId);
+    const record = await this.flowRunSummaryRepository(input.projectId).get(input.runId);
+    if (!record) return { actions: [], total: 0, limit, offset };
+    const summary = record.data as unknown as AutomationStudioFlowRunSummary;
+    let actions: AutomationStudioFlowRunActionAttemptRecord[];
+    try {
+      actions = await readJsonLinePage<AutomationStudioFlowRunActionAttemptRecord>(this.flowRunActionsFile(input.projectId, input.runId), offset, limit);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      const detail = await this.getFlowRunDetail(input.projectId, input.runId);
+      const recoveredActions = detail?.actionAttempts ?? [];
+      await this.writeJsonLines(this.flowRunActionsFile(input.projectId, input.runId), recoveredActions);
+      actions = recoveredActions.slice(offset, offset + limit);
+    }
+    return { actions, total: summary.actionAttemptCount ?? 0, limit, offset };
+  }
   async exportFlowRunAudit(projectId: string, runId: string): Promise<JsonObject | null> {
     const detail = await this.getFlowRunDetail(projectId, runId);
     if (!detail) return null;
@@ -3182,11 +3348,22 @@ export class AutomationStudioService {
         approvalDecision: adaptation.metadata?.approvalDecision
       });
     }))).filter(isJsonRecord);
+    const runDetailJson = JSON.stringify(detail);
     return compactJsonObject({
       schemaVersion: "0.1",
       exportedAt: Date.now(),
       projectId,
       runId,
+      manifest: {
+        actionCount: detail.actionAttempts?.length ?? detail.summary.actionAttemptCount ?? 0,
+        recoveryCount: detail.recoveryAttempts?.length ?? 0,
+        routeDecisionCount: detail.routeDecisions.length,
+        subflowEntryCount: detail.subflows.length,
+        interventionCount: detail.interventions.length,
+        adaptationCount: adaptations.length,
+        evidenceCount: detail.evidence?.length ?? 0
+      },
+      integrity: { algorithm: "sha256", runDetailHash: createHash("sha256").update(runDetailJson).digest("hex") },
       runDetail: detail,
       interventionSummaries: flowRunSummaryWithInterventionSummaries(detail).interventionSummaries ?? [],
       adaptations,
@@ -3284,9 +3461,12 @@ export class AutomationStudioService {
     if (!targetSubflowId) throw new Error("Route target subflow is required.");
     const now = Date.now();
     const existing = input.ruleId ? router.rules.find((rule) => rule.ruleId === input.ruleId) : undefined;
-    const condition = routeConditionFromInput(input) ?? existing?.condition;
+    const condition = input.clearCondition ? undefined : routeConditionFromInput(input) ?? existing?.condition;
     const confidence = input.confidence === undefined ? existing?.confidence : clampNumber(input.confidence, 0, 1, 1);
-    const metadata = routeRuleMetadataWithGroup({ ...(existing?.metadata ?? {}), ...(input.conditionSummary?.trim() ? { conditionSummary: input.conditionSummary.trim() } : {}) }, input.groupId);
+    const conditionMetadata = { ...(existing?.metadata ?? {}) };
+    if (input.clearCondition) delete conditionMetadata.conditionSummary;
+    else if (input.conditionSummary?.trim()) conditionMetadata.conditionSummary = input.conditionSummary.trim();
+    const metadata = routeRuleMetadataWithGroup(conditionMetadata, input.groupId);
     const rule: AutomationStudioFlowRouteRule = removeUndefinedRouteRuleFields({
       schemaVersion: "0.1",
       ruleId: existing?.ruleId ?? `route.${randomUUID()}`,
@@ -3308,6 +3488,41 @@ export class AutomationStudioService {
     return await this.saveFlowRouter(nextRouter);
   }
 
+  async setFlowMapFallback(input: { projectId: string; flowId: string; kind: "subflow" | "fail"; targetSubflowId?: string; message?: string }): Promise<AutomationStudioFlowRouter> {
+    const router = await this.ensureFlowRouter(input.projectId, input.flowId);
+    const fallback = input.kind === "subflow"
+      ? { kind: "subflow" as const, subflowId: String(input.targetSubflowId ?? "").trim() }
+      : { kind: "fail" as const, message: input.message?.trim() || "No Flow Map route matched." };
+    if (fallback.kind === "subflow" && !fallback.subflowId) throw new Error("Fallback target subflow is required.");
+    return await this.saveFlowRouter({ ...router, fallback, updatedAt: Date.now() });
+  }
+  async mutateFlowMapRoute(input: { projectId: string; flowId: string; ruleId: string; action: "move_up" | "move_down" | "duplicate" | "toggle" | "delete" }): Promise<AutomationStudioFlowRouter> {
+    const router = await this.ensureFlowRouter(input.projectId, input.flowId);
+    const ordered = flowMapSortedRules(router.rules);
+    const index = ordered.findIndex((rule) => rule.ruleId === input.ruleId.trim());
+    if (index < 0) throw new Error("Route rule was not found.");
+    if (input.action === "delete") return await this.deleteFlowMapRoute({ projectId: input.projectId, flowId: input.flowId, ruleId: input.ruleId });
+    const now = Date.now();
+    if (input.action === "duplicate") {
+      const source = ordered[index]!;
+      const takenNames = new Set(ordered.map((rule) => rule.name.toLowerCase()));
+      let name = source.name + " copy";
+      let suffix = 2;
+      while (takenNames.has(name.toLowerCase())) name = source.name + " copy " + suffix++;
+      ordered.splice(index + 1, 0, { ...source, ruleId: "route." + randomUUID(), name, createdAt: now, updatedAt: now });
+    } else if (input.action === "toggle") {
+      const source = ordered[index]!;
+      ordered[index] = { ...source, status: source.status === "active" ? "disabled" : "active", updatedAt: now };
+    } else {
+      const targetIndex = input.action === "move_up" ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= ordered.length) return router;
+      const target = ordered[targetIndex]!;
+      ordered[targetIndex] = ordered[index]!;
+      ordered[index] = target;
+    }
+    const rules = ordered.map((rule, orderIndex) => ({ ...rule, order: orderIndex * 10, updatedAt: rule.updatedAt === now ? now : input.action.startsWith("move_") ? now : rule.updatedAt }));
+    return await this.saveFlowRouter({ ...router, rules, updatedAt: now });
+  }
   async deleteFlowMapRoute(input: { projectId: string; flowId: string; ruleId: string }): Promise<AutomationStudioFlowRouter> {
     const router = await this.ensureFlowRouter(input.projectId, input.flowId);
     const ruleId = input.ruleId.trim();
@@ -3320,7 +3535,8 @@ export class AutomationStudioService {
     if (!validation.ok) throw new Error(`Invalid Automation Studio subflow: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
     await this.ensureProjectStructure(subflow.projectId);
     await new ProgramJsonStore<JsonObject>(this.flowSubflowFile(subflow.projectId, subflow.flowId, subflow.subflowId), () => ({})).write(subflow as unknown as JsonObject);
-    await this.writeFlowSubflowIndex(subflow.projectId, (index) => ({ schemaVersion: "0.1", subflows: upsertBy(index.subflows ?? [], "subflowId", subflowSummaryFromSubflow(subflow)) }));
+    await this.writeFlowSubflowIndex(subflow.projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: upsertBy(index.subflows ?? [], "subflowId", subflowSummaryFromSubflow(subflow)) }));
+    await this.writeFlowSubflowSummary(subflow.projectId, subflowSummaryFromSubflow(subflow));
     return subflow;
   }
 
@@ -3365,6 +3581,7 @@ export class AutomationStudioService {
   async updateFlowSubflow(input: UpdateFlowSubflowInput): Promise<AutomationStudioFlowSubflow> {
     const existing = await this.getFlowSubflow(input.projectId, input.flowId, input.subflowId);
     if (!existing) throw new Error(`Unknown Automation Studio subflow: ${input.subflowId}`);
+    if (input.expectedUpdatedAt !== undefined && existing.updatedAt !== input.expectedUpdatedAt) throw new Error("SUBFLOW_SAVE_CONFLICT: This subflow changed after Settings loaded.");
     const next = {
       ...existing,
       ...(input.name !== undefined ? { name: input.name.trim() } : {}),
@@ -3387,12 +3604,29 @@ export class AutomationStudioService {
 
   async duplicateFlowSubflow(input: { projectId: string; flowId: string; subflowId: string; name?: string }): Promise<AutomationStudioFlowSubflow> {
     const existing = await this.getFlowSubflow(input.projectId, input.flowId, input.subflowId);
-    if (!existing) throw new Error(`Unknown Automation Studio subflow: ${input.subflowId}`);
+    if (!existing) throw new Error("Unknown Automation Studio subflow: " + input.subflowId);
+    if (!existing.graphFlowId) throw new Error("Subflow does not own a Nodes graph and cannot be duplicated.");
     const now = Date.now();
+    const subflowId = "subflow." + randomUUID();
+    const graphFlowId = input.flowId + "." + subflowId + ".graph";
+    const sourceGraph = await this.getFlow(input.projectId, existing.graphFlowId);
+    const name = input.name?.trim() || existing.name + " Copy";
+    await this.saveFlow({
+      projectId: input.projectId,
+      flow: {
+        ...sourceGraph,
+        flowId: graphFlowId,
+        name: name + " Graph",
+        createdAt: now,
+        updatedAt: now,
+        metadata: { ...(sourceGraph.metadata ?? {}), parentFlowId: input.flowId, parentSubflowId: subflowId, subflowGraph: true, duplicatedFromFlowId: existing.graphFlowId }
+      }
+    });
     return await this.saveFlowSubflow({
       ...existing,
-      subflowId: `subflow.${randomUUID()}`,
-      name: input.name?.trim() || `${existing.name} Copy`,
+      subflowId,
+      graphFlowId,
+      name,
       status: "active",
       createdAt: now,
       updatedAt: now,
@@ -3400,7 +3634,6 @@ export class AutomationStudioService {
       metadata: { ...(existing.metadata ?? {}), duplicatedFromSubflowId: existing.subflowId }
     });
   }
-
   async disableFlowSubflow(input: { projectId: string; flowId: string; subflowId: string }): Promise<AutomationStudioFlowSubflow> {
     const existing = await this.getFlowSubflow(input.projectId, input.flowId, input.subflowId);
     if (!existing) throw new Error(`Unknown Automation Studio subflow: ${input.subflowId}`);
@@ -3413,12 +3646,32 @@ export class AutomationStudioService {
     return await this.saveFlowSubflow({ ...existing, status: "archived", updatedAt: Date.now() });
   }
 
+  async enableFlowSubflow(input: { projectId: string; flowId: string; subflowId: string }): Promise<AutomationStudioFlowSubflow> {
+    const existing = await this.getFlowSubflow(input.projectId, input.flowId, input.subflowId);
+    if (!existing) throw new Error("Unknown Automation Studio subflow: " + input.subflowId);
+    return await this.saveFlowSubflow({ ...existing, status: "active", updatedAt: Date.now() });
+  }
+
+  async deleteFlowSubflow(input: { projectId: string; flowId: string; subflowId: string }): Promise<{ deletedSubflowId: string; deletedGraphFlowId: string }> {
+    const existing = await this.getFlowSubflow(input.projectId, input.flowId, input.subflowId);
+    if (!existing) throw new Error("Unknown Automation Studio subflow: " + input.subflowId);
+    if (!existing.graphFlowId) throw new Error("Subflow does not own a Nodes graph and cannot be deleted safely.");
+    const router = await this.getFlowRouter(input.projectId, input.flowId);
+    const referenced = router?.rules.some((rule) => rule.target.subflowId === input.subflowId) || (router?.fallback?.kind === "subflow" && router.fallback.subflowId === input.subflowId);
+    if (referenced) throw new Error("Remove this Subflow from Router routes and fallback before deleting it.");
+    await this.deleteFlow({ projectId: input.projectId, flowId: existing.graphFlowId });
+    await ProgramJsonStore.deletePath(this.flowSubflowFile(input.projectId, input.flowId, input.subflowId));
+    await this.writeFlowSubflowIndex(input.projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: (index.subflows ?? []).filter((item) => item.subflowId !== input.subflowId) }));
+    if (this.projectRootDir) await this.flowSubflowSummaryRepository(input.projectId).delete(input.subflowId);
+    return { deletedSubflowId: input.subflowId, deletedGraphFlowId: existing.graphFlowId };
+  }
   async saveFlowInstruction(projectId: string, instruction: AutomationStudioFlowInstruction): Promise<AutomationStudioFlowInstruction> {
     const summary = instructionSummaryFromInstruction(instruction);
     const filePath = summary.flowId ? this.flowInstructionFile(projectId, summary.flowId, instruction.instructionId) : this.projectInstructionFile(projectId, instruction.instructionId);
     await this.ensureProjectStructure(projectId);
     await new ProgramJsonStore<JsonObject>(filePath, () => ({})).write(instruction as unknown as JsonObject);
-    await this.writeFlowInstructionIndex(projectId, (index) => ({ schemaVersion: "0.1", instructions: upsertBy(index.instructions ?? [], "instructionId", { ...summary, projectId }) }));
+    await this.writeFlowInstructionIndex(projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, instructions: upsertBy(index.instructions ?? [], "instructionId", { ...summary, projectId }) }));
+    await this.writeFlowInstructionSummary(projectId, { ...summary, projectId });
     return instruction;
   }
 
@@ -3442,6 +3695,7 @@ export class AutomationStudioService {
     await this.ensureProjectStructure(projectId);
     await new ProgramJsonStore<JsonObject>(this.flowRunDetailFile(projectId, runId), () => ({})).write(normalizedDetail as unknown as JsonObject);
     await Promise.all([
+      this.writeJsonLines(this.flowRunActionsFile(projectId, runId), normalizedDetail.actionAttempts ?? []),
       this.writeJsonLines(this.flowRunRouteDecisionsFile(projectId, runId), normalizedDetail.routeDecisions),
       this.writeJsonLines(this.flowRunSubflowsFile(projectId, runId), normalizedDetail.subflows),
       this.writeJsonLines(this.flowRunInterventionsFile(projectId, runId), normalizedDetail.interventions)
@@ -3845,7 +4099,8 @@ export class AutomationStudioService {
     if (deleteGraphFlow && graphFlowId) await this.deleteFlow({ projectId, flowId: graphFlowId }).catch(() => ({ deletedFlowId: graphFlowId }));
     if (flowId && subflowId) {
       await ProgramJsonStore.deletePath(this.flowSubflowFile(projectId, flowId, subflowId));
-      await this.writeFlowSubflowIndex(projectId, (index) => ({ schemaVersion: "0.1", subflows: (index.subflows ?? []).filter((item) => item.subflowId !== subflowId) }));
+      await this.writeFlowSubflowIndex(projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: (index.subflows ?? []).filter((item) => item.subflowId !== subflowId) }));
+      if (this.projectRootDir) await this.flowSubflowSummaryRepository(projectId).delete(subflowId);
     }
   }
 
@@ -4488,6 +4743,14 @@ export class AutomationStudioService {
     return new SQLiteRepository<JsonObject>({ rootDir: this.projectFile(projectId, "runtime", "sqlite"), kind: "runtime.sessions", layoutVersion: 1 });
   }
 
+  private flowSubflowSummaryRepository(projectId: string): SQLiteRepository<JsonObject> {
+    return new SQLiteRepository<JsonObject>({ rootDir: this.projectFile(projectId, "runtime", "sqlite"), kind: "flow.subflows", layoutVersion: 1 });
+  }
+
+  private flowInstructionSummaryRepository(projectId: string): SQLiteRepository<JsonObject> {
+    return new SQLiteRepository<JsonObject>({ rootDir: this.projectFile(projectId, "runtime", "sqlite"), kind: "flow.instructions", layoutVersion: 1 });
+  }
+
   private flowRunSummaryRepository(projectId: string): SQLiteRepository<JsonObject> {
     return new SQLiteRepository<JsonObject>({ rootDir: this.projectFile(projectId, "runtime", "sqlite"), kind: "flow.runs", layoutVersion: 1 });
   }
@@ -4513,6 +4776,51 @@ export class AutomationStudioService {
     }
   }
 
+  private async ensureFlowSubflowSummaryIndex(projectId: string): Promise<void> {
+    await this.findProject(projectId);
+    if (!this.projectRootDir) return;
+    let index: FlowSubflowIndex = await this.readFlowSubflowIndex(projectId).catch(() => ({ schemaVersion: "0.1", subflows: [] }));
+    if (index.summaryVersion !== 2 || (index.subflows ?? []).some((summary) => summary.summaryVersion !== 2)) {
+      const details = (await Promise.all((index.subflows ?? []).map((summary) => this.getFlowSubflow(projectId, summary.flowId, summary.subflowId))))
+        .filter((subflow): subflow is AutomationStudioFlowSubflow => Boolean(subflow));
+      index = await this.writeFlowSubflowIndex(projectId, () => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: details.map(subflowSummaryFromSubflow) }));
+    }
+    const repository = this.flowSubflowSummaryRepository(projectId);
+    const page = await repository.listPage({}, { limit: 1, offset: 0 });
+    const legacyRow = await repository.transaction({}, (transaction) => transaction.get<{ total: number }>(
+      "select count(*) as total from " + repository.tableName + " where json_extract(data, '$.summaryVersion') is null"
+    ));
+    if (page.total >= (index.subflows ?? []).length && (legacyRow?.total ?? 0) === 0) return;
+    for (const summary of index.subflows ?? []) await this.writeFlowSubflowSummary(projectId, summary);
+  }
+
+  private async ensureFlowInstructionSummaryIndex(projectId: string): Promise<void> {
+    await this.findProject(projectId);
+    if (!this.projectRootDir) return;
+    let index: FlowInstructionIndex = await this.readFlowInstructionIndex(projectId).catch(() => ({ schemaVersion: "0.1", instructions: [] }));
+    if (index.summaryVersion !== 2 || (index.instructions ?? []).some((summary) => summary.summaryVersion !== 2)) {
+      const details = (await Promise.all((index.instructions ?? []).map((summary) => this.getFlowInstruction(projectId, summary.instructionId))))
+        .filter((instruction): instruction is AutomationStudioFlowInstruction => Boolean(instruction));
+      index = await this.writeFlowInstructionIndex(projectId, () => ({ schemaVersion: "0.1", summaryVersion: 2, instructions: details.map(instructionSummaryFromInstruction) }));
+    }
+    const repository = this.flowInstructionSummaryRepository(projectId);
+    const page = await repository.listPage({}, { limit: 1, offset: 0 });
+    const legacyRow = await repository.transaction({}, (transaction) => transaction.get<{ total: number }>(
+      "select count(*) as total from " + repository.tableName + " where json_extract(data, '$.summaryVersion') is null"
+    ));
+    if (page.total >= (index.instructions ?? []).length && (legacyRow?.total ?? 0) === 0) return;
+    for (const summary of index.instructions ?? []) await this.writeFlowInstructionSummary(projectId, summary);
+  }
+
+  private async writeFlowInstructionSummary(projectId: string, summary: AutomationStudioInstructionSummary): Promise<void> {
+    if (!this.projectRootDir) return;
+    await this.flowInstructionSummaryRepository(projectId).put(createRecord({ id: summary.instructionId, kind: "flow.instructions", data: summary as unknown as JsonObject, nowMs: summary.updatedAt }));
+  }
+
+  private async writeFlowSubflowSummary(projectId: string, summary: AutomationStudioSubflowSummary): Promise<void> {
+    if (!this.projectRootDir) return;
+    await this.flowSubflowSummaryRepository(projectId).put(createRecord({ id: summary.subflowId, kind: "flow.subflows", data: summary as unknown as JsonObject, nowMs: summary.updatedAt }));
+  }
   private async readPipelineIndex(projectId: string): Promise<PipelineIndex> {
     await this.findProject(projectId);
     return await new ProgramJsonStore<PipelineIndex>(this.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).read();
@@ -4595,6 +4903,86 @@ export class AutomationStudioService {
     }));
   }
 
+  private async listSqlFlowRunSummaryPage(
+    repository: SQLiteRepository<JsonObject>,
+    input: { flowId?: string; status?: string; search?: string; sort: "updated" | "started" | "duration" | "actions" | "status"; direction: "asc" | "desc"; limit: number; offset: number }
+  ): Promise<AutomationStudioFlowRunSummaryPage> {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    if (input.flowId) {
+      clauses.push("json_extract(data, '$.flowId') = ?");
+      params.push(input.flowId);
+    }
+    if (input.status) {
+      clauses.push("json_extract(data, '$.status') = ?");
+      params.push(input.status);
+    }
+    if (input.search) {
+      clauses.push("(lower(id) like ? or lower(json_extract(data, '$.flowId')) like ?)");
+      params.push(`%${input.search}%`, `%${input.search}%`);
+    }
+    const sortExpressions = {
+      updated: "updated_at_ms",
+      started: "coalesce(cast(json_extract(data, '$.startedAt') as integer), 0)",
+      duration: "coalesce(cast(json_extract(data, '$.finishedAt') as integer), updated_at_ms) - coalesce(cast(json_extract(data, '$.startedAt') as integer), updated_at_ms)",
+      actions: "coalesce(cast(json_extract(data, '$.actionAttemptCount') as integer), 0)",
+      status: "lower(coalesce(json_extract(data, '$.status'), ''))"
+    } as const;
+    const where = clauses.length ? `where ${clauses.join(" and ")}` : "";
+    const orderBy = sortExpressions[input.sort];
+    const result = await repository.transaction({}, async (transaction) => {
+      const totalRow = await transaction.get<{ total: number }>(`select count(*) as total from ${repository.tableName} ${where}`, params);
+      const rows = await transaction.all<{ data: string }>(
+        `select data from ${repository.tableName} ${where} order by ${orderBy} ${input.direction}, id ${input.direction} limit ? offset ?`,
+        [...params, input.limit, input.offset]
+      );
+      return { total: totalRow?.total ?? 0, runs: rows.map((row) => JSON.parse(row.data) as unknown as AutomationStudioFlowRunSummary) };
+    });
+    return { runs: result.runs, total: result.total, limit: input.limit, offset: input.offset };
+  }
+  private async listSqlFlowAdaptationSummaryPage(
+    repository: SQLiteRepository<JsonObject>,
+    input: { flowId?: string; subflowId?: string; status?: string; risk?: string; search?: string; sort: "updated" | "status" | "risk" | "trigger"; direction: "asc" | "desc"; limit: number; offset: number }
+  ): Promise<AutomationStudioAdaptationSummaryPage> {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    if (input.flowId) {
+      clauses.push("json_extract(data, '$.flowId') = ?");
+      params.push(input.flowId);
+    }
+    if (input.subflowId) {
+      clauses.push("json_extract(data, '$.subflowId') = ?");
+      params.push(input.subflowId);
+    }
+    if (input.status) {
+      clauses.push("json_extract(data, '$.status') = ?");
+      params.push(input.status);
+    }
+    if (input.risk) {
+      clauses.push("json_extract(data, '$.riskLevel') = ?");
+      params.push(input.risk);
+    }
+    if (input.search) {
+      clauses.push("(lower(id) like ? or lower(coalesce(json_extract(data, '$.trigger'), '')) like ?)");
+      params.push('%' + input.search + '%', '%' + input.search + '%');
+    }
+    const sortExpressions = {
+      updated: "updated_at_ms",
+      status: "lower(coalesce(json_extract(data, '$.status'), ''))",
+      risk: "case lower(coalesce(json_extract(data, '$.riskLevel'), '')) when 'destructive' then 4 when 'high' then 3 when 'medium' then 2 else 1 end",
+      trigger: "lower(coalesce(json_extract(data, '$.trigger'), ''))"
+    } as const;
+    const where = clauses.length ? 'where ' + clauses.join(' and ') : '';
+    const result = await repository.transaction({}, async (transaction) => {
+      const totalRow = await transaction.get<{ total: number }>('select count(*) as total from ' + repository.tableName + ' ' + where, params);
+      const rows = await transaction.all<{ data: string }>(
+        'select data from ' + repository.tableName + ' ' + where + ' order by ' + sortExpressions[input.sort] + ' ' + input.direction + ', id ' + input.direction + ' limit ? offset ?',
+        [...params, input.limit, input.offset]
+      );
+      return { total: totalRow?.total ?? 0, adaptations: rows.map((row) => JSON.parse(row.data) as unknown as AutomationStudioAdaptationSummary) };
+    });
+    return { adaptations: result.adaptations, total: result.total, limit: input.limit, offset: input.offset };
+  }
   private async listSqlJsonSummaryPage(
     repository: SQLiteRepository<JsonObject>,
     field: "runs",
@@ -4602,6 +4990,7 @@ export class AutomationStudioService {
     limit: number,
     offset: number
   ): Promise<AutomationStudioFlowRunSummaryPage>;
+
   private async listSqlJsonSummaryPage(
     repository: SQLiteRepository<JsonObject>,
     field: "adaptations",
@@ -4611,6 +5000,7 @@ export class AutomationStudioService {
     subflowId?: string,
     status?: string
   ): Promise<AutomationStudioAdaptationSummaryPage>;
+
   private async listSqlJsonSummaryPage(
     repository: SQLiteRepository<JsonObject>,
     field: "runs" | "adaptations",
@@ -4760,6 +5150,10 @@ export class AutomationStudioService {
 
   private flowRunDetailFile(projectId: string, runId: string): string {
     return path.join(this.flowRunDirectory(projectId, runId), "run.json");
+  }
+
+  private flowRunActionsFile(projectId: string, runId: string): string {
+    return path.join(this.flowRunDirectory(projectId, runId), "actions.jsonl");
   }
 
   private flowRunRouteDecisionsFile(projectId: string, runId: string): string {
@@ -5820,11 +6214,11 @@ function emptyFlowRouterIndex(): FlowRouterIndex {
 }
 
 function emptyFlowSubflowIndex(): FlowSubflowIndex {
-  return { schemaVersion: "0.1", subflows: [] };
+  return { schemaVersion: "0.1", summaryVersion: 2, subflows: [] };
 }
 
 function emptyFlowInstructionIndex(): FlowInstructionIndex {
-  return { schemaVersion: "0.1", instructions: [] };
+  return { schemaVersion: "0.1", summaryVersion: 2, instructions: [] };
 }
 
 function emptyFlowChangeProposalIndex(): FlowChangeProposalIndex {
@@ -5890,6 +6284,8 @@ function routerSummaryFromRouter(router: AutomationStudioFlowRouter): Automation
 function subflowSummaryFromSubflow(subflow: AutomationStudioFlowSubflow): AutomationStudioSubflowSummary {
   return {
     subflowId: subflow.subflowId,
+    summaryVersion: 2,
+    ...(subflow.graphFlowId ? { graphFlowId: subflow.graphFlowId } : {}),
     flowId: subflow.flowId,
     projectId: subflow.projectId,
     name: subflow.name,
@@ -5936,6 +6332,10 @@ function withFlowMapRouteGroups(router: AutomationStudioFlowRouter, groups: Auto
 
 function nextRouteGroupOrder(groups: AutomationStudioFlowRouteGroup[]): number {
   return groups.reduce((max, group) => Math.max(max, group.order), -10) + 10;
+}
+
+function flowMapSortedRules(rules: AutomationStudioFlowRouteRule[]): AutomationStudioFlowRouteRule[] {
+  return rules.slice().sort((left, right) => left.order - right.order || left.name.localeCompare(right.name));
 }
 
 function nextRouteOrder(rules: AutomationStudioFlowRouteRule[]): number {
@@ -5987,12 +6387,14 @@ function instructionSummaryFromInstruction(instruction: AutomationStudioFlowInst
   const scope = instruction.scope;
   return {
     instructionId: instruction.instructionId,
+    summaryVersion: 2,
     ...(scope.kind !== "global" && "projectId" in scope ? { projectId: scope.projectId } : { projectId: "global" }),
     ...(scope.kind !== "global" && "flowId" in scope ? { flowId: scope.flowId } : {}),
     ...(scope.kind !== "global" && "subflowId" in scope && scope.subflowId ? { subflowId: scope.subflowId } : {}),
     title: instruction.title,
     scopeKind: scope.kind,
     status: instruction.status,
+    requirement: instruction.requirement,
     priority: instruction.priority,
     updatedAt: instruction.updatedAt
   };
@@ -7477,7 +7879,11 @@ function mergedFlowSettingsMetadata(metadata: JsonObject | undefined): JsonObjec
     ...source,
     trainingModeSettings: {
       ...(jsonObjectFromUnknown(defaults.trainingModeSettings) ?? {}),
-      ...(jsonObjectFromUnknown(source.trainingModeSettings) ?? {})
+      ...(jsonObjectFromUnknown(source.trainingModeSettings) ?? {}),
+      recoveryBudget: {
+        ...(jsonObjectFromUnknown(jsonObjectFromUnknown(defaults.trainingModeSettings)?.recoveryBudget) ?? {}),
+        ...(jsonObjectFromUnknown(jsonObjectFromUnknown(source.trainingModeSettings)?.recoveryBudget) ?? {})
+      }
     },
     adaptationPolicySettings: {
       ...(jsonObjectFromUnknown(defaults.adaptationPolicySettings) ?? {}),
@@ -7489,12 +7895,16 @@ function mergedFlowSettingsMetadata(metadata: JsonObject | undefined): JsonObjec
 function trainingModeSettingsFromMetadata(metadata: JsonObject): AutomationStudioTrainingModeSettings {
   const settings = jsonObjectFromUnknown(metadata.trainingModeSettings) ?? {};
   const budgets = jsonObjectFromUnknown(settings.budgets) ?? {};
+  const recoveryBudget = jsonObjectFromUnknown(settings.recoveryBudget) ?? {};
   const trainForRunCount = finiteNumber(settings.trainForRunCount);
   const stableRunThreshold = finiteNumber(settings.stableRunThreshold);
   const minimumStabilityScore = finiteNumber(settings.minimumStabilityScore);
   const maxInterventionsPerRun = finiteNumber(budgets.maxInterventionsPerRun);
   const maxTokensPerRun = finiteNumber(budgets.maxTokensPerRun);
   const maxCostUsdPerTrainingWindow = finiteNumber(budgets.maxCostUsdPerTrainingWindow);
+  const maxRetriesPerAction = finiteNumber(recoveryBudget.maxRetriesPerAction);
+  const maxRecoveryAttemptsPerSubflow = finiteNumber(recoveryBudget.maxRecoveryAttemptsPerSubflow);
+  const maxReroutesPerRun = finiteNumber(recoveryBudget.maxReroutesPerRun);
   return {
     mode: trainingModeValue(settings.mode ?? metadata.trainingMode),
     ...(trainForRunCount !== undefined ? { trainForRunCount } : {}),
@@ -7506,6 +7916,11 @@ function trainingModeSettingsFromMetadata(metadata: JsonObject): AutomationStudi
     proposalApprovalMode: approvalModeValue(settings.proposalApprovalMode ?? metadata.proposalApprovalMode ?? metadata.proposalMode),
     allowPromotion: booleanSetting(settings.allowPromotion, false),
     requireFirstManualReviewBeforeAutoPromotion: booleanSetting(settings.requireFirstManualReviewBeforeAutoPromotion ?? metadata.requireFirstManualReviewBeforeAutoPromotion, false),
+    recoveryBudget: {
+      ...(maxRetriesPerAction !== undefined ? { maxRetriesPerAction } : {}),
+      ...(maxRecoveryAttemptsPerSubflow !== undefined ? { maxRecoveryAttemptsPerSubflow } : {}),
+      ...(maxReroutesPerRun !== undefined ? { maxReroutesPerRun } : {})
+    },
     budgets: {
       ...(maxInterventionsPerRun !== undefined ? { maxInterventionsPerRun } : {}),
       ...(maxTokensPerRun !== undefined ? { maxTokensPerRun } : {}),
@@ -7616,6 +8031,7 @@ function runtimeAdaptationContextWithRunOverride(
 function recoveryBudgetFromRuntimeAdaptationContext(context: AutomationStudioRuntimeAdaptationContext): AutomationStudioRecoveryBudget {
   const maxAdaptationOrLlmAttemptsPerRun = firstFiniteNumber(context.policy.maxInterventionsPerRun, context.settings.budgets?.maxInterventionsPerRun);
   return {
+    ...(context.settings.recoveryBudget ?? {}),
     ...(maxAdaptationOrLlmAttemptsPerRun !== undefined ? { maxAdaptationOrLlmAttemptsPerRun } : {})
   };
 }
@@ -7903,6 +8319,67 @@ function jsonObjectFromUnknown(value: unknown): JsonObject | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : null;
 }
 
+async function readJsonLinePage<T>(filePath: string, offset: number, limit: number): Promise<T[]> {
+  const stream = createReadStream(filePath, { encoding: "utf8" });
+  const lines = createInterface({ input: stream, crlfDelay: Infinity });
+  const items: T[] = [];
+  let index = 0;
+  try {
+    for await (const line of lines) {
+      if (!line.trim()) continue;
+      if (index >= offset && items.length < limit) items.push(JSON.parse(line) as T);
+      index += 1;
+      if (items.length >= limit) break;
+    }
+  } finally {
+    lines.close();
+    stream.destroy();
+  }
+  return items;
+}
+function compareFlowAdaptationSummaries(
+  left: AutomationStudioAdaptationSummary,
+  right: AutomationStudioAdaptationSummary,
+  sort: "updated" | "status" | "risk" | "trigger",
+  direction: "asc" | "desc"
+): number {
+  const riskRank = (value: string): number => value === "destructive" ? 4 : value === "high" ? 3 : value === "medium" ? 2 : 1;
+  const value = (adaptation: AutomationStudioAdaptationSummary): number | string => {
+    if (sort === "status") return adaptation.status;
+    if (sort === "risk") return riskRank(adaptation.riskLevel);
+    if (sort === "trigger") return adaptation.trigger;
+    return adaptation.updatedAt;
+  };
+  const leftValue = value(left);
+  const rightValue = value(right);
+  const compared = typeof leftValue === "number" && typeof rightValue === "number"
+    ? leftValue - rightValue
+    : String(leftValue).localeCompare(String(rightValue));
+  const directed = direction === "asc" ? compared : -compared;
+  if (directed !== 0) return directed;
+  return direction === "asc" ? left.adaptationId.localeCompare(right.adaptationId) : right.adaptationId.localeCompare(left.adaptationId);
+}function compareFlowRunSummaries(
+  left: AutomationStudioFlowRunSummary,
+  right: AutomationStudioFlowRunSummary,
+  sort: "updated" | "started" | "duration" | "actions" | "status",
+  direction: "asc" | "desc"
+): number {
+  const value = (run: AutomationStudioFlowRunSummary): number | string => {
+    if (sort === "started") return run.startedAt ?? 0;
+    if (sort === "duration") return (run.finishedAt ?? run.updatedAt) - (run.startedAt ?? run.updatedAt);
+    if (sort === "actions") return run.actionAttemptCount ?? 0;
+    if (sort === "status") return run.status;
+    return run.updatedAt;
+  };
+  const leftValue = value(left);
+  const rightValue = value(right);
+  const compared = typeof leftValue === "number" && typeof rightValue === "number"
+    ? leftValue - rightValue
+    : String(leftValue).localeCompare(String(rightValue));
+  const directed = direction === "asc" ? compared : -compared;
+  if (directed !== 0) return directed;
+  return direction === "asc" ? left.runId.localeCompare(right.runId) : right.runId.localeCompare(left.runId);
+}
 function clampInteger(value: unknown, min: number, max: number, fallback: number): number {
   const numeric = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(numeric)) return fallback;

@@ -30,6 +30,11 @@ export type AutomationStudioTrainingModeSettings = {
   allowPromotion: boolean;
   requireFirstManualReviewBeforeAutoPromotion?: boolean;
   budgets?: AutomationStudioTrainingBudgetControls;
+  recoveryBudget?: {
+    maxRetriesPerAction?: number;
+    maxRecoveryAttemptsPerSubflow?: number;
+    maxReroutesPerRun?: number;
+  };
   frozenScopes?: AutomationStudioFrozenScope[];
   metadata?: JsonObject;
 };

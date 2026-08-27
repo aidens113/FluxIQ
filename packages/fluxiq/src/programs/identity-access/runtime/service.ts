@@ -124,6 +124,10 @@ export class IdentityAccessService {
     const existing = this.users.get(params.id);
     if (!existing) throw new Error(`Unknown user: ${params.id}`);
     if (params.roleId && !this.roles.has(params.roleId)) throw new Error(`Unknown role: ${params.roleId}`);
+    const removesFinalAdmin = existing.enabled && existing.roleId === "admin"
+      && (params.enabled === false || (params.roleId !== undefined && params.roleId !== "admin"))
+      && ![...this.users.values()].some((user) => user.id !== existing.id && user.enabled && user.roleId === "admin");
+    if (removesFinalAdmin) throw new Error("At least one enabled administrator is required");
     const next: User = {
       ...existing,
       username: params.username ?? existing.username,

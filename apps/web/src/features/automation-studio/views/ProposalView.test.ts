@@ -17,22 +17,20 @@ describe("AutomationProposalView state linking", () => {
           }]
       },
       proposalReview: null,
-      proposalTargetFlowId: "",
       recordings: [{ recordingId: "recording.web" }],
       selectedProposal: { proposalId: "proposal.partial", recordingId: "recording.web", candidates: [] },
       selectedRecording: { recordingId: "recording.web" },
       onEnsureInspectorAvailable: () => undefined,
-      onOpenRecording: () => undefined,
-      onOpenState: () => undefined,
-      onPipelineAction: () => Promise.resolve(false),
-      onProposalReviewChange: () => undefined,
-      onProcessFinalizedRecording: () => Promise.resolve(false),
-      onGenerateDirectProposal: () => Promise.resolve(false),
-      onProcessProposalWithLlm: () => undefined,
       setSelection: () => undefined
     }));
 
     expect(html).toContain("Recording Flow Proposal: unknown mapper");
+    expect(html).toContain("Legacy proposal");
+    expect(html).not.toContain("Approve to Open Flow");
+    expect(html).not.toContain("Generate Direct Proposal");
+    expect(html).toContain("Legacy proposal");
+    expect(html).not.toContain("Approve to Open Flow");
+    expect(html).not.toContain("Generate Direct Proposal");
   });
 
   it("does not let an empty saved review hide a full refreshed proposal graph", () => {
@@ -47,7 +45,6 @@ describe("AutomationProposalView state linking", () => {
         nodes: [],
         edges: []
       },
-      proposalTargetFlowId: "",
       recordings: [{ recordingId: "recording.web" }],
       selectedProposal: {
         proposalId: "proposal.full",
@@ -69,13 +66,6 @@ describe("AutomationProposalView state linking", () => {
       },
       selectedRecording: { recordingId: "recording.web" },
       onEnsureInspectorAvailable: () => undefined,
-      onOpenRecording: () => undefined,
-      onOpenState: () => undefined,
-      onPipelineAction: () => Promise.resolve(false),
-      onProposalReviewChange: () => undefined,
-      onProcessFinalizedRecording: () => Promise.resolve(false),
-      onGenerateDirectProposal: () => Promise.resolve(false),
-      onProcessProposalWithLlm: () => undefined,
       setSelection: () => undefined
     }));
 

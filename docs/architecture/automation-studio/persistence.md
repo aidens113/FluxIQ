@@ -89,6 +89,17 @@ Stable file document IDs are:
 | Flow source | `flows/{flowId}/source/` | Flow metadata |
 | Runtime run | `runtime/runs/{runId}/run.json` | runtime index |
 
+Route testing is read-only and performs no persistence. The test-flow-map-route-condition endpoint accepts a canonical condition expression and structured sample input/state, evaluates it with the runtime matcher, and returns only the match result and explanation.
+
+The mutate-flow-map-route endpoint owns atomic move_up, move_down, duplicate, toggle, and delete commands. The service reads one canonical router, applies the command, normalizes route order, validates the complete result through saveFlowRouter, and performs one persistence write. Duplicate IDs are newly generated and duplicate names are collision-safe.
+
+Route condition edits distinguish omission from removal. SaveFlowMapRouteRequest.clearCondition tells AutomationStudioService.upsertFlowMapRoute to remove both the canonical condition and its readable summary; omitted condition fields continue to preserve compatibility for partial callers. Visual text, number, and boolean controls serialize expected values with their intended JSON type.
+
+Router fallback behavior is a first-class validated router mutation. The save-flow-map-fallback endpoint persists either a subflow target or a terminal message through AutomationStudioService.setFlowMapFallback; it does not synthesize a route rule. Group lifecycle metadata remains on the canonical router document, and deleting a group removes group references while preserving its routes.
+
+Visual Flow drafts are recovery data, not canonical project artifacts. The web editor stores one JSON-safe draft record per project/Flow in browser storage under an encoded `fluxiq:automation-graph-draft:` key. Each record includes `baseUpdatedAt`, `savedAt`, and the React Flow graph presentation needed to restore the editor. Writes are debounced and navigation cleanup flushes the latest pending draft. Successful canonical saves and explicit discard remove the record.
+
+Canonical Flow saves use optimistic concurrency. `SaveFlowRequest.expectedUpdatedAt` carries the revision from which the draft began. `AutomationStudioService.saveFlow` compares it with the currently persisted Flow before mutation and throws `FLOW_SAVE_CONFLICT` on mismatch. The handler performs no repository, source-file, generated-config, or index write after this rejection. Callers that omit the field retain compatibility, while interactive editor saves always provide it.
 Newly created subflows receive a dedicated canonical Flow document for their
 internal graph. The subflow stores that Flow ID in `graphFlowId`, and the graph
 Flow records `metadata.subflowGraph`, `metadata.parentFlowId`, and
@@ -96,11 +107,11 @@ Flow records `metadata.subflowGraph`, `metadata.parentFlowId`, and
 from the parent Flow's router and top-level graph. Subflow-specific settings are
 stored on the `AutomationStudioFlowSubflow` document: role, route tags, input and
 output mappings, local instruction IDs, and an optional proposal-mode override.
-Clearing that override removes the field so runtime policy inherits from the parent Flow.
+Clearing that override removes the field so runtime policy inherits from the parent Flow. Settings resolve mapping choices from canonical parent/subflow Flow interfaces and persist only their stable port IDs after name/type validation. Instruction bindings likewise persist stable instruction IDs selected from compact named summaries. Lifecycle changes continue through the dedicated enable, disable, and archive mutations instead of adding a second status write path. Interactive Subflow Settings writes carry expectedUpdatedAt; AutomationStudioService rejects stale revisions with SUBFLOW_SAVE_CONFLICT before mutation. Flow Settings already uses the canonical SaveFlow expectedUpdatedAt contract. Both clients preserve local drafts on conflict and require an explicit reload/review rather than silently overwriting concurrent changes.
 
 The Flow summary index carries subflow ownership plus compact hierarchy metadata
 so workspace navigation can exclude internal graph Flows and reconstruct subflow
-rows, display names, category placement, and nested subflow folders without
+rows, display names, category placement, recursive Subflow containers, and their scoped objects without
 loading every Flow document. The hierarchy summary contains navigation metadata
 only; graph nodes, edges, settings, and other Flow detail remain in `flow.json`.
 Indexes created before ownership or hierarchy fields use missing metadata-version
@@ -109,16 +120,18 @@ Flow documents and persists both markers; later reads remain summary-only.
 Partial Flow updates and deletes preserve a missing marker until the complete
 repair runs.
 
+Subflow directory summaries are synchronized into the project SQLite store as flow.subflows records. list-flow-subflows applies Flow, status, role, case-insensitive name/ID search, sorting, count, limit, and offset in SQL. Canonical Subflow writes update JSON detail, the compatibility summary index, and SQLite; deletion removes all three. Compact Subflow summaries carry a summary version and canonical graphFlowId; existing JSON and SQLite indexes are backfilled once before paged reads. Duplicating a Subflow clones its canonical graph into a new independently owned graph Flow. Deletion removes that graph Flow plus the Subflow JSON and summary records, and is refused while any Router route or fallback still targets the Subflow. In-memory installations preserve equivalent filter and paging semantics. The SQL directory contract is guarded with 10,000-summary deep-page and combined-filter tests; each local query must remain below 500 ms and no response may exceed the 50-row UI cap.
+
 Flow expansion run details are deliberately split from run summaries. The
 previous-runs view reads `list-flow-runs` with SQL `limit`/`offset`
-pagination, optional Flow filtering, and summary-only rows. A selected row then
+pagination, optional Flow/status filtering, case-insensitive run/Flow ID search, and summary-only rows. Updated, started, duration, action-count, and status sorts are allowlisted SQL expressions with explicit ascending/descending direction and a run-ID tie-breaker, so equal-sort pages remain stable. Page sizes are clamped to 1-100 and count/filter/sort are applied before `limit`/`offset`; the in-memory fallback preserves the same semantics. A selected row then
 uses `get-flow-run-detail` to hydrate exactly one detail document. Adaptation
 history follows the same pattern with `list-flow-adaptations` and
 `get-flow-adaptation`; when project storage is enabled, Flow/subflow filters
 are applied in SQLite before rows are returned to the service.
 
 Run detail stores compact action-attempt and recovery-attempt records for the
-runtime debug UI. Action records preserve order, node/definition IDs, status,
+runtime debug UI. Canonical saves also write ordered action attempts to `runtime/runs/{runId}/actions.jsonl`. The normal UI requests compact run detail with no embedded actions, then uses `list-flow-run-actions` for 1-100 streamed rows at a time. Paging stops after the requested JSONL window and uses the compact run summary for total count. A persisted 10,000-action regression reads offset 9,950 as exactly 50 ordered rows, keeps the serialized page below 100 KiB, and enforces a 1.5-second local deep-page budget. Older runs without the sequence mirror are repaired lazily from `run.json`; in-memory installations preserve equivalent slicing. Action records preserve order, node/definition IDs, status,
 route, timing, comparison status, and small diff metadata. Recovery records
 preserve the selected ladder candidate, target edge/node, status, reason, and
 candidate metadata. Full runtime session traces may still exist for deep
@@ -222,6 +235,9 @@ The Automation Studio API exposes these as first-class framework endpoints:
 `get-flow-change-proposal`, `list-flow-runs`, `get-flow-run-detail`,
 `list-flow-adaptations`, `get-flow-adaptation`, `get-flow-router`,
 `cancel-runtime-session`, and `export-flow-run-audit`.
+Flow Settings may persist llmProvider, llmModel, and llmSecretKeyId metadata. llmSecretKeyId is an opaque reference to an encrypted record owned by the global Secret Keys program; Automation Studio never persists, requests, or renders the decrypted value. Settings discovery uses only metadata returned by secret-keys/snapshot and filters it by enabled state, provider, and global/Flow scope. Canonical settings saves also persist typed Flow interface ports, code-source publication pins, execution timeout/concurrency/domain grants, and nested training recovery budgets. Recovery-budget defaults are framework-owned (1 retry per action, 2 recovery attempts per subflow, and 2 reroutes per run); metadata overrides are merged per field and passed into graph execution. Visual Flow dependencies remain graph-derived from Call Flow nodes instead of duplicated settings state. Interactive Settings writes are sparse for framework-owned defaults: default-valued controlled keys are removed from Flow metadata and executionDefaults, while unrelated metadata and execution grants are retained. This makes reset-to-default durable and keeps effective-source labels truthful for both new and historically materialized defaults.
+
+Instruction summaries are synchronized to flow.instructions SQLite records with an explicit summary migration version. List reads filter and page compact title/scope/status/requirement/priority metadata in SQL; instruction bodies remain in JSON detail and are loaded only by ID. Unsaved instruction edits are non-canonical recovery records in browser storage, keyed by project, Flow, and instruction ID (or new). Writes are debounced, successful saves and explicit discards remove the record, and restoration always requires a user action.
 Canonical Flow publication is exposed through `publish-flow`,
 `list-flow-publications`, `deprecate-flow-publication`, and
 `inspect-flow-dependencies`. Compatibility endpoints for learned task models

@@ -180,21 +180,20 @@ export class BackgroundTasksService {
     if (this.schedulerStartedAtMs !== undefined) scheduler.startedAtMs = this.schedulerStartedAtMs;
     return {
       tasks: [...this.tasks.values()].sort((left, right) => left.name.localeCompare(right.name)),
-      runs: [...this.runs.values()].sort((left, right) => right.queuedAtMs - left.queuedAtMs),
+      runs: [...this.runs.values()].sort((left, right) => right.queuedAtMs - left.queuedAtMs).slice(0, 20),
       scheduler
     };
   }
 
-  async detail(taskId: string, limit = 200): Promise<{ task: BackgroundTaskDefinition; runs: BackgroundTaskRun[] }> {
+  async detail(taskId: string, limit = 50, offset = 0, status: BackgroundTaskRun["status"] | "all" = "all"): Promise<{ task: BackgroundTaskDefinition; runs: BackgroundTaskRun[]; total: number; limit: number; offset: number }> {
     await this.load();
     const task = this.requireTask(taskId);
-    return {
-      task,
-      runs: [...this.runs.values()]
-        .filter((run) => run.taskId === taskId)
-        .sort((left, right) => right.queuedAtMs - left.queuedAtMs)
-        .slice(0, Math.max(1, Math.min(1000, limit)))
-    };
+    const boundedLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
+    const boundedOffset = Math.max(0, Math.trunc(offset));
+    const matching = [...this.runs.values()]
+      .filter((run) => run.taskId === taskId && (status === "all" || run.status === status))
+      .sort((left, right) => right.queuedAtMs - left.queuedAtMs);
+    return { task, runs: matching.slice(boundedOffset, boundedOffset + boundedLimit), total: matching.length, limit: boundedLimit, offset: boundedOffset };
   }
 
   private requireTask(taskId: string): BackgroundTaskDefinition {

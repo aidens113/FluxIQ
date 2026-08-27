@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { createRecord, SQLiteRepository } from "./index.ts";
+import { createRecord, DatabaseManagerService, SQLiteRepository } from "./index.ts";
 
 describe("SQLiteRepository", () => {
   it("stores and lists global records", async () => {
@@ -75,6 +75,44 @@ describe("SQLiteRepository", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  it("filters, sorts, counts, and pages records in SQLite", async () => {
+    const root = await tempRoot();
+    try {
+      const repo = new SQLiteRepository({ rootDir: root, kind: "widgets" });
+      await Promise.all(Array.from({ length: 130 }, (_, index) => repo.put(createRecord({
+        id: "item-" + String(index).padStart(3, "0"),
+        kind: "widgets",
+        data: { title: index % 10 === 0 ? "Needle " + index : "Ordinary " + index }
+      }))));
+
+      const capped = await repo.listPage({}, { limit: 500, offset: 0, orderBy: "id", direction: "asc" });
+      expect(capped.total).toBe(130);
+      expect(capped.records).toHaveLength(100);
+      expect(capped.records[0]?.id).toBe("item-000");
+      const second = await repo.listPage({}, { limit: 25, offset: 100, orderBy: "id", direction: "asc" });
+      expect(second.records[0]?.id).toBe("item-100");
+      const filtered = await repo.listPage({}, { limit: 10, search: "Needle", orderBy: "id", direction: "asc" });
+      expect(filtered.total).toBe(13);
+      expect(filtered.records.every((record) => String(record.data.title).includes("Needle"))).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not query or expose sensitive store counts in snapshots", async () => {
+    let listCalls = 0;
+    const service = new DatabaseManagerService().registerRepository("identity.users", {
+      list: async () => { listCalls += 1; return []; },
+      get: async () => null,
+      put: async (record) => record,
+      delete: async () => false
+    });
+
+    const snapshot = await service.snapshot();
+    expect(snapshot.stores[0]?.recordCount).toBeNull();
+    expect(listCalls).toBe(0);
   });
 
   it("waits for concurrent access instead of failing with SQLITE_BUSY", async () => {

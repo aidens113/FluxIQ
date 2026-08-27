@@ -108,8 +108,13 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     endpoint: IDENTITY_ACCESS_ENDPOINTS.disableTotp,
     permission: "identity.manage",
     handler: async (request) => {
-      const payload = request.payload as { userId?: string } | undefined;
+      const payload = request.payload as { userId?: string; authSessionId?: string; authorizationPassword?: string; authorizationPin?: string; authorizationTotp?: string } | undefined;
       if (!payload?.userId) return { ok: false, error: "userId is required" };
+      try {
+        await service.authorizeSessionCredentials({ sessionId: payload.authSessionId, password: payload.authorizationPassword, pin: payload.authorizationPin, totp: payload.authorizationTotp });
+      } catch (error) {
+        return { ok: false, requiresRecheck: true, error: error instanceof Error ? error.message : String(error) };
+      }
       return { ok: true, payload: await service.disableTotp(payload.userId) };
     }
   });

@@ -43,3 +43,17 @@ version and `pnpm audit --prod --audit-level high` remains clean.
 
 See the repository root `SECURITY.md` for private vulnerability reporting and
 security boundaries.
+
+## Web Login And Bootstrap Setup
+
+The web login uses staged password and authenticator entry. It does not publish
+bootstrap credentials in normal interface copy. When the framework bootstrap
+administrator authenticates with the temporary credential, the login response
+marks that session for credential setup and the web app requires an authorized
+self-password rotation before opening the program directory.
+
+The setup password is at least 12 characters and cannot reuse the bootstrap
+value. Login preserves entered values across server errors, reports Caps Lock,
+supports password visibility, and shows a live lockout countdown. This
+bootstrap detection is a compatibility boundary for the current default-admin
+runtime; future identity metadata may replace it without changing the UI flow.

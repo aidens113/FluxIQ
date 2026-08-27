@@ -1,10 +1,10 @@
 "use client";
 
-import { Copy, Eye, KeyRound, Pencil, RefreshCcw, Trash2 } from "lucide-react";
+import { Copy, Eye, KeyRound, MoreHorizontal, Pencil, RefreshCcw, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { RevealSecretKeyResponse, SecretKeysSnapshotResponse, SecretKeySummary } from "fluxiq/secret-keys";
 import { useProgramApi, type ApiResponse, type JsonObject } from "../program-api";
-import { DataTable, Field, KeyValue, Modal, Panel, StatusBadge, StatusText } from "../shared-ui";
+import { DataTable, EmptyState, Field, KeyValue, LoadingState, Menu, Modal, Panel, StatusBadge, StatusText, VisualAlert } from "../shared-ui";
 import type { CurrentUser } from "../types";
 import { copyText, digits, formatTime } from "./shared";
 
@@ -16,6 +16,8 @@ type SecretForm = {
   scope: "global" | "domain" | "flow" | "custom";
   scopeRef: string;
   description: string;
+  model: string;
+  metadata: JsonObject;
   enabled: boolean;
 };
 
@@ -36,13 +38,22 @@ const emptySecretForm: SecretForm = {
   scope: "global",
   scopeRef: "",
   description: "",
+  model: "",
+  metadata: {},
   enabled: true
 };
 
 export function SecretKeysLive({ currentUser }: { currentUser: CurrentUser }) {
   const api = useProgramApi("secret-keys");
+  const automationApi = useProgramApi("automation-studio");
   const [snapshot, setSnapshot] = useState<ApiResponse<SecretKeysSnapshotResponse> | null>(null);
   const [status, setStatus] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [kindFilter, setKindFilter] = useState<"all" | "llm" | "custom">("all");
+  const [enabledFilter, setEnabledFilter] = useState<"all" | "enabled" | "disabled">("all");
+  const [copyStatus, setCopyStatus] = useState("");
+  const [scopeCatalog, setScopeCatalog] = useState<{ domains: Array<{ id: string; label: string }>; projects: Array<{ id: string; label: string }>; flows: Array<{ id: string; label: string }>; projectId: string; loading: boolean; error: string }>({ domains: [], projects: [], flows: [], projectId: "", loading: false, error: "" });
   const [createForm, setCreateForm] = useState<SecretForm>(emptySecretForm);
   const [createAuthorization, setCreateAuthorization] = useState<AuthForm | null>(null);
   const [selectedId, setSelectedId] = useState("");
@@ -53,15 +64,52 @@ export function SecretKeysLive({ currentUser }: { currentUser: CurrentUser }) {
 
   const refresh = useCallback(async () => setSnapshot(await api.get<SecretKeysSnapshotResponse>("snapshot")), [api]);
   useEffect(() => void refresh(), [refresh]);
+  useEffect(() => {
+    if (!createOpen && !edit) return;
+    const controller = new AbortController();
+    setScopeCatalog((current) => ({ ...current, loading: true, error: "" }));
+    void Promise.all([
+      fetch("/api/programs", { cache: "no-store", signal: controller.signal }).then((response) => response.json()),
+      automationApi.get<{ projects: Array<{ id: string; name: string }> }>("projects", { signal: controller.signal })
+    ]).then(([directory, projectsResult]) => {
+      if (controller.signal.aborted) return;
+      const domains = Array.isArray(directory?.domains) ? directory.domains.map((domain: any) => ({ id: String(domain.id ?? domain.domainId ?? ""), label: String(domain.title ?? domain.name ?? domain.id ?? "Domain") })).filter((item: { id: string }) => item.id) : [];
+      const projects = (projectsResult.payload?.projects ?? []).map((project) => ({ id: project.id, label: project.name }));
+      setScopeCatalog((current) => ({ ...current, domains, projects, loading: false, error: projectsResult.ok ? "" : projectsResult.error ?? "Flow projects could not be loaded." }));
+    }).catch((error) => {
+      if (!controller.signal.aborted) setScopeCatalog((current) => ({ ...current, loading: false, error: error instanceof Error ? error.message : "Scope objects could not be loaded." }));
+    });
+    return () => controller.abort();
+  }, [automationApi, createOpen, edit?.key.id]);
 
   const keys = snapshot?.payload?.keys ?? [];
   const selected = keys.find((key) => key.id === selectedId) ?? keys[0] ?? null;
-  const llmKeys = keys.filter((key) => key.kind === "llm").length;
-  const enabledKeys = keys.filter((key) => key.enabled).length;
-  const groupedProviders = useMemo(() => {
-    const providers = new Set(keys.map((key) => key.provider).filter(Boolean));
-    return providers.size ? [...providers].sort().join(", ") : "None";
-  }, [keys]);
+  const filteredKeys = useMemo(() => filterSecretKeys(keys, query, kindFilter, enabledFilter), [enabledFilter, keys, kindFilter, query]);
+  const scopeOptionsFor = (scope: SecretForm["scope"]) => [...new Set([
+    ...keys.filter((key) => key.scope === scope).map((key) => key.scopeRef).filter((value): value is string => Boolean(value)),
+    ...(scope === "domain" ? scopeCatalog.domains.map((item) => item.id) : []),
+    ...(scope === "flow" ? scopeCatalog.flows.map((item) => item.id) : [])
+  ])];
+  useEffect(() => {
+    if (!reveal?.value) return;
+    const timer = window.setTimeout(() => { setReveal(null); setCopyStatus(""); setStatus("Revealed value hidden after 30 seconds"); }, 30_000);
+    return () => window.clearTimeout(timer);
+  }, [reveal?.value]);
+  useEffect(() => {
+    if (reveal && selectedId && reveal.key.id !== selectedId) { setReveal(null); setCopyStatus(""); }
+  }, [reveal, selectedId]);
+  useEffect(() => {
+    if (!reveal) return;
+    const current = keys.find((key) => key.id === reveal.key.id);
+    if (secretRevealIsStale(reveal.key, current)) { setReveal(null); setCopyStatus(""); setStatus("Reveal closed because the key changed"); }
+  }, [keys, reveal]);
+
+  async function loadScopeProject(projectId: string) {
+    setScopeCatalog((current) => ({ ...current, projectId, flows: [], loading: Boolean(projectId), error: "" }));
+    if (!projectId) return;
+    const result = await automationApi.post<{ flows: Array<{ flowId: string; name: string }> }>("list-flow-summaries", { projectId });
+    setScopeCatalog((current) => current.projectId !== projectId ? current : ({ ...current, loading: false, error: result.ok ? "" : result.error ?? "Flows could not be loaded.", flows: (result.payload?.flows ?? []).map((flow) => ({ id: flow.flowId, label: flow.name })) }));
+  }
 
   async function createKey() {
     if (!createAuthorization) return;
@@ -103,6 +151,7 @@ export function SecretKeysLive({ currentUser }: { currentUser: CurrentUser }) {
       await refresh();
       return;
     }
+    setReveal({ key: reveal.key, auth: emptyAuth });
     setStatus(result.error ?? "Secret reveal failed");
   }
 
@@ -117,105 +166,41 @@ export function SecretKeysLive({ currentUser }: { currentUser: CurrentUser }) {
     }
   }
 
+  if (!snapshot) return <LoadingState label="Loading secret keys" detail="Retrieving encrypted-key metadata. Secret values are never included in this response." />;
+  if (!snapshot.ok) return <EmptyState title="Secret Keys unavailable" description={snapshot.error ?? "Encrypted-key metadata could not be loaded."} action={<button className="button" onClick={() => void refresh()} type="button">Retry</button>} />;
+
   return (
-    <section className="program-workspace-grid secret-keys-workspace">
-      <Panel title="Secret Keys" action={<button className="button" onClick={refresh} type="button"><RefreshCcw size={15} aria-hidden />Refresh</button>}>
-        <div className="secret-key-hero">
-          <div className="summary-strip secret-key-summary-strip">
-            <div><strong>{keys.length}</strong><span>Total keys</span></div>
-            <div><strong>{enabledKeys}</strong><span>Enabled</span></div>
-            <div><strong>{llmKeys}</strong><span>LLM keys</span></div>
-            <div><strong>{groupedProviders}</strong><span>Providers</span></div>
-          </div>
-        </div>
-      </Panel>
+    <section className="secret-keys-workspace">
+      <header className="program-inner-header"><div><strong>Secret Keys</strong><span>Encrypted credentials for LLM providers and custom integrations.</span></div><div className="inline-actions"><StatusText value={status} /><button className="button" onClick={() => void refresh()} type="button"><RefreshCcw size={14} aria-hidden />Refresh</button><button className="button button-primary" onClick={() => setCreateOpen(true)} type="button"><KeyRound size={14} aria-hidden />Add Key</button></div></header>
+      <div className="secret-keys-list-detail">
+        <Panel title="Saved Keys">
+          <div className="program-list-toolbar"><label className="program-search-field"><Search size={14} aria-hidden /><input aria-label="Search secret keys" onChange={(event) => setQuery(event.target.value)} placeholder="Search name, provider, scope, or model" type="search" value={query} /></label><select aria-label="Filter key type" onChange={(event) => setKindFilter(event.target.value as typeof kindFilter)} value={kindFilter}><option value="all">All types</option><option value="llm">LLM</option><option value="custom">Custom</option></select><select aria-label="Filter key status" onChange={(event) => setEnabledFilter(event.target.value as typeof enabledFilter)} value={enabledFilter}><option value="all">All statuses</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></div>
+          <DataTable columns={["Name", "Provider", "Scope", "Updated", ""]} rows={filteredKeys.map((key) => [
+            <button aria-current={selected?.id === key.id ? "true" : undefined} className="identity-user-link" onClick={() => setSelectedId(key.id)} type="button"><strong>{key.name}</strong><small>{key.kind.toUpperCase()} · {key.enabled ? "Enabled" : "Disabled"}</small></button>,
+            <span className="secret-provider-cell"><strong>{key.provider || "Custom"}</strong><small>{key.kind === "llm" ? providerRuntimeSupport(key.provider).label : "Custom integration"}</small></span>,
+            <span className="secret-scope-cell"><strong>{key.scope}</strong>{key.scopeRef ? <small>{key.scopeRef}</small> : null}</span>,
+            formatTime(key.updatedAtMs),
+            <Menu icon={<MoreHorizontal size={15} aria-hidden />} iconOnly label={"Actions for " + key.name} options={[
+              { id: "edit", label: "Edit metadata", icon: <Pencil size={14} aria-hidden />, onSelect: () => { setSelectedId(key.id); setEdit({ key, form: formFromKey(key), auth: emptyAuth }); } },
+              { id: "rotate", label: "Rotate value", icon: <RefreshCcw size={14} aria-hidden />, onSelect: () => { setSelectedId(key.id); setRotate({ key, value: "", auth: emptyAuth }); } },
+              { id: "reveal", label: "Reveal temporarily", icon: <Eye size={14} aria-hidden />, onSelect: () => { setSelectedId(key.id); setReveal({ key, auth: emptyAuth }); setCopyStatus(""); } },
+              { id: "delete", label: "Delete key", icon: <Trash2 size={14} aria-hidden />, danger: true, onSelect: () => { setSelectedId(key.id); setRemove({ key, auth: emptyAuth }); } }
+            ]} />
+          ])} empty={keys.length ? "No keys match these filters." : "No secret keys have been added."} />
+        </Panel>
+        <Panel title="Key Detail">{selected ? <div className="secret-key-detail"><div className="secret-key-detail-heading"><span className="program-icon"><KeyRound size={18} aria-hidden /></span><span><strong>{selected.name}</strong><small>{selected.provider || "Custom integration"}</small></span><StatusBadge value={selected.enabled ? "Enabled" : "Disabled"} /></div><KeyValue rows={[["Kind", selected.kind], ["Provider", selected.provider || "-"], ["Runtime support", selected.kind === "llm" ? providerRuntimeSupport(selected.provider).detail : "Resolved by the owning integration"], ["Model", String(selected.metadata?.model ?? "Any compatible model")], ["Scope", selected.scopeRef ? selected.scope + ": " + selected.scopeRef : selected.scope], ["Description", selected.description || "-"], ["Created", formatTime(selected.createdAtMs)], ["Last rotated", formatTime(selected.lastRotatedAtMs)], ["Last revealed", formatTime(selected.lastRevealedAtMs)]]} /></div> : <EmptyState compact title="No key selected" description="Choose a saved key to inspect its metadata and runtime scope." />}</Panel>
+      </div>
 
-      <Panel title="Add Key" action={<button className="button button-primary" disabled={!canPrepareSecret(createForm)} onClick={() => setCreateAuthorization(emptyAuth)} type="button"><KeyRound size={15} aria-hidden />Add Key</button>}>
-        <div className="secret-key-editor">
-          <SecretFormFields form={createForm} includeValue onChange={setCreateForm} />
-        </div>
-      </Panel>
-
-      <Panel title="Saved Keys">
-        <DataTable columns={["Name", "Provider", "Scope", "Updated", "Actions"]} rows={keys.map((key) => [
-          <button className={`link-button secret-key-name ${selected?.id === key.id ? "selected" : ""}`} onClick={() => setSelectedId(key.id)} type="button">
-            <strong>{key.name}</strong>
-            <small><StatusBadge value={key.kind.toUpperCase()} />{key.enabled ? "Enabled" : "Disabled"}</small>
-          </button>,
-          <span className="secret-provider-cell"><strong>{key.provider || "Custom"}</strong><small>{key.kind === "llm" ? "LLM provider" : "Custom secret"}</small></span>,
-          <span className="secret-scope-cell"><strong>{key.scope}</strong>{key.scopeRef ? <small>{key.scopeRef}</small> : null}</span>,
-          <span className="secret-time-cell">{formatTime(key.updatedAtMs)}</span>,
-          <div className="inline-actions secret-row-actions">
-            <button className="button" onClick={() => setEdit({ key, form: formFromKey(key), auth: emptyAuth })} type="button"><Pencil size={14} aria-hidden />Edit</button>
-            <button className="button" onClick={() => setRotate({ key, value: "", auth: emptyAuth })} type="button"><RefreshCcw size={14} aria-hidden />Rotate</button>
-            <button className="button" onClick={() => setReveal({ key, auth: emptyAuth })} type="button"><Eye size={14} aria-hidden />Reveal</button>
-            <button className="button danger-button" onClick={() => setRemove({ key, auth: emptyAuth })} type="button"><Trash2 size={14} aria-hidden />Delete</button>
-          </div>
-        ])} empty="No secret keys have been added yet." />
-      </Panel>
-
-      <Panel title="Key Detail">
-        {selected ? <div className="secret-key-detail">
-          <div className="secret-key-detail-heading">
-            <span className="program-icon"><KeyRound size={18} aria-hidden /></span>
-            <span><strong>{selected.name}</strong><small>{selected.provider ?? "No provider"}</small></span>
-            <StatusBadge value={selected.enabled ? "Enabled" : "Disabled"} />
-          </div>
-          <KeyValue rows={[
-            ["ID", selected.id],
-            ["Kind", selected.kind],
-            ["Scope", selected.scopeRef ? `${selected.scope}: ${selected.scopeRef}` : selected.scope],
-            ["Created", formatTime(selected.createdAtMs)],
-            ["Last rotated", formatTime(selected.lastRotatedAtMs)],
-            ["Last revealed", formatTime(selected.lastRevealedAtMs)]
-          ]} />
-        </div> : <p className="muted-text">Select a key row to inspect its metadata.</p>}
-      </Panel>
-
-      {createAuthorization ? <Modal title="Authorize New Key" onClose={() => setCreateAuthorization(null)}>
-        <div className="secret-modal-stack">
-          <p className="muted-text">Confirm your current credentials to encrypt and save this key.</p>
-          <AuthorizationFields auth={createAuthorization} currentUser={currentUser} requireTotp={false} onChange={setCreateAuthorization} />
-        </div>
-        <div className="modal-actions"><button className="button" onClick={() => setCreateAuthorization(null)} type="button">Cancel</button><button className="button button-primary" disabled={!canSubmitAuth(createAuthorization, currentUser, false)} onClick={createKey} type="button">Save Key</button></div>
-      </Modal> : null}
-
-      {edit ? <Modal title="Edit Key" onClose={() => setEdit(null)}>
-        <div className="secret-key-editor modal-secret-editor">
-          <SecretFormFields form={edit.form} onChange={(form) => setEdit({ ...edit, form })} />
-          <AuthorizationFields auth={edit.auth} currentUser={currentUser} onChange={(auth) => setEdit({ ...edit, auth })} />
-        </div>
-        <div className="modal-actions"><button className="button" onClick={() => setEdit(null)} type="button">Cancel</button><button className="button button-primary" disabled={!canSubmitAuth(edit.auth, currentUser) || !edit.form.name.trim()} onClick={saveEdit} type="button">Save Changes</button></div>
-      </Modal> : null}
-
-      {rotate ? <Modal title="Rotate Secret Value" onClose={() => setRotate(null)}>
-        <div className="secret-modal-stack">
-          <p className="muted-text">Replace the encrypted value for {rotate.key.name}. Existing metadata stays intact.</p>
-          <Field label="New secret value"><input type="password" value={rotate.value} onChange={(event) => setRotate({ ...rotate, value: event.target.value })} /></Field>
-          <AuthorizationFields auth={rotate.auth} currentUser={currentUser} onChange={(auth) => setRotate({ ...rotate, auth })} />
-        </div>
-        <div className="modal-actions"><button className="button" onClick={() => setRotate(null)} type="button">Cancel</button><button className="button button-primary" disabled={!rotate.value || !canSubmitAuth(rotate.auth, currentUser)} onClick={rotateKey} type="button">Rotate</button></div>
-      </Modal> : null}
-
-      {reveal ? <Modal title="Reveal Secret" onClose={() => setReveal(null)}>
-        {reveal.value ? <div className="secret-reveal-box"><code>{reveal.value}</code><button className="button" onClick={() => copyText(reveal.value ?? "")} type="button"><Copy size={14} aria-hidden />Copy</button></div> : <div className="secret-modal-stack"><p className="muted-text">Reveal {reveal.key.name} only long enough to copy or inspect it.</p><AuthorizationFields auth={reveal.auth} currentUser={currentUser} onChange={(auth) => setReveal({ ...reveal, auth })} /></div>}
-        <div className="modal-actions"><button className="button" onClick={() => setReveal(null)} type="button">Close</button>{!reveal.value ? <button className="button button-primary" disabled={!canSubmitAuth(reveal.auth, currentUser)} onClick={revealKey} type="button">Reveal</button> : null}</div>
-      </Modal> : null}
-
-      {remove ? <Modal title="Delete Key" onClose={() => setRemove(null)}>
-        <div className="secret-modal-stack">
-          <p className="muted-text">Delete {remove.key.name}. This removes the encrypted payload and its metadata.</p>
-          <AuthorizationFields auth={remove.auth} currentUser={currentUser} onChange={(auth) => setRemove({ ...remove, auth })} />
-        </div>
-        <div className="modal-actions"><button className="button" onClick={() => setRemove(null)} type="button">Cancel</button><button className="button button-primary danger-primary" disabled={!canSubmitAuth(remove.auth, currentUser)} onClick={deleteKey} type="button">Delete</button></div>
-      </Modal> : null}
-
-      <StatusText value={status} />
+      {createOpen ? <Modal title="Add Secret Key" description="Describe the encrypted credential before authorizing its creation." onClose={() => setCreateOpen(false)}><SecretFormFields form={createForm} includeValue scopeOptions={scopeOptionsFor(createForm.scope)} scopeCatalog={scopeCatalog} onProjectChange={(projectId) => void loadScopeProject(projectId)} onChange={setCreateForm} /><div className="modal-actions"><button className="button" onClick={() => setCreateOpen(false)} type="button">Cancel</button><button className="button button-primary" disabled={!canPrepareSecret(createForm)} onClick={() => { setCreateOpen(false); setCreateAuthorization(emptyAuth); }} type="button">Continue</button></div></Modal> : null}
+      {createAuthorization ? <Modal title="Authorize New Key" description="Confirm your current password and configured PIN. Adding a key does not require 2FA." onClose={() => setCreateAuthorization(null)}><AuthorizationFields auth={createAuthorization} currentUser={currentUser} requireTotp={false} onChange={setCreateAuthorization} /><div className="modal-actions"><button className="button" onClick={() => { setCreateAuthorization(null); setCreateOpen(true); }} type="button">Back</button><button className="button button-primary" disabled={!canSubmitAuth(createAuthorization, currentUser, false)} onClick={() => void createKey()} type="button">Save Key</button></div></Modal> : null}
+      {edit ? <Modal title="Edit Key Metadata" description="Update how this key is identified and where runtime resolution may use it." onClose={() => setEdit(null)}><div className="secret-key-editor modal-secret-editor"><SecretFormFields form={edit.form} scopeOptions={scopeOptionsFor(edit.form.scope)} scopeCatalog={scopeCatalog} onProjectChange={(projectId) => void loadScopeProject(projectId)} onChange={(form) => setEdit({ ...edit, form })} /><AuthorizationFields auth={edit.auth} currentUser={currentUser} onChange={(auth) => setEdit({ ...edit, auth })} /></div><div className="modal-actions"><button className="button" onClick={() => setEdit(null)} type="button">Cancel</button><button className="button button-primary" disabled={!canSubmitAuth(edit.auth, currentUser) || !edit.form.name.trim()} onClick={() => void saveEdit()} type="button">Save Changes</button></div></Modal> : null}
+      {rotate ? <Modal title="Rotate Secret Value" description={"Replace the encrypted value for " + rotate.key.name + ". Existing metadata remains unchanged."} onClose={() => setRotate(null)}><div className="secret-modal-stack"><VisualAlert tone="warning" title="Rotation impact" message="New runtime requests use the replacement immediately. Existing in-flight work may still hold the prior credential." /><Field label="New secret value" required><input autoComplete="new-password" data-autofocus type="password" value={rotate.value} onChange={(event) => setRotate({ ...rotate, value: event.target.value })} /></Field><AuthorizationFields auth={rotate.auth} currentUser={currentUser} onChange={(auth) => setRotate({ ...rotate, auth })} /></div><div className="modal-actions"><button className="button" onClick={() => setRotate(null)} type="button">Cancel</button><button className="button button-primary" disabled={!rotate.value || !canSubmitAuth(rotate.auth, currentUser)} onClick={() => void rotateKey()} type="button">Rotate Value</button></div></Modal> : null}
+      {reveal ? <Modal title="Reveal Secret" description={"Reveal " + reveal.key.name + " only long enough to inspect or copy it."} onClose={() => { setReveal(null); setCopyStatus(""); }}>{reveal.value ? <div className="secret-reveal-box"><code>{reveal.value}</code><button className="button" onClick={() => { void copyText(reveal.value ?? ""); setCopyStatus("Copied"); }} type="button"><Copy size={14} aria-hidden />{copyStatus || "Copy"}</button><small>Automatically hidden after 30 seconds.</small></div> : <AuthorizationFields auth={reveal.auth} currentUser={currentUser} onChange={(auth) => setReveal({ ...reveal, auth })} />}<div className="modal-actions"><button className="button" onClick={() => { setReveal(null); setCopyStatus(""); }} type="button">Close</button>{!reveal.value ? <button className="button button-primary" disabled={!canSubmitAuth(reveal.auth, currentUser)} onClick={() => void revealKey()} type="button">Reveal for 30 seconds</button> : null}</div></Modal> : null}
+      {remove ? <Modal title="Delete Secret Key" description={"Permanently remove " + remove.key.name + " and its encrypted payload."} onClose={() => setRemove(null)}><div className="secret-modal-stack"><VisualAlert tone="warning" title="Runtime impact" message="Flows or integrations referencing this key will no longer be able to resolve it." /><AuthorizationFields auth={remove.auth} currentUser={currentUser} onChange={(auth) => setRemove({ ...remove, auth })} /></div><div className="modal-actions"><button className="button" onClick={() => setRemove(null)} type="button">Cancel</button><button className="button button-danger" disabled={!canSubmitAuth(remove.auth, currentUser)} onClick={() => void deleteKey()} type="button">Delete Key</button></div></Modal> : null}
     </section>
   );
 }
-
-function SecretFormFields(props: { form: SecretForm; includeValue?: boolean; onChange(form: SecretForm): void }) {
+function SecretFormFields(props: { form: SecretForm; includeValue?: boolean; scopeOptions?: string[]; scopeCatalog?: { domains: Array<{ id: string; label: string }>; projects: Array<{ id: string; label: string }>; flows: Array<{ id: string; label: string }>; projectId: string; loading: boolean; error: string }; onProjectChange?(projectId: string): void; onChange(form: SecretForm): void }) {
   const { form, onChange } = props;
   const llmProviderValue = isKnownLlmProvider(form.provider) ? form.provider : "Other";
   return (
@@ -227,13 +212,16 @@ function SecretFormFields(props: { form: SecretForm; includeValue?: boolean; onC
           <Field label="Type"><select value={form.kind} onChange={(event) => onChange(changeKind(form, event.target.value as SecretForm["kind"]))}><option value="llm">LLM</option><option value="custom">Custom</option></select></Field>
           {form.kind === "llm" ? <Field label="Provider"><select value={llmProviderValue} onChange={(event) => onChange(changeLlmProvider(form, event.target.value))}>{llmProviders.map((provider) => <option key={provider} value={provider}>{provider}</option>)}</select></Field> : <Field label="Provider"><input placeholder="Internal service, vendor, app name" value={form.provider} onChange={(event) => onChange({ ...form, provider: event.target.value })} /></Field>}
           {form.kind === "llm" && llmProviderValue === "Other" ? <Field label="Custom provider"><input value={isKnownLlmProvider(form.provider) ? "" : form.provider} onChange={(event) => onChange({ ...form, provider: event.target.value })} /></Field> : null}
+          {form.kind === "llm" ? <Field hint="Optional; leave blank to allow any compatible model." label="Model"><input placeholder="Model name" value={form.model} onChange={(event) => onChange({ ...form, model: event.target.value })} /></Field> : null}
         </div>
       </div>
       <div className="secret-form-section secondary">
         <div className="field-row dense-fields secret-keys-form">
-          <Field label="Scope"><select value={form.scope} onChange={(event) => onChange({ ...form, scope: event.target.value as SecretForm["scope"] })}><option value="global">Global</option><option value="domain">Domain</option><option value="flow">Flow</option><option value="custom">Custom</option></select></Field>
-          <Field label="Scope reference"><input value={form.scopeRef} onChange={(event) => onChange({ ...form, scopeRef: event.target.value })} /></Field>
+          <Field label="Scope"><select value={form.scope} onChange={(event) => { const scope = event.target.value as SecretForm["scope"]; onChange({ ...form, scope, ...(scope === "global" ? { scopeRef: "" } : {}) }); }}><option value="global">Global</option><option value="domain">Domain</option><option value="flow">Flow</option><option value="custom">Custom</option></select></Field>
+          {form.scope === "flow" && props.scopeCatalog ? <Field hint="Flows load only for the selected project." label="Project"><select disabled={props.scopeCatalog.loading && !props.scopeCatalog.projects.length} value={props.scopeCatalog.projectId} onChange={(event) => props.onProjectChange?.(event.target.value)}><option value="">Choose project</option>{props.scopeCatalog.projects.map((project) => <option key={project.id} value={project.id}>{project.label}</option>)}</select></Field> : null}
+          <Field hint={form.scope === "global" ? "No object reference is needed for a global key." : "Choose a known reference or enter the exact owning object."} label={form.scope === "domain" ? "Domain" : form.scope === "flow" ? "Flow" : form.scope === "custom" ? "Scope object" : "Scope reference"}><input disabled={form.scope === "global" || (form.scope === "flow" && !props.scopeCatalog?.projectId)} list={form.scope === "global" ? undefined : "secret-scope-options-" + form.scope} placeholder={form.scope === "domain" ? "Choose or enter a domain" : form.scope === "flow" ? "Choose a project, then a Flow" : "Enter an object reference"} value={form.scope === "global" ? "" : form.scopeRef} onChange={(event) => onChange({ ...form, scopeRef: event.target.value })} />{form.scope !== "global" && props.scopeOptions?.length ? <datalist id={"secret-scope-options-" + form.scope}>{props.scopeOptions.map((option) => <option key={option} value={option} />)}</datalist> : null}</Field>
           <Field label="Description"><input value={form.description} onChange={(event) => onChange({ ...form, description: event.target.value })} /></Field>
+          {props.scopeCatalog?.error ? <VisualAlert tone="warning" title="Scope catalog" message={props.scopeCatalog.error} /> : null}
           <label className="check-row"><input checked={form.enabled} onChange={(event) => onChange({ ...form, enabled: event.target.checked })} type="checkbox" />Enabled</label>
         </div>
       </div>
@@ -265,11 +253,16 @@ function formFromKey(key: SecretKeySummary): SecretForm {
     scope: key.scope,
     scopeRef: key.scopeRef ?? "",
     description: key.description ?? "",
+    model: typeof key.metadata?.model === "string" ? key.metadata.model : "",
+    metadata: key.metadata ?? {},
     enabled: key.enabled
   };
 }
 
 function formPayload(form: SecretForm, includeValue = true): JsonObject {
+  const metadata: JsonObject = { ...form.metadata };
+  if (form.model.trim()) metadata.model = form.model.trim();
+  else delete metadata.model;
   return {
     name: form.name.trim(),
     ...(includeValue ? { value: form.value } : {}),
@@ -278,6 +271,7 @@ function formPayload(form: SecretForm, includeValue = true): JsonObject {
     scope: form.scope,
     ...(form.scopeRef.trim() ? { scopeRef: form.scopeRef.trim() } : { scopeRef: "" }),
     ...(form.description.trim() ? { description: form.description.trim() } : { description: "" }),
+    metadata,
     enabled: form.enabled
   };
 }
@@ -294,7 +288,7 @@ function canPrepareSecret(form: SecretForm): boolean {
   return Boolean(form.name.trim() && form.value && providerReady(form));
 }
 
-function canSubmitAuth(auth: AuthForm, currentUser: CurrentUser, requireTotp = true): boolean {
+export function canSubmitAuth(auth: AuthForm, currentUser: CurrentUser, requireTotp = true): boolean {
   return Boolean(auth.password && (!currentUser.pinConfigured || auth.pin.length >= 4) && (!requireTotp || !currentUser.totpEnabled || auth.totp.length === 6));
 }
 
@@ -313,4 +307,25 @@ function changeLlmProvider(form: SecretForm, provider: string): SecretForm {
 
 function isKnownLlmProvider(value: string): boolean {
   return llmProviders.includes(value as (typeof llmProviders)[number]) && value !== "Other";
+}
+export function filterSecretKeys(keys: SecretKeySummary[], query: string, kind: "all" | "llm" | "custom", enabled: "all" | "enabled" | "disabled"): SecretKeySummary[] {
+  const normalized = query.trim().toLocaleLowerCase();
+  return keys.filter((key) => {
+    if (kind !== "all" && key.kind !== kind) return false;
+    if (enabled === "enabled" && !key.enabled) return false;
+    if (enabled === "disabled" && key.enabled) return false;
+    const model = typeof key.metadata?.model === "string" ? key.metadata.model : "";
+    return !normalized || [key.name, key.provider ?? "", key.scope, key.scopeRef ?? "", model].some((value) => value.toLocaleLowerCase().includes(normalized));
+  });
+}
+
+export function secretRevealIsStale(revealed: SecretKeySummary, current: SecretKeySummary | undefined): boolean {
+  return !current || current.updatedAtMs !== revealed.updatedAtMs || current.lastRotatedAtMs !== revealed.lastRotatedAtMs;
+}
+
+export function providerRuntimeSupport(provider: string | undefined): { label: string; detail: string } {
+  if (!provider) return { label: "Provider required", detail: "Set a provider before this LLM key can be resolved." };
+  if (provider === "Ollama") return { label: "Local provider", detail: "Ollama normally uses a host-configured local endpoint and may not require an API key." };
+  if (isKnownLlmProvider(provider)) return { label: "Built-in provider", detail: "FluxIQ can match this key to the built-in " + provider + " provider adapter." };
+  return { label: "Custom adapter required", detail: "The host must register an adapter for this provider name before runtime resolution can use it." };
 }

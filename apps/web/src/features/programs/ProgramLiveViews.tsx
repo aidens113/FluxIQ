@@ -13,8 +13,10 @@ import {
   SecretKeysLive
 } from "./live-views";
 import { Panel } from "./shared-ui";
+import { useUiRenderMetric } from "./ui-performance";
 
 export function LiveProgramMain({ programId, user }: { programId: string; user: CurrentUser }) {
+  useUiRenderMetric(`LiveProgramMain:${programId}`);
   switch (programId) {
     case "automation-studio": return <AutomationStudioLive currentUser={user} />;
     case "identity-access": return <IdentityAccessLive currentUser={user} />;

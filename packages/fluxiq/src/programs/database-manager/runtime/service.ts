@@ -7,6 +7,8 @@ import type {
   MigrationRun,
   RecordEnvelope,
   Repository,
+  RepositoryListPage,
+  RepositoryListPageOptions,
   RepositoryScope
 } from "../types.ts";
 
@@ -56,7 +58,7 @@ export class DatabaseManagerService {
       stores.push({
         kind,
         scope,
-        recordCount: (await repository.list(scope)).length
+        recordCount: isSensitiveDatabaseKind(kind) ? null : await repositoryRecordCount(repository, scope)
       });
     }
     return {
@@ -65,6 +67,20 @@ export class DatabaseManagerService {
       migrations: [...this.migrations.values()].map(({ id, description }) => ({ id, description })),
       migrationRuns: (await this.readState()).migrationRuns.sort((left, right) => right.startedAtMs - left.startedAtMs)
     };
+  }
+
+  async listRecordPage<T extends JsonObject>(kind: string, scope: RepositoryScope = {}, options: RepositoryListPageOptions = {}): Promise<RepositoryListPage<T>> {
+    const repository = this.repository<T>(kind);
+    if (repository.listPage) return repository.listPage(scope, options);
+    const limit = clampPageInteger(options.limit, 1, 100, 25);
+    const offset = clampPageInteger(options.offset, 0, 1_000_000, 0);
+    const search = options.search?.trim().toLocaleLowerCase() ?? "";
+    const direction = options.direction === "asc" ? 1 : -1;
+    const records = (await repository.list(scope)).filter((record) => !search || (record.id + " " + JSON.stringify(record.data)).toLocaleLowerCase().includes(search)).sort((left, right) => {
+      const field = options.orderBy === "id" ? left.id.localeCompare(right.id) : options.orderBy === "created_at_ms" ? left.createdAtMs - right.createdAtMs : left.updatedAtMs - right.updatedAtMs;
+      return field * direction || left.id.localeCompare(right.id);
+    });
+    return { records: records.slice(offset, offset + limit), total: records.length, limit, offset };
   }
 
   async listRecords<T extends JsonObject>(kind: string, scope: RepositoryScope = {}): Promise<Array<RecordEnvelope<T>>> {
@@ -146,4 +162,20 @@ function safeKind(value: string): string {
 
 function hasDatabaseList(value: Repository): value is Repository & { databases(): string[] } {
   return "databases" in value && typeof (value as { databases?: unknown }).databases === "function";
+}
+
+async function repositoryRecordCount(repository: Repository, scope: RepositoryScope): Promise<number> {
+  if (repository.listPage) return (await repository.listPage(scope, { limit: 1, offset: 0 })).total;
+  return (await repository.list(scope)).length;
+}
+
+function isSensitiveDatabaseKind(kind: string): boolean {
+  const key = kind.trim().toLocaleLowerCase();
+  return key === "identity.users" || key === "secret.keys";
+}
+
+function clampPageInteger(value: unknown, min: number, max: number, fallback: number): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(parsed)));
 }

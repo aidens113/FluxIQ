@@ -1,6 +1,18 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { AutomationStateView } from "./StateView";
+import { AutomationStateView, boundedStateItems, stateLayerImageSrc } from "./StateView";
+
+describe("State view rendering guards", () => {
+  it("bounds huge collections while retaining priority and rejects unsafe asset references", () => {
+    const items = Array.from({ length: 10_000 }, (_, index) => index);
+    const bounded = boundedStateItems(items, (item) => item === 9_999, 200);
+
+    expect(bounded).toHaveLength(200);
+    expect(bounded).toContain(9_999);
+    expect(stateLayerImageSrc("not-an-automation-asset")).toBe("");
+    expect(stateLayerImageSrc("javascript:alert(1)")).toBe("");
+  });
+});
 
 describe("AutomationStateView", () => {
   it("opens an action state request from the indexed state source", () => {
@@ -60,6 +72,20 @@ describe("AutomationStateView", () => {
       />
     );
 
+    expect(html).toContain("State source");
+    expect(html).toContain("Recording target @ snapshot.after");
+    expect(html).toContain("State phase");
+    expect(html).toContain("Input");
+    expect(html).toContain("Action");
+    expect(html).toContain("Expected Output");
+    expect(html).toContain("Actual Output");
+    expect(html).toContain("State summary");
+    expect(html).toContain("State view");
+    expect(html).toContain("Visual");
+    expect(html).toContain("Structured");
+    expect(html).toContain("Diff");
+    expect(html).toContain("Compare");
+    expect(html).toContain("No before/after deltas are available for this source");
     expect(html).toContain("/after.png");
     expect(html).not.toContain("/stale.png");
     expect(html).not.toContain("/before.png");
@@ -124,9 +150,11 @@ describe("AutomationStateView", () => {
       />
     );
 
-    expect(html).not.toContain("Node State: Deposit");
-    expect(html).not.toContain("Phase");
-    expect(html).not.toContain('title="Visual"');
+    expect(html).toContain("Node State: Deposit");
+    expect(html).toContain("Phase");
+    expect(html).toContain('aria-pressed="true" title="Visual"');
+    expect(html).toContain("Evidence Inspector");
+    expect(html).toContain("Open Recording");
     expect(html).toContain("Eligibility: Ui / Bank / Visible");
     expect(html).toContain("automation-state-overlay");
     expect(html).toContain('class="automation-state-zoom-controls"');
@@ -426,7 +454,10 @@ describe("AutomationStateView", () => {
       />
     );
 
-    expect(html).not.toContain("automation-state-surface-tabs");
+    expect(html).toContain("automation-state-surface-tabs");
+    expect(html).toContain("Visual state surface");
+    expect(html).toContain("Document");
+    expect(html).toContain("Screenshot");
     expect(html).toContain('class="automation-state-canvas surface-document" style="aspect-ratio:1200 / 1800;width:100%"');
     expect(html).toContain('class="automation-state-layer automation-state-layer-image" src="/api/programs/project.one/state-assets/screen" style="left:0%;top:38.88888888888889%;width:66.66666666666666%;height:25%;z-index:1;opacity:1"');
     expect(html).toContain('aria-label="Button" class="automation-state-layer automation-state-layer-element visual-control interactive" style="left:33.33333333333333%;top:51.388888888888886%;width:6.666666666666667%;height:2.5%');
@@ -742,8 +773,8 @@ describe("AutomationStateView", () => {
     );
 
     expect(html).toContain('<button aria-label="Search" class="automation-state-layer automation-state-layer-region visual-input selected interactive"');
-    expect(html).not.toContain("automation-state-evidence-list");
-    expect(html).not.toContain("web.elements.search.value");
+    expect(html).toContain("automation-state-evidence-list");
+    expect(html).toContain("web.elements.search.value");
   });
 
   it("highlights a visual bounding box when the selected sidebar fact matches its bounds", () => {
@@ -808,11 +839,11 @@ describe("AutomationStateView", () => {
     );
 
     expect(html).toContain('aria-label="Search box" class="automation-state-layer automation-state-layer-region visual-input selected"');
-    expect(html).not.toContain("automation-state-evidence-list");
+    expect(html).toContain("automation-state-evidence-list");
   });
 
-  it("keeps the selected visual element highlighted without a local evidence list", () => {
-    const values = Object.fromEntries(Array.from({ length: 140 }, (_, index) => [
+  it("keeps the selected visual element highlighted with persistent evidence context", () => {
+    const values = Object.fromEntries(Array.from({ length: 10_000 }, (_, index) => [
       `elements.item${index}.text`,
       {
         value: `Item ${index}`,
@@ -823,7 +854,7 @@ describe("AutomationStateView", () => {
     const html = renderToStaticMarkup(
       <AutomationStateView
         input={{
-          selection: { kind: "state", id: "state:node.search", nodeId: "node.search", factPath: "web.elements.item139.text" },
+          selection: { kind: "state", id: "state:node.search", nodeId: "node.search", factPath: "web.elements.item9999.text" },
           selectedNode: { id: "node.search", label: "Search" },
           selectedRecording: {
             recordingId: "recording.one",
@@ -841,7 +872,7 @@ describe("AutomationStateView", () => {
                     id: "frame.one",
                     coordinateSpace: { width: 400, height: 240, unit: "px" },
                     layers: [
-                      { id: "late-item", kind: "element", label: "Item 139", bounds: { x: 10, y: 149, width: 80, height: 20 }, statePath: "web.elements.item139.text" }
+                      { id: "late-item", kind: "element", label: "Item 9999", bounds: { x: 10, y: 10_009, width: 80, height: 20 }, statePath: "web.elements.item9999.text" }
                     ]
                   }]
                 }
@@ -853,9 +884,9 @@ describe("AutomationStateView", () => {
           taskGraph: null,
           pipelineArtifacts: {
             nodeEvidenceBindings: [{
-              id: "evidence.item139",
+              id: "evidence.item9999",
               nodeId: "node.search",
-              fact: { namespace: "web", path: "elements.item139.text" },
+              fact: { namespace: "web", path: "elements.item9999.text" },
               role: "eligibility",
               comparator: { kind: "exists" },
               confidence: 0.92
@@ -870,9 +901,12 @@ describe("AutomationStateView", () => {
       />
     );
 
-    expect(html).toContain('aria-label="Item 139" class="automation-state-layer automation-state-layer-element visual-text selected interactive"');
-    expect(html).not.toContain("automation-state-evidence-list");
-    expect(html).not.toContain("<strong>Item 138</strong>");
+    expect(html).toContain('aria-label="Item 9999" class="automation-state-layer automation-state-layer-element visual-text selected interactive"');
+    expect(html).toContain("automation-state-evidence-list");
+    expect(html).toContain("web.elements.item9999.text");
+    expect(html).not.toContain("<strong>Item 9998</strong>");
+    expect(html).toContain("more remain available in Structured state");
+    expect(html.length).toBeLessThan(250_000);
   });
 
   it("shows runtime comparison controls and mismatch summary", () => {
@@ -932,8 +966,9 @@ describe("AutomationStateView", () => {
       />
     );
 
-    expect(html).not.toContain("Compare");
-    expect(html).not.toContain("1 mismatches");
+    expect(html).toContain("Compare");
+    expect(html).toContain("1 mismatches");
+    expect(html).toContain("Open Run Log");
     expect(html).toContain("tone-mismatch");
   });
 
@@ -969,8 +1004,34 @@ describe("AutomationStateView", () => {
       />
     );
 
-    expect(html).not.toContain('title="Visual"');
+    expect(html).toContain('aria-pressed="true" title="Visual"');
     expect(html).toContain("No visual frame exists");
+  });
+
+  it("offers raw detail on demand and retries an exact missing state", () => {
+    const input = {
+      selection: { kind: "state", id: "state:missing", timelineEntryId: "entry.missing", stateSnapshotId: "snapshot.missing", phase: "input" } as const,
+      selectedNode: null,
+      selectedEntry: null,
+      selectedRecording: null,
+      selectedTimeline: null,
+      policy: null,
+      taskGraph: null,
+      pipelineArtifacts: {},
+      recordings: [],
+      timelines: [],
+      runtimeSessions: [],
+      signals: []
+    };
+    const idleHtml = renderToStaticMarkup(<AutomationStateView input={input} setSelection={() => undefined} />);
+    const loadingHtml = renderToStaticMarkup(<AutomationStateView input={input} loading={{ timelineEntryId: "entry.missing", stateSnapshotId: "snapshot.missing", phase: "input" }} setSelection={() => undefined} />);
+
+    expect(idleHtml).toContain('title="Raw"');
+    expect(idleHtml).not.toContain("Raw state JSON");
+    expect(idleHtml).toContain("Requested state is not loaded");
+    expect(idleHtml).toContain("Retry state loading");
+    expect(loadingHtml).toContain("Opening state");
+    expect(loadingHtml).not.toContain("Retry state loading");
   });
 
   it("renders action visual targets as explicit interacted-entity callouts", () => {

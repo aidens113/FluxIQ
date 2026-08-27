@@ -27,18 +27,17 @@ export function AutomationProposalView(props: {
   actionStatus: string;
   pipelineArtifacts: any;
   proposalReview: any;
-  proposalTargetFlowId: string | null;
   recordings: any[];
   selectedProposal: any;
   selectedRecording: any;
   onEnsureInspectorAvailable(): void;
-  onOpenRecording(recordingId: string): void;
-  onOpenState(request: ProposalNodeStateRequest): void;
-  onPipelineAction(endpoint: string, payload: JsonObject, success: string): Promise<boolean | void>;
-  onProposalReviewChange(proposalId: string, review: JsonObject): void;
-  onProcessFinalizedRecording(recordingId: string, force?: boolean): Promise<boolean | void>;
-  onGenerateDirectProposal(recordingId: string, replaceProposalId?: string): Promise<boolean | void>;
-  onProcessProposalWithLlm(proposalId: string): void;
+
+
+
+
+
+
+
   setSelection(selection: AutomationSelection): void;
 }) {
   const selectedArtifact = props.selectedProposal;
@@ -89,9 +88,6 @@ export function AutomationProposalView(props: {
   }, [baseGraph, proposal?.generatedAt, proposal?.proposalId, props.proposalReview]);
   const selectedStep = model?.steps.find((step) => step.id === selectedGraphNodeId || `node.${step.id}` === selectedGraphNodeId);
   const selectedGraphNode = graph.nodes.find((node) => node.id === selectedGraphNodeId);
-  const editableNodeIds = (proposal?.patch?.nodes ?? proposal?.policy?.nodes ?? [])
-    .map((node: any) => stringValue(objectRecord(node)?.id))
-    .filter((id: string | undefined): id is string => Boolean(id));
   const recordingFlowMapperLabel = stringValue(recordingFlowProposal?.mapper?.id) ?? "unknown mapper";
   const publishProposalNodeSelection = (node: Node<AutomationPolicyNodeData> | undefined, step: ProposalStepViewModel | undefined) => {
     if (!proposal?.proposalId || !node) return;
@@ -143,88 +139,6 @@ export function AutomationProposalView(props: {
       }
     });
   };
-  const updateGraph = (next: { nodes: Array<Node<AutomationPolicyNodeData>>; edges: Edge[] }) => {
-    graphRef.current = next;
-    setGraph(next);
-    if (!proposal?.proposalId) return;
-    props.onProposalReviewChange(proposal.proposalId, {
-      proposalId: proposal.proposalId,
-      sourceGeneratedAt: proposal.generatedAt,
-      targetFlowId: props.proposalTargetFlowId ?? "",
-      nodes: next.nodes as unknown as JsonObject[],
-      edges: next.edges as unknown as JsonObject[],
-      updatedAt: Date.now(),
-      dirty: true
-    });
-  };
-  const updateSelectedNode = (changes: Partial<AutomationPolicyNodeData>) => {
-    if (!selectedGraphNode) return;
-    updateGraph({
-      nodes: graph.nodes.map((node) => node.id === selectedGraphNode.id ? { ...node, data: { ...node.data, ...changes } } : node),
-      edges: graph.edges
-    });
-  };
-  useEffect(() => {
-    const onProposalNodeUpdate = (event: Event) => {
-      const detail = (event as CustomEvent<{ nodeId?: string; label?: string; customDescription?: string; parameterValues?: JsonObject }>).detail;
-      if (!detail?.nodeId || detail.nodeId !== selectedGraphNode?.id) return;
-      updateSelectedNode({
-        ...(detail.label !== undefined ? { label: detail.label } : {}),
-        ...(detail.customDescription !== undefined ? { customDescription: detail.customDescription } : {}),
-        ...(detail.parameterValues !== undefined ? { parameterValues: detail.parameterValues } : {})
-      });
-    };
-    window.addEventListener("automation-studio:update-proposal-node", onProposalNodeUpdate);
-    window.addEventListener("automation-studio:update-node-parameters", onProposalNodeUpdate);
-    return () => {
-      window.removeEventListener("automation-studio:update-proposal-node", onProposalNodeUpdate);
-      window.removeEventListener("automation-studio:update-node-parameters", onProposalNodeUpdate);
-    };
-  }, [selectedGraphNode?.id, graph.nodes, graph.edges]);
-  const policyOverride = () => proposal ? reactFlowGraphToPolicyOverride(proposal.policy, graphRef.current, proposal.policy?.taskId ?? proposal.proposalId) : null;
-  const applyToExistingFlow = () => {
-    if (!proposal) return;
-    if (!props.proposalTargetFlowId) {
-      window.alert("Open a canonical Flow at least once before applying this proposal, or use Save as New Flow.");
-      return;
-    }
-    const override = policyOverride();
-    void props.onPipelineAction("approve-policy-proposal", { proposalId: proposal.proposalId, targetFlowId: props.proposalTargetFlowId, requireExistingFlow: true, ...(override ? { policyOverride: override as unknown as JsonObject } : {}) }, "Proposal applied to Flow.");
-  };
-  const saveAsNewFlow = () => {
-    if (!proposal) return;
-    if (recordingFlowProposal) {
-      const name = window.prompt("Name for the new Flow", `Recorded flow ${recordingFlowMapperLabel}`)?.trim();
-      if (!name) return;
-      const override = reactFlowGraphToPolicyOverride(proposal.policy, graphRef.current, proposal.policy?.taskId ?? proposal.proposalId);
-      void props.onPipelineAction("review-recording-flow-proposal", {
-        proposalId: recordingFlowProposal.proposalId,
-        decision: "approved",
-        destination: { kind: "flow", name },
-        policyOverride: override as unknown as JsonObject
-      }, "Recording proposal saved as a new Flow.");
-      return;
-    }
-    const raw = window.prompt("Flow ID for the new saved Flow", `flow.${proposal.policy?.taskId ?? proposal.proposalId}`);
-    const targetFlowId = raw?.trim();
-    if (!targetFlowId) return;
-    const override = reactFlowGraphToPolicyOverride(proposal.policy, graphRef.current, proposal.policy?.taskId ?? proposal.proposalId);
-    void props.onPipelineAction("approve-policy-proposal", { proposalId: proposal.proposalId, targetFlowId, policyOverride: override as unknown as JsonObject }, "Proposal saved as Flow.");
-  };
-  const approveRecordingProposalToFlow = () => {
-    if (!recordingFlowProposal || !proposal) return;
-    if (!props.proposalTargetFlowId) {
-      window.alert("Open a canonical Flow at least once before approving this recording proposal.");
-      return;
-    }
-    const override = reactFlowGraphToPolicyOverride(proposal.policy, graphRef.current, proposal.policy?.taskId ?? proposal.proposalId);
-    void props.onPipelineAction("review-recording-flow-proposal", {
-      proposalId: recordingFlowProposal.proposalId,
-      decision: "approved",
-      destination: { kind: "flow", flowId: props.proposalTargetFlowId },
-      policyOverride: override as unknown as JsonObject
-    }, "Recording proposal approved into a Flow.");
-  };
   return (
     <section className="automation-proposal-workspace">
       <header className="automation-proposal-header">
@@ -232,19 +146,18 @@ export function AutomationProposalView(props: {
           <strong>{recordingFlowProposal ? `Recording Flow Proposal: ${recordingFlowMapperLabel}` : model ? `Policy Flow Proposal: ${model.title}` : "Recording Proposals"}</strong>
           <span>{recordingFlowProposal ? `${recordingFlowCandidates.length} proposed action nodes from ${recordingFlowProposal.recordingId}` : model ? `Source recording ${model.source}` : "Select a generated proposal from the sidebar."}</span>
         </div>
-        <div className="automation-pipeline-controls">
-          <button className="button" disabled={!recording} onClick={() => recording && props.onOpenRecording(recording.recordingId)} type="button"><Link2 size={13} aria-hidden />Open Source Recording</button>
-          <button className="button" disabled={!recording} onClick={() => recording && void props.onGenerateDirectProposal(recording.recordingId)} type="button"><RefreshCcw size={13} aria-hidden />Regenerate as New Attempt</button>
-          <button className="button" disabled={!recording || !selectedArtifact?.proposalId} onClick={() => recording && selectedArtifact?.proposalId && void props.onGenerateDirectProposal(recording.recordingId, selectedArtifact.proposalId)} type="button"><RefreshCcw size={13} aria-hidden />Replace This Proposal</button>
-          <button className="button button-primary" disabled={!proposal} onClick={recordingFlowProposal ? approveRecordingProposalToFlow : applyToExistingFlow} type="button"><CheckCircle2 size={13} aria-hidden />{recordingFlowProposal ? "Approve to Open Flow" : "Apply to Open Flow"}</button>
-          <button className="button" disabled={!proposal} onClick={saveAsNewFlow} type="button"><Save size={13} aria-hidden />Save as New Flow</button>
-          <button className="button" disabled={!proposal || Boolean(recordingFlowProposal)} onClick={() => proposal && props.onProcessProposalWithLlm(proposal.proposalId)} type="button"><Sparkles size={13} aria-hidden />Process With LLM</button>
-          <button className="button" disabled={!proposal || !selectedGraphNode} onClick={() => proposal && selectedGraphNode && props.onOpenState(proposalNodeStateRequest({ node: selectedGraphNode, step: selectedStep, proposal, recording, phase: "input" }))} type="button"><ListChecks size={13} aria-hidden />Open Node State</button>
+        <div className="automation-project-empty compact automation-legacy-proposal-banner">
+          <strong>Legacy proposal</strong>
+          <span>This compatibility view is read-only. Current runtime changes are reviewed as Adaptations.</span>
+          <div className="automation-legacy-compatibility-actions">
+            <a className="button button-primary" href="?view=adaptations">Open Adaptations</a>
+            {recording?.recordingId ? <a className="button" href={"?view=recording-timeline&recordingId=" + encodeURIComponent(recording.recordingId)}>Open Source Recording</a> : <a className="button" href="?view=recordings">Open Recordings</a>}
+          </div>
         </div>
         {props.actionStatus ? <StatusText value={props.actionStatus} /> : null}
       </header>
       <section className="automation-proposal-body">
-        {!model && !recordingFlowProposal ? <div className="automation-project-empty compact"><strong>No proposal selected</strong><span>Select a proposal from the sidebar, or open Proposal Generator from a source recording.</span></div> : null}
+        {!model && !recordingFlowProposal ? <div className="automation-project-empty compact"><strong>No proposal selected</strong><span>This legacy proposal is no longer available. Current runtime changes appear under Adaptations.</span></div> : null}
         {proposalIsSummaryOnly ? <div className="automation-project-empty compact"><strong>Loading full proposal</strong><span>The proposal index is loaded. Waiting for the full proposal graph.</span></div> : null}
         {model && !proposalIsSummaryOnly ? <>
           <section className="automation-proposal-summary-panel">
@@ -259,13 +172,13 @@ export function AutomationProposalView(props: {
           <section className="automation-proposal-graph-review">
             <AutomationPolicyGraphEditor
               className="proposal-review"
-              editableNodeIds={editableNodeIds}
+              editableNodeIds={[]}
               edges={graph.edges}
               mode="proposal-review"
               nodes={graph.nodes}
               selectedNodeId={selectedGraphNode?.id ?? ""}
-              showPalette
-              onGraphChange={updateGraph}
+              showPalette={false}
+              onGraphChange={() => undefined}
               onNodeSelect={(node) => {
                 setSelectedGraphNodeId(node.id);
                 const step = model.steps.find((candidate) => candidate.id === node.id || `node.${candidate.id}` === node.id);

@@ -6,6 +6,9 @@ describe("program API instrumentation helpers", () => {
     expect(classifyProgramApiEndpoint("list-runtime-sessions", { summaries: true })).toBe("summary");
     expect(classifyProgramApiEndpoint("get-flow-run-detail")).toBe("detail");
     expect(classifyProgramApiEndpoint("save-flow")).toBe("mutation");
+    expect(classifyProgramApiEndpoint("append-recording-note")).toBe("mutation");
+    expect(classifyProgramApiEndpoint("normalize-recording")).toBe("mutation");
+    expect(classifyProgramApiEndpoint("mine-recording-evidence")).toBe("mutation");
     expect(classifyProgramApiEndpoint("inspect-flow-dependencies")).toBe("other");
   });
 

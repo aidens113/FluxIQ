@@ -20,14 +20,17 @@ import {
   StepForward,
   Circle,
   Bug,
-  Undo2
+  Undo2,
+  Wrench,
+  X
 } from "lucide-react";
-import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import type { FluxIQIconName, ProgramSummary } from "fluxiq";
 import { AuthStatus } from "../../AuthShell";
+import { Breadcrumb, Drawer } from "../../../features/programs/shared-ui";
 import { LiveProgramMain } from "./ProgramLiveViews";
 
-type WorkspaceTab = "main" | "api" | "storage" | "runtime";
+type TechnicalTab = "api" | "storage" | "runtime";
 
 type ProgramWorkspaceProps = {
   program: ProgramSummary;
@@ -48,8 +51,7 @@ type ProgramWorkspaceProps = {
   };
 };
 
-const tabLabels: Record<WorkspaceTab, string> = {
-  main: "Main",
+const technicalTabLabels: Record<TechnicalTab, string> = {
   api: "API",
   storage: "Storage",
   runtime: "Runtime"
@@ -68,7 +70,8 @@ const icons = {
 } satisfies Record<FluxIQIconName, typeof Blocks>;
 
 export function ProgramWorkspace({ program, capabilities, domainName, backHref, backLabel, user }: ProgramWorkspaceProps) {
-  const [tab, setTab] = useState<WorkspaceTab>("main");
+  const [technicalTab, setTechnicalTab] = useState<TechnicalTab>("api");
+  const [technicalOpen, setTechnicalOpen] = useState(false);
   const [automationStatus, setAutomationStatus] = useState<{ state: string; detail: string; running: boolean; dirty: boolean }>({
     state: "Idle",
     detail: "No active run",
@@ -101,25 +104,36 @@ export function ProgramWorkspace({ program, capabilities, domainName, backHref, 
       window.removeEventListener("automation-studio:command-status", onCommandStatus);
     };
   }, []);
-  const confirmLeave = (event: MouseEvent<HTMLAnchorElement>) => {
+  useEffect(() => {
+    if (!technicalOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setTechnicalOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [technicalOpen]);
+  const confirmLeave = (event: MouseEvent<HTMLElement>) => {
     if (automationStatus.dirty && !window.confirm("This task has unsaved whiteboard changes. Leave without saving?")) event.preventDefault();
   };
   const saveAutomationStudio = () => {
-    setCommandState("Saving", "Saving workspace and selected task", true, automationStatus.dirty);
+    if (!automationStatus.dirty) {
+      setCommandState("Saved", "No unsaved Flow changes", false, false);
+      return;
+    }
+    setCommandState("Saving", "Saving selected Flow", true, true);
     let completed = false;
     window.dispatchEvent(new CustomEvent("automation-studio:global-save", {
       detail: {
         onComplete: (result: { ok: boolean; message: string }) => {
           completed = true;
-          setCommandState(result.ok ? "Saved" : "Save failed", result.message, false, !result.ok);
+          setCommandState(result.ok ? "Saved" : result.message.toLowerCase().includes("conflict") ? "Conflict" : "Save failed", result.message, false, !result.ok);
         }
       }
     }));
     window.setTimeout(() => {
-      if (!completed) setCommandState("Saved", "Workspace layout saved", false, false);
-    }, 1000);
-  };
-  const runAutomationStudio = () => {
+      if (!completed) setCommandState("Save failed", "No active editor accepted the save command. Your recoverable draft is preserved.", false, true);
+    }, 15_000);
+  };  const runAutomationStudio = () => {
     setCommandState("Starting", "Checking selected Flow", true, automationStatus.dirty);
     window.dispatchEvent(new CustomEvent("automation-studio:run-flow"));
   };
@@ -132,15 +146,8 @@ export function ProgramWorkspace({ program, capabilities, domainName, backHref, 
       <main className="console-main single-program program-fullscreen-shell">
         <header className="console-topbar program-global-topbar">
           <div className="program-topbar-title">
-            <a className="back-link" href={backHref} aria-label={`Back to ${backLabel}`} onClick={confirmLeave}>
-              <ArrowLeft size={16} aria-hidden />
-              <span>{backLabel}</span>
-            </a>
-            <span className="breadcrumb-separator">/</span>
-            <span className="program-topbar-icon">
-              <Icon size={16} aria-hidden />
-            </span>
-            <strong>{program.title}</strong>
+            <span className="program-topbar-icon"><Icon size={16} aria-hidden /></span>
+            <Breadcrumb items={[{ label: backLabel, href: backHref, onClick: confirmLeave }, { label: program.title }]} />
             <span className="program-domain-label">{domainName}</span>
           </div>
           <div className="automation-command-center" aria-label="Automation Studio runtime state">
@@ -171,32 +178,15 @@ export function ProgramWorkspace({ program, capabilities, domainName, backHref, 
     <main className="console-main single-program">
       <header className="console-topbar program-global-topbar">
         <div className="program-topbar-title">
-          <a className="back-link" href={backHref} aria-label={`Back to ${backLabel}`} onClick={confirmLeave}>
-            <ArrowLeft size={16} aria-hidden />
-            <span>{backLabel}</span>
-          </a>
-          <span className="breadcrumb-separator">/</span>
-          <span className="program-topbar-icon">
-            <Icon size={16} aria-hidden />
-          </span>
-          <strong>{program.title}</strong>
-          <span className="program-domain-label">{domainName}</span>
-        </div>
-        <div className="program-topbar-actions">
-          <div className="program-tabs" role="tablist" aria-label={`${program.title} sections`}>
-            {(Object.keys(tabLabels) as WorkspaceTab[]).map((item) => (
-              <button
-                aria-selected={tab === item}
-                className={tab === item ? "program-tab selected" : "program-tab"}
-                key={item}
-                onClick={() => setTab(item)}
-                role="tab"
-                type="button"
-              >
-                {tabLabels[item]}
-              </button>
-            ))}
+            <span className="program-topbar-icon"><Icon size={16} aria-hidden /></span>
+            <Breadcrumb items={[{ label: backLabel, href: backHref, onClick: confirmLeave }, { label: program.title }]} />
+            <span className="program-domain-label">{domainName}</span>
           </div>
+        <div className="program-topbar-actions">
+          <button className="button program-technical-button" onClick={() => setTechnicalOpen(true)} type="button">
+            <Wrench size={15} aria-hidden />
+            Technical details
+          </button>
           <AuthStatus displayName={user.displayName} roleId={user.roleId} />
         </div>
       </header>
@@ -213,11 +203,44 @@ export function ProgramWorkspace({ program, capabilities, domainName, backHref, 
             </div>
           </div>
         </header>
-
-        {tab === "main" ? <MainProgramUi programId={program.id} user={user} /> : null}
-        {tab === "api" ? <CapabilityPanel title="API" items={capabilities.api} /> : null}
-        {tab === "storage" ? <CapabilityPanel title="Storage" items={capabilities.storage} /> : null}
-        {tab === "runtime" ? <CapabilityPanel title="Runtime" items={capabilities.runtime} /> : null}
+        <MainProgramUi programId={program.id} user={user} />
+        {technicalOpen ? <Drawer className="program-technical-content" description={"Framework interfaces exposed by " + program.title + "."} title="Technical details" onClose={() => setTechnicalOpen(false)}>
+          <div className="program-tabs" role="tablist" aria-label="Technical detail categories">
+            {(Object.keys(technicalTabLabels) as TechnicalTab[]).map((item, index, tabs) => (
+              <button
+                aria-controls={"technical-panel-" + item}
+                aria-selected={technicalTab === item}
+                className={technicalTab === item ? "program-tab selected" : "program-tab"}
+                id={"technical-tab-" + item}
+                key={item}
+                onClick={() => setTechnicalTab(item)}
+                onKeyDown={(event: ReactKeyboardEvent<HTMLButtonElement>) => {
+                  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                  event.preventDefault();
+                  const nextIndex = event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? tabs.length - 1
+                      : event.key === "ArrowLeft"
+                        ? (index - 1 + tabs.length) % tabs.length
+                        : (index + 1) % tabs.length;
+                  const next = tabs[nextIndex];
+                  if (!next) return;
+                  setTechnicalTab(next);
+                  event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]?.focus();
+                }}
+                role="tab"
+                tabIndex={technicalTab === item ? 0 : -1}
+                type="button"
+              >
+                {technicalTabLabels[item]}
+              </button>
+            ))}
+          </div>
+          <div aria-labelledby={"technical-tab-" + technicalTab} id={"technical-panel-" + technicalTab} role="tabpanel">
+            <CapabilityPanel title={technicalTabLabels[technicalTab]} items={capabilities[technicalTab]} />
+          </div>
+        </Drawer> : null}
       </div>
     </main>
   );

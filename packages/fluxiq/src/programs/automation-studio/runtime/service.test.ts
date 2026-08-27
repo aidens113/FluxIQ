@@ -9,6 +9,7 @@ import { AutomationStudioNativeNodeRuntime } from "./native-node-runtime.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioImporterSdkManifest } from "../nodes/index.ts";
 import { IoRegistry, createEnvelope } from "../../../io/index.ts";
 import type { JsonObject } from "../../../core/index.ts";
+import { SQLiteRepository } from "../../database-manager/storage/sqlite-repository.ts";
 
 const tempRoot = path.join(process.cwd(), ".tmp", "automation-studio-service-test");
 
@@ -107,6 +108,24 @@ describe("AutomationStudioService recording persistence", () => {
         policyGraphs: []
       }
     });
+  });
+
+  it("keeps lightweight snapshots free of canonical recording payloads", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot });
+    const project = await service.createProject({ name: "Snapshot bounds", domainId: "example" });
+    await service.createRecording({
+      projectId: project.id,
+      recordingId: "recording.snapshot-bound",
+      domainId: "example",
+      initialState: { timestamp: 1, namespaces: {} }
+    });
+
+    const lightweight = await service.snapshot("example", { includeCanonical: false });
+    const compatible = await service.snapshot("example");
+
+    expect(lightweight.canonical?.recordingSessions).toEqual([]);
+    expect(lightweight.canonical?.normalizedTimelines).toEqual([]);
+    expect(compatible.canonical?.recordingSessions.map((recording) => recording.recordingId)).toContain("recording.snapshot-bound");
   });
 
   it("normalizes recorded action element targets before storage", async () => {
@@ -341,6 +360,29 @@ describe("AutomationStudioService recording persistence", () => {
     });
   });
 
+  it("resolves configured recovery limits into the runtime adaptation context", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Recovery limits" });
+    const flow = await createRunnableCanonicalFlow(service, project.id, {
+      flowId: "flow.recovery-limits",
+      metadata: {
+        trainingModeSettings: {
+          mode: "continuous_adaptive",
+          allowLlmIntervention: true,
+          allowRuntimeRecovery: true,
+          allowAdaptationCreation: true,
+          proposalApprovalMode: "auto",
+          allowPromotion: true,
+          recoveryBudget: { maxRetriesPerAction: 4, maxRecoveryAttemptsPerSubflow: 5, maxReroutesPerRun: 6 },
+          budgets: { maxInterventionsPerRun: 2, maxTokensPerRun: 12000, maxCostUsdPerTrainingWindow: 5, exhaustedBehavior: "ask" }
+        }
+      }
+    });
+
+    await expect(service.resolveRuntimeAdaptationContext({ projectId: project.id, flow })).resolves.toMatchObject({
+      settings: { recoveryBudget: { maxRetriesPerAction: 4, maxRecoveryAttemptsPerSubflow: 5, maxReroutesPerRun: 6 } }
+    });
+  });
   it("activates train-for-runs only for runs inside the training window", async () => {
     const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Train for runs" });
@@ -1912,8 +1954,39 @@ describe("AutomationStudioService recording persistence", () => {
       metadata: { groupId: group.groupId, conditionSummary: "User intent is checkout" }
     });
 
+    const always = await service.upsertFlowMapRoute({
+      projectId: project.id,
+      flowId: flow.flowId,
+      ruleId: routed.rules[0]!.ruleId,
+      name: "Primary Checkout",
+      targetSubflowId: primary.subflowId,
+      clearCondition: true
+    });
+    expect(always.rules[0]?.condition).toBeUndefined();
+    expect(always.rules[0]?.metadata?.conditionSummary).toBeUndefined();
     const withFallback = await service.upsertFlowMapRoute({ projectId: project.id, flowId: flow.flowId, name: "Fallback Route", targetSubflowId: fallback.subflowId, setAsFallback: true });
     expect(withFallback.fallback).toEqual({ kind: "subflow", subflowId: fallback.subflowId });
+
+    const duplicated = await service.mutateFlowMapRoute({ projectId: project.id, flowId: flow.flowId, ruleId: routed.rules[0]!.ruleId, action: "duplicate" });
+    const copy = duplicated.rules.find((rule) => rule.name === "Primary Checkout copy");
+    expect(copy).toBeDefined();
+    expect(duplicated.rules.map((rule) => rule.order)).toEqual([0, 10, 20]);
+
+    const moved = await service.mutateFlowMapRoute({ projectId: project.id, flowId: flow.flowId, ruleId: copy!.ruleId, action: "move_up" });
+    expect(moved.rules[0]?.ruleId).toBe(copy!.ruleId);
+
+    const toggled = await service.mutateFlowMapRoute({ projectId: project.id, flowId: flow.flowId, ruleId: routed.rules[0]!.ruleId, action: "toggle" });
+    expect(toggled.rules.find((rule) => rule.ruleId === routed.rules[0]!.ruleId)?.status).toBe("disabled");
+
+    const removedCopy = await service.mutateFlowMapRoute({ projectId: project.id, flowId: flow.flowId, ruleId: copy!.ruleId, action: "delete" });
+    expect(removedCopy.rules.some((rule) => rule.ruleId === copy!.ruleId)).toBe(false);
+    const stoppedFallback = await service.setFlowMapFallback({ projectId: project.id, flowId: flow.flowId, kind: "fail", message: "No supported request matched." });
+    expect(stoppedFallback.fallback).toEqual({ kind: "fail", message: "No supported request matched." });
+    expect(stoppedFallback.rules).toHaveLength(2);
+
+    const directFallback = await service.setFlowMapFallback({ projectId: project.id, flowId: flow.flowId, kind: "subflow", targetSubflowId: primary.subflowId });
+    expect(directFallback.fallback).toEqual({ kind: "subflow", subflowId: primary.subflowId });
+    expect(directFallback.rules).toHaveLength(2);
 
     const ungrouped = await service.deleteFlowMapRouteGroup({ projectId: project.id, flowId: flow.flowId, groupId: group.groupId });
     expect(ungrouped.metadata?.routeGroups).toEqual([]);
@@ -1951,7 +2024,8 @@ describe("AutomationStudioService recording persistence", () => {
         },
         routeDecisions: [{ ...fixture.runDetail.routeDecisions[0]!, decisionId: `decision.${index}`, selectedSubflowId: subflows[0]!.subflowId }],
         subflows: [{ ...fixture.runDetail.subflows[0]!, entryId: `entry.${index}`, subflowId: subflows[0]!.subflowId }],
-        interventions: []
+        interventions: [],
+        actionAttempts: Array.from({ length: index }, (_, actionIndex) => ({ ...(fixture.runDetail.actionAttempts ?? [])[0]!, attemptId: `attempt.${index}.${actionIndex}`, order: actionIndex }))
       });
     }
 
@@ -1971,6 +2045,20 @@ describe("AutomationStudioService recording persistence", () => {
     expect(runPage).toMatchObject({ total: 35, limit: 5, offset: 10 });
     expect(runPage.runs.map((run) => run.runId)).toEqual(["run.expansion.24", "run.expansion.23", "run.expansion.22", "run.expansion.21", "run.expansion.20"]);
     expect(runPage.runs[0]).not.toHaveProperty("routeDecisions");
+    const searchedRunId = runPage.runs[0]!.runId;
+    const searchedRuns = await service.listFlowRunSummaries({ projectId: project.id, flowId: flow.flowId, search: searchedRunId.toUpperCase(), limit: 25, offset: 0 });
+    expect(searchedRuns).toMatchObject({ total: 1, limit: 25, offset: 0 });
+    expect(searchedRuns.runs.map((run) => run.runId)).toEqual([searchedRunId]);
+    const selectedStatus = runPage.runs[0]!.status;
+    const statusRuns = await service.listFlowRunSummaries({ projectId: project.id, flowId: flow.flowId, status: selectedStatus, sort: "status", direction: "asc", limit: 100, offset: 0 });
+    expect(statusRuns.total).toBeGreaterThan(0);
+    expect(statusRuns.runs.every((run) => run.status === selectedStatus)).toBe(true);
+    const actionSortedRuns = await service.listFlowRunSummaries({ projectId: project.id, flowId: flow.flowId, sort: "actions", direction: "desc", limit: 100, offset: 0 });
+    expect(actionSortedRuns.runs.every((run, index, runs) => index === 0 || runs[index - 1]!.actionAttemptCount >= run.actionAttemptCount)).toBe(true);
+    const actionPage = await service.listFlowRunActions({ projectId: project.id, runId: "run.expansion.24", limit: 5, offset: 10 });
+    expect(actionPage).toMatchObject({ total: 24, limit: 5, offset: 10 });
+    expect(actionPage.actions.map((action) => action.attemptId)).toEqual(["attempt.24.10", "attempt.24.11", "attempt.24.12", "attempt.24.13", "attempt.24.14"]);
+    expect(actionPage.actions.every((action) => action.order >= 10 && action.order <= 14)).toBe(true);
     const selectedRun = await service.getFlowRunDetail(project.id, "run.expansion.24");
     expect(selectedRun?.routeDecisions).toEqual([expect.objectContaining({ decisionId: "decision.24" })]);
 
@@ -1984,6 +2072,42 @@ describe("AutomationStudioService recording persistence", () => {
     await expect(service.getFlowChangeProposal(project.id, flow.flowId, fixture.changeProposal.proposalId)).resolves.toMatchObject({ proposalId: fixture.changeProposal.proposalId });
   });
 
+  it("streams a bounded deep page from a persisted 10,000-action run", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Ten Thousand Actions" });
+    const flow = await service.createDefaultFlow({ projectId: project.id, ownerKind: "routine", ownerId: "routine.ten-thousand-actions", name: "Ten Thousand Actions Flow" });
+    const fixture = createAutomationStudioFlowExpansionFixture(75_000);
+    const actions = Array.from({ length: 10_000 }, (_, index) => ({
+      ...(fixture.runDetail.actionAttempts ?? [])[0]!,
+      attemptId: `attempt.large.${String(index).padStart(5, "0")}`,
+      order: index,
+      nodeId: `node.${index % 25}`,
+      inputs: { index },
+      outputs: { next: index + 1 }
+    }));
+    await service.saveFlowRunDetail({
+      ...fixture.runDetail,
+      summary: { ...fixture.runSummary, projectId: project.id, flowId: flow.flowId, runId: "run.large.10000", actionAttemptCount: actions.length, updatedAt: 75_000 },
+      routeDecisions: [],
+      subflows: [],
+      recoveryAttempts: [],
+      interventions: [],
+      adaptationIds: [],
+      changeProposalIds: [],
+      actionAttempts: actions
+    });
+
+    const startedAt = performance.now();
+    const page = await service.listFlowRunActions({ projectId: project.id, runId: "run.large.10000", limit: 50, offset: 9_950 });
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(page).toMatchObject({ total: 10_000, limit: 50, offset: 9_950 });
+    expect(page.actions).toHaveLength(50);
+    expect(page.actions[0]).toMatchObject({ attemptId: "attempt.large.09950", order: 9_950 });
+    expect(page.actions[49]).toMatchObject({ attemptId: "attempt.large.09999", order: 9_999 });
+    expect(JSON.stringify(page).length).toBeLessThan(100_000);
+    expect(elapsedMs).toBeLessThan(1_500);
+  });
   it("keeps large project summary pages free of hydrated detail payloads", async () => {
     const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Large Summary Guard" });
@@ -2015,15 +2139,48 @@ describe("AutomationStudioService recording persistence", () => {
     const adaptationPage = await service.listFlowAdaptationSummaries({ projectId: project.id, flowId: flow.flowId, limit: 5, offset: 3 });
 
     expect(subflowPage).toMatchObject({ total: 6, limit: 5, offset: 2 });
+    const filteredSubflows = await service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId, role: subflowPage.subflows[0]!.role, search: subflowPage.subflows[0]!.name, sort: "name", direction: "asc", limit: 25, offset: 0 });
+    expect(filteredSubflows.total).toBeGreaterThan(0);
+    expect(filteredSubflows.subflows.every((subflow) => subflow.flowId === flow.flowId && subflow.role === subflowPage.subflows[0]!.role)).toBe(true);
+
     expect(instructionPage).toMatchObject({ total: 10, limit: 5, offset: 4 });
+    const selectedInstructionSummary = instructionPage.instructions[0]!;
+    const filteredInstructions = await service.listFlowInstructionSummaries({ projectId: project.id, flowId: flow.flowId, status: selectedInstructionSummary.status, scopeKind: selectedInstructionSummary.scopeKind, requirement: selectedInstructionSummary.requirement, search: selectedInstructionSummary.title, sort: "priority", direction: "asc", limit: 25, offset: 0 });
+    expect(filteredInstructions.instructions).toContainEqual(expect.objectContaining({ instructionId: selectedInstructionSummary.instructionId, summaryVersion: 2 }));
     expect(proposalPage).toMatchObject({ limit: 5, offset: 1 });
     expect(runPage).toMatchObject({ total: 18, limit: 5, offset: 10 });
     expect(adaptationPage).toMatchObject({ total: 8, limit: 5, offset: 3 });
+    const selectedAdaptationSummary = adaptationPage.adaptations[0]!;
+    const filteredAdaptations = await service.listFlowAdaptationSummaries({
+      projectId: project.id,
+      flowId: flow.flowId,
+      risk: selectedAdaptationSummary.riskLevel,
+      search: selectedAdaptationSummary.trigger.toUpperCase(),
+      sort: "trigger",
+      direction: "asc",
+      limit: 25,
+      offset: 0
+    });
+    expect(filteredAdaptations.adaptations).toContainEqual(expect.objectContaining({ adaptationId: selectedAdaptationSummary.adaptationId, riskLevel: selectedAdaptationSummary.riskLevel }));
+    expect(filteredAdaptations.adaptations.every((adaptation) => adaptation.riskLevel === selectedAdaptationSummary.riskLevel)).toBe(true);
+    const riskSortedAdaptations = await service.listFlowAdaptationSummaries({ projectId: project.id, flowId: flow.flowId, sort: "risk", direction: "desc", limit: 100, offset: 0 });
+    const riskRank = (value: string) => value === "destructive" ? 4 : value === "high" ? 3 : value === "medium" ? 2 : 1;
+    expect(riskSortedAdaptations.adaptations.every((adaptation, index, adaptations) => index === 0 || riskRank(adaptations[index - 1]!.riskLevel) >= riskRank(adaptation.riskLevel))).toBe(true);
 
     expect(subflowPage.subflows[0]).not.toHaveProperty("inputMapping");
     expect(instructionPage.instructions[0]).not.toHaveProperty("body");
     expect(proposalPage.changeProposals[0]).not.toHaveProperty("patches");
     expect(runPage.runs[0]).not.toHaveProperty("routeDecisions");
+    const searchedRunId = runPage.runs[0]!.runId;
+    const searchedRuns = await service.listFlowRunSummaries({ projectId: project.id, flowId: flow.flowId, search: searchedRunId.toUpperCase(), limit: 25, offset: 0 });
+    expect(searchedRuns).toMatchObject({ total: 1, limit: 25, offset: 0 });
+    expect(searchedRuns.runs.map((run) => run.runId)).toEqual([searchedRunId]);
+    const selectedStatus = runPage.runs[0]!.status;
+    const statusRuns = await service.listFlowRunSummaries({ projectId: project.id, flowId: flow.flowId, status: selectedStatus, sort: "status", direction: "asc", limit: 100, offset: 0 });
+    expect(statusRuns.total).toBeGreaterThan(0);
+    expect(statusRuns.runs.every((run) => run.status === selectedStatus)).toBe(true);
+    const actionSortedRuns = await service.listFlowRunSummaries({ projectId: project.id, flowId: flow.flowId, sort: "actions", direction: "desc", limit: 100, offset: 0 });
+    expect(actionSortedRuns.runs.every((run, index, runs) => index === 0 || runs[index - 1]!.actionAttemptCount >= run.actionAttemptCount)).toBe(true);
     expect(runPage.runs[0]).not.toHaveProperty("interventions");
     const interventionRun = runPage.runs.find((run) => (run.interventionSummaries ?? []).length > 0);
     expect(interventionRun?.tokenUsage).toEqual({ inputTokens: 20, outputTokens: 10, totalTokens: 30, estimatedCostUsd: 0.002 });
@@ -2041,6 +2198,48 @@ describe("AutomationStudioService recording persistence", () => {
     await expect(service.getFlowInstruction(project.id, instructionPage.instructions[0]!.instructionId)).resolves.toHaveProperty("body");
     await expect(service.getFlowRunDetail(project.id, runPage.runs[0]!.runId)).resolves.toHaveProperty("routeDecisions");
     await expect(service.getFlowAdaptation(project.id, flow.flowId, adaptationPage.adaptations[0]!.adaptationId)).resolves.toHaveProperty("patch");
+  });
+
+  it("pages and filters 10,000 Subflow summaries within the local directory budget", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Subflow SQL Scale" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.subflow-scale", name: "Subflow Scale" });
+    const repository = new SQLiteRepository<JsonObject>({
+      rootDir: path.join(tempRoot, "programs", "automation-studio", "projects", project.id, "runtime", "sqlite"),
+      kind: "flow.subflows",
+      layoutVersion: 1
+    });
+    await repository.transaction({}, async (transaction) => {
+      for (let index = 0; index < 10_000; index += 1) {
+        const subflowId = `subflow.scale.${String(index).padStart(5, "0")}`;
+        const data = {
+          subflowId,
+          summaryVersion: 2,
+          graphFlowId: `${flow.flowId}.${subflowId}.graph`,
+          flowId: flow.flowId,
+          projectId: project.id,
+          name: index === 9_999 ? "Needle Recovery" : `Subflow ${String(index).padStart(5, "0")}`,
+          role: index === 9_999 ? "recovery" : "utility",
+          status: index % 7 === 0 ? "disabled" : "active",
+          updatedAt: 100_000 + index
+        };
+        await transaction.run(`insert into ${repository.tableName} (id, kind, data, created_at_ms, updated_at_ms) values (?, ?, ?, ?, ?)`, [subflowId, "flow.subflows", JSON.stringify(data), data.updatedAt, data.updatedAt]);
+      }
+    });
+
+    const pageStartedAt = performance.now();
+    const page = await service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId, limit: 50, offset: 9_950, sort: "updated", direction: "asc" });
+    const pageElapsedMs = performance.now() - pageStartedAt;
+    const searchStartedAt = performance.now();
+    const filtered = await service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId, status: "active", role: "recovery", search: "needle", limit: 50, offset: 0 });
+    const searchElapsedMs = performance.now() - searchStartedAt;
+
+    expect(page).toMatchObject({ total: 10_000, limit: 50, offset: 9_950 });
+    expect(page.subflows).toHaveLength(50);
+    expect(page.subflows[0]).not.toHaveProperty("inputMapping");
+    expect(filtered.subflows).toEqual([expect.objectContaining({ subflowId: "subflow.scale.09999", name: "Needle Recovery", role: "recovery", status: "active" })]);
+    expect(pageElapsedMs).toBeLessThan(500);
+    expect(searchElapsedMs).toBeLessThan(500);
   });
 
   it("filters adaptations by status and records review/promotion transitions", async () => {
@@ -2145,6 +2344,8 @@ describe("AutomationStudioService recording persistence", () => {
     await service.saveFlowRunDetail({ ...detail!, adaptationIds: ["adaptation.target"] });
     await expect(service.exportFlowRunAudit(project.id, run.runId)).resolves.toMatchObject({
       runId: run.runId,
+      manifest: { actionCount: expect.any(Number), recoveryCount: expect.any(Number), routeDecisionCount: expect.any(Number), interventionCount: expect.any(Number), adaptationCount: 1 },
+      integrity: { algorithm: "sha256", runDetailHash: expect.stringMatching(/^[a-f0-9]{64}$/) },
       retention: { rawPromptsRetained: false, compactContextRetained: true, sensitiveValuesRedacted: true },
       adaptations: [expect.objectContaining({
         adaptationId: "adaptation.target",
@@ -2347,6 +2548,9 @@ describe("AutomationStudioService recording persistence", () => {
     const duplicated = await service.duplicateFlowSubflow({ projectId: project.id, flowId: flow.flowId, subflowId: created.subflowId, name: "Checkout retry path" });
     const disabled = await service.disableFlowSubflow({ projectId: project.id, flowId: flow.flowId, subflowId: created.subflowId });
     const archived = await service.archiveFlowSubflow({ projectId: project.id, flowId: flow.flowId, subflowId: duplicated.subflowId });
+    const enabled = await service.enableFlowSubflow({ projectId: project.id, flowId: flow.flowId, subflowId: created.subflowId });
+    const duplicateGraph = await service.getFlow(project.id, duplicated.graphFlowId!);
+    const deleted = await service.deleteFlowSubflow({ projectId: project.id, flowId: flow.flowId, subflowId: duplicated.subflowId });
     const page = await service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId });
     const flowSummaries = await service.listAutomationFlowSummaries(project.id);
 
@@ -2362,11 +2566,27 @@ describe("AutomationStudioService recording persistence", () => {
     expect(updated.proposalModeOverride).toBe("manual");
     expect(inheritedApproval.proposalModeOverride).toBeUndefined();
     expect(duplicated.metadata).toMatchObject({ duplicatedFromSubflowId: created.subflowId });
+    expect(duplicated.graphFlowId).not.toBe(created.graphFlowId);
+    expect(duplicateGraph.metadata).toMatchObject({ parentSubflowId: duplicated.subflowId, duplicatedFromFlowId: created.graphFlowId });
     expect(disabled.status).toBe("disabled");
     expect(archived.status).toBe("archived");
-    expect(page.subflows.map((item) => item.subflowId).sort()).toEqual([created.subflowId, duplicated.subflowId].sort());
+    expect(enabled.status).toBe("active");
+    expect(deleted).toEqual({ deletedSubflowId: duplicated.subflowId, deletedGraphFlowId: duplicated.graphFlowId });
+    expect(page.subflows.map((item) => item.subflowId)).toEqual([created.subflowId]);
+    expect(page.subflows[0]).toMatchObject({ summaryVersion: 2, graphFlowId: created.graphFlowId });
   });
 
+  it("rejects stale Subflow Settings revisions without overwriting canonical data", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Subflow settings conflict" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.subflow-conflict", name: "Conflict Flow" });
+    const created = await service.createFlowSubflow({ projectId: project.id, flowId: flow.flowId, name: "Original" });
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    const current = await service.updateFlowSubflow({ projectId: project.id, flowId: flow.flowId, subflowId: created.subflowId, name: "Current" });
+
+    await expect(service.updateFlowSubflow({ projectId: project.id, flowId: flow.flowId, subflowId: created.subflowId, expectedUpdatedAt: created.updatedAt, name: "Stale overwrite" })).rejects.toThrow("SUBFLOW_SAVE_CONFLICT");
+    await expect(service.getFlowSubflow(project.id, flow.flowId, created.subflowId)).resolves.toMatchObject({ name: "Current", updatedAt: current.updatedAt });
+  });
   it("repairs stale subflow ownership and hierarchy metadata before returning Flow summaries", async () => {
     const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Stale Subflow Summary" });
@@ -3125,4 +3345,13 @@ describe("AutomationStudioService canonical Flow persistence", () => {
     await expect(service.getProjectArtifact(project.id, "task", "task.legacy")).resolves.toMatchObject({ taskId: "task.legacy" });
     expect((await service.listLegacyRetirementAudit(project.id)).map((event) => event.type)).toEqual(expect.arrayContaining(["backup_created", "backup_verified", "migration_applied", "rollback_applied", "writes_locked"]));
   });
-});
+
+  it("rejects stale Flow saves without overwriting the current revision", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Save conflicts" });
+    const created = await service.createFlow({ projectId: project.id, flowId: "flow.conflict", name: "Original" });
+    const saved = await service.saveFlow({ projectId: project.id, expectedUpdatedAt: created.updatedAt, flow: { ...created, name: "Current revision" } });
+
+    await expect(service.saveFlow({ projectId: project.id, expectedUpdatedAt: saved.updatedAt + 1, flow: { ...saved, name: "Stale overwrite" } })).rejects.toThrow("FLOW_SAVE_CONFLICT");
+    await expect(service.getFlow(project.id, created.flowId)).resolves.toMatchObject({ name: "Current revision" });
+  });});

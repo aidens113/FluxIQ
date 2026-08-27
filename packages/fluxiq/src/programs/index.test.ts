@@ -13,6 +13,7 @@ describe("global programs", () => {
     expect(ids).toEqual([
       "automation-studio",
       "identity-access",
+      "secret-keys",
       "database-manager",
       "background-tasks",
       "compute-control",

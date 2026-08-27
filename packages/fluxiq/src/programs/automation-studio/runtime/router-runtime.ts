@@ -238,6 +238,12 @@ function routeDecisionMetadata(
   };
 }
 
+export function evaluateAutomationStudioRouteCondition(
+  expression: AutomationConditionExpression | undefined,
+  input: { inputs?: JsonObject; currentStateSummary?: JsonObject }
+): { matched: boolean; reason: string } {
+  return evaluateConditionExpression(expression, input as AutomationStudioRouterExecutionInput);
+}
 function evaluateConditionExpression(expression: AutomationConditionExpression | undefined, input: AutomationStudioRouterExecutionInput): { matched: boolean; reason: string } {
   if (!expression) return { matched: true, reason: "No condition configured." };
   if ("conditions" in expression) {

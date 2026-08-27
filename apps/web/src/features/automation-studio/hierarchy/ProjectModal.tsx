@@ -1,10 +1,11 @@
 "use client";
 
-import { Field, KeyValue, Modal, StatusText, VisualAlert } from "../../programs/shared-ui";
+import { Button, Field, InlineNotice, KeyValue, Modal } from "../../programs/shared-ui";
 import type { CurrentUser } from "../../programs/types";
 import type { AutomationProjectModal, AutomationStudioProject, AutomationStudioProjectCategory } from "./model";
 
 export function AutomationProjectModalView(props: {
+  busy: boolean;
   categoryName: string;
   categoryTarget: AutomationStudioProjectCategory | null;
   currentUser: CurrentUser;
@@ -28,73 +29,105 @@ export function AutomationProjectModalView(props: {
   onRename(): void;
   onRenameCategory(): void;
 }) {
+  const isProjectForm = props.mode === "create" || props.mode === "rename";
+  const isCategoryForm = props.mode === "create-category" || props.mode === "rename-category";
+  const isDelete = props.mode === "delete" || props.mode === "delete-category";
   const pinReady = Boolean(props.currentUser.pinConfigured) && props.pin.length >= 4;
-  const pinMessage = props.currentUser.pinConfigured ? "Enter your user security PIN to authorize this change." : "Your user needs a security PIN before project editing actions are allowed.";
-  const pinField = (
-    <>
-      <VisualAlert tone="warning" title="PIN required" message={pinMessage} />
-      <Field label="Security PIN"><input autoFocus={props.mode === "delete" || props.mode === "delete-category" || props.mode === "move" || props.mode === "move-category"} inputMode="numeric" value={props.pin} onChange={(event) => props.onPinChange(event.target.value)} /></Field>
-    </>
-  );
-  if (props.mode === "delete") {
-    return (
-      <Modal title="Delete Project" onClose={props.onClose}>
-        <VisualAlert tone="warning" title="Delete project" message={`Delete ${props.projectTarget?.name ?? "this project"} and all saved hierarchy/layout state?`} />
-        {pinField}
-        <StatusText value={props.status} />
-        <div className="modal-actions"><button className="button" onClick={props.onClose} type="button">Cancel</button><button className="button button-primary danger-action" disabled={!pinReady} onClick={props.onDelete} type="button">Delete Project</button></div>
-      </Modal>
-    );
-  }
-  if (props.mode === "move") {
-    return (
-      <Modal title="Move Project" onClose={props.onClose}>
-        <KeyValue rows={[["Project", props.projectTarget?.name ?? "Project"], ["Destination", props.categoryTarget?.name ?? "Uncategorized"]]} />
-        {pinField}
-        <StatusText value={props.status} />
-        <div className="modal-actions"><button className="button" onClick={props.onClose} type="button">Cancel</button><button className="button button-primary" disabled={!pinReady} onClick={props.onMove} type="button">Move Project</button></div>
-      </Modal>
-    );
-  }
-  if (props.mode === "create-category" || props.mode === "rename-category") {
-    return (
-      <Modal title={props.mode === "create-category" ? "Create Category" : "Rename Category"} onClose={props.onClose}>
-        <Field label="Category name"><input autoFocus value={props.categoryName} onChange={(event) => props.onCategoryNameChange(event.target.value)} /></Field>
-        {pinField}
-        <StatusText value={props.status} />
-        <div className="modal-actions"><button className="button" onClick={props.onClose} type="button">Cancel</button><button className="button button-primary" disabled={!props.categoryName.trim() || !pinReady} onClick={props.mode === "create-category" ? props.onCreateCategory : props.onRenameCategory} type="button">{props.mode === "create-category" ? "Create Category" : "Save Category"}</button></div>
-      </Modal>
-    );
-  }
-  if (props.mode === "delete-category") {
-    return (
-      <Modal title="Delete Category" onClose={props.onClose}>
-        <VisualAlert tone="warning" title="Delete category" message={`Delete ${props.categoryTarget?.name ?? "this category"}? Projects in it will move to Uncategorized.`} />
-        {pinField}
-        <StatusText value={props.status} />
-        <div className="modal-actions"><button className="button" onClick={props.onClose} type="button">Cancel</button><button className="button button-primary danger-action" disabled={!pinReady} onClick={props.onDeleteCategory} type="button">Delete Category</button></div>
-      </Modal>
-    );
-  }
-  if (props.mode === "move-category") {
-    return (
-      <Modal title="Move Category" onClose={props.onClose}>
-        <KeyValue rows={[["Category", props.categoryTarget?.name ?? "Category"], ["Action", "Reorder project category grid"]]} />
-        {pinField}
-        <StatusText value={props.status} />
-        <div className="modal-actions"><button className="button" onClick={props.onClose} type="button">Cancel</button><button className="button button-primary" disabled={!pinReady} onClick={props.onMoveCategory} type="button">Move Category</button></div>
-      </Modal>
-    );
-  }
+  const contentReady = isProjectForm ? Boolean(props.name.trim()) : isCategoryForm ? Boolean(props.categoryName.trim()) : true;
+  const config = projectModalConfig(props);
+  const submit = props.mode === "create" ? props.onCreate
+    : props.mode === "rename" ? props.onRename
+    : props.mode === "delete" ? props.onDelete
+    : props.mode === "move" ? props.onMove
+    : props.mode === "create-category" ? props.onCreateCategory
+    : props.mode === "rename-category" ? props.onRenameCategory
+    : props.mode === "delete-category" ? props.onDeleteCategory
+    : props.onMoveCategory;
+
   return (
-    <Modal title={props.mode === "rename" ? "Rename Project" : "Create Project"} onClose={props.onClose}>
-      <Field label="Project name"><input autoFocus value={props.name} onChange={(event) => props.onNameChange(event.target.value)} /></Field>
-      <Field label="Description"><input value={props.description} onChange={(event) => props.onDescriptionChange(event.target.value)} /></Field>
-      {pinField}
-      <StatusText value={props.status} />
-      <div className="modal-actions"><button className="button" onClick={props.onClose} type="button">Cancel</button><button className="button button-primary" disabled={!props.name.trim() || !pinReady} onClick={props.mode === "rename" ? props.onRename : props.onCreate} type="button">{props.mode === "rename" ? "Save Project" : "Create Project"}</button></div>
+    <Modal
+      busy={props.busy}
+      closeOnEscape={!props.busy}
+      description={config.description}
+      title={config.title}
+      onClose={props.onClose}
+    >
+      <div className="dialog-form">
+        {isProjectForm ? (
+          <>
+            <Field label="Project name" required>
+              <input autoFocus maxLength={120} value={props.name} onChange={(event) => props.onNameChange(event.target.value)} />
+            </Field>
+            <Field hint="Optional. This appears in project search results." label="Description">
+              <textarea maxLength={500} rows={3} value={props.description} onChange={(event) => props.onDescriptionChange(event.target.value)} />
+            </Field>
+          </>
+        ) : null}
+        {isCategoryForm ? (
+          <Field label="Category name" required>
+            <input autoFocus maxLength={120} value={props.categoryName} onChange={(event) => props.onCategoryNameChange(event.target.value)} />
+          </Field>
+        ) : null}
+        {props.mode === "move" ? <KeyValue rows={[
+          ["Project", props.projectTarget?.name ?? "Project"],
+          ["Destination", props.categoryTarget?.name ?? "Uncategorized"]
+        ]} /> : null}
+        {props.mode === "move-category" ? <KeyValue rows={[
+          ["Category", props.categoryTarget?.name ?? "Category"],
+          ["Position", "Before the selected category"]
+        ]} /> : null}
+        {isDelete ? <InlineNotice message={config.consequence} title="This cannot be undone" tone="warning" /> : null}
+        {!props.currentUser.pinConfigured ? (
+          <InlineNotice message="Configure a security PIN in Identity and Access before changing projects or categories." title="PIN not configured" tone="error" />
+        ) : (
+          <Field hint="Use your current user security PIN." label="Security PIN" required>
+            <input
+              autoComplete="off"
+              autoFocus={isDelete || props.mode === "move" || props.mode === "move-category"}
+              inputMode="numeric"
+              maxLength={12}
+              type="password"
+              value={props.pin}
+              onChange={(event) => props.onPinChange(event.target.value)}
+            />
+          </Field>
+        )}
+        {props.status ? <InlineNotice message={props.status} tone="error" /> : null}
+      </div>
+      <div className="modal-actions">
+        <Button disabled={props.busy} onClick={props.onClose}>Cancel</Button>
+        <Button
+          busy={props.busy}
+          data-modal-submit
+          disabled={!contentReady || !pinReady}
+          onClick={submit}
+          variant={isDelete ? "danger" : "primary"}
+        >
+          {config.actionLabel}
+        </Button>
+      </div>
     </Modal>
   );
+}
+
+export function projectModalConfig(props: {
+  mode: Exclude<AutomationProjectModal, null>;
+  projectTarget: AutomationStudioProject | null;
+  categoryTarget: AutomationStudioProjectCategory | null;
+}): { title: string; description: string; actionLabel: string; consequence: string } {
+  const projectName = props.projectTarget?.name ?? "this project";
+  const categoryName = props.categoryTarget?.name ?? "this category";
+  const configs = {
+    create: { title: "Create project", description: "Create a workspace for Flows, recordings, runtime history, and settings.", actionLabel: "Create project", consequence: "" },
+    rename: { title: "Edit project", description: `Update the name and description for ${projectName}.`, actionLabel: "Save changes", consequence: "" },
+    delete: { title: "Delete project", description: `Permanently delete ${projectName}.`, actionLabel: "Delete project", consequence: "The project hierarchy, workspace settings, Flows, recordings, and runtime history will be deleted." },
+    move: { title: "Move project", description: `Move ${projectName} to a different category.`, actionLabel: "Move project", consequence: "" },
+    "create-category": { title: "Create category", description: "Add a category for organizing projects.", actionLabel: "Create category", consequence: "" },
+    "rename-category": { title: "Rename category", description: `Update the display name for ${categoryName}.`, actionLabel: "Save changes", consequence: "" },
+    "delete-category": { title: "Delete category", description: `Delete ${categoryName} without deleting its projects.`, actionLabel: "Delete category", consequence: "Projects in this category will move to Uncategorized." },
+    "move-category": { title: "Reorder category", description: `Move ${categoryName} in the project browser.`, actionLabel: "Move category", consequence: "" }
+  } satisfies Record<Exclude<AutomationProjectModal, null>, { title: string; description: string; actionLabel: string; consequence: string }>;
+  return configs[props.mode];
 }
 
 export function projectGridSections(projects: AutomationStudioProject[], categories: AutomationStudioProjectCategory[]): Array<{

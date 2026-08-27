@@ -13,11 +13,3 @@ export function sameStringList(left: string[], right: string[]): boolean {
 export function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
 }
-
-export function groupByNamespace(signals: any[]): Record<string, any[]> {
-  return signals.reduce<Record<string, any[]>>((groups, signal) => {
-    const namespace = signal.namespace ?? "state";
-    groups[namespace] = [...(groups[namespace] ?? []), signal];
-    return groups;
-  }, {});
-}

@@ -1,15 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { automationBottomDockMinHeight, automationWorkspaceRegionForView, closeAutomationWorkspacePaneTab, defaultAutomationWorkspacePrefs, moveAutomationWorkspacePaneTab, normalizeAutomationWorkspacePrefs, type AutomationWorkspacePrefs } from "./layout";
+import { automationBottomDockMinHeight, automationWorkspaceRegionForView, closeAutomationWorkspacePaneTab, defaultAutomationWorkspacePrefs, moveAutomationWorkspacePaneTab, normalizeAutomationWorkspacePrefs, resizeAutomationMainSplitRatios, type AutomationWorkspacePrefs } from "./layout";
 
 describe("Automation Studio strict workspace layout", () => {
   it("opens reset/default layouts with the normal Flow editor surface", () => {
     const prefs = defaultAutomationWorkspacePrefs();
 
     expect(prefs.mainLayoutPreset).toBe("single");
+    expect(prefs.leftSidebarCollapsed).toBe(false);
     expect(prefs.panes).toEqual([{ id: "pane-main-1", activeViewId: "policy-primary", tabs: ["policy-primary"] }]);
-    expect(prefs.windows.find((windowItem) => windowItem.id === "window-policy")?.tabs).toEqual(["policy-primary"]);
+    expect(prefs.windows).toEqual([]);
+    expect(prefs.layoutVersion).toBe(3);
   });
 
+  it("persists sidebar collapse and clamps sidebar width", () => {
+    const prefs = normalizeAutomationWorkspacePrefs({
+      ...defaultAutomationWorkspacePrefs(),
+      leftSidebarCollapsed: true,
+      sidebarWidth: 999
+    });
+    expect(prefs.leftSidebarCollapsed).toBe(true);
+    expect(prefs.sidebarWidth).toBe(420);
+  });
   it("keeps legacy one-tab Flow layouts as normal editor layouts", () => {
     const prefs = normalizeAutomationWorkspacePrefs({
       layoutVersion: 2,
@@ -21,6 +32,7 @@ describe("Automation Studio strict workspace layout", () => {
       activeViewId: "policy-primary",
       maximizedWindowId: null,
       sidebarWidth: 280,
+      leftSidebarCollapsed: false,
       inspectorWidth: 320,
       bottomTimelineHeight: 220,
       bottomTimelineCollapsed: true,
@@ -31,12 +43,48 @@ describe("Automation Studio strict workspace layout", () => {
       bottomDock: { activeViewId: "recording-action-preview", expanded: false },
       utilityWindowsMigrated: true,
       rightSidebarCollapsed: false,
-      viewStates: {}
+      viewStates: {},
+      density: "comfortable",
+      motion: "system"
     });
 
     expect(prefs.panes).toEqual([{ id: "pane-main-1", activeViewId: "policy-primary", tabs: ["policy-primary"] }]);
   });
 
+  it("migrates persisted Runs tabs to canonical Runtime Debug", () => {
+    const prefs = normalizeAutomationWorkspacePrefs({
+      layoutVersion: 2,
+      panes: [{ id: "pane-main-1", activeViewId: "runs-history", tabs: ["policy-primary", "runs-history"] }],
+      rightSidebar: { activeViewId: "global-inspector", tabs: ["global-inspector"], collapsed: false },
+      bottomDock: { activeViewId: "recording-action-preview", expanded: false }
+    } as AutomationWorkspacePrefs);
+
+    expect(prefs.panes[0]?.activeViewId).toBe("runtime-debug");
+    expect(prefs.panes[0]?.tabs).toEqual(["policy-primary", "runtime-debug"]);
+    expect(prefs.panes[0]?.tabs).not.toContain("runs-history");
+  });
+  it("migrates persisted AI Assistant tabs to Inspector", () => {
+    const prefs = normalizeAutomationWorkspacePrefs({
+      layoutVersion: 2,
+      panes: [{ id: "pane-main-1", activeViewId: "policy-primary", tabs: ["policy-primary"] }],
+      rightSidebar: { activeViewId: "ai-assistant", tabs: ["ai-assistant"], collapsed: false },
+      bottomDock: { activeViewId: "recording-action-preview", expanded: false }
+    } as AutomationWorkspacePrefs);
+
+    expect(prefs.rightSidebar.activeViewId).toBe("global-inspector");
+    expect(prefs.rightSidebar.tabs).toEqual(["global-inspector"]);
+  });
+  it("migrates persisted Relationship Web tabs to State View", () => {
+    const prefs = normalizeAutomationWorkspacePrefs({
+      layoutVersion: 2,
+      panes: [{ id: "pane-main-1", activeViewId: "signals-web", tabs: ["policy-primary", "signals-web"] }],
+      rightSidebar: { activeViewId: "global-inspector", tabs: ["global-inspector"], collapsed: false },
+      bottomDock: { activeViewId: "recording-action-preview", expanded: false }
+    } as AutomationWorkspacePrefs);
+
+    expect(prefs.panes[0]?.activeViewId).toBe("state-explorer");
+    expect(prefs.panes[0]?.tabs).toEqual(["policy-primary", "state-explorer"]);
+  });
   it("does not inject Flow workbench tabs into custom multi-tab layouts", () => {
     const prefs = normalizeAutomationWorkspacePrefs({
       layoutVersion: 2,
@@ -52,7 +100,7 @@ describe("Automation Studio strict workspace layout", () => {
     expect(automationWorkspaceRegionForView("recording-action-preview")).toBe("bottom");
     expect(automationWorkspaceRegionForView("timeline-recording")).toBe("main");
     expect(automationWorkspaceRegionForView("global-inspector")).toBe("right");
-    expect(automationWorkspaceRegionForView("ai-assistant")).toBe("right");
+    expect(automationWorkspaceRegionForView("problems-view")).toBe("right");
     expect(automationWorkspaceRegionForView("state-explorer")).toBe("main");
     expect(automationWorkspaceRegionForView("proposal-generator")).toBe("main");
   });
@@ -68,13 +116,14 @@ describe("Automation Studio strict workspace layout", () => {
       activeWindowId: "proposal-window",
       maximizedWindowId: null,
       sidebarWidth: 300,
+      leftSidebarCollapsed: false,
       inspectorWidth: 360,
       utilityWindowsMigrated: true,
       rightSidebarCollapsed: false,
       viewStates: {}
     } as AutomationWorkspacePrefs);
 
-    expect(prefs.layoutVersion).toBe(2);
+    expect(prefs.layoutVersion).toBe(3);
     expect(prefs.mainLayoutPreset).toBe("three-main-two");
     expect(prefs.panes).toHaveLength(3);
     expect(prefs.panes[0]?.activeViewId).toBe("proposal-workbench");
@@ -94,6 +143,7 @@ describe("Automation Studio strict workspace layout", () => {
       activeViewId: "timeline-recording",
       maximizedWindowId: null,
       sidebarWidth: 280,
+      leftSidebarCollapsed: false,
       inspectorWidth: 320,
       bottomTimelineHeight: 999,
       bottomTimelineCollapsed: false,
@@ -107,14 +157,38 @@ describe("Automation Studio strict workspace layout", () => {
       bottomDock: { activeViewId: "recording-action-preview", expanded: true },
       utilityWindowsMigrated: true,
       rightSidebarCollapsed: true,
-      viewStates: {}
+      viewStates: {},
+      density: "comfortable",
+      motion: "system"
     });
 
     expect(prefs.panes.flatMap((pane) => pane.tabs)).toEqual(["timeline-recording", "policy-primary", "proposal-generator", "policy-primary"]);
-    expect(prefs.rightSidebar.activeViewId).toBe("workspace-dock");
-    expect(prefs.rightSidebar.tabs).toEqual(["workspace-dock", "global-inspector"]);
+    expect(prefs.rightSidebar.activeViewId).toBe("global-inspector");
+    expect(prefs.rightSidebar.tabs).toEqual(["global-inspector"]);
     expect(prefs.bottomTimelineHeight).toBe(420);
     expect(prefs.mainSplitRatios.map((ratio) => Number(ratio.toFixed(2)))).toEqual([0.33, 0.33, 0.33]);
+  });
+
+  it("migrates invalid display preferences to safe defaults", () => {
+    const prefs = normalizeAutomationWorkspacePrefs({
+      ...defaultAutomationWorkspacePrefs(),
+      density: "tiny",
+      motion: "spin"
+    } as unknown as AutomationWorkspacePrefs);
+
+    expect(prefs.density).toBe("comfortable");
+    expect(prefs.motion).toBe("system");
+  });
+
+  it("preserves supported display preferences", () => {
+    const prefs = normalizeAutomationWorkspacePrefs({
+      ...defaultAutomationWorkspacePrefs(),
+      density: "compact",
+      motion: "reduce"
+    });
+
+    expect(prefs.density).toBe("compact");
+    expect(prefs.motion).toBe("reduce");
   });
 
   it("allows a compact bottom timeline height", () => {
@@ -127,6 +201,19 @@ describe("Automation Studio strict workspace layout", () => {
     } as AutomationWorkspacePrefs);
 
     expect(prefs.bottomTimelineHeight).toBe(automationBottomDockMinHeight);
+  });
+
+  it("resizes adjacent panes without changing the other ratios or total", () => {
+    const resized = resizeAutomationMainSplitRatios([0.5, 0.25, 0.25], 1, 0.08);
+    expect(resized[0]).toBe(0.5);
+    expect(resized[1]).toBeCloseTo(0.33);
+    expect(resized[2]).toBeCloseTo(0.17);
+    expect(resized.reduce((sum, ratio) => sum + ratio, 0)).toBeCloseTo(1);
+  });
+
+  it("keeps keyboard-sized pane pairs above their minimum", () => {
+    expect(resizeAutomationMainSplitRatios([0.5, 0.25, 0.25], 1, 1)).toEqual([0.5, 0.38, 0.12]);
+    expect(resizeAutomationMainSplitRatios([1], 0, 0.1)).toEqual([1]);
   });
 
   it("closes an empty main pane and switches to the smaller layout", () => {

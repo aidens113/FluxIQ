@@ -224,9 +224,9 @@ describe("AutomationProjectTree", () => {
     expect(automationHierarchyNodeCanCreateChildFolder(nodes[1]!)).toBe(true);
     expect(automationHierarchyNodeCanCreateChildFolder(nodes[2]!)).toBe(true);
     expect(automationHierarchyNodeCanCreateChildFolder(nodes[3]!)).toBe(false);
-    expect(html).toContain('aria-label="Add inside Subflows"');
-    expect(html).toContain('aria-label="Add inside Checkout Steps"');
-    expect(html).not.toContain('aria-label="Add inside Runs"');
+    expect(html).toContain('aria-label="Subflows actions"');
+    expect(html).toContain('aria-label="Checkout Steps actions"');
+    expect(html).not.toContain('aria-label="Runs actions"');
   });
   it("allows deleting Flow category object rows without deleting generated Flow structure", () => {
     const nodes: AutomationHierarchyNode[] = [
@@ -261,11 +261,80 @@ describe("AutomationProjectTree", () => {
     expect(automationHierarchyNodeCanDelete(nodes[3]!)).toBe(true);
     expect(automationHierarchyNodeCanDelete(nodes[5]!)).toBe(true);
     expect(automationHierarchyNodeCanDelete(nodes[7]!)).toBe(true);
-    expect(html).not.toContain("aria-label=\"Delete Settings\"");
-    expect(html).not.toContain("aria-label=\"Delete Subflows\"");
-    expect(html).not.toContain("aria-label=\"Delete Adaptations\"");
-    expect(html).toContain("aria-label=\"Delete primary\"");
-    expect(html).toContain("aria-label=\"Delete route\"");
-    expect(html).toContain("aria-label=\"Delete 1\"");
+    expect(html).not.toContain("aria-label=\"Settings actions\"");
+    expect(html).not.toContain("aria-label=\"Subflows actions\"");
+    expect(html).not.toContain("aria-label=\"Adaptations actions\"");
+    expect(html).toContain("aria-label=\"primary actions\"");
+    expect(html).toContain("title=\"primary\"");
+    expect(html).toContain("aria-label=\"route actions\"");
+    expect(html).toContain("aria-label=\"1 actions\"");
   });
-});
+  it("exposes a semantic, levelled tree with one roving tab stop", () => {
+    const nodes: AutomationHierarchyNode[] = [
+      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "policy-primary", sourceId: "flow.checkout", flowId: "flow.checkout" },
+      { id: "flow-a-router", label: "Router", kind: "flow-object", category: "flow", parentId: "flow-a", viewId: "flow-router", sourceId: "flow.checkout", flowId: "flow.checkout" }
+    ];
+    const html = renderToStaticMarkup(
+      <AutomationProjectTree
+        nodes={nodes}
+        activeViewId="flow-router"
+        search=""
+        typeFilter="all"
+        selection={{ kind: "flow", id: "flow.checkout" }}
+        recordingPrimaryKind={null}
+        setRecordingPrimaryKind={vi.fn()}
+        setSelection={vi.fn()}
+        openView={vi.fn()}
+        requestAction={vi.fn()}
+      />
+    );
+
+    expect(html).toContain('role="tree"');
+    expect(html.match(/role="treeitem"/g)?.length).toBe(3);
+    expect(html.match(/role="group"/g)?.length).toBe(2);
+    expect(html.match(/tabindex="0"/g)?.length).toBe(1);
+    expect(html).toContain('aria-level="1"');
+    expect(html).toContain('aria-level="2"');
+    expect(html).toContain('aria-level="3"');
+    expect(html).toContain('aria-selected="true"');
+    expect(html).toContain('data-tree-parent-id="flow-a"');
+  });
+
+  it("progressively pages large unfiltered sibling sets but never hides search matches", () => {
+    const nodes: AutomationHierarchyNode[] = [
+      ...Array.from({ length: 124 }, (_, index): AutomationHierarchyNode => ({
+        id: "flow-" + index,
+        label: "Flow " + String(index).padStart(3, "0"),
+        kind: "flow",
+        category: "flow",
+        parentId: null,
+        viewId: "policy-primary",
+        sourceId: "flow." + index,
+        flowId: "flow." + index
+      })),
+      { id: "flow-final", label: "ZZZ final target", kind: "flow", category: "flow", parentId: null, viewId: "policy-primary", sourceId: "flow.final", flowId: "flow.final" }
+    ];
+    const render = (search: string) => renderToStaticMarkup(
+      <AutomationProjectTree
+        nodes={nodes}
+        activeViewId="policy-primary"
+        search={search}
+        typeFilter="all"
+        selection={null}
+        recordingPrimaryKind={null}
+        setRecordingPrimaryKind={vi.fn()}
+        setSelection={vi.fn()}
+        openView={vi.fn()}
+        requestAction={vi.fn()}
+      />
+    );
+
+    const unfiltered = render("");
+    expect(unfiltered.match(/role="treeitem"/g)?.length).toBe(101);
+    expect(unfiltered).toContain("Show 25 more");
+    expect(unfiltered).not.toContain("ZZZ final target");
+
+    const searched = render("ZZZ final");
+    expect(searched).toContain("ZZZ final target");
+    expect(searched).not.toContain("Show ");
+  });});

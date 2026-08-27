@@ -1,12 +1,10 @@
 "use client";
 
-import { BookOpen, CalendarClock, CheckCircle2, ChevronDown, ChevronRight, CloudUpload, Copy, Database, FileText, FolderOpen, GitBranch, KeyRound, Play, PlayCircle, QrCode, RefreshCcw, ShieldCheck, Square, TimerReset, UserPlus } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { DeploymentGitVersion, DeploymentSyncRun, DeploymentSyncSnapshotResponse } from "fluxiq/deployment-sync";
-import { useProgramApi, type ApiResponse, type JsonObject } from "../program-api";
-import { DataTable, Field, KeyValue, Modal, Panel, Segmented, SpecDatum, StatusBadge, StatusText, SummaryStrip, VisualAlert, type AlertTone } from "../shared-ui";
-import type { CurrentUser } from "../types";
-import { buildDocumentationTree, copyText, csv, digits, docRouteKey, docsLinkCandidates, emptyCredentialEdit, flattenRunLogs, formatCountdown, formatDbCell, formatDuration, formatTime, isSensitiveDatabaseStore, normalizeDocPath, parseJsonObject, resolveDocsLink, sandboxedDocumentationHtml, scheduleProgress, sensitiveStoreKey, shortJson, shouldCollapseDocsFolder, titleFromRouteSegment, yesNo, type DocsTreeNode } from "./shared";
+import { useProgramApi, type ApiResponse } from "../program-api";
+import { DataTable, Field, KeyValue, Modal, Panel, Segmented, StatusText, SummaryStrip, VisualAlert } from "../shared-ui";
+import { formatTime, yesNo } from "./shared";
 
 
 export function DeploymentSyncLive() {
@@ -16,6 +14,8 @@ export function DeploymentSyncLive() {
   const [selectedRun, setSelectedRun] = useState<DeploymentSyncRun | { version: DeploymentGitVersion } | null>(null);
   const [historyTab, setHistoryTab] = useState<"versions" | "git" | "branches" | "actions">("versions");
   const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{ endpoint: "sync" | "rollback"; targetId: string; versionSha?: string } | null>(null);
   const refresh = useCallback(async () => setSnapshot(await api.get<DeploymentSyncSnapshotResponse>("snapshot")), [api]);
   useEffect(() => void refresh(), [refresh]);
   const targets = snapshot?.payload?.targets ?? [];
@@ -23,7 +23,9 @@ export function DeploymentSyncLive() {
   const activeTarget = targets.find((item) => item.id === selectedTargetId) ?? targets[0];
 
   async function run(endpoint: "dry-run" | "sync" | "rollback", targetId: string, versionSha?: string) {
+    setBusy(true);
     const result = await api.post<DeploymentSyncRun>(endpoint, versionSha ? { targetId, versionSha } : { targetId });
+    setBusy(false);
     setSelectedRun(result.payload ?? null);
     setStatus(result.ok ? `${endpoint} finished` : result.error ?? "Deployment action failed");
     await refresh();
@@ -39,7 +41,7 @@ export function DeploymentSyncLive() {
         <div className="field-row dense-fields"><Field label="Branch target"><select value={activeTarget?.id ?? ""} onChange={(event) => setSelectedTargetId(event.target.value)}>{targets.map((item) => <option key={item.id} value={item.id}>{item.name}{item.metadata?.current ? " (current)" : ""}</option>)}</select></Field></div>
         {activeTarget ? <KeyValue rows={[["Branch", String(activeTarget.metadata?.branch ?? activeTarget.name)], ["Type", activeTarget.environment], ["Status", activeTarget.status], ["SHA", String(activeTarget.metadata?.sha ?? "-")]]} /> : null}
         {git?.dirty ? <VisualAlert tone="warning" title="Working tree has local changes" message="Git will refuse unsafe branch changes. Commit, stash, or clean local changes before syncing to another branch." /> : null}
-        <div className="inline-actions"><button className="button" disabled={!activeTarget} onClick={() => activeTarget && void run("dry-run", activeTarget.id)} type="button">Dry Run</button><button className="button button-primary" disabled={!activeTarget} onClick={() => activeTarget && void run("sync", activeTarget.id)} type="button">Checkout Branch</button></div>
+        <div className="inline-actions"><button className="button" disabled={!activeTarget || !git?.available || busy} onClick={() => activeTarget && void run("dry-run", activeTarget.id)} type="button">Dry Run</button><button className="button button-primary" disabled={!activeTarget || !git?.available || busy} onClick={() => activeTarget && setPendingAction({ endpoint: "sync", targetId: activeTarget.id })} type="button">Checkout Branch</button></div>
       </Panel>
       <Panel title="All Branches">
         <DataTable columns={["Branch", "Type", "Current", "Status", "SHA"]} rows={targets.map((item) => [<button className="link-button" onClick={() => setSelectedTargetId(item.id)} type="button">{item.name}</button>, item.environment, yesNo(item.metadata?.current), item.status, String(item.metadata?.sha ?? "-").slice(0, 12)])} />
@@ -52,7 +54,7 @@ export function DeploymentSyncLive() {
           version.author,
           formatTime(version.committedAtMs),
           version.message,
-          <button className="button" disabled={!activeTarget} onClick={() => activeTarget && void run("rollback", activeTarget.id, version.sha)} type="button">Rollback</button>
+          <button className="button" disabled={!activeTarget || !git?.available || busy} onClick={() => activeTarget && setPendingAction({ endpoint: "rollback", targetId: activeTarget.id, versionSha: version.sha })} type="button">Rollback</button>
         ])} empty="No git versions discovered." /> : null}
         {historyTab === "git" ? <div className="git-state-panel">
           <DataTable columns={["Remote", "Direction", "URL"]} rows={(git?.remotes ?? []).map((remote) => [remote.name, remote.direction, remote.url])} empty="No git remotes configured." />
@@ -60,9 +62,15 @@ export function DeploymentSyncLive() {
         </div> : null}
         {historyTab === "branches" ? <DataTable columns={["Branch", "Current", "Remote", "Upstream", "SHA"]} rows={(git?.branches ?? []).map((branch) => [branch.name, yesNo(branch.current), yesNo(branch.remote), branch.upstream ?? "-", String(branch.sha ?? "-").slice(0, 12)])} empty="No branches discovered." /> : null}
         {historyTab === "actions" ? <DataTable columns={["Run", "Target", "Mode", "Status", "Message"]} rows={(snapshot?.payload?.runs ?? []).map((run) => [<button className="link-button" onClick={() => setSelectedRun(run)} type="button">{run.id.slice(0, 8)}</button>, run.targetId, run.mode ?? "-", run.status, run.message ?? "-"])} /> : null}
-        {selectedRun ? <details className="json-details" open><summary>Selected result</summary><pre>{JSON.stringify(selectedRun, null, 2)}</pre></details> : null}
-        <StatusText value={status} />
+        {selectedRun ? <DeploymentResultDetail value={selectedRun} /> : null}
+        <StatusText value={busy ? "Deployment action in progress..." : status} />
       </Panel>
+      {pendingAction ? <Modal title={pendingAction.endpoint === "rollback" ? "Confirm Rollback" : "Confirm Branch Checkout"} description={pendingAction.endpoint === "rollback" ? "Rollback changes the selected target to version " + pendingAction.versionSha + "." : "Checkout updates the importing repository to the selected branch. Local changes may block the operation."} onClose={() => setPendingAction(null)}><VisualAlert tone="warning" title="Repository state will change" message="Review the target and working-tree status before continuing." /><KeyValue rows={[["Target", pendingAction.targetId], ["Action", pendingAction.endpoint], ["Version", pendingAction.versionSha ?? "Selected branch"]]} /><div className="modal-actions"><button className="button" onClick={() => setPendingAction(null)} type="button">Cancel</button><button className="button button-primary" onClick={() => { const action = pendingAction; setPendingAction(null); void run(action.endpoint, action.targetId, action.versionSha); }} type="button">{pendingAction.endpoint === "rollback" ? "Rollback" : "Checkout"}</button></div></Modal> : null}
     </section>
   );
+}
+
+function DeploymentResultDetail({ value }: { value: DeploymentSyncRun | { version: DeploymentGitVersion } }) {
+  if ("version" in value) return <section className="deployment-result-detail"><h3>Selected Version</h3><KeyValue rows={[["SHA", value.version.sha], ["Author", value.version.author], ["Committed", formatTime(value.version.committedAtMs)], ["Refs", value.version.refs.join(", ") || "-"], ["Message", value.version.message]]} /></section>;
+  return <section className="deployment-result-detail"><h3>Selected Action</h3><KeyValue rows={[["Run ID", value.id], ["Target", value.targetId], ["Mode", value.mode ?? "-"], ["Status", value.status], ["Started", formatTime(value.startedAtMs)], ["Finished", formatTime(value.finishedAtMs)], ["Message", value.message ?? "-"]]} />{value.plan?.length ? <ol>{value.plan.map((step) => <li key={step}>{step}</li>)}</ol> : null}</section>;
 }

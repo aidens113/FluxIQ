@@ -49,6 +49,15 @@ export type AutomationNodeParameter = {
     placeholder?: string;
   };
   required?: boolean;
+  example?: JsonValue;
+  constraints?: {
+    minimum?: number;
+    maximum?: number;
+    minLength?: number;
+    maxLength?: number;
+    pattern?: string;
+    integer?: boolean;
+  };
 };
 
 export type AutomationNodeExecutionContext = {

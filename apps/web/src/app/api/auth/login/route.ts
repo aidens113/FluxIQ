@@ -53,6 +53,7 @@ export async function POST(request: Request) {
         user: result.user,
         role: result.role,
         expiresAtMs: result.session.expiresAtMs,
+        requiresCredentialSetup: result.user.username === "admin" && payload.password === "admin",
       },
     });
     response.cookies.set(FLUXIQ_SESSION_COOKIE, result.session.id, {

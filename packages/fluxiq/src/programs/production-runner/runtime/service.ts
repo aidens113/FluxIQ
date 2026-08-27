@@ -166,7 +166,7 @@ export class ProductionRunnerService {
     const targets = [...this.targets.values()].filter((target) => !domain || target.domainId?.trim().toLowerCase() === domain || !target.domainId);
     return {
       targets: targets.sort((left, right) => left.name.localeCompare(right.name)),
-      runs: runs.sort((left, right) => (right.startedAtMs ?? 0) - (left.startedAtMs ?? 0))
+      runs: runs.sort((left, right) => (right.startedAtMs ?? 0) - (left.startedAtMs ?? 0)).slice(0, 100)
     };
   }
 

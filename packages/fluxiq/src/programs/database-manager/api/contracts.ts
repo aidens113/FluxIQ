@@ -3,6 +3,7 @@ import type { DatabaseManagerSnapshot, RecordEnvelope, RepositoryScope } from ".
 
 export const DATABASE_MANAGER_ENDPOINTS = {
   snapshot: "snapshot",
+  authorizeStore: "authorize-store",
   listRecords: "list-records",
   getRecord: "get-record",
   putRecord: "put-record",
@@ -23,6 +24,12 @@ export type DatabaseManagerStoreRequest = {
   authorizationPassword?: string;
   authorizationPin?: string;
   authorizationTotp?: string;
+  grantId?: string;
+  limit?: number;
+  offset?: number;
+  search?: string;
+  sort?: "id" | "updated" | "created";
+  direction?: "asc" | "desc";
 };
 
 export type DatabaseManagerRecordRequest = DatabaseManagerStoreRequest & {
@@ -38,4 +45,6 @@ export type DatabaseManagerRunMigrationRequest = {
   direction?: "up" | "down";
 };
 
+export type DatabaseManagerRecordPageResponse = { records: Array<RecordEnvelope<JsonObject>>; total: number; limit: number; offset: number };
+export type DatabaseManagerSensitiveGrantResponse = { grantId: string; expiresAtMs: number };
 export type DatabaseManagerRecordResponse = RecordEnvelope<JsonObject> | null;

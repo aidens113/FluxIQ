@@ -2,7 +2,7 @@ import { mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
 import sqlite3 from "sqlite3";
 import type { JsonObject } from "../../../core/index.ts";
-import type { RecordEnvelope, Repository, RepositoryScope } from "../types.ts";
+import type { RecordEnvelope, Repository, RepositoryListPage, RepositoryListPageOptions, RepositoryScope } from "../types.ts";
 
 export type SQLiteRepositoryOptions = {
   rootDir: string;
@@ -16,19 +16,8 @@ export type SQLiteTransaction = {
   get<T>(sql: string, params?: unknown[]): Promise<T | undefined>;
 };
 
-export type SQLiteListPageOptions = {
-  limit?: number;
-  offset?: number;
-  orderBy?: "id" | "updated_at_ms" | "created_at_ms";
-  direction?: "asc" | "desc";
-};
-
-export type SQLiteListPage<T extends JsonObject = JsonObject> = {
-  records: Array<RecordEnvelope<T>>;
-  total: number;
-  limit: number;
-  offset: number;
-};
+export type SQLiteListPageOptions = RepositoryListPageOptions;
+export type SQLiteListPage<T extends JsonObject = JsonObject> = RepositoryListPage<T>;
 
 export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repository<T> {
   readonly rootDir: string;
@@ -56,9 +45,12 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
     const offset = clampInteger(options.offset, 0, 1_000_000, 0);
     const orderBy = options.orderBy === "created_at_ms" ? "created_at_ms" : options.orderBy === "id" ? "id" : "updated_at_ms";
     const direction = options.direction === "asc" ? "asc" : "desc";
+    const search = typeof options.search === "string" ? options.search.trim().slice(0, 500) : "";
     return this.withDatabase(scope, async (db, normalizedScope) => {
-      const totalRow = await get<{ total: number }>(db, `select count(*) as total from ${this.tableName}`);
-      const rows = await all<SQLiteRecordRow>(db, `select id, kind, data, created_at_ms as createdAtMs, updated_at_ms as updatedAtMs from ${this.tableName} order by ${orderBy} ${direction} limit ? offset ?`, [limit, offset]);
+      const where = search ? " where id like ? escape '\\' or data like ? escape '\\'" : "";
+      const searchParams = search ? [sqliteLikePattern(search), sqliteLikePattern(search)] : [];
+      const totalRow = await get<{ total: number }>(db, `select count(*) as total from ${this.tableName}${where}`, searchParams);
+      const rows = await all<SQLiteRecordRow>(db, `select id, kind, data, created_at_ms as createdAtMs, updated_at_ms as updatedAtMs from ${this.tableName}${where} order by ${orderBy} ${direction}, id asc limit ? offset ?`, [...searchParams, limit, offset]);
       return {
         records: rows.map((row) => rowToRecord<T>(row, normalizedScope)),
         total: totalRow?.total ?? 0,
@@ -289,7 +281,10 @@ function close(db: sqlite3.Database): Promise<void> {
   });
 }
 
-function clampInteger(value: unknown, min: number, max: number, fallback: number): number {
+
+function sqliteLikePattern(value: string): string {
+  return "%" + value.replace(/([%_\\])/g, "\\$1") + "%";
+}function clampInteger(value: unknown, min: number, max: number, fallback: number): number {
   const numeric = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.min(max, Math.max(min, Math.trunc(numeric)));

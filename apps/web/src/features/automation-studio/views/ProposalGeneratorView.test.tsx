@@ -4,23 +4,19 @@ import { describe, expect, it } from "vitest";
 import { AutomationProposalGeneratorView } from "./ProposalGeneratorView";
 
 describe("AutomationProposalGeneratorView", () => {
-  it("renders LLM-assisted generation above direct generation", () => {
+  it("renders restored legacy tabs as read-only compatibility content", () => {
     const html = renderToStaticMarkup(
-      <AutomationProposalGeneratorView
-        actionStatus=""
-        generationBusy={false}
-        proposals={[]}
-        recordingProcessing={null}
-        selectedRecording={{ recordingId: "recording.one", startedAt: 1, endedAt: 2, metadata: { name: "Checkout flow" } }}
-        onGenerateAssisted={async () => true}
-        onGenerateDirect={async () => true}
-      />
+      <AutomationProposalGeneratorView selectedRecording={{ recordingId: "recording.one", metadata: { name: "Checkout flow" } }} />
     );
 
-    expect(html.indexOf("LLM-Assisted")).toBeGreaterThan(-1);
-    expect(html.indexOf("OR")).toBeGreaterThan(html.indexOf("LLM-Assisted"));
-    expect(html.indexOf("Direct Generation")).toBeGreaterThan(html.indexOf("OR"));
-    expect(html).toContain("Generate Assisted Proposal");
-    expect(html).toContain("Generate Direct Proposal");
+    expect(html).toContain("Legacy Proposal Generator");
+    expect(html).toContain("Read-only compatibility view");
+    expect(html).toContain("Recording-driven proposal generation is retired");
+    expect(html).toContain("Open Adaptations");
+    expect(html).toContain("Open Recordings");
+    expect(html).toContain("recordingId=recording.one");
+    expect(html).not.toContain("Generate Assisted Proposal");
+    expect(html).not.toContain("Generate Direct Proposal");
+    expect(AutomationProposalGeneratorView.toString()).not.toContain("onGenerate");
   });
 });

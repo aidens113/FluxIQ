@@ -74,6 +74,44 @@ export function sortAutomationHierarchyNodes(nodes: AutomationHierarchyNode[]): 
   return [...nodes].sort((first, second) => rank[first.kind] - rank[second.kind] || first.label.localeCompare(second.label));
 }
 
+export type AutomationHierarchyIndex = {
+  byId: Map<string, AutomationHierarchyNode>;
+  childrenByParentId: Map<string | null, AutomationHierarchyNode[]>;
+};
+
+export function indexAutomationHierarchyNodes(nodes: AutomationHierarchyNode[]): AutomationHierarchyIndex {
+  const byId = new Map<string, AutomationHierarchyNode>();
+  const childrenByParentId = new Map<string | null, AutomationHierarchyNode[]>();
+  for (const node of nodes) {
+    byId.set(node.id, node);
+    const children = childrenByParentId.get(node.parentId) ?? [];
+    children.push(node);
+    childrenByParentId.set(node.parentId, children);
+  }
+  for (const [parentId, children] of childrenByParentId) {
+    childrenByParentId.set(parentId, sortAutomationHierarchyNodes(children));
+  }
+  return { byId, childrenByParentId };
+}
+
+export function visibleAutomationHierarchyNodeIds(
+  index: AutomationHierarchyIndex,
+  predicate: (node: AutomationHierarchyNode) => boolean
+): Set<string> {
+  const visible = new Set<string>();
+  for (const node of index.byId.values()) {
+    if (!predicate(node)) continue;
+    visible.add(node.id);
+    let parentId = node.parentId;
+    const visited = new Set<string>();
+    while (parentId && !visited.has(parentId)) {
+      visited.add(parentId);
+      visible.add(parentId);
+      parentId = index.byId.get(parentId)?.parentId ?? null;
+    }
+  }
+  return visible;
+}
 export function automationHierarchyCategoryLabel(category: AutomationHierarchyCategory): string {
   return automationHierarchyCategories.find((item) => item.id === category)?.label ?? "Flows";
 }
@@ -114,55 +152,6 @@ export function recordingHierarchyNodes(recordings: any[]): AutomationHierarchyN
       parentId: folderId,
       viewId: "timeline-recording",
       sourceId: recording.recordingId
-    });
-  }
-  return nodes;
-}
-
-export function proposalHierarchyNodes(recordings: any[], proposals: any[]): AutomationHierarchyNode[] {
-  const clientFolders = new Map<string, AutomationHierarchyNode>();
-  const recordingFolders = new Map<string, AutomationHierarchyNode>();
-  const nodes: AutomationHierarchyNode[] = [];
-  const recordingsById = new Map(recordings.map((recording) => [recording.recordingId, recording]));
-  for (const proposal of proposals) {
-    const recordingId = proposal?.recordingId ?? proposal?.metadata?.recordingId;
-    const recording = typeof recordingId === "string" ? recordingsById.get(recordingId) : null;
-    if (!recording) continue;
-    const clientName = recordingClientName(recording);
-    const folderId = `proposals-client-${stableNodeId(clientName)}`;
-    if (!clientFolders.has(folderId)) {
-      const folder: AutomationHierarchyNode = {
-        id: folderId,
-        label: clientName,
-        kind: "folder",
-        category: "proposal",
-        parentId: null
-      };
-      clientFolders.set(folderId, folder);
-      nodes.push(folder);
-    }
-    const recordingFolderId = `proposals-recording-${stableNodeId(recording.recordingId)}`;
-    if (!recordingFolders.has(recordingFolderId)) {
-      const folder: AutomationHierarchyNode = {
-        id: recordingFolderId,
-        label: recordingDateTimeLabel(recording),
-        kind: "folder",
-        category: "proposal",
-        parentId: folderId,
-        sourceId: recording.recordingId
-      };
-      recordingFolders.set(recordingFolderId, folder);
-      nodes.push(folder);
-    }
-    nodes.push({
-      id: `proposal-${stableNodeId(proposal.proposalId)}`,
-      label: proposalHierarchyLabel(proposal),
-      kind: "proposal",
-      category: "proposal",
-      parentId: recordingFolderId,
-      viewId: "proposal-workbench",
-      sourceId: proposal.proposalId,
-      recordingId: recording.recordingId
     });
   }
   return nodes;
@@ -209,7 +198,7 @@ export function flowHierarchyNodes(flowEntries: any[], options: { recordings?: a
       recordings,
       proposals,
       subflowGraphs,
-      includeUnlinkedRecordings: true,
+      includeUnlinkedRecordings: false,
       includeRouter: true,
       visitedFlowIds: new Set([flowId])
     });
@@ -257,7 +246,6 @@ function appendFlowObjectHierarchy(input: {
     { id: "instructions", label: "Instructions", kind: "flow-object", viewId: "flow-instructions", sourceIds: Array.isArray(expansion.instructionIds) ? expansion.instructionIds : [] },
     { id: "recordings", label: "Recordings", kind: "folder", viewId: "timeline-recording", sourceIds: flowRecordings.map((recording) => recording.recordingId) },
     { id: "adaptations", label: "Adaptations", kind: "folder", viewId: "adaptations", sourceIds: adaptationSourceIds },
-    { id: "runs", label: "Runs", kind: "folder", viewId: "runs-history", sourceIds: Array.isArray(expansion.runIds) ? expansion.runIds : [] },
     { id: "runtime-debug", label: "Runtime Debug", kind: "flow-object", viewId: "runtime-debug" },
     { id: "settings", label: "Settings", kind: "flow-object", viewId: "flow-settings" }
   ];
@@ -434,13 +422,6 @@ function proposalRecordingNodeData(kind: AutomationHierarchyKind, sourceId: stri
   return recordingId ? { recordingId } : {};
 }
 
-function proposalHierarchyLabel(proposal: any): string {
-  const metadata = proposal?.metadata ?? {};
-  if (typeof metadata.title === "string" && metadata.title.trim()) return metadata.title.trim();
-  const mode = metadata.generationMode === "llm_assisted" ? "Assisted" : metadata.generationMode === "direct" ? "Direct" : "Proposal";
-  const detail = proposal?.mapper?.id ?? metadata.generatedBy ?? (proposal?.generatedAt ? new Date(proposal.generatedAt).toLocaleString() : proposal?.proposalId);
-  return `${mode}: ${detail}`;
-}
 
 export function recordingClientName(recording: any): string {
   const metadata = recording?.metadata ?? {};

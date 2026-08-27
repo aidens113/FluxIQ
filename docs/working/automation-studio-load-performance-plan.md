@@ -142,8 +142,10 @@ Hotspots from the audit:
   `metadata.projectId` when object storage is enabled.
 - `listFlowPublicationRecords()` calls `loadAllProjectFlows()` and then scans
   all persisted Flow records.
-- `snapshot()` returns complete canonical stores for recordings, timelines,
-  registries, learned models, and policy graphs.
+- The legacy service `snapshot()` can return complete canonical stores for
+  controlled compatibility callers only. Automation Studio does not invoke it
+  during browser bootstrap, and the HTTP snapshot handler always requests
+  `includeCanonical: false`.
 
 Repository work:
 
@@ -154,6 +156,9 @@ Repository work:
 - Add count metadata to paged responses.
 - Keep file/object-store fallback behavior, but prefer index summaries over
   full document reads.
+- Preserve the lightweight bootstrap boundary: project chooser loads only
+  project summaries, project open loads scoped workspace summaries, and no
+  browser route may use a complete canonical snapshot as a cache warmer.
 
 Acceptance criteria:
 

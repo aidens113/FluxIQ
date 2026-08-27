@@ -155,7 +155,7 @@ the gateway, so dismissed requests do not reappear after a browser refresh.
 Approving the modal calls `/api/client-gateway/approve-pairing`; the client
 then receives `server.session_ready` with its client credential. Raw
 credentials are never included in session snapshots. The Client Gateway view
-lists safe trust metadata and lets a PIN-authorized operator revoke access.
+lists safe trust metadata and lets a PIN-authorized operator revoke access. The Connected Clients view also exposes Approve and Reject beside every pending reference, using the same global endpoints as the shell modal. Snapshot polling runs only while the view is active, rejects stale responses, and uses a five-second interval. Start/stop recording, action testing, and trust revocation open command-specific PIN-only authorization dialogs after the command is chosen; no shared always-visible credential field is used.
 
 Extension/client connection flow:
 

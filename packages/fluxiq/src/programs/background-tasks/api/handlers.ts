@@ -23,7 +23,7 @@ export function registerBackgroundTasksApi(registry: GlobalProgramApiRegistry, s
     handler: async (request) => {
       const payload = request.payload as BackgroundTaskDetailRequest | undefined;
       if (!payload?.taskId) return { ok: false, error: "taskId is required" };
-      return { ok: true, payload: await service.detail(payload.taskId, payload.limit) };
+      return { ok: true, payload: await service.detail(payload.taskId, payload.limit, payload.offset, payload.status) };
     }
   });
   registry.register({

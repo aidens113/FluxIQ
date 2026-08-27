@@ -1,6 +1,11 @@
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Search, Trash2 } from "lucide-react";
+import { useId, useState } from "react";
 import type { AutomationNodeParameter } from "fluxiq/automation-studio/nodes";
 import type { JsonObject } from "../../programs/program-api";
+
+export type AutomationReferenceType = "action" | "task" | "policy" | "routine" | "database-collection" | "variable";
+export type AutomationReferenceOption = { id: string; label: string; detail?: string };
+export type AutomationReferenceOptions = Partial<Record<AutomationReferenceType, AutomationReferenceOption[]>>;
 
 export function AutomationNodeParameterEditor(props: {
   node: {
@@ -10,6 +15,7 @@ export function AutomationNodeParameterEditor(props: {
     parameters?: AutomationNodeParameter[];
     parameterValues?: JsonObject;
   };
+  referenceOptions?: AutomationReferenceOptions;
   onChange(parameterValues: JsonObject): void;
   onDescriptionChange(customDescription: string): void;
 }) {
@@ -36,6 +42,7 @@ export function AutomationNodeParameterEditor(props: {
             key={parameter.id}
             parameter={parameter}
             value={values[parameter.id] ?? parameter.defaultValue}
+            {...(props.referenceOptions ? { referenceOptions: props.referenceOptions } : {})}
             onChange={(value) => setValue(parameter, value)}
           />
         )) : <span className="muted-text">This node has no editable parameters.</span>}
@@ -44,9 +51,23 @@ export function AutomationNodeParameterEditor(props: {
   );
 }
 
-function AutomationNodeParameterField(props: { parameter: AutomationNodeParameter; value: unknown; onChange(value: unknown): void }) {
+function AutomationNodeParameterField(props: { parameter: AutomationNodeParameter; value: unknown; referenceOptions?: AutomationReferenceOptions; onChange(value: unknown): void }) {
+  const error = automationParameterError(props.parameter, props.value, props.referenceOptions);
+  return (
+    <div className={error ? "automation-parameter-field-shell invalid" : "automation-parameter-field-shell"}>
+      <AutomationNodeParameterControl {...props} />
+      {props.parameter.example !== undefined ? <small className="automation-parameter-example">Example: {automationParameterPrimitiveText(props.parameter.example)}</small> : null}
+      {error ? <small className="automation-parameter-error" role="alert">{error}</small> : null}
+    </div>
+  );
+}
+
+function AutomationNodeParameterControl(props: { parameter: AutomationNodeParameter; value: unknown; referenceOptions?: AutomationReferenceOptions; onChange(value: unknown): void }) {
   const parameter = props.parameter;
   const value = props.value;
+  if (parameter.ui?.control === "reference" && parameter.ui.referenceType) {
+    return <AutomationReferenceParameterField parameter={parameter} value={String(value ?? "")} options={props.referenceOptions?.[parameter.ui.referenceType] ?? []} onChange={props.onChange} />;
+  }
   if (parameter.options?.length) {
     return (
       <label className="automation-parameter-field">
@@ -70,7 +91,7 @@ function AutomationNodeParameterField(props: { parameter: AutomationNodeParamete
     return (
       <label className="automation-parameter-field">
         <span>{parameter.label}{parameter.required ? " *" : ""}</span>
-        <input type="number" value={String(value ?? 0)} onChange={(event) => props.onChange(Number(event.target.value))} />
+        <input max={parameter.constraints?.maximum} min={parameter.constraints?.minimum} step={parameter.constraints?.integer ? 1 : "any"} type="number" value={String(value ?? 0)} onChange={(event) => props.onChange(Number(event.target.value))} />
         {parameter.description ? <small className="automation-parameter-help">{parameter.description}</small> : null}
       </label>
     );
@@ -106,7 +127,7 @@ function AutomationNodeParameterField(props: { parameter: AutomationNodeParamete
     return (
       <label className="automation-parameter-field">
         <span>{parameter.label}{parameter.required ? " *" : ""}</span>
-        <textarea value={String(value ?? "")} placeholder={parameter.ui.placeholder} onChange={(event) => props.onChange(event.target.value)} />
+        <textarea maxLength={parameter.constraints?.maxLength} minLength={parameter.constraints?.minLength} value={String(value ?? "")} placeholder={parameter.ui.placeholder} onChange={(event) => props.onChange(event.target.value)} />
         {parameter.description ? <small className="automation-parameter-help">{parameter.description}</small> : null}
       </label>
     );
@@ -116,6 +137,38 @@ function AutomationNodeParameterField(props: { parameter: AutomationNodeParamete
   );
 }
 
+function AutomationReferenceParameterField(props: { parameter: AutomationNodeParameter; value: string; options: AutomationReferenceOption[]; onChange(value: unknown): void }) {
+  const [query, setQuery] = useState("");
+  const labelId = "automation-reference-" + useId().replace(/:/g, "");
+  const selected = props.options.find((option) => option.id === props.value);
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const filtered = props.options.filter((option) => !normalizedQuery || (option.label + " " + (option.detail ?? "")).toLocaleLowerCase().includes(normalizedQuery));
+  return (
+    <div className="automation-parameter-field automation-reference-control">
+      <span id={labelId}>{props.parameter.label}{props.parameter.required ? " *" : ""}</span>
+      {props.options.length ? <>
+        <label className="automation-reference-search">
+          <Search size={13} aria-hidden />
+          <input aria-label={"Search " + props.parameter.label} onChange={(event) => setQuery(event.target.value)} placeholder={props.parameter.ui?.placeholder ?? "Search available objects"} type="search" value={query} />
+        </label>
+        <div aria-labelledby={labelId} className="automation-reference-options" role="listbox">
+          {filtered.map((option) => (
+            <button aria-selected={option.id === props.value} className={option.id === props.value ? "selected" : ""} key={option.id} onClick={() => props.onChange(option.id)} role="option" type="button">
+              <strong>{option.label}</strong>
+              {option.detail ? <small>{option.detail}</small> : null}
+            </button>
+          ))}
+          {!filtered.length ? <span className="automation-reference-empty">No matching objects.</span> : null}
+        </div>
+        <div className="automation-reference-current">
+          <span>{selected ? selected.label : props.value ? "Previously selected object is unavailable" : "No object selected"}</span>
+          {!props.parameter.required && props.value ? <button className="button" onClick={() => props.onChange("")} type="button">Clear</button> : null}
+        </div>
+      </> : <span className="automation-reference-empty" role="status">No compatible objects are available.</span>}
+      {props.parameter.description ? <small className="automation-parameter-help">{props.parameter.description}</small> : null}
+    </div>
+  );
+}
 function AutomationStringParameterField(props: { parameter: AutomationNodeParameter; value: unknown; onChange(value: string): void }) {
   const ui = props.parameter.ui;
   const controlLabel = automationParameterControlLabel(props.parameter);
@@ -123,7 +176,7 @@ function AutomationStringParameterField(props: { parameter: AutomationNodeParame
     <label className={`automation-parameter-field automation-string-control ${ui?.control ?? "text"}`}>
       <span>{props.parameter.label}{props.parameter.required ? " *" : ""}</span>
       <div className="automation-string-input-wrap">
-        <input value={String(props.value ?? "")} placeholder={ui?.placeholder ?? controlLabel} onChange={(event) => props.onChange(event.target.value)} />
+        <input maxLength={props.parameter.constraints?.maxLength} minLength={props.parameter.constraints?.minLength} pattern={props.parameter.constraints?.pattern} value={String(props.value ?? "")} placeholder={ui?.placeholder ?? controlLabel} onChange={(event) => props.onChange(event.target.value)} />
         <small>{controlLabel}</small>
       </div>
       {props.parameter.description ? <small className="automation-parameter-help">{props.parameter.description}</small> : null}
@@ -213,6 +266,41 @@ function AutomationArrayParameterEditor(props: { value: unknown; onChange(value:
   );
 }
 
+export function automationParameterError(parameter: AutomationNodeParameter, value: unknown, referenceOptions?: AutomationReferenceOptions): string | null {
+  const empty = value === undefined || value === null || (typeof value === "string" && !value.trim());
+  if (parameter.required && empty) return parameter.label + " is required.";
+  if (empty) return null;
+  if (parameter.ui?.control === "reference" && parameter.ui.referenceType) {
+    const options = referenceOptions?.[parameter.ui.referenceType];
+    if (options && !options.some((option) => option.id === value)) return "Choose an available " + automationReferenceTypeLabel(parameter.ui.referenceType) + ".";
+  }
+  if (parameter.valueType === "number") {
+    if (typeof value !== "number" || !Number.isFinite(value)) return "Enter a valid number.";
+    if (parameter.constraints?.minimum !== undefined && value < parameter.constraints.minimum) return "Enter " + parameter.constraints.minimum + " or greater.";
+    if (parameter.constraints?.maximum !== undefined && value > parameter.constraints.maximum) return "Enter " + parameter.constraints.maximum + " or less.";
+    if (parameter.constraints?.integer && !Number.isInteger(value)) return "Enter a whole number.";
+  }
+  if ((parameter.valueType === "object" || parameter.valueType === "json") && (typeof value !== "object" || !value || Array.isArray(value))) return "Enter structured fields.";
+  if (parameter.valueType === "array" && !Array.isArray(value)) return "Enter a list of values.";
+  if (typeof value === "string") {
+    if (parameter.constraints?.minLength !== undefined && value.length < parameter.constraints.minLength) return "Enter at least " + parameter.constraints.minLength + " characters.";
+    if (parameter.constraints?.maxLength !== undefined && value.length > parameter.constraints.maxLength) return "Enter no more than " + parameter.constraints.maxLength + " characters.";
+    if (parameter.constraints?.pattern) {
+      try {
+        if (!new RegExp(parameter.constraints.pattern).test(value)) return "Use the required format.";
+      } catch {
+        return "This field has an invalid validation pattern.";
+      }
+    }
+    if (parameter.ui?.control === "identifier" && !/^[A-Za-z][A-Za-z0-9._-]*$/.test(value)) return "Start with a letter and use letters, numbers, dots, dashes, or underscores.";
+  }
+  return null;
+}
+
+function automationReferenceTypeLabel(type: AutomationReferenceType): string {
+  if (type === "database-collection") return "data table";
+  return type;
+}
 function automationObjectParameterValue(value: unknown): JsonObject {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : {};
 }

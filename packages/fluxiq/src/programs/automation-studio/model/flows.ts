@@ -135,6 +135,11 @@ export function defaultAutomationStudioFlowSettingsMetadata(): JsonObject {
     proposalApprovalMode: "auto",
     allowPromotion: true,
     requireFirstManualReviewBeforeAutoPromotion: false,
+    recoveryBudget: {
+      maxRetriesPerAction: 1,
+      maxRecoveryAttemptsPerSubflow: 2,
+      maxReroutesPerRun: 2
+    },
     budgets: {
       maxInterventionsPerRun: 2,
       maxTokensPerRun: 12000,

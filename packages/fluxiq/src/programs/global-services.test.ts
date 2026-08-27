@@ -220,6 +220,22 @@ describe("global program services", () => {
         actor: actorFor(login),
         payload: { kind: "identity.users", authSessionId: login.session.id, authorizationPassword: "admin" }
       })).resolves.toMatchObject({ ok: true });
+      const grant = await runtime.api.call({
+        programId: "database-manager",
+        endpoint: "authorize-store",
+        scope: {},
+        actor: actorFor(login),
+        payload: { kind: "identity.users", authSessionId: login.session.id, authorizationPassword: "admin" }
+      }) as { ok: boolean; payload?: { grantId: string; expiresAtMs: number } };
+      expect(grant.ok).toBe(true);
+      expect(grant.payload?.expiresAtMs).toBeGreaterThan(Date.now());
+      await expect(runtime.api.call({
+        programId: "database-manager",
+        endpoint: "list-records",
+        scope: {},
+        actor: actorFor(login),
+        payload: { kind: "identity.users", grantId: grant.payload?.grantId, limit: 1, offset: 0 }
+      })).resolves.toMatchObject({ ok: true, payload: { limit: 1, offset: 0, records: expect.any(Array), total: expect.any(Number) } });
 
       await runtime.api.call({
         programId: "secret-keys",
@@ -443,6 +459,16 @@ describe("global program services", () => {
 
     expect(session.expiresAtMs).toBe(1000 + 12 * 60 * 60 * 1000);
     expect((await service.snapshot(1000)).sessions).toHaveLength(1);
+  });
+
+  it("protects the final enabled administrator", async () => {
+    const service = new IdentityAccessService();
+
+    await expect(service.updateUser({ id: "admin", enabled: false })).rejects.toThrow("At least one enabled administrator is required");
+    await expect(service.updateUser({ id: "admin", roleId: "viewer" })).rejects.toThrow("At least one enabled administrator is required");
+
+    await service.upsertUser({ id: "admin.two", username: "admin-two", displayName: "Second Admin", roleId: "admin", enabled: true });
+    await expect(service.updateUser({ id: "admin", enabled: false })).resolves.toMatchObject({ enabled: false });
   });
 
   it("authenticates the default admin and verifies privileged credentials", async () => {
@@ -811,6 +837,31 @@ describe("global program services", () => {
     });
   });
 
+
+  it("requires fresh credentials before disabling two-factor authentication", async () => {
+    const runtime = createGlobalProgramRuntime();
+    const setup = await runtime.identityAccess.beginTotp("admin");
+    const code = testTotpCode(setup.secret);
+    await runtime.identityAccess.confirmTotp("admin", code);
+    const login = await runtime.identityAccess.authenticate({ username: "admin", password: "admin", totp: code });
+
+    await expect(runtime.api.call({
+      programId: "identity-access",
+      endpoint: "disable-totp",
+      scope: {},
+      actor: actorFor(login),
+      payload: { userId: "admin", authSessionId: login.session.id, authorizationPassword: "admin" }
+    })).resolves.toMatchObject({ ok: false, requiresRecheck: true });
+
+    await expect(runtime.api.call({
+      programId: "identity-access",
+      endpoint: "disable-totp",
+      scope: {},
+      actor: actorFor(login),
+      payload: { userId: "admin", authSessionId: login.session.id, authorizationPassword: "admin", authorizationTotp: code }
+    })).resolves.toMatchObject({ ok: true });
+    expect((await runtime.identityAccess.snapshot()).users.find((user) => user.id === "admin")?.totpEnabled).toBe(false);
+  });
 
   it("creates secret keys without requiring TOTP but requires TOTP to reveal them", async () => {
     const runtime = createGlobalProgramRuntime();

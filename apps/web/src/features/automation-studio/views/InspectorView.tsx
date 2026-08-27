@@ -1,16 +1,85 @@
 "use client";
 
-import { ListChecks, Search } from "lucide-react";
+import { Check, Copy, ExternalLink, ListChecks, Search } from "lucide-react";
 import type { NodeStatePhase } from "fluxiq/automation-studio";
 import type { JsonObject } from "../../programs/program-api";
+import { createContext, useContext, useEffect, useState } from "react";
 import { KeyValue, SummaryStrip } from "../../programs/shared-ui";
 import type { AutomationInspectorWidget, AutomationSelection } from "../types";
 import { formatAutomationPorts } from "../graph/ports";
 import { buildTimelineInspectorSections, conditionSummary } from "../timeline/view-model";
-import { AutomationNodeParameterEditor } from "../parameters/ParameterEditor";
+import { AutomationNodeParameterEditor, type AutomationReferenceOptions } from "../parameters/ParameterEditor";
 import { buildNodeStateViewModel } from "../state/view-model";
-export function AutomationInspector(props: { entries: any[]; selection: AutomationSelection | null; policy: any; flow: any; flowPublications: any[]; flowDependencyInfo: any; node: any; recording: any; entry: any; signal: any; pipelineArtifacts: any; selectedTimeline: any; recordings: any[]; timelines: any[]; runtimeSessions: any[]; signals: any[]; onOpenState(request: { nodeId?: string; sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; proposalId?: string; timelineEntryId?: string }): void; setSelection(selection: AutomationSelection): void }) {
-  const title = props.selection?.kind === "state" ? "State Detail" : props.selection?.kind === "flow" ? "Flow" : props.selection?.kind === "signal" ? "Signal" : props.selection?.kind === "timeline" ? "Timeline Entry" : props.selection?.kind === "recording" ? "Recording" : props.selection?.kind === "policy" ? "Policy Graph" : props.selection?.kind === "proposal-step" ? "Proposal Step" : props.selection?.kind === "editor-node" ? "Editor Node" : props.selection?.kind === "editor-mode" ? `${props.selection.label} Mode` : "Node Inspector";
+const InspectorFilterContext = createContext("");
+
+export type AutomationInspectorIdentity = { title: string; label: string; id: string; breadcrumb: string[]; href?: string; openLabel?: string };
+
+export function automationInspectorIdentity(selection: AutomationSelection | null, context: { flow?: any; node?: any; recording?: any; entry?: any; signal?: any }): AutomationInspectorIdentity | null {
+  if (!selection) return null;
+  const flowLabel = context.flow?.name ?? context.flow?.flowId;
+  const labels: Partial<Record<AutomationSelection["kind"], string>> = {
+    workspace: selection.id === "clients" ? "Connected Clients" : "Runs",
+    flow: context.flow?.name ?? selection.id,
+    policy: context.flow?.name ?? selection.id,
+    proposal: "Legacy proposal",
+    "proposal-step": selection.kind === "proposal-step" ? selection.step.label : "",
+    node: context.node?.label ?? selection.id,
+    "editor-node": selection.kind === "editor-node" ? selection.node.label : "",
+    "editor-mode": selection.kind === "editor-mode" ? selection.label + " Mode" : "",
+    recording: context.recording?.name ?? context.recording?.metadata?.name ?? selection.id,
+    timeline: context.entry?.label ?? context.entry?.type ?? selection.id,
+    signal: context.signal?.label ?? context.signal?.path ?? selection.id,
+    state: selection.kind === "state" ? selection.factPath ?? selection.evidenceId ?? "State detail" : ""
+  };
+  const titles: Partial<Record<AutomationSelection["kind"], string>> = {
+    workspace: "Workspace",
+    flow: "Flow",
+    policy: "Policy Graph",
+    proposal: "Legacy Proposal",
+    "proposal-step": "Legacy Proposal Step",
+    node: "Node",
+    "editor-node": "Editor Node",
+    "editor-mode": "Editor Mode",
+    recording: "Recording",
+    timeline: "Timeline Entry",
+    signal: "Signal",
+    state: "State Detail"
+  };
+  let href: string | undefined;
+  let openLabel: string | undefined;
+  if (selection.kind === "flow") { href = "?view=flow-settings"; openLabel = "Open Flow Settings"; }
+  else if (selection.kind === "policy" || selection.kind === "node" || selection.kind === "editor-mode") { href = "?view=flow-editor"; openLabel = "Open Nodes"; }
+  else if (selection.kind === "recording") { href = "?view=recording-timeline&recordingId=" + encodeURIComponent(selection.id); openLabel = "Open Recording"; }
+  else if (selection.kind === "timeline") { href = "?view=recording-timeline&timelineEntryId=" + encodeURIComponent(selection.id); openLabel = "Open Timeline"; }
+  else if (selection.kind === "signal" || selection.kind === "state") { href = "?view=state-explorer"; openLabel = "Open State View"; }
+  else if (selection.kind === "proposal" || selection.kind === "proposal-step") { href = "?view=proposal-workbench"; openLabel = "Open Legacy Proposal"; }
+  else if (selection.kind === "workspace") { href = selection.id === "clients" ? "?view=client-gateway" : "?view=runs-history"; openLabel = selection.id === "clients" ? "Open Connected Clients" : "Open Runs"; }
+  const label = String(labels[selection.kind] ?? selection.id);
+  return {
+    title: String(titles[selection.kind] ?? "Inspector"),
+    label,
+    id: selection.id,
+    breadcrumb: [flowLabel, label].filter((value, index, values): value is string => typeof value === "string" && Boolean(value) && values.indexOf(value) === index),
+    ...(href ? { href } : {}),
+    ...(openLabel ? { openLabel } : {})
+  };
+}
+export function AutomationInspector(props: { entries: any[]; selection: AutomationSelection | null; policy: any; policies: any[]; flow: any; flowPublications: any[]; flowDependencyInfo: any; node: any; nodeDefinitions: any[]; recording: any; entry: any; signal: any; pipelineArtifacts: any; selectedTimeline: any; recordings: any[]; timelines: any[]; runtimeSessions: any[]; signals: any[]; onOpenState(request: { nodeId?: string; sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; proposalId?: string; timelineEntryId?: string }): void; setSelection(selection: AutomationSelection): void }) {
+  const identity = automationInspectorIdentity(props.selection, { flow: props.flow, node: props.node, recording: props.recording, entry: props.entry, signal: props.signal });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [copyStatus, setCopyStatus] = useState("");
+  const copySelectionId = async () => {
+    if (!identity?.id) return;
+    try {
+      await navigator.clipboard.writeText(identity.id);
+      setCopyStatus("Copied");
+      window.setTimeout(() => setCopyStatus(""), 1_500);
+    } catch {
+      setCopyStatus("Copy failed");
+    }
+  };
+  useEffect(() => setSearchQuery(""), [identity?.id]);
+  const referenceOptions = automationInspectorReferenceOptions(props);
   const timelineInspector = props.selection?.kind === "timeline" && props.entry ? buildTimelineInspectorSections(props.entry, props.entries, props.recording) : [];
   const stateNodeId = inspectorStateNodeId(props.selection, props.node);
   const stateSelectionValue = props.selection?.kind === "state" ? props.selection : null;
@@ -60,30 +129,24 @@ export function AutomationInspector(props: { entries: any[]; selection: Automati
     props.setSelection(nextSelection);
     window.dispatchEvent(new CustomEvent("automation-studio:update-node-parameters", { detail: { nodeId: props.selection.id, customDescription } }));
   };
-  const updateProposalNode = (changes: { label?: string; customDescription?: string }) => {
-    if (props.selection?.kind !== "proposal-step") return;
-    const customDescription = changes.customDescription ?? props.selection.node?.customDescription;
-    const nextSelection: AutomationSelection = {
-      ...props.selection,
-      node: {
-        label: changes.label ?? props.selection.node?.label ?? props.selection.step.label,
-        description: props.selection.node?.description ?? props.selection.step.description,
-        ...(customDescription !== undefined ? { customDescription } : {})
-      }
-    };
-    props.setSelection(nextSelection);
-    window.dispatchEvent(new CustomEvent("automation-studio:update-proposal-node", { detail: { nodeId: props.selection.id, ...changes } }));
-  };
   return (
     <aside className="automation-inspector">
-      <header>
+      <header className="automation-inspector-identity">
         <span>Inspector</span>
-        <strong>{title}</strong>
+        <strong>{identity?.title ?? "No selection"}</strong>
+        {identity ? <small>{identity.label}</small> : null}
+        {identity?.breadcrumb.length ? <nav aria-label="Selected object path">{identity.breadcrumb.map((item, index) => <span key={item}>{index ? " / " : ""}{item}</span>)}</nav> : null}
       </header>
+      {identity ? <div className="automation-inspector-tools">
+        <button aria-label="Copy selected object ID" className="button" onClick={() => void copySelectionId()} title="Copy selected object ID" type="button">{copyStatus === "Copied" ? <Check size={14} aria-hidden /> : <Copy size={14} aria-hidden />}{copyStatus || "Copy ID"}</button>
+        {identity.href && identity.openLabel ? <a className="button" href={identity.href}><ExternalLink size={14} aria-hidden />{identity.openLabel}</a> : null}
+      </div> : null}
       <div className="automation-inspector-search">
         <Search size={14} aria-hidden />
-        <input aria-label="Search inspector fields" placeholder="Search fields" />
+        <input aria-label="Search inspector fields" disabled={!identity} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search fields" type="search" value={searchQuery} />
       </div>
+      {!identity ? <div className="automation-inspector-empty"><Search size={22} aria-hidden /><strong>Select an object to inspect</strong><span>Choose a Flow, node, route, recording, event, run, state fact, or other workspace object.</span></div> : <InspectorFilterContext.Provider value={searchQuery}><>
+      {searchQuery ? <p className="automation-inspector-filter-status">Showing fields matching <strong>{searchQuery}</strong></p> : null}
       {stateNodeId ? <button className="button automation-inspector-action" onClick={() => props.onOpenState({ nodeId: stateNodeId, ...(props.selection?.kind === "proposal-step" ? { proposalId: props.selection.proposalId } : {}), phase: "input" })} type="button"><ListChecks size={14} aria-hidden />Open State</button> : null}
       {props.selection?.kind === "state" && stateInspector ? <>
         {selectedStateEntity ? <InspectorSection title="Selected State Entity" rows={[
@@ -127,11 +190,8 @@ export function AutomationInspector(props: { entries: any[]; selection: Automati
         {props.selection.sections.map((section, sectionIndex) => <InspectorSection key={`${section.title}:${sectionIndex}`} title={section.title} rows={section.rows} />)}
       </> : null}
       {props.selection?.kind === "proposal-step" ? <>
-        <section className="automation-proposal-node-edit">
-          <label><span>Node Label</span><input value={props.selection.node?.label ?? props.selection.step.label} onChange={(event) => updateProposalNode({ label: event.target.value })} /></label>
-          <label><span>Description</span><textarea rows={3} value={props.selection.node?.customDescription ?? props.selection.node?.description ?? props.selection.step.description} onChange={(event) => updateProposalNode({ customDescription: event.target.value })} /></label>
-        </section>
-        <InspectorSection title="Proposal Step" rows={[
+        <InspectorSection title="Legacy Proposal Step" rows={[
+          ["Editing", "Read-only compatibility detail"],
           ["Confidence", props.selection.step.confidence],
           ["Event", props.selection.step.label],
           ["Transition", props.selection.step.transition ?? "-"],
@@ -145,16 +205,15 @@ export function AutomationInspector(props: { entries: any[]; selection: Automati
       </> : null}
       {props.selection?.kind === "signal" && props.signal ? <>
         <InspectorSection title="General" rows={[["Path", props.signal.path], ["Type", props.signal.type], ["Weight", String(props.signal.defaultWeight)], ["Volatility", props.signal.volatility], ["Registry", props.signal.registryId]]} />
-        <InspectorSection title="Connections" rows={[["Used by nodes", "Linked through eligibility and success conditions"], ["Relationship view", "Open in signal web"]]} />
+        <InspectorSection title="Connections" rows={[["Used by nodes", "Linked through eligibility and success conditions"]]} />
         <InspectorProvenance current={String(props.signal.defaultWeight)} source="Signal registry default" />
       </> : null}
       {props.selection?.kind === "timeline" && props.entry ? timelineInspector.map((section) => <InspectorSection key={section.title} title={section.title} rows={section.rows} />) : null}
       {props.selection?.kind === "recording" && props.recording ? <>
         <InspectorSection title="Recording Metadata" rows={[["Recording", props.recording.recordingId], ["Task", props.recording.taskId ?? "-"], ["Environment", props.recording.environment?.label ?? "-"], ["Entries", String(props.recording.timeline?.length ?? 0)], ["Notes", String(props.recording.notes?.length ?? 0)]]} />
-        <InspectorSection title="Dataset Actions" rows={[["Status", "Raw, normalized, mined"], ["Compare", "Align by semantic actions"], ["Reprocess", "Run normalization and mining"]]} />
       </> : null}
       {props.selection?.kind === "editor-node" && props.node ? <>
-        <AutomationNodeParameterEditor node={props.node} onChange={updateEditorNodeParameters} onDescriptionChange={updateEditorNodeDescription} />
+        <AutomationNodeParameterEditor node={props.node} referenceOptions={referenceOptions} onChange={updateEditorNodeParameters} onDescriptionChange={updateEditorNodeDescription} />
         <InspectorSection title="Metadata" rows={[["Node", props.node.label], ["ID", props.node.id], ["Type", props.node.nodeType ?? "-"], ["Family", props.node.family ?? "-"], ["Default description", props.node.description ?? "-"]]} />
         {props.node.metadata?.proposalStep ? <InspectorSection title="Proposal Step" rows={proposalStepRows(props.node.metadata.proposalStep)} /> : null}
         {proposalStepArray(props.node.metadata?.proposalStep?.actions).length ? <InspectorSection title="Actions" rows={listRows(proposalStepArray(props.node.metadata.proposalStep.actions))} /> : null}
@@ -173,42 +232,100 @@ export function AutomationInspector(props: { entries: any[]; selection: Automati
         <InspectorSection title="General" rows={[["Node", props.node.label], ["ID", props.node.id], ["Actions", (props.node.actions ?? []).map((action: any) => action.actionType).join(", ")], ["Recovery", props.node.recovery?.strategy ?? "-"]]} />
         <InspectorSection title="Conditions" rows={[["Eligibility", conditionSummary(props.node.eligibility)], ["Readiness", conditionSummary(props.node.readinessConditions)], ["Success", conditionSummary(props.node.successConditions)]]} />
         <InspectorSection title="Timing and Retries" rows={[["Timeout", props.node.timeout?.timeoutMs ? `${props.node.timeout.timeoutMs} ms` : "Default"], ["Retry", props.node.retry?.strategy ?? "Default"], ["Recovery", props.node.recovery?.strategy ?? "-"]]} />
-        <InspectorSection title="Runtime History" rows={[["Runs", "124"], ["Successes", "118"], ["Retries", "5"], ["Median duration", "1.7s"]]} />
-        <InspectorSection title="Training" rows={[["Suggested adjustment", "Increase timeout when recent runs exceed observed median"], ["Risk", "Low"]]} />
-        <InspectorProvenance current={props.node.timeout?.timeoutMs ? `${props.node.timeout.timeoutMs} ms` : "Default"} source="Generated from recording evidence and editable by user" />
       </> : null}
       {props.selection?.kind === "policy" && props.policy ? <>
         <InspectorSection title="Policy" rows={[["Policy", props.policy.policyId], ["Task", props.policy.taskId], ["Version", props.policy.version], ["Nodes", String(props.policy.nodes?.length ?? 0)], ["Edges", String(props.policy.edges?.length ?? 0)]]} />
         <InspectorSection title="Validation" rows={[["Schema", "Ready"], ["Graph", "Check missing references"], ["Portability", "Domain-neutral contracts"]]} />
       </> : null}
+      {props.selection?.kind === "proposal" ? <InspectorSection title="Legacy Proposal" rows={[["ID", props.selection.id], ["Status", "Read-only compatibility object"], ["Current review surface", "Adaptations"]]} /> : null}
+      {props.selection?.kind === "workspace" ? <InspectorSection title="Workspace Selection" rows={[["Object", props.selection.id === "clients" ? "Connected Clients" : "Runs"], ["Scope", "Current project"]]} /> : null}
+      </></InspectorFilterContext.Provider>}
     </aside>
   );
 }
 
+export function automationInspectorReferenceOptions(props: {
+  flow: any;
+  nodeDefinitions: any[];
+  policies: any[];
+  pipelineArtifacts: any;
+}): AutomationReferenceOptions {
+  const pipeline = props.pipelineArtifacts ?? {};
+  const option = (id: unknown, label: unknown, detail?: unknown) => ({
+    id: String(id ?? ""),
+    label: String(label ?? id ?? "Unnamed"),
+    ...(detail ? { detail: String(detail) } : {})
+  });
+  const actions = props.nodeDefinitions
+    .filter((definition) => definition?.outputAction || definition?.safety?.privileged || definition?.category === "policy")
+    .map((definition) => option(definition.id, definition.label, definition.description));
+  const tasks = [...(pipeline.tasks ?? []), ...(pipeline.learnedTaskModels ?? [])]
+    .map((task: any) => option(task.taskId ?? task.id, task.name ?? task.label ?? task.taskId, task.description));
+  const policies = [...(props.policies ?? []), ...(pipeline.policyGraphs ?? [])]
+    .map((policy: any) => option(policy.policyId ?? policy.id, policy.name ?? policy.label ?? policy.policyId, policy.version));
+  const routines = (pipeline.routines ?? [])
+    .map((routine: any) => option(routine.routineId ?? routine.id, routine.name ?? routine.label ?? routine.routineId, routine.description));
+  const collections = [...(pipeline.databaseCollections ?? []), ...(pipeline.collections ?? [])]
+    .map((collection: any) => option(collection.collectionId ?? collection.id ?? collection.name, collection.label ?? collection.name ?? collection.id, collection.description));
+  const variables = (props.flow?.variables ?? [])
+    .map((variable: any) => typeof variable === "string" ? option(variable, variable) : option(variable.id ?? variable.name, variable.label ?? variable.name ?? variable.id, variable.description));
+  return {
+    action: uniqueReferenceOptions(actions),
+    task: uniqueReferenceOptions(tasks),
+    policy: uniqueReferenceOptions(policies),
+    routine: uniqueReferenceOptions(routines),
+    "database-collection": uniqueReferenceOptions(collections),
+    variable: uniqueReferenceOptions(variables)
+  };
+}
+
+function uniqueReferenceOptions(options: Array<{ id: string; label: string; detail?: string }>) {
+  const seen = new Set<string>();
+  return options.filter((option) => {
+    if (!option.id || seen.has(option.id)) return false;
+    seen.add(option.id);
+    return true;
+  });
+}
 export function InspectorSection(props: { title: string; rows: Array<[string, string]> }) {
+  const query = useContext(InspectorFilterContext).trim().toLocaleLowerCase();
+  const rows = query
+    ? props.rows.filter(([label, value]) => (props.title + " " + label + " " + value).toLocaleLowerCase().includes(query))
+    : props.rows;
+  if (query && rows.length === 0) return null;
   return (
     <details className="automation-inspector-section" open>
       <summary>{props.title}</summary>
-      <KeyValue rows={props.rows} />
+      <KeyValue rows={rows} />
     </details>
   );
 }
 
 function InspectorWidget(props: { widget: AutomationInspectorWidget }) {
+  const query = useContext(InspectorFilterContext).trim().toLocaleLowerCase();
+  const titleMatches = props.widget.title.toLocaleLowerCase().includes(query);
   if (props.widget.kind === "summary") {
+    const items = query && !titleMatches
+      ? props.widget.items.filter(([label, value]) => (label + " " + value).toLocaleLowerCase().includes(query))
+      : props.widget.items;
+    if (query && items.length === 0) return null;
     return (
       <section className="automation-inspector-widget">
         <strong>{props.widget.title}</strong>
-        <SummaryStrip items={props.widget.items} />
+        <SummaryStrip items={items} />
       </section>
     );
   }
+  const items = query && !titleMatches
+    ? props.widget.items.filter((item) => Object.values(item).some((value) => String(value ?? "").toLocaleLowerCase().includes(query)))
+    : props.widget.items;
+  if (query && items.length === 0) return null;
   return (
     <section className="automation-inspector-widget">
       <strong>{props.widget.title}</strong>
       <div className="automation-inspector-card-list">
-        {props.widget.items.map((item) => (
-          <article key={`${item.title}:${item.meta ?? ""}`}>
+        {items.map((item) => (
+          <article key={item.title + ":" + (item.meta ?? "")}>
             <span>{item.meta ?? "Item"}</span>
             <strong>{item.title}</strong>
             <p>{item.detail}</p>
