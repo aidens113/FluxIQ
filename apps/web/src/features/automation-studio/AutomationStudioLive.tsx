@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, Blocks, Bug, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns3, FileSearch, FolderOpen, FolderPlus, GitBranch, GripVertical, History, ListChecks, Network, Plus, Radio, Search, SlidersHorizontal, Sparkles, Trash2, Workflow, X } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import type { NodeStatePhase } from "fluxiq/automation-studio";
 import {
@@ -74,12 +74,39 @@ import {
 import { AutomationTimelineDock, AutomationViewRenderer } from "./views";
 import { automationPolicyGraphProblems } from "./views/GraphEditorViews";
 import { taskFlowToReactFlowGraph } from "./graph/view-model";
-import { loadAutomationGraphDraft, removeAutomationGraphDraft, saveAutomationGraphDraft, type AutomationGraphDraftRecord } from "./graph/draft-store";
+import { automationGraphDraftIdentity, loadAutomationGraphDraft, loadAutomationGraphOperationDraft, removeAutomationGraphDraft, removeAutomationGraphOperationDraft, saveAutomationGraphDraft, saveAutomationGraphOperationDraft, type AutomationGraphDraftRecord } from "./graph/draft-store";
+import { applyAutomationGraphOperationBatch, diffAutomationGraphDocuments } from "./graph/operation-history";
+import { scheduleAutomationGraphIdleTask } from "./graph/worker-tasks";
 import { automationViewAdderOptions } from "./workspace/view-adder";
 import { removeDeletedRecordingArtifacts, removeDeletedRecordingSnapshotData, selectionReferencesDeletedRecording } from "./model/deletion";
+import {
+  applyCustomFolderCreate,
+  applyCustomFolderDelete,
+  applyFlowObjectReferenceDelete,
+  applySubflowCategoryCreate,
+  applySubflowCategoryDelete,
+  applySubflowReferenceDelete,
+  deleteRecordingCollectionItems,
+  type FlowObjectKind
+} from "./model/local-mutations";
 import { flowToTaskPolicy, graphToTaskFlow, isPersistableHierarchyNode, mergeById } from "./model/project-artifacts";
+import { AutomationStudioDataInspector } from "./development/DataInspector";
+import {
+  registerAutomationStudioDevelopmentSubscription,
+  useAutomationStudioDevelopmentTelemetry
+} from "./development/telemetry";
+import {
+  AutomationStudioProjectSyncClient,
+  applyAutomationStudioInvalidations,
+  createAutomationStudioClientStores,
+  emitAutomationStudioFeedReconciliationDiagnostic,
+  type AutomationStudioProjectChangeEvent,
+  type AutomationStudioProjectChangePage,
+  type AutomationStudioScopedInvalidation
+} from "./sync/project-sync";
 import { useProgramApi, type JsonObject } from "../programs/program-api";
-import { useUiRenderMetric } from "../programs/ui-performance";
+import { useUiLongTaskMetrics, useUiRenderMetric } from "../programs/ui-performance";
+import { automationStudioUiRequest, type AutomationStudioUiRequest } from "./data-request-policy";
 import type { CurrentUser } from "../programs/types";
 import {
   Drawer,
@@ -93,8 +120,6 @@ import {
 
 type TabButton<T extends string> = { id: T; label: string; count?: number };
 type DeletedHierarchyRefs = { taskIds: Set<string>; routineIds: Set<string>; configIds: Set<string>; flowIds: Set<string>; recordingIds: Set<string>; proposalIds: Set<string>; timelineEntryIds: Set<string> };
-type AutomationStudioApiRequest = { endpoint: string; payload: JsonObject };
-
 export const AUTOMATION_STUDIO_PROJECT_OPEN_DETAIL_ENDPOINT_DENYLIST = [
   "get-recording",
   "get-runtime-session",
@@ -109,22 +134,12 @@ export const AUTOMATION_STUDIO_PROJECT_OPEN_DETAIL_ENDPOINT_DENYLIST = [
   "list-runtime-session-events"
 ] as const;
 
-export function automationStudioProjectOpenRequests(projectId: string): [AutomationStudioApiRequest] {
-  return [{ endpoint: "get-project-hierarchy", payload: { projectId } }];
+export function automationStudioProjectOpenRequests(projectId: string): [AutomationStudioUiRequest] {
+  return [automationStudioUiRequest("catalog", "get-project-hierarchy", { projectId })];
 }
 
-export function automationStudioRuntimeSummaryRequests(projectId: string): [
-  AutomationStudioApiRequest,
-  AutomationStudioApiRequest,
-  AutomationStudioApiRequest,
-  AutomationStudioApiRequest
-] {
-  return [
-    { endpoint: "get-project-workspace-summary", payload: { projectId } },
-    { endpoint: "list-recordings", payload: { projectId, summaries: true } },
-    { endpoint: "list-runtime-sessions", payload: { projectId, summaries: true, limit: 25, offset: 0 } },
-    { endpoint: "list-recording-domains", payload: { projectId } }
-  ];
+export function automationStudioRuntimeSummaryRequests(projectId: string): [AutomationStudioUiRequest] {
+  return [automationStudioUiRequest("summary", "get-project-workspace-summary", { projectId })];
 }
 
 function shortAutomationId(value: string): string {
@@ -137,13 +152,16 @@ function emitAutomationStudioCommandStatus(detail: { state: string; detail: stri
 
 export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   useUiRenderMetric("AutomationStudioLive");
+  useUiLongTaskMetrics("AutomationStudio");
+  useAutomationStudioDevelopmentTelemetry();
   const api = useProgramApi("automation-studio");
   const pathname = usePathname();
-  const router = useRouter();
   const searchParams = useSearchParams();
   const deepLink = parseAutomationStudioDeepLink(searchParams);
   const { runLatest } = useRequestCoordinator();
   const dataCache = useAutomationStudioCache();
+  const clientStores = useMemo(() => createAutomationStudioClientStores(), []);
+  const [dataInspectorOpen, setDataInspectorOpen] = useState(false);
   const urlProjectId = deepLink.projectId;
   const {
     snapshot, setSnapshot, projects, setProjects, projectCategories, setProjectCategories,
@@ -188,6 +206,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setWindowAdderOpen, layoutPickerOpen, setLayoutPickerOpen,
   } = useLayoutController();
   const [workspaceSaveStatus, setWorkspaceSaveStatus] = useState("All workspace changes saved");
+  const [workspacePrefsSaveRevision, setWorkspacePrefsSaveRevision] = useState(0);
   const [recoverableTaskGraphDraft, setRecoverableTaskGraphDraft] = useState<AutomationGraphDraftRecord<{ nodes: any[]; edges: any[] }> | null>(null);
   const graphDraftPersistenceRef = useRef<AutomationGraphDraftRecord<{ nodes: any[]; edges: any[] }> | null>(null);
   const [isNarrowWorkspace, setIsNarrowWorkspace] = useState(false);
@@ -195,6 +214,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const sidebarCollapsed = workspacePrefs.leftSidebarCollapsed;
   const urlProjectOpenAttemptRef = useRef<string | null>(null);
   const restoredDeepLinkRef = useRef<string | null>(null);
+  const restoringDeepLinkRef = useRef(false);
   const projectActionBusyRef = useRef(false);
   const mainWorkspaceCanvasRef = useRef<HTMLDivElement>(null);
   const rightWorkspaceCanvasRef = useRef<HTMLDivElement>(null);
@@ -205,6 +225,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const lastRecordingBlockedAuditRef = useRef("");
   const pendingStateOpenKeyRef = useRef<string | null>(null);
   const gatewayActivitySignatureRef = useRef("");
+  const projectSyncClientRef = useRef<AutomationStudioProjectSyncClient | null>(null);
 
   useEffect(() => {
     const query = window.matchMedia("(max-width: 820px)");
@@ -264,7 +285,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   }, [activeProjectId, refreshProjects]);
 
   useEffect(() => {
-    let cancelled = false;
+    const unregister = registerAutomationStudioDevelopmentSubscription({ id: "project-context", kind: "event" });
     async function publishContext() {
       await fetch("/api/client-gateway/automation-studio-context", {
         method: "POST",
@@ -272,13 +293,16 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         body: JSON.stringify({ activeProjectId })
       }).catch(() => undefined);
     }
+    function publishVisibleContext() {
+      if (document.visibilityState === "visible") void publishContext();
+    }
     void publishContext();
-    const interval = window.setInterval(() => {
-      if (!cancelled) void publishContext();
-    }, 3_000);
+    window.addEventListener("focus", publishVisibleContext);
+    document.addEventListener("visibilitychange", publishVisibleContext);
     return () => {
-      cancelled = true;
-      window.clearInterval(interval);
+      unregister();
+      window.removeEventListener("focus", publishVisibleContext);
+      document.removeEventListener("visibilitychange", publishVisibleContext);
       void fetch("/api/client-gateway/automation-studio-context", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -289,6 +313,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
 
   useEffect(() => {
     let cancelled = false;
+    const unregister = registerAutomationStudioDevelopmentSubscription({ id: "gateway-activity", kind: "event" });
     async function refreshGatewaySnapshot() {
       const response = await fetch("/api/client-gateway/snapshot", { cache: "no-store" }).catch(() => null);
       if (!response) return;
@@ -307,13 +332,52 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         }
       }
     }
+    function refreshVisibleGatewaySnapshot() {
+      if (document.visibilityState === "visible") void refreshGatewaySnapshot();
+    }
     void refreshGatewaySnapshot();
-    const interval = window.setInterval(() => void refreshGatewaySnapshot(), 1_500);
+    window.addEventListener("focus", refreshVisibleGatewaySnapshot);
+    document.addEventListener("visibilitychange", refreshVisibleGatewaySnapshot);
+    window.addEventListener("program-api:mutation", refreshVisibleGatewaySnapshot);
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      unregister();
+      window.removeEventListener("focus", refreshVisibleGatewaySnapshot);
+      document.removeEventListener("visibilitychange", refreshVisibleGatewaySnapshot);
+      window.removeEventListener("program-api:mutation", refreshVisibleGatewaySnapshot);
     };
   }, []);
+
+  useEffect(() => {
+    projectSyncClientRef.current?.stop();
+    projectSyncClientRef.current = null;
+    if (!activeProjectId) return;
+    const projectId = activeProjectId;
+    const client = new AutomationStudioProjectSyncClient({
+      projectId,
+      fetchPage: async ({ afterSequence, limit, signal }) => {
+        const result = await api.post<AutomationStudioProjectChangePage>("list-project-change-feed", { projectId, afterSequence, limit }, { signal });
+        if (!result.ok || !result.payload) throw new Error(result.error ?? "Project change feed could not be loaded.");
+        return result.payload;
+      },
+      onInvalidations: (invalidations) => {
+        applyAutomationStudioInvalidations(clientStores, invalidations);
+        reconcileProjectChangeFeedInvalidations(projectId, invalidations);
+      }
+    });
+    projectSyncClientRef.current = client;
+    client.start();
+    function notifyProjectMutation(event: Event) {
+      const detail = (event as CustomEvent<{ programId?: string; projectId?: string }>).detail;
+      if (detail?.programId === "automation-studio" && detail.projectId === projectId) client.notifyMutation();
+    }
+    window.addEventListener("program-api:mutation", notifyProjectMutation);
+    return () => {
+      window.removeEventListener("program-api:mutation", notifyProjectMutation);
+      client.stop();
+      if (projectSyncClientRef.current === client) projectSyncClientRef.current = null;
+    };
+  }, [activeProjectId, api, clientStores, dataCache]);
 
   const canonical = snapshot?.payload?.canonical ?? {};
   const recordings = useMemo(
@@ -419,9 +483,20 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       ?? (projectArtifacts.flows ?? []).find((flow: any) => flow.ownerKind === "task" && flow.ownerId === selectedTask.taskId)
       ?? null
     : null;
-  const selectedTaskGraph = selectedFlow ?? selectedTask?.graph ?? selectedTaskFlow;
-  const selectedTaskGraphDraftKey = taskGraphDraftKey(selectedTaskGraph);
+  const projectFlowUrlScopeSignature = useMemo(() => projectFlows.map((entry: any) => {
+    const flow = entry?.flow ?? entry;
+    return [
+      flow?.flowId ?? "",
+      flow?.metadata?.subflowGraph === true ? "subflow" : "flow",
+      flow?.metadata?.parentFlowId ?? "",
+      flow?.metadata?.parentSubflowId ?? ""
+    ].join(":");
+  }).join("|"), [projectFlows]);  const selectedTaskGraph = selectedFlow ?? selectedTask?.graph ?? selectedTaskFlow;
+  const selectedTaskGraphDraftKey = automationGraphDraftIdentity(selectedTaskGraph);
   const selectedTaskGraphDraft = selectedTaskGraphDraftKey ? taskGraphDrafts[selectedTaskGraphDraftKey] ?? null : null;
+  const baseTaskGraphDocument = useMemo(() => selectedTaskGraph
+    ? taskFlowToReactFlowGraph(selectedTaskGraph, "", [...nativeNodeDefinitions, ...publishedFlowDefinitions])
+    : null, [selectedTaskGraph, nativeNodeDefinitions, publishedFlowDefinitions]);
   useEffect(() => {
     if (!activeProjectId || !selectedTaskGraph?.flowId) {
       setRecoverableTaskGraphDraft(null);
@@ -431,8 +506,19 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       setRecoverableTaskGraphDraft(null);
       return;
     }
-    setRecoverableTaskGraphDraft(loadAutomationGraphDraft(activeProjectId, selectedTaskGraph.flowId));
-  }, [activeProjectId, selectedTaskGraph?.flowId, selectedTaskGraph?.updatedAt, Boolean(selectedTaskGraphDraft)]);
+    const legacyDraft = loadAutomationGraphDraft<{ nodes: any[]; edges: any[] }>(activeProjectId, selectedTaskGraph.flowId);
+    if (legacyDraft) {
+      setRecoverableTaskGraphDraft(legacyDraft);
+      return;
+    }
+    let cancelled = false;
+    void loadAutomationGraphOperationDraft(activeProjectId, selectedTaskGraph.flowId).then((draft) => {
+      if (cancelled || !draft || !baseTaskGraphDocument) return;
+      const graph = applyAutomationGraphOperationBatch(baseTaskGraphDocument as any, { batchId: "browser-draft", baseRevision: draft.baseRevision, createdAt: draft.savedAt, operations: draft.operations as any, estimatedBytes: draft.estimatedBytes }, "forward");
+      setRecoverableTaskGraphDraft({ projectId: draft.projectId, flowId: draft.flowId, baseUpdatedAt: draft.baseUpdatedAt, savedAt: draft.savedAt, graph });
+    });
+    return () => { cancelled = true; };
+  }, [activeProjectId, selectedTaskGraph?.flowId, selectedTaskGraph?.updatedAt, Boolean(selectedTaskGraphDraft), baseTaskGraphDocument]);
 
   useEffect(() => {
     if (!activeProjectId || !selectedTaskGraph?.flowId || !selectedTaskGraphDraft) {
@@ -474,17 +560,35 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     }, 700);
     return () => window.clearTimeout(timeout);
   }, [activeProjectId, selectedTaskGraph?.flowId, selectedTaskGraph?.updatedAt, selectedTaskGraphDraft]);
-  const graphForValidation = useMemo(() => selectedTaskGraphDraft ?? (selectedTaskGraph
-    ? taskFlowToReactFlowGraph(selectedTaskGraph, "", [...nativeNodeDefinitions, ...publishedFlowDefinitions])
-    : null), [selectedTaskGraphDraft, selectedTaskGraph, nativeNodeDefinitions, publishedFlowDefinitions]);
-  const graphProblems = useMemo(() => graphForValidation ? automationPolicyGraphProblems(graphForValidation.nodes, graphForValidation.edges).map((problem) => ({
-    ...problem,
-    id: "graph:" + problem.id,
-    severity: "error",
-    source: "graph",
-    artifactId: selectedTaskGraph?.flowId ?? selectedTaskGraph?.id ?? "current-flow",
-    artifactLabel: selectedTaskGraph?.name ?? "Current Flow"
-  })) : [], [graphForValidation, selectedTaskGraph?.flowId, selectedTaskGraph?.id, selectedTaskGraph?.name]);
+  const activePane = workspacePrefs.panes.find((item) => item.id === workspacePrefs.activePaneId) ?? workspacePrefs.panes[0];
+  const activeViewId = activePane?.activeViewId ?? workspacePrefs.activeViewId ?? "policy-primary";
+  const graphForValidation = useMemo(() => selectedTaskGraphDraft ?? baseTaskGraphDocument, [selectedTaskGraphDraft, baseTaskGraphDocument]);
+  const [graphProblems, setGraphProblems] = useState<any[]>([]);
+  const graphProblemsVisible = activeViewId === "problems-view" || workspacePrefs.rightSidebar.activeViewId === "problems-view";
+  useEffect(() => {
+    if (!graphProblemsVisible || !graphForValidation) {
+      if (graphProblems.length) setGraphProblems([]);
+      return;
+    }
+    const flowId = selectedTaskGraph?.flowId ?? selectedTaskGraph?.id ?? "current-flow";
+    const flowName = selectedTaskGraph?.name ?? "Current Flow";
+    let cancelled = false;
+    const cancel = scheduleAutomationGraphIdleTask(() => {
+      const nextProblems = automationPolicyGraphProblems(graphForValidation.nodes, graphForValidation.edges).map((problem) => ({
+        ...problem,
+        id: "graph:" + problem.id,
+        severity: "error",
+        source: "graph",
+        artifactId: flowId,
+        artifactLabel: flowName
+      }));
+      if (!cancelled) setGraphProblems(nextProblems);
+    }, { delayMs: 80, timeoutMs: 1_000 });
+    return () => {
+      cancelled = true;
+      cancel();
+    };
+  }, [graphProblemsVisible, graphForValidation, selectedTaskGraph?.flowId, selectedTaskGraph?.id, selectedTaskGraph?.name]);
   const problems = useMemo(() => {
     const graphProblemIds = new Set(graphProblems.map((problem) => problem.id));
     return [...graphProblems, ...snapshotProblems.map((problem: any, index: number) => ({
@@ -548,6 +652,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       ?? selectedEntry)
     : selectedEntry;
   const selectedSignal = signals.find((signal: any) => selection?.kind === "signal" && selection.id === signal.path);
+  const selectedTimelineEntries = useMemo(() => selectedTimeline?.timeline ?? selectedRecording?.timeline ?? [], [selectedTimeline?.timeline, selectedRecording?.timeline]);
+  const selectedRecordingNotes = useMemo(() => selectedRecording?.notes ?? [], [selectedRecording?.notes]);
+  const recoverableTaskGraphDraftView = useMemo(() => recoverableTaskGraphDraft
+    ? { savedAt: recoverableTaskGraphDraft.savedAt, stale: recoverableTaskGraphDraft.baseUpdatedAt !== (selectedTaskGraph?.updatedAt ?? 0) }
+    : null, [recoverableTaskGraphDraft?.savedAt, recoverableTaskGraphDraft?.baseUpdatedAt, selectedTaskGraph?.updatedAt]);
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
   const restoringUrlProject = Boolean(urlProjectId && !activeProject && !projectStatus && (!projectsLoaded || activeProjectId === urlProjectId || urlProjectOpenAttemptRef.current === urlProjectId));
   useEffect(() => {
@@ -697,8 +806,6 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         ?? selectedPolicy
       : selectedPolicy;
   }
-  const activePane = workspacePrefs.panes.find((item) => item.id === workspacePrefs.activePaneId) ?? workspacePrefs.panes[0];
-  const activeViewId = activePane?.activeViewId ?? workspacePrefs.activeViewId ?? "policy-primary";
   const activeFlowScope = selectedFlow?.flowId ? automationStudioFlowScope(selectedFlow.flowId, projectFlows) : null;
   const breadcrumbFlow = activeFlowScope ? projectFlows.find((entry: any) => entry.flow?.flowId === activeFlowScope.flowId)?.flow ?? null : null;
   const breadcrumbSubflow = activeFlowScope?.subflowId ? hierarchyNodes.find((node) => node.kind === "subflow" && node.flowId === activeFlowScope.flowId && node.sourceId === activeFlowScope.subflowId) ?? null : null;
@@ -710,6 +817,21 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     viewId: activeViewId,
     viewLabel: activeViewId === "policy-primary" ? "Nodes" : viewById.get(activeViewId)?.label ?? "Workspace"
   });
+  useEffect(() => {
+    if (!activeProjectId || selection?.kind !== "flow") return;
+    updateWorkspacePrefs((current) => {
+      const currentPolicyState = current.viewStates?.["policy-primary"] ?? {};
+      if (currentPolicyState.lastOpenFlowId === selection.id) return current;
+      return {
+        ...current,
+        viewStates: {
+          ...current.viewStates,
+          "policy-primary": { ...currentPolicyState, lastOpenFlowId: selection.id }
+        }
+      };
+    }, { persist: false });
+  }, [activeProjectId, selection?.kind, selection?.id]);
+
   useEffect(() => {
     if (!activeProjectId || selectedFlowEntry?.source !== "canonical" || !automationStudioFlowNeedsDetail(selectedFlow, activeViewId, selection?.kind)) return;
     void loadFlowDetails(selectedFlow.flowId);
@@ -732,7 +854,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       ...current,
       bottomDock: { ...current.bottomDock, activeViewId: "recording-action-preview", expanded: true },
       bottomTimelineCollapsed: false
-    }));
+    }), { persist: false });
   };
   const setSelectionAndFollow = (next: AutomationSelection, flowOpenMode: "preview" | "new-window" = "preview"): boolean => {
 
@@ -757,19 +879,6 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       if (flowEntry) {
         if (flowEntry.flow?.metadata?.summaryOnly === true) void loadFlowDetails(next.id);
         if (!nativeNodeDefinitions.length && !publishedFlowDefinitions.length && activeProjectId) void loadNodeDefinitions(activeProjectId);
-        updateWorkspacePrefs((current) => {
-          const currentState = current.viewStates?.["policy-primary"] ?? {};
-          return normalizeAutomationWorkspacePrefs({
-            ...current,
-            viewStates: {
-              ...(current.viewStates ?? {}),
-              "policy-primary": {
-                ...currentState,
-                lastOpenFlowId: next.id
-              }
-            }
-          });
-        });
       }
       openView("policy-primary", flowOpenMode);
     }
@@ -936,14 +1045,18 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       }
     }
   };
+  const openStateViewRef = useRef(openStateView);
+  useEffect(() => {
+    openStateViewRef.current = openStateView;
+  }, [openStateView]);
   useEffect(() => {
     function handleOpenNodeState(event: Event) {
       const detail = (event as CustomEvent<{ nodeId?: string }>).detail;
-      if (detail?.nodeId) openStateView({ nodeId: detail.nodeId });
+      if (detail?.nodeId) openStateViewRef.current({ nodeId: detail.nodeId });
     }
     window.addEventListener("automation-studio:open-node-state", handleOpenNodeState);
     return () => window.removeEventListener("automation-studio:open-node-state", handleOpenNodeState);
-  });
+  }, []);
 
   async function monitorStoppedGatewayRecording(recordingId: string) {
     if (!activeProjectId) return;
@@ -957,8 +1070,9 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       progress: 12
     });
     setAutomationActionStatus("Recording stopped. Loading final timeline...");
-    dataCache.invalidateProject(activeProjectId);
-    await refreshProjectRuntimeState(activeProjectId);
+    dataCache.invalidateScopes(activeProjectId, ["recording", "timeline", "summary"], [recordingId]);
+    projectSyncClientRef.current?.notifyMutation();
+    notifyProjectDataChanged(["recording", "timeline", "summary"], [recordingId]);
     setRecordingProcessing((current) => current?.recordingId === recordingId ? null : current);
     setAutomationActionStatus("Recording stopped. The finalized recording is available as Flow evidence.");
   }
@@ -985,8 +1099,9 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       lastActiveGatewayRecordingRef.current = activeRecordingId;
       if (activeRecordingId === lastOpenedGatewayRecordingRef.current) return;
       lastOpenedGatewayRecordingRef.current = activeRecordingId;
-      dataCache.invalidateProject(activeProjectId);
-      void refreshProjectRuntimeState(activeProjectId).then(() => {
+      dataCache.invalidateScopes(activeProjectId, ["recording", "timeline", "summary"], [activeRecordingId]);
+      projectSyncClientRef.current?.notifyMutation();
+      void Promise.resolve().then(() => {
         setSelection({ kind: "recording", id: activeRecordingId });
         openView("timeline-recording", "preview", "main");
         setAutomationActionStatus(`Recording ${activeRecordingId} is live.`);
@@ -1037,19 +1152,24 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       if (!parentFlowAvailable) return;
     }
     restoredDeepLinkRef.current = restoreKey;
+    restoringDeepLinkRef.current = true;
     void (async () => {
-      if (deepLink.flowId && deepLink.subflowId) {
-        await openSubflowInEditor(deepLink.flowId, deepLink.subflowId, "preview");
-      } else if (deepLink.flowId) {
-        await loadFlowDetails(deepLink.flowId);
-        setSelectionAndFollow({ kind: "flow", id: deepLink.flowId }, "preview");
+      try {
+        if (deepLink.flowId && deepLink.subflowId) {
+          await openSubflowInEditor(deepLink.flowId, deepLink.subflowId, "preview");
+        } else if (deepLink.flowId) {
+          await loadFlowDetails(deepLink.flowId);
+          setSelectionAndFollow({ kind: "flow", id: deepLink.flowId }, "preview");
+        }
+        if (targetViewId) openView(targetViewId, "preview", "main");
+      } finally {
+        restoringDeepLinkRef.current = false;
       }
-      if (targetViewId) openView(targetViewId, "preview", "main");
     })();
   }, [
     activeProjectId,
     loadedProjectHierarchyId,
-    projectFlows,
+    projectFlowUrlScopeSignature,
     deepLink.projectId,
     deepLink.flowId,
     deepLink.subflowId,
@@ -1057,24 +1177,28 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     deepLink.detail?.kind,
     deepLink.detail?.id
   ]);
+  const selectedFlowSelectionId = selection?.kind === "flow" ? selection.id : null;
   useEffect(() => {
-    if (!activeProjectId || selection?.kind !== "flow") return;
+    if (!activeProjectId || restoringDeepLinkRef.current) return;
+    const linkFlowId = selectedFlowSelectionId ?? selectedFlow?.flowId ?? lastOpenFlowId;
+    if (!linkFlowId) return;
     const requestedRestorePrefix = deepLink.projectId && deepLink.flowId
       ? deepLink.projectId + "|" + deepLink.flowId + "|"
       : null;
     if (requestedRestorePrefix && !restoredDeepLinkRef.current?.startsWith(requestedRestorePrefix)) return;
-    const scope = automationStudioFlowScope(selection.id, projectFlows);
+    const scope = automationStudioFlowScope(linkFlowId, projectFlows);
+    const currentParams = automationStudioCurrentSearchParams();
     const params = automationStudioDeepLinkParams({
       projectId: activeProjectId,
       flowId: scope.flowId,
       subflowId: scope.subflowId,
       viewId: activeViewId,
       detail: null
-    }, searchParams);
-    if (params.toString() === searchParams.toString()) return;
-    const query = params.toString();
-    router.replace(query ? pathname + "?" + query : pathname, { scroll: false });
-  }, [activeProjectId, activeViewId, selection, projectFlows, deepLink.projectId, deepLink.flowId, pathname, router, searchParams]);
+    }, currentParams);
+    if (params.toString() === currentParams.toString()) return;
+    restoredDeepLinkRef.current = [activeProjectId, scope.flowId, scope.subflowId ?? "", activeViewId, ""].join("|");
+    replaceAutomationStudioBrowserUrl(pathname, params);
+  }, [activeProjectId, activeViewId, selectedFlowSelectionId, selectedFlow?.flowId, lastOpenFlowId, projectFlowUrlScopeSignature, deepLink.projectId, deepLink.flowId, pathname]);
   useEffect(() => {
     if (!activeProjectId || !projectRecordings.length) return;
     setDeletedHierarchyIds((current) => {
@@ -1085,14 +1209,15 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
 
   useEffect(() => {
     if (!activeProjectId || loadedProjectHierarchyId !== activeProjectId) return;
-    const signature = automationHierarchySignature(customHierarchyNodes, deletedHierarchyIds, workspacePrefs);
+    const persistedWorkspacePrefs = persistentAutomationWorkspacePrefs(workspacePrefs);
+    const signature = automationHierarchySignature(customHierarchyNodes, deletedHierarchyIds, persistedWorkspacePrefs);
     if (signature === lastSavedHierarchySignatureRef.current) return;
     const timeout = window.setTimeout(() => {
       if (signature === lastSavedHierarchySignatureRef.current) return;
       setWorkspaceSaveStatus("Saving workspace changes...");
       void api.post("save-project-hierarchy", {
         projectId: activeProjectId,
-        hierarchy: { customHierarchyNodes, deletedHierarchyIds, workspacePrefs }
+        hierarchy: { customHierarchyNodes, deletedHierarchyIds, workspacePrefs: persistedWorkspacePrefs }
       }).then((result) => {
         if (result.ok) {
           lastSavedHierarchySignatureRef.current = signature;
@@ -1105,28 +1230,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       });
     }, 800);
     return () => window.clearTimeout(timeout);
-  }, [activeProjectId, loadedProjectHierarchyId, customHierarchyNodes, deletedHierarchyIds, workspacePrefs, api]);
-
-  useEffect(() => {
-    if (!activeProjectId || loadedProjectHierarchyId !== activeProjectId) return;
-    setWorkspacePrefs((current) => {
-      const activeViewId = current.panes.find((item) => item.id === current.activePaneId)?.activeViewId ?? current.rightSidebar.activeViewId;
-      if (!activeViewId) return current;
-      const currentState = current.viewStates?.[activeViewId] ?? {};
-      const nextState = {
-        ...currentState,
-        ...(selection ? { selection } : {}),
-      };
-      if (JSON.stringify(currentState) === JSON.stringify(nextState)) return current;
-      return normalizeAutomationWorkspacePrefs({
-        ...current,
-        viewStates: {
-          ...(current.viewStates ?? {}),
-          [activeViewId]: nextState
-        }
-      });
-    });
-  }, [activeProjectId, loadedProjectHierarchyId, selection]);
+  }, [activeProjectId, loadedProjectHierarchyId, customHierarchyNodes, deletedHierarchyIds, workspacePrefsSaveRevision, api]);
 
   useEffect(() => {
     const hasDirtyProposalReview = Object.values(workspacePrefs.viewStates ?? {}).some((state) => {
@@ -1148,44 +1252,6 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     window.dispatchEvent(new CustomEvent("automation-studio:dirty-state", { detail: { dirty: hasDirtyTaskGraph } }));
     return () => { window.dispatchEvent(new CustomEvent("automation-studio:dirty-state", { detail: { dirty: false } })); };
   }, [hasDirtyTaskGraph]);
-
-  useEffect(() => {
-    if (!activeProjectId || selection?.kind !== "flow") return;
-    const flowEntry = projectFlows.find((entry: any) => entry.source === "canonical" && entry.flow?.flowId === selection.id);
-    if (!flowEntry) return;
-    setWorkspacePrefs((current) => {
-      const currentState = current.viewStates?.["policy-primary"] ?? {};
-      if (currentState.lastOpenFlowId === selection.id) return current;
-      return normalizeAutomationWorkspacePrefs({
-        ...current,
-        viewStates: {
-          ...(current.viewStates ?? {}),
-          "policy-primary": {
-            ...currentState,
-            lastOpenFlowId: selection.id
-          }
-        }
-      });
-    });
-  }, [activeProjectId, projectFlows, selection]);
-
-  useEffect(() => {
-    if (!selectedTask?.taskId || !projectArtifacts.tasks?.some((task: any) => task.taskId === selectedTask.taskId)) return;
-    setWorkspacePrefs((current) => {
-      const currentState = current.viewStates?.["proposal-workbench"] ?? {};
-      if (currentState.lastOpenTaskId === selectedTask.taskId) return current;
-      return normalizeAutomationWorkspacePrefs({
-        ...current,
-        viewStates: {
-          ...(current.viewStates ?? {}),
-          "proposal-workbench": {
-            ...currentState,
-            lastOpenTaskId: selectedTask.taskId
-          }
-        }
-      });
-    });
-  }, [projectArtifacts.tasks, selectedTask?.taskId]);
 
   async function runProjectAction<T>(action: () => Promise<T>): Promise<T | null> {
     if (projectActionBusyRef.current) return null;
@@ -1225,9 +1291,9 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setProjectPin("");
     setProjectStatus("");
     setProjectUrl(project.id);
-    await refreshProjectRuntimeState(project.id);
     setSelection(null);
     openView("policy-primary", "preview", "main");
+    void refreshProjectRuntimeState(project.id);
   }
 
   async function renameProject() {
@@ -1403,9 +1469,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   }
 
   function setProjectUrl(projectId: string | null) {
-    const params = automationStudioDeepLinkParams({ projectId }, searchParams);
-    const query = params.toString();
-    router.replace(query ? pathname + "?" + query : pathname, { scroll: false });
+    const params = automationStudioDeepLinkParams({ projectId }, automationStudioCurrentSearchParams());
+    replaceAutomationStudioBrowserUrl(pathname, params);
   }
   async function openProject(projectId: string, options: { updateUrl?: boolean } = {}) {
     const [hierarchyRequest] = automationStudioProjectOpenRequests(projectId);
@@ -1444,38 +1509,27 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     const activeLoadedViewId = loadedPrefs.panes.find((item) => item.id === loadedPrefs.activePaneId)?.activeViewId
       ?? loadedPrefs.activeViewId;
     if (activeLoadedViewId) restoreViewState(activeLoadedViewId, loadedPrefs);
-    lastSavedHierarchySignatureRef.current = automationHierarchySignature(result.payload.hierarchy.customHierarchyNodes, result.payload.hierarchy.deletedHierarchyIds, loadedPrefs);
+    lastSavedHierarchySignatureRef.current = automationHierarchySignature(result.payload.hierarchy.customHierarchyNodes, result.payload.hierarchy.deletedHierarchyIds, persistentAutomationWorkspacePrefs(loadedPrefs));
     setLoadedProjectHierarchyId(projectId);
     setProjectModal(null);
     setProjectStatus("");
     if (options.updateUrl !== false) setProjectUrl(projectId);
-    void refreshProjects();
   }
 
   async function refreshProjectRuntimeState(projectId = activeProjectId) {
     if (!projectId) return;
-    const cachedResults = dataCache.get<any[]>("summary", projectId, "root", 10_000);
-    let results = cachedResults;
-    if (!results) {
-      const [workspaceSummaryRequest, recordingRequest, runtimeRequest, domainRequest] = automationStudioRuntimeSummaryRequests(projectId);
-      results = await runLatest("runtime-summary", (signal) => Promise.all([
-        api.post<{ summary: any }>(workspaceSummaryRequest.endpoint, workspaceSummaryRequest.payload, { signal }),
-        api.post<{ recordings: any[] }>(recordingRequest.endpoint, recordingRequest.payload, { signal }),
-        api.post<{ runtimeSessions: any[]; page?: any }>(runtimeRequest.endpoint, runtimeRequest.payload, { signal }),
-        api.post<{ domains: any[] }>(domainRequest.endpoint, domainRequest.payload, { signal })
-      ]));
-      if (!results) return;
-      dataCache.set("summary", projectId, "root", results);
+    let workspaceSummaryResult = dataCache.get<any>("summary", projectId, "root", 10_000);
+    if (!workspaceSummaryResult) {
+      const [workspaceSummaryRequest] = automationStudioRuntimeSummaryRequests(projectId);
+      workspaceSummaryResult = await runLatest("runtime-summary", (signal) => api.post<{ summary: any }>(workspaceSummaryRequest.endpoint, workspaceSummaryRequest.payload, { signal }));
+      if (!workspaceSummaryResult) return;
+      dataCache.set("summary", projectId, "root", workspaceSummaryResult);
     }
-    const [workspaceSummaryResult, recordingResult, runtimeResult, domainResult] = results;
     const summary = workspaceSummaryResult.ok ? workspaceSummaryResult.payload?.summary : null;
+    const summaryRecordingStubs = summary ? recordingSummariesToRecordingStubs(summary.recordings ?? []) : null;
+    const runtimeStubs = summary ? (summary.runtime ?? []).map(runtimeSummaryToSessionStub) : null;
     if (summary) {
-      const summaryRecordingStubs = recordingSummariesToRecordingStubs(summary.recordings ?? []);
-      const recordingDetails = recordingResult.ok ? recordingResult.payload?.recordings ?? [] : [];
-      setProjectRecordings((current) => mergeRecordingSummaries(
-        current,
-        mergeRecordingSummaries(summaryRecordingStubs, recordingDetails)
-      ));
+      setProjectRecordings((current) => mergeRecordingSummaries(current, summaryRecordingStubs ?? []));
       setPipelineArtifacts((current: any) => ({
         ...emptyPipelineArtifacts(),
         policyProposals: mergeById(
@@ -1493,22 +1547,48 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         flowSummariesToCatalogEntries(summary.flows ?? []),
         current.filter((entry: any) => entry?.flow?.metadata?.summaryOnly !== true)
       ));
-    } else if (recordingResult.ok) {
-      setProjectRecordings((current) => mergeRecordingSummaries(current, recordingResult.payload?.recordings ?? []));
+      setRuntimeSessions(runtimeStubs ?? []);
     }
-    if (runtimeResult.ok) setRuntimeSessions(runtimeResult.payload?.runtimeSessions ?? []);
-    else if (summary) setRuntimeSessions((summary.runtime ?? []).map(runtimeSummaryToSessionStub));
-    if (domainResult.ok) setRecordingDomains(domainResult.payload?.domains ?? []);
     return {
       workspaceSummary: summary ?? null,
-      recordings: recordingResult.ok ? recordingResult.payload?.recordings ?? [] : null,
+      recordings: summaryRecordingStubs,
       timelines: null,
-      runtimeSessions: runtimeResult.ok ? runtimeResult.payload?.runtimeSessions ?? [] : null,
+      runtimeSessions: runtimeStubs,
       pipelineArtifacts: null,
       projectArtifacts: null,
       flows: summary ? flowSummariesToCatalogEntries(summary.flows ?? []) : null,
-      domains: domainResult.ok ? domainResult.payload?.domains ?? [] : null
+      domains: null
     };
+  }
+  function notifyProjectDataChanged(scopes: Parameters<typeof dataCache.invalidateScopes>[1], resourceIds: string[] = []) {
+    if (!activeProjectId) return;
+    dataCache.invalidateScopes(activeProjectId, scopes, [...new Set(resourceIds)]);
+    projectSyncClientRef.current?.notifyMutation();
+  }
+
+  function reconcileProjectChangeFeedInvalidations(projectId: string, invalidations: AutomationStudioScopedInvalidation[]): void {
+    if (!invalidations.length) return;
+    for (const invalidation of invalidations) {
+      dataCache.invalidateScopes(projectId, invalidation.cacheScopes, invalidation.cacheResourceIds);
+      const reason = invalidation.reconciliation.diagnostic;
+      if (reason) emitAutomationStudioFeedReconciliationDiagnostic({
+        projectId,
+        entityKind: invalidation.entityKind,
+        entityId: invalidation.entityId,
+        operation: invalidation.event.operation,
+        sequence: invalidation.event.sequence,
+        reason
+      });
+    }
+    const deleteEvents = invalidations
+      .map((invalidation) => invalidation.event)
+      .filter((event) => event.operation === "delete");
+    if (!deleteEvents.length) return;
+    setProjectFlows((current) => deleteEvents.reduce((next, event) => reconcileProjectFlowsFromChangeFeed(next, event).next, current));
+    setCustomHierarchyNodes((current) => deleteEvents.reduce((next, event) => reconcileCustomHierarchyNodesFromChangeFeed(next, event).next, current));
+    setProjectRecordings((current) => deleteEvents.reduce((next, event) => reconcileRecordingsFromChangeFeed(next, event).next, current));
+    setRuntimeSessions((current) => deleteEvents.reduce((next, event) => reconcileRuntimeSessionsFromChangeFeed(next, event).next, current));
+    setPipelineArtifacts((current: any) => deleteEvents.reduce((next: any, event) => reconcilePipelineArtifactsFromChangeFeed(next, event).next, current));
   }
   async function loadFlowDetails(flowId: string) {
     if (!activeProjectId || !flowId) return null;
@@ -1712,7 +1792,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setProjectRecordings((current) => [result.payload!.recording, ...current.filter((recording) => recording.recordingId !== recordingId)]);
     setSelectionAndFollow({ kind: "recording", id: recordingId });
     setAutomationActionStatus("Recording session created.");
-    await refreshProjectRuntimeState(activeProjectId);
+    notifyProjectDataChanged(["recording", "summary"], [recordingId]);
   }
 
   async function finalizeProjectRecording(recordingId: string, providedAuthorizationPin?: string) {
@@ -1743,7 +1823,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setProjectRecordings((current) => [result.payload!.recording, ...current.filter((recording) => recording.recordingId !== recordingId)]);
     setAutomationActionStatus("Recording finalized and available as optional Flow evidence.");
     setRecordingProcessing((current) => current?.recordingId === recordingId ? null : current);
-    await refreshProjectRuntimeState(activeProjectId);
+    notifyProjectDataChanged(["recording", "timeline", "summary"], [recordingId]);
   }
 
   async function normalizeProjectRecording(recordingId: string) {
@@ -1764,7 +1844,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       }));
     }
     setAutomationActionStatus(reviewResult.ok ? "Recording normalized." : "Recording normalized. Normalization details could not be created.");
-    void refreshProjectRuntimeState(activeProjectId);
+    notifyProjectDataChanged(["recording", "timeline", "summary"], [recordingId]);
     return true;
   }
 
@@ -1777,7 +1857,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     }
     const result = await api.post<{ recording: any }>("update-recording", { projectId: activeProjectId, recordingId, authorizationPin, ...changes });
     setAutomationActionStatus(result.ok ? "Recording updated." : result.error ?? "Recording could not be updated.");
-    await refreshProjectRuntimeState(activeProjectId);
+    notifyProjectDataChanged(["recording", "summary"], [recordingId]);
   }
 
   async function deleteProjectRecording(recordingId: string, authorizationPin?: string) {
@@ -1792,7 +1872,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setAutomationActionStatus(result.ok ? "Recording deleted." : result.error ?? "Recording could not be deleted.");
     if (!result.ok) return;
     removeDeletedRecordingsFromWorkspace([recordingId], result.payload?.deletedProposalIds ?? []);
-    await refreshProjectRuntimeState(activeProjectId);
+    notifyProjectDataChanged(["recording", "timeline", "proposal", "summary"], [recordingId, ...(result.payload?.deletedProposalIds ?? [])]);
   }
 
   async function deleteProjectRecordings(recordingIds: string[], authorizationPin: string) {
@@ -1808,7 +1888,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     const deletedCount = deletedIds.length;
     setAutomationActionStatus(`${deletedCount} recording${deletedCount === 1 ? "" : "s"} deleted.`);
     removeDeletedRecordingsFromWorkspace(deletedIds, result.payload?.deletedProposalIds ?? []);
-    await refreshProjectRuntimeState(activeProjectId);
+    notifyProjectDataChanged(["recording", "timeline", "proposal", "summary"], [...deletedIds, ...(result.payload?.deletedProposalIds ?? [])]);
     return true;
   }
 
@@ -1840,7 +1920,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     closeDeletedHierarchyViews(deletingNodes);
     if (selection?.kind === "proposal" && deletedProposalIds.has(selection.id)) setSelection(fallbackRecordingId ? { kind: "recording", id: fallbackRecordingId } : null);
     if (selection?.kind === "proposal-step" && deletedProposalIds.has(selection.proposalId)) setSelection(fallbackRecordingId ? { kind: "recording", id: fallbackRecordingId } : null);
-    await refreshProjectRuntimeState(activeProjectId);
+    notifyProjectDataChanged(["proposal", "summary"], [...deletedProposalIds]);
     return true;
   }
 
@@ -1857,8 +1937,9 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       ...[...deletedRecordingIds].map((recordingId) => ({ id: recordingId, kind: "recording" as const, category: "recording" as const, label: recordingId, parentId: null, sourceId: recordingId })),
       ...[...deletedProposalIds].map((proposalId) => ({ id: proposalId, kind: "proposal" as const, category: "proposal" as const, label: proposalId, parentId: null, sourceId: proposalId }))
     ];
-    setProjectRecordings((current) => current.filter((recording) => !deletedRecordingIds.has(String(recording.recordingId ?? ""))));
+    setProjectRecordings((current) => deleteRecordingCollectionItems(current, [...deletedRecordingIds]).next);
     setProjectTimelines((current) => current.filter((timeline) => !deletedRecordingIds.has(String(timeline.recordingId ?? ""))));
+    setProjectFlows((current) => removeFlowObjectReferencesFromProjectFlows(current, null, "recording", [...deletedRecordingIds]));
     setPipelineArtifacts((current: any) => removeDeletedRecordingArtifacts(current, deletedRecordingIds, deletedProposalIds));
     setSnapshot((current: any) => removeDeletedRecordingSnapshotData(current, deletedRecordingIds, deletedProposalIds));
     setIndexedStateSources((current) => Object.fromEntries(Object.entries(current).filter(([, value]) => {
@@ -1882,7 +1963,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     }
     const result = await api.post<{ recording: any }>("append-recording-note", { projectId: activeProjectId, recordingId, text, linkedEntryIds: linkedEntryId ? [linkedEntryId] : [], authorizationPin });
     setAutomationActionStatus(result.ok ? "Note added." : result.error ?? "Note could not be added.");
-    await refreshProjectRuntimeState(activeProjectId);
+    notifyProjectDataChanged(["recording", "timeline"], [recordingId]);
   }
 
   async function appendProjectRecordingMarker(recordingId: string, linkedEntryId?: string, monotonicOffsetMs?: number, providedLabel?: string, providedAuthorizationPin?: string) {
@@ -1896,7 +1977,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     }
     const result = await api.post<{ recording: any }>("append-recording-marker", { projectId: activeProjectId, recordingId, label, linkedEntryId, monotonicOffsetMs, authorizationPin });
     setAutomationActionStatus(result.ok ? "Marker added." : result.error ?? "Marker could not be added.");
-    await refreshProjectRuntimeState(activeProjectId);
+    notifyProjectDataChanged(["recording", "timeline"], [recordingId]);
   }
 
   function restoreSelectedTaskGraphDraft() {
@@ -1909,6 +1990,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
 
   function discardSelectedTaskGraphDraft() {
     if (activeProjectId && selectedTaskGraph?.flowId) removeAutomationGraphDraft(activeProjectId, selectedTaskGraph.flowId);
+    if (activeProjectId && selectedTaskGraph?.flowId) void removeAutomationGraphOperationDraft(activeProjectId, selectedTaskGraph.flowId);
     setRecoverableTaskGraphDraft(null);
     setAutomationActionStatus("Recovered draft discarded.");
   }
@@ -1943,7 +2025,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       }
       graphDraftPersistenceRef.current = null;
       removeAutomationGraphDraft(activeProjectId, selectedFlow.flowId);
-      await refreshProjectRuntimeState(activeProjectId);
+      void removeAutomationGraphOperationDraft(activeProjectId, selectedFlow.flowId);
+      notifyProjectDataChanged(["flow", "summary", "flow-metadata"], [selectedFlow.flowId]);
       setTaskGraphDrafts((current) => {
         if (!selectedTaskGraphDraftKey) return current;
         const { [selectedTaskGraphDraftKey]: _saved, ...rest } = current;
@@ -1960,6 +2043,14 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   function updateSelectedTaskGraphDraft(graph: { nodes: any[]; edges: any[] } | null) {
     if (graph) setRecoverableTaskGraphDraft(null);
     if (!selectedTaskGraphDraftKey) return;
+    if (activeProjectId && selectedTaskGraph?.flowId) {
+      if (graph && baseTaskGraphDocument) {
+        const batch = diffAutomationGraphDocuments(baseTaskGraphDocument as any, graph as any, { baseRevision: String(selectedTaskGraph.graphRevision ?? selectedTaskGraph.revision ?? selectedTaskGraph.updatedAt ?? 0) });
+        void saveAutomationGraphOperationDraft({ projectId: activeProjectId, flowId: selectedTaskGraph.flowId, baseRevision: batch.baseRevision, baseUpdatedAt: selectedTaskGraph.updatedAt ?? 0, savedAt: Date.now(), operations: batch.operations, estimatedBytes: batch.estimatedBytes });
+      } else if (!graph) {
+        void removeAutomationGraphOperationDraft(activeProjectId, selectedTaskGraph.flowId);
+      }
+    }
     setTaskGraphDrafts((current) => {
       if (!graph) {
         const { [selectedTaskGraphDraftKey]: _removed, ...rest } = current;
@@ -1975,7 +2066,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     if (authorizationPin.length < 4) return false;
     const result = await api.post<any>("publish-flow", { projectId: activeProjectId, flowId: selectedFlow.flowId, version, changelog, publishedBy: currentUser.displayName, authorizationPin });
     if (!result.ok) { setAutomationActionStatus(result.error ?? "Flow could not be published."); return false; }
-    await refreshProjectRuntimeState(activeProjectId); setAutomationActionStatus(`Published ${selectedFlow.name}@${version}.`); return true;
+    notifyProjectDataChanged(["flow", "summary", "flow-metadata"], [selectedFlow.flowId]); setAutomationActionStatus(`Published ${selectedFlow.name}@${version}.`); return true;
   }
 
   async function deprecateSelectedFlow(version: string) {
@@ -1986,7 +2077,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     if (authorizationPin.length < 4) return false;
     const result = await api.post<any>("deprecate-flow-publication", { projectId: activeProjectId, flowId: selectedFlow.flowId, version, reason, authorizationPin });
     if (!result.ok) { setAutomationActionStatus(result.error ?? "Published Flow version could not be deprecated."); return false; }
-    await refreshProjectRuntimeState(activeProjectId); setAutomationActionStatus(`Deprecated ${selectedFlow.name}@${version}.`); return true;
+    notifyProjectDataChanged(["flow", "summary", "flow-metadata"], [selectedFlow.flowId]); setAutomationActionStatus(`Deprecated ${selectedFlow.name}@${version}.`); return true;
   }
 
   function clearTaskGraphDraftsForFlow(flowId: string) {
@@ -2012,8 +2103,16 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setProjectUrl(null);
   }
 
-  function updateWorkspacePrefs(updater: (current: AutomationWorkspacePrefs) => AutomationWorkspacePrefs) {
-    setWorkspacePrefs((current) => normalizeAutomationWorkspacePrefs(updater(current)));
+  function updateWorkspacePrefs(updater: (current: AutomationWorkspacePrefs) => AutomationWorkspacePrefs, options: { persist?: boolean } = {}) {
+    const shouldPersist = options.persist !== false;
+    setWorkspacePrefs((current) => {
+      const candidate = updater(current);
+      if (candidate === current) return current;
+      const next = normalizeAutomationWorkspacePrefs(candidate);
+      if (automationWorkspacePrefsSameRuntimeState(current, next)) return current;
+      if (shouldPersist && next !== current) setWorkspacePrefsSaveRevision((revision) => revision + 1);
+      return next;
+    });
   }
   function startSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
     event.preventDefault();
@@ -2041,24 +2140,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       : clampNumber(workspacePrefs.sidebarWidth + (event.key === "ArrowLeft" ? -16 : 16), 220, 420, workspacePrefs.sidebarWidth);
     updateWorkspacePrefs((current) => ({ ...current, sidebarWidth: nextWidth }));
   }  function captureActiveViewState(current: AutomationWorkspacePrefs): AutomationWorkspacePrefs {
-    const activeViewId = current.panes.find((item) => item.id === current.activePaneId)?.activeViewId
-      ?? current.rightSidebar.activeViewId
-    if (!activeViewId) return current;
-    return {
-      ...current,
-      viewStates: {
-        ...(current.viewStates ?? {}),
-        [activeViewId]: {
-          ...(current.viewStates?.[activeViewId] ?? {}),
-          ...(selection ? { selection } : {}),
-        }
-      }
-    };
+    return current;
   }
   function restoreViewState(viewId: string, sourcePrefs = workspacePrefs) {
-    const saved = sourcePrefs.viewStates?.[viewId];
-    const savedSelection = saved?.selection;
-    if (isAutomationSelection(savedSelection)) setSelection(savedSelection);
+    void viewId;
+    void sourcePrefs;
   }
   function openView(viewId: string, mode: "preview" | "new-window" = "preview", area: AutomationWorkspaceArea = "main") {
     const region = automationWorkspaceRegionForView(viewId);
@@ -2075,6 +2161,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       if (region === "main") {
         const targetPane = chooseMainPaneForView(current, viewId);
         if (!targetPane) return current;
+        if (current.activePaneId === targetPane.id && current.activeViewId === viewId && targetPane.activeViewId === viewId && targetPane.tabs.includes(viewId)) return current;
         return {
           ...current,
           activePaneId: targetPane.id,
@@ -2086,6 +2173,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         };
       }
       if (region === "right") {
+        if (!current.rightSidebarCollapsed && current.rightSidebar.activeViewId === viewId && current.rightSidebar.tabs.includes(viewId) && current.rightSidebar.collapsed === false) return current;
         return {
           ...current,
           rightSidebarCollapsed: false,
@@ -2098,7 +2186,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         };
       }
       return current;
-    });
+    }, { persist: false });
   }
   function chooseMainPaneForView(current: AutomationWorkspacePrefs, viewId: string) {
     const existingPane = current.panes.find((item) => item.tabs.includes(viewId));
@@ -2121,7 +2209,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           tabs: current.rightSidebar.tabs.includes("global-inspector") ? current.rightSidebar.tabs : ["global-inspector", ...current.rightSidebar.tabs]
         }
       };
-    });
+    }, { persist: false });
   }
   function addWorkspaceWindow(viewId: string, area: AutomationWorkspaceArea, targetWindowId?: string) {
     const option = viewAdderOptions.find((item) => item.view.id === viewId);
@@ -2176,7 +2264,10 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       taskIds: new Set(deletingNodes.filter((node) => node.kind === "task" && node.sourceId).map((node) => node.sourceId!)),
       routineIds: new Set(deletingNodes.filter((node) => node.kind === "routine" && node.sourceId).map((node) => node.sourceId!)),
       configIds: new Set(deletingNodes.filter((node) => node.kind === "config" && node.sourceId).map((node) => node.sourceId!)),
-      flowIds: new Set(deletingNodes.filter((node) => node.kind === "flow" && node.sourceId).map((node) => node.sourceId!)),
+      flowIds: new Set([
+        ...deletingNodes.filter((node) => node.kind === "flow" && node.sourceId).map((node) => node.sourceId!),
+        ...deletingNodes.filter((node) => node.kind === "subflow" && typeof node.metadata?.graphFlowId === "string").map((node) => node.metadata!.graphFlowId as string)
+      ]),
       recordingIds: new Set(deletingNodes.filter((node) => node.kind === "recording" && node.sourceId).map((node) => node.sourceId!)),
       proposalIds: new Set(deletingNodes.filter((node) => node.kind === "proposal" && node.sourceId).map((node) => node.sourceId!)),
       timelineEntryIds: new Set(recordings
@@ -2209,18 +2300,20 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     });
   }
   function setPaneTab(paneId: string, viewId: string) {
+    if (workspacePrefs.activePaneId === paneId && workspacePrefs.activeViewId === viewId && workspacePrefs.panes.find((item) => item.id === paneId)?.activeViewId === viewId) return;
     restoreViewState(viewId);
     updateWorkspacePrefs((current) => ({
       ...captureActiveViewState(current),
       activePaneId: paneId,
       activeViewId: viewId,
       panes: current.panes.map((item) => item.id === paneId ? { ...item, activeViewId: viewId } : item)
-    }));
+    }), { persist: false });
   }
   function activatePane(paneId: string) {
     const viewId = workspacePrefs.panes.find((item) => item.id === paneId)?.activeViewId;
+    if (paneId === workspacePrefs.activePaneId && (viewId ?? workspacePrefs.activeViewId) === workspacePrefs.activeViewId) return;
     if (viewId && paneId !== workspacePrefs.activePaneId) restoreViewState(viewId);
-    updateWorkspacePrefs((current) => ({ ...captureActiveViewState(current), activePaneId: paneId, activeViewId: viewId ?? current.activeViewId }));
+    updateWorkspacePrefs((current) => ({ ...captureActiveViewState(current), activePaneId: paneId, activeViewId: viewId ?? current.activeViewId }), { persist: false });
   }
   function closePaneTab(paneId: string, viewId: string) {
     updateWorkspacePrefs((current) => {
@@ -2267,7 +2360,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         activeViewId: viewId,
         collapsed: false
       }
-    }));
+    }), { persist: false });
   }
   function closeRightSidebarTab(viewId: string) {
     updateWorkspacePrefs((current) => {
@@ -2432,12 +2525,20 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     }
     if (typeof problem?.viewId === "string") openView(problem.viewId, "preview");
   }
+  const handleCreateSubflowFromActiveGraph = useCallback(() => {
+    const subflowRoot = hierarchyNodes.find((node) => automationHierarchyNodeIsSubflowRoot(node) && node.flowId === selectedTaskGraph?.flowId);
+    if (subflowRoot) requestHierarchyAction({ action: "create", category: "flow", parentId: subflowRoot.id });
+  }, [hierarchyNodes, selectedTaskGraph?.flowId]);
+  const handleRefreshRecordingsForRenderer = useCallback(async () => {
+    await refreshProjectRuntimeState(activeProjectId);
+  }, [activeProjectId]);
+
   function renderViewContent(view: AutomationViewInstance, viewActive: boolean) {
     return (
       <AutomationViewRenderer
-        entries={selectedTimeline?.timeline ?? selectedRecording?.timeline ?? []}
+        entries={selectedTimelineEntries}
         models={models}
-        notes={selectedRecording?.notes ?? []}
+        notes={selectedRecordingNotes}
         actionStatus={automationActionStatus}
         policies={policies}
         pipelineArtifacts={pipelineArtifacts}
@@ -2445,7 +2546,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         configs={projectArtifacts.configs ?? []}
         taskGraph={selectedTaskGraph}
         taskGraphDraft={selectedTaskGraphDraft}
-        recoverableTaskGraphDraft={recoverableTaskGraphDraft ? { savedAt: recoverableTaskGraphDraft.savedAt, stale: recoverableTaskGraphDraft.baseUpdatedAt !== (selectedTaskGraph?.updatedAt ?? 0) } : null}
+        recoverableTaskGraphDraft={recoverableTaskGraphDraftView}
         flowEditable={selectedFlowEntry?.source === "canonical"}
         nativeNodeDefinitions={availableNodeDefinitions}
         flowPublications={flowPublications}
@@ -2476,10 +2577,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         onOpenTimelineEntryState={openTimelineEntryState}
         onOpenProblem={openAutomationProblem}
         onOpenProblems={openAutomationProblems}
-        onCreateSubflow={() => {
-          const subflowRoot = hierarchyNodes.find((node) => automationHierarchyNodeIsSubflowRoot(node) && node.flowId === selectedTaskGraph?.flowId);
-          if (subflowRoot) requestHierarchyAction({ action: "create", category: "flow", parentId: subflowRoot.id });
-        }}
+        onCreateSubflow={handleCreateSubflowFromActiveGraph}
         onOpenSubflow={openSubflowInEditor}
         onOpenRecording={openRecordingTimeline}
         onOpenState={openStateView}
@@ -2490,9 +2588,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         onRestoreTaskGraphDraft={restoreSelectedTaskGraphDraft}
         onDiscardTaskGraphDraft={discardSelectedTaskGraphDraft}
         onTaskGraphDirtyChange={setHasDirtyTaskGraph}
-        onRefreshRecordings={async () => {
-          await refreshProjectRuntimeState(activeProjectId);
-        }}
+        onRefreshRecordings={handleRefreshRecordingsForRenderer}
         onUpdateRecording={updateProjectRecording}
         setSelection={setSelectionAndFollow}
       />
@@ -2517,54 +2613,22 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       flowId,
       authorizationPin: hierarchyPin,
       name,
-      role: "utility"
+      role: "utility",
+      parentCategoryId
     });
     if (!result.ok || !result.payload?.subflow) {
       setHierarchyStatus(result.error ?? "Subflow could not be created.");
       return false;
     }
-    await attachSubflowToFlowExpansion(flowId, result.payload.subflow.subflowId, name, parentCategoryId);
     window.dispatchEvent(new CustomEvent("fluxiq:subflows-changed", { detail: { flowId } }));
-    await refreshProjectRuntimeState(activeProjectId);
+    notifyProjectDataChanged(["flow", "subflow", "summary"], [flowId, result.payload.subflow.subflowId]);
     const graphFlowId = result.payload.subflow.graphFlowId ?? flowId + "." + result.payload.subflow.subflowId + ".graph";
-    await loadFlowDetails(graphFlowId);
+    setProjectFlows((current) => upsertSubflowSummaryIntoProjectFlows(current, flowId, result.payload!.subflow));
+    void loadFlowDetails(graphFlowId);
     setSelection({ kind: "flow", id: graphFlowId });
     openView("policy-primary", "preview", "main");
     setHierarchyStatus(`${name} subflow created.`);
     return true;
-  }
-
-  function subflowExpansionEntryId(item: any): string {
-    return typeof item === "string" ? item : String(item?.subflowId ?? item?.id ?? item?.sourceId ?? "");
-  }
-
-  async function attachSubflowToFlowExpansion(flowId: string, subflowId: string, name: string, parentCategoryId: string | null): Promise<void> {
-    const flow = await loadHierarchyFlow(flowId);
-    if (!flow || !activeProjectId) return;
-    const expansion = flow.expansion && typeof flow.expansion === "object" ? flow.expansion : {};
-    const rawSubflowIds = Array.isArray(expansion.subflowIds) ? expansion.subflowIds : [];
-    const existingIndex = rawSubflowIds.findIndex((item: any) => subflowExpansionEntryId(item) === subflowId);
-    const existing = existingIndex >= 0 ? rawSubflowIds[existingIndex] : null;
-    const existingEntry = typeof existing === "object" && existing && !Array.isArray(existing) ? existing : {};
-    const baseMetadata = existingEntry.metadata ?? {};
-    const nextMetadata = parentCategoryId
-      ? { ...baseMetadata, subflowCategoryId: parentCategoryId }
-      : baseMetadata;
-    const nextEntry = {
-      ...existingEntry,
-      subflowId,
-      name,
-      ...(Object.keys(nextMetadata).length ? { metadata: nextMetadata } : {})
-    };
-    const nextSubflowIds = existingIndex >= 0
-      ? rawSubflowIds.map((item: any, index: number) => index === existingIndex ? nextEntry : item)
-      : [...rawSubflowIds, nextEntry];
-    const result = await api.post<{ flow: any }>("save-flow", {
-      projectId: activeProjectId,
-      authorizationPin: hierarchyPin,
-      flow: { ...flow, expansion: { ...expansion, subflowIds: nextSubflowIds } }
-    });
-    if (result.ok && result.payload?.flow) setProjectFlows((current) => mergeFlowDetails(current, [{ source: "canonical", readOnly: false, flow: result.payload!.flow }]));
   }
 
   async function createSubflowCategoryFolder(name: string, flowId: string, parentCategoryId: string | null): Promise<boolean> {
@@ -2599,8 +2663,13 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       setHierarchyStatus(result.error ?? "Subflow category could not be saved.");
       return false;
     }
-    setProjectFlows((current) => mergeFlowDetails(current, [{ source: "canonical", readOnly: false, flow: result.payload!.flow }]));
-    await refreshProjectRuntimeState(activeProjectId);
+    dataCache.set("flow", activeProjectId, flowId, result.payload.flow);
+    setProjectFlows((current) => applySubflowCategoryCreate(
+      mergeFlowDetails(current, [{ source: "canonical", readOnly: false, flow: result.payload!.flow }]),
+      flowId,
+      category
+    ).next);
+    notifyProjectDataChanged(["flow", "subflow", "summary"], [flowId, category.id]);
     setHierarchyStatus(`${name} created under Subflows.`);
     return true;
   }
@@ -2689,8 +2758,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           setHierarchyStatus(originResult.error ?? "Flow was created but its preset could not be saved.");
           return;
         }
-        await refreshProjectRuntimeState(activeProjectId);
-        setSelection({ kind: "flow", id: createdFlow.flowId });
+        const flow = originResult.payload?.flow ?? createdFlow;
+        dataCache.set("flow", activeProjectId, flow.flowId, flow);
+        setProjectFlows((current) => mergeCreatedFlowIntoProjectFlows(current, flow));
+        notifyProjectDataChanged(["flow", "summary"], [flow.flowId]);
+        setSelection({ kind: "flow", id: flow.flowId });
         openView("policy-primary", "preview", "main");
         setHierarchyStatus(`${label} saved.`);
       } else {
@@ -2702,13 +2774,14 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           if (!created) return;
         } else {
           const id = `custom-${hierarchyKind}-${Date.now()}`;
-          setCustomHierarchyNodes((items) => [...items, {
+          const folderNode: AutomationHierarchyNode = {
             id,
             kind: hierarchyKind,
             category: hierarchyCategory,
             label,
             parentId: hierarchyParentId
-          }]);
+          };
+          setCustomHierarchyNodes((items) => applyCustomFolderCreate(items, folderNode).next);
           setHierarchyStatus(`${label} created.`);
         }
       }
@@ -2719,12 +2792,12 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       const recordingIds = deletingNodes
         .filter((node) => node.kind === "recording" && node.sourceId)
         .map((node) => node.sourceId!);
-      if (hierarchyAction.node.category === "recording" && recordingIds.length) {
+      if ((hierarchyAction.node.kind === "recording" || hierarchyAction.node.category === "recording") && recordingIds.length) {
         setHierarchyStatus(`Deleting ${recordingIds.length} recording${recordingIds.length === 1 ? "" : "s"}...`);
         const deleted = await deleteProjectRecordings(recordingIds, hierarchyPin);
         if (!deleted) return;
         setDeletedHierarchyIds((items) => items.filter((id) => !id.startsWith("recordings-client-") && !recordingIds.includes(id)));
-        setCustomHierarchyNodes((items) => items.filter((item) => item.id !== hierarchyAction.node!.id && !ids.includes(item.id)));
+        setCustomHierarchyNodes((items) => applyCustomFolderDelete(items, hierarchyAction.node!.id).next.filter((item) => !ids.includes(item.id)));
         setHierarchyAction(null);
         setHierarchyPin("");
         setHierarchyName("");
@@ -2742,6 +2815,106 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         setHierarchyName("");
         return;
       }
+      const subflowCategoryNodes = deletingNodes.filter(automationHierarchyNodeIsSubflowCategory);
+      if (automationHierarchyNodeIsSubflowCategory(hierarchyAction.node) && subflowCategoryNodes.length) {
+        if (!activeProjectId) {
+          setHierarchyStatus("Open a project before deleting subflow categories.");
+          return;
+        }
+        const categoriesByFlowId = new Map<string, string[]>();
+        for (const node of subflowCategoryNodes) {
+          if (!node.flowId || !node.sourceId) continue;
+          categoriesByFlowId.set(node.flowId, [...(categoriesByFlowId.get(node.flowId) ?? []), node.sourceId]);
+        }
+        for (const [flowId, categoryIds] of categoriesByFlowId) {
+          const flow = await loadHierarchyFlow(flowId);
+          if (!flow) return;
+          const nextFlow = categoryIds.reduce((currentFlow, categoryId) => flowDocumentWithoutSubflowCategory(currentFlow, categoryId), flow);
+          const result = await api.post<{ flow: any }>("save-flow", { projectId: activeProjectId, authorizationPin: hierarchyPin, flow: nextFlow });
+          if (!result.ok) {
+            setHierarchyStatus(result.error ?? "Subflow category could not be deleted.");
+            return;
+          }
+          const savedFlow = result.payload?.flow ?? nextFlow;
+          dataCache.set("flow", activeProjectId, flowId, savedFlow);
+          setProjectFlows((current) => categoryIds.reduce(
+            (entries, categoryId) => applySubflowCategoryDelete(entries, flowId, categoryId).next,
+            mergeFlowDetails(current, [{ source: "canonical", readOnly: false, flow: savedFlow }])
+          ));
+        }
+        closeDeletedHierarchyViews(deletingNodes);
+        notifyProjectDataChanged(["flow", "subflow", "summary"], [...categoriesByFlowId.keys(), ...subflowCategoryNodes.map((node) => node.sourceId).filter((value): value is string => Boolean(value))]);
+        setHierarchyAction(null);
+        setHierarchyPin("");
+        setHierarchyName("");
+        setHierarchyStatus(`${hierarchyAction.node.label} deleted.`);
+        return;
+      }
+      const subflowNodes = hierarchyAction.node.kind === "subflow"
+        ? deletingNodes.filter((node) => node.kind === "subflow" && node.flowId && node.sourceId)
+        : [];
+      if (subflowNodes.length) {
+        if (!activeProjectId) {
+          setHierarchyStatus("Open a project before deleting subflows.");
+          return;
+        }
+        for (const node of subflowNodes) {
+          const result = await api.post("delete-flow-subflow", { projectId: activeProjectId, flowId: node.flowId, subflowId: node.sourceId, authorizationPin: hierarchyPin });
+          if (!result.ok) {
+            setHierarchyStatus(result.error ?? `${node.label} could not be deleted.`);
+            return;
+          }
+          setProjectFlows((current) => applySubflowReferenceDelete(
+            removeSubflowSummaryFromProjectFlows(removeDeletedFlowsFromProjectFlows(current, typeof node.metadata?.graphFlowId === "string" ? [node.metadata.graphFlowId] : []), node.flowId!, [node.sourceId!]),
+            node.flowId!,
+            node.sourceId!
+          ).next);
+          if (typeof node.metadata?.graphFlowId === "string") clearTaskGraphDraftsForFlow(node.metadata.graphFlowId);
+        }
+        closeDeletedHierarchyViews(deletingNodes);
+        notifyProjectDataChanged(["flow", "subflow", "summary"], subflowNodes.flatMap((node) => [node.flowId!, node.sourceId!, typeof node.metadata?.graphFlowId === "string" ? node.metadata.graphFlowId : ""]).filter(Boolean));
+        if (selection?.kind === "flow" && subflowNodes.some((node) => node.metadata?.graphFlowId === selection.id)) setSelection(null);
+        setHierarchyAction(null);
+        setHierarchyPin("");
+        setHierarchyName("");
+        setHierarchyStatus(`${hierarchyAction.node.label} deleted.`);
+        return;
+      }
+      const flowObjectNodes = deletingNodes.filter((node) => node.sourceId && node.flowId && (node.kind === "instruction" || node.kind === "adaptation"));
+      if (flowObjectNodes.length && (hierarchyAction.node.kind === "instruction" || hierarchyAction.node.kind === "adaptation")) {
+        if (!activeProjectId) {
+          setHierarchyStatus("Open a project before removing Flow objects.");
+          return;
+        }
+        const removalsByFlowId = new Map<string, Array<{ kind: FlowObjectKind; ids: string[] }>>();
+        for (const node of flowObjectNodes) {
+          const kind: FlowObjectKind = node.kind === "instruction" ? "instruction" : "adaptation";
+          removalsByFlowId.set(node.flowId!, [...(removalsByFlowId.get(node.flowId!) ?? []), { kind, ids: [node.sourceId!] }]);
+        }
+        for (const [flowId, removals] of removalsByFlowId) {
+          let flow = await loadHierarchyFlow(flowId);
+          if (!flow) return;
+          for (const removal of removals) flow = flowDocumentWithoutFlowObjectReferences(flow, removal.kind, removal.ids);
+          const result = await api.post<{ flow: any }>("save-flow", { projectId: activeProjectId, authorizationPin: hierarchyPin, flow });
+          if (!result.ok) {
+            setHierarchyStatus(result.error ?? "Flow object could not be removed.");
+            return;
+          }
+          const savedFlow = result.payload?.flow ?? flow;
+          dataCache.set("flow", activeProjectId, flowId, savedFlow);
+          setProjectFlows((current) => removals.reduce(
+            (entries, removal) => removeFlowObjectReferencesFromProjectFlows(entries, flowId, removal.kind, removal.ids),
+            mergeFlowDetails(current, [{ source: "canonical", readOnly: false, flow: savedFlow }])
+          ));
+        }
+        closeDeletedHierarchyViews(deletingNodes);
+        notifyProjectDataChanged(["flow", "summary"], flowObjectNodes.flatMap((node) => [node.flowId!, node.sourceId!]).filter(Boolean));
+        setHierarchyAction(null);
+        setHierarchyPin("");
+        setHierarchyName("");
+        setHierarchyStatus(`${hierarchyAction.node.label} deleted.`);
+        return;
+      }
       const flowNodes = deletingNodes.filter((node) => node.kind === "flow" && node.sourceId && projectFlows.some((entry: any) => entry.source === "canonical" && entry.flow?.flowId === node.sourceId));
       if (flowNodes.length) {
         if (!activeProjectId) {
@@ -2756,7 +2929,10 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           }
         }
         closeDeletedHierarchyViews(flowNodes);
-        await refreshProjectRuntimeState(activeProjectId);
+        const deletedFlowIds = flowNodes.map((node) => node.sourceId).filter((value): value is string => Boolean(value));
+        setProjectFlows((current) => removeDeletedFlowsFromProjectFlows(current, deletedFlowIds));
+        for (const flowId of deletedFlowIds) clearTaskGraphDraftsForFlow(flowId);
+        notifyProjectDataChanged(["flow", "subflow", "summary"], flowNodes.map((node) => node.sourceId).filter((value): value is string => Boolean(value)));
         if (selection?.kind === "flow" && flowNodes.some((node) => node.sourceId === selection.id)) setSelection(null);
       }
       const artifactNodes = deletingNodes.filter((node) => (node.kind === "task" || node.kind === "routine" || node.kind === "config") && node.sourceId);
@@ -2780,7 +2956,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           }
         }
         closeDeletedHierarchyViews(deletingNodes);
-        await refreshProjectRuntimeState(activeProjectId);
+        notifyProjectDataChanged(["summary"], artifactNodes.map((node) => node.sourceId).filter((value): value is string => Boolean(value)));
         const deletedTaskIds = new Set(artifactNodes.filter((node) => node.kind === "task").map((node) => node.sourceId));
         if (selection?.kind === "policy" && deletedTaskIds.has(selection.id)) {
           const nextTask = (projectArtifacts.tasks ?? []).find((task: any) => !deletedTaskIds.has(task.taskId));
@@ -2790,7 +2966,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       const artifactNodeIds = new Set([...artifactNodes, ...flowNodes].map((node) => node.id));
       const hierarchyOnlyDeletedIds = [hierarchyAction.node.id, ...ids].filter((id) => !artifactNodeIds.has(id));
       if (hierarchyOnlyDeletedIds.length) setDeletedHierarchyIds((items) => [...new Set([...items, ...hierarchyOnlyDeletedIds])]);
-      setCustomHierarchyNodes((items) => items.filter((item) => item.id !== hierarchyAction.node!.id && !ids.includes(item.id)));
+      setCustomHierarchyNodes((items) => applyCustomFolderDelete(items, hierarchyAction.node!.id).next.filter((item) => !ids.includes(item.id)));
       setHierarchyStatus(`${hierarchyAction.node.label} deleted.`);
     }
     setHierarchyAction(null);
@@ -2884,6 +3060,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                       active={workspacePrefs.activePaneId === pane.id}
                       activeViewId={pane.activeViewId}
                       frameLabel="Pane"
+                      bodyClassName={automationViewBodyClassName(view)}
                       icon={view.icon}
                       tabs={tabViews}
                       windowId={pane.id}
@@ -2968,6 +3145,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                 active
                 activeViewId={activeRightViewId}
                 frameLabel="Right utility"
+                bodyClassName={automationViewBodyClassName(view)}
                 icon={view.icon}
                 tabs={tabViews}
                 windowId="right-sidebar"
@@ -3162,6 +3340,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
             </span>)}
           </nav> : <div className="automation-workspace-breadcrumbs empty" />}
           <div className="automation-studio-context">
+            {process.env.NODE_ENV !== "production" ? <button aria-haspopup="dialog" className="icon-button" onClick={() => setDataInspectorOpen(true)} title="Open data flow inspector" type="button"><Bug size={15} aria-hidden /><span className="visually-hidden">Open data flow inspector</span></button> : null}
             <button aria-haspopup="dialog" className="button" onClick={() => setPreferencesOpen(true)} type="button"><SlidersHorizontal size={14} aria-hidden />Preferences</button>
           </div>
         </header>
@@ -3245,6 +3424,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       </Modal> : null}      {projectModal ? <AutomationProjectModalView busy={projectActionBusy} categoryName={categoryName} categoryTarget={categoryTarget} currentUser={currentUser} description={projectDescription} mode={projectModal} name={projectName} pin={projectPin} projectTarget={projectTarget} status={projectStatus} onCategoryNameChange={setCategoryName} onClose={() => { if (!projectActionBusy) setProjectModal(null); }} onCreate={() => void createProject()} onCreateCategory={() => void createCategory()} onDelete={() => void deleteProject()} onDeleteCategory={() => void deleteCategory()} onDescriptionChange={setProjectDescription} onMove={() => void moveProject()} onMoveCategory={() => void moveCategory()} onNameChange={setProjectName} onPinChange={(value) => setProjectPin(digits(value))} onRename={() => void renameProject()} onRenameCategory={() => void renameCategory()} /> : null}
       {preferencesOpen ? <Modal closeOnEscape description="Layout, region sizing, motion, and operational density." onClose={() => setPreferencesOpen(false)} title="Workspace Preferences"><AutomationWorkspacePreferences prefs={workspacePrefs} saveStatus={workspaceSaveStatus} setPrefs={updateWorkspacePrefs} /><div className="modal-actions"><button className="button button-primary" onClick={() => setPreferencesOpen(false)} type="button">Done</button></div></Modal> : null}      {windowAdderOpen ? <AutomationWindowAdderPalette area={windowAdderOpen.area} anchor={windowAdderOpen.anchor} {...(windowAdderOpen.targetWindowId ? { targetWindowId: windowAdderOpen.targetWindowId } : {})} options={viewAdderOptions} onAdd={addWorkspaceWindow} onClose={() => setWindowAdderOpen(null)} /> : null}
       {layoutPickerOpen ? <AutomationLayoutPicker area={layoutPickerOpen.area} anchor={layoutPickerOpen.anchor} onArrange={arrangeWindows} /> : null}
+      {dataInspectorOpen && process.env.NODE_ENV !== "production" ? <AutomationStudioDataInspector api={api} cacheStats={() => dataCache.stats()} onClose={() => setDataInspectorOpen(false)} /> : null}
     </section>
   );
 }
@@ -3373,9 +3553,9 @@ export function flowSummariesToCatalogEntries(summaries: any[]): any[] {
         : { status: summary.publicationStatus ?? "draft" },
       createdAt: summary.updatedAt ?? Date.now(),
       updatedAt: summary.updatedAt ?? Date.now(),
-      ...(Array.isArray(summary.hierarchySubflows) ? { expansion: { subflowIds: summary.hierarchySubflows.map((subflow: any) => ({ subflowId: subflow.subflowId, ...(subflow.name ? { name: subflow.name } : {}), ...(subflow.parentCategoryId ? { metadata: { subflowCategoryId: subflow.parentCategoryId } } : {}) })) } } : {}),
       metadata: {
         summaryOnly: true,
+        ...(Array.isArray(summary.hierarchySubflows) ? { hierarchySubflows: summary.hierarchySubflows.map((subflow: any) => ({ subflowId: subflow.subflowId, ...(subflow.name ? { name: subflow.name } : {}), ...(subflow.graphFlowId ? { graphFlowId: subflow.graphFlowId } : {}), ...(subflow.parentCategoryId ? { parentCategoryId: subflow.parentCategoryId, metadata: { subflowCategoryId: subflow.parentCategoryId } } : {}) })) } : {}),
         ...(Array.isArray(summary.subflowCategories) ? { subflowCategories: summary.subflowCategories.map((category: any) => ({ id: category.id, name: category.name, parentId: category.parentId ?? null })) } : {}),
         ...(summary.recordingProposalIds ? { recordingProposalIds: summary.recordingProposalIds } : {}),
         ...(summary.subflowGraph === true ? { subflowGraph: true } : {}),
@@ -3425,6 +3605,137 @@ function mergeFlowDetails(current: any[], incoming: any[]) {
     if (entry?.flow?.flowId && !next.some((item) => item?.flow?.flowId === entry.flow.flowId)) next.push(entry);
   }
   return next;
+}
+
+export function mergeCreatedFlowIntoProjectFlows(current: any[], flow: any): any[] {
+  if (!flow?.flowId) return current;
+  return mergeFlowDetails(current, [{ source: "canonical", readOnly: false, flow }]);
+}
+
+export function removeDeletedFlowsFromProjectFlows(current: any[], flowIds: readonly string[]): any[] {
+  const deletedFlowIds = new Set(flowIds.filter(Boolean));
+  if (!deletedFlowIds.size) return current;
+  return current.filter((entry) => !deletedFlowIds.has(entry?.flow?.flowId));
+}
+
+export function upsertSubflowSummaryIntoProjectFlows(current: any[], parentFlowId: string, subflow: any): any[] {
+  if (!parentFlowId || !subflow?.subflowId) return current;
+  return current.map((entry) => {
+    if (entry?.flow?.flowId !== parentFlowId) return entry;
+    const flow = entry.flow;
+    const metadata = flow.metadata && typeof flow.metadata === "object" ? flow.metadata : {};
+    const existing = Array.isArray(metadata.hierarchySubflows) ? metadata.hierarchySubflows : Array.isArray(flow.expansion?.subflowIds) ? flow.expansion.subflowIds : [];
+    const parentCategoryId = subflow.parentCategoryId ?? subflow.metadata?.parentCategoryId ?? subflow.metadata?.subflowCategoryId ?? subflow.metadata?.categoryId;
+    const summary = {
+      subflowId: subflow.subflowId,
+      ...(subflow.name ? { name: subflow.name } : {}),
+      ...(subflow.graphFlowId ? { graphFlowId: subflow.graphFlowId } : {}),
+      ...(typeof parentCategoryId === "string" && parentCategoryId ? { parentCategoryId, metadata: { subflowCategoryId: parentCategoryId } } : {})
+    };
+    const nextHierarchySubflows = upsertById([...existing.filter((item: any) => subflowSummaryId(item) !== subflow.subflowId), summary], "subflowId");
+    return { ...entry, flow: { ...flow, metadata: { ...metadata, hierarchySubflows: nextHierarchySubflows } } };
+  });
+}
+
+export function removeSubflowSummaryFromProjectFlows(current: any[], parentFlowId: string, subflowIds: readonly string[]): any[] {
+  const deleted = new Set(subflowIds.filter(Boolean));
+  if (!parentFlowId || !deleted.size) return current;
+  return current.map((entry) => {
+    if (entry?.flow?.flowId !== parentFlowId) return entry;
+    const flow = entry.flow;
+    const metadata = flow.metadata && typeof flow.metadata === "object" ? flow.metadata : {};
+    const existing = Array.isArray(metadata.hierarchySubflows) ? metadata.hierarchySubflows : Array.isArray(flow.expansion?.subflowIds) ? flow.expansion.subflowIds : [];
+    return { ...entry, flow: { ...flow, metadata: { ...metadata, hierarchySubflows: existing.filter((item: any) => !deleted.has(subflowSummaryId(item))) } } };
+  });
+}
+
+function subflowSummaryId(item: any): string {
+  return typeof item === "string" ? item : String(item?.subflowId ?? item?.id ?? item?.sourceId ?? "");
+}
+
+export function removeFlowObjectReferencesFromProjectFlows(current: any[], flowId: string | null | undefined, kind: FlowObjectKind, objectIds: string | string[]): any[] {
+  const flowIds = flowId
+    ? [flowId]
+    : current.map((entry) => String(entry?.flow?.flowId ?? "")).filter(Boolean);
+  return flowIds.reduce((entries, targetFlowId) => applyFlowObjectReferenceDelete(entries, targetFlowId, kind, objectIds).next, current);
+}
+
+export type AutomationStudioLocalFeedReconciliation<TValue> = {
+  next: TValue;
+  reconciled: boolean;
+  reason?: string;
+};
+
+export function reconcileProjectFlowsFromChangeFeed(current: any[], event: AutomationStudioProjectChangeEvent): AutomationStudioLocalFeedReconciliation<any[]> {
+  if (event.operation !== "delete") return { next: current, reconciled: false, reason: "Only delete feed events include enough information for local Flow reconciliation." };
+  const kind = normalizedChangeEntityKind(event.entityKind);
+  if (kind === "flow") return { next: removeDeletedFlowsFromProjectFlows(current, [event.entityId]), reconciled: true };
+  if (kind === "subflow") return { next: removeSubflowSummaryFromProjectFlowsForFeed(current, event), reconciled: true };
+  if (kind === "recording") return { next: removeFlowObjectReferencesFromProjectFlows(current, null, "recording", event.entityId), reconciled: true };
+  if (kind === "instruction") return { next: removeFlowObjectReferencesFromProjectFlows(current, event.parentId, "instruction", event.entityId), reconciled: true };
+  if (kind === "adaptation") return { next: removeFlowObjectReferencesFromProjectFlows(current, event.parentId, "adaptation", event.entityId), reconciled: true };
+  return { next: current, reconciled: false, reason: `${event.entityKind}:delete has no local Flow reconciliation handler.` };
+}
+
+export function reconcileCustomHierarchyNodesFromChangeFeed(current: AutomationHierarchyNode[], event: AutomationStudioProjectChangeEvent): AutomationStudioLocalFeedReconciliation<AutomationHierarchyNode[]> {
+  if (event.operation !== "delete") return { next: current, reconciled: false };
+  const kind = normalizedChangeEntityKind(event.entityKind);
+  if (kind !== "folder" && kind !== "hierarchy") return { next: current, reconciled: false };
+  if (!current.some((node) => node.id === event.entityId || node.sourceId === event.entityId)) return { next: current, reconciled: true };
+  const directNode = current.find((node) => node.sourceId === event.entityId) ?? current.find((node) => node.id === event.entityId);
+  return { next: directNode ? applyCustomFolderDelete(current, directNode.id).next : current, reconciled: true };
+}
+
+export function reconcileRecordingsFromChangeFeed(current: any[], event: AutomationStudioProjectChangeEvent): AutomationStudioLocalFeedReconciliation<any[]> {
+  if (event.operation !== "delete" || normalizedChangeEntityKind(event.entityKind) !== "recording") return { next: current, reconciled: false };
+  return { next: deleteRecordingCollectionItems(current, event.entityId).next, reconciled: true };
+}
+
+export function reconcileRuntimeSessionsFromChangeFeed(current: any[], event: AutomationStudioProjectChangeEvent): AutomationStudioLocalFeedReconciliation<any[]> {
+  if (event.operation !== "delete" || normalizedChangeEntityKind(event.entityKind) !== "runtime") return { next: current, reconciled: false };
+  return { next: current.filter((session) => String(session?.runId ?? session?.id ?? "") !== event.entityId), reconciled: true };
+}
+
+export function reconcilePipelineArtifactsFromChangeFeed(current: any, event: AutomationStudioProjectChangeEvent): AutomationStudioLocalFeedReconciliation<any> {
+  const kind = normalizedChangeEntityKind(event.entityKind);
+  if (event.operation !== "delete" || (kind !== "adaptation" && kind !== "proposal")) return { next: current, reconciled: false };
+  const deleted = new Set([event.entityId]);
+  return { next: removeDeletedRecordingArtifacts(current, new Set(), deleted), reconciled: true };
+}
+
+function removeSubflowSummaryFromProjectFlowsForFeed(current: any[], event: AutomationStudioProjectChangeEvent): any[] {
+  const parentFlowId = event.parentId ?? event.hierarchyScope?.id ?? null;
+  if (parentFlowId) return removeSubflowSummaryFromProjectFlows(current, parentFlowId, [event.entityId]);
+  return current.map((entry) => {
+    const flowId = String(entry?.flow?.flowId ?? "");
+    return flowId ? removeSubflowSummaryFromProjectFlows([entry], flowId, [event.entityId])[0] ?? entry : entry;
+  });
+}
+
+function normalizedChangeEntityKind(entityKind: string): "flow" | "subflow" | "folder" | "recording" | "instruction" | "adaptation" | "proposal" | "runtime" | "hierarchy" | "other" {
+  const kind = entityKind.toLowerCase();
+  if (kind.includes("subflow")) return "subflow";
+  if (kind.includes("folder") || kind.includes("category")) return "folder";
+  if (kind.includes("recording") || kind.includes("timeline")) return "recording";
+  if (kind.includes("instruction")) return "instruction";
+  if (kind.includes("adaptation")) return "adaptation";
+  if (kind.includes("proposal")) return "proposal";
+  if (kind.includes("runtime") || kind.includes("run") || kind.includes("action")) return "runtime";
+  if (kind.includes("hierarchy")) return "hierarchy";
+  if (kind.includes("flow") || kind.includes("graph")) return "flow";
+  return "other";
+}
+
+export function flowDocumentWithoutFlowObjectReferences(flow: any, kind: FlowObjectKind, objectIds: string | string[]): any {
+  if (!flow?.flowId) return flow;
+  const [entry] = applyFlowObjectReferenceDelete([{ source: "canonical", readOnly: false, flow }], flow.flowId, kind, objectIds).next;
+  return entry?.flow ?? flow;
+}
+
+export function flowDocumentWithoutSubflowCategory(flow: any, categoryId: string): any {
+  if (!flow?.flowId) return flow;
+  const [entry] = applySubflowCategoryDelete([{ source: "canonical", readOnly: false, flow }], flow.flowId, categoryId).next;
+  return entry?.flow ?? flow;
 }
 
 function automationFlowPreset(flow: any, preset: AutomationFlowPreset) {
@@ -3491,11 +3802,101 @@ function recordingIdFromStateSourceId(sourceId: string | undefined): string | un
   return match?.[1];
 }
 
+function automationViewBodyClassName(view: AutomationViewInstance): string | undefined {
+  if (view.type === "design") return "graph-body";
+  if (view.type === "recordings") return "timeline-body";
+  return undefined;
+}
+export function replaceAutomationStudioBrowserUrl(pathname: string, params: URLSearchParams): void {
+  if (typeof window === "undefined") return;
+  const query = params.toString();
+  const hash = window.location.hash ?? "";
+  const nextUrl = (query ? pathname + "?" + query : pathname) + hash;
+  const currentUrl = window.location.pathname + window.location.search + hash;
+  if (currentUrl === nextUrl) return;
+  window.history.replaceState(window.history.state, "", nextUrl);
+}
+
+function automationStudioCurrentSearchParams(searchParams?: { toString(): string }): URLSearchParams {
+  return new URLSearchParams(typeof window === "undefined" ? searchParams?.toString() ?? "" : window.location.search);
+}
 function stateOpenNodeMetadata(nodeId: string | undefined, selectedNode: any): Record<string, unknown> | null {
   if (!selectedNode || typeof selectedNode !== "object" || Array.isArray(selectedNode)) return null;
   if (nodeId && typeof selectedNode.id === "string" && selectedNode.id !== nodeId) return null;
   const metadata = selectedNode.metadata;
   return metadata && typeof metadata === "object" && !Array.isArray(metadata) ? metadata as Record<string, unknown> : null;
+}
+
+export function persistentAutomationWorkspacePrefs(prefs: AutomationWorkspacePrefs): AutomationWorkspacePrefs {
+  return normalizeAutomationWorkspacePrefs({
+    ...prefs,
+    panes: prefs.panes,
+    rightSidebar: prefs.rightSidebar,
+    viewStates: persistentAutomationViewStates(prefs.viewStates)
+  });
+}
+
+function automationWorkspacePrefsSameRuntimeState(left: AutomationWorkspacePrefs, right: AutomationWorkspacePrefs): boolean {
+  return left.activePaneId === right.activePaneId
+    && left.activeViewId === right.activeViewId
+    && left.maximizedWindowId === right.maximizedWindowId
+    && left.sidebarWidth === right.sidebarWidth
+    && left.leftSidebarCollapsed === right.leftSidebarCollapsed
+    && left.inspectorWidth === right.inspectorWidth
+    && left.bottomTimelineHeight === right.bottomTimelineHeight
+    && left.bottomTimelineCollapsed === right.bottomTimelineCollapsed
+    && left.mainLayoutPreset === right.mainLayoutPreset
+    && left.rightSidebarCollapsed === right.rightSidebarCollapsed
+    && left.density === right.density
+    && left.motion === right.motion
+    && automationWorkspacePaneListKey(left.panes) === automationWorkspacePaneListKey(right.panes)
+    && automationWorkspaceRightSidebarKey(left.rightSidebar) === automationWorkspaceRightSidebarKey(right.rightSidebar)
+    && automationWorkspaceBottomDockKey(left.bottomDock) === automationWorkspaceBottomDockKey(right.bottomDock)
+    && JSON.stringify(left.mainSplitRatios) === JSON.stringify(right.mainSplitRatios)
+    && automationWorkspaceViewStatesSameRuntimeState(left.viewStates, right.viewStates);
+}
+
+function automationWorkspaceViewStatesSameRuntimeState(left: AutomationWorkspacePrefs["viewStates"], right: AutomationWorkspacePrefs["viewStates"]): boolean {
+  if (left === right) return true;
+  const leftEntries = Object.entries(left ?? {});
+  const rightEntries = Object.entries(right ?? {});
+  if (leftEntries.length !== rightEntries.length) return false;
+  const rightById = new Map(rightEntries);
+  for (const [viewId, leftState] of leftEntries) {
+    if (!automationWorkspaceViewStateSameRuntimeState(leftState, rightById.get(viewId))) return false;
+  }
+  return true;
+}
+
+function automationWorkspaceViewStateSameRuntimeState(left: Record<string, unknown> | undefined, right: Record<string, unknown> | undefined): boolean {
+  if (left === right) return true;
+  const leftKeys = Object.keys(left ?? {}).filter((key) => key !== "selection").sort();
+  const rightKeys = Object.keys(right ?? {}).filter((key) => key !== "selection").sort();
+  if (leftKeys.length !== rightKeys.length) return false;
+  for (let index = 0; index < leftKeys.length; index += 1) {
+    const key = leftKeys[index]!;
+    if (key !== rightKeys[index]) return false;
+    if (left?.[key] !== right?.[key]) return false;
+  }
+  return true;
+}
+function automationWorkspacePaneListKey(panes: AutomationWorkspacePrefs["panes"]): string {
+  return panes.map((pane) => `${pane.id}:${pane.activeViewId}:${pane.tabs.join(",")}`).join("|");
+}
+
+function automationWorkspaceRightSidebarKey(rightSidebar: AutomationWorkspacePrefs["rightSidebar"]): string {
+  return `${rightSidebar.activeViewId}:${rightSidebar.collapsed === true}:${rightSidebar.tabs.join(",")}`;
+}
+
+function automationWorkspaceBottomDockKey(bottomDock: AutomationWorkspacePrefs["bottomDock"]): string {
+  return `${bottomDock.activeViewId}:${bottomDock.expanded === true}`;
+}
+
+function persistentAutomationViewStates(viewStates: AutomationWorkspacePrefs["viewStates"]): AutomationWorkspacePrefs["viewStates"] {
+  return Object.fromEntries(Object.entries(viewStates ?? {}).map(([viewId, state]) => {
+    const { selection: _selection, ...durableState } = state;
+    return [viewId, durableState];
+  }));
 }
 
 function stringRecordValue(record: Record<string, unknown> | null | undefined, key: string): string | undefined {
@@ -3636,23 +4037,6 @@ function formatTime(value: unknown): string {
   return typeof value === "number" && value > 0 ? new Date(value).toLocaleString() : "-";
 }
 
-function taskGraphDraftKey(graph: any): string {
-  if (!graph) return "";
-  const id = graph.flowId ?? graph.graphId ?? graph.taskId ?? "";
-  if (!id) return "";
-  const shape = JSON.stringify({
-    nodes: (graph.nodes ?? []).map((node: any) => ({ id: node.id, definitionId: node.definitionId, label: node.label, position: node.position, parameterValues: node.parameterValues })),
-    edges: (graph.edges ?? []).map((edge: any) => ({ id: edge.id, sourceNodeId: edge.sourceNodeId, targetNodeId: edge.targetNodeId, sourcePortId: edge.sourcePortId, targetPortId: edge.targetPortId, label: edge.label }))
-  });
-  return `${id}:${graph.updatedAt ?? graph.createdAt ?? graph.metadata?.savedAt ?? "draft"}:${stableStringHash(shape)}`;
-}
-
-function stableStringHash(value: string): string {
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
-  return hash.toString(36);
-}
-
 function isSensitiveDatabaseStore(kind: string): boolean {
   return kind.trim().toLowerCase() === "identity.users";
 }
@@ -3721,3 +4105,8 @@ function csv(value: string): string[] {
 function sameStringList(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((item, index) => item === right[index]);
 }
+
+
+
+
+

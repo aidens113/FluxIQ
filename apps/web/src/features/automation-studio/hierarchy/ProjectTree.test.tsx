@@ -1,10 +1,36 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { AutomationProjectTree, automationHierarchyNodeCanRemainPrimary, automationHierarchyPrimaryNodeId, automationHierarchyRouterPrimaryNodeId, automationHierarchySettingsPrimaryNodeId } from "./ProjectTree";
 import { automationHierarchyNodeCanCreateChildFolder, automationHierarchyNodeCanDelete, automationHierarchyNodeIsGeneratedFlowStructure } from "./model";
 import type { AutomationHierarchyNode } from "./model";
+import { automationHierarchyPageKey } from "./paged-cache";
 
 describe("AutomationProjectTree", () => {
+  it("does not require timer advancement to dispatch sidebar preview opens", () => {
+    const source = readFileSync(fileURLToPath(new URL("./ProjectTree.tsx", import.meta.url)), "utf8");
+
+    expect(source).not.toContain("setTimeout");
+    expect(source).not.toContain("clearTimeout");
+    expect(source).not.toContain("singleClickTimer");
+    expect(source).toContain('props.openNode(props.node, "preview")');
+    expect(source).toContain('props.openNode(props.node, "new-window")');
+  });
+
+  it("delegates known subflow graph shells to the single subflow opener", () => {
+    const source = readFileSync(fileURLToPath(new URL("./ProjectTree.tsx", import.meta.url)), "utf8");
+    const subflowBranchStart = source.indexOf('if (node.kind === "subflow" && props.openSubflow)');
+    const subflowBranchEnd = source.indexOf('if (node.kind === "task"', subflowBranchStart);
+    const subflowBranch = source.slice(subflowBranchStart, subflowBranchEnd);
+
+    expect(source).toContain('typeof node.metadata?.graphFlowId === "string"');
+    expect(source).toContain('props.setSelection({ kind: "flow", id: node.metadata.graphFlowId })');
+    expect(subflowBranch).toContain("props.openSubflow(node, mode)");
+    expect(subflowBranch).toContain("return;");
+    expect(subflowBranch).not.toContain("props.openView");
+  });
+
   it("does not mark every Flow-owned child as selected when the Flow is selected", () => {
     const nodes: AutomationHierarchyNode[] = [
       { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "policy-primary", sourceId: "flow.checkout", flowId: "flow.checkout" },
@@ -116,6 +142,17 @@ describe("AutomationProjectTree", () => {
     expect(html).toContain("Nodes</strong><small>flow-object</small>");
     expect(html).not.toContain("selected type-subflow");
     expect(automationHierarchyNodeCanRemainPrimary(nodes[3]!, selection)).toBe(true);
+  });
+  it("routes subflow clicks through one navigation path", () => {
+    const source = readFileSync(fileURLToPath(new URL("./ProjectTree.tsx", import.meta.url)), "utf8");
+    const subflowBranchStart = source.indexOf('if (node.kind === "subflow" && props.openSubflow)');
+    const subflowBranchEnd = source.indexOf('if (node.kind === "task"', subflowBranchStart);
+    const subflowBranch = source.slice(subflowBranchStart, subflowBranchEnd);
+
+    expect(subflowBranchStart).toBeGreaterThan(-1);
+    expect(subflowBranch).toContain("props.openSubflow(node, mode)");
+    expect(subflowBranch).not.toContain("props.setSelection");
+    expect(subflowBranch).not.toContain("props.openView");
   });
   it("keeps a clicked Flow-owned object primary while its Flow is selected", () => {
     const debug: AutomationHierarchyNode = { id: "flow-a-debug", label: "Runtime Debug", kind: "flow-object", category: "flow", parentId: "flow-a", viewId: "runtime-debug", sourceId: "flow.checkout", flowId: "flow.checkout" };
@@ -337,4 +374,66 @@ describe("AutomationProjectTree", () => {
     const searched = render("ZZZ final");
     expect(searched).toContain("ZZZ final target");
     expect(searched).not.toContain("Show ");
-  });});
+  });
+
+  it("renders left-sidebar folder pagination from parent-owned SQL page state", () => {
+    const nodes: AutomationHierarchyNode[] = Array.from({ length: 2 }, (_, index) => ({
+      id: "flow-" + index,
+      label: "Flow " + index,
+      kind: "flow",
+      category: "flow",
+      parentId: null,
+      viewId: "flow-router",
+      sourceId: "flow." + index,
+      flowId: "flow." + index
+    }));
+
+    const html = renderToStaticMarkup(
+      <AutomationProjectTree
+        nodes={nodes}
+        activeViewId="flow-router"
+        childPageInfo={{ [automationHierarchyPageKey(null)]: { hasMore: true, loadedCount: 2, nextCursor: "cursor.2" } }}
+        search=""
+        typeFilter="all"
+        selection={{ kind: "flow", id: "flow.1" }}
+        recordingPrimaryKind={null}
+        setRecordingPrimaryKind={vi.fn()}
+        setSelection={vi.fn()}
+        openView={vi.fn()}
+        requestAction={vi.fn()}
+      />
+    );
+
+    expect(html).toContain("Load more");
+    expect(html).not.toContain("Show 100 more");
+  });
+
+  it("keeps selection, keyboard semantics, and deep-linked objects stable on later loaded pages", () => {
+    const nodes: AutomationHierarchyNode[] = [
+      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "policy-primary", sourceId: "flow.checkout", flowId: "flow.checkout" },
+      { id: "flow-a-router", label: "Router", kind: "flow-object", category: "flow", parentId: "flow-a", viewId: "flow-router", sourceId: "flow.checkout", flowId: "flow.checkout" },
+      { id: "flow-a-settings", label: "Settings", kind: "flow-object", category: "flow", parentId: "flow-a", viewId: "flow-settings", sourceId: "flow.checkout", flowId: "flow.checkout" }
+    ];
+    const html = renderToStaticMarkup(
+      <AutomationProjectTree
+        nodes={nodes}
+        activeViewId="flow-settings"
+        childPageInfo={{ [automationHierarchyPageKey("flow-a")]: { hasMore: true, loadedCount: 2, nextCursor: "cursor.settings" } }}
+        search=""
+        typeFilter="all"
+        selection={{ kind: "flow", id: "flow.checkout" }}
+        recordingPrimaryKind={null}
+        setRecordingPrimaryKind={vi.fn()}
+        setSelection={vi.fn()}
+        openView={vi.fn()}
+        requestAction={vi.fn()}
+      />
+    );
+
+    expect(html.match(/selected type-flow-object/g)?.length).toBe(1);
+    expect(html).toContain("Settings</strong><small>flow-object</small>");
+    expect(html).toContain('aria-level="3"');
+    expect(html).toContain('data-tree-parent-id="flow-a"');
+    expect(html).toContain("Load more");
+  });
+});

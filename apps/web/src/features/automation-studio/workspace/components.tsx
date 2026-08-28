@@ -265,6 +265,7 @@ export function AutomationViewContainer(props: {
   active: boolean;
   activeViewId: string;
   children: ReactNode;
+  bodyClassName?: string | undefined;
   icon: typeof Blocks;
   frameLabel?: string;
   tabs: AutomationViewInstance[];
@@ -304,7 +305,7 @@ export function AutomationViewContainer(props: {
       data-automation-window-id={props.windowId}
       onDragOver={handleWindowDragOver}
       onDrop={handleWindowDrop}
-      onMouseDown={props.onActivate}
+      onMouseDown={props.active ? undefined : props.onActivate}
     >
       <header className="not-movable">
         <div>
@@ -319,7 +320,7 @@ export function AutomationViewContainer(props: {
       <div className="automation-tabs-shell" onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setTabPickerOpen(false);
       }} onMouseDown={(event) => event.stopPropagation()}>
-        <button aria-label="Scroll tabs left" className="automation-tab-scroll" onClick={() => tabsRef.current?.scrollBy({ left: -220, behavior: "smooth" })} type="button"><ChevronLeft aria-hidden size={14} /></button>
+        <button aria-label="Scroll tabs left" className="automation-tab-scroll" onClick={() => tabsRef.current?.scrollBy({ left: -220, behavior: "auto" })} type="button"><ChevronLeft aria-hidden size={14} /></button>
         <div className="automation-window-tabs" ref={tabsRef} role="tablist" aria-label={`${frameLabel} ${props.windowIndex + 1} tabs`}>
           {props.tabs.map((tab, tabIndex) => {
             const TabIcon = tab.icon;
@@ -385,7 +386,7 @@ export function AutomationViewContainer(props: {
             );
           })}
         </div>
-        <button aria-label="Scroll tabs right" className="automation-tab-scroll" onClick={() => tabsRef.current?.scrollBy({ left: 220, behavior: "smooth" })} type="button"><ChevronRight aria-hidden size={14} /></button>
+        <button aria-label="Scroll tabs right" className="automation-tab-scroll" onClick={() => tabsRef.current?.scrollBy({ left: 220, behavior: "auto" })} type="button"><ChevronRight aria-hidden size={14} /></button>
         <button aria-expanded={tabPickerOpen} aria-haspopup="dialog" aria-label="Find open tab" className="automation-tab-scroll" onClick={() => setTabPickerOpen((current) => !current)} type="button"><Search aria-hidden size={13} /></button>
         {tabPickerOpen ? (
           <div aria-label="Open tabs" className="automation-tab-picker" role="dialog">
@@ -404,7 +405,7 @@ export function AutomationViewContainer(props: {
             </div>
           </div>
         ) : null}
-      </div>      <div aria-labelledby={activeTabDomId} className="automation-view-body" id={`automation-panel-${props.windowId}`} role="tabpanel">{props.children}</div>
+      </div>      <div aria-labelledby={activeTabDomId} className={["automation-view-body", props.bodyClassName ?? ""].filter(Boolean).join(" ")} id={`automation-panel-${props.windowId}`} role="tabpanel">{props.children}</div>
     </section>
   );
 }

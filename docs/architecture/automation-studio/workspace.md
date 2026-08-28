@@ -170,6 +170,12 @@ Project refresh should treat the left hierarchy as a critical path. Coordinated
 Flow, recording, runtime, and domain summaries commit once after the latest
 request set completes; superseded request sets are aborted and cannot reorder
 visible hierarchy or run data.
+Normal scoped mutations must not call this broad refresh path to make their UI
+look correct. They update the relevant local rows first, invalidate typed
+resource IDs, and rely on the project change feed for cross-window sync.
+Whole-project reload remains a visible refresh/recovery action, not a silent
+side effect of clicking a row, saving settings, deleting a folder, or opening a
+run log.
 The Flow catalog endpoint reads compact adaptation/proposal warning status but
 does not revalidate every recording-derived compatibility proposal during
 sidebar load; deeper adaptation or pipeline views own that heavier validation
@@ -877,6 +883,17 @@ stores the last relevant selection context for that tab, plus view-local values
 such as the workspace dock subtab. Switching between tabs saves the outgoing
 view state and restores the incoming view state so proposal, inspector, state,
 timeline, and editor surfaces return to the item they were showing.
+No-op pane activation and tab selection are ignored before normalization, so
+clicking inside the active canvas does not rewrite workspace state. Active panes
+do not attach the activation mouse handler at all. Persisted workspace
+preferences preserve active panes and tabs but strip transient selection
+payloads. The Nodes view records its last open Flow separately from editor-node
+selection, which lets node clicks update selection without changing the
+Flow-scoped editor context. Internal URL writes mark the matching deep-link key
+as restored and use `window.history.replaceState`, not Next router navigation,
+so tab changes remain local and cannot be re-read as external deep-link
+restores. Graph node clicks, edge selection, and marquee selection update the visible canvas state immediately and do not publish ordinary selection into the global Studio navigation state. Only committed graph edits or explicit navigation/state actions may bridge from the canvas into outer Studio selection. Render, long-task, and development telemetry instrumentation are opt-in for local development to avoid turning every commit or API/cache event into performance-event fanout; the Data Flow Inspector may explicitly start the telemetry listeners while it is open.
+Project open is also summary-first: after hierarchy and workspace preferences load, the shell becomes usable without an extra project-list refresh. Runtime, Flow, recording, and proposal summaries hydrate from one workspace-summary request; detail/domain/page endpoints are view-scoped and lazy. Sidebar subflow rows use a single async subflow navigation path; they do not preselect/open the target and then resolve it again. Flow detail changes use compact URL-scope signatures so URL restore/writeback is not retriggered by object identity churn.
 Flow editor tabs render canonical Flow/policy data. Automation Studio does not
 maintain a hidden legacy Task graph in workspace preferences. Proposal review
 edits can still be cached in the project's `workspace/preferences.json` until
@@ -912,15 +929,19 @@ The conceptual ownership is:
 Large graph behavior is an explicit whiteboard contract. React Flow renders only viewport-visible nodes and edges, while the minimap remains available on wider screens and is removed on narrow screens where it would obscure editing. Structural validation builds indexed node lookup once, performs linear edge and reachability passes, and compares ports directly; it does not search the full node array per edge. Problem projections and invalid node/edge arrays are memoized until graph state changes. Closed graph-outline rows use browser content visibility so opening a large semantic tree does not require painting every offscreen row.
 
 The deterministic scale fixture includes a 180-node Flow. The browser surface matrix opens that Flow, verifies the whiteboard, visible node, toolbar, and minimum editing dimensions, and captures desktop, compact, and mobile screenshots through the existing Playwright projects. Unit performance coverage validates a connected 2,000-node graph under a 250 ms interaction budget.
-The Nodes canvas provides a stable toolbar for Select, Pan, Fit, Zoom, Undo,
-Redo, Validate, Graph Outline, and Add Node. V, H, F, plus/minus, Ctrl/Cmd+Z,
-Ctrl/Cmd+Y, and A mirror those commands when focus is on the whiteboard. Undo
-history is bounded and checkpointed before structural, parameter, connection,
-and drag changes; source replacement clears incompatible history. The graph
-outline is a semantic tree with one roving tab stop, Arrow/Home/End navigation,
-Enter/Space selection, and node-focused viewport fitting. Structural validation
-currently identifies missing or multiple Start nodes, unreachable nodes, and
-dangling edges. Canvas context menus are not globally suppressed.
+The Nodes canvas provides a stable toolbar for Fit, Zoom, Undo, Redo, Validate,
+Graph Outline, and Add Node. F, plus/minus, Ctrl/Cmd+Z, Ctrl/Cmd+Y, and A mirror
+those commands when focus is on the whiteboard. Pointer behavior is deterministic
+instead of mode-based: left-click selects, left-drag moves nodes, right-drag draws
+the selection box, and middle-drag pans the canvas. The selection rectangle is a
+single DOM overlay updated outside React render state so drawing it does not
+reconcile the whole graph. Undo history is bounded and checkpointed before
+structural, parameter, connection, and drag changes; source replacement clears
+incompatible history. The graph outline is a semantic tree with one roving tab
+stop, Arrow/Home/End navigation, Enter/Space selection, and node-focused viewport
+fitting. Structural validation currently identifies missing or multiple Start
+nodes, unreachable nodes, and dangling edges. Pane context menus are suppressed;
+node context menus remain reserved for node-level actions.
 ```text
 .fluxiq/global.sqlite
   automation.recording_sessions
@@ -953,7 +974,9 @@ the current node and completes it against the next selected node using the same
 typed-port compatibility rule as pointer connections. Duplicate, Connect, and
 Delete also have toolbar commands. Nodes and edges remain natively focusable in
 React Flow. Port handles announce input/output direction and their semantic
-label. Standard Select-mode drag replaces the retired right-button marquee.
+label. Right-button drag is the canonical multi-select marquee; selection-only
+node and edge changes update the visible graph slice without running viewport
+partition reconciliation, draft persistence, history, validation, or sync.
 Recording-derived documents remain logically owned by the recording and retain
 stable evidence references. Small documents and lookup metadata are stored in
 SQLite. Only oversized or binary payloads use the project object store.
@@ -1078,3 +1101,6 @@ error/audit path instead of being appended as timeline evidence clips.
 These controls are the UI foundation. Follow-up slices should connect them to
 the persistent workspace layout model, command registry, undo/redo stack,
 drag-and-drop pane docking, and schema-driven edit definitions.
+
+
+

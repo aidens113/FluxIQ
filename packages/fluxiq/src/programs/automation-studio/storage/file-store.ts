@@ -69,6 +69,7 @@ export type AutomationStudioProposalSummaryIndex = {
 export type AutomationStudioFlowHierarchySubflowSummary = {
   subflowId: string;
   name?: string;
+  graphFlowId?: string;
   parentCategoryId?: string;
 };
 

@@ -1,5 +1,6 @@
 import type { GlobalProgramApiRegistry } from "../../_shared/api.ts";
 import { authorizeProgramPin } from "../../_shared/authorization.ts";
+import { fluxiqPerformanceMetricsSnapshot } from "../../_shared/performance-metrics.ts";
 import {
   AUTOMATION_STUDIO_ENDPOINTS,
   type AppendRecordingMarkerRequest,
@@ -20,14 +21,17 @@ import {
   type FlowChangeProposalRequest,
   type FlowExpansionSummaryRequest,
   type FlowInstructionRequest,
+  type FlowMetadataPageRequest,
   type FlowIdProjectRequest,
   type FlowInstructionSetRequest,
   type FlowProjectRequest,
   type FlowRunDetailRequest,
   type FlowRunActionPageRequest,
+  type FlowRunEventPageRequest,
   type FlowSubflowRequest,
   type ExecuteClientActionRequest,
   type FinalizeRecordingRequest,
+  type AutomationStudioProjectChangeFeedRequest,
   type GetRecordingEntryStateRequest,
   type GetProposalRequest,
   type GetStateSnapshotRequest,
@@ -67,6 +71,18 @@ import type { AutomationStudioClientGatewayBridge } from "../client-gateway/inde
 import type { ClientGatewayService } from "../../../client-gateway/index.ts";
 
 export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, service: AutomationStudioService, identityAccess?: IdentityAccessService, clientGatewayBridge?: AutomationStudioClientGatewayBridge, clientGateway?: ClientGatewayService): void {
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.performanceMetrics,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object"
+        ? request.payload as { limit?: unknown }
+        : {};
+      const limit = Math.max(1, Math.min(500, Math.trunc(Number(payload.limit)) || 200));
+      return { ok: true, payload: { metrics: fluxiqPerformanceMetricsSnapshot(limit), limit } };
+    }
+  });
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.snapshot,
@@ -169,6 +185,15 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   });
   registry.register({
     programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectChangeFeed,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<AutomationStudioProjectChangeFeedRequest> : {};
+      return { ok: true, payload: await service.listProjectChangeFeed({ projectId: String(payload.projectId ?? ""), afterSequence: payload.afterSequence, limit: payload.limit }) };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveProjectHierarchy,
     permission: "programs.write",
     handler: async (request) => {
@@ -231,6 +256,24 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<FlowProjectRequest> : {};
       return { ok: true, payload: { flows: await service.listAutomationFlowSummaries(String(payload.projectId ?? "")) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowMetadataPage,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<FlowMetadataPageRequest> : {};
+      return { ok: true, payload: { page: await service.listFlowMetadataPage({ projectId: String(payload.projectId ?? ""), ...(typeof payload.status === "string" ? { status: payload.status } : {}), ...(typeof payload.limit === "number" ? { limit: payload.limit } : {}), ...(typeof payload.cursor === "string" ? { cursor: payload.cursor } : {}) }) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowMetadataDetail,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<FlowIdProjectRequest> : {};
+      return { ok: true, payload: { flow: await service.getFlowMetadataDetail(String(payload.projectId ?? ""), String(payload.flowId ?? "")) } };
     }
   });
   registry.register({
@@ -808,6 +851,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
       const input: Parameters<AutomationStudioService["createFlowSubflow"]>[0] = { projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), name: String(payload.name ?? "") };
       if (typeof payload.description === "string") input.description = payload.description;
       if (typeof payload.role === "string") input.role = payload.role as any;
+      if (typeof payload.parentCategoryId === "string" || payload.parentCategoryId === null) input.parentCategoryId = payload.parentCategoryId;
       if (typeof payload.graphFlowId === "string") input.graphFlowId = payload.graphFlowId;
       if (Array.isArray(payload.routeTags)) input.routeTags = payload.routeTags.filter((tag): tag is string => typeof tag === "string");
       return { ok: true, payload: { subflow: await service.createFlowSubflow(input) } };
@@ -825,6 +869,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
       if (typeof payload.name === "string") input.name = payload.name;
       if (typeof payload.description === "string") input.description = payload.description;
       if (typeof payload.role === "string") input.role = payload.role as any;
+      if (typeof payload.parentCategoryId === "string" || payload.parentCategoryId === null) input.parentCategoryId = payload.parentCategoryId;
       if (typeof payload.graphFlowId === "string") input.graphFlowId = payload.graphFlowId;
       if (Array.isArray(payload.routeTags)) input.routeTags = payload.routeTags.filter((tag): tag is string => typeof tag === "string");
       if (Array.isArray(payload.inputMapping)) input.inputMapping = payload.inputMapping;
@@ -1031,6 +1076,16 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowRunActionPageRequest : {} as FlowRunActionPageRequest;
       const page = await service.listFlowRunActions({ projectId: String(payload.projectId ?? ""), runId: String(payload.runId ?? ""), limit: payload.limit, offset: payload.offset });
       return { ok: true, payload: { actions: page.actions, page } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowRunEvents,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowRunEventPageRequest : {} as FlowRunEventPageRequest;
+      const page = await service.listFlowRunEvents({ projectId: String(payload.projectId ?? ""), runId: String(payload.runId ?? ""), afterSequence: payload.afterSequence, limit: payload.limit });
+      return { ok: true, payload: { events: page.events, page } };
     }
   });
   registry.register({

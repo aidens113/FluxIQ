@@ -5,8 +5,12 @@ import { expect, type Page, type TestInfo } from "@playwright/test";
 export type UiFixtureManifest = {
   schemaVersion: 1;
   credentials: { username: string; password: string };
+  fixtureProfiles?: Record<string, Record<string, number>>;
   projects: {
     empty: FixtureProject;
+    small: FixtureProject;
+    scale1k: FixtureProject;
+    scale10k: FixtureProject;
     representative: FixtureProject;
     scale: FixtureProject;
   };

@@ -2,6 +2,7 @@ export * from "./adapters.ts";
 export * from "./adaptive-orchestrator.ts";
 export * from "./contracts.ts";
 export * from "./composite-executor.ts";
+export * from "./compiled-plan.ts";
 export * from "./executor.ts";
 export * from "./io-bridge.ts";
 export * from "./io-policy.ts";

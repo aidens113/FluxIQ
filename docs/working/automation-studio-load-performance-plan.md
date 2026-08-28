@@ -34,6 +34,14 @@ runs are backed by a per-project SQLite summary index with SQL `limit`/`offset`
 pagination, and full run traces are fetched only when a run log is opened. The
 rest of Automation Studio should follow the same contract.
 
+The 2026-08-27 browser audit also found active-view costs that were unrelated
+to SQL payload size: the graph viewport controller had render caps effectively
+disabled with `Number.MAX_SAFE_INTEGER`, and the Flow editor dirty-state effect
+serialized the whole active graph after node/edge state changes. Those issues
+make clicks and drags lag even after backend pagination is correct. The graph
+controller must keep full graph refs authoritative for save/draft/history while
+only the React-rendered node/edge arrays are capped.
+
 ## Goals
 
 - Project open is summary-only by default.
@@ -218,7 +226,9 @@ with `JSON.stringify`.
 Status: in progress. Graph editor definition signatures now use concise IDs for
 ports and parameters, and graph dirty signatures use a trimmed node-data shape
 instead of serializing the full `data` object. Raw State View payloads are no
-longer stringified during normal render.
+longer stringified during normal render. The 2026-08-27 UI lag audit removed
+the per-render dirty check over the whole active graph; dirty state is now
+marked from persistence-affecting editor actions and reset on load/save.
 
 Required changes:
 
@@ -237,17 +247,27 @@ Acceptance criteria:
 - State view render does not stringify raw payloads until requested.
 - Runtime session summary state and runtime session detail state remain
   separate.
+- The active Flow editor does not run `graphSignature(policyNodes, policyEdges)`
+  as a render effect after each node/edge update.
+- The graph viewport controller uses finite render caps instead of disabling
+  capping with `Number.MAX_SAFE_INTEGER`.
+- Viewport capping does not truncate the authoritative graph snapshot used for
+  saves, draft persistence, or undo/redo.
 
 ## Phase 6: Instrument And Guard Against Regression
 
 Add lightweight instrumentation around Automation Studio API calls and render
 hotspots so broad loads are visible in development and tests.
 
-Status: pending. This pass validated the new summary/detail and scoped-load
+Status: in progress. This pass validated the new summary/detail and scoped-load
 work with existing typechecks, targeted service tests, web tests, builds, and
-docs reference generation. Dedicated regression tests that assert project open
-does not call broad detail endpoints still need to be added in a follow-up
-slice.
+docs reference generation. The 2026-08-27 UI lag audit found two browser-side
+regressions that escaped those checks: dev cache/API metrics were estimating
+bytes by serializing cached payloads or parsed endpoint responses, and Runtime
+Debug was polling the run list every three seconds while open. Cache and shared
+program API metrics now use bounded structural estimates, and Runtime Debug
+refreshes from explicit lifecycle/runtime-change events instead of a steady
+interval.
 
 Implementation options:
 
@@ -257,6 +277,13 @@ Implementation options:
 - Add repository tests for scoped SQL pagination.
 - Add fixture-based performance tests for large projects with many recordings,
   timelines, Flows, and runtime runs.
+- Guard cache telemetry so it never calls `JSON.stringify` on cached API
+  payloads during normal writes, invalidations, or stats reads.
+- Guard shared program API telemetry so it does not serialize parsed endpoint
+  responses just to estimate development metric byte sizes.
+- Guard Runtime Debug so the previous-runs list has no polling interval; live
+  refreshes must come from focused/visible lifecycle events or runtime-run
+  mutation events.
 
 Acceptance criteria:
 
@@ -264,6 +291,9 @@ Acceptance criteria:
 - A test fails if default project open calls full `list-flows`.
 - A test fails if runtime run list fetches full traces.
 - Large fixture project open completes with only summary payloads.
+- A test fails if cache metrics serialize cached payloads.
+- A test fails if shared program API metrics serialize parsed responses.
+- A test fails if Runtime Debug reintroduces a timer-based run-list poll.
 
 ## Implementation Order
 
@@ -292,3 +322,12 @@ pnpm docs:check
 Do not rely on manual UI feel alone. Each fixed path should have a test that
 proves summaries stay summaries and project open does not call full-detail
 endpoints.
+
+2026-08-27 UI lag audit validation:
+
+- `pnpm --filter @fluxiq/web test -- src/features/programs/program-api.test.ts src/features/automation-studio/controllers/useAutomationStudioCache.test.ts src/features/automation-studio/graph/useAutomationGraphController.test.ts src/features/automation-studio/views/WorkspaceViews.test.tsx` passed.
+- `pnpm --filter @fluxiq/web test` passed with 63 files and 322 tests.
+- `pnpm --filter @fluxiq/web check` passed.
+- `pnpm check` passed across workspace packages.
+- `pnpm docs:check` passed.
+- `pnpm --filter @fluxiq/web build` compiled successfully, then failed during final Next.js trace output with Windows `EPERM` on `apps/web/.next/trace`; a rerun hung in the same final build phase and was stopped.

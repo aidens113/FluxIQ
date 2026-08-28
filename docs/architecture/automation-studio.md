@@ -297,6 +297,18 @@ The runtime may cache Flows in memory, but it reloads from project files after a
 restart. SQLite-backed framework repositories are not the ownership layer for
 Automation Studio Flows, recordings, proposals, or visual state assets.
 
+The browser interaction model is summary-first and scoped. Opening a project
+loads only the project chooser, hierarchy, Flow summaries, recording summaries,
+runtime summaries, domains, and workspace layout needed to draw the shell.
+Selecting a view, pane, tab, row, or graph node is local UI state and must not
+write hierarchy preferences or trigger a project-wide reload. Successful
+creates, deletes, renames, router edits, settings saves, and recording/runtime
+mutations update the exact local collection they affect, emit typed mutation
+metadata, and let the project change feed reconcile matching entity caches.
+Root summary refresh is reserved for explicit user reloads, project open, and
+named recovery actions after a diagnostic says the feed event lacked enough
+payload to reconcile locally.
+
 `AutomationStudioService` exposes dedicated Flow operations:
 
 - `createFlow`, `getFlow`, `saveFlow`, and `deleteFlow` operate only on

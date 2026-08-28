@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Blocks, Settings } from "lucide-react";
 import { describe, expect, it } from "vitest";
@@ -17,6 +18,7 @@ describe("AutomationViewContainer tabs", () => {
       onMoveTab={() => undefined}
       onTabSelect={() => undefined}
       subtitle="Flow editor"
+      bodyClassName="graph-body"
       tabs={[
         { id: "nodes", label: "Nodes", type: "design", icon: Blocks },
         { id: "settings", label: "Settings", type: "settings", icon: Settings },
@@ -41,6 +43,25 @@ describe("AutomationViewContainer tabs", () => {
     expect(html).not.toContain("automation-window-resize-edge");
     expect(html).not.toContain("Reset window size");
     expect(html).toContain('aria-labelledby="automation-tab-main-nodes"');
+    expect(html).toContain('class="automation-view-body graph-body"');
+  });
+
+  it("uses explicit body classes and instant tab scrolling", () => {
+    const source = readFileSync(new URL("./components.tsx", import.meta.url), "utf8");
+    const css = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
+
+    expect(source).toContain("bodyClassName?: string");
+    expect(source).toContain('behavior: "auto"');
+    expect(source).not.toContain('behavior: "smooth"');
+    expect(css).toContain(".automation-view-body.graph-body");
+    expect(css).not.toContain(".automation-view-body:has");
+    expect(css).not.toContain("scroll-behavior: smooth");
+  });
+  it("does not attach pane activation to an already-active view body", () => {
+    const source = readFileSync(new URL("./components.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("onMouseDown={props.active ? undefined : props.onActivate}");
+    expect(source).not.toContain("onMouseDown={props.onActivate}");
   });
 });
 describe("AutomationWorkspacePreferences", () => {
@@ -64,3 +85,4 @@ describe("AutomationWorkspacePreferences", () => {
     expect(html).toContain("Reset workspace layout");
   });
 });
+

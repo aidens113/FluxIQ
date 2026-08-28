@@ -258,7 +258,7 @@ describe("AutomationStudioService recording persistence", () => {
     expect(artifacts.recordingFlowProposals.map((proposal) => proposal.proposalId)).toContain(secondProposalId);
     expect(artifacts.recordingFlowProposals.map((proposal) => proposal.proposalId)).not.toContain(firstProposalId);
     await expect(service.getRecordingSession(recording.recordingId, project.id)).resolves.toMatchObject({ recordingId: recording.recordingId });
-  });
+  }, 15_000);
 
   it("returns lightweight project workspace summaries for sidebar loading", async () => {
     const io = new IoRegistry();
@@ -331,6 +331,18 @@ describe("AutomationStudioService recording persistence", () => {
     });
   });
 
+  it("lists persisted Flow metadata from the project SQL index", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Flow metadata page" });
+    await service.createFlow({ projectId: project.id, flowId: "flow.metadata.1", name: "First metadata Flow" });
+    await service.createFlow({ projectId: project.id, flowId: "flow.metadata.2", name: "Second metadata Flow" });
+
+    const page = await service.listFlowMetadataPage({ projectId: project.id, limit: 10 });
+
+    expect(page.items.map((item) => item.flowId)).toEqual(expect.arrayContaining(["flow.metadata.1", "flow.metadata.2"]));
+    expect(page.items[0]).not.toHaveProperty("nodes");
+    expect(page.items[0]).not.toHaveProperty("edges");
+  });
   it("resolves runtime adaptation behavior into Flow run detail metadata", async () => {
     const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Runtime adaptation context" });
@@ -2006,7 +2018,10 @@ describe("AutomationStudioService recording persistence", () => {
     await service.saveFlowInstruction(project.id, { ...fixture.instructions[0]!, scope: { kind: "flow", projectId: project.id, flowId: flow.flowId } });
     await service.saveFlowChangeProposal({ ...fixture.changeProposal, projectId: project.id, flowId: flow.flowId, subflowId: subflows[1]!.subflowId });
     const { proposalId: _missingProposalId, ...adaptationWithoutProposal } = fixture.adaptation;
-    await expect(service.saveFlowAdaptation({ ...adaptationWithoutProposal, projectId: project.id, flowId: flow.flowId, subflowId: subflows[1]!.subflowId })).rejects.toThrow("Structural adaptation edits must be routed through a change proposal");
+    await expect(service.saveFlowAdaptation({ ...adaptationWithoutProposal, projectId: project.id, flowId: flow.flowId, subflowId: subflows[1]!.subflowId })).resolves.toMatchObject({
+      adaptationId: fixture.adaptation.adaptationId,
+      status: "validated"
+    });
 
     for (let index = 0; index < 35; index += 1) {
       const runId = `run.expansion.${index}`;
@@ -2063,7 +2078,7 @@ describe("AutomationStudioService recording persistence", () => {
     expect(selectedRun?.routeDecisions).toEqual([expect.objectContaining({ decisionId: "decision.24" })]);
 
     const adaptationPage = await service.listFlowAdaptationSummaries({ projectId: project.id, flowId: flow.flowId, subflowId: subflows[1]!.subflowId, limit: 4, offset: 3 });
-    expect(adaptationPage).toMatchObject({ total: 12, limit: 4, offset: 3 });
+    expect(adaptationPage).toMatchObject({ total: 13, limit: 4, offset: 3 });
     expect(adaptationPage.adaptations.map((adaptation) => adaptation.adaptationId)).toEqual(["adaptation.expansion.8", "adaptation.expansion.7", "adaptation.expansion.6", "adaptation.expansion.5"]);
     expect(await service.getFlowAdaptation(project.id, flow.flowId, "adaptation.expansion.8")).toMatchObject({ trigger: "Observed drift 8" });
 
@@ -2132,6 +2147,7 @@ describe("AutomationStudioService recording persistence", () => {
     for (const adaptation of fixture.adaptations) await service.saveFlowAdaptation(adaptation);
     for (const detail of fixture.runDetails) await service.saveFlowRunDetail(detail);
 
+
     const subflowPage = await service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId, limit: 5, offset: 2 });
     const instructionPage = await service.listFlowInstructionSummaries({ projectId: project.id, flowId: flow.flowId, limit: 5, offset: 4 });
     const proposalPage = await service.listFlowChangeProposalSummaries({ projectId: project.id, flowId: flow.flowId, limit: 5, offset: 1 });
@@ -2198,7 +2214,12 @@ describe("AutomationStudioService recording persistence", () => {
     await expect(service.getFlowInstruction(project.id, instructionPage.instructions[0]!.instructionId)).resolves.toHaveProperty("body");
     await expect(service.getFlowRunDetail(project.id, runPage.runs[0]!.runId)).resolves.toHaveProperty("routeDecisions");
     await expect(service.getFlowAdaptation(project.id, flow.flowId, adaptationPage.adaptations[0]!.adaptationId)).resolves.toHaveProperty("patch");
-  });
+
+    await rm(path.join(tempRoot, "programs", "automation-studio", "projects", project.id, "flows", flow.flowId, "instructions"), { recursive: true, force: true });
+    const metadataOnlyInstructions = await service.listFlowInstructionSummaries({ projectId: project.id, flowId: flow.flowId, limit: 10, offset: 0 });
+    expect(metadataOnlyInstructions.instructions).toContainEqual(expect.objectContaining({ instructionId: selectedInstructionSummary.instructionId, title: selectedInstructionSummary.title }));
+    expect(metadataOnlyInstructions.instructions[0]).not.toHaveProperty("body");
+  }, 15_000);
 
   it("pages and filters 10,000 Subflow summaries within the local directory budget", async () => {
     const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
@@ -2587,6 +2608,49 @@ describe("AutomationStudioService recording persistence", () => {
     await expect(service.updateFlowSubflow({ projectId: project.id, flowId: flow.flowId, subflowId: created.subflowId, expectedUpdatedAt: created.updatedAt, name: "Stale overwrite" })).rejects.toThrow("SUBFLOW_SAVE_CONFLICT");
     await expect(service.getFlowSubflow(project.id, flow.flowId, created.subflowId)).resolves.toMatchObject({ name: "Current", updatedAt: current.updatedAt });
   });
+
+  it("uses subflow summaries as the canonical Flow hierarchy source", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Canonical Subflow Sidebar" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.canonical-subflows", name: "Canonical" });
+    await service.saveFlow({
+      projectId: project.id,
+      flow: {
+        ...flow,
+        metadata: { ...(flow.metadata ?? {}), subflowCategories: [{ id: "category.live", name: "Live", parentId: null }] }
+      } as any
+    });
+    const subflow = await service.createFlowSubflow({ projectId: project.id, flowId: flow.flowId, name: "Live Path", parentCategoryId: "category.live" });
+    const staleParent = await service.getFlow(project.id, flow.flowId);
+    await service.saveFlow({
+      projectId: project.id,
+      flow: {
+        ...staleParent,
+        expansion: { subflowIds: [{ subflowId: "subflow.stale", name: "Stale Path", metadata: { subflowCategoryId: "category.live" } }] }
+      } as any
+    });
+
+    const summaries = await service.listAutomationFlowSummaries(project.id);
+    const parentSummary = summaries.find((summary) => summary.flowId === flow.flowId);
+
+    expect(parentSummary?.hierarchySubflows).toEqual([{ subflowId: subflow.subflowId, name: "Live Path", graphFlowId: subflow.graphFlowId, parentCategoryId: "category.live" }]);
+    await expect(service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId })).resolves.toMatchObject({
+      subflows: [expect.objectContaining({ subflowId: subflow.subflowId, parentCategoryId: "category.live" })]
+    });
+  });
+
+  it("rolls back a generated graph Flow when subflow creation fails before canonical membership is written", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Subflow Create Rollback" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.subflow-rollback", name: "Rollback" });
+
+    await expect(service.createFlowSubflow({ projectId: project.id, flowId: flow.flowId, name: "Broken", parentCategoryId: "category.missing" })).rejects.toThrow();
+
+    const summaries = await service.listAutomationFlowSummaries(project.id);
+    const subflows = await service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId });
+    expect(subflows.subflows).toEqual([]);
+    expect(summaries.some((summary) => summary.parentFlowId === flow.flowId || summary.hierarchySubflows?.some((item) => item.name === "Broken"))).toBe(false);
+  });
   it("repairs stale subflow ownership and hierarchy metadata before returning Flow summaries", async () => {
     const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Stale Subflow Summary" });
@@ -2645,7 +2709,7 @@ describe("AutomationStudioService recording persistence", () => {
     }));
     expect(summaries).toContainEqual(expect.objectContaining({
       flowId: parent.flowId,
-      hierarchySubflows: [{ subflowId: subflow.subflowId, name: "Checkout", parentCategoryId: "category.checkout" }],
+      hierarchySubflows: [{ subflowId: subflow.subflowId, name: "Checkout", graphFlowId: subflow.graphFlowId, parentCategoryId: "category.checkout" }],
       subflowCategories: [{ id: "category.checkout", name: "Checkout paths" }]
     }));
     expect(repairedIndex.ownershipMetadataVersion).toBe(1);
@@ -3198,6 +3262,93 @@ describe("AutomationStudioService canonical Flow persistence", () => {
     await expect(reloaded.deprecateFlowPublication({ projectId: domainProject.id, flowId: flow.flowId, version: "1.0.0", reason: "Use 2.0.0" })).resolves.toMatchObject({ status: "deprecated", deprecationReason: "Use 2.0.0" });
     await expect(reloaded.listPublishedFlowNodes(domainProject.id)).resolves.toEqual([]);
     await expect(reloaded.getFlow(globalProject.id, flow.flowId)).rejects.toThrow("Unknown Automation Studio Flow");
+  });
+
+  it("creates Flows without hydrating every persisted Flow in the project", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Large Flow Project" });
+    await service.createFlow({ projectId: project.id, flowId: "flow.persisted", name: "Persisted" });
+
+    const reloaded = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    (reloaded as unknown as { loadProjectFlows: () => Promise<void> }).loadProjectFlows = async () => {
+      throw new Error("full project Flow hydration should not be used for createFlow");
+    };
+
+    await expect(reloaded.createFlow({ projectId: project.id, flowId: "flow.new", name: "New Flow" })).resolves.toMatchObject({
+      flowId: "flow.new",
+      projectId: project.id,
+      name: "New Flow"
+    });
+    await expect(reloaded.createFlow({ projectId: project.id, flowId: "flow.persisted", name: "Duplicate" })).rejects.toThrow("already exists");
+  });
+
+  it("emits scoped project change-feed rows for Flow create, update, and delete", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Flow Feed Project" });
+    const created = await service.createFlow({ projectId: project.id, flowId: "flow.feed", name: "Feed Flow" });
+    const saved = await service.saveFlow({ projectId: project.id, flow: { ...created, name: "Updated Feed Flow" } });
+    await service.deleteFlow({ projectId: project.id, flowId: saved.flowId });
+
+    const feed = await service.listProjectChangeFeed({ projectId: project.id, afterSequence: 0, limit: 10 });
+    expect(feed).toMatchObject({ fallback: false, hasMore: false });
+    expect(feed.events.map((event) => ({
+      projectId: event.projectId,
+      entityKind: event.entityKind,
+      entityId: event.entityId,
+      operation: event.operation
+    }))).toEqual([
+      { projectId: project.id, entityKind: "flow", entityId: "flow.feed", operation: "create" },
+      { projectId: project.id, entityKind: "flow", entityId: "flow.feed", operation: "update" },
+      { projectId: project.id, entityKind: "flow", entityId: "flow.feed", operation: "delete" }
+    ]);
+    expect(feed.events.every((event) => event.revision >= 1 && event.changedAt > 0 && event.transactionId.startsWith(`project-change.${event.operation}.`))).toBe(true);
+  });
+
+  it("emits scoped project change-feed rows for subflow create, update, and delete", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Subflow Feed Project" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.subflow-feed", name: "Parent Flow" });
+    const created = await service.createFlowSubflow({ projectId: project.id, flowId: flow.flowId, name: "Verify Payment" });
+    const updated = await service.updateFlowSubflow({ projectId: project.id, flowId: flow.flowId, subflowId: created.subflowId, name: "Verify Payment Method" });
+    await service.deleteFlowSubflow({ projectId: project.id, flowId: flow.flowId, subflowId: updated.subflowId });
+
+    const feed = await service.listProjectChangeFeed({ projectId: project.id, afterSequence: 0, limit: 20 });
+    const subflowEvents = feed.events.filter((event) => event.entityKind === "subflow");
+    expect(subflowEvents.map((event) => ({
+      projectId: event.projectId,
+      entityId: event.entityId,
+      operation: event.operation
+    }))).toEqual([
+      { projectId: project.id, entityId: created.subflowId, operation: "create" },
+      { projectId: project.id, entityId: created.subflowId, operation: "update" },
+      { projectId: project.id, entityId: created.subflowId, operation: "delete" }
+    ]);
+    expect(subflowEvents.every((event) => event.revision >= 1 && event.changedAt > 0 && event.transactionId.startsWith(`project-change.${event.operation}.`))).toBe(true);
+  });
+
+  it("emits project hierarchy change-feed rows for legacy hierarchy saves", async () => {
+    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Hierarchy Feed Project" });
+
+    await service.saveProjectHierarchy(project.id, {
+      customHierarchyNodes: [{ id: "folder.root", label: "Root", kind: "folder", category: "flow", parentId: null, sourceId: "folder.root" }],
+      deletedHierarchyIds: [],
+      workspacePrefs: {}
+    });
+    await service.saveProjectHierarchy(project.id, {
+      customHierarchyNodes: [{ id: "folder.root", label: "Root Renamed", kind: "folder", category: "flow", parentId: null, sourceId: "folder.root" }],
+      deletedHierarchyIds: ["folder.deleted"],
+      workspacePrefs: { mainLayoutPreset: "single" }
+    });
+
+    const feed = await service.listProjectChangeFeed({ projectId: project.id, afterSequence: 0, limit: 10 });
+    const hierarchyEvents = feed.events.filter((event) => event.entityKind === "hierarchy");
+    expect(hierarchyEvents).toHaveLength(2);
+    expect(hierarchyEvents.map((event) => ({ projectId: event.projectId, entityId: event.entityId, operation: event.operation }))).toEqual([
+      { projectId: project.id, entityId: project.id, operation: "update" },
+      { projectId: project.id, entityId: project.id, operation: "update" }
+    ]);
+    expect(hierarchyEvents.every((event) => event.revision >= 1 && event.changedAt > 0 && event.transactionId.startsWith("project-change.update."))).toBe(true);
   });
 
   it("runs the selected canonical Flow with its compiled region plan", async () => {

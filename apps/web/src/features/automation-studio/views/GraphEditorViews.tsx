@@ -1,7 +1,7 @@
 "use client";
 
-import { Blocks, Braces, Calculator, CheckCircle2, ChevronRight, CircleDot, Clock, Copy, Database, Dice5, GitBranch, Hand, History, ListChecks, ListTree, Merge, MousePointer2, Network, Plus, Radio, Redo2, Repeat, Scan, Search, ShieldCheck, Shuffle, Split, Star, Trash2, Undo2, Waves, Workflow, X, Zap, ZoomIn, ZoomOut } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { Blocks, Braces, Calculator, CheckCircle2, ChevronRight, CircleDot, Clock, Copy, Database, Dice5, GitBranch, History, ListChecks, ListTree, Merge, Network, Plus, Radio, Redo2, Repeat, Scan, Search, ShieldCheck, Shuffle, Split, Star, Trash2, Undo2, Waves, Workflow, X, Zap, ZoomIn, ZoomOut } from "lucide-react";
+import { startTransition, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Background, BaseEdge, Controls, EdgeLabelRenderer, Handle, MiniMap, Position, ReactFlow, addEdge, applyEdgeChanges, applyNodeChanges, type Edge, type EdgeChange, type EdgeProps, type Node, type NodeChange, type NodeProps, type ReactFlowInstance } from "@xyflow/react";
 import type { AutomationNodePort } from "fluxiq/automation-studio/nodes";
 import type { JsonObject } from "../../programs/program-api";
@@ -11,6 +11,9 @@ import { automationEditorPalette } from "../types";
 import type { AutomationDragSelectBox } from "../workspace/layout";
 import { automationConnectionIsValid, automationPortCaption, automationPortDisplayLabel, automationPortTitle, automationPortTone, automationPortTypesCompatible, uniqueAutomationPorts } from "../graph/ports";
 import { useAutomationGraphController } from "../graph/useAutomationGraphController";
+import { automationGraphMiniMapNodeColor, automationGraphRevisionSignature } from "../graph/viewport-store";
+import { scheduleAutomationGraphIdleTask, type AutomationGraphIdleTaskCancel } from "../graph/worker-tasks";
+import { emitAutomationStudioGraphMetric } from "../development/telemetry";
 import { automationEdgeRoute, automationLaneEdgePath, automationLoopEdgePath, automationVisualInputPorts, createAutomationConnectionEdge, defaultAutomationParameterValues, flattenRunLogs, policyToReactFlowGraph, rebalanceAutomationEdgeLanes, reconnectAutomationEdge, roundedAutomationPosition, routineToReactFlowGraph, spawnAutomationNodePosition, startAutomationNodeMarquee, syncGraphNodes, taskFlowToReactFlowGraph } from "../graph/view-model";
 import { sameStringList } from "./view-utils";
 import { automationParameterError } from "../parameters/ParameterEditor";
@@ -226,6 +229,7 @@ const automationRoutineEditorModes: Array<{ id: AutomationRoutineEditorMode; lab
 ];
 const automationNodeEditorConnectionRadius = 72;
 const automationNodeEditorReconnectRadius = 22;
+const automationGraphMiddleMousePanButtons = [1];
 
 function protectRecentlyConnectedEdge(edgeIdsRef: { current: Set<string> }, edgeId: string) {
   edgeIdsRef.current.add(edgeId);
@@ -241,6 +245,18 @@ export function automationCompositeCallMetadata(spec: AutomationEditorNodeSpec):
 
 function ignoreProtectedEdgeRemovals(changes: EdgeChange[], protectedEdgeIds: Set<string>): EdgeChange[] {
   return changes.filter((change) => change.type !== "remove" || !protectedEdgeIds.has(change.id));
+}
+
+export function policyNodeChangesAreDurable(changes: NodeChange<Node<AutomationPolicyNodeData>>[], dragActive: boolean): boolean {
+  return changes.some((change) => {
+    if (change.type === "select" || change.type === "dimensions") return false;
+    if (change.type === "position" && dragActive) return false;
+    return true;
+  });
+}
+
+export function policyEdgeChangesAreDurable(changes: EdgeChange[]): boolean {
+  return changes.some((change) => change.type !== "select");
 }
 
 export function AutomationRoutineView(props: { models: any[]; policies: any[]; setSelection(selection: AutomationSelection): void }) {
@@ -570,7 +586,7 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
   const policyClipboardRef = useRef<{ nodes: Array<Node<AutomationPolicyNodeData>>; edges: Edge[] } | null>(null);
   const [selectedPolicyEdgeIds, setSelectedPolicyEdgeIds] = useState<string[]>([]);
   const [paletteCollapsed, setPaletteCollapsed] = useState(false);
-  const [policyInteractionMode, setPolicyInteractionMode] = useState<"select" | "pan">("select");
+  const policyDragSelectBoxRef = useRef<HTMLDivElement>(null);
   const [policyOutlineOpen, setPolicyOutlineOpen] = useState(false);
   const [saveState, setSaveState] = useState<"saved" | "unsaved" | "saving" | "failed" | "conflict">(props.taskGraphDraft ? "unsaved" : "saved");
   const policyFrameRef = useRef<HTMLDivElement>(null);
@@ -579,6 +595,7 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
   const [policyFlow, setPolicyFlow] = useState<ReactFlowInstance<Node<AutomationPolicyNodeData>, Edge> | null>(null);
 
   const savedGraphSignatureRef = useRef("");
+  const policyGraphDirtyRef = useRef(Boolean(props.taskGraphDraft));
   const recentlyConnectedPolicyEdgeIdsRef = useRef<Set<string>>(new Set());
   const taskGraphSignature = props.taskGraph ? automationTaskGraphSourceSignature(props.taskGraph) : "";
   const policyGraphSignature = props.taskGraph ? "" : automationPolicySourceSignature(props.policy);
@@ -598,29 +615,55 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
     edgesRef: policyEdgesRef,
     setNodes: setPolicyNodes,
     setEdges: setPolicyEdges,
+    setTransientNodes: setTransientPolicyNodes,
+    setTransientEdges: setTransientPolicyEdges,
     replaceGraph: replacePolicyGraph,
     checkpoint: checkpointPolicyGraph,
+    commitCheckpoint: commitPolicyGraphCheckpoint,
     undo: undoPolicyGraph,
     redo: redoPolicyGraph,
     canUndo: canUndoPolicyGraph,
-    canRedo: canRedoPolicyGraph
+    canRedo: canRedoPolicyGraph,
+    historyState: policyHistoryState,
+    viewportState: policyViewportState,
+    viewportStats: policyViewportStats
   } = useAutomationGraphController<AutomationPolicyNodeData>(graph.nodes, graph.edges);
   const policyNodeDragActiveRef = useRef(false);
   const pendingPolicyGraphDraftRef = useRef<{ nodes: Array<Node<AutomationPolicyNodeData>>; edges: Edge[] } | null>(null);
-  const policyGraphDraftFlushQueuedRef = useRef(false);
+  const policyGraphDraftFlushCancelRef = useRef<AutomationGraphIdleTaskCancel | null>(null);
+  const [policyGraphProblems, setPolicyGraphProblems] = useState<AutomationGraphProblem[]>([]);
+  const [policyGraphValidationRevision, setPolicyGraphValidationRevision] = useState(0);
+  const schedulePolicyGraphValidation = () => setPolicyGraphValidationRevision((revision) => revision + 1);
+  const markPolicyGraphDirty = (dirty: boolean) => {
+    if (policyGraphDirtyRef.current === dirty) return;
+    policyGraphDirtyRef.current = dirty;
+    if (props.active) props.onDirtyChange(dirty);
+    setSaveState((current) => dirty ? (current === "saving" || current === "conflict" ? current : "unsaved") : "saved");
+  };
   useEffect(() => {
     const nextNodes = syncGraphNodes(policyNodesRef.current, graph.nodes);
     const nextEdges = rebalanceAutomationEdgeLanes(graph.edges, nextNodes);
     replacePolicyGraph({ nodes: nextNodes, edges: nextEdges });
     savedGraphSignatureRef.current = graphSignature(nextNodes, nextEdges);
+    policyGraphDirtyRef.current = Boolean(props.taskGraphDraft);
     if (props.active) props.onDirtyChange(Boolean(props.taskGraphDraft));
+    setSaveState(props.taskGraphDraft ? "unsaved" : "saved");
     setSelectedPolicyEdgeIds([]);
+    schedulePolicyGraphValidation();
   }, [taskGraphSignature, policyGraphSignature, taskGraphDraftSignature]);
   useEffect(() => {
-    const dirty = graphSignature(policyNodes, policyEdges) !== savedGraphSignatureRef.current;
-    if (props.active) props.onDirtyChange(dirty);
-    setSaveState((current) => dirty ? (current === "saving" || current === "conflict" ? current : "unsaved") : "saved");
-  }, [policyNodes, policyEdges, props.active, props.onDirtyChange]);
+    if (props.active) props.onDirtyChange(policyGraphDirtyRef.current);
+  }, [props.active, props.onDirtyChange]);
+  useEffect(() => {
+    if (!props.active) return;
+    emitAutomationStudioGraphMetric({
+      graphId: String(props.taskGraph?.flowId ?? props.policy?.policyId ?? "active-graph"),
+      nodesMounted: policyNodes.length,
+      edgesMounted: policyEdges.length,
+      nodesCached: policyNodes.length,
+      edgesCached: policyEdges.length
+    });
+  }, [policyNodes.length, policyEdges.length, props.active, props.taskGraph?.flowId, props.policy?.policyId]);
 
   useEffect(() => {
     function captureViewport() {
@@ -660,19 +703,26 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
     if (props.taskGraph) return policyEditorSelection(node.id, node.data);
     return props.policy?.nodes?.some((policyNode: any) => policyNode.id === node.id) ? { kind: "node", id: node.id } : policyEditorSelection(node.id, node.data);
   };
+  const setPolicySelectionDeferred = (selection: AutomationSelection) => {
+    startTransition(() => props.setSelection(selection));
+  };
   const publishPolicyGraphDraft = (nodes: Array<Node<AutomationPolicyNodeData>>, edges: Edge[]) => {
+    schedulePolicyGraphValidation();
     if (!props.taskGraph || !isFlowMode) return;
     pendingPolicyGraphDraftRef.current = { nodes, edges };
-    if (policyGraphDraftFlushQueuedRef.current) return;
-    policyGraphDraftFlushQueuedRef.current = true;
-    queueMicrotask(() => {
-      policyGraphDraftFlushQueuedRef.current = false;
+    policyGraphDraftFlushCancelRef.current?.();
+    policyGraphDraftFlushCancelRef.current = scheduleAutomationGraphIdleTask(() => {
+      policyGraphDraftFlushCancelRef.current = null;
       const draft = pendingPolicyGraphDraftRef.current;
       if (!draft) return;
       pendingPolicyGraphDraftRef.current = null;
       props.onGraphDraftChange(draft);
-    });
+    }, { delayMs: 160, timeoutMs: 1_000 });
   };
+  useEffect(() => () => {
+    policyGraphDraftFlushCancelRef.current?.();
+    policyGraphDraftFlushCancelRef.current = null;
+  }, []);
   useEffect(() => {
     async function handleGlobalSave(event: Event) {
       if (!props.active) return;
@@ -683,6 +733,7 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
       setSaveState(result.state);
       if (result.ok) {
         savedGraphSignatureRef.current = graphSignature(policyNodesRef.current, policyEdgesRef.current);
+        policyGraphDirtyRef.current = false;
         props.onDirtyChange(false);
       }
       detail?.onComplete?.({
@@ -729,7 +780,7 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
     setSelectedPolicyNodeId(id);
     setSelectedPolicyNodeIds([id]);
     setSelectedPolicyEdgeIds([]);
-    props.setSelection(policyEditorSelection(id, data));
+    setPolicySelectionDeferred(policyEditorSelection(id, data));
     policySelectionRef.current = `node:${id}`;
   };
   const deletePolicySelection = () => {
@@ -792,7 +843,7 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
       const nextNodes = policyNodesRef.current.map((node) => {
         if (node.id !== detail.nodeId) return node;
         const data = { ...node.data, ...(detail.parameterValues ? { parameterValues: detail.parameterValues } : {}), ...(detail.customDescription !== undefined ? { customDescription: detail.customDescription } : {}) };
-        if (policySelectionRef.current === `node:${node.id}`) props.setSelection(policyCanvasSelectionForNode({ ...node, data }));
+        if (policySelectionRef.current === `node:${node.id}`) setPolicySelectionDeferred(policyCanvasSelectionForNode({ ...node, data }));
         return { ...node, data };
       });
       policyNodesRef.current = nextNodes;
@@ -810,7 +861,19 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
       window.removeEventListener("automation-studio:update-node-parameters", handleUpdateParameters);
     };
   }, [isFlowMode, props.setSelection, props.taskGraph, props.policy]);
-  const policyGraphProblems = useMemo(() => automationPolicyGraphProblems(policyNodes, policyEdges), [policyNodes, policyEdges]);
+  useEffect(() => {
+    let cancelled = false;
+    const nodes = policyNodesRef.current;
+    const edges = policyEdgesRef.current;
+    const cancel = scheduleAutomationGraphIdleTask(() => {
+      const problems = automationPolicyGraphProblems(nodes, edges);
+      if (!cancelled) setPolicyGraphProblems(problems);
+    }, { delayMs: 80, timeoutMs: 1_000 });
+    return () => {
+      cancelled = true;
+      cancel();
+    };
+  }, [policyGraphValidationRevision]);
   const invalidPolicyNodeIds = useMemo(() => new Set(policyGraphProblems.filter((problem) => problem.kind === "node" && problem.targetId).map((problem) => problem.targetId)), [policyGraphProblems]);
   const invalidPolicyEdgeIds = useMemo(() => new Set(policyGraphProblems.filter((problem) => problem.kind === "edge" && problem.targetId).map((problem) => problem.targetId)), [policyGraphProblems]);
   const validatedPolicyNodes = useMemo(() => policyNodes.map((node) => invalidPolicyNodeIds.has(node.id) ? { ...node, className: [node.className, "automation-validation-invalid"].filter(Boolean).join(" ") } : node), [policyNodes, invalidPolicyNodeIds]);
@@ -819,13 +882,13 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
     if (!isFlowMode) return;
     if (direction === "undo") undoPolicyGraph();
     else redoPolicyGraph();
-    queueMicrotask(() => publishPolicyGraphDraft(policyNodesRef.current, policyEdgesRef.current));
+    publishPolicyGraphDraft(policyNodesRef.current, policyEdgesRef.current);
   };
   const selectPolicyOutlineNode = (node: Node<AutomationPolicyNodeData>) => {
     setSelectedPolicyNodeId(node.id);
     setSelectedPolicyEdgeIds([]);
-    setPolicyNodes((nodes) => nodes.map((item) => ({ ...item, selected: item.id === node.id })));
-    props.setSelection(policyCanvasSelectionForNode(node));
+    setTransientPolicyNodes((nodes) => nodes.map((item) => ({ ...item, selected: item.id === node.id })));
+    setPolicySelectionDeferred(policyCanvasSelectionForNode(node));
     void policyFlow?.fitView({ nodes: [node], padding: 0.8, duration: 180 });
   };
   const focusPolicyGraphProblem = (problem: AutomationGraphProblem) => {
@@ -840,7 +903,7 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
       setSelectedPolicyNodeId("");
       setSelectedPolicyNodeIds([]);
       setSelectedPolicyEdgeIds([edge.id]);
-      setPolicyEdges((edges) => edges.map((item) => ({ ...item, selected: item.id === edge.id })));
+      setTransientPolicyEdges((edges) => edges.map((item) => ({ ...item, selected: item.id === edge.id })));
       const endpoints = policyNodesRef.current.filter((node) => node.id === edge.source || node.id === edge.target);
       if (endpoints.length) void policyFlow?.fitView({ nodes: endpoints, padding: 0.8, duration: 180 });
       return;
@@ -855,16 +918,18 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
     window.addEventListener("automation-studio:focus-graph-problem", handleFocusProblem);
     return () => window.removeEventListener("automation-studio:focus-graph-problem", handleFocusProblem);
   }, [policyFlow]);  const validatePolicyGraph = () => {
+    const problems = automationPolicyGraphProblems(policyNodesRef.current, policyEdgesRef.current);
+    setPolicyGraphProblems(problems);
     props.setSelection({
       kind: "editor-mode",
       id: "graph-validation",
       editor: "flow",
       label: "Graph Validation",
-      description: policyGraphProblems.length ? "Resolve graph problems before running this Flow." : "The graph passed structural validation.",
+      description: problems.length ? "Resolve graph problems before running this Flow." : "The graph passed structural validation.",
       sections: [{
-        title: policyGraphProblems.length ? "Problems" : "Ready",
-        rows: policyGraphProblems.length
-          ? policyGraphProblems.map((problem) => [problem.label, problem.message])
+        title: problems.length ? "Problems" : "Ready",
+        rows: problems.length
+          ? problems.map((problem) => [problem.label, problem.message])
           : [["Status", "No structural graph problems"]]
       }]
     });
@@ -908,7 +973,7 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
     setSelectedPolicyNodeId(pastedIds[0] ?? "");
     setSelectedPolicyEdgeIds([]);
     publishPolicyGraphDraft(nextNodes, nextEdges);
-    if (pastedNodes[0]) props.setSelection(policyCanvasSelectionForNode(pastedNodes[0]));
+    if (pastedNodes[0]) setPolicySelectionDeferred(policyCanvasSelectionForNode(pastedNodes[0]));
   };
   const duplicatePolicySelection = () => {
     copyPolicySelection();
@@ -957,12 +1022,52 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
   };
   const selectAllPolicyNodes = () => {
     const ids = policyNodesRef.current.map((node) => node.id);
-    setPolicyNodes((nodes) => nodes.map((node) => ({ ...node, selected: true })));
-    setPolicyEdges((edges) => edges.map((edge) => ({ ...edge, selected: false })));
+    setTransientPolicyNodes((nodes) => nodes.map((node) => ({ ...node, selected: true })));
+    setTransientPolicyEdges((edges) => edges.map((edge) => ({ ...edge, selected: false })));
     setSelectedPolicyNodeIds(ids);
     setSelectedPolicyNodeId(ids[0] ?? "");
     setSelectedPolicyEdgeIds([]);
-  };  const openPolicyNodePalette = () => {
+  };
+  const startPolicyDragSelect = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!isFlowMode) return;
+    startAutomationNodeMarquee({
+      event,
+      flow: policyFlow,
+      frame: policyFrameRef.current,
+      nodes: policyNodesRef.current,
+      setDragBox: setPolicyDragSelectBox,
+      setEdges: (updater) => setTransientPolicyEdges((edges) => updater(edges)),
+      setNodes: (updater) => setTransientPolicyNodes((nodes) => updater(nodes)),
+      onSelected: (nodes) => {
+        const ids = nodes.map((node) => node.id);
+        const primaryNode = nodes[0];
+        setSelectedPolicyNodeIds(ids);
+        setSelectedPolicyNodeId(primaryNode?.id ?? "");
+        setSelectedPolicyEdgeIds([]);
+        const key = primaryNode ? `node:${primaryNode.id}` : "";
+        policySelectionRef.current = key;
+        if (primaryNode) setPolicySelectionDeferred(policyCanvasSelectionForNode(primaryNode));
+      }
+    });
+  };
+  const setPolicyDragSelectBox = (box: AutomationDragSelectBox | null) => {
+    const element = policyDragSelectBoxRef.current;
+    if (!element) return;
+    if (!box) {
+      element.hidden = true;
+      return;
+    }
+    element.hidden = false;
+    element.style.left = `${box.left}px`;
+    element.style.top = `${box.top}px`;
+    element.style.width = `${box.width}px`;
+    element.style.height = `${box.height}px`;
+  };
+  const suppressPolicyPaneContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (!target.closest(".react-flow__node, .react-flow__handle, button, input, select, textarea, a")) event.preventDefault();
+  };
+  const openPolicyNodePalette = () => {
     setPaletteCollapsed(false);
     queueMicrotask(() => window.dispatchEvent(new CustomEvent("automation-studio:focus-node-palette")));
   };
@@ -1015,9 +1120,7 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
       applyPolicyHistory("redo");
       return;
     }
-    if (key === "v") setPolicyInteractionMode("select");
-    else if (key === "h") setPolicyInteractionMode("pan");
-    else if (key === "f") void policyFlow?.fitView({ padding: 0.25, duration: 180 });
+    if (key === "f") void policyFlow?.fitView({ padding: 0.25, duration: 180 });
     else if (key === "+" || key === "=") void policyFlow?.zoomIn({ duration: 120 });
     else if (key === "-") void policyFlow?.zoomOut({ duration: 120 });
     else if (key === "a" && isFlowMode) openPolicyNodePalette();
@@ -1027,18 +1130,19 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
   return (
     <section className="automation-policy-canvas">
       <div aria-live="polite" className={`automation-graph-save-state ${saveState}`} role="status"><span aria-hidden />{saveState === "saved" ? "Saved" : saveState === "unsaved" ? "Unsaved changes" : saveState === "saving" ? "Saving" : saveState === "conflict" ? "Save conflict" : "Save failed"}</div>
+      <div aria-live="polite" className={`automation-graph-viewport-state ${policyViewportState}`} role="status">
+        <span>{policyViewportState}</span>
+        <strong>{policyNodes.length} nodes / {policyEdges.length} routes</strong>
+        <small>{policyViewportStats.cachedPartitions} partitions cached | {Math.round(policyHistoryState.estimatedBytes / 1024)} KiB history</small>
+      </div>
       {props.recoverableDraft ? <div className={props.recoverableDraft.stale ? "automation-draft-recovery stale" : "automation-draft-recovery"} role="status">
         <div><strong>{props.recoverableDraft.stale ? "Unsaved draft from an older Flow version" : "Unsaved draft available"}</strong><span>Recovered from {new Date(props.recoverableDraft.savedAt).toLocaleString()}.</span></div>
         <div><button className="button button-primary" onClick={props.onRestoreDraft} type="button">Restore Draft</button><button className="button" onClick={props.onDiscardDraft} type="button">Discard</button></div>
       </div> : null}
       {codeOwned ? <div className="automation-source-warning"><strong>Code-owned Flow</strong><span>The compiled graph is read-only. Change its module and recompile, or explicitly convert it back to visual ownership.</span></div> : null}
       <div className={paletteCollapsed ? "automation-policy-editor-grid palette-collapsed" : "automation-policy-editor-grid"}>
-        <div aria-label="Nodes whiteboard" className="automation-react-flow-frame" onKeyDown={handlePolicyCanvasKeyDown} ref={policyFrameRef} tabIndex={0}>
+        <div aria-label="Nodes whiteboard" className="automation-react-flow-frame" onContextMenu={suppressPolicyPaneContextMenu} onKeyDown={handlePolicyCanvasKeyDown} onPointerDownCapture={startPolicyDragSelect} ref={policyFrameRef} tabIndex={0}>
           <div aria-label="Canvas tools" className="automation-canvas-toolbar" role="toolbar">
-            <div className="automation-canvas-tool-group">
-              <button aria-keyshortcuts="V" aria-label="Select mode" aria-pressed={policyInteractionMode === "select"} className="icon-button" onClick={() => setPolicyInteractionMode("select")} title="Select (V)" type="button"><MousePointer2 size={14} aria-hidden /></button>
-              <button aria-keyshortcuts="H" aria-label="Pan mode" aria-pressed={policyInteractionMode === "pan"} className="icon-button" onClick={() => setPolicyInteractionMode("pan")} title="Pan (H)" type="button"><Hand size={14} aria-hidden /></button>
-            </div>
             <div className="automation-canvas-tool-group">
               <button aria-keyshortcuts="F" aria-label="Fit graph" className="icon-button" onClick={() => void policyFlow?.fitView({ padding: 0.25, duration: 180 })} title="Fit graph (F)" type="button"><Scan size={14} aria-hidden /></button>
               <button aria-keyshortcuts="+" aria-label="Zoom in" className="icon-button" onClick={() => void policyFlow?.zoomIn({ duration: 120 })} title="Zoom in (+)" type="button"><ZoomIn size={14} aria-hidden /></button>
@@ -1074,8 +1178,8 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
             nodesFocusable
             edgesFocusable
             onlyRenderVisibleElements
-            panOnDrag={policyInteractionMode === "pan"}
-            selectionOnDrag={policyInteractionMode === "select"}
+            panOnDrag={automationGraphMiddleMousePanButtons}
+            selectionOnDrag={false}
             deleteKeyCode={isFlowMode ? ["Backspace", "Delete"] : null}
             minZoom={0.1}
             reconnectRadius={automationNodeEditorReconnectRadius}
@@ -1084,6 +1188,7 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
             onConnect={(connection) => {
               if (!isFlowMode) return;
               checkpointPolicyGraph();
+              markPolicyGraphDirty(true);
               const nextEdge = createAutomationConnectionEdge(connection, policyEdgesRef.current, "policy-edge", policyNodesRef.current);
               protectRecentlyConnectedEdge(recentlyConnectedPolicyEdgeIdsRef, nextEdge.id);
               setPolicyEdges((edges) => {
@@ -1096,6 +1201,7 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
             onReconnect={(oldEdge, connection) => {
               if (!isFlowMode) return;
               checkpointPolicyGraph();
+              markPolicyGraphDirty(true);
               setPolicyEdges((edges) => {
                 const nextEdges = reconnectAutomationEdge(oldEdge, connection, edges, policyNodesRef.current);
                 policyEdgesRef.current = nextEdges;
@@ -1107,17 +1213,23 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
               if (!isFlowMode) return;
               const allowedChanges = ignoreProtectedEdgeRemovals(changes, recentlyConnectedPolicyEdgeIdsRef.current);
               if (!allowedChanges.length) return;
-              if (allowedChanges.some((change) => change.type === "remove" || change.type === "add")) checkpointPolicyGraph();
-              setPolicyEdges((edges) => {
+              const durableChange = policyEdgeChangesAreDurable(allowedChanges);
+              if (durableChange) {
+                checkpointPolicyGraph();
+                markPolicyGraphDirty(true);
+              }
+              const setNextEdges = durableChange ? setPolicyEdges : setTransientPolicyEdges;
+              setNextEdges((edges) => {
                 const nextEdges = rebalanceAutomationEdgeLanes(applyEdgeChanges(allowedChanges, edges), policyNodesRef.current);
                 policyEdgesRef.current = nextEdges;
-                publishPolicyGraphDraft(policyNodesRef.current, nextEdges);
+                if (durableChange) publishPolicyGraphDraft(policyNodesRef.current, nextEdges);
                 return nextEdges;
               });
             }}
             onEdgesDelete={(deletedEdges) => setSelectedPolicyEdgeIds((ids) => ids.filter((id) => !deletedEdges.some((edge) => edge.id === id)))}
             onNodesDelete={(deletedNodes) => {
               checkpointPolicyGraph();
+              markPolicyGraphDirty(true);
               const deletedIds = new Set(deletedNodes.map((node) => node.id));
               setPolicyEdges((edges) => {
                 const nextEdges = rebalanceAutomationEdgeLanes(edges.filter((edge) => !deletedIds.has(edge.source) && !deletedIds.has(edge.target)), policyNodesRef.current);
@@ -1130,22 +1242,27 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
             }}
             onNodesChange={(changes: NodeChange<Node<AutomationPolicyNodeData>>[]) => {
               if (!isFlowMode) return;
+              const durableChange = policyNodeChangesAreDurable(changes, policyNodeDragActiveRef.current);
+              if (durableChange) checkpointPolicyGraph();
               const nextNodes = applyNodeChanges(changes, policyNodesRef.current);
               policyNodesRef.current = nextNodes;
               const removedNodeIds = new Set(changes.filter((change) => change.type === "remove").map((change) => change.id));
               if (removedNodeIds.size) {
+                markPolicyGraphDirty(true);
                 const nextEdges = rebalanceAutomationEdgeLanes(policyEdgesRef.current.filter((edge) => !removedNodeIds.has(edge.source) && !removedNodeIds.has(edge.target)), nextNodes);
                 policyEdgesRef.current = nextEdges;
                 setPolicyEdges(nextEdges);
                 publishPolicyGraphDraft(nextNodes, nextEdges);
               }
-              setPolicyNodes(nextNodes);
+              if (durableChange) setPolicyNodes(nextNodes);
+              else setTransientPolicyNodes(nextNodes);
             }}
-            onEdgeClick={(_event, edge) => {
+            onEdgeClick={(event, edge) => {
+              if (event.button !== 0) return;
               setSelectedPolicyNodeId("");
               setSelectedPolicyNodeIds([]);
               setSelectedPolicyEdgeIds([edge.id]);
-              setPolicyEdges((edges) => {
+              setTransientPolicyEdges((edges) => {
                 const nextEdges = edges.map((item) => ({ ...item, selected: item.id === edge.id }));
                 policyEdgesRef.current = nextEdges;
                 return nextEdges;
@@ -1158,20 +1275,23 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
             onNodeDragStop={() => {
               policyNodeDragActiveRef.current = false;
               const nodes = policyNodesRef.current;
-              setPolicyEdges((edges) => {
+              setTransientPolicyEdges((edges) => {
                 const nextEdges = rebalanceAutomationEdgeLanes(edges, nodes);
                 policyEdgesRef.current = nextEdges;
-                publishPolicyGraphDraft(nodes, nextEdges);
                 return nextEdges;
               });
-            }}
-            onNodeClick={(_event, node) => {
-              setSelectedPolicyNodeId((current: string) => current === node.id ? current : node.id);
-              const key = `node:${node.id}`;
-              if (policySelectionRef.current !== key) {
-                policySelectionRef.current = key;
-                props.setSelection(policyCanvasSelectionForNode(node));
+              const committed = commitPolicyGraphCheckpoint();
+              if (committed) {
+                markPolicyGraphDirty(true);
+                publishPolicyGraphDraft(nodes, policyEdgesRef.current);
               }
+            }}
+            onNodeClick={(event, node) => {
+              if (event.button !== 0) return;
+              setSelectedPolicyNodeId((current: string) => current === node.id ? current : node.id);
+              setSelectedPolicyNodeIds((current) => sameStringList(current, [node.id]) ? current : [node.id]);
+              setSelectedPolicyEdgeIds((current) => current.length ? [] : current);
+              policySelectionRef.current = `node:${node.id}`;
             }}
             onSelectionChange={({ nodes, edges }) => {
               const selectedNode = nodes[0];
@@ -1181,19 +1301,14 @@ export function AutomationPolicyCanvas(props: { active: boolean; editable: boole
               setSelectedPolicyNodeId((current: string) => current === nodeId ? current : nodeId);
               setSelectedPolicyNodeIds((current) => sameStringList(current, nodeIds) ? current : nodeIds);
               setSelectedPolicyEdgeIds((current) => sameStringList(current, edgeIds) ? current : edgeIds);
-              const key = selectedNode ? `node:${selectedNode.id}` : edgeIds.length ? `edges:${edgeIds.join(",")}` : "";
-              if (selectedNode && policySelectionRef.current !== key) {
-                policySelectionRef.current = key;
-                props.setSelection(policyCanvasSelectionForNode(selectedNode));
-              } else if (!selectedNode) {
-                policySelectionRef.current = key;
-              }
+              policySelectionRef.current = selectedNode ? `node:${selectedNode.id}` : edgeIds.length ? `edges:${edgeIds.join(",")}` : "";
             }}
           >
             <Background gap={24} size={1} />
-            <MiniMap pannable zoomable />
+            <MiniMap nodeColor={automationGraphMiniMapNodeColor} pannable zoomable />
 
           </ReactFlow>
+          <div className="automation-node-marquee" hidden ref={policyDragSelectBoxRef} />
           {policyOutlineOpen ? <AutomationGraphOutline nodes={policyNodes} selectedNodeId={selectedPolicyNodeId} onClose={() => setPolicyOutlineOpen(false)} onSelect={selectPolicyOutlineNode} /> : null}
         </div>
         <AutomationNodePalette collapsed={paletteCollapsed} disabled={!isFlowMode} groups={palette} title="Policy Nodes" onAddNode={addPolicyNode} onCollapsedChange={setPaletteCollapsed} />
@@ -1549,7 +1664,7 @@ export function AutomationPolicyGraphEditor(props: {
         }}
       >
         <Background gap={24} size={1} />
-        <MiniMap pannable zoomable />
+        <MiniMap nodeColor={automationGraphMiniMapNodeColor} pannable zoomable />
         <Controls showInteractive={false} />
         </ReactFlow>
       </div>
@@ -1600,78 +1715,26 @@ function AutomationPolicyNode({ id, data, selected }: NodeProps) {
 }
 
 function automationEmbeddedGraphSignature(nodes: Array<Node<AutomationPolicyNodeData>>, edges: Edge[], selectedNodeId: string, mode: AutomationPolicyGraphEditorMode, editableNodeKey: string): string {
-  return JSON.stringify({
-    selectedNodeId,
-    mode,
-    editableNodeKey,
-    nodes: nodes.map((node) => ({
-      id: node.id,
-      x: Math.round(node.position.x),
-      y: Math.round(node.position.y),
-      label: node.data.label,
-      description: node.data.description,
-      customDescription: node.data.customDescription,
-      reviewTone: node.data.reviewTone
-    })),
-    edges: edges.map((edge) => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      sourceHandle: edge.sourceHandle,
-      targetHandle: edge.targetHandle,
-      label: edge.label ?? edge.data?.label
-    }))
-  });
+  return [selectedNodeId, mode, editableNodeKey, nodes.length, edges.length, nodes[0]?.id ?? "", nodes.at(-1)?.id ?? "", edges[0]?.id ?? "", edges.at(-1)?.id ?? ""].join(":");
 }
 
 function automationTaskGraphSourceSignature(graph: any): string {
-  return JSON.stringify({
-    flowId: graph?.flowId,
-    ownerId: graph?.ownerId,
-    updatedAt: graph?.updatedAt,
-    nodes: (graph?.nodes ?? []).map((node: any) => ({
-      id: node.id,
-      definitionId: node.definitionId,
-      definitionVersion: node.definitionVersion,
-      label: node.label,
-      description: node.description,
-      position: node.position,
-      parameterValues: node.parameterValues,
-      metadata: node.metadata
-    })),
-    edges: (graph?.edges ?? []).map((edge: any) => ({
-      id: edge.id,
-      sourceNodeId: edge.sourceNodeId,
-      targetNodeId: edge.targetNodeId,
-      sourcePortId: edge.sourcePortId,
-      targetPortId: edge.targetPortId,
-      label: edge.label,
-      metadata: edge.metadata
-    }))
+  return automationGraphRevisionSignature({
+    flowId: graph?.flowId ?? graph?.graphId ?? graph?.ownerId,
+    revision: graph?.graphRevision ?? graph?.revision ?? graph?.metadata?.graphRevision,
+    updatedAt: graph?.updatedAt ?? graph?.metadata?.savedAt,
+    pendingOperationCount: graph?.metadata?.pendingOperationCount ?? (graph?.nodes?.length ?? 0),
+    pendingOperationBytes: graph?.metadata?.pendingOperationBytes ?? (graph?.edges?.length ?? 0),
   });
 }
 
 function automationPolicySourceSignature(policy: any): string {
-  return JSON.stringify({
-    policyId: policy?.policyId,
-    taskId: policy?.taskId,
+  return automationGraphRevisionSignature({
+    flowId: policy?.policyId ?? policy?.taskId,
+    revision: policy?.revision ?? policy?.generatedMetadata?.revision,
     updatedAt: policy?.updatedAt ?? policy?.generatedMetadata?.generatedAt,
-    nodes: (policy?.nodes ?? []).map((node: any) => ({
-      id: node.id,
-      label: node.label,
-      description: node.description,
-      metadata: node.metadata,
-      actions: node.actions,
-      recovery: node.recovery,
-      timeout: node.timeout
-    })),
-    edges: (policy?.edges ?? []).map((edge: any) => ({
-      id: edge.id,
-      fromNodeId: edge.fromNodeId,
-      toNodeId: edge.toNodeId,
-      label: edge.label,
-      metadata: edge.metadata
-    }))
+    pendingOperationCount: policy?.nodes?.length ?? 0,
+    pendingOperationBytes: policy?.edges?.length ?? 0,
   });
 }
 
@@ -1843,3 +1906,5 @@ function AutomationFlowEdge(props: EdgeProps) {
     </>
   );
 }
+
+

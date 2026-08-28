@@ -8,6 +8,41 @@ const FIXTURE_MARKER = "fluxiq-e2e-fixture-v1";
 const FIXED_NOW_MS = Date.UTC(2026, 0, 15, 12, 0, 0);
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const fixtureRoot = path.resolve(process.env.FLUXIQ_E2E_FIXTURE_ROOT ?? path.join(webRoot, ".e2e-host"));
+const fixtureProfiles = Object.freeze({
+  small: Object.freeze({
+    flowCount: 2,
+    subflowsPerFlow: 4,
+    runsPerFlow: 18,
+    adaptationsPerFlow: 8,
+    instructionsPerFlow: 6,
+    recordingCount: 1,
+    graphNodeCount: 120,
+    hierarchyFolderCount: 80,
+    timelineEntryCount: 240,
+  }),
+  scale1k: Object.freeze({
+    flowCount: 8,
+    subflowsPerFlow: 8,
+    runsPerFlow: 40,
+    adaptationsPerFlow: 12,
+    instructionsPerFlow: 12,
+    recordingCount: 2,
+    graphNodeCount: 1_000,
+    hierarchyFolderCount: 1_000,
+    timelineEntryCount: 1_000,
+  }),
+  scale10k: Object.freeze({
+    flowCount: 20,
+    subflowsPerFlow: 12,
+    runsPerFlow: 60,
+    adaptationsPerFlow: 16,
+    instructionsPerFlow: 16,
+    recordingCount: 4,
+    graphNodeCount: 10_000,
+    hierarchyFolderCount: 2_000,
+    timelineEntryCount: 10_000,
+  }),
+});
 const markerPath = path.join(fixtureRoot, ".fluxiq-e2e-fixture-root");
 
 await resetOwnedFixtureRoot();
@@ -23,35 +58,25 @@ const emptyProject = await studio.createProject({
   categoryId: category.id,
 });
 
-const representativeProject = await seedProject({
-  name: "UI Fixture - Representative",
-  description: "Representative flows, instructions, routes, runs, and adaptations.",
+const smallProject = await seedProject({
+  name: "UI Fixture - Small",
+  description: "Small deterministic flows, instructions, routes, runs, and adaptations.",
   categoryId: category.id,
-  fixture: {
-    flowCount: 2,
-    subflowsPerFlow: 4,
-    runsPerFlow: 18,
-    adaptationsPerFlow: 8,
-    instructionsPerFlow: 6,
-    recordingCount: 0,
-  },
+  fixture: fixtureProfiles.small,
 });
 
-const scaleProject = await seedProject({
-  name: "UI Fixture - Scale",
-  description: "High-volume hierarchy and runtime data for UI performance checks.",
+const scale1kProject = await seedProject({
+  name: "UI Fixture - Scale 1k",
+  description: "One-thousand-entity hierarchy and graph data for UI performance checks.",
   categoryId: category.id,
-  fixture: {
-    flowCount: 6,
-    subflowsPerFlow: 8,
-    runsPerFlow: 24,
-    adaptationsPerFlow: 10,
-    instructionsPerFlow: 10,
-    recordingCount: 0,
-    graphNodeCount: 180,
-    hierarchyFolderCount: 180,
-    timelineEntryCount: 600,
-  },
+  fixture: fixtureProfiles.scale1k,
+});
+
+const scale10kProject = await seedProject({
+  name: "UI Fixture - Scale 10k",
+  description: "Ten-thousand-node graph and event-log data for local Studio certification.",
+  categoryId: category.id,
+  fixture: fixtureProfiles.scale10k,
 });
 
 const globalStress = await seedGlobalStressFixtures();
@@ -61,10 +86,14 @@ const manifest = {
   fixedNowMs: FIXED_NOW_MS,
   root: fixtureRoot,
   credentials: { username: "admin", password: "admin" },
+  fixtureProfiles,
   projects: {
     empty: summarizeProject(emptyProject),
-    representative: representativeProject,
-    scale: scaleProject,
+    small: smallProject,
+    scale1k: scale1kProject,
+    scale10k: scale10kProject,
+    representative: smallProject,
+    scale: scale1kProject,
   },
   globalStress,
 };
@@ -122,6 +151,7 @@ async function seedProject({ name, description, categoryId, fixture: fixtureOpti
       graphNodes: graphNodeCount,
       hierarchyFolders: hierarchyFolderCount,
       timelineEntries: timelineEntryCount,
+      certificationSize: Math.max(graphNodeCount, hierarchyFolderCount, timelineEntryCount),
     },
   };
 }

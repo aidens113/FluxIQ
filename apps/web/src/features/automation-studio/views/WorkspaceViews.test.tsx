@@ -309,7 +309,32 @@ describe("Automation Runtime workspace", () => {
     expect(RuntimeActionLogPage.toString()).toContain("RUNTIME_ACTION_PAGE_SIZE");
     expect(RuntimeActionLogPage.toString()).toContain("RuntimeActionDetailPanel");
     expect(RuntimeActionLogPage.toString()).toContain("selectedAttempt");
-    expect(RuntimeRunHistory.toString()).toContain("compact: true");
+    expect(RuntimeRunHistory.toString()).not.toContain("get-flow-run-detail");
+    expect(RuntimeActionLogPage.toString()).toContain("get-flow-run-detail");
+    expect(RuntimeActionLogPage.toString()).toContain("compact: true");
+    expect(RuntimeActionLogPage.toString()).toContain("Load Event Stream");
+    expect(RuntimeActionLogPage.toString()).toContain("Events load only when opened");
+    expect(RuntimeActionLogPage.toString()).toContain("Selected event JSON");
+  });
+
+  it("opens the Runtime Debug log shell before run detail and keeps events opt-in", () => {
+    const html = renderToStaticMarkup(createElement(RuntimeActionLogPage, {
+      api: { post: async <T = any>() => ({ ok: true as const, payload: {} as T }) },
+      projectId: "project.debug",
+      runId: "run.pending",
+      loading: false,
+      error: "",
+      onBack: () => undefined,
+      runDetail: null
+    }));
+
+    expect(html).toContain("Action Log");
+    expect(html).toContain("run.pending");
+    expect(html).toContain("No actions loaded yet");
+    expect(html).not.toContain("Ordered Event Stream");
+    expect(RuntimeActionLogPage.toString()).toContain("list-flow-run-actions");
+    expect(RuntimeActionLogPage.toString()).toContain("list-flow-run-events");
+    expect(RuntimeActionLogPage.toString()).toContain("eventPage.loaded ? eventPage.lastSequence : 0");
   });
 
   it("keeps raw JSON opt-in and run lists paged", () => {
@@ -389,6 +414,49 @@ describe("Automation Runtime workspace", () => {
     expect(settingsHtml).not.toContain("should-not-render-until-expanded");
   });
 
+  it("bounds Runtime Debug action rows before detail panes or raw JSON are opened", () => {
+    const attempts = Array.from({ length: 125 }, (_, index) => ({
+      attemptId: "attempt." + index,
+      nodeId: index < 50 ? "visible-node-" + index : "hidden-node-" + index,
+      definitionId: "builtin.policy.action",
+      status: "succeeded",
+      inputs: { heavyInput: "hidden-json-payload-" + index },
+      outputs: { heavyOutput: "hidden-json-output-" + index },
+      effects: [{ type: "debug.effect", payload: { secret: "hidden-effect-payload-" + index } }]
+    }));
+    const html = renderToStaticMarkup(createElement(RuntimeActionLogPage, {
+      projectId: "project.debug",
+      runId: "run.large",
+      loading: false,
+      error: "",
+      onBack: () => undefined,
+      runDetail: {
+        summary: { runId: "run.large", flowId: "flow.large", status: "succeeded", actionAttemptCount: attempts.length },
+        actionAttempts: attempts,
+        trace: { attempts, effects: [], values: { secret: "hidden-root-state" } }
+      }
+    }));
+
+    expect((html.match(/automation-runtime-attempt-row/g) ?? []).length).toBe(50);
+    expect(html).toContain("1-50 of 125 actions");
+    expect(html).toContain("visible-node-49");
+    expect(html).not.toContain("hidden-node-50");
+    expect(html).not.toContain("hidden-json-payload");
+    expect(html).not.toContain("hidden-effect-payload");
+    expect(html).not.toContain("hidden-root-state");
+    expect(html).not.toContain("automation-runtime-action-detail");
+    expect(html).toContain("Open action details");
+  });
+
+  it("loads Runtime Debug details and paged events through bounded endpoints", () => {
+    const source = RuntimeActionLogPage.toString();
+    expect(source).toContain('"get-flow-run-detail", { projectId: props.projectId, runId: props.runId, compact: true }');
+    expect(source).toContain('"list-flow-run-actions", { projectId: props.projectId, runId: props.runId, limit: RUNTIME_ACTION_PAGE_SIZE, offset }');
+    expect(source).toContain('"list-flow-run-events", { projectId: props.projectId, runId: props.runId, afterSequence, limit: 100 }');
+    expect(source).toContain("setSelectedAttempt(null)");
+    expect(source).toContain('setActionDetailView("summary")');
+  });
+
   it("builds typed runtime inputs and blocks incomplete Flow readiness", () => {
     const flow: any = { flowId: "flow.typed", nodes: [], interface: { inputs: [{ id: "email", name: "Email", required: true, valueType: { kind: "string" } }, { id: "attempts", name: "Attempts", valueType: { kind: "number" }, defaultValue: 2 }, { id: "approved", name: "Approved", valueType: { kind: "boolean" } }, { id: "context", name: "Context", valueType: { kind: "json" } }] } };
     expect(runtimeFlowInputPorts(flow)).toHaveLength(4);
@@ -407,7 +475,8 @@ describe("Automation Runtime workspace", () => {
     expect(source).not.toContain("list-runtime-sessions");
     expect(source).toContain("runListRequestRef");
     expect(source).toContain("fluxiq:runtime-runs-changed");
-    expect(source).toContain("setInterval");
+    expect(source).not.toContain("setInterval");
+    expect(source).toContain('window.addEventListener("focus"');
     expect(source).toContain("visibilityState");
   });
   it("queues runs before execution so active runs can be stopped and opened live", () => {
@@ -507,6 +576,10 @@ describe("Automation Runtime workspace", () => {
     expect(source.indexOf("Show complete adaptation JSON")).toBeGreaterThan(source.indexOf('detailView === "audit"'));
     expect(source).toContain("No source references were recorded.");
     expect(source).toContain("This adaptation has not been validated yet.");
+    expect(source).toContain("ADAPTATION_DETAIL_PAGE_SIZE");
+    expect(source).toContain("phase9.artifacts");
+    expect(source).toContain("Lifecycle Events");
+    expect(source).toContain("automation-adaptation-detail-pagination");
   });
 
   it("validates General and Runtime settings and renders user-facing runtime defaults", () => {

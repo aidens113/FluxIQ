@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildNodeStateViewModel } from "./view-model";
+import { buildNodeStateInputSignature, buildNodeStateViewModel, buildNodeStateViewStateSignature, type BuildNodeStateViewModelInput } from "./view-model";
 
 const visualSnapshot = {
   id: "snapshot.visual",
@@ -67,6 +67,41 @@ function snapshotWithImage(id: string, timestamp: number, contentRef: string) {
 }
 
 describe("node state view model", () => {
+  it("keeps the input signature stable across unrelated wrapper identity changes", () => {
+    const input: BuildNodeStateViewModelInput = {
+      selection: { kind: "state", id: "state.one", sourceId: "observed:recording.1:entry.checkpoint", stateSnapshotId: "snapshot.visual", phase: "input" },
+      selectedNode: { id: "node.deposit", label: "Deposit Inventory" },
+      selectedRecording: { recordingId: "recording.1", updatedAt: 100, timeline: [{ id: "entry.checkpoint", state: visualSnapshot }] },
+      selectedTimeline: { recordingId: "recording.1", updatedAt: 100, timeline: [{ id: "entry.checkpoint" }] },
+      policy: { id: "policy.one", updatedAt: 100 },
+      taskGraph: { flowId: "flow.one", updatedAt: 100, nodes: [{ id: "node.deposit" }], edges: [] },
+      pipelineArtifacts: { learnedTaskModels: [{ learnedTaskModelId: "model.one", updatedAt: 100 }] },
+      recordings: [{ recordingId: "recording.1", updatedAt: 100, timeline: [{ id: "entry.checkpoint" }] }],
+      timelines: [{ recordingId: "recording.1", updatedAt: 100, timeline: [{ id: "entry.checkpoint" }] }],
+      runtimeSessions: [{ runId: "run.one", updatedAt: 100, status: "running" }],
+      signals: [{ id: "signal.one", updatedAt: 100 }],
+      indexedStateSources: [{
+        source: { kind: "observed", id: "observed:recording.1:entry.checkpoint", label: "Recording", recordingId: "recording.1", timestamp: 100 } as any,
+        snapshot: visualSnapshot as any
+      }]
+    };
+
+    const clonedInput: BuildNodeStateViewModelInput = {
+      ...input,
+      selectedNode: { ...(input.selectedNode as Record<string, unknown>) },
+      recordings: [...input.recordings],
+      timelines: [...input.timelines],
+      runtimeSessions: [...input.runtimeSessions],
+      signals: [...input.signals]
+    };
+
+    expect(buildNodeStateInputSignature(clonedInput)).toBe(buildNodeStateInputSignature(input));
+    expect(buildNodeStateInputSignature({ ...input, selectedNode: { id: "node.other", label: "Other" } })).not.toBe(buildNodeStateInputSignature(input));
+    expect(buildNodeStateInputSignature({ ...input, recordings: [{ recordingId: "recording.1", updatedAt: 101, timeline: [{ id: "entry.checkpoint" }] }] })).not.toBe(buildNodeStateInputSignature(input));
+    expect(buildNodeStateViewStateSignature({ sourceId: "a", phase: "input" })).toBe(buildNodeStateViewStateSignature({ sourceId: "a", phase: "input" }));
+    expect(buildNodeStateViewStateSignature({ sourceId: "a", phase: "input" })).not.toBe(buildNodeStateViewStateSignature({ sourceId: "a", phase: "action" }));
+  });
+
   it("returns an empty state without a selected node or recording", () => {
     const model = buildNodeStateViewModel({
       selection: null,

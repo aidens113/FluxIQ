@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, KeyboardEvent } from "react";
 import type { EvidenceAnchor, NodeStatePhase, StateVisualLayer } from "fluxiq/automation-studio";
 import type { AutomationSelection } from "../types";
-import { buildNodeStateViewModel, type BuildNodeStateViewModelInput, type NodeStateViewModel, type StateFactViewModel, type StateOverlayViewModel, type StateVisualTone } from "../state/view-model";
+import { buildNodeStateInputSignature, buildNodeStateViewModel, buildNodeStateViewStateSignature, type BuildNodeStateViewModelInput, type NodeStateViewModel, type StateFactViewModel, type StateOverlayViewModel, type StateVisualTone } from "../state/view-model";
 
 export type StateViewMode = "visual" | "structured" | "diff" | "compare" | "raw";
 type StateVisualSurfaceMode = "screenshot" | "document";
@@ -20,33 +20,34 @@ const stateVisualItemLimit = 200;
 const stateStructuredPageSize = 100;
 
 export function AutomationStateView(props: { input: BuildNodeStateViewModelInput; loading?: { recordingId?: string; timelineEntryId?: string; stateSnapshotId?: string; phase?: NodeStatePhase } | null | undefined; setSelection(selection: AutomationSelection): void }) {
-  const initialSelection = stateSelection(props.input.selection);
+  const selectionKey = stateSelectionKey(props.input.selection);
+  const initialSelection = useMemo(() => stateSelection(props.input.selection), [selectionKey]);
+  const inputSignature = buildNodeStateInputSignature(props.input);
   const [sourceId, setSourceId] = useState<string | undefined>(initialSelection.sourceId);
   const [phase, setPhase] = useState<NodeStatePhase>(initialSelection.phase ?? "input");
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | undefined>(initialSelection.evidenceId);
   const [selectedFactPath, setSelectedFactPath] = useState<string | undefined>(initialSelection.factPath);
   const [mode, setMode] = useState<StateViewMode>("visual");
-  const selectionKey = stateSelectionKey(props.input.selection);
 
   useEffect(() => {
-    const nextSelection = stateSelection(props.input.selection);
-    setSourceId(nextSelection.sourceId);
-    setPhase(nextSelection.phase ?? "input");
-    setSelectedEvidenceId(nextSelection.evidenceId);
-    setSelectedFactPath(nextSelection.factPath);
-  }, [selectionKey, props.input.selection]);
+    setSourceId(initialSelection.sourceId);
+    setPhase(initialSelection.phase ?? "input");
+    setSelectedEvidenceId(initialSelection.evidenceId);
+    setSelectedFactPath(initialSelection.factPath);
+  }, [selectionKey, initialSelection.sourceId, initialSelection.phase, initialSelection.evidenceId, initialSelection.factPath]);
 
-  const viewState = compactStateViewState({
+  const viewState = useMemo(() => compactStateViewState({
     sourceId,
     stateSnapshotId: initialSelection.stateSnapshotId,
     phase,
     selectedEvidenceId,
     selectedFactPath
-  });
+  }), [sourceId, initialSelection.stateSnapshotId, phase, selectedEvidenceId, selectedFactPath]);
+  const viewStateSignature = buildNodeStateViewStateSignature(viewState);
   const model = useMemo(() => buildNodeStateViewModel({
     ...props.input,
     viewState
-  }), [props.input, viewState]);
+  }), [inputSignature, viewStateSignature]);
   const resolvedSourceId = model.activeSource?.id ?? sourceId;
   const viewModes: Array<{ id: StateViewMode; label: string; available: boolean; unavailableReason?: string }> = [
     { id: "visual", label: "Visual", available: true },
@@ -448,7 +449,7 @@ function StateComparePanel(props: { model: NodeStateViewModel; onSelectEvidence(
 function StateRawPanel(props: { model: NodeStateViewModel }) {
   const [expanded, setExpanded] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
-  const raw = useMemo(() => JSON.stringify(props.model.raw, null, 2), [props.model.raw]);
+  const raw = useMemo(() => expanded ? JSON.stringify(props.model.raw, null, 2) : "", [expanded, props.model.raw]);
   if (!expanded) {
     return (
       <div className="automation-state-raw-placeholder">

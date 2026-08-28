@@ -692,6 +692,7 @@ function problemSeverityRank(value: unknown): number {
 }const RUNTIME_RUN_PAGE_SIZE = 25;
 const RUNTIME_ACTION_PAGE_SIZE = 50;
 const ADAPTATION_PAGE_SIZE = 25;
+const ADAPTATION_DETAIL_PAGE_SIZE = 8;
 const ADAPTATION_STATUSES = ["proposed", "testing", "validated", "applied", "rejected", "disabled", "reverted", "superseded"];
 const WORKBENCH_PAGE_SIZE = 25;
 const ROUTER_ROUTE_PAGE_SIZE = 100;
@@ -2583,6 +2584,7 @@ export function AutomationAdaptationsWorkspace(props: { projectId: string | null
   const [page, setPage] = useState({ limit: ADAPTATION_PAGE_SIZE, offset: 0, total: 0 });
   const [selectedAdaptation, setSelectedAdaptation] = useState<any | null>(null);
   const [detailView, setDetailView] = useState<"summary" | "changes" | "evidence" | "validation" | "audit">("summary");
+  const [detailOffsets, setDetailOffsets] = useState<Record<string, number>>({ summary: 0, changes: 0, evidence: 0, validation: 0, audit: 0 });
   const [pendingReviewAction, setPendingReviewAction] = useState<AdaptationReviewAction | null>(null);
   const [reviewPin, setReviewPin] = useState("");
   const [reviewReason, setReviewReason] = useState("");
@@ -2650,6 +2652,7 @@ export function AutomationAdaptationsWorkspace(props: { projectId: string | null
     }
     setSelectedAdaptation(result.payload.adaptation);
     setDetailView("summary");
+    setDetailOffsets({ summary: 0, changes: 0, evidence: 0, validation: 0, audit: 0 });
   };
   const requestAdaptationReview = (action: AdaptationReviewAction) => {
     setPendingReviewAction(action);
@@ -2693,6 +2696,23 @@ export function AutomationAdaptationsWorkspace(props: { projectId: string | null
   };
   const nextOffset = page.offset + page.limit;
   const previousOffset = Math.max(0, page.offset - page.limit);
+  const phase9 = selectedAdaptation?.metadata?.phase9 && typeof selectedAdaptation.metadata.phase9 === "object" ? selectedAdaptation.metadata.phase9 : {};
+  const phase9Artifacts = Array.isArray(phase9.artifacts) ? phase9.artifacts : [];
+  const phase9AuditEvents = Array.isArray(phase9.auditEvents) ? phase9.auditEvents : [];
+  const evidenceRows = [
+    ...phase9Artifacts.filter((artifact: any) => ["prompt", "response", "evidence", "validation", "rollback"].includes(artifact.artifactKind)).map((artifact: any) => [artifact.artifactKind ?? "Artifact", artifact.summary ?? "Stored object", artifact.objectId ?? "-", formatRuntimeTimestamp(artifact.createdAt)]),
+    ...(selectedAdaptation?.sourceRunId ? [["Runtime run", <a href={"?view=runtime-debug&runId=" + encodeURIComponent(selectedAdaptation.sourceRunId)} key={selectedAdaptation.sourceRunId}>Open run {selectedAdaptation.sourceRunId}</a>, selectedAdaptation.sourceRunId, "-"]] : []),
+    ...((selectedAdaptation?.sourceRecordingIds ?? []).map((id: string) => ["Recording", <a href={"?view=recording-timeline&recordingId=" + encodeURIComponent(id)} key={id}>Open recording {id}</a>, id, "-"])),
+    ...((selectedAdaptation?.sourceInstructionIds ?? []).map((id: string) => ["Instruction", <a href={"?view=flow-instructions&instructionId=" + encodeURIComponent(id)} key={id}>Open instruction {id}</a>, id, "-"]))
+  ];
+  const detailTotal = detailView === "changes" ? (selectedAdaptation?.patch?.length ?? 0) : detailView === "evidence" ? evidenceRows.length : detailView === "validation" ? (selectedAdaptation?.validationResults?.length ?? 0) : detailView === "audit" ? phase9AuditEvents.length : 0;
+  const detailOffset = Math.min(detailOffsets[detailView] ?? 0, Math.max(0, detailTotal - 1));
+  const detailNextOffset = detailOffset + ADAPTATION_DETAIL_PAGE_SIZE;
+  const setDetailPageOffset = (offset: number) => setDetailOffsets((current) => ({ ...current, [detailView]: Math.max(0, Math.min(offset, Math.max(0, detailTotal - ADAPTATION_DETAIL_PAGE_SIZE))) }));
+  const pagedChanges = (selectedAdaptation?.patch ?? []).slice(detailOffset, detailOffset + ADAPTATION_DETAIL_PAGE_SIZE);
+  const pagedEvidenceRows = evidenceRows.slice(detailOffset, detailOffset + ADAPTATION_DETAIL_PAGE_SIZE);
+  const pagedValidationRows = (selectedAdaptation?.validationResults ?? []).slice(detailOffset, detailOffset + ADAPTATION_DETAIL_PAGE_SIZE);
+  const pagedAuditEvents = phase9AuditEvents.slice(detailOffset, detailOffset + ADAPTATION_DETAIL_PAGE_SIZE);
   return (
     <section className="automation-runs-workspace">
       <header><div><strong>Adaptations</strong><span>Review runtime fixes and promotion evidence</span></div></header>
@@ -2761,7 +2781,7 @@ export function AutomationAdaptationsWorkspace(props: { projectId: string | null
             {detailView === "changes" ? <div className="automation-adaptation-detail-body">
               <section className="automation-runtime-log-section">
                 <header><strong>Planned Changes</strong><span>{selectedAdaptation.patch?.length ?? 0} changes</span></header>
-                <div className="automation-adaptation-change-list">{(selectedAdaptation.patch ?? []).map((patch: any, index: number) => <AdaptationChangeCard change={patch} index={index} key={patch.targetId ?? index} />)}{!selectedAdaptation.patch?.length ? <p className="automation-runtime-empty">This adaptation does not contain changes.</p> : null}</div>
+                <div className="automation-adaptation-change-list">{pagedChanges.map((patch: any, index: number) => <AdaptationChangeCard change={patch} index={detailOffset + index} key={patch.targetId ?? detailOffset + index} />)}{!selectedAdaptation.patch?.length ? <p className="automation-runtime-empty">This adaptation does not contain changes.</p> : null}</div>
               </section>
               {selectedAdaptation.metadata?.applicationRecord?.mutations?.length ? <section className="automation-runtime-log-section">
                 <header><strong>Applied Changes</strong><span>{selectedAdaptation.metadata.applicationRecord.mutations.length} durable mutations</span></header>
@@ -2771,11 +2791,7 @@ export function AutomationAdaptationsWorkspace(props: { projectId: string | null
             {detailView === "evidence" ? <div className="automation-adaptation-detail-body">
               <section className="automation-runtime-log-section">
                 <header><strong>Source Evidence</strong><span>Records used to create this adaptation</span></header>
-                <DataTable columns={["Source", "Reference"]} rows={[
-                  ...(selectedAdaptation.sourceRunId ? [["Runtime run", <a href={"?view=runtime-debug&runId=" + encodeURIComponent(selectedAdaptation.sourceRunId)} key={selectedAdaptation.sourceRunId}>Open run {selectedAdaptation.sourceRunId}</a>]] : []),
-                  ...((selectedAdaptation.sourceRecordingIds ?? []).map((id: string) => ["Recording", <a href={"?view=recording-timeline&recordingId=" + encodeURIComponent(id)} key={id}>Open recording {id}</a>])),
-                  ...((selectedAdaptation.sourceInstructionIds ?? []).map((id: string) => ["Instruction", <a href={"?view=flow-instructions&instructionId=" + encodeURIComponent(id)} key={id}>Open instruction {id}</a>]))
-                ]} empty="No source references were recorded." />
+                <DataTable columns={["Type", "Summary", "Reference", "Stored"]} rows={pagedEvidenceRows} empty="No source references were recorded." />
               </section>
               <section className="automation-runtime-log-section">
                 <header><strong>Observed Context</strong><span>What the runtime compared</span></header>
@@ -2789,7 +2805,7 @@ export function AutomationAdaptationsWorkspace(props: { projectId: string | null
             {detailView === "validation" ? <div className="automation-adaptation-detail-body">
               <section className="automation-runtime-log-section">
                 <header><strong>Validation Runs</strong><span>{selectedAdaptation.validationResults?.length ?? 0} checks</span></header>
-                <DataTable columns={["Run", "Result", "Checked", "Detail"]} rows={(selectedAdaptation.validationResults ?? []).map((validation: any) => [
+                <DataTable columns={["Run", "Result", "Checked", "Detail"]} rows={pagedValidationRows.map((validation: any) => [
                   validation.runId ?? "-",
                   <StatusBadge key={validation.runId ?? validation.checkedAt} value={validation.status ?? "unknown"} />,
                   formatRuntimeTimestamp(validation.checkedAt),
@@ -2803,11 +2819,22 @@ export function AutomationAdaptationsWorkspace(props: { projectId: string | null
                 <DataTable columns={["Mode", "Risk", "Validation", "Manual", "Reason"]} rows={[[selectedAdaptation.metadata.approvalDecision.mode ?? "-", selectedAdaptation.metadata.approvalDecision.risk ?? selectedAdaptation.riskLevel ?? "-", selectedAdaptation.metadata.approvalDecision.validationStatus ?? "-", selectedAdaptation.metadata.approvalDecision.requiresManualApproval ? "Required" : "Not required", selectedAdaptation.metadata.approvalDecision.reason ?? "-"]]} empty="No approval decision." />
               </section> : null}
               <section className="automation-runtime-log-section">
+                <header><strong>Lifecycle Events</strong><span>{phase9.auditTotal ?? phase9AuditEvents.length} events</span></header>
+                <DataTable columns={["Event", "Status", "Actor", "Reason", "At"]} rows={pagedAuditEvents.map((event: any) => [event.eventType ?? "event", [event.fromStatus, event.toStatus].filter(Boolean).join(" -> ") || "-", event.actorId ?? "system", event.reason ?? "-", formatRuntimeTimestamp(event.createdAt)])} empty="No typed lifecycle events were recorded." />
+              </section>
+              <section className="automation-runtime-log-section">
                 <header><strong>Review Actions</strong><span>PIN required</span></header>
                 <div className="automation-runtime-json-actions">{adaptationReviewActions(selectedAdaptation.status).map((action) => <button className={adaptationReviewCopy(action).danger ? "button button-danger" : action === "apply" ? "button button-primary" : "button"} key={action} onClick={() => requestAdaptationReview(action)} type="button">{adaptationReviewCopy(action).label}</button>)}{!adaptationReviewActions(selectedAdaptation.status).length ? <span className="automation-adaptation-copy">This adaptation is in a terminal state. Its audit record remains available.</span> : null}</div>
               </section>
               <JsonToggle label="Show complete adaptation JSON" value={selectedAdaptation} />
             </div> : null}
+            {detailView !== "summary" && detailTotal > ADAPTATION_DETAIL_PAGE_SIZE ? <footer className="automation-runtime-pagination-footer automation-adaptation-detail-pagination">
+              <span>{detailTotal ? detailOffset + 1 : 0}-{Math.min(detailTotal, detailOffset + ADAPTATION_DETAIL_PAGE_SIZE)} of {detailTotal}</span>
+              <div className="automation-runtime-pagination">
+                <button aria-label="Previous adaptation detail page" disabled={detailOffset <= 0} onClick={() => setDetailPageOffset(detailOffset - ADAPTATION_DETAIL_PAGE_SIZE)} type="button"><ChevronLeft size={16} aria-hidden />Previous</button>
+                <button aria-label="Next adaptation detail page" disabled={detailNextOffset >= detailTotal} onClick={() => setDetailPageOffset(detailNextOffset)} type="button">Next<ChevronRight size={16} aria-hidden /></button>
+              </div>
+            </footer> : null}
           </div> : <p className="automation-runtime-empty">Select an adaptation to inspect its evidence, changes, validation, and audit history.</p>}
         </section>
       </div>
@@ -2852,9 +2879,7 @@ export function RuntimeRunHistory(props: { projectId: string | null; initialSess
   const [page, setPage] = useState({ limit: RUNTIME_RUN_PAGE_SIZE, offset: 0, total: initialRuns.length });
   const [query, setQuery] = useState<RuntimeRunHistoryQuery>({ status: "", search: "", sort: "updated", direction: "desc", limit: RUNTIME_RUN_PAGE_SIZE });
   const [searchDraft, setSearchDraft] = useState("");
-  const [selectedRunDetail, setSelectedRunDetail] = useState<any | null>(null);
   const [loadingRuns, setLoadingRuns] = useState(false);
-  const [loadingLog, setLoadingLog] = useState(false);
   const [error, setError] = useState("");
   const runListRequestRef = useRef(0);
   useEffect(() => {
@@ -2908,37 +2933,26 @@ export function RuntimeRunHistory(props: { projectId: string | null; initialSess
       if (props.flowId && detail?.flowId && detail.flowId !== props.flowId) return;
       refresh();
     };
-    const interval = window.setInterval(refresh, 3_000);
     document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
     window.addEventListener("fluxiq:runtime-runs-changed", handleRuntimeChange);
     return () => {
-      window.clearInterval(interval);
       document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
       window.removeEventListener("fluxiq:runtime-runs-changed", handleRuntimeChange);
     };
   }, [props.flowId, props.projectId, view, page.offset, query.status, query.search, query.sort, query.direction, query.limit]);  const updateQuery = (patch: Partial<RuntimeRunHistoryQuery>) => setQuery((current) => ({ ...current, ...patch }));
-  const openLog = async (runId: string) => {
+  const openLog = (runId: string) => {
     setSelectedRunId(runId);
-    setSelectedRunDetail(null);
     setView("log");
-    if (!props.projectId) return;
-    setLoadingLog(true);
     setError("");
-    const result = await api.post<{ runDetail?: any }>("get-flow-run-detail", { projectId: props.projectId, runId, compact: true });
-    setLoadingLog(false);
-    if (!result.ok || !result.payload?.runDetail) {
-      setError(result.error ?? "Runtime log could not be loaded.");
-      return;
-    }
-    setSelectedRunDetail(result.payload.runDetail);
   };
   const closeLog = () => {
     setView("list");
     setSelectedRunId(null);
-    setSelectedRunDetail(null);
   };
   useEffect(() => {
-    if (props.focusRunId && props.focusRunId !== selectedRunId) void openLog(props.focusRunId);
+    if (props.focusRunId && props.focusRunId !== selectedRunId) openLog(props.focusRunId);
   }, [props.focusRunId]);
   return (
     <section className="automation-runtime-debugger">
@@ -2957,7 +2971,7 @@ export function RuntimeRunHistory(props: { projectId: string | null; initialSess
             onSearchDraft={setSearchDraft}
             onSubmitSearch={() => updateQuery({ search: searchDraft.trim() })}
           />
-        : <RuntimeActionLogPage api={api} error={error} loading={loadingLog} projectId={props.projectId} runId={selectedRunId} runDetail={selectedRunDetail} onBack={closeLog} />}
+        : <RuntimeActionLogPage api={api} error={error} loading={false} projectId={props.projectId} runId={selectedRunId} runDetail={null} onBack={closeLog} />}
     </section>
   );
 }
@@ -3272,13 +3286,20 @@ export function RuntimeActionLogPage(props: { api?: { post<T = any>(endpoint: st
   const [attemptOffset, setAttemptOffset] = useState(0);
   const [exportMessage, setExportMessage] = useState("");
   const [exportPreparing, setExportPreparing] = useState(false);
-  const runDetail = props.runDetail;
+  const [loadedRunDetail, setLoadedRunDetail] = useState<any | null>(props.runDetail ?? null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [detailError, setDetailError] = useState("");
+  const runDetail = props.runDetail ?? loadedRunDetail;
   const summary = runDetail?.summary ?? {};
   const trace = runDetail?.trace;
   const embeddedAttempts = runtimeAttemptsForRunDetail(runDetail);
   const [actionPage, setActionPage] = useState<{ actions: any[]; total: number; limit: number; offset: number }>(() => ({ actions: embeddedAttempts.slice(0, RUNTIME_ACTION_PAGE_SIZE), total: embeddedAttempts.length, limit: RUNTIME_ACTION_PAGE_SIZE, offset: 0 }));
   const [loadingActions, setLoadingActions] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [eventPage, setEventPage] = useState<{ events: any[]; nextCursor: string | null; hasMore: boolean; lastSequence: number; loaded: boolean }>(() => ({ events: [], nextCursor: null, hasMore: false, lastSequence: 0, loaded: false }));
+  const [loadingEvents, setLoadingEvents] = useState(false);
+  const [eventError, setEventError] = useState("");
+  const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
   const [selectedAttempt, setSelectedAttempt] = useState<any | null>(null);
   const [actionDetailView, setActionDetailView] = useState<"summary" | "data" | "effects" | "state" | "raw">("summary");
   const recoveryAttempts = runDetail?.recoveryAttempts ?? [];
@@ -3300,12 +3321,40 @@ export function RuntimeActionLogPage(props: { api?: { post<T = any>(endpoint: st
     setActionDetailView("summary");
     setActionPage({ actions: result.payload?.actions ?? page?.actions ?? [], total: page?.total ?? result.payload?.actions?.length ?? 0, limit: page?.limit ?? RUNTIME_ACTION_PAGE_SIZE, offset: page?.offset ?? offset });
   };
+  const loadRunDetail = async () => {
+    if (!props.api || !props.projectId || !props.runId || props.runDetail) return;
+    setLoadingDetail(true);
+    setDetailError("");
+    const result = await props.api.post<{ runDetail?: any }>("get-flow-run-detail", { projectId: props.projectId, runId: props.runId, compact: true });
+    setLoadingDetail(false);
+    if (!result.ok || !result.payload?.runDetail) { setDetailError(result.error ?? "Runtime log could not be loaded."); return; }
+    setLoadedRunDetail(result.payload.runDetail);
+  };
+  const loadEventPage = async (afterSequence = 0) => {
+    if (!props.api || !props.projectId || !props.runId) return;
+    setLoadingEvents(true);
+    setEventError("");
+    const result = await props.api.post<{ events?: any[]; page?: { events?: any[]; nextCursor?: string | null; hasMore?: boolean; lastSequence?: number } }>("list-flow-run-events", { projectId: props.projectId, runId: props.runId, afterSequence, limit: 100 });
+    setLoadingEvents(false);
+    if (!result.ok) { setEventError(result.error ?? "Runtime events could not be loaded."); return; }
+    const page = result.payload?.page;
+    setSelectedEvent(null);
+    setEventPage({ events: result.payload?.events ?? page?.events ?? [], nextCursor: page?.nextCursor ?? null, hasMore: page?.hasMore === true, lastSequence: page?.lastSequence ?? afterSequence, loaded: true });
+  };
   useEffect(() => {
     setAttemptOffset(0);
     setExportMessage("");
-    if (props.api && props.projectId && props.runId) void loadActionPage(0);
+    setLoadedRunDetail(props.runDetail ?? null);
+    setDetailError("");
+    setEventError("");
+    setSelectedEvent(null);
+    setEventPage({ events: [], nextCursor: null, hasMore: false, lastSequence: 0, loaded: false });
+    if (props.api && props.projectId && props.runId) {
+      void loadRunDetail();
+      void loadActionPage(0);
+    }
     else setActionPage({ actions: embeddedAttempts.slice(0, RUNTIME_ACTION_PAGE_SIZE), total: embeddedAttempts.length, limit: RUNTIME_ACTION_PAGE_SIZE, offset: 0 });
-  }, [props.runId, runDetail]);
+  }, [props.runId]);
   const exportAudit = async () => {
     const runId = props.runId;
     if (!props.api || !props.projectId || !runId) return;
@@ -3333,7 +3382,12 @@ export function RuntimeActionLogPage(props: { api?: { post<T = any>(endpoint: st
   if (!runDetail) {
     return (
       <section className="automation-runtime-log-page">
-        <header><button className="automation-runtime-back" onClick={props.onBack} type="button">Back</button><div><strong>Action Log</strong><span>{props.loading ? `Loading ${props.runId ?? "run"}...` : props.error || "Run not found."}</span></div></header>
+        <header><button className="automation-runtime-back" onClick={props.onBack} type="button">Back</button><div><strong>Action Log</strong><span>{loadingDetail || props.loading ? `Loading ${props.runId ?? "run"}...` : detailError || props.error || (props.runId ? `Waiting for ${props.runId}...` : "Run not found.")}</span></div></header>
+        <div className="automation-runtime-log-toolbar"><span>{actionTotal ? `${actionPage.offset + 1}-${Math.min(actionTotal, nextAttemptOffset)} of ${actionTotal} actions` : loadingActions ? "Loading actions..." : "No actions loaded yet"}</span><div><button disabled={loadingActions || actionPage.offset <= 0} onClick={() => void loadActionPage(Math.max(0, actionPage.offset - actionPage.limit))} type="button">Previous</button><button disabled={loadingActions || nextAttemptOffset >= actionTotal} onClick={() => void loadActionPage(nextAttemptOffset)} type="button">Next</button></div></div>
+        {actionError ? <div className="automation-runtime-inline-error" role="alert"><span>{actionError}</span><button className="button" onClick={() => void loadActionPage(actionPage.offset)} type="button">Retry</button></div> : null}
+        <ol aria-busy={loadingActions} className="automation-runtime-action-log">
+          {visibleAttempts.map((attempt: any, index: number) => <li key={runtimeAttemptKey(attempt, actionPage.offset + index)}><RuntimeAttemptRow attempt={attempt} index={actionPage.offset + index} /></li>)}
+        </ol>
       </section>
     );
   }
@@ -3353,6 +3407,7 @@ export function RuntimeActionLogPage(props: { api?: { post<T = any>(endpoint: st
         </div>
       </header>
       {exportMessage ? <p className="automation-runtime-message">{exportMessage}</p> : null}
+      {detailError || props.error ? <div className="automation-runtime-inline-error" role="alert"><span>{detailError || props.error}</span><button className="button" disabled={loadingDetail} onClick={() => void loadRunDetail()} type="button">Retry</button></div> : null}
       {runDetail?.metadata?.terminalFailureReason ? <p className="automation-runtime-message">{runDetail.metadata.terminalFailureReason}</p> : null}
       {runDetail?.metadata?.message ? <p className="automation-runtime-message">{runDetail.metadata.message}</p> : null}
       <section className="automation-runtime-story-panel">
@@ -3365,6 +3420,17 @@ export function RuntimeActionLogPage(props: { api?: { post<T = any>(endpoint: st
         </dl>
         <RuntimeRunStory runDetail={runDetail} />
         <RuntimeMetricsPanel summary={summary} metrics={metrics} recoveryCount={recoveryAttempts.length} interventionCount={interventions.length} adaptationCount={runDetail.adaptationIds?.length ?? 0} />
+      </section>
+      <section className="automation-runtime-event-stream" aria-busy={loadingEvents}>
+        <header>
+          <div><strong>Ordered Event Stream</strong><span>{eventPage.events.length ? `Through sequence ${eventPage.lastSequence}` : loadingEvents ? "Loading events..." : eventPage.loaded ? "No stream events found" : "Events load only when opened"}</span></div>
+          <button className="automation-runtime-row-action" disabled={loadingEvents || (eventPage.loaded && !eventPage.hasMore)} onClick={() => void loadEventPage(eventPage.loaded ? eventPage.lastSequence : 0)} type="button">{eventPage.loaded ? "Next Events" : "Load Event Stream"}</button>
+        </header>
+        {eventError ? <div className="automation-runtime-inline-error" role="alert"><span>{eventError}</span><button className="button" onClick={() => void loadEventPage(eventPage.lastSequence)} type="button">Retry</button></div> : null}
+        <ol className="automation-runtime-event-list">
+          {eventPage.events.map((event) => <li key={event.eventId ?? event.sequence}><button aria-pressed={selectedEvent === event} onClick={() => setSelectedEvent(event)} type="button"><span>{event.sequence}</span><strong>{event.title ?? event.eventKind ?? "Runtime event"}</strong><StatusBadge value={event.status ?? event.eventKind ?? "event"} /><code>{event.eventKind ?? "event"}</code></button></li>)}
+        </ol>
+        {selectedEvent ? <aside className="automation-runtime-event-detail" aria-label="Selected event JSON"><header><strong>Event JSON</strong><button aria-label="Close event JSON" className="automation-icon-button" onClick={() => setSelectedEvent(null)} title="Close event JSON" type="button"><X size={16} /></button></header><JsonPreview value={selectedEvent} /></aside> : null}
       </section>
       <div className="automation-runtime-log-toolbar">
         <span>{actionTotal ? `${actionPage.offset + 1}-${Math.min(actionTotal, nextAttemptOffset)} of ${actionTotal} actions` : "No actions"}</span>

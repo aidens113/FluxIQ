@@ -4,7 +4,7 @@ import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 import path from "node:path";
 import type { AutomationStudioSnapshot } from "../api/index.ts";
-import type { AutomationStudioProject, AutomationStudioProjectCategory, AutomationStudioProjectHierarchy } from "../api/contracts.ts";
+import type { AutomationStudioProject, AutomationStudioProjectCategory, AutomationStudioProjectChangeFeedPage, AutomationStudioProjectHierarchy } from "../api/contracts.ts";
 import {
   appendRecordingEntry,
   appendRecordingNote,
@@ -47,6 +47,7 @@ import {
   type AutomationStudioLegacyRetirementDiagnostic,
   type AutomationStudioLegacyRetirementReport,
   type AutomationStudioLegacyRetirementState,
+  type AutomationStudioFlowOrigin,
   type AutomationStudioFlowScope,
   type AutomationStudioProjectArtifacts,
   type AutomationStudioProjectArtifactKind,
@@ -163,6 +164,18 @@ import {
   type AutomationStudioRuntimeRunSummaryPage,
   type AutomationStudioWorkspaceSummary,
   RecordingStateIndexStore,
+  AutomationStudioProjectAdministration,
+  AutomationStudioProjectAdaptationStore,
+  AutomationStudioProjectDatabasePool,
+  AutomationStudioProjectFlowResourceRepository,
+  AutomationStudioProjectRuntimeStreamStore,
+  type AutomationStudioFlowResourcePage,
+  type AutomationStudioSqlFlowDetail,
+  type AutomationStudioSqlFlowRecord,
+  type AutomationStudioSqlInstructionScope,
+  type AutomationStudioSqlInstructionSummary,
+  type AutomationStudioSqlSubflow,
+  type AutomationStudioRuntimeEventPage,
   emptyFlowSummaryIndex
 } from "../storage/index.ts";
 import {
@@ -274,6 +287,7 @@ export type AutomationStudioSubflowSummary = {
   name: string;
   role: AutomationStudioFlowSubflow["role"];
   status: AutomationStudioFlowSubflow["status"];
+  parentCategoryId?: string;
   updatedAt: number;
 };
 
@@ -397,6 +411,7 @@ export type CreateFlowSubflowInput = {
   name: string;
   description?: string;
   role?: AutomationStudioFlowSubflow["role"];
+  parentCategoryId?: string | null;
   graphFlowId?: string;
   routeTags?: string[];
 };
@@ -409,6 +424,7 @@ export type UpdateFlowSubflowInput = {
   name?: string;
   description?: string;
   role?: AutomationStudioFlowSubflow["role"];
+  parentCategoryId?: string | null;
   routeTags?: string[];
   inputMapping?: AutomationStudioFlowSubflow["inputMapping"];
   outputMapping?: AutomationStudioFlowSubflow["outputMapping"];
@@ -603,6 +619,8 @@ export class AutomationStudioService {
   private readonly recordingDomains = new RecordingDomainRegistry();
   private readonly objectStore?: AutomationStudioObjectStore;
   private readonly recordingStateIndexes?: RecordingStateIndexStore;
+  private readonly projectDatabasePool?: AutomationStudioProjectDatabasePool;
+  private readonly runtimeProjectDatabasePool?: AutomationStudioProjectDatabasePool;
   private readonly recordingMutationLocks = new Map<string, Promise<void>>();
   private readonly repairedRecordingStateIndexReads = new Set<string>();
   private readonly ready: Promise<void>;
@@ -628,6 +646,8 @@ export class AutomationStudioService {
         this.objectStore = new AutomationStudioObjectStore(automationDataDir);
         this.recordingStateIndexes = new RecordingStateIndexStore(automationDataDir);
       }
+      this.runtimeProjectDatabasePool = new AutomationStudioProjectDatabasePool({ rootDir: automationDataDir });
+      this.projectDatabasePool = this.runtimeProjectDatabasePool;
       this.projectRootDir = path.join(automationDataDir, "projects");
       const nodeRootDir = options.customNodeRootDir ?? (options.storageRootDir ? undefined : path.join(automationDataDir, "nodes"));
       if (nodeRootDir) this.nodeRootDir = nodeRootDir;
@@ -749,6 +769,8 @@ export class AutomationStudioService {
       const summaries = (await this.listRecordingSessions(projectId)).map(summaryRecordingSession).sort((left, right) => right.startedAt - left.startedAt || left.recordingId.localeCompare(right.recordingId));
       return { recordings: summaries.slice(offset, offset + limit), page: { limit, offset, total: summaries.length } };
     }
+    const typedPage = await this.tryWithRuntimeStreamStore(projectId, async (store) => await store.listRecordingSummaries({ limit, offset }));
+    if (typedPage && typedPage.total > 0) return { recordings: typedPage.recordings, page: { limit: typedPage.limit, offset: typedPage.offset, total: typedPage.total } };
     const index = await this.readRecordingIndex(projectId);
     const ordered = [...(index.recordings ?? [])].sort((left, right) => right.startedAt - left.startedAt || left.recordingId.localeCompare(right.recordingId));
     const recordings = ordered.slice(offset, offset + limit).map((item) => summaryRecordingSession({
@@ -881,7 +903,8 @@ export class AutomationStudioService {
       if (input.projectId && next.endedAt !== undefined) {
         await this.writeProjectRecordingSession(input.projectId, stored);
       } else if (input.projectId) {
-        await this.writeRecordingTimeline(input.projectId, stored.recordingId, stored.timeline);
+        const typedAppend = await this.tryAppendRecordingEntries(input.projectId, stored, stored.timeline.slice(recording.timeline.length));
+        if (!typedAppend) await this.writeRecordingTimeline(input.projectId, stored.recordingId, stored.timeline);
         await this.writeRecordingStateIndex(input.projectId, stored);
         await this.writeProjectRecordingIndexSummary(input.projectId, stored);
       }
@@ -1810,7 +1833,29 @@ export class AutomationStudioService {
     const metadataAwareIndex = index.ownershipMetadataVersion === 1 && index.hierarchyMetadataVersion === 1
       ? index
       : await this.repairFlowSummaryMetadataIndex(projectId, index);
-    return (metadataAwareIndex.flows ?? []).sort((left, right) => right.updatedAt - left.updatedAt);
+    return (await this.withCanonicalFlowHierarchySubflows(projectId, metadataAwareIndex.flows ?? [])).sort((left, right) => right.updatedAt - left.updatedAt);
+  }
+
+  async listFlowMetadataPage(input: { projectId: string; limit?: number; cursor?: string | null; status?: string }): Promise<AutomationStudioFlowResourcePage<AutomationStudioSqlFlowRecord>> {
+    await this.findProject(input.projectId);
+    if (!this.projectDatabasePool) return { items: [], nextCursor: null, hasMore: false, limit: Math.max(1, Math.min(500, Math.trunc(input.limit ?? 50))) };
+    const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool: this.projectDatabasePool, projectId: input.projectId });
+    try {
+      return await repository.listFlowsPage({ ...(input.limit !== undefined ? { limit: input.limit } : {}), ...(input.cursor !== undefined ? { cursor: input.cursor } : {}), ...(input.status ? { status: input.status } : {}) });
+    } finally {
+      await repository.close();
+    }
+  }
+
+  async getFlowMetadataDetail(projectId: string, flowId: string): Promise<AutomationStudioSqlFlowDetail | null> {
+    await this.findProject(projectId);
+    if (!this.projectDatabasePool) return null;
+    const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool: this.projectDatabasePool, projectId });
+    try {
+      return await repository.getFlow(flowId);
+    } finally {
+      await repository.close();
+    }
   }
 
   private async listAutomationRuntimeSummaries(projectId: string): Promise<AutomationStudioRuntimeRunSummary[]> {
@@ -1849,7 +1894,7 @@ export class AutomationStudioService {
     const name = typeof input.name === "string" ? input.name.trim() : "";
     if (!name) throw new Error("Flow name is required.");
     const flowId = typeof input.flowId === "string" && input.flowId.trim() ? input.flowId.trim() : `flow.${randomUUID()}`;
-    await this.loadProjectFlows(project.id);
+    await this.loadProjectFlow(project.id, flowId);
     if (await this.repositories.flows.get(flowId)) throw new Error(`Automation Studio Flow ID already exists: ${flowId}`);
     const flow = createBlankAutomationStudioFlowArtifact({
       flowId,
@@ -1885,10 +1930,11 @@ export class AutomationStudioService {
     if (existing) assertPublicationMutationAllowed(existing, input.flow, allowPublicationMutation);
     else if (!allowPublicationMutation && (input.flow.publication.status === "published" || input.flow.publication.status === "deprecated" || input.flow.publicationHistory?.length)) throw new Error("Published Flow state can only be created through publishFlow().");
     const now = Date.now();
+    const createdAt = existing?.createdAt ?? input.flow.createdAt ?? now;
     let flow: AutomationStudioFlowArtifact = {
       ...input.flow,
-      createdAt: existing?.createdAt ?? input.flow.createdAt ?? now,
-      updatedAt: now
+      createdAt,
+      updatedAt: Math.max(now, createdAt)
     };
     if (existing) flow = recordManualRecordingProposalChanges(existing, flow, now);
     const validation = validateAutomationStudioFlow(flow);
@@ -1901,6 +1947,17 @@ export class AutomationStudioService {
     await this.writeProjectFlow(project.id, saved);
     await this.writeFlowSourceFile(project.id, saved);
     await this.writeGeneratedFlowConfig(project.id, saved);
+    const sqlFlow = await this.writeSqlFlowMetadata(project.id, saved);
+    await this.appendProjectMutationChangeFeed({
+      projectId: project.id,
+      entityKind: "flow",
+      entityId: saved.flowId,
+      parentId: stringOrNull(jsonObjectFromUnknown(saved.metadata)?.parentFlowId),
+      operation: existing ? "update" : "create",
+      revision: flowFeedRevision(sqlFlow),
+      changedAt: saved.updatedAt,
+      hierarchyScope: { kind: "project", id: project.id }
+    });
     return saved;
   }
 
@@ -1931,6 +1988,8 @@ export class AutomationStudioService {
 
   async deleteFlow(input: { projectId: string; flowId: string }): Promise<{ deletedFlowId: string }> {
     const flow = await this.getFlow(input.projectId, input.flowId);
+    const deletedAt = Date.now();
+    const sqlFlow = await this.markSqlFlowDeleted(input.projectId, input.flowId, deletedAt);
     await this.repositories.flows.delete(input.flowId);
     await this.deleteProjectArtifactFile(input.projectId, "config", flowConfigArtifactId(input.flowId));
     await this.deleteFlowSourceFile(input.projectId, flow);
@@ -1942,6 +2001,16 @@ export class AutomationStudioService {
     }));
     await ProgramJsonStore.deletePath(this.flowDirectory(input.projectId, input.flowId));
     await rm(this.flowDirectory(input.projectId, input.flowId), { recursive: true, force: true });
+    await this.appendProjectMutationChangeFeed({
+      projectId: input.projectId,
+      entityKind: "flow",
+      entityId: input.flowId,
+      parentId: stringOrNull(jsonObjectFromUnknown(flow.metadata)?.parentFlowId),
+      operation: "delete",
+      revision: flowFeedRevision(sqlFlow),
+      changedAt: deletedAt,
+      hierarchyScope: { kind: "project", id: input.projectId }
+    });
     return { deletedFlowId: input.flowId };
   }
 
@@ -3122,6 +3191,17 @@ export class AutomationStudioService {
       );
       return { subflows: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
     }
+    const typedPage = await this.tryWithFlowResourceRepository(input.projectId, async (repository) => await repository.listSubflowSummariesPage({
+      ...(input.flowId ? { flowId: input.flowId } : {}),
+      ...(input.status ? { status: input.status } : {}),
+      ...(input.role ? { role: input.role } : {}),
+      ...(search ? { search } : {}),
+      ...(input.sort ? { sort: input.sort } : {}),
+      ...(input.direction ? { direction: input.direction } : {}),
+      limit,
+      offset
+    }));
+    if (typedPage && typedPage.total > 0) return { subflows: typedPage.items.map((item) => subflowSummaryFromSql(item, input.projectId)), total: typedPage.total, limit: typedPage.limit, offset: typedPage.offset };
     await this.ensureFlowSubflowSummaryIndex(input.projectId);
     const repository = this.flowSubflowSummaryRepository(input.projectId);
     const clauses: string[] = [];
@@ -3168,6 +3248,19 @@ export class AutomationStudioService {
       });
       return { instructions: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
     }
+    const typedPage = await this.tryWithFlowResourceRepository(input.projectId, async (repository) => await repository.listInstructionSummariesPage({
+      ...(input.flowId ? { flowId: input.flowId } : {}),
+      ...(input.subflowId ? { subflowId: input.subflowId } : {}),
+      ...(input.scopeKind ? { scopeKind: sqlInstructionScopeKind(input.scopeKind) } : {}),
+      ...(input.status ? { status: sqlInstructionStatus(input.status) } : {}),
+      ...(input.requirement ? { requirement: sqlInstructionRequirement(input.requirement) } : {}),
+      ...(search ? { search } : {}),
+      ...(input.sort ? { sort: input.sort } : {}),
+      ...(input.direction ? { direction: input.direction } : {}),
+      limit,
+      offset
+    }));
+    if (typedPage && typedPage.total > 0) return { instructions: typedPage.items.map((item) => instructionSummaryFromSql(item, input.projectId)), total: typedPage.total, limit: typedPage.limit, offset: typedPage.offset };
     await this.ensureFlowInstructionSummaryIndex(input.projectId);
     const repository = this.flowInstructionSummaryRepository(input.projectId);
     const clauses: string[] = [];
@@ -3211,6 +3304,16 @@ export class AutomationStudioService {
       ).sort((left, right) => compareFlowRunSummaries(left, right, sort, direction));
       return { runs: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
     }
+    const typedPage = await this.tryWithRuntimeStreamStore(input.projectId, async (store) => await store.listRunSummaries({
+      ...(input.flowId ? { flowId: input.flowId } : {}),
+      ...(input.status ? { status: input.status } : {}),
+      ...(search ? { search } : {}),
+      sort,
+      direction,
+      limit,
+      offset
+    }));
+    if (typedPage && typedPage.total > 0) return typedPage;
     await this.ensureFlowRunSummaryIndex(input.projectId);
     return await this.listSqlFlowRunSummaryPage(this.flowRunSummaryRepository(input.projectId), {
       ...(input.flowId ? { flowId: input.flowId } : {}),
@@ -3229,6 +3332,18 @@ export class AutomationStudioService {
     const search = input.search?.trim().toLowerCase();
     const sort = input.sort ?? "updated";
     const direction = input.direction === "asc" ? "asc" : "desc";
+    const typedPage = await this.tryWithAdaptationStore(input.projectId, async (store) => await store.listAdaptationsPage({
+      ...(input.flowId ? { flowId: input.flowId } : {}),
+      ...(input.subflowId ? { subflowId: input.subflowId } : {}),
+      ...(input.status ? { status: input.status } : {}),
+      ...(input.risk ? { risk: input.risk } : {}),
+      ...(search ? { search } : {}),
+      sort,
+      direction,
+      limit,
+      offset
+    }));
+    if (typedPage && typedPage.total > 0) return { adaptations: typedPage.adaptations.map(adaptationSummaryFromTypedStore), total: typedPage.total, limit: typedPage.limit, offset: typedPage.offset };
     if (!this.projectRootDir) {
       const index = await this.readFlowAdaptationIndex(input.projectId);
       const scoped = (index.adaptations ?? []).filter((item) =>
@@ -3263,7 +3378,8 @@ export class AutomationStudioService {
   async getFlowSubflow(projectId: string, flowId: string, subflowId: string): Promise<AutomationStudioFlowSubflow | null> {
     await this.findProject(projectId);
     const stored = await new ProgramJsonStore<JsonObject>(this.flowSubflowFile(projectId, flowId, subflowId), () => ({})).read();
-    return typeof stored.subflowId === "string" ? stored as unknown as AutomationStudioFlowSubflow : null;
+    if (typeof stored.subflowId === "string") return stored as unknown as AutomationStudioFlowSubflow;
+    return await this.readSqlFlowSubflow(projectId, flowId, subflowId);
   }
 
   async getFlowInstruction(projectId: string, instructionId: string): Promise<AutomationStudioFlowInstruction | null> {
@@ -3288,6 +3404,8 @@ export class AutomationStudioService {
 
   async getFlowRunDetail(projectId: string, runId: string): Promise<AutomationStudioFlowRunDetail | null> {
     await this.findProject(projectId);
+    const typed = await this.tryWithRuntimeStreamStore(projectId, async (store) => await store.getRunDetail(runId));
+    if (typed) return typed;
     const stored = await new ProgramJsonStore<JsonObject>(this.flowRunDetailFile(projectId, runId), () => ({})).read();
     if (typeof (stored.summary as { runId?: unknown } | undefined)?.runId === "string") return stored as unknown as AutomationStudioFlowRunDetail;
     const session = await this.getRuntimeSession(projectId, runId);
@@ -3305,6 +3423,8 @@ export class AutomationStudioService {
     const limit = clampInteger(input.limit, 1, 100, 50);
     const offset = clampInteger(input.offset, 0, 10_000_000, 0);
     await this.findProject(input.projectId);
+    const typed = await this.tryWithRuntimeStreamStore(input.projectId, async (store) => await store.listRunActions({ runId: input.runId, limit, offset }));
+    if (typed && (typed.total > 0 || offset === 0)) return typed;
     if (!this.projectRootDir) {
       const detail = await this.getFlowRunDetail(input.projectId, input.runId);
       const actions = detail?.actionAttempts ?? [];
@@ -3377,6 +3497,13 @@ export class AutomationStudioService {
 
   async getFlowAdaptation(projectId: string, flowId: string, adaptationId: string): Promise<AutomationStudioFlowAdaptation | null> {
     await this.findProject(projectId);
+    const typed = await this.tryWithAdaptationStore(projectId, async (store) => {
+      const detail = await store.getAdaptation(adaptationId);
+      if (!detail) return null;
+      const audit = await store.listAuditEvents({ adaptationId, limit: 25, offset: 0 });
+      return { ...detail, auditEvents: audit.events, auditTotal: audit.total };
+    });
+    if (typed && typed.flowId === flowId) return adaptationFromTypedStoreDetail(typed);
     const stored = await new ProgramJsonStore<JsonObject>(this.flowAdaptationFile(projectId, flowId, adaptationId), () => ({})).read();
     return typeof stored.adaptationId === "string" ? stored as unknown as AutomationStudioFlowAdaptation : null;
   }
@@ -3534,6 +3661,7 @@ export class AutomationStudioService {
     const validation = validateAutomationStudioFlowSubflow(subflow);
     if (!validation.ok) throw new Error(`Invalid Automation Studio subflow: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
     await this.ensureProjectStructure(subflow.projectId);
+    await this.writeSqlFlowSubflow(subflow.projectId, subflow);
     await new ProgramJsonStore<JsonObject>(this.flowSubflowFile(subflow.projectId, subflow.flowId, subflow.subflowId), () => ({})).write(subflow as unknown as JsonObject);
     await this.writeFlowSubflowIndex(subflow.projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: upsertBy(index.subflows ?? [], "subflowId", subflowSummaryFromSubflow(subflow)) }));
     await this.writeFlowSubflowSummary(subflow.projectId, subflowSummaryFromSubflow(subflow));
@@ -3545,6 +3673,7 @@ export class AutomationStudioService {
     const now = Date.now();
     const subflowId = `subflow.${randomUUID()}`;
     const graphFlowId = input.graphFlowId ?? `${input.flowId}.${subflowId}.graph`;
+    let createdGraph = false;
     if (!input.graphFlowId) {
       await this.saveFlow({
         projectId: input.projectId,
@@ -3559,6 +3688,7 @@ export class AutomationStudioService {
           metadata: { parentFlowId: input.flowId, parentSubflowId: subflowId, subflowGraph: true }
         })
       });
+      createdGraph = true;
     }
     const subflow: AutomationStudioFlowSubflow = {
       schemaVersion: "0.1",
@@ -3569,13 +3699,26 @@ export class AutomationStudioService {
       ...(input.description?.trim() ? { description: input.description.trim() } : {}),
       role: input.role ?? "utility",
       status: "active",
+      ...(input.parentCategoryId ? { metadata: { parentCategoryId: input.parentCategoryId, subflowCategoryId: input.parentCategoryId } } : {}),
       ...(input.routeTags?.length ? { routeTags: uniqueStrings(input.routeTags.map((tag) => tag.trim()).filter(Boolean)) } : {}),
       graphFlowId,
       createdAt: now,
       updatedAt: now,
       stability: { runCount: 0, successCount: 0, failureCount: 0 }
     };
-    return await this.saveFlowSubflow(subflow);
+    let saved: AutomationStudioFlowSubflow;
+    try {
+      saved = await this.saveFlowSubflow(subflow);
+    } catch (error) {
+      await ProgramJsonStore.deletePath(this.flowSubflowFile(input.projectId, input.flowId, subflowId)).catch(() => undefined);
+      await this.writeFlowSubflowIndex(input.projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: (index.subflows ?? []).filter((item) => item.subflowId !== subflowId) })).catch(() => undefined);
+      if (this.projectRootDir) await this.flowSubflowSummaryRepository(input.projectId).delete(subflowId).catch(() => undefined);
+      await this.markSqlFlowSubflowDeleted(input.projectId, subflow, Date.now()).catch(() => undefined);
+      if (createdGraph) await this.deleteFlow({ projectId: input.projectId, flowId: graphFlowId }).catch(() => undefined);
+      throw error;
+    }
+    await this.appendFlowSubflowMutationChangeFeed(saved, "create");
+    return saved;
   }
 
   async updateFlowSubflow(input: UpdateFlowSubflowInput): Promise<AutomationStudioFlowSubflow> {
@@ -3587,6 +3730,7 @@ export class AutomationStudioService {
       ...(input.name !== undefined ? { name: input.name.trim() } : {}),
       ...(input.description !== undefined ? input.description.trim() ? { description: input.description.trim() } : { description: undefined } : {}),
       ...(input.role !== undefined ? { role: input.role } : {}),
+      ...(input.parentCategoryId !== undefined ? { metadata: subflowMetadataWithParentCategory(existing.metadata, input.parentCategoryId) } : {}),
       ...(input.routeTags !== undefined ? { routeTags: uniqueStrings(input.routeTags.map((tag) => tag.trim()).filter(Boolean)) } : {}),
       ...(input.inputMapping !== undefined ? { inputMapping: input.inputMapping } : {}),
       ...(input.outputMapping !== undefined ? { outputMapping: input.outputMapping } : {}),
@@ -3595,7 +3739,10 @@ export class AutomationStudioService {
       ...(input.graphFlowId !== undefined ? { graphFlowId: input.graphFlowId.trim() } : {}),
       updatedAt: Date.now()
     };
-    return await this.saveFlowSubflow(removeUndefinedSubflowFields(next as AutomationStudioFlowSubflow));
+    const saved = await this.saveFlowSubflow(removeUndefinedSubflowFields(next as AutomationStudioFlowSubflow));
+    if (input.name !== undefined && saved.graphFlowId) await this.renameSubflowGraphFlow(input.projectId, saved, input.name.trim()).catch(() => undefined);
+    await this.appendFlowSubflowMutationChangeFeed(saved, "update");
+    return saved;
   }
 
   async renameFlowSubflow(input: { projectId: string; flowId: string; subflowId: string; name: string }): Promise<AutomationStudioFlowSubflow> {
@@ -3622,7 +3769,7 @@ export class AutomationStudioService {
         metadata: { ...(sourceGraph.metadata ?? {}), parentFlowId: input.flowId, parentSubflowId: subflowId, subflowGraph: true, duplicatedFromFlowId: existing.graphFlowId }
       }
     });
-    return await this.saveFlowSubflow({
+    const saved = await this.saveFlowSubflow({
       ...existing,
       subflowId,
       graphFlowId,
@@ -3633,23 +3780,31 @@ export class AutomationStudioService {
       stability: { runCount: 0, successCount: 0, failureCount: 0 },
       metadata: { ...(existing.metadata ?? {}), duplicatedFromSubflowId: existing.subflowId }
     });
+    await this.appendFlowSubflowMutationChangeFeed(saved, "create");
+    return saved;
   }
   async disableFlowSubflow(input: { projectId: string; flowId: string; subflowId: string }): Promise<AutomationStudioFlowSubflow> {
     const existing = await this.getFlowSubflow(input.projectId, input.flowId, input.subflowId);
     if (!existing) throw new Error(`Unknown Automation Studio subflow: ${input.subflowId}`);
-    return await this.saveFlowSubflow({ ...existing, status: "disabled", updatedAt: Date.now() });
+    const saved = await this.saveFlowSubflow({ ...existing, status: "disabled", updatedAt: Date.now() });
+    await this.appendFlowSubflowMutationChangeFeed(saved, "update");
+    return saved;
   }
 
   async archiveFlowSubflow(input: { projectId: string; flowId: string; subflowId: string }): Promise<AutomationStudioFlowSubflow> {
     const existing = await this.getFlowSubflow(input.projectId, input.flowId, input.subflowId);
     if (!existing) throw new Error(`Unknown Automation Studio subflow: ${input.subflowId}`);
-    return await this.saveFlowSubflow({ ...existing, status: "archived", updatedAt: Date.now() });
+    const saved = await this.saveFlowSubflow({ ...existing, status: "archived", updatedAt: Date.now() });
+    await this.appendFlowSubflowMutationChangeFeed(saved, "update");
+    return saved;
   }
 
   async enableFlowSubflow(input: { projectId: string; flowId: string; subflowId: string }): Promise<AutomationStudioFlowSubflow> {
     const existing = await this.getFlowSubflow(input.projectId, input.flowId, input.subflowId);
     if (!existing) throw new Error("Unknown Automation Studio subflow: " + input.subflowId);
-    return await this.saveFlowSubflow({ ...existing, status: "active", updatedAt: Date.now() });
+    const saved = await this.saveFlowSubflow({ ...existing, status: "active", updatedAt: Date.now() });
+    await this.appendFlowSubflowMutationChangeFeed(saved, "update");
+    return saved;
   }
 
   async deleteFlowSubflow(input: { projectId: string; flowId: string; subflowId: string }): Promise<{ deletedSubflowId: string; deletedGraphFlowId: string }> {
@@ -3659,10 +3814,22 @@ export class AutomationStudioService {
     const router = await this.getFlowRouter(input.projectId, input.flowId);
     const referenced = router?.rules.some((rule) => rule.target.subflowId === input.subflowId) || (router?.fallback?.kind === "subflow" && router.fallback.subflowId === input.subflowId);
     if (referenced) throw new Error("Remove this Subflow from Router routes and fallback before deleting it.");
+    const deletedAt = Date.now();
+    await this.markSqlFlowSubflowDeleted(input.projectId, existing, deletedAt);
     await this.deleteFlow({ projectId: input.projectId, flowId: existing.graphFlowId });
     await ProgramJsonStore.deletePath(this.flowSubflowFile(input.projectId, input.flowId, input.subflowId));
     await this.writeFlowSubflowIndex(input.projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: (index.subflows ?? []).filter((item) => item.subflowId !== input.subflowId) }));
     if (this.projectRootDir) await this.flowSubflowSummaryRepository(input.projectId).delete(input.subflowId);
+    await this.appendProjectMutationChangeFeed({
+      projectId: input.projectId,
+      entityKind: "subflow",
+      entityId: input.subflowId,
+      parentId: input.flowId,
+      operation: "delete",
+      revision: subflowFeedRevision(existing),
+      changedAt: deletedAt,
+      hierarchyScope: { kind: "flow", id: input.flowId }
+    });
     return { deletedSubflowId: input.subflowId, deletedGraphFlowId: existing.graphFlowId };
   }
   async saveFlowInstruction(projectId: string, instruction: AutomationStudioFlowInstruction): Promise<AutomationStudioFlowInstruction> {
@@ -3672,6 +3839,7 @@ export class AutomationStudioService {
     await new ProgramJsonStore<JsonObject>(filePath, () => ({})).write(instruction as unknown as JsonObject);
     await this.writeFlowInstructionIndex(projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, instructions: upsertBy(index.instructions ?? [], "instructionId", { ...summary, projectId }) }));
     await this.writeFlowInstructionSummary(projectId, { ...summary, projectId });
+    await this.writeSqlFlowInstruction(projectId, instruction).catch(() => undefined);
     return instruction;
   }
 
@@ -3693,6 +3861,7 @@ export class AutomationStudioService {
     const normalizedDetail = { ...detailWithMetrics, summary: flowRunSummaryWithInterventionSummaries(detailWithMetrics) };
     const { projectId, runId } = normalizedDetail.summary;
     await this.ensureProjectStructure(projectId);
+    if (await this.tryPersistRuntimeRunDetail(normalizedDetail)) return normalizedDetail;
     await new ProgramJsonStore<JsonObject>(this.flowRunDetailFile(projectId, runId), () => ({})).write(normalizedDetail as unknown as JsonObject);
     await Promise.all([
       this.writeJsonLines(this.flowRunActionsFile(projectId, runId), normalizedDetail.actionAttempts ?? []),
@@ -3708,12 +3877,8 @@ export class AutomationStudioService {
   async saveFlowAdaptation(adaptation: AutomationStudioFlowAdaptation): Promise<AutomationStudioFlowAdaptation> {
     const validation = validateAutomationStudioFlowAdaptation(adaptation);
     if (!validation.ok) throw new Error(`Invalid Automation Studio adaptation: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
-    if (adaptationRequiresChangeProposal(adaptation) && !adaptation.proposalId) {
-      throw new Error("Structural adaptation edits must be routed through a change proposal before they can be saved.");
-    }
-    if (adaptation.proposalId && !await this.getFlowChangeProposal(adaptation.projectId, adaptation.flowId, adaptation.proposalId)) {
-      throw new Error(`Unknown change proposal for adaptation: ${adaptation.proposalId}`);
-    }
+    const typed = await this.tryWithAdaptationStore(adaptation.projectId, async (store) => await store.putAdaptation({ adaptation, approvalMode: adaptationApprovalModeForStore(adaptation), evidence: adaptationEvidenceForStore(adaptation), changedAt: adaptation.updatedAt }));
+    if (typed) return adaptationFromTypedStoreDetail(typed);
     await this.ensureProjectStructure(adaptation.projectId);
     await new ProgramJsonStore<JsonObject>(this.flowAdaptationFile(adaptation.projectId, adaptation.flowId, adaptation.adaptationId), () => ({})).write(adaptation as unknown as JsonObject);
     await this.writeFlowAdaptationIndex(adaptation.projectId, (index) => ({ schemaVersion: "0.1", adaptations: upsertBy(index.adaptations ?? [], "adaptationId", adaptationSummaryFromAdaptation(adaptation)) }));
@@ -3722,6 +3887,8 @@ export class AutomationStudioService {
   }
 
   async reviewFlowAdaptation(input: ReviewFlowAdaptationInput): Promise<AutomationStudioFlowAdaptation> {
+    const typedReview = await this.reviewTypedFlowAdaptation(input);
+    if (typedReview) return typedReview;
     const adaptation = await this.getFlowAdaptation(input.projectId, input.flowId, input.adaptationId);
     if (!adaptation) throw new Error(`Unknown adaptation: ${input.adaptationId}`);
     const now = Date.now();
@@ -4438,23 +4605,66 @@ export class AutomationStudioService {
     };
   }
 
+  async listProjectChangeFeed(input: { projectId: string; afterSequence?: unknown; limit?: unknown }): Promise<AutomationStudioProjectChangeFeedPage> {
+    await this.findProject(input.projectId);
+    const afterSequence = Math.max(0, Math.trunc(Number(input.afterSequence ?? 0)) || 0);
+    const limit = Math.max(1, Math.min(500, Math.trunc(Number(input.limit ?? 100)) || 100));
+    if (!this.projectRootDir) return { events: [], cursor: afterSequence, hasMore: false, fallback: true };
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir: path.dirname(this.projectRootDir) });
+    const admin = await AutomationStudioProjectAdministration.open({ pool, projectId: input.projectId });
+    try {
+      const events = await admin.changeFeed.listAfter(afterSequence, limit + 1);
+      const page = events.slice(0, limit).map((event) => ({
+        projectId: input.projectId,
+        sequence: event.sequence,
+        transactionId: event.transactionId,
+        entityKind: event.entityKind,
+        entityId: event.entityId,
+        operation: event.operation,
+        revision: event.revision,
+        changedAt: event.changedAt,
+        ...(event.parentId !== undefined ? { parentId: event.parentId } : {}),
+        ...(event.hierarchyScope !== undefined ? { hierarchyScope: event.hierarchyScope } : {})
+      }));
+      return {
+        events: page,
+        cursor: page.at(-1)?.sequence ?? afterSequence,
+        hasMore: events.length > limit,
+        fallback: false
+      };
+    } finally {
+      await admin.close();
+      await pool.closeAll();
+    }
+  }
+
   async saveProjectHierarchy(projectId: string, hierarchy: AutomationStudioProjectHierarchy): Promise<AutomationStudioProjectHierarchy> {
     const nextHierarchy: AutomationStudioProjectHierarchy = {
       customHierarchyNodes: Array.isArray(hierarchy.customHierarchyNodes) ? hierarchy.customHierarchyNodes : [],
       deletedHierarchyIds: Array.isArray(hierarchy.deletedHierarchyIds) ? hierarchy.deletedHierarchyIds : [],
       workspacePrefs: hierarchy.workspacePrefs && typeof hierarchy.workspacePrefs === "object" && !Array.isArray(hierarchy.workspacePrefs) ? hierarchy.workspacePrefs : {}
     };
+    const changedAt = Date.now();
     if (this.objectStore && this.projectIndexStore) {
       await ProgramJsonStore.transaction(this.projectIndexStore.filePath, async (transaction) => {
         const state = await transaction.read(this.projectIndexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
         const current = state.projects.find((project) => project.id === projectId);
         if (!current) throw new Error(`Unknown Automation Studio project: ${projectId}`);
-        const updated = { ...current, updatedAt: Date.now() };
+        const updated = { ...current, updatedAt: changedAt };
         await transaction.write(this.projectIndexStore!.filePath, { ...state, projects: state.projects.map((project) => project.id === projectId ? updated : project) });
         await transaction.write(this.projectFile(projectId, "manifest.json"), updated);
         await transaction.write(this.projectFile(projectId, "hierarchy", "nodes.json"), { customHierarchyNodes: nextHierarchy.customHierarchyNodes });
         await transaction.write(this.projectFile(projectId, "hierarchy", "deleted.json"), { deletedHierarchyIds: nextHierarchy.deletedHierarchyIds });
         await transaction.write(this.projectFile(projectId, "workspace", "preferences.json"), { workspacePrefs: nextHierarchy.workspacePrefs });
+      });
+      await this.appendProjectMutationChangeFeed({
+        projectId,
+        entityKind: "hierarchy",
+        entityId: projectId,
+        operation: "update",
+        revision: hierarchyFeedRevision(nextHierarchy, changedAt),
+        changedAt,
+        hierarchyScope: { kind: "project", id: projectId }
       });
       return nextHierarchy;
     }
@@ -4463,12 +4673,21 @@ export class AutomationStudioService {
       ...state,
       projects: state.projects.map((project) => {
         if (project.id !== projectId) return project;
-        updatedProject = { ...project, updatedAt: Date.now() };
+        updatedProject = { ...project, updatedAt: changedAt };
         return updatedProject;
       })
     }));
     if (!updatedProject) throw new Error(`Unknown Automation Studio project: ${projectId}`);
     await this.writeProjectRecord({ ...updatedProject, ...nextHierarchy });
+    await this.appendProjectMutationChangeFeed({
+      projectId,
+      entityKind: "hierarchy",
+      entityId: projectId,
+      operation: "update",
+      revision: hierarchyFeedRevision(nextHierarchy, changedAt),
+      changedAt,
+      hierarchyScope: { kind: "project", id: projectId }
+    });
     return nextHierarchy;
   }
 
@@ -4653,6 +4872,25 @@ export class AutomationStudioService {
       const flow = await this.repositories.flows.get(summary.flowId);
       if (flow?.projectId === projectId) repairedByFlowId.set(summary.flowId, flowSummaryFromFlow(flow));
     }));
+    const repairedSubflowPlacement = new Map<string, { graphFlowId?: string; parentCategoryId?: string }>();
+    for (const flowSummary of repairedByFlowId.values()) {
+      for (const subflow of flowSummary.hierarchySubflows ?? []) {
+        repairedSubflowPlacement.set(subflow.subflowId, {
+          ...(subflow.graphFlowId ? { graphFlowId: subflow.graphFlowId } : {}),
+          ...(subflow.parentCategoryId ? { parentCategoryId: subflow.parentCategoryId } : {})
+        });
+      }
+    }
+    if (repairedSubflowPlacement.size) {
+      await this.writeFlowSubflowIndex(projectId, (index) => ({
+        schemaVersion: "0.1",
+        summaryVersion: 2,
+        subflows: (index.subflows ?? []).map((subflow) => {
+          const placement = repairedSubflowPlacement.get(subflow.subflowId);
+          return placement ? { ...subflow, ...placement } : subflow;
+        })
+      }));
+    }
     return await this.writeFlowIndex(projectId, (current) => {
       if (current.ownershipMetadataVersion === 1 && current.hierarchyMetadataVersion === 1) return current;
       return {
@@ -4660,6 +4898,33 @@ export class AutomationStudioService {
         ownershipMetadataVersion: 1,
         hierarchyMetadataVersion: 1,
         flows: (current.flows ?? []).map((summary) => repairedByFlowId.get(summary.flowId) ?? summary)
+      };
+    });
+  }
+
+  private async withCanonicalFlowHierarchySubflows(projectId: string, flows: AutomationStudioFlowSummary[]): Promise<AutomationStudioFlowSummary[]> {
+    const index = await this.readFlowSubflowIndex(projectId).catch(() => emptyFlowSubflowIndex());
+    const byFlowId = new Map<string, AutomationStudioSubflowSummary[]>();
+    for (const subflow of index.subflows ?? []) {
+      if (!subflow.flowId) continue;
+      const items = byFlowId.get(subflow.flowId) ?? [];
+      items.push(subflow);
+      byFlowId.set(subflow.flowId, items);
+    }
+    if (!byFlowId.size) return flows;
+    return flows.map((flow) => {
+      const subflows = byFlowId.get(flow.flowId);
+      if (!subflows) return flow;
+      return {
+        ...flow,
+        hierarchySubflows: subflows
+          .sort((left, right) => left.name.localeCompare(right.name) || left.subflowId.localeCompare(right.subflowId))
+          .map((subflow) => ({
+            subflowId: subflow.subflowId,
+            name: subflow.name,
+            ...(subflow.graphFlowId ? { graphFlowId: subflow.graphFlowId } : {}),
+            ...(subflow.parentCategoryId ? { parentCategoryId: subflow.parentCategoryId } : {})
+          }))
       };
     });
   }
@@ -4821,6 +5086,120 @@ export class AutomationStudioService {
     if (!this.projectRootDir) return;
     await this.flowSubflowSummaryRepository(projectId).put(createRecord({ id: summary.subflowId, kind: "flow.subflows", data: summary as unknown as JsonObject, nowMs: summary.updatedAt }));
   }
+
+  private async tryWithRuntimeStreamStore<T>(projectId: string, operation: (store: AutomationStudioProjectRuntimeStreamStore) => Promise<T>): Promise<T | null> {
+    if (!this.runtimeProjectDatabasePool || !this.projectRootDir) return null;
+    try {
+      await this.findProject(projectId);
+      const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
+      try {
+        return await operation(store);
+      } finally {
+        await store.close();
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  private async tryWithFlowResourceRepository<T>(projectId: string, operation: (repository: AutomationStudioProjectFlowResourceRepository) => Promise<T>): Promise<T | null> {
+    if (!this.projectDatabasePool || !this.projectRootDir) return null;
+    try {
+      await this.findProject(projectId);
+      const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool: this.projectDatabasePool, projectId });
+      try {
+        return await operation(repository);
+      } finally {
+        await repository.close();
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  private async tryWithAdaptationStore<T>(projectId: string, operation: (store: AutomationStudioProjectAdaptationStore) => Promise<T>): Promise<T | null> {
+    if (!this.runtimeProjectDatabasePool || !this.projectRootDir) return null;
+    try {
+      await this.findProject(projectId);
+      const store = await AutomationStudioProjectAdaptationStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
+      try {
+        return await operation(store);
+      } finally {
+        await store.close();
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  private async reviewTypedFlowAdaptation(input: ReviewFlowAdaptationInput): Promise<AutomationStudioFlowAdaptation | null> {
+    if (!this.runtimeProjectDatabasePool || !this.projectRootDir) return null;
+    await this.findProject(input.projectId);
+    const store = await AutomationStudioProjectAdaptationStore.open({ pool: this.runtimeProjectDatabasePool, projectId: input.projectId });
+    try {
+      const detail = await store.getAdaptation(input.adaptationId);
+      if (!detail || detail.flowId !== input.flowId) return null;
+      const actorId = input.actorId ?? "reviewer";
+      if (input.action === "apply") return adaptationFromTypedStoreDetail((await store.applyApprovedAdaptation({ adaptationId: input.adaptationId, actorId })).adaptation);
+      if (input.action === "revert") return adaptationFromTypedStoreDetail((await store.rollbackAdaptation({ adaptationId: input.adaptationId, actorId, ...(input.reason ? { reason: input.reason } : {}) })).adaptation);
+      if (input.action === "supersede") {
+        if (!input.supersededByAdaptationId) throw new Error("Supersede requires a replacement adaptation ID.");
+        return adaptationFromTypedStoreDetail(await store.supersedeAdaptation({ adaptationId: input.adaptationId, supersededByAdaptationId: input.supersededByAdaptationId, actorId, ...(input.reason ? { reason: input.reason } : {}) }));
+      }
+      if (input.action === "request_validation") return adaptationFromTypedStoreDetail(await store.setAdaptationStatus({ adaptationId: input.adaptationId, status: "testing", actorId, ...(input.reason ? { reason: input.reason } : {}) }));
+      if (input.action === "approve") return adaptationFromTypedStoreDetail(await store.setAdaptationStatus({ adaptationId: input.adaptationId, status: "validated", actorId, ...(input.reason ? { reason: input.reason } : {}) }));
+      if (input.action === "reject") return adaptationFromTypedStoreDetail(await store.setAdaptationStatus({ adaptationId: input.adaptationId, status: "rejected", actorId, ...(input.reason ? { reason: input.reason } : {}) }));
+      if (input.action === "disable") return adaptationFromTypedStoreDetail(await store.setAdaptationStatus({ adaptationId: input.adaptationId, status: "disabled", approvalMode: "disabled", actorId, ...(input.reason ? { reason: input.reason } : {}) }));
+      if (input.action === "switch_manual") return adaptationFromTypedStoreDetail(await store.setAdaptationStatus({ adaptationId: input.adaptationId, status: "proposed", approvalMode: "manual_approval", actorId, ...(input.reason ? { reason: input.reason } : {}) }));
+      return null;
+    } finally {
+      await store.close();
+    }
+  }
+
+  private async tryPersistRuntimeRunDetail(detail: AutomationStudioFlowRunDetail): Promise<boolean> {
+    const { projectId, flowId } = detail.summary;
+    const written = await this.tryWithRuntimeStreamStore(projectId, async (store) => {
+      await store.ensureRuntimeFlowProjection({ flowId, name: flowId, now: detail.summary.startedAt ?? detail.summary.updatedAt });
+      await store.putRunDetail(detail);
+      return true;
+    });
+    return written === true;
+  }
+
+  private async tryPersistRecordingSession(projectId: string, recording: RecordingSession): Promise<boolean> {
+    const written = await this.tryWithRuntimeStreamStore(projectId, async (store) => {
+      await store.putRecording(recording);
+      return true;
+    });
+    return written === true;
+  }
+
+  private async tryAppendRecordingEntries(projectId: string, recording: RecordingSession, entries: RecordingSession["timeline"]): Promise<boolean> {
+    if (!entries.length) {
+      await this.tryWithRuntimeStreamStore(projectId, async (store) => await store.upsertRecordingSummary(recording));
+      return true;
+    }
+    const written = await this.tryWithRuntimeStreamStore(projectId, async (store) => {
+      await store.upsertRecordingSummary(recording);
+      await store.appendRecordingEvents({ recordingId: recording.recordingId, events: entries as any[] });
+      await store.upsertRecordingSummary(recording);
+      return true;
+    });
+    return written === true;
+  }
+
+  async listFlowRunEvents(input: { projectId: string; runId: string; afterSequence?: unknown; limit?: unknown }): Promise<AutomationStudioRuntimeEventPage> {
+    const typed = await this.tryWithRuntimeStreamStore(input.projectId, async (store) => await store.listRuntimeEvents({ runId: input.runId, afterSequence: input.afterSequence, limit: input.limit }));
+    if (typed) return typed;
+    const detail = await this.getFlowRunDetail(input.projectId, input.runId);
+    const actions = detail?.actionAttempts ?? [];
+    const afterSequence = clampInteger(input.afterSequence, 0, 10_000_000, 0);
+    const limit = clampInteger(input.limit, 1, 500, 100);
+    const events = actions.map((action, index) => ({ sequence: index + 1, eventId: `action_attempt:${action.attemptId}`, eventKind: "action_attempt" as const, timestampMs: action.startedAt, title: action.nodeId, status: action.status, entityId: action.attemptId, payload: action as unknown as JsonObject })).filter((event) => event.sequence > afterSequence).slice(0, limit);
+    return { events, nextCursor: events.length === limit ? String(events.at(-1)!.sequence) : null, hasMore: actions.length > afterSequence + events.length, lastSequence: events.at(-1)?.sequence ?? afterSequence };
+  }
+
   private async readPipelineIndex(projectId: string): Promise<PipelineIndex> {
     await this.findProject(projectId);
     return await new ProgramJsonStore<PipelineIndex>(this.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).read();
@@ -5832,6 +6211,185 @@ export class AutomationStudioService {
     }));
   }
 
+  private async writeSqlFlowMetadata(projectId: string, flow: AutomationStudioFlowArtifact): Promise<AutomationStudioSqlFlowDetail | null> {
+    if (!this.projectDatabasePool) return null;
+    const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool: this.projectDatabasePool, projectId });
+    try {
+      const metadata = jsonObjectFromUnknown(flow.metadata) ?? {};
+      const parentSubflowId = stringOrNull(metadata.parentSubflowId);
+      const scope = flow.scope.kind === "domain" ? { scopeKind: "domain" as const, scopeId: flow.scope.domainId } : { scopeKind: "global" as const, scopeId: null };
+      const detail = await repository.upsertFlow({
+        flowId: flow.flowId,
+        parentFlowId: stringOrNull(metadata.parentFlowId),
+        owningSubflowId: parentSubflowId && await repository.getSubflow(parentSubflowId) ? parentSubflowId : null,
+        name: flow.name,
+        description: flow.description ?? "",
+        scopeKind: scope.scopeKind,
+        scopeId: scope.scopeId,
+        visibility: flow.visibility === "public" ? scope.scopeKind : "private",
+        origin: flowOriginForSql(flow.origin),
+        sourceMode: flow.source.mode === "code" ? "code" : "visual",
+        status: flow.publication.status === "deprecated" ? "archived" : "draft",
+        compiledRevision: null,
+        createdAt: flow.createdAt,
+        updatedAt: flow.updatedAt,
+        settings: {
+          executionDefaults: (flow.executionDefaults ?? {}) as JsonObject,
+          training: jsonObjectFromUnknown(metadata.trainingModeSettings) ?? {},
+          adaptation: jsonObjectFromUnknown(metadata.adaptationPolicySettings) ?? {},
+          llm: { provider: typeof metadata.llmProvider === "string" ? metadata.llmProvider : "host" },
+          safety: {}
+        },
+        inputs: flow.interface.inputs.map((port, index) => ({ portId: port.id, name: port.name, valueType: port.valueType as JsonValue, required: port.required === true, defaultValue: port.defaultValue ?? null, description: port.description ?? "", sortKey: String(index).padStart(8, "0") })),
+        outputs: flow.interface.outputs.map((port, index) => ({ portId: port.id, name: port.name, valueType: port.valueType as JsonValue, required: port.required === true, defaultValue: port.defaultValue ?? null, description: port.description ?? "", sortKey: String(index).padStart(8, "0") })),
+        variables: flow.variables.map((variable, index) => ({ variableId: variable.id, name: variable.name, valueType: variable.valueType as JsonValue, initialValue: variable.initialValue ?? null, description: variable.description ?? "", sortKey: String(index).padStart(8, "0") })),
+        errors: flow.errors.map((error) => ({ errorId: error.id, code: error.id, description: error.description ?? "", metadata: error.metadata ?? {} }))
+      });
+      for (const [index, category] of orderSubflowCategoriesParentFirst(flowSubflowCategoriesFromFlow(flow)).entries()) {
+        await repository.upsertSubflowCategory({
+          categoryId: category.id,
+          flowId: flow.flowId,
+          parentCategoryId: category.parentId ?? null,
+          name: category.name,
+          sortKey: String(index).padStart(8, "0") + "." + category.name.toLowerCase()
+        });
+      }
+      return detail;
+    } finally {
+      await repository.close();
+    }
+  }
+
+  private async readSqlFlowSubflow(projectId: string, flowId: string, subflowId: string): Promise<AutomationStudioFlowSubflow | null> {
+    if (!this.projectDatabasePool) return null;
+    const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool: this.projectDatabasePool, projectId });
+    try {
+      const row = await repository.getSubflow(subflowId);
+      if (!row || row.parentFlowId !== flowId || row.deletedAt !== null) return null;
+      return sqlSubflowToFlowSubflow(projectId, row);
+    } finally {
+      await repository.close();
+    }
+  }
+
+  private async writeSqlFlowSubflow(projectId: string, subflow: AutomationStudioFlowSubflow): Promise<void> {
+    if (!this.projectDatabasePool) return;
+    const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool: this.projectDatabasePool, projectId });
+    try {
+      await this.loadProjectFlow(projectId, subflow.flowId);
+      const parentFlow = await this.repositories.flows.get(subflow.flowId);
+      if (parentFlow?.projectId === projectId) {
+        for (const [index, category] of orderSubflowCategoriesParentFirst(flowSubflowCategoriesFromFlow(parentFlow)).entries()) {
+          await repository.upsertSubflowCategory({
+            categoryId: category.id,
+            flowId: subflow.flowId,
+            parentCategoryId: category.parentId ?? null,
+            name: category.name,
+            sortKey: String(index).padStart(8, "0") + "." + category.name.toLowerCase()
+          });
+        }
+      }
+      const graphFlowId = subflow.graphFlowId ?? `${subflow.flowId}.${subflow.subflowId}.graph`;
+      if (!await repository.getFlow(graphFlowId)) {
+        await this.loadProjectFlow(projectId, graphFlowId);
+        const graphFlow = await this.repositories.flows.get(graphFlowId);
+        if (!graphFlow || graphFlow.projectId !== projectId) return;
+        await this.writeSqlFlowMetadata(projectId, graphFlow);
+      }
+      await repository.upsertSubflow(sqlSubflowFromFlowSubflow(subflow));
+    } finally {
+      await repository.close();
+    }
+  }
+
+  private async writeSqlFlowInstruction(projectId: string, instruction: AutomationStudioFlowInstruction): Promise<void> {
+    if (!this.projectDatabasePool) return;
+    const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool: this.projectDatabasePool, projectId });
+    try {
+      await repository.upsertInstruction({
+        instructionId: instruction.instructionId,
+        title: instruction.title,
+        bodyObjectId: null,
+        inlineBody: null,
+        requirement: sqlInstructionRequirement(instruction.requirement),
+        status: sqlInstructionStatus(instruction.status),
+        priority: instruction.priority,
+        contentDigest: `sha256:${createHash("sha256").update(stableJson([instruction.title, instruction.body])).digest("hex")}`,
+        scopes: [sqlInstructionScopeFromInstruction(projectId, instruction.scope)],
+        tags: instruction.tags ?? [],
+        createdAt: instruction.createdAt,
+        updatedAt: instruction.updatedAt
+      });
+    } finally {
+      await repository.close();
+    }
+  }
+
+  private async markSqlFlowSubflowDeleted(projectId: string, subflow: AutomationStudioFlowSubflow, deletedAt: number): Promise<void> {
+    if (!this.projectDatabasePool) return;
+    const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool: this.projectDatabasePool, projectId });
+    try {
+      await repository.upsertSubflow({ ...sqlSubflowFromFlowSubflow(subflow), status: "deleted", updatedAt: deletedAt, deletedAt });
+    } finally {
+      await repository.close();
+    }
+  }
+
+  private async renameSubflowGraphFlow(projectId: string, subflow: AutomationStudioFlowSubflow, name: string): Promise<void> {
+    if (!subflow.graphFlowId || !name) return;
+    const graph = await this.getFlow(projectId, subflow.graphFlowId);
+    await this.saveFlow({
+      projectId,
+      flow: {
+        ...graph,
+        name: `${name} Graph`,
+        metadata: { ...(graph.metadata ?? {}), parentFlowId: subflow.flowId, parentSubflowId: subflow.subflowId, subflowGraph: true }
+      }
+    });
+  }
+
+  private async markSqlFlowDeleted(projectId: string, flowId: string, deletedAt: number): Promise<AutomationStudioSqlFlowRecord | null> {
+    if (!this.projectDatabasePool) return null;
+    const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool: this.projectDatabasePool, projectId });
+    try {
+      return await repository.markFlowDeleted(flowId, deletedAt);
+    } finally {
+      await repository.close();
+    }
+  }
+
+  private async appendProjectMutationChangeFeed(input: { projectId: string; entityKind: string; entityId: string; parentId?: string | null; operation: "create" | "update" | "delete" | "touch"; revision: number; changedAt: number; hierarchyScope?: { kind: string; id?: string } | null }): Promise<void> {
+    if (!this.runtimeProjectDatabasePool) return;
+    const admin = await AutomationStudioProjectAdministration.open({ pool: this.runtimeProjectDatabasePool, projectId: input.projectId });
+    try {
+      await admin.changeFeed.append({
+        transactionId: projectChangeTransactionId(input),
+        entityKind: input.entityKind,
+        entityId: input.entityId,
+        ...(input.parentId !== undefined ? { parentId: input.parentId } : {}),
+        operation: input.operation,
+        revision: input.revision,
+        changedAt: input.changedAt,
+        ...(input.hierarchyScope !== undefined ? { hierarchyScope: input.hierarchyScope } : {})
+      });
+    } finally {
+      await admin.close();
+    }
+  }
+
+  private async appendFlowSubflowMutationChangeFeed(subflow: AutomationStudioFlowSubflow, operation: "create" | "update" | "delete"): Promise<void> {
+    await this.appendProjectMutationChangeFeed({
+      projectId: subflow.projectId,
+      entityKind: "subflow",
+      entityId: subflow.subflowId,
+      parentId: subflow.flowId,
+      operation,
+      revision: subflowFeedRevision(subflow),
+      changedAt: subflow.updatedAt,
+      hierarchyScope: { kind: "flow", id: subflow.flowId }
+    });
+  }
+
   private async loadProjectFlows(projectId: string): Promise<void> {
     if (!this.projectRootDir) return;
     const index = await this.readFlowIndex(projectId).catch(() => emptyFlowSummaryIndex());
@@ -6045,8 +6603,9 @@ export class AutomationStudioService {
     await this.ensureProjectStructure(projectId);
     const sessionDir = this.recordingSessionDirectory(projectId, recording.recordingId);
     const recordingDocument = { ...recording, timeline: [] };
+    const typedRecording = await this.tryPersistRecordingSession(projectId, recording);
     await new ProgramJsonStore<JsonObject>(path.join(sessionDir, "recording.json"), () => ({ recording: recordingDocument as unknown as JsonObject })).write({ recording: recordingDocument as unknown as JsonObject });
-    await this.writeRecordingTimeline(projectId, recording.recordingId, recording.timeline);
+    if (!typedRecording) await this.writeRecordingTimeline(projectId, recording.recordingId, recording.timeline);
     await this.writeRecordingStateIndex(projectId, recording);
     await new ProgramJsonStore<JsonObject>(path.join(sessionDir, "snapshots", "initial-state.json"), () => ({ initialState: recording.initialState as unknown as JsonObject })).write({ initialState: recording.initialState as unknown as JsonObject });
     await this.ensureProjectRecordingPipeline(projectId, recording);
@@ -6282,6 +6841,7 @@ function routerSummaryFromRouter(router: AutomationStudioFlowRouter): Automation
 }
 
 function subflowSummaryFromSubflow(subflow: AutomationStudioFlowSubflow): AutomationStudioSubflowSummary {
+  const parentCategoryId = subflowParentCategoryId(subflow);
   return {
     subflowId: subflow.subflowId,
     summaryVersion: 2,
@@ -6291,8 +6851,91 @@ function subflowSummaryFromSubflow(subflow: AutomationStudioFlowSubflow): Automa
     name: subflow.name,
     role: subflow.role,
     status: subflow.status,
+    ...(parentCategoryId ? { parentCategoryId } : {}),
     updatedAt: subflow.updatedAt
   };
+}
+
+function subflowSummaryFromSql(subflow: AutomationStudioSqlSubflow, projectId: string): AutomationStudioSubflowSummary {
+  return {
+    subflowId: subflow.subflowId,
+    summaryVersion: 2,
+    graphFlowId: subflow.graphFlowId,
+    flowId: subflow.parentFlowId,
+    projectId,
+    name: subflow.name,
+    role: subflow.role as AutomationStudioFlowSubflow["role"],
+    status: flowExpansionStatusFromSql(subflow.status),
+    ...(subflow.parentCategoryId ? { parentCategoryId: subflow.parentCategoryId } : {}),
+    updatedAt: subflow.updatedAt
+  };
+}
+
+function instructionSummaryFromSql(instruction: AutomationStudioSqlInstructionSummary, fallbackProjectId: string): AutomationStudioInstructionSummary {
+  const scope = instruction.scope;
+  return {
+    instructionId: instruction.instructionId,
+    summaryVersion: 2,
+    projectId: scope?.projectId ?? fallbackProjectId,
+    ...(scope?.flowId ? { flowId: scope.flowId } : {}),
+    ...(scope?.subflowId ? { subflowId: scope.subflowId } : {}),
+    title: instruction.title,
+    scopeKind: instructionScopeKindFromSql(scope?.scopeKind),
+    status: flowExpansionStatusFromSql(instruction.status),
+    requirement: instructionRequirementFromSql(instruction.requirement),
+    priority: instruction.priority,
+    updatedAt: instruction.updatedAt
+  };
+}
+
+function sqlInstructionScopeKind(scopeKind: string): AutomationStudioSqlInstructionScope["scopeKind"] {
+  if (scopeKind === "on_error") return "error";
+  if (scopeKind === "adaptation_review") return "flow";
+  return scopeKind === "global" || scopeKind === "project" || scopeKind === "flow" || scopeKind === "router" || scopeKind === "subflow" || scopeKind === "node" || scopeKind === "error" ? scopeKind : "flow";
+}
+
+function instructionScopeKindFromSql(scopeKind: AutomationStudioSqlInstructionScope["scopeKind"] | undefined): AutomationStudioInstructionSummary["scopeKind"] {
+  if (scopeKind === "error") return "on_error";
+  return (scopeKind ?? "flow") as AutomationStudioInstructionSummary["scopeKind"];
+}
+
+function sqlInstructionRequirement(requirement: string): "guidance" | "required" | "forbidden" {
+  if (requirement === "required") return "required";
+  if (requirement === "forbidden") return "forbidden";
+  return "guidance";
+}
+
+function instructionRequirementFromSql(requirement: "guidance" | "required" | "forbidden"): AutomationStudioInstructionSummary["requirement"] {
+  return requirement === "required" ? "required" : "advisory";
+}
+
+function sqlInstructionStatus(status: string): "draft" | "active" | "archived" | "deleted" {
+  if (status === "archived") return "archived";
+  if (status === "deleted") return "deleted";
+  if (status === "draft") return "draft";
+  return "active";
+}
+
+function sqlInstructionScopeFromInstruction(projectId: string, scope: AutomationStudioFlowInstruction["scope"]): AutomationStudioSqlInstructionScope {
+  if (scope.kind === "global") return { scopeKind: "global", projectId: null, flowId: null, routerId: null, subflowId: null, nodeId: null, errorCode: null };
+  if (scope.kind === "project") return { scopeKind: "project", projectId: scope.projectId, flowId: null, routerId: null, subflowId: null, nodeId: null, errorCode: null };
+  if (scope.kind === "router") return { scopeKind: "router", projectId: scope.projectId, flowId: scope.flowId, routerId: scope.routerId, subflowId: null, nodeId: null, errorCode: null };
+  if (scope.kind === "subflow") return { scopeKind: "subflow", projectId: scope.projectId, flowId: scope.flowId, routerId: null, subflowId: scope.subflowId, nodeId: null, errorCode: null };
+  if (scope.kind === "node") return { scopeKind: "node", projectId: scope.projectId, flowId: scope.flowId, routerId: null, subflowId: scope.subflowId ?? null, nodeId: scope.nodeId, errorCode: null };
+  if (scope.kind === "on_error") return { scopeKind: "error", projectId: scope.projectId, flowId: scope.flowId, routerId: null, subflowId: scope.subflowId ?? null, nodeId: scope.nodeId ?? null, errorCode: stringOrNull(scope.nodeId) ?? "flow_error" };
+  if (scope.kind === "adaptation_review") return { scopeKind: "flow", projectId: scope.projectId, flowId: scope.flowId, routerId: null, subflowId: scope.subflowId ?? null, nodeId: null, errorCode: null };
+  return { scopeKind: "flow", projectId, flowId: "flow.unknown", routerId: null, subflowId: null, nodeId: null, errorCode: null };
+}
+
+function sqlResourceStatus(status: string): "draft" | "active" | "archived" | "deleted" {
+  if (status === "archived") return "archived";
+  if (status === "deleted") return "deleted";
+  if (status === "draft") return "draft";
+  return "active";
+}
+
+function flowExpansionStatusFromSql(status: string): AutomationStudioFlowSubflow["status"] {
+  return status === "archived" ? "archived" : "active";
 }
 
 function flowMapRouteGroups(router: AutomationStudioFlowRouter): AutomationStudioFlowRouteGroup[] {
@@ -6425,6 +7068,57 @@ function adaptationSummaryFromAdaptation(adaptation: AutomationStudioFlowAdaptat
     trigger: adaptation.trigger,
     updatedAt: adaptation.updatedAt
   };
+}
+
+function adaptationSummaryFromTypedStore(adaptation: { adaptationId: string; flowId: string; projectId: string; subflowId: string | null; status: AutomationStudioFlowAdaptation["status"]; riskLevel: AutomationStudioFlowAdaptation["riskLevel"]; trigger: string; updatedAt: number; patchCount?: number; evidenceCount?: number; approvalMode?: string; baseRevision?: number; appliedRevision?: number | null }): AutomationStudioAdaptationSummary {
+  return compactJsonObject({
+    adaptationId: adaptation.adaptationId,
+    flowId: adaptation.flowId,
+    projectId: adaptation.projectId,
+    ...(adaptation.subflowId ? { subflowId: adaptation.subflowId } : {}),
+    status: adaptation.status,
+    riskLevel: adaptation.riskLevel,
+    trigger: adaptation.trigger,
+    updatedAt: adaptation.updatedAt,
+    patchCount: adaptation.patchCount,
+    evidenceCount: adaptation.evidenceCount,
+    approvalMode: adaptation.approvalMode,
+    baseRevision: adaptation.baseRevision,
+    appliedRevision: adaptation.appliedRevision ?? undefined
+  }) as unknown as AutomationStudioAdaptationSummary;
+}
+
+function adaptationFromTypedStoreDetail(detail: { adaptation: AutomationStudioFlowAdaptation; revisions?: unknown; artifacts?: unknown[]; auditEvents?: unknown[]; auditTotal?: number; approvalMode?: string; baseRevision?: number; appliedRevision?: number | null; statusReason?: string; supersededByAdaptationId?: string | null }): AutomationStudioFlowAdaptation {
+  return {
+    ...detail.adaptation,
+    metadata: compactJsonObject({
+      ...(detail.adaptation.metadata ?? {}),
+      phase9: compactJsonObject({
+        revisions: isJsonRecord(detail.revisions) ? detail.revisions : {},
+        artifacts: Array.isArray(detail.artifacts) ? detail.artifacts : [],
+        auditEvents: Array.isArray(detail.auditEvents) ? detail.auditEvents : [],
+        auditTotal: detail.auditTotal,
+        approvalMode: detail.approvalMode,
+        baseRevision: detail.baseRevision,
+        appliedRevision: detail.appliedRevision ?? undefined,
+        statusReason: detail.statusReason,
+        supersededByAdaptationId: detail.supersededByAdaptationId ?? undefined
+      })
+    })
+  };
+}
+
+function adaptationApprovalModeForStore(adaptation: AutomationStudioFlowAdaptation): "adaptive" | "manual_approval" | "disabled" {
+  if (adaptation.status === "disabled") return "disabled";
+  const value = adaptation.metadata?.proposalModeOverride ?? adaptation.metadata?.approvalMode;
+  if (value === "manual" || value === "manual_approval") return "manual_approval";
+  if (value === "disabled" || value === "deterministic") return "disabled";
+  return "adaptive";
+}
+
+function adaptationEvidenceForStore(adaptation: AutomationStudioFlowAdaptation): JsonObject | undefined {
+  const evidence = compactJsonObject({ observedState: adaptation.observedState, expectedState: adaptation.expectedState, failedAction: adaptation.failedAction, diagnosis: adaptation.diagnosis });
+  return Object.keys(evidence).length ? evidence : undefined;
 }
 
 function approvalDecisionHistory(metadata: JsonObject | undefined): JsonObject[] {
@@ -7444,6 +8138,84 @@ function flowSubflowCategoriesFromFlow(flow: AutomationStudioFlowArtifact): Arra
     return [{ id, name, ...(parentId ? { parentId } : {}) }];
   });
 }
+
+function orderSubflowCategoriesParentFirst(categories: Array<{ id: string; name: string; parentId?: string }>): Array<{ id: string; name: string; parentId?: string }> {
+  const byId = new Map(categories.map((category) => [category.id, category]));
+  const ordered: Array<{ id: string; name: string; parentId?: string }> = [];
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  function visit(category: { id: string; name: string; parentId?: string }) {
+    if (visited.has(category.id) || visiting.has(category.id)) return;
+    visiting.add(category.id);
+    const parent = category.parentId ? byId.get(category.parentId) : null;
+    if (parent) visit(parent);
+    visiting.delete(category.id);
+    visited.add(category.id);
+    ordered.push(category);
+  }
+  for (const category of categories) visit(category);
+  return ordered;
+}
+
+function subflowParentCategoryId(subflow: AutomationStudioFlowSubflow): string | undefined {
+  const metadata = subflow.metadata && typeof subflow.metadata === "object" && !Array.isArray(subflow.metadata) ? subflow.metadata as Record<string, unknown> : {};
+  if (typeof metadata.parentCategoryId === "string" && metadata.parentCategoryId.trim()) return metadata.parentCategoryId.trim();
+  if (typeof metadata.subflowCategoryId === "string" && metadata.subflowCategoryId.trim()) return metadata.subflowCategoryId.trim();
+  if (typeof metadata.categoryId === "string" && metadata.categoryId.trim()) return metadata.categoryId.trim();
+  return undefined;
+}
+
+function subflowMetadataWithParentCategory(metadata: AutomationStudioFlowSubflow["metadata"], parentCategoryId: string | null): AutomationStudioFlowSubflow["metadata"] | undefined {
+  const next = metadata && typeof metadata === "object" && !Array.isArray(metadata) ? { ...metadata } : {};
+  delete next.parentCategoryId;
+  delete next.subflowCategoryId;
+  delete next.categoryId;
+  if (parentCategoryId?.trim()) {
+    next.parentCategoryId = parentCategoryId.trim();
+    next.subflowCategoryId = parentCategoryId.trim();
+  }
+  return Object.keys(next).length ? next : undefined;
+}
+
+function sqlSubflowFromFlowSubflow(subflow: AutomationStudioFlowSubflow): Omit<AutomationStudioSqlSubflow, "revision" | "createdAt" | "updatedAt" | "deletedAt"> & { revision?: number; createdAt?: number; updatedAt?: number; deletedAt?: number | null } {
+  return {
+    subflowId: subflow.subflowId,
+    parentFlowId: subflow.flowId,
+    graphFlowId: subflow.graphFlowId ?? `${subflow.flowId}.${subflow.subflowId}.graph`,
+    parentCategoryId: subflowParentCategoryId(subflow) ?? null,
+    name: subflow.name,
+    description: subflow.description ?? "",
+    role: subflow.role,
+    status: subflow.status === "disabled" ? "draft" : subflow.status,
+    inputMapping: subflow.inputMapping ?? [],
+    outputMapping: subflow.outputMapping ?? [],
+    approvalOverride: subflow.proposalModeOverride === "manual" ? "manual_approval" : subflow.proposalModeOverride === "auto" || subflow.proposalModeOverride === "mixed" ? "adaptive" : null,
+    createdAt: subflow.createdAt,
+    updatedAt: subflow.updatedAt,
+    deletedAt: null
+  };
+}
+
+function sqlSubflowToFlowSubflow(projectId: string, row: AutomationStudioSqlSubflow): AutomationStudioFlowSubflow {
+  return removeUndefinedSubflowFields({
+    schemaVersion: "0.1",
+    subflowId: row.subflowId,
+    projectId,
+    flowId: row.parentFlowId,
+    name: row.name,
+    ...(row.description ? { description: row.description } : {}),
+    role: row.role as AutomationStudioFlowSubflow["role"],
+    status: row.status === "draft" ? "active" : row.status,
+    inputMapping: Array.isArray(row.inputMapping) ? row.inputMapping as AutomationStudioFlowSubflow["inputMapping"] : [],
+    outputMapping: Array.isArray(row.outputMapping) ? row.outputMapping as AutomationStudioFlowSubflow["outputMapping"] : [],
+    ...(row.approvalOverride === "manual_approval" ? { proposalModeOverride: "manual" as const } : row.approvalOverride === "adaptive" ? { proposalModeOverride: "auto" as const } : row.approvalOverride === "disabled" ? { proposalModeOverride: "disabled" as const } : {}),
+    graphFlowId: row.graphFlowId,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    ...(row.parentCategoryId ? { metadata: { parentCategoryId: row.parentCategoryId, subflowCategoryId: row.parentCategoryId } } : {}),
+    stability: { runCount: 0, successCount: 0, failureCount: 0 }
+  } as AutomationStudioFlowSubflow);
+}
 function flowSummaryFromFlow(flow: AutomationStudioFlowArtifact): AutomationStudioFlowSummary {
   const hierarchySubflows = flowHierarchySubflowsFromFlow(flow);
   const subflowCategories = flowSubflowCategoriesFromFlow(flow);
@@ -7471,6 +8243,24 @@ function flowSourceModuleId(flow: AutomationStudioFlowArtifact): string {
   return flow.source.mode === "code" && flow.source.moduleId.trim()
     ? flow.source.moduleId
     : `flows/${safeSegment(flow.flowId)}.flow.ts`;
+}
+
+function flowFeedRevision(flow: Pick<AutomationStudioSqlFlowRecord, "graphRevision" | "settingsRevision"> | null): number {
+  if (!flow) return 1;
+  return Math.max(1, Math.trunc(Math.max(flow.graphRevision, flow.settingsRevision)));
+}
+
+function subflowFeedRevision(subflow: Pick<AutomationStudioFlowSubflow, "updatedAt" | "createdAt">): number {
+  return Math.max(1, Math.trunc(Math.max(subflow.updatedAt, subflow.createdAt ?? 1)));
+}
+
+function hierarchyFeedRevision(hierarchy: AutomationStudioProjectHierarchy, changedAt: number): number {
+  return Math.max(1, Math.trunc(Math.max(changedAt, hierarchy.customHierarchyNodes.length + hierarchy.deletedHierarchyIds.length)));
+}
+
+function projectChangeTransactionId(input: { projectId: string; entityKind: string; entityId: string; operation: string; changedAt: number }): string {
+  const digest = createHash("sha256").update(JSON.stringify([input.projectId, input.entityKind, input.entityId, input.operation, input.changedAt])).digest("hex").slice(0, 24);
+  return `project-change.${input.operation}.${digest}`;
 }
 
 function safeRelativePathParts(moduleId: string): string[] {
@@ -8317,6 +9107,16 @@ function graphStatusToFlowRunStatus(status: string): AutomationStudioFlowRunActi
 
 function jsonObjectFromUnknown(value: unknown): JsonObject | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : null;
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function flowOriginForSql(origin: AutomationStudioFlowOrigin): AutomationStudioSqlFlowRecord["origin"] {
+  if (origin === "recorded") return "recording";
+  if (origin === "imported" || origin === "migrated") return "import";
+  return "user";
 }
 
 async function readJsonLinePage<T>(filePath: string, offset: number, limit: number): Promise<T[]> {

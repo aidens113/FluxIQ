@@ -8,6 +8,14 @@ Automation Studio project artifacts are owned by the project file tree under
 repositories are caches used by service code and tests; they are not the source
 of truth for recordings, proposals, Flows, state assets, or runtime runs.
 
+The v2 scalable architecture is certified with the Phase 12 report described in
+`docs/operations/automation-studio-scale-certification.md`. Release candidates
+must attach passing evidence for the full scale matrix, 24-hour stream and
+subscription soaks, crash recovery, heap retention, critical query/payload
+budgets, backup restore, deterministic compiled-plan replay, documentation
+freshness, and feature-flag removal gates before the legacy compatibility path
+is retired.
+
 The canonical project layout is:
 
 ```text
@@ -69,6 +77,15 @@ objects. Full documents are loaded only when a tab or operation requests them.
 The proposal workbench uses `get-proposal` to hydrate one selected proposal by
 ID; project refresh must not call the broad `list-pipeline-artifacts` endpoint
 just to make proposal rows clickable.
+
+Project change feed rows are the normal synchronization contract between
+mutations and the browser. Each row carries project ID, entity kind, entity ID,
+operation, revision, changed timestamp, and optional parent or hierarchy scope.
+Normal mutation paths invalidate cache entries by those typed entity IDs only;
+they do not implicitly include the `root` summary resource. Payload-free create
+events or unsupported delete events may emit a recovery diagnostic, but the
+caller must choose an explicit reload/recovery path before hydrating broad
+project state again.
 
 Stable file document IDs are:
 

@@ -81,20 +81,45 @@ describe("Nodes whiteboard toolbar and outline", () => {
   });
   it("renders explicit canvas modes, complete commands, and a semantic graph outline", () => {
     const source = readFileSync(new URL("./GraphEditorViews.tsx", import.meta.url), "utf8");
-    for (const command of ["Select mode", "Pan mode", "Fit graph", "Zoom in", "Zoom out", "Undo graph change", "Redo graph change", "Validate graph", "Toggle graph outline", "Add node"]) {
+    for (const command of ["Fit graph", "Zoom in", "Zoom out", "Undo graph change", "Redo graph change", "Validate graph", "Toggle graph outline", "Add node"]) {
       expect(source).toContain('aria-label="' + command + '"');
     }
+    expect(source).not.toContain('aria-label="Select mode"');
+    expect(source).not.toContain('aria-label="Pan mode"');
     expect(source).toContain('role="toolbar"');
     expect(source).toContain('role="tree"');
     expect(source).toContain('role="treeitem"');
-    expect(source).toContain('panOnDrag={policyInteractionMode === "pan"}');
-    expect(source).toContain('selectionOnDrag={policyInteractionMode === "select"}');
-    expect(source).not.toContain('className="automation-react-flow-frame" onContextMenu=');
+    expect(source).toContain("automationGraphMiddleMousePanButtons");
+    expect(source).toContain("panOnDrag={automationGraphMiddleMousePanButtons}");
+    expect(source).toContain('selectionOnDrag={false}');
+    expect(source).toContain("startPolicyDragSelect");
+    expect(source).toContain("policyDragSelectBoxRef");
     expect(source).toContain("automation-studio:focus-graph-problem");
     expect(source).toContain("validatedPolicyNodes");
+    expect(source).toContain("policyGraphValidationRevision");
+    expect(source).toContain("scheduleAutomationGraphIdleTask");
+    expect(source).not.toContain("useMemo(() => automationPolicyGraphProblems(policyNodes, policyEdges)");
     expect(source).toContain("onlyRenderVisibleElements");
+    expect(source).toContain("automationGraphRevisionSignature");
+    expect(source).toContain("automationGraphMiniMapNodeColor");
     expect(source).toContain("const nodesById = new Map");
     expect(source).toContain("props.onOpenProblems()");
+    expect(source).toContain("startTransition");
+    expect(source).toContain("setPolicySelectionDeferred");
+    expect(source).toContain("setSelectedPolicyNodeIds((current)");
+    expect(source).toContain("sameStringList(current, [node.id])");
+    const nodeClickStart = source.indexOf("onNodeClick={(event, node) =>");
+    const selectionChangeStart = source.indexOf("onSelectionChange=", nodeClickStart);
+    const selectionChangeEnd = source.indexOf("<Background", selectionChangeStart);
+    expect(nodeClickStart).toBeGreaterThan(0);
+    expect(selectionChangeStart).toBeGreaterThan(nodeClickStart);
+    const nodeClickSource = source.slice(nodeClickStart, selectionChangeStart);
+    const selectionChangeSource = source.slice(selectionChangeStart, selectionChangeEnd);
+    expect(nodeClickSource).toContain("policySelectionRef.current = `node:${node.id}`");
+    expect(nodeClickSource).not.toContain("setPolicySelectionDeferred");
+    expect(nodeClickSource).not.toContain("setTransientPolicyNodes");
+    expect(nodeClickSource).not.toContain("setTransientPolicyEdges");
+    expect(selectionChangeSource).not.toContain("setPolicySelectionDeferred");
   });
 });
 describe("Node palette", () => {
@@ -140,7 +165,8 @@ describe("Nodes whiteboard interaction completeness", () => {
     expect(source).toContain("nodesFocusable");
     expect(source).toContain("edgesFocusable");
     expect(source).toContain('aria-label={(props.direction === "source" ? "Output " : "Input ")');
-    expect(source).not.toContain("startPolicyDragSelect");
-    expect(source).not.toContain("policyDragSelectBox");
+    expect(source).toContain("startPolicyDragSelect");
+    expect(source).toContain("policyDragSelectBoxRef");
   });
 });
+

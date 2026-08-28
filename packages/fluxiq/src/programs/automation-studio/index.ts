@@ -1,4 +1,5 @@
 export * from "./api/index.ts";
+export type { AutomationStudioChangeFeedOperation } from "./api/index.ts";
 export * from "./client-gateway/index.ts";
 export * from "./dsl/index.ts";
 export * from "./fingerprinting/index.ts";
@@ -10,5 +11,6 @@ export * from "./nodes/index.ts";
 export * from "./normalization/index.ts";
 export * from "./runtime/index.ts";
 export * from "./storage/index.ts";
+export * from "./testing/index.ts";
 export * from "./types.ts";
 export * from "./ui/index.ts";

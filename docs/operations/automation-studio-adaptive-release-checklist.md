@@ -16,6 +16,9 @@ LLM-assisted edits, persistence, or the web workbench.
 - Run authored/generated documentation validation after doc or reference
   changes:
   - `pnpm docs:check`
+- For scalable Automation Studio releases, generate and attach the final scale
+  certification report:
+  - `pnpm studio:certify -- --evidence .fluxiq/cache/automation-studio-scale-certification/evidence.json --output .fluxiq/cache/automation-studio-scale-certification/report.json`
 
 ## Performance And Cost Evidence
 
@@ -32,6 +35,8 @@ LLM-assisted edits, persistence, or the web workbench.
 - Release only when stable fixture Flow runs show LLM use trending down as
   deterministic automation, recovery paths, and proposals absorb repeated
   novelty.
+- Remove scalable data-flow feature flags only after the Automation Studio
+  scale certification report has `overallStatus: "passed"`.
 
 ## Adaptive Safety Gates
 

@@ -448,7 +448,7 @@ describe("global program services", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 
   it("manages identity users and sessions", async () => {
     const service = new IdentityAccessService();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { idleAutomationRequestState, LatestAutomationRequestRegistry, nextAutomationRequestState } from "./useRequestCoordinator";
+import { AutomationRequestStateStore, idleAutomationRequestState, LatestAutomationRequestRegistry, nextAutomationRequestState } from "./useRequestCoordinator";
 
 describe("Automation Studio request state", () => {
   it("tracks a request from loading to completion", () => {
@@ -23,5 +23,20 @@ describe("Automation Studio request state", () => {
     expect(registry.owns("runtime-summary", second)).toBe(true);
     registry.cancelAll();
     expect(second.signal.aborted).toBe(true);
+  });
+
+  it("updates request state snapshots outside React state", () => {
+    const store = new AutomationRequestStateStore();
+    const emptySnapshot = store.snapshot;
+
+    store.set("projects", nextAutomationRequestState("loading", 10));
+    expect(emptySnapshot).toEqual({});
+    expect(store.snapshot).toEqual({ projects: { phase: "loading", startedAt: 10 } });
+
+    store.update("projects", (current) => nextAutomationRequestState("success", 25, current));
+    expect(store.snapshot.projects).toEqual({ phase: "success", startedAt: 10, finishedAt: 25 });
+
+    store.reset("projects");
+    expect(store.snapshot.projects).toBe(idleAutomationRequestState);
   });
 });

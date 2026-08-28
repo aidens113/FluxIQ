@@ -1,5 +1,10 @@
 import type { Permission } from "../identity-access/types.ts";
 import { GLOBAL_PROGRAMS } from "./catalog.ts";
+import {
+  recordProgramEndpointPerformance,
+  serializedMetricBytes,
+  withEndpointPerformanceScope
+} from "./performance-metrics.ts";
 import type { ProgramScope } from "./types.ts";
 
 export type ProgramApiActor = {
@@ -65,11 +70,23 @@ export class GlobalProgramApiRegistry {
         errorCode: "authorization.forbidden",
       };
     }
-    try {
-      return (await registration.handler(request)) as ProgramApiResponse<TResponse>;
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) };
-    }
+    const startedAt = performance.now();
+    const measured = await withEndpointPerformanceScope(async (): Promise<ProgramApiResponse<TResponse>> => {
+      try {
+        return (await registration.handler(request)) as ProgramApiResponse<TResponse>;
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    });
+    recordProgramEndpointPerformance({
+      programId: request.programId,
+      endpoint: request.endpoint,
+      elapsedMs: performance.now() - startedAt,
+      responseBytes: serializedMetricBytes(measured.result),
+      ...measured.sql,
+      ok: measured.result.ok
+    });
+    return measured.result;
   }
 
   endpoints(): Array<{ programId: string; endpoint: string; permission: Permission }> {

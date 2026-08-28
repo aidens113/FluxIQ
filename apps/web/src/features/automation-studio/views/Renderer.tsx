@@ -2,8 +2,9 @@
 
 import type { JsonObject } from "../../programs/program-api";
 import type { NodeStatePhase } from "fluxiq/automation-studio";
-import type { ComponentProps } from "react";
+import { memo, useMemo, type ComponentProps } from "react";
 import type { AutomationSelection, AutomationViewInstance, RecordingProcessingStatus } from "../types";
+import { buildNodeStateInputSignature } from "../state/view-model";
 import { AutomationClientGatewayView, AutomationConfigView } from "./ClientViews";
 import { AutomationProposalView } from "./ProposalView";
 import { AutomationProposalGeneratorView } from "./ProposalGeneratorView";
@@ -19,6 +20,26 @@ type ProposalViewProps = ComponentProps<typeof AutomationProposalView>;
 type InspectorViewProps = ComponentProps<typeof AutomationInspector>;
 type StateViewProps = ComponentProps<typeof AutomationStateView>;
 type ConfigViewProps = ComponentProps<typeof AutomationConfigView>;
+const emptyIndexedStateSources: NonNullable<StateViewProps["input"]["indexedStateSources"]> = [];
+const emptyViewArray: never[] = [];
+const emptyFlowDependencyInfo: NonNullable<InspectorViewProps["flowDependencyInfo"]> = {};
+const MemoAutomationClientGatewayView = memo(AutomationClientGatewayView);
+const MemoAutomationConfigView = memo(AutomationConfigView);
+const MemoAutomationProposalView = memo(AutomationProposalView);
+const MemoAutomationProposalGeneratorView = memo(AutomationProposalGeneratorView);
+const MemoAutomationTimelineView = memo(AutomationTimelineView);
+const MemoAutomationInspector = memo(AutomationInspector);
+const MemoAutomationPolicyCanvas = memo(AutomationPolicyCanvas);
+const MemoAutomationStateView = memo(AutomationStateView);
+const MemoAutomationAdaptationsWorkspace = memo(AutomationAdaptationsWorkspace);
+const MemoAutomationFlowSettingsWorkspace = memo(AutomationFlowSettingsWorkspace);
+const MemoAutomationInstructionsWorkspace = memo(AutomationInstructionsWorkspace);
+const MemoAutomationProblemsWorkspace = memo(AutomationProblemsWorkspace);
+const MemoAutomationFlowMapWorkspace = memo(AutomationFlowMapWorkspace);
+const MemoAutomationRunsWorkspace = memo(AutomationRunsWorkspace);
+const MemoAutomationRuntimeWorkspace = memo(AutomationRuntimeWorkspace);
+const MemoAutomationSubflowsWorkspace = memo(AutomationSubflowsWorkspace);
+
 export type AutomationViewRendererProps = {
   actionStatus: string;
   entries: TimelineViewProps["entries"];
@@ -77,23 +98,34 @@ export type AutomationViewRendererProps = {
   setSelection(selection: AutomationSelection): void;
 };
 
-export function AutomationViewRenderer(props: AutomationViewRendererProps) {
-  if (props.view.type === "design") return <AutomationPolicyCanvas active={props.viewActive} editable={props.flowEditable} entries={props.entries} policy={props.policy} taskGraph={props.taskGraph} {...(props.taskGraphDraft !== undefined ? { taskGraphDraft: props.taskGraphDraft } : {})} {...(props.recoverableTaskGraphDraft !== undefined ? { recoverableDraft: props.recoverableTaskGraphDraft } : {})} nativeNodeDefinitions={props.nativeNodeDefinitions ?? []} recordings={props.recordings} selectedNode={props.selectedNode} selectedTimeline={props.selectedTimeline} signals={props.signals} onSaveGraph={props.onSaveTaskGraph} onGraphDraftChange={props.onTaskGraphDraftChange} onDirtyChange={props.onTaskGraphDirtyChange} onOpenProblems={props.onOpenProblems} onRestoreDraft={props.onRestoreTaskGraphDraft} onDiscardDraft={props.onDiscardTaskGraphDraft} setSelection={props.setSelection} />;
-  if (props.view.type === "router") return <AutomationFlowMapWorkspace flow={props.taskGraph} projectId={props.projectId} onCreateSubflow={props.onCreateSubflow} />;
-  if (props.view.type === "recordings") return <AutomationTimelineView actionStatus={props.actionStatus} projectId={props.projectId} entries={props.entries} notes={props.notes} recordings={props.recordings} recordingProcessing={props.recordingProcessing} selectedEntry={props.selectedEntry} selectedRecording={props.selectedRecording} selectedTimeline={props.selectedTimeline} timelines={props.timelines} onAppendRecordingMarker={props.onAppendRecordingMarker} onAppendRecordingNote={props.onAppendRecordingNote} onDeleteRecording={props.onDeleteRecording} onFinalizeRecording={props.onFinalizeRecording} onOpenTimelineEntryState={props.onOpenTimelineEntryState} onRefreshRecordings={props.onRefreshRecordings} onUpdateRecording={props.onUpdateRecording} setSelection={props.setSelection} />;
-  if (props.view.type === "proposal-generator") return <AutomationProposalGeneratorView selectedRecording={props.selectedRecording} />;
-  if (props.view.type === "proposal") return <AutomationProposalView actionStatus={props.actionStatus} pipelineArtifacts={props.pipelineArtifacts} proposalReview={props.proposalReview} recordings={props.recordings} selectedProposal={props.selectedProposal} selectedRecording={props.selectedRecording} onEnsureInspectorAvailable={props.onEnsureInspectorAvailable} setSelection={props.setSelection} />;
-  if (props.view.type === "runtime") return <AutomationRuntimeWorkspace flow={props.taskGraph} projectId={props.projectId} pipelineArtifacts={props.pipelineArtifacts} timelines={props.selectedTimeline ? [props.selectedTimeline] : []} models={props.models} policies={props.policies} runtimeSessions={props.runtimeSessions} />;
-  if (props.view.type === "runs") return <AutomationRunsWorkspace projectId={props.projectId} pipelineArtifacts={props.pipelineArtifacts} runtimeSessions={props.runtimeSessions} />;
-  if (props.view.type === "subflows") return <AutomationSubflowsWorkspace flow={props.taskGraph} projectId={props.projectId} onOpenSubflow={props.onOpenSubflow} />;
-  if (props.view.type === "instructions") return <AutomationInstructionsWorkspace flow={props.taskGraph} projectId={props.projectId} />;
-  if (props.view.type === "adaptations") return <AutomationAdaptationsWorkspace flow={props.taskGraph} projectId={props.projectId} />;
-  if (props.view.type === "settings") return <AutomationFlowSettingsWorkspace flow={props.taskGraph} projectId={props.projectId} />;
-  if (props.view.type === "state") return <AutomationStateView loading={props.stateLoading} input={{ selection: props.selection, selectedNode: props.selectedNode, selectedEntry: props.selectedEntry, selectedProposal: props.selectedProposal, selectedRecording: props.selectedRecording, selectedTimeline: props.selectedTimeline, policy: props.policy, taskGraph: props.taskGraph, pipelineArtifacts: props.pipelineArtifacts, recordings: props.recordings, timelines: props.timelines, runtimeSessions: props.runtimeSessions, signals: props.signals, indexedStateSources: props.indexedStateSources ?? [] }} setSelection={props.setSelection} />;
-  if (props.view.type === "clients") return <AutomationClientGatewayView active={props.viewActive} projectId={props.projectId} />;
-  if (props.view.type === "problems") return <AutomationProblemsWorkspace currentObjectId={props.selection?.id ?? null} {...(props.selectedNode?.label || props.selection?.id ? { currentObjectLabel: props.selectedNode?.label ?? props.selection?.id } : {})} problems={props.problems} onOpenProblem={props.onOpenProblem} />;
-  if (props.view.type === "inspector") return <AutomationInspector entries={props.entries} selection={props.selection} policy={props.policy} policies={props.policies} flow={props.taskGraph} flowPublications={props.flowPublications ?? []} flowDependencyInfo={props.flowDependencyInfo ?? {}} node={props.selectedNode} nodeDefinitions={props.nativeNodeDefinitions ?? []} recording={props.selectedRecording} entry={props.selectedEntry} signal={props.selectedSignal} pipelineArtifacts={props.pipelineArtifacts} selectedTimeline={props.selectedTimeline} recordings={props.recordings} timelines={props.timelines} runtimeSessions={props.runtimeSessions} signals={props.signals} onOpenState={props.onOpenState} setSelection={props.setSelection} />;
+export const AutomationViewRenderer = memo(function AutomationViewRenderer(props: AutomationViewRendererProps) {
+  if (props.view.type === "design") return <MemoAutomationPolicyCanvas active={props.viewActive} editable={props.flowEditable} entries={props.entries} policy={props.policy} taskGraph={props.taskGraph} {...(props.taskGraphDraft !== undefined ? { taskGraphDraft: props.taskGraphDraft } : {})} {...(props.recoverableTaskGraphDraft !== undefined ? { recoverableDraft: props.recoverableTaskGraphDraft } : {})} nativeNodeDefinitions={props.nativeNodeDefinitions ?? emptyViewArray} recordings={props.recordings} selectedNode={props.selectedNode} selectedTimeline={props.selectedTimeline} signals={props.signals} onSaveGraph={props.onSaveTaskGraph} onGraphDraftChange={props.onTaskGraphDraftChange} onDirtyChange={props.onTaskGraphDirtyChange} onOpenProblems={props.onOpenProblems} onRestoreDraft={props.onRestoreTaskGraphDraft} onDiscardDraft={props.onDiscardTaskGraphDraft} setSelection={props.setSelection} />;
+  if (props.view.type === "router") return <MemoAutomationFlowMapWorkspace flow={props.taskGraph} projectId={props.projectId} onCreateSubflow={props.onCreateSubflow} />;
+  if (props.view.type === "recordings") return <MemoAutomationTimelineView actionStatus={props.actionStatus} projectId={props.projectId} entries={props.entries} notes={props.notes} recordings={props.recordings} recordingProcessing={props.recordingProcessing} selectedEntry={props.selectedEntry} selectedRecording={props.selectedRecording} selectedTimeline={props.selectedTimeline} timelines={props.timelines} onAppendRecordingMarker={props.onAppendRecordingMarker} onAppendRecordingNote={props.onAppendRecordingNote} onDeleteRecording={props.onDeleteRecording} onFinalizeRecording={props.onFinalizeRecording} onOpenTimelineEntryState={props.onOpenTimelineEntryState} onRefreshRecordings={props.onRefreshRecordings} onUpdateRecording={props.onUpdateRecording} setSelection={props.setSelection} />;
+  if (props.view.type === "proposal-generator") return <MemoAutomationProposalGeneratorView selectedRecording={props.selectedRecording} />;
+  if (props.view.type === "proposal") return <MemoAutomationProposalView actionStatus={props.actionStatus} pipelineArtifacts={props.pipelineArtifacts} proposalReview={props.proposalReview} recordings={props.recordings} selectedProposal={props.selectedProposal} selectedRecording={props.selectedRecording} onEnsureInspectorAvailable={props.onEnsureInspectorAvailable} setSelection={props.setSelection} />;
+  if (props.view.type === "runtime") return <AutomationRuntimeViewContainer taskGraph={props.taskGraph} projectId={props.projectId} pipelineArtifacts={props.pipelineArtifacts} selectedTimeline={props.selectedTimeline} models={props.models} policies={props.policies} runtimeSessions={props.runtimeSessions} />;
+  if (props.view.type === "runs") return <MemoAutomationRunsWorkspace projectId={props.projectId} pipelineArtifacts={props.pipelineArtifacts} runtimeSessions={props.runtimeSessions} />;
+  if (props.view.type === "subflows") return <MemoAutomationSubflowsWorkspace flow={props.taskGraph} projectId={props.projectId} onOpenSubflow={props.onOpenSubflow} />;
+  if (props.view.type === "instructions") return <MemoAutomationInstructionsWorkspace flow={props.taskGraph} projectId={props.projectId} />;
+  if (props.view.type === "adaptations") return <MemoAutomationAdaptationsWorkspace flow={props.taskGraph} projectId={props.projectId} />;
+  if (props.view.type === "settings") return <MemoAutomationFlowSettingsWorkspace flow={props.taskGraph} projectId={props.projectId} />;
+  if (props.view.type === "state") return <AutomationStateViewContainer loading={props.stateLoading} pipelineArtifacts={props.pipelineArtifacts} policy={props.policy} recordings={props.recordings} runtimeSessions={props.runtimeSessions} selectedEntry={props.selectedEntry} selectedNode={props.selectedNode} selectedProposal={props.selectedProposal} selectedRecording={props.selectedRecording} selectedTimeline={props.selectedTimeline} selection={props.selection} signals={props.signals} taskGraph={props.taskGraph} timelines={props.timelines} indexedStateSources={props.indexedStateSources} setSelection={props.setSelection} />;
+  if (props.view.type === "clients") return <MemoAutomationClientGatewayView active={props.viewActive} projectId={props.projectId} />;
+  if (props.view.type === "problems") return <MemoAutomationProblemsWorkspace currentObjectId={props.selection?.id ?? null} {...(props.selectedNode?.label || props.selection?.id ? { currentObjectLabel: props.selectedNode?.label ?? props.selection?.id } : {})} problems={props.problems} onOpenProblem={props.onOpenProblem} />;
+  if (props.view.type === "inspector") return <MemoAutomationInspector entries={props.entries} selection={props.selection} policy={props.policy} policies={props.policies} flow={props.taskGraph} flowPublications={props.flowPublications ?? emptyViewArray} flowDependencyInfo={props.flowDependencyInfo ?? emptyFlowDependencyInfo} node={props.selectedNode} nodeDefinitions={props.nativeNodeDefinitions ?? emptyViewArray} recording={props.selectedRecording} entry={props.selectedEntry} signal={props.selectedSignal} pipelineArtifacts={props.pipelineArtifacts} selectedTimeline={props.selectedTimeline} recordings={props.recordings} timelines={props.timelines} runtimeSessions={props.runtimeSessions} signals={props.signals} onOpenState={props.onOpenState} setSelection={props.setSelection} />;
   if (props.view.type === "routine") return <section className="automation-project-empty"><strong>Legacy Routine is read-only</strong><span>Migrate this project to canonical Flows. Routine orchestration is now represented by ordinary Flow nodes and published composites.</span></section>;
-  if (props.view.type === "config") return <AutomationConfigView configs={props.configs ?? []} flow={props.taskGraph} policy={props.policy} projectId={props.projectId} onRefresh={props.onRefreshRecordings} />;
-  return <AutomationStateView loading={props.stateLoading} input={{ selection: props.selection, selectedNode: props.selectedNode, selectedEntry: props.selectedEntry, selectedProposal: props.selectedProposal, selectedRecording: props.selectedRecording, selectedTimeline: props.selectedTimeline, policy: props.policy, taskGraph: props.taskGraph, pipelineArtifacts: props.pipelineArtifacts, recordings: props.recordings, timelines: props.timelines, runtimeSessions: props.runtimeSessions, signals: props.signals, indexedStateSources: props.indexedStateSources ?? [] }} setSelection={props.setSelection} />;
-}
+  if (props.view.type === "config") return <MemoAutomationConfigView configs={props.configs ?? emptyViewArray} flow={props.taskGraph} policy={props.policy} projectId={props.projectId} onRefresh={props.onRefreshRecordings} />;
+  return <AutomationStateViewContainer loading={props.stateLoading} pipelineArtifacts={props.pipelineArtifacts} policy={props.policy} recordings={props.recordings} runtimeSessions={props.runtimeSessions} selectedEntry={props.selectedEntry} selectedNode={props.selectedNode} selectedProposal={props.selectedProposal} selectedRecording={props.selectedRecording} selectedTimeline={props.selectedTimeline} selection={props.selection} signals={props.signals} taskGraph={props.taskGraph} timelines={props.timelines} indexedStateSources={props.indexedStateSources} setSelection={props.setSelection} />;
+});
+
+const AutomationRuntimeViewContainer = memo(function AutomationRuntimeViewContainer(props: Pick<AutomationViewRendererProps, "models" | "pipelineArtifacts" | "policies" | "projectId" | "runtimeSessions" | "selectedTimeline" | "taskGraph">) {
+  const timelines = useMemo(() => props.selectedTimeline ? [props.selectedTimeline] : emptyViewArray, [props.selectedTimeline]);
+  return <MemoAutomationRuntimeWorkspace flow={props.taskGraph} projectId={props.projectId} pipelineArtifacts={props.pipelineArtifacts} timelines={timelines} models={props.models} policies={props.policies} runtimeSessions={props.runtimeSessions} />;
+});
+
+const AutomationStateViewContainer = memo(function AutomationStateViewContainer(props: Pick<AutomationViewRendererProps, "pipelineArtifacts" | "policy" | "recordings" | "runtimeSessions" | "selectedEntry" | "selectedNode" | "selectedProposal" | "selectedRecording" | "selectedTimeline" | "selection" | "signals" | "taskGraph" | "timelines" | "indexedStateSources" | "stateLoading" | "setSelection"> & { loading?: AutomationViewRendererProps["stateLoading"] }) {
+  const stateInputSignature = buildNodeStateInputSignature({ selection: props.selection, selectedNode: props.selectedNode, selectedEntry: props.selectedEntry, selectedProposal: props.selectedProposal, selectedRecording: props.selectedRecording, selectedTimeline: props.selectedTimeline, policy: props.policy, taskGraph: props.taskGraph, pipelineArtifacts: props.pipelineArtifacts, recordings: props.recordings, timelines: props.timelines, runtimeSessions: props.runtimeSessions, signals: props.signals, indexedStateSources: props.indexedStateSources ?? emptyIndexedStateSources });
+  const stateInput = useMemo<StateViewProps["input"]>(() => ({ selection: props.selection, selectedNode: props.selectedNode, selectedEntry: props.selectedEntry, selectedProposal: props.selectedProposal, selectedRecording: props.selectedRecording, selectedTimeline: props.selectedTimeline, policy: props.policy, taskGraph: props.taskGraph, pipelineArtifacts: props.pipelineArtifacts, recordings: props.recordings, timelines: props.timelines, runtimeSessions: props.runtimeSessions, signals: props.signals, indexedStateSources: props.indexedStateSources ?? emptyIndexedStateSources }), [stateInputSignature]);
+  return <MemoAutomationStateView loading={props.loading ?? props.stateLoading} input={stateInput} setSelection={props.setSelection} />;
+});

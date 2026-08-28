@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  AUTOMATION_STUDIO_CERTIFICATION_INTERACTIONS,
+  evaluateInteractionBudget,
   evaluateRequestBudget,
   evaluateRenderBudget,
   evaluateStudioScenarioBudgets,
+  resolveAutomationStudioInteractionBudget,
   UI_PERFORMANCE_BUDGETS
 } from "./ui-performance-budgets";
 
@@ -35,7 +38,40 @@ describe("UI performance budgets", () => {
       interactions: { selectFirstFlow: 101 }
     });
     expect(violations.map((item) => item.budget)).toEqual([
-      "scenarioRequestCount", "longTaskMs", "flowSwitchMs"
+      "scenarioRequestCount", "longTaskMs", "viewSwitchMs"
+    ]);
+  });
+
+  it("defines certification budgets for every required Studio interaction", () => {
+    expect(AUTOMATION_STUDIO_CERTIFICATION_INTERACTIONS).toEqual([
+      "projectOpen",
+      "viewSwitch",
+      "createFlow",
+      "deleteFlow",
+      "createFolder",
+      "deleteFolder",
+      "runtimeDebugOpen",
+      "runLogOpen",
+      "graphSelect",
+      "graphDrag",
+      "graphSave"
+    ]);
+    expect(resolveAutomationStudioInteractionBudget("openRuntimeDebug")).toBe("runtimeDebugOpen");
+    expect(resolveAutomationStudioInteractionBudget("graphDrag.primary")).toBe("graphDrag");
+  });
+
+  it("flags settled interaction request, long-task, timeout, and duration regressions", () => {
+    const violations = evaluateInteractionBudget("graphSelect.first-node", {
+      duration: UI_PERFORMANCE_BUDGETS.graphSelectMs + 1,
+      requestCount: 1,
+      longTaskCount: 1,
+      timedOut: true
+    });
+    expect(violations.map((item) => item.budget)).toEqual([
+      "graphSelectMs",
+      "interactionTimeoutCount",
+      "interactionRequestCount",
+      "interactionLongTaskCount"
     ]);
   });
 });

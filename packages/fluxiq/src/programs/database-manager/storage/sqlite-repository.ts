@@ -2,6 +2,7 @@ import { mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
 import sqlite3 from "sqlite3";
 import type { JsonObject } from "../../../core/index.ts";
+import { recordSqlPerformance, withSqlPerformanceContext } from "../../_shared/performance-metrics.ts";
 import type { RecordEnvelope, Repository, RepositoryListPage, RepositoryListPageOptions, RepositoryScope } from "../types.ts";
 
 export type SQLiteRepositoryOptions = {
@@ -141,12 +142,14 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
     const normalizedScope = normalizeScope(scope);
     const filePath = this.databasePath(normalizedScope);
     return enqueueDatabaseOperation(filePath, async () => {
-      const db = await this.open(normalizedScope);
-      try {
-        return await operation(db, normalizedScope);
-      } finally {
-        await close(db);
-      }
+      return withSqlPerformanceContext({ repositoryKind: this.kind, databaseName: path.basename(filePath) }, async () => {
+        const db = await this.open(normalizedScope);
+        try {
+          return await operation(db, normalizedScope);
+        } finally {
+          await close(db);
+        }
+      });
     });
   }
 
@@ -163,23 +166,25 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
   async transaction<TResult>(scope: RepositoryScope, operation: (transaction: SQLiteTransaction) => Promise<TResult>): Promise<TResult> {
     const filePath = this.databasePath(scope);
     return enqueueDatabaseOperation(filePath, async () => {
-      const db = await this.open(scope);
-      await run(db, "begin immediate");
-      const transaction: SQLiteTransaction = {
-        run: (sql, params = []) => run(db, sql, params),
-        all: <T>(sql: string, params: unknown[] = []) => all<T>(db, sql, params),
-        get: <T>(sql: string, params: unknown[] = []) => get<T>(db, sql, params)
-      };
-      try {
-        const result = await operation(transaction);
-        await run(db, "commit");
-        return result;
-      } catch (error) {
-        await run(db, "rollback").catch(() => undefined);
-        throw error;
-      } finally {
-        await close(db);
-      }
+      return withSqlPerformanceContext({ repositoryKind: this.kind, databaseName: path.basename(filePath) }, async () => {
+        const db = await this.open(scope);
+        await run(db, "begin immediate");
+        const transaction: SQLiteTransaction = {
+          run: (sql, params = []) => run(db, sql, params),
+          all: <T>(sql: string, params: unknown[] = []) => all<T>(db, sql, params),
+          get: <T>(sql: string, params: unknown[] = []) => get<T>(db, sql, params)
+        };
+        try {
+          const result = await operation(transaction);
+          await run(db, "commit");
+          return result;
+        } catch (error) {
+          await run(db, "rollback").catch(() => undefined);
+          throw error;
+        } finally {
+          await close(db);
+        }
+      });
     });
   }
 }
@@ -246,8 +251,10 @@ async function enqueueDatabaseOperation<TResult>(filePath: string, operation: ()
 }
 
 function run(db: sqlite3.Database, sql: string, params: unknown[] = []): Promise<RunResult> {
+  const startedAt = performance.now();
   return new Promise((resolve, reject) => {
     db.run(sql, params, function onRun(error) {
+      recordSqlPerformance({ operation: "run", sql, elapsedMs: performance.now() - startedAt, rowsChanged: error ? 0 : this.changes, ok: !error });
       if (error) reject(error);
       else resolve({ changes: this.changes, lastID: this.lastID });
     });
@@ -255,8 +262,10 @@ function run(db: sqlite3.Database, sql: string, params: unknown[] = []): Promise
 }
 
 function all<T>(db: sqlite3.Database, sql: string, params: unknown[] = []): Promise<T[]> {
+  const startedAt = performance.now();
   return new Promise((resolve, reject) => {
     db.all(sql, params, (error, rows: T[]) => {
+      recordSqlPerformance({ operation: "all", sql, elapsedMs: performance.now() - startedAt, rowsReturned: error ? 0 : rows.length, ok: !error });
       if (error) reject(error);
       else resolve(rows);
     });
@@ -264,8 +273,10 @@ function all<T>(db: sqlite3.Database, sql: string, params: unknown[] = []): Prom
 }
 
 function get<T>(db: sqlite3.Database, sql: string, params: unknown[] = []): Promise<T | undefined> {
+  const startedAt = performance.now();
   return new Promise((resolve, reject) => {
     db.get(sql, params, (error, row: T | undefined) => {
+      recordSqlPerformance({ operation: "get", sql, elapsedMs: performance.now() - startedAt, rowsReturned: error || row === undefined ? 0 : 1, ok: !error });
       if (error) reject(error);
       else resolve(row);
     });

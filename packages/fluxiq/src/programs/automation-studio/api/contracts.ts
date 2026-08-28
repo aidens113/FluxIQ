@@ -17,6 +17,7 @@ import type { JsonObject } from "../../../core/index.ts";
 import type { ClientGatewayActionCommand } from "../../../client-gateway/index.ts";
 
 export const AUTOMATION_STUDIO_ENDPOINTS = {
+  performanceMetrics: "get-performance-metrics",
   snapshot: "snapshot",
   projects: "projects",
   createProject: "create-project",
@@ -27,15 +28,23 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   deleteProjectCategory: "delete-project-category",
   reorderProjectCategories: "reorder-project-categories",
   getProjectHierarchy: "get-project-hierarchy",
+  listProjectChangeFeed: "list-project-change-feed",
   saveProjectHierarchy: "save-project-hierarchy",
   getProjectWorkspaceSummary: "get-project-workspace-summary",
   listRecordings: "list-recordings",
   listProjectArtifacts: "list-project-artifacts",
   listFlows: "list-flows",
   listFlowSummaries: "list-flow-summaries",
+  listFlowMetadataPage: "list-flow-metadata-page",
+  getFlowMetadataDetail: "get-flow-metadata-detail",
   createFlow: "create-flow",
   getFlow: "get-flow",
   saveFlow: "save-flow",
+  getGraphViewport: "get-graph-viewport",
+  applyGraphPatch: "apply-graph-patch",
+  listGraphRevisions: "list-graph-revisions",
+  createGraphSnapshot: "create-graph-snapshot",
+  restoreGraphSnapshot: "restore-graph-snapshot",
   compileFlowSource: "compile-flow-source",
   convertFlowToVisual: "convert-flow-to-visual",
   deleteFlow: "delete-flow",
@@ -108,6 +117,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   listFlowRuns: "list-flow-runs",
   getFlowRunDetail: "get-flow-run-detail",
   listFlowRunActions: "list-flow-run-actions",
+  listFlowRunEvents: "list-flow-run-events",
   listFlowAdaptations: "list-flow-adaptations",
   getFlowAdaptation: "get-flow-adaptation",
   reviewFlowAdaptation: "review-flow-adaptation",
@@ -173,6 +183,51 @@ export type AutomationStudioProjectHierarchy = {
   workspacePrefs: JsonObject;
 };
 
+export type AutomationStudioChangeFeedOperation = "create" | "update" | "delete" | "touch";
+
+export type AutomationStudioChangeFeedEntityKind =
+  | "project"
+  | "flow"
+  | "subflow"
+  | "folder"
+  | "recording"
+  | "instruction"
+  | "adaptation"
+  | "runtime_run"
+  | "hierarchy"
+  | string;
+
+export type AutomationStudioChangeFeedHierarchyScope = {
+  kind: "project" | "flow" | "subflow" | "folder" | string;
+  id?: string;
+};
+
+export type AutomationStudioProjectChangeFeedEvent = {
+  projectId: string;
+  sequence: number;
+  transactionId: string;
+  entityKind: AutomationStudioChangeFeedEntityKind;
+  entityId: string;
+  parentId?: string | null;
+  operation: AutomationStudioChangeFeedOperation;
+  revision: number;
+  changedAt: number;
+  hierarchyScope?: AutomationStudioChangeFeedHierarchyScope | null;
+};
+
+export type AutomationStudioProjectChangeFeedRequest = {
+  projectId: string;
+  afterSequence?: unknown;
+  limit?: unknown;
+};
+
+export type AutomationStudioProjectChangeFeedPage = {
+  events: AutomationStudioProjectChangeFeedEvent[];
+  cursor: number;
+  hasMore: boolean;
+  fallback: boolean;
+};
+
 export type AutomationStudioSnapshot = {
   tasks: AutomationTask[];
   recordings: AutomationRecording[];
@@ -217,6 +272,12 @@ export type FlowProjectRequest = {
   projectId: string;
 };
 
+export type FlowMetadataPageRequest = FlowProjectRequest & {
+  status?: string;
+  limit?: unknown;
+  cursor?: unknown;
+};
+
 export type CreateFlowRequest = FlowProjectRequest & {
   name?: unknown;
   description?: unknown;
@@ -224,9 +285,44 @@ export type CreateFlowRequest = FlowProjectRequest & {
 };
 
 export type SaveFlowRequest = FlowProjectRequest & {
+  /** @deprecated Normal visual editor writes must use ApplyGraphPatchRequest. */
   flow: AutomationStudioFlowArtifact;
   expectedUpdatedAt?: number;
 };
+
+export type GraphViewportRequest = FlowIdProjectRequest & {
+  bounds: { minX: number; minY: number; maxX: number; maxY: number };
+  cursor?: string | null;
+  limit?: number;
+  pinnedNodeIds?: string[];
+};
+
+export type GraphPatchOperation =
+  | { op: "add_node"; node: Record<string, unknown> }
+  | { op: "move_node"; nodeId: string; x: number; y: number }
+  | { op: "set_node_parameters"; nodeId: string; values: JsonObject }
+  | { op: "delete_node"; nodeId: string }
+  | { op: "add_edge"; edge: Record<string, unknown> }
+  | { op: "delete_edge"; edgeId: string };
+
+export type ApplyGraphPatchRequest = FlowIdProjectRequest & {
+  baseRevision: number;
+  mutationId: string;
+  operations: GraphPatchOperation[];
+  message?: string;
+};
+
+export type ListGraphRevisionsRequest = FlowIdProjectRequest & { cursor?: string | null; limit?: number };
+export type CreateGraphSnapshotRequest = FlowIdProjectRequest & { revisionNumber?: number; mutationId?: string };
+export type RestoreGraphSnapshotRequest = FlowIdProjectRequest & { snapshotSha256: string; mutationId: string };
+
+export const AUTOMATION_STUDIO_NORMAL_EDITOR_GRAPH_WRITE_ENDPOINT = AUTOMATION_STUDIO_ENDPOINTS.applyGraphPatch;
+
+export function assertAutomationStudioNormalEditorGraphEndpoint(endpoint: string): void {
+  if (endpoint === AUTOMATION_STUDIO_ENDPOINTS.saveFlow || endpoint === AUTOMATION_STUDIO_ENDPOINTS.getFlow) {
+    throw new Error("Normal visual editor graph requests must use graph viewport and patch endpoints, not full Flow document endpoints.");
+  }
+}
 
 export type FlowIdProjectRequest = FlowProjectRequest & {
   flowId: string;
@@ -393,6 +489,7 @@ export type CreateFlowSubflowRequest = FlowIdProjectRequest & {
   name: string;
   description?: string;
   role?: string;
+  parentCategoryId?: string | null;
   graphFlowId?: string;
   routeTags?: string[];
 };
@@ -402,6 +499,7 @@ export type UpdateFlowSubflowRequest = FlowSubflowRequest & {
   name?: string;
   description?: string;
   role?: string;
+  parentCategoryId?: string | null;
   routeTags?: string[];
   inputMapping?: Array<{ flowInputId: string; subflowInputId: string; required?: boolean }>;
   outputMapping?: Array<{ subflowOutputId: string; flowOutputId: string; required?: boolean }>;
@@ -499,6 +597,12 @@ export type FlowRunActionPageRequest = FlowProjectRequest & {
   runId: string;
   limit?: unknown;
   offset?: unknown;
+};
+
+export type FlowRunEventPageRequest = FlowProjectRequest & {
+  runId: string;
+  afterSequence?: unknown;
+  limit?: unknown;
 };
 
 export type RuntimeSessionControlRequest = FlowProjectRequest & {

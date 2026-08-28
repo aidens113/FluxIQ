@@ -2,6 +2,7 @@ export * from "./_shared/api.ts";
 export * from "./_shared/authorization.ts";
 export * from "./_shared/catalog.ts";
 export * from "./_shared/docs-generators.ts";
+export * from "./_shared/performance-metrics.ts";
 export * from "./_shared/runtime.ts";
 export * from "./_shared/types.ts";
 export * from "./automation-studio/index.ts";

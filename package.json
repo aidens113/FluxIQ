@@ -13,6 +13,8 @@
     "test": "pnpm -r test",
     "docs:reference": "node scripts/docs-reference.mjs",
     "docs:check": "node scripts/validate-docs.mjs && node scripts/docs-reference.mjs --check",
+    "studio:baseline": "pnpm --filter fluxiq build && node scripts/automation-studio-scale-baseline.mjs",
+    "studio:certify": "pnpm --filter fluxiq build && node scripts/automation-studio-scale-certification.mjs",
     "flows:check": "node scripts/flow-compiler.mjs --check",
     "flows:build": "node scripts/flow-compiler.mjs --build",
     "quality:check": "biome check .",

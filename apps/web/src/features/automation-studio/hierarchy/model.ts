@@ -242,7 +242,7 @@ function appendFlowObjectHierarchy(input: {
     ...changeProposalIds
   ].filter((sourceId, index, allIds) => allIds.indexOf(sourceId) === index);
   const sectionSpecs: Array<{ id: string; label: string; kind: AutomationHierarchyKind; viewId: string; sourceIds?: unknown[]; metadata?: Record<string, unknown> }> = [
-    { id: "subflows", label: "Subflows", kind: "folder", viewId: "flow-subflows", sourceIds: Array.isArray(expansion.subflowIds) ? expansion.subflowIds : [], metadata: { flowStructure: "subflows" } },
+    { id: "subflows", label: "Subflows", kind: "folder", viewId: "flow-subflows", sourceIds: hierarchySubflowEntries(ownerFlow), metadata: { flowStructure: "subflows" } },
     { id: "instructions", label: "Instructions", kind: "flow-object", viewId: "flow-instructions", sourceIds: Array.isArray(expansion.instructionIds) ? expansion.instructionIds : [] },
     { id: "recordings", label: "Recordings", kind: "folder", viewId: "timeline-recording", sourceIds: flowRecordings.map((recording) => recording.recordingId) },
     { id: "adaptations", label: "Adaptations", kind: "folder", viewId: "adaptations", sourceIds: adaptationSourceIds },
@@ -278,7 +278,7 @@ function appendFlowObjectHierarchy(input: {
               : "run";
       const subflowGraph = childKind === "subflow" ? subflowGraphs.get(subflowGraphKey(navigationFlowId, sourceId)) : null;
       const subflowGraphId = childKind === "subflow"
-        ? subflowGraph?.flowId ?? defaultSubflowGraphFlowId(navigationFlowId, sourceId)
+        ? subflowGraph?.flowId ?? subflowGraphFlowId(rawId) ?? defaultSubflowGraphFlowId(navigationFlowId, sourceId)
         : null;
       const childNodeId = `flow-${stableNodeId(navigationFlowId)}-${section.id}-${stableNodeId(sourceId)}`;
       nodes.push({
@@ -351,6 +351,12 @@ function subflowCategoriesFromFlow(flow: any): Array<{ id: string; name: string;
   });
 }
 
+function hierarchySubflowEntries(flow: any): unknown[] {
+  const metadata = flow?.metadata && typeof flow.metadata === "object" && !Array.isArray(flow.metadata) ? flow.metadata : {};
+  if (Array.isArray(metadata.hierarchySubflows)) return metadata.hierarchySubflows;
+  return Array.isArray(flow?.expansion?.subflowIds) ? flow.expansion.subflowIds : [];
+}
+
 function subflowGraphKey(parentFlowId: string, subflowId: string): string {
   return parentFlowId + "::" + subflowId;
 }
@@ -365,6 +371,12 @@ function subflowDisplayName(rawId: unknown): string | null {
   return typeof raw.name === "string" && raw.name.trim()
     ? raw.name.trim()
     : typeof raw.label === "string" && raw.label.trim() ? raw.label.trim() : null;
+}
+
+function subflowGraphFlowId(rawId: unknown): string | null {
+  if (!rawId || typeof rawId !== "object" || Array.isArray(rawId)) return null;
+  const graphFlowId = (rawId as Record<string, unknown>).graphFlowId;
+  return typeof graphFlowId === "string" && graphFlowId.trim() ? graphFlowId.trim() : null;
 }
 
 function subflowSourceId(rawId: unknown): string {

@@ -40,6 +40,13 @@ canonical Flow. The backup contains Task, Routine, configuration, and legacy
 owner-bound Flow documents plus a SHA-256 digest. Migration ledgers retain
 source identity and the digest of each created canonical Flow.
 
+Phase 11 migrations also create a verified backup manifest before importing a
+project into v2 storage. The manifest records every legacy file path, byte
+count, modified time, SHA-256 digest, resource classification, total byte count,
+and manifest digest. Verification must be run after the manifest is written and
+again before any rollback. A changed or missing file blocks cutover until the
+operator either creates a fresh manifest or records an explicit deferral.
+
 Use `plan-flow-migration-rollback` first. Rollback is blocked if the backup is
 missing/invalid, a migrated Flow lost its source provenance, the Flow was
 edited, or it is no longer a draft. This prevents an emergency rollback from
@@ -74,3 +81,18 @@ and only after supported importers are validated, project inventories are clean
 or intentionally deferred, backup/rollback rehearsals pass, and the retention
 policy permits deletion. That future removal requires a separate explicit
 migration; schema `0.2` only disables legacy writes.
+
+## Backup retention
+
+Keep the latest verified Phase 11 backup manifest for each migrated project for
+at least one major schema release after v2 becomes the default. Keep any failed
+or mismatch-producing manifest until its support case is closed. Do not prune a
+manifest while a migration job, hybrid-read comparison, verification report, or
+rollback plan references its digest.
+
+Backup manifests are small and immutable. Retention jobs may archive older
+manifests, but they must preserve the manifest JSON, verification result,
+inventory digest, legacy resource counts, and referenced object digest list.
+Physical legacy folders may only be removed after a successful final
+verification report confirms counts, object references, graph semantics, stream
+chunk continuity, and intentionally deferred artifacts.
