@@ -57,6 +57,78 @@ describe("Automation Studio project query plans", () => {
           params: ["runtime_run", "run.1", "event_chunk", 50],
           table: "object_references",
           indexes: ["object_references_owner_idx"]
+        },
+        {
+          sql: "select entry_id, display_name from hierarchy_entries where parent_entry_id is null and is_deleted = 0 order by sort_key, entry_id limit ?",
+          params: [50],
+          table: "hierarchy_entries",
+          indexes: ["hierarchy_entries_children_idx"]
+        },
+        {
+          sql: "select value_json from workspace_preferences where user_id = ? and preference_key = ?",
+          params: ["user.1", "workspace"],
+          table: "workspace_preferences",
+          indexes: ["sqlite_autoindex_workspace_preferences"]
+        },
+        {
+          sql: "select flow_id, name from flows where parent_flow_id is null and deleted_at_ms is null order by updated_at_ms desc, flow_id desc limit ?",
+          params: [50],
+          table: "flows",
+          indexes: ["flows_parent_status_idx", "flows_updated_idx"]
+        },
+        {
+          sql: "select subflow_id, name from subflows where parent_flow_id = ? and deleted_at_ms is null order by name collate nocase, subflow_id limit ?",
+          params: ["flow.1", 50],
+          table: "subflows",
+          indexes: ["subflows_parent_name_idx"]
+        },
+        {
+          sql: "select subflow_id, updated_at_ms from subflows where parent_flow_id = ? and deleted_at_ms is null order by updated_at_ms desc, subflow_id desc limit ?",
+          params: ["flow.1", 50],
+          table: "subflows",
+          indexes: ["subflows_parent_updated_idx"]
+        },
+        {
+          sql: "select node_id from graph_nodes where flow_id = ? and deleted_at_ms is null order by node_id limit ?",
+          params: ["flow.1", 500],
+          table: "graph_nodes",
+          indexes: ["graph_nodes_flow_idx"]
+        },
+        {
+          sql: "select edge_id from graph_edges where flow_id = ? and deleted_at_ms is null order by edge_id limit ?",
+          params: ["flow.1", 500],
+          table: "graph_edges",
+          indexes: ["graph_edges_flow_idx"]
+        },
+        {
+          sql: "select run_id, status from runtime_runs where flow_id = ? order by updated_at_ms desc, run_id desc limit ?",
+          params: ["flow.1", 50],
+          table: "runtime_runs",
+          indexes: ["runtime_runs_flow_updated_idx"]
+        },
+        {
+          sql: "select run_id, status from runtime_runs order by updated_at_ms desc, run_id desc limit ?",
+          params: [50],
+          table: "runtime_runs",
+          indexes: ["runtime_runs_updated_idx"]
+        },
+        {
+          sql: "select instruction_id from instruction_scopes where flow_id = ? limit ?",
+          params: ["flow.1", 100],
+          table: "instruction_scopes",
+          indexes: ["instruction_scopes_flow_idx"]
+        },
+        {
+          sql: "select instruction_id from instructions where deleted_at_ms is null and status = ? order by priority desc, updated_at_ms desc, instruction_id desc limit ?",
+          params: ["active", 50],
+          table: "instructions",
+          indexes: ["instructions_priority_updated_idx"]
+        },
+        {
+          sql: "select adaptation_id from adaptations where flow_id = ? order by updated_at_ms desc, adaptation_id desc limit ?",
+          params: ["flow.1", 50],
+          table: "adaptations",
+          indexes: ["adaptations_flow_updated_idx"]
         }
       ] as const;
       for (const entry of cases) {

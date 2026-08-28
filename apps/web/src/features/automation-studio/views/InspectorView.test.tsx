@@ -1,9 +1,17 @@
 import React from "react";
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AutomationInspector, automationInspectorIdentity, automationInspectorReferenceOptions } from "./InspectorView";
 
 describe("AutomationInspector", () => {
+  it("owns graph selection locally instead of publishing it through the Studio root", () => {
+    const source = readFileSync(new URL("./InspectorView.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("subscribeAutomationGraphSelection(setGraphSelection)");
+    expect(source).toContain("setGraphSelection(nextSelection)");
+    expect(source).not.toContain("props.setSelection(nextSelection)");
+  });
   it("builds stable identity, breadcrumbs, and canonical detail destinations", () => {
     expect(automationInspectorIdentity(
       { kind: "flow", id: "flow.billing" },

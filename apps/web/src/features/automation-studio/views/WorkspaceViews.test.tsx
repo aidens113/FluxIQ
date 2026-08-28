@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { AutomationAdaptationsWorkspace, adaptationChangedFields, adaptationObjectHref, adaptationReviewActions, adaptationReviewCopy, AutomationProblemsWorkspace, normalizeAutomationProblems, automationProblemsForScope, AutomationFlowSettingsWorkspace, AutomationInstructionsWorkspace, AutomationFlowMapWorkspace, AutomationRuntimeWorkspace, AutomationRunsWorkspace, AutomationSubflowsWorkspace, RuntimeActionLogPage, RuntimeAttemptRow, RuntimePostRunSummary, RuntimeRunHistory, adaptationReviewHref, runtimeAuditBlob, buildAutomationRuntimeRunPayload, flowMapConditionDraft, flowMapConditionExpected, flowMapConditionSummary, flowMapRoutes, routerReferencesForSubflow, subflowReadiness, runtimeAttemptsForRunDetail, runtimeLlmAdaptationEvents, runtimeRecoveryRoutingEvents, runtimeRunEffects, runtimeRunStateEvidence, runtimeRunsForHistory, sortRuntimeRunsForDebugView, buildFlowMapRouteTestPayload, readSubflowDirectoryUrlState, readInstructionDirectoryUrlState, instructionDraftStorageKey, instructionDraftIsDirty, instructionScopeTargetError, instructionImportance, instructionPriorityForImportance, INSTRUCTION_TEMPLATES, effectiveInstructionOrder, instructionDiagnostics, estimateInstructionTokens, settingsDraftIsDirty, flowGeneralRuntimeErrors, FLOW_LLM_PROVIDERS, flowLlmProvider, flowLlmSettingsErrors, applyFlowTrainingMode, applyFlowAdaptationPreset, flowAdaptationErrors, flowLimitsInterfaceErrors, flowEffectiveSettings, flowSettingsDraftFromFlow, buildFlowSettingsSavePayload, subflowSettingsErrors, subflowSettingsDraft, SubflowMappingEditor, readSettingsSection, AutomationSubflowSettingsWorkspace, AutomationTopLevelFlowSettingsWorkspace, runtimeFlowInputPorts, runtimeTypedInputErrors, runtimeFlowReadinessIssues } from "./WorkspaceViews";
+import { AutomationAdaptationsWorkspace, adaptationChangedFields, adaptationObjectHref, adaptationReviewActions, adaptationReviewCopy, AutomationProblemsWorkspace, normalizeAutomationProblems, automationProblemsForScope, AutomationFlowSettingsWorkspace, AutomationInstructionsWorkspace, AutomationFlowMapWorkspace, AutomationRuntimeWorkspace, AutomationRunsWorkspace, AutomationSubflowsWorkspace, RuntimeActionLogPage, RuntimeAttemptRow, RuntimePostRunSummary, RuntimeRunHistory, adaptationReviewHref, runtimeAuditBlob, buildAutomationRuntimeRunPayload, flowMapConditionDraft, flowMapConditionExpected, flowMapConditionSummary, flowMapRoutes, routerReferencesForSubflow, subflowReadiness, runtimeAttemptsForRunDetail, runtimeLlmAdaptationEvents, runtimeRecoveryRoutingEvents, runtimeRunEffects, runtimeRunStateEvidence, runtimeRunsForHistory, sortRuntimeRunsForDebugView, buildFlowMapRouteTestPayload, readSubflowDirectoryUrlState, readInstructionDirectoryUrlState, INSTRUCTION_DRAFT_MAX_LOCAL_STORAGE_CHARS, instructionDraftStorageKey, instructionDraftIsDirty, readStoredInstructionDraft, instructionScopeTargetError, instructionImportance, instructionPriorityForImportance, INSTRUCTION_TEMPLATES, effectiveInstructionOrder, instructionDiagnostics, estimateInstructionTokens, settingsDraftIsDirty, flowGeneralRuntimeErrors, FLOW_LLM_PROVIDERS, flowLlmProvider, flowLlmSettingsErrors, applyFlowTrainingMode, applyFlowAdaptationPreset, flowAdaptationErrors, flowLimitsInterfaceErrors, flowEffectiveSettings, flowSettingsDraftFromFlow, buildFlowSettingsSavePayload, subflowSettingsErrors, subflowSettingsDraft, SubflowMappingEditor, readSettingsSection, AutomationSubflowSettingsWorkspace, AutomationTopLevelFlowSettingsWorkspace, runtimeFlowInputPorts, runtimeTypedInputErrors, runtimeFlowReadinessIssues } from "./WorkspaceViews";
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams()
@@ -817,12 +817,33 @@ describe("Automation Runtime workspace", () => {
     expect(instructionDraftIsDirty({ ...base, body: "Require an order number." }, base)).toBe(true);
 
     const source = AutomationInstructionsWorkspace.toString();
-    expect(source).toContain("localStorage.setItem");
+    expect(source).toContain("saveInstructionDraftToLocalStorage");
     expect(source).toContain("beforeunload");
     expect(source).toContain("Unsaved Instruction Changes");
     expect(source).toContain("Recovered local draft");
     expect(source).toContain("automation-instruction-content-section");
     expect(source).toContain("automation-instruction-behavior-section");
+  });
+
+  it("removes oversized instruction recovery drafts before parsing", () => {
+    const originalWindow = globalThis.window;
+    const values = new Map<string, string>();
+    const key = instructionDraftStorageKey("project.one", "flow.checkout");
+    const fakeWindow = {
+      localStorage: {
+        getItem: (storageKey: string) => values.get(storageKey) ?? null,
+        setItem: (storageKey: string, value: string) => { values.set(storageKey, value); },
+        removeItem: (storageKey: string) => { values.delete(storageKey); }
+      }
+    } as any;
+    Object.defineProperty(globalThis, "window", { configurable: true, value: fakeWindow });
+    try {
+      values.set(key, "{" + " ".repeat(INSTRUCTION_DRAFT_MAX_LOCAL_STORAGE_CHARS) + "}");
+      expect(readStoredInstructionDraft(key)).toBeNull();
+      expect(values.has(key)).toBe(false);
+    } finally {
+      Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+    }
   });
   it("uses named object pickers and validates scoped instruction targets", () => {
     const base = { instructionId: "", title: "Rule", body: "Do the thing", scopeKind: "flow", routerId: "", subflowId: "", nodeId: "", errorTargetKind: "flow" as const, priority: 50, requirement: "advisory", status: "active" };

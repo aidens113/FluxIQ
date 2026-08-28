@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationGraphDraftIdentity, automationGraphDraftKey, automationGraphOperationDraftKey, browserIndexedDbDraftDatabase, createMemoryAutomationGraphDraftDatabase, loadAutomationGraphDraft, loadAutomationGraphOperationDraft, removeAutomationGraphDraft, removeAutomationGraphOperationDraft, saveAutomationGraphDraft, saveAutomationGraphOperationDraft } from "./draft-store";
+import { AUTOMATION_GRAPH_DRAFT_MAX_LOCAL_STORAGE_CHARS, automationGraphDraftIdentity, automationGraphDraftKey, automationGraphOperationDraftKey, browserIndexedDbDraftDatabase, createMemoryAutomationGraphDraftDatabase, loadAutomationGraphDraft, loadAutomationGraphOperationDraft, removeAutomationGraphDraft, removeAutomationGraphOperationDraft, saveAutomationGraphDraft, saveAutomationGraphOperationDraft } from "./draft-store";
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -28,6 +28,22 @@ describe("Automation graph draft store", () => {
     expect(loadAutomationGraphDraft("project", "flow", storage)).toBeNull();
     storage.setItem(automationGraphDraftKey("project", "flow"), JSON.stringify({ projectId: "project", flowId: "flow", graph: {} }));
     expect(loadAutomationGraphDraft("project", "flow", storage)).toBeNull();
+  });
+  it("removes oversized legacy localStorage drafts before parsing", () => {
+    const storage = memoryStorage();
+    const key = automationGraphDraftKey("project", "flow");
+    storage.setItem(key, "{" + " ".repeat(AUTOMATION_GRAPH_DRAFT_MAX_LOCAL_STORAGE_CHARS) + "}");
+
+    expect(loadAutomationGraphDraft("project", "flow", storage)).toBeNull();
+    expect(storage.getItem(key)).toBeNull();
+  });
+
+  it("skips oversized legacy localStorage draft writes", () => {
+    const storage = memoryStorage();
+    const record = { projectId: "project", flowId: "flow", baseUpdatedAt: 1, savedAt: 2, graph: { nodes: [{ id: "n", data: "x".repeat(AUTOMATION_GRAPH_DRAFT_MAX_LOCAL_STORAGE_CHARS) }], edges: [] } };
+
+    expect(saveAutomationGraphDraft(record, storage)).toBe(false);
+    expect(storage.getItem(automationGraphDraftKey("project", "flow"))).toBeNull();
   });
 
   it("builds draft identity from revision metadata instead of serializing full graph bodies", () => {

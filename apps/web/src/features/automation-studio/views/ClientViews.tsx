@@ -4,6 +4,7 @@ import { QrCode, Radio, RefreshCcw, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { generateFlowTypeScript } from "fluxiq/automation-studio/dsl/generator";
 import { useProgramApi } from "../../programs/program-api";
+import { subscribeAutomationMountedViewActivation } from "../workspace/components";
 import { AuthorizationDialog, Field, KeyValue, StatusBadge, StatusText, VisualAlert } from "../../programs/shared-ui";
 import type { AutomationFlowConfigExtension } from "../types";
 import { InspectorSection } from "./InspectorView";
@@ -145,7 +146,7 @@ export function clientAuthorizationCopy(kind: "start" | "stop" | "execute" | "re
   return { title: "Revoke client trust", description: "Disconnect this trusted client and require a new pairing approval before it can reconnect.", action: "Revoke trust" };
 }
 
-export function AutomationClientGatewayView(props: { active: boolean; projectId: string | null }) {
+export function AutomationClientGatewayView(props: { activeRef: { current: boolean }; projectId: string | null }) {
   const api = useProgramApi("automation-studio");
   const [snapshot, setSnapshot] = useState<any>({ enabled: false, sessions: [], pairings: [], auditLog: [] });
   const [selectedSessionId, setSelectedSessionId] = useState("");
@@ -176,11 +177,17 @@ export function AutomationClientGatewayView(props: { active: boolean; projectId:
     setSelectedSessionId((current) => sessions.some((session: any) => session.sessionId === current) ? current : sessions[0]?.sessionId ?? "");
   }, [api]);
   useEffect(() => {
-    if (!props.active) return;
-    void refreshGateway();
-    const interval = window.setInterval(() => void refreshGateway(), 5000);
-    return () => window.clearInterval(interval);
-  }, [props.active, refreshGateway]);
+    const refreshWhenActive = () => {
+      if (props.activeRef.current) void refreshGateway();
+    };
+    refreshWhenActive();
+    const interval = window.setInterval(refreshWhenActive, 5000);
+    const unsubscribeActivation = subscribeAutomationMountedViewActivation(refreshWhenActive);
+    return () => {
+      window.clearInterval(interval);
+      unsubscribeActivation();
+    };
+  }, [props.activeRef, refreshGateway]);
   const sessions = snapshot.sessions ?? [];
   const selectedSession = sessions.find((session: any) => session.sessionId === selectedSessionId) ?? sessions[0];
   const pairings = snapshot.pairings ?? [];

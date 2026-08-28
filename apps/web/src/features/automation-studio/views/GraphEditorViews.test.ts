@@ -1,7 +1,20 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { automationNodeCompatibilityHint, automationPolicyGraphProblems, graphSignature } from "./GraphEditorViews";
+import { automationNodeCompatibilityHint, automationPolicyGraphProblems, graphSignature, NODE_PALETTE_FAVORITES_MAX_LOCAL_STORAGE_CHARS, NODE_PALETTE_FAVORITES_STORAGE_KEY, readNodePaletteFavoritesFromLocalStorage } from "./GraphEditorViews";
 
+describe("Automation graph editor browser storage guards", () => {
+  it("removes oversized node palette favorites before parsing", () => {
+    const removed: string[] = [];
+    const storage = {
+      getItem: (key: string) => key === NODE_PALETTE_FAVORITES_STORAGE_KEY ? "x".repeat(NODE_PALETTE_FAVORITES_MAX_LOCAL_STORAGE_CHARS + 1) : null,
+      removeItem: (key: string) => { removed.push(key); }
+    };
+    Object.defineProperty(globalThis, "window", { configurable: true, value: { localStorage: storage }});
+
+    expect(readNodePaletteFavoritesFromLocalStorage()).toEqual([]);
+    expect(removed).toEqual([NODE_PALETTE_FAVORITES_STORAGE_KEY]);
+  });
+});
 describe("Automation graph editor render-cost guards", () => {
   it("does not include full node payloads or bulky metadata in graph signatures", () => {
     const signature = graphSignature([
@@ -104,8 +117,10 @@ describe("Nodes whiteboard toolbar and outline", () => {
     expect(source).toContain("automationGraphMiniMapNodeColor");
     expect(source).toContain("const nodesById = new Map");
     expect(source).toContain("props.onOpenProblems()");
-    expect(source).toContain("startTransition");
-    expect(source).toContain("setPolicySelectionDeferred");
+    expect(source).not.toContain("startTransition");
+    expect(source).not.toContain("props.setSelection(");
+    expect(source).toContain("publishAutomationGraphSelection");
+    expect(source).toContain("publishPolicySelection");
     expect(source).toContain("setSelectedPolicyNodeIds((current)");
     expect(source).toContain("sameStringList(current, [node.id])");
     const nodeClickStart = source.indexOf("onNodeClick={(event, node) =>");
@@ -116,10 +131,11 @@ describe("Nodes whiteboard toolbar and outline", () => {
     const nodeClickSource = source.slice(nodeClickStart, selectionChangeStart);
     const selectionChangeSource = source.slice(selectionChangeStart, selectionChangeEnd);
     expect(nodeClickSource).toContain("policySelectionRef.current = `node:${node.id}`");
-    expect(nodeClickSource).not.toContain("setPolicySelectionDeferred");
+    expect(nodeClickSource).toContain("publishPolicySelection(policyCanvasSelectionForNode(node))");
+    expect(nodeClickSource).not.toContain("props.setSelection(");
     expect(nodeClickSource).not.toContain("setTransientPolicyNodes");
     expect(nodeClickSource).not.toContain("setTransientPolicyEdges");
-    expect(selectionChangeSource).not.toContain("setPolicySelectionDeferred");
+    expect(selectionChangeSource).not.toContain("props.setSelection(");
   });
 });
 describe("Node palette", () => {
@@ -167,6 +183,16 @@ describe("Nodes whiteboard interaction completeness", () => {
     expect(source).toContain('aria-label={(props.direction === "source" ? "Output " : "Input ")');
     expect(source).toContain("startPolicyDragSelect");
     expect(source).toContain("policyDragSelectBoxRef");
+  });
+
+  it("does not rescan graph documents for activity-only renders", () => {
+    const source = readFileSync(new URL("./GraphEditorViews.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("activeRef: { current: boolean }");
+    expect(source).toContain("props.activeRef.current");
+    expect(source).toContain("const taskGraphSignature = useMemo");
+    expect(source).toContain("const taskGraphDraftSignature = useMemo");
+    expect(source).not.toContain("const taskGraphDraftSignature = props.taskGraphDraft ?");
   });
 });
 

@@ -8,6 +8,11 @@ import type { AutomationHierarchyNode } from "./model";
 import { automationHierarchyPageKey } from "./paged-cache";
 
 describe("AutomationProjectTree", () => {
+  it("isolates the hierarchy from unrelated parent view renders", () => {
+    const source = readFileSync(fileURLToPath(new URL("./ProjectTree.tsx", import.meta.url)), "utf8");
+
+    expect(source).toContain("export const AutomationProjectTree = memo(function AutomationProjectTree");
+  });
   it("does not require timer advancement to dispatch sidebar preview opens", () => {
     const source = readFileSync(fileURLToPath(new URL("./ProjectTree.tsx", import.meta.url)), "utf8");
 
@@ -17,15 +22,78 @@ describe("AutomationProjectTree", () => {
     expect(source).toContain('props.openNode(props.node, "preview")');
     expect(source).toContain('props.openNode(props.node, "new-window")');
   });
+  it("keeps sidebar row selection animated with immediate press feedback", () => {
+    const css = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
+
+    expect(css).toContain(".automation-project-tree button {");
+    expect(css).toContain("transition: background-color var(--motion-fast)");
+    expect(css).toContain(".automation-project-tree button:active");
+  });
+  it("does not force a synchronous sidebar render before navigation work starts", () => {
+    const source = readFileSync(fileURLToPath(new URL("./ProjectTree.tsx", import.meta.url)), "utf8");
+    const openStart = source.indexOf("const openFromTree =");
+    const openEnd = source.indexOf("const openSettingsFromTree", openStart);
+    const openSource = source.slice(openStart, openEnd);
+
+    expect(source).not.toContain("import { flushSync } from \"react-dom\"");
+    expect(source).not.toContain("flushSync(");
+    expect(source).not.toContain("onPointerDown={(event) => {\n          if (event.button === 0 && !isFolder)");
+    expect(openSource).toContain("const targetNode = previewPrimaryNode(node);");
+    expect(openSource).toContain("primaryTreeExpectedSignatureRef.current = targetSelection ? automationHierarchySelectionSignature(targetSelection, targetViewId) : null");
+    expect(openSource.indexOf("primaryTreeExpectedSignatureRef.current")).toBeLessThan(openSource.indexOf("if (targetSelection && !automationHierarchySelectionSame"));
+    expect(openSource.indexOf("if (targetSelection && !automationHierarchySelectionSame")).toBeLessThan(openSource.indexOf("props.openView(targetViewId, mode)"));
+  });
+
+  it("keeps cached hydration and local tree emission strictly one-way", () => {
+    const source = readFileSync(fileURLToPath(new URL("./ProjectTree.tsx", import.meta.url)), "utf8");
+    const hydrateStart = source.indexOf("const nextState = incomingUiStateRef.current;");
+    const emitStart = source.indexOf("const nextState = { collapsedFolderIds", hydrateStart);
+    const syncEnd = source.indexOf("const activeSubflowContainerIds", emitStart);
+    const hydrateSource = source.slice(hydrateStart, emitStart);
+    const emitSource = source.slice(emitStart, syncEnd);
+
+    expect(hydrateSource).toContain("appliedUiStateSignatureRef.current = uiStateSignature");
+    expect(hydrateSource).toContain("}, [uiStateSignature]);");
+    expect(hydrateSource).not.toContain("props.uiState, uiStateSignature");
+    expect(hydrateSource).not.toContain("uiStateSignature, localTreeStateSignature");
+    expect(emitSource).toContain("appliedUiStateSignatureRef.current = nextSignature");
+    expect(emitSource).toContain("props.onUiStateChange?.(nextState)");
+    expect(emitSource).not.toContain("props.onUiStateChange, uiStateSignature");
+    expect(source).toContain("function sameStringList(left: string[], right: string[]): boolean");
+  });
+
+  it("does not publish an unchanged Flow owner selection for view-only sidebar navigation", () => {
+    const source = readFileSync(fileURLToPath(new URL("./ProjectTree.tsx", import.meta.url)), "utf8");
+    const openStart = source.indexOf("const openFromTree =");
+    const openEnd = source.indexOf("const openSettingsFromTree", openStart);
+    const openSource = source.slice(openStart, openEnd);
+
+    expect(source).toContain("function automationHierarchySelectionSame");
+    expect(openSource).toContain("!automationHierarchySelectionSame(props.selection, targetSelection)");
+    expect(openSource).not.toContain("if (targetSelection) props.setSelection(targetSelection)");
+  });
+
+  it("previews sidebar primary selection before dispatching navigation", () => {
+    const source = readFileSync(fileURLToPath(new URL("./ProjectTree.tsx", import.meta.url)), "utf8");
+    const previewStart = source.indexOf("const previewPrimaryNode =");
+    const openStart = source.indexOf("const openFromTree =");
+
+    expect(previewStart).toBeGreaterThan(-1);
+    expect(openStart).toBeGreaterThan(previewStart);
+    expect(source.indexOf("const targetNode = previewPrimaryNode(node);", openStart)).toBeGreaterThan(openStart);
+    expect(source).toContain("primaryTreeSelectionOriginRef");
+    expect(source).toContain("automationHierarchySelectionSignature");
+  });
 
   it("delegates known subflow graph shells to the single subflow opener", () => {
     const source = readFileSync(fileURLToPath(new URL("./ProjectTree.tsx", import.meta.url)), "utf8");
     const subflowBranchStart = source.indexOf('if (node.kind === "subflow" && props.openSubflow)');
-    const subflowBranchEnd = source.indexOf('if (node.kind === "task"', subflowBranchStart);
+    const subflowBranchEnd = source.indexOf('if (node.kind === "recording"', subflowBranchStart);
     const subflowBranch = source.slice(subflowBranchStart, subflowBranchEnd);
 
     expect(source).toContain('typeof node.metadata?.graphFlowId === "string"');
-    expect(source).toContain('props.setSelection({ kind: "flow", id: node.metadata.graphFlowId })');
+    expect(source).toContain("function automationHierarchySelectionForOpenNode");
+    expect(source).toContain('if (node.kind === "subflow" && typeof node.metadata?.graphFlowId === "string") return { kind: "flow", id: node.metadata.graphFlowId };');
     expect(subflowBranch).toContain("props.openSubflow(node, mode)");
     expect(subflowBranch).toContain("return;");
     expect(subflowBranch).not.toContain("props.openView");
@@ -146,13 +214,13 @@ describe("AutomationProjectTree", () => {
   it("routes subflow clicks through one navigation path", () => {
     const source = readFileSync(fileURLToPath(new URL("./ProjectTree.tsx", import.meta.url)), "utf8");
     const subflowBranchStart = source.indexOf('if (node.kind === "subflow" && props.openSubflow)');
-    const subflowBranchEnd = source.indexOf('if (node.kind === "task"', subflowBranchStart);
+    const subflowBranchEnd = source.indexOf('if (node.kind === "recording"', subflowBranchStart);
     const subflowBranch = source.slice(subflowBranchStart, subflowBranchEnd);
 
     expect(subflowBranchStart).toBeGreaterThan(-1);
     expect(subflowBranch).toContain("props.openSubflow(node, mode)");
-    expect(subflowBranch).not.toContain("props.setSelection");
-    expect(subflowBranch).not.toContain("props.openView");
+    expect(subflowBranch).not.toContain('if (node.kind === "subflow" && typeof node.metadata?.graphFlowId');
+    expect(subflowBranch).not.toContain("props.openView(targetViewId, mode)");
   });
   it("keeps a clicked Flow-owned object primary while its Flow is selected", () => {
     const debug: AutomationHierarchyNode = { id: "flow-a-debug", label: "Runtime Debug", kind: "flow-object", category: "flow", parentId: "flow-a", viewId: "runtime-debug", sourceId: "flow.checkout", flowId: "flow.checkout" };

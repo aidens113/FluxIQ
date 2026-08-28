@@ -1,6 +1,6 @@
 import type { Edge, Node } from "@xyflow/react";
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import { createAutomationGraphOperationHistory, diffAutomationGraphDocuments, type AutomationGraphDocument, type AutomationGraphHistoryState } from "./operation-history";
+import { createAutomationGraphOperationHistory, diffAutomationGraphDocuments, type AutomationGraphDocument, type AutomationGraphHistoryState, type AutomationGraphOperationHistory } from "./operation-history";
 import { createAutomationGraphViewportStore, type AutomationGraphDensityState } from "./viewport-store";
 import { scheduleAutomationGraphIdleTask, type AutomationGraphIdleTaskCancel } from "./worker-tasks";
 
@@ -36,8 +36,12 @@ export function useAutomationGraphController<T extends Record<string, unknown>>(
   const [edges, setEdgeState] = useState(initialEdges);
   const nodesRef = useRef(initialNodes);
   const edgesRef = useRef(initialEdges);
-  const historyRef = useRef(createAutomationGraphOperationHistory<T>({ maxBytes: 1_500_000 }));
-  const viewportStoreRef = useRef(createAutomationGraphViewportStore<T>());
+  const historyRef = useRef<AutomationGraphOperationHistory<T> | null>(null);
+  if (!historyRef.current) historyRef.current = createAutomationGraphOperationHistory<T>({ maxBytes: 1_500_000 });
+  const historyStore = historyRef.current;
+  const viewportStoreRef = useRef<ReturnType<typeof createAutomationGraphViewportStore<T>> | null>(null);
+  if (!viewportStoreRef.current) viewportStoreRef.current = createAutomationGraphViewportStore<T>();
+  const viewportStore = viewportStoreRef.current;
   const pendingCheckpointRef = useRef<AutomationGraphDocument<T> | null>(null);
   const pendingHistoryFlushRef = useRef(false);
   const pendingHistoryFlushCancelRef = useRef<AutomationGraphIdleTaskCancel | null>(null);
@@ -46,7 +50,7 @@ export function useAutomationGraphController<T extends Record<string, unknown>>(
 
   const reconcileThroughViewport = useCallback((document: AutomationGraphDocument<T>): AutomationGraphDocument<T> => {
     const bounds = graphDocumentBounds(document);
-    const visible = viewportStoreRef.current.loadInitialViewport({ flowId: "client-draft", revision: String(historyVersion), bounds, nodes: document.nodes, edges: document.edges });
+    const visible = viewportStore.loadInitialViewport({ flowId: "client-draft", revision: String(historyVersion), bounds, nodes: document.nodes, edges: document.edges });
     setViewportState(visible.state);
     return { nodes: visible.nodes, edges: visible.edges };
   }, [historyVersion]);
@@ -58,7 +62,7 @@ export function useAutomationGraphController<T extends Record<string, unknown>>(
     const after = { nodes: nodesRef.current, edges: edgesRef.current };
     const batch = diffAutomationGraphDocuments(before, after, { baseRevision: String(historyVersion) });
     if (!batch.operations.length) return false;
-    historyRef.current.push(batch);
+    historyStore.push(batch);
     setHistoryVersion((version) => version + 1);
     return true;
   }, [historyVersion]);
@@ -116,7 +120,7 @@ export function useAutomationGraphController<T extends Record<string, unknown>>(
     setNodeState(visible.nodes);
     setEdgeState(visible.edges);
     pendingCheckpointRef.current = null;
-    historyRef.current.clear();
+    historyStore.clear();
     setHistoryVersion((version) => version + 1);
   }, [reconcileThroughViewport]);
 
@@ -139,15 +143,15 @@ export function useAutomationGraphController<T extends Record<string, unknown>>(
   }, [reconcileThroughViewport]);
 
   const undo = useCallback(() => {
-    applyHistoryDocument(historyRef.current.undo(snapshot()));
+    applyHistoryDocument(historyStore.undo(snapshot()));
   }, [applyHistoryDocument, snapshot]);
 
   const redo = useCallback(() => {
-    applyHistoryDocument(historyRef.current.redo(snapshot()));
+    applyHistoryDocument(historyStore.redo(snapshot()));
   }, [applyHistoryDocument, snapshot]);
 
-  const historyState = historyRef.current.state();
-  const viewportStats = viewportStoreRef.current.stats();
+  const historyState = historyStore.state();
+  const viewportStats = viewportStore.stats();
 
   return {
     nodes,

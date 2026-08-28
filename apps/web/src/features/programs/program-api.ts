@@ -58,6 +58,7 @@ function estimateProgramApiPayloadShapeBytes(value: unknown, depth = 0): number 
 }
 
 export function classifyProgramApiEndpoint(endpoint: string, payload?: JsonObject): ProgramApiMetric["classification"] {
+  if (endpoint === "save-project-ui-cache" || endpoint === "delete-project-ui-cache") return "other";
   if (/^(append|apply|approve|create|deprecate|delete|finalize|generate|mine|normalize|propose|publish|reject|repair|reorder|review|run|save|set|start|stop|update)-/.test(endpoint)) return "mutation";
   if (endpoint.startsWith("get-") || endpoint.includes("-detail") || endpoint.endsWith("-detail")) return "detail";
   if (endpoint.startsWith("list-") || endpoint.includes("summary") || endpoint.includes("summaries") || payload?.summaries === true) return "summary";

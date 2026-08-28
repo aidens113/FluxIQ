@@ -73,12 +73,24 @@ export function startAutomationNodeMarquee<T extends Record<string, unknown>>(op
     height: Math.abs(point.y - start.y)
   });
   options.setDragBox(toBox(start));
+  let animationFrame = 0;
+  const flushDragBox = () => {
+    animationFrame = 0;
+    options.setDragBox(toBox(latest));
+  };
+  const scheduleDragBox = () => {
+    if (!animationFrame) animationFrame = window.requestAnimationFrame(flushDragBox);
+  };
   const onMove = (moveEvent: PointerEvent) => {
     latest = { x: moveEvent.clientX, y: moveEvent.clientY };
-    options.setDragBox(toBox(latest));
+    scheduleDragBox();
   };
   const onUp = (upEvent: PointerEvent) => {
     latest = { x: upEvent.clientX, y: upEvent.clientY };
+    if (animationFrame) {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = 0;
+    }
     const selectedIds = automationNodesInScreenRect(options.nodes, flow, start, latest);
     const selectedNodes = options.nodes.filter((node) => selectedIds.has(node.id));
     options.setNodes((nodes) => nodes.map((node) => ({ ...node, selected: selectedIds.has(node.id) })));

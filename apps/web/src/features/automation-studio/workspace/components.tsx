@@ -1,11 +1,34 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, Columns3, Plus, Search, X, XCircle } from "lucide-react";
-import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import type { Blocks } from "lucide-react";
 import type { AutomationViewInstance } from "../types";
 import type { AutomationViewAdderOption } from "./view-adder";
 import { automationBottomDockMaxHeight, automationBottomDockMinHeight, automationLayoutPresetOptions, automationStrictMainLayoutPresets, defaultAutomationMainSplitRatios, defaultAutomationWorkspacePrefs, type AutomationLayoutPickerState, type AutomationLayoutPreset, type AutomationLayoutPresetOption, type AutomationWindowAdderState, type AutomationWorkspaceArea, type AutomationWorkspacePrefs, type AutomationStrictMainLayoutPreset } from "./layout";
+
+const automationMountedViewActivationEvent = "automation-studio:activate-mounted-view";
+
+type AutomationMountedViewActivation = {
+  windowId: string;
+  viewId: string;
+};
+
+export function subscribeAutomationMountedViewActivation(listener: () => void): () => void {
+  window.addEventListener(automationMountedViewActivationEvent, listener);
+  return () => window.removeEventListener(automationMountedViewActivationEvent, listener);
+}
+
+export function activateAutomationMountedView(windowId: string, viewId: string): boolean {
+  const container = Array.from(document.querySelectorAll<HTMLElement>(".automation-view-container[data-automation-window-id]"))
+    .find((candidate) => candidate.dataset.automationWindowId === windowId);
+  if (!container || !Array.from(container.querySelectorAll<HTMLElement>(".automation-mounted-view[data-view-id]"))
+    .some((slot) => slot.dataset.viewId === viewId)) return false;
+  window.dispatchEvent(new CustomEvent<AutomationMountedViewActivation>(automationMountedViewActivationEvent, {
+    detail: { windowId, viewId }
+  }));
+  return true;
+}
 
 export function viewTitle(view: AutomationViewInstance): string {
   if (view.type === "design") return "Flow";
@@ -282,12 +305,50 @@ export function AutomationViewContainer(props: {
   onTabDrop?(viewId: string | null, placement: "before" | "after" | "end", event: DragEvent<HTMLElement>): void;
   onTabSelect(viewId: string): void;
 }) {
-  const Icon = props.icon;
   const frameLabel = props.frameLabel ?? "Window";
   const tabsRef = useRef<HTMLDivElement>(null);
   const [tabPickerOpen, setTabPickerOpen] = useState(false);
   const [tabQuery, setTabQuery] = useState("");
-  const activeTabDomId = `automation-tab-${props.windowId}-${props.activeViewId}`.replace(/[^a-zA-Z0-9_-]/g, "-");
+  const [optimisticActiveViewId, setOptimisticActiveViewId] = useState(props.activeViewId);
+  const [optimisticWindowActive, setOptimisticWindowActive] = useState(props.active);
+  const optimisticView = props.tabs.find((tab) => tab.id === optimisticActiveViewId);
+  const Icon = optimisticView?.icon ?? props.icon;
+  const showOptimisticView = (viewId: string) => {
+    const container = tabsRef.current?.closest<HTMLElement>(".automation-view-container");
+    if (!container) return;
+    for (const slot of container.querySelectorAll<HTMLElement>(".automation-mounted-view[data-view-id]")) {
+      const selected = slot.dataset.viewId === viewId;
+      slot.hidden = !selected;
+      slot.setAttribute("aria-hidden", selected ? "false" : "true");
+    }
+  };
+  useEffect(() => {
+    setOptimisticActiveViewId(props.activeViewId);
+  }, [props.activeViewId]);
+  useEffect(() => {
+    setOptimisticWindowActive(props.active);
+  }, [props.active]);
+  useEffect(() => {
+    const activate = (event: Event) => {
+      const detail = (event as CustomEvent<AutomationMountedViewActivation>).detail;
+      if (!detail) return;
+      const targetsThisWindow = detail.windowId === props.windowId;
+      if (props.windowId !== "right-sidebar") setOptimisticWindowActive(targetsThisWindow);
+      if (!targetsThisWindow) return;
+      showOptimisticView(detail.viewId);
+      setOptimisticActiveViewId(detail.viewId);
+    };
+    window.addEventListener(automationMountedViewActivationEvent, activate);
+    return () => window.removeEventListener(automationMountedViewActivationEvent, activate);
+  }, [props.windowId]);
+  useLayoutEffect(() => {
+    showOptimisticView(optimisticActiveViewId);
+  });
+  const selectTab = (viewId: string) => {
+    activateAutomationMountedView(props.windowId, viewId);
+    props.onTabSelect(viewId);
+  };
+  const activeTabDomId = `automation-tab-${props.windowId}-${optimisticActiveViewId}`.replace(/[^a-zA-Z0-9_-]/g, "-");
   const visiblePickerTabs = props.tabs.filter((tab) => tab.label.toLowerCase().includes(tabQuery.trim().toLowerCase()));
   const handleWindowDragOver = props.onTabDrop
     ? (event: DragEvent<HTMLElement>) => {
@@ -301,16 +362,16 @@ export function AutomationViewContainer(props: {
     : undefined;
   return (
     <section
-      className={props.active ? "automation-view-container active" : "automation-view-container"}
+      className={optimisticWindowActive ? "automation-view-container active" : "automation-view-container"}
       data-automation-window-id={props.windowId}
       onDragOver={handleWindowDragOver}
       onDrop={handleWindowDrop}
-      onMouseDown={props.active ? undefined : props.onActivate}
+      onMouseDown={optimisticWindowActive ? undefined : props.onActivate}
     >
       <header className="not-movable">
         <div>
           <Icon size={15} aria-hidden />
-          <span><strong>{props.title}</strong><small>{frameLabel} {props.windowIndex + 1} - {props.subtitle}</small></span>
+          <span><strong>{optimisticView ? viewTitle(optimisticView) : props.title}</strong><small>{frameLabel} {props.windowIndex + 1} - {optimisticView?.label ?? props.subtitle}</small></span>
         </div>
         <div className="automation-pane-actions">
           <button className="icon-button" onClick={(event) => { event.stopPropagation(); props.onAddTab(event); }} title="Add tab" aria-label="Add tab" type="button"><Plus size={13} aria-hidden /></button>
@@ -324,7 +385,7 @@ export function AutomationViewContainer(props: {
         <div className="automation-window-tabs" ref={tabsRef} role="tablist" aria-label={`${frameLabel} ${props.windowIndex + 1} tabs`}>
           {props.tabs.map((tab, tabIndex) => {
             const TabIcon = tab.icon;
-            const selected = tab.id === props.activeViewId;
+            const selected = tab.id === optimisticActiveViewId;
             const tabId = `automation-tab-${props.windowId}-${tab.id}`.replace(/[^a-zA-Z0-9_-]/g, "-");
             return (
               <div className={selected ? "automation-tab-item selected" : "automation-tab-item"} key={tab.id}>
@@ -341,7 +402,7 @@ export function AutomationViewContainer(props: {
                       props.onCloseTab(tab.id);
                     }
                   }}
-                  onClick={(event) => { event.stopPropagation(); props.onTabSelect(tab.id); }}
+                  onClick={(event) => { event.stopPropagation(); selectTab(tab.id); }}
                   onDragOver={props.onTabDrop ? (event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; } : undefined}
                   onDragStart={props.onTabDragStart ? (event) => props.onTabDragStart?.(tab.id, event) : undefined}
                   onDrop={props.onTabDrop ? (event) => {
@@ -370,7 +431,7 @@ export function AutomationViewContainer(props: {
                           : (tabIndex + 1) % props.tabs.length;
                     const next = props.tabs[nextIndex];
                     if (!next) return;
-                    props.onTabSelect(next.id);
+                    selectTab(next.id);
                     tabsRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]?.focus();
                   }}
                   role="tab"
@@ -396,8 +457,8 @@ export function AutomationViewContainer(props: {
             </label>
             <div>
               {visiblePickerTabs.length ? visiblePickerTabs.map((tab) => (
-                <button className={tab.id === props.activeViewId ? "selected" : undefined} key={tab.id} onClick={() => {
-                  props.onTabSelect(tab.id);
+                <button className={tab.id === optimisticActiveViewId ? "selected" : undefined} key={tab.id} onClick={() => {
+                  selectTab(tab.id);
                   setTabPickerOpen(false);
                   setTabQuery("");
                 }} type="button">{tab.label}</button>

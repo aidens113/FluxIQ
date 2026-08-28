@@ -3,9 +3,6 @@
 import { useState } from "react";
 import type { NodeStatePhase } from "fluxiq/automation-studio";
 import type {
-  AutomationCreatableHierarchyKind,
-  AutomationHierarchyAction,
-  AutomationHierarchyCategory,
   AutomationHierarchyKind,
   AutomationHierarchyNode,
   AutomationProjectModal,
@@ -13,11 +10,7 @@ import type {
   AutomationStudioProjectCategory
 } from "../hierarchy/model";
 import type { AutomationSelection, RecordingProcessingStatus } from "../types";
-import {
-  defaultAutomationWorkspacePrefs,
-  type AutomationLayoutPickerState,
-  type AutomationWindowAdderState,
-} from "../workspace/layout";
+import { defaultAutomationWorkspacePrefs } from "../workspace/layout";
 
 export type AutomationFlowPreset = "blank" | "deterministic" | "recorded" | "integration" | "scheduled" | "api-endpoint" | "reusable";
 export type AutomationFlowRunState = {
@@ -31,12 +24,12 @@ export type AutomationFlowRunState = {
 };
 export const automationControllerStateKeys = {
   project: ["snapshot", "projects", "projectCategories", "projectsLoaded", "activeProjectId", "projectModal", "projectTarget", "categoryTarget", "projectName", "projectDescription", "categoryName", "projectPin", "projectStatus", "projectActionBusy", "pendingProjectMove", "pendingCategoryMove", "dragOverCategoryId"],
-  hierarchy: ["loadedProjectHierarchyId", "projectSearch", "projectTypeFilter", "hierarchyAction", "hierarchyCreateStep", "hierarchyPin", "hierarchyName", "hierarchyFlowOrigin", "hierarchyKind", "hierarchyCategory", "hierarchyParentId", "hierarchyStatus", "customHierarchyNodes", "deletedHierarchyIds"],
+  hierarchy: ["loadedProjectHierarchyId", "projectSearch", "projectTypeFilter", "customHierarchyNodes", "deletedHierarchyIds"],
   flow: ["projectArtifacts", "projectFlows", "nativeNodeDefinitions", "publishedFlowDefinitions", "flowPublications", "flowDependencyInfo", "automationActionStatus", "flowRunState", "hasDirtyTaskGraph", "taskGraphDrafts"],
   recording: ["projectRecordings", "projectTimelines", "recordingDomains", "recordingTreePrimaryKind", "recordingProcessing"],
   runtime: ["runtimeSessions", "pipelineArtifacts", "gatewaySnapshot"],
   state: ["indexedStateSources", "selection", "pendingStateOpen", "bottomPreviewEntryId"],
-  layout: ["workspacePrefs", "liveSidebarWidth", "liveInspectorWidth", "liveBottomTimelineHeight", "liveMainSplitRatios", "preferencesOpen", "windowAdderOpen", "layoutPickerOpen"]
+  layout: ["workspacePrefs"]
 } as const;
 
 export function useProjectController() {
@@ -72,25 +65,13 @@ export function useHierarchyController() {
   const [loadedProjectHierarchyId, setLoadedProjectHierarchyId] = useState<string | null>(null);
   const [projectSearch, setProjectSearch] = useState("");
   const [projectTypeFilter, setProjectTypeFilter] = useState<"all" | AutomationHierarchyKind>("all");
-  const [hierarchyAction, setHierarchyAction] = useState<AutomationHierarchyAction>(null);
-  const [hierarchyCreateStep, setHierarchyCreateStep] = useState<"type" | "details">("type");
-  const [hierarchyPin, setHierarchyPin] = useState("");
-  const [hierarchyName, setHierarchyName] = useState("");
-  const [hierarchyFlowOrigin, setHierarchyFlowOrigin] = useState<AutomationFlowPreset>("blank");
-  const [hierarchyKind, setHierarchyKind] = useState<AutomationCreatableHierarchyKind>("flow");
-  const [hierarchyCategory, setHierarchyCategory] = useState<AutomationHierarchyCategory>("flow");
-  const [hierarchyParentId, setHierarchyParentId] = useState<string | null>(null);
-  const [hierarchyStatus, setHierarchyStatus] = useState("");
   const [customHierarchyNodes, setCustomHierarchyNodes] = useState<AutomationHierarchyNode[]>([]);
   const [deletedHierarchyIds, setDeletedHierarchyIds] = useState<string[]>([]);
 
   return {
     loadedProjectHierarchyId, setLoadedProjectHierarchyId, projectSearch, setProjectSearch,
-    projectTypeFilter, setProjectTypeFilter, hierarchyAction, setHierarchyAction, hierarchyCreateStep,
-    setHierarchyCreateStep, hierarchyPin, setHierarchyPin, hierarchyName, setHierarchyName,
-    hierarchyFlowOrigin, setHierarchyFlowOrigin, hierarchyKind, setHierarchyKind, hierarchyCategory,
-    setHierarchyCategory, hierarchyParentId, setHierarchyParentId, hierarchyStatus, setHierarchyStatus,
-    customHierarchyNodes, setCustomHierarchyNodes, deletedHierarchyIds, setDeletedHierarchyIds
+    projectTypeFilter, setProjectTypeFilter, customHierarchyNodes, setCustomHierarchyNodes,
+    deletedHierarchyIds, setDeletedHierarchyIds
   };
 }
 
@@ -154,18 +135,8 @@ export function useStateController() {
 
 export function useLayoutController() {
   const [workspacePrefs, setWorkspacePrefs] = useState(() => defaultAutomationWorkspacePrefs());
-  const [liveSidebarWidth, setLiveSidebarWidth] = useState<number | null>(null);
-  const [liveInspectorWidth, setLiveInspectorWidth] = useState<number | null>(null);
-  const [liveBottomTimelineHeight, setLiveBottomTimelineHeight] = useState<number | null>(null);
-  const [liveMainSplitRatios, setLiveMainSplitRatios] = useState<number[] | null>(null);
-  const [preferencesOpen, setPreferencesOpen] = useState(false);
-  const [windowAdderOpen, setWindowAdderOpen] = useState<AutomationWindowAdderState | null>(null);
-  const [layoutPickerOpen, setLayoutPickerOpen] = useState<AutomationLayoutPickerState | null>(null);
 
   return {
-    workspacePrefs, setWorkspacePrefs,
-    liveSidebarWidth, setLiveSidebarWidth, liveInspectorWidth, setLiveInspectorWidth, liveBottomTimelineHeight, setLiveBottomTimelineHeight,
-    liveMainSplitRatios, setLiveMainSplitRatios, preferencesOpen, setPreferencesOpen, windowAdderOpen,
-    setWindowAdderOpen, layoutPickerOpen, setLayoutPickerOpen
+    workspacePrefs, setWorkspacePrefs
   };
 }

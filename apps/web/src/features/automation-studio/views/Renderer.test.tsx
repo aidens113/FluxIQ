@@ -28,4 +28,25 @@ describe("AutomationViewRenderer render fanout guards", () => {
     expect(source).toContain("const AutomationRuntimeViewContainer = memo(function AutomationRuntimeViewContainer");
     expect(source).toContain("const timelines = useMemo(() => props.selectedTimeline ? [props.selectedTimeline] : emptyViewArray");
   });
+  it("sleeps unopened views and freezes activated views while they are hidden", () => {
+    const source = readFileSync(new URL("./Renderer.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("const sleepingViewTypes = new Set");
+    expect(source).toContain('"design"');
+    expect(source).toContain('"runtime"');
+    expect(source).toContain('"state"');
+    expect(source).toContain('"instructions"');
+    expect(source).toContain('"settings"');
+    expect(source).toContain('"adaptations"');
+    expect(source).toContain("if (!props.viewActive && !props.keepMounted && sleepingViewTypes.has(props.view.type)) return <AutomationSleepingView view={props.view} />;");
+    expect(source).toContain('aria-live="polite"');
+    expect(source).toContain('role="status"');
+    expect(source).toContain("automation-view-loading-indicator");
+    expect(source).toContain("function automationViewRendererPropsEqual");
+    expect(source).toContain('key === "viewActive" || key === "keepMounted" || key === "viewActivity"');
+    expect(source).toContain('<MemoAutomationPolicyCanvas activeRef={props.viewActivity}');
+    expect(source).toContain('<MemoAutomationClientGatewayView activeRef={props.viewActivity}');
+    expect(source).toContain('if (!previous.viewActive && !next.viewActive) return true');
+    expect(source).not.toContain('typeof previousValue === "function"');
+  });
 });

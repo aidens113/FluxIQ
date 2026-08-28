@@ -11,8 +11,9 @@ describe("Connected Clients UX contracts", () => {
     const source = readFileSync(new URL("./ClientViews.tsx", import.meta.url), "utf8");
     expect(source).toContain("approve-pairing");
     expect(source).toContain("dismiss-pairing");
-    expect(source).toContain("if (!props.active) return");
-    expect(source).toContain("setInterval(() => void refreshGateway(), 5000)");
+    expect(source).toContain("if (props.activeRef.current) void refreshGateway()");
+    expect(source).toContain("setInterval(refreshWhenActive, 5000)");
+    expect(source).toContain("subscribeAutomationMountedViewActivation(refreshWhenActive)");
     expect(source).not.toContain('<Field label="PIN">');
     expect(source).toContain("requirements={{ pin: true }}");
   });

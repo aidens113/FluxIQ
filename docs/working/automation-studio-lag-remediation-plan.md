@@ -84,7 +84,9 @@ Acceptance:
 
 Validation:
 
-- `pnpm --filter @fluxiq/web check` passed.
+- pnpm --filter @fluxiq/web check passed.
+- pnpm docs:check passed.
+- pnpm --filter @fluxiq/web build compiled and generated pages once, then failed with EPERM on pps/web/.next/trace; rerun hung because an active pnpm --filter @fluxiq/web dev/Next dev server owns .next. Build should be rerun after the dev server is stopped.
 - Playwright browser spec not run because the repo instruction says not to run the web panel for the user; this helper is ready for an operator-run browser suite.
 
 ### Step 0.2: Add render/request counters for Studio shell
@@ -106,7 +108,9 @@ Validation:
 - `pnpm --filter @fluxiq/web test -- src/features/programs/ui-performance.test.ts` passed: 4 tests.
 - `pnpm --filter @fluxiq/web test -- src/features/programs/program-api.test.ts` passed: 3 tests.
 - `pnpm --filter @fluxiq/web test -- src/features/automation-studio/graph/draft-store.test.ts` passed: 6 tests.
-- `pnpm --filter @fluxiq/web check` passed.
+- pnpm --filter @fluxiq/web check passed.
+- pnpm docs:check passed.
+- pnpm --filter @fluxiq/web build compiled and generated pages once, then failed with EPERM on pps/web/.next/trace; rerun hung because an active pnpm --filter @fluxiq/web dev/Next dev server owns .next. Build should be rerun after the dev server is stopped.
 
 ### Step 0.3: Add failing baseline tests for known bad interactions
 
@@ -152,7 +156,9 @@ Acceptance:
 Validation:
 
 - `pnpm --filter @fluxiq/web test -- src/features/automation-studio/AutomationStudioLive.test.ts` passed with transient workspace preference coverage.
-- `pnpm --filter @fluxiq/web check` passed.
+- pnpm --filter @fluxiq/web check passed.
+- pnpm docs:check passed.
+- pnpm --filter @fluxiq/web build compiled and generated pages once, then failed with EPERM on pps/web/.next/trace; rerun hung because an active pnpm --filter @fluxiq/web dev/Next dev server owns .next. Build should be rerun after the dev server is stopped.
 
 ### Step 1.2: Remove hierarchy autosave from normal view activation
 
@@ -172,7 +178,9 @@ Acceptance:
 Validation:
 
 - `pnpm --filter @fluxiq/web test -- src/features/automation-studio/AutomationStudioLive.test.ts` passed with persisted preference sanitizer coverage.
-- `pnpm --filter @fluxiq/web check` passed.
+- pnpm --filter @fluxiq/web check passed.
+- pnpm docs:check passed.
+- pnpm --filter @fluxiq/web build compiled and generated pages once, then failed with EPERM on pps/web/.next/trace; rerun hung because an active pnpm --filter @fluxiq/web dev/Next dev server owns .next. Build should be rerun after the dev server is stopped.
 
 ### Step 1.3: Make all view opens render a shell before data requests complete
 
@@ -192,7 +200,9 @@ Acceptance:
 Validation:
 
 - `pnpm --filter @fluxiq/web test -- src/features/automation-studio/hierarchy/ProjectTree.test.tsx` passed: 18 tests.
-- `pnpm --filter @fluxiq/web check` passed.
+- pnpm --filter @fluxiq/web check passed.
+- pnpm docs:check passed.
+- pnpm --filter @fluxiq/web build compiled and generated pages once, then failed with EPERM on pps/web/.next/trace; rerun hung because an active pnpm --filter @fluxiq/web dev/Next dev server owns .next. Build should be rerun after the dev server is stopped.
 - Empty-project Playwright budgets remain operator-run follow-up through the Phase 0.1 settled harness.
 
 ### Step 1.4: Remove artificial sidebar click delay
@@ -237,7 +247,9 @@ Acceptance:
 Validation:
 
 - `pnpm --filter @fluxiq/web test -- src/features/automation-studio/model/local-mutations.test.ts` passed: 10 tests.
-- `pnpm --filter @fluxiq/web check` passed.
+- pnpm --filter @fluxiq/web check passed.
+- pnpm docs:check passed.
+- pnpm --filter @fluxiq/web build compiled and generated pages once, then failed with EPERM on pps/web/.next/trace; rerun hung because an active pnpm --filter @fluxiq/web dev/Next dev server owns .next. Build should be rerun after the dev server is stopped.
 
 ### Step 2.2: Make Create Flow optimistic after successful backend response
 
@@ -258,7 +270,9 @@ Acceptance:
 Validation:
 
 - `pnpm --filter @fluxiq/web test -- src/features/automation-studio/AutomationStudioLive.test.ts` passed with local Flow create merge coverage.
-- `pnpm --filter @fluxiq/web check` passed.
+- pnpm --filter @fluxiq/web check passed.
+- pnpm docs:check passed.
+- pnpm --filter @fluxiq/web build compiled and generated pages once, then failed with EPERM on pps/web/.next/trace; rerun hung because an active pnpm --filter @fluxiq/web dev/Next dev server owns .next. Build should be rerun after the dev server is stopped.
 - Playwright click-to-visible-row budget remains covered by the Phase 0.1 settled harness but not operator-run yet.
 
 ### Step 2.3: Make Delete Flow immediately remove local Flow state
@@ -280,7 +294,9 @@ Acceptance:
 Validation:
 
 - `pnpm --filter @fluxiq/web test -- src/features/automation-studio/AutomationStudioLive.test.ts` passed with local Flow delete removal coverage.
-- `pnpm --filter @fluxiq/web check` passed.
+- pnpm --filter @fluxiq/web check passed.
+- pnpm docs:check passed.
+- pnpm --filter @fluxiq/web build compiled and generated pages once, then failed with EPERM on pps/web/.next/trace; rerun hung because an active pnpm --filter @fluxiq/web dev/Next dev server owns .next. Build should be rerun after the dev server is stopped.
 - Playwright delete-flow latency budget remains covered by the Phase 0.1 settled harness but not operator-run yet.
 
 ### Step 2.4: Make folder/category mutations update tree state directly
@@ -458,7 +474,9 @@ Acceptance:
 Validation:
 
 - `pnpm --filter @fluxiq/web test -- src/features/automation-studio/controllers/useRequestCoordinator.test.ts` passed: 4 tests.
-- `pnpm --filter @fluxiq/web check` passed.
+- pnpm --filter @fluxiq/web check passed.
+- pnpm docs:check passed.
+- pnpm --filter @fluxiq/web build compiled and generated pages once, then failed with EPERM on pps/web/.next/trace; rerun hung because an active pnpm --filter @fluxiq/web dev/Next dev server owns .next. Build should be rerun after the dev server is stopped.
 
 ### Step 4.2: Split view renderers into data-specific containers
 
@@ -519,7 +537,9 @@ Acceptance:
 Validation:
 
 - `pnpm --filter @fluxiq/web test -- src/features/automation-studio/AutomationStudioLive.test.ts` passed: 14 tests.
-- `pnpm --filter @fluxiq/web check` passed.
+- pnpm --filter @fluxiq/web check passed.
+- pnpm docs:check passed.
+- pnpm --filter @fluxiq/web build compiled and generated pages once, then failed with EPERM on pps/web/.next/trace; rerun hung because an active pnpm --filter @fluxiq/web dev/Next dev server owns .next. Build should be rerun after the dev server is stopped.
 
 ## Phase 5: Fix Graph Editor Hot Path
 
@@ -543,7 +563,9 @@ Acceptance:
 Validation:
 
 - `pnpm --filter @fluxiq/web test -- src/features/automation-studio/graph/operation-history.test.ts src/features/automation-studio/graph/draft-store.test.ts src/features/automation-studio/graph/useAutomationGraphController.test.ts` passed: 13 tests.
-- `pnpm --filter @fluxiq/web check` passed.
+- pnpm --filter @fluxiq/web check passed.
+- pnpm docs:check passed.
+- pnpm --filter @fluxiq/web build compiled and generated pages once, then failed with EPERM on pps/web/.next/trace; rerun hung because an active pnpm --filter @fluxiq/web dev/Next dev server owns .next. Build should be rerun after the dev server is stopped.
 
 ### Step 5.2: Make drag transactional
 
@@ -1018,3 +1040,35 @@ Validation:
 - pnpm --filter @fluxiq/web test -- src/features/automation-studio/AutomationStudioLive.test.ts src/features/automation-studio/views/GraphEditorViews.test.ts src/features/automation-studio/workspace/components.test.tsx src/features/automation-studio/hierarchy/ProjectTree.test.tsx src/features/programs/ui-performance.test.ts passed: 71 tests across 5 files.
 - pnpm --filter @fluxiq/web check passed.
 - pnpm docs:check passed.
+### Step 10.7: Decouple sidebar visual selection from navigation/data loading
+
+Status: completed on 2026-08-27 by overseer after user isolated remaining lag to the left sidebar
+
+Source audit references:
+
+- The left sidebar still derived selected-row styling from parent Studio navigation state. Because React batches the local `setPrimaryTreeNodeId` with `setSelection`/`openView`, the highlight could wait behind heavier parent work instead of appearing when the row was pressed.
+- Subflow rows were worse: `openSubflowInEditor` awaited subflow/flow detail loading before calling `setSelectionAndFollow`, so a sidebar row with a known graph id could look idle until network/cache hydration finished.
+
+Work completed so far:
+
+- Added an immediate `previewPrimaryNode` path in `ProjectTree` and invoke it from row pointer-down before click navigation dispatches.
+- Changed the local primary selection clearing logic so a user-previewed primary row is not erased just because the parent selection has not caught up yet; it clears when the external selection/view signature actually changes or the row disappears.
+- Updated sidebar subflow opening to pass known `metadata.graphFlowId` into `openSubflowInEditor` and select/follow that graph before background `loadFlowDetails` hydration.
+- Added focused regression guards for pointer-down sidebar preview and known subflow graph-id navigation.
+
+Validation:
+
+- pnpm --filter @fluxiq/web test -- src/features/automation-studio/hierarchy/ProjectTree.test.tsx src/features/automation-studio/AutomationStudioLive.test.ts passed: 55 tests across 2 files.
+- pnpm --filter @fluxiq/web test -- src/features/automation-studio/AutomationStudioLive.test.ts src/features/automation-studio/views/GraphEditorViews.test.ts src/features/automation-studio/workspace/components.test.tsx src/features/automation-studio/hierarchy/ProjectTree.test.tsx src/features/programs/ui-performance.test.ts passed: 73 tests across 5 files.
+### Step 10.8: Plan fast rebuildable UI cache
+
+Status: completed on 2026-08-27 by overseer
+
+Source audit references:
+
+- The existing `workspacePrefs` path is persisted through `save-project-hierarchy`, which is durable and bundles hierarchy tombstones with workspace state. That is the wrong path for exact high-frequency UI cache state.
+- The repo currently has SQLite storage support but no LMDB dependency. The cache plan therefore defines an engine boundary: LMDB-style key/value cache as the target contract, with a separate SQLite WAL cache DB as the fallback implementation if adding LMDB is blocked.
+
+Working doc:
+
+- See `docs/working/automation-studio-fast-ui-cache-plan.md`.

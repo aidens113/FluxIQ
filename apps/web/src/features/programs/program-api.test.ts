@@ -10,6 +10,8 @@ describe("program API instrumentation helpers", () => {
     expect(classifyProgramApiEndpoint("normalize-recording")).toBe("mutation");
     expect(classifyProgramApiEndpoint("mine-recording-evidence")).toBe("mutation");
     expect(classifyProgramApiEndpoint("inspect-flow-dependencies")).toBe("other");
+    expect(classifyProgramApiEndpoint("save-project-ui-cache", { projectId: "project.1" })).toBe("other");
+    expect(classifyProgramApiEndpoint("delete-project-ui-cache", { projectId: "project.1" })).toBe("other");
   });
 
   it("estimates response size for development metrics without serializing payloads", () => {

@@ -396,7 +396,9 @@ export function Tree(props: {
 }) {
   const visible = flattenTree(props.nodes, props.expandedIds);
   const [focusedId, setFocusedId] = useState(props.selectedId ?? visible[0]?.node.id ?? "");
-  const itemRefs = useRef(new Map<string, HTMLLIElement>());
+  const itemRefs = useRef<Map<string, HTMLLIElement> | null>(null);
+  if (!itemRefs.current) itemRefs.current = new Map<string, HTMLLIElement>();
+  const itemRefMap = itemRefs.current;
 
   useEffect(() => {
     if (props.selectedId) setFocusedId(props.selectedId);
@@ -404,7 +406,7 @@ export function Tree(props: {
 
   function focusItem(id: string) {
     setFocusedId(id);
-    window.requestAnimationFrame(() => itemRefs.current.get(id)?.focus());
+    window.requestAnimationFrame(() => itemRefMap.get(id)?.focus());
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLLIElement>, node: TreeNode) {
@@ -449,7 +451,7 @@ export function Tree(props: {
           }}
           onFocus={() => setFocusedId(node.id)}
           onKeyDown={(event) => handleKeyDown(event, node)}
-          ref={(element) => { if (element) itemRefs.current.set(node.id, element); else itemRefs.current.delete(node.id); }}
+          ref={(element) => { if (element) itemRefMap.set(node.id, element); else itemRefMap.delete(node.id); }}
           role="treeitem"
           tabIndex={focusedId === node.id ? 0 : -1}
         >

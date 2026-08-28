@@ -163,6 +163,15 @@ import {
   type AutomationStudioRuntimeRunSummary,
   type AutomationStudioRuntimeRunSummaryPage,
   type AutomationStudioWorkspaceSummary,
+  AUTOMATION_STUDIO_UI_CACHE_MAX_BATCH_ENTRIES,
+  AUTOMATION_STUDIO_UI_CACHE_MAX_ENTRY_BYTES,
+  AUTOMATION_STUDIO_UI_CACHE_MAX_KEY_BYTES,
+  AutomationStudioLazySqliteUiCacheStore,
+  AutomationStudioMemoryUiCacheStore,
+  type AutomationStudioUiCacheEntry,
+  type AutomationStudioUiCachePutEntry,
+  type AutomationStudioUiCacheStats,
+  type AutomationStudioUiCacheStore,
   RecordingStateIndexStore,
   AutomationStudioProjectAdministration,
   AutomationStudioProjectAdaptationStore,
@@ -195,6 +204,7 @@ export type AutomationStudioServiceOptions = {
   repositories?: CanonicalAutomationStudioRepositories;
   llmProviderResolver?: (input: AutomationStudioLlmProviderResolverInput) => AutomationStudioLlmProvider | undefined | Promise<AutomationStudioLlmProvider | undefined>;
   hostRuntime?: AutomationStudioHostRuntimeBoundary;
+  uiCacheStore?: AutomationStudioUiCacheStore;
   seedFixture?: boolean;
 };
 
@@ -621,6 +631,7 @@ export class AutomationStudioService {
   private readonly recordingStateIndexes?: RecordingStateIndexStore;
   private readonly projectDatabasePool?: AutomationStudioProjectDatabasePool;
   private readonly runtimeProjectDatabasePool?: AutomationStudioProjectDatabasePool;
+  private readonly uiCacheStore: AutomationStudioUiCacheStore;
   private readonly recordingMutationLocks = new Map<string, Promise<void>>();
   private readonly repairedRecordingStateIndexReads = new Set<string>();
   private readonly ready: Promise<void>;
@@ -640,8 +651,10 @@ export class AutomationStudioService {
     this.repositories = options.repositories ?? createCanonicalAutomationStudioMemoryRepositories();
     this.llmProviderResolver = options.llmProviderResolver;
     this.hostRuntime = options.hostRuntime;
+    let uiCacheStore = options.uiCacheStore;
     if (options.dataDir || options.storageRootDir) {
       const automationDataDir = options.storageRootDir ?? path.join(options.dataDir!, "programs", "automation-studio");
+      uiCacheStore ??= new AutomationStudioLazySqliteUiCacheStore({ rootDir: automationDataDir });
       if (options.storageRootDir) {
         this.objectStore = new AutomationStudioObjectStore(automationDataDir);
         this.recordingStateIndexes = new RecordingStateIndexStore(automationDataDir);
@@ -654,7 +667,13 @@ export class AutomationStudioService {
       this.projectIndexStore = new ProgramJsonStore(path.join(this.projectRootDir, "index.json"), () => ({ categories: [], projects: [] }));
       if (options.dataDir) this.legacyProjectStore = new ProgramJsonStore(programDataFile(options.dataDir, "automation-studio", "projects.json"), () => ({ categories: [], projects: [] }));
     }
+    this.uiCacheStore = uiCacheStore ?? new AutomationStudioMemoryUiCacheStore();
     this.ready = options.seedFixture === true ? this.seedFixture() : Promise.resolve();
+  }
+
+  async close(): Promise<void> {
+    await this.uiCacheStore.close();
+    await this.runtimeProjectDatabasePool?.closeAll();
   }
 
   /** Connects Automation Studio policy execution to importer-registered IO. */
@@ -4508,6 +4527,7 @@ export class AutomationStudioService {
         await transaction.write(this.projectIndexStore!.filePath, { ...state, projects: state.projects.filter((project) => project.id !== projectId) });
         await transaction.deletePath(this.projectDirectory(projectId));
       });
+      await this.uiCacheStore.delete({ projectId }).catch(() => undefined);
       return { deletedProjectId: projectId };
     }
     await this.findProject(projectId);
@@ -4519,6 +4539,7 @@ export class AutomationStudioService {
       if (this.objectStore) await ProgramJsonStore.deletePath(this.projectDirectory(projectId));
       else await rm(this.projectDirectory(projectId), { recursive: true, force: true });
     }
+    await this.uiCacheStore.delete({ projectId }).catch(() => undefined);
     return { deletedProjectId: projectId };
   }
 
@@ -4609,9 +4630,8 @@ export class AutomationStudioService {
     await this.findProject(input.projectId);
     const afterSequence = Math.max(0, Math.trunc(Number(input.afterSequence ?? 0)) || 0);
     const limit = Math.max(1, Math.min(500, Math.trunc(Number(input.limit ?? 100)) || 100));
-    if (!this.projectRootDir) return { events: [], cursor: afterSequence, hasMore: false, fallback: true };
-    const pool = new AutomationStudioProjectDatabasePool({ rootDir: path.dirname(this.projectRootDir) });
-    const admin = await AutomationStudioProjectAdministration.open({ pool, projectId: input.projectId });
+    if (!this.projectRootDir || !this.projectDatabasePool) return { events: [], cursor: afterSequence, hasMore: false, fallback: true };
+    const admin = await AutomationStudioProjectAdministration.open({ pool: this.projectDatabasePool, projectId: input.projectId });
     try {
       const events = await admin.changeFeed.listAfter(afterSequence, limit + 1);
       const page = events.slice(0, limit).map((event) => ({
@@ -4634,10 +4654,50 @@ export class AutomationStudioService {
       };
     } finally {
       await admin.close();
-      await pool.closeAll();
     }
   }
 
+  async getProjectUiCache(input: { projectId: string; userId: string; cacheKeys: unknown }): Promise<{ entries: Array<Omit<AutomationStudioUiCacheEntry, "projectId" | "userId">>; missingKeys: string[] }> {
+    await this.findProject(input.projectId);
+    const userId = normalizeUiCacheUserId(input.userId);
+    const cacheKeys = normalizeUiCacheKeyBatch(input.cacheKeys, "cacheKeys");
+    const entries = await this.uiCacheStore.get({ projectId: input.projectId, userId, cacheKeys });
+    const foundKeys = new Set(entries.map((entry) => entry.cacheKey));
+    return {
+      entries: entries.map(projectUiCacheEntryForApi),
+      missingKeys: cacheKeys.filter((cacheKey) => !foundKeys.has(cacheKey))
+    };
+  }
+
+  async saveProjectUiCache(input: { projectId: string; userId: string; entries: unknown }): Promise<{ entries: Array<Omit<AutomationStudioUiCacheEntry, "projectId" | "userId">> }> {
+    await this.findProject(input.projectId);
+    const userId = normalizeUiCacheUserId(input.userId);
+    const entries = normalizeUiCachePutEntryBatch(input.entries);
+    const saved = await this.uiCacheStore.putBatch({ projectId: input.projectId, userId, entries });
+    return { entries: saved.map(projectUiCacheEntryForApi) };
+  }
+
+  async deleteProjectUiCache(input: { projectId: string; userId: string; cacheKeys?: unknown }): Promise<{ deleted: number }> {
+    await this.findProject(input.projectId);
+    const userId = normalizeUiCacheUserId(input.userId);
+    const cacheKeys = input.cacheKeys === undefined || input.cacheKeys === null ? undefined : normalizeUiCacheKeyBatch(input.cacheKeys, "cacheKeys");
+    return await this.uiCacheStore.delete({ projectId: input.projectId, userId, ...(cacheKeys ? { cacheKeys } : {}) });
+  }
+
+  async listProjectUiCacheStats(input: { projectId?: unknown; userId: string }): Promise<{ stats: Array<Omit<AutomationStudioUiCacheStats, "userId"> & { entryCount: number; totalBytes: number; updatedAt: number | null }> }> {
+    const userId = normalizeUiCacheUserId(input.userId);
+    const projectId = typeof input.projectId === "string" && input.projectId.trim() ? input.projectId.trim() : undefined;
+    if (projectId) await this.findProject(projectId);
+    const stats = await this.uiCacheStore.stats({ userId, ...(projectId ? { projectId } : {}) });
+    return {
+      stats: stats.map(({ userId: _userId, ...entry }) => ({
+        ...entry,
+        entryCount: entry.entries,
+        totalBytes: entry.byteCount,
+        updatedAt: entry.newestUpdatedAt
+      }))
+    };
+  }
   async saveProjectHierarchy(projectId: string, hierarchy: AutomationStudioProjectHierarchy): Promise<AutomationStudioProjectHierarchy> {
     const nextHierarchy: AutomationStudioProjectHierarchy = {
       customHierarchyNodes: Array.isArray(hierarchy.customHierarchyNodes) ? hierarchy.customHierarchyNodes : [],
@@ -9136,6 +9196,82 @@ async function readJsonLinePage<T>(filePath: string, offset: number, limit: numb
     stream.destroy();
   }
   return items;
+}
+
+function normalizeUiCacheUserId(userId: string): string {
+  const normalized = userId.trim();
+  if (!normalized) throw new Error("Automation Studio UI cache requires an authenticated user.");
+  return normalized;
+}
+
+function normalizeUiCacheKeyBatch(value: unknown, fieldName: string): string[] {
+  if (!Array.isArray(value)) throw new Error(`Automation Studio UI cache ${fieldName} must be an array.`);
+  if (value.length > AUTOMATION_STUDIO_UI_CACHE_MAX_BATCH_ENTRIES) {
+    throw new Error(`Automation Studio UI cache accepts at most ${AUTOMATION_STUDIO_UI_CACHE_MAX_BATCH_ENTRIES} keys per request.`);
+  }
+  return value.map((item, index) => normalizeUiCacheKey(item, `${fieldName}[${index}]`));
+}
+
+function normalizeUiCachePutEntryBatch(value: unknown): AutomationStudioUiCachePutEntry[] {
+  if (!Array.isArray(value)) throw new Error("Automation Studio UI cache entries must be an array.");
+  if (value.length > AUTOMATION_STUDIO_UI_CACHE_MAX_BATCH_ENTRIES) {
+    throw new Error(`Automation Studio UI cache accepts at most ${AUTOMATION_STUDIO_UI_CACHE_MAX_BATCH_ENTRIES} entries per request.`);
+  }
+  return value.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error(`Automation Studio UI cache entries[${index}] must be an object.`);
+    const entry = item as { cacheKey?: unknown; value?: unknown; contentRevision?: unknown; expiresAt?: unknown };
+    const value = normalizeUiCacheJsonValue(entry.value, `entries[${index}].value`);
+    const sizeBytes = jsonValueSizeBytes(value);
+    if (sizeBytes > AUTOMATION_STUDIO_UI_CACHE_MAX_ENTRY_BYTES) {
+      throw new Error(`Automation Studio UI cache entries[${index}] exceeds ${AUTOMATION_STUDIO_UI_CACHE_MAX_ENTRY_BYTES} bytes.`);
+    }
+    const contentRevision = entry.contentRevision === undefined ? undefined : clampOptionalUiCacheNumber(entry.contentRevision, `entries[${index}].contentRevision`);
+    const expiresAt = entry.expiresAt === undefined || entry.expiresAt === null ? entry.expiresAt as null | undefined : clampOptionalUiCacheNumber(entry.expiresAt, `entries[${index}].expiresAt`);
+    return {
+      cacheKey: normalizeUiCacheKey(entry.cacheKey, `entries[${index}].cacheKey`),
+      value,
+      sizeBytes,
+      ...(contentRevision !== undefined ? { contentRevision } : {}),
+      ...(expiresAt !== undefined ? { expiresAt } : {})
+    };
+  });
+}
+
+function normalizeUiCacheKey(value: unknown, fieldName: string): string {
+  const cacheKey = typeof value === "string" ? value.trim() : "";
+  if (!cacheKey) throw new Error(`Automation Studio UI cache ${fieldName} is required.`);
+  if (Buffer.byteLength(cacheKey, "utf8") > AUTOMATION_STUDIO_UI_CACHE_MAX_KEY_BYTES) {
+    throw new Error(`Automation Studio UI cache ${fieldName} exceeds ${AUTOMATION_STUDIO_UI_CACHE_MAX_KEY_BYTES} bytes.`);
+  }
+  return cacheKey;
+}
+
+function normalizeUiCacheJsonValue(value: unknown, fieldName: string): JsonValue {
+  if (value === undefined) throw new Error(`Automation Studio UI cache ${fieldName} is required.`);
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined) throw new Error(`Automation Studio UI cache ${fieldName} must be JSON serializable.`);
+  return JSON.parse(serialized) as JsonValue;
+}
+
+function jsonValueSizeBytes(value: JsonValue): number {
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
+}
+
+function clampOptionalUiCacheNumber(value: unknown, fieldName: string): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) throw new Error(`Automation Studio UI cache ${fieldName} must be a non-negative number.`);
+  return Math.trunc(numeric);
+}
+
+function projectUiCacheEntryForApi(entry: AutomationStudioUiCacheEntry): Omit<AutomationStudioUiCacheEntry, "projectId" | "userId"> {
+  return {
+    cacheKey: entry.cacheKey,
+    value: structuredClone(entry.value),
+    sizeBytes: entry.sizeBytes,
+    updatedAt: entry.updatedAt,
+    ...(entry.contentRevision !== undefined ? { contentRevision: entry.contentRevision } : {}),
+    ...(entry.expiresAt !== undefined ? { expiresAt: entry.expiresAt } : {})
+  };
 }
 function compareFlowAdaptationSummaries(
   left: AutomationStudioAdaptationSummary,

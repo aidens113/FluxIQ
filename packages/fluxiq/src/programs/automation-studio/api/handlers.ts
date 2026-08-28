@@ -32,6 +32,10 @@ import {
   type ExecuteClientActionRequest,
   type FinalizeRecordingRequest,
   type AutomationStudioProjectChangeFeedRequest,
+  type AutomationStudioGetProjectUiCacheRequest,
+  type AutomationStudioSaveProjectUiCacheRequest,
+  type AutomationStudioDeleteProjectUiCacheRequest,
+  type AutomationStudioListProjectUiCacheStatsRequest,
   type GetRecordingEntryStateRequest,
   type GetProposalRequest,
   type GetStateSnapshotRequest,
@@ -208,6 +212,42 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
             : { customHierarchyNodes: [], deletedHierarchyIds: [], workspacePrefs: {} })
         }
       };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProjectUiCache,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<AutomationStudioGetProjectUiCacheRequest> : {};
+      return { ok: true, payload: await service.getProjectUiCache({ projectId: String(payload.projectId ?? ""), userId: request.actor?.userId ?? "", cacheKeys: payload.cacheKeys }) };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveProjectUiCache,
+    permission: "programs.write",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<AutomationStudioSaveProjectUiCacheRequest> : {};
+      return { ok: true, payload: await service.saveProjectUiCache({ projectId: String(payload.projectId ?? ""), userId: request.actor?.userId ?? "", entries: payload.entries }) };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectUiCache,
+    permission: "programs.write",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<AutomationStudioDeleteProjectUiCacheRequest> : {};
+      return { ok: true, payload: await service.deleteProjectUiCache({ projectId: String(payload.projectId ?? ""), userId: request.actor?.userId ?? "", cacheKeys: payload.cacheKeys }) };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectUiCacheStats,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<AutomationStudioListProjectUiCacheStatsRequest> : {};
+      return { ok: true, payload: await service.listProjectUiCacheStats({ projectId: payload.projectId, userId: request.actor?.userId ?? "" }) };
     }
   });
   registry.register({

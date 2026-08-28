@@ -2,7 +2,7 @@
 
 import { AlertTriangle, Blocks, Bug, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns3, FileSearch, FolderOpen, FolderPlus, GitBranch, GripVertical, History, ListChecks, Network, Plus, Radio, Search, SlidersHorizontal, Sparkles, Trash2, Workflow, X } from "lucide-react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import type { NodeStatePhase } from "fluxiq/automation-studio";
 import {
   automationHierarchyCategories,
@@ -37,6 +37,13 @@ import {
   type AutomationFlowRunState
 } from "./controllers/useAutomationStudioControllers";
 import { useAutomationStudioCache } from "./controllers/useAutomationStudioCache";
+import { useAutomationStudioLazyPreloader } from "./controllers/useAutomationStudioLazyPreloader";
+import {
+  ProgramApiAutomationStudioUiCacheBackend,
+  normalizeAutomationProjectTreeUiState,
+  useAutomationStudioUiCacheCoordinator,
+  type AutomationProjectTreeUiState
+} from "./controllers/useAutomationStudioUiCacheCoordinator";
 import { useRequestCoordinator } from "./controllers/useRequestCoordinator";
 import { automationStudioDeepLinkParams, automationStudioDefaultViewForLink, automationStudioFlowScope, automationStudioWorkspaceBreadcrumbs, parseAutomationStudioDeepLink } from "./navigation";
 import type {
@@ -61,17 +68,20 @@ import {
   type AutomationWorkspaceArea,
   type AutomationWorkspacePrefs,
 } from "./workspace/layout";
+import { AutomationWorkspaceRenderBoundary, createAutomationWorkspaceRenderStore } from "./workspace/render-store";
+import { AutomationStudioUiBoundary, createAutomationStudioUiStore, type AutomationStudioUiState } from "./workspace/studio-ui-store";
 import {
   AutomationLayoutPicker,
   AutomationViewContainer,
   AutomationWindowAdderPalette,
   AutomationWorkspacePreferences,
+  activateAutomationMountedView,
   automationAreaLabel,
   automationFloatingPanelStyle,
   automationLayoutOptionsForArea,
   viewTitle
 } from "./workspace/components";
-import { AutomationTimelineDock, AutomationViewRenderer } from "./views";
+import { AutomationSleepingView, AutomationTimelineDock, AutomationViewRenderer, automationViewTypeCanSleep } from "./views";
 import { automationPolicyGraphProblems } from "./views/GraphEditorViews";
 import { taskFlowToReactFlowGraph } from "./graph/view-model";
 import { automationGraphDraftIdentity, loadAutomationGraphDraft, loadAutomationGraphOperationDraft, removeAutomationGraphDraft, removeAutomationGraphOperationDraft, saveAutomationGraphDraft, saveAutomationGraphOperationDraft, type AutomationGraphDraftRecord } from "./graph/draft-store";
@@ -150,6 +160,12 @@ function emitAutomationStudioCommandStatus(detail: { state: string; detail: stri
   window.dispatchEvent(new CustomEvent("automation-studio:command-status", { detail }));
 }
 
+function useStableAutomationEvent<Args extends unknown[], Result>(handler: (...args: Args) => Result): (...args: Args) => Result {
+  const handlerRef = useRef(handler);
+  handlerRef.current = handler;
+  return useCallback((...args: Args) => handlerRef.current(...args), []);
+}
+
 export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser }) {
   useUiRenderMetric("AutomationStudioLive");
   useUiLongTaskMetrics("AutomationStudio");
@@ -160,8 +176,44 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const deepLink = parseAutomationStudioDeepLink(searchParams);
   const { runLatest } = useRequestCoordinator();
   const dataCache = useAutomationStudioCache();
+  const workspaceNavigationQueueRef = useRef<{ animationFrame: number | null; timeout: number | null; flushing: boolean; commits: Array<() => void> }>({
+    animationFrame: null,
+    timeout: null,
+    flushing: false,
+    commits: []
+  });
+  const scheduleWorkspaceNavigation = useCallback((commit: () => void) => {
+    const queue = workspaceNavigationQueueRef.current;
+    if (queue.flushing) {
+      commit();
+      return;
+    }
+    queue.commits.push(commit);
+    if (queue.animationFrame !== null || queue.timeout !== null) return;
+    queue.animationFrame = window.requestAnimationFrame(() => {
+      queue.animationFrame = null;
+      queue.timeout = window.setTimeout(() => {
+        queue.timeout = null;
+        const commits = queue.commits.splice(0);
+        queue.flushing = true;
+        try {
+          for (const queuedCommit of commits) queuedCommit();
+        } finally {
+          queue.flushing = false;
+        }
+      }, 0);
+    });
+  }, []);
+  useEffect(() => () => {
+    const queue = workspaceNavigationQueueRef.current;
+    if (queue.animationFrame !== null) window.cancelAnimationFrame(queue.animationFrame);
+    if (queue.timeout !== null) window.clearTimeout(queue.timeout);
+    queue.commits.length = 0;
+  }, []);
+  const uiCacheBackend = useMemo(() => new ProgramApiAutomationStudioUiCacheBackend(api), [api]);
+  const uiCache = useAutomationStudioUiCacheCoordinator(uiCacheBackend);
   const clientStores = useMemo(() => createAutomationStudioClientStores(), []);
-  const [dataInspectorOpen, setDataInspectorOpen] = useState(false);
+
   const urlProjectId = deepLink.projectId;
   const {
     snapshot, setSnapshot, projects, setProjects, projectCategories, setProjectCategories,
@@ -173,11 +225,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   } = useProjectController();
   const {
     loadedProjectHierarchyId, setLoadedProjectHierarchyId, projectSearch, setProjectSearch,
-    projectTypeFilter, setProjectTypeFilter, hierarchyAction, setHierarchyAction, hierarchyCreateStep,
-    setHierarchyCreateStep, hierarchyPin, setHierarchyPin, hierarchyName, setHierarchyName,
-    hierarchyFlowOrigin, setHierarchyFlowOrigin, hierarchyKind, setHierarchyKind, hierarchyCategory,
-    setHierarchyCategory, hierarchyParentId, setHierarchyParentId, hierarchyStatus, setHierarchyStatus,
-    customHierarchyNodes, setCustomHierarchyNodes, deletedHierarchyIds, setDeletedHierarchyIds
+    projectTypeFilter, setProjectTypeFilter, customHierarchyNodes, setCustomHierarchyNodes,
+    deletedHierarchyIds, setDeletedHierarchyIds
   } = useHierarchyController();
   const {
     projectArtifacts, setProjectArtifacts, projectFlows, setProjectFlows, nativeNodeDefinitions,
@@ -199,14 +248,38 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     indexedStateSources, setIndexedStateSources, selection, setSelection, pendingStateOpen,
     setPendingStateOpen, bottomPreviewEntryId, setBottomPreviewEntryId
   } = useStateController();
-  const {
-    workspacePrefs, setWorkspacePrefs,
-    liveSidebarWidth, setLiveSidebarWidth, liveInspectorWidth, setLiveInspectorWidth, liveBottomTimelineHeight, setLiveBottomTimelineHeight,
-    liveMainSplitRatios, setLiveMainSplitRatios, preferencesOpen, setPreferencesOpen, windowAdderOpen,
-    setWindowAdderOpen, layoutPickerOpen, setLayoutPickerOpen,
-  } = useLayoutController();
+  const { workspacePrefs: initialWorkspacePrefs } = useLayoutController();
+  const workspaceRenderStoreRef = useRef<ReturnType<typeof createAutomationWorkspaceRenderStore> | null>(null);
+  if (!workspaceRenderStoreRef.current) workspaceRenderStoreRef.current = createAutomationWorkspaceRenderStore(initialWorkspacePrefs);
+  const workspaceRenderStore = workspaceRenderStoreRef.current;
+  const workspacePrefs = workspaceRenderStore.getPrefs();
+  const workspaceShellRendererRef = useRef<(prefs: AutomationWorkspacePrefs) => ReactNode>(() => null);
+  const stableWorkspaceShellRenderer = useCallback((prefs: AutomationWorkspacePrefs) => workspaceShellRendererRef.current(prefs), []);
+  const studioUiStoreRef = useRef<ReturnType<typeof createAutomationStudioUiStore> | null>(null);
+  if (!studioUiStoreRef.current) studioUiStoreRef.current = createAutomationStudioUiStore();
+  const studioUiStore = studioUiStoreRef.current;
+  const workspaceOverlayRendererRef = useRef<(prefs: AutomationWorkspacePrefs, studioUi: AutomationStudioUiState) => ReactNode>(() => null);
+  const stableWorkspaceOverlayRenderer = useCallback((prefs: AutomationWorkspacePrefs, studioUi: AutomationStudioUiState) => workspaceOverlayRendererRef.current(prefs, studioUi), []);
+  const setHierarchyStatus = (value: string) => studioUiStore.patch({ hierarchyStatus: value });
+  const closeHierarchyAction = () => studioUiStore.patch({ hierarchyAction: null, hierarchyName: "", hierarchyPin: "" });
+  const setWindowAdderOpen = (next: AutomationStudioUiState["windowAdderOpen"] | ((current: AutomationStudioUiState["windowAdderOpen"]) => AutomationStudioUiState["windowAdderOpen"])) => {
+    studioUiStore.patch({ windowAdderOpen: typeof next === "function" ? next(studioUiStore.getState().windowAdderOpen) : next });
+  };
+  const setLayoutPickerOpen = (next: AutomationStudioUiState["layoutPickerOpen"] | ((current: AutomationStudioUiState["layoutPickerOpen"]) => AutomationStudioUiState["layoutPickerOpen"])) => {
+    studioUiStore.patch({ layoutPickerOpen: typeof next === "function" ? next(studioUiStore.getState().layoutPickerOpen) : next });
+  };
+  function replaceWorkspaceRenderPrefs(nextOrUpdater: AutomationWorkspacePrefs | ((current: AutomationWorkspacePrefs) => AutomationWorkspacePrefs)) {
+    const current = workspaceRenderStore.getPrefs();
+    const next = typeof nextOrUpdater === "function" ? nextOrUpdater(current) : nextOrUpdater;
+    if (next !== current) workspaceRenderStore.replace(next);
+  }
   const [workspaceSaveStatus, setWorkspaceSaveStatus] = useState("All workspace changes saved");
   const [workspacePrefsSaveRevision, setWorkspacePrefsSaveRevision] = useState(0);
+  const [projectTreeUiState, setProjectTreeUiState] = useState<AutomationProjectTreeUiState | null>(null);
+  const projectTreeUiStateRef = useRef<AutomationProjectTreeUiState | null>(null);
+  const projectTreeFilterStateRef = useRef<{ search: string; typeFilter: "all" | AutomationHierarchyKind }>({ search: "", typeFilter: "all" });
+  const lastCachedWorkspacePrefsRef = useRef<AutomationWorkspacePrefs | null>(null);
+  const lastCachedWorkspacePrefsProjectRef = useRef<string | null>(null);
   const [recoverableTaskGraphDraft, setRecoverableTaskGraphDraft] = useState<AutomationGraphDraftRecord<{ nodes: any[]; edges: any[] }> | null>(null);
   const graphDraftPersistenceRef = useRef<AutomationGraphDraftRecord<{ nodes: any[]; edges: any[] }> | null>(null);
   const [isNarrowWorkspace, setIsNarrowWorkspace] = useState(false);
@@ -217,6 +290,14 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const restoringDeepLinkRef = useRef(false);
   const projectActionBusyRef = useRef(false);
   const mainWorkspaceCanvasRef = useRef<HTMLDivElement>(null);
+  const mountedWorkspaceViewsRef = useRef<{ projectId: string | null; viewIds: Set<string>; activityByViewKey: Map<string, { current: boolean }> }>({
+    projectId: activeProjectId,
+    viewIds: new Set(),
+    activityByViewKey: new Map()
+  });
+  if (mountedWorkspaceViewsRef.current.projectId !== activeProjectId) {
+    mountedWorkspaceViewsRef.current = { projectId: activeProjectId, viewIds: new Set(), activityByViewKey: new Map() };
+  }
   const rightWorkspaceCanvasRef = useRef<HTMLDivElement>(null);
   const lastSavedHierarchySignatureRef = useRef("");
   const lastOpenedGatewayRecordingRef = useRef("");
@@ -226,6 +307,10 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const pendingStateOpenKeyRef = useRef<string | null>(null);
   const gatewayActivitySignatureRef = useRef("");
   const projectSyncClientRef = useRef<AutomationStudioProjectSyncClient | null>(null);
+  const activeProjectIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    activeProjectIdRef.current = activeProjectId;
+  }, [activeProjectId]);
 
   useEffect(() => {
     const query = window.matchMedia("(max-width: 820px)");
@@ -410,15 +495,14 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     [nativeNodeDefinitions, publishedFlowDefinitions]
   );
   const indexedStateSourceList = useMemo(() => Object.values(indexedStateSources), [indexedStateSources]);
-  const projectTasks = projectArtifacts.tasks ?? [];
+  const projectTasks = useMemo(() => projectArtifacts.tasks ?? [], [projectArtifacts.tasks]);
   const flowViewState = workspacePrefs.viewStates?.["policy-primary"] ?? {};
   const lastOpenFlowId = typeof flowViewState.lastOpenFlowId === "string" ? flowViewState.lastOpenFlowId : null;
-  const validLastOpenFlowEntry = lastOpenFlowId ? projectFlows.find((entry: any) => entry.source === "canonical" && entry.flow?.flowId === lastOpenFlowId) : null;
-  const selectedFlowEntry = projectFlows.find((entry: any) => selection?.kind === "flow" && entry.flow?.flowId === selection.id)
-    ?? validLastOpenFlowEntry
+  const selectedFlowEntry = useMemo(() => projectFlows.find((entry: any) => selection?.kind === "flow" && entry.flow?.flowId === selection.id)
+    ?? (lastOpenFlowId ? projectFlows.find((entry: any) => entry.source === "canonical" && entry.flow?.flowId === lastOpenFlowId) : null)
     ?? projectFlows.find((entry: any) => entry.source === "canonical")
     ?? projectFlows[0]
-    ?? null;
+    ?? null, [lastOpenFlowId, projectFlows, selection]);
   const selectedFlow = selectedFlowEntry?.flow ?? null;
   const runnableFlowEntry = selectedFlowEntry?.source === "canonical" ? selectedFlowEntry : null;
   const runnableFlow = runnableFlowEntry?.flow ?? null;
@@ -449,7 +533,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const proposalReviewsSource = proposalViewState.proposalReviews;
   const proposalReviews = proposalReviewsSource && typeof proposalReviewsSource === "object" && !Array.isArray(proposalReviewsSource) ? proposalReviewsSource as Record<string, any> : {};
   const lastOpenTaskId = typeof proposalViewState.lastOpenTaskId === "string" ? proposalViewState.lastOpenTaskId : null;
-  const validLastOpenTask = lastOpenTaskId ? projectTasks.find((task: any) => task.taskId === lastOpenTaskId) : null;
+
   const selectionProposalId = selection?.kind === "proposal"
     ? selection.id
     : selection?.kind === "proposal-step"
@@ -459,7 +543,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         : selection?.kind === "editor-node" && typeof selection.node.metadata?.proposalId === "string"
           ? selection.node.metadata.proposalId
           : undefined;
-  const selectionRecordingIdForProposal = selection?.kind === "recording"
+  const selectionRecordingIdForProposal = useMemo(() => selection?.kind === "recording"
     ? selection.id
     : selection?.kind === "timeline"
       ? timelines.find((timeline: any) => timeline.timeline?.some((entry: any) => entry.id === selection.id))?.recordingId
@@ -470,19 +554,19 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           ? selection.recordingId
           : selection?.kind === "editor-node" && typeof selection.node.metadata?.recordingId === "string"
             ? selection.node.metadata.recordingId
-            : undefined;
-  const selectedProposal = hierarchyProposals.find((proposal: any) => selectionProposalId && proposal.proposalId === selectionProposalId)
+            : undefined, [recordings, selection, timelines]);
+  const selectedProposal = useMemo(() => hierarchyProposals.find((proposal: any) => selectionProposalId && proposal.proposalId === selectionProposalId)
     ?? latestProposalForRecordingId(selectionRecordingIdForProposal, proposals, recordingFlowProposals)
-    ?? (selection ? null : hierarchyProposals[0] ?? null);
-  const selectedTask = projectTasks.find((task: any) => selection?.kind === "policy" && (task.metadata?.policyId === selection.id || task.taskId === selection.id))
-    ?? validLastOpenTask
+    ?? (selection ? null : hierarchyProposals[0] ?? null), [hierarchyProposals, proposals, recordingFlowProposals, selection, selectionProposalId, selectionRecordingIdForProposal]);
+  const selectedTask = useMemo(() => projectTasks.find((task: any) => selection?.kind === "policy" && (task.metadata?.policyId === selection.id || task.taskId === selection.id))
+    ?? (lastOpenTaskId ? projectTasks.find((task: any) => task.taskId === lastOpenTaskId) : null)
     ?? projectTasks[0]
-    ?? null;
-  const selectedTaskFlow = selectedTask
+    ?? null, [lastOpenTaskId, projectTasks, selection]);
+  const selectedTaskFlow = useMemo(() => selectedTask
     ? (projectArtifacts.flows ?? []).find((flow: any) => (selectedTask.graphId || selectedTask.policyFlowId) && flow.flowId === (selectedTask.graphId ?? selectedTask.policyFlowId))
       ?? (projectArtifacts.flows ?? []).find((flow: any) => flow.ownerKind === "task" && flow.ownerId === selectedTask.taskId)
       ?? null
-    : null;
+    : null, [projectArtifacts.flows, selectedTask]);
   const projectFlowUrlScopeSignature = useMemo(() => projectFlows.map((entry: any) => {
     const flow = entry?.flow ?? entry;
     return [
@@ -506,18 +590,28 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       setRecoverableTaskGraphDraft(null);
       return;
     }
-    const legacyDraft = loadAutomationGraphDraft<{ nodes: any[]; edges: any[] }>(activeProjectId, selectedTaskGraph.flowId);
-    if (legacyDraft) {
-      setRecoverableTaskGraphDraft(legacyDraft);
-      return;
-    }
     let cancelled = false;
-    void loadAutomationGraphOperationDraft(activeProjectId, selectedTaskGraph.flowId).then((draft) => {
-      if (cancelled || !draft || !baseTaskGraphDocument) return;
-      const graph = applyAutomationGraphOperationBatch(baseTaskGraphDocument as any, { batchId: "browser-draft", baseRevision: draft.baseRevision, createdAt: draft.savedAt, operations: draft.operations as any, estimatedBytes: draft.estimatedBytes }, "forward");
-      setRecoverableTaskGraphDraft({ projectId: draft.projectId, flowId: draft.flowId, baseUpdatedAt: draft.baseUpdatedAt, savedAt: draft.savedAt, graph });
-    });
-    return () => { cancelled = true; };
+    const projectId = activeProjectId;
+    const flowId = selectedTaskGraph.flowId;
+    const baseGraphDocument = baseTaskGraphDocument;
+    const cancel = scheduleAutomationGraphIdleTask(() => {
+      if (cancelled) return;
+      const legacyDraft = loadAutomationGraphDraft<{ nodes: any[]; edges: any[] }>(projectId, flowId);
+      if (cancelled) return;
+      if (legacyDraft) {
+        setRecoverableTaskGraphDraft(legacyDraft);
+        return;
+      }
+      void loadAutomationGraphOperationDraft(projectId, flowId).then((draft) => {
+        if (cancelled || !draft || !baseGraphDocument) return;
+        const graph = applyAutomationGraphOperationBatch(baseGraphDocument as any, { batchId: "browser-draft", baseRevision: draft.baseRevision, createdAt: draft.savedAt, operations: draft.operations as any, estimatedBytes: draft.estimatedBytes }, "forward");
+        setRecoverableTaskGraphDraft({ projectId: draft.projectId, flowId: draft.flowId, baseUpdatedAt: draft.baseUpdatedAt, savedAt: draft.savedAt, graph });
+      });
+    }, { delayMs: 120, timeoutMs: 1_500 });
+    return () => {
+      cancelled = true;
+      cancel();
+    };
   }, [activeProjectId, selectedTaskGraph?.flowId, selectedTaskGraph?.updatedAt, Boolean(selectedTaskGraphDraft), baseTaskGraphDocument]);
 
   useEffect(() => {
@@ -525,11 +619,10 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       graphDraftPersistenceRef.current = null;
       return;
     }
-    const existing = loadAutomationGraphDraft(activeProjectId, selectedTaskGraph.flowId);
     graphDraftPersistenceRef.current = {
       projectId: activeProjectId,
       flowId: selectedTaskGraph.flowId,
-      baseUpdatedAt: existing?.baseUpdatedAt ?? selectedTaskGraph.updatedAt ?? 0,
+      baseUpdatedAt: selectedTaskGraph.updatedAt ?? 0,
       savedAt: Date.now(),
       graph: selectedTaskGraphDraft
     };
@@ -548,11 +641,10 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     const projectId = activeProjectId;
     const flowId = selectedTaskGraph.flowId;
     const timeout = window.setTimeout(() => {
-      const existing = loadAutomationGraphDraft(projectId, flowId);
       const stored = saveAutomationGraphDraft({
         projectId,
         flowId,
-        baseUpdatedAt: existing?.baseUpdatedAt ?? selectedTaskGraph.updatedAt ?? 0,
+        baseUpdatedAt: selectedTaskGraph.updatedAt ?? 0,
         savedAt: Date.now(),
         graph: selectedTaskGraphDraft
       });
@@ -562,6 +654,19 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   }, [activeProjectId, selectedTaskGraph?.flowId, selectedTaskGraph?.updatedAt, selectedTaskGraphDraft]);
   const activePane = workspacePrefs.panes.find((item) => item.id === workspacePrefs.activePaneId) ?? workspacePrefs.panes[0];
   const activeViewId = activePane?.activeViewId ?? workspacePrefs.activeViewId ?? "policy-primary";
+  const openWorkspaceViewIdList = useMemo(() => [...new Set([
+    ...workspacePrefs.panes.flatMap((pane) => pane.tabs),
+    ...workspacePrefs.rightSidebar.tabs
+  ])], [workspacePrefs.panes, workspacePrefs.rightSidebar.tabs]);
+  const activePreloadRunId = typeof flowRunState.runId === "string"
+    ? flowRunState.runId
+    : typeof runtimeSessions[0]?.runId === "string" ? runtimeSessions[0].runId : null;
+  useAutomationStudioLazyPreloader(api, {
+    projectId: activeProjectId,
+    activeFlowId: selectedFlowEntry?.source === "canonical" ? selectedFlow?.flowId ?? null : null,
+    activeRunId: activePreloadRunId,
+    openViewIds: openWorkspaceViewIdList
+  });
   const graphForValidation = useMemo(() => selectedTaskGraphDraft ?? baseTaskGraphDocument, [selectedTaskGraphDraft, baseTaskGraphDocument]);
   const [graphProblems, setGraphProblems] = useState<any[]>([]);
   const graphProblemsVisible = activeViewId === "problems-view" || workspacePrefs.rightSidebar.activeViewId === "problems-view";
@@ -610,12 +715,12 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     () => selectedTaskGraph ? flowToTaskPolicy(selectedTaskGraph, selectedTask) : selectedCanonicalPolicy,
     [selectedTaskGraph, selectedTask, selectedCanonicalPolicy]
   );
-  const timelineSelectionRecordingId = selection?.kind === "timeline"
+  const timelineSelectionRecordingId = useMemo(() => selection?.kind === "timeline"
     ? timelines.find((timeline: any) => timeline.timeline?.some((entry: any) => entry.id === selection.id))?.recordingId
       ?? recordings.find((recording: any) => recording.timeline?.some((entry: any) => entry.id === selection.id))?.recordingId
     : selection?.kind === "state"
       ? selection.recordingId ?? recordingIdFromStateSourceId(selection.sourceId)
-    : null;
+    : null, [recordings, selection, timelines]);
   const proposalSelectionRecordingId = selection?.kind === "proposal"
     ? selection.recordingId ?? selectedProposal?.metadata?.recordingId ?? selectedProposal?.recordingId
     : selection?.kind === "proposal-step"
@@ -626,11 +731,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         ? selection.recordingId ?? (selection.proposalId ? hierarchyProposals.find((proposal: any) => proposal.proposalId === selection.proposalId)?.metadata?.recordingId ?? hierarchyProposals.find((proposal: any) => proposal.proposalId === selection.proposalId)?.recordingId : undefined)
       : null;
   const selectedRecordingId = timelineSelectionRecordingId ?? proposalSelectionRecordingId;
-  const selectedRecording = recordings.find((recording: any) => selection?.kind === "recording" ? recording.recordingId === selection.id : recording.recordingId === selectedRecordingId)
-    ?? (selection ? null : recordings[0] ?? null);
-  const selectedTimeline = selectedRecording
+  const selectedRecording = useMemo(() => recordings.find((recording: any) => selection?.kind === "recording" ? recording.recordingId === selection.id : recording.recordingId === selectedRecordingId)
+    ?? (selection ? null : recordings[0] ?? null), [recordings, selectedRecordingId, selection]);
+  const selectedTimeline = useMemo(() => selectedRecording
     ? timelines.find((timeline: any) => timeline.recordingId === selectedRecording.recordingId) ?? null
-    : selection ? null : timelines[0] ?? null;
+    : selection ? null : timelines[0] ?? null, [selectedRecording, selection, timelines]);
   const selectedNode = selection?.kind === "editor-node"
     ? { id: selection.id, ...selection.node, actions: (selection.node.actionTypes ?? []).map((actionType) => ({ actionType })), recovery: { strategy: selection.node.family } }
     : selectedProposal?.policy?.nodes?.find((node: any) => selection?.kind === "state" && selection.proposalId && selection.nodeId && selection.nodeId === node.id)
@@ -680,7 +785,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     void loadProposalDetails(selectionProposalId);
   }, [activeProjectId, selectionProposalId, selectedProposal?.proposalId, selection?.kind]);
 
-  const viewInstances: AutomationViewInstance[] = [
+  const viewInstances = useMemo<AutomationViewInstance[]>(() => [
     { id: "client-gateway", label: "Connected Clients", type: "clients", icon: Radio, state: "live" },
     { id: "timeline-recording", label: `Timeline: ${selectedRecording?.name ?? selectedRecording?.recordingId ?? "Recording"}`, type: "recordings", icon: Radio, state: "live" },
     { id: "proposal-generator", label: `Legacy Proposal Generator: ${selectedRecording?.metadata?.name ?? selectedRecording?.recordingId ?? "Recording"}`, type: "proposal-generator", icon: Sparkles },
@@ -695,19 +800,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     { id: "runtime-debug", label: "Runtime Debug", type: "runtime", icon: Bug },
     { id: "problems-view", label: "Problems", type: "problems", icon: AlertTriangle },
     { id: "global-inspector", label: "Inspector", type: "inspector", icon: SlidersHorizontal },
-  ];
-  const openWorkspaceViewIds = new Set([
-    ...workspacePrefs.panes.flatMap((pane) => pane.tabs),
-    ...workspacePrefs.rightSidebar.tabs
-  ]);
-  const viewAdderOptions = windowAdderOpen
-    ? automationViewAdderOptions(viewInstances, windowAdderOpen.area, {
-      hasProject: Boolean(activeProjectId),
-      hasFlow: Boolean(selectedFlow),
-      hasRecording: Boolean(selectedRecording),
-      hasSelection: Boolean(selection)
-    }, openWorkspaceViewIds)
-  : [];
+  ], [selectedFlow?.name, selectedNode?.label, selectedProposal?.policy?.taskId, selectedProposal?.proposalId, selectedRecording?.metadata?.name, selectedRecording?.name, selectedRecording?.recordingId]);
+  const openWorkspaceViewIds = useMemo(() => new Set(openWorkspaceViewIdList), [openWorkspaceViewIdList]);
   const flowNodes = useMemo(
     () => flowHierarchyNodes(projectFlows, { recordings, proposals: hierarchyProposals }),
     [projectFlows, recordings, hierarchyProposals]
@@ -720,16 +814,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       ...customHierarchyNodes.filter((node) => isPersistableHierarchyNode(node) && node.category === "flow")
     ].filter((node) => !deletedIds.has(node.id) || (generatedHierarchyIds.has(node.id) && automationHierarchyNodeIsGeneratedFlowStructure(node)));
   }, [customHierarchyNodes, deletedHierarchyIds, flowNodes, generatedHierarchyIds]);
-  const normalizedProjectSearch = projectSearch.trim().toLocaleLowerCase();
-  const hierarchyMatchCount = hierarchyNodes.filter((node) =>
-    (projectTypeFilter === "all" || node.kind === projectTypeFilter)
-    && (!normalizedProjectSearch || (node.label + " " + node.kind).toLocaleLowerCase().includes(normalizedProjectSearch))
-  ).length;  const folderOptions = hierarchyNodes.filter((node) => node.kind === "folder" && node.category === hierarchyCategory);
-  const hierarchySubflowParent = hierarchyAction?.action === "create" ? hierarchySubflowCategoryParent(hierarchyParentId) : null;
-  const hierarchyFolderOptions = hierarchySubflowParent
-    ? hierarchyNodes.filter((node) => node.flowId === hierarchySubflowParent.flowId && (automationHierarchyNodeIsSubflowRoot(node) || automationHierarchyNodeIsSubflowCategory(node)))
-    : folderOptions;
-  const viewById = new Map(viewInstances.map((view) => [view.id, view]));
+
+  const viewById = useMemo(() => new Map(viewInstances.map((view) => [view.id, view])), [viewInstances]);
   function viewWithTitleData(view: AutomationViewInstance, sourceSelection?: AutomationSelection | null): AutomationViewInstance {
     return {
       ...view,
@@ -794,9 +880,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   }
   function taskForSelection(source: AutomationSelection | null | undefined) {
     return projectTasks.find((task: any) => source?.kind === "policy" && (task.metadata?.policyId === source.id || task.taskId === source.id))
-      ?? validLastOpenTask
-      ?? projectTasks[0]
-      ?? selectedTask;
+      ?? selectedTask
+      ?? projectTasks[0];
   }
   function policyForSelection(source: AutomationSelection | null | undefined) {
     const task = taskForSelection(source);
@@ -850,49 +935,36 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     ? selectedProposalReview.targetFlowId
     : selectedFlowEntry?.source === "canonical" ? selectedFlow?.flowId ?? null : null;
   const showRecordingActionPreview = () => {
-    updateWorkspacePrefs((current) => ({
-      ...current,
-      bottomDock: { ...current.bottomDock, activeViewId: "recording-action-preview", expanded: true },
-      bottomTimelineCollapsed: false
-    }), { persist: false });
+    scheduleWorkspaceNavigation(() => {
+      updateWorkspacePrefs((current) => ({
+        ...current,
+        bottomDock: { ...current.bottomDock, activeViewId: "recording-action-preview", expanded: true },
+        bottomTimelineCollapsed: false
+      }), { persist: false });
+    });
   };
   const setSelectionAndFollow = (next: AutomationSelection, flowOpenMode: "preview" | "new-window" = "preview"): boolean => {
-
-    if (next.kind !== "state") {
-      pendingStateOpenKeyRef.current = null;
-      setPendingStateOpen(null);
-    }
-    if (next.kind === "timeline") setBottomPreviewEntryId(next.id);
-    else if (next.kind !== "state") setBottomPreviewEntryId(null);
-    setSelection(next);
-    if (next.kind === "recording" || next.kind === "timeline") {
-      const recordingId = next.kind === "recording" ? next.id : recordings.find((recording: any) => recording.timeline?.some((entry: any) => entry.id === next.id))?.recordingId;
-      if (recordingId) void loadRecordingDetails(recordingId);
-      setRecordingTreePrimaryKind("recording");
-      showRecordingActionPreview();
-    }
-    if (next.kind === "signal") openView("state-explorer", "preview", "main");
-    if (next.kind === "state") openView("state-explorer", "preview", "main");
-    if (next.kind === "policy") openView("policy-primary", "preview");
-    if (next.kind === "flow") {
-      const flowEntry = projectFlows.find((entry: any) => entry.source === "canonical" && entry.flow?.flowId === next.id);
-      if (flowEntry) {
-        if (flowEntry.flow?.metadata?.summaryOnly === true) void loadFlowDetails(next.id);
-        if (!nativeNodeDefinitions.length && !publishedFlowDefinitions.length && activeProjectId) void loadNodeDefinitions(activeProjectId);
+    if (next.kind !== "state") pendingStateOpenKeyRef.current = null;
+    scheduleWorkspaceNavigation(() => {
+      if (next.kind !== "state") setPendingStateOpen(null);
+      if (next.kind === "timeline") setBottomPreviewEntryId(next.id);
+      else if (next.kind !== "state") setBottomPreviewEntryId(null);
+      setSelection(next);
+      if (next.kind === "recording" || next.kind === "timeline") {
+        setRecordingTreePrimaryKind("recording");
+        showRecordingActionPreview();
       }
-      openView("policy-primary", flowOpenMode);
-    }
+      if (next.kind === "signal" || next.kind === "state") openView("state-explorer", "preview", "main");
+      if (next.kind === "policy") openView("policy-primary", "preview");
+      if (next.kind === "flow") openView("policy-primary", flowOpenMode);
+    });
     return true;
   };
   const openRecordingTimeline = (recordingId: string) => {
-    setSelection({ kind: "recording", id: recordingId });
-    void loadRecordingDetails(recordingId);
-    setRecordingTreePrimaryKind("recording");
-    showRecordingActionPreview();
+    setSelectionAndFollow({ kind: "recording", id: recordingId });
     openView("timeline-recording", "preview");
   };
   const openTimelineEntryState = (recordingId: string, entryId: string) => {
-    void loadRecordingDetails(recordingId);
     void openStateView({ recordingId, timelineEntryId: entryId, phase: "input" });
   };
   const handleBottomPreviewActionClick = (entryId: string) => {
@@ -947,30 +1019,33 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       ?? selectedProposal?.proposalId;
     if (pendingKey) {
       pendingStateOpenKeyRef.current = pendingKey;
-      if (timelineEntryId) setBottomPreviewEntryId(resolveActionPreviewEntryId(selectedTimeline ?? selectedRecording, timelineEntryId));
-      setPendingStateOpen({
-        key: pendingKey,
-        recordingId,
-        phase,
-        ...(timelineEntryId ? { timelineEntryId } : {}),
-        ...(resolvedStateSnapshotId ? { stateSnapshotId: resolvedStateSnapshotId } : {})
+      scheduleWorkspaceNavigation(() => {
+        if (timelineEntryId) setBottomPreviewEntryId(resolveActionPreviewEntryId(selectedTimeline ?? selectedRecording, timelineEntryId));
+        setPendingStateOpen({
+          key: pendingKey,
+          recordingId,
+          phase,
+          ...(timelineEntryId ? { timelineEntryId } : {}),
+          ...(resolvedStateSnapshotId ? { stateSnapshotId: resolvedStateSnapshotId } : {})
+        });
+        setSelection(compactStateSelection({
+          kind: "state",
+          id: stateSelectionId(compactStateSelectionId({ nodeId, flowId: selectedFlow?.flowId, proposalId, timelineEntryId, stateSnapshotId: resolvedStateSnapshotId })),
+          nodeId,
+          sourceId,
+          phase,
+          evidenceId: request.evidenceId,
+          factPath: request.factPath,
+          recordingId,
+          proposalId,
+          timelineEntryId,
+          stateSnapshotId: resolvedStateSnapshotId,
+          stateRef: resolvedStateRef
+        }));
+        if (timelineEntryId) setRecordingTreePrimaryKind("recording");
+        openView("state-explorer", "preview", "main");
       });
-      setSelection(compactStateSelection({
-        kind: "state",
-        id: stateSelectionId(compactStateSelectionId({ nodeId, flowId: selectedFlow?.flowId, proposalId, timelineEntryId, stateSnapshotId: resolvedStateSnapshotId })),
-        nodeId,
-        sourceId,
-        phase,
-        evidenceId: request.evidenceId,
-        factPath: request.factPath,
-        recordingId,
-        proposalId,
-        timelineEntryId,
-        stateSnapshotId: resolvedStateSnapshotId,
-        stateRef: resolvedStateRef
-      }));
-      if (timelineEntryId) setRecordingTreePrimaryKind("recording");
-      openView("state-explorer", "preview", "main");
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
     }
     try {
     if (activeProjectId && recordingId && (timelineEntryId || resolvedStateSnapshotId)) {
@@ -1035,9 +1110,11 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       stateRef: resolvedStateRef
     });
     if (pendingKey && pendingStateOpenKeyRef.current !== pendingKey) return;
-    setSelection(selectionValue);
-    if (timelineEntryId) setRecordingTreePrimaryKind("recording");
-    openView("state-explorer", "preview", "main");
+    scheduleWorkspaceNavigation(() => {
+      setSelection(selectionValue);
+      if (timelineEntryId) setRecordingTreePrimaryKind("recording");
+      openView("state-explorer", "preview", "main");
+    });
     } finally {
       if (pendingKey) {
         setPendingStateOpen((current) => current?.key === pendingKey ? null : current);
@@ -1133,6 +1210,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     void openProject(urlProjectId, { updateUrl: false });
   }, [activeProjectId, urlProjectId]);
 
+  const deepLinkSearchSignature = searchParams.toString();
+
   useEffect(() => {
     if (!deepLink.projectId || activeProjectId !== deepLink.projectId || loadedProjectHierarchyId !== activeProjectId) return;
     const targetViewId = automationStudioDefaultViewForLink(deepLink);
@@ -1144,6 +1223,16 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       deepLink.detail ? deepLink.detail.kind + ":" + deepLink.detail.id : ""
     ].join("|");
     if (restoredDeepLinkRef.current === restoreKey) return;
+    const currentLinkFlowId = selection?.kind === "flow" ? selection.id : selectedFlow?.flowId ?? lastOpenFlowId;
+    const currentScope = currentLinkFlowId ? automationStudioFlowScope(currentLinkFlowId, projectFlows) : null;
+    const urlAlreadyMatchesVisibleWorkspace = Boolean(
+      (!targetViewId || targetViewId === activeViewId)
+      && (!deepLink.flowId || (currentScope?.flowId === deepLink.flowId && (currentScope.subflowId ?? null) === (deepLink.subflowId ?? null)))
+    );
+    if (urlAlreadyMatchesVisibleWorkspace) {
+      restoredDeepLinkRef.current = restoreKey;
+      return;
+    }
     if (deepLink.flowId) {
       const parentFlowAvailable = projectFlows.some((entry: any) => {
         const flow = entry?.flow ?? entry;
@@ -1170,6 +1259,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     activeProjectId,
     loadedProjectHierarchyId,
     projectFlowUrlScopeSignature,
+    deepLinkSearchSignature,
     deepLink.projectId,
     deepLink.flowId,
     deepLink.subflowId,
@@ -1177,28 +1267,6 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     deepLink.detail?.kind,
     deepLink.detail?.id
   ]);
-  const selectedFlowSelectionId = selection?.kind === "flow" ? selection.id : null;
-  useEffect(() => {
-    if (!activeProjectId || restoringDeepLinkRef.current) return;
-    const linkFlowId = selectedFlowSelectionId ?? selectedFlow?.flowId ?? lastOpenFlowId;
-    if (!linkFlowId) return;
-    const requestedRestorePrefix = deepLink.projectId && deepLink.flowId
-      ? deepLink.projectId + "|" + deepLink.flowId + "|"
-      : null;
-    if (requestedRestorePrefix && !restoredDeepLinkRef.current?.startsWith(requestedRestorePrefix)) return;
-    const scope = automationStudioFlowScope(linkFlowId, projectFlows);
-    const currentParams = automationStudioCurrentSearchParams();
-    const params = automationStudioDeepLinkParams({
-      projectId: activeProjectId,
-      flowId: scope.flowId,
-      subflowId: scope.subflowId,
-      viewId: activeViewId,
-      detail: null
-    }, currentParams);
-    if (params.toString() === currentParams.toString()) return;
-    restoredDeepLinkRef.current = [activeProjectId, scope.flowId, scope.subflowId ?? "", activeViewId, ""].join("|");
-    replaceAutomationStudioBrowserUrl(pathname, params);
-  }, [activeProjectId, activeViewId, selectedFlowSelectionId, selectedFlow?.flowId, lastOpenFlowId, projectFlowUrlScopeSignature, deepLink.projectId, deepLink.flowId, pathname]);
   useEffect(() => {
     if (!activeProjectId || !projectRecordings.length) return;
     setDeletedHierarchyIds((current) => {
@@ -1505,7 +1573,31 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setHasDirtyTaskGraph(false);
     setCustomHierarchyNodes(loadedCustomHierarchyNodes);
     setDeletedHierarchyIds(result.payload.hierarchy.deletedHierarchyIds);
-    setWorkspacePrefs(loadedPrefs);
+    replaceWorkspaceRenderPrefs(loadedPrefs);
+    uiCache.hydrateWorkspacePrefs({
+      projectId,
+      userId: currentUser.id,
+      durablePrefs: loadedPrefs,
+      onHydrate: (cachedPrefs) => {
+        if (activeProjectIdRef.current !== projectId) return;
+        replaceWorkspaceRenderPrefs((current) => automationWorkspacePrefsSameRuntimeState(current, cachedPrefs) ? current : cachedPrefs);
+        const cachedActiveViewId = cachedPrefs.panes.find((item) => item.id === cachedPrefs.activePaneId)?.activeViewId ?? cachedPrefs.activeViewId;
+        if (cachedActiveViewId) restoreViewState(cachedActiveViewId, cachedPrefs);
+      }
+    });
+    uiCache.hydrateSidebar({
+      projectId,
+      userId: currentUser.id,
+      onHydrate: (sidebar) => {
+        if (activeProjectIdRef.current !== projectId) return;
+        const hydratedTreeState = normalizeAutomationProjectTreeUiState(sidebar);
+        projectTreeUiStateRef.current = hydratedTreeState;
+        projectTreeFilterStateRef.current = { search: sidebar.search, typeFilter: sidebar.typeFilter };
+        setProjectSearch(sidebar.search);
+        setProjectTypeFilter(sidebar.typeFilter);
+        setProjectTreeUiState(hydratedTreeState);
+      }
+    });
     const activeLoadedViewId = loadedPrefs.panes.find((item) => item.id === loadedPrefs.activePaneId)?.activeViewId
       ?? loadedPrefs.activeViewId;
     if (activeLoadedViewId) restoreViewState(activeLoadedViewId, loadedPrefs);
@@ -1594,7 +1686,9 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     if (!activeProjectId || !flowId) return null;
     const cachedFlow = dataCache.get<any>("flow", activeProjectId, flowId, 60_000);
     if (cachedFlow) {
-      setProjectFlows((current) => mergeFlowDetails(current, [{ source: "canonical", readOnly: false, flow: cachedFlow }]));
+      scheduleWorkspaceNavigation(() => {
+        setProjectFlows((current) => mergeFlowDetails(current, [{ source: "canonical", readOnly: false, flow: cachedFlow }]));
+      });
       return cachedFlow;
     }
     const result = await runLatest("flow-detail", (signal) => api.post<{ flow: any }>(
@@ -1604,14 +1698,17 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     ));
     if (!result?.ok || !result.payload?.flow) return null;
     const flow = dataCache.set("flow", activeProjectId, flowId, result.payload.flow);
-    setProjectFlows((current) => mergeFlowDetails(current, [{ source: "canonical", readOnly: false, flow }]));
+    scheduleWorkspaceNavigation(() => {
+      setProjectFlows((current) => mergeFlowDetails(current, [{ source: "canonical", readOnly: false, flow }]));
+    });
     return flow;
   }
 
-  async function openSubflowInEditor(parentFlowId: string, subflowId: string, mode: "preview" | "new-window" = "preview"): Promise<void> {
+  async function openSubflowInEditor(parentFlowId: string, subflowId: string, mode: "preview" | "new-window" = "preview", knownGraphFlowId?: string): Promise<void> {
     if (!activeProjectId || !parentFlowId || !subflowId) return;
     const cacheId = parentFlowId + ":" + subflowId;
-    let subflow = dataCache.get<{ graphFlowId?: string }>("subflow", activeProjectId, cacheId, 60_000);
+    let graphFlowId = knownGraphFlowId;
+    let subflow = graphFlowId ? { graphFlowId } : dataCache.get<{ graphFlowId?: string }>("subflow", activeProjectId, cacheId, 60_000);
     if (!subflow) {
       const result = await runLatest("subflow-detail", (signal) => api.post<{ subflow?: { graphFlowId?: string } }>(
         "get-flow-subflow",
@@ -1623,10 +1720,12 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         return;
       }
       subflow = dataCache.set("subflow", activeProjectId, cacheId, result.payload.subflow);
+      graphFlowId = subflow.graphFlowId;
     }
-    if (!subflow.graphFlowId) return;
-    await loadFlowDetails(subflow.graphFlowId);
-    setSelectionAndFollow({ kind: "flow", id: subflow.graphFlowId }, mode);
+    graphFlowId = graphFlowId ?? subflow.graphFlowId;
+    if (!graphFlowId) return;
+    if (knownGraphFlowId) dataCache.set("subflow", activeProjectId, cacheId, { ...subflow, graphFlowId });
+    setSelectionAndFollow({ kind: "flow", id: graphFlowId }, mode);
   }
   async function loadNodeDefinitions(projectId = activeProjectId) {
     if (!projectId) return;
@@ -1640,8 +1739,16 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       dataCache.set("node-definitions", projectId, "root", results);
     }
     const [nativeResult, publishedResult] = results;
-    if (nativeResult.ok) setNativeNodeDefinitions(nativeResult.payload?.nodes ?? []);
-    if (publishedResult.ok) setPublishedFlowDefinitions(publishedResult.payload?.nodes ?? []);
+    scheduleWorkspaceNavigation(() => {
+      if (nativeResult.ok) {
+        const nodes = nativeResult.payload?.nodes ?? [];
+        setNativeNodeDefinitions((current) => current === nodes ? current : nodes);
+      }
+      if (publishedResult.ok) {
+        const nodes = publishedResult.payload?.nodes ?? [];
+        setPublishedFlowDefinitions((current) => current === nodes ? current : nodes);
+      }
+    });
   }
   async function loadLatestNormalizedTimeline(recordingId: string) {
     if (!activeProjectId || !recordingId) return null;
@@ -1657,10 +1764,20 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
 
   async function loadRecordingDetails(recordingId: string) {
     if (!activeProjectId || !recordingId) return null;
+    const cachedRecording = dataCache.get<any>("recording", activeProjectId, recordingId, 60_000);
+    if (cachedRecording) {
+      scheduleWorkspaceNavigation(() => {
+        setProjectRecordings((current) => mergeRecordingDetail(current, cachedRecording));
+      });
+      return cachedRecording;
+    }
     const result = await api.post<{ recording: any }>("get-recording", { projectId: activeProjectId, recordingId });
     if (!result.ok || !result.payload?.recording) return null;
-    setProjectRecordings((current) => [result.payload!.recording, ...current.filter((recording) => recording.recordingId !== recordingId)]);
-    return result.payload.recording;
+    const recording = dataCache.set("recording", activeProjectId, recordingId, result.payload.recording);
+    scheduleWorkspaceNavigation(() => {
+      setProjectRecordings((current) => mergeRecordingDetail(current, recording));
+    });
+    return recording;
   }
 
   async function loadProposalDetails(proposalId: string, kind: "policy" | "recording_flow" | "auto" = "auto") {
@@ -2084,7 +2201,31 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setTaskGraphDrafts((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(`${flowId}:`))));
   }
 
+  useEffect(() => {
+    if (!activeProjectId || loadedProjectHierarchyId !== activeProjectId) return;
+    const prefs = persistentAutomationWorkspacePrefs(workspacePrefs);
+    const previousPrefs = lastCachedWorkspacePrefsProjectRef.current === activeProjectId ? lastCachedWorkspacePrefsRef.current : null;
+    lastCachedWorkspacePrefsProjectRef.current = activeProjectId;
+    lastCachedWorkspacePrefsRef.current = prefs;
+    if (previousPrefs && automationWorkspacePrefsSameNonActivePersistentState(previousPrefs, prefs)) return;
+    uiCache.scheduleWorkspacePrefsWrite({ projectId: activeProjectId, userId: currentUser.id, prefs, delayMs: 1_200 });
+  }, [activeProjectId, currentUser.id, loadedProjectHierarchyId, uiCache, workspacePrefs]);
+
+  useEffect(() => {
+    if (!activeProjectId || loadedProjectHierarchyId !== activeProjectId) return;
+    const treeState = normalizeAutomationProjectTreeUiState(projectTreeUiStateRef.current ?? projectTreeUiState ?? undefined);
+    uiCache.scheduleSidebarWrite({
+      projectId: activeProjectId,
+      userId: currentUser.id,
+      sidebar: { ...treeState, ...projectTreeFilterStateRef.current },
+      delayMs: 1_200
+    });
+  }, [activeProjectId, currentUser.id, loadedProjectHierarchyId, projectTreeUiState, uiCache]);
+
   function closeProject() {
+    if (activeProjectId) uiCache.cancelProject(activeProjectId);
+    lastCachedWorkspacePrefsProjectRef.current = null;
+    lastCachedWorkspacePrefsRef.current = null;
     setActiveProjectId(null);
     setLoadedProjectHierarchyId(null);
     setCustomHierarchyNodes([]);
@@ -2096,50 +2237,119 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     setPipelineArtifacts({ normalizationReviews: [], miningRuns: [], evidenceFacts: [], evidenceObservations: [], stateActionCorrelations: [], evidenceClaims: [], learnedTaskModels: [], policyProposals: [], replayResults: [] });
     setRecordingDomains([]);
     setAutomationActionStatus("");
-    setWorkspacePrefs(defaultAutomationWorkspacePrefs());
-    setLiveInspectorWidth(null);
+    replaceWorkspaceRenderPrefs(defaultAutomationWorkspacePrefs());
+    projectTreeUiStateRef.current = null;
+    projectTreeFilterStateRef.current = { search: "", typeFilter: "all" };
+    setProjectTreeUiState(null);
     lastSavedHierarchySignatureRef.current = "";
     setSelection(null);
     setProjectUrl(null);
   }
 
   function updateWorkspacePrefs(updater: (current: AutomationWorkspacePrefs) => AutomationWorkspacePrefs, options: { persist?: boolean } = {}) {
-    const shouldPersist = options.persist !== false;
-    setWorkspacePrefs((current) => {
-      const candidate = updater(current);
-      if (candidate === current) return current;
-      const next = normalizeAutomationWorkspacePrefs(candidate);
-      if (automationWorkspacePrefsSameRuntimeState(current, next)) return current;
-      if (shouldPersist && next !== current) setWorkspacePrefsSaveRevision((revision) => revision + 1);
-      return next;
-    });
+    const shouldPersist = options.persist === true;
+    const current = workspaceRenderStore.getPrefs();
+    const candidate = updater(current);
+    if (candidate === current) return;
+    const next = normalizeAutomationWorkspacePrefs(candidate);
+    if (automationWorkspacePrefsSameRuntimeState(current, next)) return;
+    if (activeProjectId && shouldPersist) uiCache.markProjectUiMutation(activeProjectId);
+    workspaceRenderStore.replace(next);
+    if (activeProjectId && loadedProjectHierarchyId === activeProjectId) {
+      const prefs = persistentAutomationWorkspacePrefs(workspaceRenderStore.getPrefs());
+      lastCachedWorkspacePrefsProjectRef.current = activeProjectId;
+      lastCachedWorkspacePrefsRef.current = prefs;
+      uiCache.scheduleWorkspacePrefsWrite({ projectId: activeProjectId, userId: currentUser.id, prefs, delayMs: 400 });
+    }
+    if (shouldPersist) setWorkspacePrefsSaveRevision((revision) => revision + 1);
   }
+  function activateWarmWorkspaceView(windowId: string, viewId: string, area: "main" | "right"): boolean {
+    const projectKey = activeProjectId ?? "no-project";
+    const mountedViewKey = [projectKey, windowId, viewId].join(":");
+    if (!mountedWorkspaceViewsRef.current.viewIds.has(mountedViewKey)) return false;
+
+    const activityPrefix = [projectKey, windowId, ""].join(":");
+    const activitySnapshot: Array<[{ current: boolean }, boolean]> = [];
+    for (const [key, activity] of mountedWorkspaceViewsRef.current.activityByViewKey) {
+      if (!key.startsWith(activityPrefix)) continue;
+      activitySnapshot.push([activity, activity.current]);
+      activity.current = key === mountedViewKey;
+    }
+    if (!activateAutomationMountedView(windowId, viewId)) {
+      for (const [activity, current] of activitySnapshot) activity.current = current;
+      return false;
+    }
+
+    if (area === "main") {
+      workspacePrefs.activePaneId = windowId;
+      workspacePrefs.activeViewId = viewId;
+      workspacePrefs.panes = workspacePrefs.panes.map((pane) => pane.id === windowId ? { ...pane, activeViewId: viewId } : pane);
+    } else {
+      workspacePrefs.rightSidebarCollapsed = false;
+      workspacePrefs.rightSidebar = { ...workspacePrefs.rightSidebar, activeViewId: viewId, collapsed: false };
+    }
+
+    if (activeProjectId && loadedProjectHierarchyId === activeProjectId) {
+      const prefs = persistentAutomationWorkspacePrefs(workspacePrefs);
+      lastCachedWorkspacePrefsProjectRef.current = activeProjectId;
+      lastCachedWorkspacePrefsRef.current = prefs;
+      uiCache.scheduleWorkspacePrefsWrite({ projectId: activeProjectId, userId: currentUser.id, prefs, delayMs: 400 });
+    }
+    return true;
+  }
+
   function startSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = workspacePrefs.sidebarWidth;
+    const shell = event.currentTarget.closest<HTMLElement>(".automation-studio-shell");
     let latestWidth = startWidth;
     const onMove = (moveEvent: PointerEvent) => {
       latestWidth = clampNumber(startWidth + moveEvent.clientX - startX, 220, 420, startWidth);
-      setLiveSidebarWidth(latestWidth);
+      if (shell) shell.style.gridTemplateColumns = `${latestWidth}px minmax(0, 1fr)`;
     };
     const onUp = () => {
       updateWorkspacePrefs((current) => ({ ...current, sidebarWidth: latestWidth }));
-      setLiveSidebarWidth(null);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp, { once: true });
-  }
-  function resizeSidebarFromKeyboard(event: KeyboardEvent<HTMLDivElement>) {
+  }  function resizeSidebarFromKeyboard(event: KeyboardEvent<HTMLDivElement>) {
     if (!["ArrowLeft", "ArrowRight", "Home"].includes(event.key)) return;
     event.preventDefault();
     const nextWidth = event.key === "Home"
       ? 280
       : clampNumber(workspacePrefs.sidebarWidth + (event.key === "ArrowLeft" ? -16 : 16), 220, 420, workspacePrefs.sidebarWidth);
     updateWorkspacePrefs((current) => ({ ...current, sidebarWidth: nextWidth }));
-  }  function captureActiveViewState(current: AutomationWorkspacePrefs): AutomationWorkspacePrefs {
+  }
+  const handleProjectTreeUiStateChange = useStableAutomationEvent((state: AutomationProjectTreeUiState) => {
+    projectTreeUiStateRef.current = state;
+    if (!activeProjectId || loadedProjectHierarchyId !== activeProjectId) return;
+    uiCache.scheduleSidebarWrite({
+      projectId: activeProjectId,
+      userId: currentUser.id,
+      sidebar: { ...state, ...projectTreeFilterStateRef.current },
+      delayMs: 400
+    });
+  });
+  const setProjectTreeSelection = useCallback((next: AutomationSelection) => {
+    scheduleWorkspaceNavigation(() => {
+      setSelection((current) => automationSelectionSame(current, next) ? current : next);
+    });
+  }, [scheduleWorkspaceNavigation, setSelection]);
+  const handleProjectTreeFilterStateChange = useStableAutomationEvent((filterState: { search: string; typeFilter: "all" | AutomationHierarchyKind }) => {
+    projectTreeFilterStateRef.current = filterState;
+    if (!activeProjectId || loadedProjectHierarchyId !== activeProjectId) return;
+    const treeState = normalizeAutomationProjectTreeUiState(projectTreeUiStateRef.current ?? undefined);
+    uiCache.scheduleSidebarWrite({
+      projectId: activeProjectId,
+      userId: currentUser.id,
+      sidebar: { ...treeState, ...filterState },
+      delayMs: 400
+    });
+  });
+  function captureActiveViewState(current: AutomationWorkspacePrefs): AutomationWorkspacePrefs {
     return current;
   }
   function restoreViewState(viewId: string, sourcePrefs = workspacePrefs) {
@@ -2148,6 +2358,12 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   }
   function openView(viewId: string, mode: "preview" | "new-window" = "preview", area: AutomationWorkspaceArea = "main") {
     const region = automationWorkspaceRegionForView(viewId);
+    if (mode === "preview" && region === "main") {
+      const existingPane = chooseMainPaneForView(workspacePrefs, viewId);
+      if (existingPane?.tabs.includes(viewId) && activateWarmWorkspaceView(existingPane.id, viewId, "main")) return;
+    }
+    if (mode === "preview" && region === "right" && workspacePrefs.rightSidebar.tabs.includes(viewId)
+      && activateWarmWorkspaceView("right-sidebar", viewId, "right")) return;
     updateWorkspacePrefs((current) => {
       current = captureActiveViewState(current);
       if (region === "bottom") {
@@ -2198,8 +2414,8 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     return current.panes.find((item) => item.id === current.activePaneId) ?? current.panes[0] ?? null;
   }
   function ensureGlobalInspectorAvailable() {
-    updateWorkspacePrefs((current) => {
-      return {
+    scheduleWorkspaceNavigation(() => {
+      updateWorkspacePrefs((current) => ({
         ...captureActiveViewState(current),
         rightSidebarCollapsed: false,
         rightSidebar: {
@@ -2208,11 +2424,17 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
           collapsed: false,
           tabs: current.rightSidebar.tabs.includes("global-inspector") ? current.rightSidebar.tabs : ["global-inspector", ...current.rightSidebar.tabs]
         }
-      };
-    }, { persist: false });
+      }), { persist: false });
+    });
   }
   function addWorkspaceWindow(viewId: string, area: AutomationWorkspaceArea, targetWindowId?: string) {
-    const option = viewAdderOptions.find((item) => item.view.id === viewId);
+    const options = automationViewAdderOptions(viewInstances, area, {
+      hasProject: Boolean(activeProjectId),
+      hasFlow: Boolean(selectedFlow),
+      hasRecording: Boolean(selectedRecording),
+      hasSelection: Boolean(selection)
+    }, openWorkspaceViewIds);
+    const option = options.find((item) => item.view.id === viewId);
     if (!option || option.disabledReason) {
       setAutomationActionStatus(option?.disabledReason ?? "That view is not available in this workspace region.");
       setWindowAdderOpen(null);
@@ -2302,23 +2524,30 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   function setPaneTab(paneId: string, viewId: string) {
     if (workspacePrefs.activePaneId === paneId && workspacePrefs.activeViewId === viewId && workspacePrefs.panes.find((item) => item.id === paneId)?.activeViewId === viewId) return;
     restoreViewState(viewId);
-    updateWorkspacePrefs((current) => ({
-      ...captureActiveViewState(current),
-      activePaneId: paneId,
-      activeViewId: viewId,
-      panes: current.panes.map((item) => item.id === paneId ? { ...item, activeViewId: viewId } : item)
-    }), { persist: false });
+    if (activateWarmWorkspaceView(paneId, viewId, "main")) return;
+    scheduleWorkspaceNavigation(() => {
+      updateWorkspacePrefs((current) => ({
+        ...captureActiveViewState(current),
+        activePaneId: paneId,
+        activeViewId: viewId,
+        panes: current.panes.map((item) => item.id === paneId ? { ...item, activeViewId: viewId } : item)
+      }), { persist: false });
+    });
   }
   function activatePane(paneId: string) {
     const viewId = workspacePrefs.panes.find((item) => item.id === paneId)?.activeViewId;
     if (paneId === workspacePrefs.activePaneId && (viewId ?? workspacePrefs.activeViewId) === workspacePrefs.activeViewId) return;
     if (viewId && paneId !== workspacePrefs.activePaneId) restoreViewState(viewId);
-    updateWorkspacePrefs((current) => ({ ...captureActiveViewState(current), activePaneId: paneId, activeViewId: viewId ?? current.activeViewId }), { persist: false });
+    scheduleWorkspaceNavigation(() => {
+      updateWorkspacePrefs((current) => ({ ...captureActiveViewState(current), activePaneId: paneId, activeViewId: viewId ?? current.activeViewId }), { persist: false });
+    });
   }
   function closePaneTab(paneId: string, viewId: string) {
-    updateWorkspacePrefs((current) => {
-      current = captureActiveViewState(current);
-      return { ...current, ...closeAutomationWorkspacePaneTab(current.panes, paneId, viewId, current.activePaneId, current.mainLayoutPreset) };
+    scheduleWorkspaceNavigation(() => {
+      updateWorkspacePrefs((current) => {
+        current = captureActiveViewState(current);
+        return { ...current, ...closeAutomationWorkspacePaneTab(current.panes, paneId, viewId, current.activePaneId, current.mainLayoutPreset) };
+      });
     });
   }
   function startPaneTabDrag(paneId: string, viewId: string, event: DragEvent<HTMLButtonElement>) {
@@ -2334,47 +2563,56 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     if (!payload) return;
     const parsed = parsePaneTabDragPayload(payload);
     if (!parsed) return;
-    updateWorkspacePrefs((current) => {
-      current = captureActiveViewState(current);
-      const moved = moveAutomationWorkspacePaneTab(current.panes, parsed.paneId, targetPaneId, parsed.viewId, current.mainLayoutPreset, targetViewId, placement);
-      return moved ? { ...current, ...moved } : current;
+    scheduleWorkspaceNavigation(() => {
+      updateWorkspacePrefs((current) => {
+        current = captureActiveViewState(current);
+        const moved = moveAutomationWorkspacePaneTab(current.panes, parsed.paneId, targetPaneId, parsed.viewId, current.mainLayoutPreset, targetViewId, placement);
+        return moved ? { ...current, ...moved } : current;
+      });
     });
   }
   function movePaneTabByKeyboard(sourcePaneId: string, viewId: string, direction: -1 | 1) {
-    updateWorkspacePrefs((current) => {
-      const sourceIndex = current.panes.findIndex((pane) => pane.id === sourcePaneId);
-      const targetPane = current.panes[sourceIndex + direction];
-      if (!targetPane) return current;
-      const moved = moveAutomationWorkspacePaneTab(current.panes, sourcePaneId, targetPane.id, viewId, current.mainLayoutPreset, null, "end");
-      if (!moved) return current;
-      return { ...current, ...moved };
+    scheduleWorkspaceNavigation(() => {
+      updateWorkspacePrefs((current) => {
+        const sourceIndex = current.panes.findIndex((pane) => pane.id === sourcePaneId);
+        const targetPane = current.panes[sourceIndex + direction];
+        if (!targetPane) return current;
+        const moved = moveAutomationWorkspacePaneTab(current.panes, sourcePaneId, targetPane.id, viewId, current.mainLayoutPreset, null, "end");
+        if (!moved) return current;
+        return { ...current, ...moved };
+      });
     });
   }
   function setRightSidebarTab(viewId: string) {
     restoreViewState(viewId);
-    updateWorkspacePrefs((current) => ({
-      ...captureActiveViewState(current),
-      rightSidebarCollapsed: false,
-      rightSidebar: {
-        ...current.rightSidebar,
-        activeViewId: viewId,
-        collapsed: false
-      }
-    }), { persist: false });
-  }
-  function closeRightSidebarTab(viewId: string) {
-    updateWorkspacePrefs((current) => {
-      current = captureActiveViewState(current);
-      const tabs = current.rightSidebar.tabs.filter((tab) => tab !== viewId);
-      const nextTabs = tabs.length ? tabs : ["global-inspector"];
-      return {
-        ...current,
+    if (activateWarmWorkspaceView("right-sidebar", viewId, "right")) return;
+    scheduleWorkspaceNavigation(() => {
+      updateWorkspacePrefs((current) => ({
+        ...captureActiveViewState(current),
+        rightSidebarCollapsed: false,
         rightSidebar: {
           ...current.rightSidebar,
-          tabs: nextTabs,
-          activeViewId: current.rightSidebar.activeViewId === viewId ? nextTabs[0] ?? "global-inspector" : current.rightSidebar.activeViewId
+          activeViewId: viewId,
+          collapsed: false
         }
-      };
+      }), { persist: false });
+    });
+  }
+  function closeRightSidebarTab(viewId: string) {
+    scheduleWorkspaceNavigation(() => {
+      updateWorkspacePrefs((current) => {
+        current = captureActiveViewState(current);
+        const tabs = current.rightSidebar.tabs.filter((tab) => tab !== viewId);
+        const nextTabs = tabs.length ? tabs : ["global-inspector"];
+        return {
+          ...current,
+          rightSidebar: {
+            ...current.rightSidebar,
+            tabs: nextTabs,
+            activeViewId: current.rightSidebar.activeViewId === viewId ? nextTabs[0] ?? "global-inspector" : current.rightSidebar.activeViewId
+          }
+        };
+      });
     });
   }
   function arrangeWindows(preset: AutomationLayoutPreset) {
@@ -2403,25 +2641,20 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     event.stopPropagation();
     const startX = event.clientX;
     const startWidth = workspacePrefs.inspectorWidth;
+    const workspace = event.currentTarget.closest<HTMLElement>(".automation-studio-workspace");
     let latestWidth = startWidth;
     const onMove = (moveEvent: PointerEvent) => {
       latestWidth = clampNumber(startWidth + startX - moveEvent.clientX, 260, 620, startWidth);
-      setLiveInspectorWidth(latestWidth);
+      if (workspace) workspace.style.gridTemplateColumns = `minmax(0, 1fr) ${latestWidth}px`;
     };
     const onUp = () => {
-      updateWorkspacePrefs((current) => ({
-        ...current,
-        inspectorWidth: latestWidth,
-        rightSidebarCollapsed: false
-      }));
-      setLiveInspectorWidth(null);
+      updateWorkspacePrefs((current) => ({ ...current, inspectorWidth: latestWidth, rightSidebarCollapsed: false }));
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp, { once: true });
-  }
-  function resizeInspectorFromKeyboard(event: KeyboardEvent<HTMLButtonElement>) {
+  }  function resizeInspectorFromKeyboard(event: KeyboardEvent<HTMLButtonElement>) {
     if (!["ArrowLeft", "ArrowRight", "Home"].includes(event.key)) return;
     event.preventDefault();
     const nextWidth = event.key === "Home"
@@ -2434,26 +2667,20 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     event.stopPropagation();
     const startY = event.clientY;
     const startHeight = workspacePrefs.bottomTimelineHeight;
+    const workspace = event.currentTarget.closest<HTMLElement>(".automation-studio-workspace");
     let latestHeight = startHeight;
     const onMove = (moveEvent: PointerEvent) => {
       latestHeight = clampNumber(startHeight + startY - moveEvent.clientY, automationBottomDockMinHeight, automationBottomDockMaxHeight, startHeight);
-      setLiveBottomTimelineHeight(latestHeight);
+      if (workspace) workspace.style.gridTemplateRows = `minmax(0, 1fr) ${latestHeight}px`;
     };
     const onUp = () => {
-      updateWorkspacePrefs((current) => ({
-        ...current,
-        bottomTimelineHeight: latestHeight,
-        bottomTimelineCollapsed: false,
-        bottomDock: { ...current.bottomDock, expanded: true }
-      }));
-      setLiveBottomTimelineHeight(null);
+      updateWorkspacePrefs((current) => ({ ...current, bottomTimelineHeight: latestHeight, bottomTimelineCollapsed: false, bottomDock: { ...current.bottomDock, expanded: true } }));
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp, { once: true });
-  }
-  function resizeBottomTimelineFromKeyboard(event: KeyboardEvent<HTMLButtonElement>) {
+  }  function resizeBottomTimelineFromKeyboard(event: KeyboardEvent<HTMLButtonElement>) {
     if (!["ArrowUp", "ArrowDown", "Home"].includes(event.key)) return;
     event.preventDefault();
     const nextHeight = event.key === "Home"
@@ -2474,29 +2701,29 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     const bounds = mainWorkspaceCanvasRef.current?.getBoundingClientRect();
     const totalSize = Math.max(1, vertical ? bounds?.height ?? 1 : bounds?.width ?? 1);
     const paneCount = automationMainPaneCount(workspacePrefs.mainLayoutPreset);
-    const startRatios = (liveMainSplitRatios ?? workspacePrefs.mainSplitRatios).length === paneCount
-      ? [...(liveMainSplitRatios ?? workspacePrefs.mainSplitRatios)]
+    const startRatios = workspacePrefs.mainSplitRatios.length === paneCount
+      ? [...workspacePrefs.mainSplitRatios]
       : Array.from({ length: paneCount }, () => 1 / paneCount);
+    const paneLayout = mainWorkspaceCanvasRef.current?.querySelector<HTMLElement>(".automation-strict-pane-layout");
     let latestRatios = startRatios;
     const onMove = (moveEvent: PointerEvent) => {
       const currentPoint = vertical ? moveEvent.clientY : moveEvent.clientX;
       const deltaRatio = (currentPoint - startPoint) / totalSize;
       latestRatios = resizeAutomationMainSplitRatios(startRatios, splitIndex, deltaRatio);
-      setLiveMainSplitRatios(latestRatios);
+      if (paneLayout) {
+        const tracks = latestRatios.map((ratio) => `minmax(0, ${ratio}fr)`).join(" ");
+        if (vertical) paneLayout.style.gridTemplateRows = tracks;
+        else paneLayout.style.gridTemplateColumns = tracks;
+      }
     };
     const onUp = () => {
-      updateWorkspacePrefs((current) => ({
-        ...current,
-        mainSplitRatios: latestRatios
-      }));
-      setLiveMainSplitRatios(null);
+      updateWorkspacePrefs((current) => ({ ...current, mainSplitRatios: latestRatios }));
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp, { once: true });
-  }
-  function resizeMainSplitFromKeyboard(splitIndex: number, event: KeyboardEvent<HTMLButtonElement>) {
+  }  function resizeMainSplitFromKeyboard(splitIndex: number, event: KeyboardEvent<HTMLButtonElement>) {
     const vertical = workspacePrefs.mainLayoutPreset === "two-rows";
     const decreaseKey = vertical ? "ArrowUp" : "ArrowLeft";
     const increaseKey = vertical ? "ArrowDown" : "ArrowRight";
@@ -2508,7 +2735,6 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         ? defaultAutomationMainSplitRatios(current.mainLayoutPreset)
         : resizeAutomationMainSplitRatios(current.mainSplitRatios, splitIndex, event.key === decreaseKey ? -0.04 : 0.04)
     }));
-    setLiveMainSplitRatios(null);
   }
   function openAutomationProblems() {
     openView("problems-view", "preview", "right");
@@ -2532,8 +2758,26 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
   const handleRefreshRecordingsForRenderer = useCallback(async () => {
     await refreshProjectRuntimeState(activeProjectId);
   }, [activeProjectId]);
+  const deleteRecordingForRenderer = useStableAutomationEvent(deleteProjectRecording);
+  const finalizeRecordingForRenderer = useStableAutomationEvent(finalizeProjectRecording);
+  const ensureInspectorForRenderer = useStableAutomationEvent(ensureGlobalInspectorAvailable);
+  const openTimelineEntryStateForRenderer = useStableAutomationEvent(openTimelineEntryState);
+  const openProblemForRenderer = useStableAutomationEvent(openAutomationProblem);
+  const openProblemsForRenderer = useStableAutomationEvent(openAutomationProblems);
+  const openSubflowForRenderer = useStableAutomationEvent(openSubflowInEditor);
+  const openRecordingForRenderer = useStableAutomationEvent(openRecordingTimeline);
+  const openStateForRenderer = useStableAutomationEvent(openStateView);
+  const appendRecordingMarkerForRenderer = useStableAutomationEvent(appendProjectRecordingMarker);
+  const appendRecordingNoteForRenderer = useStableAutomationEvent(appendProjectRecordingNote);
+  const saveTaskGraphForRenderer = useStableAutomationEvent(saveSelectedTaskGraph);
+  const updateTaskGraphDraftForRenderer = useStableAutomationEvent(updateSelectedTaskGraphDraft);
+  const restoreTaskGraphDraftForRenderer = useStableAutomationEvent(restoreSelectedTaskGraphDraft);
+  const discardTaskGraphDraftForRenderer = useStableAutomationEvent(discardSelectedTaskGraphDraft);
+  const updateRecordingForRenderer = useStableAutomationEvent(updateProjectRecording);
+  const setSelectionForRenderer = useStableAutomationEvent(setSelectionAndFollow);
 
-  function renderViewContent(view: AutomationViewInstance, viewActive: boolean) {
+  function renderViewContent(view: AutomationViewInstance, viewActive: boolean, keepMounted = false, viewActivity: { current: boolean } = { current: viewActive }) {
+    if (!viewActive && !keepMounted && automationViewTypeCanSleep(view.type)) return <AutomationSleepingView view={view} />;
     return (
       <AutomationViewRenderer
         entries={selectedTimelineEntries}
@@ -2571,26 +2815,28 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         timelines={timelines}
         view={view}
         viewActive={viewActive}
-        onDeleteRecording={deleteProjectRecording}
-        onFinalizeRecording={finalizeProjectRecording}
-        onEnsureInspectorAvailable={ensureGlobalInspectorAvailable}
-        onOpenTimelineEntryState={openTimelineEntryState}
-        onOpenProblem={openAutomationProblem}
-        onOpenProblems={openAutomationProblems}
+        viewActivity={viewActivity}
+        keepMounted={keepMounted}
+        onDeleteRecording={deleteRecordingForRenderer}
+        onFinalizeRecording={finalizeRecordingForRenderer}
+        onEnsureInspectorAvailable={ensureInspectorForRenderer}
+        onOpenTimelineEntryState={openTimelineEntryStateForRenderer}
+        onOpenProblem={openProblemForRenderer}
+        onOpenProblems={openProblemsForRenderer}
         onCreateSubflow={handleCreateSubflowFromActiveGraph}
-        onOpenSubflow={openSubflowInEditor}
-        onOpenRecording={openRecordingTimeline}
-        onOpenState={openStateView}
-        onAppendRecordingMarker={appendProjectRecordingMarker}
-        onAppendRecordingNote={appendProjectRecordingNote}
-        onSaveTaskGraph={saveSelectedTaskGraph}
-        onTaskGraphDraftChange={updateSelectedTaskGraphDraft}
-        onRestoreTaskGraphDraft={restoreSelectedTaskGraphDraft}
-        onDiscardTaskGraphDraft={discardSelectedTaskGraphDraft}
+        onOpenSubflow={openSubflowForRenderer}
+        onOpenRecording={openRecordingForRenderer}
+        onOpenState={openStateForRenderer}
+        onAppendRecordingMarker={appendRecordingMarkerForRenderer}
+        onAppendRecordingNote={appendRecordingNoteForRenderer}
+        onSaveTaskGraph={saveTaskGraphForRenderer}
+        onTaskGraphDraftChange={updateTaskGraphDraftForRenderer}
+        onRestoreTaskGraphDraft={restoreTaskGraphDraftForRenderer}
+        onDiscardTaskGraphDraft={discardTaskGraphDraftForRenderer}
         onTaskGraphDirtyChange={setHasDirtyTaskGraph}
         onRefreshRecordings={handleRefreshRecordingsForRenderer}
-        onUpdateRecording={updateProjectRecording}
-        setSelection={setSelectionAndFollow}
+        onUpdateRecording={updateRecordingForRenderer}
+        setSelection={setSelectionForRenderer}
       />
     );
   }
@@ -2603,7 +2849,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     return null;
   }
 
-  async function createFlowSubflowFromHierarchy(name: string, flowId: string, parentCategoryId: string | null): Promise<boolean> {
+  async function createFlowSubflowFromHierarchy(name: string, flowId: string, parentCategoryId: string | null, authorizationPin: string): Promise<boolean> {
     if (!activeProjectId) {
       setHierarchyStatus("Open a project before creating a subflow.");
       return false;
@@ -2611,7 +2857,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     const result = await api.post<{ subflow: any }>("create-flow-subflow", {
       projectId: activeProjectId,
       flowId,
-      authorizationPin: hierarchyPin,
+      authorizationPin,
       name,
       role: "utility",
       parentCategoryId
@@ -2623,15 +2869,16 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     window.dispatchEvent(new CustomEvent("fluxiq:subflows-changed", { detail: { flowId } }));
     notifyProjectDataChanged(["flow", "subflow", "summary"], [flowId, result.payload.subflow.subflowId]);
     const graphFlowId = result.payload.subflow.graphFlowId ?? flowId + "." + result.payload.subflow.subflowId + ".graph";
-    setProjectFlows((current) => upsertSubflowSummaryIntoProjectFlows(current, flowId, result.payload!.subflow));
-    void loadFlowDetails(graphFlowId);
-    setSelection({ kind: "flow", id: graphFlowId });
-    openView("policy-primary", "preview", "main");
+    scheduleWorkspaceNavigation(() => {
+      setProjectFlows((current) => upsertSubflowSummaryIntoProjectFlows(current, flowId, result.payload!.subflow));
+      setSelection({ kind: "flow", id: graphFlowId });
+      openView("policy-primary", "preview", "main");
+    });
     setHierarchyStatus(`${name} subflow created.`);
     return true;
   }
 
-  async function createSubflowCategoryFolder(name: string, flowId: string, parentCategoryId: string | null): Promise<boolean> {
+  async function createSubflowCategoryFolder(name: string, flowId: string, parentCategoryId: string | null, authorizationPin: string): Promise<boolean> {
     if (!activeProjectId) {
       setHierarchyStatus("Open a project before creating a subflow category.");
       return false;
@@ -2658,7 +2905,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         subflowCategories: [...categories, category]
       }
     };
-    const result = await api.post<{ flow: any }>("save-flow", { projectId: activeProjectId, authorizationPin: hierarchyPin, flow: nextFlow });
+    const result = await api.post<{ flow: any }>("save-flow", { projectId: activeProjectId, authorizationPin, flow: nextFlow });
     if (!result.ok || !result.payload?.flow) {
       setHierarchyStatus(result.error ?? "Subflow category could not be saved.");
       return false;
@@ -2699,28 +2946,48 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     });
   }
   function requestHierarchyAction(action: NonNullable<AutomationHierarchyAction>) {
-    setHierarchyAction(action);
-    if (action.action === "create") {
-      const parent = action.parentId ? hierarchyNodes.find((node) => node.id === action.parentId) : null;
-      const category = action.category ?? parent?.category ?? "flow";
-      const createsSubflowObject = parent ? automationHierarchyNodeIsSubflowRoot(parent) || automationHierarchyNodeIsSubflowCategory(parent) : false;
-      setHierarchyCreateStep("type");
-      setHierarchyCategory(category);
-      setHierarchyKind(createsSubflowObject ? "subflow" : category === "flow" ? "flow" : "folder");
-      setHierarchyName("");
-      setHierarchyFlowOrigin("blank");
-      setHierarchyParentId(action.parentId ?? null);
-    }
-    if (action.action === "delete" && action.node) {
-      if (action.node.kind === "flow" || action.node.kind === "folder") setHierarchyKind(action.node.kind);
-      setHierarchyCategory(action.node.category);
-      setHierarchyName(action.node.label);
-      setHierarchyParentId(action.node.parentId);
-    }
-    setHierarchyPin("");
-    setHierarchyStatus("");
+    const parent = action.action === "create" && action.parentId
+      ? hierarchyNodes.find((node) => node.id === action.parentId)
+      : null;
+    const category = action.action === "create"
+      ? action.category ?? parent?.category ?? "flow"
+      : action.node?.category ?? "flow";
+    const createsSubflowObject = Boolean(parent && (automationHierarchyNodeIsSubflowRoot(parent) || automationHierarchyNodeIsSubflowCategory(parent)));
+    studioUiStore.patch({
+      hierarchyAction: action,
+      hierarchyCategory: category,
+      hierarchyCreateStep: "type",
+      hierarchyFlowOrigin: "blank",
+      hierarchyKind: action.action === "create"
+        ? createsSubflowObject ? "subflow" : category === "flow" ? "flow" : "folder"
+        : action.node?.kind === "flow" || action.node?.kind === "folder" ? action.node.kind : "folder",
+      hierarchyName: action.action === "delete" ? action.node?.label ?? "" : "",
+      hierarchyParentId: action.action === "create" ? action.parentId ?? null : action.node?.parentId ?? null,
+      hierarchyPin: "",
+      hierarchyStatus: ""
+    });
   }
+  const openProjectTreeView = useStableAutomationEvent((viewId: string, mode: "preview" | "new-window" = "preview") => {
+    openView(viewId, mode);
+  });
+  const openProjectTreeSubflow = useStableAutomationEvent((node: AutomationHierarchyNode, mode: "preview" | "new-window") => {
+    if (node.flowId && node.sourceId) {
+      void openSubflowInEditor(node.flowId, node.sourceId, mode, typeof node.metadata?.graphFlowId === "string" ? node.metadata.graphFlowId : undefined);
+    }
+  });
+  const requestProjectTreeAction = useStableAutomationEvent((action: NonNullable<AutomationHierarchyAction>) => {
+    requestHierarchyAction(action);
+  });
   async function confirmHierarchyAction() {
+    const {
+      hierarchyAction,
+      hierarchyCategory,
+      hierarchyFlowOrigin,
+      hierarchyKind,
+      hierarchyName,
+      hierarchyParentId,
+      hierarchyPin
+    } = studioUiStore.getState();
     if (hierarchyPin.length < 4) {
       setHierarchyStatus("Enter your PIN before changing hierarchy items.");
       return;
@@ -2760,17 +3027,19 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         }
         const flow = originResult.payload?.flow ?? createdFlow;
         dataCache.set("flow", activeProjectId, flow.flowId, flow);
-        setProjectFlows((current) => mergeCreatedFlowIntoProjectFlows(current, flow));
+        scheduleWorkspaceNavigation(() => {
+          setProjectFlows((current) => mergeCreatedFlowIntoProjectFlows(current, flow));
+          setSelection({ kind: "flow", id: flow.flowId });
+          openView("policy-primary", "preview", "main");
+        });
         notifyProjectDataChanged(["flow", "summary"], [flow.flowId]);
-        setSelection({ kind: "flow", id: flow.flowId });
-        openView("policy-primary", "preview", "main");
         setHierarchyStatus(`${label} saved.`);
       } else {
         const subflowParent = hierarchySubflowCategoryParent(hierarchyParentId);
         if (subflowParent) {
           const created = hierarchyKind === "subflow"
-            ? await createFlowSubflowFromHierarchy(label, subflowParent.flowId, subflowParent.parentCategoryId)
-            : await createSubflowCategoryFolder(label, subflowParent.flowId, subflowParent.parentCategoryId);
+            ? await createFlowSubflowFromHierarchy(label, subflowParent.flowId, subflowParent.parentCategoryId, hierarchyPin)
+            : await createSubflowCategoryFolder(label, subflowParent.flowId, subflowParent.parentCategoryId, hierarchyPin);
           if (!created) return;
         } else {
           const id = `custom-${hierarchyKind}-${Date.now()}`;
@@ -2798,9 +3067,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         if (!deleted) return;
         setDeletedHierarchyIds((items) => items.filter((id) => !id.startsWith("recordings-client-") && !recordingIds.includes(id)));
         setCustomHierarchyNodes((items) => applyCustomFolderDelete(items, hierarchyAction.node!.id).next.filter((item) => !ids.includes(item.id)));
-        setHierarchyAction(null);
-        setHierarchyPin("");
-        setHierarchyName("");
+        closeHierarchyAction();
         return;
       }
       const proposalIds = deletingNodes
@@ -2810,9 +3077,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         setHierarchyStatus(`Deleting ${proposalIds.length} proposal${proposalIds.length === 1 ? "" : "s"}...`);
         const deleted = await deleteProjectProposals(proposalIds, hierarchyPin);
         if (!deleted) return;
-        setHierarchyAction(null);
-        setHierarchyPin("");
-        setHierarchyName("");
+        closeHierarchyAction();
         return;
       }
       const subflowCategoryNodes = deletingNodes.filter(automationHierarchyNodeIsSubflowCategory);
@@ -2844,9 +3109,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         }
         closeDeletedHierarchyViews(deletingNodes);
         notifyProjectDataChanged(["flow", "subflow", "summary"], [...categoriesByFlowId.keys(), ...subflowCategoryNodes.map((node) => node.sourceId).filter((value): value is string => Boolean(value))]);
-        setHierarchyAction(null);
-        setHierarchyPin("");
-        setHierarchyName("");
+        closeHierarchyAction();
         setHierarchyStatus(`${hierarchyAction.node.label} deleted.`);
         return;
       }
@@ -2874,9 +3137,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         closeDeletedHierarchyViews(deletingNodes);
         notifyProjectDataChanged(["flow", "subflow", "summary"], subflowNodes.flatMap((node) => [node.flowId!, node.sourceId!, typeof node.metadata?.graphFlowId === "string" ? node.metadata.graphFlowId : ""]).filter(Boolean));
         if (selection?.kind === "flow" && subflowNodes.some((node) => node.metadata?.graphFlowId === selection.id)) setSelection(null);
-        setHierarchyAction(null);
-        setHierarchyPin("");
-        setHierarchyName("");
+        closeHierarchyAction();
         setHierarchyStatus(`${hierarchyAction.node.label} deleted.`);
         return;
       }
@@ -2909,9 +3170,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
         }
         closeDeletedHierarchyViews(deletingNodes);
         notifyProjectDataChanged(["flow", "summary"], flowObjectNodes.flatMap((node) => [node.flowId!, node.sourceId!]).filter(Boolean));
-        setHierarchyAction(null);
-        setHierarchyPin("");
-        setHierarchyName("");
+        closeHierarchyAction();
         setHierarchyStatus(`${hierarchyAction.node.label} deleted.`);
         return;
       }
@@ -2969,9 +3228,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       setCustomHierarchyNodes((items) => applyCustomFolderDelete(items, hierarchyAction.node!.id).next.filter((item) => !ids.includes(item.id)));
       setHierarchyStatus(`${hierarchyAction.node.label} deleted.`);
     }
-    setHierarchyAction(null);
-    setHierarchyPin("");
-    setHierarchyName("");
+    closeHierarchyAction();
   }
 
   const renderBottomTimelineDock = (forceExpanded = false) => {
@@ -3016,7 +3273,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       const activeNarrowPane = configuredPanes.find((pane) => pane.id === workspacePrefs.activePaneId) ?? configuredPanes[0];
       const panes = isNarrowWorkspace && activeNarrowPane ? [activeNarrowPane] : configuredPanes;
       const paneCount = panes.length;
-      const ratiosSource = isNarrowWorkspace ? [1] : liveMainSplitRatios ?? workspacePrefs.mainSplitRatios;
+      const ratiosSource = isNarrowWorkspace ? [1] : workspacePrefs.mainSplitRatios;
       const ratios = ratiosSource.length === paneCount ? ratiosSource : Array.from({ length: paneCount }, () => 1 / paneCount);
       const paneLayoutStyle = workspacePrefs.mainLayoutPreset === "two-rows"
         ? { gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: ratios.map((ratio) => `minmax(0, ${ratio}fr)`).join(" ") }
@@ -3076,7 +3333,33 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                       onTabDrop={(viewId, placement, event) => dropPaneTab(pane.id, viewId, placement, event)}
                       onTabSelect={(viewId) => setPaneTab(pane.id, viewId)}
                     >
-                      {renderViewContent(view, workspacePrefs.activePaneId === pane.id && pane.activeViewId === view.id)}
+                      <div className="automation-mounted-view-stack">
+                        {tabViews.map((tabView) => {
+                          const selected = pane.activeViewId === tabView.id;
+                          const viewActive = workspacePrefs.activePaneId === pane.id && selected;
+                          const mountedViewKey = `${activeProjectId ?? "no-project"}:${pane.id}:${tabView.id}`;
+                          let viewActivity = mountedWorkspaceViewsRef.current.activityByViewKey.get(mountedViewKey);
+                          if (!viewActivity) {
+                            viewActivity = { current: viewActive };
+                            mountedWorkspaceViewsRef.current.activityByViewKey.set(mountedViewKey, viewActivity);
+                          } else {
+                            viewActivity.current = viewActive;
+                          }
+                          if (viewActive) mountedWorkspaceViewsRef.current.viewIds.add(mountedViewKey);
+                          const keepMounted = mountedWorkspaceViewsRef.current.viewIds.has(mountedViewKey);
+                          return (
+                            <div
+                              aria-hidden={!selected}
+                              className={["automation-mounted-view", automationViewBodyClassName(tabView) ?? ""].filter(Boolean).join(" ")}
+                              data-view-id={tabView.id}
+                              hidden={!selected}
+                              key={mountedViewKey}
+                            >
+                              {renderViewContent(tabView, viewActive, keepMounted, viewActivity)}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </AutomationViewContainer>
                   </div>
                 );
@@ -3158,7 +3441,33 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                 onAddTab={(event) => toggleWindowAdder("right", event, "right-sidebar")}
                 onTabSelect={setRightSidebarTab}
               >
-                {renderViewContent(view, true)}
+                <div className="automation-mounted-view-stack">
+                  {tabViews.map((tabView) => {
+                    const selected = activeRightViewId === tabView.id;
+                    const viewActive = selected;
+                    const mountedViewKey = `${activeProjectId ?? "no-project"}:right-sidebar:${tabView.id}`;
+                    let viewActivity = mountedWorkspaceViewsRef.current.activityByViewKey.get(mountedViewKey);
+                    if (!viewActivity) {
+                      viewActivity = { current: viewActive };
+                      mountedWorkspaceViewsRef.current.activityByViewKey.set(mountedViewKey, viewActivity);
+                    } else {
+                      viewActivity.current = viewActive;
+                    }
+                    if (viewActive) mountedWorkspaceViewsRef.current.viewIds.add(mountedViewKey);
+                    const keepMounted = mountedWorkspaceViewsRef.current.viewIds.has(mountedViewKey);
+                    return (
+                      <div
+                        aria-hidden={!selected}
+                        className={["automation-mounted-view", automationViewBodyClassName(tabView) ?? ""].filter(Boolean).join(" ")}
+                        data-view-id={tabView.id}
+                        hidden={!selected}
+                        key={mountedViewKey}
+                      >
+                        {renderViewContent(tabView, viewActive, keepMounted, viewActivity)}
+                      </div>
+                    );
+                  })}
+                </div>
               </AutomationViewContainer>
             </div>
           </div> : null}
@@ -3231,79 +3540,44 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
     );
   }
 
+  const renderWorkspaceShell = (renderPrefs: AutomationWorkspacePrefs) => {
+  const workspacePrefs = renderPrefs;
+  const activePane = workspacePrefs.panes.find((item) => item.id === workspacePrefs.activePaneId) ?? workspacePrefs.panes[0];
+  const activeViewId = activePane?.activeViewId ?? workspacePrefs.activeViewId ?? "policy-primary";
+  const sidebarCollapsed = workspacePrefs.leftSidebarCollapsed;
+  const workspaceBreadcrumbs = automationStudioWorkspaceBreadcrumbs({
+    flowId: activeFlowScope?.flowId,
+    flowName: breadcrumbFlow?.name ?? (activeFlowScope?.subflowId ? null : selectedFlow?.name),
+    subflowId: activeFlowScope?.subflowId,
+    subflowName: breadcrumbSubflow?.label ?? (activeFlowScope?.subflowId ? selectedFlow?.name : null),
+    viewId: activeViewId,
+    viewLabel: activeViewId === "policy-primary" ? "Nodes" : viewById.get(activeViewId)?.label ?? "Workspace"
+  });
   const hierarchyCollapsed = isNarrowWorkspace ? false : sidebarCollapsed;
   const projectHierarchySidebar = (
-      <aside aria-label="Project hierarchy" className="automation-studio-sidebar">
-        <div className="automation-studio-sidebar-heading">
-          {!hierarchyCollapsed ? <strong title={activeProject.name}>{activeProject.name}</strong> : null}
-          <div className="inline-actions">
-            {hierarchyCollapsed ? <button className="icon-button" onClick={closeProject} title="Back to projects" aria-label="Back to projects" type="button"><FolderOpen size={15} aria-hidden /></button> : null}
-            <button
-              aria-expanded={!hierarchyCollapsed}
-              className="icon-button"
-              onClick={() => updateWorkspacePrefs((current) => ({ ...current, leftSidebarCollapsed: !current.leftSidebarCollapsed }))}
-              title={hierarchyCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              aria-label={hierarchyCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              type="button"
-            >
-              {hierarchyCollapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronLeft size={14} aria-hidden />}
-            </button>
-          </div>
-        </div>
-        {!hierarchyCollapsed ? <div className="automation-sidebar-tools">
-          <label className="automation-tree-search">
-            <Search size={14} aria-hidden />
-            <span className="sr-only">Search project hierarchy</span>
-            <input aria-label="Search project hierarchy" onChange={(event) => setProjectSearch(event.target.value)} placeholder="Search objects" type="search" value={projectSearch} />
-            {projectSearch ? <button aria-label="Clear hierarchy search" className="automation-tree-search-clear" onClick={() => setProjectSearch("")} type="button"><X size={13} aria-hidden /></button> : null}
-          </label>
-          <div className="automation-tree-filter-row">
-            <label>
-              <span className="sr-only">Filter project object type</span>
-              <select aria-label="Filter project object type" onChange={(event) => setProjectTypeFilter(event.target.value as typeof projectTypeFilter)} value={projectTypeFilter}>
-                <option value="all">All objects</option>
-                <option value="flow">Flows</option>
-                <option value="folder">Folders</option>
-                <option value="subflow">Subflows</option>
-                <option value="flow-object">Flow objects</option>
-                <option value="instruction">Instructions</option>
-                <option value="adaptation">Adaptations</option>
-                <option value="recording">Recordings</option>
-                <option value="run">Runs</option>
-              </select>
-            </label>
-            <small aria-live="polite">{hierarchyMatchCount} match{hierarchyMatchCount === 1 ? "" : "es"}</small>
-          </div>
-        </div> : null}
-        {!hierarchyCollapsed ? <AutomationProjectTree
-          nodes={hierarchyNodes}
-          activeViewId={activeViewId}
-          selection={selection}
-          recordingPrimaryKind={recordingTreePrimaryKind}
-          setRecordingPrimaryKind={setRecordingTreePrimaryKind}
-          search={projectSearch}
-          typeFilter={projectTypeFilter}
-          setSelection={setSelection}
-          openSubflow={(node, mode) => {
-            if (node.flowId && node.sourceId) void openSubflowInEditor(node.flowId, node.sourceId, mode);
-          }}
-          openView={openView}
-          requestAction={requestHierarchyAction}
-        /> : null}
-        {!hierarchyCollapsed ? <div
-          aria-label="Resize project hierarchy"
-          aria-orientation="vertical"
-          aria-valuemax={420}
-          aria-valuemin={220}
-          aria-valuenow={Math.round(liveSidebarWidth ?? workspacePrefs.sidebarWidth)}
-          className="automation-sidebar-resizer"
-          onKeyDown={resizeSidebarFromKeyboard}
-          onPointerDown={startSidebarResize}
-          role="separator"
-          tabIndex={0}
-          title="Drag to resize. Use Left and Right arrow keys; Home resets."
-        /> : null}
-      </aside>
+    <AutomationProjectHierarchySidebar
+      activeViewId={activeViewId}
+      collapsed={hierarchyCollapsed}
+      initialSearch={projectSearch}
+      initialTypeFilter={projectTypeFilter}
+      nodes={hierarchyNodes}
+      onCloseProject={closeProject}
+      onFilterStateChange={handleProjectTreeFilterStateChange}
+      onResizeKeyDown={resizeSidebarFromKeyboard}
+      onResizePointerDown={startSidebarResize}
+      onTreeUiStateChange={handleProjectTreeUiStateChange}
+      onToggleCollapsed={() => updateWorkspacePrefs((current) => ({ ...current, leftSidebarCollapsed: !current.leftSidebarCollapsed }))}
+      openSubflow={openProjectTreeSubflow}
+      openView={openProjectTreeView}
+      projectName={activeProject.name}
+      recordingPrimaryKind={recordingTreePrimaryKind}
+      requestAction={requestProjectTreeAction}
+      selection={selection}
+      setRecordingPrimaryKind={setRecordingTreePrimaryKind}
+      setSelection={setProjectTreeSelection}
+      sidebarWidth={workspacePrefs.sidebarWidth}
+      treeUiState={projectTreeUiState}
+    />
   );
 
   const activeRightUtility = viewById.get(workspacePrefs.rightSidebar.activeViewId) ?? viewById.get("global-inspector");
@@ -3334,22 +3608,25 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
               {index ? <ChevronRight aria-hidden size={13} /> : null}
               {crumb.current ? <strong aria-current="page">{crumb.label}</strong> : <button onClick={() => {
                 if (crumb.kind === "flow") {
-                  void loadFlowDetails(crumb.id).then((flow) => { if (!flow) return; setSelection({ kind: "flow", id: crumb.id }); openView("flow-router", "preview", "main"); });
+                  scheduleWorkspaceNavigation(() => {
+                    setSelection({ kind: "flow", id: crumb.id });
+                    openView("flow-router", "preview", "main");
+                  });
                 } else if (crumb.kind === "subflow" && activeFlowScope?.flowId) void openSubflowInEditor(activeFlowScope.flowId, crumb.id);
               }} type="button">{crumb.label}</button>}
             </span>)}
           </nav> : <div className="automation-workspace-breadcrumbs empty" />}
           <div className="automation-studio-context">
-            {process.env.NODE_ENV !== "production" ? <button aria-haspopup="dialog" className="icon-button" onClick={() => setDataInspectorOpen(true)} title="Open data flow inspector" type="button"><Bug size={15} aria-hidden /><span className="visually-hidden">Open data flow inspector</span></button> : null}
-            <button aria-haspopup="dialog" className="button" onClick={() => setPreferencesOpen(true)} type="button"><SlidersHorizontal size={14} aria-hidden />Preferences</button>
+            {process.env.NODE_ENV !== "production" ? <button aria-haspopup="dialog" className="icon-button" onClick={() => studioUiStore.patch({ dataInspectorOpen: true })} title="Open data flow inspector" type="button"><Bug size={15} aria-hidden /><span className="visually-hidden">Open data flow inspector</span></button> : null}
+            <button aria-haspopup="dialog" className="button" onClick={() => studioUiStore.patch({ preferencesOpen: true })} type="button"><SlidersHorizontal size={14} aria-hidden />Preferences</button>
           </div>
         </header>
 
         <section
           className={`automation-studio-workspace${workspacePrefs.rightSidebarCollapsed ? " right-collapsed" : ""}`}
           style={{
-            gridTemplateColumns: `minmax(0, 1fr) ${workspacePrefs.rightSidebarCollapsed ? 38 : (liveInspectorWidth ?? workspacePrefs.inspectorWidth)}px`,
-            gridTemplateRows: `minmax(0, 1fr) ${workspacePrefs.bottomTimelineCollapsed ? 38 : (liveBottomTimelineHeight ?? workspacePrefs.bottomTimelineHeight)}px`
+            gridTemplateColumns: `minmax(0, 1fr) ${workspacePrefs.rightSidebarCollapsed ? 38 : workspacePrefs.inspectorWidth}px`,
+            gridTemplateRows: `minmax(0, 1fr) ${workspacePrefs.bottomTimelineCollapsed ? 38 : workspacePrefs.bottomTimelineHeight}px`
           }}
         >
           {renderWorkspaceArea("main", "Main", mainWorkspaceCanvasRef)}
@@ -3359,13 +3636,48 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
       </div>
       {isNarrowWorkspace && narrowWorkspacePanel === "hierarchy" ? <Drawer onClose={() => setNarrowWorkspacePanel(null)} side="left" title="Project Hierarchy">{projectHierarchySidebar}</Drawer> : null}
       {isNarrowWorkspace && narrowWorkspacePanel === "inspector" ? <Drawer onClose={() => setNarrowWorkspacePanel(null)} side="right" title={narrowRightUtilityLabel}>{renderWorkspaceArea("right", narrowRightUtilityLabel, rightWorkspaceCanvasRef, true)}</Drawer> : null}
-      {isNarrowWorkspace && narrowWorkspacePanel === "timeline" ? <Drawer className="automation-preview-sheet" onClose={() => setNarrowWorkspacePanel(null)} side="right" title="Action Preview">{renderBottomTimelineDock(true)}</Drawer> : null}      {hierarchyAction ? <Modal title={
+      {isNarrowWorkspace && narrowWorkspacePanel === "timeline" ? <Drawer className="automation-preview-sheet" onClose={() => setNarrowWorkspacePanel(null)} side="right" title="Action Preview">{renderBottomTimelineDock(true)}</Drawer> : null}    </section>
+  );
+  };
+
+  const renderWorkspaceOverlays = (renderPrefs: AutomationWorkspacePrefs, studioUi: AutomationStudioUiState) => {
+    const workspacePrefs = renderPrefs;
+    const {
+      dataInspectorOpen,
+      hierarchyAction,
+      hierarchyCategory,
+      hierarchyCreateStep,
+      hierarchyFlowOrigin,
+      hierarchyKind,
+      hierarchyName,
+      hierarchyParentId,
+      hierarchyPin,
+      hierarchyStatus,
+      layoutPickerOpen,
+      preferencesOpen,
+      windowAdderOpen
+    } = studioUi;
+    const folderOptions = hierarchyNodes.filter((node) => node.kind === "folder" && node.category === hierarchyCategory);
+    const hierarchySubflowParent = hierarchyAction?.action === "create" ? hierarchySubflowCategoryParent(hierarchyParentId) : null;
+    const hierarchyFolderOptions = hierarchySubflowParent
+      ? hierarchyNodes.filter((node) => node.flowId === hierarchySubflowParent.flowId && (automationHierarchyNodeIsSubflowRoot(node) || automationHierarchyNodeIsSubflowCategory(node)))
+      : folderOptions;
+    const viewAdderOptions = windowAdderOpen
+      ? automationViewAdderOptions(viewInstances, windowAdderOpen.area, {
+        hasProject: Boolean(activeProjectId),
+        hasFlow: Boolean(selectedFlow),
+        hasRecording: Boolean(selectedRecording),
+        hasSelection: Boolean(selection)
+      }, openWorkspaceViewIds)
+      : [];
+    return (<>
+      {hierarchyAction ? <Modal title={
         hierarchyAction.action === "create" && hierarchyCreateStep === "type"
           ? hierarchySubflowParent ? "Add to Subflows" : "Add to " + automationHierarchyCategoryLabel(hierarchyCategory)
           : hierarchyAction.action === "create"
             ? "Create " + (hierarchySubflowParent && hierarchyKind === "folder" ? "Folder" : hierarchyKind === "subflow" ? "Subflow" : hierarchyKind)
             : "Delete item"
-      } onClose={() => setHierarchyAction(null)}>
+      } onClose={closeHierarchyAction}>
         {hierarchyAction.action === "create" && hierarchyCreateStep === "type" ? <div className="automation-hierarchy-create">
           <div className="automation-create-type-grid" role="list" aria-label="Choose item type">
             {[
@@ -3378,10 +3690,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
                 <button
                   key={item.kind}
                   className="automation-create-type-card"
-                  onClick={() => {
-                    setHierarchyKind(item.kind);
-                    setHierarchyCreateStep("details");
-                  }}
+                  onClick={() => studioUiStore.patch({ hierarchyKind: item.kind, hierarchyCreateStep: "details" })}
                   type="button"
                 >
                   <span className="automation-create-type-icon"><Icon size={19} aria-hidden /></span>
@@ -3391,7 +3700,7 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
               );
             })}
           </div>
-          <div className="modal-actions"><button className="button" onClick={() => setHierarchyAction(null)} type="button">Cancel</button></div>
+          <div className="modal-actions"><button className="button" onClick={closeHierarchyAction} type="button">Cancel</button></div>
         </div> : hierarchyAction.action === "create" ? <div className="automation-hierarchy-create automation-hierarchy-create-form">
           <div className="automation-hierarchy-create-heading">
             <span className="automation-create-type-icon">{hierarchyKind === "subflow" ? <Workflow size={19} aria-hidden /> : hierarchyKind === "folder" ? <FolderPlus size={19} aria-hidden /> : <GitBranch size={19} aria-hidden />}</span>
@@ -3401,36 +3710,169 @@ export function AutomationStudioLive({ currentUser }: { currentUser: CurrentUser
             </div>
           </div>
           <div className="automation-hierarchy-create-fields">
-            <Field label="Name"><input autoFocus value={hierarchyName} onChange={(event) => setHierarchyName(event.target.value)} placeholder={hierarchyKind === "subflow" ? "Subflow name" : hierarchyKind === "folder" ? "Folder name" : "Flow name"} /></Field>
-            {hierarchyKind === "flow" ? <Field label="Flow preset"><select value={hierarchyFlowOrigin} onChange={(event) => setHierarchyFlowOrigin(event.target.value as AutomationFlowPreset)}><option value="blank">Blank visual Flow</option><option value="deterministic">Deterministic workflow</option><option value="recorded">Recorded automation</option><option value="integration">Integration Flow</option><option value="scheduled">Scheduled Flow</option><option value="api-endpoint">API endpoint</option><option value="reusable">Reusable component</option></select></Field> : null}
-            <Field label="Location"><select value={hierarchyParentId ?? ""} onChange={(event) => setHierarchyParentId(event.target.value || null)}>{hierarchySubflowParent ? null : <option value="">{automationHierarchyCategoryLabel(hierarchyCategory)}</option>}{hierarchyFolderOptions.map((folder) => <option key={folder.id} value={folder.id}>{folder.label}</option>)}</select></Field>
-            <Field label="Security PIN"><input inputMode="numeric" type="password" value={hierarchyPin} onChange={(event) => setHierarchyPin(digits(event.target.value))} placeholder="Enter PIN" /></Field>
+            <Field label="Name"><input autoFocus value={hierarchyName} onChange={(event) => studioUiStore.patch({ hierarchyName: event.target.value })} placeholder={hierarchyKind === "subflow" ? "Subflow name" : hierarchyKind === "folder" ? "Folder name" : "Flow name"} /></Field>
+            {hierarchyKind === "flow" ? <Field label="Flow preset"><select value={hierarchyFlowOrigin} onChange={(event) => studioUiStore.patch({ hierarchyFlowOrigin: event.target.value as AutomationFlowPreset })}><option value="blank">Blank visual Flow</option><option value="deterministic">Deterministic workflow</option><option value="recorded">Recorded automation</option><option value="integration">Integration Flow</option><option value="scheduled">Scheduled Flow</option><option value="api-endpoint">API endpoint</option><option value="reusable">Reusable component</option></select></Field> : null}
+            <Field label="Location"><select value={hierarchyParentId ?? ""} onChange={(event) => studioUiStore.patch({ hierarchyParentId: event.target.value || null })}>{hierarchySubflowParent ? null : <option value="">{automationHierarchyCategoryLabel(hierarchyCategory)}</option>}{hierarchyFolderOptions.map((folder) => <option key={folder.id} value={folder.id}>{folder.label}</option>)}</select></Field>
+            <Field label="Security PIN"><input inputMode="numeric" type="password" value={hierarchyPin} onChange={(event) => studioUiStore.patch({ hierarchyPin: digits(event.target.value) })} placeholder="Enter PIN" /></Field>
           </div>
           <StatusText value={hierarchyStatus} />
           <div className="modal-actions">
-            <button className="button" onClick={() => setHierarchyCreateStep("type")} type="button">Back</button>
-            <button className="button" onClick={() => setHierarchyAction(null)} type="button">Cancel</button>
+            <button className="button" onClick={() => studioUiStore.patch({ hierarchyCreateStep: "type" })} type="button">Back</button>
+            <button className="button" onClick={closeHierarchyAction} type="button">Cancel</button>
             <button className="button button-primary" disabled={hierarchyPin.length < 4 || !hierarchyName.trim()} onClick={confirmHierarchyAction} type="button">Create</button>
           </div>
         </div> : <>
           {hierarchyAction.node ? <VisualAlert tone="warning" title={"Delete " + hierarchyAction.node.label + "?"} message="This removes the selected item and its contained hierarchy items." /> : null}
-          <Field label="Security PIN"><input autoFocus inputMode="numeric" type="password" value={hierarchyPin} onChange={(event) => setHierarchyPin(digits(event.target.value))} /></Field>
+          <Field label="Security PIN"><input autoFocus inputMode="numeric" type="password" value={hierarchyPin} onChange={(event) => studioUiStore.patch({ hierarchyPin: digits(event.target.value) })} /></Field>
           <StatusText value={hierarchyStatus} />
           <div className="modal-actions">
-            <button className="button" onClick={() => setHierarchyAction(null)} type="button">Cancel</button>
+            <button className="button" onClick={closeHierarchyAction} type="button">Cancel</button>
             <button className="button danger" disabled={hierarchyPin.length < 4} onClick={confirmHierarchyAction} type="button">Delete</button>
           </div>
         </>}
       </Modal> : null}      {projectModal ? <AutomationProjectModalView busy={projectActionBusy} categoryName={categoryName} categoryTarget={categoryTarget} currentUser={currentUser} description={projectDescription} mode={projectModal} name={projectName} pin={projectPin} projectTarget={projectTarget} status={projectStatus} onCategoryNameChange={setCategoryName} onClose={() => { if (!projectActionBusy) setProjectModal(null); }} onCreate={() => void createProject()} onCreateCategory={() => void createCategory()} onDelete={() => void deleteProject()} onDeleteCategory={() => void deleteCategory()} onDescriptionChange={setProjectDescription} onMove={() => void moveProject()} onMoveCategory={() => void moveCategory()} onNameChange={setProjectName} onPinChange={(value) => setProjectPin(digits(value))} onRename={() => void renameProject()} onRenameCategory={() => void renameCategory()} /> : null}
-      {preferencesOpen ? <Modal closeOnEscape description="Layout, region sizing, motion, and operational density." onClose={() => setPreferencesOpen(false)} title="Workspace Preferences"><AutomationWorkspacePreferences prefs={workspacePrefs} saveStatus={workspaceSaveStatus} setPrefs={updateWorkspacePrefs} /><div className="modal-actions"><button className="button button-primary" onClick={() => setPreferencesOpen(false)} type="button">Done</button></div></Modal> : null}      {windowAdderOpen ? <AutomationWindowAdderPalette area={windowAdderOpen.area} anchor={windowAdderOpen.anchor} {...(windowAdderOpen.targetWindowId ? { targetWindowId: windowAdderOpen.targetWindowId } : {})} options={viewAdderOptions} onAdd={addWorkspaceWindow} onClose={() => setWindowAdderOpen(null)} /> : null}
+      {preferencesOpen ? <Modal closeOnEscape description="Layout, region sizing, motion, and operational density." onClose={() => studioUiStore.patch({ preferencesOpen: false })} title="Workspace Preferences"><AutomationWorkspacePreferences prefs={workspacePrefs} saveStatus={workspaceSaveStatus} setPrefs={updateWorkspacePrefs} /><div className="modal-actions"><button className="button button-primary" onClick={() => studioUiStore.patch({ preferencesOpen: false })} type="button">Done</button></div></Modal> : null}      {windowAdderOpen ? <AutomationWindowAdderPalette area={windowAdderOpen.area} anchor={windowAdderOpen.anchor} {...(windowAdderOpen.targetWindowId ? { targetWindowId: windowAdderOpen.targetWindowId } : {})} options={viewAdderOptions} onAdd={addWorkspaceWindow} onClose={() => setWindowAdderOpen(null)} /> : null}
       {layoutPickerOpen ? <AutomationLayoutPicker area={layoutPickerOpen.area} anchor={layoutPickerOpen.anchor} onArrange={arrangeWindows} /> : null}
-      {dataInspectorOpen && process.env.NODE_ENV !== "production" ? <AutomationStudioDataInspector api={api} cacheStats={() => dataCache.stats()} onClose={() => setDataInspectorOpen(false)} /> : null}
-    </section>
-  );
+      {dataInspectorOpen && process.env.NODE_ENV !== "production" ? <AutomationStudioDataInspector activeProjectId={activeProjectId} api={api} cacheStats={() => dataCache.stats()} onClose={() => studioUiStore.patch({ dataInspectorOpen: false })} /> : null}
+    </>);
+  };
+
+  const workspaceShellRenderInputs = [
+    activeProject, activeProjectId, loadedProjectHierarchyId, isNarrowWorkspace, narrowWorkspacePanel,
+    snapshot, customHierarchyNodes, deletedHierarchyIds, projectSearch, projectTypeFilter, projectTreeUiState,
+    projectArtifacts, projectFlows, nativeNodeDefinitions, publishedFlowDefinitions, flowPublications, flowDependencyInfo,
+    automationActionStatus, flowRunState, hasDirtyTaskGraph, taskGraphDrafts, recoverableTaskGraphDraft, graphProblems,
+    projectRecordings, projectTimelines, recordingDomains, recordingTreePrimaryKind, recordingProcessing,
+    runtimeSessions, pipelineArtifacts, gatewaySnapshot, indexedStateSources, selection, pendingStateOpen, bottomPreviewEntryId
+  ] as const;
+  const workspaceOverlayRenderInputs = [
+    activeProjectId, hierarchyNodes, viewInstances, openWorkspaceViewIds, selectedFlow, selectedRecording, selection,
+    projectModal, projectActionBusy, categoryName, categoryTarget, projectDescription, projectName,
+    projectPin, projectStatus, projectTarget, workspaceSaveStatus
+  ] as const;
+  workspaceShellRendererRef.current = renderWorkspaceShell;
+  workspaceOverlayRendererRef.current = renderWorkspaceOverlays;
+  return <>
+    <AutomationWorkspaceRenderBoundary render={stableWorkspaceShellRenderer} renderInputs={workspaceShellRenderInputs} store={workspaceRenderStore} />
+    <AutomationStudioUiBoundary studioUiStore={studioUiStore} render={stableWorkspaceOverlayRenderer} renderInputs={workspaceOverlayRenderInputs} workspaceStore={workspaceRenderStore} />
+  </>;
 }
 
 
 
+const AutomationProjectHierarchySidebar = memo(function AutomationProjectHierarchySidebar(props: {
+  activeViewId: string;
+  collapsed: boolean;
+  initialSearch: string;
+  initialTypeFilter: "all" | AutomationHierarchyKind;
+  nodes: AutomationHierarchyNode[];
+  onCloseProject(): void;
+  onFilterStateChange(state: { search: string; typeFilter: "all" | AutomationHierarchyKind }): void;
+  onResizeKeyDown(event: KeyboardEvent<HTMLDivElement>): void;
+  onResizePointerDown(event: ReactPointerEvent<HTMLDivElement>): void;
+  onToggleCollapsed(): void;
+  onTreeUiStateChange(state: AutomationProjectTreeUiState): void;
+  openSubflow(node: AutomationHierarchyNode, mode: "preview" | "new-window"): void;
+  openView(viewId: string, mode?: "preview" | "new-window"): void;
+  projectName: string;
+  recordingPrimaryKind: "recording" | "proposal" | null;
+  requestAction(action: NonNullable<AutomationHierarchyAction>): void;
+  selection: AutomationSelection | null;
+  setRecordingPrimaryKind(kind: "recording" | "proposal"): void;
+  setSelection(selection: AutomationSelection): void;
+  sidebarWidth: number;
+  treeUiState: AutomationProjectTreeUiState | null;
+}) {
+  const [filterState, setFilterState] = useState({ search: props.initialSearch, typeFilter: props.initialTypeFilter });
+  useEffect(() => {
+    setFilterState((current) => current.search === props.initialSearch && current.typeFilter === props.initialTypeFilter
+      ? current
+      : { search: props.initialSearch, typeFilter: props.initialTypeFilter });
+  }, [props.initialSearch, props.initialTypeFilter]);
+  const normalizedSearch = filterState.search.trim().toLocaleLowerCase();
+  const matchCount = useMemo(() => props.nodes.filter((node) =>
+    (filterState.typeFilter === "all" || node.kind === filterState.typeFilter)
+    && (!normalizedSearch || (node.label + " " + node.kind).toLocaleLowerCase().includes(normalizedSearch))
+  ).length, [filterState.typeFilter, normalizedSearch, props.nodes]);
+  const updateFilters = (next: { search: string; typeFilter: "all" | AutomationHierarchyKind }) => {
+    setFilterState(next);
+    props.onFilterStateChange(next);
+  };
+
+  return (
+    <aside aria-label="Project hierarchy" className="automation-studio-sidebar">
+      <div className="automation-studio-sidebar-heading">
+        {!props.collapsed ? <strong title={props.projectName}>{props.projectName}</strong> : null}
+        <div className="inline-actions">
+          {props.collapsed ? <button className="icon-button" onClick={props.onCloseProject} title="Back to projects" aria-label="Back to projects" type="button"><FolderOpen size={15} aria-hidden /></button> : null}
+          <button
+            aria-expanded={!props.collapsed}
+            className="icon-button"
+            onClick={props.onToggleCollapsed}
+            title={props.collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={props.collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            type="button"
+          >
+            {props.collapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronLeft size={14} aria-hidden />}
+          </button>
+        </div>
+      </div>
+      {!props.collapsed ? <div className="automation-sidebar-tools">
+        <label className="automation-tree-search">
+          <Search size={14} aria-hidden />
+          <span className="sr-only">Search project hierarchy</span>
+          <input aria-label="Search project hierarchy" onChange={(event) => updateFilters({ ...filterState, search: event.target.value })} placeholder="Search objects" type="search" value={filterState.search} />
+          {filterState.search ? <button aria-label="Clear hierarchy search" className="automation-tree-search-clear" onClick={() => updateFilters({ ...filterState, search: "" })} type="button"><X size={13} aria-hidden /></button> : null}
+        </label>
+        <div className="automation-tree-filter-row">
+          <label>
+            <span className="sr-only">Filter project object type</span>
+            <select aria-label="Filter project object type" onChange={(event) => updateFilters({ ...filterState, typeFilter: event.target.value as "all" | AutomationHierarchyKind })} value={filterState.typeFilter}>
+              <option value="all">All objects</option>
+              <option value="flow">Flows</option>
+              <option value="folder">Folders</option>
+              <option value="subflow">Subflows</option>
+              <option value="flow-object">Flow objects</option>
+              <option value="instruction">Instructions</option>
+              <option value="adaptation">Adaptations</option>
+              <option value="recording">Recordings</option>
+              <option value="run">Runs</option>
+            </select>
+          </label>
+          <small aria-live="polite">{matchCount} match{matchCount === 1 ? "" : "es"}</small>
+        </div>
+      </div> : null}
+      {!props.collapsed ? <AutomationProjectTree
+        nodes={props.nodes}
+        activeViewId={props.activeViewId}
+        selection={props.selection}
+        recordingPrimaryKind={props.recordingPrimaryKind}
+        setRecordingPrimaryKind={props.setRecordingPrimaryKind}
+        search={filterState.search}
+        typeFilter={filterState.typeFilter}
+        setSelection={props.setSelection}
+        openSubflow={props.openSubflow}
+        openView={props.openView}
+        requestAction={props.requestAction}
+        uiState={props.treeUiState}
+        onUiStateChange={props.onTreeUiStateChange}
+      /> : null}
+      {!props.collapsed ? <div
+        aria-label="Resize project hierarchy"
+        aria-orientation="vertical"
+        aria-valuemax={420}
+        aria-valuemin={220}
+        aria-valuenow={Math.round(props.sidebarWidth)}
+        className="automation-sidebar-resizer"
+        onKeyDown={props.onResizeKeyDown}
+        onPointerDown={props.onResizePointerDown}
+        role="separator"
+        tabIndex={0}
+        title="Drag to resize. Use Left and Right arrow keys; Home resets."
+      /> : null}
+    </aside>
+  );
+});
 function emptyPipelineArtifacts() {
   return {
     normalizationReviews: [],
@@ -3600,11 +4042,28 @@ function mergeFlowDetails(current: any[], incoming: any[]) {
   const incomingById = new Map(incoming
     .filter((entry) => entry?.flow?.flowId)
     .map((entry) => [entry.flow.flowId, entry]));
-  const next = current.map((entry) => incomingById.get(entry?.flow?.flowId) ?? entry);
+  let changed = false;
+  const next = current.map((entry) => {
+    const replacement = incomingById.get(entry?.flow?.flowId);
+    if (!replacement) return entry;
+    if (replacement === entry || (replacement.flow === entry.flow && replacement.source === entry.source && replacement.readOnly === entry.readOnly)) return entry;
+    changed = true;
+    return replacement;
+  });
   for (const entry of incoming) {
-    if (entry?.flow?.flowId && !next.some((item) => item?.flow?.flowId === entry.flow.flowId)) next.push(entry);
+    if (entry?.flow?.flowId && !next.some((item) => item?.flow?.flowId === entry.flow.flowId)) {
+      next.push(entry);
+      changed = true;
+    }
   }
-  return next;
+  return changed ? next : current;
+}
+
+function mergeRecordingDetail(current: any[], recording: any): any[] {
+  if (!recording?.recordingId) return current;
+  const existing = current.find((item) => item?.recordingId === recording.recordingId);
+  if (existing === recording) return current;
+  return [recording, ...current.filter((item) => item?.recordingId !== recording.recordingId)];
 }
 
 export function mergeCreatedFlowIntoProjectFlows(current: any[], flow: any): any[] {
@@ -3856,6 +4315,24 @@ function automationWorkspacePrefsSameRuntimeState(left: AutomationWorkspacePrefs
     && automationWorkspaceViewStatesSameRuntimeState(left.viewStates, right.viewStates);
 }
 
+function automationWorkspacePrefsSameNonActivePersistentState(left: AutomationWorkspacePrefs, right: AutomationWorkspacePrefs): boolean {
+  return left.maximizedWindowId === right.maximizedWindowId
+    && left.sidebarWidth === right.sidebarWidth
+    && left.leftSidebarCollapsed === right.leftSidebarCollapsed
+    && left.inspectorWidth === right.inspectorWidth
+    && left.bottomTimelineHeight === right.bottomTimelineHeight
+    && left.bottomTimelineCollapsed === right.bottomTimelineCollapsed
+    && left.mainLayoutPreset === right.mainLayoutPreset
+    && left.rightSidebarCollapsed === right.rightSidebarCollapsed
+    && left.density === right.density
+    && left.motion === right.motion
+    && automationWorkspacePaneListNonActiveKey(left.panes) === automationWorkspacePaneListNonActiveKey(right.panes)
+    && automationWorkspaceRightSidebarNonActiveKey(left.rightSidebar) === automationWorkspaceRightSidebarNonActiveKey(right.rightSidebar)
+    && automationWorkspaceBottomDockNonActiveKey(left.bottomDock) === automationWorkspaceBottomDockNonActiveKey(right.bottomDock)
+    && JSON.stringify(left.mainSplitRatios) === JSON.stringify(right.mainSplitRatios)
+    && automationWorkspaceViewStatesSameRuntimeState(left.viewStates, right.viewStates);
+}
+
 function automationWorkspaceViewStatesSameRuntimeState(left: AutomationWorkspacePrefs["viewStates"], right: AutomationWorkspacePrefs["viewStates"]): boolean {
   if (left === right) return true;
   const leftEntries = Object.entries(left ?? {});
@@ -3884,12 +4361,24 @@ function automationWorkspacePaneListKey(panes: AutomationWorkspacePrefs["panes"]
   return panes.map((pane) => `${pane.id}:${pane.activeViewId}:${pane.tabs.join(",")}`).join("|");
 }
 
+function automationWorkspacePaneListNonActiveKey(panes: AutomationWorkspacePrefs["panes"]): string {
+  return panes.map((pane) => `${pane.id}:${pane.tabs.join(",")}`).join("|");
+}
+
 function automationWorkspaceRightSidebarKey(rightSidebar: AutomationWorkspacePrefs["rightSidebar"]): string {
   return `${rightSidebar.activeViewId}:${rightSidebar.collapsed === true}:${rightSidebar.tabs.join(",")}`;
 }
 
+function automationWorkspaceRightSidebarNonActiveKey(rightSidebar: AutomationWorkspacePrefs["rightSidebar"]): string {
+  return `${rightSidebar.collapsed === true}:${rightSidebar.tabs.join(",")}`;
+}
+
 function automationWorkspaceBottomDockKey(bottomDock: AutomationWorkspacePrefs["bottomDock"]): string {
   return `${bottomDock.activeViewId}:${bottomDock.expanded === true}`;
+}
+
+function automationWorkspaceBottomDockNonActiveKey(bottomDock: AutomationWorkspacePrefs["bottomDock"]): string {
+  return `${bottomDock.expanded === true}`;
 }
 
 function persistentAutomationViewStates(viewStates: AutomationWorkspacePrefs["viewStates"]): AutomationWorkspacePrefs["viewStates"] {
@@ -4106,7 +4595,12 @@ function sameStringList(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((item, index) => item === right[index]);
 }
 
-
-
-
+function automationSelectionSame(left: AutomationSelection | null, right: AutomationSelection): boolean {
+  if (!left || left.kind !== right.kind) return false;
+  const leftRecord = left as unknown as Record<string, unknown>;
+  const rightRecord = right as unknown as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord);
+  const rightKeys = Object.keys(rightRecord);
+  return leftKeys.length === rightKeys.length && leftKeys.every((key) => leftRecord[key] === rightRecord[key]);
+}
 

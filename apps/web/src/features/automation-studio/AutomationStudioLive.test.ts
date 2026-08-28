@@ -77,7 +77,9 @@ describe("AutomationStudioLive state opening", () => {
     const activateSource = source.slice(activateStart, activateEnd);
 
     expect(updateStart).toBeGreaterThan(-1);
-    expect(updateSource).toContain("if (candidate === current) return current");
+    expect(updateSource).toContain("if (candidate === current) return;");
+    expect(updateSource).toContain("workspaceRenderStore.replace(next)");
+    expect(updateSource).not.toContain("setWorkspacePrefs(");
     expect(updateSource).toContain("automationWorkspacePrefsSameRuntimeState");
     expect(source).toContain("automationWorkspaceViewStatesSameRuntimeState(left.viewStates, right.viewStates)");
     expect(source).not.toContain("JSON.stringify(left.viewStates");
@@ -98,23 +100,39 @@ describe("AutomationStudioLive state opening", () => {
     expect(contextSource).not.toContain('pointerdown');
     expect(contextSource).not.toContain('keydown');
   });
-  it("marks internally synced URLs as already restored so tab changes do not bounce", () => {
+  it("uses known sidebar subflow graph ids and leaves detail loading to active-view effects", () => {
     const source = readFileSync(new URL("./AutomationStudioLive.tsx", import.meta.url), "utf8");
-    const syncStart = source.indexOf("const selectedFlowSelectionId = selection?.kind === \"flow\"");
-    const historyReplaceIndex = source.indexOf("replaceAutomationStudioBrowserUrl(pathname, params)", syncStart);
-    const syncSource = source.slice(syncStart, historyReplaceIndex + 260);
+    const openStart = source.indexOf("async function openSubflowInEditor");
+    const openEnd = source.indexOf("async function loadNodeDefinitions", openStart);
+    const openSource = source.slice(openStart, openEnd);
 
-    expect(syncStart).toBeGreaterThan(-1);
-    expect(historyReplaceIndex).toBeGreaterThan(syncStart);
+    expect(openStart).toBeGreaterThan(-1);
+    expect(openSource).toContain("knownGraphFlowId?: string");
+    expect(openSource).toContain("setSelectionAndFollow({ kind: \"flow\", id: graphFlowId }, mode)");
+    expect(openSource).not.toContain("loadFlowDetails(graphFlowId)");
+    expect(source).toContain("automationStudioFlowNeedsDetail(selectedFlow, activeViewId, selection?.kind)");
+    expect(source).toContain("node.metadata?.graphFlowId");
+  });
+  it("keeps live tab and sidebar selection out of URL synchronization", () => {
+    const source = readFileSync(new URL("./AutomationStudioLive.tsx", import.meta.url), "utf8");
+    const deepLinkStart = source.indexOf("const deepLinkSearchSignature = searchParams.toString()");
+    const deepLinkEnd = source.indexOf("if (!activeProjectId || !projectRecordings.length)", deepLinkStart);
+    const deepLinkSource = source.slice(deepLinkStart, deepLinkEnd);
+    const projectUrlStart = source.indexOf("function setProjectUrl(projectId: string | null)");
+    const projectUrlEnd = source.indexOf("async function openProject", projectUrlStart);
+    const projectUrlSource = source.slice(projectUrlStart, projectUrlEnd);
+
+    expect(deepLinkStart).toBeGreaterThan(-1);
+    expect(deepLinkEnd).toBeGreaterThan(deepLinkStart);
+    expect(projectUrlStart).toBeGreaterThan(-1);
     expect(source).not.toContain("useRouter");
     expect(source).not.toContain("router.replace");
-    expect(syncSource).toContain("const linkFlowId = selectedFlowSelectionId ?? selectedFlow?.flowId ?? lastOpenFlowId");
-    expect(syncSource).toContain("restoredDeepLinkRef.current = [activeProjectId, scope.flowId, scope.subflowId ?? \"\", activeViewId, \"\"].join(\"|\")");
-    expect(syncSource).toContain("replaceAutomationStudioBrowserUrl(pathname, params)");
-    expect(syncSource).toContain("const currentParams = automationStudioCurrentSearchParams();");
-    expect(syncSource).toContain("[activeProjectId, activeViewId, selectedFlowSelectionId");
-    expect(syncSource).not.toContain("[activeProjectId, activeViewId, selection,");
-    expect(syncSource).not.toContain("searchParams]);");
+    expect(source).not.toContain("const selectedFlowSelectionId = selection?.kind === \"flow\"");
+    expect(deepLinkSource).toContain("urlAlreadyMatchesVisibleWorkspace");
+    expect(deepLinkSource).not.toContain("replaceAutomationStudioBrowserUrl");
+    expect(deepLinkSource).not.toContain("viewId: activeViewId");
+    expect(projectUrlSource).toContain("automationStudioDeepLinkParams({ projectId }, automationStudioCurrentSearchParams())");
+    expect(projectUrlSource).toContain("replaceAutomationStudioBrowserUrl(pathname, params)");
   });
 
   it("updates browser history for Studio URL sync without routing", () => {
@@ -142,6 +160,28 @@ describe("AutomationStudioLive state opening", () => {
     expect(source).toContain("if (currentPolicyState.lastOpenFlowId === selection.id) return current");
   });
 
+
+  it("does not feed active tab focus into lazy preloading", () => {
+    const source = readFileSync(new URL("./AutomationStudioLive.tsx", import.meta.url), "utf8");
+    const preloadStart = source.indexOf("useAutomationStudioLazyPreloader(api, {");
+    const preloadEnd = source.indexOf("});", preloadStart);
+    const preloadSource = source.slice(preloadStart, preloadEnd);
+
+    expect(preloadStart).toBeGreaterThan(-1);
+    expect(preloadSource).not.toContain("activeViewId");
+    expect(preloadSource).toContain("openViewIds: openWorkspaceViewIdList");
+  });  it("defers graph draft recovery storage reads out of the flow selection path", () => {
+    const source = readFileSync(new URL("./AutomationStudioLive.tsx", import.meta.url), "utf8");
+    const recoveryStart = source.indexOf("const baseTaskGraphDocument = useMemo");
+    const recoveryEnd = source.indexOf("const activePane = workspacePrefs.panes.find", recoveryStart);
+    const recoverySource = source.slice(recoveryStart, recoveryEnd);
+
+    expect(recoveryStart).toBeGreaterThan(-1);
+    expect(recoveryEnd).toBeGreaterThan(recoveryStart);
+    expect(recoverySource).toContain("scheduleAutomationGraphIdleTask");
+    expect(recoverySource.indexOf("loadAutomationGraphDraft")).toBeGreaterThan(recoverySource.indexOf("scheduleAutomationGraphIdleTask"));
+    expect(recoverySource).not.toContain("const existing = loadAutomationGraphDraft");
+  });
   it("runs parent graph validation only when Problems is visible and idle", () => {
     const source = readFileSync(new URL("./AutomationStudioLive.tsx", import.meta.url), "utf8");
 
@@ -195,7 +235,53 @@ describe("AutomationStudioLive state opening", () => {
     expect(afterDelete.map((entry) => entry.flow.flowId)).toEqual(["flow.new"]);
   });
 
-  it("keeps empty view switching out of hierarchy save and request churn", () => {
+  it("keeps sidebar interaction state out of the Studio root render path", () => {
+    const source = readFileSync(new URL("./AutomationStudioLive.tsx", import.meta.url), "utf8");
+    const start = source.indexOf("const handleProjectTreeUiStateChange =");
+    const end = source.indexOf("const setProjectTreeSelection =", start);
+    const callback = source.slice(start, end);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(callback).toContain("projectTreeUiStateRef.current = state");
+    expect(callback).toContain("uiCache.scheduleSidebarWrite");
+    expect(callback).not.toContain("setProjectTreeUiState");
+    expect(callback).not.toContain("setWorkspacePrefs");
+    expect(callback).not.toContain("scheduleWorkspaceNavigation");
+  });
+  it("routes pure workspace preferences through the UI cache lane", () => {
+    const source = readFileSync(new URL("./AutomationStudioLive.tsx", import.meta.url), "utf8");
+    const updateStart = source.indexOf("function updateWorkspacePrefs(");
+    const resizeStart = source.indexOf("function startSidebarResize", updateStart);
+    const updateSource = source.slice(updateStart, resizeStart);
+
+    expect(updateSource).toContain("const shouldPersist = options.persist === true");
+    expect(updateSource).toContain("if (activeProjectId && shouldPersist) uiCache.markProjectUiMutation(activeProjectId)");
+    expect(source).toContain("uiCache.scheduleWorkspacePrefsWrite");
+    expect(source).toContain("uiCache.scheduleSidebarWrite");
+    expect(updateSource).not.toContain("save-project-hierarchy");
+  });
+  it("preserves activated tab view instances while unopened views remain asleep", () => {
+    const source = readFileSync(new URL("./AutomationStudioLive.tsx", import.meta.url), "utf8");
+    const workspaceStart = source.indexOf("const renderWorkspaceArea =");
+    const workspaceSource = source.slice(workspaceStart, source.indexOf("if (restoringUrlProject)", workspaceStart));
+
+    expect(source).toContain("mountedWorkspaceViewsRef");
+    expect(workspaceSource).toContain("{tabViews.map((tabView) => {");
+    expect(workspaceSource).toContain("mountedWorkspaceViewsRef.current.viewIds.add(mountedViewKey)");
+    expect(workspaceSource).toContain("hidden={!selected}");
+    expect(workspaceSource).toContain("renderViewContent(tabView, viewActive, keepMounted, viewActivity)");
+    expect(workspaceSource).toContain(":right-sidebar:${tabView.id}");
+    expect(source).toContain("if (!viewActive && !keepMounted && automationViewTypeCanSleep(view.type))");
+    expect(workspaceSource).toContain("activityByViewKey");
+  });
+  it("does not add a second whole-Studio render before waking the selected body", () => {
+    const source = readFileSync(new URL("./AutomationStudioLive.tsx", import.meta.url), "utf8");
+
+    expect(source).not.toContain("activeViewRenderSignature");
+    expect(source).not.toContain("readyActiveViewRenderSignature");
+    expect(source).not.toContain("activeViewBodyReady");
+    expect(source).toContain("const viewActive = workspacePrefs.activePaneId === pane.id && selected");
+  });  it("keeps empty view switching out of hierarchy save, cache mutation, and request churn", () => {
     const source = readFileSync(new URL("./AutomationStudioLive.tsx", import.meta.url), "utf8");
     const openViewStart = source.indexOf("function openView(");
     const choosePaneStart = source.indexOf("function chooseMainPaneForView", openViewStart);
@@ -208,8 +294,118 @@ describe("AutomationStudioLive state opening", () => {
     expect(openViewSource).not.toContain("runLatest(");
     expect(openViewSource).not.toContain("api.post(");
     expect(openViewSource).not.toContain("recordAutomationStudioHierarchySaveRequest");
+    expect(openViewSource).not.toContain("markProjectUiMutation");
+    expect(openViewSource).toContain("targetPane.tabs.includes(viewId)");
+    expect(openViewSource).toContain("item.tabs.includes(viewId) ? item.tabs : [...item.tabs, viewId]");
+    expect(source).toContain("setSelection((current) => automationSelectionSame(current, next) ? current : next)");
+    expect(source).toContain("setSelection={setProjectTreeSelection}");
   });
 
+  it("commits sidebar view navigation through an isolated synchronous UI render store", () => {
+    const source = readFileSync(new URL("./AutomationStudioLive.tsx", import.meta.url), "utf8");
+    const openStart = source.indexOf("function openView(");
+    const openBody = source.slice(openStart, source.indexOf("function chooseMainPaneForView", openStart));
+    const updateStart = source.indexOf("function updateWorkspacePrefs(");
+    const updateBody = source.slice(updateStart, source.indexOf("function activateWarmWorkspaceView", updateStart));
+
+    expect(openStart).toBeGreaterThan(-1);
+    expect(openBody).toContain("updateWorkspacePrefs");
+    expect(openBody).not.toContain("scheduleWorkspaceNavigation");
+    expect(openBody).not.toContain("setWorkspacePrefs(");
+    expect(updateBody).toContain("workspaceRenderStore.replace(next)");
+    expect(updateBody).not.toContain("setWorkspacePrefs(");
+    expect(source).toContain("createAutomationWorkspaceRenderStore(initialWorkspacePrefs)");
+    expect(source).toContain("workspaceShellRendererRef.current = renderWorkspaceShell");
+    expect(source).toContain("<AutomationWorkspaceRenderBoundary render={stableWorkspaceShellRenderer} renderInputs={workspaceShellRenderInputs} store={workspaceRenderStore} />");
+    expect(source).toContain("<AutomationStudioUiBoundary studioUiStore={studioUiStore} render={stableWorkspaceOverlayRenderer} renderInputs={workspaceOverlayRenderInputs} workspaceStore={workspaceRenderStore} />");
+    expect(source).not.toContain("workspaceRenderStore.invalidate()");
+    expect(source).toContain("workspaceShellRenderInputs");
+    expect(source).toContain("const openProjectTreeView = useStableAutomationEvent");
+    expect(source).toContain("openView={openProjectTreeView}");
+
+    const selectionStart = source.indexOf("const setSelectionAndFollow =");
+    const selectionBody = source.slice(selectionStart, source.indexOf("const openRecordingTimeline", selectionStart));
+    expect(selectionBody).toContain("scheduleWorkspaceNavigation");
+    expect(selectionBody).not.toContain("loadFlowDetails(");
+    expect(selectionBody).not.toContain("loadRecordingDetails(");
+  });
+  it("keeps outer overlays from reconciling the workspace shell", () => {
+    const source = readFileSync(new URL("./AutomationStudioLive.tsx", import.meta.url), "utf8");
+    const shellStart = source.indexOf("const renderWorkspaceShell =");
+    const overlayStart = source.indexOf("const renderWorkspaceOverlays =", shellStart);
+    const shellSource = source.slice(shellStart, overlayStart);
+    const overlayEnd = source.indexOf("const workspaceShellRenderInputs =", overlayStart);
+    const overlaySource = source.slice(overlayStart, overlayEnd);
+
+    expect(shellStart).toBeGreaterThan(-1);
+    expect(overlayStart).toBeGreaterThan(shellStart);
+    expect(shellSource).not.toContain("hierarchyAction ? <Modal");
+    expect(shellSource).not.toContain("preferencesOpen ? <Modal");
+    expect(shellSource).not.toContain("windowAdderOpen ?");
+    expect(shellSource).not.toContain("layoutPickerOpen ?");
+    expect(shellSource).not.toContain("dataInspectorOpen &&");
+    expect(overlaySource).toContain("hierarchyAction ? <Modal");
+    expect(overlaySource).toContain("preferencesOpen ? <Modal");
+    expect(overlaySource).toContain("windowAdderOpen ?");
+    expect(overlaySource).toContain("layoutPickerOpen ?");
+    expect(overlaySource).toContain("dataInspectorOpen &&");
+    expect(source).toContain("createAutomationStudioUiStore()");
+    expect(source).toContain("studioUiStore.patch({ preferencesOpen: true })");
+    expect(source).toContain("studioUiStore.patch({ dataInspectorOpen: true })");
+    expect(source).not.toContain("const [dataInspectorOpen, setDataInspectorOpen] = useState");
+    expect(source).not.toContain("preferencesOpen, setPreferencesOpen");
+    expect(source).not.toContain("hierarchyAction, setHierarchyAction");
+    expect(source).not.toContain("setHierarchyName(event.target.value)");
+  });
+  it("keeps hierarchy search and filtering local to the sidebar boundary", () => {
+    const source = readFileSync(new URL("./AutomationStudioLive.tsx", import.meta.url), "utf8");
+    const sidebarStart = source.indexOf("const AutomationProjectHierarchySidebar = memo");
+    const sidebarEnd = source.indexOf("function emptyPipelineArtifacts", sidebarStart);
+    const sidebarSource = source.slice(sidebarStart, sidebarEnd);
+    const filterCallbackStart = source.indexOf("const handleProjectTreeFilterStateChange =");
+    const filterCallbackEnd = source.indexOf("function captureActiveViewState", filterCallbackStart);
+    const filterCallbackSource = source.slice(filterCallbackStart, filterCallbackEnd);
+
+    expect(sidebarStart).toBeGreaterThan(-1);
+    expect(sidebarSource).toContain("const [filterState, setFilterState] = useState");
+    expect(sidebarSource).toContain("props.onFilterStateChange(next)");
+    expect(sidebarSource).toContain("search={filterState.search}");
+    expect(sidebarSource).toContain("typeFilter={filterState.typeFilter}");
+    expect(filterCallbackSource).toContain("projectTreeFilterStateRef.current = filterState");
+    expect(filterCallbackSource).toContain("uiCache.scheduleSidebarWrite");
+    expect(filterCallbackSource).not.toContain("setProjectSearch");
+    expect(filterCallbackSource).not.toContain("setProjectTypeFilter");
+  });
+  it("keeps pointer-move resizing out of React state", () => {
+    const source = readFileSync(new URL("./AutomationStudioLive.tsx", import.meta.url), "utf8");
+    const resizeStart = source.indexOf("function startSidebarResize(");
+    const resizeEnd = source.indexOf("function openAutomationProblems", resizeStart);
+    const resizeSource = source.slice(resizeStart, resizeEnd);
+
+    expect(resizeStart).toBeGreaterThan(-1);
+    expect(resizeSource).toContain('closest<HTMLElement>(".automation-studio-shell")');
+    expect(resizeSource).toContain('closest<HTMLElement>(".automation-studio-workspace")');
+    expect(resizeSource).toContain('querySelector<HTMLElement>(".automation-strict-pane-layout")');
+    expect(resizeSource).toContain("style.gridTemplateColumns");
+    expect(resizeSource).toContain("style.gridTemplateRows");
+    expect(resizeSource).not.toContain("setLiveSidebarWidth");
+    expect(resizeSource).not.toContain("setLiveInspectorWidth");
+    expect(resizeSource).not.toContain("setLiveBottomTimelineHeight");
+    expect(resizeSource).not.toContain("setLiveMainSplitRatios");
+  });
+  it("activates warm mounted views without scheduling a Studio root update", () => {
+    const source = readFileSync(new URL("./AutomationStudioLive.tsx", import.meta.url), "utf8");
+    const start = source.indexOf("function activateWarmWorkspaceView(");
+    const end = source.indexOf("function startSidebarResize", start);
+    const warmActivation = source.slice(start, end);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(warmActivation).toContain("activateAutomationMountedView(windowId, viewId)");
+    expect(warmActivation).toContain("activity.current = key === mountedViewKey");
+    expect(warmActivation).toContain("uiCache.scheduleWorkspacePrefsWrite");
+    expect(warmActivation).not.toContain("setWorkspacePrefs(");
+    expect(warmActivation).not.toContain("scheduleWorkspaceNavigation(");
+  });
   it("uses stable renderer inputs for data-heavy view props", () => {
     const source = readFileSync(new URL("./AutomationStudioLive.tsx", import.meta.url), "utf8");
     const renderViewStart = source.indexOf("function renderViewContent(");
@@ -221,6 +417,10 @@ describe("AutomationStudioLive state opening", () => {
     expect(source).toContain("const recoverableTaskGraphDraftView = useMemo");
     expect(source).toContain("const handleCreateSubflowFromActiveGraph = useCallback");
     expect(source).toContain("const handleRefreshRecordingsForRenderer = useCallback");
+    expect(source).toContain("const setSelectionForRenderer = useStableAutomationEvent(setSelectionAndFollow)");
+    expect(renderViewSource).toContain("setSelection={setSelectionForRenderer}");
+    expect(renderViewSource).toContain("if (!viewActive && !keepMounted && automationViewTypeCanSleep(view.type)) return <AutomationSleepingView view={view} />;");
+    expect(renderViewSource.indexOf("AutomationSleepingView")).toBeLessThan(renderViewSource.indexOf("entries={selectedTimelineEntries}"));
     expect(renderViewSource).toContain("entries={selectedTimelineEntries}");
     expect(renderViewSource).toContain("notes={selectedRecordingNotes}");
     expect(renderViewSource).toContain("recoverableTaskGraphDraft={recoverableTaskGraphDraftView}");
@@ -323,11 +523,15 @@ describe("AutomationStudioLive state opening", () => {
     expect(source).toContain("}, []);");
   });
 
-  it("does not block subflow creation UI on graph detail hydration", () => {
+  it("does not start graph detail hydration from subflow creation completion", () => {
     const source = readFileSync(new URL("./AutomationStudioLive.tsx", import.meta.url), "utf8");
+    const createStart = source.indexOf("async function createFlowSubflowFromHierarchy");
+    const createEnd = source.indexOf("async function createSubflowCategoryFolder", createStart);
+    const createSource = source.slice(createStart, createEnd);
 
-    expect(source).toContain("void loadFlowDetails(graphFlowId)");
-    expect(source).not.toContain("await loadFlowDetails(graphFlowId)");
+    expect(createSource).toContain("scheduleWorkspaceNavigation");
+    expect(createSource).not.toContain("loadFlowDetails(graphFlowId)");
+    expect(source).toContain("automationStudioFlowNeedsDetail(selectedFlow, activeViewId, selection?.kind)");
   });
 
   it("resolves action timeline entries to the exact action-adjacent state snapshot", () => {
@@ -623,9 +827,3 @@ function feedEvent(entityKind: string, entityId: string, override: Record<string
     ...override
   };
 }
-
-
-
-
-
-

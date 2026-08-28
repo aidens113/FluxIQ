@@ -2,6 +2,7 @@ import { recordAutomationStudioDraftWrite } from "../../programs/ui-performance"
 
 export const AUTOMATION_GRAPH_DRAFT_PREFIX = "fluxiq:automation-graph-draft:";
 export const AUTOMATION_GRAPH_OPERATION_DRAFT_STORE = "automationGraphOperationDrafts";
+export const AUTOMATION_GRAPH_DRAFT_MAX_LOCAL_STORAGE_CHARS = 1_000_000;
 
 export type AutomationGraphDraftRecord<TGraph = { nodes: any[]; edges: any[] }> = {
   projectId: string;
@@ -46,11 +47,19 @@ export function automationGraphDraftIdentity(graph: any): string {
 
 export function loadAutomationGraphDraft<TGraph>(projectId: string, flowId: string, storage: DraftStorage | null = browserDraftStorage()): AutomationGraphDraftRecord<TGraph> | null {
   if (!storage) return null;
+  const key = automationGraphDraftKey(projectId, flowId);
   try {
-    const value = JSON.parse(storage.getItem(automationGraphDraftKey(projectId, flowId)) ?? "null");
+    const raw = storage.getItem(key);
+    if (!raw) return null;
+    if (raw.length > AUTOMATION_GRAPH_DRAFT_MAX_LOCAL_STORAGE_CHARS) {
+      storage.removeItem(key);
+      return null;
+    }
+    const value = JSON.parse(raw);
     if (!value || value.projectId !== projectId || value.flowId !== flowId || !value.graph || !Array.isArray(value.graph.nodes) || !Array.isArray(value.graph.edges)) return null;
     return value as AutomationGraphDraftRecord<TGraph>;
   } catch {
+    storage.removeItem(key);
     return null;
   }
 }
@@ -58,7 +67,9 @@ export function loadAutomationGraphDraft<TGraph>(projectId: string, flowId: stri
 export function saveAutomationGraphDraft<TGraph>(record: AutomationGraphDraftRecord<TGraph>, storage: DraftStorage | null = browserDraftStorage()): boolean {
   if (!storage) return false;
   try {
-    storage.setItem(automationGraphDraftKey(record.projectId, record.flowId), JSON.stringify(record));
+    const raw = JSON.stringify(record);
+    if (raw.length > AUTOMATION_GRAPH_DRAFT_MAX_LOCAL_STORAGE_CHARS) return false;
+    storage.setItem(automationGraphDraftKey(record.projectId, record.flowId), raw);
     recordAutomationStudioDraftWrite("graph-draft", { projectId: record.projectId, flowId: record.flowId, storage: "localStorage" });
     return true;
   } catch {

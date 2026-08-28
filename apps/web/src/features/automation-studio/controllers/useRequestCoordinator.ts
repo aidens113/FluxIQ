@@ -72,39 +72,43 @@ export class AutomationRequestStateStore {
 }
 
 export function useRequestCoordinator() {
-  const registryRef = useRef(new LatestAutomationRequestRegistry());
-  const requestStateStoreRef = useRef(new AutomationRequestStateStore());
+  const registryRef = useRef<LatestAutomationRequestRegistry | null>(null);
+  if (!registryRef.current) registryRef.current = new LatestAutomationRequestRegistry();
+  const requestStateStoreRef = useRef<AutomationRequestStateStore | null>(null);
+  if (!requestStateStoreRef.current) requestStateStoreRef.current = new AutomationRequestStateStore();
+  const registry = registryRef.current;
+  const requestStateStore = requestStateStoreRef.current;
 
   const runLatest = useCallback(async <T,>(key: string, operation: (signal: AbortSignal) => Promise<T>): Promise<T | undefined> => {
-    const controller = registryRef.current.begin(key);
-    requestStateStoreRef.current.set(key, nextAutomationRequestState("loading", performance.now()));
+    const controller = registry.begin(key);
+    requestStateStore.set(key, nextAutomationRequestState("loading", performance.now()));
     recordAutomationStudioRequestLifecycle(key, { source: "request-coordinator", phase: "loading" });
     try {
       const value = await operation(controller.signal);
-      if (controller.signal.aborted || !registryRef.current.owns(key, controller)) return undefined;
-      requestStateStoreRef.current.update(key, (current) => nextAutomationRequestState("success", performance.now(), current));
+      if (controller.signal.aborted || !registry.owns(key, controller)) return undefined;
+      requestStateStore.update(key, (current) => nextAutomationRequestState("success", performance.now(), current));
       recordAutomationStudioRequestLifecycle(key, { source: "request-coordinator", phase: "success" });
       return value;
     } catch (error) {
-      if (controller.signal.aborted || !registryRef.current.owns(key, controller)) return undefined;
+      if (controller.signal.aborted || !registry.owns(key, controller)) return undefined;
       const message = error instanceof Error ? error.message : "Request could not be completed.";
-      requestStateStoreRef.current.update(key, (current) => nextAutomationRequestState("error", performance.now(), current, message));
+      requestStateStore.update(key, (current) => nextAutomationRequestState("error", performance.now(), current, message));
       recordAutomationStudioRequestLifecycle(key, { source: "request-coordinator", phase: "error" });
       return undefined;
     } finally {
-      registryRef.current.finish(key, controller);
+      registry.finish(key, controller);
     }
   }, []);
 
   const cancel = useCallback((key: string) => {
-    registryRef.current.cancel(key);
-    requestStateStoreRef.current.reset(key);
+    registry.cancel(key);
+    requestStateStore.reset(key);
     recordAutomationStudioRequestLifecycle(key, { source: "request-coordinator", phase: "cancelled" });
   }, []);
 
   useEffect(() => () => {
-    registryRef.current.cancelAll();
+    registry.cancelAll();
   }, []);
 
-  return { requestStates: requestStateStoreRef.current.snapshot, runLatest, cancel };
+  return { requestStates: requestStateStore.snapshot, runLatest, cancel };
 }

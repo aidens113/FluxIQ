@@ -81,20 +81,22 @@ export class AutomationStudioDataCache {
 }
 
 export function useAutomationStudioCache(): AutomationStudioDataCache {
-  const cacheRef = useRef(new AutomationStudioDataCache());
+  const cacheRef = useRef<AutomationStudioDataCache | null>(null);
+  if (!cacheRef.current) cacheRef.current = new AutomationStudioDataCache();
+  const cache = cacheRef.current;
   useEffect(() => {
     function invalidate(event: Event) {
       const detail = (event as CustomEvent<{ programId?: string; projectId?: string; cacheScopes?: AutomationStudioCacheScope[]; resourceIds?: string[] }>).detail;
       if (detail?.programId !== "automation-studio" || !detail.projectId) return;
-      if (detail.cacheScopes?.length && detail.resourceIds?.length) cacheRef.current.invalidateScopes(detail.projectId, detail.cacheScopes, detail.resourceIds);
+      if (detail.cacheScopes?.length && detail.resourceIds?.length) cache.invalidateScopes(detail.projectId, detail.cacheScopes, detail.resourceIds);
     }
     window.addEventListener("program-api:mutation", invalidate);
     return () => {
       window.removeEventListener("program-api:mutation", invalidate);
-      cacheRef.current.clear();
+      cache.clear();
     };
-  }, []);
-  return cacheRef.current;
+  }, [cache]);
+  return cache;
 }
 
 export function estimateAutomationStudioCacheValueBytes(value: unknown, depth = 0): number {

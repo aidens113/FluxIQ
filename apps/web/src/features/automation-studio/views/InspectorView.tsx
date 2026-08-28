@@ -10,6 +10,7 @@ import { formatAutomationPorts } from "../graph/ports";
 import { buildTimelineInspectorSections, conditionSummary } from "../timeline/view-model";
 import { AutomationNodeParameterEditor, type AutomationReferenceOptions } from "../parameters/ParameterEditor";
 import { buildNodeStateViewModel } from "../state/view-model";
+import { subscribeAutomationGraphSelection } from "./selection-channel";
 const InspectorFilterContext = createContext("");
 
 export type AutomationInspectorIdentity = { title: string; label: string; id: string; breadcrumb: string[]; href?: string; openLabel?: string };
@@ -64,7 +65,13 @@ export function automationInspectorIdentity(selection: AutomationSelection | nul
     ...(openLabel ? { openLabel } : {})
   };
 }
-export function AutomationInspector(props: { entries: any[]; selection: AutomationSelection | null; policy: any; policies: any[]; flow: any; flowPublications: any[]; flowDependencyInfo: any; node: any; nodeDefinitions: any[]; recording: any; entry: any; signal: any; pipelineArtifacts: any; selectedTimeline: any; recordings: any[]; timelines: any[]; runtimeSessions: any[]; signals: any[]; onOpenState(request: { nodeId?: string; sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; proposalId?: string; timelineEntryId?: string }): void; setSelection(selection: AutomationSelection): void }) {
+export function AutomationInspector(inputProps: { entries: any[]; selection: AutomationSelection | null; policy: any; policies: any[]; flow: any; flowPublications: any[]; flowDependencyInfo: any; node: any; nodeDefinitions: any[]; recording: any; entry: any; signal: any; pipelineArtifacts: any; selectedTimeline: any; recordings: any[]; timelines: any[]; runtimeSessions: any[]; signals: any[]; onOpenState(request: { nodeId?: string; sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; proposalId?: string; timelineEntryId?: string }): void; setSelection(selection: AutomationSelection): void }) {
+  const [graphSelection, setGraphSelection] = useState<AutomationSelection | null>(null);
+  useEffect(() => subscribeAutomationGraphSelection(setGraphSelection), []);
+  useEffect(() => setGraphSelection(null), [inputProps.selection]);
+  const props = graphSelection?.kind === "editor-node" || graphSelection?.kind === "editor-mode"
+    ? { ...inputProps, selection: graphSelection, node: graphSelection.kind === "editor-node" ? graphSelection.node : inputProps.node }
+    : inputProps;
   const identity = automationInspectorIdentity(props.selection, { flow: props.flow, node: props.node, recording: props.recording, entry: props.entry, signal: props.signal });
   const [searchQuery, setSearchQuery] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
@@ -114,7 +121,7 @@ export function AutomationInspector(props: { entries: any[]; selection: Automati
         parameterValues
       }
     };
-    props.setSelection(nextSelection);
+    setGraphSelection(nextSelection);
     window.dispatchEvent(new CustomEvent("automation-studio:update-node-parameters", { detail: { nodeId: props.selection.id, parameterValues } }));
   };
   const updateEditorNodeDescription = (customDescription: string) => {
@@ -126,7 +133,7 @@ export function AutomationInspector(props: { entries: any[]; selection: Automati
         customDescription
       }
     };
-    props.setSelection(nextSelection);
+    setGraphSelection(nextSelection);
     window.dispatchEvent(new CustomEvent("automation-studio:update-node-parameters", { detail: { nodeId: props.selection.id, customDescription } }));
   };
   return (

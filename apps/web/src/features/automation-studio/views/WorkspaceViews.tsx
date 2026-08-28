@@ -433,21 +433,6 @@ export function AutomationSubflowsWorkspace(props: { projectId: string | null; f
     return () => window.removeEventListener("fluxiq:subflows-changed", refreshSubflows);
   }, [props.projectId, flowId, page.offset, page.limit, filters]);
 
-  const syncUrl = (offset: number) => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const values: Record<string, string> = {
-      subflowQuery: filters.search,
-      subflowStatus: filters.status,
-      subflowRole: filters.role,
-      subflowSort: filters.sort,
-      subflowDirection: filters.direction,
-      subflowPageSize: String(page.limit),
-      subflowOffset: String(offset)
-    };
-    Object.entries(values).forEach(([key, value]) => value && value !== "0" ? params.set(key, value) : params.delete(key));
-    window.history.replaceState(null, "", window.location.pathname + (params.size ? "?" + params.toString() : "") + window.location.hash);
-  };
 
   const loadRouter = async () => {
     if (!props.projectId || !flowId) return;
@@ -490,7 +475,7 @@ export function AutomationSubflowsWorkspace(props: { projectId: string | null; f
     }
     setSubflows(items);
     setPage((current) => ({ limit: resultPage?.limit ?? current.limit, offset: resultPage?.offset ?? offset, total }));
-    syncUrl(resultPage?.offset ?? offset);
+
   };
 
   const beginSubflowAction = (subflow: any, action: "rename" | "duplicate" | "enable" | "disable" | "archive" | "delete") => {
@@ -1196,6 +1181,8 @@ function emptyInstructionDraft(): InstructionDraft {
   return { instructionId: "", title: "", body: "", scopeKind: "flow", routerId: "", subflowId: "", nodeId: "", errorTargetKind: "flow", priority: 50, requirement: "advisory", status: "active" };
 }
 
+export const INSTRUCTION_DRAFT_MAX_LOCAL_STORAGE_CHARS = 250_000;
+
 export function instructionDraftStorageKey(projectId: string, flowId: string, instructionId?: string): string {
   return `fluxiq:instruction-draft:${projectId}:${flowId}:${instructionId || "new"}`;
 }
@@ -1245,13 +1232,33 @@ export function instructionScopeTargetError(draft: InstructionDraft): string {
   if (draft.scopeKind === "adaptation_review" && draft.errorTargetKind === "subflow" && !draft.subflowId) return "Choose the reviewed subflow.";
   return "";
 }
-function readStoredInstructionDraft(key: string): InstructionDraft | null {
+export function readStoredInstructionDraft(key: string): InstructionDraft | null {
   if (typeof window === "undefined") return null;
   try {
-    const value = JSON.parse(window.localStorage.getItem(key) ?? "null");
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    if (raw.length > INSTRUCTION_DRAFT_MAX_LOCAL_STORAGE_CHARS) {
+      window.localStorage.removeItem(key);
+      return null;
+    }
+    const value = JSON.parse(raw);
     return value && typeof value === "object" ? { ...emptyInstructionDraft(), ...value } : null;
   } catch {
+    window.localStorage.removeItem(key);
     return null;
+  }
+}
+function saveInstructionDraftToLocalStorage(key: string, draft: InstructionDraft): void {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = JSON.stringify(draft);
+    if (raw.length > INSTRUCTION_DRAFT_MAX_LOCAL_STORAGE_CHARS) {
+      window.localStorage.removeItem(key);
+      return;
+    }
+    window.localStorage.setItem(key, raw);
+  } catch {
+    window.localStorage.removeItem(key);
   }
 }
 
@@ -1325,7 +1332,7 @@ export function AutomationInstructionsWorkspace(props: { projectId: string | nul
     }
   }, [draftInstruction.scopeKind, draftInstruction.routerId, scopeRouter?.routerId]);  useEffect(() => {
     if (!draftKey || !draftDirty) return;
-    const timer = window.setTimeout(() => window.localStorage.setItem(draftKey, JSON.stringify(draftInstruction)), 300);
+    const timer = window.setTimeout(() => saveInstructionDraftToLocalStorage(draftKey, draftInstruction), 300);
     return () => window.clearTimeout(timer);
   }, [draftKey, draftDirty, draftInstruction]);
   useEffect(() => {
@@ -1357,13 +1364,8 @@ export function AutomationInstructionsWorkspace(props: { projectId: string | nul
     setEffectiveLoading(false);
     if (!result.ok) { setEffectiveError(result.error ?? "Effective instructions could not be loaded."); return; }
     setEffectiveInstructions(effectiveInstructionOrder(result.payload?.instructions ?? []));
-  };  const syncInstructionUrl = (offset: number) => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const values: Record<string, string> = { instructionQuery: filters.search, instructionStatus: filters.status, instructionScope: filters.scopeKind, instructionRequirement: filters.requirement, instructionSort: filters.sort, instructionDirection: filters.direction, instructionPageSize: String(page.limit), instructionOffset: String(offset) };
-    Object.entries(values).forEach(([key, value]) => value && value !== "0" ? params.set(key, value) : params.delete(key));
-    window.history.replaceState(null, "", window.location.pathname + (params.size ? "?" + params.toString() : "") + window.location.hash);
   };
+
   const loadInstructions = async (offset: number) => {
     if (!props.projectId || !flowId) return;
     const requestId = ++requestRef.current;
@@ -1380,7 +1382,7 @@ export function AutomationInstructionsWorkspace(props: { projectId: string | nul
     if (safeOffset !== offset) { void loadInstructions(safeOffset); return; }
     setInstructions(items);
     setPage((current) => ({ limit: resultPage?.limit ?? current.limit, offset: resultPage?.offset ?? offset, total }));
-    syncInstructionUrl(resultPage?.offset ?? offset);
+
   };
   const openInstructionSet = async (instructionId: string) => {
     if (!props.projectId || !flowId) return;
@@ -1616,15 +1618,10 @@ export function readSettingsSection(search: string, kind: "flow" | "subflow"): s
   return (allowed as readonly string[]).includes(value) ? value : allowed[0];
 }
 
-function syncSettingsSectionUrl(sectionId: string): void {
-  if (typeof window === "undefined") return;
-  const url = new URL(window.location.href);
-  url.searchParams.set("settingsSection", sectionId);
-  window.history.replaceState(window.history.state, "", url);
-}
+
 function scrollToSettingsSection(sectionId: string): void {
   if (typeof document === "undefined") return;
-  document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  document.getElementById(sectionId)?.scrollIntoView({ block: "start" });
 }
 type SubflowSettingsDraft = {
   name: string;
@@ -1783,7 +1780,7 @@ export function AutomationSubflowSettingsWorkspace(props: {
       {loading ? <div className="automation-runtime-empty">Loading subflow settings...</div> : null}
       {!loading && !draft ? <div className="automation-runtime-empty">Select a persisted subflow to edit its settings.</div> : null}
       {settingsErrors.length ? <div className="automation-settings-validation" role="alert"><AlertTriangle size={16} aria-hidden /><div><strong>Fix these subflow settings before saving</strong>{settingsErrors.map((item) => <span key={item}>{item}</span>)}</div></div> : null}
-      {draft ? <div className="automation-settings-layout"><nav aria-label="Subflow settings sections" className="automation-settings-section-nav">{([["subflow-settings-general", "General"], ["subflow-settings-routing", "Routing & Instructions"], ["subflow-settings-inputs", "Input Mapping"], ["subflow-settings-outputs", "Output Mapping"], ["subflow-settings-lifecycle", "Lifecycle & Ownership"]] as const).map(([id, label]) => <button aria-current={activeSection === id ? "location" : undefined} className={activeSection === id ? "selected" : ""} key={id} onClick={() => { setActiveSection(id); syncSettingsSectionUrl(id); scrollToSettingsSection(id); }} type="button">{label}</button>)}</nav><div className="automation-flow-settings-grid">
+      {draft ? <div className="automation-settings-layout"><nav aria-label="Subflow settings sections" className="automation-settings-section-nav">{([["subflow-settings-general", "General"], ["subflow-settings-routing", "Routing & Instructions"], ["subflow-settings-inputs", "Input Mapping"], ["subflow-settings-outputs", "Output Mapping"], ["subflow-settings-lifecycle", "Lifecycle & Ownership"]] as const).map(([id, label]) => <button aria-current={activeSection === id ? "location" : undefined} className={activeSection === id ? "selected" : ""} key={id} onClick={() => { setActiveSection(id); scrollToSettingsSection(id); }} type="button">{label}</button>)}</nav><div className="automation-flow-settings-grid">
         <section className="automation-settings-panel" id="subflow-settings-general">
           <header><strong>Subflow Identity</strong><span>Name, responsibility, and routing role</span></header>
           <label><span>Name</span><input value={draft.name} onChange={(event) => updateDraft("name", event.target.value)} placeholder="Subflow name" /></label>
@@ -2162,7 +2159,7 @@ export function AutomationTopLevelFlowSettingsWorkspace(props: { projectId: stri
       {error ? <p className="automation-runtime-message">{error}</p> : null}
       {message ? <p className="automation-settings-success">{message}</p> : null}
       {settingsErrors.length ? <div className="automation-settings-validation" role="alert"><AlertTriangle size={16} aria-hidden /><div><strong>Fix these settings before saving</strong>{settingsErrors.map((item) => <span key={item}>{item}</span>)}</div></div> : null}
-      <div className="automation-settings-layout"><nav aria-label="Flow settings sections" className="automation-settings-section-nav">{([["flow-settings-general", "General"], ["flow-settings-runtime", "Runtime"], ["flow-settings-llm", "LLM"], ["flow-settings-adaptation", "Adaptation"], ["flow-settings-limits", "Limits"], ["flow-settings-safety", "Safety"], ["flow-settings-inputs", "Inputs & Outputs"], ["flow-settings-dependencies", "Dependencies"], ["flow-settings-effective", "Effective Values"]] as const).map(([id, label]) => <button aria-current={activeSection === id ? "location" : undefined} className={activeSection === id ? "selected" : ""} key={id} onClick={() => { setActiveSection(id); syncSettingsSectionUrl(id); scrollToSettingsSection(id); }} type="button">{label}</button>)}</nav><div className="automation-flow-settings-grid">
+      <div className="automation-settings-layout"><nav aria-label="Flow settings sections" className="automation-settings-section-nav">{([["flow-settings-general", "General"], ["flow-settings-runtime", "Runtime"], ["flow-settings-llm", "LLM"], ["flow-settings-adaptation", "Adaptation"], ["flow-settings-limits", "Limits"], ["flow-settings-safety", "Safety"], ["flow-settings-inputs", "Inputs & Outputs"], ["flow-settings-dependencies", "Dependencies"], ["flow-settings-effective", "Effective Values"]] as const).map(([id, label]) => <button aria-current={activeSection === id ? "location" : undefined} className={activeSection === id ? "selected" : ""} key={id} onClick={() => { setActiveSection(id); scrollToSettingsSection(id); }} type="button">{label}</button>)}</nav><div className="automation-flow-settings-grid">
         <section className="automation-settings-panel" id="flow-settings-general">
           <header><strong>Flow Identity</strong><span>Name, description, and catalog visibility</span></header>
           <label><span>Name</span><input aria-invalid={!draft.name.trim()} value={draft.name} onChange={(event) => updateDraft("name", event.target.value)} placeholder="Flow name" />{!draft.name.trim() ? <small>Flow name is required.</small> : null}</label>

@@ -123,7 +123,7 @@ roots. A Flow row expands into framework-owned child folders and objects:
 Router, Subflows, Instructions, Recordings, Adaptations, Runs, Runtime Debug,
 and Settings. Subflow creation is owned by one hierarchy dialog shared by the Router empty state, the top-level Subflows plus command, and every nested Subflow folder plus command. The first view explicitly chooses Subflow or Folder; the form then collects a friendly name and location. Folder creation persists parentCategoryId, so arbitrary nesting reuses the same flow.
 
-The Subflows view is a server-paged directory, not an embedded graph editor. Search, status, role, sort, direction, page size, and offset are reflected in URL query state. Reads retain prior rows while refreshing, reject stale responses, distinguish no data from no matches, and provide Retry plus first/previous/next/last controls. Every directory row opens Nodes from its primary surface and exposes a compact action menu for rename, duplicate, enable/disable, archive, and delete. Lifecycle changes use focused confirmation dialogs with contextual consequences and PIN authorization; destructive deletion is rejected while the parent Router still references the Subflow. Rows also show graph readiness separately from Router usage. The directory loads one parent Router document per Flow page, derives reverse references locally, and names blocking rules or fallback behavior in the delete confirmation.
+The Subflows view is a server-paged directory, not an embedded graph editor. Search, status, role, sort, direction, page size, and offset remain view-local memory/cache state; an old deep link may bootstrap them once, but normal interaction does not mutate browser history. Reads retain prior rows while refreshing, reject stale responses, distinguish no data from no matches, and provide Retry plus first/previous/next/last controls. Every directory row opens Nodes from its primary surface and exposes a compact action menu for rename, duplicate, enable/disable, archive, and delete. Lifecycle changes use focused confirmation dialogs with contextual consequences and PIN authorization; destructive deletion is rejected while the parent Router still references the Subflow. Rows also show graph readiness separately from Router usage. The directory loads one parent Router document per Flow page, derives reverse references locally, and names blocking rules or fallback behavior in the delete confirmation.
 
 Subflows appear as child objects inside the Subflows folder for
 their owning Flow. Each subflow row is itself an expandable Flow-object container
@@ -142,7 +142,7 @@ top-level Flows expose runtime training, adaptation, provider, budget, and safet
 policy, while subflows expose their role, route tags, Flow-boundary input/output
 mappings, local instruction bindings, and optional approval-mode override. Subflow
 settings persist the subflow record rather than treating its internal graph Flow
-as an ordinary top-level Flow configuration. The form loads the parent Flow contract, compact instruction summaries, and parent Router in parallel. Local instructions are selected by title and shown as removable named bindings; saved missing references are identified without asking users to type IDs. Input/output mappings use named typed port selectors from the parent and subflow contracts, block missing, duplicate, and incompatible mappings, and disable creation until both sides define ports. Approval uses an explicit Inherit/Automatic/Manual for risky/Manual only choice and names the effective parent value. Router references remain read-only because routing is top-level Flow ownership. Active, Disabled, and Archived lifecycle choices are editable, while ownership IDs remain collapsed technical detail. Flow and Subflow section navigation persists the selected anchor in the settingsSection URL query and restores/scrolls it on entry. Dirty drafts register unload protection. Save opens a PIN-only in-product modal after the user chooses Save; authorization, network, validation, and conflict failures keep the draft and modal context intact. Successful writes close authorization, refresh the canonical base draft, and emit scoped settings-change events. Recordings, adaptation/change-review
+as an ordinary top-level Flow configuration. The form loads the parent Flow contract, compact instruction summaries, and parent Router in parallel. Local instructions are selected by title and shown as removable named bindings; saved missing references are identified without asking users to type IDs. Input/output mappings use named typed port selectors from the parent and subflow contracts, block missing, duplicate, and incompatible mappings, and disable creation until both sides define ports. Approval uses an explicit Inherit/Automatic/Manual for risky/Manual only choice and names the effective parent value. Router references remain read-only because routing is top-level Flow ownership. Active, Disabled, and Archived lifecycle choices are editable, while ownership IDs remain collapsed technical detail. Flow and Subflow section navigation persists the selected anchor in workspace memory/cache and restores/scrolls it on entry without routing the browser. Dirty drafts register unload protection. Save opens a PIN-only in-product modal after the user chooses Save; authorization, network, validation, and conflict failures keep the draft and modal context intact. Successful writes close authorization, refresh the canonical base draft, and emit scoped settings-change events. Recordings, adaptation/change-review
 records,
 and settings appear inside the same owning Flow hierarchy rather than in global
 category
@@ -214,6 +214,24 @@ search and type filters are never capped. This is a DOM rendering boundary, not
 a database claim. Runtime Debug run history and the Subflows directory own their
 existing SQL limit/offset pages, while the hierarchy consumes compact project
 summaries.
+
+Sidebar UI state has one-way ownership boundaries. Cached parent state hydrates
+the tree only when its external content signature changes; local focus,
+selection, and expansion changes emit separately and mark their signature before
+notifying the parent. The hydration and emission effects must never depend on
+each other's changing signature, because that recreates a render feedback loop.
+Selecting an object that is already selected preserves the current selection
+object and does not schedule a redundant Studio render.
+
+Open main-pane tabs have stable component identities. Unopened tabs render a
+lightweight sleeping placeholder. Once a tab is activated, its view remains
+mounted in a project-and-pane-scoped slot when hidden so component-local UI
+state and scroll state survive navigation. Hidden mounted renderers receive an
+inactive transition and then freeze against unrelated parent updates until they
+are selected again. Opening a view already present in any pane activates that
+existing tab; it does not append a second tab or create a second view instance.
+Project changes create new slot keys so mounted state cannot cross project
+boundaries.
 
 Recording client folders and recording rows in the project hierarchy are
 generated from persisted recording sessions. They must not be hidden by the
@@ -893,7 +911,7 @@ Flow-scoped editor context. Internal URL writes mark the matching deep-link key
 as restored and use `window.history.replaceState`, not Next router navigation,
 so tab changes remain local and cannot be re-read as external deep-link
 restores. Graph node clicks, edge selection, and marquee selection update the visible canvas state immediately and do not publish ordinary selection into the global Studio navigation state. Only committed graph edits or explicit navigation/state actions may bridge from the canvas into outer Studio selection. Render, long-task, and development telemetry instrumentation are opt-in for local development to avoid turning every commit or API/cache event into performance-event fanout; the Data Flow Inspector may explicitly start the telemetry listeners while it is open.
-Project open is also summary-first: after hierarchy and workspace preferences load, the shell becomes usable without an extra project-list refresh. Runtime, Flow, recording, and proposal summaries hydrate from one workspace-summary request; detail/domain/page endpoints are view-scoped and lazy. Sidebar subflow rows use a single async subflow navigation path; they do not preselect/open the target and then resolve it again. Flow detail changes use compact URL-scope signatures so URL restore/writeback is not retriggered by object identity churn.
+Project open is also summary-first: after hierarchy and workspace preferences load, the shell becomes usable without an extra project-list refresh. Runtime, Flow, recording, and proposal summaries hydrate from one workspace-summary request; detail/domain/page endpoints are view-scoped and lazy. Sidebar subflow rows use a single async subflow navigation path; they do not preselect/open the target and then resolve it again. The sidebar also owns an immediate local primary-row preview on pointer-down so selected styling moves before parent navigation, detail loading, or URL synchronization finishes. When a subflow row already carries its graph Flow id, the Studio selects/follows that graph immediately and hydrates details in the background. Flow detail changes use compact URL-scope signatures so URL restore/writeback is not retriggered by object identity churn.
 Flow editor tabs render canonical Flow/policy data. Automation Studio does not
 maintain a hidden legacy Task graph in workspace preferences. Proposal review
 edits can still be cached in the project's `workspace/preferences.json` until
@@ -1104,3 +1122,23 @@ drag-and-drop pane docking, and schema-driven edit definitions.
 
 
 
+
+## Responsive Workspace Ownership
+
+Automation Studio behaves as a long-lived client workspace, not as a collection of URL-routed pages. The URL may bootstrap or reopen a project, but hierarchy objects, pane tabs, right utilities, pagination, filters, and view-local state remain in memory and the UI cache during normal use.
+
+Navigation has three explicit scheduling tiers:
+
+1. Workspace chrome is urgent and local. Tree rows and tab strips paint their selected state immediately inside their own component boundary.
+2. Workspace structure is owned by a dedicated external render store. Warm activation may switch an existing mounted slot directly; cold activation synchronously commits the new tab and active view to the store. Both paths bypass `AutomationStudioLive` project-data state and schedule their exact UI-cache write without waiting for a request, timer queue, or parent render.
+3. Data hydration is effect-driven and cache-first. Click handlers do not start Flow, recording, or node-definition requests. Cold activation first presents a stable loading surface; data work follows independently and changes the workspace only when a declared data input reference changes.
+
+The workspace shell is a memoized `useSyncExternalStore` subscriber with a stable renderer delegate and an explicit shallow render-input vector. Parent overlay or chrome state changes are absent from that vector and therefore cannot reconcile the shell. Modals, palettes, and development overlays render through a separate lightweight boundary. Project-data references appear in the shell vector and refresh it only when their identity changes. This separation is a required ownership contract, not an optional optimization.
+
+Hierarchy search and object-type filtering are local to the memoized sidebar component. They rerender only the filter controls and tree, then schedule a direct sidebar-cache write. Pointer movement for sidebar, Inspector, timeline, and pane-split resizing updates transient DOM geometry directly; React and persistence receive only the final pointer-up dimensions.
+
+Open main-pane and right-utility views retain stable mounted identities after their first activation. Hidden mounted views are frozen and do not receive unrelated parent render churn; reopening one reuses its component state and DOM. Activity is exposed to heavyweight views through a stable mutable guard, so activation alone does not rerender React Flow. A view that has never mounted uses a dimensionally stable status surface while it activates. It must never render as an unexplained blank panel.
+
+The hierarchy tree is memoized and receives stable event callbacks. Request-driven changes elsewhere in the Studio must not rerender it unless its nodes, search/filter inputs, active view, selection, or cached tree UI state actually changed. Cache merges must preserve the current state object when the cached object is already applied, because a cache hit that emits an equivalent new array still forces a full workspace reconciliation.
+
+Graph node and graph-mode selection is owned by the graph and global Inspector through a local selection channel. Ordinary canvas selection, marquee selection, node creation, paste, and parameter editing must not publish into `AutomationStudioLive` selection state. This keeps canvas interactions independent from workspace reconciliation while preserving the Inspector editing workflow. Renderer callbacks crossing the mounted-view memo boundary use stable event delegates so frozen views do not retain stale closures.

@@ -8,6 +8,7 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const outputPath = path.join(repositoryRoot, "docs", "reference", "framework-reference.md");
 const packageOutputPath = path.join(repositoryRoot, "packages", "fluxiq", "docs", "reference", "framework-reference.md");
 const checkOnly = process.argv.includes("--check");
+if (checkOnly) process.argv = process.argv.filter((arg) => arg !== "--check");
 const packageRequire = createRequire(path.join(repositoryRoot, "packages", "fluxiq", "package.json"));
 const { Application, EntryPointStrategy } = await import(pathToFileURL(packageRequire.resolve("typedoc")).href);
 
@@ -33,7 +34,12 @@ const declarations = (project.children ?? [])
     source: sourceSummary(reflection),
     summary: commentSummary(reflection.comment),
   }))
-  .sort((left, right) => left.name.localeCompare(right.name));
+  .sort((left, right) =>
+    left.name.localeCompare(right.name)
+    || left.kind.localeCompare(right.kind)
+    || left.source.localeCompare(right.source)
+    || left.summary.localeCompare(right.summary)
+  );
 const counts = new Map();
 for (const declaration of declarations) counts.set(declaration.kind, (counts.get(declaration.kind) ?? 0) + 1);
 

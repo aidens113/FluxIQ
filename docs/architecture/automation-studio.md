@@ -301,7 +301,14 @@ The browser interaction model is summary-first and scoped. Opening a project
 loads only the project chooser, hierarchy, Flow summaries, recording summaries,
 runtime summaries, domains, and workspace layout needed to draw the shell.
 Selecting a view, pane, tab, row, or graph node is local UI state and must not
-write hierarchy preferences or trigger a project-wide reload. Successful
+write hierarchy preferences or trigger a project-wide reload. Workspace layout
+and active-view state live in a dedicated external render store subscribed by a
+memoized workspace boundary; they are not React state owned by the project-data
+controller. A UI commit paints that boundary synchronously and schedules its
+exact UI-cache write. Parent commits are gated by an explicit shallow input
+vector, so overlay and chrome state cannot reconcile the workspace shell;
+project-data changes refresh it only when a declared data reference changes.
+Data hydration is never the mechanism that makes a selected view appear. Successful
 creates, deletes, renames, router edits, settings saves, and recording/runtime
 mutations update the exact local collection they affect, emit typed mutation
 metadata, and let the project change feed reconcile matching entity caches.

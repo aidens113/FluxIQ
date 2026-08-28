@@ -46,7 +46,21 @@ describe("AutomationViewContainer tabs", () => {
     expect(html).toContain('class="automation-view-body graph-body"');
   });
 
-  it("uses explicit body classes and instant tab scrolling", () => {
+  it("keeps active tab feedback local while parent navigation is deferred", () => {
+    const source = readFileSync(new URL("./components.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("const [optimisticActiveViewId, setOptimisticActiveViewId] = useState(props.activeViewId)");
+    expect(source).toContain("activateAutomationMountedView(props.windowId, viewId)");
+    expect(source).toContain("automation-studio:activate-mounted-view");
+    expect(source).toContain('.automation-mounted-view[data-view-id]');
+    expect(source).toContain("const selected = tab.id === optimisticActiveViewId");
+    expect(source).toContain("selectTab(tab.id)");
+  });
+  it("does not keep hidden heavy tab views mounted", () => {
+    const css = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
+
+    expect(css).not.toContain(".automation-view-keepalive");
+  });  it("uses explicit body classes and instant tab scrolling", () => {
     const source = readFileSync(new URL("./components.tsx", import.meta.url), "utf8");
     const css = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
 
@@ -60,7 +74,7 @@ describe("AutomationViewContainer tabs", () => {
   it("does not attach pane activation to an already-active view body", () => {
     const source = readFileSync(new URL("./components.tsx", import.meta.url), "utf8");
 
-    expect(source).toContain("onMouseDown={props.active ? undefined : props.onActivate}");
+    expect(source).toContain("onMouseDown={optimisticWindowActive ? undefined : props.onActivate}");
     expect(source).not.toContain("onMouseDown={props.onActivate}");
   });
 });
