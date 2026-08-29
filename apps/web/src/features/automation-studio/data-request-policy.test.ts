@@ -8,7 +8,7 @@ import {
   automationStudioRequestIsOrdinary,
   automationStudioUiRequest
 } from "./data-request-policy";
-import { automationStudioProjectOpenRequests, automationStudioRuntimeSummaryRequests } from "./AutomationStudioLive";
+import { automationStudioProjectOpenRequests, automationStudioRuntimeSummaryRequests } from "./model/live-helpers";
 
 describe("Automation Studio ordinary request policy", () => {
   it("rejects every known full-document endpoint from catalog and summary paths", () => {

@@ -1,0 +1,21 @@
+@media (max-width: 860px) {
+  .automation-instructions-workspace {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .automation-instruction-list-pane,
+  .automation-instruction-editor-pane {
+    max-height: 70vh;
+  }
+
+  .automation-instruction-editor-card {
+    grid-template-columns: 1fr;
+  }
+
+  .automation-flow-settings-grid,
+  .automation-settings-inline-fields,
+  .automation-settings-toggle-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,5 +1,7 @@
-import type { AutomationViewInstance } from "../types";
-import { automationWorkspaceRegionForView, type AutomationWorkspaceArea } from "./layout";
+import type { AutomationViewInstance } from "../views/view-types";
+import { automationStudioViewDefinition } from "../views/view-registry";
+import type { AutomationWorkspaceArea } from "./layout/contracts";
+import { automationWorkspaceRegionForView } from "./layout/regions";
 
 export type AutomationViewAdderContext = {
   hasProject: boolean;
@@ -16,27 +18,6 @@ export type AutomationViewAdderOption = {
   disabledReason: string | null;
 };
 
-type ViewRule = {
-  group: AutomationViewAdderOption["group"];
-  requires?: keyof AutomationViewAdderContext;
-  scope: string;
-};
-
-const viewRules: Record<string, ViewRule> = {
-  "client-gateway": { group: "Workspace", requires: "hasProject", scope: "Current project" },
-  "timeline-recording": { group: "Evidence", requires: "hasRecording", scope: "Selected recording" },
-  "policy-primary": { group: "Flow", requires: "hasFlow", scope: "Selected Flow or subflow" },
-  "flow-router": { group: "Flow", requires: "hasFlow", scope: "Selected top-level Flow" },
-  "flow-subflows": { group: "Flow", requires: "hasFlow", scope: "Selected Flow" },
-  "flow-instructions": { group: "Flow", requires: "hasFlow", scope: "Selected Flow or subflow" },
-  adaptations: { group: "Flow", requires: "hasFlow", scope: "Selected Flow or subflow" },
-  "flow-settings": { group: "Flow", requires: "hasFlow", scope: "Selected Flow or subflow" },
-  "state-explorer": { group: "Evidence", requires: "hasSelection", scope: "Current selection" },
-  "runtime-debug": { group: "Evidence", requires: "hasFlow", scope: "Selected Flow" },
-  "problems-view": { group: "Evidence", requires: "hasProject", scope: "Current project" },
-  "global-inspector": { group: "Workspace", requires: "hasProject", scope: "Current selection" }
-};
-
 const contextLabels: Record<keyof AutomationViewAdderContext, string> = {
   hasProject: "Open a project first",
   hasFlow: "Select a Flow or subflow first",
@@ -51,8 +32,8 @@ export function automationViewAdderOptions(
   openViewIds: ReadonlySet<string>
 ): AutomationViewAdderOption[] {
   return views.flatMap((view) => {
-    const rule = viewRules[view.id];
-    if (!rule || automationWorkspaceRegionForView(view.id) !== area) return [];
+    const rule = automationStudioViewDefinition(view.id);
+    if (!rule?.addable || automationWorkspaceRegionForView(view.id) !== area) return [];
     const missingContext = rule.requires && !context[rule.requires] ? contextLabels[rule.requires] : null;
     const alreadyOpen = openViewIds.has(view.id) ? "Already open in this workspace" : null;
     return [{

@@ -28,6 +28,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   deleteProjectCategory: "delete-project-category",
   reorderProjectCategories: "reorder-project-categories",
   getProjectHierarchy: "get-project-hierarchy",
+  listProjectHierarchyChildren: "list-project-hierarchy-children",
   listProjectChangeFeed: "list-project-change-feed",
   saveProjectHierarchy: "save-project-hierarchy",
   getProjectUiCache: "get-project-ui-cache",
@@ -185,6 +186,35 @@ export type AutomationStudioProjectHierarchy = {
   customHierarchyNodes: AutomationStudioHierarchyNode[];
   deletedHierarchyIds: string[];
   workspacePrefs: JsonObject;
+};
+
+export type AutomationStudioHierarchyPageEntry = {
+  entryId: string;
+  parentEntryId: string | null;
+  kind: string;
+  ownerId: string;
+  displayName: string;
+  sortKey: string;
+  depth: number;
+  pathKey: string;
+  isSystem: boolean;
+  isDeleted: boolean;
+  revision: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type AutomationStudioListHierarchyChildrenRequest = {
+  projectId: string;
+  parentId: string | null;
+  cursor?: string | null;
+  limit?: number;
+};
+
+export type AutomationStudioHierarchyChildrenPage = {
+  items: AutomationStudioHierarchyPageEntry[];
+  nextCursor: string | null;
+  hasMore: boolean;
 };
 export type AutomationStudioProjectUiCacheEntry = {
   cacheKey: string;

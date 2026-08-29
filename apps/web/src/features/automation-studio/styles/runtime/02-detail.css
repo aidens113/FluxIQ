@@ -1,0 +1,363 @@
+.automation-runtime-log-toolbar {
+  justify-content: space-between;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 8px 10px;
+}
+
+.automation-runtime-log-toolbar span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-runtime-action-log {
+  display: grid;
+  gap: var(--space-xs);
+  min-width: 0;
+  margin: 0;
+  overflow-x: auto;
+  padding: 0;
+  list-style: none;
+}
+
+.automation-runtime-event-stream {
+  display: grid;
+  gap: var(--space-xs);
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: #ffffff;
+  padding: var(--space-sm);
+}
+
+.automation-runtime-event-stream > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.automation-runtime-event-stream > header > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.automation-runtime-event-stream > header strong {
+  color: var(--color-text);
+  font-size: var(--font-size-body-small);
+}
+
+.automation-runtime-event-stream > header span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.automation-runtime-event-list {
+  display: grid;
+  gap: 1px;
+  max-height: 220px;
+  min-width: 0;
+  margin: 0;
+  overflow: auto;
+  padding: 0;
+  list-style: none;
+}
+
+.automation-runtime-event-list li {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto minmax(120px, auto);
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: 30px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.automation-runtime-event-list li > span:first-child {
+  color: var(--color-text-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.automation-runtime-event-list strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-runtime-event-list code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-runtime-log-page {
+  grid-template-rows: auto auto auto auto auto auto minmax(0, 1fr);
+}
+
+.automation-runtime-log-hero {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+}
+
+.automation-runtime-log-hero > div:nth-child(2) {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.automation-runtime-story-panel {
+  display: grid;
+  gap: var(--space-dense);
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: #ffffff;
+  padding: var(--space-md);
+}
+
+.automation-runtime-story-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+  min-width: 0;
+}
+
+.automation-runtime-story-summary strong {
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+}
+
+.automation-runtime-story-summary span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-runtime-story-steps {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(110px, 1fr));
+  gap: var(--space-sm);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.automation-runtime-story-step {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: #f8fafc;
+  padding: 9px;
+}
+
+.automation-runtime-story-step span {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.automation-runtime-story-step strong {
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: var(--font-size-compact);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-runtime-story-step.success {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.automation-runtime-story-step.failed {
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.automation-runtime-story-step.active {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.automation-runtime-story-step.muted {
+  color: var(--color-text-muted);
+}
+
+.automation-runtime-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(86px, 1fr));
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.automation-runtime-metric {
+  display: grid;
+  gap: var(--space-xxs);
+  min-width: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-control);
+  background: #fbfcfd;
+  padding: var(--space-sm);
+}
+
+.automation-runtime-metric span {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.automation-runtime-metric strong {
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: var(--font-size-body-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-runtime-message {
+  margin: 0;
+  border: 1px solid #fed7aa;
+  border-radius: var(--radius-control);
+  background: #fff7ed;
+  color: #9a3412;
+  padding: 8px 10px;
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-runtime-attempt-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 44px minmax(120px, 1.2fr) 92px minmax(150px, 1.25fr) minmax(70px, 0.7fr) minmax(144px, 1fr) minmax(68px, 0.65fr) 104px minmax(104px, 1fr) minmax(180px, 1.4fr) 92px;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: #fbfcfd;
+  padding: 4px 8px;
+}
+
+.automation-runtime-action-log li {
+  min-width: 1180px;
+}
+
+.automation-runtime-attempt-row > span,
+.automation-runtime-attempt-row > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-compact);
+}
+
+.automation-runtime-attempt-row > span {
+  color: var(--color-text-muted);
+}
+
+.automation-runtime-attempt-row > strong,
+.automation-runtime-attempt-index {
+  color: var(--color-text);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-runtime-json-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-compact);
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.automation-runtime-json-toggle {
+  display: grid;
+  gap: var(--space-compact);
+  min-width: 0;
+}
+
+.automation-runtime-attempt-row > .automation-runtime-json-toggle {
+  justify-self: end;
+}
+
+.automation-runtime-attempt-row > .automation-runtime-json-toggle > button {
+  min-height: 24px;
+  white-space: nowrap;
+}
+
+.automation-runtime-attempt-row > .automation-runtime-json-toggle > pre {
+  position: absolute;
+  right: 12px;
+  left: 12px;
+  z-index: 5;
+  margin-top: 30px;
+}
+
+.automation-runtime-log-section {
+  display: grid;
+  align-content: start;
+  gap: var(--space-sm);
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: var(--space-dense);
+}
+
+.automation-runtime-json {
+  max-height: 260px;
+  min-width: 0;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-code);
+  color: var(--content-code);
+  padding: var(--space-sm);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-caption);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.automation-runtime-empty {
+  margin: 0;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  padding: var(--space-md);
+  font-size: var(--font-size-compact);
+}
+

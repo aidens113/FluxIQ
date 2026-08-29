@@ -1,21 +1,25 @@
-import { mkdir, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutomationStudioProjectAdministration } from "./project-administration.ts";
 import { AutomationStudioProjectDatabasePool } from "./project-database.ts";
 import { AutomationStudioProjectEventStreamStore } from "./project-event-stream-writer.ts";
 
-const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-project-event-stream-writer-test");
+let rootDir: string;
+let pool: AutomationStudioProjectDatabasePool;
 
 describe("AutomationStudioProjectEventStreamStore", () => {
   beforeEach(async () => {
-    await rm(rootDir, { recursive: true, force: true });
-    await mkdir(rootDir, { recursive: true });
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-event-stream-writer-"));
+    pool = new AutomationStudioProjectDatabasePool({ rootDir });
   });
-  afterEach(async () => rm(rootDir, { recursive: true, force: true }));
+  afterEach(async () => {
+    await pool.closeAll();
+    await rm(rootDir, { recursive: true, force: true });
+  });
 
   it("allows one active writer per stream and seals a spool into an immutable chunk", async () => {
-    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
     await seedRuntime(pool, "project.stream", "flow.1", "run.1");
     const streams = await AutomationStudioProjectEventStreamStore.open({ pool, projectId: "project.stream" });
     const writer = await streams.acquireWriter({ streamKind: "runtime", streamId: "run.1", ownerId: "worker.1", leaseTtlMs: 5_000, now: 1 });
@@ -25,11 +29,9 @@ describe("AutomationStudioProjectEventStreamStore", () => {
     expect(chunk).toMatchObject({ streamKind: "runtime", streamId: "run.1", firstSequence: 1, lastSequence: 2, eventCount: 2 });
     await expect(streams.acquireWriter({ streamKind: "runtime", streamId: "run.1", ownerId: "worker.2", leaseTtlMs: 5_000, now: 3 })).resolves.toBeTruthy();
     await streams.close();
-    await pool.closeAll();
   });
 
   it("recovers expired active spools into chunks after a simulated crash", async () => {
-    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
     await seedRuntime(pool, "project.recover", "flow.1", "run.1");
     let streams = await AutomationStudioProjectEventStreamStore.open({ pool, projectId: "project.recover" });
     const writer = await streams.acquireWriter({ streamKind: "runtime", streamId: "run.1", ownerId: "worker.1", leaseTtlMs: 1_000, now: 1_000 });
@@ -40,11 +42,9 @@ describe("AutomationStudioProjectEventStreamStore", () => {
     streams = await AutomationStudioProjectEventStreamStore.open({ pool, projectId: "project.recover" });
     await expect(streams.recoverExpiredSpools({ now: 3_000 })).resolves.toMatchObject([{ firstSequence: 1, lastSequence: 2, eventCount: 2 }]);
     await streams.close();
-    await pool.closeAll();
   });
 
   it("enforces contiguous append sequences within the active spool", async () => {
-    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
     await seedRuntime(pool, "project.sequence", "flow.1", "run.1");
     const streams = await AutomationStudioProjectEventStreamStore.open({ pool, projectId: "project.sequence" });
     const writer = await streams.acquireWriter({ streamKind: "runtime", streamId: "run.1", ownerId: "worker.1", now: 1 });
@@ -52,7 +52,6 @@ describe("AutomationStudioProjectEventStreamStore", () => {
     await expect(writer.append([{ sequence: 12, kind: "skip" }])).rejects.toThrow(/expected sequence 11/);
     await writer.close();
     await streams.close();
-    await pool.closeAll();
   });
 });
 

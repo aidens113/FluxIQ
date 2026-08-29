@@ -1,14 +1,42 @@
 "use client";
 
-import { Bug, ChevronDown, ChevronRight, ClipboardList, FileCode2, FileText, FolderOpen, GitBranch, History, ListChecks, MoreHorizontal, Network, Plus, Radio, Route, Settings, SlidersHorizontal, Sparkles, Trash2, Workflow } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import type { AutomationHierarchyAction, AutomationHierarchyIndex, AutomationHierarchyKind, AutomationHierarchyNode } from "./model";
-import { automationHierarchyNodeCanCreateChildFolder, automationHierarchyNodeCanDelete, indexAutomationHierarchyNodes, visibleAutomationHierarchyNodeIds } from "./model";
-import { automationHierarchyPageKey, type AutomationHierarchyPageInfo } from "./paged-cache";
-import type { AutomationSelection } from "../types";
-import type { AutomationProjectTreeUiState } from "../controllers/useAutomationStudioUiCacheCoordinator";
-import { Menu } from "../../programs/shared-ui";
+import { ChevronDown, ChevronRight, Plus } from "lucide-react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+  type KeyboardEvent
+} from "react";
+import type { AutomationSelection } from "../shared/selection-contracts";
+import { useUiRenderMetric } from "../../programs/ui-performance";
+import { createAutomationHierarchyCommands } from "./commands";
+import {
+  createAutomationHierarchyController,
+  type AutomationHierarchyController,
+  type AutomationHierarchyControllerContext
+} from "./controller";
+import type {
+  AutomationHierarchyAction,
+  AutomationHierarchyKind,
+  AutomationHierarchyNode
+} from "./model";
+import type { AutomationHierarchyPageInfo } from "./paged-cache";
+import { automationHierarchyKeyboardAction } from "./keyboard";
+import { automationHierarchySelectionSignature, type AutomationHierarchyRoutableViewId } from "./routing";
+import {
+  createAutomationHierarchyProjectionSelector,
+  selectAutomationHierarchyEffectiveCollapsedIds
+} from "./selectors";
+import {
+  automationHierarchyUiStateSignature,
+  createAutomationHierarchyStore,
+  type AutomationHierarchyStore,
+  type AutomationHierarchyUiState
+} from "./store";
+import { AutomationHierarchyChildren } from "./tree-rows";
 
 export const AutomationProjectTree = memo(function AutomationProjectTree(props: {
   nodes: AutomationHierarchyNode[];
@@ -16,516 +44,226 @@ export const AutomationProjectTree = memo(function AutomationProjectTree(props: 
   search: string;
   typeFilter: "all" | AutomationHierarchyKind;
   selection: AutomationSelection | null;
-  recordingPrimaryKind: "recording" | "proposal" | null;
-  setRecordingPrimaryKind(kind: "recording" | "proposal" | null): void;
+  recordingPrimaryKind: "recording" | null;
+  setRecordingPrimaryKind(kind: "recording" | null): void;
   setSelection(selection: AutomationSelection): void;
-  openView(viewId: string, mode?: "preview" | "new-window"): void;
+  openView(viewId: AutomationHierarchyRoutableViewId, mode?: "preview" | "new-window"): void;
   openSubflow?(node: AutomationHierarchyNode, mode: "preview" | "new-window"): void;
   childPageInfo?: Record<string, AutomationHierarchyPageInfo>;
   loadMoreChildren?(parentId: string | null): void;
   requestAction(action: NonNullable<AutomationHierarchyAction>): void;
-  uiState?: AutomationProjectTreeUiState | null;
-  onUiStateChange?(state: AutomationProjectTreeUiState): void;
+  uiState?: AutomationHierarchyUiState | null;
+  onUiStateChange?(state: AutomationHierarchyUiState): void;
 }) {
-  const [primaryTreeNodeId, setPrimaryTreeNodeId] = useState<string | null>(null);
-  const primaryTreeExternalSignature = automationHierarchySelectionSignature(props.selection, props.activeViewId);
-  const primaryTreeSelectionOriginRef = useRef<string | null>(null);
-  const primaryTreeExpectedSignatureRef = useRef<string | null>(null);
-  const localTreeInteractionRef = useRef(false);
-  const emittedUiStateSignatureRef = useRef("");
-  const [collapsedFolderIds, setCollapsedFolderIds] = useState<string[]>([]);
-  const [expandedDefaultCollapsedIds, setExpandedDefaultCollapsedIds] = useState<string[]>([]);
-  const [focusedTreeNodeId, setFocusedTreeNodeId] = useState("root-flow");
-  const appliedUiStateSignatureRef = useRef("");
-  const uiStateSignature = props.uiState ? automationProjectTreeUiStateSignature(props.uiState) : "";
+  useUiRenderMetric("AutomationStudioHierarchyBoundary");
   const incomingUiStateRef = useRef(props.uiState);
   incomingUiStateRef.current = props.uiState;
-  const localTreeStateSignature = automationProjectTreeUiStateSignature({ collapsedFolderIds, expandedDefaultCollapsedIds, focusedTreeNodeId, primaryTreeNodeId });
-  const hierarchyIndex = useMemo(() => indexAutomationHierarchyNodes(props.nodes), [props.nodes]);
-  const visibleIds = useMemo(() => {
-    const normalizedSearch = props.search.trim().toLocaleLowerCase();
-    return visibleAutomationHierarchyNodeIds(hierarchyIndex, (node) =>
-      (props.typeFilter === "all" || props.typeFilter === node.kind)
-      && (!normalizedSearch || (node.label + " " + node.kind).toLocaleLowerCase().includes(normalizedSearch))
-    );
-  }, [hierarchyIndex, props.search, props.typeFilter]);
-  const rootNodes = (hierarchyIndex.childrenByParentId.get(null) ?? [])
-    .filter((node) => node.category === "flow" && visibleIds.has(node.id));
+  const incomingUiStateSignature = automationHierarchyUiStateSignature(props.uiState);
+
+  const storeRef = useRef<AutomationHierarchyStore | null>(null);
+  if (!storeRef.current) storeRef.current = createAutomationHierarchyStore(props.uiState);
+  const hierarchyStore = storeRef.current;
+  const appliedIncomingUiStateRef = useRef(incomingUiStateSignature);
+  const uiState = useSyncExternalStore(
+    hierarchyStore.subscribe,
+    hierarchyStore.getSnapshot,
+    hierarchyStore.getSnapshot
+  );
+
+  const projectionSelectorRef = useRef<ReturnType<typeof createAutomationHierarchyProjectionSelector> | null>(null);
+  if (!projectionSelectorRef.current) {
+    projectionSelectorRef.current = createAutomationHierarchyProjectionSelector();
+  }
+  const projection = projectionSelectorRef.current(props.nodes, props.search, props.typeFilter);
+  const { index: hierarchyIndex, visibleIds, rootNodes } = projection;
+  const effectiveCollapsedFolderIds = useMemo(
+    () => selectAutomationHierarchyEffectiveCollapsedIds({
+      nodes: props.nodes,
+      collapsedFolderIds: uiState.collapsedFolderIds,
+      expandedDefaultCollapsedIds: uiState.expandedDefaultCollapsedIds,
+      selection: props.selection
+    }),
+    [
+      props.nodes,
+      props.selection,
+      uiState.collapsedFolderIds,
+      uiState.expandedDefaultCollapsedIds
+    ]
+  );
+
+  const controllerContext: AutomationHierarchyControllerContext = {
+    nodes: props.nodes,
+    activeViewId: props.activeViewId,
+    selection: props.selection,
+    recordingPrimaryKind: props.recordingPrimaryKind,
+    setRecordingPrimaryKind: props.setRecordingPrimaryKind,
+    setSelection: props.setSelection,
+    openView: props.openView,
+    ...(props.openSubflow ? { openSubflow: props.openSubflow } : {})
+  };
+  const controllerRef = useRef<AutomationHierarchyController | null>(null);
+  if (!controllerRef.current) {
+    controllerRef.current = createAutomationHierarchyController(hierarchyStore, controllerContext);
+  }
+  const hierarchyController = controllerRef.current;
+  hierarchyController.updateContext(controllerContext);
+
+  const commandsRef = useRef<ReturnType<typeof createAutomationHierarchyCommands> | null>(null);
+  const requestActionRef = useRef(props.requestAction);
+  if (!commandsRef.current || requestActionRef.current !== props.requestAction) {
+    requestActionRef.current = props.requestAction;
+    commandsRef.current = createAutomationHierarchyCommands(props.requestAction);
+  }
+  const commands = commandsRef.current;
+
+  const externalSelectionSignature = automationHierarchySelectionSignature(props.selection, props.activeViewId);
   useEffect(() => {
-    const nextState = incomingUiStateRef.current;
-    if (!nextState || uiStateSignature === appliedUiStateSignatureRef.current) return;
-    appliedUiStateSignatureRef.current = uiStateSignature;
-    if (localTreeInteractionRef.current && uiStateSignature !== emittedUiStateSignatureRef.current) return;
-    if (uiStateSignature === localTreeStateSignature) return;
-    setCollapsedFolderIds((current) => sameStringList(current, nextState.collapsedFolderIds) ? current : nextState.collapsedFolderIds);
-    setExpandedDefaultCollapsedIds((current) => sameStringList(current, nextState.expandedDefaultCollapsedIds) ? current : nextState.expandedDefaultCollapsedIds);
-    setFocusedTreeNodeId((current) => current === nextState.focusedTreeNodeId ? current : nextState.focusedTreeNodeId);
-    setPrimaryTreeNodeId((current) => current === nextState.primaryTreeNodeId ? current : nextState.primaryTreeNodeId);
-  }, [uiStateSignature]);
+    hierarchyStore.setChangeListener(props.onUiStateChange);
+    return () => hierarchyStore.setChangeListener(undefined);
+  }, [hierarchyStore, props.onUiStateChange]);
   useEffect(() => {
-    const nextState = { collapsedFolderIds, expandedDefaultCollapsedIds, focusedTreeNodeId, primaryTreeNodeId };
-    const nextSignature = automationProjectTreeUiStateSignature(nextState);
-    if (!localTreeInteractionRef.current) {
-      emittedUiStateSignatureRef.current = nextSignature;
-      return;
-    }
-    if (nextSignature === emittedUiStateSignatureRef.current) return;
-    emittedUiStateSignatureRef.current = nextSignature;
-    appliedUiStateSignatureRef.current = nextSignature;
-    props.onUiStateChange?.(nextState);
-  }, [collapsedFolderIds, expandedDefaultCollapsedIds, focusedTreeNodeId, primaryTreeNodeId, props.onUiStateChange]);
-  const activeSubflowContainerIds = useMemo(() => new Set(props.nodes
-    .filter((node) => node.kind === "subflow" && props.selection?.kind === "flow" && node.metadata?.graphFlowId === props.selection.id)
-    .map((node) => node.id)), [props.nodes, props.selection?.kind, props.selection?.id]);
-  const effectiveCollapsedFolderIds = useMemo(() => {
-    const expandedIds = new Set(expandedDefaultCollapsedIds);
-    return [
-      ...collapsedFolderIds.filter((id) => !activeSubflowContainerIds.has(id)),
-      ...props.nodes.filter((node) => node.metadata?.defaultCollapsed === true && !expandedIds.has(node.id) && !activeSubflowContainerIds.has(node.id)).map((node) => node.id)
-    ];
-  }, [activeSubflowContainerIds, collapsedFolderIds, expandedDefaultCollapsedIds, props.nodes]);
+    if (incomingUiStateSignature === appliedIncomingUiStateRef.current) return;
+    appliedIncomingUiStateRef.current = incomingUiStateSignature;
+    hierarchyStore.hydrate(incomingUiStateRef.current);
+  }, [hierarchyStore, incomingUiStateSignature]);
   useEffect(() => {
-    if (focusedTreeNodeId === "root-flow" || visibleIds.has(focusedTreeNodeId)) return;
-    localTreeInteractionRef.current = true;
-    setFocusedTreeNodeId("root-flow");
-  }, [focusedTreeNodeId, props.nodes, props.search, props.typeFilter, visibleIds]);
+    hierarchyStore.ensureVisibleFocus(visibleIds);
+  }, [hierarchyStore, visibleIds]);
+  useEffect(() => {
+    hierarchyController.reconcileExternalSelection();
+  }, [externalSelectionSignature, hierarchyController, props.nodes, props.recordingPrimaryKind]);
+
+  const openFromTree = useCallback(
+    (node: AutomationHierarchyNode, mode: "preview" | "new-window") => hierarchyController.openNode(node, mode),
+    [hierarchyController]
+  );
+  const openSettingsFromTree = useCallback(
+    (node: AutomationHierarchyNode) => hierarchyController.openSettings(node),
+    [hierarchyController]
+  );
+  const toggleFolder = useCallback(
+    (folderId: string) => hierarchyController.toggleFolder(folderId),
+    [hierarchyController]
+  );
+  const focusTreeItem = useCallback(
+    (nodeId: string) => hierarchyStore.focus(nodeId),
+    [hierarchyStore]
+  );
+
   const handleTreeKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     const item = (event.target as HTMLElement).closest<HTMLElement>('[role="treeitem"]');
     if (!item || !event.currentTarget.contains(item)) return;
-    const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="treeitem"]'));
-    const index = items.indexOf(item);
-    if (index < 0) return;
-    const focusItem = (target: HTMLElement | undefined) => {
-      if (!target) return;
-      event.preventDefault();
+    const elements = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="treeitem"]'));
+    const action = automationHierarchyKeyboardAction({
+      items: elements.map((element) => ({
+        id: element.dataset.treeItemId ?? "root-flow",
+        parentId: element.dataset.treeParentId ?? null,
+        expanded: element.hasAttribute("aria-expanded")
+          ? element.getAttribute("aria-expanded") === "true"
+          : null
+      })),
+      currentId: item.dataset.treeItemId ?? "root-flow",
+      key: event.key
+    });
+    if (action.type === "none") return;
+    event.preventDefault();
+    const target = elements.find((element) => element.dataset.treeItemId === action.id);
+    if (!target) return;
+    if (action.type === "focus") {
       item.tabIndex = -1;
       target.tabIndex = 0;
-      setFocusedTreeNodeId(target.dataset.treeItemId ?? "root-flow");
+      hierarchyStore.focus(action.id);
       target.focus();
-    };
-    if (event.key === "ArrowDown") return focusItem(items[index + 1] ?? items[0]);
-    if (event.key === "ArrowUp") return focusItem(items[index - 1] ?? items[items.length - 1]);
-    if (event.key === "Home") return focusItem(items[0]);
-    if (event.key === "End") return focusItem(items[items.length - 1]);
-    if (event.key === "ArrowRight") {
-      event.preventDefault();
-      if (item.getAttribute("aria-expanded") === "false") {
-        const disclosure = item.closest(".automation-tree-item")?.querySelector<HTMLButtonElement>(".tree-row-disclosure");
-        (disclosure ?? item).click();
-        return;
-      }
-      const next = items[index + 1];
-      if (next?.dataset.treeParentId === item.dataset.treeItemId) focusItem(next);
       return;
     }
-    if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      if (item.getAttribute("aria-expanded") === "true") {
-        const disclosure = item.closest(".automation-tree-item")?.querySelector<HTMLButtonElement>(".tree-row-disclosure");
-        (disclosure ?? item).click();
-        return;
-      }
-      const parentId = item.dataset.treeParentId;
-      if (parentId) focusItem(items.find((candidate) => candidate.dataset.treeItemId === parentId));
+    if (action.type === "toggle") {
+      const disclosure = target.closest(".automation-tree-item")
+        ?.querySelector<HTMLButtonElement>(".tree-row-disclosure");
+      (disclosure ?? target).click();
       return;
     }
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      item.click();
-    }
+    target.click();
   };
-  const requestTreeAction = (action: NonNullable<AutomationHierarchyAction>) => {
-    props.requestAction(action);
-  };
-  const previewPrimaryNode = (node: AutomationHierarchyNode): AutomationHierarchyNode => {
-    localTreeInteractionRef.current = true;
-    const targetNode = automationHierarchyPrimaryNode(node, props.nodes);
-    primaryTreeSelectionOriginRef.current = primaryTreeExternalSignature;
-    setPrimaryTreeNodeId(targetNode.id);
-    return targetNode;
-  };
-  const expandHierarchyContainer = (node: AutomationHierarchyNode) => {
-    if (node.metadata?.hierarchyContainer !== true) return;
-    setCollapsedFolderIds((current) => current.filter((id) => id !== node.id));
-    if (node.metadata?.defaultCollapsed === true) {
-      setExpandedDefaultCollapsedIds((current) => current.includes(node.id) ? current : [...current, node.id]);
-    }
-  };
-  const openFromTree = (node: AutomationHierarchyNode, mode: "preview" | "new-window") => {
-    if (node.kind === "folder") return;
-    expandHierarchyContainer(node);
-    const targetNode = previewPrimaryNode(node);
-    const targetViewId = automationHierarchyViewIdForOpenNode(targetNode);
-    const targetSelection = automationHierarchySelectionForOpenNode(targetNode);
-    primaryTreeExpectedSignatureRef.current = targetSelection ? automationHierarchySelectionSignature(targetSelection, targetViewId) : null;
-    if (node.kind === "subflow" && props.openSubflow) {
-      props.openSubflow(node, mode);
-      return;
-    }
-    if (node.kind === "recording" && node.sourceId) props.setRecordingPrimaryKind("recording");
-    if (node.kind === "proposal" && node.sourceId) props.setRecordingPrimaryKind("proposal");
-    if (targetSelection && !automationHierarchySelectionSame(props.selection, targetSelection)) props.setSelection(targetSelection);
-    props.openView(targetViewId, mode);
-  };
-  const openSettingsFromTree = (node: AutomationHierarchyNode) => {
-    if (!node.sourceId || (node.kind !== "flow" && node.kind !== "task")) return;
-    const targetSelection: AutomationSelection = node.kind === "flow" ? { kind: "flow", id: node.sourceId } : { kind: "policy", id: node.sourceId };
-    localTreeInteractionRef.current = true;
-    primaryTreeSelectionOriginRef.current = primaryTreeExternalSignature;
-    primaryTreeExpectedSignatureRef.current = automationHierarchySelectionSignature(targetSelection, "flow-settings");
-    setPrimaryTreeNodeId(automationHierarchySettingsPrimaryNodeId(node, props.nodes));
-    if (!automationHierarchySelectionSame(props.selection, targetSelection)) props.setSelection(targetSelection);
-    props.openView("flow-settings", "preview");
-  };
-  useEffect(() => {
-    if (!primaryTreeNodeId) return;
-    const primaryNode = props.nodes.find((node) => node.id === primaryTreeNodeId);
-    if (!primaryNode) {
-      primaryTreeSelectionOriginRef.current = null;
-      primaryTreeExpectedSignatureRef.current = null;
-      setPrimaryTreeNodeId(null);
-      return;
-    }
-    const expectedSignature = primaryTreeExpectedSignatureRef.current;
-    if (expectedSignature) {
-      if (expectedSignature === primaryTreeExternalSignature) {
-        primaryTreeExpectedSignatureRef.current = null;
-        primaryTreeSelectionOriginRef.current = null;
-      } else if (automationHierarchyNodeCanRemainPrimary(primaryNode, props.selection)) {
-        return;
-      }
-    }
-    if (primaryNode.flowId && primaryNode.kind !== "flow" && primaryNode.viewId && props.activeViewId && primaryNode.viewId !== props.activeViewId && props.selection?.kind === "flow" && props.selection.id === primaryNode.flowId) {
-      setPrimaryTreeNodeId(null);
-      return;
-    }
-    if (primaryTreeSelectionOriginRef.current !== null && primaryTreeSelectionOriginRef.current !== primaryTreeExternalSignature && !automationHierarchyNodeCanRemainPrimary(primaryNode, props.selection)) {
-      primaryTreeSelectionOriginRef.current = null;
-      setPrimaryTreeNodeId(null);
-    }
-  }, [primaryTreeExternalSignature, primaryTreeNodeId, props.activeViewId, props.nodes, props.selection]);
-  useEffect(() => {
-    if (!props.recordingPrimaryKind) return;
-    const primaryNode = props.selection?.kind === "recording"
-      ? props.nodes.find((node) => node.kind === props.recordingPrimaryKind && (node.sourceId === props.selection?.id || node.recordingId === props.selection?.id))
-      : props.selection?.kind === "proposal"
-        ? props.nodes.find((node) => node.kind === props.recordingPrimaryKind && node.sourceId === props.selection?.id)
-        : null;
-    setPrimaryTreeNodeId(primaryNode?.id ?? null);
-  }, [props.nodes, props.recordingPrimaryKind, props.selection]);
-  const toggleFolder = (folderId: string) => {
-    localTreeInteractionRef.current = true;
-    const node = hierarchyIndex.byId.get(folderId);
-    if (node?.metadata?.defaultCollapsed === true) {
-      setExpandedDefaultCollapsedIds((current) => current.includes(folderId) ? current.filter((id) => id !== folderId) : [...current, folderId]);
-      return;
-    }
-    setCollapsedFolderIds((current) => current.includes(folderId) ? current.filter((id) => id !== folderId) : [...current, folderId]);
-  };
+
+  const rootCollapsed = uiState.collapsedFolderIds.includes("root-flow");
   return (
     <nav className="automation-project-tree" aria-label="Automation Studio project tree">
-      <section className="automation-folder-root root-flow" onKeyDown={handleTreeKeyDown} role="tree" aria-label="Flows">
+      <section
+        className="automation-folder-root root-flow"
+        onKeyDown={handleTreeKeyDown}
+        role="tree"
+        aria-label="Flows"
+      >
         <div className="automation-tree-item root-folder">
-          <button aria-expanded={!collapsedFolderIds.includes("root-flow")} aria-level={1} data-tree-item-id="root-flow" role="treeitem" tabIndex={focusedTreeNodeId === "root-flow" ? 0 : -1} className="type-folder category-root category-flow" onClick={() => toggleFolder("root-flow")} onFocus={() => setFocusedTreeNodeId("root-flow")} type="button">
-            {collapsedFolderIds.includes("root-flow") ? <ChevronRight size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
+          <button
+            aria-expanded={!rootCollapsed}
+            aria-level={1}
+            data-tree-item-id="root-flow"
+            role="treeitem"
+            tabIndex={uiState.focusedTreeNodeId === "root-flow" ? 0 : -1}
+            className="type-folder category-root category-flow"
+            onClick={() => toggleFolder("root-flow")}
+            onFocus={() => hierarchyStore.focus("root-flow")}
+            type="button"
+          >
+            {rootCollapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
             <span><strong>Flows</strong><small>Product automations</small></span>
           </button>
-          <button className="tree-row-action" onClick={(event) => { event.preventDefault(); event.stopPropagation(); requestTreeAction({ action: "create", category: "flow", parentId: null }); }} onPointerDown={(event) => event.stopPropagation()} title="Add Flow" aria-label="Add Flow" type="button"><Plus size={13} aria-hidden /></button>
+          <button
+            className="tree-row-action"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              commands.create({ parentId: null, category: "flow" });
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            title="Add Flow"
+            aria-label="Add Flow"
+            type="button"
+          >
+            <Plus size={13} aria-hidden />
+          </button>
         </div>
-        {!collapsedFolderIds.includes("root-flow") ? <div className="automation-tree-children root-children" role="group">
-          <AutomationHierarchyChildren nodes={rootNodes} activeViewId={props.activeViewId} allNodes={props.nodes} hierarchyIndex={hierarchyIndex} visibleIds={visibleIds} collapsedFolderIds={effectiveCollapsedFolderIds} primaryTreeNodeId={primaryTreeNodeId} previewPrimaryNode={previewPrimaryNode} focusedTreeNodeId={focusedTreeNodeId} parentId={null} level={2} recordingPrimaryKind={props.recordingPrimaryKind} selection={props.selection} openConfig={openSettingsFromTree} openNode={openFromTree} {...(props.loadMoreChildren ? { onLoadMoreChildren: props.loadMoreChildren } : {})} onTreeItemFocus={setFocusedTreeNodeId} {...(props.childPageInfo ? { pageInfo: props.childPageInfo } : {})} requestAction={requestTreeAction} toggleFolder={toggleFolder} unbounded={Boolean(props.search || props.typeFilter !== "all")} />
-          {!rootNodes.length ? <div className="automation-tree-empty">No flows match the current filter.</div> : null}
-        </div> : null}
+        {!rootCollapsed ? (
+          <div className="automation-tree-children root-children" role="group">
+            <AutomationHierarchyChildren
+              nodes={rootNodes}
+              activeViewId={props.activeViewId}
+              allNodes={props.nodes}
+              hierarchyIndex={hierarchyIndex}
+              visibleIds={visibleIds}
+              collapsedFolderIds={effectiveCollapsedFolderIds}
+              primaryTreeNodeId={uiState.primaryTreeNodeId}
+              focusedTreeNodeId={uiState.focusedTreeNodeId}
+              parentId={null}
+              level={2}
+              recordingPrimaryKind={props.recordingPrimaryKind}
+              selection={props.selection}
+              openConfig={openSettingsFromTree}
+              openNode={openFromTree}
+              {...(props.loadMoreChildren ? { onLoadMoreChildren: props.loadMoreChildren } : {})}
+              onTreeItemFocus={focusTreeItem}
+              {...(props.childPageInfo ? { pageInfo: props.childPageInfo } : {})}
+              commands={commands}
+              toggleFolder={toggleFolder}
+              unbounded={Boolean(props.search || props.typeFilter !== "all")}
+            />
+            {!rootNodes.length ? (
+              <div className="automation-tree-empty">No flows match the current filter.</div>
+            ) : null}
+          </div>
+        ) : null}
       </section>
     </nav>
   );
 });
 
-export function AutomationHierarchyTreeNode(props: {
-  node: AutomationHierarchyNode;
-  activeViewId: string | undefined;
-  nodes: AutomationHierarchyNode[];
-  hierarchyIndex: AutomationHierarchyIndex;
-  visibleIds: Set<string>;
-  collapsedFolderIds: string[];
-  primaryTreeNodeId: string | null;
-  previewPrimaryNode(node: AutomationHierarchyNode): void;
-  focusedTreeNodeId: string;
-  level: number;
-  recordingPrimaryKind: "recording" | "proposal" | null;
-  selection: AutomationSelection | null;
-  openConfig(node: AutomationHierarchyNode): void;
-  openNode(node: AutomationHierarchyNode, mode: "preview" | "new-window"): void;
-  onTreeItemFocus(nodeId: string): void;
-  requestAction(action: NonNullable<AutomationHierarchyAction>): void;
-  toggleFolder(folderId: string): void;
-  pageInfo?: Record<string, AutomationHierarchyPageInfo>;
-  onLoadMoreChildren?(parentId: string | null): void;
-  unbounded: boolean;
-}) {
-  const children = (props.hierarchyIndex.childrenByParentId.get(props.node.id) ?? []).filter((node) => props.visibleIds.has(node.id));
-  const selectionMatched = automationHierarchyNodeMatchesSelection(props.node, props.selection);
-  const activeViewMatched = automationHierarchyNodeMatchesActiveFlowView(props.node, props.selection, props.activeViewId);
-  const activeChildOwnsFlowSelection = automationHierarchyActiveChildOwnsFlowSelection(props.node, props.hierarchyIndex, props.selection, props.activeViewId);
-  const recordingPrimarySelected = props.selection?.kind === "recording" && props.recordingPrimaryKind ? props.node.kind === props.recordingPrimaryKind : props.node.kind === "recording";
-  const primarySelected = props.primaryTreeNodeId ? props.primaryTreeNodeId === props.node.id : activeViewMatched || (!activeChildOwnsFlowSelection && selectionMatched && (props.selection?.kind === "recording" ? recordingPrimarySelected : true));
-  const correlatedSelected = selectionMatched && !primarySelected && !activeChildOwnsFlowSelection;
-  const isFolder = props.node.kind === "folder";
-  const isContainer = isFolder || children.length > 0;
-  const canCreateChildFolder = automationHierarchyNodeCanCreateChildFolder(props.node);
-  const canDeleteNode = automationHierarchyNodeCanDelete(props.node);
-  const collapsed = props.collapsedFolderIds.includes(props.node.id);
-  const Icon = automationHierarchyIconForNode(props.node);
-  return (
-    <div className="automation-tree-branch">
-      <div className="automation-tree-item">
-        {isContainer && !isFolder ? <button
-          className="tree-row-disclosure"
-          onClick={(event) => { event.preventDefault(); event.stopPropagation(); props.toggleFolder(props.node.id); }}
-          onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); }}
-          title={`${collapsed ? "Expand" : "Collapse"} ${props.node.label}`}
-          aria-label={`${collapsed ? "Expand" : "Collapse"} ${props.node.label}`}
-          type="button"
-        >{collapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}</button> : null}
-        <button aria-expanded={isContainer ? !collapsed : undefined} aria-level={props.level} aria-selected={primarySelected} data-tree-item-id={props.node.id} data-tree-parent-id={props.node.parentId ?? "root-flow"} role="treeitem" tabIndex={props.focusedTreeNodeId === props.node.id ? 0 : -1} className={`tree-row-main ${primarySelected ? "selected " : ""}${correlatedSelected ? "correlated " : ""}${isFolder ? "folder-row " : ""}type-${props.node.kind}`} onClick={(event) => {
-          if (event.detail > 1) return;
-          if (isFolder) props.toggleFolder(props.node.id);
-          else props.openNode(props.node, "preview");
-        }} onDoubleClick={() => props.openNode(props.node, "new-window")} onFocus={() => props.onTreeItemFocus(props.node.id)} title={props.node.label} type="button">
-          {isFolder ? <>{collapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}<Icon size={14} aria-hidden /></> : <Icon size={14} aria-hidden />}
-          <span><strong>{props.node.label}</strong><small>{props.node.kind}</small></span>
-        </button>
-        {canCreateChildFolder || ((props.node.kind === "flow" || props.node.kind === "task") && props.node.sourceId) || canDeleteNode ? (
-          <div className="automation-tree-row-menu">
-            <Menu
-              icon={<MoreHorizontal size={14} aria-hidden />}
-              iconOnly
-              label={props.node.label + " actions"}
-              options={[
-                ...(canCreateChildFolder ? [{
-                  id: "create",
-                  label: "Add inside",
-                  icon: <Plus size={14} aria-hidden />,
-                  onSelect: () => props.requestAction({ action: "create", parentId: props.node.id })
-                }] : []),
-                ...((props.node.kind === "flow" || props.node.kind === "task") && props.node.sourceId ? [{
-                  id: "settings",
-                  label: "Open settings",
-                  icon: <Settings size={14} aria-hidden />,
-                  onSelect: () => props.openConfig(props.node)
-                }] : []),
-                ...(canDeleteNode ? [{
-                  id: "delete",
-                  label: "Delete",
-                  icon: <Trash2 size={14} aria-hidden />,
-                  danger: true,
-                  onSelect: () => props.requestAction({ action: "delete", node: props.node })
-                }] : [])
-              ]}
-            />
-          </div>
-        ) : null}
-      </div>
-      {children.length && !collapsed ? <div className="automation-tree-children" role="group"><AutomationHierarchyChildren nodes={children} activeViewId={props.activeViewId} allNodes={props.nodes} hierarchyIndex={props.hierarchyIndex} visibleIds={props.visibleIds} collapsedFolderIds={props.collapsedFolderIds} primaryTreeNodeId={props.primaryTreeNodeId} previewPrimaryNode={props.previewPrimaryNode} focusedTreeNodeId={props.focusedTreeNodeId} parentId={props.node.id} level={props.level + 1} recordingPrimaryKind={props.recordingPrimaryKind} selection={props.selection} openConfig={props.openConfig} openNode={props.openNode} {...(props.onLoadMoreChildren ? { onLoadMoreChildren: props.onLoadMoreChildren } : {})} onTreeItemFocus={props.onTreeItemFocus} {...(props.pageInfo ? { pageInfo: props.pageInfo } : {})} requestAction={props.requestAction} toggleFolder={props.toggleFolder} unbounded={props.unbounded} /></div> : null}
-    </div>
-  );
-}
-
-function automationHierarchyIconForNode(node: AutomationHierarchyNode): LucideIcon {
-  if (node.kind === "folder") {
-    if (node.viewId === "timeline-recording") return Radio;
-    if (node.viewId === "proposal-workbench") return Sparkles;
-    if (node.viewId === "runs-history") return History;
-    if (node.viewId === "adaptations") return ClipboardList;
-    if (node.label === "Subflows") return Workflow;
-    return FolderOpen;
-  }
-  if (node.viewId === "flow-instructions" || node.kind === "instruction") return ListChecks;
-  if (node.kind === "change-proposal" || node.kind === "proposal") return Sparkles;
-  if (node.viewId === "runtime-debug") return Bug;
-  if (node.viewId === "state-explorer" || node.metadata?.flowStructure === "subflow-nodes") return Network;
-  if (node.viewId === "flow-settings") return Settings;
-  if (node.kind === "subflow" || node.kind === "routine") return Workflow;
-  if (node.kind === "recording" || node.kind === "client") return Radio;
-  if (node.kind === "run") return History;
-  if (node.kind === "config") return SlidersHorizontal;
-  if (node.kind === "task") return FileCode2;
-  if (node.viewId === "flow-router") return Route;
-  if (node.kind === "flow") return GitBranch;
-  return FileText;
-}
-
-export function AutomationHierarchyChildren(props: {
-  nodes: AutomationHierarchyNode[];
-  activeViewId: string | undefined;
-  allNodes: AutomationHierarchyNode[];
-  hierarchyIndex: AutomationHierarchyIndex;
-  visibleIds: Set<string>;
-  collapsedFolderIds: string[];
-  primaryTreeNodeId: string | null;
-  previewPrimaryNode(node: AutomationHierarchyNode): void;
-  focusedTreeNodeId: string;
-  level: number;
-  recordingPrimaryKind: "recording" | "proposal" | null;
-  selection: AutomationSelection | null;
-  openConfig(node: AutomationHierarchyNode): void;
-  openNode(node: AutomationHierarchyNode, mode: "preview" | "new-window"): void;
-  onLoadMoreChildren?(parentId: string | null): void;
-  onTreeItemFocus(nodeId: string): void;
-  pageInfo?: Record<string, AutomationHierarchyPageInfo>;
-  parentId: string | null;
-  requestAction(action: NonNullable<AutomationHierarchyAction>): void;
-  toggleFolder(folderId: string): void;
-  unbounded: boolean;
-}) {
-  const [limit, setLimit] = useState(100);
-  const pageInfo = props.pageInfo?.[automationHierarchyPageKey(props.parentId)];
-  const visibleNodes = pageInfo ? props.nodes : props.unbounded ? props.nodes : props.nodes.slice(0, limit);
-  const remaining = pageInfo ? 0 : props.nodes.length - visibleNodes.length;
-  const showPageMore = pageInfo ? pageInfo.hasMore || pageInfo.invalidated : remaining > 0;
-  const pageMoreLabel = pageInfo
-    ? pageInfo.loading ? "Loading..." : pageInfo.invalidated ? "Refresh folder" : "Load more"
-    : `Show ${Math.min(100, remaining)} more`;
-  return (
-    <>
-      {visibleNodes.map((node) => (
-        <AutomationHierarchyTreeNode
-          key={node.id}
-          node={node}
-          activeViewId={props.activeViewId}
-          nodes={props.allNodes}
-          hierarchyIndex={props.hierarchyIndex}
-          visibleIds={props.visibleIds}
-          collapsedFolderIds={props.collapsedFolderIds}
-          primaryTreeNodeId={props.primaryTreeNodeId}
-          previewPrimaryNode={props.previewPrimaryNode}
-          focusedTreeNodeId={props.focusedTreeNodeId}
-          level={props.level}
-          recordingPrimaryKind={props.recordingPrimaryKind}
-          selection={props.selection}
-          openConfig={props.openConfig}
-          openNode={props.openNode}
-          {...(props.onLoadMoreChildren ? { onLoadMoreChildren: props.onLoadMoreChildren } : {})}
-          onTreeItemFocus={props.onTreeItemFocus}
-          {...(props.pageInfo ? { pageInfo: props.pageInfo } : {})}
-          requestAction={props.requestAction}
-          toggleFolder={props.toggleFolder}
-          unbounded={props.unbounded}
-        />
-      ))}
-      {showPageMore ? <div className="automation-tree-page-more-wrap" role="none"><button className="automation-tree-page-more" disabled={Boolean(pageInfo?.loading)} onClick={() => pageInfo ? props.onLoadMoreChildren?.(props.parentId) : setLimit((current) => current + 100)} type="button">{pageMoreLabel}</button></div> : null}
-    </>
-  );
-}
-
-function automationHierarchySelectionSignature(selection: AutomationSelection | null, activeViewId?: string): string {
-  return [
-    activeViewId ?? "",
-    selection?.kind ?? "",
-    selection?.id ?? "",
-    selection?.kind === "proposal" ? selection.recordingId ?? "" : ""
-  ].join("|");
-}
-function automationHierarchyActiveChildOwnsFlowSelection(node: AutomationHierarchyNode, hierarchyIndex: AutomationHierarchyIndex, selection: AutomationSelection | null, activeViewId?: string): boolean {
-  const ownedFlowId = node.kind === "flow"
-    ? node.sourceId
-    : node.kind === "subflow" && typeof node.metadata?.graphFlowId === "string" ? node.metadata.graphFlowId : null;
-  return Boolean(
-    ownedFlowId
-    && selection?.kind === "flow"
-    && selection.id === ownedFlowId
-    && activeViewId
-    && (hierarchyIndex.childrenByParentId.get(node.id) ?? []).some((candidate) => candidate.flowId === ownedFlowId && candidate.viewId === activeViewId)
-  );
-}
-
-function automationHierarchyNodeMatchesSelection(node: AutomationHierarchyNode, selection: AutomationSelection | null): boolean {
-  return Boolean(
-    node.sourceId
-    && (
-      (selection?.kind === "flow" && node.kind === "flow" && selection.id === node.sourceId)
-      || (selection?.kind === "flow" && node.kind === "subflow" && selection.id === node.metadata?.graphFlowId)
-      || (selection?.kind === "policy" && selection.id === node.sourceId)
-      || (selection?.kind === "recording" && selection.id === node.sourceId)
-      || (selection?.kind === "recording" && selection.id === node.recordingId)
-      || (selection?.kind === "proposal" && selection.id === node.sourceId)
-      || (selection?.kind === "workspace" && selection.id === node.sourceId)
-    )
-  );
-}
-
-function automationHierarchyNodeMatchesActiveFlowView(node: AutomationHierarchyNode, selection: AutomationSelection | null, activeViewId?: string): boolean {
-  return Boolean(
-    activeViewId
-    && node.viewId === activeViewId
-    && node.flowId
-    && node.kind !== "flow"
-    && selection?.kind === "flow"
-    && selection.id === node.flowId
-  );
-}
-
-function automationHierarchySelectionSame(left: AutomationSelection | null, right: AutomationSelection): boolean {
-  if (!left || left.kind !== right.kind) return false;
-  const leftRecord = left as unknown as Record<string, unknown>;
-  const rightRecord = right as unknown as Record<string, unknown>;
-  const leftKeys = Object.keys(leftRecord);
-  const rightKeys = Object.keys(rightRecord);
-  return leftKeys.length === rightKeys.length && leftKeys.every((key) => leftRecord[key] === rightRecord[key]);
-}
-
-function automationHierarchySelectionForOpenNode(node: AutomationHierarchyNode): AutomationSelection | null {
-  if (node.kind === "task" && node.sourceId) return { kind: "policy", id: node.sourceId };
-  if (node.kind === "flow" && node.sourceId) return { kind: "flow", id: node.sourceId };
-  if (node.kind === "subflow" && typeof node.metadata?.graphFlowId === "string") return { kind: "flow", id: node.metadata.graphFlowId };
-  if (node.kind === "recording" && node.sourceId) return { kind: "recording", id: node.sourceId };
-  if (node.kind === "proposal" && node.sourceId) return { kind: "proposal", id: node.sourceId, ...(node.recordingId ? { recordingId: node.recordingId } : {}) };
-  if ((node.kind === "client" || (node.kind === "run" && !node.flowId)) && node.sourceId) return { kind: "workspace", id: node.sourceId as "clients" | "runs" };
-  if (node.flowId && node.kind !== "flow" && node.kind !== "subflow" && node.kind !== "recording" && node.kind !== "proposal") return { kind: "flow", id: node.flowId };
-  return null;
-}
-
-function automationHierarchyViewIdForOpenNode(node: AutomationHierarchyNode): string {
-  return node.viewId ?? (node.kind === "flow" || node.kind === "task" ? "policy-primary" : node.kind === "routine" ? "routine-editor" : node.kind === "recording" ? "timeline-recording" : node.kind === "client" ? "client-gateway" : node.kind === "proposal" ? "proposal-workbench" : node.kind === "run" ? "runtime-debug" : "flow-settings");
-}
-
-export function automationHierarchyNodeCanRemainPrimary(node: AutomationHierarchyNode, selection: AutomationSelection | null, activeViewId?: string): boolean {
-  if (automationHierarchyNodeMatchesSelection(node, selection)) return true;
-  return Boolean(node.flowId && node.kind !== "flow" && selection?.kind === "flow" && selection.id === node.flowId && (!activeViewId || !node.viewId || node.viewId === activeViewId));
-}
-
-export function automationHierarchyPrimaryNode(node: AutomationHierarchyNode, nodes: AutomationHierarchyNode[]): AutomationHierarchyNode {
-  if (node.kind === "subflow" && typeof node.metadata?.graphFlowId === "string") {
-    return nodes.find((candidate) => candidate.parentId === node.id && candidate.metadata?.flowStructure === "subflow-nodes" && candidate.flowId === node.metadata?.graphFlowId) ?? node;
-  }
-  return automationHierarchyRouterPrimaryNode(node, nodes);
-}
-
-export function automationHierarchyPrimaryNodeId(node: AutomationHierarchyNode, nodes: AutomationHierarchyNode[]): string {
-  return automationHierarchyPrimaryNode(node, nodes).id;
-}
-export function automationHierarchyRouterPrimaryNode(node: AutomationHierarchyNode, nodes: AutomationHierarchyNode[]): AutomationHierarchyNode {
-  if (node.kind !== "flow" || !node.sourceId) return node;
-  return nodes.find((candidate) => candidate.viewId === "flow-router" && candidate.flowId === node.sourceId) ?? node;
-}
-
-export function automationHierarchyRouterPrimaryNodeId(node: AutomationHierarchyNode, nodes: AutomationHierarchyNode[]): string {
-  return automationHierarchyRouterPrimaryNode(node, nodes).id;
-}
-export function automationHierarchySettingsPrimaryNodeId(node: AutomationHierarchyNode, nodes: AutomationHierarchyNode[]): string {
-  if (!node.sourceId) return node.id;
-  return nodes.find((candidate) => candidate.viewId === "flow-settings" && candidate.flowId === node.sourceId)?.id ?? node.id;
-}
-
-function automationProjectTreeUiStateSignature(state: AutomationProjectTreeUiState): string {
-  return [
-    state.collapsedFolderIds.join(","),
-    state.expandedDefaultCollapsedIds.join(","),
-    state.focusedTreeNodeId,
-    state.primaryTreeNodeId ?? ""
-  ].join("|");
-}
-
-function sameStringList(left: string[], right: string[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
-}
+export { AutomationHierarchyChildren, AutomationHierarchyTreeNode } from "./tree-rows";
+export {
+  automationHierarchyNodeCanRemainPrimary,
+  automationHierarchyPrimaryNode,
+  automationHierarchyPrimaryNodeId,
+  automationHierarchyRouterPrimaryNode,
+  automationHierarchyRouterPrimaryNodeId,
+  automationHierarchySettingsPrimaryNodeId
+} from "./selectors";

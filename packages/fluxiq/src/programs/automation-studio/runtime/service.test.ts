@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAutomationStudioFlowExpansionFixture, createAutomationStudioLargeProjectFixture, createCallFlowNode, stateValue, type StateSnapshot } from "../model/index.ts";
@@ -11,7 +12,14 @@ import { IoRegistry, createEnvelope } from "../../../io/index.ts";
 import type { JsonObject } from "../../../core/index.ts";
 import { SQLiteRepository } from "../../database-manager/storage/sqlite-repository.ts";
 
-const tempRoot = path.join(process.cwd(), ".tmp", "automation-studio-service-test");
+let tempRoot: string;
+const services = new Set<AutomationStudioService>();
+
+function createService(...args: ConstructorParameters<typeof AutomationStudioService>): AutomationStudioService {
+  const service = new AutomationStudioService(...args);
+  services.add(service);
+  return service;
+}
 
 function stateFixture(id: string, timestamp: number, title: string): StateSnapshot {
   return {
@@ -87,16 +95,17 @@ function adaptiveTrainingMetadata(): JsonObject {
 
 describe("AutomationStudioService recording persistence", () => {
   beforeEach(async () => {
-    await rm(tempRoot, { recursive: true, force: true });
-    await mkdir(tempRoot, { recursive: true });
+    tempRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-automation-studio-service-"));
   });
 
   afterEach(async () => {
+    await Promise.all([...services].map((service) => service.close()));
+    services.clear();
     await rm(tempRoot, { recursive: true, force: true });
   });
 
   it("does not seed demo fixture recordings by default", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot });
+    const service = createService({ dataDir: tempRoot });
 
     await expect(service.listRecordingSessions()).resolves.toEqual([]);
     await expect(service.snapshot()).resolves.toMatchObject({
@@ -111,7 +120,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("keeps lightweight snapshots free of canonical recording payloads", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot });
+    const service = createService({ dataDir: tempRoot });
     const project = await service.createProject({ name: "Snapshot bounds", domainId: "example" });
     await service.createRecording({
       projectId: project.id,
@@ -129,7 +138,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("normalizes recorded action element targets before storage", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot });
+    const service = createService({ dataDir: tempRoot });
     const project = await service.createProject({ name: "Element targets", domainId: "example" });
     const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.element-target", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
     await service.appendRecordingEvent({
@@ -171,7 +180,7 @@ describe("AutomationStudioService recording persistence", () => {
         })
       }
     });
-    const service = new AutomationStudioService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const service = createService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
     const project = await service.createProject({ name: "Mapped element target", domainId: "example" });
     const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.mapper-element-target", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
     await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: {}, timestamp: 2 } });
@@ -191,7 +200,7 @@ describe("AutomationStudioService recording persistence", () => {
     const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "click-mapper", version: "1.0.0", description: "Maps recorded clicks", outputIds: ["click"] }] };
     let mapperSawElementMatcher = false;
     const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingMappers: { "click-mapper": (observation, context) => { mapperSawElementMatcher = typeof context.elementMatcher.bestCandidate === "function"; return observation.type === "observation" ? { outputId: "click", parameters: { target: "submit" }, sourceInputIds: ["clicked"], expectedConfirmation: { inputId: "clicked", timeoutMs: 100 }, confidence: 0.9 } : null; } } });
-    const service = new AutomationStudioService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const service = createService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
     const project = await service.createProject({ name: "Mapped recording", domainId: "example" });
     const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.mapped", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
     await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" } } });
@@ -234,7 +243,7 @@ describe("AutomationStudioService recording persistence", () => {
     io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
     const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "click-mapper", version: "1.0.0", description: "Maps clicks", outputIds: ["click"] }] };
     const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingMappers: { "click-mapper": () => ({ outputId: "click", parameters: { target: "submit" }, sourceObservationIds: ["entry.shared-state"], confidence: 0.9 }) } });
-    const service = new AutomationStudioService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const service = createService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
     const project = await service.createProject({ name: "Proposal attempts", domainId: "example" });
     const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.attempts", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
     await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" } } });
@@ -265,7 +274,7 @@ describe("AutomationStudioService recording persistence", () => {
     io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
     const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "click-mapper", version: "1.0.0", description: "Maps clicks", outputIds: ["click"] }] };
     const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingMappers: { "click-mapper": () => ({ outputId: "click", parameters: { target: "submit" }, confidence: 0.9 }) } });
-    const service = new AutomationStudioService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const service = createService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
     const project = await service.createProject({ name: "Workspace summary", domainId: "example" });
     const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.summary", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
     await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" } } });
@@ -283,7 +292,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("creates Flows with default settings metadata", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Default settings" });
 
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.defaults", name: "Default settings Flow" });
@@ -332,7 +341,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("lists persisted Flow metadata from the project SQL index", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Flow metadata page" });
     await service.createFlow({ projectId: project.id, flowId: "flow.metadata.1", name: "First metadata Flow" });
     await service.createFlow({ projectId: project.id, flowId: "flow.metadata.2", name: "Second metadata Flow" });
@@ -344,7 +353,7 @@ describe("AutomationStudioService recording persistence", () => {
     expect(page.items[0]).not.toHaveProperty("edges");
   });
   it("resolves runtime adaptation behavior into Flow run detail metadata", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Runtime adaptation context" });
     const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.runtime-context" });
 
@@ -373,7 +382,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("resolves configured recovery limits into the runtime adaptation context", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Recovery limits" });
     const flow = await createRunnableCanonicalFlow(service, project.id, {
       flowId: "flow.recovery-limits",
@@ -396,7 +405,7 @@ describe("AutomationStudioService recording persistence", () => {
     });
   });
   it("activates train-for-runs only for runs inside the training window", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Train for runs" });
     const flow = await createRunnableCanonicalFlow(service, project.id, {
       flowId: "flow.train-for-runs",
@@ -426,7 +435,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("resolves stable and continuous adaptive modes plus budget exhaustion", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Adaptive modes" });
     const stableFlow = await createRunnableCanonicalFlow(service, project.id, {
       flowId: "flow.train-until-stable",
@@ -523,7 +532,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("records a missing-provider runtime diagnosis intervention when adaptive policy allows LLM", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Missing provider" });
     const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.missing-provider", metadata: adaptiveTrainingMetadata() });
 
@@ -546,7 +555,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("runs a configured runtime diagnosis provider and rolls usage into run summary", async () => {
-    const service = new AutomationStudioService({
+    const service = createService({
       dataDir: tempRoot,
       seedFixture: false,
       llmProviderResolver: () => ({
@@ -577,7 +586,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("tests runtime patch responses and persists resulting adaptation evidence", async () => {
-    const service = new AutomationStudioService({
+    const service = createService({
       dataDir: tempRoot,
       seedFixture: false,
       llmProviderResolver: () => ({
@@ -646,7 +655,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("auto-applies validated low-risk runtime adaptations and records approval decisions", async () => {
-    const service = new AutomationStudioService({
+    const service = createService({
       dataDir: tempRoot,
       seedFixture: false,
       llmProviderResolver: () => ({
@@ -745,7 +754,7 @@ describe("AutomationStudioService recording persistence", () => {
           : { status: "failed", route: "failed", outputs: { error: "Target drift was not recovered." } }
       }
     });
-    const service = new AutomationStudioService({
+    const service = createService({
       dataDir: tempRoot,
       seedFixture: false,
       llmProviderResolver: () => ({
@@ -818,7 +827,7 @@ describe("AutomationStudioService recording persistence", () => {
     io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
     const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "click-mapper", version: "1.0.0", description: "Maps clicks", outputIds: ["click"] }] };
     const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingMappers: { "click-mapper": () => ({ outputId: "click", parameters: { target: "submit", payload: "x".repeat(300_000) }, confidence: 0.9 }) } });
-    const service = new AutomationStudioService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const service = createService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
     const project = await service.createProject({ name: "Stale proposal object", domainId: "example" });
     const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.stale-proposal-object", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
     await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" } } });
@@ -837,7 +846,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("reports when direct generation produces no proposal artifact", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot });
+    const service = createService({ dataDir: tempRoot });
     const project = await service.createProject({ name: "Empty proposal generation", domainId: "example" });
     const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.empty-proposal", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
     await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId });
@@ -854,7 +863,7 @@ describe("AutomationStudioService recording persistence", () => {
     io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
     const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "click-mapper", version: "1.0.0", description: "Maps clicks", outputIds: ["click"] }] };
     const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingMappers: { "click-mapper": () => null } });
-    const service = new AutomationStudioService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const service = createService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
     const project = await service.createProject({ name: "State-only proposal generation", domainId: "example" });
     const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.state-only-proposal", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
     await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "client.state_snapshot", payload: { state: { timestamp: 2, namespaces: {} } } } });
@@ -875,7 +884,7 @@ describe("AutomationStudioService recording persistence", () => {
     io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
     const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "click-mapper", version: "1.0.0", description: "Maps clicks", outputIds: ["click"] }] };
     const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingMappers: { "click-mapper": () => null } });
-    const service = new AutomationStudioService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const service = createService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
     const project = await service.createProject({ name: "Direct action proposals", domainId: "example" });
     const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.direct-action-proposal", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
     await service.appendRecordingEvent({
@@ -923,7 +932,7 @@ describe("AutomationStudioService recording persistence", () => {
         }
       }
     });
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const service = createService({ dataDir: tempRoot, seedFixture: false }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
     const project = await service.createProject({ name: "Compacted mapper recording", domainId: "example" });
     const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.mapper-compaction", domainId: "example", startedAt: 0, initialState: { timestamp: 0, namespaces: {} } });
     await service.appendRecordingEvents({
@@ -970,7 +979,7 @@ describe("AutomationStudioService recording persistence", () => {
     io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
     const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "click-mapper", version: "1.0.0", description: "Maps recorded clicks", outputIds: ["click"] }] };
     const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingMappers: { "click-mapper": (observation) => observation.type === "observation" ? { outputId: "click", parameters: { target: "submit" }, sourceInputIds: ["clicked"], expectedConfirmation: { inputId: "clicked", timeoutMs: 100 }, confidence: 0.9 } : null } });
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const service = createService({ dataDir: tempRoot, seedFixture: false }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
     const project = await service.createProject({ name: "Extension Process", domainId: "example" });
     const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.extension-process", domainId: "example", startedAt: 100, initialState: { timestamp: 100, namespaces: {} } });
     await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" }, timestamp: 200, monotonicOffsetMs: 100 } });
@@ -1004,7 +1013,7 @@ describe("AutomationStudioService recording persistence", () => {
         }
       }
     });
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const service = createService({ dataDir: tempRoot, seedFixture: false }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
     const project = await service.createProject({ name: "Cached mapper proposal", domainId: "example" });
     const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.cached-mapper", domainId: "example", startedAt: 100, initialState: { timestamp: 100, namespaces: {} } });
     await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" }, timestamp: 200, monotonicOffsetMs: 100 } });
@@ -1025,7 +1034,7 @@ describe("AutomationStudioService recording persistence", () => {
 
   it("stores project state image assets as digest-addressed object references", async () => {
     await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
-    const service = new AutomationStudioService({
+    const service = createService({
       dataDir: tempRoot,
       storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
       seedFixture: false
@@ -1060,7 +1069,7 @@ describe("AutomationStudioService recording persistence", () => {
 
   it("rejects state image assets whose bytes do not match the requested digest", async () => {
     await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
-    const service = new AutomationStudioService({
+    const service = createService({
       dataDir: tempRoot,
       storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
       seedFixture: false
@@ -1077,7 +1086,7 @@ describe("AutomationStudioService recording persistence", () => {
 
   it("deletes recording-owned state image assets when no remaining recording references them", async () => {
     await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
-    const service = new AutomationStudioService({
+    const service = createService({
       dataDir: tempRoot,
       storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
       seedFixture: false
@@ -1117,7 +1126,7 @@ describe("AutomationStudioService recording persistence", () => {
 
   it("deletes unindexed files left under the recording session directory", async () => {
     await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
-    const service = new AutomationStudioService({
+    const service = createService({
       dataDir: tempRoot,
       storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
       seedFixture: false
@@ -1141,7 +1150,7 @@ describe("AutomationStudioService recording persistence", () => {
 
   it("deletes stale shared pipeline artifacts owned by the deleted recording", async () => {
     await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
-    const service = new AutomationStudioService({
+    const service = createService({
       dataDir: tempRoot,
       storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
       seedFixture: false
@@ -1176,7 +1185,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("deletes recording batches with one index and pipeline cleanup pass", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Batch cleanup" });
     const first = await service.createRecording({ projectId: project.id, recordingId: "recording.batch-a", initialState: { timestamp: 0, namespaces: {} } });
     const second = await service.createRecording({ projectId: project.id, recordingId: "recording.batch-b", initialState: { timestamp: 0, namespaces: {} } });
@@ -1204,7 +1213,7 @@ describe("AutomationStudioService recording persistence", () => {
 
   it("keeps deleted recording assets that are still referenced by another recording", async () => {
     await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
-    const service = new AutomationStudioService({
+    const service = createService({
       dataDir: tempRoot,
       storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
       seedFixture: false
@@ -1237,7 +1246,7 @@ describe("AutomationStudioService recording persistence", () => {
     io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
     const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "click-mapper", version: "1.0.0", description: "Maps recorded clicks", outputIds: ["click"] }] };
     const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingMappers: { "click-mapper": (observation) => observation.type === "observation" ? { outputId: "click", parameters: { target: "submit" }, confidence: 0.9 } : null } });
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const service = createService({ dataDir: tempRoot, seedFixture: false }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
     const project = await service.createProject({ name: "Edited Mapper Approval", domainId: "example" });
     const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.edited-mapper", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
     await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" } } });
@@ -1317,7 +1326,7 @@ describe("AutomationStudioService recording persistence", () => {
     io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
     const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "empty-mapper", version: "1.0.0", description: "Does not map this recording", outputIds: ["click"] }] };
     const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingMappers: { "empty-mapper": () => null } });
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
+    const service = createService({ dataDir: tempRoot, seedFixture: false }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
     const project = await service.createProject({ name: "Mapper Miss", domainId: "example" });
     const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.mapper-miss", domainId: "example", startedAt: 100, initialState: { timestamp: 100, namespaces: {} } });
     await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" }, timestamp: 200, monotonicOffsetMs: 100 } });
@@ -1329,7 +1338,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("stores project recordings and normalized timelines in project folders", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "State Framework" });
     await expect(service.listProjectArtifacts(project.id)).resolves.toMatchObject({
       tasks: [],
@@ -1364,7 +1373,7 @@ describe("AutomationStudioService recording persistence", () => {
     });
     const normalized = await service.normalizeRecording({ projectId: project.id, recordingId: recording.recordingId });
 
-    const reloaded = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const reloaded = createService({ dataDir: tempRoot, seedFixture: false });
     const recordings = await reloaded.listRecordingSessions(project.id);
 
     expect(recordings.map((item) => item.recordingId)).toContain("recording.service-test");
@@ -1379,7 +1388,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("persists rapid recording event bursts without colliding JSON temp files", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Event Burst" });
     const recording = await service.createRecording({
       projectId: project.id,
@@ -1408,7 +1417,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("lists project recording summaries without returning screenshot-heavy timelines", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Recording summaries" });
     const recording = await service.createRecording({
       projectId: project.id,
@@ -1458,7 +1467,7 @@ describe("AutomationStudioService recording persistence", () => {
 
   it("stores client state snapshots as recording-scoped object refs and hydrates them when opened", async () => {
     await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
-    const service = new AutomationStudioService({
+    const service = createService({
       dataDir: tempRoot,
       storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
       seedFixture: false
@@ -1506,7 +1515,7 @@ describe("AutomationStudioService recording persistence", () => {
 
   it("writes recording state indexes with distinct action state links", async () => {
     await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
-    const service = new AutomationStudioService({
+    const service = createService({
       dataDir: tempRoot,
       storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
       seedFixture: false
@@ -1551,7 +1560,7 @@ describe("AutomationStudioService recording persistence", () => {
           : null
       }
     });
-    const service = new AutomationStudioService({
+    const service = createService({
       dataDir: tempRoot,
       storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
       seedFixture: false
@@ -1581,7 +1590,7 @@ describe("AutomationStudioService recording persistence", () => {
 
   it("resolves recording entry state from the recording index without guessing another state", async () => {
     await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
-    const service = new AutomationStudioService({
+    const service = createService({
       dataDir: tempRoot,
       storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
       seedFixture: false
@@ -1623,7 +1632,7 @@ describe("AutomationStudioService recording persistence", () => {
 
   it("resolves unlinked timeline events to the latest prior state snapshot", async () => {
     await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
-    const service = new AutomationStudioService({
+    const service = createService({
       dataDir: tempRoot,
       storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
       seedFixture: false
@@ -1668,7 +1677,7 @@ describe("AutomationStudioService recording persistence", () => {
 
   it("repairs stale prior-state links before indexed state lookup", async () => {
     await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
-    const service = new AutomationStudioService({
+    const service = createService({
       dataDir: tempRoot,
       storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
       seedFixture: false
@@ -1713,7 +1722,7 @@ describe("AutomationStudioService recording persistence", () => {
 
   it("does not hydrate missing state refs while appending to recordings", async () => {
     await writeFile(path.join(tempRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }), "utf8");
-    const service = new AutomationStudioService({
+    const service = createService({
       dataDir: tempRoot,
       storageRootDir: path.join(tempRoot, "artifacts", "automation-studio"),
       seedFixture: false
@@ -1754,7 +1763,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("stores project artifacts and runtime sessions in project folders", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Runtime Project" });
     const flow = await service.createDefaultFlow({ projectId: project.id, ownerKind: "routine", ownerId: "routine.runtime", name: "Runtime Flow" });
     const runnableFlow = {
@@ -1772,7 +1781,7 @@ describe("AutomationStudioService recording persistence", () => {
     await service.saveProjectArtifact({ projectId: project.id, kind: "flow", artifact: runnableFlow });
 
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
-    const reloaded = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const reloaded = createService({ dataDir: tempRoot, seedFixture: false });
     const artifacts = await reloaded.listProjectArtifacts(project.id);
     const runs = await reloaded.listRuntimeSessions(project.id);
 
@@ -1786,7 +1795,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("pages runtime run summaries from the runtime SQL index without loading traces", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Runtime Pages" });
     const flow = await service.createDefaultFlow({ projectId: project.id, ownerKind: "routine", ownerId: "routine.runtime-pages", name: "Runtime Pages Flow" });
     const runnableFlow = {
@@ -1819,7 +1828,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("idempotently returns the same runtime run for duplicate idempotency keys", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Runtime Idempotency" });
     const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.runtime-idempotency" });
 
@@ -1832,7 +1841,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("cancels queued runtime runs and recovers missing run detail from the session record", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Runtime Cancellation" });
     const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.runtime-cancel" });
     const queued = await service.startRuntimeSession({ projectId: project.id, flowId: flow.flowId });
@@ -1849,7 +1858,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("blocks a second active adaptive runtime run in the same project", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Adaptive Runtime Concurrency" });
     const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.runtime-concurrency", metadata: adaptiveTrainingMetadata() });
     await service.startRuntimeSession({ projectId: project.id, flowId: flow.flowId, metadata: { adaptiveRuntime: true } });
@@ -1858,7 +1867,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("persists compact action comparisons and recovery ladder records in Flow run detail", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Runtime Recovery Detail" });
     const flow = await service.createDefaultFlow({ projectId: project.id, ownerKind: "routine", ownerId: "routine.runtime-recovery", name: "Runtime Recovery Flow" });
     await service.saveProjectArtifact({
@@ -1906,7 +1915,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("persists host state refs in run detail without hydrating summaries", async () => {
-    const service = new AutomationStudioService({
+    const service = createService({
       dataDir: tempRoot,
       seedFixture: false,
       hostRuntime: {
@@ -1935,7 +1944,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("mutates Flow Map route groups and routes through validated router writes", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Flow Map Mutations" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.flow-map-mutations", name: "Flow Map Mutations" });
     const primary = await service.createFlowSubflow({ projectId: project.id, flowId: flow.flowId, name: "Main Task", role: "primary" });
@@ -2008,7 +2017,7 @@ describe("AutomationStudioService recording persistence", () => {
     expect(withoutRoute.rules.map((rule) => rule.name)).toEqual(["Fallback Route"]);
   });
   it("persists Flow expansion summaries with paged run and adaptation detail reads", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Expansion Pages" });
     const flow = await service.createDefaultFlow({ projectId: project.id, ownerKind: "routine", ownerId: "routine.expansion-pages", name: "Expansion Pages Flow" });
     const fixture = createAutomationStudioFlowExpansionFixture(10_000);
@@ -2088,7 +2097,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("streams a bounded deep page from a persisted 10,000-action run", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Ten Thousand Actions" });
     const flow = await service.createDefaultFlow({ projectId: project.id, ownerKind: "routine", ownerId: "routine.ten-thousand-actions", name: "Ten Thousand Actions Flow" });
     const fixture = createAutomationStudioFlowExpansionFixture(75_000);
@@ -2124,7 +2133,7 @@ describe("AutomationStudioService recording persistence", () => {
     expect(elapsedMs).toBeLessThan(1_500);
   });
   it("keeps large project summary pages free of hydrated detail payloads", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Large Summary Guard" });
     const fixture = createAutomationStudioLargeProjectFixture({
       projectId: project.id,
@@ -2222,7 +2231,7 @@ describe("AutomationStudioService recording persistence", () => {
   }, 15_000);
 
   it("pages and filters 10,000 Subflow summaries within the local directory budget", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Subflow SQL Scale" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.subflow-scale", name: "Subflow Scale" });
     const repository = new SQLiteRepository<JsonObject>({
@@ -2264,7 +2273,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("filters adaptations by status and records review/promotion transitions", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Adaptation Review" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.adaptation-review", name: "Adaptation Review Flow" });
     await service.saveFlow({
@@ -2320,7 +2329,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("applies and reverts durable action target and structural adaptation patches", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Durable Adaptations" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.durable-adaptations", name: "Durable Adaptations Flow" });
     await service.saveFlow({
@@ -2417,7 +2426,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("rolls back created subflows and rejects invalid durable mutations", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Durable Subflow Rollback" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.subflow-rollback", name: "Subflow Rollback Flow" });
     const base = {
@@ -2480,7 +2489,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("routes canonical Flow runtime sessions through the selected subflow and records run detail", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Routed Runtime" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.routed-runtime", name: "Routed Flow" });
     await service.saveFlow({
@@ -2543,7 +2552,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("creates, updates, duplicates, disables, and archives Flow subflows", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Subflow CRUD" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.subflow-crud", name: "Subflow CRUD Flow" });
 
@@ -2598,7 +2607,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("rejects stale Subflow Settings revisions without overwriting canonical data", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Subflow settings conflict" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.subflow-conflict", name: "Conflict Flow" });
     const created = await service.createFlowSubflow({ projectId: project.id, flowId: flow.flowId, name: "Original" });
@@ -2610,7 +2619,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("uses subflow summaries as the canonical Flow hierarchy source", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Canonical Subflow Sidebar" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.canonical-subflows", name: "Canonical" });
     await service.saveFlow({
@@ -2640,7 +2649,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("rolls back a generated graph Flow when subflow creation fails before canonical membership is written", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Subflow Create Rollback" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.subflow-rollback", name: "Rollback" });
 
@@ -2652,7 +2661,7 @@ describe("AutomationStudioService recording persistence", () => {
     expect(summaries.some((summary) => summary.parentFlowId === flow.flowId || summary.hierarchySubflows?.some((item) => item.name === "Broken"))).toBe(false);
   });
   it("repairs stale subflow ownership and hierarchy metadata before returning Flow summaries", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Stale Subflow Summary" });
     const parent = await service.createFlow({ projectId: project.id, flowId: "flow.stale-parent", name: "Test" });
     const subflow = await service.createFlowSubflow({
@@ -2690,7 +2699,7 @@ describe("AutomationStudioService recording persistence", () => {
     }
     await writeFile(indexFile, JSON.stringify(staleEnvelope, null, 2), "utf8");
 
-    const reloaded = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const reloaded = createService({ dataDir: tempRoot, seedFixture: false });
     const summaries = await reloaded.listAutomationFlowSummaries(project.id);
     const repairedEnvelope = JSON.parse(await readFile(indexFile, "utf8")) as {
       data: {
@@ -2722,7 +2731,7 @@ describe("AutomationStudioService recording persistence", () => {
     }));
   });
   it("deletes saved project artifacts and owned flow files from project folders", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Deletion Project" });
     const now = Date.now();
     await service.saveProjectArtifact({
@@ -2772,7 +2781,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("persists recording pipeline artifacts through proposal approval and replay", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Pipeline Project" });
     const recording = await service.createRecording({
       projectId: project.id,
@@ -2831,7 +2840,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("proposes a task directly from recording-owned mined evidence", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     service.registerRecordingDomain({
       domainId: "example.direct",
       label: "Direct proposal domain",
@@ -2901,7 +2910,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("turns state evidence around an output action into eligibility and success conditions", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     service.registerRecordingDomain({
       domainId: "example.state-evidence",
       label: "State evidence domain",
@@ -2977,7 +2986,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("merges proposals from multiple recordings into one canonical Flow", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Branching Proposal Project" });
     for (const [recordingId, secondStep] of [["recording.branch-a", "branch.a"], ["recording.branch-b", "branch.b"]] as const) {
       const recording = await service.createRecording({
@@ -3012,7 +3021,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("applies edited proposal overrides exactly instead of preserving deleted nodes", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Edited Proposal Project" });
     const recording = await service.createRecording({
       projectId: project.id,
@@ -3063,7 +3072,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("proposes a task from sparse mined action evidence without state correlations", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Sparse Proposal Project" });
     const recording = await service.createRecording({
       projectId: project.id,
@@ -3094,7 +3103,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("processes finalized recordings into current task proposals", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Finalized Processing Project" });
     const recording = await service.createRecording({
       projectId: project.id,
@@ -3129,7 +3138,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("keeps finalized recording proposals stable and persisted", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Stable Proposal Project" });
     const recording = await service.createRecording({
       projectId: project.id,
@@ -3161,7 +3170,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("accepts only registered domain recording events and records derived state", async () => {
-    const service = new AutomationStudioService({ seedFixture: false });
+    const service = createService({ seedFixture: false });
     service.registerRecordingDomain({
       domainId: "example.domain",
       label: "Example domain",
@@ -3233,16 +3242,17 @@ describe("AutomationStudioService recording persistence", () => {
 
 describe("AutomationStudioService canonical Flow persistence", () => {
   beforeEach(async () => {
-    await rm(tempRoot, { recursive: true, force: true });
-    await mkdir(tempRoot, { recursive: true });
+    tempRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-automation-studio-service-"));
   });
 
   afterEach(async () => {
+    await Promise.all([...services].map((service) => service.close()));
+    services.clear();
     await rm(tempRoot, { recursive: true, force: true });
   });
 
   it("persists new canonical Flows in project files with project scope enforcement", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const domainProject = await service.createProject({ name: "Orders", domainId: "orders" });
     const globalProject = await service.createProject({ name: "Global" });
     const flow = await service.createFlow({ projectId: domainProject.id, flowId: "flow.orders.submit", name: "Submit order" });
@@ -3256,7 +3266,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
     await expect(service.saveFlow({ projectId: domainProject.id, flow: { ...published, publicationHistory: [] } })).rejects.toThrow("publication history is immutable");
     await expect(service.saveFlow({ projectId: domainProject.id, flow: { ...published, publication: { status: "draft" } } })).rejects.toThrow("snapshot metadata is immutable");
 
-    const reloaded = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const reloaded = createService({ dataDir: tempRoot, seedFixture: false });
     const entries = await reloaded.listFlows(domainProject.id);
     expect(entries.find((entry) => entry.source === "canonical")?.flow).toMatchObject({ flowId: flow.flowId, projectId: domainProject.id });
     await expect(reloaded.deprecateFlowPublication({ projectId: domainProject.id, flowId: flow.flowId, version: "1.0.0", reason: "Use 2.0.0" })).resolves.toMatchObject({ status: "deprecated", deprecationReason: "Use 2.0.0" });
@@ -3265,11 +3275,11 @@ describe("AutomationStudioService canonical Flow persistence", () => {
   });
 
   it("creates Flows without hydrating every persisted Flow in the project", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Large Flow Project" });
     await service.createFlow({ projectId: project.id, flowId: "flow.persisted", name: "Persisted" });
 
-    const reloaded = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const reloaded = createService({ dataDir: tempRoot, seedFixture: false });
     (reloaded as unknown as { loadProjectFlows: () => Promise<void> }).loadProjectFlows = async () => {
       throw new Error("full project Flow hydration should not be used for createFlow");
     };
@@ -3283,7 +3293,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
   });
 
   it("emits scoped project change-feed rows for Flow create, update, and delete", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Flow Feed Project" });
     const created = await service.createFlow({ projectId: project.id, flowId: "flow.feed", name: "Feed Flow" });
     const saved = await service.saveFlow({ projectId: project.id, flow: { ...created, name: "Updated Feed Flow" } });
@@ -3305,7 +3315,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
   });
 
   it("emits scoped project change-feed rows for subflow create, update, and delete", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Subflow Feed Project" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.subflow-feed", name: "Parent Flow" });
     const created = await service.createFlowSubflow({ projectId: project.id, flowId: flow.flowId, name: "Verify Payment" });
@@ -3327,7 +3337,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
   });
 
   it("emits project hierarchy change-feed rows for legacy hierarchy saves", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Hierarchy Feed Project" });
 
     await service.saveProjectHierarchy(project.id, {
@@ -3352,7 +3362,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
   });
 
   it("runs the selected canonical Flow with its compiled region plan", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Canonical runtime" });
     const blank = await service.createFlow({ projectId: project.id, flowId: "flow.canonical.runtime", name: "Canonical runtime" });
     await service.saveFlow({ projectId: project.id, flow: {
@@ -3369,7 +3379,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
   });
 
   it("requires an explicit per-run grant for global-to-domain Call Flow execution", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false }).bindIoRuntime(new IoRegistry(), "orders");
+    const service = createService({ dataDir: tempRoot, seedFixture: false }).bindIoRuntime(new IoRegistry(), "orders");
     const domainProject = await service.createProject({ name: "Orders", domainId: "orders" });
     const globalProject = await service.createProject({ name: "Global orchestrator" });
     const child = await service.createFlow({ projectId: domainProject.id, flowId: "flow.orders.child", name: "Orders child" });
@@ -3399,7 +3409,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
   });
 
   it("converts source ownership explicitly and rejects uncompiled code-owned edits", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Source ownership" });
     const blank = await service.createFlow({ projectId: project.id, flowId: "flow.source", name: "Source" });
     const generatedSourcePath = path.join(tempRoot, "programs", "automation-studio", "projects", project.id, "flows", "flow.source", "source", "flows", "flow.source.flow.ts");
@@ -3435,7 +3445,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
     const definition = { schemaVersion: "0.1" as const, id: "orders.total", version: "1.0.0", label: "Order total", description: "Calculates total", category: "Orders", source: { kind: "importer" as const, domainId: "orders", packageId: "orders.package", implementationKey: "total" }, availability: { kind: "domain" as const, domainId: "orders" }, capabilities: { executable: true as const }, inputs: [], outputs: [{ id: "total", label: "Total", valueType: "number" as const }], parameters: [] };
     const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "orders.package", packageVersion: "1.0.0", domainId: "orders", nodes: [definition] };
     const native = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "orders.package", packageVersion: "1.0.0", implementations: { total: () => ({ outputs: { total: 42 } }) } });
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false }).bindNativeNodeRuntime(native);
+    const service = createService({ dataDir: tempRoot, seedFixture: false }).bindNativeNodeRuntime(native);
     const domainProject = await service.createProject({ name: "Orders", domainId: "orders" }); const globalProject = await service.createProject({ name: "Global" });
     expect(await service.listNativeNodeDefinitions(domainProject.id)).toMatchObject([{ id: "orders.total" }]); expect(await service.listNativeNodeDefinitions(globalProject.id)).toEqual([]);
     const blank = await service.createFlow({ projectId: domainProject.id, flowId: "flow.orders.native", name: "Native" });
@@ -3444,7 +3454,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
   });
 
   it("inspects and applies non-destructive legacy Flow migration idempotently", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Migration" });
     await service.saveProjectArtifact({
       projectId: project.id,
@@ -3498,7 +3508,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
   });
 
   it("rejects stale Flow saves without overwriting the current revision", async () => {
-    const service = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Save conflicts" });
     const created = await service.createFlow({ projectId: project.id, flowId: "flow.conflict", name: "Original" });
     const saved = await service.saveFlow({ projectId: project.id, expectedUpdatedAt: created.updatedAt, flow: { ...created, name: "Current revision" } });

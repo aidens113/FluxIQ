@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { defaultAutomationWorkspacePrefs } from "./layout";
+import { defaultAutomationWorkspacePrefs } from "./layout/defaults";
 import { createAutomationWorkspaceRenderStore, shallowAutomationWorkspaceRenderInputsSame } from "./render-store";
 
 describe("AutomationWorkspaceRenderStore", () => {

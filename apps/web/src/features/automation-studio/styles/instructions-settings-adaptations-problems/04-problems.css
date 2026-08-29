@@ -1,0 +1,172 @@
+.automation-problems-workspace {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+.automation-problems-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-dense);
+  border-bottom: 1px solid var(--color-border);
+  padding: 10px 12px;
+}
+
+.automation-problems-header > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.automation-problems-header > div > div {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.automation-problems-header strong,
+.automation-problems-header span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-problems-header > div span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+}
+
+.automation-problems-header > span {
+  min-width: 24px;
+  border-radius: var(--radius-control);
+  background: var(--surface-tool);
+  padding: 3px 6px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  text-align: center;
+}
+
+.automation-problem-filters {
+  display: flex;
+  gap: 3px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--color-border);
+  padding: 6px 8px;
+}
+
+.automation-problem-filters button {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text-muted);
+  padding: 5px 8px;
+  font: inherit;
+  font-size: var(--font-size-compact);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.automation-problem-filters button:hover {
+  background: var(--surface-tool);
+}
+
+.automation-problem-filters button[aria-pressed="true"] {
+  border-color: var(--color-selected-border);
+  background: var(--surface-selected);
+  color: var(--color-primary);
+}
+
+.automation-problem-filters button span {
+  color: inherit;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-problem-list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+}
+
+.automation-problem-list li + li {
+  border-top: 1px solid var(--color-border-subtle, var(--color-border));
+}
+
+.automation-problem-list button {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 16px;
+  width: 100%;
+  min-width: 0;
+  align-items: start;
+  gap: 7px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text);
+  padding: 9px 7px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.automation-problem-list button:hover,
+.automation-problem-list button:focus-visible {
+  background: var(--surface-tool);
+  outline: none;
+}
+
+.automation-problem-list button > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.automation-problem-list strong,
+.automation-problem-list small,
+.automation-problem-list em {
+  overflow-wrap: anywhere;
+}
+
+.automation-problem-list small {
+  color: var(--color-text-muted);
+  line-height: 1.35;
+}
+
+.automation-problem-list em {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  font-style: normal;
+}
+
+.automation-problems-empty {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 6px;
+  min-height: 180px;
+  padding: 24px;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.automation-problems-empty strong {
+  color: var(--color-text);
+}
+
+.automation-problems-empty span {
+  max-width: 34ch;
+  font-size: var(--font-size-compact);
+  line-height: 1.4;
+}

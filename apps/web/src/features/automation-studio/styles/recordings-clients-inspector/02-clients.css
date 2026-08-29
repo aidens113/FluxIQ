@@ -1,0 +1,147 @@
+.automation-client-gateway-view {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--space-dense);
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  padding: var(--space-dense);
+}
+
+.automation-client-gateway-view > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-dense);
+  min-width: 0;
+}
+
+.automation-client-gateway-view > header > div {
+  display: grid;
+  gap: var(--space-xxs);
+  min-width: 0;
+}
+
+.automation-client-gateway-view > header span {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-client-gateway-grid {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.7fr) minmax(280px, 1fr);
+  gap: var(--space-dense);
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.automation-client-panel {
+  display: grid;
+  align-content: start;
+  gap: var(--space-sm);
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  padding: var(--space-dense);
+}
+
+.automation-client-panel > header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--color-text);
+}
+
+.automation-client-list,
+.automation-client-pairings {
+  display: grid;
+  gap: var(--space-compact);
+  min-width: 0;
+}
+
+.automation-client-list > button,
+.automation-client-pairings > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-tool);
+  padding: 7px;
+  text-align: left;
+}
+
+.automation-client-list > button {
+  cursor: pointer;
+}
+
+.automation-client-list > button.selected,
+.automation-client-list > button:hover {
+  border-color: var(--color-primary);
+  background: var(--surface-selected);
+}
+
+.automation-client-list span,
+.automation-client-pairings span {
+  display: grid;
+  min-width: 0;
+}
+
+.automation-client-pairings .inline-actions {
+  display: flex;
+  flex: 0 0 auto;
+  grid-auto-flow: column;
+  gap: var(--space-xs);
+}
+
+.automation-client-pairings .inline-actions .button {
+  min-height: 28px;
+}
+
+.automation-client-list small,
+.automation-client-pairings small {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-client-pairing-modal {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-sm);
+  min-width: min(360px, 78vw);
+  text-align: center;
+}
+
+.automation-client-pairing-modal code {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-panel);
+  background: var(--surface-tool);
+  padding: 12px 18px;
+  color: var(--color-text);
+  font-size: var(--font-size-display);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0;
+}
+
+.automation-client-pairing-modal span,
+.automation-client-pairing-modal small {
+  color: var(--color-text-muted);
+}
+
+.automation-tree-empty {
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--space-sm);
+}
+

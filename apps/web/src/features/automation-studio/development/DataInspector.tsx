@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw, Trash2 } from "lucide-react";
 import { Button, DataTable, Modal, Segmented } from "../../programs/shared-ui";
-import type { AutomationStudioCacheStats } from "../controllers/useAutomationStudioCache";
+import type { AutomationStudioCacheStats } from "../cache/data-cache";
 import { useAutomationStudioDevelopmentSnapshot } from "./telemetry";
 
 type ServerMetric = {

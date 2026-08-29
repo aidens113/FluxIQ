@@ -87,6 +87,29 @@ events or unsupported delete events may emit a recovery diagnostic, but the
 caller must choose an explicit reload/recovery path before hydrating broad
 project state again.
 
+## Browser Cache Ownership
+
+Canonical project files, indexes, and SQLite rows remain authoritative. The web
+feature has two non-canonical acceleration layers:
+
+- an in-memory data cache with TTL and typed project/resource scopes for
+  summaries and selected domain documents; and
+- a UI cache for workspace preferences and hierarchy sidebar state, keyed by
+  schema version, user, project, and cache kind.
+
+The UI cache backend is an interface, not a browser-product dependency. The
+current local fallback uses bounded `localStorage`; the program-API adapter
+mirrors the same envelopes through project UI-cache endpoints. Hydration and
+writes run as idle/background work, writes are debounced, and generation checks
+prevent a late cache read from overwriting a newer project interaction.
+Transient selection is removed before workspace view state is persisted.
+
+Neither cache owns Flow, run, recording, instruction, adaptation, or State
+truth. Warm mounted views may preserve local component state during a session,
+but arbitrary hydrated detail is not promised across reloads. Cache misses and
+stale entries must fall back to bounded asynchronous reads behind a stable
+loading surface; they must never block selection or authorize a mutation.
+
 Stable file document IDs are:
 
 | Artifact | Full document | Summary index |
@@ -136,6 +159,27 @@ markers. The first summary read repairs that legacy index once from canonical
 Flow documents and persists both markers; later reads remain summary-only.
 Partial Flow updates and deletes preserve a missing marker until the complete
 repair runs.
+
+Hierarchy navigation has a dedicated SQL sibling-page contract. The
+`list-project-hierarchy-children` endpoint accepts `projectId`, an exact
+`parentId` (or `null` for roots), an opaque cursor, and a bounded limit. The
+repository filters deleted rows in SQL, constrains the query to that exact
+parent, and orders by `sort_key, entry_id`. Its cursor carries both ordering
+values, so equal sort keys remain stable across pages. The service defaults to
+100 rows and clamps requests to 1-500; the browser decoder applies its own
+250-row safety bound, while the hierarchy pager requests the smaller UI row
+page size.
+
+The browser owns independent sibling-page state per parent. Its pager tracks
+cursor, `hasMore`, loading, invalidation, and errors by parent key, aborts stale
+project requests, and exposes exact-parent load-more and retry commands. SQL
+rows are merged by stable hierarchy entry ID with static/system nodes already
+available from project summaries. Static nodes remain visible during project
+activation and first-page hydration, and a remote row never duplicates the
+same static ID. If an older project has no SQL hierarchy rows, the first
+cursorless empty read imports the legacy hierarchy once and retries the page.
+This compatibility import does not make the file summary the ongoing paging
+engine.
 
 Subflow directory summaries are synchronized into the project SQLite store as flow.subflows records. list-flow-subflows applies Flow, status, role, case-insensitive name/ID search, sorting, count, limit, and offset in SQL. Canonical Subflow writes update JSON detail, the compatibility summary index, and SQLite; deletion removes all three. Compact Subflow summaries carry a summary version and canonical graphFlowId; existing JSON and SQLite indexes are backfilled once before paged reads. Duplicating a Subflow clones its canonical graph into a new independently owned graph Flow. Deletion removes that graph Flow plus the Subflow JSON and summary records, and is refused while any Router route or fallback still targets the Subflow. In-memory installations preserve equivalent filter and paging semantics. The SQL directory contract is guarded with 10,000-summary deep-page and combined-filter tests; each local query must remain below 500 ms and no response may exceed the 50-row UI cap.
 

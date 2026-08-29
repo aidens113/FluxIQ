@@ -1,0 +1,100 @@
+"use client";
+
+import { ChevronLeft, ChevronRight, FolderOpen, Search, X } from "lucide-react";
+import { memo, useMemo, useSyncExternalStore, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import type { AutomationSelection } from "../shared/selection-contracts";
+import type { AutomationHierarchyAction, AutomationHierarchyKind, AutomationHierarchyNode } from "./contracts";
+import type { AutomationHierarchyPageInfo } from "./paged-cache";
+import { AutomationProjectTree } from "./ProjectTree";
+import type { AutomationHierarchyRoutableViewId } from "./routing";
+import type { AutomationHierarchyUiCoordinator } from "./ui-coordinator";
+
+export const AutomationProjectHierarchySidebar = memo(function AutomationProjectHierarchySidebar(props: {
+  activeViewId: string;
+  childPageInfo?: Record<string, AutomationHierarchyPageInfo>;
+  collapsed: boolean;
+  coordinator: AutomationHierarchyUiCoordinator;
+  loadMoreChildren?(parentId: string | null): void;
+  nodes: AutomationHierarchyNode[];
+  onCloseProject(): void;
+  onResizeKeyDown(event: KeyboardEvent<HTMLDivElement>): void;
+  onResizePointerDown(event: ReactPointerEvent<HTMLDivElement>): void;
+  onToggleCollapsed(): void;
+  openSubflow(node: AutomationHierarchyNode, mode: "preview" | "new-window"): void;
+  openView(viewId: AutomationHierarchyRoutableViewId, mode?: "preview" | "new-window"): void;
+  projectName: string;
+  recordingPrimaryKind: "recording" | null;
+  requestAction(action: NonNullable<AutomationHierarchyAction>): void;
+  selection: AutomationSelection | null;
+  setRecordingPrimaryKind(kind: "recording" | null): void;
+  setSelection(selection: AutomationSelection): void;
+  sidebarWidth: number;
+  showResizeHandle?: boolean;
+}) {
+  const ui = useSyncExternalStore(props.coordinator.subscribe, props.coordinator.getSnapshot, props.coordinator.getSnapshot);
+  const normalizedSearch = ui.filter.search.trim().toLocaleLowerCase();
+  const matchCount = useMemo(() => props.nodes.filter((node) =>
+    (ui.filter.typeFilter === "all" || node.kind === ui.filter.typeFilter)
+    && (!normalizedSearch || (node.label + " " + node.kind).toLocaleLowerCase().includes(normalizedSearch))
+  ).length, [normalizedSearch, props.nodes, ui.filter.typeFilter]);
+  const updateFilters = (next: { search: string; typeFilter: "all" | AutomationHierarchyKind }) => {
+    props.coordinator.setFilter(next);
+  };
+
+  return (
+    <aside aria-label="Project hierarchy" className="automation-studio-sidebar">
+      <div className="automation-studio-sidebar-heading">
+        {!props.collapsed ? <strong title={props.projectName}>{props.projectName}</strong> : null}
+        <div className="inline-actions">
+          {props.collapsed ? <button className="icon-button" onClick={props.onCloseProject} title="Back to projects" aria-label="Back to projects" type="button"><FolderOpen size={15} aria-hidden /></button> : null}
+          <button aria-expanded={!props.collapsed} className="icon-button" onClick={props.onToggleCollapsed} title={props.collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-label={props.collapsed ? "Expand sidebar" : "Collapse sidebar"} type="button">
+            {props.collapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronLeft size={14} aria-hidden />}
+          </button>
+        </div>
+      </div>
+      {!props.collapsed ? <div className="automation-sidebar-tools">
+        <label className="automation-tree-search">
+          <Search size={14} aria-hidden />
+          <span className="sr-only">Search project hierarchy</span>
+          <input aria-label="Search project hierarchy" onChange={(event) => updateFilters({ ...ui.filter, search: event.target.value })} placeholder="Search objects" type="search" value={ui.filter.search} />
+          {ui.filter.search ? <button aria-label="Clear hierarchy search" className="automation-tree-search-clear" onClick={() => updateFilters({ ...ui.filter, search: "" })} type="button"><X size={13} aria-hidden /></button> : null}
+        </label>
+        <div className="automation-tree-filter-row">
+          <label>
+            <span className="sr-only">Filter project object type</span>
+            <select aria-label="Filter project object type" onChange={(event) => updateFilters({ ...ui.filter, typeFilter: event.target.value as "all" | AutomationHierarchyKind })} value={ui.filter.typeFilter}>
+              <option value="all">All objects</option>
+              <option value="flow">Flows</option>
+              <option value="folder">Folders</option>
+              <option value="subflow">Subflows</option>
+              <option value="flow-object">Flow objects</option>
+              <option value="instruction">Instructions</option>
+              <option value="adaptation">Adaptations</option>
+              <option value="recording">Recordings</option>
+              <option value="run">Runs</option>
+            </select>
+          </label>
+          <small aria-live="polite">{matchCount} match{matchCount === 1 ? "" : "es"}</small>
+        </div>
+      </div> : null}
+      {!props.collapsed ? <AutomationProjectTree
+        nodes={props.nodes}
+        activeViewId={props.activeViewId}
+        selection={props.selection}
+        recordingPrimaryKind={props.recordingPrimaryKind}
+        setRecordingPrimaryKind={props.setRecordingPrimaryKind}
+        search={ui.filter.search}
+        typeFilter={ui.filter.typeFilter}
+        setSelection={props.setSelection}
+        openSubflow={props.openSubflow}
+        openView={props.openView}
+        requestAction={props.requestAction}
+        uiState={ui.tree}
+        onUiStateChange={props.coordinator.setTree}
+        {...(props.childPageInfo ? { childPageInfo: props.childPageInfo } : {})}
+        {...(props.loadMoreChildren ? { loadMoreChildren: props.loadMoreChildren } : {})}
+      /> : null}
+      {!props.collapsed && props.showResizeHandle !== false ? <div aria-label="Resize project hierarchy" aria-orientation="vertical" aria-valuemax={420} aria-valuemin={220} aria-valuenow={Math.round(props.sidebarWidth)} className="automation-sidebar-resizer" onKeyDown={props.onResizeKeyDown} onPointerDown={props.onResizePointerDown} role="separator" tabIndex={0} title="Drag to resize. Use Left and Right arrow keys; Home resets." /> : null}
+    </aside>
+  );
+});

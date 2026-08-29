@@ -393,42 +393,66 @@ flowing into normalization, mining, graph generation, or runtime execution.
 
 ## Program Workspace UI
 
-Workspace composition, hierarchy behavior, recording and proposal surfaces,
-node editors, window management, and project operations are documented in the
-[workspace and authoring UI guide](automation-studio/workspace.md).
+Workspace composition, hierarchy behavior, project lifecycle, scoped store
+ownership, typed view hosting, domain view boundaries, browser-neutral cache and
+synchronization, style ownership, and UI performance contracts are documented
+in the [workspace and authoring UI guide](automation-studio/workspace.md).
+
+The web workspace is a long-lived client application. It publishes a project
+shell and visible selection synchronously, then hydrates bounded summaries and
+selected detail asynchronously under an abortable project-generation guard.
+Project-scoped external stores use selector-aware subscriptions and atomic typed
+transactions so unrelated data or view changes do not rerender the whole
+workspace.
+
+`AutomationStudioLive.tsx` is now only the client entry facade. The modular live
+composition wires project-scoped stores, domain runtimes, workspace regions,
+and overlays; domain views remain owned by their feature directories.
+
+Canonical views have one typed definition containing ID/aliases, metadata,
+availability, lifecycle, cache schema, functionality, and host binding. The
+workspace resolves the definition and component host at render time instead of
+eagerly constructing every view or passing all domain data through an aggregate
+renderer. Hidden warm views follow their declared mount policy. Retired Config
+and proposal-workbench IDs are migrated when context permits or render explicit
+recovery UI; they never become parallel current views.
+
+Current editor vocabulary is Flow-first. Legacy Policy document adapters,
+persisted renderer discriminants, scope/family values, CSS hooks, and deprecated
+aliases remain compatibility boundaries rather than current product concepts.
+Browser performance certification is pending until the manual profiling and
+scale procedures pass on documented hardware.
 
 ## Canonical Persistence
 
-Canonical storage ownership, recording pipeline documents, task artifacts,
-and runtime-session persistence are documented in the
-[persistence guide](automation-studio/persistence.md).
+Canonical storage ownership, recording pipeline documents, Flow artifacts,
+adaptation compatibility data, and runtime-session persistence are documented in
+the [persistence guide](automation-studio/persistence.md).
 
-## Flow-first authoring UI
+## Flow-first Authoring UI
 
 Automation Studio presents one **Flows** tree for project automation. Creating a
 Flow writes the canonical Flow repository directly; users do not choose between
-Tasks and Routines. Blank, deterministic, recorded, integration, scheduled,
-API-endpoint, and reusable presets all create the same canonical artifact with
-safe initial metadata and graph content.
+Task and Routine authoring modes. A top-level Flow owns Router, Subflows,
+Instructions, Recordings, Adaptations, Runtime Debug, and Settings. A Subflow
+owns its Nodes editor and scoped supporting objects, but routing remains a
+top-level Flow responsibility.
 
-The shared visual editor owns graph node and edge edits. Flow-level settings
-such as name, description, typed input/output interfaces, declared errors,
-variables, timeout/concurrency defaults, publication intent, and authorized
-domain grants belong to generated Flow configuration/source artifacts instead
-of the canvas header. Each canonical Flow save materializes a generated config
-artifact under the project `configs/` artifact folder and keeps that artifact
-out of legacy backup/digest calculations. Flow and task rows expose a gear
-action in the hierarchy sidebar that opens the corresponding configuration
-view. Running, switching Flows, closing the project, browser navigation, and
-window close protect unsaved visual graph edits. The palette is grouped by
-built-ins, importer integrations, domain nodes, published public Flows, project
-nodes, trusted-local code nodes, and policy/evidence nodes.
+The shared Flow editor owns graph node and edge edits. Settings own typed
+identity, execution, LLM, adaptation, interface, error, variable, visibility,
+and capability configuration. Instructions are first-class scoped objects.
+State is a global inspection view that can follow a Flow, Subflow, recording,
+node, or run without becoming a Flow hierarchy object.
 
-Existing Task and Routine artifacts are exposed through the Flow compatibility
-catalog as labelled legacy entries. They are intentionally read-only in the
-editor: editing or deleting one cannot silently mutate its legacy source.
-Projects can explicitly migrate those entries using the Flow migration API,
-after which the canonical copy is editable through the same Flow editor.
+Adaptations are the current user-facing review surface for LLM-assisted changes.
+Legacy proposal records and view IDs may remain for persistence compatibility
+and explicit read-only recovery, but proposal generation is not a current
+navigation object or current authoring workflow.
+
+Existing Task and Routine artifacts may still be exposed through explicitly
+labelled, read-only compatibility paths. Migration to a canonical Flow is an
+explicit operation; normal Flow editing must not silently mutate a legacy
+source.
 
 ## Published Flow composition
 

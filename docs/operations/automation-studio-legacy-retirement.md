@@ -8,6 +8,27 @@ Flows.
 This runbook deliberately separates compatibility migration from physical data
 removal. Locking writes does not delete legacy source artifacts.
 
+## Web compatibility surfaces
+
+Persistence compatibility is separate from the retired universal web renderer.
+Automation Studio no longer ships `views/legacy-renderer-adapter.tsx`, and
+`Renderer.tsx` now exports only the typed `AutomationViewHost` contract and its
+request types. Canonical views are published independently into the workspace
+view source; saved unknown, mismatched, or retired IDs recover through explicit
+UI instead of being pushed through a broad aggregate renderer.
+
+Internal Flow-editor focus/save communication and the generic program-workspace
+Automation Studio bridge have also moved from browser `CustomEvent` messages to
+typed props and direct commands. Do not recreate those channels to support a
+legacy view. Program API mutation notifications and development-only metric or
+reconciliation events are integration/diagnostic adapters, not a supported
+legacy view-control API.
+
+The Config view remains a read-only compatibility surface while saved Config
+IDs migrate to Flow Settings. Its presence does not permit new Config editing,
+and removing it requires the same saved-view inventory and recovery evidence as
+other compatibility UI removal.
+
 ## Compatibility window
 
 Every project begins in schema `0.1` with phase `compatibility`. Legacy read

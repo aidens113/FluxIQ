@@ -1,0 +1,240 @@
+.automation-state-layer-region.visual-media,
+.automation-state-layer-element.visual-media,
+.automation-state-overlay.visual-media {
+  --state-visual-color: #f97316;
+  border-color: #f97316;
+  background: rgba(249, 115, 22, 0.055);
+}
+
+.automation-state-layer-region.visual-navigation,
+.automation-state-layer-element.visual-navigation,
+.automation-state-overlay.visual-navigation {
+  --state-visual-color: #14b8a6;
+  border-color: #14b8a6;
+  background: rgba(20, 184, 166, 0.05);
+}
+
+.automation-state-layer-region.visual-list,
+.automation-state-layer-element.visual-list,
+.automation-state-overlay.visual-list {
+  --state-visual-color: #84cc16;
+  border-color: #84cc16;
+  background: rgba(132, 204, 22, 0.045);
+}
+
+.automation-state-layer-region.visual-status,
+.automation-state-layer-element.visual-status,
+.automation-state-overlay.visual-status {
+  --state-visual-color: #f59e0b;
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.06);
+}
+
+.automation-state-layer-region.visual-selected,
+.automation-state-layer-element.visual-selected,
+.automation-state-overlay.visual-selected {
+  --state-visual-color: #06b6d4;
+  border-color: #06b6d4;
+  background: rgba(6, 182, 212, 0.065);
+}
+
+.automation-state-layer-region.visual-disabled,
+.automation-state-layer-element.visual-disabled,
+.automation-state-overlay.visual-disabled {
+  --state-visual-color: #64748b;
+  border-color: #64748b;
+  background: rgba(100, 116, 139, 0.05);
+  border-style: dashed;
+}
+
+.automation-state-layer-region.visual-unknown,
+.automation-state-layer-element.visual-unknown,
+.automation-state-overlay.visual-unknown {
+  --state-visual-color: #6366f1;
+  border-color: #6366f1;
+  background: rgba(99, 102, 241, 0.045);
+}
+
+.automation-state-overlay.tone-action-target {
+  --state-visual-color: #f59e0b;
+  border-color: #f59e0b;
+  background:
+    linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(255, 255, 255, 0.04));
+}
+
+.automation-state-visual-limit {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: var(--layer-raised);
+  max-width: min(460px, calc(100% - 150px));
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  padding: 6px 8px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-state-table-pagination {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-dense);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+  padding: var(--space-sm);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.automation-state-table-pagination > div {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.automation-state-table-pagination button {
+  min-height: 30px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 4px 8px;
+}
+
+.automation-state-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-compact);
+}
+
+.automation-state-table th,
+.automation-state-table td {
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-sm);
+  text-align: left;
+  vertical-align: top;
+}
+
+.automation-state-table tr {
+  cursor: pointer;
+}
+
+.automation-state-table td {
+  color: var(--color-text-muted);
+}
+
+.automation-state-diff-list,
+.automation-state-compare-list {
+  display: grid;
+  align-content: start;
+  gap: var(--space-compact);
+  padding: var(--space-sm);
+}
+
+.automation-state-diff-list > div,
+.automation-state-compare-list > div,
+.automation-state-compare-list button {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: var(--space-sm);
+  text-align: left;
+}
+
+.automation-state-compare-list button {
+  cursor: pointer;
+}
+
+.automation-state-compare-list button:hover {
+  border-color: var(--color-primary);
+}
+
+.automation-state-compare-list button.status-match {
+  border-color: rgba(21, 153, 71, 0.55);
+}
+
+.automation-state-compare-list button.status-mismatch {
+  border-color: rgba(204, 61, 61, 0.7);
+  background: rgba(204, 61, 61, 0.06);
+}
+
+.automation-state-compare-list button.status-irrelevant {
+  border-color: rgba(107, 114, 128, 0.42);
+}
+
+.automation-state-compare-list header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.automation-state-compare-list header span,
+.automation-state-diff-list span,
+.automation-state-diff-list small,
+.automation-state-compare-list span,
+.automation-state-compare-list small {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.automation-state-diff-list code,
+.automation-state-compare-list code,
+.automation-state-raw {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-compact);
+}
+
+.automation-state-raw {
+  margin: 0;
+  padding: var(--space-dense);
+  color: #eef6ff;
+  background: var(--surface-code);
+}
+
+.automation-state-raw-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.automation-state-raw-detail > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-dense);
+  padding: var(--space-dense);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.automation-state-raw-detail > header div {
+  display: grid;
+  gap: 2px;
+}
+
+.automation-state-raw-detail > header span,
+.automation-state-raw-detail > span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.automation-state-raw-detail > span {
+  padding: 0 var(--space-dense);
+}
+
+.automation-state-raw-detail .automation-state-raw {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+

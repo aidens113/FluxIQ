@@ -8,9 +8,17 @@ describe("Automation Studio deep links", () => {
     });
   });
 
-  it("normalizes compatibility view IDs", () => {
+  it("normalizes supported aliases and Flow-scoped retired view IDs", () => {
+    expect(parseAutomationStudioDeepLink("project=p1&flow=f1&view=policy-primary").viewId).toBe("flow-nodes");
     expect(parseAutomationStudioDeepLink("project=p1&view=runs-history").viewId).toBe("runtime-debug");
     expect(parseAutomationStudioDeepLink("project=p1&view=signals-web").viewId).toBe("state-explorer");
+    expect(parseAutomationStudioDeepLink("project=p1&flow=f1&view=proposal-workbench").viewId).toBe("adaptations");
+    expect(parseAutomationStudioDeepLink("project=p1&view=proposal-workbench").viewId).toBeNull();
+    expect(automationStudioDeepLinkParams({
+      projectId: "p1",
+      flowId: "f1",
+      viewId: "proposal-generator"
+    }).get("view")).toBe("adaptations");
   });
 
   it("drops descendants when their parent scope is absent", () => {
@@ -25,10 +33,10 @@ describe("Automation Studio deep links", () => {
   });
 
   it("builds Flow, Subflow, and current-object breadcrumbs", () => {
-    expect(automationStudioWorkspaceBreadcrumbs({ flowId: "flow.top", flowName: "Checkout", subflowId: "subflow.pay", subflowName: "Pay", viewId: "policy-primary", viewLabel: "Nodes" })).toEqual([
+    expect(automationStudioWorkspaceBreadcrumbs({ flowId: "flow.top", flowName: "Checkout", subflowId: "subflow.pay", subflowName: "Pay", viewId: "flow-nodes", viewLabel: "Nodes" })).toEqual([
       { kind: "flow", id: "flow.top", label: "Checkout", current: false },
       { kind: "subflow", id: "subflow.pay", label: "Pay", current: false },
-      { kind: "view", id: "policy-primary", label: "Nodes", current: true }
+      { kind: "view", id: "flow-nodes", label: "Nodes", current: true }
     ]);
   });
 
@@ -40,6 +48,6 @@ describe("Automation Studio deep links", () => {
     expect(automationStudioFlowScope("flow.top", entries)).toEqual({ flowId: "flow.top", subflowId: null });
     expect(automationStudioFlowScope("flow.graph", entries)).toEqual({ flowId: "flow.top", subflowId: "subflow.checkout" });
     expect(automationStudioDefaultViewForLink({ flowId: "flow.top", subflowId: null, viewId: null })).toBe("flow-router");
-    expect(automationStudioDefaultViewForLink({ flowId: "flow.top", subflowId: "subflow.checkout", viewId: null })).toBe("policy-primary");
+    expect(automationStudioDefaultViewForLink({ flowId: "flow.top", subflowId: "subflow.checkout", viewId: null })).toBe("flow-nodes");
     expect(automationStudioDefaultViewForLink({ flowId: "flow.top", subflowId: null, viewId: "flow-settings" })).toBe("flow-settings");
   });});

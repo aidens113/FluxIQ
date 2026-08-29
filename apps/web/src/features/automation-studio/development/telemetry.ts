@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useSyncExternalStore } from "react";
-import type { AutomationStudioCacheStats } from "../controllers/useAutomationStudioCache";
+import type { AutomationStudioCacheStats } from "../cache/data-cache";
 import type { ProgramApiMetric, ProgramApiRequestMetric } from "../../programs/program-api";
 import type { AutomationStudioPerformanceCountersSnapshot, UiLongTaskMetric, UiRenderMetric } from "../../programs/ui-performance";
 

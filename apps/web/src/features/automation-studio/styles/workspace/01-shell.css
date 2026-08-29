@@ -1,0 +1,310 @@
+.automation-studio-shell {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  min-height: 680px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--surface-shell);
+  box-shadow: var(--shadow-panel);
+}
+
+.automation-studio-sidebar {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  align-content: start;
+  gap: var(--space-sm);
+  min-height: 0;
+  border-right: 1px solid var(--color-border);
+  background: var(--surface-tool);
+  padding: var(--space-dense);
+}
+
+.automation-studio-sidebar-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.automation-studio-sidebar-heading strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-studio-nav {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.automation-studio-nav button {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: 34px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text);
+  padding: 6px 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.automation-studio-nav button:hover,
+.automation-studio-nav button.selected {
+  border-color: var(--color-primary);
+  background: var(--surface-selected);
+  color: var(--color-primary);
+}
+
+.automation-studio-nav span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-studio-nav small {
+  min-width: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  padding: 1px 5px;
+  text-align: center;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-studio-sidebar-note {
+  display: grid;
+  gap: var(--space-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: var(--space-dense);
+}
+
+.automation-studio-sidebar-note span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  line-height: 1.4;
+}
+
+.automation-studio-sidebar-note .button {
+  width: 100%;
+}
+
+.automation-sidebar-tools {
+  display: grid;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.automation-tree-search {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 3px 4px 3px 8px;
+  color: var(--color-text-muted);
+}
+
+.automation-tree-search input {
+  width: 100%;
+  min-width: 0;
+  height: 26px;
+  min-height: 26px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.automation-tree-search:focus-within {
+  border-color: var(--color-focus);
+  box-shadow: 0 0 0 2px var(--color-focus-ring);
+}
+
+.automation-tree-search-clear {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.automation-tree-search-clear:hover {
+  background: var(--surface-hover);
+  color: var(--color-text);
+}
+
+.automation-tree-filter-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.automation-tree-filter-row label {
+  min-width: 0;
+}
+
+.automation-tree-filter-row select {
+  width: 100%;
+  min-width: 132px;
+  min-height: 30px;
+  font-size: var(--font-size-compact);
+}
+
+.automation-tree-filter-row small {
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  white-space: nowrap;
+}
+
+.automation-sidebar-resizer {
+  position: absolute;
+  z-index: 4;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 7px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.automation-sidebar-resizer::after {
+  position: absolute;
+  top: 0;
+  right: 2px;
+  bottom: 0;
+  width: 2px;
+  background: transparent;
+  content: "";
+}
+
+.automation-sidebar-resizer:hover::after,
+.automation-sidebar-resizer:focus-visible::after {
+  background: var(--color-primary);
+}
+.automation-studio-main {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+}
+
+.automation-view-grid .workspace-panel {
+  grid-column: span 12;
+}
+
+.automation-view-grid .workspace-panel + .workspace-panel {
+  grid-column: span 6;
+}
+
+.automation-two-pane {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.42fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.automation-two-pane .workspace-panel {
+  grid-column: auto;
+  min-height: 520px;
+}
+
+.program-fullscreen-shell {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.program-fullscreen-shell > .program-global-topbar {
+  flex: 0 0 auto;
+}
+
+.automation-command-center {
+  display: grid;
+  justify-items: center;
+  min-width: 220px;
+  line-height: 1.15;
+}
+
+.automation-command-center span {
+  color: var(--color-success);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+}
+
+.automation-command-center span.running {
+  color: var(--color-primary);
+}
+
+.automation-command-center strong {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.automation-main-command-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-compact);
+  min-width: 0;
+}
+
+.automation-command-menu {
+  min-height: 32px;
+  padding-inline: 9px;
+}
+
+.automation-command-menu svg:first-child {
+  color: var(--color-danger);
+}
+
+.icon-button.run-command {
+  border-color: var(--color-success-border);
+  background: var(--color-surface);
+  color: #18824a;
+}
+
+.icon-button.run-command:hover {
+  border-color: var(--color-success-border);
+  background: var(--color-success-surface);
+  color: #106c32;
+}
+
+.command-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--color-border);
+}
+
+.program-fullscreen-shell > .automation-studio-shell {
+  height: calc(100vh - 49px);
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+

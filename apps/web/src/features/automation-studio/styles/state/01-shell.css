@@ -1,0 +1,179 @@
+.automation-detail-view,
+.automation-config-view,
+.automation-state-view,
+.automation-state-explorer-view {
+  display: grid;
+  align-content: start;
+  gap: var(--space-md);
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-md);
+  background: var(--surface-tool);
+}
+
+.automation-state-view {
+  display: flex;
+  flex-direction: column;
+  align-content: normal;
+  gap: var(--space-sm);
+  overflow: hidden;
+}
+
+.automation-state-view-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.automation-state-view-header > div:first-child {
+  display: grid;
+  gap: var(--space-xxs);
+  min-width: 0;
+}
+
+.automation-state-view-header strong {
+  color: var(--color-text);
+  font-size: var(--font-size-body-large);
+}
+
+.automation-state-view-header span,
+.automation-state-muted {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.automation-state-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-compact);
+}
+
+.automation-state-summary span {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 4px 7px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.automation-state-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-dense);
+}
+
+.automation-state-control {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.automation-state-control > span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+}
+
+.automation-state-control .segmented-control {
+  max-width: 100%;
+}
+
+.automation-state-control .segmented-control button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-state-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  padding: var(--space-dense);
+}
+
+.automation-state-empty span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.automation-state-workspace {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+
+.automation-state-primary {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.automation-state-loading {
+  position: absolute;
+  inset: 0;
+  z-index: var(--layer-sticky);
+  display: grid;
+  place-items: center;
+  background: rgb(248 250 252 / 58%);
+  pointer-events: none;
+}
+
+.automation-state-loading > div {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  max-width: min(320px, calc(100% - 32px));
+  border: 1px solid rgb(16 35 55 / 16%);
+  border-radius: var(--radius-panel);
+  background: rgb(255 255 255 / 94%);
+  padding: 16px 18px;
+  box-shadow: 0 16px 36px rgb(16 35 55 / 16%);
+  text-align: center;
+}
+
+.automation-state-loading strong {
+  color: var(--color-text);
+  font-size: var(--font-size-body-small);
+}
+
+.automation-state-loading small {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-state-loading-spinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid rgb(16 35 55 / 14%);
+  border-top-color: var(--color-primary);
+  border-radius: var(--radius-pill);
+  animation: automation-state-loading-spin var(--motion-activity) linear infinite;
+}
+
+@keyframes automation-state-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+

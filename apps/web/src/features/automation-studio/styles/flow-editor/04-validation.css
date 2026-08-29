@@ -1,0 +1,12 @@
+/* Automation Studio validation and Problems */
+.automation-validation-invalid .automation-policy-node,
+.automation-validation-invalid .automation-routine-node {
+  border-color: var(--color-danger);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-danger) 16%, transparent);
+}
+
+.react-flow__edge.automation-validation-invalid .react-flow__edge-path {
+  stroke: var(--color-danger);
+  stroke-width: 2;
+}
+

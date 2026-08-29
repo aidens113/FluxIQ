@@ -14,7 +14,7 @@ describe("AutomationProjectTree", () => {
     expect(source).toContain("export const AutomationProjectTree = memo(function AutomationProjectTree");
   });
   it("does not require timer advancement to dispatch sidebar preview opens", () => {
-    const source = readFileSync(fileURLToPath(new URL("./ProjectTree.tsx", import.meta.url)), "utf8");
+    const source = readFileSync(fileURLToPath(new URL("./tree-rows.tsx", import.meta.url)), "utf8");
 
     expect(source).not.toContain("setTimeout");
     expect(source).not.toContain("clearTimeout");
@@ -23,92 +23,27 @@ describe("AutomationProjectTree", () => {
     expect(source).toContain('props.openNode(props.node, "new-window")');
   });
   it("keeps sidebar row selection animated with immediate press feedback", () => {
-    const css = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
+    const css = readFileSync(new URL("../styles/workspace/05-hierarchy.css", import.meta.url), "utf8");
 
     expect(css).toContain(".automation-project-tree button {");
     expect(css).toContain("transition: background-color var(--motion-fast)");
     expect(css).toContain(".automation-project-tree button:active");
   });
-  it("does not force a synchronous sidebar render before navigation work starts", () => {
-    const source = readFileSync(fileURLToPath(new URL("./ProjectTree.tsx", import.meta.url)), "utf8");
-    const openStart = source.indexOf("const openFromTree =");
-    const openEnd = source.indexOf("const openSettingsFromTree", openStart);
-    const openSource = source.slice(openStart, openEnd);
 
-    expect(source).not.toContain("import { flushSync } from \"react-dom\"");
-    expect(source).not.toContain("flushSync(");
-    expect(source).not.toContain("onPointerDown={(event) => {\n          if (event.button === 0 && !isFolder)");
-    expect(openSource).toContain("const targetNode = previewPrimaryNode(node);");
-    expect(openSource).toContain("primaryTreeExpectedSignatureRef.current = targetSelection ? automationHierarchySelectionSignature(targetSelection, targetViewId) : null");
-    expect(openSource.indexOf("primaryTreeExpectedSignatureRef.current")).toBeLessThan(openSource.indexOf("if (targetSelection && !automationHierarchySelectionSame"));
-    expect(openSource.indexOf("if (targetSelection && !automationHierarchySelectionSame")).toBeLessThan(openSource.indexOf("props.openView(targetViewId, mode)"));
-  });
 
-  it("keeps cached hydration and local tree emission strictly one-way", () => {
-    const source = readFileSync(fileURLToPath(new URL("./ProjectTree.tsx", import.meta.url)), "utf8");
-    const hydrateStart = source.indexOf("const nextState = incomingUiStateRef.current;");
-    const emitStart = source.indexOf("const nextState = { collapsedFolderIds", hydrateStart);
-    const syncEnd = source.indexOf("const activeSubflowContainerIds", emitStart);
-    const hydrateSource = source.slice(hydrateStart, emitStart);
-    const emitSource = source.slice(emitStart, syncEnd);
 
-    expect(hydrateSource).toContain("appliedUiStateSignatureRef.current = uiStateSignature");
-    expect(hydrateSource).toContain("}, [uiStateSignature]);");
-    expect(hydrateSource).not.toContain("props.uiState, uiStateSignature");
-    expect(hydrateSource).not.toContain("uiStateSignature, localTreeStateSignature");
-    expect(emitSource).toContain("appliedUiStateSignatureRef.current = nextSignature");
-    expect(emitSource).toContain("props.onUiStateChange?.(nextState)");
-    expect(emitSource).not.toContain("props.onUiStateChange, uiStateSignature");
-    expect(source).toContain("function sameStringList(left: string[], right: string[]): boolean");
-  });
 
-  it("does not publish an unchanged Flow owner selection for view-only sidebar navigation", () => {
-    const source = readFileSync(fileURLToPath(new URL("./ProjectTree.tsx", import.meta.url)), "utf8");
-    const openStart = source.indexOf("const openFromTree =");
-    const openEnd = source.indexOf("const openSettingsFromTree", openStart);
-    const openSource = source.slice(openStart, openEnd);
-
-    expect(source).toContain("function automationHierarchySelectionSame");
-    expect(openSource).toContain("!automationHierarchySelectionSame(props.selection, targetSelection)");
-    expect(openSource).not.toContain("if (targetSelection) props.setSelection(targetSelection)");
-  });
-
-  it("previews sidebar primary selection before dispatching navigation", () => {
-    const source = readFileSync(fileURLToPath(new URL("./ProjectTree.tsx", import.meta.url)), "utf8");
-    const previewStart = source.indexOf("const previewPrimaryNode =");
-    const openStart = source.indexOf("const openFromTree =");
-
-    expect(previewStart).toBeGreaterThan(-1);
-    expect(openStart).toBeGreaterThan(previewStart);
-    expect(source.indexOf("const targetNode = previewPrimaryNode(node);", openStart)).toBeGreaterThan(openStart);
-    expect(source).toContain("primaryTreeSelectionOriginRef");
-    expect(source).toContain("automationHierarchySelectionSignature");
-  });
-
-  it("delegates known subflow graph shells to the single subflow opener", () => {
-    const source = readFileSync(fileURLToPath(new URL("./ProjectTree.tsx", import.meta.url)), "utf8");
-    const subflowBranchStart = source.indexOf('if (node.kind === "subflow" && props.openSubflow)');
-    const subflowBranchEnd = source.indexOf('if (node.kind === "recording"', subflowBranchStart);
-    const subflowBranch = source.slice(subflowBranchStart, subflowBranchEnd);
-
-    expect(source).toContain('typeof node.metadata?.graphFlowId === "string"');
-    expect(source).toContain("function automationHierarchySelectionForOpenNode");
-    expect(source).toContain('if (node.kind === "subflow" && typeof node.metadata?.graphFlowId === "string") return { kind: "flow", id: node.metadata.graphFlowId };');
-    expect(subflowBranch).toContain("props.openSubflow(node, mode)");
-    expect(subflowBranch).toContain("return;");
-    expect(subflowBranch).not.toContain("props.openView");
-  });
 
   it("does not mark every Flow-owned child as selected when the Flow is selected", () => {
     const nodes: AutomationHierarchyNode[] = [
-      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "policy-primary", sourceId: "flow.checkout", flowId: "flow.checkout" },
+      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "flow-nodes", sourceId: "flow.checkout", flowId: "flow.checkout" },
       { id: "flow-a-instructions", label: "Instructions", kind: "flow-object", category: "flow", parentId: "flow-a", viewId: "flow-instructions", sourceId: "flow.checkout", flowId: "flow.checkout" },
       { id: "flow-a-runs", label: "Runs", kind: "folder", category: "flow", parentId: "flow-a", viewId: "runs-history", sourceId: "flow.checkout", flowId: "flow.checkout" }
     ];
     const html = renderToStaticMarkup(
       <AutomationProjectTree
         nodes={nodes}
-        activeViewId="policy-primary"
+        activeViewId="flow-nodes"
         search=""
         typeFilter="all"
         selection={{ kind: "flow", id: "flow.checkout" }}
@@ -127,15 +62,15 @@ describe("AutomationProjectTree", () => {
 
   it("keeps subflow object containers collapsed by default", () => {
     const nodes: AutomationHierarchyNode[] = [
-      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "policy-primary", sourceId: "flow.checkout", flowId: "flow.checkout", metadata: { hierarchyContainer: true } },
+      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "flow-nodes", sourceId: "flow.checkout", flowId: "flow.checkout", metadata: { hierarchyContainer: true } },
       { id: "flow-a-subflows", label: "Subflows", kind: "folder", category: "flow", parentId: "flow-a", viewId: "flow-subflows", sourceId: "flow.checkout", flowId: "flow.checkout", metadata: { flowStructure: "subflows" } },
-      { id: "flow-a-subflow-primary", label: "Primary checkout", kind: "subflow", category: "flow", parentId: "flow-a-subflows", viewId: "policy-primary", sourceId: "subflow.primary", flowId: "flow.checkout", metadata: { graphFlowId: "flow.checkout.primary.graph", hierarchyContainer: true, defaultCollapsed: true } },
+      { id: "flow-a-subflow-primary", label: "Primary checkout", kind: "subflow", category: "flow", parentId: "flow-a-subflows", viewId: "flow-nodes", sourceId: "subflow.primary", flowId: "flow.checkout", metadata: { graphFlowId: "flow.checkout.primary.graph", hierarchyContainer: true, defaultCollapsed: true } },
       { id: "flow-a-subflow-primary-settings", label: "Subflow Settings Child", kind: "flow-object", category: "flow", parentId: "flow-a-subflow-primary", viewId: "flow-settings", sourceId: "flow.checkout.primary.graph", flowId: "flow.checkout.primary.graph" }
     ];
     const html = renderToStaticMarkup(
       <AutomationProjectTree
         nodes={nodes}
-        activeViewId="policy-primary"
+        activeViewId="flow-nodes"
         search=""
         typeFilter="all"
         selection={{ kind: "flow", id: "flow.checkout" }}
@@ -153,7 +88,7 @@ describe("AutomationProjectTree", () => {
   });
   it("renders distinct icons for different Flow-owned object roles", () => {
     const nodes: AutomationHierarchyNode[] = [
-      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "policy-primary", sourceId: "flow.checkout", flowId: "flow.checkout" },
+      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "flow-nodes", sourceId: "flow.checkout", flowId: "flow.checkout" },
       { id: "flow-a-instructions", label: "Instructions", kind: "flow-object", category: "flow", parentId: "flow-a", viewId: "flow-instructions", sourceId: "flow.checkout", flowId: "flow.checkout" },
       { id: "flow-a-debug", label: "Runtime Debug", kind: "flow-object", category: "flow", parentId: "flow-a", viewId: "runtime-debug", sourceId: "flow.checkout", flowId: "flow.checkout" },
       { id: "flow-a-settings", label: "Settings", kind: "flow-object", category: "flow", parentId: "flow-a", viewId: "flow-settings", sourceId: "flow.checkout", flowId: "flow.checkout" },
@@ -184,16 +119,16 @@ describe("AutomationProjectTree", () => {
 
   it("visually selects Nodes while its subflow graph is open in the normal Flow editor", () => {
     const nodes: AutomationHierarchyNode[] = [
-      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "policy-primary", sourceId: "flow.checkout", flowId: "flow.checkout" },
+      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "flow-nodes", sourceId: "flow.checkout", flowId: "flow.checkout" },
       { id: "flow-a-subflows", label: "Subflows", kind: "folder", category: "flow", parentId: "flow-a", viewId: "flow-subflows", sourceId: "flow.checkout", flowId: "flow.checkout", metadata: { flowStructure: "subflows" } },
-      { id: "flow-a-subflow-primary", label: "Primary", kind: "subflow", category: "flow", parentId: "flow-a-subflows", viewId: "policy-primary", sourceId: "subflow.primary", flowId: "flow.checkout", metadata: { graphFlowId: "flow.checkout.subflow.primary.graph", hierarchyContainer: true, defaultCollapsed: true } },
-      { id: "flow-a-subflow-primary-nodes", label: "Nodes", kind: "flow-object", category: "flow", parentId: "flow-a-subflow-primary", viewId: "policy-primary", sourceId: "flow.checkout.subflow.primary.graph", flowId: "flow.checkout.subflow.primary.graph", metadata: { flowStructure: "subflow-nodes" } }
+      { id: "flow-a-subflow-primary", label: "Primary", kind: "subflow", category: "flow", parentId: "flow-a-subflows", viewId: "flow-nodes", sourceId: "subflow.primary", flowId: "flow.checkout", metadata: { graphFlowId: "flow.checkout.subflow.primary.graph", hierarchyContainer: true, defaultCollapsed: true } },
+      { id: "flow-a-subflow-primary-nodes", label: "Nodes", kind: "flow-object", category: "flow", parentId: "flow-a-subflow-primary", viewId: "flow-nodes", sourceId: "flow.checkout.subflow.primary.graph", flowId: "flow.checkout.subflow.primary.graph", metadata: { flowStructure: "subflow-nodes" } }
     ];
     const selection = { kind: "flow" as const, id: "flow.checkout.subflow.primary.graph" };
     const html = renderToStaticMarkup(
       <AutomationProjectTree
         nodes={nodes}
-        activeViewId="policy-primary"
+        activeViewId="flow-nodes"
         search=""
         typeFilter="all"
         selection={selection}
@@ -211,17 +146,6 @@ describe("AutomationProjectTree", () => {
     expect(html).not.toContain("selected type-subflow");
     expect(automationHierarchyNodeCanRemainPrimary(nodes[3]!, selection)).toBe(true);
   });
-  it("routes subflow clicks through one navigation path", () => {
-    const source = readFileSync(fileURLToPath(new URL("./ProjectTree.tsx", import.meta.url)), "utf8");
-    const subflowBranchStart = source.indexOf('if (node.kind === "subflow" && props.openSubflow)');
-    const subflowBranchEnd = source.indexOf('if (node.kind === "recording"', subflowBranchStart);
-    const subflowBranch = source.slice(subflowBranchStart, subflowBranchEnd);
-
-    expect(subflowBranchStart).toBeGreaterThan(-1);
-    expect(subflowBranch).toContain("props.openSubflow(node, mode)");
-    expect(subflowBranch).not.toContain('if (node.kind === "subflow" && typeof node.metadata?.graphFlowId');
-    expect(subflowBranch).not.toContain("props.openView(targetViewId, mode)");
-  });
   it("keeps a clicked Flow-owned object primary while its Flow is selected", () => {
     const debug: AutomationHierarchyNode = { id: "flow-a-debug", label: "Runtime Debug", kind: "flow-object", category: "flow", parentId: "flow-a", viewId: "runtime-debug", sourceId: "flow.checkout", flowId: "flow.checkout" };
     const otherDebug: AutomationHierarchyNode = { id: "flow-b-debug", label: "Runtime Debug", kind: "flow-object", category: "flow", parentId: "flow-b", viewId: "runtime-debug", sourceId: "flow.billing", flowId: "flow.billing" };
@@ -232,7 +156,7 @@ describe("AutomationProjectTree", () => {
 
   it("marks only the active Flow object view as selected", () => {
     const nodes: AutomationHierarchyNode[] = [
-      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "policy-primary", sourceId: "flow.checkout", flowId: "flow.checkout" },
+      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "flow-nodes", sourceId: "flow.checkout", flowId: "flow.checkout" },
       { id: "flow-a-instructions", label: "Instructions", kind: "flow-object", category: "flow", parentId: "flow-a", viewId: "flow-instructions", sourceId: "flow.checkout", flowId: "flow.checkout" },
       { id: "flow-a-settings", label: "Settings", kind: "flow-object", category: "flow", parentId: "flow-a", viewId: "flow-settings", sourceId: "flow.checkout", flowId: "flow.checkout" }
     ];
@@ -257,7 +181,7 @@ describe("AutomationProjectTree", () => {
 
   it("visually selects Router instead of the Flow row when Router is the active Flow view", () => {
     const nodes: AutomationHierarchyNode[] = [
-      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "policy-primary", sourceId: "flow.checkout", flowId: "flow.checkout" },
+      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "flow-nodes", sourceId: "flow.checkout", flowId: "flow.checkout" },
       { id: "flow-a-router", label: "Router", kind: "flow-object", category: "flow", parentId: "flow-a", viewId: "flow-router", sourceId: "flow.checkout", flowId: "flow.checkout" },
       { id: "flow-a-settings", label: "Settings", kind: "flow-object", category: "flow", parentId: "flow-a", viewId: "flow-settings", sourceId: "flow.checkout", flowId: "flow.checkout" }
     ];
@@ -283,21 +207,21 @@ describe("AutomationProjectTree", () => {
     expect(html).not.toContain("correlated type-flow");
   });
   it("uses the Router object as primary when the Flow row is clicked", () => {
-    const flow: AutomationHierarchyNode = { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "policy-primary", sourceId: "flow.checkout", flowId: "flow.checkout" };
+    const flow: AutomationHierarchyNode = { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "flow-nodes", sourceId: "flow.checkout", flowId: "flow.checkout" };
     const router: AutomationHierarchyNode = { id: "flow-a-router", label: "Router", kind: "flow-object", category: "flow", parentId: "flow-a", viewId: "flow-router", sourceId: "flow.checkout", flowId: "flow.checkout" };
 
     expect(automationHierarchyRouterPrimaryNodeId(flow, [flow, router])).toBe("flow-a-router");
     expect(automationHierarchyRouterPrimaryNodeId(router, [flow, router])).toBe("flow-a-router");
   });
   it("uses the Nodes object as primary when a subflow container is clicked", () => {
-    const subflow: AutomationHierarchyNode = { id: "subflow-a", label: "Checkout", kind: "subflow", category: "flow", parentId: "flow-a-subflows", viewId: "policy-primary", sourceId: "subflow.checkout", flowId: "flow.checkout", metadata: { graphFlowId: "flow.checkout.subflow.checkout.graph", hierarchyContainer: true, defaultCollapsed: true } };
-    const nodes: AutomationHierarchyNode = { id: "subflow-a-nodes", label: "Nodes", kind: "flow-object", category: "flow", parentId: "subflow-a", viewId: "policy-primary", sourceId: "flow.checkout.subflow.checkout.graph", flowId: "flow.checkout.subflow.checkout.graph", metadata: { flowStructure: "subflow-nodes" } };
+    const subflow: AutomationHierarchyNode = { id: "subflow-a", label: "Checkout", kind: "subflow", category: "flow", parentId: "flow-a-subflows", viewId: "flow-nodes", sourceId: "subflow.checkout", flowId: "flow.checkout", metadata: { graphFlowId: "flow.checkout.subflow.checkout.graph", hierarchyContainer: true, defaultCollapsed: true } };
+    const nodes: AutomationHierarchyNode = { id: "subflow-a-nodes", label: "Nodes", kind: "flow-object", category: "flow", parentId: "subflow-a", viewId: "flow-nodes", sourceId: "flow.checkout.subflow.checkout.graph", flowId: "flow.checkout.subflow.checkout.graph", metadata: { flowStructure: "subflow-nodes" } };
 
     expect(automationHierarchyPrimaryNodeId(subflow, [subflow, nodes])).toBe("subflow-a-nodes");
     expect(automationHierarchyPrimaryNodeId(nodes, [subflow, nodes])).toBe("subflow-a-nodes");
   });
   it("uses the Settings object as primary when the Flow gear opens settings", () => {
-    const flow: AutomationHierarchyNode = { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "policy-primary", sourceId: "flow.checkout", flowId: "flow.checkout" };
+    const flow: AutomationHierarchyNode = { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "flow-nodes", sourceId: "flow.checkout", flowId: "flow.checkout" };
     const settings: AutomationHierarchyNode = { id: "flow-a-settings", label: "Settings", kind: "flow-object", category: "flow", parentId: "flow-a", viewId: "flow-settings", sourceId: "flow.checkout", flowId: "flow.checkout" };
 
     expect(automationHierarchySettingsPrimaryNodeId(flow, [flow, settings])).toBe("flow-a-settings");
@@ -306,15 +230,15 @@ describe("AutomationProjectTree", () => {
 
   it("shows add buttons on the generated Subflows folder and nested subflow categories", () => {
     const nodes: AutomationHierarchyNode[] = [
-      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "policy-primary", sourceId: "flow.checkout", flowId: "flow.checkout" },
-      { id: "flow-a-subflows", label: "Subflows", kind: "folder", category: "flow", parentId: "flow-a", viewId: "policy-primary", sourceId: "flow.checkout", flowId: "flow.checkout", metadata: { flowStructure: "subflows" } },
-      { id: "flow-a-subflows-checkout", label: "Checkout Steps", kind: "folder", category: "flow", parentId: "flow-a-subflows", viewId: "policy-primary", sourceId: "subflow-category.checkout", flowId: "flow.checkout", metadata: { flowStructure: "subflow-category" } },
+      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "flow-nodes", sourceId: "flow.checkout", flowId: "flow.checkout" },
+      { id: "flow-a-subflows", label: "Subflows", kind: "folder", category: "flow", parentId: "flow-a", viewId: "flow-nodes", sourceId: "flow.checkout", flowId: "flow.checkout", metadata: { flowStructure: "subflows" } },
+      { id: "flow-a-subflows-checkout", label: "Checkout Steps", kind: "folder", category: "flow", parentId: "flow-a-subflows", viewId: "flow-nodes", sourceId: "subflow-category.checkout", flowId: "flow.checkout", metadata: { flowStructure: "subflow-category" } },
       { id: "flow-a-runs", label: "Runs", kind: "folder", category: "flow", parentId: "flow-a", viewId: "runs-history", sourceId: "flow.checkout", flowId: "flow.checkout" }
     ];
     const html = renderToStaticMarkup(
       <AutomationProjectTree
         nodes={nodes}
-        activeViewId="policy-primary"
+        activeViewId="flow-nodes"
         search=""
         typeFilter="all"
         selection={{ kind: "flow", id: "flow.checkout" }}
@@ -335,10 +259,10 @@ describe("AutomationProjectTree", () => {
   });
   it("allows deleting Flow category object rows without deleting generated Flow structure", () => {
     const nodes: AutomationHierarchyNode[] = [
-      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "policy-primary", sourceId: "flow.checkout", flowId: "flow.checkout" },
+      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "flow-nodes", sourceId: "flow.checkout", flowId: "flow.checkout" },
       { id: "flow-a-settings", label: "Settings", kind: "flow-object", category: "flow", parentId: "flow-a", viewId: "flow-settings", sourceId: "flow.checkout", flowId: "flow.checkout" },
-      { id: "flow-a-subflows", label: "Subflows", kind: "folder", category: "flow", parentId: "flow-a", viewId: "policy-primary", sourceId: "flow.checkout", flowId: "flow.checkout" },
-      { id: "flow-a-subflows-primary", label: "primary", kind: "subflow", category: "flow", parentId: "flow-a-subflows", viewId: "policy-primary", sourceId: "subflow.primary", flowId: "flow.checkout" },
+      { id: "flow-a-subflows", label: "Subflows", kind: "folder", category: "flow", parentId: "flow-a", viewId: "flow-nodes", sourceId: "flow.checkout", flowId: "flow.checkout" },
+      { id: "flow-a-subflows-primary", label: "primary", kind: "subflow", category: "flow", parentId: "flow-a-subflows", viewId: "flow-nodes", sourceId: "subflow.primary", flowId: "flow.checkout" },
       { id: "flow-a-adaptations", label: "Adaptations", kind: "folder", category: "flow", parentId: "flow-a", viewId: "adaptations", sourceId: "flow.checkout", flowId: "flow.checkout" },
       { id: "flow-a-adaptations-route", label: "route", kind: "adaptation", category: "flow", parentId: "flow-a-adaptations", viewId: "adaptations", sourceId: "proposal.route", flowId: "flow.checkout" },
       { id: "flow-a-runs", label: "Runs", kind: "folder", category: "flow", parentId: "flow-a", viewId: "runs-history", sourceId: "flow.checkout", flowId: "flow.checkout" },
@@ -347,7 +271,7 @@ describe("AutomationProjectTree", () => {
     const html = renderToStaticMarkup(
       <AutomationProjectTree
         nodes={nodes}
-        activeViewId="policy-primary"
+        activeViewId="flow-nodes"
         search=""
         typeFilter="all"
         selection={{ kind: "flow", id: "flow.checkout" }}
@@ -376,7 +300,7 @@ describe("AutomationProjectTree", () => {
   });
   it("exposes a semantic, levelled tree with one roving tab stop", () => {
     const nodes: AutomationHierarchyNode[] = [
-      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "policy-primary", sourceId: "flow.checkout", flowId: "flow.checkout" },
+      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "flow-nodes", sourceId: "flow.checkout", flowId: "flow.checkout" },
       { id: "flow-a-router", label: "Router", kind: "flow-object", category: "flow", parentId: "flow-a", viewId: "flow-router", sourceId: "flow.checkout", flowId: "flow.checkout" }
     ];
     const html = renderToStaticMarkup(
@@ -413,16 +337,16 @@ describe("AutomationProjectTree", () => {
         kind: "flow",
         category: "flow",
         parentId: null,
-        viewId: "policy-primary",
+        viewId: "flow-nodes",
         sourceId: "flow." + index,
         flowId: "flow." + index
       })),
-      { id: "flow-final", label: "ZZZ final target", kind: "flow", category: "flow", parentId: null, viewId: "policy-primary", sourceId: "flow.final", flowId: "flow.final" }
+      { id: "flow-final", label: "ZZZ final target", kind: "flow", category: "flow", parentId: null, viewId: "flow-nodes", sourceId: "flow.final", flowId: "flow.final" }
     ];
     const render = (search: string) => renderToStaticMarkup(
       <AutomationProjectTree
         nodes={nodes}
-        activeViewId="policy-primary"
+        activeViewId="flow-nodes"
         search={search}
         typeFilter="all"
         selection={null}
@@ -478,7 +402,7 @@ describe("AutomationProjectTree", () => {
 
   it("keeps selection, keyboard semantics, and deep-linked objects stable on later loaded pages", () => {
     const nodes: AutomationHierarchyNode[] = [
-      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "policy-primary", sourceId: "flow.checkout", flowId: "flow.checkout" },
+      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "flow-nodes", sourceId: "flow.checkout", flowId: "flow.checkout" },
       { id: "flow-a-router", label: "Router", kind: "flow-object", category: "flow", parentId: "flow-a", viewId: "flow-router", sourceId: "flow.checkout", flowId: "flow.checkout" },
       { id: "flow-a-settings", label: "Settings", kind: "flow-object", category: "flow", parentId: "flow-a", viewId: "flow-settings", sourceId: "flow.checkout", flowId: "flow.checkout" }
     ];

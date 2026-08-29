@@ -1,3 +1,4 @@
+import { automationStudioViewId } from "./views/view-registry";
 import type { JsonObject } from "../programs/program-api";
 
 export type AutomationStudioUiRequestIntent = "catalog" | "summary" | "detail" | "mutation";
@@ -107,8 +108,8 @@ export function automationStudioLazyPreloadPlan(input: AutomationStudioLazyPrelo
     if (input.graphViewportBounds) add(1, "detail", "get-graph-viewport", { projectId, flowId, bounds: input.graphViewportBounds, limit: 200 }, "Warm only the visible graph viewport.");
   }
 
-  if (flowId && (viewIds.has("adaptations") || viewIds.has("flow-adaptations"))) add(2, "summary", "list-flow-adaptations", { projectId, flowId, limit: 25, offset: 0 }, "Warm the open adaptations inbox page.");
-  if (flowId && viewIds.has("flow-settings")) add(2, "detail", "get-flow-metadata-detail", { projectId, flowId }, "Warm editable Flow settings metadata.");
+  if (flowId && (viewIds.has(automationStudioViewId.adaptations) || viewIds.has("flow-adaptations"))) add(2, "summary", "list-flow-adaptations", { projectId, flowId, limit: 25, offset: 0 }, "Warm the open adaptations inbox page.");
+  if (flowId && viewIds.has(automationStudioViewId.settings)) add(2, "detail", "get-flow-metadata-detail", { projectId, flowId }, "Warm editable Flow settings metadata.");
   if (runId) {
     add(2, "detail", "list-flow-run-events", { projectId, runId, afterSequence: 0, limit: 50 }, "Warm the first runtime event page for the selected run.");
     add(3, "detail", "list-flow-run-actions", { projectId, runId, limit: 50, offset: 0 }, "Warm the selected run action page after the event log is available.");

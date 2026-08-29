@@ -1,10 +1,10 @@
 import { Blocks } from "lucide-react";
 import { describe, expect, it } from "vitest";
-import type { AutomationViewInstance } from "../types";
+import type { AutomationViewInstance } from "../views/view-types";
 import { automationViewAdderOptions } from "./view-adder";
 
 const views: AutomationViewInstance[] = [
-  { id: "policy-primary", label: "Flow", type: "design", icon: Blocks },
+  { id: "flow-nodes", label: "Flow", type: "design", icon: Blocks },
   { id: "flow-router", label: "Router", type: "router", icon: Blocks },
   { id: "timeline-recording", label: "Timeline", type: "recordings", icon: Blocks },
   { id: "runtime-debug", label: "Runtime Debug", type: "runtime", icon: Blocks },
@@ -17,7 +17,7 @@ describe("Automation Studio View Adder options", () => {
   it("keeps main and Inspector options in their fixed regions", () => {
     const context = { hasProject: true, hasFlow: true, hasRecording: true, hasSelection: true };
     expect(automationViewAdderOptions(views, "main", context, new Set()).map((item) => item.view.id)).toEqual([
-      "policy-primary",
+      "flow-nodes",
       "flow-router",
       "timeline-recording",
       "runtime-debug"
@@ -35,7 +35,7 @@ describe("Automation Studio View Adder options", () => {
       { hasProject: true, hasFlow: false, hasRecording: false, hasSelection: false },
       new Set(["runtime-debug"])
     );
-    expect(options.find((item) => item.view.id === "policy-primary")?.disabledReason).toBe("Select a Flow or subflow first");
+    expect(options.find((item) => item.view.id === "flow-nodes")?.disabledReason).toBe("Select a Flow or subflow first");
     expect(options.find((item) => item.view.id === "timeline-recording")?.disabledReason).toBe("Select a recording first");
     expect(options.find((item) => item.view.id === "runtime-debug")?.disabledReason).toBe("Select a Flow or subflow first");
     const duplicate = automationViewAdderOptions(

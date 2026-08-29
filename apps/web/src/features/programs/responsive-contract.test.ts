@@ -1,7 +1,7 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { readCssManifest } from "./css-manifest-test-helper";
 
-const css = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
+const css = readCssManifest(new URL("../../app/globals.css", import.meta.url));
 
 function mediaBlock(start: string, next?: string): string {
   const from = css.indexOf(start);

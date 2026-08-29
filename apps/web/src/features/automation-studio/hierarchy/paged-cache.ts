@@ -8,6 +8,7 @@ export type AutomationHierarchyPageInfo = {
   loadedCount: number;
   loading?: boolean;
   invalidated?: boolean;
+  error?: string;
 };
 
 export type AutomationHierarchyChildrenPage = {
@@ -82,27 +83,55 @@ export function applyAutomationHierarchyChildrenPage(cache: AutomationHierarchyP
 }
 
 export function applyAutomationHierarchyCacheUpdates(cache: AutomationHierarchyPageCache, updates: AutomationHierarchyCacheUpdate[]): AutomationHierarchyPageCache {
-  let next = cloneAutomationHierarchyPageCache(cache);
-  for (const update of updates) next = applyAutomationHierarchyCacheUpdate(next, update);
+  const next = cloneAutomationHierarchyPageCache(cache);
+  const dirtyParentKeys = new Set<string>();
+  for (const update of updates) applyAutomationHierarchyCacheUpdateInPlace(next, update, dirtyParentKeys);
+  for (const parentKey of dirtyParentKeys) {
+    const childIds = next.childIdsByParentKey.get(parentKey) ?? [];
+    next.childIdsByParentKey.set(parentKey, sortChildIds(childIds, next.nodesById));
+    const pageInfo = next.pageInfoByParentKey.get(parentKey);
+    if (pageInfo) next.pageInfoByParentKey.set(parentKey, { ...pageInfo, loadedCount: childIds.length });
+  }
   return next;
 }
 
 export function applyAutomationHierarchyCacheUpdate(cache: AutomationHierarchyPageCache, update: AutomationHierarchyCacheUpdate): AutomationHierarchyPageCache {
   const next = cloneAutomationHierarchyPageCache(cache);
-  next.lastSequence = Math.max(next.lastSequence, update.sequence);
-  for (const entryId of update.deletedEntryIds ?? []) removeNode(next, entryId);
-  if (update.operation === "delete") removeNode(next, update.entryId);
-  if (update.entry) {
-    const previous = next.nodesById.get(update.entry.id);
-    next.nodesById.set(update.entry.id, update.entry);
-    if (previous?.parentId && previous.parentId !== update.entry.parentId) removeChildId(next, previous.parentId, update.entry.id);
-    const parentKey = automationHierarchyPageKey(update.entry.parentId);
-    const childIds = next.childIdsByParentKey.get(parentKey);
-    if (childIds?.includes(update.entry.id)) next.childIdsByParentKey.set(parentKey, sortChildIds(childIds, next.nodesById));
-  }
-  for (const parentId of update.invalidateParentEntryIds ?? []) markParentInvalidated(next, parentId);
-  for (const subtreeId of update.invalidateSubtreeEntryIds ?? []) markSubtreeInvalidated(next, subtreeId);
+  applyAutomationHierarchyCacheUpdateInPlace(next, update);
   return next;
+}
+
+function applyAutomationHierarchyCacheUpdateInPlace(
+  cache: AutomationHierarchyPageCache,
+  update: AutomationHierarchyCacheUpdate,
+  dirtyParentKeys?: Set<string>
+): void {
+  if (update.sequence <= cache.lastSequence) return;
+  cache.lastSequence = update.sequence;
+  for (const entryId of update.deletedEntryIds ?? []) removeNode(cache, entryId);
+  if (update.operation === "delete") removeNode(cache, update.entryId);
+  if (update.entry) {
+    const previous = cache.nodesById.get(update.entry.id);
+    cache.nodesById.set(update.entry.id, update.entry);
+    if (previous && previous.parentId !== update.entry.parentId) {
+      removeChildId(cache, previous.parentId, update.entry.id);
+    }
+    const parentKey = automationHierarchyPageKey(update.entry.parentId);
+    const childIds = cache.childIdsByParentKey.get(parentKey) ?? [];
+    const nextChildIds = previous?.parentId === update.entry.parentId ? childIds : [...childIds, update.entry.id];
+    if (dirtyParentKeys) {
+      cache.childIdsByParentKey.set(parentKey, nextChildIds);
+      dirtyParentKeys.add(parentKey);
+    } else {
+      cache.childIdsByParentKey.set(parentKey, sortChildIds(nextChildIds, cache.nodesById));
+      const pageInfo = cache.pageInfoByParentKey.get(parentKey);
+      if (pageInfo) {
+        cache.pageInfoByParentKey.set(parentKey, { ...pageInfo, loadedCount: nextChildIds.length });
+      }
+    }
+  }
+  for (const parentId of update.invalidateParentEntryIds ?? []) markParentInvalidated(cache, parentId);
+  for (const subtreeId of update.invalidateSubtreeEntryIds ?? []) markSubtreeInvalidated(cache, subtreeId);
 }
 
 export function automationHierarchyLoadedNodes(cache: AutomationHierarchyPageCache): AutomationHierarchyNode[] {
@@ -123,14 +152,29 @@ function cloneAutomationHierarchyPageCache(cache: AutomationHierarchyPageCache):
 }
 
 function removeNode(cache: AutomationHierarchyPageCache, nodeId: string): void {
-  const childKey = automationHierarchyPageKey(nodeId);
-  for (const childId of cache.childIdsByParentKey.get(childKey) ?? []) removeNode(cache, childId);
-  cache.nodesById.delete(nodeId);
-  cache.childIdsByParentKey.delete(childKey);
-  cache.pageInfoByParentKey.delete(childKey);
-  for (const ids of cache.childIdsByParentKey.values()) {
-    const index = ids.indexOf(nodeId);
-    if (index >= 0) ids.splice(index, 1);
+  const pending = [nodeId];
+  const removed = new Set<string>();
+  while (pending.length) {
+    const currentId = pending.pop()!;
+    if (removed.has(currentId)) continue;
+    removed.add(currentId);
+    pending.push(...(cache.childIdsByParentKey.get(automationHierarchyPageKey(currentId)) ?? []));
+  }
+  for (const removedId of removed) {
+    cache.nodesById.delete(removedId);
+    const childKey = automationHierarchyPageKey(removedId);
+    cache.childIdsByParentKey.delete(childKey);
+    cache.pageInfoByParentKey.delete(childKey);
+  }
+  for (const [parentKey, ids] of cache.childIdsByParentKey) {
+    const remaining = ids.filter((id) => !removed.has(id));
+    if (remaining.length !== ids.length) {
+      cache.childIdsByParentKey.set(parentKey, remaining);
+      const pageInfo = cache.pageInfoByParentKey.get(parentKey);
+      if (pageInfo) {
+        cache.pageInfoByParentKey.set(parentKey, { ...pageInfo, loadedCount: remaining.length });
+      }
+    }
   }
 }
 

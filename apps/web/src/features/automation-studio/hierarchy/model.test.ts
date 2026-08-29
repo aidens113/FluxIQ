@@ -27,7 +27,7 @@ describe("flowHierarchyNodes", () => {
     const subflowsFolder = nodes.find((node) => node.kind === "folder" && node.label === "Subflows");
     const subflows = nodes.filter((node) => node.kind === "subflow");
 
-    expect(flow).toMatchObject({ label: "Checkout", parentId: null, viewId: "policy-primary", sourceId: "flow.checkout" });
+    expect(flow).toMatchObject({ label: "Checkout", parentId: null, viewId: "flow-nodes", sourceId: "flow.checkout" });
     expect(nodes).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "flow-object", label: "Instructions", parentId: flow?.id, viewId: "flow-instructions", flowId: "flow.checkout" }),
       expect.objectContaining({ kind: "folder", label: "Recordings", parentId: flow?.id, viewId: "timeline-recording", flowId: "flow.checkout" }),
@@ -52,7 +52,7 @@ describe("flowHierarchyNodes", () => {
     expect(subflowsFolder).toMatchObject({ parentId: flow?.id, viewId: "flow-subflows", flowId: "flow.checkout" });
     expect(subflows).toHaveLength(2);
     expect(subflows.map((node) => node.label)).toContain("Primary checkout");
-    expect(subflows.every((node) => node.parentId === subflowsFolder?.id && node.viewId === "policy-primary" && node.flowId === "flow.checkout" && typeof node.metadata?.graphFlowId === "string")).toBe(true);
+    expect(subflows.every((node) => node.parentId === subflowsFolder?.id && node.viewId === "flow-nodes" && node.flowId === "flow.checkout" && typeof node.metadata?.graphFlowId === "string")).toBe(true);
   });
 
   it("does not multiply unlinked recordings across Flow hierarchies", () => {
@@ -101,7 +101,7 @@ describe("flowHierarchyNodes", () => {
       label: "Primary",
       sourceId: "subflow.primary",
       flowId: "flow.checkout",
-      viewId: "policy-primary",
+      viewId: "flow-nodes",
       metadata: { graphFlowId: "flow.checkout.custom-subflow-graph" }
     });
     expect(nodes.some((node) => node.kind === "flow" && node.sourceId === "flow.checkout.custom-subflow-graph")).toBe(false);
@@ -114,7 +114,7 @@ describe("flowHierarchyNodes", () => {
       expect.objectContaining({
         label: "Nodes",
         parentId: subflow?.id,
-        viewId: "policy-primary",
+        viewId: "flow-nodes",
         sourceId: "flow.checkout.custom-subflow-graph",
         flowId: "flow.checkout.custom-subflow-graph",
         metadata: { flowStructure: "subflow-nodes" }

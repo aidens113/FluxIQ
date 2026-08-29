@@ -2,12 +2,15 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Blocks, Settings } from "lucide-react";
 import { describe, expect, it } from "vitest";
-import { AutomationViewContainer, AutomationWorkspacePreferences } from "./components";
-import { defaultAutomationWorkspacePrefs } from "./layout";
+import { createAutomationMountedViewActivationStore } from "./components/mounted-view-activation";
+import { AutomationViewContainer } from "./components/view-container";
+import { AutomationWorkspacePreferences } from "./components/workspace-preferences";
+import { defaultAutomationWorkspacePrefs } from "./layout/defaults";
 
 describe("AutomationViewContainer tabs", () => {
   it("renders an accessible overflow-safe tab strip and linked panel", () => {
     const html = renderToStaticMarkup(<AutomationViewContainer
+      activation={createAutomationMountedViewActivationStore()}
       active
       activeViewId="nodes"
       icon={Blocks}
@@ -21,7 +24,7 @@ describe("AutomationViewContainer tabs", () => {
       bodyClassName="graph-body"
       tabs={[
         { id: "nodes", label: "Nodes", type: "design", icon: Blocks },
-        { id: "settings", label: "Settings", type: "settings", icon: Settings },
+        { id: "settings", label: "Settings", type: "settings", icon: Settings }
       ]}
       title="Checkout"
       windowId="main"
@@ -46,23 +49,33 @@ describe("AutomationViewContainer tabs", () => {
     expect(html).toContain('class="automation-view-body graph-body"');
   });
 
-  it("keeps active tab feedback local while parent navigation is deferred", () => {
-    const source = readFileSync(new URL("./components.tsx", import.meta.url), "utf8");
+  it("keeps active tab feedback in the typed mounted-view store", () => {
+    const container = readFileSync(new URL("./components/view-container.tsx", import.meta.url), "utf8");
+    const activation = readFileSync(new URL("./components/mounted-view-activation.ts", import.meta.url), "utf8");
+    const pane = readFileSync(new URL("./shell/PaneArea.tsx", import.meta.url), "utf8");
+    const stack = readFileSync(new URL("./shell/MountedViewStack.tsx", import.meta.url), "utf8");
 
-    expect(source).toContain("const [optimisticActiveViewId, setOptimisticActiveViewId] = useState(props.activeViewId)");
-    expect(source).toContain("activateAutomationMountedView(props.windowId, viewId)");
-    expect(source).toContain("automation-studio:activate-mounted-view");
-    expect(source).toContain('.automation-mounted-view[data-view-id]');
-    expect(source).toContain("const selected = tab.id === optimisticActiveViewId");
-    expect(source).toContain("selectTab(tab.id)");
+    expect(container).toContain("useAutomationMountedViewActivation(props.activation, props.windowId)");
+    expect(container).toContain("activateAutomationMountedView(props.activation, props.windowId, viewId)");
+    expect(container).toContain("const selected = tab.id === optimisticActiveViewId");
+    expect(container).toContain("selectTab(tab.id)");
+    expect(activation).toContain("createAutomationMountedViewActivationStore");
+    expect(activation).toContain("return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)");
+    expect(activation).not.toContain("CustomEvent");
+    expect(activation).not.toContain("window.dispatchEvent");
+    expect(pane).toContain("props.commands.selectPaneTab(props.pane.id, viewId)");
+    expect(stack).toContain("const activePane = activation.activeWindow ?? props.activePane");
   });
+
   it("does not keep hidden heavy tab views mounted", () => {
-    const css = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
+    const css = readFileSync(new URL("../styles/workspace/04-layout.css", import.meta.url), "utf8");
 
     expect(css).not.toContain(".automation-view-keepalive");
-  });  it("uses explicit body classes and instant tab scrolling", () => {
-    const source = readFileSync(new URL("./components.tsx", import.meta.url), "utf8");
-    const css = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
+  });
+
+  it("uses explicit body classes and instant tab scrolling", () => {
+    const source = readFileSync(new URL("./components/view-container.tsx", import.meta.url), "utf8");
+    const css = readFileSync(new URL("../styles/workspace/04-layout.css", import.meta.url), "utf8");
 
     expect(source).toContain("bodyClassName?: string");
     expect(source).toContain('behavior: "auto"');
@@ -71,13 +84,15 @@ describe("AutomationViewContainer tabs", () => {
     expect(css).not.toContain(".automation-view-body:has");
     expect(css).not.toContain("scroll-behavior: smooth");
   });
+
   it("does not attach pane activation to an already-active view body", () => {
-    const source = readFileSync(new URL("./components.tsx", import.meta.url), "utf8");
+    const source = readFileSync(new URL("./components/view-container.tsx", import.meta.url), "utf8");
 
     expect(source).toContain("onMouseDown={optimisticWindowActive ? undefined : props.onActivate}");
     expect(source).not.toContain("onMouseDown={props.onActivate}");
   });
 });
+
 describe("AutomationWorkspacePreferences", () => {
   it("renders complete grouped controls, save state, and an explicit reset command", () => {
     const html = renderToStaticMarkup(
@@ -99,4 +114,3 @@ describe("AutomationWorkspacePreferences", () => {
     expect(html).toContain("Reset workspace layout");
   });
 });
-

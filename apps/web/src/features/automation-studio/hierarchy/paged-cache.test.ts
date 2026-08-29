@@ -25,8 +25,8 @@ describe("automation hierarchy paged cache", () => {
   });
 
   it("applies feed updates by invalidating only touched parents and subtrees", () => {
-    const subflow: AutomationHierarchyNode = { id: "subflow-a", label: "Primary", kind: "subflow", category: "flow", parentId: "flow-a", viewId: "policy-primary", sourceId: "subflow.primary", flowId: "flow.checkout" };
-    const nodeBoard: AutomationHierarchyNode = { id: "subflow-a-nodes", label: "Nodes", kind: "flow-object", category: "flow", parentId: "subflow-a", viewId: "policy-primary", sourceId: "flow.checkout.primary", flowId: "flow.checkout.primary" };
+    const subflow: AutomationHierarchyNode = { id: "subflow-a", label: "Primary", kind: "subflow", category: "flow", parentId: "flow-a", viewId: "flow-nodes", sourceId: "subflow.primary", flowId: "flow.checkout" };
+    const nodeBoard: AutomationHierarchyNode = { id: "subflow-a-nodes", label: "Nodes", kind: "flow-object", category: "flow", parentId: "subflow-a", viewId: "flow-nodes", sourceId: "flow.checkout.primary", flowId: "flow.checkout.primary" };
     let cache = createAutomationHierarchyPageCache([rootFlow, subflow, nodeBoard]);
 
     cache = applyAutomationHierarchyCacheUpdates(cache, [{

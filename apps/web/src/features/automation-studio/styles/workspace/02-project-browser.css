@@ -1,0 +1,395 @@
+.automation-studio-shell {
+  grid-template-columns: 280px minmax(0, 1fr);
+  height: min(900px, calc(100vh - 150px));
+  min-height: 720px;
+}
+
+.automation-studio-shell.page-window-fullscreen {
+  position: fixed;
+  inset: 49px 0 0 0;
+  z-index: var(--layer-dropdown);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) !important;
+  width: 100vw;
+  height: calc(100vh - 49px);
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.automation-studio-shell.page-window-fullscreen > .automation-studio-sidebar,
+.automation-studio-shell.page-window-fullscreen .automation-studio-workbar {
+  display: none;
+}
+
+.automation-studio-shell.page-window-fullscreen > .automation-studio-main {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.automation-studio-shell.project-required {
+  display: block;
+  min-height: 0;
+}
+
+.automation-project-required {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+}
+
+.automation-project-gate {
+  display: grid;
+  align-items: start;
+  min-height: 0;
+  overflow: auto;
+  background: var(--surface-tool);
+  padding: var(--space-xl);
+}
+
+.automation-project-browser {
+  display: grid;
+  gap: var(--space-lg);
+  width: min(960px, 100%);
+  margin: 0 auto;
+  min-width: 0;
+}
+
+.automation-project-browser-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  min-width: 0;
+}
+
+.automation-project-browser-icon,
+.automation-project-row-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid var(--color-selected-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-selected);
+  color: var(--color-primary);
+}
+
+.automation-project-browser-icon {
+  width: 38px;
+  height: 38px;
+}
+
+.automation-project-browser-heading > div {
+  display: grid;
+  gap: var(--space-xxs);
+  min-width: 0;
+}
+
+.automation-project-browser-heading h1,
+.automation-project-browser-heading p,
+.automation-project-category-title h2,
+.automation-project-category-empty {
+  margin: 0;
+}
+
+.automation-project-browser-heading h1 {
+  font-size: var(--font-size-title-large);
+}
+
+.automation-project-browser-heading p {
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+.automation-project-browser-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  min-width: 0;
+  border-block: 1px solid var(--color-border);
+  padding-block: var(--space-sm);
+}
+
+.automation-project-search {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 360px) auto;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: min(100%, 260px);
+  color: var(--color-text-muted);
+}
+
+.automation-project-search input {
+  width: 100%;
+  min-width: 0;
+}
+
+.automation-project-search small {
+  white-space: nowrap;
+  font-size: var(--font-size-caption);
+}
+
+.automation-project-browser-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+}
+
+.automation-project-sections {
+  display: grid;
+  gap: var(--space-lg);
+  min-width: 0;
+}
+
+.automation-project-category-section {
+  display: grid;
+  gap: var(--space-xs);
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-panel);
+}
+
+.automation-project-category-section.drag-over {
+  border-color: var(--color-primary);
+  background: var(--surface-selected);
+}
+
+.automation-project-category-section > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  min-width: 0;
+  min-height: 34px;
+  border-bottom: 1px solid var(--color-border);
+  padding: 0 var(--space-xs) var(--space-xs);
+}
+
+.automation-project-category-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+  color: var(--color-text-muted);
+}
+
+.automation-project-category-title h2 {
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-project-category-title > span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--surface-tool);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-project-list {
+  display: grid;
+  min-width: 0;
+}
+
+.automation-project-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+  min-height: 48px;
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-xs);
+}
+
+.automation-project-row:active {
+  cursor: grabbing;
+}
+
+.automation-project-row:hover,
+.automation-project-row:focus-within {
+  background: var(--surface-selected);
+}
+
+.automation-project-row-main {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 2px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.automation-project-row-icon {
+  width: 30px;
+  height: 30px;
+}
+
+.automation-project-row-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.automation-project-row-copy strong,
+.automation-project-row-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-project-row-copy strong {
+  font-size: var(--font-size-body);
+}
+
+.automation-project-row-copy small,
+.automation-project-row time,
+.automation-project-category-empty {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.automation-project-row time {
+  white-space: nowrap;
+}
+
+.automation-project-row > .menu,
+.automation-project-category-section > header > .menu {
+  justify-self: end;
+}
+
+.automation-project-category-empty {
+  padding: var(--space-md) var(--space-sm);
+}
+
+@media (max-width: 768px) {
+  .modal-actions {
+    flex-wrap: wrap;
+  }
+  .automation-project-gate {
+    padding: var(--space-md);
+  }
+
+  .automation-project-browser-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .automation-project-search {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    width: 100%;
+  }
+
+  .automation-project-browser-actions {
+    justify-content: stretch;
+  }
+
+  .automation-project-browser-actions .button {
+    flex: 1 1 0;
+  }
+
+  .automation-project-row-main {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .automation-project-row time {
+    display: none;
+  }
+}
+
+@media (max-width: 390px) {
+  .automation-project-browser-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .automation-project-browser-actions .button-primary {
+    grid-column: 1 / -1;
+  }
+}
+.automation-project-empty {
+  display: grid;
+  place-items: center;
+  gap: var(--space-compact);
+  min-height: 180px;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.automation-project-empty.compact {
+  min-height: 92px;
+}
+
+
+
+.automation-studio-main {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.automation-studio-workbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  min-height: 46px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  padding: 8px 12px;
+}
+
+.automation-studio-shell.sidebar-collapsed .automation-studio-sidebar {
+  padding: 8px 5px;
+}
+
+.automation-studio-shell.sidebar-collapsed .automation-studio-sidebar-heading {
+  justify-content: center;
+  gap: 0;
+}
+
+.automation-studio-shell.sidebar-collapsed .automation-studio-sidebar-heading .inline-actions {
+  justify-content: center;
+  width: 100%;
+}
+
+.automation-studio-shell.sidebar-collapsed .automation-studio-sidebar-heading .icon-button {
+  width: 32px;
+  height: 32px;
+}
+
+.automation-workspace-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+

@@ -1,7 +1,7 @@
 "use client";
 
 import { registerAutomationStudioDevelopmentSubscription } from "../development/telemetry";
-import type { AutomationStudioCacheScope } from "../controllers/useAutomationStudioCache";
+import type { AutomationStudioCacheScope } from "../cache/data-cache";
 
 export type AutomationStudioProjectChangeOperation = "create" | "update" | "delete" | "touch";
 

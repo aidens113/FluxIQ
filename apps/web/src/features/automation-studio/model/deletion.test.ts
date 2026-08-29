@@ -7,7 +7,7 @@ describe("Automation Studio deletion cleanup", () => {
     const proposalIds = new Set(["proposal.one"]);
 
     expect(selectionReferencesDeletedRecording({ kind: "recording", id: "recording.one" }, recordingIds, proposalIds)).toBe(true);
-    expect(selectionReferencesDeletedRecording({ kind: "proposal", id: "proposal.one", recordingId: "recording.one" }, recordingIds, proposalIds)).toBe(true);
+    expect(selectionReferencesDeletedRecording({ kind: "state", id: "state:proposal.one", proposalId: "proposal.one" }, recordingIds, proposalIds)).toBe(true);
     expect(selectionReferencesDeletedRecording({ kind: "state", id: "state:recording.one", sourceId: "observed:recording.one:entry.1" }, recordingIds, proposalIds)).toBe(true);
     expect(selectionReferencesDeletedRecording({ kind: "recording", id: "recording.two" }, recordingIds, proposalIds)).toBe(false);
   });

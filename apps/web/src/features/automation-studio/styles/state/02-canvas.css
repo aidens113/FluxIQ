@@ -1,0 +1,412 @@
+.automation-state-canvas-shell,
+.automation-state-visual-fallback,
+.automation-state-table-wrap,
+.automation-state-raw-placeholder,
+.automation-state-raw,
+.automation-state-diff-list {
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+}
+
+.automation-state-canvas-shell {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+}
+
+.automation-state-visual-fallback,
+.automation-state-table-wrap,
+.automation-state-raw-placeholder,
+.automation-state-raw,
+.automation-state-diff-list {
+  overflow: auto;
+}
+
+.automation-state-raw-placeholder {
+  display: grid;
+  place-items: center;
+  padding: var(--space-lg);
+}
+
+.automation-state-canvas-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 6px 46px;
+}
+
+.automation-state-zoom-controls {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  z-index: var(--layer-raised);
+  display: inline-flex;
+  width: max-content;
+  max-width: calc(100% - 20px);
+  align-items: center;
+  gap: var(--space-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: rgba(255, 255, 255, 0.92);
+  padding: 3px;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+}
+
+.automation-state-zoom-controls button {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text);
+  padding: 0;
+  cursor: pointer;
+}
+
+.automation-state-zoom-controls button:hover:not(:disabled) {
+  background: var(--surface-selected);
+  color: var(--color-primary);
+}
+
+.automation-state-zoom-controls button:disabled {
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.automation-state-zoom-controls span {
+  min-width: 42px;
+  color: var(--color-text-muted);
+  text-align: center;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-state-visual-fallback {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.automation-state-visual-fallback > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  border-bottom: 1px solid var(--color-border);
+  padding: 10px 12px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.automation-state-visual-fallback > div:first-child strong {
+  color: var(--color-text);
+}
+
+.automation-state-canvas {
+  position: relative;
+  box-sizing: border-box;
+  min-width: 160px;
+  max-width: none;
+  margin-inline: auto;
+  height: auto;
+  overflow: hidden;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-panel);
+  background:
+    linear-gradient(45deg, rgba(15, 20, 26, 0.04) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(15, 20, 26, 0.04) 25%, transparent 25%),
+    var(--color-surface-subtle);
+  background-size: 18px 18px;
+}
+
+.automation-state-canvas.surface-document {
+  background:
+    linear-gradient(rgba(15, 23, 42, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.05) 1px, transparent 1px),
+    #fbfdff;
+  background-size: 48px 48px;
+}
+
+.automation-state-layer,
+.automation-state-overlay {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+.automation-state-layer-image {
+  object-fit: fill;
+  object-position: 0 0;
+}
+
+.automation-state-layer-placeholder {
+  display: grid;
+  place-items: center;
+  gap: var(--space-compact);
+  overflow: hidden;
+  border: 1px dashed var(--color-border-strong);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--color-text-muted);
+  padding: var(--space-sm);
+  text-align: center;
+}
+
+.automation-state-layer-placeholder span,
+.automation-state-layer-text {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-state-layer-text {
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--color-text);
+  padding: 3px 6px;
+  font-size: var(--font-size-compact);
+  line-height: 1.3;
+}
+
+.automation-state-layer-text.size-xs {
+  font-size: var(--font-size-caption);
+}
+
+.automation-state-layer-text.size-lg {
+  font-size: var(--font-size-body);
+}
+
+.automation-state-layer-region,
+.automation-state-layer-element {
+  border: 1px solid var(--state-visual-color, rgba(31, 41, 55, 0.45));
+  background: rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+
+.automation-state-layer-region.interactive,
+.automation-state-layer-element.interactive {
+  padding: 0;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.automation-state-layer-region.interactive:hover,
+.automation-state-layer-element.interactive:hover {
+  border-width: 2px;
+  box-shadow: 0 0 0 2px rgba(36, 99, 235, 0.18);
+}
+
+.automation-state-layer-region.selected,
+.automation-state-layer-element.selected {
+  z-index: 7;
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.2);
+}
+
+.automation-state-layer-region.direct-rendered,
+.automation-state-layer-element.direct-rendered {
+  container-type: size;
+  display: flex;
+  align-items: center;
+  justify-content: start;
+  min-width: 2px;
+  min-height: 2px;
+  overflow: hidden;
+  border: 0;
+  outline: 1px solid var(--state-visual-color, rgba(31, 41, 55, 0.45));
+  outline-offset: 0;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.automation-state-layer-region.direct-rendered.selected,
+.automation-state-layer-element.direct-rendered.selected {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.automation-state-layer-region.direct-rendered span,
+.automation-state-layer-element.direct-rendered span {
+  display: block;
+  box-sizing: border-box;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  padding: 1px var(--state-direct-padding-x, 5px);
+  color: var(--color-text);
+  font-size: clamp(var(--font-size-caption), min(var(--state-direct-fit-width, 24cqw), var(--state-direct-fit-height, 78cqh)), var(--font-size-title-small));
+  line-height: var(--state-direct-line-height, 1.15);
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.automation-state-viewport-rect {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px dashed #0f172a;
+  background: rgba(15, 23, 42, 0.04);
+  pointer-events: none;
+}
+
+.automation-state-overlay {
+  --state-overlay-accent: var(--color-primary);
+  position: absolute;
+  border: 2px solid var(--color-primary);
+  border-radius: var(--radius-control);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0;
+  cursor: pointer;
+}
+
+.automation-state-overlay.tone-positive {
+  --state-overlay-accent: #159947;
+  border-color: #159947;
+}
+
+.automation-state-overlay.tone-weak {
+  --state-overlay-accent: #b7791f;
+  border-color: #b7791f;
+}
+
+.automation-state-overlay.tone-negative,
+.automation-state-overlay.tone-mismatch {
+  --state-overlay-accent: #cc3d3d;
+  border-color: #cc3d3d;
+}
+
+.automation-state-overlay.tone-neutral {
+  --state-overlay-accent: #6b7280;
+  border-color: #6b7280;
+}
+
+.automation-state-overlay.tone-action-target {
+  --state-overlay-accent: #f59e0b;
+  border: 3px solid #f59e0b;
+  background:
+    linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(255, 255, 255, 0.04));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.72),
+    0 0 0 2px rgba(245, 158, 11, 0.28),
+    0 10px 24px rgba(120, 53, 15, 0.24);
+}
+
+.automation-state-overlay.selected {
+  z-index: 8;
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.2);
+}
+
+.automation-state-overlay.tone-action-target.selected {
+  z-index: 12;
+  outline: 2px solid rgba(255, 255, 255, 0.95);
+  outline-offset: 3px;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.78),
+    0 0 0 3px rgba(245, 158, 11, 0.42),
+    0 12px 28px rgba(120, 53, 15, 0.3);
+}
+
+.automation-state-overlay-tag {
+  position: absolute;
+  top: -25px;
+  left: -3px;
+  display: inline-flex;
+  max-width: min(180px, 60vw);
+  min-height: 19px;
+  align-items: center;
+  border: 1px solid #b45309;
+  border-radius: var(--radius-control);
+  background: #fffbeb;
+  color: #78350f;
+  padding: 2px 7px;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(120, 53, 15, 0.18);
+  pointer-events: none;
+}
+
+.automation-state-overlay-corner {
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  border-color: #78350f;
+  pointer-events: none;
+}
+
+.automation-state-overlay-corner.top-left {
+  top: -7px;
+  left: -7px;
+  border-top: 3px solid;
+  border-left: 3px solid;
+}
+
+.automation-state-overlay-corner.top-right {
+  top: -7px;
+  right: -7px;
+  border-top: 3px solid;
+  border-right: 3px solid;
+}
+
+.automation-state-overlay-corner.bottom-right {
+  right: -7px;
+  bottom: -7px;
+  border-right: 3px solid;
+  border-bottom: 3px solid;
+}
+
+.automation-state-overlay-corner.bottom-left {
+  bottom: -7px;
+  left: -7px;
+  border-bottom: 3px solid;
+  border-left: 3px solid;
+}
+
+.automation-state-layer-region.visual-control,
+.automation-state-layer-element.visual-control,
+.automation-state-overlay.visual-control {
+  --state-visual-color: #1d4ed8;
+  border-color: #1d4ed8;
+  background: rgba(29, 78, 216, 0.06);
+}
+
+.automation-state-layer-region.visual-link,
+.automation-state-layer-element.visual-link,
+.automation-state-overlay.visual-link {
+  --state-visual-color: #00a6d6;
+  border-color: #00a6d6;
+  background: rgba(0, 166, 214, 0.06);
+}
+
+.automation-state-layer-region.visual-input,
+.automation-state-layer-element.visual-input,
+.automation-state-overlay.visual-input {
+  --state-visual-color: #8b5cf6;
+  border-color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.055);
+}
+
+.automation-state-layer-region.visual-text,
+.automation-state-layer-element.visual-text,
+.automation-state-overlay.visual-text {
+  --state-visual-color: #ec4899;
+  border-color: #ec4899;
+  background: rgba(236, 72, 153, 0.045);
+}
+
+.automation-state-layer-region.visual-region,
+.automation-state-layer-element.visual-region,
+.automation-state-overlay.visual-region {
+  --state-visual-color: #22c55e;
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.045);
+}
+

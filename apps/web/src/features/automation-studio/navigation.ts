@@ -1,4 +1,4 @@
-import { canonicalAutomationWorkspaceViewId } from "./workspace/layout";
+import { automationStudioViewId, canonicalAutomationStudioViewId, isAutomationStudioViewId } from "./views/view-registry";
 
 export type AutomationStudioDetailKind = "run" | "adaptation" | "recording" | "node" | "state";
 export type AutomationStudioFlowScope = { flowId: string; subflowId: string | null };
@@ -12,11 +12,6 @@ export type AutomationStudioDeepLink = {
   detail: { kind: AutomationStudioDetailKind; id: string } | null;
 };
 
-const canonicalViewIds = new Set([
-  "client-gateway", "timeline-recording", "policy-primary", "flow-router",
-  "flow-subflows", "flow-instructions", "adaptations", "flow-settings",
-  "state-explorer", "runtime-debug", "problems-view", "global-inspector"
-]);
 const detailKinds = new Set<AutomationStudioDetailKind>(["run", "adaptation", "recording", "node", "state"]);
 
 export function parseAutomationStudioDeepLink(input: URLSearchParams | string): AutomationStudioDeepLink {
@@ -24,12 +19,12 @@ export function parseAutomationStudioDeepLink(input: URLSearchParams | string): 
   const projectId = clean(params.get("project"));
   const flowId = projectId ? clean(params.get("flow")) : null;
   const subflowId = flowId ? clean(params.get("subflow")) : null;
-  const candidateViewId = projectId ? canonicalAutomationWorkspaceViewId(clean(params.get("view")) ?? "") : "";
+  const candidateViewId = projectId ? canonicalAutomationStudioViewId(clean(params.get("view")) ?? "", { hasFlow: Boolean(flowId) }) : "";
   return {
     projectId,
     flowId,
     subflowId,
-    viewId: canonicalViewIds.has(candidateViewId) ? candidateViewId : null,
+    viewId: isAutomationStudioViewId(candidateViewId) ? candidateViewId : null,
     detail: projectId ? parseDetail(params.get("detail")) : null
   };
 }
@@ -40,8 +35,8 @@ export function automationStudioDeepLinkParams(link: Partial<AutomationStudioDee
   setOrDelete(params, "project", projectId);
   setOrDelete(params, "flow", projectId ? clean(link.flowId) : null);
   setOrDelete(params, "subflow", projectId && clean(link.flowId) ? clean(link.subflowId) : null);
-  const viewId = projectId && link.viewId ? canonicalAutomationWorkspaceViewId(link.viewId) : null;
-  setOrDelete(params, "view", viewId && canonicalViewIds.has(viewId) ? viewId : null);
+  const viewId = projectId && link.viewId ? canonicalAutomationStudioViewId(link.viewId, { hasFlow: Boolean(clean(link.flowId)) }) : null;
+  setOrDelete(params, "view", viewId && isAutomationStudioViewId(viewId) ? viewId : null);
   const detailId = link.detail ? clean(link.detail.id) : null;
   setOrDelete(params, "detail", projectId && link.detail && detailKinds.has(link.detail.kind) && detailId
     ? `${link.detail.kind}:${detailId}`
@@ -72,8 +67,8 @@ export function automationStudioWorkspaceBreadcrumbs(input: { flowId: string | n
 
 export function automationStudioDefaultViewForLink(link: Pick<AutomationStudioDeepLink, "flowId" | "subflowId" | "viewId">): string | null {
   if (link.viewId) return link.viewId;
-  if (link.subflowId) return "policy-primary";
-  if (link.flowId) return "flow-router";
+  if (link.subflowId) return automationStudioViewId.flowEditor;
+  if (link.flowId) return automationStudioViewId.router;
   return null;
 }
 function parseDetail(value: string | null): AutomationStudioDeepLink["detail"] {

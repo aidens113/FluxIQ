@@ -32,6 +32,7 @@ import {
   type ExecuteClientActionRequest,
   type FinalizeRecordingRequest,
   type AutomationStudioProjectChangeFeedRequest,
+  type AutomationStudioListHierarchyChildrenRequest,
   type AutomationStudioGetProjectUiCacheRequest,
   type AutomationStudioSaveProjectUiCacheRequest,
   type AutomationStudioDeleteProjectUiCacheRequest,
@@ -184,6 +185,27 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
       return {
         ok: true,
         payload: { hierarchy: await service.getProjectHierarchy(String(payload.projectId ?? "")) }
+      };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectHierarchyChildren,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object"
+        ? request.payload as Partial<AutomationStudioListHierarchyChildrenRequest>
+        : {};
+      return {
+        ok: true,
+        payload: {
+          page: await service.listProjectHierarchyChildren({
+            projectId: String(payload.projectId ?? ""),
+            parentId: payload.parentId,
+            cursor: payload.cursor,
+            limit: payload.limit
+          })
+        }
       };
     }
   });

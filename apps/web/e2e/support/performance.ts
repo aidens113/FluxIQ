@@ -44,6 +44,21 @@ export type StudioSettledInteractionMetrics = {
   lastActiveRequestNames: string[];
   domSamples: number[];
   timedOut: boolean;
+  apiMetricCount?: number;
+  domBefore?: number;
+  domAfter?: number;
+  domDelta?: number;
+  renderMetrics?: Array<{ component: string; count: number; recordedAt: number }>;
+  renderCounts?: Record<string, number>;
+  longTaskEntries?: Array<{ startTime: number; duration: number }>;
+};
+
+type UiPerformanceCursor = {
+  timeOrigin: number;
+  apiMetricIndex: number;
+  longTaskIndex: number;
+  renderMetricIndex: number;
+  domNodes: number;
 };
 
 export type StudioSettledInteractionOptions = {
@@ -87,6 +102,12 @@ export async function collectBrowserHeapUsage(page: Page): Promise<BrowserHeapUs
 
 export async function installUiPerformanceCollection(page: Page): Promise<void> {
   await page.addInitScript(() => {
+    const instrumentedWindow = window as typeof window & {
+      __FLUXIQ_ENABLE_UI_PERFORMANCE_COUNTERS__?: boolean;
+      __FLUXIQ_ENABLE_AUTOMATION_STUDIO_TELEMETRY__?: boolean;
+    };
+    instrumentedWindow.__FLUXIQ_ENABLE_UI_PERFORMANCE_COUNTERS__ = true;
+    instrumentedWindow.__FLUXIQ_ENABLE_AUTOMATION_STUDIO_TELEMETRY__ = true;
     const metrics = {
       apiMetrics: [] as UiRequestPerformanceMetric[],
       longTasks: [] as Array<{ startTime: number; duration: number }>,
@@ -238,6 +259,57 @@ async function readDomNodeCount(page: Page): Promise<number> {
   return await page.evaluate(() => document.getElementsByTagName("*").length);
 }
 
+async function readUiPerformanceCursor(page: Page): Promise<UiPerformanceCursor> {
+  return await page.evaluate(() => {
+    const collected = (window as typeof window & {
+      __fluxiqUiPerformance?: {
+        apiMetrics: unknown[];
+        longTasks: unknown[];
+        renderMetrics: unknown[];
+      };
+    }).__fluxiqUiPerformance;
+    return {
+      timeOrigin: performance.timeOrigin,
+      apiMetricIndex: collected?.apiMetrics.length ?? 0,
+      longTaskIndex: collected?.longTasks.length ?? 0,
+      renderMetricIndex: collected?.renderMetrics.length ?? 0,
+      domNodes: document.getElementsByTagName("*").length,
+    };
+  });
+}
+
+export function countRenderCommits(metrics: ReadonlyArray<{ component: string }>): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const metric of metrics) counts[metric.component] = (counts[metric.component] ?? 0) + 1;
+  return counts;
+}
+
+async function readUiPerformanceEvidence(page: Page, cursor: UiPerformanceCursor) {
+  return await page.evaluate((start) => {
+    const collected = (window as typeof window & {
+      __fluxiqUiPerformance?: {
+        apiMetrics: UiRequestPerformanceMetric[];
+        longTasks: Array<{ startTime: number; duration: number }>;
+        renderMetrics: Array<{ component: string; count: number; recordedAt: number }>;
+      };
+    }).__fluxiqUiPerformance;
+    const documentChanged = performance.timeOrigin !== start.timeOrigin;
+    const apiMetricIndex = documentChanged ? 0 : start.apiMetricIndex;
+    const longTaskIndex = documentChanged ? 0 : start.longTaskIndex;
+    const renderMetricIndex = documentChanged ? 0 : start.renderMetricIndex;
+    const renderMetrics = (collected?.renderMetrics ?? []).slice(renderMetricIndex);
+    const domAfter = document.getElementsByTagName("*").length;
+    return {
+      apiMetricCount: Math.max(0, (collected?.apiMetrics.length ?? 0) - apiMetricIndex),
+      domBefore: start.domNodes,
+      domAfter,
+      domDelta: domAfter - start.domNodes,
+      renderMetrics,
+      longTaskEntries: (collected?.longTasks ?? []).slice(longTaskIndex),
+    };
+  }, cursor);
+}
+
 function hasStableTrailingSamples(samples: number[], requiredSamples: number): boolean {
   if (samples.length < requiredSamples) {
     return false;
@@ -335,7 +407,8 @@ export function formatStudioSettledInteraction(metrics: StudioSettledInteraction
   const requests = metrics.lastActiveRequestNames.length > 0
     ? ` last requests: ${metrics.lastActiveRequestNames.join(", ")}`
     : "";
-  return `duration=${Math.round(metrics.duration)}ms operation=${Math.round(metrics.operationDuration)}ms settle=${Math.round(metrics.settleDuration)}ms requests=${metrics.requestCount} longTasks=${metrics.longTaskCount} timedOut=${metrics.timedOut}${requests}`;
+  const renders = Object.entries(metrics.renderCounts ?? {}).map(([name, count]) => name + ":" + count).join(",") || "none";
+  return "duration=" + Math.round(metrics.duration) + "ms operation=" + Math.round(metrics.operationDuration) + "ms settle=" + Math.round(metrics.settleDuration) + "ms requests=" + metrics.requestCount + " apiMetrics=" + (metrics.apiMetricCount ?? 0) + " longTasks=" + metrics.longTaskCount + " domDelta=" + (metrics.domDelta ?? 0) + " renders=" + renders + " timedOut=" + metrics.timedOut + requests;
 }
 
 export async function measureInteraction(page: Page, operation: () => Promise<void>): Promise<number>;
@@ -360,6 +433,7 @@ export async function measureInteraction(
   options: StudioSettledInteractionOptions = {},
 ): Promise<number | StudioSettledInteractionMetrics> {
   const startedAt = await page.evaluate(() => performance.now());
+  const cursor = options.returnMetrics === true ? await readUiPerformanceCursor(page) : null;
   const tracker = options.waitForSettled === true || options.returnMetrics === true ? createRequestTracker(page, options) : null;
   await operation();
   const finishedAt = await page.evaluate(() => performance.now());
@@ -369,7 +443,9 @@ export async function measureInteraction(
   }
   try {
     const metrics = await waitForStudioSettledWithTracker(page, startedAt, operationDuration, tracker, options);
-    return options.returnMetrics === true ? metrics : metrics.duration;
+    if (options.returnMetrics !== true || !cursor) return metrics.duration;
+    const evidence = await readUiPerformanceEvidence(page, cursor);
+    return { ...metrics, ...evidence, renderCounts: countRenderCommits(evidence.renderMetrics) };
   } finally {
     tracker.dispose();
   }

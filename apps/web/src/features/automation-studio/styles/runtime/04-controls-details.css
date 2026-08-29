@@ -1,0 +1,471 @@
+.automation-inline-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.automation-runtime-readiness {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-sm);
+  border: 1px solid var(--color-warning-border, #f59e0b);
+  background: #fffbeb;
+  padding: var(--space-sm);
+}
+
+.automation-runtime-readiness > div {
+  display: grid;
+  gap: 4px;
+}
+
+.automation-runtime-readiness > div:last-child {
+  display: flex;
+  flex-wrap: wrap;
+}
+.automation-runtime-mode-control {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.automation-runtime-mode-control > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: var(--space-sm);
+}
+
+.automation-runtime-mode-control button {
+  display: grid;
+  gap: 3px;
+  min-height: 64px;
+  border: 1px solid var(--color-border);
+  background: #fff;
+  padding: 9px 10px;
+  color: var(--color-text);
+  text-align: left;
+}
+
+.automation-runtime-mode-control button.selected {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--surface-selected);
+  background: var(--surface-selected);
+}
+
+.automation-runtime-mode-control button span,
+.automation-runtime-mode-control small {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+@media (max-width: 760px) {
+  .automation-runtime-mode-control > div { grid-template-columns: 1fr; }
+}
+.automation-runtime-live-control,
+.automation-runtime-retry-control {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-sm);
+}
+
+.automation-runtime-live-control > div { display: grid; gap: 2px; min-width: 0; margin-right: auto; }
+.automation-runtime-live-control span,
+.automation-runtime-retry-control > span { color: var(--color-text-muted); font-size: var(--font-size-compact); }
+.automation-runtime-retry-control { justify-content: space-between; }
+
+@media (max-width: 620px) {
+  .automation-runtime-live-control { align-items: stretch; flex-wrap: wrap; }
+  .automation-runtime-live-control > div { flex: 1 1 calc(100% - 28px); }
+}
+/* Runtime run-history query controls */
+.automation-runtime-run-filters {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto repeat(4, minmax(112px, auto)) auto;
+  align-items: end;
+  gap: var(--space-dense);
+  padding: var(--space-dense);
+  border-block: 1px solid var(--color-border);
+  background: var(--color-surface-subtle);
+}
+
+.automation-runtime-run-filters label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-runtime-run-filters input,
+.automation-runtime-run-filters select {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 6px 9px;
+  font: inherit;
+  font-weight: var(--font-weight-regular);
+}
+
+.automation-runtime-inline-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-dense);
+  padding: var(--space-dense);
+  color: var(--color-danger);
+  background: var(--color-danger-surface);
+}
+
+@media (max-width: 1100px) {
+  .automation-runtime-run-filters {
+    grid-template-columns: minmax(180px, 1fr) auto repeat(2, minmax(120px, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .automation-runtime-run-filters {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .automation-runtime-run-filters label:not(.automation-runtime-run-search) {
+    grid-column: span 1;
+  }
+
+  .automation-runtime-pagination {
+    flex-wrap: wrap;
+  }
+}
+/* Runs workspace inner-view composition */
+.automation-runs-view-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-subtle);
+}
+
+.automation-runs-replay-view {
+  min-height: 0;
+  overflow: auto;
+}
+
+.automation-runs-replay-view > header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-surface);
+}
+
+@media (max-width: 720px) {
+  .automation-runs-workspace > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .automation-runs-view-control,
+  .automation-runs-view-control .button {
+    width: 100%;
+  }
+}
+/* Run detail overview */
+.automation-runtime-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  border: 1px solid var(--color-border);
+  background: var(--color-border);
+}
+
+.automation-runtime-overview-grid > div {
+  min-width: 0;
+  padding: var(--space-dense);
+  background: var(--color-surface);
+}
+
+.automation-runtime-overview-grid dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-runtime-overview-grid dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+}
+
+@media (max-width: 720px) {
+  .automation-runtime-overview-grid {
+    grid-template-columns: 1fr;
+  }
+}
+/* Selected action detail inspector */
+.automation-runtime-action-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  border-block: 1px solid var(--color-border);
+}
+
+.automation-runtime-action-workspace.has-detail {
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 42%);
+}
+
+.automation-runtime-action-list-region {
+  min-width: 0;
+  overflow: auto;
+}
+
+.automation-runtime-attempt-row {
+  grid-template-columns: 44px minmax(120px, 1.2fr) 92px minmax(150px, 1.25fr) minmax(70px, 0.7fr) minmax(144px, 1fr) minmax(68px, 0.65fr) 104px minmax(104px, 1fr) minmax(180px, 1.4fr) 28px;
+}
+
+.automation-runtime-attempt-row[role="button"] {
+  cursor: pointer;
+}
+
+.automation-runtime-attempt-row[role="button"]:hover,
+.automation-runtime-attempt-row.selected {
+  border-color: var(--color-primary);
+  background: var(--surface-selected);
+}
+
+.automation-runtime-attempt-row:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.automation-runtime-action-detail {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 360px;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.automation-runtime-action-detail > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-dense);
+  padding: var(--space-dense);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.automation-runtime-action-detail > header > div {
+  display: grid;
+  min-width: 0;
+}
+
+.automation-runtime-action-detail > header span {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-runtime-action-detail-tabs {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  padding: 4px var(--space-dense);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.automation-runtime-action-detail-tabs button {
+  min-height: 30px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--color-text-muted);
+  padding: 4px 8px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.automation-runtime-action-detail-tabs button.active {
+  border-bottom-color: var(--color-primary);
+  color: var(--color-text);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-runtime-action-detail-body {
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-dense);
+}
+
+.automation-runtime-action-detail-stack {
+  display: grid;
+  gap: var(--space-dense);
+}
+
+.automation-runtime-action-detail-stack section {
+  min-width: 0;
+}
+
+.automation-runtime-action-detail-stack section > strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+@media (max-width: 900px) {
+  .automation-runtime-action-workspace.has-detail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .automation-runtime-action-detail {
+    border-top: 1px solid var(--color-border);
+    border-left: 0;
+  }
+}
+/* Recovery and routing decision history */
+.automation-runtime-decision-links,
+.automation-runtime-decision-meta,
+.automation-runtime-decision-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-dense);
+}
+
+.automation-runtime-decision-timeline {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  background: var(--color-border);
+  list-style: none;
+}
+
+.automation-runtime-decision-timeline > li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-dense);
+  padding: var(--space-dense);
+  background: var(--color-surface);
+}
+
+.automation-runtime-decision-index {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-runtime-decision-timeline > li > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.automation-runtime-decision-timeline > li > div > span,
+.automation-runtime-decision-meta {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.automation-runtime-decision-meta a {
+  color: var(--color-primary);
+  font-weight: var(--font-weight-bold);
+}
+
+@media (max-width: 720px) {
+  .automation-runtime-decision-timeline > li {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .automation-runtime-decision-timeline > li > .automation-runtime-json-toggle {
+    grid-column: 2;
+  }
+}
+/* LLM and adaptation sequence */
+.automation-runtime-adaptation-sequence {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  background: var(--color-border);
+  list-style: none;
+}
+
+.automation-runtime-adaptation-sequence > li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-dense);
+  padding: var(--space-dense);
+  background: var(--color-surface);
+}
+
+.automation-runtime-adaptation-sequence > li > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.automation-runtime-adaptation-sequence p {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.automation-runtime-adaptation-stage {
+  color: var(--color-primary);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+}
+
+@media (max-width: 720px) {
+  .automation-runtime-adaptation-sequence > li {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .automation-runtime-adaptation-sequence > li > .automation-runtime-json-toggle {
+    grid-column: 2;
+  }
+}
+/* Run state and effects */
+.automation-runtime-state-effects-panel > header {
+  align-items: center;
+}
+
+.automation-runtime-state-effects-panel > header > div:first-child {
+  display: grid;
+  min-width: 0;
+}
+
+.automation-runtime-state-effects-panel > header > div:first-child span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+@media (max-width: 720px) {
+  .automation-runtime-state-effects-panel > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

@@ -26,7 +26,8 @@ describe("flowInstructionScopeFromPayload", () => {
     expect(() => assertAutomationStudioNormalEditorGraphEndpoint(AUTOMATION_STUDIO_ENDPOINTS.saveFlow)).toThrow(/full Flow document/);
     expect(() => assertAutomationStudioNormalEditorGraphEndpoint(AUTOMATION_STUDIO_ENDPOINTS.applyGraphPatch)).not.toThrow();
   });
-  it("exposes a cursor-based project change-feed endpoint for browser sync", () => {
+  it("exposes cursor-based hierarchy and project change-feed endpoints", () => {
+    expect(AUTOMATION_STUDIO_ENDPOINTS.listProjectHierarchyChildren).toBe("list-project-hierarchy-children");
     expect(AUTOMATION_STUDIO_ENDPOINTS.listProjectChangeFeed).toBe("list-project-change-feed");
   });
   it("exposes ordered runtime event pages for Runtime Debug", () => {
@@ -164,6 +165,53 @@ describe("Automation Studio project UI cache API", () => {
 
       expect(response.ok).toBe(false);
       expect(response.error).toContain("at most 100 entries");
+    } finally {
+      await cleanup();
+    }
+  });
+});
+
+describe("Automation Studio hierarchy page API", () => {
+  it("imports legacy hierarchy once and returns stable SQL sibling pages", async () => {
+    const { service, cleanup } = await createCacheApiTestService();
+    try {
+      const project = await service.createProject({ name: "Hierarchy pages" });
+      await service.saveProjectHierarchy(project.id, {
+        customHierarchyNodes: [
+          { id: "folder.a", label: "Alpha", kind: "folder", category: "flow", parentId: null },
+          { id: "folder.b", label: "Beta", kind: "folder", category: "flow", parentId: null },
+          { id: "folder.c", label: "Charlie", kind: "folder", category: "flow", parentId: null }
+        ],
+        deletedHierarchyIds: [],
+        workspacePrefs: {}
+      });
+      const registry = new GlobalProgramApiRegistry();
+      registerAutomationStudioApi(registry, service);
+
+      const first = await registry.call({
+        programId: "automation-studio",
+        endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectHierarchyChildren,
+        scope: {},
+        actor: cacheActor("user.one"),
+        payload: { projectId: project.id, parentId: null, limit: 2 }
+      });
+      expect(first.ok).toBe(true);
+      const firstPage = (first.payload as { page: { items: Array<{ entryId: string }>; nextCursor: string | null; hasMore: boolean } }).page;
+      expect(firstPage.items.map((item) => item.entryId)).toEqual(["folder.a", "folder.b"]);
+      expect(firstPage.hasMore).toBe(true);
+      expect(firstPage.nextCursor).toBeTypeOf("string");
+
+      const second = await registry.call({
+        programId: "automation-studio",
+        endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectHierarchyChildren,
+        scope: {},
+        actor: cacheActor("user.one"),
+        payload: { projectId: project.id, parentId: null, cursor: firstPage.nextCursor, limit: 2 }
+      });
+      expect((second.payload as { page: { items: Array<{ entryId: string }>; hasMore: boolean } }).page).toMatchObject({
+        items: [{ entryId: "folder.c" }],
+        hasMore: false
+      });
     } finally {
       await cleanup();
     }

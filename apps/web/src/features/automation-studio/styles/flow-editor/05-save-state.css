@@ -1,0 +1,136 @@
+.automation-graph-save-state {
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 24px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-graph-save-state > span {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.automation-graph-save-state.unsaved {
+  color: var(--color-warning);
+}
+
+.automation-graph-save-state.saving {
+  color: var(--color-primary);
+}
+
+.automation-graph-save-state.failed,
+.automation-graph-save-state.conflict {
+  color: var(--color-danger);
+}
+
+.automation-graph-viewport-state {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  line-height: 1.2;
+}
+
+.automation-graph-viewport-state > span {
+  min-width: 54px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-control);
+  padding: 3px 7px;
+  background: var(--surface-muted);
+  color: var(--color-text);
+  text-align: center;
+  text-transform: capitalize;
+}
+
+.automation-graph-viewport-state > strong {
+  color: var(--color-text);
+  font-size: var(--font-size-caption);
+}
+
+.automation-graph-viewport-state > small {
+  color: var(--color-text-muted);
+}
+
+.automation-graph-viewport-state.loading > span,
+.automation-graph-viewport-state.partial > span {
+  border-color: var(--color-selected-border);
+  background: var(--surface-selected);
+}
+
+.automation-graph-viewport-state.dense > span,
+.automation-graph-viewport-state.capped > span {
+  border-color: color-mix(in srgb, var(--color-warning) 45%, var(--color-border-subtle));
+  background: color-mix(in srgb, var(--color-warning) 10%, var(--surface-muted));
+}
+
+.automation-graph-viewport-state.error > span {
+  border-color: color-mix(in srgb, var(--color-danger) 50%, var(--color-border-subtle));
+  background: color-mix(in srgb, var(--color-danger) 10%, var(--surface-muted));
+}
+
+.automation-draft-recovery {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-dense);
+  border: 1px solid var(--color-selected-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-selected);
+  padding: 9px 10px;
+}
+
+.automation-draft-recovery.stale {
+  border-color: color-mix(in srgb, var(--color-warning) 50%, var(--color-border));
+  background: color-mix(in srgb, var(--color-warning) 7%, var(--color-surface));
+}
+
+.automation-draft-recovery > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.automation-draft-recovery > div:first-child span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+}
+
+.automation-draft-recovery > div:last-child {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.automation-draft-recovery .button {
+  min-height: 30px;
+  padding: 5px 9px;
+}
+
+@media (max-width: 720px) {
+  .automation-draft-recovery {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+.automation-graph-outline [role="treeitem"] {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 42px;
+}
+
+@media (max-width: 720px) {
+  .automation-policy-canvas .react-flow__minimap {
+    display: none;
+  }
+}

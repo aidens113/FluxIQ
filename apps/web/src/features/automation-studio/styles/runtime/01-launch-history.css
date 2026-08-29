@@ -1,0 +1,399 @@
+.automation-runtime-debugger {
+  display: grid;
+  min-width: 0;
+  min-height: 520px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: #f8fafc;
+}
+
+.automation-runtime-list-page,
+.automation-runtime-log-page {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-content: start;
+  gap: var(--space-md);
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-md);
+}
+
+.automation-runtime-list-page > header,
+.automation-runtime-log-page > header,
+.automation-runtime-log-section > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.automation-runtime-list-page > header,
+.automation-runtime-log-page > header {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: var(--space-md);
+}
+
+.automation-runtime-list-page > header > div,
+.automation-runtime-log-page > header > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.automation-runtime-list-page > header span,
+.automation-runtime-log-page > header span,
+.automation-runtime-log-section > header span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.automation-runtime-list-summary,
+.automation-runtime-log-actions,
+.automation-runtime-log-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.automation-runtime-list-summary span {
+  border: 1px solid #dbeafe;
+  border-radius: var(--radius-control);
+  background: #f8fbff;
+  color: #1e3a8a;
+  padding: 4px 8px;
+  font-weight: var(--font-weight-bold);
+  white-space: nowrap;
+}
+
+.automation-runtime-row-action,
+.automation-runtime-back,
+.automation-runtime-pagination button,
+.automation-runtime-log-toolbar button,
+.automation-runtime-json-toggle button {
+  min-height: 28px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  padding: 4px 9px;
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+}
+
+.automation-runtime-row-action:hover,
+.automation-runtime-back:hover,
+.automation-runtime-pagination button:hover:not(:disabled),
+.automation-runtime-log-toolbar button:hover:not(:disabled),
+.automation-runtime-json-toggle button:hover {
+  border-color: var(--color-primary);
+  background: var(--surface-selected);
+}
+
+.automation-runtime-pagination,
+.automation-runtime-log-toolbar,
+.automation-runtime-log-toolbar > div {
+  display: flex;
+  align-items: center;
+  gap: var(--space-compact);
+}
+
+.automation-runtime-pagination-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-dense);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 9px 10px;
+}
+
+.automation-runtime-pagination-footer span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-runtime-pagination button:disabled,
+.automation-runtime-log-toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.automation-runtime-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-dense);
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: var(--space-dense);
+}
+
+.automation-runtime-form-grid label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-runtime-form-grid input,
+.automation-runtime-form-grid select,
+.automation-runtime-form-grid textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+.automation-runtime-form-wide {
+  grid-column: 1 / -1;
+}
+
+.automation-runtime-run-panel {
+  display: grid;
+  gap: var(--space-md);
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: var(--space-md);
+}
+
+.automation-runtime-run-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-dense);
+  min-width: 0;
+}
+
+.automation-runtime-run-panel > header > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.automation-runtime-run-panel > header strong {
+  font-size: var(--font-size-body);
+}
+
+.automation-runtime-run-panel > header span {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-runtime-run-command {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: var(--space-dense);
+  align-items: end;
+  min-width: 0;
+}
+
+.automation-runtime-run-command label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-runtime-run-command select {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 6px 8px;
+  font-size: var(--font-size-body-small);
+}
+
+.automation-runtime-run-command select:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  outline: none;
+}
+
+.automation-runtime-run-command small {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-runtime-run-command button {
+  min-width: 120px;
+  min-height: 36px;
+  margin: 0;
+}
+
+.automation-runtime-input-fields {
+  display: grid;
+  gap: var(--space-dense);
+  min-width: 0;
+  border: 1px solid #dbeafe;
+  border-radius: var(--radius-control);
+  background: #f8fbff;
+  padding: var(--space-dense);
+}
+
+.automation-runtime-input-fields > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.automation-runtime-input-fields > header span,
+.automation-runtime-input-preview span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.automation-runtime-input-fields > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.automation-runtime-input-fields label,
+.automation-runtime-advanced-grid label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-runtime-input-fields input,
+.automation-runtime-advanced-grid input {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 6px 8px;
+  font-size: var(--font-size-body-small);
+}
+
+.automation-runtime-input-fields input:focus,
+.automation-runtime-advanced-grid input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  outline: none;
+}
+
+.automation-runtime-input-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-dense);
+  min-width: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-control);
+  background: #f8fafc;
+  padding: 9px 10px;
+}
+
+.automation-runtime-input-preview strong,
+.automation-runtime-input-preview span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-runtime-advanced-grid {
+  display: grid;
+  grid-template-columns: minmax(140px, 190px);
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.automation-runtime-run-list {
+  display: grid;
+  align-content: start;
+  gap: var(--space-xs);
+  min-width: 0;
+  overflow: auto;
+}
+
+.automation-runtime-run-header {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) minmax(150px, 1.2fr) 92px minmax(132px, 0.9fr) minmax(92px, 0.7fr) minmax(86px, 0.65fr) minmax(82px, 0.65fr);
+  gap: var(--space-sm);
+  align-items: center;
+  min-width: 830px;
+  min-height: 28px;
+  border: 1px solid #dbeafe;
+  border-radius: var(--radius-control);
+  background: #eff6ff;
+  color: #1e3a8a;
+  padding: 4px 8px;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+}
+
+.automation-runtime-run-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) minmax(150px, 1.2fr) 92px minmax(132px, 0.9fr) minmax(92px, 0.7fr) minmax(86px, 0.65fr) minmax(82px, 0.65fr);
+  gap: var(--space-sm);
+  align-items: center;
+  min-width: 830px;
+  min-height: 34px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 4px 8px;
+}
+
+.automation-runtime-run-row {
+  cursor: pointer;
+}
+
+.automation-runtime-run-row:hover,
+.automation-runtime-run-row:focus-visible {
+  border-color: #93c5fd;
+  background: #f8fbff;
+  outline: none;
+}
+
+.automation-runtime-run-row > strong,
+.automation-runtime-run-row > span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--font-size-compact);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-runtime-run-row > strong {
+  color: var(--color-text);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-runtime-run-row > span {
+  color: var(--color-text-muted);
+}
+

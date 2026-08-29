@@ -1,0 +1,21 @@
+@media (max-width: 860px) {
+  .automation-runtime-debugger {
+    min-height: 0;
+  }
+
+  .automation-runtime-list-page,
+  .automation-runtime-log-page {
+    max-height: 70vh;
+  }
+
+  .automation-runtime-pagination-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .automation-runtime-run-command,
+  .automation-runtime-input-fields > div,
+  .automation-runtime-advanced-grid {
+    grid-template-columns: 1fr;
+  }
+}

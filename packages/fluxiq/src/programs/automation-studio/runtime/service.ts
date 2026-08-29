@@ -4,7 +4,7 @@ import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 import path from "node:path";
 import type { AutomationStudioSnapshot } from "../api/index.ts";
-import type { AutomationStudioProject, AutomationStudioProjectCategory, AutomationStudioProjectChangeFeedPage, AutomationStudioProjectHierarchy } from "../api/contracts.ts";
+import type { AutomationStudioHierarchyChildrenPage, AutomationStudioProject, AutomationStudioProjectCategory, AutomationStudioProjectChangeFeedPage, AutomationStudioProjectHierarchy } from "../api/contracts.ts";
 import {
   appendRecordingEntry,
   appendRecordingNote,
@@ -177,6 +177,7 @@ import {
   AutomationStudioProjectAdaptationStore,
   AutomationStudioProjectDatabasePool,
   AutomationStudioProjectFlowResourceRepository,
+  AutomationStudioProjectHierarchyRepository,
   AutomationStudioProjectRuntimeStreamStore,
   type AutomationStudioFlowResourcePage,
   type AutomationStudioSqlFlowDetail,
@@ -4282,12 +4283,25 @@ export class AutomationStudioService {
   }
 
   private async deleteCreatedFlowSubflow(projectId: string, flowId: string, subflowId: string, graphFlowId: string | undefined, deleteGraphFlow: boolean): Promise<void> {
+    const existing = flowId && subflowId ? await this.getFlowSubflow(projectId, flowId, subflowId).catch(() => null) : null;
+    const deletedAt = Date.now();
+    if (existing) await this.markSqlFlowSubflowDeleted(projectId, existing, deletedAt);
     if (deleteGraphFlow && graphFlowId) await this.deleteFlow({ projectId, flowId: graphFlowId }).catch(() => ({ deletedFlowId: graphFlowId }));
     if (flowId && subflowId) {
       await ProgramJsonStore.deletePath(this.flowSubflowFile(projectId, flowId, subflowId));
       await this.writeFlowSubflowIndex(projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: (index.subflows ?? []).filter((item) => item.subflowId !== subflowId) }));
       if (this.projectRootDir) await this.flowSubflowSummaryRepository(projectId).delete(subflowId);
     }
+    if (existing) await this.appendProjectMutationChangeFeed({
+      projectId,
+      entityKind: "subflow",
+      entityId: subflowId,
+      parentId: flowId,
+      operation: "delete",
+      revision: subflowFeedRevision(existing),
+      changedAt: deletedAt,
+      hierarchyScope: { kind: "flow", id: flowId }
+    });
   }
 
   private async getFlowSubflowsForValidation(projectId: string, flowId: string): Promise<AutomationStudioFlowSubflow[]> {
@@ -4626,6 +4640,35 @@ export class AutomationStudioService {
     };
   }
 
+  async listProjectHierarchyChildren(input: { projectId: string; parentId?: unknown; cursor?: unknown; limit?: unknown }): Promise<AutomationStudioHierarchyChildrenPage> {
+    const project = await this.findProject(input.projectId);
+    if (!this.projectDatabasePool) return { items: [], nextCursor: null, hasMore: false };
+
+    const repository = await AutomationStudioProjectHierarchyRepository.open({
+      pool: this.projectDatabasePool,
+      projectId: input.projectId
+    });
+    try {
+      const parentEntryId = typeof input.parentId === "string" && input.parentId.trim()
+        ? input.parentId.trim()
+        : null;
+      const cursor = typeof input.cursor === "string" && input.cursor ? input.cursor : null;
+      const limit = Math.max(1, Math.min(500, Math.trunc(Number(input.limit ?? 100)) || 100));
+      let page = await repository.listChildrenPage({ parentEntryId, cursor, limit });
+
+      if (!cursor && page.items.length === 0 && project.customHierarchyNodes.length > 0) {
+        await repository.importLegacyHierarchy({
+          customHierarchyNodes: project.customHierarchyNodes,
+          deletedHierarchyIds: project.deletedHierarchyIds,
+          workspacePrefs: project.workspacePrefs ?? {}
+        });
+        page = await repository.listChildrenPage({ parentEntryId, limit });
+      }
+      return page;
+    } finally {
+      await repository.close();
+    }
+  }
   async listProjectChangeFeed(input: { projectId: string; afterSequence?: unknown; limit?: unknown }): Promise<AutomationStudioProjectChangeFeedPage> {
     await this.findProject(input.projectId);
     const afterSequence = Math.max(0, Math.trunc(Number(input.afterSequence ?? 0)) || 0);
@@ -5199,6 +5242,7 @@ export class AutomationStudioService {
     try {
       const detail = await store.getAdaptation(input.adaptationId);
       if (!detail || detail.flowId !== input.flowId) return null;
+      if ((input.action === "apply" || input.action === "revert") && !await store.supportsGraphTransaction(detail.adaptation)) return null;
       const actorId = input.actorId ?? "reviewer";
       if (input.action === "apply") return adaptationFromTypedStoreDetail((await store.applyApprovedAdaptation({ adaptationId: input.adaptationId, actorId })).adaptation);
       if (input.action === "revert") return adaptationFromTypedStoreDetail((await store.rollbackAdaptation({ adaptationId: input.adaptationId, actorId, ...(input.reason ? { reason: input.reason } : {}) })).adaptation);
@@ -7153,6 +7197,7 @@ function adaptationFromTypedStoreDetail(detail: { adaptation: AutomationStudioFl
     ...detail.adaptation,
     metadata: compactJsonObject({
       ...(detail.adaptation.metadata ?? {}),
+      ...(detail.approvalMode === "manual_approval" ? { proposalModeOverride: "manual" } : {}),
       phase9: compactJsonObject({
         revisions: isJsonRecord(detail.revisions) ? detail.revisions : {},
         artifacts: Array.isArray(detail.artifacts) ? detail.artifacts : [],

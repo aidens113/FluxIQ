@@ -1,0 +1,463 @@
+.automation-canvas {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface-tool);
+  padding: var(--space-md);
+}
+
+.automation-inspector {
+  display: grid;
+  align-content: start;
+  gap: var(--space-md);
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: var(--color-surface);
+  padding: var(--space-md);
+}
+
+.automation-inspector header {
+  display: grid;
+  gap: var(--space-xxs);
+}
+
+.automation-inspector header span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+}
+.automation-inspector-identity > strong {
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-body);
+}
+
+.automation-inspector-identity > small,
+.automation-inspector-identity nav {
+  overflow-wrap: anywhere;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  line-height: 1.35;
+}
+
+.automation-inspector-identity nav span {
+  color: inherit;
+  font-size: inherit;
+  font-weight: var(--font-weight-regular);
+  text-transform: none;
+}
+
+.automation-inspector-tools {
+  display: flex;
+  gap: var(--space-compact);
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.automation-inspector-tools .button {
+  min-height: 26px;
+  padding: 3px 8px;
+  font-size: var(--font-size-compact);
+  justify-content: center;
+}
+
+.automation-inspector-search {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-compact);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-tool);
+  padding: 6px 8px;
+}
+
+.automation-inspector-search input {
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+}
+.automation-inspector-search:focus-within {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.automation-inspector-empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xl) var(--space-md);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.automation-inspector-empty strong {
+  color: var(--color-text);
+}
+
+.automation-inspector-empty span,
+.automation-inspector-filter-status {
+  margin: 0;
+  font-size: var(--font-size-compact);
+  line-height: 1.4;
+}
+
+.automation-inspector-section {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+}
+
+.automation-inspector-section summary {
+  min-height: 32px;
+  border-bottom: 1px solid var(--color-border);
+  padding: 8px 10px;
+  cursor: pointer;
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-inspector-section .key-value {
+  border: 0;
+  border-radius: 0;
+}
+
+.automation-inspector-widget {
+  display: grid;
+  gap: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: var(--space-dense);
+}
+
+.automation-inspector-widget > strong {
+  font-size: var(--font-size-body-small);
+}
+
+.automation-inspector-card-list {
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.automation-inspector-card-list article {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-tool);
+  padding: var(--space-sm);
+}
+
+.automation-inspector-card-list span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.automation-inspector-card-list p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  line-height: 1.35;
+}
+
+.automation-node-parameters {
+  overflow: hidden;
+}
+
+.automation-parameter-stack {
+  display: grid;
+  gap: 9px;
+  padding: var(--space-dense);
+}
+
+.automation-parameter-field-shell {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+}
+
+.automation-parameter-field-shell.invalid {
+  border-color: color-mix(in srgb, var(--color-danger) 48%, var(--color-border));
+  background: color-mix(in srgb, var(--color-danger) 5%, var(--color-surface));
+}
+
+.automation-parameter-error,
+.automation-parameter-example {
+  display: block;
+  font-size: var(--font-size-caption);
+  line-height: 1.35;
+}
+
+.automation-parameter-error {
+  color: var(--color-danger);
+  font-weight: var(--font-weight-semibold);
+}
+
+.automation-parameter-example {
+  color: var(--color-text-muted);
+}
+
+.automation-reference-control {
+  gap: 7px;
+}
+
+.automation-reference-search {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding-left: 7px;
+  color: var(--color-text-muted);
+}
+
+.automation-reference-search:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 16%, transparent);
+}
+
+.automation-reference-search input {
+  border: 0;
+  outline: 0;
+  padding-left: 0;
+  box-shadow: none;
+}
+
+.automation-reference-options {
+  display: grid;
+  max-height: 190px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 3px;
+}
+
+.automation-reference-options > button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: calc(var(--radius-control) - 2px);
+  background: transparent;
+  color: var(--color-text);
+  padding: 7px 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.automation-reference-options > button:hover,
+.automation-reference-options > button:focus-visible {
+  background: var(--surface-tool);
+  outline: none;
+}
+
+.automation-reference-options > button.selected {
+  background: var(--surface-selected);
+  color: var(--color-primary);
+}
+
+.automation-reference-options strong,
+.automation-reference-options small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-reference-options small {
+  color: var(--color-text-muted);
+}
+
+.automation-reference-current {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-compact);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+}
+
+.automation-reference-current > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-reference-current .button {
+  min-height: 26px;
+  padding: 4px 7px;
+}
+
+.automation-reference-empty {
+  display: block;
+  padding: 9px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  text-align: center;
+}
+.automation-parameter-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.automation-parameter-field > span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-parameter-help {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.35;
+}
+
+.automation-parameter-field.checkbox .automation-parameter-help {
+  margin-top: 2px;
+}
+
+.automation-parameter-field input,
+.automation-parameter-field select,
+.automation-parameter-field textarea {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 7px 8px;
+  font: inherit;
+}
+
+.automation-string-input-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-compact);
+  align-items: center;
+}
+
+.automation-string-input-wrap small {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-tool);
+  color: var(--color-text-muted);
+  padding: 6px 7px;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  white-space: nowrap;
+}
+
+.automation-typed-value-editor {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.42fr) minmax(0, 1fr);
+  gap: var(--space-compact);
+}
+
+.automation-parameter-field textarea {
+  min-height: 92px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-compact);
+}
+
+.automation-parameter-field textarea.automation-description-input {
+  min-height: 68px;
+  font-family: inherit;
+  font-size: var(--font-size-body-small);
+}
+
+.automation-parameter-field.checkbox {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+}
+
+.automation-parameter-field.checkbox input {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+}
+
+.automation-structured-parameter {
+  display: grid;
+  gap: 7px;
+}
+
+.automation-structured-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr) 28px;
+  gap: var(--space-compact);
+  align-items: center;
+}
+
+.automation-structured-row:has(> input:first-child:last-of-type) {
+  grid-template-columns: minmax(0, 1fr) 28px;
+}
+
+.automation-array-object {
+  display: grid;
+  gap: var(--space-compact);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 7px;
+  background: var(--surface-tool);
+}
+
+.secondary-button.compact {
+  width: fit-content;
+  min-height: 28px;
+  padding: 5px 9px;
+  font-size: var(--font-size-compact);
+}
+
+.secondary-button.compact.danger {
+  color: var(--color-danger);
+  border-color: color-mix(in srgb, var(--color-danger) 34%, var(--color-border));
+}
+
+.automation-provenance-card {
+  display: grid;
+  gap: var(--space-xs);
+  border: 1px solid var(--color-selected-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-selected);
+  color: var(--color-primary);
+  padding: var(--space-dense);
+}
+
+.automation-provenance-card span,
+.automation-provenance-card small {
+  color: var(--color-text-muted);
+}
+
+.context-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-compact);
+}
+
+.context-chip-row span {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  padding: 3px 7px;
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+}
+
