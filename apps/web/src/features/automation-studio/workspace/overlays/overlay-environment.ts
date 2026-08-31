@@ -4,6 +4,7 @@ type FocusTarget = {
 };
 
 type OverlayEnvironmentToken = {
+  lockScroll: boolean;
   returnFocus: FocusTarget | null;
 };
 
@@ -16,16 +17,17 @@ const environmentByDocument = new WeakMap<Document, OverlayEnvironmentState>();
 
 export function acquireOverlayEnvironment(
   documentRef: Document,
-  returnFocus: FocusTarget | null
+  returnFocus: FocusTarget | null,
+  options: { lockScroll?: boolean } = {}
 ): () => void {
   const state = environmentByDocument.get(documentRef) ?? {
     originalOverflow: documentRef.body.style.overflow,
     tokens: []
   };
-  const token = { returnFocus };
+  const token = { lockScroll: options.lockScroll ?? true, returnFocus };
   state.tokens.push(token);
   environmentByDocument.set(documentRef, state);
-  documentRef.body.style.overflow = "hidden";
+  if (token.lockScroll) documentRef.body.style.overflow = "hidden";
 
   let released = false;
   return () => {
@@ -36,8 +38,10 @@ export function acquireOverlayEnvironment(
     const wasTop = index === state.tokens.length - 1;
     state.tokens.splice(index, 1);
 
-    if (!state.tokens.length) {
+    if (!state.tokens.some((item) => item.lockScroll)) {
       documentRef.body.style.overflow = state.originalOverflow;
+    }
+    if (!state.tokens.length) {
       environmentByDocument.delete(documentRef);
     }
     if (wasTop && returnFocus?.isConnected !== false) {

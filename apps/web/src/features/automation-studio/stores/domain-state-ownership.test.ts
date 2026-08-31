@@ -25,7 +25,8 @@ describe("Automation Studio domain state ownership", () => {
     const resourceOwner = readFileSync(new URL("./use-project-data-resource.ts", import.meta.url), "utf8");
     const selectionOwner = readFileSync(new URL(ownerFiles.selection, import.meta.url), "utf8");
     expect(resourceOwner).toContain("useAutomationStoreSelector");
-    expect(resourceOwner).toContain("shallowArraySame");
+    expect(resourceOwner).toContain("automationEntityCollectionSelector");
+    expect(resourceOwner).not.toContain("[...state.entities[kind].values()]");
     expect(selectionOwner).toContain("useAutomationStoreSelector");
     expect(selectionOwner).not.toContain("useState(");
   });

@@ -61,8 +61,19 @@ describe("Automation Studio direct domain host bindings", () => {
     );
     const registration = automationViewHostRegistration("router");
 
-    expect(registration?.createDataSelector()(request)).toBe(model);
-    expect(registration?.createDataSelector()(request)).not.toBe(commands);
+    expect(registration?.selectData(request)).toBe(model);
+    expect(registration?.selectData(request)).not.toBe(commands);
+  });
+
+  it("does not create data selectors in the React host render path", () => {
+    const hostSource = readFileSync(new URL("./ViewHost.tsx", import.meta.url), "utf8");
+    const registrySource = readFileSync(new URL("./view-host-registry.tsx", import.meta.url), "utf8");
+
+    expect(hostSource).not.toContain("createDataSelector");
+    expect(hostSource).toContain("registration.selectData(readyRequest)");
+    expect(hostSource.indexOf("registration.selectData(readyRequest)"))
+      .toBeGreaterThan(hostSource.indexOf("render={(readyModel)"));
+    expect(registrySource).not.toContain("createDataSelector");
   });
 
   it("keeps transport and compatibility component prop inference outside the registry contract", () => {

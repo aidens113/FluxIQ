@@ -43,9 +43,21 @@ describe("Automation Studio typed view host", () => {
     for (const kind of kinds) {
       const registration = automationViewHostRegistration(kind);
       expect(registration?.kind).toBe(kind);
-      expect(registration?.createDataSelector()).toBeTypeOf("function");
+      expect(registration?.selectData).toBeTypeOf("function");
       expect(registration?.loadComponent()).toBeTypeOf("function");
     }
+  });
+
+  it("retains one data selector per registration across registry lookups", () => {
+    const firstRouter = automationViewHostRegistration("router");
+    const secondRouter = automationViewHostRegistration("router");
+    const firstRoutine = automationViewHostRegistration("routine");
+    const secondRoutine = automationViewHostRegistration("routine");
+
+    expect(firstRouter).toBe(secondRouter);
+    expect(firstRouter?.selectData).toBe(secondRouter?.selectData);
+    expect(firstRoutine).toBe(secondRoutine);
+    expect(firstRoutine?.selectData).toBe(secondRoutine?.selectData);
   });
 
   it("sleeps cold views and preserves a warm mounted compatibility surface", () => {
@@ -53,6 +65,7 @@ describe("Automation Studio typed view host", () => {
       { id: "routine", label: "Legacy Routine", type: "routine", icon: GitBranch },
       { model: {}, commands: {} }
     );
+    expect(request.readiness).toMatchObject({ status: "ready", data: request.binding.model });
     const sleeping = renderToStaticMarkup(
       <AutomationViewHost active={false} activeRef={activity} request={request} />
     );

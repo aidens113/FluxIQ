@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
+import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 import {
   architectureSource,
@@ -21,7 +22,7 @@ import {
   testSources,
   type NamedResidualExemption
 } from "./architecture-test-helpers";
-import { automationStudioViewIds } from "./views/view-registry";
+import { automationStudioViewId, automationStudioViewIds } from "./views/view-registry";
 
 const sources = productionSources();
 const tests = testSources();
@@ -71,9 +72,9 @@ const productDomains = new Set([
 ]);
 
 const approvedTopLevelDirectories = [
-  "adaptations", "cache", "clients", "data", "development", "flow-editor", "graph",
+  "adaptations", "bootstrap", "cache", "clients", "data", "development", "flow-editor", "graph",
   "hierarchy", "inspector", "instructions", "live", "model", "parameters", "problems",
-  "project", "recordings", "router", "runtime", "settings", "shared", "state", "stores", "styles",
+  "presentation", "project", "recordings", "router", "runtime", "settings", "shared", "state", "stores", "styles",
   "subflows", "sync", "testing", "views", "workspace"
 ] as const;
 const directApiResiduals: NamedResidualExemption[] = [];
@@ -90,6 +91,54 @@ const urlViewStateResiduals: NamedResidualExemption[] = [
 const proposalCreationResiduals: NamedResidualExemption[] = [
 ];
 
+const removedAggregateAndPublisherPaths = [
+  "live/useAutomationProjectView.ts",
+  "live/useAutomationCanonicalViewInputs.ts",
+  "live/view-host/canonical-publishers.tsx",
+  "live/view-host/publisher.tsx",
+  "live/view-host/input-identity.ts"
+] as const;
+
+const removedAggregateAndPublisherModules = new Set([
+  "useAutomationProjectView",
+  "useAutomationCanonicalViewInputs",
+  "canonical-publishers",
+  "publisher",
+  "input-identity"
+]);
+
+const synchronousInteractionPaths = [
+  "flow-editor/FlowEditorView.tsx",
+  "flow-editor/FlowGraphCanvas.tsx",
+  "flow-editor/FlowGraphToolbar.tsx",
+  "flow-editor/FlowNode.tsx",
+  "flow-editor/flow-canvas-interaction-controller.ts",
+  "flow-editor/useFlowEditorCanvasInteractions.ts",
+  "flow-editor/useFlowEditorGraphDocument.ts",
+  "hierarchy/ProjectTree.tsx",
+  "hierarchy/controller.ts",
+  "hierarchy/tree-rows.tsx",
+  "live/AutomationStudioSession.tsx",
+  "live/useAutomationHierarchyCommandBridge.ts",
+  "live/useAutomationSelectionNavigation.ts",
+  "live/useAutomationWorkspaceRuntime.ts",
+  "presentation/transaction.ts",
+  "workspace/commands/port.ts",
+  "workspace/commands/warm-activation.ts",
+  "workspace/commands/workspace-commands.ts",
+  "workspace/components/view-container.tsx"
+] as const;
+
+const diagnosticCustomEventOwners = new Map<string, ReadonlySet<string> | "dynamic-telemetry">([
+  ["cache/data-cache.ts", new Set(["automation-studio:cache-metric"])],
+  ["development/telemetry.ts", "dynamic-telemetry"],
+  ["graph/worker-tasks.ts", new Set(["automation-studio:worker-queue-metric"])],
+  ["sync/background-work.ts", new Set(["automation-studio:background-work"])],
+  ["sync/lazy-preloader.ts", new Set(["automation-studio:preload-metric"])],
+  ["sync/project-sync.ts", new Set(["automation-studio:change-feed-reconciliation"])],
+  ["workspace/cache/coordinator.ts", new Set(["automation-studio:ui-cache-metric"])]
+]);
+
 function rawCanonicalViewBoundaryCount(source: ReturnType<typeof architectureSource>): number {
   const nonCollidingIds = new Set([...canonicalViewIds].filter((id) => id !== "adaptations"));
   const adaptationBoundaryCount = countPattern(
@@ -100,6 +149,125 @@ function rawCanonicalViewBoundaryCount(source: ReturnType<typeof architectureSou
 }
 function debt(path: string, ceiling: number, owner: string, removalPhase: string): NamedResidualExemption {
   return { path, ceiling, owner, removalPhase };
+}
+
+function importedBindingNames(source: ReturnType<typeof architectureSource>): string[] {
+  const names: string[] = [];
+  visitSyntax(source.syntax, (node) => {
+    if (!ts.isImportDeclaration(node)) return;
+    const clause = node.importClause;
+    if (!clause) return;
+    if (clause.name) names.push(clause.name.text);
+    const bindings = clause.namedBindings;
+    if (bindings && ts.isNamedImports(bindings)) {
+      names.push(...bindings.elements.map((element) => element.name.text));
+    } else if (bindings && ts.isNamespaceImport(bindings)) {
+      names.push(bindings.name.text);
+    }
+  });
+  return names;
+}
+
+function runtimeImportSpecifiers(source: ReturnType<typeof architectureSource>): string[] {
+  const specifiers: string[] = [];
+  visitSyntax(source.syntax, (node) => {
+    if (!ts.isImportDeclaration(node) || !ts.isStringLiteral(node.moduleSpecifier)) return;
+    const clause = node.importClause;
+    if (clause?.isTypeOnly) return;
+    const bindings = clause?.namedBindings;
+    if (bindings && ts.isNamedImports(bindings) && bindings.elements.every((element) => element.isTypeOnly)) return;
+    specifiers.push(node.moduleSpecifier.text);
+  });
+  return specifiers;
+}
+
+function directSelectorOwners(source: ReturnType<typeof architectureSource>): string[] {
+  const owners: string[] = [];
+  visitSyntax(source.syntax, (node) => {
+    if (!ts.isCallExpression(node) || node.expression.getText(source.syntax) !== "useAutomationStoreSelector") return;
+    const owner = node.arguments[0]?.getText(source.syntax);
+    if (owner) owners.push(owner);
+  });
+  return owners;
+}
+
+function customEventCreations(source: ReturnType<typeof architectureSource>): Array<string | null> {
+  const channels: Array<string | null> = [];
+  visitSyntax(source.syntax, (node) => {
+    if (!ts.isNewExpression(node) || node.expression.getText(source.syntax) !== "CustomEvent") return;
+    const channel = node.arguments?.[0];
+    channels.push(channel && (ts.isStringLiteral(channel) || ts.isNoSubstitutionTemplateLiteral(channel))
+      ? channel.text
+      : null);
+  });
+  return channels;
+}
+
+function stringArgumentsForCall(
+  source: ReturnType<typeof architectureSource>,
+  functionName: string
+): Array<string | null> {
+  const values: Array<string | null> = [];
+  visitSyntax(source.syntax, (node) => {
+    if (!ts.isCallExpression(node) || node.expression.getText(source.syntax) !== functionName) return;
+    const argument = node.arguments[0];
+    values.push(argument && (ts.isStringLiteral(argument) || ts.isNoSubstitutionTemplateLiteral(argument))
+      ? argument.text
+      : null);
+  });
+  return values;
+}
+
+function renderTimeExternalWrites(source: ReturnType<typeof architectureSource>): string[] {
+  const violations: string[] = [];
+  const mutationMethods = new Set([
+    "patch", "publish", "replace", "setEntity", "setResource", "setSelection", "setState", "transaction"
+  ]);
+  visitSyntax(source.syntax, (node) => {
+    if (!isRenderFunction(node)) return;
+    visitRenderBody(node.body, (candidate) => {
+      if (!ts.isCallExpression(candidate) || !ts.isPropertyAccessExpression(candidate.expression)) return;
+      const method = candidate.expression.name.text;
+      const receiver = candidate.expression.expression.getText(source.syntax);
+      if (mutationMethods.has(method) && /(?:controller|projectData|runtimeStatus|selection|source|store|this)$/iu.test(receiver)) {
+        violations.push(`${source.path}: ${candidate.expression.getText(source.syntax)}`);
+      }
+    });
+  });
+  return violations;
+}
+
+function isRenderFunction(node: ts.Node): node is ts.FunctionLikeDeclaration {
+  if (!ts.isFunctionDeclaration(node)
+    && !ts.isFunctionExpression(node)
+    && !ts.isArrowFunction(node)
+    && !ts.isMethodDeclaration(node)) return false;
+  if (ts.isMethodDeclaration(node)) return node.name.getText() === "render";
+  if (node.name && ts.isIdentifier(node.name)) return /^[A-Z]/u.test(node.name.text);
+  let parent = node.parent;
+  while (ts.isCallExpression(parent)
+    || ts.isParenthesizedExpression(parent)
+    || ts.isAsExpression(parent)
+    || ts.isSatisfiesExpression(parent)) {
+    parent = parent.parent;
+  }
+  return ts.isVariableDeclaration(parent)
+    && ts.isIdentifier(parent.name)
+    && /^[A-Z]/u.test(parent.name.text);
+}
+
+function visitRenderBody(node: ts.ConciseBody | undefined, callback: (node: ts.Node) => void): void {
+  if (!node) return;
+  callback(node);
+  node.forEachChild((child) => {
+    if (ts.isFunctionLike(child)) return;
+    visitRenderBody(child as ts.ConciseBody, callback);
+  });
+}
+
+function visitSyntax(node: ts.Node, callback: (node: ts.Node) => void): void {
+  callback(node);
+  node.forEachChild((child) => visitSyntax(child, callback));
 }
 
 describe("Automation Studio Phase 10I architecture enforcement", () => {
@@ -159,9 +327,10 @@ describe("Automation Studio Phase 10I architecture enforcement", () => {
     expect(namedResidualAudit(current, rawViewIdResiduals).violations).toEqual([]);
   });
 
-  it("keeps canonical host, publisher, and functionality registration definition-driven", () => {
+  it("keeps canonical host registration typed and destination connectors publisher-free", () => {
     const contracts = architectureSource("live/view-host/contracts.ts").source;
-    const publishers = architectureSource("live/view-host/canonical-publishers.tsx").source;
+    const connectors = architectureSource("live/view-host/canonical-connected-views.tsx").source;
+    const directConnector = architectureSource("live/view-host/direct-view-connector.tsx").source;
     const hostTypes = architectureSource("views/view-host-types.ts").source;
     const hostRegistry = architectureSource("views/view-host-registry.tsx").source;
     const viewContracts = architectureSource("views/view-contracts.ts").source;
@@ -169,9 +338,81 @@ describe("Automation Studio Phase 10I architecture enforcement", () => {
     expect(contracts).not.toContain("canonicalViewHostKinds");
     expect(hostRegistry).not.toContain("registrationList");
     expect(hostTypes).not.toMatch(/AutomationViewHostBindingMap\s*=\s*\{/u);
-    expect(publishers).not.toMatch(/automationStudioViewId\./u);
+    expect(connectors).toContain("createAutomationDirectViewConnector({");
+    expect(directConnector).not.toMatch(/AutomationCanonicalViewPublisher|WorkspaceViewSource/u);
     expect(viewContracts).toContain("automationStudioViewDefinitionsList.map");
   });
+
+  it("keeps deleted aggregate-model and publisher modules absent and unimportable", () => {
+    expect(removedAggregateAndPublisherPaths.filter((path) => existsSync(featurePath(path)))).toEqual([]);
+    const forbiddenImports = [...sources, ...tests].flatMap((source) =>
+      importSpecifiers(source).flatMap((specifier) => {
+        const moduleName = specifier.split("/").at(-1)?.replace(/.(?:ts|tsx)$/u, "") ?? "";
+        return removedAggregateAndPublisherModules.has(moduleName)
+          ? [`${source.path}: ${specifier}`]
+          : [];
+      })
+    );
+    expect(forbiddenImports).toEqual([]);
+  });
+
+  it("keeps Session off broad live project, entity, resource, and selection subscriptions", () => {
+    const session = architectureSource("live/AutomationStudioSession.tsx");
+    const forbiddenBindings = new Set([
+      "useAutomationCanonicalViewInputs",
+      "useAutomationProjectDataResource",
+      "useAutomationProjectEntityCollection",
+      "useAutomationProjectResource",
+      "useAutomationProjectSelection",
+      "useAutomationProjectView",
+      "useAutomationSelectionState",
+      "useSyncExternalStore"
+    ]);
+    expect(importedBindingNames(session).filter((name) => forbiddenBindings.has(name))).toEqual([]);
+    expect(directSelectorOwners(session)).toEqual(["studioStores.catalog"]);
+    expect(session.source).not.toMatch(
+      /studioStores\.(?:projectData|queries|runtimeStatus|selection)\.subscribe\s*\(|useAutomationStoreSelector\s*\(\s*studioStores\.(?:projectData|queries|runtimeStatus|selection)/u
+    );
+    expect(session.source).not.toMatch(
+      /useAutomation(?:CanonicalViewInputs|ProjectDataResource|ProjectEntityCollection|ProjectResource|ProjectSelection|ProjectView|SelectionState)\s*\(/u
+    );
+  });
+
+  it("keeps every canonical connector owned by its destination ViewHost", () => {
+    const session = architectureSource("live/AutomationStudioSession.tsx").source;
+    const entries = architectureSource("live/view-host/connected-view-entries.tsx").source;
+    const connector = architectureSource("live/view-host/direct-view-connector.tsx").source;
+    const host = architectureSource("views/ViewHost.tsx").source;
+    const connectorProperties = [...entries.matchAll(
+      /\bentry\s*\(\s*automationStudioViewId\.([A-Za-z][A-Za-z0-9]*)\s*,/gu
+    )].map((match) => match[1] as keyof typeof automationStudioViewId);
+    const connectedIds = connectorProperties.map((property) => automationStudioViewId[property]).sort();
+
+    expect(connectedIds).toEqual([...automationStudioViewIds].sort());
+    expect(new Set(connectedIds).size).toBe(automationStudioViewIds.length);
+    expect(entries).toContain("createAutomationConnectedViewHostRequest(view as never, connect)");
+    expect(entries).toContain("createAutomationDirectViewConnection(Connector");
+    expect(session).toContain("useAutomationConnectedViewEntries({");
+    expect(session).not.toMatch(/AutomationCanonicalViewPublisher|createAutomationViewHostComposition/u);
+
+    const connectedMount = host.indexOf('if ("connect" in props.request) return props.request.connect(activity);');
+    const boundRegistration = host.indexOf("const registration = automationViewHostRegistration(boundRequest.kind);");
+    expect(connectedMount).toBeGreaterThan(-1);
+    expect(boundRegistration).toBeGreaterThan(connectedMount);
+    expect(host).not.toMatch(/canonical-connected-views|direct-view-connector/u);
+
+    expect(connector).toContain("if (!active) return () => undefined;");
+    expect(connector).toContain("stores.projectData.subscribe(listener, scope)");
+    expect(connector).toContain("store.subscribe(listener, scope)");
+    expect(connector).toContain("<AutomationViewBoundary");
+    expect(connector).toContain("renderAutomationViewHostRequest(");
+
+    const connectorConsumers = sources
+      .filter((source) => runtimeImportSpecifiers(source).some((specifier) => specifier.endsWith("/canonical-connected-views")))
+      .map((source) => source.path);
+    expect(connectorConsumers).toEqual(["live/view-host/connected-view-entries.tsx"]);
+  });
+
   it("forbids imports of sibling domain-private modules", () => {
     const current = domainPrivateImportCounts(sources, productDomains);
     expect(namedResidualAudit(current, domainPrivateImportResiduals).violations).toEqual([]);
@@ -257,6 +498,7 @@ describe("Automation Studio Phase 10I architecture enforcement", () => {
   it("rejects renamed global Studio action channels outside diagnostic owners", () => {
     const diagnosticChannels = new Set([
       "automation-studio:cache-metric",
+      "automation-studio:background-work",
       "automation-studio:change-feed-reconciliation",
       "automation-studio:command-status",
       "automation-studio:dirty-state",
@@ -264,6 +506,7 @@ describe("Automation Studio Phase 10I architecture enforcement", () => {
       "automation-studio:performance-counter",
       "automation-studio:preload-metric",
       "automation-studio:subscription-metric",
+      "automation-studio:ui-cache-metric",
       "automation-studio:worker-queue-metric"
     ]);
     const current = mapCounts(sources.map((source) => ({
@@ -272,6 +515,52 @@ describe("Automation Studio Phase 10I architecture enforcement", () => {
     })));
     expect(namedResidualAudit(current, []).violations).toEqual([]);
   });
+
+  it("confines CustomEvent dispatch to exact diagnostic producers and channels", () => {
+    const violations = sources.flatMap((source) => {
+      const channels = customEventCreations(source);
+      if (!channels.length) return [];
+      const ownership = diagnosticCustomEventOwners.get(source.path);
+      if (!ownership) return channels.map((channel) => `${source.path}: ${channel ?? "<dynamic>"}`);
+      if (ownership === "dynamic-telemetry") {
+        return channels.filter((channel) => channel !== null)
+          .map((channel) => `${source.path}: expected typed dynamic telemetry, received ${channel}`);
+      }
+      return channels.filter((channel) => channel === null || !ownership.has(channel))
+        .map((channel) => `${source.path}: ${channel ?? "<dynamic>"}`);
+    });
+    expect(violations).toEqual([]);
+
+    const staleOwners = [...diagnosticCustomEventOwners]
+      .filter(([path]) => customEventCreations(architectureSource(path)).length === 0)
+      .map(([path]) => path);
+    expect(staleOwners).toEqual([]);
+
+    const telemetry = architectureSource("development/telemetry.ts");
+    const telemetryChannels = stringArgumentsForCall(telemetry, "emitDevelopmentMetric").sort();
+    expect(telemetryChannels).toEqual([
+      "automation-studio:graph-metric",
+      "automation-studio:subscription-metric",
+      "automation-studio:subscription-metric",
+      "automation-studio:worker-queue-metric"
+    ]);
+    expect(telemetry.source).not.toMatch(/export\s+function\s+emitDevelopmentMetric/u);
+  });
+
+  it("forbids external controller and store writes during component render", () => {
+    expect(sources.flatMap(renderTimeExternalWrites)).toEqual([]);
+  });
+
+  it("keeps synchronous navigation, selection, and canvas interactions serialization-free", () => {
+    const missing = synchronousInteractionPaths.filter((path) => !sourceByPath.has(path));
+    expect(missing).toEqual([]);
+    const offenders = synchronousInteractionPaths.flatMap((path) => {
+      const source = sourceByPath.get(path);
+      return source && /\bJSON\.stringify\s*\(/u.test(source.source) ? [path] : [];
+    });
+    expect(offenders).toEqual([]);
+  });
+
   it("keeps AutomationStudioLive a bounded composition root without debt", () => {
     const root = architectureSource("AutomationStudioLive.tsx");
     const functions = functionSpans(root);
@@ -314,16 +603,18 @@ describe("Automation Studio Phase 10I architecture enforcement", () => {
     ];
     expect(removed.filter((path) => existsSync(featurePath(path)))).toEqual([]);
 
-    const residuals = [
-      debt("hierarchy/model.ts", 5, "Phase 7 hierarchy root adoption", "Phase 7"),
-      debt("views/Renderer.tsx", 15, "Phase 10H typed host adoption", "Phase 10H"),
-      debt("workspace/components.tsx", 8, "Phase 8 workspace shell extraction", "Phase 8"),
-      debt("workspace/layout.ts", 8, "Phase 8 workspace shell extraction", "Phase 8")
-    ];
-    const current = new Map(residuals.map((entry) => [
-      entry.path,
-      existsSync(featurePath(entry.path)) ? sourceLineCount(readFileSync(featurePath(entry.path), "utf8")) : 0
-    ]));
-    expect(namedResidualAudit(current, residuals).violations).toEqual([]);
+    const boundedBarrels = new Map([
+      ["hierarchy/model.ts", 5],
+      ["views/Renderer.tsx", 15],
+      ["workspace/components.tsx", 7],
+      ["workspace/layout.ts", 8]
+    ]);
+    const oversized = [...boundedBarrels].flatMap(([path, ceiling]) => {
+      const lines = existsSync(featurePath(path))
+        ? sourceLineCount(readFileSync(featurePath(path), "utf8"))
+        : 0;
+      return lines > ceiling ? [`${path}: ${lines} > ${ceiling}`] : [];
+    });
+    expect(oversized).toEqual([]);
   });
 });

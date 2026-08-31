@@ -21,7 +21,9 @@ export type AutomationHierarchyStore = {
   setChangeListener(listener: ((state: AutomationHierarchyUiState) => void) | undefined): void;
   hydrate(state: AutomationHierarchyUiState | null | undefined): boolean;
   focus(nodeId: string): boolean;
+  previewFocus(nodeId: string): boolean;
   setPrimary(nodeId: string | null): boolean;
+  previewPrimary(nodeId: string | null): boolean;
   toggleFolder(folderId: string, defaultCollapsed?: boolean): boolean;
   expandContainer(folderId: string, defaultCollapsed?: boolean): boolean;
   ensureVisibleFocus(visibleIds: ReadonlySet<string>): boolean;
@@ -40,11 +42,11 @@ export function createAutomationHierarchyStore(
   let snapshot = normalizeAutomationHierarchyUiState(initialState);
   let onChange: ((state: AutomationHierarchyUiState) => void) | undefined;
   const listeners = new Set<() => void>();
-  const replace = (next: AutomationHierarchyUiState, publish: boolean): boolean => {
+  const replace = (next: AutomationHierarchyUiState, publish: boolean, notify = true): boolean => {
     const normalized = normalizeAutomationHierarchyUiState(next);
     if (automationHierarchyUiStateEqual(snapshot, normalized)) return false;
     snapshot = normalized;
-    for (const listener of listeners) listener();
+    if (notify) for (const listener of listeners) listener();
     if (publish) onChange?.(snapshot);
     return true;
   };
@@ -58,13 +60,19 @@ export function createAutomationHierarchyStore(
       onChange = listener;
     },
     hydrate(state) {
-      return state ? replace(state, false) : false;
+      return replace(normalizeAutomationHierarchyUiState(state), false);
     },
     focus(nodeId) {
       return replace({ ...snapshot, focusedTreeNodeId: nodeId }, true);
     },
+    previewFocus(nodeId) {
+      return replace({ ...snapshot, focusedTreeNodeId: nodeId }, false, false);
+    },
     setPrimary(nodeId) {
       return replace({ ...snapshot, primaryTreeNodeId: nodeId }, true);
+    },
+    previewPrimary(nodeId) {
+      return replace({ ...snapshot, primaryTreeNodeId: nodeId }, false, false);
     },
     toggleFolder(folderId, defaultCollapsed = false) {
       if (defaultCollapsed) {

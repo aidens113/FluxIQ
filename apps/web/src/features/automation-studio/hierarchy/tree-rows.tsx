@@ -78,7 +78,7 @@ type AutomationHierarchyTreeNodeProps = AutomationHierarchyTreeRowsProps & {
   node: AutomationHierarchyNode;
 };
 
-export const AutomationHierarchyTreeNode = memo(function AutomationHierarchyTreeNode(
+export function AutomationHierarchyTreeNode(
   props: AutomationHierarchyTreeNodeProps
 ) {
   const children = useMemo(
@@ -97,93 +97,24 @@ export const AutomationHierarchyTreeNode = memo(function AutomationHierarchyTree
   const isFolder = props.node.kind === "folder";
   const isContainer = isFolder || children.length > 0;
   const collapsed = props.collapsedFolderIds.includes(props.node.id);
-  const actionIds = automationHierarchyRowActionIds(props.node);
-  const Icon = automationHierarchyIconForNode(props.node);
 
   return (
     <div className="automation-tree-branch">
-      <div className="automation-tree-item">
-        {isContainer && !isFolder ? (
-          <button
-            className="tree-row-disclosure"
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              props.toggleFolder(props.node.id);
-            }}
-            onDoubleClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-            }}
-            title={`${collapsed ? "Expand" : "Collapse"} ${props.node.label}`}
-            aria-label={`${collapsed ? "Expand" : "Collapse"} ${props.node.label}`}
-            type="button"
-          >
-            {collapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
-          </button>
-        ) : null}
-        <button
-          aria-expanded={isContainer ? !collapsed : undefined}
-          aria-level={props.level}
-          aria-selected={primarySelected}
-          data-tree-item-id={props.node.id}
-          data-tree-parent-id={props.node.parentId ?? "root-flow"}
-          role="treeitem"
-          tabIndex={props.focusedTreeNodeId === props.node.id ? 0 : -1}
-          className={`tree-row-main ${primarySelected ? "selected " : ""}${correlatedSelected ? "correlated " : ""}${isFolder ? "folder-row " : ""}type-${props.node.kind}`}
-          onClick={(event) => {
-            if (event.detail > 1) return;
-            if (isFolder) props.toggleFolder(props.node.id);
-            else props.openNode(props.node, "preview");
-          }}
-          onDoubleClick={() => props.openNode(props.node, "new-window")}
-          onFocus={() => props.onTreeItemFocus(props.node.id)}
-          title={props.node.label}
-          type="button"
-        >
-          {isFolder ? (
-            <>
-              {collapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
-              <Icon size={14} aria-hidden />
-            </>
-          ) : <Icon size={14} aria-hidden />}
-          <span><strong>{props.node.label}</strong><small>{props.node.kind}</small></span>
-        </button>
-        {actionIds.length ? (
-          <div className="automation-tree-row-menu">
-            <Menu
-              icon={<MoreHorizontal size={14} aria-hidden />}
-              iconOnly
-              label={props.node.label + " actions"}
-              options={actionIds.map((actionId) => {
-                if (actionId === "create-child") {
-                  return {
-                    id: actionId,
-                    label: "Add inside",
-                    icon: <Plus size={14} aria-hidden />,
-                    onSelect: () => props.commands.create({ parentId: props.node.id, parent: props.node })
-                  };
-                }
-                if (actionId === "open-settings") {
-                  return {
-                    id: actionId,
-                    label: "Open settings",
-                    icon: <Settings size={14} aria-hidden />,
-                    onSelect: () => props.openConfig(props.node)
-                  };
-                }
-                return {
-                  id: actionId,
-                  label: "Delete",
-                  icon: <Trash2 size={14} aria-hidden />,
-                  danger: true,
-                  onSelect: () => props.commands.delete(props.node)
-                };
-              })}
-            />
-          </div>
-        ) : null}
-      </div>
+      <AutomationHierarchyTreeRow
+        collapsed={collapsed}
+        commands={props.commands}
+        correlatedSelected={correlatedSelected}
+        focused={props.focusedTreeNodeId === props.node.id}
+        isContainer={isContainer}
+        isFolder={isFolder}
+        level={props.level}
+        node={props.node}
+        onTreeItemFocus={props.onTreeItemFocus}
+        openConfig={props.openConfig}
+        openNode={props.openNode}
+        primarySelected={primarySelected}
+        toggleFolder={props.toggleFolder}
+      />
       {children.length && !collapsed ? (
         <div className="automation-tree-children" role="group">
           <AutomationHierarchyChildren
@@ -191,6 +122,112 @@ export const AutomationHierarchyTreeNode = memo(function AutomationHierarchyTree
             nodes={children}
             parentId={props.node.id}
             level={props.level + 1}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+type AutomationHierarchyTreeRowProps = {
+  collapsed: boolean;
+  commands: AutomationHierarchyCommands;
+  correlatedSelected: boolean;
+  focused: boolean;
+  isContainer: boolean;
+  isFolder: boolean;
+  level: number;
+  node: AutomationHierarchyNode;
+  onTreeItemFocus(nodeId: string): void;
+  openConfig(node: AutomationHierarchyNode): void;
+  openNode(node: AutomationHierarchyNode, mode: "preview" | "new-window"): void;
+  primarySelected: boolean;
+  toggleFolder(folderId: string): void;
+};
+
+const AutomationHierarchyTreeRow = memo(function AutomationHierarchyTreeRow(
+  props: AutomationHierarchyTreeRowProps
+) {
+  const actionIds = automationHierarchyRowActionIds(props.node);
+  const Icon = automationHierarchyIconForNode(props.node);
+  return (
+    <div className="automation-tree-item">
+      {props.isContainer && !props.isFolder ? (
+        <button
+          className="tree-row-disclosure"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            props.toggleFolder(props.node.id);
+          }}
+          onDoubleClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          title={`${props.collapsed ? "Expand" : "Collapse"} ${props.node.label}`}
+          aria-label={`${props.collapsed ? "Expand" : "Collapse"} ${props.node.label}`}
+          type="button"
+        >
+          {props.collapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
+        </button>
+      ) : null}
+      <button
+        aria-expanded={props.isContainer ? !props.collapsed : undefined}
+        aria-level={props.level}
+        aria-selected={props.primarySelected}
+        data-tree-item-id={props.node.id}
+        data-tree-parent-id={props.node.parentId ?? "root-flow"}
+        role="treeitem"
+        tabIndex={props.focused ? 0 : -1}
+        className={`tree-row-main ${props.primarySelected ? "selected " : ""}${props.correlatedSelected ? "correlated " : ""}${props.isFolder ? "folder-row " : ""}type-${props.node.kind}`}
+        onClick={(event) => {
+          if (event.detail > 1) return;
+          if (props.isFolder) props.toggleFolder(props.node.id);
+          else props.openNode(props.node, "preview");
+        }}
+        onDoubleClick={() => props.openNode(props.node, "new-window")}
+        title={props.node.label}
+        type="button"
+      >
+        {props.isFolder ? (
+          <>
+            {props.collapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
+            <Icon size={14} aria-hidden />
+          </>
+        ) : <Icon size={14} aria-hidden />}
+        <span><strong>{props.node.label}</strong><small>{props.node.kind}</small></span>
+      </button>
+      {actionIds.length ? (
+        <div className="automation-tree-row-menu">
+          <Menu
+            icon={<MoreHorizontal size={14} aria-hidden />}
+            iconOnly
+            label={props.node.label + " actions"}
+            options={actionIds.map((actionId) => {
+              if (actionId === "create-child") {
+                return {
+                  id: actionId,
+                  label: "Add inside",
+                  icon: <Plus size={14} aria-hidden />,
+                  onSelect: () => props.commands.create({ parentId: props.node.id, parent: props.node })
+                };
+              }
+              if (actionId === "open-settings") {
+                return {
+                  id: actionId,
+                  label: "Open settings",
+                  icon: <Settings size={14} aria-hidden />,
+                  onSelect: () => props.openConfig(props.node)
+                };
+              }
+              return {
+                id: actionId,
+                label: "Delete",
+                icon: <Trash2 size={14} aria-hidden />,
+                danger: true,
+                onSelect: () => props.commands.delete(props.node)
+              };
+            })}
           />
         </div>
       ) : null}

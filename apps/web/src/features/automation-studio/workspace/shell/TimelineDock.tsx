@@ -1,14 +1,14 @@
 "use client";
 
 import { ChevronDown, ChevronUp, Radio } from "lucide-react";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import type { AutomationWorkspaceCommands, AutomationWorkspaceCommandPort } from "../commands/contracts";
 import { automationBottomDockMaxHeight, automationBottomDockMinHeight } from "../layout/defaults";
 import type { AutomationWorkspaceRenderStore } from "../render-store";
 import { useAutomationWorkspaceSelector } from "./selectors";
 import { beginAutomationSectionResize, resizeTimelineFromKeyboard } from "./resize-events";
 
-export function AutomationTimelineDock(props: {
+export const AutomationTimelineDock = memo(function AutomationTimelineDock(props: {
   commands: AutomationWorkspaceCommands;
   content: ReactNode;
   forceExpanded?: boolean;
@@ -77,4 +77,4 @@ export function AutomationTimelineDock(props: {
       {!state.collapsed ? props.content : null}
     </section>
   );
-}
+});

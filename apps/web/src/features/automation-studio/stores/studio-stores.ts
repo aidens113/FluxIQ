@@ -1,12 +1,14 @@
 import type { AutomationStudioProject, AutomationStudioProjectCategory } from "../hierarchy/model";
 import { createAutomationProjectCatalogStore } from "./project-catalog-store";
 import { createAutomationProjectDataStore } from "./project-data-store";
+import { createAutomationProjectQueryStore } from "./project-query-store";
 import { createAutomationRuntimeStatusStore } from "./runtime-status-store";
 import { createAutomationSelectionStore } from "./selection-store";
 
 export function createAutomationStudioStores() {
   const catalog = createAutomationProjectCatalogStore<AutomationStudioProject, AutomationStudioProjectCategory>();
   const projectData = createAutomationProjectDataStore();
+  const queries = createAutomationProjectQueryStore();
   const selection = createAutomationSelectionStore();
   const runtimeStatus = createAutomationRuntimeStatusStore();
   projectData.transaction(() => {
@@ -25,13 +27,24 @@ export function createAutomationStudioStores() {
     });
     projectData.setResource("gatewaySnapshot", { enabled: false, sessions: [], pairings: [], auditLog: [] });
     projectData.setResource("indexedStateSources", {});
+    projectData.setResource("loadedProjectHierarchyId", null);
+    projectData.setResource("projectSearch", "");
+    projectData.setResource("projectTypeFilter", "all");
+    projectData.setResource("customHierarchyNodes", []);
+    projectData.setResource("deletedHierarchyIds", []);
   });
-  const stores = { catalog, projectData, selection, runtimeStatus };
+  const stores = { catalog, projectData, queries, selection, runtimeStatus };
 
   return {
     ...stores,
     transaction<Result>(operation: () => Result): Result {
-      return catalog.transaction(() => projectData.transaction(() => selection.transaction(() => runtimeStatus.transaction(operation))));
+      return catalog.transaction(() =>
+        projectData.transaction(() =>
+          queries.transaction(() =>
+            selection.transaction(() => runtimeStatus.transaction(operation))
+          )
+        )
+      );
     }
   };
 }

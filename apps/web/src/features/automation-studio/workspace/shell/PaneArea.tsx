@@ -1,9 +1,8 @@
 "use client";
 
 import { Columns3 } from "lucide-react";
-import { memo, useMemo } from "react";
+import { memo } from "react";
 import { AutomationViewContainer } from "../components/view-container";
-import { createAutomationMountedViewActivationStore, type AutomationMountedViewActivationStore } from "../components/mounted-view-activation";
 import { viewTitle } from "../components/view-metadata";
 import type { AutomationWorkspaceCommandPort, AutomationWorkspaceCommands } from "../commands/contracts";
 import type { AutomationWarmViewRegistry } from "../commands/warm-activation";
@@ -33,7 +32,6 @@ export const AutomationPaneArea = memo(function AutomationPaneArea(props: {
   store: AutomationWorkspaceRenderStore;
   warm: AutomationWarmViewRegistry;
 }) {
-  const activation = useMemo(createAutomationMountedViewActivationStore, [props.projectKey]);
   const state = useAutomationWorkspaceSelector(props.store, (prefs) => ({
     activePaneId: prefs.activePaneId,
     panes: prefs.panes,
@@ -68,7 +66,6 @@ export const AutomationPaneArea = memo(function AutomationPaneArea(props: {
           {panes.map((pane, index) => (
             <AutomationPaneSlot
               active={pane.id === state.activePaneId}
-              activation={activation}
               chrome={props.chrome}
               commands={props.commands}
               index={index}
@@ -106,7 +103,6 @@ export const AutomationPaneArea = memo(function AutomationPaneArea(props: {
 
 function AutomationPaneSlot(props: {
   active: boolean;
-  activation: AutomationMountedViewActivationStore;
   chrome: AutomationWorkspaceChromeCommands;
   commands: AutomationWorkspaceCommands;
   index: number;
@@ -124,9 +120,7 @@ function AutomationPaneSlot(props: {
     <div aria-label={`Editor pane ${props.index + 1}`} className="automation-pane-slot" role="group">
       <AutomationViewContainer
         active={props.active}
-        activation={props.activation}
         activeViewId={activeEntry.view.id}
-        bodyClassName={activeEntry.bodyClassName}
         frameLabel="Pane"
         icon={activeEntry.view.icon}
         onActivate={() => props.commands.activatePane(props.pane.id)}
@@ -145,7 +139,6 @@ function AutomationPaneSlot(props: {
       >
         <AutomationMountedViewStack
           activePane={props.active}
-          activation={props.activation}
           activeViewId={activeEntry.view.id}
           paneId={props.pane.id}
           projectKey={props.projectKey}

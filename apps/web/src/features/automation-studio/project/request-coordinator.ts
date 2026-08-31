@@ -71,6 +71,59 @@ export class AutomationRequestStateStore {
   }
 }
 
+export type AutomationRequestCoordinator = {
+  readonly requestStates: Record<string, AutomationRequestState>;
+  runLatest<T>(key: string, operation: (signal: AbortSignal) => Promise<T>): Promise<T | undefined>;
+  cancel(key: string): void;
+  cancelAll(): void;
+};
+
+export function createAutomationRequestCoordinator(
+  registry = new LatestAutomationRequestRegistry(),
+  states = new AutomationRequestStateStore()
+): AutomationRequestCoordinator {
+  return {
+    get requestStates() {
+      return states.snapshot;
+    },
+    runLatest: (key, operation) => runLatestAutomationRequest(registry, states, key, operation),
+    cancel(key) {
+      registry.cancel(key);
+      states.reset(key);
+      recordAutomationStudioRequestLifecycle(key, { source: 'request-coordinator', phase: 'cancelled' });
+    },
+    cancelAll() {
+      registry.cancelAll();
+    }
+  };
+}
+
+async function runLatestAutomationRequest<T>(
+  registry: LatestAutomationRequestRegistry,
+  states: AutomationRequestStateStore,
+  key: string,
+  operation: (signal: AbortSignal) => Promise<T>
+): Promise<T | undefined> {
+  const controller = registry.begin(key);
+  states.set(key, nextAutomationRequestState('loading', performance.now()));
+  recordAutomationStudioRequestLifecycle(key, { source: 'request-coordinator', phase: 'loading' });
+  try {
+    const value = await operation(controller.signal);
+    if (controller.signal.aborted || !registry.owns(key, controller)) return undefined;
+    states.update(key, (current) => nextAutomationRequestState('success', performance.now(), current));
+    recordAutomationStudioRequestLifecycle(key, { source: 'request-coordinator', phase: 'success' });
+    return value;
+  } catch (error) {
+    if (controller.signal.aborted || !registry.owns(key, controller)) return undefined;
+    const message = error instanceof Error ? error.message : 'Request could not be completed.';
+    states.update(key, (current) => nextAutomationRequestState('error', performance.now(), current, message));
+    recordAutomationStudioRequestLifecycle(key, { source: 'request-coordinator', phase: 'error' });
+    return undefined;
+  } finally {
+    registry.finish(key, controller);
+  }
+}
+
 export function useRequestCoordinator() {
   const registryRef = useRef<LatestAutomationRequestRegistry | null>(null);
   if (!registryRef.current) registryRef.current = new LatestAutomationRequestRegistry();

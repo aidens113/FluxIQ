@@ -6,7 +6,8 @@ import type { AutomationHierarchyNode } from "./model";
 import { indexAutomationHierarchyNodes } from "./model";
 import {
   automationHierarchyNodeSelectionState,
-  createAutomationHierarchyProjectionSelector
+  createAutomationHierarchyProjectionSelector,
+  selectAutomationHierarchyPrimaryTreeNodeId
 } from "./selectors";
 import { createAutomationHierarchyStore } from "./store";
 
@@ -63,6 +64,46 @@ describe("automation hierarchy store", () => {
     expect(publish).toHaveBeenCalledTimes(1);
   });
 
+  it("hydrates cached project state once without publishing it back", () => {
+    const store = createAutomationHierarchyStore();
+    const subscriber = vi.fn();
+    const publish = vi.fn();
+    store.subscribe(subscriber);
+    store.setChangeListener(publish);
+    const cached = {
+      collapsedFolderIds: ["folder-a"],
+      expandedDefaultCollapsedIds: ["subflow-a"],
+      focusedTreeNodeId: "flow-a",
+      primaryTreeNodeId: router.id
+    };
+
+    expect(store.hydrate(cached)).toBe(true);
+    expect(store.getSnapshot()).toEqual(cached);
+    expect(subscriber).toHaveBeenCalledTimes(1);
+    expect(publish).not.toHaveBeenCalled();
+
+    expect(store.hydrate({ ...cached, collapsedFolderIds: [...cached.collapsedFolderIds] })).toBe(false);
+    expect(subscriber).toHaveBeenCalledTimes(1);
+    expect(publish).not.toHaveBeenCalled();
+
+    expect(store.focus(settings.id)).toBe(true);
+    expect(subscriber).toHaveBeenCalledTimes(2);
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(store.hydrate({ ...store.getSnapshot() })).toBe(false);
+    expect(subscriber).toHaveBeenCalledTimes(2);
+    expect(publish).toHaveBeenCalledTimes(1);
+
+    expect(store.hydrate(null)).toBe(true);
+    expect(store.getSnapshot()).toEqual({
+      collapsedFolderIds: [],
+      expandedDefaultCollapsedIds: [],
+      focusedTreeNodeId: "root-flow",
+      primaryTreeNodeId: null
+    });
+    expect(subscriber).toHaveBeenCalledTimes(3);
+    expect(publish).toHaveBeenCalledTimes(1);
+  });
+
   it("preserves ordinary folder and default-collapsed subflow semantics", () => {
     const store = createAutomationHierarchyStore();
 
@@ -98,6 +139,58 @@ describe("automation hierarchy selectors", () => {
     expect(selected.map((node) => node.id)).toEqual([settings.id]);
   });
 
+  it("derives external selection without feeding updates back into the hierarchy store", () => {
+    const store = createAutomationHierarchyStore({
+      collapsedFolderIds: [],
+      expandedDefaultCollapsedIds: [],
+      focusedTreeNodeId: router.id,
+      primaryTreeNodeId: router.id
+    });
+    const subscriber = vi.fn();
+    store.subscribe(subscriber);
+
+    for (let index = 0; index < 100; index += 1) {
+      expect(selectAutomationHierarchyPrimaryTreeNodeId({
+        nodes: [flow, router, settings],
+        primaryTreeNodeId: store.getSnapshot().primaryTreeNodeId,
+        selection: { kind: "flow", id: "flow.checkout" },
+        activeViewId: "flow-settings",
+        recordingPrimaryKind: null
+      })).toBeNull();
+    }
+
+    expect(store.getSnapshot().primaryTreeNodeId).toBe(router.id);
+    expect(subscriber).not.toHaveBeenCalled();
+
+    const selected = [flow, router, settings].filter((node) => automationHierarchyNodeSelectionState({
+      node,
+      index: indexAutomationHierarchyNodes([flow, router, settings]),
+      selection: { kind: "flow", id: "flow.checkout" },
+      activeViewId: "flow-settings",
+      primaryTreeNodeId: null,
+      recordingPrimaryKind: null
+    }).primarySelected);
+    expect(selected.map((node) => node.id)).toEqual([settings.id]);
+  });
+
+  it("shows a newly requested primary row before its workspace view activates", () => {
+    expect(selectAutomationHierarchyPrimaryTreeNodeId({
+      nodes: [flow, router, settings],
+      primaryTreeNodeId: settings.id,
+      selection: { kind: "flow", id: "flow.checkout" },
+      activeViewId: undefined,
+      recordingPrimaryKind: null
+    })).toBe(settings.id);
+
+    expect(selectAutomationHierarchyPrimaryTreeNodeId({
+      nodes: [flow, router, settings],
+      primaryTreeNodeId: settings.id,
+      selection: { kind: "flow", id: "flow.checkout" },
+      activeViewId: "flow-router",
+      recordingPrimaryKind: null
+    })).toBeNull();
+  });
+
   it("retains stable indexes and arrays for unchanged projection inputs", () => {
     const selectProjection = createAutomationHierarchyProjectionSelector();
     const nodes = [flow, router, settings];
@@ -107,12 +200,15 @@ describe("automation hierarchy selectors", () => {
     expect(second).toBe(first);
     expect(second.index).toBe(first.index);
     expect(second.rootNodes).toBe(first.rootNodes);
-    expect(selectProjection(nodes, "settings", "all")).not.toBe(first);
+    const filtered = selectProjection(nodes, "settings", "all");
+    expect(filtered).not.toBe(first);
+    expect(filtered.index).toBe(first.index);
+    expect(filtered.matchCount).toBe(1);
   });
 });
 
 describe("automation hierarchy controller", () => {
-  it("publishes the row primary state before domain navigation work", () => {
+  it("updates the primary snapshot without a redundant tree publication", () => {
     const store = createAutomationHierarchyStore();
     const order: string[] = [];
     store.subscribe(() => order.push("tree"));
@@ -129,10 +225,90 @@ describe("automation hierarchy controller", () => {
     controller.openNode(flow, "preview");
 
     expect(store.getSnapshot().primaryTreeNodeId).toBe(router.id);
-    expect(order[0]).toBe("tree");
-    expect(order).toEqual(["tree", "view"]);
+    expect(order).toEqual(["view"]);
   });
 
+  it("keeps one controller while reading the latest command context", () => {
+    const firstOpenView = vi.fn();
+    const latestOpenView = vi.fn();
+    const latestSetSelection = vi.fn();
+    const store = createAutomationHierarchyStore();
+    let context = {
+      nodes: [flow, router],
+      activeViewId: "flow-router" as string | undefined,
+      selection: { kind: "flow" as const, id: "flow.checkout" },
+      recordingPrimaryKind: null as "recording" | null,
+      setRecordingPrimaryKind: vi.fn(),
+      setSelection: vi.fn(),
+      openView: firstOpenView
+    };
+    const controller = createAutomationHierarchyController(store, () => context);
+    const originalController = controller;
+
+    controller.openNode(router, "preview");
+    expect(firstOpenView).toHaveBeenCalledOnce();
+
+    const defaultCollapsedFolder: AutomationHierarchyNode = {
+      id: "folder-latest",
+      label: "Latest folder",
+      kind: "folder",
+      category: "flow",
+      parentId: flow.id,
+      metadata: { defaultCollapsed: true }
+    };
+    context = {
+      ...context,
+      nodes: [flow, router, defaultCollapsedFolder],
+      activeViewId: "flow-settings",
+      selection: { kind: "flow", id: "flow.other" },
+      setSelection: latestSetSelection,
+      openView: latestOpenView
+    };
+
+    controller.openNode(router, "new-window");
+    controller.toggleFolder(defaultCollapsedFolder.id);
+
+    expect(controller).toBe(originalController);
+    expect(firstOpenView).toHaveBeenCalledOnce();
+    expect(latestSetSelection).toHaveBeenCalledWith({ kind: "flow", id: "flow.checkout" });
+    expect(latestOpenView).toHaveBeenCalledWith("flow-router", "new-window");
+    expect(store.getSnapshot().expandedDefaultCollapsedIds).toEqual([defaultCollapsedFolder.id]);
+  });
+
+  it("keeps folder toggles local to the hierarchy store", () => {
+    const folder: AutomationHierarchyNode = {
+      id: "folder-a",
+      label: "Folder",
+      kind: "folder",
+      category: "flow",
+      parentId: flow.id
+    };
+    const store = createAutomationHierarchyStore();
+    const subscriber = vi.fn();
+    const setRecordingPrimaryKind = vi.fn();
+    const setSelection = vi.fn();
+    const openView = vi.fn();
+    store.subscribe(subscriber);
+    const controller = createAutomationHierarchyController(store, {
+      nodes: [flow, folder],
+      activeViewId: "flow-router",
+      selection: { kind: "flow", id: "flow.checkout" },
+      recordingPrimaryKind: null,
+      setRecordingPrimaryKind,
+      setSelection,
+      openView
+    });
+
+    controller.toggleFolder(folder.id);
+    expect(store.getSnapshot().collapsedFolderIds).toEqual([folder.id]);
+    controller.toggleFolder(folder.id);
+    expect(store.getSnapshot().collapsedFolderIds).toEqual([]);
+
+    expect(subscriber).toHaveBeenCalledTimes(2);
+    expect(setRecordingPrimaryKind).not.toHaveBeenCalled();
+    expect(setSelection).not.toHaveBeenCalled();
+    expect(openView).not.toHaveBeenCalled();
+  });
   it("opens a subflow through its single graph-shell path and selects Nodes", () => {
     const subflow: AutomationHierarchyNode = {
       id: "subflow-a",

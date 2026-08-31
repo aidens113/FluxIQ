@@ -25,6 +25,8 @@ describe("DocsLive contract", () => {
   it("exposes bounded, deep-linked, keyboard-operable states", () => {
     const source = readFileSync(new URL("./docs.tsx", import.meta.url), "utf8");
     expect(source).toContain("TREE_PAGE_LIMIT");
+    expect(source).toContain("useDeferredValue");
+    expect(source).toContain("const renderedHtml = useMemo");
     expect(source).toContain('searchParams.get("doc")');
     expect(source).toContain('role="tree"');
     expect(source).toContain('"ArrowDown"');

@@ -38,11 +38,11 @@ describe("Phase 9 overlay architecture", () => {
     expect(source).not.toMatch(/projectFlows|projectRecordings|runtimeSessions|pipelineArtifacts|hierarchyNodes/);
   });
 
-  it("provides focus, Escape, scroll-lock, and viewport containment", () => {
+  it("provides focus, Escape, non-blocking scroll, and viewport containment", () => {
     const floating = readFileSync(new URL("accessible-floating-overlay.tsx", overlayDirectory), "utf8");
     expect(floating).toContain('event.key === "Escape"');
     expect(floating).toContain('event.key !== "Tab"');
-    expect(floating).toContain('document.body.style.overflow = "hidden"');
+    expect(floating).toContain("{ lockScroll: false }");
     expect(floating).toContain("maxHeight:");
     expect(floating).toContain("maxWidth:");
     const modalSubscribers = [

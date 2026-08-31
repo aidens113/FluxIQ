@@ -122,6 +122,18 @@ describe("Phase 9 overlay hardening", () => {
     expect(focus).toHaveBeenCalledTimes(1);
   });
 
+  it("does not mutate document scrolling for floating menu overlays", () => {
+    const documentRef = {
+      body: { style: { overflow: "auto" } }
+    } as unknown as Document;
+
+    const release = acquireOverlayEnvironment(documentRef, null, { lockScroll: false });
+    expect(documentRef.body.style.overflow).toBe("auto");
+    expect(overlayEnvironmentDepth(documentRef)).toBe(1);
+    release();
+    expect(documentRef.body.style.overflow).toBe("auto");
+  });
+
   it("blocks implicit dismissal during a command but permits explicit cancellation", () => {
     expect(canCloseFloatingOverlay(true, "escape")).toBe(false);
     expect(canCloseFloatingOverlay(true, "backdrop")).toBe(false);

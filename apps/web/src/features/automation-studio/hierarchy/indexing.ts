@@ -3,7 +3,10 @@ import type { AutomationHierarchyKind, AutomationHierarchyNode } from "./contrac
 export type AutomationHierarchyIndex = {
   byId: Map<string, AutomationHierarchyNode>;
   childrenByParentId: Map<string | null, AutomationHierarchyNode[]>;
+  searchTextById: Map<string, string>;
 };
+
+const hierarchyIndexCache = new WeakMap<readonly AutomationHierarchyNode[], AutomationHierarchyIndex>();
 
 const hierarchyKindRank: Readonly<Record<AutomationHierarchyKind, number>> = {
   folder: 0,
@@ -33,8 +36,10 @@ export function sortAutomationHierarchyNodes(nodes: readonly AutomationHierarchy
 export function indexAutomationHierarchyNodes(nodes: readonly AutomationHierarchyNode[]): AutomationHierarchyIndex {
   const byId = new Map<string, AutomationHierarchyNode>();
   const childrenByParentId = new Map<string | null, AutomationHierarchyNode[]>();
+  const searchTextById = new Map<string, string>();
   for (const node of nodes) {
     byId.set(node.id, node);
+    searchTextById.set(node.id, (node.label + " " + node.kind).toLocaleLowerCase());
     const children = childrenByParentId.get(node.parentId);
     if (children) children.push(node);
     else childrenByParentId.set(node.parentId, [node]);
@@ -42,7 +47,17 @@ export function indexAutomationHierarchyNodes(nodes: readonly AutomationHierarch
   for (const [parentId, children] of childrenByParentId) {
     childrenByParentId.set(parentId, sortAutomationHierarchyNodes(children));
   }
-  return { byId, childrenByParentId };
+  return { byId, childrenByParentId, searchTextById };
+}
+
+export function memoizedAutomationHierarchyIndex(
+  nodes: readonly AutomationHierarchyNode[]
+): AutomationHierarchyIndex {
+  const cached = hierarchyIndexCache.get(nodes);
+  if (cached) return cached;
+  const index = indexAutomationHierarchyNodes(nodes);
+  hierarchyIndexCache.set(nodes, index);
+  return index;
 }
 
 export function visibleAutomationHierarchyNodeIds(

@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import type { AutomationProjectEntityKind } from "./project-data-store";
+import {
+  automationEntityCollectionSelector,
+  type AutomationProjectEntityKind
+} from "./project-data-store";
 import type { AutomationStudioStores } from "./studio-stores";
 import { useAutomationStoreSelector } from "./use-store-selector";
 
@@ -31,12 +34,12 @@ export function useAutomationProjectEntityCollection<Value>(
   stores: AutomationStudioStores,
   kind: AutomationProjectEntityKind
 ): Value[] {
+  const selector = useMemo(() => automationEntityCollectionSelector(kind), [kind]);
   return useAutomationStoreSelector(
     stores.projectData,
-    (state) => [...state.entities[kind].values()] as Value[],
-    `entities:${kind}`,
-    shallowArraySame
-  );
+    selector,
+    `entities:${kind}`
+  ) as Value[];
 }
 
 export function useAutomationProjectEntityCollectionSetter<Value>(
@@ -49,8 +52,4 @@ export function useAutomationProjectEntityCollectionSetter<Value>(
     const value = typeof next === "function" ? next(current) : next;
     stores.projectData.replaceAll(kind, value.map((item, index) => [identify(item, index), item] as const));
   }, [identify, kind, stores]);
-}
-
-function shallowArraySame(left: readonly unknown[], right: readonly unknown[]): boolean {
-  return left.length === right.length && left.every((value, index) => Object.is(value, right[index]));
 }

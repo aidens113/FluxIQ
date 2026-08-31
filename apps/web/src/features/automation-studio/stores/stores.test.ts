@@ -1,10 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { createScopedExternalStore } from "./external-store";
+import { createScopedExternalStore, runAutomationStoreTransaction } from "./external-store";
 import { automationEntityScope, createAutomationProjectDataStore } from "./project-data-store";
 import { createAutomationSelectionStore } from "./selection-store";
 import { createAutomationRuntimeStatusStore } from "./runtime-status-store";
 
 describe("Automation Studio scoped stores", () => {
+  it("publishes cross-store presentation writes only after every owner is consistent", () => {
+    const selection = createScopedExternalStore({ id: "flow.one" });
+    const workspace = createScopedExternalStore({ viewId: "flow-editor" });
+    const observed: string[] = [];
+    selection.subscribe(() => observed.push(selection.getState().id + ":" + workspace.getState().viewId));
+    workspace.subscribe(() => observed.push(selection.getState().id + ":" + workspace.getState().viewId));
+
+    runAutomationStoreTransaction(() => {
+      selection.replace({ id: "flow.two" });
+      expect(observed).toEqual([]);
+      workspace.replace({ viewId: "settings" });
+      expect(observed).toEqual([]);
+    });
+
+    expect(observed).toEqual(["flow.two:settings", "flow.two:settings"]);
+  });
+
   it("batches atomic writes and notifies only affected scoped subscribers", () => {
     const store = createScopedExternalStore({ a: 0, b: 0 });
     let global = 0;
@@ -32,6 +49,31 @@ describe("Automation Studio scoped stores", () => {
     expect(store.upsert("flows", "flow.one", { flowId: "flow.one" })).toBe(true);
     expect(store.getState().entities.recordings).toBe(recordings);
     expect({ flowUpdates, recordingUpdates }).toEqual({ flowUpdates: 1, recordingUpdates: 0 });
+  });
+
+  it("retains normalized entity and page ID arrays across semantic no-ops", () => {
+    const store = createAutomationProjectDataStore();
+    const flow = { flowId: "flow.one" };
+    expect(store.replaceAll("flows", [["flow.one", flow], ["flow.one", flow]])).toBe(true);
+    const entityIds = store.getState().entityIds.flows;
+    expect(entityIds).toEqual(["flow.one"]);
+    expect(store.replaceAll("flows", [["flow.one", flow]])).toBe(false);
+    expect(store.getState().entityIds.flows).toBe(entityIds);
+
+    expect(store.setPage("runs", {
+      ids: ["run.one", "run.two"],
+      total: 2,
+      limit: 25,
+      offset: 0
+    })).toBe(true);
+    const pageIds = store.getState().pages.get("runs")?.ids;
+    expect(store.setPage("runs", {
+      ids: ["run.one", "run.two"],
+      total: 2,
+      limit: 25,
+      offset: 0
+    })).toBe(false);
+    expect(store.getState().pages.get("runs")?.ids).toBe(pageIds);
   });
 
   it("guards semantic selection no-ops without notifying unrelated scopes", () => {

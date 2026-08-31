@@ -1,5 +1,7 @@
 # Automation Studio Lag Remediation Plan
 
+> Historical tracking notice (2026-08-29): this document preserves its audit and implementation evidence, but it no longer owns current Automation Studio render/runtime status. Current topology and remaining certification work are tracked in [Automation Studio render/data separation plan](./automation-studio-render-data-separation-plan.md) and [Automation Studio workspace architecture](../architecture/automation-studio/workspace.md).
+
 Status: completed on 2026-08-27; interaction hot-path follow-up patched on 2026-08-27  
 Date: 2026-08-27  
 Owner: Automation Studio  

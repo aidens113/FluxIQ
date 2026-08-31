@@ -1,12 +1,12 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import type { AutomationWorkspaceCommandPort } from "../commands/contracts";
 import type { AutomationWorkspaceRenderStore } from "../render-store";
 import { beginAutomationSectionResize, resizeSidebarFromKeyboard } from "./resize-events";
 import { useAutomationWorkspaceSelector } from "./selectors";
 
-export function AutomationHierarchyRegion(props: {
+export const AutomationHierarchyRegion = memo(function AutomationHierarchyRegion(props: {
   content: ReactNode;
   port: AutomationWorkspaceCommandPort;
   store: AutomationWorkspaceRenderStore;
@@ -25,7 +25,7 @@ export function AutomationHierarchyRegion(props: {
           aria-valuemax={420}
           aria-valuemin={220}
           aria-valuenow={state.width}
-          className="automation-sidebar-resize-handle"
+          className="automation-section-resize-handle hierarchy"
           onKeyDown={(event) => resizeSidebarFromKeyboard(event, props.port)}
           onPointerDown={(event) => {
             const shell = event.currentTarget.closest<HTMLElement>(".automation-studio-shell");
@@ -55,4 +55,4 @@ export function AutomationHierarchyRegion(props: {
       ) : null}
     </aside>
   );
-}
+});

@@ -54,6 +54,8 @@ const LIFECYCLE_SCHEMA = [
   )`
 ] as const;
 
+const migrationQueues = new Map<string, Promise<void>>();
+
 export class AutomationStudioSchemaMigrationRunner {
   private readonly database: AutomationStudioProjectDatabase;
   private readonly migrations: readonly AutomationStudioSchemaMigration[];
@@ -72,6 +74,18 @@ export class AutomationStudioSchemaMigrationRunner {
   }
 
   async migrate(): Promise<AutomationStudioSchemaMigrationResult> {
+    const queueKey = this.database.filePath;
+    const previous = migrationQueues.get(queueKey) ?? Promise.resolve();
+    const operation = previous.catch(() => undefined).then(() => this.migrateExclusive());
+    const settled = operation.then(() => undefined, () => undefined);
+    migrationQueues.set(queueKey, settled);
+    void settled.then(() => {
+      if (migrationQueues.get(queueKey) === settled) migrationQueues.delete(queueKey);
+    });
+    return operation;
+  }
+
+  private async migrateExclusive(): Promise<AutomationStudioSchemaMigrationResult> {
     await this.ensureLifecycleSchema();
     const appliedRows = await this.database.all<MigrationRow>("select migration_id as migrationId, checksum from automation_schema_migrations order by migration_id");
     const appliedById = new Map(appliedRows.map((row) => [row.migrationId, row.checksum]));

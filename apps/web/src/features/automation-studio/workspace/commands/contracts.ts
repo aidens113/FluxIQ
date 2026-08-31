@@ -17,10 +17,6 @@ export type AutomationWorkspaceCommandPort = {
   schedule?(operation: () => void): void;
 };
 
-export type AutomationWorkspaceWarmActivator = {
-  activate(region: Exclude<AutomationWorkspaceRegion, "bottom">, paneId: string, viewId: string): boolean;
-};
-
 export type AutomationWorkspaceRegionActivation = {
   region: AutomationWorkspaceRegion;
   paneId: string;

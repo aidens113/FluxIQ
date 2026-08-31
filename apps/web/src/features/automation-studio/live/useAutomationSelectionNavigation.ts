@@ -11,6 +11,7 @@ import type { AutomationStatePublication } from "../state/commands";
 import { recordingIdFromStateSourceId, stateOpenNodeMetadata } from "../model/live-helpers";
 import { stringRecordValue } from "../model/timeline-resolution";
 import { resolveActionPreviewEntryId } from "../model/timeline-resolution";
+import { runAutomationPresentationTransaction } from "../presentation/transaction";
 
 type WorkspaceCommands = ReturnType<typeof createAutomationWorkspaceCommands>;
 type StateRequest = { nodeId?: string; sourceId?: string; phase?: NodeStatePhase; evidenceId?: string; factPath?: string; proposalId?: string; recordingId?: string; timelineEntryId?: string; stateSnapshotId?: string; repairAttempted?: boolean };
@@ -19,7 +20,6 @@ type NavigationOptions = {
   workspacePrefs: AutomationWorkspacePrefs;
   commands: WorkspaceCommands;
   updatePrefs: (updater: (current: AutomationWorkspacePrefs) => AutomationWorkspacePrefs, options?: { persist?: boolean }) => void;
-  schedule: (commit: () => void) => void;
   liveCommands: AutomationLiveDomainCommands;
   selection: AutomationSelection | null;
   selectedNode: any;
@@ -34,6 +34,11 @@ type NavigationOptions = {
   setRecordingPrimaryKind: (next: "recording" | null) => void;
   setIndexedStateSources: (next: any) => void;
   setActionStatus: (status: string) => void;
+  getSnapshot?: () => Pick<
+    NavigationOptions,
+    "activeProjectId" | "workspacePrefs" | "selection" | "selectedNode" | "selectedFlow"
+      | "selectedProposal" | "selectedRecording" | "selectedTimeline" | "timelineEntryById"
+  >;
 };
 
 export function useAutomationSelectionNavigation(options: NavigationOptions) {
@@ -41,16 +46,14 @@ export function useAutomationSelectionNavigation(options: NavigationOptions) {
     options.commands.openView(viewId, mode);
   }, [options.commands]);
   const showRecordingPreview = useCallback(() => {
-    options.schedule(() => {
-      options.updatePrefs((current) => ({
-        ...current,
-        bottomDock: { ...current.bottomDock, activeViewId: "recording-action-preview", expanded: true },
-        bottomTimelineCollapsed: false
-      }), { persist: false });
-    });
-  }, [options.schedule, options.updatePrefs]);
+    options.updatePrefs((current) => ({
+      ...current,
+      bottomDock: { ...current.bottomDock, activeViewId: "recording-action-preview", expanded: true },
+      bottomTimelineCollapsed: false
+    }), { persist: false });
+  }, [options.updatePrefs]);
   const selectAndFollow = useCallback((next: AutomationSelection, flowMode: "preview" | "new-window" = "preview") => {
-    options.schedule(() => {
+    runAutomationPresentationTransaction(() => {
       if (next.kind !== "state") options.setPendingStateOpen(null);
       if (next.kind === "timeline") options.setBottomPreviewEntryId(next.id);
       else if (next.kind !== "state") options.setBottomPreviewEntryId(null);
@@ -61,31 +64,45 @@ export function useAutomationSelectionNavigation(options: NavigationOptions) {
       }
       if (next.kind === "signal" || next.kind === "state") openView(automationStudioViewId.state);
       if (next.kind === "policy") openView(automationStudioViewId.flowEditor);
-      if (next.kind === "flow") openView(automationStudioViewId.flowEditor, flowMode);
+      if (next.kind === "flow") {
+        options.updatePrefs((current) => {
+          const currentFlowState = current.viewStates?.[automationStudioViewId.flowEditor] ?? {};
+          if (currentFlowState.lastOpenFlowId === next.id) return current;
+          return {
+            ...current,
+            viewStates: {
+              ...current.viewStates,
+              [automationStudioViewId.flowEditor]: { ...currentFlowState, lastOpenFlowId: next.id }
+            }
+          };
+        }, { persist: false });
+        openView(automationStudioViewId.flowEditor, flowMode);
+      }
     });
     return true;
   }, [openView, options, showRecordingPreview]);
   const openState = useCallback(async (request: StateRequest) => {
-    const nodeId = request.nodeId ?? options.selectedNode?.id;
-    const nodeMetadata = stateOpenNodeMetadata(nodeId, options.selectedNode);
+    const current = options.getSnapshot?.() ?? options;
+    const nodeId = request.nodeId ?? current.selectedNode?.id;
+    const nodeMetadata = stateOpenNodeMetadata(nodeId, current.selectedNode);
     const recordingId = request.recordingId
       ?? stringRecordValue(nodeMetadata, "recordingId")
-      ?? options.selectedRecording?.recordingId
-      ?? options.selectedProposal?.metadata?.recordingId
-      ?? options.selectedProposal?.recordingId
+      ?? current.selectedRecording?.recordingId
+      ?? current.selectedProposal?.metadata?.recordingId
+      ?? current.selectedProposal?.recordingId
       ?? recordingIdFromStateSourceId(request.sourceId);
     const timelineEntryId = request.timelineEntryId
       ?? stringRecordValue(nodeMetadata, "actionEntryId")
       ?? stringRecordValue(nodeMetadata, "timelineEntryId");
     const stateSnapshotId = request.stateSnapshotId ?? stringRecordValue(nodeMetadata, "stateSnapshotId");
     const proposalId = request.proposalId
-      ?? (options.selection?.kind === "state" ? options.selection.proposalId : undefined)
-      ?? options.selectedProposal?.proposalId;
+      ?? (current.selection?.kind === "state" ? current.selection.proposalId : undefined)
+      ?? current.selectedProposal?.proposalId;
     const stateRef = stringRecordValue(nodeMetadata, "stateRef");
     const outcome = await options.liveCommands.openState<any>({
       phase: request.phase ?? "input",
       ...(nodeId ? { nodeId } : {}),
-      ...(options.selectedFlow?.flowId ? { flowId: options.selectedFlow.flowId } : {}),
+      ...(current.selectedFlow?.flowId ? { flowId: current.selectedFlow.flowId } : {}),
       ...(request.sourceId ? { sourceId: request.sourceId } : {}),
       ...(request.evidenceId ? { evidenceId: request.evidenceId } : {}),
       ...(request.factPath ? { factPath: request.factPath } : {}),
@@ -101,14 +118,15 @@ export function useAutomationSelectionNavigation(options: NavigationOptions) {
     void openState({ recordingId, timelineEntryId: entryId, phase: "input" });
   }, [openState]);
   const selectPreviewEntry = useCallback((entryId: string) => {
-    const recordingId = options.selectedRecording?.recordingId ?? options.timelineEntryById.get(entryId)?.recordingId;
-    const activePane = options.workspacePrefs.panes.find((pane) => pane.id === options.workspacePrefs.activePaneId) ?? options.workspacePrefs.panes[0];
+    const current = options.getSnapshot?.() ?? options;
+    const recordingId = current.selectedRecording?.recordingId ?? current.timelineEntryById.get(entryId)?.recordingId;
+    const activePane = current.workspacePrefs.panes.find((pane) => pane.id === current.workspacePrefs.activePaneId) ?? current.workspacePrefs.panes[0];
     if (activePane?.activeViewId === automationStudioViewId.state && recordingId) return openTimelineEntryState(recordingId, entryId);
-    if (activePane?.activeViewId === automationStudioViewId.recordingTimeline || options.workspacePrefs.panes.some((pane) => pane.activeViewId === automationStudioViewId.recordingTimeline)) {
+    if (activePane?.activeViewId === automationStudioViewId.recordingTimeline || current.workspacePrefs.panes.some((pane) => pane.activeViewId === automationStudioViewId.recordingTimeline)) {
       selectAndFollow({ kind: "timeline", id: entryId });
       return;
     }
-    if (options.workspacePrefs.panes.some((pane) => pane.activeViewId === automationStudioViewId.state) && recordingId) return openTimelineEntryState(recordingId, entryId);
+    if (current.workspacePrefs.panes.some((pane) => pane.activeViewId === automationStudioViewId.state) && recordingId) return openTimelineEntryState(recordingId, entryId);
     selectAndFollow({ kind: "timeline", id: entryId });
   }, [openTimelineEntryState, options, selectAndFollow]);
   const openSubflow = useCallback(async (parentFlowId: string, subflowId: string, mode: "preview" | "new-window" = "preview", knownGraphFlowId?: string) => {
@@ -129,9 +147,10 @@ function publishState(
   timelineEntryId: string | undefined,
   stateSnapshotId: string | undefined
 ) {
+  const current = options.getSnapshot?.() ?? options;
   if (event.kind === "intent") {
     if (timelineEntryId) {
-      options.setBottomPreviewEntryId(resolveActionPreviewEntryId(options.selectedTimeline ?? options.selectedRecording, timelineEntryId));
+      options.setBottomPreviewEntryId(resolveActionPreviewEntryId(current.selectedTimeline ?? current.selectedRecording, timelineEntryId));
       options.setRecordingPrimaryKind("recording");
     }
     options.setPendingStateOpen(event.loading ? {
@@ -152,7 +171,7 @@ function publishState(
   }
   if (event.detail) options.setIndexedStateSources((current: any) => ({ ...current, [event.detail!.source.id]: event.detail! }));
   if (event.resolved?.entryId) {
-    options.setBottomPreviewEntryId(resolveActionPreviewEntryId(options.selectedTimeline ?? options.selectedRecording, event.resolved.entryId));
+    options.setBottomPreviewEntryId(resolveActionPreviewEntryId(current.selectedTimeline ?? current.selectedRecording, event.resolved.entryId));
     options.setRecordingPrimaryKind("recording");
   }
   options.setSelection(event.selection);

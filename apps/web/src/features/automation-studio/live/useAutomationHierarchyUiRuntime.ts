@@ -20,10 +20,8 @@ type Options = {
   activeProjectId: string | null;
   loadedProjectId: string | null;
   currentUserId: string;
-  customNodes: AutomationHierarchyNode[];
-  deletedIds: string[];
-  workspacePrefs: AutomationWorkspacePrefs;
-  saveRevision: number;
+  getCustomNodes(): AutomationHierarchyNode[];
+  getDeletedIds(): string[];
   workspaceStore: WorkspaceStore;
   uiCache: AutomationStudioUiCachePort;
   setSearch: (value: string) => void;
@@ -39,10 +37,10 @@ export function useAutomationHierarchyUiRuntime(options: Options) {
     transport: options.transport,
     projectId: options.activeProjectId,
     loadedProjectId: options.loadedProjectId,
-    customNodes: options.customNodes,
-    deletedIds: options.deletedIds,
-    workspacePrefs: options.workspacePrefs,
-    saveRevision: options.saveRevision,
+    getCustomNodes: options.getCustomNodes,
+    getDeletedIds: options.getDeletedIds,
+    getWorkspacePrefs: options.workspaceStore.getPrefs,
+    subscribeSaveRequests: (listener) => options.workspaceStore.subscribe(listener, "save-request"),
     setSaveStatus: options.workspaceStore.setSaveStatus,
     reportSaveError: (message) => notifyGlobalAlert({
       tone: "error", title: "Workspace save failed", message, id: "automation-workspace-save-failed"

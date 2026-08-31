@@ -1,9 +1,31 @@
 import { describe, expect, it, vi } from "vitest";
 import { createAutomationProjectCatalogStore } from "../stores";
 import { loadAutomationProjectCatalog } from "./project-catalog-queries";
-import { createAutomationProjectLifecycle } from "./project-lifecycle";
+import { createAutomationProjectLifecycle, createAutomationProjectLifecycleLease } from "./project-lifecycle";
 
 describe("Automation Studio project lifecycle", () => {
+  it("recreates a disposed lifecycle for React Strict Mode effect remounting", async () => {
+    const committed: string[] = [];
+    let instances = 0;
+    const lease = createAutomationProjectLifecycleLease(() => {
+      instances += 1;
+      return createAutomationProjectLifecycle({
+        publishOpening: () => undefined,
+        hydrate: async (projectId) => projectId,
+        commit: (projectId) => committed.push(projectId),
+        fail: () => undefined,
+        clear: () => undefined
+      });
+    });
+
+    lease.current();
+    lease.dispose();
+    await expect(lease.current().open("project.after-remount")).resolves.toBe(true);
+
+    expect(instances).toBe(2);
+    expect(committed).toEqual(["project.after-remount"]);
+  });
+
   it("publishes the opening shell synchronously before hydration", async () => {
     let resolve!: (value: string) => void;
     const order: string[] = [];
@@ -39,6 +61,30 @@ describe("Automation Studio project lifecycle", () => {
     await expect(first).resolves.toBe(false);
     await expect(second).resolves.toBe(true);
     expect(committed).toEqual(["project.two"]);
+  });
+
+  it("uses an injected session generation to reject work invalidated elsewhere", async () => {
+    let generation = 0;
+    let resolve!: (value: string) => void;
+    const commits: string[] = [];
+    const lifecycle = createAutomationProjectLifecycle({
+      publishOpening: () => undefined,
+      hydrate: () => new Promise<string>((done) => { resolve = done; }),
+      commit: (id) => commits.push(id),
+      fail: () => undefined,
+      clear: () => undefined
+    }, {
+      advance: () => ++generation,
+      current: () => generation,
+      isCurrent: (candidate) => candidate === generation
+    });
+
+    const opening = lifecycle.open("project.one");
+    generation += 1;
+    resolve("stale");
+
+    await expect(opening).resolves.toBe(false);
+    expect(commits).toEqual([]);
   });
 
   it("cancels project work before clearing on close", async () => {

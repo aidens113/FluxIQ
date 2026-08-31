@@ -2,6 +2,8 @@
 
 import { memo } from "react";
 import type { AutomationViewInstance } from "./view-types";
+import { AutomationViewBoundary } from "./AutomationViewBoundary";
+import type { AutomationViewReadiness } from "./view-readiness";
 import { AutomationRetiredViewRecovery } from "./RetiredViewRecovery";
 import { automationStudioViewDefinitions, resolveAutomationStudioView } from "./view-registry";
 import { automationViewHostRegistration, renderAutomationViewHostRequest } from "./view-host-registry";
@@ -81,21 +83,37 @@ export const AutomationViewHost = memo(function AutomationViewHost(props: Automa
     return <AutomationUnknownView view={props.request.view} reason="mismatch" />;
   }
 
-  const registration = automationViewHostRegistration(props.request.kind);
-  if (!registration) return <AutomationUnknownView view={props.request.view} reason="unknown" />;
-
   const keepMounted = props.keepMounted ?? false;
   if (!props.active && !keepMounted && sleepingViewKinds.has(props.request.kind)) {
     return <AutomationSleepingView view={props.request.view} />;
   }
 
-  const selectData = registration.createDataSelector();
-  const model = selectData(props.request);
-  return renderAutomationViewHostRequest(props.request, {
+  const activity = {
     active: props.active,
     activeRef: props.activeRef,
     keepMounted
-  }, model);
+  };
+  if ("connect" in props.request) return props.request.connect(activity);
+
+  const boundRequest = props.request;
+  const registration = automationViewHostRegistration(boundRequest.kind);
+  if (!registration) return <AutomationUnknownView view={props.request.view} reason="unknown" />;
+  const readiness = boundRequest.readiness;
+  return (
+    <AutomationViewBoundary<unknown>
+      readiness={readiness as AutomationViewReadiness<unknown>}
+      render={(readyModel) => {
+        const readyRequest = readyModel === boundRequest.binding.model
+          ? boundRequest
+          : {
+            ...boundRequest,
+            binding: { ...boundRequest.binding, model: readyModel }
+          } as typeof boundRequest;
+        return renderAutomationViewHostRequest(readyRequest, activity, registration.selectData(readyRequest));
+      }}
+      view={props.request.view}
+    />
+  );
 }, automationViewHostPropsEqual);
 
 function automationViewHostPropsEqual(previous: AutomationViewHostProps, next: AutomationViewHostProps): boolean {
@@ -109,6 +127,12 @@ function automationViewHostPropsEqual(previous: AutomationViewHostProps, next: A
     previous.request.view.label !== next.request.view.label
     || previous.request.view.state !== next.request.view.state
   ) return false;
+  if ("connect" in previous.request || "connect" in next.request) {
+    return "connect" in previous.request
+      && "connect" in next.request
+      && previous.request.connect === next.request.connect;
+  }
+  if (previous.request.readiness !== next.request.readiness) return false;
   return shallowRecordEqual(previous.request.binding.model, next.request.binding.model)
     && shallowRecordEqual(previous.request.binding.commands, next.request.binding.commands);
 }

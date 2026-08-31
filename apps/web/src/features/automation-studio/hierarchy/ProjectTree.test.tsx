@@ -10,8 +10,26 @@ import { automationHierarchyPageKey } from "./paged-cache";
 describe("AutomationProjectTree", () => {
   it("isolates the hierarchy from unrelated parent view renders", () => {
     const source = readFileSync(fileURLToPath(new URL("./ProjectTree.tsx", import.meta.url)), "utf8");
+    const rows = readFileSync(fileURLToPath(new URL("./tree-rows.tsx", import.meta.url)), "utf8");
 
     expect(source).toContain("export const AutomationProjectTree = memo(function AutomationProjectTree");
+    expect(rows).toContain("const AutomationHierarchyTreeRow = memo(function AutomationHierarchyTreeRow");
+    expect(rows).not.toContain("type AutomationHierarchyTreeRowProps = AutomationHierarchyTreeRowsProps");
+  });
+  it("keeps one controller identity and delegates active-view primary validation", () => {
+    const source = readFileSync(fileURLToPath(new URL("./ProjectTree.tsx", import.meta.url)), "utf8");
+    const primary = readFileSync(fileURLToPath(new URL("./usePrimaryTreeNodeId.ts", import.meta.url)), "utf8");
+
+    expect(source).not.toContain("updateContext");
+    expect(source).not.toContain("reconcileExternalSelection");
+    expect(source).not.toContain("hierarchyStore.ensureVisibleFocus");
+    expect(source).toContain("const controllerRef = useRef<AutomationHierarchyController | null>(null)");
+    expect(source).toContain("() => controllerContextRef.current");
+    expect(source).toContain("automationHierarchyUiStateSignature(props.uiState)");
+    expect(source).toContain("hierarchyStore.hydrate(incomingUiStateRef.current)");
+    expect(source).toContain("useAutomationHierarchyPrimaryTreeNodeId");
+    expect(primary).toContain("selectAutomationHierarchyPrimaryTreeNodeId");
+    expect(primary).toContain("options.store.setPrimary(null)");
   });
   it("does not require timer advancement to dispatch sidebar preview opens", () => {
     const source = readFileSync(fileURLToPath(new URL("./tree-rows.tsx", import.meta.url)), "utf8");
@@ -21,13 +39,17 @@ describe("AutomationProjectTree", () => {
     expect(source).not.toContain("singleClickTimer");
     expect(source).toContain('props.openNode(props.node, "preview")');
     expect(source).toContain('props.openNode(props.node, "new-window")');
+    expect(source).not.toContain("markAutomationHierarchyRowSelected");
+    expect(source).not.toContain("onPointerDown=");
   });
-  it("keeps sidebar row selection animated with immediate press feedback", () => {
+  it("keeps sidebar pointer feedback free of press transitions", () => {
     const css = readFileSync(new URL("../styles/workspace/05-hierarchy.css", import.meta.url), "utf8");
 
     expect(css).toContain(".automation-project-tree button {");
-    expect(css).toContain("transition: background-color var(--motion-fast)");
-    expect(css).toContain(".automation-project-tree button:active");
+    expect(css).toContain("transition: none");
+    expect(css).not.toContain(".automation-project-tree button:active");
+    expect(css).not.toContain("content-visibility: auto");
+    expect(css).not.toContain("contain-intrinsic-block-size");
   });
 
 

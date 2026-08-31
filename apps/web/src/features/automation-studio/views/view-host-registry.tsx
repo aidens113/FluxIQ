@@ -8,6 +8,7 @@ import {
 import { automationStudioViewDefinition } from "./view-registry";
 import type {
   AutomationViewHostActivity,
+  AutomationBoundViewHostRequest,
   AutomationViewHostBindingMap,
   AutomationViewHostKind,
   AutomationViewHostRequest
@@ -15,9 +16,9 @@ import type {
 
 export type AutomationViewHostRegistration<Kind extends AutomationViewHostKind> = {
   kind: Kind;
-  createDataSelector(): (request: AutomationViewHostRequest<Kind>) => AutomationViewHostBindingMap[Kind]["model"];
+  selectData(request: AutomationBoundViewHostRequest<Kind>): AutomationViewHostBindingMap[Kind]["model"];
   loadComponent(): (
-    request: AutomationViewHostRequest<Kind>,
+    request: AutomationBoundViewHostRequest<Kind>,
     activity: AutomationViewHostActivity,
     model: AutomationViewHostBindingMap[Kind]["model"]
   ) => ReactNode;
@@ -25,15 +26,16 @@ export type AutomationViewHostRegistration<Kind extends AutomationViewHostKind> 
 
 type ErasedViewHostRegistration = {
   kind: AutomationViewHostKind;
-  createDataSelector(): (request: AutomationViewHostRequest) => unknown;
-  loadComponent(): (request: AutomationViewHostRequest, activity: AutomationViewHostActivity, model: unknown) => ReactNode;
+  selectData(request: AutomationBoundViewHostRequest): unknown;
+  loadComponent(): (request: AutomationBoundViewHostRequest, activity: AutomationViewHostActivity, model: unknown) => ReactNode;
 };
 
 function registrationFromDefinition(definition: AutomationStudioViewDefinition): ErasedViewHostRegistration {
   const adapter = definition.host;
+  const selectData: ErasedViewHostRegistration["selectData"] = (request) => adapter.select(request.binding as never);
   return {
     kind: definition.kind,
-    createDataSelector: () => (request) => adapter.select(request.binding as never),
+    selectData,
     loadComponent: () => (request, activity, model) => adapter.render({
       model,
       commands: request.binding.commands,
@@ -41,6 +43,8 @@ function registrationFromDefinition(definition: AutomationStudioViewDefinition):
     } as never)
   };
 }
+
+const routineCompatibilityModel: Record<string, never> = Object.freeze({});
 
 let canonicalRegistrationCache: ReadonlyMap<AutomationViewHostKind, ErasedViewHostRegistration> | null = null;
 
@@ -53,7 +57,7 @@ function canonicalRegistrations(): ReadonlyMap<AutomationViewHostKind, ErasedVie
 
 const routineCompatibilityRegistration: ErasedViewHostRegistration = {
   kind: "routine",
-  createDataSelector: () => () => ({}),
+  selectData: () => routineCompatibilityModel,
   loadComponent: () => () => (
     <section className="automation-project-empty">
       <strong>Legacy Routine is read-only</strong>
@@ -72,7 +76,7 @@ export function automationViewHostRegistration<Kind extends AutomationViewHostKi
 }
 
 export function renderAutomationViewHostRequest(
-  request: AutomationViewHostRequest,
+  request: AutomationBoundViewHostRequest,
   activity: AutomationViewHostActivity,
   model: unknown
 ): ReactNode {
@@ -83,7 +87,7 @@ export function renderAutomationViewHostRequest(
 
 export type AutomationRegisteredViewHost = {
   definition: AutomationStudioViewDefinition;
-  createDataSelector: ErasedViewHostRegistration["createDataSelector"];
+  selectData: ErasedViewHostRegistration["selectData"];
   loadComponent: ErasedViewHostRegistration["loadComponent"];
 };
 
@@ -94,7 +98,7 @@ export function automationRegisteredViewHost(value: string): AutomationRegistere
   if (!registration) return null;
   return {
     definition,
-    createDataSelector: registration.createDataSelector,
+    selectData: registration.selectData,
     loadComponent: registration.loadComponent
   };
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { memo, useMemo } from "react";
 import type { AutomationStudioUiStore } from "../studio-ui-store";
 import { useAutomationNarrowWorkspace } from "../studio-ui-store";
 import type { AutomationWorkspaceCommandPort, AutomationWorkspaceCommands } from "../commands/contracts";
@@ -15,6 +16,7 @@ import type {
 } from "./contracts";
 import { AutomationHierarchyRegion } from "./HierarchyRegion";
 import { AutomationPaneArea } from "./PaneArea";
+import { AutomationRegionBoundary } from "./RegionBoundary";
 import { AutomationResponsiveDrawers } from "./ResponsiveDrawers";
 import { AutomationRightPaneArea } from "./RightPaneArea";
 import { useAutomationWorkspaceSelector } from "./selectors";
@@ -22,7 +24,7 @@ import { AutomationTimelineDock } from "./TimelineDock";
 import { useAutomationWorkspaceView } from "./view-source";
 import { AutomationWorkspaceHeader } from "./WorkspaceHeader";
 
-export function AutomationWorkspaceShell(props: {
+export const AutomationWorkspaceShell = memo(function AutomationWorkspaceShell(props: {
   breadcrumbs: readonly AutomationWorkspaceBreadcrumb[];
   chrome: AutomationWorkspaceChromeCommands;
   commands: AutomationWorkspaceCommands;
@@ -52,30 +54,45 @@ export function AutomationWorkspaceShell(props: {
   const activeRightView = useAutomationWorkspaceView(props.source, activeRightViewId);
   const { isNarrowWorkspace, narrowWorkspacePanel } = useAutomationNarrowWorkspace(props.studioUiStore);
   const inspectorLabel = activeRightView?.view.label ?? "Inspector";
-  const hierarchy = (
-    <AutomationHierarchyRegion content={props.surfaces.hierarchy} port={props.port} store={props.store} />
-  );
-  const rightPane = (
-    <AutomationRightPaneArea
-      chrome={props.chrome}
-      commands={props.commands}
-      forceExpanded={isNarrowWorkspace}
-      port={props.port}
-      projectKey={props.projectKey}
-      source={props.source}
-      store={props.store}
-      warm={props.warm}
-    />
-  );
-  const timeline = (
-    <AutomationTimelineDock
-      commands={props.commands}
-      content={props.surfaces.timeline}
-      forceExpanded={isNarrowWorkspace}
-      port={props.port}
-      store={props.store}
-    />
-  );
+  const hierarchy = useMemo(() => (
+    <AutomationRegionBoundary label="Hierarchy" resetKey={props.projectKey}>
+      <AutomationHierarchyRegion content={props.surfaces.hierarchy} port={props.port} store={props.store} />
+    </AutomationRegionBoundary>
+  ), [props.port, props.projectKey, props.store, props.surfaces.hierarchy]);
+  const rightPane = useMemo(() => (
+    <AutomationRegionBoundary label="Inspector" resetKey={props.projectKey}>
+      <AutomationRightPaneArea
+        chrome={props.chrome}
+        commands={props.commands}
+        forceExpanded={isNarrowWorkspace}
+        port={props.port}
+        projectKey={props.projectKey}
+        source={props.source}
+        store={props.store}
+        warm={props.warm}
+      />
+    </AutomationRegionBoundary>
+  ), [
+    isNarrowWorkspace,
+    props.chrome,
+    props.commands,
+    props.port,
+    props.projectKey,
+    props.source,
+    props.store,
+    props.warm
+  ]);
+  const timeline = useMemo(() => (
+    <AutomationRegionBoundary label="Timeline" resetKey={props.projectKey}>
+      <AutomationTimelineDock
+        commands={props.commands}
+        content={props.surfaces.timeline}
+        forceExpanded={isNarrowWorkspace}
+        port={props.port}
+        store={props.store}
+      />
+    </AutomationRegionBoundary>
+  ), [isNarrowWorkspace, props.commands, props.port, props.projectKey, props.store, props.surfaces.timeline]);
 
   return (
     <section
@@ -87,15 +104,17 @@ export function AutomationWorkspaceShell(props: {
     >
       {!isNarrowWorkspace ? hierarchy : null}
       <div className="automation-studio-main">
-        <AutomationWorkspaceHeader
-          breadcrumbs={props.breadcrumbs}
-          chrome={props.chrome}
-          commands={props.headerCommands}
-          inspectorLabel={inspectorLabel}
-          narrow={isNarrowWorkspace}
-          narrowPanel={narrowWorkspacePanel}
-          {...(props.showDataInspector !== undefined ? { showDataInspector: props.showDataInspector } : {})}
-        />
+        <AutomationRegionBoundary label="Header" resetKey={props.projectKey}>
+          <AutomationWorkspaceHeader
+            breadcrumbs={props.breadcrumbs}
+            chrome={props.chrome}
+            commands={props.headerCommands}
+            inspectorLabel={inspectorLabel}
+            narrow={isNarrowWorkspace}
+            narrowPanel={narrowWorkspacePanel}
+            {...(props.showDataInspector !== undefined ? { showDataInspector: props.showDataInspector } : {})}
+          />
+        </AutomationRegionBoundary>
         <AutomationWorkspaceGrid
           chrome={props.chrome}
           commands={props.commands}
@@ -121,9 +140,9 @@ export function AutomationWorkspaceShell(props: {
       ) : null}
     </section>
   );
-}
+});
 
-function AutomationWorkspaceGrid(props: {
+const AutomationWorkspaceGrid = memo(function AutomationWorkspaceGrid(props: {
   chrome: AutomationWorkspaceChromeCommands;
   commands: AutomationWorkspaceCommands;
   narrow: boolean;
@@ -152,18 +171,20 @@ function AutomationWorkspaceGrid(props: {
         gridTemplateRows: `minmax(0, 1fr) ${grid.timelineCollapsed ? 38 : grid.timelineHeight}px`
       }}
     >
-      <AutomationPaneArea
-        chrome={props.chrome}
-        commands={props.commands}
-        narrow={props.narrow}
-        port={props.port}
-        projectKey={props.projectKey}
-        source={props.source}
-        store={props.store}
-        warm={props.warm}
-      />
+      <AutomationRegionBoundary label="Editor" resetKey={props.projectKey}>
+        <AutomationPaneArea
+          chrome={props.chrome}
+          commands={props.commands}
+          narrow={props.narrow}
+          port={props.port}
+          projectKey={props.projectKey}
+          source={props.source}
+          store={props.store}
+          warm={props.warm}
+        />
+      </AutomationRegionBoundary>
       {!props.narrow ? props.rightPane : null}
       {!props.narrow ? props.timeline : null}
     </section>
   );
-}
+});

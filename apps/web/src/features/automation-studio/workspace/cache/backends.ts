@@ -15,44 +15,58 @@ export class ProgramApiAutomationStudioUiCacheBackend implements AutomationStudi
     private readonly fallback: AutomationStudioUiCacheBackend = new LocalStorageAutomationStudioUiCacheBackend()
   ) {}
 
-  async get<T>(key: string): Promise<T | undefined> {
-    const fallbackValue = await this.fallback.get<T>(key).catch(() => undefined);
+  async get<T>(key: string, options?: { signal?: AbortSignal }): Promise<T | undefined> {
+    if (options?.signal?.aborted) return undefined;
+    const fallbackValue = await this.fallback.get<T>(key, options).catch(() => undefined);
     if (fallbackValue !== undefined) return fallbackValue;
     const parts = parseAutomationStudioUiCacheKey(key);
     if (!parts) return undefined;
     const result = await this.transport.post<{ entries?: Array<{ value?: unknown }> }>(
       "get-project-ui-cache",
-      { projectId: parts.projectId, cacheKeys: [parts.kind] }
+      { projectId: parts.projectId, cacheKeys: [parts.kind] },
+      options
     ).catch(() => undefined);
-    if (!result?.ok) return undefined;
+    if (!result?.ok || options?.signal?.aborted) return undefined;
     const value = result.payload?.entries?.[0]?.value as T | undefined;
-    if (value !== undefined) await this.fallback.set(key, value).catch(() => undefined);
+    if (value !== undefined && !automationStudioUiCacheValueFits(value)) return undefined;
+    if (value !== undefined) await this.fallback.set(key, value, options).catch(() => undefined);
     return value;
   }
 
-  async set<T>(key: string, value: T): Promise<void> {
-    await this.fallback.set(key, value).catch(() => undefined);
+  async set<T>(key: string, value: T, options?: { signal?: AbortSignal }): Promise<void> {
+    if (options?.signal?.aborted) return;
+    if (!automationStudioUiCacheValueFits(value)) {
+      await this.fallback.delete?.(key, options).catch(() => undefined);
+      return;
+    }
+    await this.fallback.set(key, value, options).catch(() => undefined);
+    if (options?.signal?.aborted) return;
     const parts = parseAutomationStudioUiCacheKey(key);
     if (!parts) return;
     await this.transport.post(
       "save-project-ui-cache",
-      { projectId: parts.projectId, entries: [{ cacheKey: parts.kind, value }] }
+      { projectId: parts.projectId, entries: [{ cacheKey: parts.kind, value }] },
+      options
     ).catch(() => undefined);
   }
 
-  async delete(key: string): Promise<void> {
-    await this.fallback.delete?.(key).catch(() => undefined);
+  async delete(key: string, options?: { signal?: AbortSignal }): Promise<void> {
+    if (options?.signal?.aborted) return;
+    await this.fallback.delete?.(key, options).catch(() => undefined);
+    if (options?.signal?.aborted) return;
     const parts = parseAutomationStudioUiCacheKey(key);
     if (!parts) return;
     await this.transport.post(
       "delete-project-ui-cache",
-      { projectId: parts.projectId, cacheKeys: [parts.kind] }
+      { projectId: parts.projectId, cacheKeys: [parts.kind] },
+      options
     ).catch(() => undefined);
   }
 }
 
 export class LocalStorageAutomationStudioUiCacheBackend implements AutomationStudioUiCacheBackend {
-  async get<T>(key: string): Promise<T | undefined> {
+  async get<T>(key: string, options?: { signal?: AbortSignal }): Promise<T | undefined> {
+    if (options?.signal?.aborted) return undefined;
     if (typeof window === "undefined" || !window.localStorage) return undefined;
     const raw = window.localStorage.getItem(key);
     if (!raw) return undefined;
@@ -68,17 +82,19 @@ export class LocalStorageAutomationStudioUiCacheBackend implements AutomationStu
     }
   }
 
-  async set<T>(key: string, value: T): Promise<void> {
+  async set<T>(key: string, value: T, options?: { signal?: AbortSignal }): Promise<void> {
+    if (options?.signal?.aborted) return;
     if (typeof window === "undefined" || !window.localStorage) return;
     const raw = JSON.stringify(value);
     if (raw.length > AUTOMATION_STUDIO_UI_CACHE_MAX_LOCAL_STORAGE_CHARS) {
       window.localStorage.removeItem(key);
       return;
     }
-    window.localStorage.setItem(key, raw);
+    if (!options?.signal?.aborted) window.localStorage.setItem(key, raw);
   }
 
-  async delete(key: string): Promise<void> {
+  async delete(key: string, options?: { signal?: AbortSignal }): Promise<void> {
+    if (options?.signal?.aborted) return;
     if (typeof window === "undefined" || !window.localStorage) return;
     window.localStorage.removeItem(key);
   }
@@ -90,6 +106,14 @@ export function automationStudioUiCacheKey(
   kind: AutomationStudioUiCacheKind
 ): string {
   return [AUTOMATION_STUDIO_UI_CACHE_NAMESPACE, userId, projectId, kind].map(encodeURIComponent).join(":");
+}
+
+export function automationStudioUiCacheValueFits(value: unknown): boolean {
+  try {
+    return JSON.stringify(value).length <= AUTOMATION_STUDIO_UI_CACHE_MAX_LOCAL_STORAGE_CHARS;
+  } catch {
+    return false;
+  }
 }
 
 function parseAutomationStudioUiCacheKey(key: string): AutomationStudioUiCacheKeyParts | null {

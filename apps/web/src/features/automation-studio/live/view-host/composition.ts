@@ -223,6 +223,7 @@ function recordMatches(
     && previous.input.label === next.input.label
     && previous.input.state === next.input.state
     && previous.input.bodyClassName === next.input.bodyClassName
+    && previous.input.readiness === next.input.readiness
   );
 }
 
@@ -272,7 +273,7 @@ function createBoundRequest<Kind extends AutomationViewHostKind>(
     model: input.model,
     commands: input.commands
   } as AutomationViewHostBindingMap[Kind];
-  return createAutomationViewHostRequest(view, binding);
+  return createAutomationViewHostRequest(view, binding, input.readiness);
 }
 
 function boundedInteger(value: number | undefined, fallback: number, maximum: number): number {

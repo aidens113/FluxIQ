@@ -1,10 +1,9 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { memo } from "react";
 import { AutomationViewContainer } from "../components/view-container";
-import { createAutomationMountedViewActivationStore } from "../components/mounted-view-activation";
 import { viewTitle } from "../components/view-metadata";
-import { useMemo } from "react";
 import type { AutomationWorkspaceCommandPort, AutomationWorkspaceCommands } from "../commands/contracts";
 import type { AutomationWarmViewRegistry } from "../commands/warm-activation";
 import type { AutomationWorkspaceRenderStore } from "../render-store";
@@ -15,7 +14,7 @@ import { beginAutomationSectionResize, resizeInspectorFromKeyboard } from "./res
 import { useAutomationWorkspaceSelector } from "./selectors";
 import { useAutomationWorkspaceViews } from "./view-source";
 
-export function AutomationRightPaneArea(props: {
+export const AutomationRightPaneArea = memo(function AutomationRightPaneArea(props: {
   chrome: AutomationWorkspaceChromeCommands;
   commands: AutomationWorkspaceCommands;
   forceExpanded?: boolean;
@@ -25,7 +24,6 @@ export function AutomationRightPaneArea(props: {
   store: AutomationWorkspaceRenderStore;
   warm: AutomationWarmViewRegistry;
 }) {
-  const activation = useMemo(createAutomationMountedViewActivationStore, [props.projectKey]);
   const state = useAutomationWorkspaceSelector(props.store, (prefs) => ({
     activeViewId: prefs.rightSidebar.activeViewId || defaultAutomationRightSidebarPrefs().activeViewId,
     collapsed: props.forceExpanded ? false : prefs.rightSidebarCollapsed,
@@ -93,9 +91,7 @@ export function AutomationRightPaneArea(props: {
           <div className="automation-pane-slot">
             <AutomationViewContainer
               active
-              activation={activation}
               activeViewId={activeEntry.view.id}
-              bodyClassName={activeEntry.bodyClassName}
               frameLabel="Right utility"
               icon={activeEntry.view.icon}
               onActivate={() => undefined}
@@ -111,7 +107,6 @@ export function AutomationRightPaneArea(props: {
             >
               <AutomationMountedViewStack
                 activePane
-                activation={activation}
                 activeViewId={activeEntry.view.id}
                 paneId="right-sidebar"
                 projectKey={props.projectKey}
@@ -125,7 +120,7 @@ export function AutomationRightPaneArea(props: {
       ) : null}
     </aside>
   );
-}
+});
 
 function rightPaneStateEqual(
   left: { activeViewId: string; collapsed: boolean; tabs: string[]; width: number },

@@ -73,8 +73,9 @@ describe("hierarchy routing and activation", () => {
     });
   });
 
-  it("publishes primary row and domain selection before view activation", () => {
+  it("activates the view before queued domain reconciliation", () => {
     const order: string[] = [];
+    const queued: Array<() => void> = [];
     const store = createAutomationHierarchyStore();
     store.subscribe(() => order.push("row"));
     const controller = createAutomationHierarchyController(store, {
@@ -83,6 +84,7 @@ describe("hierarchy routing and activation", () => {
       selection: { kind: "flow", id: "flow.other" },
       recordingPrimaryKind: null,
       setRecordingPrimaryKind: vi.fn(),
+      scheduleReconciliation: (commit) => queued.push(commit),
       openView: () => order.push("view"),
       setSelection: () => order.push("selection")
     });
@@ -90,7 +92,9 @@ describe("hierarchy routing and activation", () => {
     controller.openNode(flow, "preview");
 
     expect(store.getSnapshot().primaryTreeNodeId).toBe(router.id);
-    expect(order).toEqual(["row", "selection", "view"]);
+    expect(order).toEqual(["view"]);
+    queued.forEach((commit) => commit());
+    expect(order).toEqual(["view", "selection"]);
   });
 });
 

@@ -1,13 +1,14 @@
 "use client";
 
 import { Bug, ChevronRight, FolderOpen, ListChecks, Radio, SlidersHorizontal } from "lucide-react";
+import { memo } from "react";
 import type {
   AutomationWorkspaceBreadcrumb,
   AutomationWorkspaceChromeCommands,
   AutomationWorkspaceHeaderCommands
 } from "./contracts";
 
-export function AutomationWorkspaceHeader(props: {
+export const AutomationWorkspaceHeader = memo(function AutomationWorkspaceHeader(props: {
   breadcrumbs: readonly AutomationWorkspaceBreadcrumb[];
   chrome: AutomationWorkspaceChromeCommands;
   commands: AutomationWorkspaceHeaderCommands;
@@ -77,4 +78,4 @@ export function AutomationWorkspaceHeader(props: {
       </div>
     </header>
   );
-}
+});

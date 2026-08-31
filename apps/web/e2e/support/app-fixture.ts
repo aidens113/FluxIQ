@@ -32,12 +32,25 @@ export async function readUiFixtureManifest(): Promise<UiFixtureManifest> {
 
 export async function authenticate(page: Page, manifest: UiFixtureManifest): Promise<void> {
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  const password = page.getByLabel("Password");
+  const username = page.locator('input[name="username"]');
+  const password = page.locator("#auth-password");
   if (await password.isVisible()) {
-    await password.fill(manifest.credentials.password);
-    await page.getByRole("button", { name: "Sign in" }).click();
+    const usernameValue = process.env.FLUXIQ_E2E_USERNAME ?? manifest.credentials.username;
+    const passwordValue = process.env.FLUXIQ_E2E_PASSWORD ?? manifest.credentials.password;
+    const submit = page.getByRole("button", { name: "Sign in" });
+    await expect(username).toBeEditable();
+    await expect(password).toBeEditable();
+    for (let attempt = 0; attempt < 3 && !await submit.isEnabled(); attempt += 1) {
+      await username.fill(usernameValue);
+      await password.fill(passwordValue);
+      await page.waitForTimeout(50);
+    }
+    await expect(username).toHaveValue(usernameValue);
+    await expect(password).toHaveValue(passwordValue);
+    await expect(submit).toBeEnabled();
+    await submit.click();
   }
-  await expect(page.getByRole("heading", { name: "FluxIQ Workspace" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Programs", exact: true })).toBeVisible();
 }
 
 export async function captureState(page: Page, testInfo: TestInfo, name: string): Promise<void> {

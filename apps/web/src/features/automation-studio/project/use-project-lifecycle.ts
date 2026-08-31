@@ -1,39 +1,51 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { createAutomationProjectLifecycle, type AutomationProjectLifecycleAdapters } from "./project-lifecycle";
+import {
+  createAutomationProjectLifecycle,
+  createAutomationProjectLifecycleLease,
+  type AutomationProjectGenerationOwner,
+  type AutomationProjectLifecycleAdapters
+} from "./project-lifecycle";
 
 export type AutomationProjectOpenOptions = { updateUrl?: boolean };
 
 export function useAutomationProjectLifecycle<Hydration>(options: {
   adapters: AutomationProjectLifecycleAdapters<Hydration>;
+  generation: AutomationProjectGenerationOwner;
   setProjectUrl(projectId: string | null): void;
 }) {
   const adaptersRef = useRef(options.adapters);
   const setProjectUrlRef = useRef(options.setProjectUrl);
+  const generationRef = useRef(options.generation);
   adaptersRef.current = options.adapters;
   setProjectUrlRef.current = options.setProjectUrl;
-  const lifecycleRef = useRef<ReturnType<typeof createAutomationProjectLifecycle<Hydration>> | null>(null);
-  if (!lifecycleRef.current) {
-    lifecycleRef.current = createAutomationProjectLifecycle({
+  generationRef.current = options.generation;
+  const lifecycleLeaseRef = useRef<ReturnType<typeof createAutomationProjectLifecycleLease> | null>(null);
+  if (!lifecycleLeaseRef.current) {
+    lifecycleLeaseRef.current = createAutomationProjectLifecycleLease(() => createAutomationProjectLifecycle({
       publishOpening: (projectId) => adaptersRef.current.publishOpening(projectId),
       hydrate: (projectId, signal) => adaptersRef.current.hydrate(projectId, signal),
       commit: (projectId, hydration) => adaptersRef.current.commit(projectId, hydration),
       fail: (projectId, error) => adaptersRef.current.fail(projectId, error),
       clear: (projectId) => adaptersRef.current.clear(projectId)
-    });
+    }, generationRef.current));
   }
-  useEffect(() => () => lifecycleRef.current?.dispose(), []);
+  lifecycleLeaseRef.current.current();
+  useEffect(() => {
+    lifecycleLeaseRef.current!.current();
+    return () => lifecycleLeaseRef.current?.dispose();
+  }, []);
 
   const openProject = useCallback((projectId: string, openOptions: AutomationProjectOpenOptions = {}) => {
     if (openOptions.updateUrl !== false) setProjectUrlRef.current(projectId);
-    return lifecycleRef.current!.open(projectId);
+    return lifecycleLeaseRef.current!.current().open(projectId);
   }, []);
   const closeProject = useCallback(() => {
-    lifecycleRef.current!.close();
+    lifecycleLeaseRef.current!.current().close();
     setProjectUrlRef.current(null);
   }, []);
-  return { openProject, closeProject, activeLifecycleProjectId: () => lifecycleRef.current!.activeProjectId() };
+  return { openProject, closeProject, activeLifecycleProjectId: () => lifecycleLeaseRef.current!.current().activeProjectId() };
 }
 
 export class AutomationProjectDeepLinkAdapter {

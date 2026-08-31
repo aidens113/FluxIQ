@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, BookOpen, ChevronDown, ChevronRight, FileText, FolderOpen, Menu, RefreshCcw, Search } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import type { DocumentationPage, DocumentationPageContent, DocsPageResponse, DocsSnapshotResponse } from "fluxiq/docs";
 import { useProgramApi, type ApiResponse } from "../program-api";
 import { Drawer, EmptyState, LoadingState, StatusText } from "../shared-ui";
@@ -42,11 +42,12 @@ export function DocsLive() {
 
   const pages = snapshot?.payload?.pages ?? [];
   const sources = snapshot?.payload?.sources ?? [];
+  const deferredSearch = useDeferredValue(search);
   const matchingPages = useMemo(() => {
-    const needle = search.trim().toLocaleLowerCase();
+    const needle = deferredSearch.trim().toLocaleLowerCase();
     return pages.filter((item) => (sourceId === "all" || item.sourceId === sourceId) && (!needle || (item.title + " " + docRouteKey(item) + " " + item.sourceId).toLocaleLowerCase().includes(needle)));
-  }, [pages, search, sourceId]);
-  const visiblePages = matchingPages.slice(0, TREE_PAGE_LIMIT);
+  }, [deferredSearch, pages, sourceId]);
+  const visiblePages = useMemo(() => matchingPages.slice(0, TREE_PAGE_LIMIT), [matchingPages]);
   const docsTree = useMemo(() => buildDocumentationTree(visiblePages), [visiblePages]);
   const activePage = pages.find((item) => item.id === activePageId);
 
@@ -102,9 +103,9 @@ export function DocsLive() {
     else setStatus("That documentation link does not match a page in the current snapshot.");
   }
 
-  const renderedHtml = page ? decorateDocumentationHeadings(page.html) : "";
+  const renderedHtml = useMemo(() => page ? decorateDocumentationHeadings(page.html) : "", [page]);
   const outline = useMemo(() => buildDocumentationOutline(page?.html ?? ""), [page?.html]);
-  const explorer = <DocsExplorer activePageId={activePage?.id} docsTree={docsTree} hiddenCount={matchingPages.length - visiblePages.length} matchingCount={matchingPages.length} onRefresh={() => void refresh()} onRebuild={() => void rebuild()} onSearch={setSearch} onSelect={selectPage} onSource={setSourceId} pages={pages} rebuilding={rebuilding} search={search} selectedSource={sourceId} sources={sources} />;
+  const explorer = <DocsExplorer activePageId={activePage?.id} busy={search !== deferredSearch} docsTree={docsTree} hiddenCount={matchingPages.length - visiblePages.length} matchingCount={matchingPages.length} onRefresh={() => void refresh()} onRebuild={() => void rebuild()} onSearch={setSearch} onSelect={selectPage} onSource={setSourceId} pages={pages} rebuilding={rebuilding} search={search} selectedSource={sourceId} sources={sources} />;
 
   if (!snapshot) return <LoadingState label="Loading documentation" detail="Reading source and page metadata." />;
   if (!snapshot.ok) return <EmptyState title="Documentation unavailable" description={snapshot.error ?? "The documentation snapshot could not be loaded."} action={<button className="button" onClick={() => void refresh()} type="button">Retry</button>} />;
@@ -131,8 +132,8 @@ export function DocsLive() {
   );
 }
 
-function DocsExplorer(props: { activePageId: string | undefined; docsTree: DocsTreeNode; hiddenCount: number; matchingCount: number; pages: DocumentationPage[]; rebuilding: boolean; search: string; selectedSource: string; sources: DocsSnapshotResponse["sources"]; onRefresh(): void; onRebuild(): void; onSearch(value: string): void; onSelect(pageId: string): void; onSource(sourceId: string): void }) {
-  return <aside className="docs-explorer-panel">
+function DocsExplorer(props: { activePageId: string | undefined; busy: boolean; docsTree: DocsTreeNode; hiddenCount: number; matchingCount: number; pages: DocumentationPage[]; rebuilding: boolean; search: string; selectedSource: string; sources: DocsSnapshotResponse["sources"]; onRefresh(): void; onRebuild(): void; onSearch(value: string): void; onSelect(pageId: string): void; onSource(sourceId: string): void }) {
+  return <aside aria-busy={props.busy || undefined} className="docs-explorer-panel">
     <div className="docs-explorer-header"><div><h2 className="panel-title">Documentation</h2><p className="panel-kicker">{props.pages.length} indexed pages</p></div><div className="inline-actions"><button aria-label="Refresh documentation" className="icon-button" onClick={props.onRefresh} title="Refresh documentation" type="button"><RefreshCcw aria-hidden size={15} /></button><button className="button button-primary" disabled={props.rebuilding} onClick={props.onRebuild} type="button">Rebuild</button></div></div>
     <label className="program-search-field docs-search"><Search aria-hidden size={14} /><input aria-label="Search documentation" onChange={(event) => props.onSearch(event.target.value)} placeholder="Search titles and paths" type="search" value={props.search} /></label>
     <nav aria-label="Documentation sources" className="docs-source-list"><button aria-pressed={props.selectedSource === "all"} className={props.selectedSource === "all" ? "selected" : ""} onClick={() => props.onSource("all")} type="button"><span>All sources</span><small>{props.pages.length}</small></button>{props.sources.map((source) => <button aria-pressed={props.selectedSource === source.id} className={props.selectedSource === source.id ? "selected" : ""} key={source.id} onClick={() => props.onSource(source.id)} type="button"><span>{source.title}</span><small>{props.pages.filter((page) => page.sourceId === source.id).length}</small></button>)}</nav>

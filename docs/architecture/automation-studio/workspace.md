@@ -16,27 +16,40 @@ and responsiveness certification remains a separate, evidence-based gate.
 
 `AutomationStudioLive.tsx` is a client entry facade. It exports
 `AutomationStudioComposition` from `live/AutomationStudioComposition.tsx` and
-contains no project, view, or interaction implementation. The composition
-module wires project-scoped owners and named domain hooks; workspace rendering
-is assembled by `AutomationStudioWorkspaceComposition`. Domain components,
-query shapes, commands, conversion, and pointer algorithms remain in their
-owning feature directories.
+contains no project, view, or interaction implementation.
+`AutomationStudioComposition` creates one stable `AutomationStudioRuntime` for
+the mounted Studio session and passes it to `AutomationStudioSession`. The
+runtime owns the external stores, request coordinator, and shared project
+generation. Its identity does not change when project entities, selection, or
+workspace presentation change, and disposal cancels outstanding requests and
+invalidates the generation.
+
+`AutomationStudioSession` is the orchestration boundary. It connects project
+lifecycle, commands, navigation, connected workspace regions, and compact view
+connector registrations. `AutomationStudioWorkspaceComposition` assembles the
+workspace shell and overlays. Domain components, query shapes, commands,
+conversion, and pointer algorithms remain in their owning feature directories.
 
 This split is an architectural boundary, not an invitation to move all behavior
 into the composition module. New behavior belongs in an owning domain module,
-store, command, or pure model. The composition root may connect those ports and
-publish canonical view inputs, but it must not become a second domain owner or
-reintroduce a universal renderer property bag.
+store, command, connector, or pure model. The composition root may connect
+those ports, but it must not become a second domain owner, derive every view
+model, or reintroduce a universal renderer property bag.
 
 The feature is organized by ownership:
 
 ```text
 automation-studio/
+  bootstrap/      Stable runtime, store owners, requests, and project generation.
+  live/           Session orchestration and direct view/region connectors.
   project/        Project catalog, lifecycle, hydration, and project surfaces.
-  stores/         Project-scoped data, selection, runtime, and transaction stores.
+  stores/         Normalized data, queries, selection, runtime, and transactions.
+  presentation/   Atomic presentation transactions.
   workspace/      Workbench layout and view-slot UI state.
   hierarchy/      Tree state, bounded rows, commands, and hierarchy UI.
   views/          Typed registry, canonical host, and retired-view recovery.
+  graph/          Draft ownership, graph jobs, history, and worker scheduling.
+  cache/          In-memory project resource cache.
   flow-editor/    Flow canvas, controller, model, and Flow commands.
   runtime/        Run history, action/event details, queries, and commands.
   recordings/     Recording views, models, and lifecycle commands.
@@ -53,12 +66,13 @@ automation-studio/
   styles/         Domain-owned ordered CSS partials.
   testing/        Deterministic fixtures and architecture/scale contracts.
   model/          Pure cross-domain project and selection derivation.
-  legacy/         Explicitly isolated compatibility behavior.
 ```
 
 Domain views must not be collected into aggregate workspace-view files. Retired
-aggregation facades are absent from the current architecture; canonical imports
-come from the owning domain.
+publisher facades are not part of the live render path; canonical imports come
+from the owning domain. The older snapshot composition helper under
+`live/view-host/composition.ts` remains a compatibility and deterministic-test
+utility. `AutomationStudioSession` does not use it to render the workspace.
 
 ## State Ownership
 
@@ -67,16 +81,20 @@ Automation Studio uses project-scoped external stores with selector-aware
 
 - `project-catalog-store`: project/category summaries and active project;
 - `project-data-store`: normalized project resources and entity indexes;
+- `project-query-store`: normalized bounded-query identity, IDs, totals,
+  freshness, errors, and cursors;
 - `selection-store`: global Studio selection only;
 - `runtime-status-store`: active runtime operation status;
 - `workspace/render-store`: pane, tab, layout, and persisted view state;
 - `workspace/studio-ui-store`: narrow-shell and transient Studio chrome state;
 - `mutation-transaction-store`: typed, atomic mutation publication.
 
-`useAutomationStudioStoreOwners` creates these owners once per mounted Studio
-instance. Domain hooks subscribe through narrow selectors and publish through
-their owning stores. Domain models and commands are not owned by the workspace
-render store merely because their components appear inside a pane.
+`createAutomationStudioRuntime` creates these owners once per mounted Studio
+instance. `useAutomationStudioRuntime` retains that runtime in a ref and only
+disposes it when the Studio unmounts. Domain hooks and connectors subscribe
+through narrow selectors or exact scope revisions and publish through their
+owning stores. Domain models and commands are not owned by the workspace render
+store merely because their components appear inside a pane.
 
 Stores publish only when their selected value changes. No-op writes preserve
 the current reference and do not notify subscribers. Cross-store updates use a
@@ -84,10 +102,31 @@ single synchronous transaction so observers cannot see a half-applied mutation.
 Deleting or updating one entity invalidates only the affected entity, list, and
 view scopes; it must not trigger an unconditional project reload.
 
+Durable hierarchy/workspace saving is not a React render dependency. The
+hierarchy persistence owner subscribes imperatively to the workspace store's
+exact `save-request` scope, coalesces requests for 800 ms, and only then reads
+the current custom nodes, deleted IDs, and durable workspace preferences.
+Hierarchy mutations explicitly publish that save request even when layout state
+did not change. Project changes invalidate late save completion, and neither the
+revision signal nor signature construction rerenders `AutomationStudioSession`.
+
 Project data is normalized by stable ID. Pure project view-model and selection
 resolvers derive bounded summaries and reuse references when their inputs have
-not changed. Expensive graph conversion is subscriber-driven and must not run
-when no mounted graph view needs it.
+not changed. The data store publishes collection, entity, detail, page, and
+resource scopes independently. The query store keys project, collection,
+filter, sort, page, and page size; it preserves ID references for equivalent
+results and distinguishes `missing`, `fresh`, and `stale` data.
+
+One residual aggregate reader is intentionally explicit:
+`createAutomationSessionProjectViewReader` reads the current project-data,
+selection, and workspace snapshots imperatively. It has no React subscription
+and does not publish models into the ViewHost. The session currently takes one
+such snapshot during its own render for remaining orchestration hooks, and
+command callbacks call the reader when they need a fresh cross-domain view.
+The connected hierarchy also invokes it only after one of its declared project
+scopes changes. This is a residual session-orchestration projection, not the
+data path for canonical destination views; destination connectors read their
+own normalized scopes directly.
 
 Global selection, Flow-editor canvas selection, hierarchy expansion, and
 view-local filters are different state domains. Canvas pointer movement and
@@ -119,6 +158,12 @@ hierarchy hydration are owned outside the composition root. Modal state is
 isolated from workspace rendering. A late request from a closed or superseded
 project must resolve as stale or cancelled and publish nothing.
 
+Active destination loaders use the same generation boundary for Flow detail,
+node definitions, recording detail, timelines, and Flow metadata. Load
+completion may update its normalized entity/resource scope only while the
+captured generation is current. The request coordinator also enforces
+latest-request ownership with `AbortController` instances.
+
 The URL may bootstrap a project or restore a deep link. Normal sidebar
 selection, inner-view switching, pagination, filtering, and workspace layout do
 not require server navigation or browser-history mutation.
@@ -143,19 +188,27 @@ separate cache responsibilities:
   Flow, recording, proposal, timeline, Flow metadata, node-definition, and
   Subflow resources. Typed mutations invalidate only affected scopes and IDs.
 - `AutomationStudioUiCacheCoordinator` stores schema-versioned workspace
-  preferences and hierarchy sidebar UI state by user and project. Its backend
+  presentation seeds and hierarchy sidebar UI state by user and project. Its backend
   contract is browser-neutral. The current default uses bounded `localStorage`;
   the program-API backend reads through that local fallback and mirrors values
   through `get-project-ui-cache`, `save-project-ui-cache`, and
   `delete-project-ui-cache`.
 
-UI-cache hydration and writes are scheduled in background/idle work, writes are
-debounced, and a project-generation guard rejects stale hydration. Project
-switch or close cancels pending writes for that project. Persisted view state
-does not include transient selection. Warm mounted views preserve component
-state in memory, but the cache does not claim to persist arbitrary hydrated
-domain detail or make stale data authoritative. A cache miss changes the stable
-loading surface; it must not delay visible selection or tab activation.
+The workspace cache payload is compact and layout-only: dimensions, collapsed
+states, layout preset and ratios, density, and motion preference. It does not
+restore panes, tabs, active view, view-local state, or selection. The separate
+sidebar seed contains presentation state, but hydration resets focused and
+primary tree-node identity so cached data cannot navigate the user.
+
+UI-cache hydration enters the shared background queue only after a paint and an
+idle opportunity. Writes are debounced, coalesced by cache key, and capped;
+overflow evicts the oldest pending write. Cache and preload work repeatedly
+yield while browser input or an active user-visible request is pending. A
+project-generation guard rejects stale hydration, and project switch or close
+aborts queued work for that project. Warm mounted views preserve local React
+state in memory, but the cache does not persist arbitrary hydrated domain
+detail or make stale data authoritative. A cache miss changes the destination
+readiness surface; it must not delay visible selection or tab activation.
 
 Mutation synchronization uses typed transactions, such as
 `subflow.changed`, rather than stringly typed window events. Transactions name
@@ -189,7 +242,10 @@ project has those size limits.
 
 Background preloading may be scheduled after first interactive paint. It must
 be low priority, cancellable by project generation, cache-aware, and unable to
-delay input, navigation, or the active view's required request.
+delay input, navigation, or the active view's required request. The current
+runner limits a plan to 24 tasks and concurrency to at most two, executes only
+within bounded time slices, and treats responses as warm data only. Starting a
+new plan aborts the old plan. Preload cannot write active view or selection.
 
 ## Workspace Shell And View Host
 
@@ -216,31 +272,80 @@ hierarchy region, pane grid, right pane, timeline dock, responsive drawers, and
 header. It reads only the layout selectors each region needs; canonical domain
 data does not travel through a universal workspace render callback.
 
-The live composition root publishes each canonical view independently through
-`AutomationCanonicalViewPublisher` into an
-`AutomationWorkspaceViewSource`. The source is keyed by view ID, keeps a
-per-view revision, suppresses same-reference replacements, and notifies only
-subscribers to the changed view. `AutomationViewHost` receives a discriminated
-request containing that view's typed model and commands. It resolves the
-canonical definition and host registration at render time, validates the view
-kind, selects that host's model, and only then invokes the component getter.
-Canonical registration maps are derived lazily from the definitions, so module
-initialization does not eagerly construct every view component. The former
-universal renderer and legacy renderer adapter are absent; `Renderer.tsx` is
-only a small typed public export surface.
+`useAutomationConnectedViewEntries` registers one compact connected request per
+canonical view. The workspace source is still keyed by exact view ID, but its
+live entries contain connector functions rather than prebuilt domain models.
+The mounted destination asks `AutomationViewHost` to invoke its connector.
+Only then does that connector subscribe to its declared project-data, query,
+runtime, and selection scopes and derive its model. A connector may initiate
+its active-only detail loader; the connector contract also supports an exact
+bounded query and query loader. Domain views that own their own list controller
+continue to own that bounded query locally. The destination renders through
+`AutomationViewBoundary`; there is no grouped publisher pass pushing every
+model through the session or shell.
 
-Activity has three useful states. An active view renders and may perform its
-required hydration. A warm view remains mounted for the same project and pane
-so local scroll, selection, draft, and disclosure state can be restored without
-recreating the view. A cold sleeping view renders a stable opening surface and
-must not hydrate or subscribe to unrelated domain detail. Warm activity is
-project-keyed and reset on project change. View subscriptions are bounded, and
-unknown, mismatched, or retired IDs render explicit recovery UI instead of
-silently redirecting or oscillating between tabs.
+`AutomationViewHost` resolves the canonical definition and host registration,
+validates saved ID/kind compatibility, and renders explicit recovery for
+unknown or retired views. Canonical registration maps are derived from typed
+definitions rather than a handwritten universal switch. `Renderer.tsx` is a
+small typed public export surface, not the live model owner.
+
+Activity has three useful states. An active view renders, subscribes to its
+declared scopes, and may perform its required hydration. A hidden warm view
+remains mounted for the same project and pane so local scroll, draft, and
+disclosure state survive, but its connector returns retained model state and
+unsubscribes from project, query, runtime, and selection stores. A cold view
+whose lifecycle permits sleeping renders a stable opening surface without
+mounting the connector. Warm activity is project-keyed and reset on project
+change. View-source subscriptions are bounded to 64 exact IDs, and unknown,
+mismatched, or retired IDs render explicit recovery UI instead of silently
+redirecting or oscillating between tabs.
+
+Readiness is local to each destination. When a direct connector declares a
+query, it maps that exact query snapshot to `loading`, `empty`, `error`,
+`stale-ready`, or `ready`. A refresh may retain usable data as
+`stale-ready`; a missing first result displays the local loading boundary.
+Readiness tokens include project generation and query update identity. Views
+with domain-local controllers expose the same states inside their own boundary.
+The shell, tab strip, and unrelated views do not subscribe to readiness.
 
 This shell, typed-source, and composition-root adoption is complete in source.
 Browser responsiveness remains subject to the separate manual certification
 described below.
+
+## Connected Hierarchy And Timeline
+
+The hierarchy and bottom timeline are shell regions rather than canonical pane
+views, so they have explicit connected-region owners in
+`AutomationStudioConnectedRegions.tsx`.
+
+`AutomationStudioConnectedHierarchy` subscribes to the Flow, recording,
+timeline, hierarchy-resource, and hierarchy-selection scopes it needs. Project
+changes trigger the residual project snapshot reader described above;
+selection styling reads the selection store directly and does not rebuild the
+project projection for unrelated selection updates.
+
+`AutomationStudioConnectedTimeline` reads normalized recording and timeline
+maps directly. Its selection snapshot reduces unrelated Flow, node, and
+settings selections to one stable `unrelated` key, so those changes do not
+rescan timelines. Preview, pending State-open, recording, timeline, and relevant
+State selection identity are the only selection inputs to the dock model.
+
+## Graph Derivation
+
+Task-Flow conversion and graph validation run through
+`createAutomationGraphDerivationJob`. Requests have a project/Flow owner key
+and a revision key containing the source revision and relevant object
+identities. The job is idle-scheduled, generation-cancelled, and
+subscriber-aware: it starts only while the Flow canvas or Problems destination
+needs graph output, and cancels scheduled work when the last subscriber leaves.
+
+A same-owner refresh keeps the last valid graph visible while the new revision
+is derived. Changing project or Flow owner clears the prior graph. Conversion
+and validation results commit only if the request revision, job generation, and
+subscriber set are still current. High-frequency canvas movement remains local
+to the Flow editor; graph drafts, validation, history, and persistence are
+published at settled interaction boundaries.
 
 ## Overlay And Dialog Ownership
 
@@ -358,9 +463,10 @@ visibility, and independent body scrolling.
 
 ## Performance Contracts
 
-Architecture tests enforce bounded module sizes, canonical imports, absence of
-retired facades, isolated store notifications, stable derivation references,
-and bounded rendering for large State and domain collections.
+Architecture and deterministic tests enforce bounded module sizes, canonical
+imports, live-path connector ownership, isolated store notifications, stable
+derivation references, generation rejection, and bounded visible work for
+large project fixtures.
 
 The deterministic in-process large-project fixture currently generates by
 default:
@@ -372,8 +478,14 @@ default:
 
 Generation is deterministic, linear in collection size, configurable, and
 capped at 50,000 items per collection to prevent accidental test exhaustion.
-It validates models and component boundaries; it is not a substitute for a
-real browser, database query-plan, heap, or soak certification.
+Phase 11 also uses a one-million-logical-view-ID sentinel without allocating a
+million rendered views. Deterministic contracts establish a 100-row hierarchy
+window, 64 subscribed view IDs after examining at most 128 IDs, 25 run IDs per
+first page, stable selector/query identity, no-op notification suppression,
+one notification per affected store in a transaction, and stale-generation
+rejection. These are source, store, selector, and subscription-invalidation
+results. They do not measure React commit duration, browser input latency,
+paint, long tasks, retained heap, DOM cost, SQL query plans, or soak behavior.
 
 The source of truth for browser budgets is
 `apps/web/src/features/programs/ui-performance-budgets.ts`. Current key limits
@@ -382,10 +494,13 @@ renders per instrumented Automation Studio component in a scenario, 900 graph
 DOM entities, and 32 MiB retained heap for the switch scenario. Tests must use
 the source constants rather than copying values into assertions.
 
-Browser measurements are pending until the manual procedure in
+No browser performance measurement is claimed by this document. Browser
+certification remains pending until the manual procedure in
 [Automation Studio UI performance profiling](../../operations/automation-studio-ui-performance-profiling.md)
-passes on documented hardware and build conditions. A passing unit/type/build
-suite does not establish interactive responsiveness.
+and the evidence requirements in
+[Automation Studio scale certification](../../operations/automation-studio-scale-certification.md)
+pass on documented hardware and build conditions. A passing unit, type, docs,
+or build suite does not establish interactive responsiveness.
 
 Repository automation and coding agents do not start the web panel. A human
 operator starts it for inspection and certification with:
@@ -405,10 +520,10 @@ Before accepting an Automation Studio web architecture change:
 4. Keep list queries bounded in SQL and load detail only after selection.
 5. Preserve browser-neutral cache and sync contracts.
 6. Register a typed view contract instead of extending an aggregate renderer
-   payload.
+   payload; connect its model at the destination in `ViewHost`.
 7. Add empty, loading, error, permission, and representative large-data tests.
 8. Put styles in the owning partial and verify desktop/narrow overflow.
 9. Run relevant tests, `pnpm --filter @fluxiq/web check`, and the repository
    documentation check.
-10. Run the manual browser certification before claiming a performance gate is
-    complete.
+10. Keep deterministic evidence labelled as such, and run the manual browser
+    certification before claiming an interactive performance gate is complete.

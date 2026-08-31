@@ -12,9 +12,9 @@ import { automationWorkspaceRegionForView } from "../layout/regions";
 import type {
   AutomationWorkspaceCommandPort,
   AutomationWorkspaceCommands,
-  AutomationWorkspaceRegionActivation,
-  AutomationWorkspaceWarmActivator
+  AutomationWorkspaceRegionActivation
 } from "./contracts";
+import type { AutomationWarmViewRegistry } from "./warm-activation";
 import { chooseAutomationMainPane, nextAutomationPaneId } from "./pane-choice";
 
 export const automationWorkspaceMaxMainPanes = 3;
@@ -26,84 +26,99 @@ const uniqueMainPaneFallbacks = automationStudioViewDefinitions()
 
 export function createAutomationWorkspaceCommands(options: {
   port: AutomationWorkspaceCommandPort;
-  warm: AutomationWorkspaceWarmActivator;
+  warm?: AutomationWarmViewRegistry;
   onRegionActivated?(activation: AutomationWorkspaceRegionActivation): void;
 }): AutomationWorkspaceCommands {
-  const { port, warm } = options;
+  const { port } = options;
   const defaultRightViewId = defaultAutomationRightSidebarPrefs().activeViewId;
-  const perform = (operation: () => void) => port.schedule ? port.schedule(operation) : operation();
   const notifyRegion = (activation: AutomationWorkspaceRegionActivation) => {
     options.onRegionActivated?.(activation);
   };
   const commit = (update: (current: AutomationWorkspacePrefs) => AutomationWorkspacePrefs, persist = false) => {
-    let changed = false;
-    perform(() => {
-      changed = port.commit(update, { persist, scope: "workspace" });
-    });
-    return changed || Boolean(port.schedule);
+    return port.commit(update, { persist, scope: "workspace" });
   };
   const activateMain = (paneId: string, viewId: string) => {
     const current = port.read();
     const pane = current.panes.find((candidate) => candidate.id === paneId);
     if (!pane) return false;
-    notifyRegion({ region: "main", paneId, viewId });
     const unchanged = current.activePaneId === paneId
       && current.activeViewId === viewId
       && pane.activeViewId === viewId
       && pane.tabs.includes(viewId);
     if (unchanged) return false;
-    warm.activate("main", paneId, viewId);
-    return commit((current) => ({
-      ...current,
-      activePaneId: paneId,
-      activeViewId: viewId,
-      panes: current.panes.map((candidate) => candidate.id === paneId
-        ? { ...candidate, activeViewId: viewId, tabs: uniqueTabs([...candidate.tabs, viewId]) }
-        : candidate)
-    }));
+    const changed = commit((latest) => {
+      const latestPane = latest.panes.find((candidate) => candidate.id === paneId);
+      if (!latestPane) return latest;
+      if (latest.activePaneId === paneId
+        && latest.activeViewId === viewId
+        && latestPane.activeViewId === viewId
+        && latestPane.tabs.includes(viewId)) return latest;
+      return {
+        ...latest,
+        activePaneId: paneId,
+        activeViewId: viewId,
+        panes: latest.panes.map((candidate) => candidate.id === paneId
+          ? { ...candidate, activeViewId: viewId, tabs: uniqueTabs([...candidate.tabs, viewId]) }
+          : candidate)
+      };
+    });
+    if (changed) notifyRegion({ region: "main", paneId, viewId });
+    return changed;
   };
   const activateRight = (viewId: string) => {
-    notifyRegion({ region: "right", paneId: "right-sidebar", viewId });
     const current = port.read();
     const unchanged = !current.rightSidebarCollapsed
       && !current.rightSidebar.collapsed
       && current.rightSidebar.activeViewId === viewId
       && current.rightSidebar.tabs.includes(viewId);
     if (unchanged) return false;
-    warm.activate("right", "right-sidebar", viewId);
-    return commit((current) => ({
-      ...current,
-      rightSidebarCollapsed: false,
-      rightSidebar: {
-        ...current.rightSidebar,
-        activeViewId: viewId,
-        collapsed: false,
-        tabs: uniqueTabs([...current.rightSidebar.tabs, viewId])
-      }
-    }));
+    const changed = commit((latest) => {
+      if (!latest.rightSidebarCollapsed
+        && !latest.rightSidebar.collapsed
+        && latest.rightSidebar.activeViewId === viewId
+        && latest.rightSidebar.tabs.includes(viewId)) return latest;
+      return {
+        ...latest,
+        rightSidebarCollapsed: false,
+        rightSidebar: {
+          ...latest.rightSidebar,
+          activeViewId: viewId,
+          collapsed: false,
+          tabs: uniqueTabs([...latest.rightSidebar.tabs, viewId])
+        }
+      };
+    });
+    if (changed) notifyRegion({ region: "right", paneId: "right-sidebar", viewId });
+    return changed;
   };
 
   const commands: AutomationWorkspaceCommands = {
     openView(viewId, mode = "preview") {
       const region = automationWorkspaceRegionForView(viewId);
       if (region === "bottom") {
-        notifyRegion({ region, paneId: "bottom-dock", viewId });
-        return commit((current) => ({
-          ...current,
-          bottomTimelineCollapsed: false,
-          bottomDock: { ...current.bottomDock, activeViewId: current.bottomDock.activeViewId, expanded: true },
-          maximizedWindowId: null
-        }));
+        const changed = commit((current) => current.bottomDock.expanded
+          && !current.bottomTimelineCollapsed
+          && current.maximizedWindowId === null
+          ? current
+          : {
+            ...current,
+            bottomTimelineCollapsed: false,
+            bottomDock: { ...current.bottomDock, expanded: true },
+            maximizedWindowId: null
+          });
+        if (changed) notifyRegion({ region, paneId: "bottom-dock", viewId });
+        return changed;
       }
       if (region === "right") return activateRight(viewId);
       const current = port.read();
       if (mode === "new-window" && !current.panes.some((pane) => pane.tabs.includes(viewId))) {
         if (current.panes.length >= automationWorkspaceMaxMainPanes) return false;
         const paneId = nextAutomationPaneId(current.panes);
-        notifyRegion({ region: "main", paneId, viewId });
-        return commit((latest) => latest.panes.length >= automationWorkspaceMaxMainPanes
+        const changed = commit((latest) => latest.panes.length >= automationWorkspaceMaxMainPanes
           ? latest
           : addMainPane(latest, viewId, paneId), true);
+        if (changed) notifyRegion({ region: "main", paneId, viewId });
+        return changed;
       }
       const pane = chooseAutomationMainPane(current, viewId);
       return pane ? activateMain(pane.id, viewId) : false;
@@ -168,6 +183,7 @@ export function createAutomationWorkspaceCommands(options: {
       }, true);
     },
     applyLayoutPreset(preset) {
+      if (port.read().mainLayoutPreset === preset) return false;
       return commit((current) => resizeMainPanesForPreset(current, preset), true);
     },
     toggleRightSidebar() {

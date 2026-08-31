@@ -1,5 +1,6 @@
 :root {
   color-scheme: light;
+  scrollbar-gutter: stable;
   --color-background: #f2f3f3;
   --color-bg: var(--color-background);
   --color-surface: #ffffff;
@@ -1118,6 +1119,14 @@ select {
   background: var(--surface-pane);
   box-shadow: var(--shadow-popover);
   padding: var(--space-xs);
+}
+
+.menu-popover-portal {
+  position: fixed;
+  right: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  contain: layout paint style;
 }
 
 .menu-popover :is(button, a) {
@@ -2580,6 +2589,8 @@ select {
   background: rgb(0 0 0 / 35%);
   padding: var(--space-xl);
   pointer-events: auto;
+  contain: layout paint style;
+  overscroll-behavior: contain;
 }
 
 .modal-panel {
@@ -2595,6 +2606,8 @@ select {
   background: var(--color-surface);
   box-shadow: 0 16px 36px rgb(0 28 36 / 22%);
   padding: var(--space-lg);
+  contain: layout paint style;
+  overscroll-behavior: contain;
 }
 
 .modal-panel label {
@@ -2661,6 +2674,8 @@ select {
   inset: 0;
   z-index: var(--layer-overlay);
   background: rgb(0 0 0 / 35%);
+  contain: layout paint style;
+  overscroll-behavior: contain;
 }
 
 .drawer-panel {
@@ -2670,6 +2685,8 @@ select {
   max-height: 100dvh;
   border-radius: 0;
   padding: var(--space-lg);
+  contain: layout paint style;
+  overscroll-behavior: contain;
 }
 
 .drawer-panel.right {

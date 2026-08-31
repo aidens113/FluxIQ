@@ -43,8 +43,7 @@ export function AccessibleFloatingOverlay(props: {
   useEffect(() => {
     const panel = panelRef.current;
     const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    // The shared environment performs document.body.style.overflow = "hidden" with reference counting.
-    const releaseEnvironment = acquireOverlayEnvironment(document, returnFocus);
+    const releaseEnvironment = acquireOverlayEnvironment(document, returnFocus, { lockScroll: false });
     const initial = panel?.querySelector<HTMLElement>(focusableSelector());
     (initial ?? panel)?.focus({ preventScroll: true });
     return releaseEnvironment;

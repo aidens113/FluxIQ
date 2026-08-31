@@ -1,19 +1,16 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, Plus, Search, X, XCircle } from "lucide-react";
-import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import type { Blocks } from "lucide-react";
 import type { AutomationViewInstance } from "../../views/view-types";
 import { useUiRenderMetric } from "../../../programs/ui-performance";
-import { activateAutomationMountedView, useAutomationMountedViewActivation, type AutomationMountedViewActivationStore } from "./mounted-view-activation";
 import { viewTitle } from "./view-metadata";
 
 export function AutomationViewContainer(props: {
   active: boolean;
   activeViewId: string;
-  activation: AutomationMountedViewActivationStore;
   children: ReactNode;
-  bodyClassName?: string | undefined;
   icon: typeof Blocks;
   frameLabel?: string;
   tabs: AutomationViewInstance[];
@@ -35,24 +32,9 @@ export function AutomationViewContainer(props: {
   const tabsRef = useRef<HTMLDivElement>(null);
   const [tabPickerOpen, setTabPickerOpen] = useState(false);
   const [tabQuery, setTabQuery] = useState("");
-  const activation = useAutomationMountedViewActivation(props.activation, props.windowId);
-  const optimisticActiveViewId = activation.activeViewId ?? props.activeViewId;
-  const optimisticWindowActive = activation.activeWindow ?? props.active;
-  const optimisticView = props.tabs.find((tab) => tab.id === optimisticActiveViewId);
-  const Icon = optimisticView?.icon ?? props.icon;
-  const registeredViewIds = props.tabs.map((tab) => tab.id).join("\u0000");
-  useEffect(
-    () => props.activation.registerWindow(props.windowId, registeredViewIds ? registeredViewIds.split("\u0000") : []),
-    [props.activation, props.windowId, registeredViewIds]
-  );
-  useEffect(() => {
-    props.activation.confirm(props.windowId, props.activeViewId, props.active);
-  }, [props.activation, props.active, props.activeViewId, props.windowId]);
-  const selectTab = (viewId: string) => {
-    activateAutomationMountedView(props.activation, props.windowId, viewId);
-    props.onTabSelect(viewId);
-  };
-  const activeTabDomId = `automation-tab-${props.windowId}-${optimisticActiveViewId}`.replace(/[^a-zA-Z0-9_-]/g, "-");
+  const activeView = props.tabs.find((tab) => tab.id === props.activeViewId);
+  const Icon = activeView?.icon ?? props.icon;
+  const activeTabDomId = `automation-tab-${props.windowId}-${props.activeViewId}`.replace(/[^a-zA-Z0-9_-]/g, "-");
   const visiblePickerTabs = props.tabs.filter((tab) => tab.label.toLowerCase().includes(tabQuery.trim().toLowerCase()));
   const handleWindowDragOver = props.onTabDrop
     ? (event: DragEvent<HTMLElement>) => {
@@ -66,16 +48,16 @@ export function AutomationViewContainer(props: {
     : undefined;
   return (
     <section
-      className={optimisticWindowActive ? "automation-view-container active" : "automation-view-container"}
+      className={props.active ? "automation-view-container active" : "automation-view-container"}
       data-automation-window-id={props.windowId}
       onDragOver={handleWindowDragOver}
       onDrop={handleWindowDrop}
-      onMouseDown={optimisticWindowActive ? undefined : props.onActivate}
+      onMouseDown={props.active ? undefined : props.onActivate}
     >
       <header className="not-movable">
         <div>
           <Icon size={15} aria-hidden />
-          <span><strong>{optimisticView ? viewTitle(optimisticView) : props.title}</strong><small>{frameLabel} {props.windowIndex + 1} - {optimisticView?.label ?? props.subtitle}</small></span>
+          <span><strong>{activeView ? viewTitle(activeView) : props.title}</strong><small>{frameLabel} {props.windowIndex + 1} - {activeView?.label ?? props.subtitle}</small></span>
         </div>
         <div className="automation-pane-actions">
           <button className="icon-button" onClick={(event) => { event.stopPropagation(); props.onAddTab(event); }} title="Add tab" aria-label="Add tab" type="button"><Plus size={13} aria-hidden /></button>
@@ -89,7 +71,7 @@ export function AutomationViewContainer(props: {
         <div className="automation-window-tabs" ref={tabsRef} role="tablist" aria-label={`${frameLabel} ${props.windowIndex + 1} tabs`}>
           {props.tabs.map((tab, tabIndex) => {
             const TabIcon = tab.icon;
-            const selected = tab.id === optimisticActiveViewId;
+            const selected = tab.id === props.activeViewId;
             const tabId = `automation-tab-${props.windowId}-${tab.id}`.replace(/[^a-zA-Z0-9_-]/g, "-");
             return (
               <div className={selected ? "automation-tab-item selected" : "automation-tab-item"} key={tab.id}>
@@ -106,7 +88,7 @@ export function AutomationViewContainer(props: {
                       props.onCloseTab(tab.id);
                     }
                   }}
-                  onClick={(event) => { event.stopPropagation(); selectTab(tab.id); }}
+                  onClick={(event) => { event.stopPropagation(); props.onTabSelect(tab.id); }}
                   onDragOver={props.onTabDrop ? (event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; } : undefined}
                   onDragStart={props.onTabDragStart ? (event) => props.onTabDragStart?.(tab.id, event) : undefined}
                   onDrop={props.onTabDrop ? (event) => {
@@ -135,7 +117,7 @@ export function AutomationViewContainer(props: {
                           : (tabIndex + 1) % props.tabs.length;
                     const next = props.tabs[nextIndex];
                     if (!next) return;
-                    selectTab(next.id);
+                    props.onTabSelect(next.id);
                     tabsRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]?.focus();
                   }}
                   role="tab"
@@ -161,8 +143,8 @@ export function AutomationViewContainer(props: {
             </label>
             <div>
               {visiblePickerTabs.length ? visiblePickerTabs.map((tab) => (
-                <button className={tab.id === optimisticActiveViewId ? "selected" : undefined} key={tab.id} onClick={() => {
-                  selectTab(tab.id);
+                <button className={tab.id === props.activeViewId ? "selected" : undefined} key={tab.id} onClick={() => {
+                  props.onTabSelect(tab.id);
                   setTabPickerOpen(false);
                   setTabQuery("");
                 }} type="button">{tab.label}</button>
@@ -170,7 +152,7 @@ export function AutomationViewContainer(props: {
             </div>
           </div>
         ) : null}
-      </div>      <div aria-labelledby={activeTabDomId} className={["automation-view-body", props.bodyClassName ?? ""].filter(Boolean).join(" ")} id={`automation-panel-${props.windowId}`} role="tabpanel">{props.children}</div>
+      </div>      <div aria-labelledby={activeTabDomId} className="automation-view-body" id={`automation-panel-${props.windowId}`} role="tabpanel">{props.children}</div>
     </section>
   );
 }

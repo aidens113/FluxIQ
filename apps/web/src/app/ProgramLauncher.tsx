@@ -1,6 +1,7 @@
 "use client";
 
 import { Blocks, BookOpen, CalendarClock, ChevronRight, CloudUpload, Database, GitBranch, KeyRound, MousePointerClick, PlayCircle, Search, ShieldCheck } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import type { FluxIQIconName, ProgramSummary } from "fluxiq";
 import { EmptyState } from "../features/programs/shared-ui";
@@ -104,12 +105,12 @@ function LauncherGroup(props: { title: string; items: LauncherItem[]; onOpen(hre
       <div className="launcher-list">
         {props.items.map((item) => {
           const Icon = item.icon;
-          return <a className="launcher-row" href={item.href} key={item.id} onClick={() => props.onOpen(item.href)}>
+          return <Link className="launcher-row" href={item.href} key={item.id} onClick={() => props.onOpen(item.href)} prefetch={false}>
             <span className="launcher-icon"><Icon aria-hidden size={17} /></span>
             <span className="launcher-copy"><strong>{item.title}</strong><small>{item.description}</small></span>
             <span className="launcher-meta">{item.meta ?? item.category}</span>
             <ChevronRight aria-hidden size={15} />
-          </a>;
+          </Link>;
         })}
       </div>
     </section>

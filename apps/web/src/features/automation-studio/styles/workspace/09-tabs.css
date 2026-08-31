@@ -1,0 +1,178 @@
+.automation-tabs-shell {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 28px 28px;
+  align-items: stretch;
+  min-width: 0;
+  width: 100%;
+  height: 36px;
+  border-bottom: var(--border-width) solid var(--color-border);
+  background: var(--surface-tool);
+  padding: var(--space-xs);
+  box-sizing: border-box;
+  contain: layout style;
+}
+
+.automation-tab-scroll {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.automation-tab-scroll:hover,
+.automation-tab-scroll[aria-expanded="true"] {
+  background: var(--surface-selected);
+  color: var(--color-primary);
+}
+
+.automation-window-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  white-space: nowrap;
+}
+
+.automation-window-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.automation-tab-item {
+  display: inline-grid;
+  grid-template-columns: minmax(0, 1fr) 24px;
+  align-items: center;
+  flex: 0 0 auto;
+  max-width: min(260px, 46vw);
+  min-width: 80px;
+  height: 28px;
+  overflow: hidden;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-pane);
+  color: var(--color-text-muted);
+}
+
+.automation-tab-item.selected {
+  border-color: var(--color-primary);
+  background: var(--surface-selected);
+  color: var(--color-primary);
+}
+
+.automation-tab-select {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-compact);
+  min-width: 0;
+  height: 26px;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 2px var(--space-sm);
+  cursor: pointer;
+}
+
+.automation-tab-select > svg {
+  flex: 0 0 auto;
+}
+
+.automation-tab-select > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-close {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text-subtle);
+  cursor: pointer;
+}
+
+.tab-close:hover,
+.tab-close:focus-visible {
+  background: var(--color-danger-surface);
+  color: var(--color-danger);
+}
+
+.automation-tab-picker {
+  position: absolute;
+  top: calc(100% + var(--space-xs));
+  right: var(--space-xs);
+  z-index: var(--layer-dropdown);
+  display: grid;
+  gap: var(--space-sm);
+  width: min(320px, calc(100vw - var(--space-xl)));
+  max-height: min(420px, 60vh);
+  overflow: hidden;
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-panel);
+  background: var(--surface-pane);
+  box-shadow: var(--shadow-popover);
+  padding: var(--space-sm);
+}
+
+.automation-tab-picker label {
+  display: grid;
+  gap: var(--space-xs);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+}
+
+.automation-tab-picker input {
+  width: 100%;
+  min-height: var(--control-height-default);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-pane);
+  color: var(--color-text);
+  padding: var(--space-sm);
+}
+
+.automation-tab-picker > div {
+  display: grid;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.automation-tab-picker > div button {
+  min-height: var(--control-height-default);
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text);
+  padding: var(--space-sm);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.automation-tab-picker > div button:hover,
+.automation-tab-picker > div button.selected {
+  background: var(--surface-selected);
+  color: var(--color-primary);
+}
+
+.automation-tab-picker-empty {
+  color: var(--color-text-muted);
+  padding: var(--space-md);
+  text-align: center;
+}

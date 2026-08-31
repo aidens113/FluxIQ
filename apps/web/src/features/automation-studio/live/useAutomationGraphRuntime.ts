@@ -5,8 +5,10 @@ import { notifyGlobalAlert } from "../../programs/shared-ui";
 import type { AutomationWorkspacePrefs } from "../workspace/layout";
 import { automationStudioViewId } from "../views/view-registry";
 import type { AutomationGraphFocusRequest } from "../flow-editor/flow-editor-types";
-import { automationPolicyGraphProblems } from "../flow-editor/graph-validation";
-import { taskFlowToReactFlowGraph } from "../flow-editor/model/policy-graph";
+import {
+  automationGraphDerivationKeys,
+  createAutomationGraphDerivationJob
+} from "../graph/derivation-job";
 import { automationGraphDraftIdentity, type AutomationGraphDraftRecord } from "../graph/draft-store";
 import { scheduleAutomationGraphIdleTask } from "../graph/worker-tasks";
 import { mergeFlowDetails } from "../model/project-change-reconciliation";
@@ -29,20 +31,65 @@ type GraphRuntimeOptions = {
   setDirty: (dirty: boolean) => void;
   setActionStatus: (status: string) => void;
   notifyChanged: (scopes: any[], resourceIds: string[]) => void;
+  getSnapshot?: () => Pick<
+    GraphRuntimeOptions,
+    "activeProjectId" | "selectedTaskGraph" | "selectedFlow" | "selectedFlowEntry"
+      | "availableNodeDefinitions" | "snapshotProblems" | "taskGraphDrafts"
+  >;
 };
 
 export function useAutomationGraphRuntime(options: GraphRuntimeOptions) {
   const [recoverable, setRecoverable] = useState<AutomationGraphDraftRecord<GraphDocument> | null>(null);
-  const [graphProblems, setGraphProblems] = useState<any[]>([]);
   const [focusRequest, setFocusRequest] = useState<AutomationGraphFocusRequest | null>(null);
   const persistenceRef = useRef<AutomationGraphDraftRecord<GraphDocument> | null>(null);
+  const derivationJobRef = useRef<ReturnType<typeof createAutomationGraphDerivationJob> | null>(null);
+  if (!derivationJobRef.current) derivationJobRef.current = createAutomationGraphDerivationJob();
+  const derivationJob = derivationJobRef.current;
+  const [derivationSnapshot, setDerivationSnapshot] = useState(() => derivationJob.getSnapshot());
   const draftKey = automationGraphDraftIdentity(options.selectedTaskGraph);
   const draft = draftKey ? options.taskGraphDrafts[draftKey] ?? null : null;
-  const subscribersActive = options.workspacePrefs.panes.some((pane) => pane.tabs.includes(automationStudioViewId.flowEditor) || pane.tabs.includes(automationStudioViewId.problems))
-    || options.workspacePrefs.rightSidebar.tabs.includes(automationStudioViewId.problems);
-  const baseGraph = useMemo(() => subscribersActive && options.selectedTaskGraph
-    ? taskFlowToReactFlowGraph(options.selectedTaskGraph, "", options.availableNodeDefinitions)
-    : null, [options.availableNodeDefinitions, options.selectedTaskGraph, subscribersActive]);
+  const graphVisible = options.workspacePrefs.panes.some((pane) => pane.activeViewId === automationStudioViewId.flowEditor);
+  const problemsVisible = options.workspacePrefs.panes.some((pane) => pane.activeViewId === automationStudioViewId.problems)
+    || (!options.workspacePrefs.rightSidebar.collapsed
+      && !options.workspacePrefs.rightSidebarCollapsed
+      && options.workspacePrefs.rightSidebar.activeViewId === automationStudioViewId.problems);
+  const subscribersActive = graphVisible || problemsVisible;
+  const baseGraph = derivationSnapshot.graph;
+
+  useEffect(() => {
+    if (!subscribersActive) return;
+    const unsubscribe = derivationJob.subscribe(setDerivationSnapshot);
+    if (!options.selectedTaskGraph) {
+      derivationJob.setRequest(null);
+      return unsubscribe;
+    }
+    const { ownerKey, revisionKey } = automationGraphDerivationKeys({
+      projectId: options.activeProjectId,
+      source: options.selectedTaskGraph,
+      nodeDefinitions: options.availableNodeDefinitions,
+      validationGraph: draft,
+      validate: problemsVisible
+    });
+    derivationJob.setRequest({
+      ownerKey,
+      revisionKey,
+      flowId: String(options.selectedTaskGraph.flowId ?? options.selectedTaskGraph.id ?? "current-flow"),
+      flowName: String(options.selectedTaskGraph.name ?? "Current Flow"),
+      source: options.selectedTaskGraph,
+      nodeDefinitions: options.availableNodeDefinitions,
+      validationGraph: draft,
+      validate: problemsVisible
+    });
+    return unsubscribe;
+  }, [
+    derivationJob,
+    draft,
+    options.activeProjectId,
+    options.availableNodeDefinitions,
+    options.selectedTaskGraph,
+    problemsVisible,
+    subscribersActive
+  ]);
 
   useEffect(() => {
     if (!options.activeProjectId || !options.selectedTaskGraph?.flowId || draft) {
@@ -100,39 +147,15 @@ export function useAutomationGraphRuntime(options: GraphRuntimeOptions) {
     return () => window.clearTimeout(timeout);
   }, [draft, options.activeProjectId, options.liveCommands, options.selectedTaskGraph?.flowId, options.selectedTaskGraph?.updatedAt]);
 
-  const graphForValidation = draft ?? baseGraph;
-  const visible = options.activeViewId === automationStudioViewId.problems || options.workspacePrefs.rightSidebar.activeViewId === automationStudioViewId.problems;
-  useEffect(() => {
-    if (!visible || !graphForValidation) {
-      setGraphProblems((current) => current.length ? [] : current);
-      return;
-    }
-    let cancelled = false;
-    const flowId = options.selectedTaskGraph?.flowId ?? options.selectedTaskGraph?.id ?? "current-flow";
-    const flowName = options.selectedTaskGraph?.name ?? "Current Flow";
-    const cancel = scheduleAutomationGraphIdleTask(() => {
-      const next = automationPolicyGraphProblems(graphForValidation.nodes, graphForValidation.edges).map((problem) => ({
-        ...problem,
-        id: "graph:" + problem.id,
-        severity: "error",
-        source: "graph",
-        artifactId: flowId,
-        artifactLabel: flowName
-      }));
-      if (!cancelled) setGraphProblems(next);
-    }, { delayMs: 80, timeoutMs: 1_000 });
-    return () => { cancelled = true; cancel(); };
-  }, [graphForValidation, options.selectedTaskGraph?.flowId, options.selectedTaskGraph?.id, options.selectedTaskGraph?.name, visible]);
-
   const problems = useMemo(() => {
-    const graphIds = new Set(graphProblems.map((problem) => problem.id));
-    return [...graphProblems, ...options.snapshotProblems.map((problem: any, index: number) => ({
+    const graphIds = new Set(derivationSnapshot.problems.map((problem) => problem.id));
+    return [...derivationSnapshot.problems, ...options.snapshotProblems.map((problem: any, index: number) => ({
       ...problem,
       id: problem.id && !graphIds.has(String(problem.id)) ? String(problem.id) : "snapshot:" + (problem.id ?? index),
       severity: problem.severity ?? "error",
       source: problem.source ?? "project"
     }))];
-  }, [graphProblems, options.snapshotProblems]);
+  }, [derivationSnapshot.problems, options.snapshotProblems]);
 
   const clearDrafts = useCallback((flowId: string) => {
     options.setTaskGraphDrafts((current) => Object.fromEntries(
@@ -147,17 +170,19 @@ export function useAutomationGraphRuntime(options: GraphRuntimeOptions) {
     options.setDirty(true);
   }, [draftKey, options.liveCommands, options.setDirty, options.setTaskGraphDrafts, recoverable]);
   const discardDraft = useCallback(() => {
-    if (!options.selectedTaskGraph?.flowId) return;
-    void options.liveCommands.discardFlowDraft(options.selectedTaskGraph.flowId).then((outcome) => {
+    const current = options.getSnapshot?.() ?? options;
+    if (!current.selectedTaskGraph?.flowId) return;
+    void options.liveCommands.discardFlowDraft(current.selectedTaskGraph.flowId).then((outcome) => {
       if (outcome.status === "success") setRecoverable(null);
     });
   }, [options.liveCommands, options.selectedTaskGraph?.flowId]);
   const saveGraph = useCallback(async (graph: GraphDocument) => {
-    if (!options.selectedFlow || options.selectedFlowEntry?.source !== "canonical") {
+    const current = options.getSnapshot?.() ?? options;
+    if (!current.selectedFlow || current.selectedFlowEntry?.source !== "canonical") {
       return { ok: false, state: "failed" as const, message: "Only canonical Flows can be saved." };
     }
     const pin = window.prompt("Enter PIN to save this Flow") ?? "";
-    const outcome = await options.liveCommands.saveFlowDraft(options.selectedFlow, graph, pin, true);
+    const outcome = await options.liveCommands.saveFlowDraft(current.selectedFlow, graph, pin, true);
     if (outcome.status !== "success") {
       const message = outcome.status === "failure" ? outcome.error : "Flow save was cancelled.";
       options.setActionStatus(message);
@@ -171,20 +196,22 @@ export function useAutomationGraphRuntime(options: GraphRuntimeOptions) {
     return { ok: true, state: "saved" as const, message: "Flow graph saved." };
   }, [clearDrafts, options]);
   const updateDraft = useCallback((graph: GraphDocument | null) => {
-    if (!draftKey || !options.selectedTaskGraph?.flowId) return;
+    const current = options.getSnapshot?.() ?? options;
+    const currentDraftKey = automationGraphDraftIdentity(current.selectedTaskGraph);
+    if (!currentDraftKey || !current.selectedTaskGraph?.flowId) return;
     options.setTaskGraphDrafts((current) => {
       if (!graph) {
-        const { [draftKey]: _removed, ...rest } = current;
+        const { [currentDraftKey]: _removed, ...rest } = current;
         return rest;
       }
-      return { ...current, [draftKey]: graph };
+      return { ...current, [currentDraftKey]: graph };
     });
     void options.liveCommands.updateFlowDraft({
-      flowId: options.selectedTaskGraph.flowId,
+      flowId: current.selectedTaskGraph.flowId,
       graph,
       baseGraph,
-      baseRevision: String(options.selectedTaskGraph.graphRevision ?? options.selectedTaskGraph.revision ?? options.selectedTaskGraph.updatedAt ?? 0),
-      baseUpdatedAt: options.selectedTaskGraph.updatedAt ?? 0
+      baseRevision: String(current.selectedTaskGraph.graphRevision ?? current.selectedTaskGraph.revision ?? current.selectedTaskGraph.updatedAt ?? 0),
+      baseUpdatedAt: current.selectedTaskGraph.updatedAt ?? 0
     });
   }, [baseGraph, draftKey, options.liveCommands, options.selectedTaskGraph, options.setTaskGraphDrafts]);
   const focusProblem = useCallback((problem: any) => {

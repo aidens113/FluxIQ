@@ -25,10 +25,11 @@ import type {
 } from "./model";
 import type { AutomationHierarchyPageInfo } from "./paged-cache";
 import { automationHierarchyKeyboardAction } from "./keyboard";
-import { automationHierarchySelectionSignature, type AutomationHierarchyRoutableViewId } from "./routing";
+import type { AutomationHierarchyRoutableViewId } from "./routing";
 import {
   createAutomationHierarchyProjectionSelector,
-  selectAutomationHierarchyEffectiveCollapsedIds
+  selectAutomationHierarchyEffectiveCollapsedIds,
+  type AutomationHierarchyProjection
 } from "./selectors";
 import {
   automationHierarchyUiStateSignature,
@@ -37,9 +38,12 @@ import {
   type AutomationHierarchyUiState
 } from "./store";
 import { AutomationHierarchyChildren } from "./tree-rows";
+import { useAutomationHierarchyPrimaryTreeNodeId } from "./usePrimaryTreeNodeId";
+import { usePostPaintHierarchyReconciliation } from "./usePostPaintHierarchyReconciliation";
 
 export const AutomationProjectTree = memo(function AutomationProjectTree(props: {
   nodes: AutomationHierarchyNode[];
+  projection?: AutomationHierarchyProjection;
   activeViewId: string | undefined;
   search: string;
   typeFilter: "all" | AutomationHierarchyKind;
@@ -63,7 +67,9 @@ export const AutomationProjectTree = memo(function AutomationProjectTree(props: 
   const storeRef = useRef<AutomationHierarchyStore | null>(null);
   if (!storeRef.current) storeRef.current = createAutomationHierarchyStore(props.uiState);
   const hierarchyStore = storeRef.current;
-  const appliedIncomingUiStateRef = useRef(incomingUiStateSignature);
+  const scheduleHierarchyReconciliation = usePostPaintHierarchyReconciliation();
+  const appliedIncomingUiStateSignatureRef = useRef(incomingUiStateSignature);
+
   const uiState = useSyncExternalStore(
     hierarchyStore.subscribe,
     hierarchyStore.getSnapshot,
@@ -74,7 +80,8 @@ export const AutomationProjectTree = memo(function AutomationProjectTree(props: 
   if (!projectionSelectorRef.current) {
     projectionSelectorRef.current = createAutomationHierarchyProjectionSelector();
   }
-  const projection = projectionSelectorRef.current(props.nodes, props.search, props.typeFilter);
+  const projection = props.projection
+    ?? projectionSelectorRef.current(props.nodes, props.search, props.typeFilter);
   const { index: hierarchyIndex, visibleIds, rootNodes } = projection;
   const effectiveCollapsedFolderIds = useMemo(
     () => selectAutomationHierarchyEffectiveCollapsedIds({
@@ -91,7 +98,7 @@ export const AutomationProjectTree = memo(function AutomationProjectTree(props: 
     ]
   );
 
-  const controllerContext: AutomationHierarchyControllerContext = {
+  const controllerContextRef = useRef<AutomationHierarchyControllerContext>({
     nodes: props.nodes,
     activeViewId: props.activeViewId,
     selection: props.selection,
@@ -99,39 +106,53 @@ export const AutomationProjectTree = memo(function AutomationProjectTree(props: 
     setRecordingPrimaryKind: props.setRecordingPrimaryKind,
     setSelection: props.setSelection,
     openView: props.openView,
+    scheduleReconciliation: scheduleHierarchyReconciliation,
+    ...(props.openSubflow ? { openSubflow: props.openSubflow } : {})
+  });
+  controllerContextRef.current = {
+    nodes: props.nodes,
+    activeViewId: props.activeViewId,
+    selection: props.selection,
+    recordingPrimaryKind: props.recordingPrimaryKind,
+    setRecordingPrimaryKind: props.setRecordingPrimaryKind,
+    setSelection: props.setSelection,
+    openView: props.openView,
+    scheduleReconciliation: scheduleHierarchyReconciliation,
     ...(props.openSubflow ? { openSubflow: props.openSubflow } : {})
   };
   const controllerRef = useRef<AutomationHierarchyController | null>(null);
   if (!controllerRef.current) {
-    controllerRef.current = createAutomationHierarchyController(hierarchyStore, controllerContext);
+    controllerRef.current = createAutomationHierarchyController(
+      hierarchyStore,
+      () => controllerContextRef.current
+    );
   }
   const hierarchyController = controllerRef.current;
-  hierarchyController.updateContext(controllerContext);
+  const commands = useMemo(
+    () => createAutomationHierarchyCommands(props.requestAction),
+    [props.requestAction]
+  );
 
-  const commandsRef = useRef<ReturnType<typeof createAutomationHierarchyCommands> | null>(null);
-  const requestActionRef = useRef(props.requestAction);
-  if (!commandsRef.current || requestActionRef.current !== props.requestAction) {
-    requestActionRef.current = props.requestAction;
-    commandsRef.current = createAutomationHierarchyCommands(props.requestAction);
-  }
-  const commands = commandsRef.current;
-
-  const externalSelectionSignature = automationHierarchySelectionSignature(props.selection, props.activeViewId);
   useEffect(() => {
     hierarchyStore.setChangeListener(props.onUiStateChange);
     return () => hierarchyStore.setChangeListener(undefined);
   }, [hierarchyStore, props.onUiStateChange]);
   useEffect(() => {
-    if (incomingUiStateSignature === appliedIncomingUiStateRef.current) return;
-    appliedIncomingUiStateRef.current = incomingUiStateSignature;
+    if (incomingUiStateSignature === appliedIncomingUiStateSignatureRef.current) return;
+    appliedIncomingUiStateSignatureRef.current = incomingUiStateSignature;
     hierarchyStore.hydrate(incomingUiStateRef.current);
   }, [hierarchyStore, incomingUiStateSignature]);
-  useEffect(() => {
-    hierarchyStore.ensureVisibleFocus(visibleIds);
-  }, [hierarchyStore, visibleIds]);
-  useEffect(() => {
-    hierarchyController.reconcileExternalSelection();
-  }, [externalSelectionSignature, hierarchyController, props.nodes, props.recordingPrimaryKind]);
+
+  const primaryTreeNodeId = useAutomationHierarchyPrimaryTreeNodeId({
+    nodes: props.nodes,
+    selection: props.selection,
+    activeViewId: props.activeViewId,
+    recordingPrimaryKind: props.recordingPrimaryKind,
+    store: hierarchyStore
+  });
+  const focusedTreeNodeId = uiState.focusedTreeNodeId === "root-flow" || visibleIds.has(uiState.focusedTreeNodeId)
+    ? uiState.focusedTreeNodeId
+    : "root-flow";
 
   const openFromTree = useCallback(
     (node: AutomationHierarchyNode, mode: "preview" | "new-window") => hierarchyController.openNode(node, mode),
@@ -146,7 +167,7 @@ export const AutomationProjectTree = memo(function AutomationProjectTree(props: 
     [hierarchyController]
   );
   const focusTreeItem = useCallback(
-    (nodeId: string) => hierarchyStore.focus(nodeId),
+    (nodeId: string) => hierarchyStore.previewFocus(nodeId),
     [hierarchyStore]
   );
 
@@ -172,7 +193,7 @@ export const AutomationProjectTree = memo(function AutomationProjectTree(props: 
     if (action.type === "focus") {
       item.tabIndex = -1;
       target.tabIndex = 0;
-      hierarchyStore.focus(action.id);
+      hierarchyStore.previewFocus(action.id);
       target.focus();
       return;
     }
@@ -200,10 +221,9 @@ export const AutomationProjectTree = memo(function AutomationProjectTree(props: 
             aria-level={1}
             data-tree-item-id="root-flow"
             role="treeitem"
-            tabIndex={uiState.focusedTreeNodeId === "root-flow" ? 0 : -1}
+            tabIndex={focusedTreeNodeId === "root-flow" ? 0 : -1}
             className="type-folder category-root category-flow"
             onClick={() => toggleFolder("root-flow")}
-            onFocus={() => hierarchyStore.focus("root-flow")}
             type="button"
           >
             {rootCollapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
@@ -233,8 +253,8 @@ export const AutomationProjectTree = memo(function AutomationProjectTree(props: 
               hierarchyIndex={hierarchyIndex}
               visibleIds={visibleIds}
               collapsedFolderIds={effectiveCollapsedFolderIds}
-              primaryTreeNodeId={uiState.primaryTreeNodeId}
-              focusedTreeNodeId={uiState.focusedTreeNodeId}
+              primaryTreeNodeId={primaryTreeNodeId}
+              focusedTreeNodeId={focusedTreeNodeId}
               parentId={null}
               level={2}
               recordingPrimaryKind={props.recordingPrimaryKind}

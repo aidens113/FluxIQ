@@ -1,23 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useMemo } from "react";
-import { AutomationHierarchyDialog } from "../hierarchy/AutomationHierarchyDialog";
 import { createAutomationHierarchyCommandExecutor } from "../hierarchy/command-executor";
 import { createAutomationHierarchyDialogStore } from "../hierarchy/dialog-store";
 import type { AutomationWorkspaceBreadcrumb } from "../workspace/shell/contracts";
 import { automationStudioViewId } from "../views/view-registry";
-import { AutomationHierarchySurface } from "./AutomationHierarchySurface";
 import { AutomationStudioProjectGate } from "./AutomationStudioProjectGate";
-import { useAutomationStoreSelector } from "../stores";
+import {
+  automationEntityCollectionSelector,
+  useAutomationStoreSelector,
+  type AutomationProjectEntityKind
+} from "../stores";
 import { useAutomationProjectCatalogLoader } from "../project";
 import type { AutomationSelection } from "../shared/selection-contracts";
 import { useAutomationNarrowWorkspace } from "../workspace/studio-ui-store";
-import { RecordingActionPreviewDock as AutomationTimelineDock } from "../recordings";
-import { automationStudioFlowNeedsDetail } from "../model/project-summary-converters";
-import { useAutomationStudioDevelopmentTelemetry } from "../development/telemetry";
+import type { AutomationStudioRuntime } from "../bootstrap/studio-runtime";
 import { useAutomationProjectPreload } from "../sync";
 import { useAutomationGatewayRecordingBridge } from "./use-gateway-recording-bridge";
-import { useUiLongTaskMetrics, useUiRenderMetric } from "../../programs/ui-performance";
 import type { CurrentUser } from "../../programs/types";
 import { notifyGlobalAlert } from "../../programs/shared-ui";
 import { useAutomationStudioFoundation } from "./useAutomationStudioFoundation";
@@ -26,54 +25,122 @@ import { useAutomationWorkspaceRuntime } from "./useAutomationWorkspaceRuntime";
 import { useAutomationHierarchyUiRuntime } from "./useAutomationHierarchyUiRuntime";
 import { useAutomationHierarchyCommandBridge } from "./useAutomationHierarchyCommandBridge";
 import { useAutomationProjectRuntime } from "./useAutomationProjectRuntime";
-import { useAutomationProjectView } from "./useAutomationProjectView";
+import { createAutomationStudioViewInstances } from "../views/view-instances";
 import { useAutomationGraphRuntime } from "./useAutomationGraphRuntime";
 import { useAutomationSelectionNavigation } from "./useAutomationSelectionNavigation";
 import { useAutomationRecordingCommands } from "./useAutomationRecordingCommands";
-import { useAutomationCanonicalViewInputs } from "./useAutomationCanonicalViewInputs";
 import { useAdaptationWorkspaceNavigation } from "./useAdaptationWorkspaceNavigation";
 import { useAutomationExternalLifecycle } from "./useAutomationExternalLifecycle";
 import { useAutomationDeepLinkRuntime } from "./useAutomationDeepLinkRuntime";
 import { AutomationStudioWorkspaceComposition } from "./AutomationStudioWorkspaceComposition";
 import { useStableAutomationEvent } from "./useStableAutomationEvent";
-
-const EMPTY_AUTOMATION_RECORD = Object.freeze({}) as Record<string, never>;
-const EMPTY_AUTOMATION_LIST = Object.freeze([]) as unknown as any[];
-export function AutomationStudioComposition({ currentUser }: { currentUser: CurrentUser }) {
-  useUiRenderMetric("AutomationStudioLive");
-  useUiLongTaskMetrics("AutomationStudio");
-  useAutomationStudioDevelopmentTelemetry();
-  const foundation = useAutomationStudioFoundation();
+import { runAutomationPresentationTransaction } from "../presentation/transaction";
+import type { AutomationCanonicalConnectorScope } from "./view-host/canonical-connected-views";
+import { useAutomationConnectedViewEntries } from "./view-host/connected-view-entries";
+import {
+  AutomationStudioConnectedHierarchy,
+  AutomationStudioConnectedTimeline
+} from "./AutomationStudioConnectedRegions";
+import {
+  createAutomationSessionProjectViewReader,
+  EMPTY_AUTOMATION_GATEWAY_SNAPSHOT,
+  EMPTY_AUTOMATION_LIST,
+  EMPTY_AUTOMATION_PROJECT_ARTIFACTS,
+  EMPTY_AUTOMATION_RECORD
+} from "./session-project-view";
+import {
+  automationFlowEntryId,
+  automationRecordingId,
+  automationRunId,
+  automationTimelineId,
+  createAutomationSessionStoreCommands
+} from "./session-store-commands";
+export function AutomationStudioSession(props: {
+  currentUser: CurrentUser;
+  runtime: AutomationStudioRuntime;
+}) {
+  const { currentUser, runtime } = props;
+  const foundation = useAutomationStudioFoundation(runtime);
   const { api, hierarchyPaging, liveCommands, liveCommandScope, projectDataPlatform, uiCache } = foundation;
   const { deepLink, pathname, searchSignature } = useAutomationBrowserEntry();
   const { studioStores, studioUiStore, workspaceRenderStore } = foundation.owners;
-  const { snapshot, setSnapshot, projects, projectsLoaded, projectCatalogError, activeProjectId } = foundation.shell;
-  const {
-    loadedProjectHierarchyId, setLoadedProjectHierarchyId, projectSearch, setProjectSearch,
-    projectTypeFilter, setProjectTypeFilter, customHierarchyNodes, setCustomHierarchyNodes,
-    deletedHierarchyIds, setDeletedHierarchyIds
-  } = foundation.hierarchy;
-  const {
-    projectArtifacts, setProjectArtifacts, projectFlows, setProjectFlows, nativeNodeDefinitions,
-    setNativeNodeDefinitions, publishedFlowDefinitions, setPublishedFlowDefinitions, flowPublications,
-    setFlowPublications, flowDependencyInfo, setFlowDependencyInfo, automationActionStatus,
-    setAutomationActionStatus, flowRunState, setFlowRunState, hasDirtyTaskGraph, setHasDirtyTaskGraph,
-    taskGraphDrafts, setTaskGraphDrafts
-  } = foundation.flow;
-  const {
-    projectRecordings, setProjectRecordings, projectTimelines, setProjectTimelines, recordingDomains,
-    setRecordingDomains, recordingTreePrimaryKind, setRecordingTreePrimaryKind, recordingProcessing,
-    setRecordingProcessing
-  } = foundation.recording;
-  const { runtimeSessions, setRuntimeSessions, pipelineArtifacts, setPipelineArtifacts, gatewaySnapshot, setGatewaySnapshot } = foundation.runtime;
-  const {
-    indexedStateSources, setIndexedStateSources, selection, setSelection, pendingStateOpen,
-    setPendingStateOpen, bottomPreviewEntryId, setBottomPreviewEntryId
-  } = foundation.state;
+  const activeProjectId = foundation.activeProjectId;
+  const catalogState = useAutomationStoreSelector(
+    studioStores.catalog,
+    (state) => ({
+      projects: state.projects,
+      loaded: state.loaded,
+      error: state.error
+    }),
+    "status",
+    (left, right) => left.projects === right.projects && left.loaded === right.loaded && left.error === right.error
+  );
+  const projects = catalogState.projects;
+  const projectsLoaded = catalogState.loaded;
+  const projectCatalogError = catalogState.error;
+  const dataState = studioStores.projectData.getState();
+  const selectionState = studioStores.selection.getState();
+  const runtimeStatusState = studioStores.runtimeStatus.getState();
+  const resource = <Value,>(key: string, fallback: Value): Value => (
+    dataState.resources.has(key) ? dataState.resources.get(key) as Value : fallback
+  );
+  const entities = <Value,>(kind: AutomationProjectEntityKind): Value[] => (
+    automationEntityCollectionSelector(kind)(dataState) as Value[]
+  );
+  const storeCommands = useMemo(() => createAutomationSessionStoreCommands(studioStores), [studioStores]);
+  const snapshot = resource<any | null>("snapshot", null);
+  const setSnapshot = storeCommands.resource<any>("snapshot");
+  const loadedProjectHierarchyId = resource<string | null>("loadedProjectHierarchyId", null);
+  const setLoadedProjectHierarchyId = storeCommands.resource<string | null>("loadedProjectHierarchyId");
+  const projectSearch = resource("projectSearch", "");
+  const setProjectSearch = storeCommands.resource<string>("projectSearch");
+  const projectTypeFilter = resource<any>("projectTypeFilter", "all");
+  const setProjectTypeFilter = storeCommands.resource<any>("projectTypeFilter");
+  const customHierarchyNodes = resource<any[]>("customHierarchyNodes", EMPTY_AUTOMATION_LIST);
+  const setCustomHierarchyNodes = storeCommands.resource<any[]>("customHierarchyNodes");
+  const deletedHierarchyIds = resource<string[]>("deletedHierarchyIds", EMPTY_AUTOMATION_LIST);
+  const setDeletedHierarchyIds = storeCommands.resource<string[]>("deletedHierarchyIds");
+  const projectArtifacts = resource<any>("projectArtifacts", EMPTY_AUTOMATION_PROJECT_ARTIFACTS);
+  const setProjectArtifacts = storeCommands.resource<any>("projectArtifacts");
+  const projectFlows = entities<any>("flows");
+  const setProjectFlows = storeCommands.entities<any>("flows", automationFlowEntryId);
+  const nativeNodeDefinitions = resource<any[]>("nativeNodeDefinitions", EMPTY_AUTOMATION_LIST);
+  const setNativeNodeDefinitions = storeCommands.resource<any[]>("nativeNodeDefinitions");
+  const publishedFlowDefinitions = resource<any[]>("publishedFlowDefinitions", EMPTY_AUTOMATION_LIST);
+  const setPublishedFlowDefinitions = storeCommands.resource<any[]>("publishedFlowDefinitions");
+  const automationActionStatus = runtimeStatusState.actionStatus;
+  const setAutomationActionStatus = storeCommands.actionStatus;
+  const flowRunState = runtimeStatusState.flowRunState as any;
+  const setFlowRunState = storeCommands.flowRunState;
+  const hasDirtyTaskGraph = resource("hasDirtyTaskGraph", false);
+  const setHasDirtyTaskGraph = storeCommands.resource<boolean>("hasDirtyTaskGraph");
+  const taskGraphDrafts = resource<Record<string, { nodes: any[]; edges: any[] }>>("taskGraphDrafts", EMPTY_AUTOMATION_RECORD);
+  const setTaskGraphDrafts = storeCommands.resource<Record<string, { nodes: any[]; edges: any[] }>>("taskGraphDrafts");
+  const projectRecordings = entities<any>("recordings");
+  const setProjectRecordings = storeCommands.entities<any>("recordings", automationRecordingId);
+  const projectTimelines = entities<any>("timelines");
+  const setProjectTimelines = storeCommands.entities<any>("timelines", automationTimelineId);
+  const recordingDomains = resource<any[]>("recordingDomains", EMPTY_AUTOMATION_LIST);
+  const setRecordingDomains = storeCommands.resource<any[]>("recordingDomains");
+  const recordingTreePrimaryKind = selectionState.recordingPrimaryKind;
+  const setRecordingTreePrimaryKind = storeCommands.recordingPrimaryKind;
+  const recordingProcessing = runtimeStatusState.recordingProcessing as any;
+  const setRecordingProcessing = storeCommands.recordingProcessing;
+  const runtimeSessions = entities<any>("runs");
+  const setRuntimeSessions = storeCommands.entities<any>("runs", automationRunId);
+  const pipelineArtifacts = resource<any>("pipelineArtifacts", EMPTY_AUTOMATION_RECORD);
+  const setPipelineArtifacts = storeCommands.resource<any>("pipelineArtifacts");
+  const gatewaySnapshot = resource<any>("gatewaySnapshot", EMPTY_AUTOMATION_GATEWAY_SNAPSHOT);
+  const setGatewaySnapshot = storeCommands.resource<any>("gatewaySnapshot");
+  const indexedStateSources = resource<Record<string, any>>("indexedStateSources", EMPTY_AUTOMATION_RECORD);
+  const setIndexedStateSources = storeCommands.resource<Record<string, any>>("indexedStateSources");
+  const selection = selectionState.selection;
+  const setSelection = storeCommands.selection;
+  const setPendingStateOpen = storeCommands.pendingStateOpen;
+  const setBottomPreviewEntryId = storeCommands.bottomPreview;
   const { runLatest, cancelAll: cancelAllRequests } = foundation.requests;
   const urlProjectId = deepLink.projectId;
   const workspacePrefs = workspaceRenderStore.getPrefs();
-  const workspacePrefsSaveRevision = useAutomationStoreSelector(workspaceRenderStore, (state) => state.saveRevision, "save-request");
   const { isNarrowWorkspace, narrowWorkspacePanel, setIsNarrowWorkspace, setNarrowWorkspacePanel } = useAutomationNarrowWorkspace(studioUiStore);const hierarchyDialogStore = useMemo(createAutomationHierarchyDialogStore, []);
   const hierarchyCommandExecutor = useMemo(createAutomationHierarchyCommandExecutor, []);
   const workspaceRuntime = useAutomationWorkspaceRuntime({
@@ -98,10 +165,8 @@ export function AutomationStudioComposition({ currentUser }: { currentUser: Curr
     activeProjectId,
     loadedProjectId: loadedProjectHierarchyId,
     currentUserId: currentUser.id,
-    customNodes: customHierarchyNodes,
-    deletedIds: deletedHierarchyIds,
-    workspacePrefs,
-    saveRevision: workspacePrefsSaveRevision,
+    getCustomNodes: () => studioStores.projectData.getState().resources.get("customHierarchyNodes") as any[] ?? [],
+    getDeletedIds: () => studioStores.projectData.getState().resources.get("deletedHierarchyIds") as string[] ?? [],
     workspaceStore: workspaceRenderStore,
     uiCache,
     setSearch: setProjectSearch,
@@ -113,7 +178,14 @@ export function AutomationStudioComposition({ currentUser }: { currentUser: Curr
     pathname,
     activeProjectId,
     urlProjectId,
-    foundation: { projectDataPlatform, uiCache, liveCommands, requests: foundation.requests, stores: studioStores },
+    foundation: {
+      projectDataPlatform,
+      projectGeneration: foundation.projectGeneration,
+      uiCache,
+      liveCommands,
+      requests: foundation.requests,
+      stores: studioStores
+    },
     hierarchy: {
       setLoadedProjectId: setLoadedProjectHierarchyId,
       setCustomNodes: setCustomHierarchyNodes,
@@ -140,38 +212,31 @@ export function AutomationStudioComposition({ currentUser }: { currentUser: Curr
     refreshRuntime: refreshProjectRuntimeState } = projectRuntime;
 
   const refreshProjects = useAutomationProjectCatalogLoader(api, studioStores.catalog);
-
-  const projectView = useAutomationProjectView({
-    model: {
-      hasActiveProject: Boolean(activeProjectId),
-      canonical: snapshot?.payload?.canonical ?? EMPTY_AUTOMATION_RECORD,
-      pipelineArtifacts,
-      snapshotProblems: snapshot?.payload?.problems ?? EMPTY_AUTOMATION_LIST,
-      projectRecordings,
-      projectTimelines,
-      projectFlows,
-      projectArtifacts,
-      indexedStateSources,
-      nativeNodeDefinitions,
-      publishedFlowDefinitions,
-      customHierarchyNodes,
-      deletedHierarchyIds,
-      selection,
-      lastOpenFlowId: typeof workspacePrefs.viewStates?.[automationStudioViewId.flowEditor]?.lastOpenFlowId === "string"
-        ? workspacePrefs.viewStates?.[automationStudioViewId.flowEditor]?.lastOpenFlowId as string
-        : null,
-      lastOpenTaskId: null
-    },
-    workspacePrefs,
-    projects,
-    activeProjectId,
-    urlProjectId,
-    projectCatalogError,
-    projectsLoaded,
-    pendingStateOpen,
-    bottomPreviewEntryId,
-    selection
-  });
+  const getProjectView = useMemo(() => {
+    return createAutomationSessionProjectViewReader({
+      activeProjectId,
+      stores: studioStores,
+      workspace: workspaceRenderStore
+    });
+  }, [activeProjectId, studioStores, workspaceRenderStore]);
+  const projectView = getProjectView();
+  const activePane = workspacePrefs.panes.find((item) => item.id === workspacePrefs.activePaneId)
+    ?? workspacePrefs.panes[0];
+  const activeViewId = activePane?.activeViewId ?? workspacePrefs.activeViewId ?? automationStudioViewId.flowEditor;
+  const openWorkspaceViewIdList = [...new Set([
+    ...workspacePrefs.panes.flatMap((pane) => pane.tabs),
+    ...workspacePrefs.rightSidebar.tabs
+  ])];
+  const openWorkspaceViewIds = new Set(openWorkspaceViewIdList);
+  const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
+  const restoringUrlProject = Boolean(
+    urlProjectId
+    && !activeProject
+    && !projectCatalogError
+    && (!projectsLoaded || activeProjectId === urlProjectId)
+  );
+  const viewInstances = useMemo(() => createAutomationStudioViewInstances(), []);
+  const viewById = new Map(viewInstances.map((view) => [view.id, view]));
   const {
     recordings, timelines, registries, models, proposals, recordingFlowProposals, hierarchyProposals,
     policies, snapshotProblems, signals, availableNodeDefinitions, indexedStateSourceList, projectTasks,
@@ -181,9 +246,7 @@ export function AutomationStudioComposition({ currentUser }: { currentUser: Curr
     selectedTimeline, selectedNode, selectedEntry, selectedSignal, selectedTimelineEntries, selectedRecordingNotes,
     hierarchyNodes, indexes: projectEntityIndexes, activeFlowScope, breadcrumbFlow, breadcrumbSubflow,
     viewLabelForSelection, viewWithTitleData, flowForSelection, recordingForSelection, proposalForSelection,
-    taskForSelection, policyForSelection, workspaceBreadcrumbsForView, activePreviewEntry,
-    activePreviewEntryId, activeProject, activeViewId, openViewIds: openWorkspaceViewIdList,
-    openWorkspaceViewIds, restoringUrlProject, viewById, viewInstances
+    taskForSelection, policyForSelection, workspaceBreadcrumbsForView
   } = projectView;
   useAutomationExternalLifecycle({
     actionStatus: automationActionStatus,
@@ -193,17 +256,7 @@ export function AutomationStudioComposition({ currentUser }: { currentUser: Curr
     setNarrow: setIsNarrowWorkspace,
     narrowPanel: narrowWorkspacePanel,
     setNarrowPanel: setNarrowWorkspacePanel
-  });  useEffect(() => {
-    if (!selectedFlow?.flowId || selectedFlowEntry?.source !== "canonical") {
-      setFlowPublications([]);
-      setFlowDependencyInfo({ dependencies: [], usedBy: [], availableUpgrades: [] });
-      return;
-    }
-    void liveCommands.loadFlowMetadata(selectedFlow.flowId).then((metadata) => {
-      setFlowPublications(metadata.publications);
-      setFlowDependencyInfo(metadata.dependencies);
-    });
-  }, [selectedFlow?.flowId, selectedFlow?.updatedAt, selectedFlowEntry?.source, liveCommands]);
+  });
   const graphRuntime = useAutomationGraphRuntime({
     activeProjectId,
     activeViewId,
@@ -219,7 +272,20 @@ export function AutomationStudioComposition({ currentUser }: { currentUser: Curr
     setProjectFlows,
     setDirty: setHasDirtyTaskGraph,
     setActionStatus: setAutomationActionStatus,
-    notifyChanged: projectRuntime.notifyChanged
+    notifyChanged: projectRuntime.notifyChanged,
+    getSnapshot: () => {
+      const current = getProjectView();
+      const resources = studioStores.projectData.getState().resources;
+      return {
+        activeProjectId: studioStores.catalog.getState().activeProjectId,
+        selectedTaskGraph: current.selectedTaskGraph,
+        selectedFlow: current.selectedFlow,
+        selectedFlowEntry: current.selectedFlowEntry,
+        availableNodeDefinitions: current.availableNodeDefinitions,
+        snapshotProblems: (resources.get("snapshot") as any)?.payload?.problems ?? [],
+        taskGraphDrafts: resources.get("taskGraphDrafts") as any ?? {}
+      };
+    }
   });
   const activePreloadRunId = typeof flowRunState.runId === "string"
     ? flowRunState.runId
@@ -234,49 +300,11 @@ export function AutomationStudioComposition({ currentUser }: { currentUser: Curr
   const baseTaskGraphDocument = graphRuntime.baseGraph;
   const problems = graphRuntime.problems;
   const recoverableTaskGraphDraftView = graphRuntime.recoverableDraft;
-  useEffect(() => {
-    if (!activeProjectId || !selectedRecording?.recordingId || selectedRecording.metadata?.summaryOnly !== true) return;
-    if (!["recording", "timeline", "state"].includes(selection?.kind ?? "")) return;
-    void loadRecordingDetails(selectedRecording.recordingId);
-  }, [activeProjectId, selectedRecording?.recordingId, selectedRecording?.metadata?.summaryOnly, selection?.kind]);
-  useEffect(() => {
-    if (!activeProjectId || !selection || !selectedRecordingId || selectedRecording?.recordingId === selectedRecordingId) return;
-    if (!["editor-node", "state", "timeline"].includes(selection.kind)) return;
-    void loadRecordingDetails(selectedRecordingId);
-  }, [activeProjectId, selectedRecordingId, selectedRecording?.recordingId, selection?.kind]);
-  useEffect(() => {
-    if (!activeProjectId || selection?.kind !== "flow") return;
-    updateWorkspacePrefs((current) => {
-      const currentPolicyState = current.viewStates?.[automationStudioViewId.flowEditor] ?? {};
-      if (currentPolicyState.lastOpenFlowId === selection.id) return current;
-      return {
-        ...current,
-        viewStates: {
-          ...current.viewStates,
-          [automationStudioViewId.flowEditor]: { ...currentPolicyState, lastOpenFlowId: selection.id }
-        }
-      };
-    }, { persist: false });
-  }, [activeProjectId, selection?.kind, selection?.id]);
-
-  useEffect(() => {
-    if (!activeProjectId || selectedFlowEntry?.source !== "canonical" || !automationStudioFlowNeedsDetail(selectedFlow, activeViewId, selection?.kind)) return;
-    void loadFlowDetails(selectedFlow.flowId);
-  }, [activeProjectId, activeViewId, selectedFlow?.flowId, selectedFlow?.metadata?.summaryOnly, selectedFlowEntry?.source, selection?.kind]);  useEffect(() => {
-    if (!activeProjectId || activeViewId !== automationStudioViewId.flowEditor) return;
-    if (nativeNodeDefinitions.length || publishedFlowDefinitions.length) return;
-    void loadNodeDefinitions();
-  }, [activeProjectId, activeViewId, nativeNodeDefinitions.length, publishedFlowDefinitions.length]);
-  useEffect(() => {
-    if (!activeProjectId || activeViewId !== automationStudioViewId.recordingTimeline || !selectedRecording?.recordingId || selectedTimeline) return;
-    void loadLatestNormalizedTimeline(selectedRecording.recordingId);
-  }, [activeProjectId, activeViewId, selectedRecording?.recordingId, selectedTimeline?.normalizedTimelineId]);
   const navigation = useAutomationSelectionNavigation({
     activeProjectId,
     workspacePrefs,
     commands: workspaceCommands,
     updatePrefs: updateWorkspacePrefs,
-    schedule: scheduleWorkspaceNavigation,
     liveCommands,
     selection,
     selectedNode,
@@ -290,7 +318,21 @@ export function AutomationStudioComposition({ currentUser }: { currentUser: Curr
     setBottomPreviewEntryId,
     setRecordingPrimaryKind: setRecordingTreePrimaryKind,
     setIndexedStateSources,
-    setActionStatus: setAutomationActionStatus
+    setActionStatus: setAutomationActionStatus,
+    getSnapshot: () => {
+      const current = getProjectView();
+      return {
+        activeProjectId: studioStores.catalog.getState().activeProjectId,
+        workspacePrefs: workspaceRenderStore.getPrefs(),
+        selection: studioStores.selection.getState().selection,
+        selectedNode: current.selectedNode,
+        selectedFlow: current.selectedFlow,
+        selectedProposal: current.selectedProposal,
+        selectedRecording: current.selectedRecording,
+        selectedTimeline: current.selectedTimeline,
+        timelineEntryById: current.indexes.timelineEntryById
+      };
+    }
   });
   const setSelectionAndFollow = navigation.selectAndFollow;
   const openStateView = navigation.openState;
@@ -323,7 +365,7 @@ export function AutomationStudioComposition({ currentUser }: { currentUser: Curr
       progress: 12
     });
     setAutomationActionStatus("Recording stopped. Loading final timeline...");
-    setRecordingProcessing((current) => current?.recordingId === recordingId ? null : current);
+    setRecordingProcessing((current: any) => current?.recordingId === recordingId ? null : current);
     setAutomationActionStatus("Recording stopped. The finalized recording is available as Flow evidence.");
   });
   useAutomationGatewayRecordingBridge({
@@ -334,7 +376,6 @@ export function AutomationStudioComposition({ currentUser }: { currentUser: Curr
     publishBlocked: publishGatewayBlocked,
     publishTransition: publishGatewayTransition
   });
-
   useAutomationDeepLinkRuntime({
     deepLink,
     searchSignature,
@@ -360,10 +401,10 @@ export function AutomationStudioComposition({ currentUser }: { currentUser: Curr
       return cleaned.length === current.length ? current : cleaned;
     });
   }, [activeProjectId, projectRecordings]);
-
   const recordingCommands = useAutomationRecordingCommands({
     liveCommands,
     selection,
+    getSelection: () => studioStores.selection.getState().selection,
     setActionStatus: setAutomationActionStatus,
     setProjectRecordings,
     setProjectTimelines,
@@ -391,27 +432,36 @@ export function AutomationStudioComposition({ currentUser }: { currentUser: Curr
     deleteRecordings: deleteProjectRecordings,
     notifyChanged: notifyProjectDataChanged,
     clearFlowDrafts: graphRuntime.clearDrafts,
-    schedule: scheduleWorkspaceNavigation,
     openView,
     openSubflow: navigation.openSubflow,
     setSelection,
     updatePrefs: updateWorkspacePrefs,
     setProjectFlows,
     setCustomNodes: setCustomHierarchyNodes,
-    setDeletedIds: setDeletedHierarchyIds
+    setDeletedIds: setDeletedHierarchyIds,
+    requestSave: workspaceRenderStore.markSaveRequested,
+    getSnapshot: () => {
+      const current = getProjectView();
+      return {
+        activeProjectId: studioStores.catalog.getState().activeProjectId,
+        nodes: current.hierarchyNodes,
+        indexes: current.indexes,
+        selection: studioStores.selection.getState().selection,
+        projectTasks: (studioStores.projectData.getState().resources.get("projectArtifacts") as any)?.tasks ?? [],
+        selectedTaskGraph: current.selectedTaskGraph
+      };
+    }
   });
   function openAutomationProblems() {
     workspaceCommands.selectRightTab(automationStudioViewId.problems);
     if (isNarrowWorkspace) setNarrowWorkspacePanel("inspector");
   }
-
   function openAutomationProblem(problem: any) {
     if (problem?.source === "graph" || ["node", "edge", "graph"].includes(problem?.kind)) {
       openView(automationStudioViewId.flowEditor, "preview");
       graphRuntime.focusProblem(problem);
     } else if (typeof problem?.viewId === "string") openView(problem.viewId);
   }
-
   const adaptationNavigation = useAdaptationWorkspaceNavigation({
     selectedFlowId: selectedTaskGraph?.flowId,
     updatePrefs: updateWorkspacePrefs,
@@ -439,58 +489,50 @@ export function AutomationStudioComposition({ currentUser }: { currentUser: Curr
     await refreshProjectRuntimeState(activeProjectId);
   }, [activeProjectId]);
 
-  const canonicalViewInputs = useAutomationCanonicalViewInputs({
+  const connectorScope = useMemo<AutomationCanonicalConnectorScope>(() => ({
+    projectId: activeProjectId,
+    getWorkspacePrefs: workspaceRenderStore.getPrefs,
+    loadFlowDetail: loadFlowDetails,
+    loadNodeDefinitions,
+    loadRecording: loadRecordingDetails,
+    loadTimeline: loadLatestNormalizedTimeline,
+    async loadFlowMetadata(flowId: string) {
+      const generation = foundation.projectGeneration.current();
+      const metadata = await liveCommands.loadFlowMetadata(flowId);
+      if (!foundation.projectGeneration.isCurrent(generation)) return;
+      studioStores.projectData.transaction(() => {
+        studioStores.projectData.setResource("flowPublications", metadata.publications);
+        studioStores.projectData.setResource("flowDependencyInfo", metadata.dependencies);
+        studioStores.projectData.setResource("flowMetadataFlowId", flowId);
+      });
+    }
+  }), [
     activeProjectId,
-    actionStatus: automationActionStatus,
-    availableNodeDefinitions,
-    flowDependencyInfo,
-    flowPublications,
-    focusRequest: graphRuntime.focusRequest,
-    indexedStateSourceList,
-    models,
-    pendingStateOpen,
-    pipelineArtifacts,
-    policies,
-    problems,
-    recordingProcessing,
-...(workspacePrefs.viewStates?.[automationStudioViewId.adaptations]?.flowId === selectedTaskGraph?.flowId && typeof workspacePrefs.viewStates?.[automationStudioViewId.adaptations]?.selectedAdaptationId === "string"
-      ? { requestedAdaptationId: workspacePrefs.viewStates[automationStudioViewId.adaptations]!.selectedAdaptationId as string }
-      : {}),
-    recordings,
-    recoverableDraft: recoverableTaskGraphDraftView,
-    runtimeSessions,
-    selectedEntry: activePreviewEntry,
-    selectedFlow,
-    selectedFlowEntry,
-    selectedNode,
-    selectedPolicy,
-    selectedProposal,
-    selectedRecording,
-    selectedRecordingNotes,
-    selectedSignal,
-    selectedTaskGraph,
-    selectedTaskGraphDraft,
-    selectedTimeline,
-    selectedTimelineEntries,
-    selection,
-    signals,
-    timelines
-  }, {
-    adaptations: { onSelectedAdaptationChange: adaptationNavigation.selectAdaptation },
-    flowEditor: {
+    foundation.projectGeneration,
+    liveCommands,
+    loadFlowDetails,
+    loadLatestNormalizedTimeline,
+    loadNodeDefinitions,
+    loadRecordingDetails,
+    studioStores.projectData,
+    workspaceRenderStore
+  ]);
+  const connectorStores = studioStores;
+  const connectorGeneration = foundation.projectGeneration.current();
+  const connectedEntries = useAutomationConnectedViewEntries({
+    commands: {
+      [automationStudioViewId.clients]: {},
+      [automationStudioViewId.flowEditor]: {
       onSaveGraph: saveTaskGraphForRenderer,
       onGraphDraftChange: updateTaskGraphDraftForRenderer,
       onDirtyChange: setHasDirtyTaskGraph,
       onOpenProblems: openProblemsForRenderer,
-      onOpenNodeState: (nodeId) => openStateForRenderer({ nodeId, phase: "input" }),
+      onOpenNodeState: (nodeId: string) => openStateForRenderer({ nodeId, phase: "input" }),
       onRestoreDraft: restoreTaskGraphDraftForRenderer,
       onDiscardDraft: discardTaskGraphForRenderer,
       setSelection: setSelectionForRenderer
-    },
-    inspector: { onOpenState: openStateForRenderer, onUpdateEditorNodeSelection: setSelectionForRenderer },
-    instructions: {},
-    problems: { onOpenProblem: openProblemForRenderer },
-    recording: {
+      },
+      [automationStudioViewId.recordingTimeline]: {
       onAppendRecordingMarker: appendRecordingMarkerForRenderer,
       onAppendRecordingNote: appendRecordingNoteForRenderer,
       onDeleteRecording: deleteRecordingForRenderer,
@@ -499,13 +541,31 @@ export function AutomationStudioComposition({ currentUser }: { currentUser: Curr
       onRefreshRecordings: handleRefreshRecordingsForRenderer,
       onUpdateRecording: updateRecordingForRenderer,
       setSelection: setSelectionForRenderer
+      },
+      [automationStudioViewId.state]: { setSelection: setSelectionForRenderer },
+      [automationStudioViewId.runtime]: {
+        onOpenAdaptation: adaptationNavigation.openAdaptation,
+        onOpenReadinessTarget: adaptationNavigation.openReadinessTarget
+      },
+      [automationStudioViewId.problems]: { onOpenProblem: openProblemForRenderer },
+      [automationStudioViewId.inspector]: {
+        onOpenState: openStateForRenderer,
+        onUpdateEditorNodeSelection: setSelectionForRenderer
+      },
+      [automationStudioViewId.router]: { onCreateSubflow: hierarchyBridge.createSubflow },
+      [automationStudioViewId.subflows]: { onOpenSubflow: openSubflowForRenderer },
+      [automationStudioViewId.instructions]: {},
+      [automationStudioViewId.adaptations]: {
+        onSelectedAdaptationChange: adaptationNavigation.selectAdaptation
+      },
+      [automationStudioViewId.settings]: {}
     },
-    router: { onCreateSubflow: hierarchyBridge.createSubflow },
-    runtime: { onOpenAdaptation: adaptationNavigation.openAdaptation, onOpenReadinessTarget: adaptationNavigation.openReadinessTarget },
-    settings: {},
-    state: { setSelection: setSelectionForRenderer },
-    subflows: { onOpenSubflow: openSubflowForRenderer }
-  });  const resolveWorkspaceBreadcrumbs = useCallback((targetViewId: string) => (
+    generation: connectorGeneration,
+    scope: connectorScope,
+    stores: connectorStores,
+    views: viewInstances
+  });
+  const resolveWorkspaceBreadcrumbs = useCallback((targetViewId: string) => (
     workspaceBreadcrumbsForView(
       targetViewId,
       targetViewId === automationStudioViewId.flowEditor ? "Nodes" : viewById.get(targetViewId)?.label ?? "Workspace"
@@ -513,14 +573,102 @@ export function AutomationStudioComposition({ currentUser }: { currentUser: Curr
   ), [viewById, workspaceBreadcrumbsForView]);
   const activateWorkspaceBreadcrumb = useStableAutomationEvent((crumb: AutomationWorkspaceBreadcrumb) => {
     if (crumb.kind === "flow") {
-      scheduleWorkspaceNavigation(() => {
+      runAutomationPresentationTransaction(() => {
         setSelection({ kind: "flow", id: crumb.id });
         workspaceCommands.openView(automationStudioViewId.router, "preview");
       });
     } else if (crumb.kind === "subflow" && activeFlowScope?.flowId) {
       void openSubflowForRenderer(activeFlowScope.flowId, crumb.id, "preview");
     }
-  });  if (restoringUrlProject || !activeProject) {
+  });
+  const hierarchySurface = useMemo(() => (
+    <AutomationStudioConnectedHierarchy
+      dialog={{ execute: hierarchyBridge.execute, store: hierarchyDialogStore }}
+      getProjectView={getProjectView}
+      stores={studioStores}
+      surface={{
+        coordinator: hierarchyUiCoordinator,
+        paging: hierarchyPaging,
+        projectId: activeProject?.id ?? "",
+        onCloseProject: closeProject,
+        openSubflow: hierarchyBridge.openTreeSubflow,
+        openView: hierarchyBridge.openTreeView,
+        port: workspaceCommandPort,
+        projectName: activeProject?.name ?? "",
+        requestAction: hierarchyBridge.requestAction,
+        setRecordingPrimaryKind: setRecordingTreePrimaryKind,
+        setSelection: hierarchyBridge.setTreeSelection,
+        store: workspaceRenderStore
+      }}
+    />
+  ), [
+    activeProject?.id,
+    activeProject?.name,
+    closeProject,
+    getProjectView,
+    hierarchyBridge.execute,
+    hierarchyBridge.openTreeSubflow,
+    hierarchyBridge.openTreeView,
+    hierarchyBridge.requestAction,
+    hierarchyBridge.setTreeSelection,
+    hierarchyDialogStore,
+    hierarchyPaging,
+    hierarchyUiCoordinator,
+    setRecordingTreePrimaryKind,
+    studioStores,
+    workspaceCommandPort,
+    workspaceRenderStore
+  ]);
+  const timelineSurface = useMemo(() => (
+    <AutomationStudioConnectedTimeline
+      onSelectAction={handleBottomPreviewActionClick}
+      stores={studioStores}
+    />
+  ), [
+    handleBottomPreviewActionClick,
+    studioStores
+  ]);
+  const getViewAdderContext = useCallback(() => {
+    const current = getProjectView();
+    return {
+      selectedFlow: Boolean(current.selectedFlow),
+      selectedRecording: Boolean(current.selectedRecording),
+      selection: studioStores.selection.getState().selection
+    };
+  }, [getProjectView, studioStores.selection]);
+  const projectBinding = useMemo(() => ({
+    id: activeProject?.id ?? "",
+    name: activeProject?.name ?? "",
+    getViewAdderContext
+  }), [activeProject?.id, activeProject?.name, getViewAdderContext]);
+  const workspaceBinding = useMemo(() => ({
+    commands: workspaceCommands,
+    port: workspaceCommandPort,
+    warm: warmWorkspaceViews,
+    store: workspaceRenderStore,
+    studioUiStore,
+    updatePrefs: updateWorkspacePrefs
+  }), [
+    studioUiStore,
+    updateWorkspacePrefs,
+    warmWorkspaceViews,
+    workspaceCommands,
+    workspaceCommandPort,
+    workspaceRenderStore
+  ]);
+  const viewBinding = useMemo(() => ({
+    entries: connectedEntries,
+    instances: viewInstances,
+    openIds: openWorkspaceViewIds,
+    resolveBreadcrumbs: resolveWorkspaceBreadcrumbs
+  }), [connectedEntries, openWorkspaceViewIds, resolveWorkspaceBreadcrumbs, viewInstances]);
+  const headerBinding = useMemo(() => ({
+    closeProject,
+    activateBreadcrumb: activateWorkspaceBreadcrumb
+  }), [activateWorkspaceBreadcrumb, closeProject]);
+  const cacheStats = useCallback(() => projectDataPlatform.stats(), [projectDataPlatform]);
+  const inspectorBinding = useMemo(() => ({ api, cacheStats }), [api, cacheStats]);
+  if (restoringUrlProject || !activeProject) {
     return (
       <AutomationStudioProjectGate
         api={api}
@@ -535,53 +683,15 @@ export function AutomationStudioComposition({ currentUser }: { currentUser: Curr
   }
 
   return <>
-    <AutomationHierarchyDialog execute={hierarchyBridge.execute} nodes={hierarchyNodes} store={hierarchyDialogStore} />
     <AutomationStudioWorkspaceComposition
       currentUser={currentUser}
-      project={{
-        id: activeProject.id,
-        name: activeProject.name,
-        selectedFlow: Boolean(selectedFlow),
-        selectedRecording: Boolean(selectedRecording),
-        selection
-      }}
-      workspace={{
-        commands: workspaceCommands,
-        port: workspaceCommandPort,
-        warm: warmWorkspaceViews,
-        store: workspaceRenderStore,
-        studioUiStore,
-        updatePrefs: updateWorkspacePrefs
-      }}
-      views={{ inputs: canonicalViewInputs, instances: viewInstances, openIds: openWorkspaceViewIds, resolveBreadcrumbs: resolveWorkspaceBreadcrumbs }}
-      header={{ closeProject, activateBreadcrumb: activateWorkspaceBreadcrumb }}
-      hierarchy={
-        <AutomationHierarchySurface
-          coordinator={hierarchyUiCoordinator}
-          paging={hierarchyPaging}
-          projectId={activeProjectId}
-          nodes={hierarchyNodes}
-          onCloseProject={closeProject}
-          openSubflow={hierarchyBridge.openTreeSubflow}
-          openView={hierarchyBridge.openTreeView}
-          port={workspaceCommandPort}
-          projectName={activeProject.name}
-          recordingPrimaryKind={recordingTreePrimaryKind === "recording" ? "recording" : null}
-          requestAction={hierarchyBridge.requestAction}
-          selection={selection}
-          setRecordingPrimaryKind={setRecordingTreePrimaryKind}
-          setSelection={hierarchyBridge.setTreeSelection}
-          store={workspaceRenderStore}
-        />
-      }
-      timeline={
-        <AutomationTimelineDock
-          entries={selectedTimeline?.timeline ?? selectedRecording?.timeline ?? []}
-          onSelectAction={handleBottomPreviewActionClick}
-          {...(activePreviewEntryId ? { selectedEntryId: activePreviewEntryId } : {})}
-        />
-      }
-      inspector={{ api, cacheStats: () => projectDataPlatform.stats() }}
+      project={projectBinding}
+      workspace={workspaceBinding}
+      views={viewBinding}
+      header={headerBinding}
+      hierarchy={hierarchySurface}
+      timeline={timelineSurface}
+      inspector={inspectorBinding}
     />
   </>;
 }

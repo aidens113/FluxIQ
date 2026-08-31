@@ -16,28 +16,48 @@ import {
 describe("Phase 8 workspace commands", () => {
   it("keeps warm activity identity local to a pane and resets it between projects", () => {
     const warm = createAutomationWarmViewRegistry({ projectKey: "project-a" });
-    const activated = vi.fn();
-    const unsubscribe = warm.subscribe("pane-1", activated);
     const first = warm.activity("pane-1", "flow-nodes");
     const same = warm.activity("pane-1", "flow-nodes");
-    const second = warm.activity("pane-1", "runtime-debug");
 
     expect(same).toBe(first);
-    expect(warm.activate("main", "pane-1", "flow-nodes")).toBe(false);
-
     warm.markWarm("pane-1", "flow-nodes");
-    first.current = false;
-    second.current = true;
-    expect(warm.activate("main", "pane-1", "flow-nodes")).toBe(true);
-    expect(first.current).toBe(true);
-    expect(second.current).toBe(false);
-    expect(activated).toHaveBeenCalledWith("flow-nodes");
+    expect(warm.isWarm("pane-1", "flow-nodes")).toBe(true);
 
-    unsubscribe();
     warm.reset("project-b");
     expect(warm.activity("pane-1", "flow-nodes")).not.toBe(first);
     expect(warm.isWarm("pane-1", "flow-nodes")).toBe(false);
-    expect(warm.activate("main", "pane-1", "flow-nodes")).toBe(false);
+  });
+
+  it("commits a tab selection synchronously exactly once and guards repeated selection", () => {
+    const initial = defaultAutomationWorkspacePrefs();
+    initial.panes[0] = {
+      ...initial.panes[0]!,
+      tabs: [...initial.panes[0]!.tabs, "runtime-debug"]
+    };
+    const store = createAutomationWorkspaceRenderStore(initial);
+    const schedule = vi.fn();
+    const onCommit = vi.fn();
+    const onRegionActivated = vi.fn();
+    const listener = vi.fn();
+    store.subscribe(listener);
+    const commands = createAutomationWorkspaceCommands({
+      port: createAutomationWorkspaceCommandPort(store, { onCommit, schedule }),
+      warm: createAutomationWarmViewRegistry({ projectKey: "p" }),
+      onRegionActivated
+    });
+
+    expect(commands.selectPaneTab(initial.panes[0]!.id, "runtime-debug")).toBe(true);
+    expect(schedule).not.toHaveBeenCalled();
+    expect(listener).toHaveBeenCalledOnce();
+    expect(onCommit).toHaveBeenCalledOnce();
+    expect(onRegionActivated).toHaveBeenCalledOnce();
+    expect(store.getPrefs().activeViewId).toBe("runtime-debug");
+    expect(store.getPrefs().panes[0]?.activeViewId).toBe("runtime-debug");
+
+    expect(commands.selectPaneTab(initial.panes[0]!.id, "runtime-debug")).toBe(false);
+    expect(listener).toHaveBeenCalledOnce();
+    expect(onCommit).toHaveBeenCalledOnce();
+    expect(onRegionActivated).toHaveBeenCalledOnce();
   });
 
   it("moves a tab between panes with the keyboard command and keeps one active owner", () => {
@@ -80,7 +100,7 @@ describe("Phase 8 workspace commands", () => {
     expect(onCommit).toHaveBeenLastCalledWith(store.getPrefs(), { persist: true, scope: "workspace" });
   });
 
-  it("publishes typed region activation even when a narrow utility is already selected", () => {
+  it("publishes region activation only after a guarded workspace commit", () => {
     const activated = vi.fn();
     const store = createAutomationWorkspaceRenderStore(defaultAutomationWorkspacePrefs());
     const commands = createAutomationWorkspaceCommands({
@@ -91,12 +111,8 @@ describe("Phase 8 workspace commands", () => {
 
     expect(commands.openView("global-inspector")).toBe(false);
     expect(commands.openView("recording-action-preview")).toBe(true);
-    expect(activated).toHaveBeenNthCalledWith(1, {
-      region: "right",
-      paneId: "right-sidebar",
-      viewId: "global-inspector"
-    });
-    expect(activated).toHaveBeenNthCalledWith(2, {
+    expect(activated).toHaveBeenCalledOnce();
+    expect(activated).toHaveBeenCalledWith({
       region: "bottom",
       paneId: "bottom-dock",
       viewId: "recording-action-preview"

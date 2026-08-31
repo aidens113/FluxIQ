@@ -1,14 +1,28 @@
 export {
   AutomationSleepingView,
   AutomationUnknownView,
+  AutomationViewBoundary,
+  AutomationViewEmptyState,
+  AutomationViewErrorState,
   AutomationViewHost,
+  AutomationViewLoadingState,
   automationViewTypeCanSleep,
   createAutomationViewHostRequest,
+  createAutomationConnectedViewHostRequest,
+  createAutomationViewReadinessOwner,
+  readyAutomationView,
+  useAutomationViewReadiness,
   type AutomationViewBinding,
   type AutomationViewHostActivity,
+  type AutomationBoundViewHostRequest,
+  type AutomationConnectedViewHostRequest,
   type AutomationViewHostBindingMap,
   type AutomationViewHostKind,
   type AutomationViewHostProps,
-  type AutomationViewHostRequest
+  type AutomationViewHostRequest,
+  type AutomationViewLoadResult,
+  type AutomationViewReadiness,
+  type AutomationViewReadinessOwner,
+  type AutomationViewRequestToken
 } from "./Renderer";
 export type { AutomationStudioView, AutomationViewType, PersistedAutomationViewType, AutomationViewInstance } from "./view-types";

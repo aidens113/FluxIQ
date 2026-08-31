@@ -2,12 +2,13 @@ import { automationStudioViewId } from "../views/view-registry";
 import type { AutomationSelection } from "../shared/selection-contracts";
 import type { AutomationHierarchyKind, AutomationHierarchyNode } from "./contracts";
 import type { AutomationHierarchyIndex } from "./indexing";
-import { indexAutomationHierarchyNodes, visibleAutomationHierarchyNodeIds } from "./indexing";
+import { memoizedAutomationHierarchyIndex, visibleAutomationHierarchyNodeIds } from "./indexing";
 
 export type AutomationHierarchyProjection = {
   index: AutomationHierarchyIndex;
   visibleIds: Set<string>;
   rootNodes: AutomationHierarchyNode[];
+  matchCount: number;
 };
 
 export function createAutomationHierarchyProjectionSelector(): (
@@ -22,18 +23,22 @@ export function createAutomationHierarchyProjectionSelector(): (
   return (nodes, search, typeFilter) => {
     const normalizedSearch = search.trim().toLocaleLowerCase();
     if (previous && previousNodes === nodes && previousSearch === normalizedSearch && previousTypeFilter === typeFilter) return previous;
-    const index = previousNodes === nodes && previous ? previous.index : indexAutomationHierarchyNodes(nodes);
-    const visibleIds = visibleAutomationHierarchyNodeIds(index, (node) =>
-      (typeFilter === "all" || typeFilter === node.kind)
-      && (!normalizedSearch || (node.label + " " + node.kind).toLocaleLowerCase().includes(normalizedSearch))
-    );
+    const index = previousNodes === nodes && previous ? previous.index : memoizedAutomationHierarchyIndex(nodes);
+    let matchCount = 0;
+    const visibleIds = visibleAutomationHierarchyNodeIds(index, (node) => {
+      const matches = (typeFilter === "all" || typeFilter === node.kind)
+        && (!normalizedSearch || index.searchTextById.get(node.id)?.includes(normalizedSearch) === true);
+      if (matches) matchCount += 1;
+      return matches;
+    });
     previousNodes = nodes;
     previousSearch = normalizedSearch;
     previousTypeFilter = typeFilter;
     previous = {
       index,
       visibleIds,
-      rootNodes: (index.childrenByParentId.get(null) ?? []).filter((node) => node.category === "flow" && visibleIds.has(node.id))
+      rootNodes: (index.childrenByParentId.get(null) ?? []).filter((node) => node.category === "flow" && visibleIds.has(node.id)),
+      matchCount
     };
     return previous;
   };
@@ -138,6 +143,27 @@ export function automationHierarchyNodeCanRemainPrimary(
     && (!activeViewId || !node.viewId || node.viewId === activeViewId));
 }
 
+export function selectAutomationHierarchyPrimaryTreeNodeId(input: {
+  nodes: AutomationHierarchyNode[];
+  primaryTreeNodeId: string | null;
+  selection: AutomationSelection | null;
+  activeViewId: string | undefined;
+  recordingPrimaryKind: "recording" | null;
+}): string | null {
+  if (input.recordingPrimaryKind) {
+    if (input.selection?.kind !== "recording") return null;
+    return input.nodes.find((node) =>
+      node.kind === input.recordingPrimaryKind
+      && (node.sourceId === input.selection?.id || node.recordingId === input.selection?.id)
+    )?.id ?? null;
+  }
+  if (!input.primaryTreeNodeId) return null;
+  const primaryNode = input.nodes.find((node) => node.id === input.primaryTreeNodeId);
+  if (!primaryNode) return null;
+  return automationHierarchyNodeCanRemainPrimary(primaryNode, input.selection, input.activeViewId)
+    ? primaryNode.id
+    : null;
+}
 export function automationHierarchyPrimaryNode(node: AutomationHierarchyNode, nodes: AutomationHierarchyNode[]): AutomationHierarchyNode {
   if (node.kind === "subflow" && typeof node.metadata?.graphFlowId === "string") {
     return nodes.find((candidate) =>

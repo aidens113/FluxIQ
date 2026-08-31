@@ -5,7 +5,7 @@ import {
   AutomationStudioUiCacheCoordinator,
   LocalStorageAutomationStudioUiCacheBackend,
   ProgramApiAutomationStudioUiCacheBackend,
-
+  automationStudioUiCacheKey,
   type AutomationStudioUiCacheBackend
 } from "./index";
 import { normalizeAutomationHierarchySidebarUiState } from "../../hierarchy/ui-coordinator";
@@ -13,12 +13,16 @@ import { normalizeAutomationHierarchySidebarUiState } from "../../hierarchy/ui-c
 class MemoryUiCacheBackend implements AutomationStudioUiCacheBackend {
   readonly values = new Map<string, unknown>();
   writes: Array<{ key: string; value: unknown }> = [];
+  signals: AbortSignal[] = [];
 
-  async get<T>(key: string): Promise<T | undefined> {
+  async get<T>(key: string, options?: { signal?: AbortSignal }): Promise<T | undefined> {
+    if (options?.signal) this.signals.push(options.signal);
     return this.values.get(key) as T | undefined;
   }
 
-  async set<T>(key: string, value: T): Promise<void> {
+  async set<T>(key: string, value: T, options?: { signal?: AbortSignal }): Promise<void> {
+    if (options?.signal) this.signals.push(options.signal);
+    if (options?.signal?.aborted) return;
     this.values.set(key, value);
     this.writes.push({ key, value });
   }
@@ -37,9 +41,15 @@ describe("AutomationStudioUiCacheCoordinator", () => {
     const backend = new MemoryUiCacheBackend();
     const coordinator = new AutomationStudioUiCacheCoordinator(backend);
     const durablePrefs = defaultAutomationWorkspacePrefs();
-    const cachedPrefs = { ...durablePrefs, activeViewId: "runtime-debug", panes: [{ id: "pane-main-1", activeViewId: "runtime-debug", tabs: ["flow-nodes", "runtime-debug"] }] };
+    const cachedPrefs = {
+      ...durablePrefs,
+      activeViewId: "runtime-debug",
+      sidebarWidth: 333,
+      panes: [{ id: "pane-main-1", activeViewId: "runtime-debug", tabs: ["flow-nodes", "runtime-debug"] }]
+    };
     coordinator.scheduleWorkspacePrefsWrite({ projectId: "project-a", userId: "user-a", prefs: cachedPrefs, delayMs: 1 });
     await vi.advanceTimersByTimeAsync(1);
+    await vi.runOnlyPendingTimersAsync();
     await vi.runOnlyPendingTimersAsync();
     await flushAsyncTasks();
 
@@ -48,16 +58,19 @@ describe("AutomationStudioUiCacheCoordinator", () => {
 
     expect(onHydrate).not.toHaveBeenCalled();
     await vi.runOnlyPendingTimersAsync();
+    await vi.runOnlyPendingTimersAsync();
     await flushAsyncTasks();
     expect(onHydrate).toHaveBeenCalledTimes(1);
-    expect(onHydrate.mock.calls[0]?.[0].activeViewId).toBe("runtime-debug");
+    expect(onHydrate.mock.calls[0]?.[0].activeViewId).toBe(durablePrefs.activeViewId);
+    expect(onHydrate.mock.calls[0]?.[0].panes).toEqual(durablePrefs.panes);
+    expect(onHydrate.mock.calls[0]?.[0].sidebarWidth).toBe(333);
   });
 
-  it("debounces workspace writes and stores only the latest exact UI state", async () => {
+  it("debounces workspace writes and stores only the latest compact non-navigation state", async () => {
     const backend = new MemoryUiCacheBackend();
     const coordinator = new AutomationStudioUiCacheCoordinator(backend);
-    const first = { ...defaultAutomationWorkspacePrefs(), activeViewId: "flow-nodes" };
-    const latest = { ...defaultAutomationWorkspacePrefs(), activeViewId: "runtime-debug", panes: [{ id: "pane-main-1", activeViewId: "runtime-debug", tabs: ["runtime-debug"] }] };
+    const first = { ...defaultAutomationWorkspacePrefs(), activeViewId: "flow-nodes", sidebarWidth: 280 };
+    const latest = { ...defaultAutomationWorkspacePrefs(), activeViewId: "runtime-debug", sidebarWidth: 360, panes: [{ id: "pane-main-1", activeViewId: "runtime-debug", tabs: ["runtime-debug"] }] };
 
     coordinator.scheduleWorkspacePrefsWrite({ projectId: "project-a", userId: "user-a", prefs: first, delayMs: 50 });
     coordinator.scheduleWorkspacePrefsWrite({ projectId: "project-a", userId: "user-a", prefs: latest, delayMs: 50 });
@@ -66,10 +79,14 @@ describe("AutomationStudioUiCacheCoordinator", () => {
 
     await vi.advanceTimersByTimeAsync(1);
     await vi.runOnlyPendingTimersAsync();
+    await vi.runOnlyPendingTimersAsync();
     await flushAsyncTasks();
 
     expect(backend.writes).toHaveLength(1);
-    expect((backend.writes[0]?.value as any).value.activeViewId).toBe("runtime-debug");
+    expect((backend.writes[0]?.value as any).value.sidebarWidth).toBe(360);
+    expect((backend.writes[0]?.value as any).value.activeViewId).toBeUndefined();
+    expect((backend.writes[0]?.value as any).value.panes).toBeUndefined();
+    expect((backend.writes[0]?.value as any).value.viewStates).toBeUndefined();
   });
 
   it("does not apply stale hydration after a local UI mutation", async () => {
@@ -91,6 +108,172 @@ describe("AutomationStudioUiCacheCoordinator", () => {
     expect(onHydrate).not.toHaveBeenCalled();
   });
 
+  it("never restores cached hierarchy focus or primary selection", async () => {
+    const backend = new MemoryUiCacheBackend();
+    const coordinator = new AutomationStudioUiCacheCoordinator(backend);
+    coordinator.scheduleSidebarWrite({
+      projectId: "project-a",
+      userId: "user-a",
+      sidebar: {
+        collapsedFolderIds: ["folder-a"],
+        expandedDefaultCollapsedIds: [],
+        focusedTreeNodeId: "flow-a:settings",
+        primaryTreeNodeId: "flow-a:settings",
+        search: "settings",
+        typeFilter: "all"
+      },
+      delayMs: 1
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.runOnlyPendingTimersAsync();
+    await flushAsyncTasks();
+
+    const onHydrate = vi.fn();
+    coordinator.hydrateSidebar({ projectId: "project-a", userId: "user-a", onHydrate });
+    await vi.runOnlyPendingTimersAsync();
+    await flushAsyncTasks();
+
+    expect(onHydrate).toHaveBeenCalledWith(expect.objectContaining({
+      collapsedFolderIds: ["folder-a"],
+      focusedTreeNodeId: "root-flow",
+      primaryTreeNodeId: null
+    }));
+  });
+
+  it("aborts queued cache work on project close without completing hydration or writes", async () => {
+    const callbacks: Array<() => void> = [];
+    const backend = new MemoryUiCacheBackend();
+    const coordinator = new AutomationStudioUiCacheCoordinator(backend, {
+      scheduler: (callback) => {
+        callbacks.push(callback);
+        return () => undefined;
+      }
+    });
+    const onHydrate = vi.fn();
+    coordinator.hydrateWorkspacePrefs({
+      projectId: "project-a",
+      userId: "user-a",
+      durablePrefs: defaultAutomationWorkspacePrefs(),
+      onHydrate
+    });
+    callbacks.shift()?.();
+    coordinator.cancelProject("project-a");
+    await flushAsyncTasks();
+
+    expect(onHydrate).not.toHaveBeenCalled();
+    expect(backend.signals).toHaveLength(1);
+    expect(backend.signals[0]?.aborted).toBe(true);
+
+    coordinator.scheduleWorkspacePrefsWrite({
+      projectId: "project-a",
+      userId: "user-a",
+      prefs: defaultAutomationWorkspacePrefs(),
+      delayMs: 1
+    });
+    await vi.advanceTimersByTimeAsync(1);
+
+    coordinator.cancelProject("project-a");
+    callbacks.splice(0).forEach((callback) => callback());
+    await flushAsyncTasks();
+
+    expect(backend.writes).toHaveLength(0);
+    expect(backend.signals.every((signal) => signal.aborted)).toBe(true);
+  });
+
+  it("keeps cache work queued while browser input is pending", async () => {
+    const callbacks: Array<() => void> = [];
+    let inputPending = true;
+    const backend = new MemoryUiCacheBackend();
+    const coordinator = new AutomationStudioUiCacheCoordinator(backend, {
+      scheduler: (callback) => {
+        callbacks.push(callback);
+        return () => undefined;
+      },
+      isInputPending: () => inputPending
+    });
+    coordinator.hydrateWorkspacePrefs({
+      projectId: "project-a",
+      userId: "user-a",
+      durablePrefs: defaultAutomationWorkspacePrefs(),
+      onHydrate: vi.fn()
+    });
+
+    callbacks.shift()?.();
+    await flushAsyncTasks();
+    expect(backend.signals).toHaveLength(0);
+
+    inputPending = false;
+    callbacks.shift()?.();
+    await flushAsyncTasks();
+    expect(backend.signals).toHaveLength(1);
+  });
+
+  it("coalesces equivalent hydration work and only applies the latest callback", async () => {
+    const callbacks: Array<() => void> = [];
+    const backend = new MemoryUiCacheBackend();
+    const durablePrefs = defaultAutomationWorkspacePrefs();
+    backend.values.set(
+      automationStudioUiCacheKey("project-a", "user-a", "workspacePrefs"),
+      {
+        schemaVersion: 1,
+        projectId: "project-a",
+        userId: "user-a",
+        kind: "workspacePrefs",
+        updatedAt: Date.now(),
+        value: { ...durablePrefs, sidebarWidth: 345 }
+      }
+    );
+    const coordinator = new AutomationStudioUiCacheCoordinator(backend, {
+      scheduler: (callback) => {
+        callbacks.push(callback);
+        return () => undefined;
+      }
+    });
+    const firstHydrate = vi.fn();
+    const latestHydrate = vi.fn();
+
+    coordinator.hydrateWorkspacePrefs({
+      projectId: "project-a",
+      userId: "user-a",
+      durablePrefs,
+      onHydrate: firstHydrate
+    });
+    coordinator.hydrateWorkspacePrefs({
+      projectId: "project-a",
+      userId: "user-a",
+      durablePrefs,
+      onHydrate: latestHydrate
+    });
+    callbacks.splice(0).forEach((callback) => callback());
+    await flushAsyncTasks();
+
+    expect(firstHydrate).not.toHaveBeenCalled();
+    expect(latestHydrate).toHaveBeenCalledTimes(1);
+    expect(latestHydrate.mock.calls[0]?.[0].sidebarWidth).toBe(345);
+    expect(backend.signals).toHaveLength(1);
+  });
+
+  it("bounds pending writes and reports queue diagnostics without subscribers", () => {
+    const metrics: Array<{ phase: string; pendingWrites: number }> = [];
+    const coordinator = new AutomationStudioUiCacheCoordinator(new MemoryUiCacheBackend(), {
+      maxPendingWrites: 2,
+      onMetric: (metric) => metrics.push(metric)
+    });
+
+    for (const userId of ["user-a", "user-b", "user-c"]) {
+      coordinator.scheduleWorkspacePrefsWrite({
+        projectId: "project-a",
+        userId,
+        prefs: defaultAutomationWorkspacePrefs(),
+        delayMs: 1_000
+      });
+    }
+
+    expect(metrics.some((metric) => metric.phase === "evicted")).toBe(true);
+    expect(Math.max(...metrics.map((metric) => metric.pendingWrites))).toBeLessThanOrEqual(2);
+    coordinator.cancelProject("project-a");
+  });
+
 
   it("writes through the Program API backend while keeping local fallback first", async () => {
     const api = { post: vi.fn(async (endpoint: string, payload: Record<string, unknown>) => ({ ok: true, payload: endpoint === "get-project-ui-cache" ? { entries: [] } : { entries: [] } })) } as any;
@@ -101,7 +284,11 @@ describe("AutomationStudioUiCacheCoordinator", () => {
 
     await backend.set(key, envelope);
     expect(fallback.values.get(key)).toEqual(envelope);
-    expect(api.post).toHaveBeenCalledWith("save-project-ui-cache", { projectId: "project-a", entries: [{ cacheKey: "sidebar", value: envelope }] });
+    expect(api.post).toHaveBeenCalledWith(
+      "save-project-ui-cache",
+      { projectId: "project-a", entries: [{ cacheKey: "sidebar", value: envelope }] },
+      undefined
+    );
     await expect(backend.get(key)).resolves.toEqual(envelope);
     expect(api.post).toHaveBeenCalledTimes(1);
   });

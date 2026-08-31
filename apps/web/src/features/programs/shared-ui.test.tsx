@@ -1,9 +1,22 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Save } from "lucide-react";
 import { ActionLink, Breadcrumb, Button, CodeViewer, Combobox, DataTable, EmptyState, Field, IconButton, JsonViewer, List, ListRow, LoadingState, Menu, ModalContent, Pagination, Progress, Segmented, Skeleton, Splitter, StatusBadge, Toolbar, Tooltip, Tree, titleFromTone, toneFromMessage, VisualAlert } from "./shared-ui";
 
 describe("critical shared UI states", () => {
+  it("isolates modal focus without mutating the entire application subtree", () => {
+    const source = readFileSync(new URL("./shared-ui.tsx", import.meta.url), "utf8");
+    const css = readFileSync(new URL("../../app/styles/global-foundation.css", import.meta.url), "utf8");
+    expect(source).not.toContain(".inert = true");
+    expect(source).not.toContain('document.body.style.overflow = "hidden"');
+    expect(source).toContain('document.addEventListener("wheel"');
+    expect(source).toContain("focus({ preventScroll: true })");
+    expect(css).toContain("scrollbar-gutter: stable");
+    expect(css).toMatch(/\.drawer-backdrop[\s\S]*?contain: layout paint style/u);
+    expect(css).toMatch(/\.drawer-panel[\s\S]*?overscroll-behavior: contain/u);
+  });
+
   it("renders privileged confirmations as an accessible modal", () => {
     const html = renderToStaticMarkup(
       <ModalContent busy className="wide-dialog" description="Re-enter credentials to continue." title="Confirm privileged action" onClose={() => undefined}>

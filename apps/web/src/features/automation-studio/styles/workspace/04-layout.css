@@ -70,6 +70,9 @@
 .automation-section-resize-handle {
   position: absolute;
   z-index: var(--layer-dropdown);
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 0;
   border: 0;
   background: transparent;
   opacity: 0;
@@ -83,6 +86,15 @@
   left: 0;
   width: 8px;
   cursor: ew-resize;
+}
+
+.automation-section-resize-handle.hierarchy {
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+  touch-action: none;
 }
 
 .automation-section-resize-handle.bottom {
@@ -210,10 +222,12 @@
 
 .automation-pane-slot {
   display: grid;
+  width: 100%;
   height: 100%;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  contain: strict;
 }
 
 .automation-window-shell {
@@ -236,15 +250,17 @@
 .automation-view-container {
   position: relative;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: 38px 36px minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
+  width: 100%;
   height: 100%;
   overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-panel);
   background: var(--surface-pane);
   box-shadow: var(--shadow-panel);
+  contain: strict;
 }
 
 .automation-dock-layout.maximized .automation-view-container {
@@ -261,13 +277,15 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-dense);
+  box-sizing: border-box;
   min-width: 0;
-  min-height: 38px;
-  max-height: 38px;
+  width: 100%;
+  height: 38px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
   padding: 6px 8px;
   cursor: move;
+  contain: layout style;
 }
 
 .automation-view-container > header.not-movable {
@@ -331,14 +349,9 @@
 }
 
 .automation-view-body {
+  display: grid;
   min-width: 0;
   min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-.automation-view-body.graph-body,
-.automation-view-body.timeline-body {
-  display: grid;
   overflow: hidden;
 }
 
@@ -351,13 +364,20 @@
 }
 
 .automation-mounted-view-stack {
+  position: relative;
   display: grid;
   overflow: hidden;
+  contain: layout paint style;
 }
 
 .automation-mounted-view {
+  position: absolute;
+  inset: 0;
   grid-area: 1 / 1;
   overflow: auto;
+  opacity: 0;
+  pointer-events: none;
+  contain: strict;
 }
 
 .automation-mounted-view.graph-body,
@@ -366,8 +386,9 @@
   overflow: hidden;
 }
 
-.automation-mounted-view[hidden] {
-  display: none;
+.automation-mounted-view[data-active="true"] {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .automation-view-sleeping {
@@ -513,181 +534,4 @@
   outline: 0;
   box-shadow: none;
   opacity: 0;
-}
-
-.automation-tabs-shell {
-  position: relative;
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) 28px 28px;
-  align-items: stretch;
-  min-width: 0;
-  height: 36px;
-  border-bottom: var(--border-width) solid var(--color-border);
-  background: var(--surface-tool);
-  padding: var(--space-xs);
-}
-
-.automation-tab-scroll {
-  display: inline-grid;
-  place-items: center;
-  width: 28px;
-  min-width: 28px;
-  height: 28px;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--color-text-muted);
-  cursor: pointer;
-}
-
-.automation-tab-scroll:hover,
-.automation-tab-scroll[aria-expanded="true"] {
-  background: var(--surface-selected);
-  color: var(--color-primary);
-}
-
-.automation-window-tabs {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-  min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  white-space: nowrap;
-}
-
-.automation-window-tabs::-webkit-scrollbar {
-  display: none;
-}
-
-.automation-tab-item {
-  display: inline-grid;
-  grid-template-columns: minmax(0, 1fr) 24px;
-  align-items: center;
-  flex: 0 0 auto;
-  max-width: min(260px, 46vw);
-  min-width: 80px;
-  height: 28px;
-  overflow: hidden;
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--surface-pane);
-  color: var(--color-text-muted);
-}
-
-.automation-tab-item.selected {
-  border-color: var(--color-primary);
-  background: var(--surface-selected);
-  color: var(--color-primary);
-  font-weight: var(--font-weight-semibold);
-}
-
-.automation-tab-select {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-compact);
-  min-width: 0;
-  height: 26px;
-  overflow: hidden;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  padding: 2px var(--space-sm);
-  cursor: pointer;
-}
-
-.automation-tab-select > svg {
-  flex: 0 0 auto;
-}
-
-.automation-tab-select > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tab-close {
-  display: inline-grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--color-text-subtle);
-  cursor: pointer;
-}
-
-.tab-close:hover,
-.tab-close:focus-visible {
-  background: var(--color-danger-surface);
-  color: var(--color-danger);
-}
-
-.automation-tab-picker {
-  position: absolute;
-  top: calc(100% + var(--space-xs));
-  right: var(--space-xs);
-  z-index: var(--layer-dropdown);
-  display: grid;
-  gap: var(--space-sm);
-  width: min(320px, calc(100vw - var(--space-xl)));
-  max-height: min(420px, 60vh);
-  overflow: hidden;
-  border: var(--border-width) solid var(--color-border-strong);
-  border-radius: var(--radius-panel);
-  background: var(--surface-pane);
-  box-shadow: var(--shadow-popover);
-  padding: var(--space-sm);
-}
-
-.automation-tab-picker label {
-  display: grid;
-  gap: var(--space-xs);
-  color: var(--color-text-muted);
-  font-size: var(--font-size-caption);
-  font-weight: var(--font-weight-semibold);
-}
-
-.automation-tab-picker input {
-  width: 100%;
-  min-height: var(--control-height-default);
-  border: var(--border-width) solid var(--color-border-strong);
-  border-radius: var(--radius-control);
-  background: var(--surface-pane);
-  color: var(--color-text);
-  padding: var(--space-sm);
-}
-
-.automation-tab-picker > div {
-  display: grid;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-.automation-tab-picker > div button {
-  min-height: var(--control-height-default);
-  overflow: hidden;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--color-text);
-  padding: var(--space-sm);
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.automation-tab-picker > div button:hover,
-.automation-tab-picker > div button.selected {
-  background: var(--surface-selected);
-  color: var(--color-primary);
-}
-
-.automation-tab-picker-empty {
-  color: var(--color-text-muted);
-  padding: var(--space-md);
-  text-align: center;
 }

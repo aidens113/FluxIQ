@@ -11,6 +11,8 @@ import { automationStudioViewId } from "../views/view-registry";
 import type { AutomationLiveDomainCommands } from "./domain-commands";
 import { automationSelectionSame } from "../model/live-helpers";
 import { commitAutomationStudioMutation } from "../stores/mutation-transaction-store";
+import { runAutomationPresentationTransaction } from "../presentation/transaction";
+import { automationViewStateReferencesAny } from "./view-state-references";
 
 type Options = {
   activeProjectId: string | null;
@@ -26,7 +28,6 @@ type Options = {
   deleteRecordings: (ids: string[], pin: string) => Promise<boolean>;
   notifyChanged: (scopes: any[], ids?: string[]) => void;
   clearFlowDrafts: (flowId: string) => void;
-  schedule: (commit: () => void) => void;
   openView: (viewId: string, mode?: "preview" | "new-window") => void;
   openSubflow: (flowId: string, subflowId: string, mode: "preview" | "new-window", graphFlowId?: string) => Promise<void>;
   setSelection: (next: any) => void;
@@ -34,6 +35,8 @@ type Options = {
   setProjectFlows: (next: any) => void;
   setCustomNodes: (next: any) => void;
   setDeletedIds: (next: any) => void;
+  requestSave: () => void;
+  getSnapshot?: () => Pick<Options, "activeProjectId" | "nodes" | "indexes" | "selection" | "projectTasks" | "selectedTaskGraph">;
 };
 
 export function useAutomationHierarchyCommandBridge(options: Options) {
@@ -43,20 +46,24 @@ export function useAutomationHierarchyCommandBridge(options: Options) {
     (...args: Args) => handler(ref.current, ...args)
   ), []);
   const setTreeSelection = useCallback((next: AutomationSelection) => {
-    options.schedule(() => options.setSelection((current: AutomationSelection | null) => automationSelectionSame(current, next) ? current : next));
-  }, [options.schedule, options.setSelection]);
-  const closeDeletedViews = useCallback((deletingNodes: AutomationHierarchyNode[]) => {
+    runAutomationPresentationTransaction(() => {
+      options.setSelection((current: AutomationSelection | null) => automationSelectionSame(current, next) ? current : next);
+    });
+  }, [options.setSelection]);
+  const closeDeletedViews = stable((source, deletingNodes: AutomationHierarchyNode[]) => {
+    const current = withSnapshot(source);
     const sourceIds = new Set(deletingNodes.map((node) => node.sourceId).filter((id): id is string => Boolean(id)));
-    if (options.selection && "id" in options.selection && sourceIds.has(String(options.selection.id))) options.setSelection(null);
-    options.updatePrefs((current) => ({
-      ...current,
-      viewStates: Object.fromEntries(Object.entries(current.viewStates ?? {}).filter(([, state]) => {
-        const serialized = JSON.stringify(state);
-        return ![...sourceIds].some((id) => serialized.includes(id));
-      }))
+    if (current.selection && "id" in current.selection && sourceIds.has(String(current.selection.id))) current.setSelection(null);
+    current.updatePrefs((prefs) => ({
+      ...prefs,
+      viewStates: Object.fromEntries(Object.entries(prefs.viewStates ?? {}).filter(
+        ([, state]) => !automationViewStateReferencesAny(state, sourceIds)
+      ))
     }), { persist: true });
-  }, [options]);
-  const execute = stable((current, transaction: AutomationHierarchyDialogTransaction) => current.executor.execute(transaction, {
+  });
+  const execute = stable((source, transaction: AutomationHierarchyDialogTransaction) => {
+    const current = withSnapshot(source);
+    return current.executor.execute(transaction, {
     projectId: current.activeProjectId,
     nodes: current.nodes,
     nodeById: current.indexes.hierarchyNodeById,
@@ -89,28 +96,48 @@ export function useAutomationHierarchyCommandBridge(options: Options) {
     clearFlowDrafts: current.clearFlowDrafts,
     setSelection: current.setSelection,
     updateProjectFlows: current.setProjectFlows,
-    updateCustomNodes: current.setCustomNodes,
-    updateDeletedIds: current.setDeletedIds
-  }));
-  const requestAction = stable((current, action: NonNullable<AutomationHierarchyAction>) => {
+    updateCustomNodes(update) {
+      current.setCustomNodes(update);
+      current.requestSave();
+    },
+    updateDeletedIds(update) {
+      current.setDeletedIds(update);
+      current.requestSave();
+    }
+    });
+  });
+  const requestAction = stable((source, action: NonNullable<AutomationHierarchyAction>) => {
+    const current = withSnapshot(source);
     current.dialogStore.request(action, current.indexes.hierarchyNodeById);
   });
-  const openTreeView = stable((current, viewId: string, mode: "preview" | "new-window" = "preview") => current.openView(viewId, mode));
+  const openTreeView = stable((current, viewId: string, mode: "preview" | "new-window" = "preview") => {
+    current.openView(viewId, mode);
+  });
   const openTreeSubflow = stable((current, node: AutomationHierarchyNode, mode: "preview" | "new-window") => {
     if (node.flowId && node.sourceId) void current.openSubflow(
       node.flowId, node.sourceId, mode,
       typeof node.metadata?.graphFlowId === "string" ? node.metadata.graphFlowId : undefined
     );
   });
-  const createSubflow = useCallback(() => {
-    const root = options.selectedTaskGraph?.flowId ? options.indexes.subflowRootByFlowId.get(options.selectedTaskGraph.flowId) : undefined;
-    if (root) options.dialogStore.request({ action: "create", category: "flow", parentId: root.id }, options.indexes.hierarchyNodeById);
-  }, [options]);
+  const createSubflow = stable((source) => {
+    const current = withSnapshot(source);
+    const root = current.selectedTaskGraph?.flowId
+      ? current.indexes.subflowRootByFlowId.get(current.selectedTaskGraph.flowId)
+      : undefined;
+    if (root) current.dialogStore.request(
+      { action: "create", category: "flow", parentId: root.id },
+      current.indexes.hierarchyNodeById
+    );
+  });
   return { createSubflow, execute, openTreeSubflow, openTreeView, requestAction, setTreeSelection };
 }
 
+function withSnapshot(options: Options): Options {
+  return options.getSnapshot ? { ...options, ...options.getSnapshot() } : options;
+}
+
 function selectCreated(options: Options, flowId: string): void {
-  options.schedule(() => {
+  runAutomationPresentationTransaction(() => {
     options.setSelection({ kind: "flow", id: flowId });
     options.openView(automationStudioViewId.flowEditor, "preview");
   });

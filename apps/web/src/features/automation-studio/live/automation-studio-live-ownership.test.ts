@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 
 const read = (relativePath: string) => readFileSync(new URL(relativePath, import.meta.url), "utf8");
 
-const composition = read("./AutomationStudioComposition.tsx");
+const bootstrap = read("./AutomationStudioComposition.tsx");
+const composition = read("./AutomationStudioSession.tsx");
 const workspaceRuntime = read("./useAutomationWorkspaceRuntime.ts");
 const navigation = read("./useAutomationSelectionNavigation.ts");
 const deepLinks = read("./useAutomationDeepLinkRuntime.ts");
@@ -11,8 +12,10 @@ const graphRuntime = read("./useAutomationGraphRuntime.ts");
 const projectRuntime = read("./useAutomationProjectRuntime.ts");
 const hierarchyUi = read("./useAutomationHierarchyUiRuntime.ts");
 const hierarchyBridge = read("./useAutomationHierarchyCommandBridge.ts");
-const projectView = read("./useAutomationProjectView.ts");
-const canonicalViews = read("./useAutomationCanonicalViewInputs.ts");
+const connectedViews = read("./view-host/canonical-connected-views.tsx");
+const directConnector = read("./view-host/direct-view-connector.tsx");
+const connectedEntryRegistry = read("./view-host/connected-view-entries.tsx");
+const connectedRegions = read("./AutomationStudioConnectedRegions.tsx");
 const workspaceComposition = read("./AutomationStudioWorkspaceComposition.tsx");
 const gatewayBridge = read("./use-gateway-recording-bridge.ts");
 const root = read("../AutomationStudioLive.tsx");
@@ -22,6 +25,18 @@ describe("Automation Studio extracted owner contracts", () => {
     expect(root).toContain("export { AutomationStudioComposition as AutomationStudioLive }");
     expect(root).not.toMatch(/useEffect|useState|useMemo|function AutomationStudioLive/u);
     expect(root.split(/\r?\n/u).length).toBeLessThan(50);
+  });
+
+  it("keeps the bootstrap free of project and presentation subscriptions", () => {
+    expect(bootstrap).toContain("useAutomationStudioRuntime()");
+    expect(bootstrap).toContain("<AutomationStudioSession");
+    expect(bootstrap).not.toMatch(/useAutomationStoreSelector|useAutomationProjectView|useAutomationSelectionState/u);
+  });
+
+  it("keeps inline root selectors from invalidating external-store snapshots", () => {
+    const selector = read("../stores/use-store-selector.ts");
+    expect(selector).toContain("resolveAutomationStoreSelectorSnapshot(");
+    expect(selector).not.toContain("cache.current = null");
   });
 
   it("guards workspace updates and pane activation from no-op click churn", () => {
@@ -52,7 +67,8 @@ describe("Automation Studio extracted owner contracts", () => {
     expect(navigation).not.toContain("loadFlowDetails(");
     expect(loaders).toContain("if (input.knownGraphFlowId)");
     expect(loaders).toContain('source: "known"');
-    expect(composition).toContain("automationStudioFlowNeedsDetail(selectedFlow, activeViewId, selection?.kind)");
+    expect(connectedViews).toContain("onActive: (state, scope: AutomationCanonicalConnectorScope");
+    expect(connectedViews).toContain("scope.loadFlowDetail");
   });
 
   it("keeps live tab and sidebar selection out of URL synchronization", () => {
@@ -65,9 +81,9 @@ describe("Automation Studio extracted owner contracts", () => {
   });
 
   it("remembers active Flow identity separately from node selection", () => {
-    expect(composition).toContain('current.viewStates?.[automationStudioViewId.flowEditor]');
-    expect(composition).toContain("if (currentPolicyState.lastOpenFlowId === selection.id) return current;");
-    expect(composition).toContain('[automationStudioViewId.flowEditor]: { ...currentPolicyState, lastOpenFlowId: selection.id }');
+    expect(navigation).toContain('current.viewStates?.[automationStudioViewId.flowEditor]');
+    expect(navigation).toContain("if (currentFlowState.lastOpenFlowId === next.id) return current;");
+    expect(navigation).toContain('[automationStudioViewId.flowEditor]: { ...currentFlowState, lastOpenFlowId: next.id }');
     expect(deepLinks).toContain("options.selectedFlow?.flowId ?? options.lastOpenFlowId");
   });
 
@@ -90,10 +106,9 @@ describe("Automation Studio extracted owner contracts", () => {
   });
 
   it("validates graphs only while Problems is visible and on the idle lane", () => {
-    expect(graphRuntime).toContain('const visible = options.activeViewId === automationStudioViewId.problems');
-    expect(graphRuntime).toContain("if (!visible || !graphForValidation)");
-    expect(graphRuntime).toContain("scheduleAutomationGraphIdleTask(() =>");
-    expect(graphRuntime).not.toContain("const graphProblems = useMemo(() => graphForValidation");
+    expect(graphRuntime).toContain("const problemsVisible = options.workspacePrefs.panes.some");
+    expect(graphRuntime).toContain("validate: problemsVisible");
+    expect(graphRuntime).toContain("const subscribersActive = graphVisible || problemsVisible");
   });
 
   it("keeps development telemetry opt in", () => {
@@ -135,11 +150,17 @@ describe("Automation Studio extracted owner contracts", () => {
     const pane = read("../workspace/shell/PaneArea.tsx");
     const mounted = read("../workspace/shell/MountedViewStack.tsx");
     const viewSource = read("../workspace/shell/view-source.ts");
-    expect(workspaceComposition).toContain("createAutomationWorkspaceViewSource()");
+    expect(workspaceComposition).toContain("createAutomationWorkspaceViewSource(");
     expect(pane).toContain("useAutomationWorkspaceViews(props.source, props.pane.tabs, props.pane.activeViewId)");
     expect(mounted).toContain("const keepMounted = props.active || props.warm.isWarm(props.paneId, props.viewId)");
     expect(mounted).toContain("if (props.active) props.warm.markWarm(props.paneId, props.viewId)");
     expect(viewSource).toContain("useSyncExternalStore(subscribe, getSnapshot, getSnapshot)");
+  });
+
+  it("derives the workspace view source without an effect-driven store feedback loop", () => {
+    expect(workspaceComposition).toContain("[props.views.entries]");
+    expect(workspaceComposition).not.toContain("source.replace(");
+    expect(workspaceComposition).not.toMatch(/useEffect\(\(\) => \{[\s\S]*props\.views\.entries/u);
   });
 
   it("wakes selected view bodies without a second Studio render", () => {
@@ -148,7 +169,8 @@ describe("Automation Studio extracted owner contracts", () => {
     expect(composition).not.toContain("activeViewRenderSignature");
     expect(composition).not.toContain("readyActiveViewRenderSignature");
     expect(surface).toContain("const activeViewId = useAutomationWorkspaceSelector(props.store");
-    expect(mounted).toContain("props.warm.subscribe(props.paneId, setLocalActiveViewId)");
+    expect(mounted).toContain("active={props.activePane && props.activeViewId === viewId}");
+    expect(mounted).not.toMatch(/localActiveViewId|setLocalActiveViewId|warm\.subscribe/u);
     expect(mounted).not.toContain("scheduleWorkspaceNavigation");
   });
 
@@ -158,7 +180,8 @@ describe("Automation Studio extracted owner contracts", () => {
     expect(navigation).not.toMatch(/save-project-hierarchy|runLatest\(|api\.post\(/u);
     expect(commands).toContain("if (unchanged) return false");
     expect(commands).toContain("tabs: uniqueTabs([...candidate.tabs, viewId])");
-    expect(commands).toContain('warm.activate("main", paneId, viewId)');
+    expect(commands).not.toContain("warm.activate");
+    expect(commands).not.toContain("port.schedule");
   });
 
   it("commits view navigation through the isolated synchronous render store", () => {
@@ -166,21 +189,33 @@ describe("Automation Studio extracted owner contracts", () => {
     const commands = read("../workspace/commands/workspace-commands.ts");
     expect(commands).toContain("port.commit(update");
     expect(port).toContain("store.replace(next)");
-    expect(composition).toContain("useAutomationStudioFoundation()");
+    expect(composition).toContain("useAutomationStudioFoundation(runtime)");
     expect(workspaceComposition).toContain("<AutomationStudioWorkspaceSurface");
     expect(workspaceComposition).toContain("source={source}");
     expect(workspaceComposition).toContain("store={props.workspace.store}");
-    expect(navigation).toContain("options.schedule(() => {");
+    expect(navigation).toContain("runAutomationPresentationTransaction(() => {");
+    expect(navigation).not.toContain("options.schedule");
     expect(navigation).not.toContain("loadFlowDetails(");
   });
 
   it("mounts project overlays outside the workspace surface", () => {
-    expect(composition).toContain("<AutomationHierarchyDialog");
+    expect(connectedRegions).toContain("<AutomationHierarchyDialog");
     expect(workspaceComposition).toContain("useAutomationStudioLiveOverlays({");
     expect(workspaceComposition.indexOf("<AutomationStudioWorkspaceSurface")).toBeLessThan(workspaceComposition.indexOf("<AutomationStudioOverlays"));
     expect(workspaceComposition).toContain("openPreferences: overlays.openPreferences");
     expect(workspaceComposition).toContain("openDataInspector: overlays.openDataInspector");
     expect(workspaceComposition).not.toMatch(/AutomationWorkspacePreferences|AutomationWindowAdderPalette|AutomationLayoutPicker/u);
+  });
+
+  it("contains loading and render failures inside independent shell regions", () => {
+    const shell = read("../workspace/shell/WorkspaceShell.tsx");
+    const boundary = read("../workspace/shell/RegionBoundary.tsx");
+    for (const label of ["Header", "Hierarchy", "Editor", "Inspector", "Timeline"]) {
+      expect(shell).toContain(`label="${label}"`);
+    }
+    expect(boundary).toContain("<Suspense fallback=");
+    expect(boundary).toContain("getDerivedStateFromError");
+    expect(boundary).toContain("previous.resetKey !== this.props.resetKey");
   });
 
   it("keeps pointer move resizing out of React state", () => {
@@ -197,24 +232,22 @@ describe("Automation Studio extracted owner contracts", () => {
     expect([...regions, resize].join("\n")).not.toMatch(/useState|setLiveSidebarWidth|setLiveInspectorWidth|setLiveBottomTimelineHeight/u);
   });
 
-  it("activates warm views without scheduling a Studio update", () => {
+  it("uses warm state only for mount retention", () => {
     const commands = read("../workspace/commands/workspace-commands.ts");
     const warm = read("../workspace/commands/warm-activation.ts");
-    expect(commands).toContain('warm.activate("main", paneId, viewId)');
-    expect(commands).toContain('warm.activate("right", "right-sidebar", viewId)');
-    expect(warm).toContain("activity.current = candidateKey === key");
+    expect(commands).not.toContain("warm.activate");
+    expect(warm).not.toContain("subscribe(");
+    expect(warm).toContain("isWarm(paneId, viewId)");
+    expect(warm).toContain("markWarm(paneId, viewId)");
     expect(warm).not.toContain("scheduleWorkspaceNavigation");
   });
 
-  it("publishes typed memoized inputs instead of broad view collections", () => {
-    const publisher = read("./view-host/publisher.tsx");
-    expect(canonicalViews).toContain("entries: state.selectedTimelineEntries");
-    expect(canonicalViews).toContain("notes: state.selectedRecordingNotes");
-    expect(canonicalViews).toContain("recoverableDraft: state.recoverableDraft");
-    expect(canonicalViews).not.toContain("selectedRecording?.notes ?? []");
-    expect(composition).toContain("const canonicalViewInputs = useAutomationCanonicalViewInputs({");
-    expect(publisher).toContain("const entry = useMemo(");
-    expect(publisher).toContain("props.source.replace(props.id, entry)");
+  it("mounts typed selectors inside destination connectors instead of root publishers", () => {
+    expect(connectedEntryRegistry).toContain("createAutomationDirectViewConnection(Connector");
+    expect(composition).not.toMatch(/useAutomationCanonicalViewInputs|AutomationCanonicalViewPublishers/u);
+    expect(directConnector).toContain("const active = props.activity.active");
+    expect(directConnector).toContain("if (!active) return () => undefined;");
+    expect(connectedViews).toContain("createAutomationDirectViewConnector({");
   });
 
   it("does not bootstrap through the unbounded legacy snapshot endpoint", () => {
@@ -232,7 +265,7 @@ describe("Automation Studio extracted owner contracts", () => {
     expect(block).not.toContain("loadHierarchyFlow(");
     expect(hierarchyBridge).toContain("openCreatedSubflow(flowId) { selectCreated(current, flowId); }");
     expect(hierarchyBridge).not.toContain("loadFlowDetails(");
-    expect(composition).toContain("automationStudioFlowNeedsDetail(selectedFlow, activeViewId, selection?.kind)");
+    expect(connectedViews).toContain("scope.loadFlowDetail");
   });
 
   it("keeps feed reconciliation on exact cache resources without broad project invalidation", () => {
@@ -254,18 +287,25 @@ describe("Automation Studio extracted owner contracts", () => {
     expect(composition).not.toContain("program-api:mutation");
   });
 
-  it("derives project entities once and uses stable indexes in event owners", () => {
-    expect(projectView.match(/createAutomationProjectViewModelSelector\(\)/g)).toHaveLength(1);
-    expect(projectView).toContain("const viewModel = useMemo(() => select(options.model)");
-    expect(composition).toContain("projectEntityIndexes.timelineEntryById");
+  it("keeps broad project subscriptions out of Session and reads command snapshots on demand", () => {
+    expect(composition).not.toMatch(/useAutomationProjectView|useAutomationCanonicalViewInputs|useAutomationProjectEntityCollection|useAutomationProjectDataResource/u);
+    expect(composition).toContain("const current = getProjectView();");
+    expect(composition).toContain("getSnapshot: () => {");
     expect(hierarchyBridge).toContain("current.indexes.hierarchyNodeById");
     expect(hierarchyBridge).toContain("current.indexes.canonicalFlowEntryById.get(flowId)");
   });
 
+  it("uses stable empty resource identities in the Session projection", () => {
+    const projectViewReader = read("./session-project-view.ts");
+    expect(projectViewReader).toContain("EMPTY_AUTOMATION_PROJECT_ARTIFACTS");
+    expect(projectViewReader).not.toMatch(/resource\([^\n]+, \{\}\)|resource\([^\n]+, \[\]\)/u);
+    expect(composition).toContain('resource<any[]>("nativeNodeDefinitions", EMPTY_AUTOMATION_LIST)');
+  });
+
   it("runs graph conversion only while a graph subscriber is mounted", () => {
-    expect(graphRuntime).toContain("const subscribersActive = options.workspacePrefs.panes.some");
-    expect(graphRuntime).toContain("const baseGraph = useMemo(() => subscribersActive && options.selectedTaskGraph");
-    expect(graphRuntime).toContain("taskFlowToReactFlowGraph(options.selectedTaskGraph");
-    expect(graphRuntime).toContain("[options.availableNodeDefinitions, options.selectedTaskGraph, subscribersActive]");
+    expect(graphRuntime).toContain("const subscribersActive = graphVisible || problemsVisible");
+    expect(graphRuntime).toContain("if (!subscribersActive) return;");
+    expect(graphRuntime).toContain("derivationJob.setRequest({");
+    expect(graphRuntime).toContain("subscribersActive\n  ]");
   });
 });

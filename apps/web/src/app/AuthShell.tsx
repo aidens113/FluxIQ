@@ -1,6 +1,7 @@
 "use client";
 
 import { Blocks, CheckCircle2, Eye, EyeOff, LogOut, Settings, ShieldCheck, UserRound } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Breadcrumb, Button, Field, IconButton, InlineNotice, Menu, type AlertTone, type BreadcrumbItem } from "../features/programs/shared-ui";
 
@@ -23,7 +24,7 @@ export function GlobalTopbar(props: {
 }) {
   return (
     <header className="directory-topbar global-topbar">
-      <a aria-label="FluxIQ programs" className="brand-lockup" href="/"><span className="brand-mark"><Blocks aria-hidden size={17} /></span><span>FluxIQ</span></a>
+      <Link aria-label="FluxIQ programs" className="brand-lockup" href="/"><span className="brand-mark"><Blocks aria-hidden size={17} /></span><span>FluxIQ</span></Link>
       {props.breadcrumbs?.length ? <div className="global-topbar-context"><Breadcrumb items={props.breadcrumbs} /></div> : null}
       {props.actions ? <div className="global-topbar-actions">{props.actions}</div> : null}
       <AuthStatus displayName={props.user.displayName} roleId={props.user.roleId} />

@@ -44,6 +44,7 @@ const fixtureProfiles = Object.freeze({
   }),
 });
 const markerPath = path.join(fixtureRoot, ".fluxiq-e2e-fixture-root");
+const fastStudioOnly = process.env.FLUXIQ_E2E_FAST_STUDIO === "true";
 
 await resetOwnedFixtureRoot();
 
@@ -65,21 +66,21 @@ const smallProject = await seedProject({
   fixture: fixtureProfiles.small,
 });
 
-const scale1kProject = await seedProject({
+const scale1kProject = fastStudioOnly ? smallProject : await seedProject({
   name: "UI Fixture - Scale 1k",
   description: "One-thousand-entity hierarchy and graph data for UI performance checks.",
   categoryId: category.id,
   fixture: fixtureProfiles.scale1k,
 });
 
-const scale10kProject = await seedProject({
+const scale10kProject = fastStudioOnly ? smallProject : await seedProject({
   name: "UI Fixture - Scale 10k",
   description: "Ten-thousand-node graph and event-log data for local Studio certification.",
   categoryId: category.id,
   fixture: fixtureProfiles.scale10k,
 });
 
-const globalStress = await seedGlobalStressFixtures();
+const globalStress = fastStudioOnly ? {} : await seedGlobalStressFixtures();
 
 const manifest = {
   schemaVersion: 1,

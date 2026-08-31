@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { ProgramLauncher } from "./ProgramLauncher";
 
@@ -37,5 +38,10 @@ describe("ProgramLauncher", () => {
     const html = renderToStaticMarkup(<ProgramLauncher label="Programs" programs={[]} />);
     expect(html).toContain("No matching programs");
     expect(html).toContain("Try a different name");
+  });
+
+  it("does not eagerly prefetch every global program route", () => {
+    const source = readFileSync(new URL("./ProgramLauncher.tsx", import.meta.url), "utf8");
+    expect(source).toContain("prefetch={false}");
   });
 });

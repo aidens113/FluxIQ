@@ -29,6 +29,36 @@ describe("AutomationStudioSchemaMigrationRunner", () => {
     await pool.closeAll();
   });
 
+  it("serializes concurrent migration callers targeting one project file", async () => {
+    const firstPool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const secondPool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const firstLease = await firstPool.acquire("project.concurrent");
+    const secondLease = await secondPool.acquire("project.concurrent");
+    expect(firstLease.database).not.toBe(secondLease.database);
+    const first = new AutomationStudioSchemaMigrationRunner({
+      database: firstLease.database,
+      migrations: initial
+    });
+    const second = new AutomationStudioSchemaMigrationRunner({
+      database: secondLease.database,
+      migrations: initial
+    });
+
+    const results = await Promise.all([first.migrate(), second.migrate()]);
+
+    expect(results.map((result) => result.applied)).toEqual([["0001_initial"], []]);
+    expect(results.map((result) => result.skipped)).toEqual([[], ["0001_initial"]]);
+    await expect(first.state()).resolves.toMatchObject({
+      status: "ready",
+      lockToken: null,
+      failureMessage: null
+    });
+    await secondLease.release();
+    await firstLease.release();
+    await secondPool.closeAll();
+    await firstPool.closeAll();
+  });
+
   it("persists checksum mismatch and migration failure states without partial schema ledger writes", async () => {
     const pool = new AutomationStudioProjectDatabasePool({ rootDir });
     const lease = await pool.acquire("project.failure");

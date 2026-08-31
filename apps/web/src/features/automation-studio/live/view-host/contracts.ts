@@ -1,10 +1,10 @@
-import type {
-  AutomationCanonicalPublisherInputs,
-  AutomationStudioViewId,
-  AutomationViewDefinitionById
+import {
+  type AutomationStudioViewId,
+  type AutomationViewDefinitionById
 } from "../../views/canonical-view-definitions";
 import type { HostBindingOf } from "../../views/view-definition-types";
 import type { AutomationViewInstance } from "../../views/view-types";
+import type { AutomationViewReadiness } from "../../views/view-readiness";
 import type { AutomationWorkspaceViewEntry, AutomationWorkspaceViewSource } from "../../workspace/shell/contracts";
 
 export type CanonicalViewHostKind<Id extends AutomationStudioViewId> = AutomationViewDefinitionById<Id>["kind"];
@@ -16,11 +16,11 @@ export type AutomationCanonicalViewHostInput<Id extends AutomationStudioViewId> 
   label?: string;
   state?: AutomationViewInstance["state"];
   bodyClassName?: string;
+  readiness?: AutomationViewReadiness<HostBindingOf<AutomationViewDefinitionById<Id>>["model"]>;
 };
 export type AutomationCanonicalViewHostInputs = Partial<{
   [Id in AutomationStudioViewId]: AutomationCanonicalViewHostInput<Id>;
 }>;
-export type AutomationCanonicalViewPublisherInputs = AutomationCanonicalPublisherInputs;
 
 export type AutomationViewHostCompositionSnapshot = {
   projectKey: string | null;

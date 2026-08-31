@@ -11,5 +11,11 @@ export {
   type AutomationViewHostPublicationResult,
   type AutomationViewHostRecovery
 } from "./contracts";
-export { AutomationCanonicalViewPublisher } from "./publisher";
-export { AutomationCanonicalViewPublishers, type AutomationCanonicalViewPublisherInputs } from "./canonical-publishers";
+export {
+  createAutomationDirectViewConnector,
+  createAutomationDirectViewConnection,
+  resolveAutomationDirectViewReadiness,
+  type AutomationDirectViewConnectorConfig,
+  type AutomationDirectViewConnectorProps,
+  type AutomationDirectViewConnectorStores
+} from "./direct-view-connector";

@@ -10,6 +10,23 @@ export type ScopedExternalStore<T> = {
   transaction<Result>(operation: () => Result): Result;
 };
 
+let globalTransactionDepth = 0;
+const globalPendingFlushes = new Set<() => void>();
+
+export function runAutomationStoreTransaction<Result>(operation: () => Result): Result {
+  globalTransactionDepth += 1;
+  try {
+    return operation();
+  } finally {
+    globalTransactionDepth -= 1;
+    if (globalTransactionDepth === 0) {
+      const flushes = [...globalPendingFlushes];
+      globalPendingFlushes.clear();
+      for (const flush of flushes) flush();
+    }
+  }
+}
+
 export function createScopedExternalStore<T>(initialState: T): ScopedExternalStore<T> {
   let state = initialState;
   let globalRevision = 0;
@@ -22,6 +39,10 @@ export function createScopedExternalStore<T>(initialState: T): ScopedExternalSto
 
   const flush = () => {
     if (!pendingPublish || transactionDepth > 0) return;
+    if (globalTransactionDepth > 0) {
+      globalPendingFlushes.add(flush);
+      return;
+    }
     pendingPublish = false;
     globalRevision += 1;
     const scopes = [...pendingScopes];

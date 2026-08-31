@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import type { AutomationStudioUiStore } from "../workspace/studio-ui-store";
 import type {
   AutomationWorkspaceBreadcrumb,
@@ -17,7 +17,7 @@ import type {
 import type { AutomationWarmViewRegistry } from "../workspace/commands/warm-activation";
 import type { AutomationWorkspaceRenderStore } from "../workspace/render-store";
 
-export function AutomationStudioWorkspaceSurface(props: {
+export const AutomationStudioWorkspaceSurface = memo(function AutomationStudioWorkspaceSurface(props: {
   chrome: AutomationWorkspaceChromeCommands;
   commands: AutomationWorkspaceCommands;
   headerCommands: Omit<AutomationWorkspaceHeaderCommands, "activateBreadcrumb"> & {
@@ -57,4 +57,4 @@ export function AutomationStudioWorkspaceSurface(props: {
         : {})}
     />
   );
-}
+});

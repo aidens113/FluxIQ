@@ -1,5 +1,7 @@
 # Automation Studio Load Performance Plan
 
+> Historical tracking notice (2026-08-29): this document preserves its audit and implementation evidence, but it no longer owns current Automation Studio render/runtime status. Current topology and remaining certification work are tracked in [Automation Studio render/data separation plan](./automation-studio-render-data-separation-plan.md) and [Automation Studio workspace architecture](../architecture/automation-studio/workspace.md).
+
 Automation Studio must treat project open, pane switching, runtime debug, and
 Flow browsing as summary-first workflows. A normal UI refresh must not load every
 recording, timeline, Flow, project artifact, publication, proposal, or runtime

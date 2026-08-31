@@ -13,6 +13,7 @@ import type { AutomationProjectApi } from "../project/project-api";
 import type { AutomationStudioStores } from "../stores/studio-stores";
 import type { AutomationStudioLazyPreloaderInput } from "./lazy-preloader";
 import { useAutomationStudioLazyPreloader } from "./lazy-preloader";
+import { runAutomationStudioActiveWork } from "./background-work";
 import { applyAutomationProjectInvalidations } from "./project-invalidation";
 import { AutomationProjectRevalidator } from "./project-revalidation";
 import type { AutomationStudioProjectChangePage } from "./project-sync";
@@ -33,18 +34,15 @@ export function useAutomationProjectDataPlatform(options: {
   api: AutomationProjectApi;
   projectId: string | null;
   stores: AutomationStudioStores;
-  customHierarchyNodes: AutomationHierarchyNode[];
-  deletedHierarchyIds: string[];
+  getCustomHierarchyNodes(): AutomationHierarchyNode[];
   replaceCustomHierarchyNodes(nodes: AutomationHierarchyNode[]): void;
   replaceDeletedHierarchyIds(ids: string[]): void;
 }): AutomationProjectDataPlatform {
   const dataRef = useRef<AutomationStudioProjectDataAccess | null>(null);
   if (!dataRef.current) dataRef.current = new AutomationStudioProjectDataAccess();
   const data = dataRef.current;
-  const hierarchyRef = useRef(options.customHierarchyNodes);
   const replaceHierarchyRef = useRef(options.replaceCustomHierarchyNodes);
   const replaceDeletedHierarchyRef = useRef(options.replaceDeletedHierarchyIds);
-  hierarchyRef.current = options.customHierarchyNodes;
   replaceHierarchyRef.current = options.replaceCustomHierarchyNodes;
   replaceDeletedHierarchyRef.current = options.replaceDeletedHierarchyIds;
   const revalidator = useMemo(() => new AutomationProjectRevalidator({
@@ -78,7 +76,7 @@ export function useAutomationProjectDataPlatform(options: {
         data,
         stores: options.stores,
         hierarchy: {
-          getNodes: () => hierarchyRef.current,
+          getNodes: options.getCustomHierarchyNodes,
           replaceNodes: (nodes) => replaceHierarchyRef.current(nodes)
         }
       });
@@ -109,11 +107,17 @@ export function useAutomationProjectDataPlatform(options: {
   return useMemo(() => ({
     openProject,
     closeProject,
-    readThrough: <Value,>(request: ProjectDataRequest<Value>) => data.readThrough(request),
+    readThrough: <Value,>(request: ProjectDataRequest<Value>) => runAutomationStudioActiveWork(
+      () => data.readThrough(request)
+    ),
     remember: <Value,>(projectId: string, scope: AutomationStudioCacheScope, resourceId: string, value: Value) => data.remember(projectId, scope, resourceId, value),
     notifyMutation,
-    loadHydration: (projectId: string, signal: AbortSignal) => loadAutomationProjectHydration(options.api, data, projectId, signal),
-    loadRuntimeSummary: (projectId: string, signal?: AbortSignal) => loadAutomationProjectRuntimeSummary(options.api, data, projectId, signal),
+    loadHydration: (projectId: string, signal: AbortSignal) => runAutomationStudioActiveWork(
+      () => loadAutomationProjectHydration(options.api, data, projectId, signal)
+    ),
+    loadRuntimeSummary: (projectId: string, signal?: AbortSignal) => runAutomationStudioActiveWork(
+      () => loadAutomationProjectRuntimeSummary(options.api, data, projectId, signal)
+    ),
     stats: () => data.stats()
   }), [closeProject, data, notifyMutation, openProject, options.api]);
 }

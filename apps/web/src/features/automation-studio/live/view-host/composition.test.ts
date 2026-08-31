@@ -23,7 +23,7 @@ describe("typed Automation Studio view-host composition", () => {
     );
     expect(entry.view.id).toBe("flow-router");
     expect(entry.request.kind).toBe("router");
-    expect(entry.request.binding.model).toEqual({ flow: "selected" });
+    expect("binding" in entry.request ? entry.request.binding.model : null).toEqual({ flow: "selected" });
   });
   it("publishes every canonical view with its registered kind", async () => {
     const composition = createAutomationViewHostComposition();
@@ -76,7 +76,10 @@ describe("typed Automation Studio view-host composition", () => {
     expect(composition.getProjectKey()).toBe("project-b");
     expect(composition.source.get("flow-nodes")).toBeNull();
     expect(
-      composition.source.get("client-gateway")?.request.binding.model
+      (() => {
+        const request = composition.source.get("client-gateway")?.request;
+        return request && "binding" in request ? request.binding.model : null;
+      })()
     ).toEqual({ project: "b" });
   });
 
@@ -129,6 +132,37 @@ describe("typed Automation Studio view-host composition", () => {
     expect(result.published).toBe(0);
     expect(composition.source.get("flow-router")).toBe(first);
     expect(composition.source.getRevision("flow-router")).toBe(firstRevision);
+  });
+
+  it("notifies only the changed view and preserves unrelated entry identity", async () => {
+    const composition = createAutomationViewHostComposition();
+    const views = allCanonicalInputs();
+    await composition.publish({ projectKey: "project-a", views });
+    const routerEntry = composition.source.get("flow-router");
+    const settingsEntry = composition.source.get("flow-settings");
+    const notifications = { router: 0, settings: 0 };
+    const unsubscribeRouter = composition.source.subscribe("flow-router", () => {
+      notifications.router += 1;
+    });
+    const unsubscribeSettings = composition.source.subscribe("flow-settings", () => {
+      notifications.settings += 1;
+    });
+
+    const result = await composition.publish({
+      projectKey: "project-a",
+      views: {
+        ...views,
+        "flow-router": input("flow-router", "warm", { changed: true })
+      }
+    });
+
+    expect(result.published).toBe(1);
+    expect(result.reused).toBe(automationStudioViewIds.length - 1);
+    expect(composition.source.get("flow-router")).not.toBe(routerEntry);
+    expect(composition.source.get("flow-settings")).toBe(settingsEntry);
+    expect(notifications).toEqual({ router: 1, settings: 0 });
+    unsubscribeRouter();
+    unsubscribeSettings();
   });
 
   it("publishes active work synchronously and bounds later batches", async () => {

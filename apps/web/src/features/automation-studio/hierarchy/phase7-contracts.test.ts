@@ -73,7 +73,7 @@ describe("Phase 7 hierarchy routing contracts", () => {
     )).toBe(false);
   });
 
-  it("selects Router before activating it when the Flow name opens", () => {
+  it("activates Router before reconciling the Flow selection", () => {
     const order: string[] = [];
     const openView = vi.fn((viewId: string) => order.push("view:" + viewId));
     const setSelection = vi.fn(() => order.push("selection"));
@@ -94,10 +94,10 @@ describe("Phase 7 hierarchy routing contracts", () => {
     expect(store.getSnapshot().primaryTreeNodeId).toBe(router.id);
     expect(setSelection).toHaveBeenCalledWith({ kind: "flow", id: "flow.checkout" });
     expect(openView).toHaveBeenCalledWith("flow-router", "preview");
-    expect(order).toEqual(["row", "selection", "view:flow-router"]);
+    expect(order).toEqual(["view:flow-router", "selection"]);
   });
 
-  it("selects the subflow graph before opening its Nodes editor", () => {
+  it("opens the subflow graph before reconciling its selection", () => {
     const subflow: AutomationHierarchyNode = {
       id: "subflow.checkout",
       label: "Checkout steps",
@@ -142,8 +142,8 @@ describe("Phase 7 hierarchy routing contracts", () => {
     controller.openNode(subflow, "preview");
 
     expect(store.getSnapshot().primaryTreeNodeId).toBe(nodes.id);
-    expect(order.slice(-2)).toEqual(["selection", "subflow"]);
-    expect(order.filter((event) => event === "row")).toHaveLength(2);
+    expect(order.slice(-2)).toEqual(["subflow", "selection"]);
+    expect(order.filter((event) => event === "row")).toHaveLength(1);
     expect(openSubflow).toHaveBeenCalledWith(subflow, "preview");
   });
 });

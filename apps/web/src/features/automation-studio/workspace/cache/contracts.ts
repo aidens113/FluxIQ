@@ -2,8 +2,25 @@ import type { AutomationHierarchySidebarUiState } from "../../hierarchy/ui-coord
 import type { AutomationWorkspacePrefs } from "../layout";
 
 export type AutomationStudioCachedUiState = {
-  workspacePrefs?: AutomationWorkspacePrefs;
+  workspacePrefs?: AutomationStudioCachedWorkspaceSeed;
   sidebar?: AutomationHierarchySidebarUiState;
+};
+
+export type AutomationStudioCachedWorkspaceSeed = Pick<
+  AutomationWorkspacePrefs,
+  | "sidebarWidth"
+  | "leftSidebarCollapsed"
+  | "inspectorWidth"
+  | "bottomTimelineHeight"
+  | "bottomTimelineCollapsed"
+  | "mainLayoutPreset"
+  | "mainSplitRatios"
+  | "rightSidebarCollapsed"
+  | "density"
+  | "motion"
+> & {
+  rightSidebarCollapsedState: boolean;
+  bottomDockExpanded: boolean;
 };
 
 export type AutomationStudioUiCacheKind = keyof AutomationStudioCachedUiState;
@@ -18,9 +35,9 @@ export type AutomationStudioUiCacheEnvelope<T> = {
 };
 
 export interface AutomationStudioUiCacheBackend {
-  get<T>(key: string): Promise<T | undefined>;
-  set<T>(key: string, value: T): Promise<void>;
-  delete?(key: string): Promise<void>;
+  get<T>(key: string, options?: { signal?: AbortSignal }): Promise<T | undefined>;
+  set<T>(key: string, value: T, options?: { signal?: AbortSignal }): Promise<void>;
+  delete?(key: string, options?: { signal?: AbortSignal }): Promise<void>;
 }
 
 export interface AutomationStudioUiCacheTransport {

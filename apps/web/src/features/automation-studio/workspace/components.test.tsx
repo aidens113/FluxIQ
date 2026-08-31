@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Blocks, Settings } from "lucide-react";
 import { describe, expect, it } from "vitest";
-import { createAutomationMountedViewActivationStore } from "./components/mounted-view-activation";
 import { AutomationViewContainer } from "./components/view-container";
 import { AutomationWorkspacePreferences } from "./components/workspace-preferences";
 import { defaultAutomationWorkspacePrefs } from "./layout/defaults";
@@ -10,7 +9,6 @@ import { defaultAutomationWorkspacePrefs } from "./layout/defaults";
 describe("AutomationViewContainer tabs", () => {
   it("renders an accessible overflow-safe tab strip and linked panel", () => {
     const html = renderToStaticMarkup(<AutomationViewContainer
-      activation={createAutomationMountedViewActivationStore()}
       active
       activeViewId="nodes"
       icon={Blocks}
@@ -21,7 +19,6 @@ describe("AutomationViewContainer tabs", () => {
       onMoveTab={() => undefined}
       onTabSelect={() => undefined}
       subtitle="Flow editor"
-      bodyClassName="graph-body"
       tabs={[
         { id: "nodes", label: "Nodes", type: "design", icon: Blocks },
         { id: "settings", label: "Settings", type: "settings", icon: Settings }
@@ -46,41 +43,50 @@ describe("AutomationViewContainer tabs", () => {
     expect(html).not.toContain("automation-window-resize-edge");
     expect(html).not.toContain("Reset window size");
     expect(html).toContain('aria-labelledby="automation-tab-main-nodes"');
-    expect(html).toContain('class="automation-view-body graph-body"');
+    expect(html).toContain('class="automation-view-body"');
   });
 
-  it("keeps active tab feedback in the typed mounted-view store", () => {
+  it("uses workspace props as the sole active-view owner", () => {
     const container = readFileSync(new URL("./components/view-container.tsx", import.meta.url), "utf8");
-    const activation = readFileSync(new URL("./components/mounted-view-activation.ts", import.meta.url), "utf8");
     const pane = readFileSync(new URL("./shell/PaneArea.tsx", import.meta.url), "utf8");
     const stack = readFileSync(new URL("./shell/MountedViewStack.tsx", import.meta.url), "utf8");
 
-    expect(container).toContain("useAutomationMountedViewActivation(props.activation, props.windowId)");
-    expect(container).toContain("activateAutomationMountedView(props.activation, props.windowId, viewId)");
-    expect(container).toContain("const selected = tab.id === optimisticActiveViewId");
-    expect(container).toContain("selectTab(tab.id)");
-    expect(activation).toContain("createAutomationMountedViewActivationStore");
-    expect(activation).toContain("return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)");
-    expect(activation).not.toContain("CustomEvent");
-    expect(activation).not.toContain("window.dispatchEvent");
+    expect(container).toContain("const selected = tab.id === props.activeViewId");
+    expect(container).toContain("props.onTabSelect(tab.id)");
+    expect(container).not.toContain("mounted-view-activation");
+    expect(container).not.toContain("optimisticActiveViewId");
     expect(pane).toContain("props.commands.selectPaneTab(props.pane.id, viewId)");
-    expect(stack).toContain("const activePane = activation.activeWindow ?? props.activePane");
+    expect(pane).not.toContain("createAutomationMountedViewActivationStore");
+    expect(stack).toContain("active={props.activePane && props.activeViewId === viewId}");
+    expect(stack).not.toContain("localActiveViewId");
+    expect(stack).not.toContain("warm.subscribe");
   });
 
-  it("does not keep hidden heavy tab views mounted", () => {
+  it("keeps warm tab layouts contained while inactive", () => {
+    const stack = readFileSync(new URL("./shell/MountedViewStack.tsx", import.meta.url), "utf8");
     const css = readFileSync(new URL("../styles/workspace/04-layout.css", import.meta.url), "utf8");
 
     expect(css).not.toContain(".automation-view-keepalive");
+    expect(stack).toContain('data-active={props.active ? "true" : "false"}');
+    expect(stack).not.toContain("inert={!props.active}");
+    expect(stack).not.toMatch(/\n\s+hidden=\{!props\.active\}/u);
+    expect(css).toContain(".automation-mounted-view[data-active=");
+    expect(css).toContain("contain: strict");
+    expect(css).not.toContain("visibility: hidden");
+    expect(css).toContain("opacity: 0");
   });
 
-  it("uses explicit body classes and instant tab scrolling", () => {
+  it("keeps the shared body geometry stable and view classes destination-local", () => {
     const source = readFileSync(new URL("./components/view-container.tsx", import.meta.url), "utf8");
+    const stack = readFileSync(new URL("./shell/MountedViewStack.tsx", import.meta.url), "utf8");
     const css = readFileSync(new URL("../styles/workspace/04-layout.css", import.meta.url), "utf8");
 
-    expect(source).toContain("bodyClassName?: string");
+    expect(source).not.toContain("bodyClassName");
+    expect(stack).toContain('entry.bodyClassName ?? ""');
     expect(source).toContain('behavior: "auto"');
     expect(source).not.toContain('behavior: "smooth"');
-    expect(css).toContain(".automation-view-body.graph-body");
+    expect(css).not.toContain(".automation-view-body.graph-body");
+    expect(css).toMatch(/\.automation-view-body \{[^}]*display: grid;[^}]*overflow: hidden;/su);
     expect(css).not.toContain(".automation-view-body:has");
     expect(css).not.toContain("scroll-behavior: smooth");
   });
@@ -88,8 +94,29 @@ describe("AutomationViewContainer tabs", () => {
   it("does not attach pane activation to an already-active view body", () => {
     const source = readFileSync(new URL("./components/view-container.tsx", import.meta.url), "utf8");
 
-    expect(source).toContain("onMouseDown={optimisticWindowActive ? undefined : props.onActivate}");
+    expect(source).toContain("onMouseDown={props.active ? undefined : props.onActivate}");
     expect(source).not.toContain("onMouseDown={props.onActivate}");
+  });
+});
+
+describe("Automation hierarchy shell", () => {
+  it("has one full-height resize owner and a contained three-row sidebar", () => {
+    const hierarchy = readFileSync(new URL("../hierarchy/AutomationProjectHierarchySidebar.tsx", import.meta.url), "utf8");
+    const region = readFileSync(new URL("./shell/HierarchyRegion.tsx", import.meta.url), "utf8");
+    const shellCss = readFileSync(new URL("../styles/workspace/01-shell.css", import.meta.url), "utf8");
+    const layoutCss = readFileSync(new URL("../styles/workspace/04-layout.css", import.meta.url), "utf8");
+
+    expect(hierarchy).not.toContain("automation-sidebar-resizer");
+    expect(hierarchy).not.toContain("Resize project hierarchy");
+    expect(region).toContain('className="automation-section-resize-handle hierarchy"');
+    expect(region).toContain('aria-label="Resize hierarchy"');
+    expect(shellCss).toContain("grid-template-rows: auto auto minmax(0, 1fr)");
+    expect(shellCss).toContain(".automation-studio-sidebar-shell > .automation-studio-sidebar");
+    expect(shellCss).toMatch(/\.automation-studio-shell \{[^}]*contain: layout paint style;/su);
+    expect(shellCss).toContain("contain: size layout style");
+    expect(layoutCss).toContain(".automation-section-resize-handle.hierarchy");
+    expect(layoutCss).toContain("box-sizing: border-box");
+    expect(layoutCss).toContain("padding: 0");
   });
 });
 

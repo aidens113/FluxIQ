@@ -1,9 +1,44 @@
 # Automation Studio UI Performance Profiling
 
 This runbook turns an Automation Studio responsiveness report into repeatable
-browser evidence. Unit tests, type checks, and production builds validate code
-boundaries; they do not certify interaction latency, rendering, retained heap,
-or query behavior.
+evidence. It covers the implemented runtime and the probes needed to show that
+presentation remains responsive while project data, cache work, and lazy
+preloads continue asynchronously.
+
+Passing source tests, unit tests, type checks, or a production build is
+**deterministic engineering evidence**. It is not proof of browser latency,
+render cost, retained heap, or frame pacing. Only a trace captured from the
+running application under recorded conditions is **real-browser
+certification**.
+
+## Runtime Contracts Under Test
+
+| Runtime area | Implemented contract | Browser failure signal |
+| --- | --- | --- |
+| Runtime/bootstrap | One stable runtime owns the Studio stores, workspace render store, request coordinator, and project generation owner for the mounted session. Disposal cancels requests and invalidates the generation. | Owners are recreated during selection, an old project result commits, or interactions remount the shell. |
+| Presentation | Selection, tab activation, and hierarchy navigation commit synchronously through one presentation transaction. No-op writes do not publish. | Selection waits for a request, a click exposes intermediate states, or the same state republishes. |
+| Shell | Header, hierarchy, editor, inspector, and timeline are memoized regions with local Suspense/error boundaries. | A view load blanks or rerenders unrelated regions, or a local error replaces the Studio. |
+| Project data | Entities are normalized by kind and ID. Entity, detail, page, and resource changes publish exact scopes. | One entity update rebuilds broad collections or unrelated views. |
+| Project queries | Query identity includes project, scope, normalized filter, normalized sort, page, and page size. Readiness and freshness belong to that query. | Pages overwrite each other, one load marks unrelated views loading, or a list needs an unbounded aggregate. |
+| View readiness | Each view has loading, empty, error, ready, and stale-ready states guarded by project-generation and request tokens. | A cold view delays tab activation, warm data disappears during refresh, or stale work commits. |
+| Cache/preload | Cache and preload jobs queue after paint, yield to pending input and active foreground work, and are cancellable. | Serialization runs in a click task, work starts before paint, or obsolete work continues. |
+| Flow canvas | Drag, marquee, hover, and viewport previews use an imperative controller and coalesce to animation frames; settled state publishes at gesture completion. | Pointer movement causes a React commit per event, concurrent frames queue, or settlement publishes twice. |
+
+## Evidence Classes
+
+Keep evidence labeled; do not substitute one class for another:
+
+1. **Deterministic tests** prove controlled contracts such as stale-token
+   rejection, transaction coalescing, exact selector notifications, scheduler
+   cancellation/yielding, and one-frame canvas coalescing.
+2. **Source and architecture checks** prove ownership and dependency rules.
+3. **Automated browser evidence** measures interaction and settle duration,
+   requests, long tasks, DOM size, render counters, graph entities, and
+   supported Chromium heap usage.
+4. **Manual browser traces** expose handler stacks, frame gaps, style/layout,
+   paints, background work timing, and retained objects.
+
+The first two classes may pass while a browser interaction is still slow.
 
 ## Preconditions
 
@@ -65,6 +100,28 @@ once, wait for compilation to finish, reload, and then begin the recorded run.
 For release evidence, use the build mode required by the release checklist and
 state that mode in the report.
 
+The Playwright harness enables instrumentation before application code runs. In
+a manual development session, enable it before reloading:
+
+```js
+window.__FLUXIQ_ENABLE_UI_PERFORMANCE_COUNTERS__ = true;
+window.__FLUXIQ_ENABLE_AUTOMATION_STUDIO_TELEMETRY__ = true;
+```
+
+The development Data Inspector exposes active requests, API timings, render
+metrics, long tasks, cache estimates, graph counts, counters, subscriptions,
+worker queues, and preload generations. Relevant development event channels are
+`ui-render:metric`, `ui-long-task:metric`,
+`automation-studio:performance-counter`,
+`automation-studio:cache-metric`, `automation-studio:graph-metric`,
+`automation-studio:background-work`,
+`automation-studio:worker-queue-metric`, and
+`automation-studio:subscription-metric`.
+
+`automation-studio:background-work` is development-only. Its `queued`,
+`yielded`, `started`, `finished`, and `cancelled` phases support scheduler
+diagnosis; absence from a production trace is expected.
+
 ## Automated Browser Capture
 
 In another shell:
@@ -74,22 +131,113 @@ $env:FLUXIQ_E2E_BASE_URL = "http://127.0.0.1:3000"
 pnpm --filter @fluxiq/web test:e2e -- performance-baseline.spec.ts
 ```
 
-The suite captures settled duration, request count, long-task count, DOM size,
-render counters, request timing and payload metadata, graph DOM counts, and the
-repeated-switch heap scenario. JSON evidence is written below
+The suite records operation duration separately from settle duration and
+captures request count, last active request names, long-task count/duration,
+DOM samples, render metrics, request timing and payload metadata, graph DOM
+counts, and repeated-switch heap evidence. JSON evidence is written below
 `apps/web/test-results/playwright`.
 
-A loading spinner is not settled. The visible selection/loading surface must
-publish immediately, and the measured operation settles only when required work
-is quiet according to the test harness.
+A loading spinner is not settled. The selected tab/row and its local loading or
+stale-ready surface must publish immediately. Settled means relevant requests
+are quiet, DOM samples are stable, and the configured animation-frame window
+has elapsed.
 
-The modular architecture can be verified by source and unit tests: the client
-entry is a facade, stores notify narrow selectors, canonical view registrations
-come from one typed definition object, and the host resolves a component during
-render. Those checks can catch regressions such as duplicate registries, eager
-host construction, broad aggregate props, or repeating publications. They do
-not measure the browser main thread. A source test that passes while a click
-takes two seconds is still a browser performance failure.
+Architecture tests can catch duplicate runtime owners, broad aggregate props,
+unstable publications, or forbidden dependencies. They do not measure the
+browser main thread. A source test that passes while a click takes two seconds
+is still a browser performance failure.
+
+## Concrete Runtime Probes
+
+Run these probes on empty, small, and the applicable scale fixture.
+
+### Stable Bootstrap And Project Generation
+
+1. Record project open, switch, close, and same-project reopen.
+2. Confirm ordinary selections do not recreate runtime/store owners or remount
+   the shell.
+3. Start a delayed detail read, switch projects, and retain its request and
+   readiness diagnostics.
+4. Confirm the obsolete result never changes the new project's hierarchy,
+   active view, normalized entities, or query readiness.
+
+Retain interaction metrics, shell-region render counts, the request
+generation/token sequence, and a screenshot or trace marker showing the new
+project before the old request resolves.
+
+### Synchronous Presentation Transactions
+
+Record a hierarchy-row click, tab click, tab close, and breadcrumb navigation.
+For each input, the selected row/tab must change in the input task or next paint
+without waiting for domain data. A transaction may notify multiple exact
+scopes, but observers must see one coherent final presentation state.
+
+Retain input-to-paint timing, render counts, and the event-task call tree.
+Repeating publications, oscillating tabs, or effect-driven correction are
+failures.
+
+### Isolated Shell Regions
+
+Capture render counters for header, hierarchy, editor, inspector, and timeline
+while switching a view and updating one selection. Confirm unrelated regions
+have zero commits where the certification scenario forbids them. In a
+non-release environment, exercise a local loading and error state; the rest of
+the shell must remain usable.
+
+Retain per-region render counts and screenshots of local loading, empty,
+stale-ready, and error surfaces. Do not inject failures into release data.
+
+### Normalized Project And Query Stores
+
+Open two pages or filters of the same collection, then update one entity.
+Record each query's project, scope, filter, sort, page, and page size. Confirm
+that IDs, total, loading, freshness, cursor, and error remain query-local and
+that an entity update rerenders only exact entity/collection consumers.
+
+For SQL-backed lists, retain the query plan, bind values, returned row count,
+payload bytes, stable ordering, and cursor/offset. Browser-side slicing of an
+unbounded response fails this probe.
+
+### Local View Readiness
+
+For a cold view, confirm immediate tab activation followed by a local loading,
+empty, or ready surface. For a warm view, trigger refresh and confirm retained
+data remains visible with data-view-state set to stale-ready. Switch away
+during a read and confirm its project-generation/request token rejects
+completion.
+
+Retain state screenshots or DOM snapshots, interaction metrics, and the
+generation/token sequence for the cancellation case.
+
+### After-Paint Cache And Lazy Preload Scheduler
+
+On project open, begin typing, dragging, or switching views while preload/cache
+work is queued. Development diagnostics should show background work queued
+after paint and yielded while input or active foreground work is pending.
+Project switch or disposal must cancel obsolete work; active view reads have
+priority.
+
+In a Performance trace, cache serialization and preload must not be part of the
+initiating click task. Work must begin after the selected surface paints,
+remain bounded, and leave opportunities for input and frames. A UI-cache hit,
+warm mounted view, domain-cache hit, and cold detail read are separate results.
+
+Retain the development background-work phase sequence and a real-browser trace
+showing input, first paint, background start, task duration, yield behavior, and
+cancellation. The development event order does not establish production
+timing.
+
+### Imperative Frame-Coalesced Canvas
+
+Record node selection, node drag, right-button marquee, hover, pan/zoom, and
+save. Raw pointer moves may update the controller many times, but previews must
+flush at most once per animation frame. Settled node or marquee state publishes
+once at gesture completion.
+
+Retain trace screenshots with frame boundaries, pointer-event and
+animation-frame call stacks, graph/render counters, mounted graph entity count,
+and save request count. A React render for every pointer event or duplicate
+settlement fails this probe.
 
 ## Required Interaction Matrix
 
@@ -98,20 +246,20 @@ Run the automated scenario and manually inspect these paths on `empty`,
 
 | Interaction | Required observation |
 | --- | --- |
-| Project open/close/switch | Shell appears synchronously; stale project data never flashes or commits. |
+| Project open/close/switch | Stable shell appears synchronously; stale project data never flashes or commits. |
 | Root folder toggle | Expansion is immediate and performs no detail request. |
 | Folder load more | Requests only the selected parent's next SQL sibling page; other branches retain their rows and page state. |
-| Flow and Nodes selection | Selected hierarchy row changes immediately; detail may hydrate behind loading UI. |
+| Flow and Nodes selection | Selected hierarchy row changes immediately; detail hydrates behind a local readiness boundary. |
 | Settings and Instructions | Warm switching preserves exact local view state. |
 | Tab picker open/type | Overlay and typing remain responsive and do not hydrate domain detail. |
-| State cold open | Tab/loading surface appears before State detail. |
-| Warm Flow/State switch | Existing mounted slots activate without refetch or parent navigation. |
+| Cold view open | Tab activates before its local loading/empty/ready state resolves. |
+| Warm view refresh | Existing data remains visible as stale-ready while refreshing. |
 | Runtime Debug open | Run list is SQL-paged; opening the view does not fetch every run detail. |
 | Run row open | Only selected run detail/actions/events load, under bounded limits. |
-| Graph select/drag | Selection is local, drag is smooth, and no project summary reload occurs. |
+| Graph select/drag/marquee | Pointer previews are frame-coalesced and no project summary reload occurs. |
 | Recording timeline navigation | At most 200 timeline/action-preview entries are materialized; moving selection reuses the ordered preview index. |
 | Hierarchy resize | Transient pointer work remains local; persistence occurs at commit. |
-| Create/delete Flow or folder | UI transaction commits immediately and only affected scopes refresh. |
+| Create/delete Flow or folder | Presentation commits immediately and only affected data/query scopes refresh. |
 
 Also test keyboard navigation, narrow viewport scrolling, the tab strip with
 overflow, and a modal taller than the available viewport.
@@ -150,25 +298,30 @@ document must be corrected.
 
 Use the following procedure when certifying a release or investigating a failure:
 
-1. Start with the clean profile and documented fixture/build conditions.
-2. Open DevTools Performance and enable screenshots. Enable memory for repeated
-   switching or suspected retention.
-3. Record exactly one named interaction from pointer/key input until the UI and
-   required requests settle.
-4. Export the trace and attach the matching Playwright JSON artifact.
-5. Record route bootstrap parameters, fixture, click target, settled duration,
-   request count, long-task count/duration, timeout state, DOM count, graph DOM
-   count, and active request names.
-6. Record render counters for `AutomationStudioLive`,
+1. Record the commit, environment, fixture counts, build mode, and clean-profile
+   conditions.
+2. Warm compilation/routes, reload, and wait for a quiet baseline.
+3. Open DevTools Performance and enable screenshots. Enable memory only for
+   repeated switching or retention work because collection affects timings.
+4. Record one named interaction from pointer/key input through its first visual
+   commit and settled state.
+5. Export the trace and attach the matching Playwright JSON artifact.
+6. Record operation duration, input-to-paint, settle duration, request count and
+   names, long-task count/duration, timeout state, DOM delta, and graph DOM
+   count.
+7. Record render counters for `AutomationStudioLive`,
    `AutomationStudioWorkspaceBoundary`, `AutomationStudioHierarchyBoundary`,
    `AutomationStudioPaneBoundary`, `AutomationStudioOverlayBoundary`, and
    `AutomationStudioSelectionBoundary`.
-7. For a SQL-backed list, attach the query plan and returned row/payload count.
-8. Repeat a failed interaction with CPU profiling and inspect the longest task,
-   its call tree, and the component/store notifications immediately before it.
-9. Repeat the accepted matrix at narrow desktop and mobile widths to verify
+8. Mark the presentation commit, readiness transition, background-work start,
+   and settled data in the trace or accompanying timeline.
+9. For a SQL-backed list, attach the query plan, bind values, returned rows,
+   payload bytes, cursor, and total/hasMore metadata.
+10. Repeat a failure with CPU profiling and inspect the longest task's call tree,
+   bottom-up view, React commits, and store/diagnostic events before it.
+11. Repeat the accepted matrix at narrow desktop and mobile widths to verify
    scrolling and non-overlap.
-10. Store artifacts with the commit SHA and environment record; do not describe
+12. Store artifacts with the commit SHA and environment record; do not describe
     the gate as passed without those artifacts.
 
 For hierarchy evidence, record the requested `parentId`, cursor, returned row
@@ -179,18 +332,23 @@ mounted preview row count separately; a 10,000-event fixture must not create
 
 ## Diagnosing Failures
 
-- Slow with zero requests: inspect render fanout, selectors returning new
-  references, graph conversion, JSON serialization, layout, and event handlers.
+- Slow with zero requests: inspect presentation publication count, broad
+  selectors, shell-region fanout, graph conversion, JSON serialization,
+  layout, and the input handler's call tree.
+- Selection waits for data: verify the input performs a synchronous
+  presentation transaction and readiness belongs only to the selected view.
 - Excess requests: inspect broad invalidation, retry loops, duplicate hydration,
   project-summary refreshes, and view activation persistence.
-- Repeating renders: inspect no-op store publication, unstable effect
-  dependencies, selection feedback, and legacy aggregate host props.
-- A long task: inspect synchronous parsing, validation, graph diff/layout,
-  unbounded mapping, and storage serialization.
+- Repeating renders: inspect no-op store publication, runtime owner recreation,
+  unstable selector/effect identity, and cross-store selection feedback.
+- A long task: inspect synchronous parsing, graph diff/layout, unbounded
+  mapping, storage serialization, and whether cache/preload ran before paint.
 - A timeout: inspect requests that never settle, repeating store notifications,
   cache retry loops, and mounted hidden views.
-- Heap growth: compare retained project snapshots, event/subscription teardown,
-  warm-view policy, caches, and graph instances across switch cycles.
+- Pointer lag: compare raw pointer events with animation-frame flushes and React
+  commits; inspect forced layout and duplicate gesture settlement.
+- Heap growth: compare retained runtime owners, project/query snapshots,
+  subscriptions, readiness owners, warm views, caches, and graph instances.
 
 When evaluating cache behavior, distinguish three cases in the evidence:
 
@@ -205,8 +363,9 @@ handler and that stale project generations cannot commit.
 
 ## Acceptance
 
-Browser certification remains pending until every required interaction is
-captured under stated conditions, all source budgets pass, SQL/detail boundaries
-are confirmed, and the evidence is attached to the scale-certification report.
+Browser certification remains not-run or blocked until every required
+interaction is captured under stated conditions, all source budgets pass,
+SQL/detail boundaries are confirmed, and evidence is attached to the
+scale-certification report.
 Passing `pnpm check`, `pnpm test`, or `pnpm build` alone is not browser
 performance acceptance.

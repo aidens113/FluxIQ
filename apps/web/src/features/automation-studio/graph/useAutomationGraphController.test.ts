@@ -6,6 +6,7 @@ function flowEditorSource(): string {
   return [
     "../flow-editor/useFlowEditorController.ts",
     "../flow-editor/useFlowEditorGraphDocument.ts",
+    "../flow-editor/useFlowEditorCanvasInteractions.ts",
     "../flow-editor/FlowGraphCanvas.tsx"
   ].map((path) => readFileSync(new URL(path, import.meta.url), "utf8").replace(/\r\n/g, "\n")).join("\n");
 }
@@ -65,17 +66,17 @@ describe("Automation graph controller", () => {
 
   it("routes selection-only editor changes through transient setters without draft publishing", () => {
     const editorSource = flowEditorSource();
-    const nodeChangeStart = editorSource.indexOf("onNodesChange={(changes: NodeChange<Node<AutomationFlowNodeData>>[])");
-    const edgeClickStart = editorSource.indexOf("onEdgeClick={(event, edge)", nodeChangeStart);
-    const nodeChangeSource = editorSource.slice(nodeChangeStart, edgeClickStart);
-    const nodeClickStart = editorSource.indexOf("onNodeClick={(event, node)", edgeClickStart);
-    const selectionChangeStart = editorSource.indexOf("onSelectionChange=", nodeClickStart);
-    const nodeClickSource = editorSource.slice(nodeClickStart, selectionChangeStart);
+    const nodeChangeStart = editorSource.indexOf("const handleFlowNodesChange = useCallback");
+    const connectStart = editorSource.indexOf("const connectFlowNodes", nodeChangeStart);
+    const nodeChangeSource = editorSource.slice(nodeChangeStart, connectStart);
+    const nodeClickStart = editorSource.indexOf("const selectClickedFlowNode:");
+    const viewportStart = editorSource.indexOf("const previewFlowViewport", nodeClickStart);
+    const nodeClickSource = editorSource.slice(nodeClickStart, viewportStart);
 
-    expect(nodeChangeSource).toContain("flowNodeChangesAreDurable(changes, flowNodeDragActiveRef.current)");
-    expect(nodeChangeSource).toContain("if (durableChange) checkpointFlowGraph()");
-    expect(nodeChangeSource).toContain("if (durableChange) setFlowNodes(nextNodes)");
-    expect(nodeChangeSource).toContain("else setTransientFlowNodes(nextNodes)");
+    expect(nodeChangeSource).toContain("flowNodeChangesAreDurable(changes, false)");
+    expect(nodeChangeSource).toContain("if (durableChange) currentGraph.checkpointFlowGraph()");
+    expect(nodeChangeSource).toContain("if (durableChange) currentGraph.setFlowNodes(nextNodes)");
+    expect(nodeChangeSource).toContain("else currentGraph.setTransientFlowNodes(nextNodes)");
     expect(nodeClickSource).not.toContain("publishFlowGraphDraft");
     expect(nodeClickSource).not.toContain("checkpointFlowGraph");
   });
@@ -98,5 +99,15 @@ describe("Automation graph controller", () => {
     expect(publishSource).toContain("scheduleAutomationGraphIdleTask");
     expect(publishSource).toContain("delayMs: 160");
     expect(publishSource).not.toContain("queueMicrotask");
+  });
+
+  it("does not serialize selected-node parameters in the selection/render effect", () => {
+    const graphDocumentSource = readFileSync(new URL("../flow-editor/useFlowEditorGraphDocument.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+    const selectionEffectStart = graphDocumentSource.indexOf("const nodeId = props.selectedNode?.id;");
+    const selectionEffectEnd = graphDocumentSource.indexOf("useEffect(() => () =>", selectionEffectStart);
+    const selectionEffectSource = graphDocumentSource.slice(selectionEffectStart, selectionEffectEnd);
+
+    expect(selectionEffectSource).toContain("currentNode.data.parameterValues !== selectedParameterValues");
+    expect(selectionEffectSource).not.toContain("JSON.stringify");
   });
 });

@@ -1,12 +1,13 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, FolderOpen, Search, X } from "lucide-react";
-import { memo, useMemo, useSyncExternalStore, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { memo, useRef, useSyncExternalStore } from "react";
 import type { AutomationSelection } from "../shared/selection-contracts";
 import type { AutomationHierarchyAction, AutomationHierarchyKind, AutomationHierarchyNode } from "./contracts";
 import type { AutomationHierarchyPageInfo } from "./paged-cache";
 import { AutomationProjectTree } from "./ProjectTree";
 import type { AutomationHierarchyRoutableViewId } from "./routing";
+import { createAutomationHierarchyProjectionSelector } from "./selectors";
 import type { AutomationHierarchyUiCoordinator } from "./ui-coordinator";
 
 export const AutomationProjectHierarchySidebar = memo(function AutomationProjectHierarchySidebar(props: {
@@ -17,8 +18,6 @@ export const AutomationProjectHierarchySidebar = memo(function AutomationProject
   loadMoreChildren?(parentId: string | null): void;
   nodes: AutomationHierarchyNode[];
   onCloseProject(): void;
-  onResizeKeyDown(event: KeyboardEvent<HTMLDivElement>): void;
-  onResizePointerDown(event: ReactPointerEvent<HTMLDivElement>): void;
   onToggleCollapsed(): void;
   openSubflow(node: AutomationHierarchyNode, mode: "preview" | "new-window"): void;
   openView(viewId: AutomationHierarchyRoutableViewId, mode?: "preview" | "new-window"): void;
@@ -28,15 +27,13 @@ export const AutomationProjectHierarchySidebar = memo(function AutomationProject
   selection: AutomationSelection | null;
   setRecordingPrimaryKind(kind: "recording" | null): void;
   setSelection(selection: AutomationSelection): void;
-  sidebarWidth: number;
-  showResizeHandle?: boolean;
 }) {
   const ui = useSyncExternalStore(props.coordinator.subscribe, props.coordinator.getSnapshot, props.coordinator.getSnapshot);
-  const normalizedSearch = ui.filter.search.trim().toLocaleLowerCase();
-  const matchCount = useMemo(() => props.nodes.filter((node) =>
-    (ui.filter.typeFilter === "all" || node.kind === ui.filter.typeFilter)
-    && (!normalizedSearch || (node.label + " " + node.kind).toLocaleLowerCase().includes(normalizedSearch))
-  ).length, [normalizedSearch, props.nodes, ui.filter.typeFilter]);
+  const projectionSelectorRef = useRef<ReturnType<typeof createAutomationHierarchyProjectionSelector> | null>(null);
+  if (!projectionSelectorRef.current) {
+    projectionSelectorRef.current = createAutomationHierarchyProjectionSelector();
+  }
+  const projection = projectionSelectorRef.current(props.nodes, ui.filter.search, ui.filter.typeFilter);
   const updateFilters = (next: { search: string; typeFilter: "all" | AutomationHierarchyKind }) => {
     props.coordinator.setFilter(next);
   };
@@ -74,11 +71,12 @@ export const AutomationProjectHierarchySidebar = memo(function AutomationProject
               <option value="run">Runs</option>
             </select>
           </label>
-          <small aria-live="polite">{matchCount} match{matchCount === 1 ? "" : "es"}</small>
+          <small aria-live="polite">{projection.matchCount} match{projection.matchCount === 1 ? "" : "es"}</small>
         </div>
       </div> : null}
       {!props.collapsed ? <AutomationProjectTree
         nodes={props.nodes}
+        projection={projection}
         activeViewId={props.activeViewId}
         selection={props.selection}
         recordingPrimaryKind={props.recordingPrimaryKind}
@@ -94,7 +92,6 @@ export const AutomationProjectHierarchySidebar = memo(function AutomationProject
         {...(props.childPageInfo ? { childPageInfo: props.childPageInfo } : {})}
         {...(props.loadMoreChildren ? { loadMoreChildren: props.loadMoreChildren } : {})}
       /> : null}
-      {!props.collapsed && props.showResizeHandle !== false ? <div aria-label="Resize project hierarchy" aria-orientation="vertical" aria-valuemax={420} aria-valuemin={220} aria-valuenow={Math.round(props.sidebarWidth)} className="automation-sidebar-resizer" onKeyDown={props.onResizeKeyDown} onPointerDown={props.onResizePointerDown} role="separator" tabIndex={0} title="Drag to resize. Use Left and Right arrow keys; Home resets." /> : null}
     </aside>
   );
 });

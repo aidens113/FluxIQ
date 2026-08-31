@@ -11,6 +11,7 @@ import { mergeRecordingDetail, removeFlowObjectReferencesFromProjectFlows } from
 type RecordingCommandsOptions = {
   liveCommands: AutomationLiveDomainCommands;
   selection: AutomationSelection | null;
+  getSelection?: () => AutomationSelection | null;
   setActionStatus: (status: string) => void;
   setProjectRecordings: (next: any) => void;
   setProjectTimelines: (next: any) => void;
@@ -38,7 +39,7 @@ export function useAutomationRecordingCommands(options: RecordingCommandsOptions
       return !recordings.has(String(source.recordingId ?? "")) && !proposals.has(String(source.proposalId ?? ""));
     })));
     options.setRecordingProcessing((current: any) => current && recordings.has(current.recordingId) ? null : current);
-    if (selectionReferencesDeletedRecording(options.selection, recordings, proposals)) {
+    if (selectionReferencesDeletedRecording(options.getSelection?.() ?? options.selection, recordings, proposals)) {
       options.setRecordingPrimaryKind(null);
       options.setSelection(null);
     }

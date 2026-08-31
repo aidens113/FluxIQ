@@ -3,6 +3,7 @@ import {
   AutomationStudioLazyPreloadRunner,
   automationStudioLazyPreloadInputSignature,
   scheduleAutomationStudioPreloadWork,
+  type AutomationStudioPreloadApi,
   type AutomationStudioPreloadScheduler
 } from "./lazy-preloader";
 
@@ -107,6 +108,49 @@ describe("AutomationStudioLazyPreloadRunner", () => {
     await flushAsyncTasks();
     expect(api.post).toHaveBeenCalledTimes(2);
     expect(manual.pendingCount()).toBe(1);
+  });
+
+  it("does not start preload requests while browser input is pending", async () => {
+    const manual = createManualScheduler();
+    let inputPending = true;
+    const api = { post: vi.fn(async () => ({ ok: true })) };
+    const runner = new AutomationStudioLazyPreloadRunner(api, {
+      scheduler: manual.scheduler,
+      isInputPending: () => inputPending,
+      maxTaskCount: 2
+    });
+
+    runner.start({ projectId: "project-a", activeFlowId: "flow-a" });
+    manual.flushOne();
+    await flushAsyncTasks();
+    expect(api.post).not.toHaveBeenCalled();
+    expect(manual.pendingCount()).toBe(1);
+
+    inputPending = false;
+    manual.flushOne();
+    await flushAsyncTasks();
+    expect(api.post).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats preload responses as warm-only and cannot mutate presentation state", async () => {
+    const manual = createManualScheduler();
+    const presentation = { activeViewId: "flow-nodes", selectedObjectId: "node-a" };
+    const api: AutomationStudioPreloadApi = {
+      post: async <T = unknown>() => ({
+        ok: true,
+        payload: { activeViewId: "runtime-debug", selectedObjectId: "node-b" } as T
+      })
+    };
+    const runner = new AutomationStudioLazyPreloadRunner(api, {
+      scheduler: manual.scheduler,
+      maxTaskCount: 1
+    });
+
+    runner.start({ projectId: "project-a", activeFlowId: "flow-a" });
+    manual.flushOne();
+    await flushAsyncTasks();
+
+    expect(presentation).toEqual({ activeViewId: "flow-nodes", selectedObjectId: "node-a" });
   });
 
   it("uses a stable signature for equivalent open view sets", () => {

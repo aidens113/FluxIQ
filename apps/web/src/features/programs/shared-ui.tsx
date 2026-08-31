@@ -2,6 +2,7 @@
 
 import { AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Circle, Copy, Download, Info, LoaderCircle, WrapText, XCircle, X } from "lucide-react";
 import { fluxiqStatusLabel, fluxiqStatusTone } from "fluxiq/ui";
+import Link from "next/link";
 import { cloneElement, isValidElement, useEffect, useId, useRef, useState, type AnchorHTMLAttributes, type ButtonHTMLAttributes, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactElement, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -88,12 +89,48 @@ export type MenuOption = {
 
 export function Menu(props: { label: string; options: MenuOption[]; icon?: ReactNode; iconOnly?: boolean; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(props.defaultOpen ?? false);
+  const [position, setPosition] = useState<{ maxHeight: number; right: number; top: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus();
+    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus({ preventScroll: true });
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && (triggerRef.current?.contains(target) || menuRef.current?.contains(target))) return;
+      setOpen(false);
+    };
+    const closeForViewportChange = () => setOpen(false);
+    document.addEventListener("pointerdown", closeOutside, true);
+    window.addEventListener("resize", closeForViewportChange);
+    window.addEventListener("scroll", closeForViewportChange);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside, true);
+      window.removeEventListener("resize", closeForViewportChange);
+      window.removeEventListener("scroll", closeForViewportChange);
+    };
   }, [open]);
+
+  function toggleMenu() {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    const bounds = triggerRef.current?.getBoundingClientRect();
+    if (bounds) {
+      const margin = 8;
+      const below = window.innerHeight - bounds.bottom - margin;
+      const above = bounds.top - margin;
+      const openBelow = below >= 160 || below >= above;
+      setPosition({
+        maxHeight: Math.max(80, openBelow ? below : above),
+        right: Math.max(margin, window.innerWidth - bounds.right),
+        top: openBelow ? bounds.bottom + 4 : margin
+      });
+    }
+    setOpen(true);
+  }
 
   function moveFocus(event: KeyboardEvent<HTMLDivElement>) {
     const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)'));
@@ -103,52 +140,53 @@ export function Menu(props: { label: string; options: MenuOption[]; icon?: React
     items[next]?.focus();
   }
 
+  const popover = open ? (
+    <div
+      aria-label={props.label}
+      className="menu-popover menu-popover-portal"
+      onKeyDown={(event) => {
+        if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+          event.preventDefault();
+          moveFocus(event);
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          setOpen(false);
+        }
+      }}
+      ref={menuRef}
+      role="menu"
+      style={position ? { maxHeight: position.maxHeight, right: position.right, top: position.top } : undefined}
+    >
+      {props.options.map((option) => option.href ? (
+        <Link className={option.danger ? "danger" : undefined} href={option.href} key={option.id} onClick={() => setOpen(false)} role="menuitem">
+          {option.icon}<span>{option.label}</span>
+        </Link>
+      ) : (
+        <button
+          className={option.danger ? "danger" : undefined}
+          disabled={option.disabled}
+          key={option.id}
+          onClick={() => {
+            option.onSelect?.();
+            setOpen(false);
+          }}
+          role="menuitem"
+          type="button"
+        >
+          {option.icon}<span>{option.label}</span>
+        </button>
+      ))}
+    </div>
+  ) : null;
+
   return (
-    <div className="menu" onBlur={(event) => {
-      if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
-    }}>
+    <div className="menu" ref={triggerRef}>
       {props.iconOnly
-        ? <IconButton aria-expanded={open} aria-haspopup="menu" label={props.label} onClick={() => setOpen((current) => !current)}>{props.icon}</IconButton>
-        : <Button aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen((current) => !current)} size="compact" variant="secondary">
+        ? <IconButton aria-expanded={open} aria-haspopup="menu" label={props.label} onClick={toggleMenu}>{props.icon}</IconButton>
+        : <Button aria-expanded={open} aria-haspopup="menu" onClick={toggleMenu} size="compact" variant="secondary">
           {props.icon}<span>{props.label}</span><ChevronDown aria-hidden size={14} />
         </Button>}
-      {open ? (
-        <div
-          aria-label={props.label}
-          className="menu-popover"
-          onKeyDown={(event) => {
-            if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-              event.preventDefault();
-              moveFocus(event);
-            } else if (event.key === "Escape") {
-              event.preventDefault();
-              setOpen(false);
-            }
-          }}
-          ref={menuRef}
-          role="menu"
-        >
-          {props.options.map((option) => option.href ? (
-            <a className={option.danger ? "danger" : undefined} href={option.href} key={option.id} onClick={() => setOpen(false)} role="menuitem">
-              {option.icon}<span>{option.label}</span>
-            </a>
-          ) : (
-            <button
-              className={option.danger ? "danger" : undefined}
-              disabled={option.disabled}
-              key={option.id}
-              onClick={() => {
-                option.onSelect?.();
-                setOpen(false);
-              }}
-              role="menuitem"
-              type="button"
-            >
-              {option.icon}<span>{option.label}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
+      {popover && typeof document !== "undefined" ? createPortal(popover, document.body) : popover}
     </div>
   );
 }
@@ -483,7 +521,7 @@ export function Breadcrumb(props: { items: BreadcrumbItem[]; label?: string }) {
           const current = index === props.items.length - 1;
           return <li key={`${item.label}:${index}`}>
             {index ? <ChevronRight aria-hidden size={13} /> : null}
-            {current ? <span aria-current="page">{item.label}</span> : item.href ? <a href={item.href} onClick={item.onClick}>{item.label}</a> : <button onClick={item.onClick} type="button">{item.label}</button>}
+            {current ? <span aria-current="page">{item.label}</span> : item.href ? <Link href={item.href} {...(item.onClick ? { onClick: item.onClick } : {})}>{item.label}</Link> : <button onClick={item.onClick} type="button">{item.label}</button>}
           </li>;
         })}
       </ol>
@@ -710,27 +748,28 @@ export function ModalContent(props: DialogProps & { onKeyDown?(event: KeyboardEv
     const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const overlay = panel.closest(".modal-backdrop, .drawer-backdrop");
     const siblings = Array.from(document.body.children).filter((element) => element !== overlay);
-    const previousOverflow = document.body.style.overflow;
     const previousStates = siblings.map((element) => ({
       element: element as HTMLElement,
       ariaHidden: element.getAttribute("aria-hidden"),
-      inert: (element as HTMLElement).inert,
     }));
-    document.body.style.overflow = "hidden";
     siblings.forEach((element) => {
-      (element as HTMLElement).inert = true;
       element.setAttribute("aria-hidden", "true");
     });
+    const preventBackgroundScroll = (event: Event) => {
+      if (!panel.contains(event.target as Node | null)) event.preventDefault();
+    };
+    document.addEventListener("wheel", preventBackgroundScroll, { capture: true, passive: false });
+    document.addEventListener("touchmove", preventBackgroundScroll, { capture: true, passive: false });
     const initial = panel.querySelector<HTMLElement>("[data-autofocus], [autofocus], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled)");
-    (initial ?? panel).focus();
+    (initial ?? panel).focus({ preventScroll: true });
     return () => {
-      document.body.style.overflow = previousOverflow;
-      previousStates.forEach(({ element, ariaHidden, inert }) => {
-        element.inert = inert;
+      document.removeEventListener("wheel", preventBackgroundScroll, true);
+      document.removeEventListener("touchmove", preventBackgroundScroll, true);
+      previousStates.forEach(({ element, ariaHidden }) => {
         if (ariaHidden === null) element.removeAttribute("aria-hidden");
         else element.setAttribute("aria-hidden", ariaHidden);
       });
-      returnFocus?.focus();
+      returnFocus?.focus({ preventScroll: true });
     };
   }, []);
 

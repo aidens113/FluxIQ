@@ -8,8 +8,13 @@ import {
   type AutomationStudioLazyPreloadTask
 } from "../data-request-policy";
 import type { ApiResponse, JsonObject } from "../../programs/program-api";
+import {
+  scheduleAutomationStudioBackgroundWork,
+  scheduleAutomationStudioAfterPaintIdleWork,
+  type AutomationStudioInputPendingProbe
+} from "./background-work";
 
-type AutomationStudioPreloadApi = {
+export type AutomationStudioPreloadApi = {
   post<T = unknown>(endpoint: string, payload: JsonObject, options?: { signal?: AbortSignal }): Promise<ApiResponse<T>>;
 };
 
@@ -17,6 +22,7 @@ export type AutomationStudioLazyPreloadRunnerOptions = {
   maxTaskCount?: number;
   maxConcurrency?: 1 | 2;
   scheduler?: AutomationStudioPreloadScheduler;
+  isInputPending?: AutomationStudioInputPendingProbe;
   onMetric?: (metric: AutomationStudioPreloadMetric) => void;
   now?: () => number;
 };
@@ -104,7 +110,17 @@ export class AutomationStudioLazyPreloadRunner {
   private schedule(active: ActivePreloadRun): void {
     if (active.cancelled || active.controller.signal.aborted) return;
     active.cancelScheduled?.();
-    active.cancelScheduled = (this.options.scheduler ?? scheduleAutomationStudioPreloadWork)(() => this.pump(active), active.plan.idleTimeoutMs);
+    active.cancelScheduled = scheduleAutomationStudioBackgroundWork(
+      () => this.pump(active),
+      {
+        signal: active.controller.signal,
+        timeoutMs: active.plan.idleTimeoutMs,
+        scheduler: this.options.scheduler ?? scheduleAutomationStudioPreloadWork,
+        priority: "preload",
+        label: `preload:${active.plan.projectId}:${active.generation}`,
+        ...(this.options.isInputPending ? { isInputPending: this.options.isInputPending } : {})
+      }
+    );
   }
 
   private pump(active: ActivePreloadRun): void {
@@ -140,6 +156,7 @@ export class AutomationStudioLazyPreloadRunner {
     } finally {
       active.inFlight = Math.max(0, active.inFlight - 1);
       active.completed += 1;
+      if (this.active !== active || active.generation !== this.generation || active.cancelled || active.controller.signal.aborted) return;
       this.emit({
         phase: "task-finished",
         projectId: active.plan.projectId,
@@ -152,7 +169,6 @@ export class AutomationStudioLazyPreloadRunner {
         ok,
         elapsedMs: this.now() - startedAt
       });
-      if (this.active !== active || active.cancelled || active.controller.signal.aborted) return;
       if (active.cursor < active.tasks.length) this.schedule(active);
       else if (active.inFlight === 0) this.drain(active);
     }
@@ -190,7 +206,7 @@ export function useAutomationStudioLazyPreloader(
   input: AutomationStudioLazyPreloaderInput,
   options: AutomationStudioLazyPreloadRunnerOptions = {}
 ): void {
-  const runner = useMemo(() => new AutomationStudioLazyPreloadRunner(api, options), [api, options.maxTaskCount, options.maxConcurrency, options.scheduler, options.onMetric, options.now]);
+  const runner = useMemo(() => new AutomationStudioLazyPreloadRunner(api, options), [api, options.maxTaskCount, options.maxConcurrency, options.scheduler, options.isInputPending, options.onMetric, options.now]);
   const signature = automationStudioLazyPreloadInputSignature(input);
   const latestInput = useRef(input);
   latestInput.current = input;
@@ -220,18 +236,7 @@ export function automationStudioLazyPreloadInputSignature(input: AutomationStudi
 }
 
 export function scheduleAutomationStudioPreloadWork(callback: () => void, timeoutMs: number): () => void {
-  if (typeof window !== "undefined") {
-    const idleWindow = window as Window & {
-      requestIdleCallback?: (handler: IdleRequestCallback, options?: IdleRequestOptions) => number;
-      cancelIdleCallback?: (handle: number) => void;
-    };
-    if (idleWindow.requestIdleCallback) {
-      const handle = idleWindow.requestIdleCallback(() => callback(), { timeout: timeoutMs });
-      return () => idleWindow.cancelIdleCallback?.(handle);
-    }
-  }
-  const handle = setTimeout(callback, Math.min(Math.max(timeoutMs, 1), 250));
-  return () => clearTimeout(handle);
+  return scheduleAutomationStudioAfterPaintIdleWork(callback, timeoutMs);
 }
 
 function stablePreloadStringify(value: unknown): string {

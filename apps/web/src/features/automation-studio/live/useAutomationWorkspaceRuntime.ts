@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { CurrentUser } from "../../programs/types";
 import type { AutomationStudioUiCachePort } from "../workspace/cache";
-import type { useAutomationStudioStoreOwners } from "../stores";
+import type { AutomationWorkspaceRenderStore } from "../workspace/render-store";
 import { createAutomationWorkspaceCommandPort } from "../workspace/commands/port";
 import { createAutomationWorkspaceCommands } from "../workspace/commands/workspace-commands";
 import { createAutomationWarmViewRegistry } from "../workspace/commands/warm-activation";
@@ -11,15 +11,12 @@ import { normalizeAutomationWorkspacePrefs, type AutomationWorkspacePrefs } from
 import { persistentAutomationWorkspacePrefs } from "../model/workspace-persistence";
 import { automationWorkspacePrefsSameRuntimeState } from "../model/workspace-persistence";
 
-type StoreOwners = ReturnType<typeof useAutomationStudioStoreOwners>;
-
-
 export type AutomationWorkspaceRuntimeOptions = {
   activeProjectId: string | null;
   currentUserId: CurrentUser["id"];
   loadedProjectHierarchyId: string | null;
   uiCache: AutomationStudioUiCachePort;
-  workspaceRenderStore: StoreOwners["workspaceRenderStore"];
+  workspaceRenderStore: AutomationWorkspaceRenderStore;
 };
 
 export function useAutomationWorkspaceRuntime(options: AutomationWorkspaceRuntimeOptions) {
@@ -42,7 +39,9 @@ export function useAutomationWorkspaceRuntime(options: AutomationWorkspaceRuntim
         queue.timeout = null;
         const commits = queue.commits.splice(0);
         queue.flushing = true;
-        try { commits.forEach((queuedCommit) => queuedCommit()); }
+        try {
+          commits.forEach((queuedCommit) => queuedCommit());
+        }
         finally { queue.flushing = false; }
       }, 0);
     });
@@ -58,7 +57,6 @@ export function useAutomationWorkspaceRuntime(options: AutomationWorkspaceRuntim
     [options.activeProjectId]
   );
   const port = useMemo(() => createAutomationWorkspaceCommandPort(options.workspaceRenderStore, {
-    schedule,
     onCommit: (prefs, commit) => {
       if (!options.activeProjectId || options.loadedProjectHierarchyId !== options.activeProjectId) return;
       const durablePrefs = persistentAutomationWorkspacePrefs(prefs);
@@ -80,9 +78,8 @@ export function useAutomationWorkspaceRuntime(options: AutomationWorkspaceRuntim
     options.loadedProjectHierarchyId,
     options.uiCache,
     options.workspaceRenderStore,
-    schedule
   ]);
-  const commands = useMemo(() => createAutomationWorkspaceCommands({ port, warm }), [port, warm]);
+  const commands = useMemo(() => createAutomationWorkspaceCommands({ port }), [port]);
 
   const updatePrefs = useCallback((
     updater: (current: AutomationWorkspacePrefs) => AutomationWorkspacePrefs,

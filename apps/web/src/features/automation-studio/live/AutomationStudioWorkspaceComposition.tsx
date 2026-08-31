@@ -1,8 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, type ComponentProps, type ReactNode } from "react";
+import { memo, useMemo, type ComponentProps, type ReactNode } from "react";
 import type { CurrentUser } from "../../programs/types";
-import { AutomationCanonicalViewPublishers, type AutomationCanonicalViewPublisherInputs } from "./view-host";
 import { createAutomationWorkspaceViewSource } from "../workspace/shell/view-source";
 import { AutomationStudioWorkspaceSurface } from "./AutomationStudioWorkspaceSurface";
 import { AutomationStudioOverlays } from "../workspace/overlays";
@@ -11,7 +10,7 @@ import { automationViewAdderOptions } from "../workspace/view-adder";
 import type { AutomationViewInstance } from "../views/view-types";
 import type { AutomationSelection } from "../shared/selection-contracts";
 import type { AutomationWorkspaceArea, AutomationWorkspacePrefs } from "../workspace/layout";
-import type { AutomationWorkspaceBreadcrumb } from "../workspace/shell/contracts";
+import type { AutomationWorkspaceBreadcrumb, AutomationWorkspaceViewEntry } from "../workspace/shell/contracts";
 import type { createAutomationWorkspaceCommands } from "../workspace/commands/workspace-commands";
 import type { createAutomationWorkspaceCommandPort } from "../workspace/commands/port";
 import type { createAutomationWarmViewRegistry } from "../workspace/commands/warm-activation";
@@ -25,9 +24,11 @@ type WarmRegistry = ReturnType<typeof createAutomationWarmViewRegistry>;
 type ProjectBinding = {
   id: string;
   name: string;
-  selectedFlow: boolean;
-  selectedRecording: boolean;
-  selection: AutomationSelection | null;
+  getViewAdderContext(): {
+    selectedFlow: boolean;
+    selectedRecording: boolean;
+    selection: AutomationSelection | null;
+  };
 };
 type WorkspaceBinding = {
   commands: WorkspaceCommands;
@@ -37,11 +38,13 @@ type WorkspaceBinding = {
   studioUiStore: Owners["studioUiStore"];
   updatePrefs: (updater: (current: AutomationWorkspacePrefs) => AutomationWorkspacePrefs, options?: { persist?: boolean }) => void;
 };
-type ViewBinding = {
-  inputs: AutomationCanonicalViewPublisherInputs;
+type ViewBindingBase = {
   instances: AutomationViewInstance[];
   openIds: ReadonlySet<string>;
   resolveBreadcrumbs: (viewId: string) => AutomationWorkspaceBreadcrumb[];
+};
+type ViewBinding = ViewBindingBase & {
+  entries: readonly AutomationWorkspaceViewEntry[];
 };
 type HeaderBinding = {
   closeProject: () => void;
@@ -63,23 +66,33 @@ export type AutomationStudioWorkspaceCompositionProps = {
   inspector: InspectorBinding;
 };
 
-export function AutomationStudioWorkspaceComposition(props: AutomationStudioWorkspaceCompositionProps) {
-  const source = useMemo(() => createAutomationWorkspaceViewSource(), []);
+export const AutomationStudioWorkspaceComposition = memo(function AutomationStudioWorkspaceComposition(
+  props: AutomationStudioWorkspaceCompositionProps
+) {
+  const source = useMemo(
+    () => createAutomationWorkspaceViewSource(
+      props.views.entries.map((entry) => [entry.view.id, entry] as const)
+    ),
+    [props.views.entries]
+  );
   const overlays = useAutomationStudioLiveOverlays({
     activeProjectId: props.project.id,
     getPreferences: props.workspace.store.getPrefs,
     getPreferencesSaveStatus: props.workspace.store.getSaveStatus,
-    getViewAdderOptions: (area) => automationViewAdderOptions(
-      props.views.instances,
-      area,
-      {
-        hasProject: true,
-        hasFlow: props.project.selectedFlow,
-        hasRecording: props.project.selectedRecording,
-        hasSelection: Boolean(props.project.selection)
-      },
-      props.views.openIds
-    ),
+    getViewAdderOptions: (area) => {
+      const context = props.project.getViewAdderContext();
+      return automationViewAdderOptions(
+        props.views.instances,
+        area,
+        {
+          hasProject: true,
+          hasFlow: context.selectedFlow,
+          hasRecording: context.selectedRecording,
+          hasSelection: Boolean(context.selection)
+        },
+        props.views.openIds
+      );
+    },
     replacePreferences: (command) => {
       props.workspace.updatePrefs(() => command.prefs as AutomationWorkspacePrefs, { persist: true });
     },
@@ -112,11 +125,13 @@ export function AutomationStudioWorkspaceComposition(props: AutomationStudioWork
     activateBreadcrumb: props.header.activateBreadcrumb,
     openDataInspector: overlays.openDataInspector,
     openPreferences: overlays.openPreferences
-  }), [overlays, props.header]);
-  const inspector = useMemo(() => ({ api: props.inspector.api, cacheStats: props.inspector.cacheStats }), [props.inspector]);
+  }), [overlays, props.header.activateBreadcrumb, props.header.closeProject]);
+  const inspector = useMemo(
+    () => ({ api: props.inspector.api, cacheStats: props.inspector.cacheStats }),
+    [props.inspector.api, props.inspector.cacheStats]
+  );
 
   return <>
-    <AutomationCanonicalViewPublishers inputs={props.views.inputs} source={source} />
     <AutomationStudioWorkspaceSurface
       chrome={chrome}
       commands={props.workspace.commands}
@@ -139,7 +154,7 @@ export function AutomationStudioWorkspaceComposition(props: AutomationStudioWork
       store={overlays.store}
     />
   </>;
-}
+});
 
 function rect(anchor: DOMRect) {
   return { top: anchor.top, right: anchor.right, bottom: anchor.bottom, left: anchor.left };

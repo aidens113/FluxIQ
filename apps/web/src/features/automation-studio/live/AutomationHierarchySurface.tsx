@@ -57,12 +57,10 @@ export function AutomationHierarchySurface(props: AutomationHierarchySurfaceProp
     const activePane = prefs.panes.find((pane) => pane.id === prefs.activePaneId) ?? prefs.panes[0];
     return {
       activeViewId: activePane?.activeViewId ?? prefs.activeViewId,
-      collapsed: prefs.leftSidebarCollapsed,
-      sidebarWidth: prefs.sidebarWidth
+      collapsed: prefs.leftSidebarCollapsed
     };
   }, (left, right) => left.activeViewId === right.activeViewId
-    && left.collapsed === right.collapsed
-    && left.sidebarWidth === right.sidebarWidth);
+    && left.collapsed === right.collapsed);
   const projectId = props.projectId ?? null;
   const staticMergeRef = useRef<AutomationHierarchyStaticMergeInput>(staticMerge(props));
   staticMergeRef.current = staticMerge(props);
@@ -101,8 +99,6 @@ export function AutomationHierarchySurface(props: AutomationHierarchySurfaceProp
       coordinator={props.coordinator}
       nodes={pagingState.nodes}
       onCloseProject={props.onCloseProject}
-      onResizeKeyDown={() => undefined}
-      onResizePointerDown={() => undefined}
       onToggleCollapsed={() => {
         props.port.commit(
           (current) => ({ ...current, leftSidebarCollapsed: !current.leftSidebarCollapsed }),
@@ -117,7 +113,6 @@ export function AutomationHierarchySurface(props: AutomationHierarchySurfaceProp
       selection={props.selection}
       setRecordingPrimaryKind={props.setRecordingPrimaryKind}
       setSelection={props.setSelection}
-      sidebarWidth={workspace.sidebarWidth}
       {...(pagingState.childPageInfo ? { childPageInfo: pagingState.childPageInfo } : {})}
       {...(pagingState.loadMoreChildren ? { loadMoreChildren: pagingState.loadMoreChildren } : {})}
     />

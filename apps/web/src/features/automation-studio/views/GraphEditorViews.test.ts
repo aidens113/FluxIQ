@@ -140,27 +140,28 @@ describe("Nodes whiteboard toolbar and outline", () => {
     expect(source).toContain("automationGraphRevisionSignature");
     expect(source).toContain("automationGraphMiniMapNodeColor");
     expect(source).toContain("const nodesById = new Map");
-    expect(source).toContain("props.onOpenProblems()");
+    expect(source).toContain("currentProps.onOpenProblems()");
     expect(source).not.toContain("startTransition");
-    expect(source).toContain("props.setSelection(");
+    expect(source).toContain("currentProps.setSelection(");
     expect(source).not.toContain("publishAutomationGraphSelection");
     expect(source).not.toContain("automation-studio:update-node-parameters");
     expect(source).toContain("publishFlowSelection");
-    expect(source).toContain("setSelectedFlowNodeIds((current)");
+    expect(source).toContain("setSelectedFlowNodeIds(");
     expect(source).toContain("sameStringList(current, [node.id])");
-    const nodeClickStart = source.indexOf("onNodeClick={(event, node) =>");
-    const selectionChangeStart = source.indexOf("onSelectionChange=", nodeClickStart);
-    const selectionChangeEnd = source.indexOf("<Background", selectionChangeStart);
+    const nodeClickStart = source.indexOf("const selectClickedFlowNode:");
+    const selectionChangeStart = source.indexOf("const previewFlowViewport", nodeClickStart);
+    const selectionChangeEnd = source.indexOf("const validateFlowGraph", selectionChangeStart);
     expect(nodeClickStart).toBeGreaterThan(0);
     expect(selectionChangeStart).toBeGreaterThan(nodeClickStart);
     const nodeClickSource = source.slice(nodeClickStart, selectionChangeStart);
     const selectionChangeSource = source.slice(selectionChangeStart, selectionChangeEnd);
     expect(nodeClickSource).toContain("flowSelectionRef.current = `node:${node.id}`");
-    expect(nodeClickSource).toContain("publishFlowSelection(flowCanvasSelectionForNode(node))");
-    expect(nodeClickSource).not.toContain("props.setSelection(");
+    expect(nodeClickSource).toContain("currentSelection.publishFlowSelection(");
+    expect(nodeClickSource).toContain("currentSelection.flowCanvasSelectionForNode(node)");
+    expect(nodeClickSource).not.toContain("currentProps.setSelection(");
     expect(nodeClickSource).not.toContain("setTransientFlowNodes");
     expect(nodeClickSource).not.toContain("setTransientFlowEdges");
-    expect(selectionChangeSource).not.toContain("props.setSelection(");
+    expect(selectionChangeSource).not.toContain("currentProps.setSelection(");
   });
 });
 describe("Node palette", () => {
@@ -255,6 +256,12 @@ describe("Flow editor decomposition contracts", () => {
     "../flow-editor/useFlowEditorPalette.ts",
   ];
 
+  it("keeps active-tab changes behind the Flow editor render boundary", () => {
+    const source = readFileSync(new URL("../flow-editor/FlowEditorView.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("memo(function FlowEditorView");
+  });
+
   it("keeps implementation modules below the hard source limit", () => {
     for (const path of implementationFiles) {
       const source = readFileSync(new URL(path, import.meta.url), "utf8");
@@ -281,13 +288,16 @@ describe("Flow editor decomposition contracts", () => {
   });
   it("preserves the established pointer contract", () => {
     const canvas = readFileSync(new URL("../flow-editor/FlowGraphCanvas.tsx", import.meta.url), "utf8");
-    const marquee = readFileSync(new URL("../graph/interaction-geometry.ts", import.meta.url), "utf8");
+    const interactions = readFileSync(new URL("../flow-editor/useFlowEditorCanvasInteractions.ts", import.meta.url), "utf8");
+    const controller = readFileSync(new URL("../flow-editor/flow-canvas-interaction-controller.ts", import.meta.url), "utf8");
     expect(canvas).toContain("panOnDrag={automationGraphMiddleMousePanButtons}");
     expect(canvas).toContain("selectionOnDrag={false}");
     expect(canvas).toContain("onPointerDownCapture={startFlowDragSelect}");
-    expect(canvas).toContain("onNodeClick={(event, node) =>");
-    expect(canvas).toContain("if (event.button !== 0) return");
-    expect(marquee).toContain("options.event.button !== 2");
-    expect(marquee).toContain('.closest(".react-flow__node, .react-flow__handle');
+    expect(canvas).toContain("onNodeClick={selectClickedFlowNode}");
+    expect(canvas).toContain("onNodeContextMenu={reserveFlowNodeContextMenu}");
+    expect(interactions).toContain("if (event.button !== 0) return");
+    expect(interactions).toContain("event.button !== 2");
+    expect(interactions).toContain('".react-flow__node, .react-flow__handle');
+    expect(controller).toContain("marqueeMovementThreshold");
   });
 });

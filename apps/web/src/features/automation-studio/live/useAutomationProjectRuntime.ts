@@ -19,7 +19,7 @@ type Options = {
   pathname: string;
   activeProjectId: string | null;
   urlProjectId: string | null;
-  foundation: Pick<Foundation, "projectDataPlatform" | "uiCache" | "liveCommands" | "requests"> & {
+  foundation: Pick<Foundation, "projectDataPlatform" | "projectGeneration" | "uiCache" | "liveCommands" | "requests"> & {
     stores: Foundation["owners"]["studioStores"];
   };
   hierarchy: {
@@ -89,6 +89,7 @@ export function useAutomationProjectRuntime(options: Options) {
   const clear = useCallback((projectId: string | null) => { cancel(projectId); reset(null); }, [cancel, reset]);
   const commit = useCallback((projectId: string, hydration: AutomationProjectHydration) => {
     if (activeProjectRef.current !== projectId) return;
+    const commitGeneration = options.foundation.projectGeneration.current();
     const loadedPrefs = normalizeAutomationWorkspacePrefs(hydration.hierarchy.workspacePrefs ?? defaultAutomationWorkspacePrefs());
     options.hierarchy.setCustomNodes(hydration.hierarchy.customHierarchyNodes);
     options.hierarchy.setDeletedIds(hydration.hierarchy.deletedHierarchyIds);
@@ -99,7 +100,7 @@ export function useAutomationProjectRuntime(options: Options) {
       userId: options.currentUserId,
       durablePrefs: loadedPrefs,
       onHydrate: (cachedPrefs) => {
-        if (activeProjectRef.current !== projectId) return;
+        if (activeProjectRef.current !== projectId || !options.foundation.projectGeneration.isCurrent(commitGeneration)) return;
         options.workspace.replacePrefs((current) => automationWorkspacePrefsSameRuntimeState(current, cachedPrefs) ? current : cachedPrefs);
       }
     });
@@ -107,7 +108,9 @@ export function useAutomationProjectRuntime(options: Options) {
       projectId,
       userId: options.currentUserId,
       onHydrate: (sidebar) => {
-        if (activeProjectRef.current === projectId) options.hierarchy.hydrateSidebar(sidebar);
+        if (activeProjectRef.current === projectId && options.foundation.projectGeneration.isCurrent(commitGeneration)) {
+          options.hierarchy.hydrateSidebar(sidebar);
+        }
       }
     });
     options.hierarchy.markPersisted({
@@ -119,6 +122,7 @@ export function useAutomationProjectRuntime(options: Options) {
     options.hierarchy.setLoadedProjectId(projectId);
   }, [applySummary, options]);
   const lifecycle = useAutomationProjectLifecycle({
+    generation: options.foundation.projectGeneration,
     adapters: {
       publishOpening(projectId) {
         cancel(activeProjectRef.current);
@@ -144,33 +148,46 @@ export function useAutomationProjectRuntime(options: Options) {
   }, [options.foundation.projectDataPlatform]);
   const refreshRuntime = useCallback(async (projectId = options.activeProjectId) => {
     if (!projectId) return;
+    const generation = options.foundation.projectGeneration.current();
     const summary = await options.foundation.requests.runLatest("runtime-summary", (signal) => options.foundation.projectDataPlatform.loadRuntimeSummary(projectId, signal));
-    if (summary === undefined || activeProjectRef.current !== projectId) return;
+    if (summary === undefined || activeProjectRef.current !== projectId || !options.foundation.projectGeneration.isCurrent(generation)) return;
     return applySummary(summary);
   }, [applySummary, options.activeProjectId, options.foundation.projectDataPlatform, options.foundation.requests]);
   const loadFlowDetails = useCallback(async (flowId: string) => {
     if (!flowId) return null;
+    const generation = options.foundation.projectGeneration.current();
     const outcome = await options.foundation.liveCommands.loadFlowDetail<any>(flowId);
-    if (outcome.status !== "success") return null;
+    if (outcome.status !== "success" || !options.foundation.projectGeneration.isCurrent(generation)) return null;
     options.schedule(() => options.data.setProjectFlows((current: any[]) => mergeFlowDetails(current, [{ source: "canonical", readOnly: false, flow: outcome.value.flow }])));
     return outcome.value.flow;
   }, [options.data, options.foundation.liveCommands, options.schedule]);
   const loadNodeDefinitions = useCallback(async () => {
+    const generation = options.foundation.projectGeneration.current();
     const outcome = await options.foundation.liveCommands.loadNodeDefinitions<any>();
-    if (outcome.status !== "success") return;
+    if (outcome.status !== "success" || !options.foundation.projectGeneration.isCurrent(generation)) return;
     options.schedule(() => {
       options.data.setNativeNodeDefinitions((current: any) => current === outcome.value.native ? current : outcome.value.native);
       options.data.setPublishedFlowDefinitions((current: any) => current === outcome.value.published ? current : outcome.value.published);
     });
   }, [options.data, options.foundation.liveCommands, options.schedule]);
   const loadTimeline = useCallback(async (recordingId: string) => {
+    const generation = options.foundation.projectGeneration.current();
     const timeline = await options.foundation.liveCommands.loadLatestNormalizedTimeline<any>(recordingId);
-    if (timeline) options.data.setProjectTimelines((current: any[]) => mergeById([timeline], current, "normalizedTimelineId"));
+    if (timeline && options.foundation.projectGeneration.isCurrent(generation)) {
+      options.data.setProjectTimelines((current: any[]) => mergeById([timeline], current, "normalizedTimelineId"));
+    }
     return timeline;
   }, [options.data, options.foundation.liveCommands]);
   const loadRecording = useCallback(async (recordingId: string) => {
+    const generation = options.foundation.projectGeneration.current();
     const recording = await options.foundation.liveCommands.loadRecordingDetail<any>(recordingId);
-    if (recording) options.schedule(() => options.data.setProjectRecordings((current: any[]) => mergeRecordingDetail(current, recording)));
+    if (recording && options.foundation.projectGeneration.isCurrent(generation)) {
+      options.schedule(() => {
+        if (options.foundation.projectGeneration.isCurrent(generation)) {
+          options.data.setProjectRecordings((current: any[]) => mergeRecordingDetail(current, recording));
+        }
+      });
+    }
     return recording;
   }, [options.data, options.foundation.liveCommands, options.schedule]);
   return { ...lifecycle, activeProjectRef, loadFlowDetails, loadNodeDefinitions, loadRecording, loadTimeline, notifyChanged, refreshRuntime };

@@ -149,9 +149,9 @@ export function useFlowEditorGraphDocument(props: FlowEditorProps) {
     if (!nodeId) return;
     const currentNode = flowNodesRef.current.find((node) => node.id === nodeId);
     if (!currentNode) return;
-    const parametersChanged = props.selectedNode?.parameterValues !== undefined
-      && JSON.stringify(currentNode.data.parameterValues ?? {})
-        !== JSON.stringify(props.selectedNode.parameterValues);
+    const selectedParameterValues = props.selectedNode?.parameterValues;
+    const parametersChanged = selectedParameterValues !== undefined
+      && currentNode.data.parameterValues !== selectedParameterValues;
     const descriptionChanged = props.selectedNode?.customDescription !== undefined
       && currentNode.data.customDescription !== props.selectedNode.customDescription;
     if (!parametersChanged && !descriptionChanged) return;
@@ -161,7 +161,7 @@ export function useFlowEditorGraphDocument(props: FlowEditorProps) {
       data: {
         ...node.data,
         ...(parametersChanged
-          ? { parameterValues: props.selectedNode.parameterValues }
+          ? { parameterValues: selectedParameterValues }
           : {}),
         ...(descriptionChanged
           ? { customDescription: props.selectedNode.customDescription }
