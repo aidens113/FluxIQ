@@ -5,12 +5,12 @@ import { automationStudioViewId } from "../views/view-registry";
 import { useStableAutomationEvent } from "./useStableAutomationEvent";
 
 type WorkspacePrefs = { viewStates?: Record<string, Record<string, unknown>> };
-type ReadinessTarget = "problems" | "instructions" | "router" | "nodes";
+type ReadinessTarget = "instructions" | "router" | "nodes" | "subflows";
 
 export function useAdaptationWorkspaceNavigation(options: {
   selectedFlowId?: string;
   updatePrefs(update: (current: WorkspacePrefs) => WorkspacePrefs): void;
-  openView(viewId: string, mode?: "preview" | "new-window"): void;
+  openView(viewId: string, mode?: "preview" | "new-pane-or-focus"): void;
   openProblems(): void;
   setSelection(selection: AutomationSelection): void;
 }) {
@@ -37,12 +37,13 @@ export function useAdaptationWorkspaceNavigation(options: {
     persistSelection(options.selectedFlowId, adaptationId);
   });
   const openReadinessTarget = useStableAutomationEvent((target: ReadinessTarget) => {
-    if (target === "problems") return options.openProblems();
     options.openView(target === "instructions"
       ? automationStudioViewId.instructions
       : target === "router"
         ? automationStudioViewId.router
-        : automationStudioViewId.flowEditor, "preview");
+        : target === "subflows"
+          ? automationStudioViewId.subflows
+          : automationStudioViewId.flowEditor, "preview");
   });
 
   return { openAdaptation, openReadinessTarget, selectAdaptation };

@@ -6,6 +6,8 @@ import type { IdentityAccessSnapshotResponse, User } from "fluxiq/identity-acces
 import { useProgramApi, type ApiResponse, type JsonObject } from "../program-api";
 import { DataTable, EmptyState, Field, KeyValue, LoadingState, Menu, Modal, Panel, Segmented, StatusBadge, StatusText, VisualAlert, type AlertTone } from "../shared-ui";
 import type { CurrentUser } from "../types";
+import { OperationBusyBoundary, useOperationLock } from "../use-operation-lock";
+import { reconcileVisibleSelection } from "../program-selection";
 import { copyText, digits, emptyCredentialEdit, formatTime } from "./shared";
 
 type IdentityView = "Users" | "Roles" | "Authentication Policy";
@@ -42,31 +44,44 @@ export function IdentityAccessLive({ currentUser }: { currentUser: CurrentUser }
   const [roleEdit, setRoleEdit] = useState<{ userId: string; roleId: string; password: string; pin: string; totp: string } | null>(null);
   const [roleAlert, setRoleAlert] = useState<{ tone: AlertTone; message: string } | null>(null);
   const [totpDisable, setTotpDisable] = useState<{ userId: string; authorizationPassword: string; authorizationPin: string; authorizationTotp: string; error: string } | null>(null);
+  const operation = useOperationLock();
 
-  const refresh = useCallback(async () => setSnapshot(await api.get<IdentityAccessSnapshotResponse>("snapshot")), [api]);
-  useEffect(() => void refresh(), [refresh]);
+  const refresh = useCallback(async (signal?: AbortSignal) => {
+    const result = await api.get<IdentityAccessSnapshotResponse>("snapshot", signal ? { signal } : {});
+    if (!result.aborted) setSnapshot(result);
+  }, [api]);
+  useEffect(() => { const controller = new AbortController(); void refresh(controller.signal); return () => controller.abort(); }, [refresh]);
   const users = snapshot?.payload?.users ?? [];
   const roles = snapshot?.payload?.roles ?? [];
   const sessions = snapshot?.payload?.sessions ?? [];
-  const selectedUser = users.find((user) => user.id === selectedUserId) ?? users[0];
   const actorUser = users.find((user) => user.id === currentUser.id);
   const actorPinConfigured = Boolean(actorUser?.pinConfigured);
   const filteredUsers = useMemo(() => visibleIdentityUsers(users, query, enabledFilter), [enabledFilter, query, users]);
+  const visibleUserId = reconcileVisibleSelection(filteredUsers, selectedUserId, (user) => user.id);
+  const selectedUser = filteredUsers.find((user) => user.id === visibleUserId);
+  useEffect(() => {
+    const nextId = selectedUser?.id ?? "";
+    if (selectedUserId !== nextId) setSelectedUserId(nextId);
+  }, [selectedUser?.id, selectedUserId]);
 
   async function createUser() {
-    const result = await api.post("create-user", newUser);
-    if (!result.ok) { setStatus(result.error ?? "Create failed"); return; }
-    setStatus("User created");
-    setNewUser({ username: "", displayName: "", roleId: "viewer", password: "", pin: "", enabled: true });
-    setCreateOpen(false);
-    await refresh();
+    await operation.run("create-user", async () => {
+      const result = await api.post("create-user", newUser);
+      if (!result.ok) { setStatus(result.error ?? "Create failed"); return; }
+      setStatus("User created");
+      setNewUser({ username: "", displayName: "", roleId: "viewer", password: "", pin: "", enabled: true });
+      setCreateOpen(false);
+      await refresh();
+    });
   }
 
   async function updateUser(user: User, patch: JsonObject) {
-    const result = await api.post("update-user", { id: user.id, ...patch });
-    setStatus(result.ok ? "User updated" : result.error ?? "Update failed");
-    if (result.ok) await refresh();
-    return result.ok;
+    return operation.run("update-user", async () => {
+      const result = await api.post("update-user", { id: user.id, ...patch });
+      setStatus(result.ok ? "User updated" : result.error ?? "Update failed");
+      if (result.ok) await refresh();
+      return result.ok;
+    });
   }
 
   async function saveProfile() {
@@ -78,40 +93,52 @@ export function IdentityAccessLive({ currentUser }: { currentUser: CurrentUser }
 
   async function saveRoleEdit() {
     if (!roleEdit) return;
-    const result = await api.post("update-user", { id: roleEdit.userId, roleId: roleEdit.roleId, authorizationPassword: roleEdit.password, authorizationPin: roleEdit.pin, authorizationTotp: roleEdit.totp });
-    if (result.ok) { setStatus("Role updated"); setRoleAlert(null); setRoleEdit(null); await refresh(); }
-    else setRoleAlert({ tone: "error", message: result.error ?? "Role update failed." });
+    await operation.run("update-role", async () => {
+      const result = await api.post("update-user", { id: roleEdit.userId, roleId: roleEdit.roleId, authorizationPassword: roleEdit.password, authorizationPin: roleEdit.pin, authorizationTotp: roleEdit.totp });
+      if (result.ok) { setStatus("Role updated"); setRoleAlert(null); setRoleEdit(null); await refresh(); }
+      else setRoleAlert({ tone: "error", message: result.error ?? "Role update failed." });
+    });
   }
 
   async function saveCredential() {
     if (!selectedUser || !credentialEdit || credentialEdit.value !== credentialEdit.confirm) { setCredentialAlert({ tone: "error", message: "Credential values must match." }); return; }
-    const endpoint = credentialEdit.kind === "password" ? "set-password" : "set-pin";
-    const result = await api.post(endpoint, { userId: selectedUser.id, value: credentialEdit.value, authorizationPassword: credentialEdit.authorizationPassword, authorizationPin: credentialEdit.authorizationPin, authorizationTotp: credentialEdit.authorizationTotp });
-    if (result.ok) { setStatus(credentialEdit.kind + " updated"); setCredentialAlert(null); setCredentialEdit(null); await refresh(); }
-    else setCredentialAlert({ tone: "error", message: result.error ?? "Credential update failed." });
+    const draft = credentialEdit;
+    await operation.run("update-credential", async () => {
+      const endpoint = draft.kind === "password" ? "set-password" : "set-pin";
+      const result = await api.post(endpoint, { userId: selectedUser.id, value: draft.value, authorizationPassword: draft.authorizationPassword, authorizationPin: draft.authorizationPin, authorizationTotp: draft.authorizationTotp });
+      if (result.ok) { setStatus(draft.kind + " updated"); setCredentialAlert(null); setCredentialEdit(null); await refresh(); }
+      else setCredentialAlert({ tone: "error", message: result.error ?? "Credential update failed." });
+    });
   }
 
   async function beginTotp(userId = selectedUser?.id) {
     if (!userId) return;
-    const result = await api.post<{ secret: string; otpauthUrl: string; qrSvg: string; issuer: string; accountLabel: string }>("begin-totp", { userId });
-    if (result.ok) { setTotpSetup(result.payload ?? null); setTotpCode(""); setStatus("2FA setup started"); }
-    else setStatus(result.error ?? "2FA setup failed");
+    await operation.run("begin-totp", async () => {
+      const result = await api.post<{ secret: string; otpauthUrl: string; qrSvg: string; issuer: string; accountLabel: string }>("begin-totp", { userId });
+      if (result.ok) { setTotpSetup(result.payload ?? null); setTotpCode(""); setStatus("2FA setup started"); }
+      else setStatus(result.error ?? "2FA setup failed");
+    });
   }
 
   async function confirmTotp() {
     if (!selectedUser) return;
-    const result = await api.post("confirm-totp", { userId: selectedUser.id, code: totpCode });
-    setStatus(result.ok ? "2FA enabled" : result.error ?? "2FA confirmation failed");
-    if (result.ok) { setTotpSetup(null); await refresh(); }
+    await operation.run("confirm-totp", async () => {
+      const result = await api.post("confirm-totp", { userId: selectedUser.id, code: totpCode });
+      setStatus(result.ok ? "2FA enabled" : result.error ?? "2FA confirmation failed");
+      if (result.ok) { setTotpSetup(null); await refresh(); }
+    });
   }
 
   async function disableTotp() {
     if (!totpDisable) return;
-    const result = await api.post("disable-totp", totpDisable);
-    if (!result.ok) { setTotpDisable({ ...totpDisable, error: result.error ?? "2FA disable failed." }); return; }
-    setStatus("2FA disabled");
-    setTotpDisable(null);
-    await refresh();
+    const draft = totpDisable;
+    await operation.run("disable-totp", async () => {
+      const result = await api.post("disable-totp", draft);
+      if (!result.ok) { setTotpDisable({ ...draft, error: result.error ?? "2FA disable failed." }); return; }
+      setStatus("2FA disabled");
+      setTotpDisable(null);
+      await refresh();
+    });
   }
 
   function beginCredential(user: User, kind: "password" | "pin") {
@@ -124,20 +151,20 @@ export function IdentityAccessLive({ currentUser }: { currentUser: CurrentUser }
   if (!snapshot.ok) return <EmptyState title="Identity and access unavailable" description={snapshot.error ?? "The identity service could not be loaded."} action={<button className="button" onClick={() => void refresh()} type="button">Retry</button>} />;
 
   return (
-    <section className="identity-access-workspace">
+    <OperationBusyBoundary busy={operation.busy}><section aria-busy={operation.busy || undefined} className="identity-access-workspace">
       <header className="program-inner-header">
         <div><strong>Identity and Access</strong><span>Manage accounts, roles, credentials, and authentication policy.</span></div>
-        <StatusText value={status} />
+        <StatusText value={operation.activeOperation ? `Identity operation in progress: ${operation.activeOperation}` : status} />
       </header>
       <Segmented label="Identity and Access view" options={["Users", "Roles", "Authentication Policy"]} value={activeView} onChange={(value) => setActiveView(value as IdentityView)} />
 
       {activeView === "Users" ? <div className="identity-users-layout">
-        <Panel title="Users" action={<button className="button button-primary" onClick={() => setCreateOpen(true)} type="button"><UserPlus size={14} aria-hidden />Add User</button>}>
+        <Panel title="Users" action={<button className="button button-primary" disabled={operation.busy} onClick={() => setCreateOpen(true)} type="button"><UserPlus size={14} aria-hidden />Add User</button>}>
           <div className="program-list-toolbar">
             <label className="program-search-field"><Search size={14} aria-hidden /><input aria-label="Search users" onChange={(event) => setQuery(event.target.value)} placeholder="Search name, username, or role" type="search" value={query} /></label>
             <select aria-label="Filter users" onChange={(event) => setEnabledFilter(event.target.value as typeof enabledFilter)} value={enabledFilter}><option value="all">All users</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select>
           </div>
-          <DataTable columns={["User", "Role", "2FA", "Status", ""]} rows={filteredUsers.map((user) => {
+          <DataTable label="Identity users" columns={["User", "Role", "2FA", "Status", "Actions"]} rows={filteredUsers.map((user) => {
             const protectedAdmin = isLastEnabledAdmin(users, user);
             return [
               <button aria-current={selectedUser?.id === user.id ? "true" : undefined} className="identity-user-link" onClick={() => setSelectedUserId(user.id)} type="button"><strong>{user.displayName}</strong><small>@{user.username}</small></button>,
@@ -164,7 +191,7 @@ export function IdentityAccessLive({ currentUser }: { currentUser: CurrentUser }
         </Panel>
       </div> : null}
 
-      {activeView === "Roles" ? <Panel title="Roles and permissions"><DataTable columns={["Role", "Permissions", "Users"]} rows={roles.map((role) => [<strong key={role.id}>{role.id}</strong>, role.permissions.join(", "), String(users.filter((user) => user.roleId === role.id).length)])} empty="No roles are configured." /></Panel> : null}
+      {activeView === "Roles" ? <Panel title="Roles and permissions"><DataTable label="Identity roles and permissions" columns={["Role", "Permissions", "Users"]} rows={roles.map((role) => [<strong key={role.id}>{role.id}</strong>, role.permissions.join(", "), String(users.filter((user) => user.roleId === role.id).length)])} empty="No roles are configured." /></Panel> : null}
 
       {activeView === "Authentication Policy" ? <div className="identity-policy-grid">
         <Panel title="Authentication"><KeyValue rows={[["Password", "Required for account login and privileged authorization"], ["PIN", "Optional per user; required when configured"], ["Two-factor", "Optional per user; required for privileged authorization when enabled"], ["Session owner", currentUser.displayName], ["Active sessions", String(sessions.length)]]} /></Panel>
@@ -186,7 +213,7 @@ export function IdentityAccessLive({ currentUser }: { currentUser: CurrentUser }
       {totpDisable ? <Modal title="Disable Two-Factor Authentication" description={"Remove authenticator protection from " + (selectedUser?.displayName ?? "this user") + "."} onClose={() => setTotpDisable(null)}>{totpDisable.error ? <VisualAlert tone="error" title="Authorization failed" message={totpDisable.error} /> : null}<div className="dialog-form"><VisualAlert tone="warning" title="Security impact" message="This user will be able to sign in without an authenticator code after this change." /><AuthorizationFields currentUser={currentUser} pinConfigured={actorPinConfigured} value={totpDisable} onChange={(authorization) => setTotpDisable({ ...totpDisable, ...authorization, error: "" })} /></div><div className="modal-actions"><button className="button" onClick={() => setTotpDisable(null)} type="button">Cancel</button><button className="button button-danger" disabled={!totpDisable.authorizationPassword || (actorPinConfigured && totpDisable.authorizationPin.length < 4) || (currentUser.totpEnabled && totpDisable.authorizationTotp.length !== 6)} onClick={() => void disableTotp()} type="button">Disable 2FA</button></div></Modal> : null}
 
       {roleEdit ? <Modal title="Change Role" description="Changing permissions affects what this user can view and control." onClose={() => setRoleEdit(null)}>{roleAlert ? <VisualAlert tone={roleAlert.tone} title="Role update" message={roleAlert.message} /> : null}<div className="dialog-form"><Field label="Role" required><select data-autofocus value={roleEdit.roleId} onChange={(event) => setRoleEdit({ ...roleEdit, roleId: event.target.value })}>{roles.map((role) => <option key={role.id} value={role.id}>{role.id}</option>)}</select></Field><AuthorizationFields currentUser={currentUser} pinConfigured={actorPinConfigured} value={{ authorizationPassword: roleEdit.password, authorizationPin: roleEdit.pin, authorizationTotp: roleEdit.totp }} onChange={(value) => setRoleEdit({ ...roleEdit, password: value.authorizationPassword, pin: value.authorizationPin, totp: value.authorizationTotp })} /></div><div className="modal-actions"><button className="button" onClick={() => setRoleEdit(null)} type="button">Cancel</button><button className="button button-primary" disabled={!roleEdit.password || (actorPinConfigured && roleEdit.pin.length < 4) || (currentUser.totpEnabled && roleEdit.totp.length !== 6)} onClick={() => void saveRoleEdit()} type="button">Save Role</button></div></Modal> : null}
-    </section>
+    </section></OperationBusyBoundary>
   );
 }
 

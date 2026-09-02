@@ -19,6 +19,7 @@ import type { ClientGatewayActionCommand } from "../../../client-gateway/index.t
 export const AUTOMATION_STUDIO_ENDPOINTS = {
   performanceMetrics: "get-performance-metrics",
   snapshot: "snapshot",
+  listProjectProblems: "list-project-problems",
   projects: "projects",
   createProject: "create-project",
   updateProject: "update-project",
@@ -45,6 +46,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   createFlow: "create-flow",
   getFlow: "get-flow",
   saveFlow: "save-flow",
+  updateFlowSettings: "update-flow-settings",
   getGraphViewport: "get-graph-viewport",
   applyGraphPatch: "apply-graph-patch",
   listGraphRevisions: "list-graph-revisions",
@@ -104,6 +106,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   listRuntimeSessions: "list-runtime-sessions",
   getRuntimeSession: "get-runtime-session",
   listFlowSubflows: "list-flow-subflows",
+  listFlowSubflowTargets: "list-flow-subflow-targets",
   getFlowSubflow: "get-flow-subflow",
   createFlowSubflow: "create-flow-subflow",
   updateFlowSubflow: "update-flow-subflow",
@@ -122,11 +125,17 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   listFlowRuns: "list-flow-runs",
   getFlowRunDetail: "get-flow-run-detail",
   listFlowRunActions: "list-flow-run-actions",
+  getFlowRunActionDetail: "get-flow-run-action-detail",
   listFlowRunEvents: "list-flow-run-events",
+  getFlowRunEventDetail: "get-flow-run-event-detail",
   listFlowAdaptations: "list-flow-adaptations",
   getFlowAdaptation: "get-flow-adaptation",
   reviewFlowAdaptation: "review-flow-adaptation",
   getFlowRouter: "get-flow-router",
+  getFlowRouterSummary: "get-flow-router-summary",
+  listFlowRouterRoutes: "list-flow-router-routes",
+  listFlowRouterTargetReferences: "list-flow-router-target-references",
+  getFlowRouterGraphSummary: "get-flow-router-graph-summary",
   saveFlowMapRouteGroup: "save-flow-map-route-group",
   deleteFlowMapRouteGroup: "delete-flow-map-route-group",
   saveFlowMapRoute: "save-flow-map-route",
@@ -144,6 +153,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   validateRecordingDomainEvent: "validate-recording-domain-event",
   appendRecordingDomainEvent: "append-recording-domain-event",
   clientGatewaySnapshot: "client-gateway-snapshot",
+  listClientGatewayItems: "list-client-gateway-items",
   revokeClientTrust: "revoke-client-trust",
   startClientRecording: "start-client-recording",
   stopClientRecording: "stop-client-recording",
@@ -599,6 +609,7 @@ export type UpdateFlowSubflowRequest = FlowSubflowRequest & {
   outputMapping?: Array<{ subflowOutputId: string; flowOutputId: string; required?: boolean }>;
   localInstructionIds?: string[];
   proposalModeOverride?: string | null;
+  interventionModeOverride?: "fully_adaptive" | "manual_approval" | "no_llm_intervention" | null;
   graphFlowId?: string;
 };
 
@@ -691,11 +702,13 @@ export type FlowRunActionPageRequest = FlowProjectRequest & {
   runId: string;
   limit?: unknown;
   offset?: unknown;
+  cursor?: string | null;
 };
 
 export type FlowRunEventPageRequest = FlowProjectRequest & {
   runId: string;
   afterSequence?: unknown;
+  cursor?: string | null;
   limit?: unknown;
 };
 

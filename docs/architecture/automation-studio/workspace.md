@@ -9,8 +9,22 @@ authoring, runtime inspection, and view-local interaction.
 
 This document describes the currently accepted web architecture. It records
 ownership and runtime behavior rather than duplicating a working plan. The
-modular composition and ownership refactor is implemented; real-browser scale
-and responsiveness certification remains a separate, evidence-based gate.
+modular composition and ownership refactor is implemented. Real-browser scale,
+responsiveness, and resource certification is an evidence-based release gate
+that must be rerun after workspace interaction or lifecycle changes.
+
+## Browser Cache Certification
+
+Automation Studio UI cache entries are bounded at three levels: 500,000
+characters per entry, twenty retained projects, and 2,000,000 characters
+globally. The local backend evicts the oldest project envelopes and then the
+oldest remaining entries after each write. Phase 8 records these counts and
+sizes after fifty ten-view cycles; exceeding any bound fails certification.
+
+Resource telemetry is opt-in through the browser certification bootstrap. It
+counts live Automation Studio external-store subscriptions without changing
+normal production behavior and is paired with browser listener, DOM, heap,
+warm-view, frame, long-task, and React commit evidence.
 
 ## Architecture Direction
 
@@ -46,7 +60,7 @@ automation-studio/
   stores/         Normalized data, queries, selection, runtime, and transactions.
   presentation/   Atomic presentation transactions.
   workspace/      Workbench layout and view-slot UI state.
-  hierarchy/      Tree state, bounded rows, commands, and hierarchy UI.
+  hierarchy/      Tree state, flat virtualization, commands, and hierarchy UI.
   views/          Typed registry, canonical host, and retired-view recovery.
   graph/          Draft ownership, graph jobs, history, and worker scheduling.
   cache/          In-memory project resource cache.
@@ -110,15 +124,20 @@ Hierarchy mutations explicitly publish that save request even when layout state
 did not change. Project changes invalidate late save completion, and neither the
 revision signal nor signature construction rerenders `AutomationStudioSession`.
 
-Project data is normalized by stable ID. Pure project view-model and selection
-resolvers derive bounded summaries and reuse references when their inputs have
-not changed. The data store publishes collection, entity, detail, page, and
-resource scopes independently. The query store keys project, collection,
-filter, sort, page, and page size; it preserves ID references for equivalent
-results and distinguishes `missing`, `fresh`, and `stale` data.
+Project data is normalized by stable ID. One
+`AutomationProjectViewModelCache` is created for each open project session.
+Its key is the project identity plus project-data, selection, and workspace
+preference revisions. The Session, hierarchy, commands, and connected views
+read that shared cache; they do not create parallel whole-project selectors.
+The underlying pure selector preserves heavy hierarchy/index/source references
+when a revision changes without changing their inputs. The data store publishes
+collection, entity, detail, page, and resource scopes independently. The query
+store keys project, collection, filter, sort, page, and page size; it preserves
+ID references for equivalent results and distinguishes `missing`, `fresh`, and
+`stale` data.
 
-One residual aggregate reader is intentionally explicit:
-`createAutomationSessionProjectViewReader` reads the current project-data,
+`createAutomationSessionProjectViewReader` is a compatibility name for a thin
+reader over that project-scoped cache. It reads the current project-data,
 selection, and workspace snapshots imperatively. It has no React subscription
 and does not publish models into the ViewHost. The session currently takes one
 such snapshot during its own render for remaining orchestration hooks, and
@@ -141,10 +160,14 @@ Opening a project is shell-first and hydration-second:
 1. A project shell and loading surfaces publish synchronously.
 2. The lifecycle captures the project ID and a monotonically increasing
    generation.
-3. Summary and hierarchy hydration run asynchronously.
-4. A response may commit only when its project ID and generation are still
-   current.
-5. Switching or closing a project aborts requests and tears down project sync
+3. After resetting project-scoped UI state, opening captures separate workspace
+   preferences and hierarchy UI revision snapshots.
+4. Summary, durable workspace/hierarchy state, and UI-cache hydration run
+   asynchronously.
+5. A response may commit only when its project ID and generation are still
+   current. Durable or cached workspace/hierarchy state has the additional rule
+   that its surface revision must still match the captured revision.
+6. Switching or closing a project aborts requests and tears down project sync
    and cache subscriptions before clearing scoped state.
 
 The visible workspace selection is committed to scoped external stores before
@@ -204,11 +227,19 @@ UI-cache hydration enters the shared background queue only after a paint and an
 idle opportunity. Writes are debounced, coalesced by cache key, and capped;
 overflow evicts the oldest pending write. Cache and preload work repeatedly
 yield while browser input or an active user-visible request is pending. A
-project-generation guard rejects stale hydration, and project switch or close
-aborts queued work for that project. Warm mounted views preserve local React
-state in memory, but the cache does not persist arbitrary hydrated domain
-detail or make stale data authoritative. A cache miss changes the destination
-readiness surface; it must not delay visible selection or tab activation.
+project-generation guard rejects hydration for a closed or superseded project.
+Independent workspace preferences and hierarchy UI revisions reject a late
+durable or cache result after the user has changed that surface. The revision is
+captured after project reset, checked before durable state is applied, captured
+again before cache hydration, and checked again in the cache callback. Thus a
+tab/layout interaction cannot be reverted by late workspace preferences, and a
+selection, disclosure, filter, or sidebar interaction cannot be reverted by a
+late sidebar seed. A change on one surface does not suppress valid hydration on
+the other. Project switch or close aborts queued work for that project. Warm
+mounted views preserve local React state in memory, but the cache does not
+persist arbitrary hydrated domain detail or make stale data authoritative. A
+cache miss changes the destination readiness surface; it must not delay visible
+selection or tab activation.
 
 Mutation synchronization uses typed transactions, such as
 `subflow.changed`, rather than stringly typed window events. Transactions name
@@ -295,11 +326,53 @@ declared scopes, and may perform its required hydration. A hidden warm view
 remains mounted for the same project and pane so local scroll, draft, and
 disclosure state survive, but its connector returns retained model state and
 unsubscribes from project, query, runtime, and selection stores. A cold view
-whose lifecycle permits sleeping renders a stable opening surface without
-mounting the connector. Warm activity is project-keyed and reset on project
-change. View-source subscriptions are bounded to 64 exact IDs, and unknown,
-mismatched, or retired IDs render explicit recovery UI instead of silently
-redirecting or oscillating between tabs.
+is unmounted until activation, at which point its local readiness boundary owns
+the opening surface. Warm eligibility comes from the canonical view lifecycle.
+Warm activity is project-keyed and reset on project change.
+
+Tab selection is one synchronous workspace command and one authoritative React
+render. The tab container does not walk or mutate sibling DOM nodes, maintain a
+pending selection marker, start a timer, or schedule a second activation pass.
+`MountedViewStack` reads the selected view ID directly from the pane snapshot;
+the tab attributes and active mounted destination therefore change in the same
+commit. Data loading remains downstream of each destination's local readiness
+boundary and cannot delay that commit.
+
+Warm destinations stay mounted and preserve their local state. The mounted
+view stack uses fixed geometry and strict containment so activating a warm view
+does not resize the pane or remount its contents. Cold destinations mount when
+selected and own their loading surface. View activation does not use an
+`Opening view...` placeholder, animation-frame scheduler, idle callback, or
+React transition that can race a later selection.
+
+Warm retention uses access-order LRU. Desktop retains at most six warm view
+instances and constrained/narrow workspaces retain at most three. The active
+view and every dirty view are pinned and cannot be evicted; therefore the
+measurable bound is `configured cap + active/dirty pins` while those pins exist.
+The workspace runtime owns one lifecycle-scoped dirty-registry subscription for
+its project-local warm registry. A dirty-to-clean notification synchronously
+reconciles retention and immediately evicts the oldest eligible entries back to
+the configured cap; active and still-dirty entries remain pinned. Eviction
+removes the mounted view and its activity reference. The registry publishes only
+membership changes, so a warm revisit preserves local state without turning
+access-order updates into render work. View-source subscriptions are separately
+bounded to 64 exact IDs, and unknown, mismatched, or retired IDs render explicit
+recovery UI instead of silently redirecting or oscillating between tabs.
+
+## Connected View Identity
+
+`useAutomationConnectorCommands` wraps every domain command in a stable event
+callback and memoizes one command object per canonical view. The connected-entry
+cache compares the command object, project generation, connector scope, stores,
+and view instance. An unrelated selection, disclosure, menu, or pane action
+therefore reuses the entry object. If one view's command contract changes, only
+that entry changes.
+
+`useAutomationConnectedViewSource` owns exactly one source for a contiguous
+project session. Entry changes are reconciled into that source by view ID;
+subscribers of unchanged IDs are not notified. Changing projects creates a new
+source and project generation. The workspace composition receives the source
+as a port and never derives or replaces it from render-time props.
 
 Readiness is local to each destination. When a direct connector declares a
 query, it maps that exact query snapshot to `loading`, `empty`, `error`,
@@ -325,6 +398,23 @@ changes trigger the residual project snapshot reader described above;
 selection styling reads the selection store directly and does not rebuild the
 project projection for unrelated selection updates.
 
+The hierarchy projection first computes filtered visible IDs and then flattens
+only expanded rows into stable `{id, parentId, level}` records. The tree scroll
+owner materializes fixed 40-pixel rows for the viewport plus five rows of
+overscan on each side. Keyboard traversal uses the complete flat visible-row
+sequence rather than querying mounted DOM, scrolls an offscreen target into the
+window, and then restores roving focus. `aria-level`, `aria-posinset`,
+`aria-setsize`, `aria-expanded`, and `aria-selected` preserve tree meaning even
+though recursive DOM groups are not retained. SQL-owned child pages remain
+explicit Load More rows; already-loaded siblings are never hidden behind a
+second client-only row cap.
+
+Hierarchy navigation exposes two truthful modes. `preview` activates the
+chosen object in the current pane. `new-pane-or-focus` creates another main
+pane only when that view identity is not already open; otherwise it focuses
+the existing pane. The old `new-window` name was retired because the command
+never guaranteed a separate browser window or duplicate view instance.
+
 `AutomationStudioConnectedTimeline` reads normalized recording and timeline
 maps directly. Its selection snapshot reduces unrelated Flow, node, and
 settings selections to one stable `unrelated` key, so those changes do not
@@ -348,6 +438,17 @@ to the Flow editor; graph drafts, validation, history, and persistence are
 published at settled interaction boundaries.
 
 ## Overlay And Dialog Ownership
+
+All browser overlays register with the shared
+`features/programs/overlay-environment.ts` manager. It owns one document-level
+listener set, reference-counted scroll locking, body-sibling isolation, nested
+focus return, Escape handling, outside-pointer handling, and viewport-change
+notifications. `modal` and `drawer` registrations are modal and isolate the
+background; `menu` and `nonmodal` registrations do not claim `aria-modal`,
+inert the page, or lock scrolling. Nested menus remain available above their
+owning dialog, while a nested modal temporarily isolates the underlying modal.
+Shared Modal/Drawer primitives and Studio floating pickers must not install
+their own document listeners or sibling-isolation effects.
 
 The `workspace/overlays/` package provides a project-scoped overlay store,
 typed channel controller, atomic command dispatchers, and subscriber-owned
@@ -397,6 +498,58 @@ Every data-intensive view must keep prior usable content while refreshing when
 safe, distinguish loading from empty and error states, and preserve the user's
 selection when the selected entity remains present.
 
+### Canonical View Diagnostics Audit
+
+Ordinary workflows present labels, validation, and recoverable errors first.
+Technical identifiers, source documents, and raw payloads are secondary and
+must remain behind an explicit Details, JSON, or raw-state disclosure. The Data
+Flow Inspector is the only intentional implementation-diagnostics surface; it
+is a development-only overlay and is not a canonical workspace view.
+
+| Canonical view | Ordinary presentation | Technical detail policy |
+| --- | --- | --- |
+| Connected Clients | Searchable, server-paged client and pairing lists | Connection implementation details are collapsed |
+| Timeline | Recording events, notes, markers, lifecycle actions | No ordinary repair or raw-index controls |
+| Nodes | Graph authoring, selection, parameters, Problems | No implementation diagnostics in the canvas |
+| Router | Typed conditions, ordered routes, fallback behavior | Per-route details are collapsed |
+| Subflows | Searchable, paged directory and lifecycle actions | Stable IDs are secondary; no raw document editor |
+| Instructions | Scoped instruction editor and effective ordering | Complete instruction JSON is opt-in |
+| Adaptations | Summary, changed fields, evidence, and review actions | Complete adaptation and technical change JSON are opt-in |
+| Settings | Typed Flow/Subflow controls and revision-conflict recovery | Technical metadata, ownership IDs, and comparisons are disclosed |
+| State View | Visual, structured, diff, and compare modes | Raw state JSON is explicitly expanded and can be collapsed |
+| Runtime Debug | Typed run form, readiness, Runs/Replays, action summaries | Advanced input JSON and action/event payloads are opt-in |
+| Problems | User-facing validation and runtime Problems | No implementation telemetry is exposed |
+| Inspector | Typed selected-object sections and parameter controls | Identifier groups use collapsible sections |
+
+`canonical-diagnostics-disclosure.test.ts` keeps this table aligned with the
+registered canonical view IDs and enforces the single development-overlay
+allowlist.
+
+### Node Palette Preferences
+
+**Session Recent** is editor-session-only. It records the last twelve node
+types added by the currently mounted Nodes editor, is deduplicated in most
+recent order, and intentionally resets when that editor session is remounted or
+the browser session ends. It is not project data and is not synchronized.
+
+**Favorites** are persisted browser-neutral UI preferences through the Web
+Storage API. They are not tied to Chrome APIs, project persistence, or the
+framework database. Reads and writes tolerate unavailable browser storage;
+duplicates and node IDs no longer present in the active registry are removed.
+An empty Favorites view explains how to add the first favorite.
+
+The expanded palette uses independently expandable categories, so users can keep
+multiple node families visible while building a graph. Every expanded entry
+is a complete node card with its icon, name, description, compatibility hint,
+and favorite control; there is no separate preview card. Rich cards materialize
+one per animation frame into preallocated, fixed-height, independently
+contained slots. Opening a category therefore acknowledges the arrow
+immediately without repeatedly shifting or relaying out cards already shown.
+The palette is memoized from graph history and position updates, its Add
+callback has stable identity, and it occupies an absolutely positioned,
+strictly contained editor rail with reserved canvas space. Graph layout changes
+therefore do not relayout the palette's card tree.
+
 ## Interaction Model
 
 Flow-editor pointer behavior is direct:
@@ -411,6 +564,54 @@ Flow-editor pointer behavior is direct:
 High-frequency pointer movement must not publish global Studio state. Geometry
 may update locally during the gesture; persistence and broader store
 transactions occur at the committed boundary.
+
+Immediate graph edits use bounded local reconciliation. They do not run full
+viewport partitioning, graph serialization, or history diffs in the input
+handler. History and recovery-draft diffs run through the graph worker task
+boundary. Locally published drafts are recognized by identity and base revision
+so they are not reapplied as external graph documents. Node dimensions are
+stable before React Flow measures them, and the shell, pane, mounted view,
+canvas, frame, status rows, and palette provide explicit strict layout
+containment. These rules apply equally to node creation, selection, dragging,
+connections, undo, and warm tab revisits.
+
+During a node drag, FluxIQ coalesces React Flow's controlled position updates to
+at most one update per animation frame so connected edges follow the node without
+publishing a durable draft on every pointer event. On release, the final full node
+array is written to both the authoritative graph ref and React state before the
+history checkpoint, dirty state, and draft publication are committed. Lane
+rebalancing is excluded from the drag and reconnect paths.
+
+Start, End, and operational nodes share one card renderer and fixed geometry so
+every graph object has consistent information, port, and selection layout. The
+React Flow edge container and its SVG fill the viewport because Chromium does not
+paint route overflow from a zero-size or one-pixel SVG. New nodes are inserted at
+the exact center of the currently visible canvas without moving the camera.
+Implicit auto-pan is disabled for both node dragging and connection gestures,
+which prevents hidden viewport shifts and removes React Flow's continuous
+reconnect-time pan loop. During endpoint reconnection, raw mouse movement is
+coalesced to one React Flow update per animation frame and the library's linear
+candidate scan is scoped to mounted viewport nodes plus the current edge
+endpoints. The final pointer position is flushed before mouse-up so a fast drop
+cannot miss its target. Selected edges are elevated so their endpoint controls
+remain hit-testable beside selected node cards. Users retain explicit
+middle-mouse panning and Fit View.
+
+The canvas toolbar keeps Fit, history, Save, and Add available without covering
+the graph. Selection commands appear only while a graph object is selected.
+Zoom, validation, minimap, and outline controls live in the More menu. Every
+toolbar mutation checkpoints history, synchronizes visual selection, marks the
+graph dirty, and makes Save available; undo reconciles dirty state against the
+last saved graph signature.
+
+Graph saves send bounded node and edge operations through `apply-graph-patch`.
+The browser editor does not use the retired full-document save route.
+
+Flow edges use the port tone as their foreground stroke, a surface-colored
+contrast halo, rounded joins, and a closed directional marker. The foreground
+and halo are separate paths while the interaction path remains transparent and
+wide. Saved and newly connected routes use the same `automationEdge` renderer,
+so reloads cannot silently fall back to a visually different edge treatment.
 
 Sidebar selection and view activation publish their visible state
 synchronously. Data hydration follows independently. The selected row/tab and a
@@ -449,10 +650,21 @@ second instance of an already-open canonical view.
 
 ## Style Ownership
 
-`apps/web/src/app/globals.css` is an ordered import manifest. Automation Studio
-styles live under `automation-studio/styles/` in domain partials for workspace,
-Flow editor, Runtime, State, Router/Subflows, Recordings/Clients/Inspector, and
-Instructions/Settings/Adaptations/Problems.
+CSS has four explicit ownership levels:
+
+- `app/globals.css` imports only the global foundation and global program
+  primitives required on every route;
+- `app/programs/automation-studio/layout.tsx` owns the React Flow stylesheet
+  and the route-local `automation-studio.css` manifest;
+- `automation-studio/styles/workspace/` owns Studio shell, hierarchy, pane,
+  tab, and responsive-shell rules;
+- each Studio domain owns its individual view rules under its named style
+  directory.
+
+Automation Studio styles live under `automation-studio/styles/` in domain
+partials for workspace, Flow editor, Runtime, State, Router/Subflows,
+Recordings/Clients/Inspector, and Instructions/Settings/Adaptations/Problems.
+Non-Studio routes must not import the route manifest or React Flow stylesheet.
 
 Order is explicit because the existing cascade is part of the behavior. New
 selectors belong to their domain partial. A partial must stay below the
@@ -460,6 +672,21 @@ architecture line budget; `globals.css` must not regain feature selectors.
 Responsive rules stay with their owning domain, and changes must be checked at
 desktop and narrow widths for clipping, overflow, tab-strip space, modal
 visibility, and independent body scrolling.
+
+The Studio shell owns `calc(100dvh - 49px)` and has no fixed tall minimum.
+Shell, pane, tab-frame, and graph/timeline containers clip by design. The
+project gate, project hierarchy, ordinary active view, and preview sheet are
+the named vertical scroll owners; table wrappers may additionally own
+horizontal scrolling. At 820 CSS pixels and below the hierarchy and secondary
+regions use drawers, while 320-pixel layouts stack form and pagination actions.
+The executable matrix and golden-state procedure are documented in
+[Web Panel responsive and visual certification](../../operations/web-panel-responsive-visual-certification.md).
+
+Hierarchy controls use explicit role classes: `tree-row-main`,
+`tree-row-label`, `tree-row-disclosure`, `tree-row-action`, and
+`automation-sidebar-resizer`. Tree styles must not target every descendant
+`button`, because disclosure, object actions, pagination, menus, and resize
+controls have different geometry and interaction contracts.
 
 ## Performance Contracts
 
@@ -479,12 +706,19 @@ default:
 Generation is deterministic, linear in collection size, configurable, and
 capped at 50,000 items per collection to prevent accidental test exhaustion.
 Phase 11 also uses a one-million-logical-view-ID sentinel without allocating a
-million rendered views. Deterministic contracts establish a 100-row hierarchy
-window, 64 subscribed view IDs after examining at most 128 IDs, 25 run IDs per
-first page, stable selector/query identity, no-op notification suppression,
+million rendered views. Deterministic contracts establish a viewport-derived
+hierarchy window with 40-pixel rows and five-row overscan, six desktop or three
+constrained warm instances plus explicit active/dirty pins, 64 subscribed view
+IDs after examining at most 128 IDs, 25 run IDs per first page, stable
+selector/query identity, no-op notification suppression,
 one notification per affected store in a transaction, and stale-generation
-rejection. These are source, store, selector, and subscription-invalidation
-results. They do not measure React commit duration, browser input latency,
+rejection. A deterministic React 19 mounted harness additionally uses
+`Profiler` around selection, hierarchy, hierarchy-menu, pane, and connected
+view consumers. Selection, disclosure, menu-open, and pane-selection commands
+must commit only their owning consumer; unrelated connected views must record
+zero commits, preserve their entry object, and retain one source subscription
+until unmount. These tests count literal React commits and subscription
+lifecycle changes, but do not measure commit duration, browser input latency,
 paint, long tasks, retained heap, DOM cost, SQL query plans, or soak behavior.
 
 The source of truth for browser budgets is
@@ -494,13 +728,19 @@ renders per instrumented Automation Studio component in a scenario, 900 graph
 DOM entities, and 32 MiB retained heap for the switch scenario. Tests must use
 the source constants rather than copying values into assertions.
 
-No browser performance measurement is claimed by this document. Browser
-certification remains pending until the manual procedure in
-[Automation Studio UI performance profiling](../../operations/automation-studio-ui-performance-profiling.md)
-and the evidence requirements in
-[Automation Studio scale certification](../../operations/automation-studio-scale-certification.md)
-pass on documented hardware and build conditions. A passing unit, type, docs,
-or build suite does not establish interactive responsiveness.
+Phase 8 normalized production certification currently passes the fixed Empty,
+Ordinary, and Scale fixtures in one serial desktop-Chromium report. Across the
+accepted run, input and retained-warm p95 values are at most 13.7 ms and 12.9
+ms, project-entry p95 is at most 89.1 ms, listeners and subscriptions return to
+their post-warm baselines, final DOM remains at most 2,121 nodes, retained heap
+growth remains at most 2.65 MiB, and core-interaction long tasks and critical
+accessibility violations are zero. Exact protocol, environment, and evidence
+are recorded in [Web Panel Phase 8 browser and scale certification](../../operations/web-panel-phase8-browser-scale-certification.md).
+
+This evidence is not permanent permission to skip browser measurement. Changes
+to interaction scheduling, mounted-view lifecycle, fixture loading, telemetry,
+or resource ownership must rerun the release gate. Unit, type, docs, or build
+success alone does not establish interactive responsiveness.
 
 Repository automation and coding agents do not start the web panel. A human
 operator starts it for inspection and certification with:

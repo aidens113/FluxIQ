@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ProductionRun, ProductionRunnerSnapshotResponse } from "fluxiq/production-runner";
 import { useProgramApi, type ApiResponse, type JsonObject } from "../program-api";
-import { DataTable, Field, KeyValue, Panel, Segmented, StatusBadge, StatusText, SummaryStrip, VisualAlert } from "../shared-ui";
-import { digits, flattenRunLogs, formatTime } from "./shared";
+import { DataTable, EmptyState, Field, KeyValue, LoadingState, Panel, Segmented, StatusBadge, StatusText, SummaryStrip, VisualAlert } from "../shared-ui";
+import { digits, flattenRunLogs, formatTime, type ProductionLogRow } from "./shared";
 
 
 export function ProductionRunnerLive() {
@@ -20,15 +20,18 @@ export function ProductionRunnerLive() {
   const [consoleView, setConsoleView] = useState<"workloads" | "logs">("workloads");
   const [logFilter, setLogFilter] = useState("all");
   const [status, setStatus] = useState("");
-  const refresh = useCallback(async () => setSnapshot(await api.get<ProductionRunnerSnapshotResponse>("snapshot")), [api]);
-  useEffect(() => void refresh(), [refresh]);
+  const refresh = useCallback(async (signal?: AbortSignal) => {
+    const result = await api.get<ProductionRunnerSnapshotResponse>("snapshot", signal ? { signal } : {});
+    if (!result.aborted) setSnapshot(result);
+  }, [api]);
+  useEffect(() => { const controller = new AbortController(); void refresh(controller.signal); return () => controller.abort(); }, [refresh]);
 
   const targets = snapshot?.payload?.targets ?? [];
   const runs = snapshot?.payload?.runs ?? [];
   const targetOptions = targets.filter((target) => target.type === targetType);
   const selectedTarget = targetOptions.find((target) => target.id === targetId) ?? targetOptions[0];
   const activeRuns = runs.filter((run) => ["running", "scheduled", "starting"].includes(run.status));
-  const allLogRows = flattenRunLogs(runs).filter((entry) => logFilter === "all" || entry.status === logFilter || entry.type === logFilter);
+  const allLogRows = newestProductionLogRows(runs, logFilter);
   const logRows = allLogRows.slice(0, 500);
   const selectedRun = runs.find((run) => run.id === selectedRunId);
 
@@ -46,9 +49,13 @@ export function ProductionRunnerLive() {
     await refresh();
   }
 
+  if (!snapshot) return <LoadingState label="Loading Production Runner" detail="Reading targets, active workloads, and recent execution summaries." />;
+  if (!snapshot.ok) return <EmptyState title="Production Runner unavailable" description={snapshot.error ?? "Production state could not be loaded."} action={<button className="button" onClick={() => void refresh()} type="button">Retry</button>} />;
+
   return (
     <section className="program-workspace-grid">
       <Panel title="Launch Workload" action={<button className="button button-primary" disabled={!selectedTarget} onClick={startRun} type="button">Run {targetType}</button>}>
+        {!targets.length ? <EmptyState compact title="No production targets" description="Register a routine, task, or interface target before launching a workload." /> : null}
         <Segmented value={targetType} onChange={setTargetType} options={["routine", "task", "interface"]} />
         <div className="field-row dense-fields">
           <Field label="Target"><select value={selectedTarget?.id ?? ""} onChange={(event) => { setTargetId(event.target.value); setParameterValues({}); }}>{targetOptions.map((target) => <option key={target.id} value={target.id}>{target.name}</option>)}</select></Field>
@@ -58,18 +65,18 @@ export function ProductionRunnerLive() {
         </div>
         <ProductionParameterFields schema={selectedTarget?.metadata?.parameterSchema} values={parameterValues} onChange={setParameterValues} />
       </Panel>
-      <Panel title="Console" action={<div className="inline-actions"><button className={consoleView === "workloads" ? "button button-primary" : "button"} onClick={() => setConsoleView("workloads")} type="button">Workloads</button><button className={consoleView === "logs" ? "button button-primary" : "button"} onClick={() => setConsoleView("logs")} type="button">Logs</button><button className="button" onClick={refresh} type="button">Refresh</button></div>}>
+      <Panel title="Console" action={<div className="inline-actions"><button className={consoleView === "workloads" ? "button button-primary" : "button"} onClick={() => setConsoleView("workloads")} type="button">Workloads</button><button className={consoleView === "logs" ? "button button-primary" : "button"} onClick={() => setConsoleView("logs")} type="button">Logs</button><button className="button" onClick={() => void refresh()} type="button">Refresh</button></div>}>
         <SummaryStrip items={[["Active", activeRuns.length], ["Runs", runs.length], ["Targets", targets.length], ["Failures", runs.filter((run) => run.status === "failed").length]]} />
-        {consoleView === "workloads" ? <WorkloadBoard runs={activeRuns} onSelect={setSelectedRunId} onAdvance={(runId) => api.post("advance", { runId }).then(refresh)} onCancel={(runId) => api.post("cancel", { runId }).then(refresh)} /> : <>
+        {consoleView === "workloads" ? <WorkloadBoard runs={activeRuns} onSelect={setSelectedRunId} onAdvance={(runId) => api.post("advance", { runId }).then(() => refresh())} onCancel={(runId) => api.post("cancel", { runId }).then(() => refresh())} /> : <>
           <div className="field-row dense-fields"><Field label="Log filter"><select value={logFilter} onChange={(event) => setLogFilter(event.target.value)}><option value="all">All</option><option value="task">Tasks</option><option value="routine">Routines</option><option value="interface">Interfaces</option><option value="failed">Failed</option><option value="success">Success</option></select></Field></div>
           {allLogRows.length > logRows.length ? <VisualAlert tone="warning" title="Log view limited" message={"Showing the newest 500 of " + allLogRows.length + " matching execution entries."} /> : null}
-          <DataTable columns={["Time", "Target", "Loop", "Status", "Message"]} rows={logRows.map((entry) => [formatTime(entry.atMs), entry.target, entry.loop, entry.status, entry.message])} empty="No execution logs yet." />
+          <DataTable label="Production execution logs" columns={["Time", "Target", "Loop", "Status", "Message"]} rowKeys={logRows.map((entry) => entry.id)} rows={logRows.map((entry) => [formatTime(entry.atMs), entry.target, entry.loop, entry.status, entry.message])} empty="No execution logs yet." />
         </>}
         {selectedRun ? <section className="production-run-detail"><div className="panel-heading"><h3 className="panel-title">Selected Run</h3><StatusBadge value={selectedRun.status} /></div><KeyValue rows={[["Run ID", selectedRun.id], ["Target", selectedRun.name], ["Type", selectedRun.targetType ?? "task"], ["Progress", String(selectedRun.loopsCompleted ?? 0) + "/" + String(selectedRun.loopsTotal ?? 1)], ["Started", formatTime(selectedRun.startedAtMs)], ["Updated", formatTime(selectedRun.updatedAtMs)]]} /></section> : null}
         <StatusText value={status} />
       </Panel>
       <Panel title="Targets">
-        <DataTable columns={["Target", "Type", "Domain", "Description"]} rows={targets.map((target) => [target.name, target.type, target.domainId ?? "global", target.description ?? "-"])} />
+        <DataTable label="Production targets" columns={["Target", "Type", "Domain", "Description"]} rows={targets.map((target) => [target.name, target.type, target.domainId ?? "global", target.description ?? "-"])} empty="No production targets are registered." />
       </Panel>
     </section>
   );
@@ -85,6 +92,12 @@ function ProductionParameterFields(props: { schema: unknown; values: Record<stri
   const fields = productionParameterFields(props.schema);
   if (!fields.length) return null;
   return <div className="production-parameter-grid">{fields.map((field) => <Field key={field.name} label={field.label}>{field.type === "boolean" ? <select value={props.values[field.name] ?? String(field.defaultValue ?? false)} onChange={(event) => props.onChange({ ...props.values, [field.name]: event.target.value })}><option value="false">No</option><option value="true">Yes</option></select> : <input inputMode={field.type === "number" ? "decimal" : undefined} value={props.values[field.name] ?? String(field.defaultValue ?? "")} onChange={(event) => props.onChange({ ...props.values, [field.name]: event.target.value })} />}</Field>)}</div>;
+}
+
+export function newestProductionLogRows(runs: ProductionRun[], filter = "all"): ProductionLogRow[] {
+  return flattenRunLogs(runs)
+    .filter((entry) => filter === "all" || entry.status === filter || entry.type === filter)
+    .sort((left, right) => right.atMs - left.atMs || right.id.localeCompare(left.id));
 }
 
 export function productionParameterFields(schema: unknown): Array<{ name: string; label: string; type: string; defaultValue?: unknown }> {

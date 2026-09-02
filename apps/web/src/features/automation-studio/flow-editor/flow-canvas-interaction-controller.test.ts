@@ -43,8 +43,8 @@ function frameScheduler() {
 
 function controllerFixture(nodes: FlowNode[]) {
   const frames = frameScheduler();
-  const previewNodes = vi.fn();
   const renderMarquee = vi.fn();
+  const renderNodePositions = vi.fn();
   const renderHover = vi.fn();
   const renderViewport = vi.fn();
   const settleNodeDrag = vi.fn();
@@ -53,7 +53,7 @@ function controllerFixture(nodes: FlowNode[]) {
     scheduler: frames.scheduler,
     getNodes: () => nodes,
     screenToFlowPosition: (point) => point,
-    previewNodes,
+    renderNodePositions,
     renderMarquee,
     renderHover,
     renderViewport,
@@ -63,7 +63,7 @@ function controllerFixture(nodes: FlowNode[]) {
   return {
     controller,
     frames,
-    previewNodes,
+    renderNodePositions,
     renderMarquee,
     renderHover,
     renderViewport,
@@ -73,7 +73,7 @@ function controllerFixture(nodes: FlowNode[]) {
 }
 
 describe("Flow canvas interaction controller", () => {
-  it("coalesces raw node movement and commits only after drag settlement", () => {
+  it("coalesces dragged-node transforms and commits only after drag settlement", () => {
     const fixture = controllerFixture([node("a", 0, 0)]);
     fixture.controller.beginNodeDrag();
     fixture.controller.previewNodeChanges([{
@@ -90,14 +90,12 @@ describe("Flow canvas interaction controller", () => {
     }]);
 
     expect(fixture.frames.pending()).toBe(1);
-    expect(fixture.previewNodes).not.toHaveBeenCalled();
+    expect(fixture.renderNodePositions).not.toHaveBeenCalled();
     expect(fixture.settleNodeDrag).not.toHaveBeenCalled();
 
     fixture.frames.flush();
-    expect(fixture.previewNodes).toHaveBeenCalledTimes(1);
-    expect(fixture.previewNodes.mock.calls[0]?.[0]?.[0]?.position)
-      .toEqual({ x: 30, y: 15 });
-    expect(fixture.settleNodeDrag).not.toHaveBeenCalled();
+    expect(fixture.renderNodePositions).toHaveBeenCalledTimes(1);
+    expect(fixture.renderNodePositions).toHaveBeenCalledWith([{ id: "a", x: 30, y: 15 }]);
 
     fixture.controller.settleNodeDrag([node("a", 42, 21)]);
     expect(fixture.settleNodeDrag).toHaveBeenCalledTimes(1);

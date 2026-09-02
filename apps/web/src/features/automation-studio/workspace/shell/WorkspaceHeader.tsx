@@ -1,6 +1,6 @@
 "use client";
 
-import { Bug, ChevronRight, FolderOpen, ListChecks, Radio, SlidersHorizontal } from "lucide-react";
+import { Bug, FolderOpen, ListChecks, Radio, SlidersHorizontal } from "lucide-react";
 import { memo } from "react";
 import type {
   AutomationWorkspaceBreadcrumb,
@@ -26,18 +26,21 @@ export const AutomationWorkspaceHeader = memo(function AutomationWorkspaceHeader
         {props.narrow ? (
           <div className="automation-narrow-workspace-actions">
             <button
+              aria-controls="automation-project-hierarchy"
               aria-expanded={props.narrowPanel === "hierarchy"}
               className="button"
               onClick={() => props.chrome.setNarrowPanel(props.narrowPanel === "hierarchy" ? null : "hierarchy")}
               type="button"
             ><ListChecks aria-hidden size={14} />Hierarchy</button>
             <button
+              aria-controls="automation-right-utilities"
               aria-expanded={props.narrowPanel === "inspector"}
               className="button"
               onClick={() => props.chrome.setNarrowPanel(props.narrowPanel === "inspector" ? null : "inspector")}
               type="button"
             ><SlidersHorizontal aria-hidden size={14} />{props.inspectorLabel}</button>
             <button
+              aria-controls="automation-action-preview"
               aria-expanded={props.narrowPanel === "timeline"}
               className="button"
               onClick={() => props.chrome.setNarrowPanel(props.narrowPanel === "timeline" ? null : "timeline")}
@@ -46,18 +49,6 @@ export const AutomationWorkspaceHeader = memo(function AutomationWorkspaceHeader
           </div>
         ) : null}
       </div>
-      {props.breadcrumbs.length ? (
-        <nav aria-label="Workspace location" className="automation-workspace-breadcrumbs">
-          {props.breadcrumbs.map((crumb, index) => (
-            <span key={`${crumb.kind}:${crumb.id}`}>
-              {index ? <ChevronRight aria-hidden size={13} /> : null}
-              {crumb.current
-                ? <strong aria-current="page">{crumb.label}</strong>
-                : <button onClick={() => props.commands.activateBreadcrumb(crumb)} type="button">{crumb.label}</button>}
-            </span>
-          ))}
-        </nav>
-      ) : <div className="automation-workspace-breadcrumbs empty" />}
       <div className="automation-studio-context">
         {props.showDataInspector ? (
           <button

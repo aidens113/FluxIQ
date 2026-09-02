@@ -9,8 +9,9 @@ export function FlowNode({ id, data, selected }: NodeProps) {
   const Icon = automationNodeIcon(node.icon, node.recovery);
   const description = node.customDescription || node.description || node.actionTypes.join(", ") || "Flow node";
   const toneClass = node.reviewTone ? ` ${node.reviewTone}` : "";
+  const selectionClass = selected ? " selected" : "";
   return (
-    <div className={selected ? `automation-flow-node selected${toneClass}` : `automation-flow-node${toneClass}`}>
+    <div className={`automation-flow-node${selectionClass}${toneClass}`}>
       {selected ? <SelectedNodeDeleteButton nodeId={id} /> : null}
       {selected ? <SelectedNodeStateButton nodeId={id} /> : null}
       <div className="node-badges">
@@ -40,7 +41,6 @@ export function FlowNode({ id, data, selected }: NodeProps) {
         <span className={node.successCount ? "node-state-chip has-state" : "node-state-chip empty-state"}>Success {node.successCount}</span>
         <span className="node-state-chip has-state">Evidence {node.evidenceCount}</span>
       </div>
-      <footer className="node-runtime-line">12 successes - 1 retry</footer>
     </div>
   );
 }

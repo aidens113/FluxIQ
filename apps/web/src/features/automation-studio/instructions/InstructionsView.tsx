@@ -12,6 +12,8 @@ import { effectiveInstructionOrder, emptyInstructionDraft, estimateInstructionTo
 import { instructionDraftStorageKey, readStoredInstructionDraft, removeStoredInstructionDraft, saveStoredInstructionDraft } from "./instruction-draft-repository";
 import { useInstructionCommands, type InstructionCommands } from "./instruction-host";
 import { EffectiveInstructionsPanel, InstructionEditorPanel, InstructionLibraryPanel, type InstructionSaveState } from "./InstructionWorkbenchPanels";
+import { useDirtyViewRegistration } from "../workspace/DirtyViewGuard";
+import { automationStudioViewId } from "../views/view-registry";
 
 export type InstructionsViewProps = { projectId: string | null; flow: any };
 
@@ -94,10 +96,6 @@ export function InstructionsViewContent(props: InstructionsViewProps & { command
   }, [draftKey, draftDirty, draftInstruction]);
   useEffect(() => {
     setSaveState(draftDirty ? "unsaved" : "saved");
-  }, [draftDirty]);  useEffect(() => {
-    const warnBeforeUnload = (event: BeforeUnloadEvent) => { if (draftDirty) event.preventDefault(); };
-    window.addEventListener("beforeunload", warnBeforeUnload);
-    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
   }, [draftDirty]);  const loadInstructionScopeTargets = async (kind: "router" | "subflows") => {
     if (!props.projectId || !flowId) return;
     const requestId = ++scopeRequestRef.current;
@@ -187,6 +185,14 @@ export function InstructionsViewContent(props: InstructionsViewProps & { command
     setRecoveryDraft(null);
     setSaveState("saved");
   };
+  useDirtyViewRegistration({
+    id: `instructions:${props.projectId ?? "none"}:${flowId ?? "none"}`,
+    viewId: automationStudioViewId.instructions,
+    label: selectedInstruction?.title ? `Instruction: ${selectedInstruction.title}` : "New instruction",
+    dirty: draftDirty,
+    save: requestSaveInstruction,
+    discard: discardInstructionChanges
+  });
   const saveInstruction = async (authorizationPin: string) => {
     if (!props.projectId || !flowId || authorizationPin.trim().length < 4) return;
     setError("");

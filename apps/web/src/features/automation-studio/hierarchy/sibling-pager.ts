@@ -165,7 +165,7 @@ export class AutomationHierarchySiblingPager {
       children.set(key, siblings);
     }
     for (const siblings of children.values()) {
-      siblings.sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id));
+      siblings.sort(compareHierarchySiblings);
     }
 
     const visible = new Set<string>();
@@ -204,6 +204,12 @@ export class AutomationHierarchySiblingPager {
   private publish(): void {
     for (const listener of this.listeners) listener();
   }
+}
+
+function compareHierarchySiblings(left: AutomationHierarchyNode, right: AutomationHierarchyNode): number {
+  const leftPriority = left.parentId === null && left.kind === "flow" ? 0 : 1;
+  const rightPriority = right.parentId === null && right.kind === "flow" ? 0 : 1;
+  return leftPriority - rightPriority || left.label.localeCompare(right.label) || left.id.localeCompare(right.id);
 }
 
 function siblingPagerSnapshotsEqual(

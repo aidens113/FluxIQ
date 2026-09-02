@@ -19,6 +19,7 @@ import {
   reorderAutomationProjectCategories
 } from "./project-catalog-commands";
 import type { AutomationProjectApi } from "./project-api";
+import { sanitizeAsciiDigits } from "../../../lib/input-sanitizers";
 
 export function AutomationProjectCatalogSurface(props: {
   api: AutomationProjectApi;
@@ -241,7 +242,7 @@ function AutomationProjectModalBoundary(props: {
     onMove={() => void move()}
     onMoveCategory={() => void moveCategory()}
     onNameChange={(projectName) => props.studioUiStore.patch({ projectName })}
-    onPinChange={(value) => props.studioUiStore.patch({ projectPin: value.replace(/D/g, "") })}
+    onPinChange={(value) => props.studioUiStore.patch({ projectPin: sanitizeAsciiDigits(value, 12) })}
     onRename={() => void rename()}
     onRenameCategory={() => void renameCategory()}
   />;

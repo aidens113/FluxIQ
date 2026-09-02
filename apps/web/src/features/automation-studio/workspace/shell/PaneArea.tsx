@@ -49,7 +49,7 @@ export const AutomationPaneArea = memo(function AutomationPaneArea(props: {
   const handles = automationPaneSplitHandles(ratios);
 
   return (
-    <section aria-label="Main editor" className="automation-workspace-section main strict" data-workspace-region="main">
+    <section aria-label="Main editor" className="automation-workspace-section main strict" data-workspace-region="main" id="automation-main-editor">
       <header className="automation-workspace-section-header">
         <div className="automation-workspace-section-actions">
           <button
@@ -71,6 +71,7 @@ export const AutomationPaneArea = memo(function AutomationPaneArea(props: {
               index={index}
               key={pane.id}
               pane={pane}
+              port={props.port}
               projectKey={props.projectKey}
               source={props.source}
               warm={props.warm}
@@ -78,6 +79,7 @@ export const AutomationPaneArea = memo(function AutomationPaneArea(props: {
           ))}
           {!props.narrow ? handles.map((handle) => (
             <button
+              aria-controls="automation-main-editor"
               aria-label="Resize panes"
               aria-orientation={state.preset === "two-rows" ? "horizontal" : "vertical"}
               aria-valuemax={88}
@@ -107,6 +109,7 @@ function AutomationPaneSlot(props: {
   commands: AutomationWorkspaceCommands;
   index: number;
   pane: AutomationWorkspacePane;
+  port: AutomationWorkspaceCommandPort;
   projectKey: string;
   source: AutomationWorkspaceViewSource;
   warm: AutomationWarmViewRegistry;
@@ -130,7 +133,7 @@ function AutomationPaneSlot(props: {
         onMoveTab={(viewId, direction) => props.commands.movePaneTabByKeyboard(props.pane.id, viewId, direction)}
         onTabDragStart={(viewId, event) => startAutomationTabDrag(props.pane.id, viewId, event)}
         onTabDrop={(viewId, placement, event) => dropAutomationTab(props.commands, props.pane.id, viewId, placement, event)}
-        onTabSelect={(viewId) => props.commands.selectPaneTab(props.pane.id, viewId)}
+        onTabSelect={(viewId) => { props.commands.selectPaneTab(props.pane.id, viewId); }}
         subtitle={activeEntry.view.label}
         tabs={entries.map((entry) => entry.view)}
         title={viewTitle(activeEntry.view)}

@@ -2,7 +2,7 @@
 
 import { automationInspectorReferenceOptions, type InspectorPanelContext } from "../../inspector";
 import { automationGraphDraftIdentity } from "../../graph/draft-store";
-import { createAutomationProjectViewModelSelector } from "../../model/project-view-model";
+import type { AutomationProjectViewModelCache } from "../../model/project-view-model-cache";
 import type { AutomationSelection } from "../../shared/selection-contracts";
 import { automationEntityCollectionSelector, automationEntityScope } from "../../stores/project-data-store";
 import type { AutomationWorkspacePrefs } from "../../workspace/layout";
@@ -11,6 +11,7 @@ import { createAutomationDirectViewConnector, type AutomationDirectViewConnector
 
 export type AutomationCanonicalConnectorScope = {
   projectId: string | null;
+  projectView: AutomationProjectViewModelCache;
   getWorkspacePrefs(): AutomationWorkspacePrefs;
   loadFlowDetail(flowId: string): Promise<unknown>;
   loadFlowMetadata(flowId: string): Promise<void>;
@@ -21,7 +22,6 @@ export type AutomationCanonicalConnectorScope = {
 
 const emptyList = Object.freeze([]) as unknown as any[];
 const emptyRecord = Object.freeze({}) as Record<string, any>;
-const emptyArtifacts = Object.freeze({ tasks: [], routines: [], configs: [], flows: [] });
 const emptyPipeline = Object.freeze({
   normalizationReviews: [], miningRuns: [], evidenceFacts: [], evidenceObservations: [],
   stateActionCorrelations: [], evidenceClaims: [], learnedTaskModels: [], policyProposals: [], replayResults: []
@@ -35,33 +35,6 @@ function resource<Value>(state: AutomationDirectViewConnectorState, key: string,
 
 function collection(state: AutomationDirectViewConnectorState, kind: Parameters<typeof automationEntityCollectionSelector>[0]) {
   return automationEntityCollectionSelector(kind)(state.projectData) as any[];
-}
-
-function createProjectionSelector() {
-  const select = createAutomationProjectViewModelSelector();
-  return (state: AutomationDirectViewConnectorState, scope: AutomationCanonicalConnectorScope) => {
-    const prefs = scope.getWorkspacePrefs();
-    return select({
-      hasActiveProject: Boolean(scope.projectId),
-      canonical: resource<any>(state, "snapshot", null)?.payload?.canonical ?? emptyRecord,
-      pipelineArtifacts: resource(state, "pipelineArtifacts", emptyPipeline),
-      snapshotProblems: resource<any>(state, "snapshot", null)?.payload?.problems ?? emptyList,
-      projectRecordings: collection(state, "recordings"),
-      projectTimelines: collection(state, "timelines"),
-      projectFlows: collection(state, "flows"),
-      projectArtifacts: resource(state, "projectArtifacts", emptyArtifacts),
-      indexedStateSources: resource(state, "indexedStateSources", emptyRecord),
-      nativeNodeDefinitions: resource(state, "nativeNodeDefinitions", emptyList),
-      publishedFlowDefinitions: resource(state, "publishedFlowDefinitions", emptyList),
-      customHierarchyNodes: resource(state, "customHierarchyNodes", emptyList),
-      deletedHierarchyIds: resource(state, "deletedHierarchyIds", emptyList),
-      selection: state.selection.selection,
-      lastOpenFlowId: typeof prefs.viewStates?.[automationStudioViewId.flowEditor]?.lastOpenFlowId === "string"
-        ? prefs.viewStates[automationStudioViewId.flowEditor]!.lastOpenFlowId as string
-        : null,
-      lastOpenTaskId: null
-    });
-  };
 }
 
 const selectionScopes = () => ["selection", "state-open", "preview"] as const;
@@ -132,10 +105,8 @@ export const AutomationFlowEditorConnectedView = createAutomationDirectViewConne
     if (!(model.nativeNodeDefinitions?.length ?? 0)) void scope.loadNodeDefinitions();
   },
   selectModel: () => emptyRecord as any,
-  createModelSelector: () => {
-    const project = createProjectionSelector();
-    return (state, scope) => {
-      const view = project(state, scope as AutomationCanonicalConnectorScope);
+  createModelSelector: () => (state, scope) => {
+      const view = (scope as AutomationCanonicalConnectorScope).projectView.read();
       const drafts = resource<Record<string, any>>(state, "taskGraphDrafts", emptyRecord);
       const draftKey = automationGraphDraftIdentity(view.selectedTaskGraph);
       return {
@@ -151,8 +122,7 @@ export const AutomationFlowEditorConnectedView = createAutomationDirectViewConne
         selectedTimeline: view.selectedTimeline,
         signals: view.signals
       } as any;
-    };
-  }
+    }
 });
 
 export const AutomationRecordingConnectedView = createAutomationDirectViewConnector({
@@ -174,10 +144,8 @@ export const AutomationRecordingConnectedView = createAutomationDirectViewConnec
     if (recordingId && !model.selectedTimeline) void scope.loadTimeline(recordingId);
   },
   selectModel: () => emptyRecord as any,
-  createModelSelector: () => {
-    const project = createProjectionSelector();
-    return (state, scope) => {
-      const view = project(state, scope as AutomationCanonicalConnectorScope);
+  createModelSelector: () => (state, scope) => {
+      const view = (scope as AutomationCanonicalConnectorScope).projectView.read();
       return {
         actionStatus: state.runtimeStatus.actionStatus,
         projectId: scope.projectId,
@@ -190,8 +158,7 @@ export const AutomationRecordingConnectedView = createAutomationDirectViewConnec
         selectedTimeline: view.selectedTimeline,
         timelines: view.timelines
       } as any;
-    };
-  }
+    }
 });
 
 function createFlowDetailConnector(id:
@@ -236,7 +203,7 @@ export const AutomationAdaptationsConnectedView = createAutomationDirectViewConn
       void scope.loadFlowDetail(selected.flow.flowId);
     }
   },
-  selectModel: (state, scope) => {
+  selectModel: (state, scope: AutomationCanonicalConnectorScope) => {
       const prefs = scope.getWorkspacePrefs();
       const flow = selectAutomationConnectorFlow(state, scope).flow;
       const saved = prefs.viewStates?.[automationStudioViewId.adaptations];
@@ -284,10 +251,11 @@ export const AutomationProblemsConnectedView = createAutomationDirectViewConnect
   placeholder: () => ({ currentObjectId: null, problems: [] }),
   projectScopes: () => ["resource:snapshot"],
   selectionScopes,
-  selectModel: (state) => {
+  selectModel: (state, scope: AutomationCanonicalConnectorScope) => {
       const selection = state.selection.selection;
       const snapshotProblems = resource<any>(state, "snapshot", null)?.payload?.problems ?? emptyList;
       return {
+        projectId: scope.projectId,
         currentObjectId: selection?.id ?? null,
         ...(selection?.id
           ? { currentObjectLabel: selection.id }
@@ -310,10 +278,8 @@ export const AutomationInspectorConnectedView = createAutomationDirectViewConnec
     }
   },
   selectModel: () => emptyRecord as any,
-  createModelSelector: () => {
-    const project = createProjectionSelector();
-    return (state, scope) => {
-      const view = project(state, scope as AutomationCanonicalConnectorScope);
+  createModelSelector: () => (state, scope) => {
+      const view = (scope as AutomationCanonicalConnectorScope).projectView.read();
       const selection = state.selection.selection;
       if (!selection) return { context: null };
       const dependency = resource<any>(state, "flowDependencyInfo", emptyRecord);
@@ -345,8 +311,7 @@ export const AutomationInspectorConnectedView = createAutomationDirectViewConnec
         statePanel: null
       };
       return { context };
-    };
-  }
+    }
 });
 
 export const AutomationStateConnectedView = createAutomationDirectViewConnector({
@@ -355,10 +320,8 @@ export const AutomationStateConnectedView = createAutomationDirectViewConnector(
   projectScopes: () => [...flowScopes(), ...runtimeScopes(), "resource:pipelineArtifacts"],
   selectionScopes,
   selectModel: () => emptyRecord as any,
-  createModelSelector: () => {
-    const project = createProjectionSelector();
-    return (state, scope) => {
-      const view = project(state, scope as AutomationCanonicalConnectorScope);
+  createModelSelector: () => (state, scope) => {
+      const view = (scope as AutomationCanonicalConnectorScope).projectView.read();
       return {
         input: {
           selection: state.selection.selection as AutomationSelection | null,
@@ -378,6 +341,5 @@ export const AutomationStateConnectedView = createAutomationDirectViewConnector(
         },
         loading: state.selection.pendingStateOpen
       } as any;
-    };
-  }
+    }
 });

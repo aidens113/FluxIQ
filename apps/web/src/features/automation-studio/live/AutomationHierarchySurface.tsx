@@ -25,8 +25,8 @@ type AutomationHierarchySurfaceCommonProps = {
   loadMoreChildren?(parentId: string | null): void;
   nodes: AutomationHierarchyNode[];
   onCloseProject(): void;
-  openSubflow(node: AutomationHierarchyNode, mode: "preview" | "new-window"): void;
-  openView(viewId: AutomationHierarchyRoutableViewId, mode?: "preview" | "new-window"): void;
+  openSubflow(node: AutomationHierarchyNode, mode: "preview" | "new-pane-or-focus"): void;
+  openView(viewId: AutomationHierarchyRoutableViewId, mode?: "preview" | "new-pane-or-focus"): void;
   port: AutomationWorkspaceCommandPort;
   projectName: string;
   recordingPrimaryKind: "recording" | null;

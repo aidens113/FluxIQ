@@ -1,15 +1,18 @@
 import type { Edge, Node } from "@xyflow/react";
+import { diffAutomationGraphDocuments, type AutomationGraphOperationBatch } from "./operation-history";
 
 export type AutomationGraphWorkerTask<T extends Record<string, unknown> = Record<string, unknown>> =
   | { kind: "selection-bounds"; nodes: Array<Node<T>>; selectedNodeIds: string[] }
   | { kind: "serialize-graph"; graph: { nodes: Array<Node<T>>; edges: Edge[] } }
   | { kind: "revision-signature"; flowId: string; revision: string | number; pendingOperationCount: number; pendingOperationBytes: number }
+  | { kind: "diff-graph"; before: { nodes: Array<Node<T>>; edges: Edge[] }; after: { nodes: Array<Node<T>>; edges: Edge[] }; baseRevision: string; now?: number }
   | { kind: "validate-shape"; graph: { nodes: Array<Node<T>>; edges: Edge[] } };
 
 export type AutomationGraphWorkerResult =
   | { kind: "selection-bounds"; bounds: { x: number; y: number; width: number; height: number } | null }
   | { kind: "serialize-graph"; json: string; bytes: number }
   | { kind: "revision-signature"; signature: string }
+  | { kind: "diff-graph"; batch: AutomationGraphOperationBatch<Record<string, unknown>> }
   | { kind: "validate-shape"; problems: Array<{ id: string; message: string }> };
 
 export type AutomationGraphWorkerQueueOptions = {
@@ -89,6 +92,15 @@ export function runAutomationGraphWorkerTaskInline<T extends Record<string, unkn
   if (task.kind === "revision-signature") {
     return { kind: task.kind, signature: [task.flowId, task.revision, task.pendingOperationCount, task.pendingOperationBytes].join(":") };
   }
+  if (task.kind === "diff-graph") {
+    return {
+      kind: task.kind,
+      batch: diffAutomationGraphDocuments(task.before, task.after, {
+        baseRevision: task.baseRevision,
+        ...(task.now !== undefined ? { now: task.now } : {})
+      })
+    };
+  }
   const nodeIds = new Set(task.graph.nodes.map((node) => node.id));
   const problems = task.graph.edges
     .filter((edge) => !nodeIds.has(edge.source) || !nodeIds.has(edge.target))
@@ -120,6 +132,35 @@ function runInBrowserWorker<T extends Record<string, unknown>>(task: AutomationG
       }
       if (task.kind === 'revision-signature') {
         self.postMessage({ kind: task.kind, signature: [task.flowId, task.revision, task.pendingOperationCount, task.pendingOperationBytes].join(':') });
+        return;
+      }
+      if (task.kind === 'diff-graph') {
+        const transient = new Set(['selected', 'dragging', 'measured', 'resizing', 'width', 'height', 'positionAbsolute']);
+        const isElement = function(value) { return value && typeof value.id === 'string' && ((value.position && typeof value.position === 'object' && 'data' in value) || (typeof value.source === 'string' && typeof value.target === 'string')); };
+        const strip = function(value) {
+          if (!value || typeof value !== 'object') return value;
+          if (value instanceof Map) return new Map(Array.from(value.entries()).map(function(entry) { return [entry[0], strip(entry[1])]; }));
+          if (value instanceof Set) return new Set(Array.from(value.values()).map(strip));
+          if (Array.isArray(value)) return value.map(strip);
+          const output = {};
+          const stripPresentation = isElement(value);
+          Object.entries(value).forEach(function(entry) { if (!stripPresentation || !transient.has(entry[0])) output[entry[0]] = strip(entry[1]); });
+          return output;
+        };
+        const signature = function(value) { return JSON.stringify(strip(value), function(_key, item) { if (item instanceof Map) return Array.from(item.entries()); if (item instanceof Set) return Array.from(item.values()); return item; }); };
+        const beforeNodes = new Map((task.before.nodes || []).map(function(node) { return [node.id, node]; }));
+        const afterNodes = new Map((task.after.nodes || []).map(function(node) { return [node.id, node]; }));
+        const beforeEdges = new Map((task.before.edges || []).map(function(edge) { return [edge.id, edge]; }));
+        const afterEdges = new Map((task.after.edges || []).map(function(edge) { return [edge.id, edge]; }));
+        const operations = [];
+        afterNodes.forEach(function(node, id) { const previous = beforeNodes.get(id); if (!previous) operations.push({ kind: 'node.add', entityId: id, after: strip(node) }); else if (signature(previous) !== signature(node)) operations.push({ kind: 'node.update', entityId: id, before: strip(previous), after: strip(node) }); });
+        beforeNodes.forEach(function(node, id) { if (!afterNodes.has(id)) operations.push({ kind: 'node.delete', entityId: id, before: strip(node) }); });
+        afterEdges.forEach(function(edge, id) { const previous = beforeEdges.get(id); if (!previous) operations.push({ kind: 'edge.add', entityId: id, after: strip(edge) }); else if (signature(previous) !== signature(edge)) operations.push({ kind: 'edge.update', entityId: id, before: strip(previous), after: strip(edge) }); });
+        beforeEdges.forEach(function(edge, id) { if (!afterEdges.has(id)) operations.push({ kind: 'edge.delete', entityId: id, before: strip(edge) }); });
+        const createdAt = task.now === undefined ? Date.now() : task.now;
+        const batch = { batchId: 'graph-batch-' + createdAt.toString(36), baseRevision: task.baseRevision || 'draft', createdAt: createdAt, operations: operations, estimatedBytes: 0 };
+        batch.estimatedBytes = new TextEncoder().encode(JSON.stringify(batch)).byteLength;
+        self.postMessage({ kind: task.kind, batch: batch });
         return;
       }
       const nodeIds = new Set((task.graph.nodes || []).map(function(node) { return node.id; }));

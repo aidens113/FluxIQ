@@ -3,16 +3,28 @@
 import { AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Circle, Copy, Download, Info, LoaderCircle, WrapText, XCircle, X } from "lucide-react";
 import { fluxiqStatusLabel, fluxiqStatusTone } from "fluxiq/ui";
 import Link from "next/link";
-import { cloneElement, isValidElement, useEffect, useId, useRef, useState, type AnchorHTMLAttributes, type ButtonHTMLAttributes, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactElement, type ReactNode } from "react";
+import React, { cloneElement, isValidElement, useEffect, useId, useRef, useState, type AnchorHTMLAttributes, type ButtonHTMLAttributes, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactElement, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { acquireOverlayEnvironment, type OverlayEnvironmentMode } from "./overlay-environment";
+import { useInheritedOperationBusy } from "./use-operation-lock";
 
 export type AlertTone = "info" | "success" | "warning" | "error";
-type GlobalAlertPayload = { tone: AlertTone; title?: string; message: string; id?: string; ttlMs?: number };
+type GlobalAlertPayload = {
+  tone: AlertTone;
+  title?: string;
+  message: string;
+  id?: string;
+  ttlMs?: number;
+  actionLabel?: string;
+  onAction?: () => void;
+};
 type GlobalAlertItem = Required<Pick<GlobalAlertPayload, "tone" | "message">> & {
   id: string;
   title?: string;
   createdAt: number;
   ttlMs: number;
+  actionLabel?: string;
+  onAction?: () => void;
 };
 
 export function notifyGlobalAlert(payload: GlobalAlertPayload) {
@@ -88,48 +100,62 @@ export type MenuOption = {
 };
 
 export function Menu(props: { label: string; options: MenuOption[]; icon?: ReactNode; iconOnly?: boolean; defaultOpen?: boolean }) {
+  const menuId = `menu-${useId().replace(/:/g, "")}`;
   const [open, setOpen] = useState(props.defaultOpen ?? false);
   const [position, setPosition] = useState<{ maxHeight: number; right: number; top: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
+  const closeMenu = (_restoreFocus = false) => {
+    setOpen(false);
+  };
 
   useEffect(() => {
     if (!open) return;
-    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus({ preventScroll: true });
-    const closeOutside = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      if (target && (triggerRef.current?.contains(target) || menuRef.current?.contains(target))) return;
-      setOpen(false);
-    };
-    const closeForViewportChange = () => setOpen(false);
-    document.addEventListener("pointerdown", closeOutside, true);
-    window.addEventListener("resize", closeForViewportChange);
-    window.addEventListener("scroll", closeForViewportChange);
-    return () => {
-      document.removeEventListener("pointerdown", closeOutside, true);
-      window.removeEventListener("resize", closeForViewportChange);
-      window.removeEventListener("scroll", closeForViewportChange);
-    };
+    const panel = menuRef.current;
+    const trigger = triggerRef.current?.querySelector<HTMLElement>("button") ?? null;
+    if (!panel) return;
+    const release = acquireOverlayEnvironment(document, {
+      mode: "menu",
+      panel,
+      root: panel,
+      returnFocus: trigger,
+      additionalInsideElements: () => [triggerRef.current],
+      onEscape: () => setOpen(false),
+      onPointerDownOutside: () => setOpen(false),
+      onViewportChange: updateMenuPosition
+    });
+    panel.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus({ preventScroll: true });
+    return release;
   }, [open]);
 
   function toggleMenu() {
     if (open) {
-      setOpen(false);
+      closeMenu(true);
       return;
     }
+    updateMenuPosition();
+    setOpen(true);
+  }
+
+  function updateMenuPosition() {
     const bounds = triggerRef.current?.getBoundingClientRect();
     if (bounds) {
       const margin = 8;
       const below = window.innerHeight - bounds.bottom - margin;
       const above = bounds.top - margin;
       const openBelow = below >= 160 || below >= above;
-      setPosition({
+      const next = {
         maxHeight: Math.max(80, openBelow ? below : above),
         right: Math.max(margin, window.innerWidth - bounds.right),
         top: openBelow ? bounds.bottom + 4 : margin
-      });
+      };
+      setPosition((current) => current
+        && current.maxHeight === next.maxHeight
+        && current.right === next.right
+        && current.top === next.top
+        ? current
+        : next);
     }
-    setOpen(true);
   }
 
   function moveFocus(event: KeyboardEvent<HTMLDivElement>) {
@@ -150,15 +176,16 @@ export function Menu(props: { label: string; options: MenuOption[]; icon?: React
           moveFocus(event);
         } else if (event.key === "Escape") {
           event.preventDefault();
-          setOpen(false);
+          closeMenu(true);
         }
       }}
       ref={menuRef}
       role="menu"
+      id={menuId}
       style={position ? { maxHeight: position.maxHeight, right: position.right, top: position.top } : undefined}
     >
       {props.options.map((option) => option.href ? (
-        <Link className={option.danger ? "danger" : undefined} href={option.href} key={option.id} onClick={() => setOpen(false)} role="menuitem">
+        <Link className={option.danger ? "danger" : undefined} href={option.href} key={option.id} onClick={() => closeMenu(true)} role="menuitem">
           {option.icon}<span>{option.label}</span>
         </Link>
       ) : (
@@ -168,7 +195,7 @@ export function Menu(props: { label: string; options: MenuOption[]; icon?: React
           key={option.id}
           onClick={() => {
             option.onSelect?.();
-            setOpen(false);
+            closeMenu(true);
           }}
           role="menuitem"
           type="button"
@@ -182,8 +209,8 @@ export function Menu(props: { label: string; options: MenuOption[]; icon?: React
   return (
     <div className="menu" ref={triggerRef}>
       {props.iconOnly
-        ? <IconButton aria-expanded={open} aria-haspopup="menu" label={props.label} onClick={toggleMenu}>{props.icon}</IconButton>
-        : <Button aria-expanded={open} aria-haspopup="menu" onClick={toggleMenu} size="compact" variant="secondary">
+        ? <IconButton aria-controls={menuId} aria-expanded={open} aria-haspopup="menu" label={props.label} onClick={toggleMenu}>{props.icon}</IconButton>
+        : <Button aria-controls={menuId} aria-expanded={open} aria-haspopup="menu" aria-label={props.label} onClick={toggleMenu} size="compact" variant="secondary">
           {props.icon}<span>{props.label}</span><ChevronDown aria-hidden size={14} />
         </Button>}
       {popover && typeof document !== "undefined" ? createPortal(popover, document.body) : popover}
@@ -203,6 +230,8 @@ export function Combobox(props: {
   error?: string;
   disabled?: boolean;
   defaultOpen?: boolean;
+  loading?: boolean;
+  onQueryChange?(query: string): void;
 }) {
   const generatedId = useId().replace(/:/g, "");
   const inputId = `combobox-${generatedId}`;
@@ -253,6 +282,7 @@ export function Combobox(props: {
           id={inputId}
           onChange={(event) => {
             setQuery(event.target.value);
+            props.onQueryChange?.(event.target.value);
             setActiveIndex(0);
             setOpen(true);
           }}
@@ -282,19 +312,22 @@ export function Combobox(props: {
       {open ? (
         <div className="combobox-listbox" id={listId} role="listbox">
           {filtered.length ? filtered.map((option) => (
-            <button
+            <div
               aria-selected={option.value === props.value}
-              className={option.value === props.value ? "selected" : undefined}
+              className={[
+                option.value === props.value ? "selected" : "",
+                option.value === activeOption?.value ? "active" : ""
+              ].filter(Boolean).join(" ")}
               id={`${listId}-${option.value}`}
               key={option.value}
+              onMouseDown={(event) => event.preventDefault()}
               onClick={() => choose(option)}
               role="option"
-              type="button"
             >
               <span>{option.label}</span>
               {option.description ? <small>{option.description}</small> : null}
-            </button>
-          )) : <div className="combobox-empty">No matching options.</div>}
+            </div>
+          )) : <div className="combobox-empty">{props.loading ? "Loading options..." : "No matching options."}</div>}
         </div>
       ) : null}
       {props.hint ? <small className="field-message" id={hintId}>{props.hint}</small> : null}
@@ -303,15 +336,23 @@ export function Combobox(props: {
   );
 }
 
+type TooltipChildProps = { "aria-describedby"?: string };
+
 export function Tooltip(props: { content: string; children: ReactNode }) {
-  return <span className="tooltip-anchor" data-tooltip={props.content}>{props.children}</span>;
+  const tooltipId = `tooltip-${useId().replace(/:/g, "")}`;
+  const child = isValidElement<TooltipChildProps>(props.children)
+    ? cloneElement(props.children, {
+      "aria-describedby": [props.children.props["aria-describedby"], tooltipId].filter(Boolean).join(" ")
+    })
+    : props.children;
+  return <span className="tooltip-anchor">{child}<span className="tooltip-content" id={tooltipId} role="tooltip">{props.content}</span></span>;
 }
 export function DataTable(props: {
   columns: string[];
   rows?: Array<Array<ReactNode>>;
   rowKeys?: string[];
   empty?: string;
-  label?: string;
+  label: string;
   compact?: boolean;
   loading?: boolean;
 }) {
@@ -319,7 +360,7 @@ export function DataTable(props: {
   return (
     <div aria-busy={props.loading || undefined} className={`table-wrap${props.compact ? " compact" : ""}`}>
       <table aria-label={props.label} className="data-table">
-        {props.label ? <caption className="visually-hidden">{props.label}</caption> : null}
+        <caption className="visually-hidden">{props.label}</caption>
         <thead>
           <tr>
             {props.columns.map((column) => (
@@ -396,7 +437,7 @@ export function ListRow(props: {
     <div className={`list-row${props.selected ? " selected" : ""}`} role="listitem">
       <button aria-current={props.selected ? "true" : undefined} className="list-row-main" onClick={props.onOpen} type="button">
         {props.leading ? <span className="list-row-leading" aria-hidden>{props.leading}</span> : null}
-        <span className="list-row-copy"><strong>{props.title}</strong>{props.description ? <small>{props.description}</small> : null}</span>
+        <span className="list-row-copy"><strong title={props.title}>{props.title}</strong>{props.description ? <small title={props.description}>{props.description}</small> : null}</span>
         {props.meta ? <span className="list-row-meta">{props.meta}</span> : null}
       </button>
       {props.actions ? <div className="list-row-actions">{props.actions}</div> : null}
@@ -424,6 +465,12 @@ function flattenTree(nodes: TreeNode[], expandedIds: Set<string>, parentId?: str
   return flattened;
 }
 
+export function resolveTreeFocusId(visibleIds: string[], focusedId: string, selectedId?: string): string {
+  if (visibleIds.includes(focusedId)) return focusedId;
+  if (selectedId && visibleIds.includes(selectedId)) return selectedId;
+  return visibleIds[0] ?? "";
+}
+
 export function Tree(props: {
   label: string;
   nodes: TreeNode[];
@@ -432,7 +479,9 @@ export function Tree(props: {
   onSelect(id: string): void;
   onToggle(id: string): void;
 }) {
+  const treeId = `tree-${useId().replace(/:/g, "")}`;
   const visible = flattenTree(props.nodes, props.expandedIds);
+  const visibleIdKey = visible.map((item) => item.node.id).join("\u001f");
   const [focusedId, setFocusedId] = useState(props.selectedId ?? visible[0]?.node.id ?? "");
   const itemRefs = useRef<Map<string, HTMLLIElement> | null>(null);
   if (!itemRefs.current) itemRefs.current = new Map<string, HTMLLIElement>();
@@ -441,6 +490,10 @@ export function Tree(props: {
   useEffect(() => {
     if (props.selectedId) setFocusedId(props.selectedId);
   }, [props.selectedId]);
+  useEffect(() => {
+    const nextFocusedId = resolveTreeFocusId(visible.map((item) => item.node.id), focusedId, props.selectedId);
+    if (nextFocusedId !== focusedId) setFocusedId(nextFocusedId);
+  }, [focusedId, props.selectedId, visibleIdKey]);
 
   function focusItem(id: string) {
     setFocusedId(id);
@@ -473,6 +526,7 @@ export function Tree(props: {
     return nodes.map((node, index) => {
       const expandable = Boolean(node.children?.length);
       const expanded = expandable && props.expandedIds.has(node.id);
+      const groupId = `${treeId}-group-${node.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
       return (
         <li
           aria-disabled={node.disabled || undefined}
@@ -494,18 +548,18 @@ export function Tree(props: {
           tabIndex={focusedId === node.id ? 0 : -1}
         >
           <div className="tree-item-row" style={{ paddingInlineStart: `calc((${level} - 1) * var(--space-lg))` }}>
-            {expandable ? <button aria-label={expanded ? `Collapse ${node.label}` : `Expand ${node.label}`} className="tree-toggle" onClick={(event) => { event.stopPropagation(); props.onToggle(node.id); }} tabIndex={-1} type="button"><ChevronDown aria-hidden className={expanded ? "" : "collapsed"} size={14} /></button> : <span className="tree-toggle-spacer" />}
+            {expandable ? <button aria-controls={groupId} aria-expanded={expanded} aria-label={expanded ? `Collapse ${node.label}` : `Expand ${node.label}`} className="tree-toggle" onClick={(event) => { event.stopPropagation(); props.onToggle(node.id); }} tabIndex={-1} type="button"><ChevronDown aria-hidden className={expanded ? "" : "collapsed"} size={14} /></button> : <span className="tree-toggle-spacer" />}
             {node.icon ? <span className="tree-icon" aria-hidden>{node.icon}</span> : null}
             <span className="tree-label">{node.label}</span>
             {node.actions ? <span className="tree-actions" onClick={(event) => event.stopPropagation()}>{node.actions}</span> : null}
           </div>
-          {expanded ? <ul role="group">{renderNodes(node.children ?? [], level + 1)}</ul> : null}
+          {expanded ? <ul id={groupId} role="group">{renderNodes(node.children ?? [], level + 1)}</ul> : null}
         </li>
       );
     });
   }
 
-  return <ul aria-label={props.label} className="tree" role="tree">{renderNodes(props.nodes, 1)}</ul>;
+  return <ul aria-label={props.label} className="tree" id={treeId} role="tree">{renderNodes(props.nodes, 1)}</ul>;
 }
 export function Toolbar(props: { label: string; children: ReactNode; orientation?: "horizontal" | "vertical" }) {
   return <div aria-label={props.label} aria-orientation={props.orientation ?? "horizontal"} className={`toolbar ${props.orientation ?? "horizontal"}`} role="toolbar">{props.children}</div>;
@@ -632,8 +686,19 @@ export function CodeViewer(props: { label: string; code: string; language?: stri
         <label className="code-viewer-search"><span className="visually-hidden">Find in {props.label}</span><input onChange={(event) => setQuery(event.target.value)} placeholder="Find" type="search" value={query} /></label>
         {query ? <span className="code-viewer-matches">{matchCount} matches</span> : null}
         <Tooltip content={wrap ? "Use horizontal scrolling" : "Wrap long lines"}><IconButton aria-pressed={wrap} label="Toggle line wrapping" onClick={() => setWrap((current) => !current)}><WrapText aria-hidden size={14} /></IconButton></Tooltip>
-        <Tooltip content="Copy visible source"><IconButton label="Copy source" onClick={() => void navigator.clipboard?.writeText(props.code)}><Copy aria-hidden size={14} /></IconButton></Tooltip>
-        {props.filename ? <Tooltip content={`Download ${props.filename}`}><IconButton label="Download source" onClick={() => downloadText(props.filename!, props.code)}><Download aria-hidden size={14} /></IconButton></Tooltip> : null}
+        <Tooltip content="Copy visible source"><IconButton label="Copy source" onClick={() => {
+          void navigator.clipboard?.writeText(props.code)
+            .then(() => notifyGlobalAlert({ id: `copy:${props.label}`, tone: "success", message: `${props.label} copied.` }))
+            .catch(() => notifyGlobalAlert({ id: `copy:${props.label}`, tone: "error", message: `${props.label} could not be copied.` }));
+        }}><Copy aria-hidden size={14} /></IconButton></Tooltip>
+        {props.filename ? <Tooltip content={`Download ${props.filename}`}><IconButton label="Download source" onClick={() => {
+          try {
+            downloadText(props.filename!, props.code);
+            notifyGlobalAlert({ id: `download:${props.filename}`, tone: "success", message: `${props.filename} download started.` });
+          } catch {
+            notifyGlobalAlert({ id: `download:${props.filename}`, tone: "error", message: `${props.filename} could not be downloaded.` });
+          }
+        }}><Download aria-hidden size={14} /></IconButton></Tooltip> : null}
       </Toolbar>
       <pre className={wrap ? "wrap" : ""} data-language={props.language}><code>{props.code}</code></pre>
     </section>
@@ -713,6 +778,7 @@ export type DialogProps = {
   description?: string;
   busy?: boolean;
   closeOnEscape?: boolean;
+  dialogRole?: "dialog" | "alertdialog";
   onClose(): void;
 };
 
@@ -730,84 +796,56 @@ export function Modal(props: DialogProps) {
   }
   if (typeof document === "undefined") return null;
   return createPortal(
-    <div className="modal-backdrop">
-      <ModalContent {...props} onKeyDown={submitOnEnter} />
+    <div className="modal-backdrop" data-overlay-root="modal">
+      <ModalContent {...props} onKeyDown={submitOnEnter} overlayMode="modal" />
     </div>,
     document.body,
   );
 }
 
-export function ModalContent(props: DialogProps & { onKeyDown?(event: KeyboardEvent<HTMLElement>): void }) {
+export function ModalContent(props: DialogProps & { onKeyDown?(event: KeyboardEvent<HTMLElement>): void; overlayMode?: Extract<OverlayEnvironmentMode, "modal" | "drawer"> }) {
   const panelRef = useRef<HTMLElement>(null);
+  const behaviorRef = useRef({ busy: false, closeOnEscape: true, onClose: props.onClose });
   const titleId = `dialog-title-${useId().replace(/:/g, "")}`;
   const descriptionId = props.description ? `${titleId}-description` : undefined;
+  const busy = Boolean(props.busy || useInheritedOperationBusy());
+  behaviorRef.current = { busy, closeOnEscape: props.closeOnEscape !== false, onClose: props.onClose };
 
   useEffect(() => {
     const panel = panelRef.current;
     if (!panel) return;
     const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const overlay = panel.closest(".modal-backdrop, .drawer-backdrop");
-    const siblings = Array.from(document.body.children).filter((element) => element !== overlay);
-    const previousStates = siblings.map((element) => ({
-      element: element as HTMLElement,
-      ariaHidden: element.getAttribute("aria-hidden"),
-    }));
-    siblings.forEach((element) => {
-      element.setAttribute("aria-hidden", "true");
+    const root = panel.closest<HTMLElement>("[data-overlay-root]") ?? panel;
+    const release = acquireOverlayEnvironment(document, {
+      mode: props.overlayMode ?? "modal",
+      panel,
+      root,
+      returnFocus,
+      canDismiss: () => behaviorRef.current.closeOnEscape && !behaviorRef.current.busy,
+      onEscape: () => behaviorRef.current.onClose(),
+      trapFocus: true
     });
-    const preventBackgroundScroll = (event: Event) => {
-      if (!panel.contains(event.target as Node | null)) event.preventDefault();
-    };
-    document.addEventListener("wheel", preventBackgroundScroll, { capture: true, passive: false });
-    document.addEventListener("touchmove", preventBackgroundScroll, { capture: true, passive: false });
     const initial = panel.querySelector<HTMLElement>("[data-autofocus], [autofocus], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled)");
     (initial ?? panel).focus({ preventScroll: true });
     return () => {
-      document.removeEventListener("wheel", preventBackgroundScroll, true);
-      document.removeEventListener("touchmove", preventBackgroundScroll, true);
-      previousStates.forEach(({ element, ariaHidden }) => {
-        if (ariaHidden === null) element.removeAttribute("aria-hidden");
-        else element.setAttribute("aria-hidden", ariaHidden);
-      });
-      returnFocus?.focus({ preventScroll: true });
+      release();
     };
   }, []);
 
   function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
-    if (event.key === "Escape" && props.closeOnEscape !== false && !props.busy) {
-      event.preventDefault();
-      props.onClose();
-      return;
-    }
-    if (event.key === "Tab") {
-      const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
-        'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
-      )).filter((element) => !element.hidden && element.getAttribute("aria-hidden") !== "true");
-      if (focusable.length) {
-        const first = focusable[0]!;
-        const last = focusable[focusable.length - 1]!;
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-      }
-    }
     props.onKeyDown?.(event);
   }
 
   return (
     <section
-      aria-busy={props.busy || undefined}
+      aria-busy={busy || undefined}
       aria-describedby={descriptionId}
       aria-labelledby={titleId}
       aria-modal="true"
       className={`modal-panel${props.className ? ` ${props.className}` : ""}`}
       onKeyDown={handleKeyDown}
       ref={panelRef}
-      role="dialog"
+      role={props.dialogRole ?? "dialog"}
       tabIndex={-1}
     >
       <div className="panel-heading">
@@ -815,9 +853,9 @@ export function ModalContent(props: DialogProps & { onKeyDown?(event: KeyboardEv
           <h2 className="panel-title" id={titleId}>{props.title}</h2>
           {props.description ? <p id={descriptionId}>{props.description}</p> : null}
         </div>
-        <IconButton disabled={props.busy} label="Close" onClick={props.onClose}><X size={16} aria-hidden /></IconButton>
+        <IconButton disabled={busy} label="Close" onClick={props.onClose}><X size={16} aria-hidden /></IconButton>
       </div>
-      {props.children}
+      <fieldset className="modal-operation-boundary" disabled={busy}>{props.children}</fieldset>
     </section>
   );
 }
@@ -833,7 +871,7 @@ export function AlertDialog(props: {
   onConfirm(): void;
 }) {
   return (
-    <Modal busy={Boolean(props.busy)} closeOnEscape={!props.busy} description={props.description} title={props.title} onClose={props.onCancel}>
+    <Modal busy={Boolean(props.busy)} closeOnEscape={!props.busy} description={props.description} dialogRole="alertdialog" title={props.title} onClose={props.onCancel}>
       {props.objectLabel ? <div className="dialog-object-label"><strong>{props.objectLabel}</strong></div> : null}
       <div className="modal-actions">
         <Button disabled={props.busy} onClick={props.onCancel}>Cancel</Button>
@@ -879,8 +917,8 @@ export function AuthorizationDialog(props: {
 export function Drawer(props: DialogProps & { side?: "left" | "right" }) {
   if (typeof document === "undefined") return null;
   return createPortal(
-    <div className="drawer-backdrop">
-      <ModalContent {...props} className={`drawer-panel ${props.side ?? "right"}${props.className ? ` ${props.className}` : ""}`} />
+    <div className="drawer-backdrop" data-overlay-root="drawer">
+      <ModalContent {...props} className={`drawer-panel ${props.side ?? "right"}${props.className ? ` ${props.className}` : ""}`} overlayMode="drawer" />
     </div>,
     document.body,
   );
@@ -954,6 +992,7 @@ export function VisualAlert(props: { tone: AlertTone; title?: string; message: s
 
 export function GlobalAlertViewport() {
   const [alerts, setAlerts] = useState<GlobalAlertItem[]>([]);
+  const [pausedIds, setPausedIds] = useState<Set<string>>(() => new Set());
   useEffect(() => {
     const onAlert = (event: Event) => {
       const detail = (event as CustomEvent<GlobalAlertPayload>).detail;
@@ -966,7 +1005,9 @@ export function GlobalAlertViewport() {
         ...(detail.title ? { title: detail.title } : {}),
         message: detail.message,
         createdAt: Date.now(),
-        ttlMs
+        ttlMs,
+        ...(detail.actionLabel ? { actionLabel: detail.actionLabel } : {}),
+        ...(detail.onAction ? { onAction: detail.onAction } : {})
       };
       setAlerts((current) => [alert, ...current.filter((item) => item.id !== key)].slice(0, 4));
     };
@@ -975,30 +1016,54 @@ export function GlobalAlertViewport() {
   }, []);
   useEffect(() => {
     if (!alerts.length) return;
-    const timers = alerts.map((alert) => window.setTimeout(() => {
+    const timers = alerts.filter((alert) => !pausedIds.has(alert.id)).map((alert) => window.setTimeout(() => {
       setAlerts((current) => current.filter((item) => item.id !== alert.id));
     }, alert.ttlMs));
     return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [alerts]);
+  }, [alerts, pausedIds]);
   if (!alerts.length) return null;
   return (
-    <div className="global-alert-viewport" aria-live="polite" aria-label="Notifications">
+    <div className="global-alert-viewport" aria-label="Notifications">
       {alerts.map((alert) => (
-        <GlobalAlertCard key={alert.id} alert={alert} onDismiss={() => setAlerts((current) => current.filter((item) => item.id !== alert.id))} />
+        <GlobalAlertCard
+          key={alert.id}
+          alert={alert}
+          onDismiss={() => setAlerts((current) => current.filter((item) => item.id !== alert.id))}
+          onPause={(paused) => setPausedIds((current) => {
+            const next = new Set(current);
+            if (paused) next.add(alert.id);
+            else next.delete(alert.id);
+            return next;
+          })}
+        />
       ))}
     </div>
   );
 }
 
-function GlobalAlertCard(props: { alert: GlobalAlertItem; onDismiss(): void }) {
+function GlobalAlertCard(props: { alert: GlobalAlertItem; onDismiss(): void; onPause(paused: boolean): void }) {
   const Icon = props.alert.tone === "success" ? CheckCircle2 : props.alert.tone === "warning" ? AlertTriangle : props.alert.tone === "error" ? XCircle : Info;
   return (
-    <div className={`global-alert ${props.alert.tone}`} role={props.alert.tone === "error" ? "alert" : "status"}>
+    <div
+      className={`global-alert ${props.alert.tone}`}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) props.onPause(false);
+      }}
+      onFocus={() => props.onPause(true)}
+      onMouseEnter={() => props.onPause(true)}
+      onMouseLeave={() => props.onPause(false)}
+      role={props.alert.tone === "error" ? "alert" : "status"}
+    >
       <Icon size={16} aria-hidden />
       <span>
         {props.alert.title ? <strong>{props.alert.title}</strong> : null}
         <small>{props.alert.message}</small>
       </span>
+      {props.alert.actionLabel && props.alert.onAction ? (
+        <button className="global-alert-action" onClick={() => { props.alert.onAction?.(); props.onDismiss(); }} type="button">
+          {props.alert.actionLabel}
+        </button>
+      ) : null}
       <button className="global-alert-dismiss" onClick={props.onDismiss} title="Dismiss notification" aria-label="Dismiss notification" type="button">
         <X size={13} aria-hidden />
       </button>

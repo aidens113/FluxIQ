@@ -41,4 +41,11 @@ describe("SecretKeysLive view model", () => {
     expect(canSubmitAuth(auth, user, false)).toBe(true);
     expect(canSubmitAuth(auth, user)).toBe(false);
   });
+
+  it("routes create, update, rotate, reveal, and delete through the operation gate", () => {
+    const source = readFileSync(new URL("./secret-keys.tsx", import.meta.url), "utf8");
+    for (const operation of ["create-key", "update-key", "rotate-key", "reveal-key", "delete-key"]) {
+      expect(source).toContain(`operation.run("${operation}"`);
+    }
+  });
 });

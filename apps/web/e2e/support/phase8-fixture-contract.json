@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "profiles": {
+    "empty": {
+      "projects": 1,
+      "flows": 1,
+      "subflows": 0,
+      "hierarchyObjects": 1,
+      "activeGraphNodes": 0,
+      "routes": 0,
+      "runEvents": 0,
+      "problems": 0,
+      "docs": 0,
+      "recordings": 0,
+      "runs": 0,
+      "adaptations": 0
+    },
+    "ordinary": {
+      "projects": 1,
+      "flows": 25,
+      "subflows": 250,
+      "hierarchyObjects": 5000,
+      "activeGraphNodes": 1000,
+      "routes": 2500,
+      "runEvents": 10000,
+      "problems": 5000,
+      "docs": 5000,
+      "recordings": 1,
+      "runs": 250,
+      "adaptations": 250
+    },
+    "scale": {
+      "projects": 1,
+      "flows": 250,
+      "subflows": 5000,
+      "hierarchyObjects": 50000,
+      "activeGraphNodes": 5000,
+      "routes": 10000,
+      "runEvents": 250000,
+      "problems": 100000,
+      "docs": 100000,
+      "recordings": 1,
+      "runs": 250,
+      "adaptations": 5000
+    }
+  }
+}

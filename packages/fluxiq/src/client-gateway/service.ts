@@ -47,6 +47,10 @@ type PendingCommand = {
   timeout: ReturnType<typeof setTimeout>;
 };
 
+export type ClientGatewayItemKind = "sessions" | "pairings" | "trustedClients";
+export type ClientGatewaySummaryItem = ClientGatewaySession | ClientGatewayPairingChallenge | ClientGatewayTrustedClientView;
+export type ClientGatewaySummaryPage = { items: ClientGatewaySummaryItem[]; total: number; limit: number; lastId: string | null; hasMore: boolean };
+
 export class ClientGatewayService {
   private readonly enabled: boolean;
   private readonly publicUrl: string | undefined;
@@ -95,6 +99,36 @@ export class ClientGatewayService {
       trustedClients: [...this.trustedClients.values()].map((client) => this.publicTrustedClient(client)),
       auditLog: this.auditLog.slice(-100)
     };
+  }
+
+  summary(): { enabled: boolean; publicUrl?: string; counts: Record<ClientGatewayItemKind, number> } {
+    this.pruneExpiredPairings();
+    return {
+      enabled: this.enabled,
+      ...(this.publicUrl ? { publicUrl: this.publicUrl } : {}),
+      counts: { sessions: this.sessions.size, pairings: this.pairings.size, trustedClients: this.trustedClients.size }
+    };
+  }
+
+  listSummaryItems(input: { kind: ClientGatewayItemKind; afterId?: string | null; limit?: number; search?: string } ): ClientGatewaySummaryPage {
+    this.pruneExpiredPairings();
+    const idOf = input.kind === "sessions"
+      ? (item: ClientGatewaySummaryItem) => (item as ClientGatewaySession).sessionId
+      : input.kind === "pairings"
+        ? (item: ClientGatewaySummaryItem) => (item as ClientGatewayPairingChallenge).pairingCode
+        : (item: ClientGatewaySummaryItem) => (item as ClientGatewayTrustedClientView).trustedClientId;
+    const source: ClientGatewaySummaryItem[] = input.kind === "sessions"
+      ? [...this.sessions.values()].map((session) => this.publicSession(session))
+      : input.kind === "pairings"
+        ? [...this.pairings.values()].map((pairing) => ({ ...pairing }))
+        : [...this.trustedClients.values()].map((client) => this.publicTrustedClient(client));
+    const search = input.search?.trim().toLowerCase() ?? "";
+    const limit = Math.max(1, Math.min(200, Math.trunc(input.limit ?? 50) || 50));
+    const filtered = source.filter((item) => !search || Object.values(item).some((value) => typeof value === "string" && value.toLowerCase().includes(search)))
+      .sort((left, right) => idOf(left).localeCompare(idOf(right)));
+    const after = input.afterId ? filtered.filter((item) => idOf(item) > input.afterId!) : filtered;
+    const items = after.slice(0, limit);
+    return { items, total: filtered.length, limit, lastId: items.at(-1) ? idOf(items.at(-1)!) : null, hasMore: after.length > limit };
   }
 
   async authorizeToken(token: string | null | undefined): Promise<ClientGatewaySession | null> {

@@ -8,6 +8,20 @@ import type { AutomationHierarchyNode } from "./model";
 import { automationHierarchyPageKey } from "./paged-cache";
 
 describe("AutomationProjectTree", () => {
+  it("uses role-specific classes instead of cross-role tree button selectors", () => {
+    const css = readFileSync(fileURLToPath(new URL("../styles/workspace/05-hierarchy.css", import.meta.url)), "utf8");
+    const rows = readFileSync(fileURLToPath(new URL("./tree-rows.tsx", import.meta.url)), "utf8");
+
+    expect(css).not.toMatch(/\.automation-project-tree\s+button(?:\s|\{|\.|:)/u);
+    expect(css).toContain(".tree-row-main");
+    expect(css).toContain(".tree-row-disclosure");
+    expect(css).toContain(".tree-row-action");
+    expect(css).toContain(".tree-row-label");
+    expect(css).toContain("height: 44px");
+    expect(rows).toContain('className="tree-row-label"');
+    expect(rows).toContain('aria-label={`Add inside ${node.label}`}');
+    expect(rows).not.toContain('label: "Add inside"');
+  });
   it("isolates the hierarchy from unrelated parent view renders", () => {
     const source = readFileSync(fileURLToPath(new URL("./ProjectTree.tsx", import.meta.url)), "utf8");
     const rows = readFileSync(fileURLToPath(new URL("./tree-rows.tsx", import.meta.url)), "utf8");
@@ -37,19 +51,34 @@ describe("AutomationProjectTree", () => {
     expect(source).not.toContain("setTimeout");
     expect(source).not.toContain("clearTimeout");
     expect(source).not.toContain("singleClickTimer");
-    expect(source).toContain('props.openNode(props.node, "preview")');
-    expect(source).toContain('props.openNode(props.node, "new-window")');
+    expect(source).toContain('props.openNode(node, "preview")');
+    expect(source).toContain('props.openNode(node, "new-pane-or-focus")');
     expect(source).not.toContain("markAutomationHierarchyRowSelected");
     expect(source).not.toContain("onPointerDown=");
   });
   it("keeps sidebar pointer feedback free of press transitions", () => {
     const css = readFileSync(new URL("../styles/workspace/05-hierarchy.css", import.meta.url), "utf8");
 
-    expect(css).toContain(".automation-project-tree button {");
+    expect(css).toContain(".automation-tree-item .tree-row-main {");
     expect(css).toContain("transition: none");
-    expect(css).not.toContain(".automation-project-tree button:active");
+    expect(css).not.toContain(".automation-project-tree button");
     expect(css).not.toContain("content-visibility: auto");
     expect(css).not.toContain("contain-intrinsic-block-size");
+  });
+
+  it("contains condensed hierarchy labels within their virtual row", () => {
+    const css = readFileSync(new URL("../styles/workspace/05-hierarchy.css", import.meta.url), "utf8");
+    const rowMain = css.match(/\.automation-tree-item > button\.tree-row-main \{([^}]*)\}/u)?.[1] ?? "";
+    const title = css.match(/\.automation-tree-item > button\.tree-row-main strong \{([^}]*)\}/u)?.[1] ?? "";
+    const label = css.match(/\.automation-tree-item \.tree-row-label \{([^}]*)\}/u)?.[1] ?? "";
+
+    expect(rowMain).toContain("overflow: hidden");
+    expect(label).toContain("overflow: hidden");
+    expect(title).toContain("overflow: hidden");
+    expect(title).toContain("text-overflow: ellipsis");
+    expect(title).toContain("white-space: nowrap");
+    expect(title).not.toContain("overflow: visible");
+    expect(title).not.toContain("overflow-wrap: anywhere");
   });
 
 
@@ -108,6 +137,40 @@ describe("AutomationProjectTree", () => {
     expect(html).toContain('aria-label="Expand Primary checkout"');
     expect(html).not.toContain("Subflow Settings Child");
   });
+
+  it("uses the same dedicated disclosure control at every hierarchy depth", () => {
+    const nodes: AutomationHierarchyNode[] = [
+      { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "flow-nodes", sourceId: "flow.checkout", flowId: "flow.checkout" },
+      { id: "flow-a-instructions", label: "Instructions", kind: "flow-object", category: "flow", parentId: "flow-a", viewId: "flow-instructions", sourceId: "flow.checkout", flowId: "flow.checkout" },
+      { id: "flow-a-subflows", label: "Subflows", kind: "folder", category: "flow", parentId: "flow-a", viewId: "flow-subflows", sourceId: "flow.checkout", flowId: "flow.checkout" },
+      { id: "flow-a-primary", label: "Primary", kind: "subflow", category: "flow", parentId: "flow-a-subflows", viewId: "flow-nodes", sourceId: "subflow.primary", flowId: "flow.checkout", metadata: { defaultCollapsed: true, hierarchyContainer: true } },
+      { id: "flow-a-primary-nodes", label: "Nodes", kind: "flow-object", category: "flow", parentId: "flow-a-primary", viewId: "flow-nodes", sourceId: "subflow.primary", flowId: "flow.checkout" }
+    ];
+    const html = renderToStaticMarkup(
+      <AutomationProjectTree
+        nodes={nodes}
+        activeViewId="flow-nodes"
+        search=""
+        typeFilter="all"
+        selection={null}
+        recordingPrimaryKind={null}
+        setRecordingPrimaryKind={vi.fn()}
+        setSelection={vi.fn()}
+        openView={vi.fn()}
+        requestAction={vi.fn()}
+      />
+    );
+
+    expect(html).toContain('aria-label="Collapse Flows"');
+    expect(html).toContain('aria-label="Collapse Checkout"');
+    expect(html).toContain('aria-label="Collapse Subflows"');
+    expect(html).toContain('aria-label="Expand Primary"');
+    expect(html).not.toContain('aria-label="Collapse Instructions"');
+    expect(html.match(/tree-row-disclosure-slot/g)).toHaveLength(5);
+    expect(html.match(/class="tree-row-disclosure"[^>]*tabindex="-1"/g)).toHaveLength(4);
+    expect(html).toMatch(/aria-expanded="true"[^>]*aria-level="3"/u);
+  });
+
   it("renders distinct icons for different Flow-owned object roles", () => {
     const nodes: AutomationHierarchyNode[] = [
       { id: "flow-a", label: "Checkout", kind: "flow", category: "flow", parentId: null, viewId: "flow-nodes", sourceId: "flow.checkout", flowId: "flow.checkout" },
@@ -136,7 +199,9 @@ describe("AutomationProjectTree", () => {
     expect(html).toContain("lucide-settings");
     expect(html).toContain("lucide-radio");
     expect(html).toContain("lucide-history");
-    expect(html).toContain("folder-row type-folder");
+    expect(html).toContain('aria-label="Collapse Recordings"');
+    expect(html).toContain('aria-label="Collapse Runs"');
+    expect(html).toContain("tree-row-main type-folder");
   });
 
   it("visually selects Nodes while its subflow graph is open in the normal Flow editor", () => {
@@ -275,9 +340,12 @@ describe("AutomationProjectTree", () => {
     expect(automationHierarchyNodeCanCreateChildFolder(nodes[1]!)).toBe(true);
     expect(automationHierarchyNodeCanCreateChildFolder(nodes[2]!)).toBe(true);
     expect(automationHierarchyNodeCanCreateChildFolder(nodes[3]!)).toBe(false);
-    expect(html).toContain('aria-label="Subflows actions"');
+    expect(html).toContain('aria-label="Add inside Subflows"');
+    expect(html).toContain('aria-label="Add inside Checkout Steps"');
+    expect(html).not.toContain('aria-label="Subflows actions"');
     expect(html).toContain('aria-label="Checkout Steps actions"');
     expect(html).not.toContain('aria-label="Runs actions"');
+    expect(html).not.toContain('aria-label="Add inside Runs"');
   });
   it("allows deleting Flow category object rows without deleting generated Flow structure", () => {
     const nodes: AutomationHierarchyNode[] = [
@@ -342,7 +410,8 @@ describe("AutomationProjectTree", () => {
 
     expect(html).toContain('role="tree"');
     expect(html.match(/role="treeitem"/g)?.length).toBe(3);
-    expect(html.match(/role="group"/g)?.length).toBe(2);
+    expect(html).not.toContain("aria-rowcount");
+    expect(html).toContain('class="automation-tree-item root-folder automation-tree-virtual-item" data-tree-item-id="root-flow"');
     expect(html.match(/tabindex="0"/g)?.length).toBe(1);
     expect(html).toContain('aria-level="1"');
     expect(html).toContain('aria-level="2"');
@@ -351,7 +420,7 @@ describe("AutomationProjectTree", () => {
     expect(html).toContain('data-tree-parent-id="flow-a"');
   });
 
-  it("progressively pages large unfiltered sibling sets but never hides search matches", () => {
+  it("virtualizes large sibling sets without hiding search matches", () => {
     const nodes: AutomationHierarchyNode[] = [
       ...Array.from({ length: 124 }, (_, index): AutomationHierarchyNode => ({
         id: "flow-" + index,
@@ -381,8 +450,9 @@ describe("AutomationProjectTree", () => {
     );
 
     const unfiltered = render("");
-    expect(unfiltered.match(/role="treeitem"/g)?.length).toBe(101);
-    expect(unfiltered).toContain("Show 25 more");
+    expect(unfiltered.match(/role="treeitem"/g)?.length).toBeLessThanOrEqual(22);
+    expect(unfiltered).not.toContain("aria-rowcount");
+    expect(unfiltered).not.toContain("Show 25 more");
     expect(unfiltered).not.toContain("ZZZ final target");
 
     const searched = render("ZZZ final");

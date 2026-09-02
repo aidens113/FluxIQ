@@ -35,6 +35,10 @@ describe("AutomationNodeParameterEditor reference picker", () => {
       />
     );
     expect(html).toContain('role="listbox"');
+    expect(html).toContain('tabindex="0"');
+    expect(html).toContain("aria-activedescendant=");
+    expect(html).toContain('role="option"');
+    expect(html).not.toMatch(/<button[^>]*role="option"/u);
     expect(html).toContain("Search Routine");
     expect(html).toContain("First routine");
     expect(html).toContain("Published");

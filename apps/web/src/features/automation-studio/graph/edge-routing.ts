@@ -43,6 +43,9 @@ export function reconnectAutomationEdge<T extends AutomationEdgeNodeData>(oldEdg
   const sourcePort = nodes.find((node) => node.id === source)?.data.outputs?.find((port) => port.id === sourceHandle);
   const label = sourcePort ? automationPortDisplayLabel(sourcePort) : automationPortLabelFromId(sourceHandle) ?? String(oldEdge.label ?? "Next");
   const color = automationPortColor(automationPortTone(sourcePort ?? { id: sourceHandle, label, valueType: "any" }, "source"));
+  const siblingIndex = existingEdges.filter((edge) => edge.id !== oldEdge.id && edge.source === source && edge.target === target).length;
+  const routeIndex = existingEdges.filter((edge) => edge.id !== oldEdge.id && edge.source === source).length;
+  const lane = Number((oldEdge.data as Record<string, unknown> | undefined)?.lane ?? automationEdgeLane(oldEdge.id, siblingIndex));
   const updatedEdges = existingEdges.map((edge) => {
     if (edge.id !== oldEdge.id) return edge;
     return {
@@ -55,6 +58,9 @@ export function reconnectAutomationEdge<T extends AutomationEdgeNodeData>(oldEdg
       data: {
         ...(edge.data as Record<string, unknown> | undefined),
         label,
+        lane,
+        siblingIndex,
+        routeIndex,
         sourcePort: sourceHandle,
         targetPort: targetHandle
       },
@@ -62,7 +68,7 @@ export function reconnectAutomationEdge<T extends AutomationEdgeNodeData>(oldEdg
       style: { ...edge.style, stroke: color }
     };
   });
-  return rebalanceAutomationEdgeLanes(updatedEdges, nodes);
+  return updatedEdges;
 }
 
 export function automationEdgeRoute(id: string, sourceX: number, sourceY: number, targetX: number, targetY: number, data: Record<string, unknown> | undefined): { kind: "step" | "loop"; lane: number } {

@@ -1,5 +1,5 @@
 import { Plus, Search, Trash2 } from "lucide-react";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import type { AutomationNodeParameter } from "fluxiq/automation-studio/nodes";
 import type { JsonObject } from "../../programs/program-api";
 
@@ -139,24 +139,76 @@ function AutomationNodeParameterControl(props: { parameter: AutomationNodeParame
 
 function AutomationReferenceParameterField(props: { parameter: AutomationNodeParameter; value: string; options: AutomationReferenceOption[]; onChange(value: unknown): void }) {
   const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
   const labelId = "automation-reference-" + useId().replace(/:/g, "");
+  const listboxId = labelId + "-listbox";
+  const listboxRef = useRef<HTMLDivElement>(null);
   const selected = props.options.find((option) => option.id === props.value);
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const filtered = props.options.filter((option) => !normalizedQuery || (option.label + " " + (option.detail ?? "")).toLocaleLowerCase().includes(normalizedQuery));
+  const boundedActiveIndex = Math.max(0, Math.min(activeIndex, filtered.length - 1));
+  const optionId = (index: number) => listboxId + "-option-" + index;
+  const chooseActive = () => {
+    const option = filtered[boundedActiveIndex];
+    if (option) props.onChange(option.id);
+  };
   return (
     <div className="automation-parameter-field automation-reference-control">
       <span id={labelId}>{props.parameter.label}{props.parameter.required ? " *" : ""}</span>
       {props.options.length ? <>
         <label className="automation-reference-search">
           <Search size={13} aria-hidden />
-          <input aria-label={"Search " + props.parameter.label} onChange={(event) => setQuery(event.target.value)} placeholder={props.parameter.ui?.placeholder ?? "Search available objects"} type="search" value={query} />
+          <input
+            aria-controls={listboxId}
+            aria-label={"Search " + props.parameter.label}
+            onChange={(event) => { setQuery(event.target.value); setActiveIndex(0); }}
+            onKeyDown={(event) => {
+              if (event.key !== "ArrowDown") return;
+              event.preventDefault();
+              listboxRef.current?.focus();
+            }}
+            placeholder={props.parameter.ui?.placeholder ?? "Search available objects"}
+            type="search"
+            value={query}
+          />
         </label>
-        <div aria-labelledby={labelId} className="automation-reference-options" role="listbox">
-          {filtered.map((option) => (
-            <button aria-selected={option.id === props.value} className={option.id === props.value ? "selected" : ""} key={option.id} onClick={() => props.onChange(option.id)} role="option" type="button">
+        <div
+          aria-activedescendant={filtered.length ? optionId(boundedActiveIndex) : undefined}
+          aria-labelledby={labelId}
+          className="automation-reference-options"
+          id={listboxId}
+          onKeyDown={(event) => {
+            if (!filtered.length) return;
+            if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Home" || event.key === "End") {
+              event.preventDefault();
+              setActiveIndex((current) => event.key === "Home"
+                ? 0
+                : event.key === "End"
+                  ? filtered.length - 1
+                  : event.key === "ArrowDown"
+                    ? Math.min(filtered.length - 1, current + 1)
+                    : Math.max(0, current - 1));
+            } else if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              chooseActive();
+            }
+          }}
+          ref={listboxRef}
+          role="listbox"
+          tabIndex={0}
+        >
+          {filtered.map((option, index) => (
+            <div
+              aria-selected={option.id === props.value}
+              className={[option.id === props.value ? "selected" : "", index === boundedActiveIndex ? "active" : ""].filter(Boolean).join(" ")}
+              id={optionId(index)}
+              key={option.id}
+              onClick={() => { setActiveIndex(index); props.onChange(option.id); }}
+              role="option"
+            >
               <strong>{option.label}</strong>
               {option.detail ? <small>{option.detail}</small> : null}
-            </button>
+            </div>
           ))}
           {!filtered.length ? <span className="automation-reference-empty">No matching objects.</span> : null}
         </div>

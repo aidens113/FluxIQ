@@ -22,12 +22,17 @@ export type RouterContentViewProps = {
   onCreateSubflow: (() => void) | undefined; requestAuthorization(action: NonNullable<Authorization>["action"]): void;
   requestRouteMutation(ruleId: string, action: RouteMutation): void; retryFlowMap(): Promise<void>;
   routeDraft: RouteDraft; routeGroups: any[]; routeModalOpen: boolean; routePageOffset: number;
+  routeCounts: { total: number; active: number; disabled: number; byGroup: Record<string, number> };
+  routeHasMore: boolean; routeQuery: string; routeStatus: "all" | "active" | "disabled";
+  onNextRoutePage(): void; onPreviousRoutePage(): void; onRouteQuery(value: string): void;
+  onRouteStatus(value: "all" | "active" | "disabled"): void; onSubflowQuery(value: string): void;
+  subflowTotal: number; subflowsLoading: boolean;
   routeTestResult: null | { matched: boolean; reason: string }; routeTestValue: string;
   runRouteTest(): Promise<void>; saving: boolean; selectedGroupId: string;
   setAuthorization: Setter<Authorization>; setAuthorizationPin: Setter<string>;
   setFallbackDraft: DraftSetter<FallbackDraft>; setFallbackModalOpen: Setter<boolean>; setGroupDraft: DraftSetter<GroupDraft>;
   setGroupModalOpen: Setter<boolean>; setRouteDraft: DraftSetter<RouteDraft>; setRouteModalOpen: Setter<boolean>;
-  setRoutePageOffset: Setter<number>; setRouteTestResult: Setter<null | { matched: boolean; reason: string }>;
+  setRouteTestResult: Setter<null | { matched: boolean; reason: string }>;
   setRouteTestValue: Setter<string>; setSelectedGroupId: Setter<string>; sortedRoutes: any[];
   subflowOptions: any[]; testingRoute: boolean; visibleRoutePage: any[]; visibleRoutes: any[];
 };
@@ -40,8 +45,10 @@ export function RouterContentView(props: RouterContentViewProps) {
     requestRouteMutation, retryFlowMap, routeDraft, routeGroups, routeModalOpen, routePageOffset,
     routeTestResult, routeTestValue, runRouteTest, saving, selectedGroupId, setAuthorization,
     setAuthorizationPin, setFallbackDraft, setFallbackModalOpen, setGroupDraft, setGroupModalOpen,
-    setRouteDraft, setRouteModalOpen, setRoutePageOffset, setRouteTestResult, setRouteTestValue,
-    setSelectedGroupId, sortedRoutes, subflowOptions, testingRoute, visibleRoutePage, visibleRoutes
+    setRouteDraft, setRouteModalOpen, setRouteTestResult, setRouteTestValue,
+    setSelectedGroupId, sortedRoutes, subflowOptions, testingRoute, visibleRoutePage, visibleRoutes,
+    routeCounts, routeHasMore, routeQuery, routeStatus, onNextRoutePage, onPreviousRoutePage,
+    onRouteQuery, onRouteStatus, onSubflowQuery, subflowTotal, subflowsLoading
   } = props;
   if (!flowId) {
     return (
@@ -70,7 +77,7 @@ export function RouterContentView(props: RouterContentViewProps) {
     );
   }
 
-  if (!activeSubflows.length) {
+  if (!subflowTotal) {
     return (
       <section className="automation-runs-workspace automation-flow-map-workspace">
         {error ? <div className="automation-router-error" role="alert"><StatusText value={error} /><button className="button" onClick={() => void retryFlowMap()} type="button">Retry</button></div> : null}
@@ -98,7 +105,7 @@ export function RouterContentView(props: RouterContentViewProps) {
       <section className="automation-router-workbench" aria-label="Router routes">
         <div className="automation-router-group-bar">
           <div className="automation-router-group-filters" role="group" aria-label="Filter routes by group">
-            {[{ groupId: "all", name: "All routes", count: sortedRoutes.length }, { groupId: "ungrouped", name: "Ungrouped", count: sortedRoutes.filter((route) => !route.metadata?.groupId).length }, ...routeGroups.map((group) => ({ ...group, count: sortedRoutes.filter((route) => route.metadata?.groupId === group.groupId).length }))].map((group) => (
+            {[{ groupId: "all", name: "All routes", count: routeCounts.total }, { groupId: "ungrouped", name: "Ungrouped", count: routeCounts.byGroup.ungrouped ?? 0 }, ...routeGroups.map((group) => ({ ...group, count: routeCounts.byGroup[group.groupId] ?? 0 }))].map((group) => (
               <div className={`automation-router-group-option${selectedGroupId === group.groupId ? " selected" : ""}`} key={group.groupId}>
                 <button aria-pressed={selectedGroupId === group.groupId} onClick={() => setSelectedGroupId(group.groupId)} type="button">
                   <span>{group.name}</span>
@@ -109,6 +116,16 @@ export function RouterContentView(props: RouterContentViewProps) {
             ))}
           </div>
           <button className="button automation-router-new-group" onClick={beginNewGroup} disabled={!flowId} type="button"><Plus size={14} aria-hidden />Group</button>
+        </div>
+
+        <div className="automation-router-list-controls">
+          <label className="automation-runtime-search">
+            <Search aria-hidden size={15} />
+            <span className="sr-only">Search routes</span>
+            <input onChange={(event) => onRouteQuery(event.target.value)} placeholder="Search routes or targets" type="search" value={routeQuery} />
+            {routeQuery ? <button aria-label="Clear route search" onClick={() => onRouteQuery("")} type="button"><X aria-hidden size={14} /></button> : null}
+          </label>
+          <label className="field compact"><span className="field-label">Status</span><select onChange={(event) => onRouteStatus(event.target.value as "all" | "active" | "disabled")} value={routeStatus}><option value="all">All statuses</option><option value="active">Active</option><option value="disabled">Disabled</option></select></label>
         </div>
 
         <div className="automation-router-route-list-heading" aria-hidden>
@@ -134,7 +151,7 @@ export function RouterContentView(props: RouterContentViewProps) {
                 </button>
                 <Menu icon={<MoreHorizontal size={15} aria-hidden />} iconOnly label={"Actions for " + String(rule.name ?? rule.ruleId)} options={[
                   { id: "move-up", label: "Move up", icon: <ArrowUp size={14} aria-hidden />, disabled: routeIndex === 0, onSelect: () => requestRouteMutation(rule.ruleId, "move_up") },
-                  { id: "move-down", label: "Move down", icon: <ArrowDown size={14} aria-hidden />, disabled: routeIndex === visibleRoutes.length - 1, onSelect: () => requestRouteMutation(rule.ruleId, "move_down") },
+                  { id: "move-down", label: "Move down", icon: <ArrowDown size={14} aria-hidden />, disabled: !routeHasMore && index === visibleRoutes.length - 1, onSelect: () => requestRouteMutation(rule.ruleId, "move_down") },
                   { id: "duplicate", label: "Duplicate route", icon: <Copy size={14} aria-hidden />, onSelect: () => requestRouteMutation(rule.ruleId, "duplicate") },
                   { id: "toggle", label: rule.status === "active" ? "Disable route" : "Enable route", icon: <Power size={14} aria-hidden />, onSelect: () => requestRouteMutation(rule.ruleId, "toggle") },
                   { id: "delete", label: "Delete route", icon: <Trash2 size={14} aria-hidden />, danger: true, onSelect: () => requestRouteMutation(rule.ruleId, "delete") }
@@ -144,16 +161,16 @@ export function RouterContentView(props: RouterContentViewProps) {
           })}
           {!visibleRoutes.length ? <div className="automation-router-routes-empty">
             <Route size={20} aria-hidden />
-            <strong>{sortedRoutes.length ? "No routes in this group" : "No routes yet"}</strong>
-            <span>{sortedRoutes.length ? "Choose another group or add a route here." : "Add the first route to send runtime traffic to a subflow."}</span>
+            <strong>{routeCounts.total ? "No routes on this page" : "No routes yet"}</strong>
+            <span>{routeCounts.total ? "Adjust the filters or return to the previous page." : "Add the first route to send runtime traffic to a subflow."}</span>
             <button className="button button-primary" onClick={beginNewRoute} type="button"><Plus size={14} aria-hidden />New Route</button>
           </div> : null}
         </div>
-        {visibleRoutes.length > ROUTER_ROUTE_PAGE_SIZE ? <footer className="automation-runtime-pagination-footer">
-          <span>{routePageOffset + 1}-{Math.min(visibleRoutes.length, routePageOffset + visibleRoutePage.length)} of {visibleRoutes.length} routes</span>
+        {routePageOffset > 0 || routeHasMore ? <footer className="automation-runtime-pagination-footer">
+          <span>{routeCounts.total ? routePageOffset + 1 : 0}-{Math.min(routeCounts.total, routePageOffset + visibleRoutePage.length)} of {routeCounts.total} routes</span>
           <div className="automation-runtime-pagination">
-            <button disabled={routePageOffset === 0} onClick={() => setRoutePageOffset(Math.max(0, routePageOffset - ROUTER_ROUTE_PAGE_SIZE))} type="button"><ChevronLeft size={15} aria-hidden />Previous</button>
-            <button disabled={routePageOffset + ROUTER_ROUTE_PAGE_SIZE >= visibleRoutes.length} onClick={() => setRoutePageOffset(routePageOffset + ROUTER_ROUTE_PAGE_SIZE)} type="button">Next<ChevronRight size={15} aria-hidden /></button>
+            <button disabled={routePageOffset === 0} onClick={onPreviousRoutePage} type="button"><ChevronLeft size={15} aria-hidden />Previous</button>
+            <button disabled={!routeHasMore} onClick={onNextRoutePage} type="button">Next<ChevronRight size={15} aria-hidden /></button>
           </div>
         </footer> : null}
 
@@ -168,7 +185,7 @@ export function RouterContentView(props: RouterContentViewProps) {
         <div className="automation-modal-form automation-router-route-editor">
           <div className="automation-router-editor-grid">
             <Field label="Route name"><input autoFocus value={routeDraft.name} onChange={(event) => setRouteDraft((current) => ({ ...current, name: event.target.value }))} placeholder="For example, Handle refund requests" /></Field>
-            <Combobox {...(!routeDraft.targetSubflowId ? { error: "Choose a target subflow." } : {})} label="Target subflow" onChange={(value) => setRouteDraft((current) => ({ ...current, targetSubflowId: value }))} options={subflowOptions} placeholder="Search subflows" value={routeDraft.targetSubflowId} />
+            <Combobox {...(!routeDraft.targetSubflowId ? { error: "Choose a target subflow." } : {})} label="Target subflow" loading={subflowsLoading} onQueryChange={onSubflowQuery} onChange={(value) => setRouteDraft((current) => ({ ...current, targetSubflowId: value }))} options={subflowOptions} placeholder="Search all subflows" value={routeDraft.targetSubflowId} />
             <Field label="Route group"><select value={routeDraft.groupId} onChange={(event) => setRouteDraft((current) => ({ ...current, groupId: event.target.value }))}><option value="">Ungrouped</option>{routeGroups.map((group) => <option key={group.groupId} value={group.groupId}>{group.name}</option>)}</select></Field>
             <Field label="Priority"><input min="0" step="1" type="number" value={routeDraft.order} onChange={(event) => setRouteDraft((current) => ({ ...current, order: Number(event.target.value) }))} /></Field>
           </div>
@@ -218,7 +235,7 @@ export function RouterContentView(props: RouterContentViewProps) {
             </select>
           </Field>
           {fallbackDraft.kind === "subflow"
-            ? <Combobox {...(!fallbackDraft.targetSubflowId ? { error: "Choose a fallback subflow." } : {})} label="Fallback subflow" onChange={(value) => setFallbackDraft((current) => ({ ...current, targetSubflowId: value }))} options={subflowOptions} placeholder="Search subflows" value={fallbackDraft.targetSubflowId} />
+            ? <Combobox {...(!fallbackDraft.targetSubflowId ? { error: "Choose a fallback subflow." } : {})} label="Fallback subflow" loading={subflowsLoading} onQueryChange={onSubflowQuery} onChange={(value) => setFallbackDraft((current) => ({ ...current, targetSubflowId: value }))} options={subflowOptions} placeholder="Search all subflows" value={fallbackDraft.targetSubflowId} />
             : <Field label="Run message"><textarea autoFocus rows={3} value={fallbackDraft.message} onChange={(event) => setFallbackDraft((current) => ({ ...current, message: event.target.value }))} placeholder="Explain why the run stopped" /></Field>}
           <div className="modal-actions"><button className="button" onClick={() => setFallbackModalOpen(false)} type="button">Cancel</button><button className="button button-primary" onClick={() => requestAuthorization("save-fallback")} disabled={saving || (fallbackDraft.kind === "subflow" ? !fallbackDraft.targetSubflowId : !fallbackDraft.message.trim())} type="button">Save Fallback</button></div>
         </div>

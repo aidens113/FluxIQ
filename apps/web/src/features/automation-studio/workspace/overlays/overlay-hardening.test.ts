@@ -5,8 +5,10 @@ import { boundedHierarchyFolderOptions } from "./HierarchyCreateOverlaySurface";
 import {
   acquireOverlayEnvironment,
   canCloseFloatingOverlay,
-  overlayEnvironmentDepth
-} from "./overlay-environment";
+  overlayEnvironmentDepth,
+  overlayEnvironmentListenerCount,
+  type OverlayEnvironmentMode
+} from "../../../programs/overlay-environment";
 import {
   automationStudioOverlayRootAdoptionMap,
   automationStudioOverlayRootAdoptionSteps,
@@ -71,36 +73,36 @@ describe("Phase 9 overlay hardening", () => {
 
   it("keeps scroll locked until the final overlapping overlay releases", () => {
     const focus = vi.fn();
-    const documentRef = {
-      body: { style: { overflow: "auto" } }
-    } as unknown as Document;
-    const releaseFirst = acquireOverlayEnvironment(documentRef, { focus, isConnected: true });
-    const releaseSecond = acquireOverlayEnvironment(documentRef, null);
+    const documentRef = overlayDocument("auto");
+    const releaseFirst = acquireOverlayEnvironment(documentRef, overlayOptions({ focus, isConnected: true }));
+    const releaseSecond = acquireOverlayEnvironment(documentRef, overlayOptions(null));
 
+    expect(documentRef.addEventListener).toHaveBeenCalledTimes(4);
+    expect(documentRef.defaultView?.addEventListener).toHaveBeenCalledTimes(2);
     expect(documentRef.body.style.overflow).toBe("hidden");
     expect(overlayEnvironmentDepth(documentRef)).toBe(2);
     releaseFirst();
     expect(documentRef.body.style.overflow).toBe("hidden");
     expect(focus).not.toHaveBeenCalled();
+    expect(documentRef.removeEventListener).not.toHaveBeenCalled();
     releaseSecond();
     expect(documentRef.body.style.overflow).toBe("auto");
     expect(focus).not.toHaveBeenCalled();
+    expect(documentRef.removeEventListener).toHaveBeenCalledTimes(4);
   });
 
   it("restores focus to the underlying overlay without unlocking scroll", () => {
     const originalFocus = vi.fn();
     const underlyingFocus = vi.fn();
-    const documentRef = {
-      body: { style: { overflow: "auto" } }
-    } as unknown as Document;
-    const releaseUnderlying = acquireOverlayEnvironment(documentRef, {
+    const documentRef = overlayDocument("auto");
+    const releaseUnderlying = acquireOverlayEnvironment(documentRef, overlayOptions({
       focus: originalFocus,
       isConnected: true
-    });
-    const releaseTop = acquireOverlayEnvironment(documentRef, {
+    }));
+    const releaseTop = acquireOverlayEnvironment(documentRef, overlayOptions({
       focus: underlyingFocus,
       isConnected: true
-    });
+    }));
 
     releaseTop();
     expect(underlyingFocus).toHaveBeenCalledWith({ preventScroll: true });
@@ -111,27 +113,25 @@ describe("Phase 9 overlay hardening", () => {
   });
   it("restores focus after the final overlay and ignores disconnected targets", () => {
     const focus = vi.fn();
-    const documentRef = {
-      body: { style: { overflow: "" } }
-    } as unknown as Document;
+    const documentRef = overlayDocument("");
 
-    acquireOverlayEnvironment(documentRef, { focus, isConnected: true })();
+    acquireOverlayEnvironment(documentRef, overlayOptions({ focus, isConnected: true }))();
     expect(focus).toHaveBeenCalledWith({ preventScroll: true });
 
-    acquireOverlayEnvironment(documentRef, { focus, isConnected: false })();
+    acquireOverlayEnvironment(documentRef, overlayOptions({ focus, isConnected: false }))();
     expect(focus).toHaveBeenCalledTimes(1);
   });
 
   it("does not mutate document scrolling for floating menu overlays", () => {
-    const documentRef = {
-      body: { style: { overflow: "auto" } }
-    } as unknown as Document;
+    const documentRef = overlayDocument("auto");
 
-    const release = acquireOverlayEnvironment(documentRef, null, { lockScroll: false });
+    const release = acquireOverlayEnvironment(documentRef, overlayOptions(null, "menu"));
     expect(documentRef.body.style.overflow).toBe("auto");
     expect(overlayEnvironmentDepth(documentRef)).toBe(1);
+    expect(overlayEnvironmentListenerCount(documentRef)).toBe(1);
     release();
     expect(documentRef.body.style.overflow).toBe("auto");
+    expect(overlayEnvironmentListenerCount(documentRef)).toBe(0);
   });
 
   it("blocks implicit dismissal during a command but permits explicit cancellation", () => {
@@ -198,3 +198,20 @@ describe("Phase 9 overlay hardening", () => {
     expect(automationStudioOverlayRootAdoptionSteps).toHaveLength(7);
   });
 });
+
+function overlayDocument(overflow: string): Document {
+  return {
+    body: { style: { overflow }, children: [] },
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    defaultView: { addEventListener: vi.fn(), removeEventListener: vi.fn() }
+  } as unknown as Document;
+}
+
+function overlayOptions(
+  returnFocus: { focus(options?: FocusOptions): void; isConnected?: boolean } | null,
+  mode: OverlayEnvironmentMode = "modal"
+) {
+  const panel = { contains: () => false, querySelectorAll: () => [], focus: vi.fn(), ownerDocument: {} } as unknown as HTMLElement;
+  return { mode, panel, root: panel, returnFocus };
+}

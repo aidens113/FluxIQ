@@ -26,6 +26,7 @@ export type FlowSettingsDraft = {
   visibility: "private" | "public";
   timeoutSeconds: string;
   maxConcurrency: string;
+  adaptationMode: "fully_adaptive" | "manual_approval" | "no_llm_intervention";
   trainingMode: "normal" | "train_for_runs" | "train_until_stable" | "continuous_adaptive";
   trainForRunCount: string;
   minimumStabilityScore: string;
@@ -86,7 +87,7 @@ export function flowLimitsInterfaceErrors(draft: Pick<FlowSettingsDraft, "maxInt
 type FlowEffectiveSetting = { key: keyof FlowSettingsDraft; group: string; label: string; value: string; source: "Flow override" | "Framework default" | "Flow contract"; resettable: boolean };
 
 export const FLOW_SETTINGS_DEFAULT_VALUES: Partial<FlowSettingsDraft> = {
-  timeoutSeconds: "30", maxConcurrency: "1", trainingMode: "continuous_adaptive", llmProvider: "host", llmModel: "host-default",
+  timeoutSeconds: "30", maxConcurrency: "1", adaptationMode: "fully_adaptive", trainingMode: "continuous_adaptive", llmProvider: "host", llmModel: "host-default",
   adaptationPreset: "adaptive", adaptationProposalMode: "auto", maxInterventionsPerRun: "2", maxTokensPerRun: "12000",
   maxCostUsdPerTrainingWindow: "5", maxRetriesPerAction: "1", maxRecoveryAttemptsPerSubflow: "2", maxReroutesPerRun: "2"
 };
@@ -97,7 +98,7 @@ export function flowEffectiveSettings(flow: any, draft: FlowSettingsDraft): Flow
   const describeMode = (value: string) => value === "continuous_adaptive" ? "Fully adaptive" : value === "train_for_runs" ? "Fixed training runs" : value === "train_until_stable" ? "Until stable" : "No LLM intervention";
   const describeApproval = (value: string) => value === "auto" ? "Automatic" : value === "mixed" ? "Manual for risky" : "Manual only";
   const definitions: Array<{ key: keyof FlowSettingsDraft; group: string; label: string; value: string; overridden: boolean }> = [
-    { key: "trainingMode", group: "Runtime", label: "LLM intervention mode", value: describeMode(draft.trainingMode), overridden: draft.trainingMode !== "continuous_adaptive" },
+    { key: "adaptationMode", group: "Runtime", label: "LLM intervention mode", value: draft.adaptationMode === "fully_adaptive" ? "Fully adaptive" : draft.adaptationMode === "manual_approval" ? "Manual approval" : "No LLM intervention", overridden: draft.adaptationMode !== "fully_adaptive" },
     { key: "timeoutSeconds", group: "Runtime", label: "Flow timeout", value: draft.timeoutSeconds + " seconds", overridden: Number(draft.timeoutSeconds) !== 30 },
     { key: "maxConcurrency", group: "Runtime", label: "Maximum concurrent runs", value: draft.maxConcurrency, overridden: Number(draft.maxConcurrency) !== 1 },
     { key: "llmProvider", group: "LLM", label: "Provider", value: flowLlmProvider(draft.llmProvider).label, overridden: draft.llmProvider !== "host" },
@@ -115,6 +116,12 @@ export function flowEffectiveSettings(flow: any, draft: FlowSettingsDraft): Flow
 export function applyFlowTrainingMode(draft: FlowSettingsDraft, trainingMode: FlowSettingsDraft["trainingMode"]): FlowSettingsDraft {
   if (trainingMode === "normal") return { ...draft, trainingMode, allowLlmIntervention: false, allowAdaptationCreation: false, allowPromotion: false };
   return { ...draft, trainingMode, allowLlmIntervention: true, allowAdaptationCreation: true, allowPromotion: draft.adaptationProposalMode !== "manual" };
+}
+
+export function applyFlowAdaptationMode(draft: FlowSettingsDraft, adaptationMode: FlowSettingsDraft["adaptationMode"]): FlowSettingsDraft {
+  if (adaptationMode === "no_llm_intervention") return applyFlowAdaptationPreset({ ...draft, adaptationMode, trainingMode: "normal", proposalApprovalMode: "manual", adaptationProposalMode: "manual", allowLlmIntervention: false, allowAdaptationCreation: false, allowPromotion: false }, "locked");
+  if (adaptationMode === "manual_approval") return applyFlowAdaptationPreset({ ...draft, adaptationMode, trainingMode: "continuous_adaptive", proposalApprovalMode: "manual", adaptationProposalMode: "manual", allowLlmIntervention: true, allowAdaptationCreation: true, allowPromotion: false }, "adaptive");
+  return applyFlowAdaptationPreset({ ...draft, adaptationMode, trainingMode: "continuous_adaptive", proposalApprovalMode: "auto", adaptationProposalMode: "auto", allowLlmIntervention: true, allowAdaptationCreation: true, allowPromotion: true }, "adaptive");
 }
 
 export function applyFlowAdaptationPreset(draft: FlowSettingsDraft, preset: FlowSettingsDraft["adaptationPreset"]): FlowSettingsDraft {
@@ -168,6 +175,62 @@ function flowPortFromSettingsDraft(port: FlowPortSettingsDraft): any {
   }
   return { id: port.id, name: port.name.trim(), valueType: { kind: port.valueKind }, ...(port.description.trim() ? { description: port.description.trim() } : {}), ...(port.required ? { required: true } : {}), ...(defaultValue !== undefined ? { defaultValue } : {}) };
 }
+
+export function flowSettingsFlowFromDetail(baseFlow: any, detail: any): any {
+  if (!detail?.flowId) return baseFlow;
+  const settings = detail.settings && typeof detail.settings === "object" ? detail.settings : {};
+  const training = settings.training && typeof settings.training === "object" ? settings.training : {};
+  const adaptation = settings.adaptation && typeof settings.adaptation === "object" ? settings.adaptation : {};
+  const llm = settings.llm && typeof settings.llm === "object" ? settings.llm : {};
+  const metadata = baseFlow?.metadata && typeof baseFlow.metadata === "object" ? baseFlow.metadata : {};
+  const port = (value: any) => ({
+    id: String(value?.portId ?? value?.id ?? ""),
+    name: String(value?.name ?? ""),
+    valueType: value?.valueType ?? { kind: "json" },
+    ...(value?.required === true ? { required: true } : {}),
+    ...(value?.defaultValue !== null && value?.defaultValue !== undefined ? { defaultValue: value.defaultValue } : {}),
+    ...(value?.description ? { description: String(value.description) } : {})
+  });
+  const llmProvider = typeof llm.provider === "string" ? llm.provider : metadata.llmProvider;
+  const llmModel = typeof llm.model === "string" ? llm.model : metadata.llmModel;
+  const llmSecretKeyId = typeof llm.secretKeyId === "string" ? llm.secretKeyId : metadata.llmSecretKeyId;
+  const adaptationPolicyId = typeof adaptation.policyId === "string" ? adaptation.policyId : metadata.adaptationPolicyId;
+
+  return {
+    ...(baseFlow ?? {}),
+    flowId: detail.flowId,
+    name: String(detail.name ?? baseFlow?.name ?? ""),
+    description: String(detail.description ?? baseFlow?.description ?? ""),
+    visibility: detail.visibility === "private" ? "private" : "public",
+    scope: detail.scopeKind === "domain"
+      ? { kind: "domain", domainId: detail.scopeId }
+      : { kind: "global" },
+    source: baseFlow?.source ?? { mode: detail.sourceMode === "code" ? "code" : "visual" },
+    interface: {
+      inputs: (Array.isArray(detail.inputs) ? detail.inputs : []).map(port),
+      outputs: (Array.isArray(detail.outputs) ? detail.outputs : []).map(port)
+    },
+    executionDefaults: {
+      ...(baseFlow?.executionDefaults ?? {}),
+      ...(settings.executionDefaults && typeof settings.executionDefaults === "object" ? settings.executionDefaults : {})
+    },
+    createdAt: detail.createdAt ?? baseFlow?.createdAt,
+    updatedAt: detail.updatedAt ?? settings.updatedAt ?? baseFlow?.updatedAt,
+    metadata: {
+      ...metadata,
+      summaryOnly: false,
+      settingsRevision: detail.settingsRevision ?? settings.revision,
+      ...(settings.interventionMode ? { adaptationModeVersion: 1, adaptationMode: settings.interventionMode } : {}),
+      trainingModeSettings: { ...(metadata.trainingModeSettings ?? {}), ...training },
+      adaptationPolicySettings: { ...(metadata.adaptationPolicySettings ?? {}), ...adaptation },
+      ...(llmProvider ? { llmProvider } : {}),
+      ...(llmModel ? { llmModel } : {}),
+      ...(llmSecretKeyId ? { llmSecretKeyId } : {}),
+      ...(adaptationPolicyId ? { adaptationPolicyId } : {})
+    }
+  };
+}
+
 export function flowSettingsDraftFromFlow(flow: any): FlowSettingsDraft {
   const metadata = flowSettingsMetadata(flow);
   const trainingSettings = metadata.trainingModeSettings && typeof metadata.trainingModeSettings === "object" ? metadata.trainingModeSettings : {};
@@ -176,12 +239,14 @@ export function flowSettingsDraftFromFlow(flow: any): FlowSettingsDraft {
   const trainingMode = flowSettingsTrainingMode(trainingSettings.mode ?? metadata.trainingMode);
   const proposalApprovalMode = flowSettingsProposalMode(trainingSettings.proposalApprovalMode ?? metadata.proposalApprovalMode ?? metadata.proposalMode);
   const adaptationProposalMode = flowSettingsProposalMode(adaptationSettings.proposalMode ?? proposalApprovalMode);
+  const adaptationMode = flowSettingsAdaptationMode(metadata, trainingMode, adaptationSettings.preset, adaptationProposalMode);
   return {
     name: String(flow?.name ?? ""),
     description: String(flow?.description ?? ""),
     visibility: flow?.visibility === "public" ? "public" : "private",
     timeoutSeconds: numberInputValue(Number(flow?.executionDefaults?.timeoutMs ?? 30000) / 1000),
     maxConcurrency: numberInputValue(flow?.executionDefaults?.maxConcurrency ?? 1),
+    adaptationMode,
     trainingMode,
     trainForRunCount: numberInputValue(trainingSettings.trainForRunCount ?? metadata.trainForRunCount),
     minimumStabilityScore: numberInputValue(trainingSettings.minimumStabilityScore ?? metadata.minimumStabilityScore),
@@ -292,6 +357,8 @@ export function buildFlowSettingsSavePayload(flow: any, draft: FlowSettingsDraft
     },
     metadata: {
       ...retainedMetadata,
+      adaptationModeVersion: 1,
+      adaptationMode: draft.adaptationMode,
       ...(Object.keys(trainingModeSettings).length ? { trainingModeSettings } : {}),
       ...(Object.keys(adaptationPolicySettings).length ? { adaptationPolicySettings } : {}),
       ...(llmProvider && llmProvider !== "host" ? { llmProvider } : {}),
@@ -372,6 +439,13 @@ export function flowSettingsProposalMode(value: unknown): FlowSettingsDraft["pro
 
 function flowSettingsAdaptationPreset(value: unknown): FlowSettingsDraft["adaptationPreset"] {
   return value === "locked" || value === "observe" || value === "autonomous" ? value : "adaptive";
+}
+
+function flowSettingsAdaptationMode(metadata: any, trainingMode: FlowSettingsDraft["trainingMode"], preset: unknown, approval: unknown): FlowSettingsDraft["adaptationMode"] {
+  if (metadata?.adaptationModeVersion === 1 && (metadata.adaptationMode === "fully_adaptive" || metadata.adaptationMode === "manual_approval" || metadata.adaptationMode === "no_llm_intervention")) return metadata.adaptationMode;
+  if (trainingMode === "normal" || preset === "locked" || approval === "disabled" || approval === "deterministic") return "no_llm_intervention";
+  if (approval === "manual" || approval === "mixed" || approval === "manual_approval" || preset === "observe" || preset === "repair") return "manual_approval";
+  return "fully_adaptive";
 }
 
 function booleanSetting(value: unknown, fallback: boolean): boolean {

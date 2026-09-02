@@ -23,6 +23,7 @@ type Options = {
     stores: Foundation["owners"]["studioStores"];
   };
   hierarchy: {
+    getUiRevision: () => number;
     setLoadedProjectId: (value: string | null) => void;
     setCustomNodes: (value: any) => void;
     setDeletedIds: (value: any) => void;
@@ -31,6 +32,7 @@ type Options = {
     reset: () => void;
   };
   workspace: {
+    getPrefsRevision: () => number;
     replacePrefs: (value: AutomationWorkspacePrefs | ((current: AutomationWorkspacePrefs) => AutomationWorkspacePrefs)) => void;
     resetCachedPrefs: () => void;
   };
@@ -49,6 +51,7 @@ type Options = {
 
 export function useAutomationProjectRuntime(options: Options) {
   const activeProjectRef = useRef<string | null>(null);
+  const openingUiRevisionRef = useRef<{ projectId: string; workspace: number; hierarchy: number } | null>(null);
   useEffect(() => { activeProjectRef.current = options.activeProjectId; }, [options.activeProjectId]);
   const applySummary = useCallback((summary: any | null) => {
     if (summary) {
@@ -93,22 +96,33 @@ export function useAutomationProjectRuntime(options: Options) {
     const loadedPrefs = normalizeAutomationWorkspacePrefs(hydration.hierarchy.workspacePrefs ?? defaultAutomationWorkspacePrefs());
     options.hierarchy.setCustomNodes(hydration.hierarchy.customHierarchyNodes);
     options.hierarchy.setDeletedIds(hydration.hierarchy.deletedHierarchyIds);
-    options.workspace.replacePrefs(loadedPrefs);
+    const openingUi = openingUiRevisionRef.current;
+    const workspaceIsUntouched = openingUi?.projectId === projectId
+      && options.workspace.getPrefsRevision() === openingUi.workspace;
+    const hierarchyIsUntouched = openingUi?.projectId === projectId
+      && options.hierarchy.getUiRevision() === openingUi.hierarchy;
+    if (workspaceIsUntouched) options.workspace.replacePrefs(loadedPrefs);
+    const cacheHydrationRevision = options.workspace.getPrefsRevision();
     if (hydration.summary) applySummary(hydration.summary);
-    options.foundation.uiCache.hydrateWorkspacePrefs({
+    if (workspaceIsUntouched) options.foundation.uiCache.hydrateWorkspacePrefs({
       projectId,
       userId: options.currentUserId,
       durablePrefs: loadedPrefs,
       onHydrate: (cachedPrefs) => {
-        if (activeProjectRef.current !== projectId || !options.foundation.projectGeneration.isCurrent(commitGeneration)) return;
+        if (activeProjectRef.current !== projectId
+          || !options.foundation.projectGeneration.isCurrent(commitGeneration)
+          || options.workspace.getPrefsRevision() !== cacheHydrationRevision) return;
         options.workspace.replacePrefs((current) => automationWorkspacePrefsSameRuntimeState(current, cachedPrefs) ? current : cachedPrefs);
       }
     });
-    options.foundation.uiCache.hydrateSidebar({
+    const cacheHierarchyRevision = options.hierarchy.getUiRevision();
+    if (hierarchyIsUntouched) options.foundation.uiCache.hydrateSidebar({
       projectId,
       userId: options.currentUserId,
       onHydrate: (sidebar) => {
-        if (activeProjectRef.current === projectId && options.foundation.projectGeneration.isCurrent(commitGeneration)) {
+        if (activeProjectRef.current === projectId
+          && options.foundation.projectGeneration.isCurrent(commitGeneration)
+          && options.hierarchy.getUiRevision() === cacheHierarchyRevision) {
           options.hierarchy.hydrateSidebar(sidebar);
         }
       }
@@ -128,6 +142,11 @@ export function useAutomationProjectRuntime(options: Options) {
         cancel(activeProjectRef.current);
         options.foundation.projectDataPlatform.openProject(projectId);
         reset(projectId);
+        openingUiRevisionRef.current = {
+          projectId,
+          workspace: options.workspace.getPrefsRevision(),
+          hierarchy: options.hierarchy.getUiRevision()
+        };
         options.foundation.stores.catalog.setError(null);
       },
       hydrate: (projectId, signal) => options.foundation.projectDataPlatform.loadHydration(projectId, signal),

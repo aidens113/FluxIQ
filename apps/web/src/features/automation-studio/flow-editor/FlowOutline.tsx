@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { Node } from "@xyflow/react";
 import type { AutomationFlowNodeData } from "./node-types";
 export function FlowOutline(props: {
+  id: string;
   nodes: Array<Node<AutomationFlowNodeData>>;
   selectedNodeId: string;
   onClose(): void;
@@ -17,7 +18,7 @@ export function FlowOutline(props: {
     document.getElementById("automation-outline-node-" + props.nodes[bounded]?.id)?.focus();
   };
   return (
-    <aside aria-label="Graph outline" className="automation-graph-outline">
+    <aside aria-label="Graph outline" className="automation-graph-outline" id={props.id}>
       <header><div><ListTree size={14} aria-hidden /><strong>Graph Outline</strong><span>{props.nodes.length}</span></div><button aria-label="Close graph outline" className="icon-button" onClick={props.onClose} title="Close outline" type="button"><X size={13} aria-hidden /></button></header>
       <div aria-label="Graph nodes" role="tree">
         {props.nodes.map((node, index) => (

@@ -2,7 +2,6 @@
 
 import { memo, useMemo, type ComponentProps, type ReactNode } from "react";
 import type { CurrentUser } from "../../programs/types";
-import { createAutomationWorkspaceViewSource } from "../workspace/shell/view-source";
 import { AutomationStudioWorkspaceSurface } from "./AutomationStudioWorkspaceSurface";
 import { AutomationStudioOverlays } from "../workspace/overlays";
 import { useAutomationStudioLiveOverlays } from "./useAutomationStudioLiveOverlays";
@@ -10,10 +9,11 @@ import { automationViewAdderOptions } from "../workspace/view-adder";
 import type { AutomationViewInstance } from "../views/view-types";
 import type { AutomationSelection } from "../shared/selection-contracts";
 import type { AutomationWorkspaceArea, AutomationWorkspacePrefs } from "../workspace/layout";
-import type { AutomationWorkspaceBreadcrumb, AutomationWorkspaceViewEntry } from "../workspace/shell/contracts";
+import type { AutomationWorkspaceBreadcrumb, AutomationWorkspaceViewSource } from "../workspace/shell/contracts";
 import type { createAutomationWorkspaceCommands } from "../workspace/commands/workspace-commands";
 import type { createAutomationWorkspaceCommandPort } from "../workspace/commands/port";
 import type { createAutomationWarmViewRegistry } from "../workspace/commands/warm-activation";
+import { DirtyViewGuard } from "../workspace/DirtyViewGuard";
 import type { useAutomationStudioStoreOwners } from "../stores";
 
 type Owners = ReturnType<typeof useAutomationStudioStoreOwners>;
@@ -26,6 +26,7 @@ type ProjectBinding = {
   name: string;
   getViewAdderContext(): {
     selectedFlow: boolean;
+    selectedTopLevelFlow: boolean;
     selectedRecording: boolean;
     selection: AutomationSelection | null;
   };
@@ -44,7 +45,7 @@ type ViewBindingBase = {
   resolveBreadcrumbs: (viewId: string) => AutomationWorkspaceBreadcrumb[];
 };
 type ViewBinding = ViewBindingBase & {
-  entries: readonly AutomationWorkspaceViewEntry[];
+  source: AutomationWorkspaceViewSource;
 };
 type HeaderBinding = {
   closeProject: () => void;
@@ -69,12 +70,6 @@ export type AutomationStudioWorkspaceCompositionProps = {
 export const AutomationStudioWorkspaceComposition = memo(function AutomationStudioWorkspaceComposition(
   props: AutomationStudioWorkspaceCompositionProps
 ) {
-  const source = useMemo(
-    () => createAutomationWorkspaceViewSource(
-      props.views.entries.map((entry) => [entry.view.id, entry] as const)
-    ),
-    [props.views.entries]
-  );
   const overlays = useAutomationStudioLiveOverlays({
     activeProjectId: props.project.id,
     getPreferences: props.workspace.store.getPrefs,
@@ -87,6 +82,7 @@ export const AutomationStudioWorkspaceComposition = memo(function AutomationStud
         {
           hasProject: true,
           hasFlow: context.selectedFlow,
+          hasTopLevelFlow: context.selectedTopLevelFlow,
           hasRecording: context.selectedRecording,
           hasSelection: Boolean(context.selection)
         },
@@ -141,7 +137,7 @@ export const AutomationStudioWorkspaceComposition = memo(function AutomationStud
       projectKey={props.project.id}
       resolveBreadcrumbs={props.views.resolveBreadcrumbs}
       showDataInspector={process.env.NODE_ENV !== "production"}
-      source={source}
+      source={props.views.source}
       store={props.workspace.store}
       studioUiStore={props.workspace.studioUiStore}
       timeline={props.timeline}
@@ -153,6 +149,7 @@ export const AutomationStudioWorkspaceComposition = memo(function AutomationStud
       pinConfigured={Boolean(props.currentUser.pinConfigured)}
       store={overlays.store}
     />
+    <DirtyViewGuard />
   </>;
 });
 

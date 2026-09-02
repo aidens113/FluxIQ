@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { useProgramTransport } from "../data/use-program-transport";
 import { cancelRuntimeSession, executeRuntimeSession, exportRuntimeRunAudit, startRuntimeSession } from "./run-commands";
-import { getRuntimeFlowReadiness, getRuntimeRunDetail, listRuntimeRunActions, listRuntimeRunEvents, listRuntimeRuns } from "./run-queries";
+import { getRuntimeFlowReadiness, getRuntimeRunActionDetail, getRuntimeRunDetail, getRuntimeRunEventDetail, listRuntimeRunActions, listRuntimeRunEvents, listRuntimeRuns } from "./run-queries";
 export type RuntimeViewHostModel = {
   projectId: string | null;
   flow?: any;
@@ -16,7 +16,7 @@ export type RuntimeViewHostModel = {
 
 export type RuntimeViewHostCommands = {
   onOpenAdaptation?(flowId: string | undefined, adaptationId: string): void;
-  onOpenReadinessTarget?(target: "problems" | "instructions" | "router" | "nodes"): void;
+  onOpenReadinessTarget?(target: "instructions" | "router" | "nodes" | "subflows"): void;
 };
 export type RuntimeHistoryViewHostModel = {
   projectId: string | null;
@@ -31,9 +31,11 @@ export type RuntimeHistoryCommands = {
 };
 
 export type RuntimeDetailCommands = {
-  loadDetail(payload: { projectId: string; runId: string; compact: true }): ReturnType<typeof getRuntimeRunDetail>;
-  listActions(payload: { projectId: string; runId: string; limit: number; offset: number }): ReturnType<typeof listRuntimeRunActions>;
-  listEvents(payload: { projectId: string; runId: string; afterSequence: number; limit: number }): ReturnType<typeof listRuntimeRunEvents>;
+  loadDetail(payload: { projectId: string; runId: string; compact: true }, signal?: AbortSignal): ReturnType<typeof getRuntimeRunDetail>;
+  listActions(payload: { projectId: string; runId: string; limit: number; offset?: number; cursor?: string | null }, signal?: AbortSignal): ReturnType<typeof listRuntimeRunActions>;
+  loadActionDetail?(payload: { projectId: string; runId: string; attemptId: string }, signal?: AbortSignal): ReturnType<typeof getRuntimeRunActionDetail>;
+  listEvents(payload: { projectId: string; runId: string; afterSequence?: number; cursor?: string | null; limit: number }, signal?: AbortSignal): ReturnType<typeof listRuntimeRunEvents>;
+  loadEventDetail?(payload: { projectId: string; runId: string; sequence: number }, signal?: AbortSignal): ReturnType<typeof getRuntimeRunEventDetail>;
   exportAudit(payload: { projectId: string; runId: string }): ReturnType<typeof exportRuntimeRunAudit>;
 };
 
@@ -52,9 +54,11 @@ export function useRuntimeHistoryCommands(): RuntimeHistoryCommands {
 export function useRuntimeDetailCommands(): RuntimeDetailCommands {
   const transport = useProgramTransport("automation-studio");
   return useMemo(() => ({
-    loadDetail: (payload) => getRuntimeRunDetail(transport, payload),
-    listActions: (payload) => listRuntimeRunActions(transport, payload),
-    listEvents: (payload) => listRuntimeRunEvents(transport, payload),
+    loadDetail: (payload, signal) => getRuntimeRunDetail(transport, payload, signal),
+    listActions: (payload, signal) => listRuntimeRunActions(transport, payload, signal),
+    loadActionDetail: (payload, signal) => getRuntimeRunActionDetail(transport, payload, signal),
+    listEvents: (payload, signal) => listRuntimeRunEvents(transport, payload, signal),
+    loadEventDetail: (payload, signal) => getRuntimeRunEventDetail(transport, payload, signal),
     exportAudit: (payload) => exportRuntimeRunAudit(transport, payload)
   }), [transport]);
 }

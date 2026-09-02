@@ -122,7 +122,7 @@ export function StateExplorerView(props: { input: BuildNodeStateViewModelInput; 
       </div>
       {model.emptyState ? <div className="automation-state-empty"><AlertCircle size={16} aria-hidden /><strong>{model.emptyState.title}</strong><span>{model.emptyState.message}</span>{model.emptyState.title === "Requested state is not loaded" && !props.loading ? <button className="button" onClick={retryState} type="button">Retry state loading</button> : null}</div> : null}
       <div className="automation-state-workspace">
-        <main className="automation-state-primary">
+        <section className="automation-state-primary">
           {mode === "visual" ? <StateVisualCanvas model={model} selectedFactPath={selectedFactPath} onSelectEvidence={selectEvidence} onSelectFact={selectFact} /> : null}
           {mode === "structured" ? <StateStructuredPanel rows={model.structuredRows} onSelectFact={selectFact} /> : null}
           {mode === "diff" ? <StateDiffPanel model={model} /> : null}
@@ -135,7 +135,7 @@ export function StateExplorerView(props: { input: BuildNodeStateViewModelInput; 
               <small>{props.loading.timelineEntryId ? `Loading state for ${props.loading.timelineEntryId}` : "Loading state data"}</small>
             </div>
           </div> : null}
-        </main>
+        </section>
         <StateEvidenceInspector model={model} selectedEvidenceId={selectedEvidenceId} selectedFactPath={selectedFactPath} onSelectEvidence={selectEvidence} onSelectFact={selectFact} />
       </div>
     </section>

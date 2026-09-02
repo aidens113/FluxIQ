@@ -15,6 +15,7 @@ export type ProblemsCurrentObject = {
 };
 
 export type ProblemsViewHostModel = {
+  projectId?: string | null;
   problems: readonly AutomationProblemSource[];
   currentObject?: ProblemsCurrentObject | null;
   currentObjectId?: string | null;
@@ -26,6 +27,14 @@ export type ProblemsViewHostModel = {
 export type ProblemsViewHostCommands = {
   onOpenProblem?(problem: AutomationProblemSource): void;
   onRequestValidation?(): void;
+  onListProblems?(payload: Record<string, unknown>): Promise<{
+    ok: boolean;
+    error?: string;
+    payload?: {
+      problems?: any[];
+      page?: { problems?: any[]; total?: number; counts?: { error?: number; warning?: number; info?: number }; limit?: number; nextCursor?: string | null; hasMore?: boolean };
+    };
+  }>;
 };
 
 export type ProblemsViewHostProps = ProblemsViewHostModel & ProblemsViewHostCommands;

@@ -10,6 +10,7 @@ import {
   createAutomationGraphDerivationJob
 } from "../graph/derivation-job";
 import { automationGraphDraftIdentity, type AutomationGraphDraftRecord } from "../graph/draft-store";
+import { applyAutomationGraphDraftRestore, discardAutomationGraphRecovery, reloadSavedAutomationGraph, shouldRestoreAutomationGraphDraft } from "../graph/recovery-actions";
 import { scheduleAutomationGraphIdleTask } from "../graph/worker-tasks";
 import { mergeFlowDetails } from "../model/project-change-reconciliation";
 import type { AutomationLiveDomainCommands } from "./domain-commands";
@@ -31,6 +32,7 @@ type GraphRuntimeOptions = {
   setDirty: (dirty: boolean) => void;
   setActionStatus: (status: string) => void;
   notifyChanged: (scopes: any[], resourceIds: string[]) => void;
+  reloadFlowDetail(flowId: string): Promise<unknown | null>;
   getSnapshot?: () => Pick<
     GraphRuntimeOptions,
     "activeProjectId" | "selectedTaskGraph" | "selectedFlow" | "selectedFlowEntry"
@@ -163,19 +165,30 @@ export function useAutomationGraphRuntime(options: GraphRuntimeOptions) {
     ));
   }, [options.setTaskGraphDrafts]);
   const restoreDraft = useCallback(() => {
+    if (!shouldRestoreAutomationGraphDraft(recoverable?.baseUpdatedAt !== (options.selectedTaskGraph?.updatedAt ?? 0), () => window.confirm("This draft began from an older Flow revision. Restore it for review without overwriting the saved Flow?"))) return;
     const outcome = options.liveCommands.restoreFlowDraft(draftKey, recoverable);
-    if (outcome.status !== "success") return;
-    options.setTaskGraphDrafts((current) => ({ ...current, [outcome.value.draftKey]: outcome.value.graph }));
-    setRecoverable(null);
-    options.setDirty(true);
+    const restored = applyAutomationGraphDraftRestore(outcome as any, (value: any) => {
+      options.setTaskGraphDrafts((current) => ({ ...current, [value.draftKey]: value.graph }));
+      setRecoverable(null);
+      options.setDirty(true);
+    });
+    if (!restored.ok) notifyGlobalAlert({ tone: "error", title: "Draft could not be restored", message: restored.error, id: "automation-draft-restore-failed" });
   }, [draftKey, options.liveCommands, options.setDirty, options.setTaskGraphDrafts, recoverable]);
   const discardDraft = useCallback(() => {
     const current = options.getSnapshot?.() ?? options;
     if (!current.selectedTaskGraph?.flowId) return;
-    void options.liveCommands.discardFlowDraft(current.selectedTaskGraph.flowId).then((outcome) => {
-      if (outcome.status === "success") setRecoverable(null);
+    void discardAutomationGraphRecovery(() => options.liveCommands.discardFlowDraft(current.selectedTaskGraph.flowId) as any, () => setRecoverable(null)).then((outcome) => {
+      if (!outcome.ok) notifyGlobalAlert({ tone: "error", title: "Draft could not be discarded", message: outcome.error, id: "automation-draft-discard-failed" });
     });
   }, [options.liveCommands, options.selectedTaskGraph?.flowId]);
+  const reloadGraph = useCallback(() => {
+    const current = options.getSnapshot?.() ?? options;
+    const flowId = current.selectedTaskGraph?.flowId;
+    if (!flowId) return;
+    void reloadSavedAutomationGraph({ reload: () => options.reloadFlowDetail(flowId), clearDraft: () => clearDrafts(flowId), markClean: () => options.setDirty(false), notify: () => options.notifyChanged(["flow", "summary", "flow-metadata"], [flowId]) }).then((outcome) => {
+      if (!outcome.ok) notifyGlobalAlert({ tone: "error", title: "Flow could not be reloaded", message: outcome.error, id: "automation-graph-reload-failed" });
+    });
+  }, [clearDrafts, options]);
   const saveGraph = useCallback(async (graph: GraphDocument) => {
     const current = options.getSnapshot?.() ?? options;
     if (!current.selectedFlow || current.selectedFlowEntry?.source !== "canonical") {
@@ -233,6 +246,7 @@ export function useAutomationGraphRuntime(options: GraphRuntimeOptions) {
     problems,
     recoverableDraft,
     reset,
+    reloadGraph,
     restoreDraft,
     saveGraph,
     updateDraft

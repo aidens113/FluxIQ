@@ -17,7 +17,8 @@
   flex-direction: column;
   align-content: normal;
   gap: var(--space-sm);
-  overflow: hidden;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .automation-state-view-header {
@@ -68,7 +69,10 @@
 
 .automation-state-control {
   display: grid;
+  flex: 1 1 320px;
   gap: var(--space-xs);
+  min-width: min(100%, 240px);
+  max-width: 100%;
 }
 
 .automation-state-control > span {
@@ -79,15 +83,18 @@
 }
 
 .automation-state-control .segmented-control {
+  width: 100%;
   max-width: 100%;
+  overflow: visible;
 }
 
 .automation-state-control .segmented-control button {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  flex: 1 1 96px;
   min-width: 0;
-  max-width: 180px;
+  max-width: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

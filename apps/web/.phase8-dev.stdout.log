@@ -1,0 +1,40 @@
+
+> @fluxiq/web@0.1.0 dev F:\!FluxIQ\apps\web
+> next dev --turbopack --hostname 127.0.0.1
+
+   ▲ Next.js 15.5.23 (Turbopack)
+   - Local:        http://127.0.0.1:3000
+   - Network:      http://127.0.0.1:3000
+
+ ✓ Starting...
+Creating turbopack project { dir: 'F:\\!FluxIQ\\apps\\web', testMode: true }
+ ✓ Ready in 1556ms
+ ○ Compiling / ...
+ ✓ Compiled / in 3.1s
+ ○ Compiling /programs/automation-studio ...
+ ✓ Compiled /programs/automation-studio in 2.2s
+ GET /programs/automation-studio 200 in 2388ms
+ GET /programs/automation-studio?domainId=web-automation 200 in 1004ms
+ ✓ Compiled in 547ms
+iled / in 530ms
+ GET / 200 in 731ms
+ ○ Compiling /api/client-gateway/snapshot ...
+ ✓ Compiled /api/client-gateway/snapshot in 857ms
+ GET /programs/automation-studio?project=8f7125c5-576f-44cb-8a0b-98a615ad6ed9 200 in 910ms
+ GET /api/client-gateway/snapshot 200 in 809ms
+ GET /api/client-gateway/snapshot 200 in 515ms
+ ○ Compiling /api/client-gateway/automation-studio-context ...
+ ✓ Compiled /api/client-gateway/automation-studio-context in 614ms
+ POST /api/client-gateway/automation-studio-context 200 in 817ms
+ POST /api/client-gateway/automation-studio-context 200 in 1179ms
+ POST /api/client-gateway/automation-studio-context 200 in 412ms
+ GET /api/programs/automation-studio/projects 200 in 2113ms
+ POST /api/programs/automation-studio/get-project-hierarchy 200 in 2178ms
+ GET /api/client-gateway/snapshot 200 in 309ms
+ POST /api/programs/automation-studio/list-project-change-feed 200 in 1803ms
+ POST /api/programs/automation-studio/get-project-workspace-summary 200 in 2381ms
+ POST /api/programs/automation-studio/list-native-node-definitions 200 in 646ms
+ POST /api/programs/automation-studio/get-project-hierarchy 200 in 477ms
+ POST /api/programs/automation-studio/get-project-hierarchy 200 in 397ms
+ POST /api/programs/automation-studio/list-project-hierarchy-children 400 in 492ms
+[?25h

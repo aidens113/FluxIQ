@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { RunActionLogViewContent } from "./RunActionLogView";
-import { RunHistoryViewContent } from "./RuntimeDebugView";
+import { RunHistoryViewContent } from "./RunHistory";
 import {
   runtimeAttemptsForRunDetail,
   runtimeLlmAdaptationEvents,

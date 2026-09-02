@@ -1,14 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import type { RecordingJsonObject, RecordingViewDataPort } from "./recording-api-types";
+import { useRef, useState } from "react";
+import type { RecordingJsonObject } from "./recording-api-types";
 import { appendRecordingMarker } from "./recording-markers";
 import { appendRecordingNote } from "./recording-notes";
 import type { RecordingActionKind } from "./recording-model";
 
 export function useRecordingActionController(input: {
-  projectId: string | null;
-  dataPort: Pick<RecordingViewDataPort, "repairStateIndex">;
   selectedEntry: any;
   selectedRecording: any;
   onAppendRecordingMarker(recordingId: string, linkedEntryId?: string, monotonicOffsetMs?: number, label?: string, authorizationPin?: string): Promise<void>;
@@ -23,6 +21,7 @@ export function useRecordingActionController(input: {
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const busyRef = useRef(false);
 
   const open = (nextKind: RecordingActionKind) => {
     setKind(nextKind);
@@ -36,7 +35,7 @@ export function useRecordingActionController(input: {
   };
 
   const submit = async () => {
-    if (!kind || !input.selectedRecording) return;
+    if (busyRef.current || !kind || !input.selectedRecording) return;
     if (pin.length < 4) {
       setError("Enter your security PIN.");
       return;
@@ -45,6 +44,7 @@ export function useRecordingActionController(input: {
       setError(kind === "rename" ? "Enter a recording name." : kind === "note" ? "Enter note text." : "Enter a marker label.");
       return;
     }
+    busyRef.current = true;
     setBusy(true);
     setError("");
     const recordingId = input.selectedRecording.recordingId;
@@ -65,24 +65,12 @@ export function useRecordingActionController(input: {
       });
       if (kind === "finalize") await input.onFinalizeRecording(recordingId, pin);
       if (kind === "delete") await input.onDeleteRecording(recordingId, pin);
-      if (kind === "repair") {
-        if (!input.projectId) {
-          setError("Open a project before repairing recording state.");
-          return;
-        }
-        const result = await input.dataPort.repairStateIndex({
-          projectId: input.projectId,
-          recordingId,
-          authorizationPin: pin
-        });
-        if (!result.ok) {
-          setError(result.error ?? "Recording state index could not be repaired.");
-          return;
-        }
-        await input.onRefreshRecordings();
-      }
+      await input.onRefreshRecordings();
       setKind(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The recording change could not be completed. Try again.");
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };

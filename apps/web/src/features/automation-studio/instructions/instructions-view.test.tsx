@@ -1,5 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({
@@ -7,6 +8,8 @@ vi.mock("next/navigation", () => ({
 }));
 import { InstructionsView, InstructionsViewContent, effectiveInstructionOrder, estimateInstructionTokens, INSTRUCTION_DRAFT_MAX_LOCAL_STORAGE_CHARS, INSTRUCTION_TEMPLATES, instructionDiagnostics, instructionDraftIsDirty, instructionDraftStorageKey, instructionImportance, instructionPriorityForImportance, instructionScopeTargetError, readInstructionDirectoryUrlState, readStoredInstructionDraft } from "./index";
 import { EffectiveInstructionsPanel, InstructionEditorPanel } from "./InstructionWorkbenchPanels";
+
+(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe("Automation Instructions workspace", () => {
   it("restores bounded Instruction filters and renders bottom pagination", () => {
@@ -31,7 +34,7 @@ describe("Automation Instructions workspace", () => {
     const viewSource = InstructionsViewContent.toString();
     const editorSource = InstructionEditorPanel.toString();
     expect(viewSource).toContain("saveStoredInstructionDraft");
-    expect(viewSource).toContain("beforeunload");
+    expect(viewSource).toContain("useDirtyViewRegistration");
     expect(viewSource).toContain("Unsaved Instruction Changes");
     expect(editorSource).toContain("Recovered local draft");
     expect(editorSource).toContain("automation-instruction-content-section");
@@ -134,5 +137,43 @@ describe("Automation Instructions workspace", () => {
     expect(html).toContain("Create Instruction");
     expect(html).toContain("Browse Templates");
     expect(html).toContain("All changes saved");
+  });
+  it("opens a usable editor from the brand-new Flow readiness action", async () => {
+    const originalWindow = globalThis.window;
+    const values = new Map<string, string>();
+    Object.defineProperty(globalThis, "window", { configurable: true, value: {
+      clearTimeout: globalThis.clearTimeout,
+      localStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        removeItem: (key: string) => { values.delete(key); },
+        setItem: (key: string, value: string) => { values.set(key, value); }
+      },
+      setTimeout: globalThis.setTimeout
+    } });
+    const ok = async (payload: Record<string, unknown>) => ({ ok: true as const, payload });
+    const commands = {
+      loadScopeRouter: vi.fn(() => ok({ router: null })),
+      listScopeSubflows: vi.fn(() => ok({ subflows: [] })),
+      loadEffectiveSet: vi.fn(() => ok({ instructions: [] })),
+      listInstructions: vi.fn(() => ok({ page: { instructions: [], limit: 25, offset: 0, total: 0 } })),
+      loadInstruction: vi.fn(() => ok({ instruction: null })),
+      saveInstruction: vi.fn(() => ok({ instruction: null }))
+    } as any;
+    let renderer: ReactTestRenderer | undefined;
+    try {
+      await act(async () => {
+        renderer = create(<InstructionsViewContent commands={commands} flow={{ flowId: "flow.new", name: "New Flow", nodes: [] }} projectId="project.one" />);
+      });
+      const createInstruction = renderer!.root.findAllByType("button").find((button) => button.children.includes("Create Instruction"));
+      expect(createInstruction).toBeDefined();
+      expect(renderer!.root.findByProps({ className: "automation-instruction-editor-pane" }).props.hidden).toBe(true);
+      await act(async () => createInstruction!.props.onClick());
+      expect(renderer!.root.findByProps({ className: "automation-instruction-editor-pane" }).props.hidden).toBe(false);
+      expect(renderer!.root.findAllByType("textarea")).toHaveLength(1);
+      expect(renderer!.root.findAllByProps({ role: "tab" }).find((tab) => tab.children.includes("Editor"))?.props["aria-selected"]).toBe(true);
+    } finally {
+      if (renderer) await act(async () => renderer!.unmount());
+      Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+    }
   });
 });

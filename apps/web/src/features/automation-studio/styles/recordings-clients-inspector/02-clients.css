@@ -58,6 +58,14 @@
   color: var(--color-text);
 }
 
+.automation-client-search { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-xs); min-width: 0; }
+.automation-client-search input { width: 100%; min-width: 0; border: 1px solid var(--color-border-strong); border-radius: var(--radius-control); background: var(--color-surface); padding: 6px 9px; color: var(--color-text); }
+.automation-client-selection-note { margin: 0; border-left: 3px solid var(--color-info); background: var(--color-info-surface); padding: var(--space-xs) var(--space-sm); color: var(--color-text-muted); font-size: var(--font-size-compact); }
+.automation-client-selection-note.missing { border-left-color: var(--color-danger); background: var(--color-danger-surface); color: var(--color-danger-strong); }
+.automation-client-diagnostics { min-width: 0; border-top: 1px solid var(--color-border); padding-top: var(--space-xs); }
+.automation-client-diagnostics summary { cursor: pointer; color: var(--color-text-muted); font-size: var(--font-size-compact); font-weight: var(--font-weight-bold); }
+.automation-client-diagnostics > :not(summary) { margin-top: var(--space-xs); }
+
 .automation-client-list,
 .automation-client-pairings {
   display: grid;

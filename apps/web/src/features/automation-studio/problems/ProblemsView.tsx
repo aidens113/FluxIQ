@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, CircleCheck, Info, RefreshCw, Search, X } from "lucide-react";
 import { resolveProblemsHostState, type ProblemsViewHostProps } from "./problem-host";
 import {
@@ -20,16 +20,29 @@ export function ProblemsView(props: ProblemsViewHostProps) {
   const [scope, setScope] = useState<AutomationProblemScope>("project");
   const [query, setQuery] = useState("");
   const [pageOffset, setPageOffset] = useState(0);
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("open");
+  const [remotePageIndex, setRemotePageIndex] = useState(0);
+  const [remoteCursors, setRemoteCursors] = useState<Array<string | null>>([null]);
+  const [remotePage, setRemotePage] = useState<{ problems: any[]; total: number; counts: Record<AutomationProblemSeverity, number>; nextCursor: string | null; hasMore: boolean } | null>(null);
+  const remoteRequestRef = useRef(0);
   const [selectedProblemKey, setSelectedProblemKey] = useState<string | null>(null);
-  const collection = useMemo(() => collectAutomationProblems(props.problems), [props.problems]);
+  const sourceProblems = remotePage?.problems ?? (props.projectId ? [] : props.problems);
+  const collection = useMemo(() => collectAutomationProblems(sourceProblems), [sourceProblems]);
   const hostState = resolveProblemsHostState(props, props);
-  const page = useMemo(() => pageAutomationProblems(collection.items, {
+  const localPage = useMemo(() => pageAutomationProblems(collection.items, {
     currentObjectId: hostState.currentObject?.id ?? null,
     filter,
     query,
     scope,
     offset: pageOffset
   }), [collection.items, filter, hostState.currentObject?.id, pageOffset, query, scope]);
+  const page = remotePage && props.projectId ? {
+    items: collection.items,
+    filteredCount: remotePage.total,
+    offset: remotePageIndex * PROBLEMS_PAGE_SIZE,
+    counts: remotePage.counts
+  } : localPage;
   const grouped = useMemo(() => groupProblemPage(page.items), [page.items]);
 
   useEffect(() => {
@@ -38,6 +51,41 @@ export function ProblemsView(props: ProblemsViewHostProps) {
     }
   }, [collection.items, selectedProblemKey]);
   useEffect(() => setPageOffset(0), [filter, scope, query, hostState.currentObject?.id]);
+  useEffect(() => {
+    if (!props.projectId) return;
+    const timer = setTimeout(() => {
+      setRemotePageIndex(0);
+      setRemoteCursors([null]);
+      void loadRemotePage(null, 0);
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [props.projectId, filter, scope, query, sourceFilter, statusFilter, hostState.currentObject?.id]);
+
+  const loadRemotePage = async (cursor: string | null, pageIndex: number) => {
+    if (!props.projectId) return;
+    const requestId = ++remoteRequestRef.current;
+    if (!props.onListProblems) return;
+    const result = await props.onListProblems({
+      projectId: props.projectId,
+      limit: PROBLEMS_PAGE_SIZE,
+      cursor,
+      ...(filter !== "all" ? { severity: filter } : {}),
+      ...(sourceFilter !== "all" ? { source: sourceFilter } : {}),
+      ...(statusFilter !== "all" ? { status: statusFilter } : {}),
+      ...(scope === "current" && hostState.currentObject?.id ? { scopeId: hostState.currentObject.id } : {}),
+      ...(query.trim() ? { search: query.trim() } : {})
+    });
+    if (requestId !== remoteRequestRef.current || !result.ok) return;
+    const remote = result.payload?.page;
+    setRemotePageIndex(pageIndex);
+    setRemotePage({
+      problems: result.payload?.problems ?? remote?.problems ?? [],
+      total: remote?.total ?? 0,
+      counts: { error: remote?.counts?.error ?? 0, warning: remote?.counts?.warning ?? 0, info: remote?.counts?.info ?? 0 },
+      nextCursor: remote?.nextCursor ?? null,
+      hasMore: remote?.hasMore === true
+    });
+  };
 
   const showStatePanel = hostState.status === "loading"
     || hostState.status === "error"
@@ -48,7 +96,7 @@ export function ProblemsView(props: ProblemsViewHostProps) {
     <section className="automation-problems-workspace" aria-busy={hostState.status === "loading"}>
       <header className="automation-problems-header">
         <div><AlertTriangle size={16} aria-hidden /><div><strong>Problems</strong><span>Validation, authoring, and runtime issues</span></div></div>
-        <span aria-label={collection.items.length + " problems"}>{collection.items.length}</span>
+        <span aria-label={page.filteredCount + " problems"}>{page.filteredCount}</span>
       </header>
 
       {showStatePanel ? <ProblemsStatePanel
@@ -75,6 +123,8 @@ export function ProblemsView(props: ProblemsViewHostProps) {
           <button aria-pressed={filter === "warning"} onClick={() => setFilter("warning")} type="button">Warnings <span>{page.counts.warning}</span></button>
           <button aria-pressed={filter === "info"} onClick={() => setFilter("info")} type="button">Info <span>{page.counts.info}</span></button>
         </div>
+        <label className="field compact"><span className="field-label">Source</span><select onChange={(event) => setSourceFilter(event.target.value)} value={sourceFilter}><option value="all">All sources</option><option value="framework">Framework</option><option value="flow">Flow</option><option value="runtime">Runtime</option></select></label>
+        <label className="field compact"><span className="field-label">Status</span><select onChange={(event) => setStatusFilter(event.target.value)} value={statusFilter}><option value="open">Open</option><option value="resolved">Resolved</option><option value="all">All statuses</option></select></label>
       </div>
 
       {scope === "current" && hostState.currentObject ? <p className="automation-problems-scope">Showing problems for <strong>{hostState.currentObject.label}</strong></p> : null}
@@ -97,8 +147,18 @@ export function ProblemsView(props: ProblemsViewHostProps) {
       {page.filteredCount > PROBLEMS_PAGE_SIZE ? <footer className="automation-runtime-pagination-footer">
         <span>{page.offset + 1}-{Math.min(page.filteredCount, page.offset + page.items.length)} of {page.filteredCount}</span>
         <div className="automation-runtime-pagination">
-          <button disabled={page.offset <= 0} onClick={() => setPageOffset(Math.max(0, page.offset - PROBLEMS_PAGE_SIZE))} type="button"><ChevronLeft size={15} aria-hidden />Previous</button>
-          <button disabled={page.offset + PROBLEMS_PAGE_SIZE >= page.filteredCount} onClick={() => setPageOffset(page.offset + PROBLEMS_PAGE_SIZE)} type="button">Next<ChevronRight size={15} aria-hidden /></button>
+          <button disabled={page.offset <= 0} onClick={() => {
+            if (!props.projectId) return setPageOffset(Math.max(0, page.offset - PROBLEMS_PAGE_SIZE));
+            const nextIndex = Math.max(0, remotePageIndex - 1);
+            void loadRemotePage(remoteCursors[nextIndex] ?? null, nextIndex);
+          }} type="button"><ChevronLeft size={15} aria-hidden />Previous</button>
+          <button disabled={props.projectId ? !remotePage?.hasMore : page.offset + PROBLEMS_PAGE_SIZE >= page.filteredCount} onClick={() => {
+            if (!props.projectId) return setPageOffset(page.offset + PROBLEMS_PAGE_SIZE);
+            if (!remotePage?.nextCursor) return;
+            const nextIndex = remotePageIndex + 1;
+            setRemoteCursors((current) => [...current.slice(0, nextIndex), remotePage.nextCursor]);
+            void loadRemotePage(remotePage.nextCursor, nextIndex);
+          }} type="button">Next<ChevronRight size={15} aria-hidden /></button>
         </div>
       </footer> : null}
     </section>

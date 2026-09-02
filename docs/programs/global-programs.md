@@ -33,6 +33,8 @@ Current behavior:
 - role and credential changes and 2FA disable state their consequence and require the acting user's configured password/PIN/TOTP factors;
 - the final enabled administrator cannot be disabled or demoted; this is enforced by both the UI affordance and Identity service;
 - initial loading, service failure with Retry, no users, no filter matches, and selected-user detail are distinct states.
+- create, profile, role, credential, and 2FA operations share a synchronous operation gate; while one privileged command is in flight, duplicate or competing submissions are rejected and the active operation is announced;
+- filtering, deletion, or page replacement reconciles the selected user to a visible row, or clears detail when no visible row remains.
 
 Planned improvements:
 
@@ -63,6 +65,8 @@ Current behavior:
 - rotate and delete dialogs explain immediate runtime impact, and no workflow exposes raw JSON editing;
 - Database Manager treats `secret.keys` as a sensitive store and requires the
   same credential recheck before encrypted rows can be viewed.
+- create, edit, rotate, reveal, and delete are mutually exclusive operations in the browser, retain retryable errors, and cannot be submitted twice by rapid input;
+- key filters reconcile detail to a visible key and clear stale detail after deletion.
 
 Planned improvements:
 
@@ -151,6 +155,7 @@ Deployment Sync coordinates repository-oriented deployment state.
 Current behavior:
 
 - checkout and rollback require focused confirmation with target/version context, expose progress and failure status, and render structured results rather than raw JSON;
+- initial request loading, request failure with Retry, Git unavailable, no registered targets, and ready repository state are separate product states; branch mutations remain disabled until repository state is ready;
 - detects Git state for the importing repository;
 - lists branches, remotes, working tree status, and recent versions;
 - can checkout branches;
@@ -176,12 +181,14 @@ Current behavior:
   `.fluxiq/cache/docs/reference` when FluxIQ source files and TypeDoc are
   available;
 - presents authored and runtime-cache sources in one source-aware explorer with
-  page counts, source filtering, title/path search, and bounded 1,000-page tree
-  rendering for very large documentation sets;
+  page counts, source filtering, title/path search, centralized disclosure state,
+  and a fixed-row virtual viewport; every indexed page remains reachable while
+  only the visible navigation window and overscan are mounted;
 - supports folder expansion plus Arrow Up/Down/Left/Right, Home, and End tree
   navigation and keeps the active document visibly selected;
-- restores and writes the active page through the `doc` URL query parameter so
-  documentation links can be shared and refreshed;
+- restores the active page through the `doc` URL query parameter; deliberate page
+  and internal-link selections use browser history entries, while `popstate`
+  restores Back/Forward navigation without creating replacement history;
 - shows Markdown, HTML, and JSON documentation files in a folder-style explorer;
 - resolves internal documentation links inside the Docs program and reports
   broken snapshot links instead of silently navigating away;
@@ -204,6 +211,8 @@ Production Runner starts and monitors production workloads.
 Current behavior:
 
 - launch parameters use target-owned `parameterSchema` controls instead of manual JSON; snapshots are bounded to 100 run summaries and visible log views to 500 entries;
+- initial loading, request failure with Retry, valid no-target state, valid no-run/log state, and ready state are distinct; launch controls stay disabled without a registered target;
+- execution rows are sorted by timestamp descending with a stable run/loop tie-breaker before the newest-500 cap is applied;
 - active workloads retain grouped progress, selected detail, advance, and cancel controls;
 - supports routine, task, and interface targets;
 - tracks scheduled/running/completed/cancelled runs;
@@ -215,6 +224,44 @@ Planned improvements:
 - run approval gates;
 - persistent run history in SQLite;
 - integration with Compute Control.
+
+## Web Request And Route Recovery
+
+All global-program requests use the shared web request coordinator.
+
+- safe reads use in-flight deduplication, caller-specific cancellation, a bounded timeout, and at most two exponential-backoff retries when the typed response marks the failure retryable;
+- Docs and Deployment reads use 20-second timeouts; other global reads use 15 seconds;
+- ordinary mutations use a 30-second timeout; Docs rebuild, Deployment sync/rollback, and database migrations use 120 seconds;
+- mutations are never retried automatically, because their idempotency cannot be assumed;
+- when every consumer cancels a deduplicated read, the underlying fetch is aborted;
+- root, domain, and program routes provide authored loading and error boundaries with Retry, an optional error reference, and a safe return to Programs; unknown domains and routes use the authored not-found surface.
+
+Every shared `DataTable` requires an accessible label at its type boundary and renders that label as both the table name and a visually hidden caption.
+
+Shared program fields, segmented controls, icon buttons, menus, pagination,
+modals, drawers, tables, badges, and loading/empty/error states use one visual
+contract. Narrow programs use page scrolling; labelled table and explorer
+regions may own bounded inner scrolling. Docs, Database Manager, Background
+Tasks, and Compute Control do not impose fixed 520-720 pixel workspace
+minimums. At 320 pixels, actions stack, modal and drawer surfaces occupy the
+dynamic viewport, and tables retain local horizontal scrolling. The complete
+viewport and state matrix is maintained in
+[Web Panel responsive and visual certification](../operations/web-panel-responsive-visual-certification.md).
+
+## Operational Framework Routes
+
+Operational routes are intentionally API-only host-integration contracts. They are not ordinary end-user program commands and must not be exposed by an importing UI without preserving the permission and recovery contract below.
+
+| Operation | Method and route | Permission | Disposition | Recovery |
+| --- | --- | --- | --- | --- |
+| Inspect setup/storage | `GET /api/framework/setup` | `programs.read` | API-only | Read-only; safe to retry. |
+| Idempotent setup | `POST /api/framework/setup` with `action: setup` or omitted | `programs.write` | API-only | Inspect current state and retry after interruption. |
+| Storage migration | `POST /api/framework/setup` with `action: migrate` | `programs.write` | API-only | Collision preflight fails before archiving; inspect journal/state before retry. |
+| Storage rollback | `POST /api/framework/setup` with `action: rollback-migration` | `programs.write` | API-only | Available only for an incomplete pre-commit migration; restore archive, then reload runtime. |
+| Inspect framework I/O | `GET /api/framework/io` | `programs.read` | API-only | Read-only; safe to retry. |
+| Validate framework I/O | `POST /api/framework/io/validate` | `programs.read` | API-only | Side-effect free; safe to retry after interruption. |
+
+Unknown setup actions fail closed with `400`; anonymous callers receive `401`; callers without the declared permission receive `403`. The route-disposition registry is executable and tested, so a new operational route must be classified before it can be considered supported.
 
 ## Automation Studio
 

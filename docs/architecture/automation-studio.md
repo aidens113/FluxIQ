@@ -188,6 +188,15 @@ default so editing a subflow does not mutate the parent Flow/router graph. The
 Subflows workspace is only a paginated directory; selecting a row resolves the
 subflow's graphFlowId and opens that graph in the normal Flow editor. Backing
 subflow graph Flows are not shown as separate top-level Flows.
+
+Legacy Subflow documents that predate `graphFlowId` remain compatible. SQL
+projection derives the deterministic backing Flow ID and, when no graph exists,
+synthesizes an empty isolated graph from the parent Flow before writing the
+Subflow row. Referenced Subflows and their graph Flows are projected before the
+Router that targets them. This lazy repair is a SQL/graph compatibility action,
+not a canonical JSON backfill: the legacy Subflow document receives
+`graphFlowId` only when it later goes through the normal Subflow save path.
+
 Structural adaptation patches that create or edit subflows, routers, or
 recovery paths must be linked to an adaptation review record before they can be
 saved. This keeps recovery/adaptation behavior auditable through the same
@@ -312,6 +321,11 @@ Data hydration is never the mechanism that makes a selected view appear. Success
 creates, deletes, renames, router edits, settings saves, and recording/runtime
 mutations update the exact local collection they affect, emit typed mutation
 metadata, and let the project change feed reconcile matching entity caches.
+Project opening snapshots the workspace preferences and hierarchy UI revisions
+after reset. Late durable or cached hydration may update a surface only while
+that surface still has the captured revision, so user tab/layout actions and
+hierarchy selection/disclosure actions cannot be rolled back by background
+hydration even when the project generation itself is still current.
 Root summary refresh is reserved for explicit user reloads, project open, and
 named recovery actions after a diagnostic says the feed event lacked enough
 payload to reconcile locally.

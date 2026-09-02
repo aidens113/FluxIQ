@@ -36,6 +36,14 @@ export function subflowReadiness(subflow: any): { label: "Ready" | "Needs setup"
 
 export function routerReferencesForSubflow(router: any | null, subflowId: string): Array<{ id: string; name: string; status: string; order: string | number; condition: string }> {
   if (!router || !subflowId) return [];
+  const target = (router.targets ?? router.batch?.targets ?? []).find((item: any) => item?.subflowId === subflowId);
+  if (target) return (target.references ?? []).map((reference: any) => ({
+    id: reference.id,
+    name: reference.name ?? reference.id ?? "Route rule",
+    status: reference.status ?? "active",
+    order: reference.order ?? "-",
+    condition: reference.conditionLabel ?? (reference.condition ? compactConditionLabel(reference.condition) : "Always")
+  }));
   const rules = (router.rules ?? [])
     .filter((rule: any) => rule?.target?.kind === "subflow" && rule.target.subflowId === subflowId)
     .map((rule: any) => ({
@@ -49,4 +57,10 @@ export function routerReferencesForSubflow(router: any | null, subflowId: string
     ? [{ id: `${router.routerId}:fallback`, name: "Fallback", status: router.status ?? "active", order: "fallback", condition: "No rule matched" }]
     : [];
   return [...rules, ...fallback];
+}
+
+export function routerReferenceSummaryForSubflow(router: any | null, subflowId: string): { references: ReturnType<typeof routerReferencesForSubflow>; total: number; hasMore: boolean } {
+  const references = routerReferencesForSubflow(router, subflowId);
+  const target = (router?.targets ?? router?.batch?.targets ?? []).find((item: any) => item?.subflowId === subflowId);
+  return { references, total: Number.isSafeInteger(target?.total) ? target.total : references.length, hasMore: target?.hasMore === true };
 }

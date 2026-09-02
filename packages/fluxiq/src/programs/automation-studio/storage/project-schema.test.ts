@@ -1,9 +1,11 @@
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AutomationStudioProjectAdministration } from "./project-administration.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AutomationStudioProjectAdministration } from "./project-administration.ts";
 import { AutomationStudioProjectDatabasePool } from "./project-database.ts";
-import { AUTOMATION_STUDIO_PROJECT_DOMAIN_TABLES, AUTOMATION_STUDIO_PROJECT_SEARCH_TABLES } from "./project-schema.ts";
+import { AutomationStudioProjectFlowResourceRepository } from "./project-flow-resource-repository.ts";
+import { AUTOMATION_STUDIO_PROJECT_DOMAIN_TABLES, AUTOMATION_STUDIO_PROJECT_INTERVENTION_MODE_MIGRATION, AUTOMATION_STUDIO_PROJECT_RUNTIME_SUMMARY_ENVELOPE_MIGRATION, AUTOMATION_STUDIO_PROJECT_SEARCH_TABLES } from "./project-schema.ts";
+import { AutomationStudioSchemaMigrationRunner } from "./schema-migrations.ts";
 
 const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-project-schema-test");
 
@@ -45,6 +47,73 @@ describe("Automation Studio project domain schema", () => {
     await lease.release();
     await admin.close();
     await pool.closeAll();
+  });
+
+  it("installs Router/runtime paging indexes and additive summary columns", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const admin = await AutomationStudioProjectAdministration.open({ pool, projectId: "project.paging-schema" });
+    const lease = await pool.acquire("project.paging-schema");
+    const indexes = await lease.database.all<{ name: string }>("select name from sqlite_master where type = 'index' and name in ('subflows_target_lookup_idx', 'router_routes_page_idx', 'router_routes_target_page_idx', 'router_groups_order_idx', 'runtime_action_summaries_page_idx', 'runtime_action_summaries_status_idx') order by name");
+    expect(indexes.map((row) => row.name)).toEqual(["router_groups_order_idx", "router_routes_page_idx", "router_routes_target_page_idx", "runtime_action_summaries_page_idx", "runtime_action_summaries_status_idx", "subflows_target_lookup_idx"]);
+    const groupColumns = await lease.database.all<{ name: string }>("pragma table_info(router_groups)");
+    expect(groupColumns.map((column) => column.name)).toEqual(expect.arrayContaining(["description", "order_value", "status", "collapsed", "created_at_ms", "updated_at_ms", "metadata_json"]));
+    const actionColumns = await lease.database.all<{ name: string }>("pragma table_info(runtime_action_summaries)");
+    expect(actionColumns.map((column) => column.name)).toEqual(expect.arrayContaining(["definition_id", "route", "comparison_status", "message_summary", "detail_json"]));
+    await lease.release();
+    await admin.close();
+    await pool.closeAll();
+  });
+
+  it("installs canonical intervention columns and their paging index", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const admin = await AutomationStudioProjectAdministration.open({ pool, projectId: "project.intervention-schema" });
+    const lease = await pool.acquire("project.intervention-schema");
+    const columns = await lease.database.all<{ name: string }>("pragma table_info(flow_settings)");
+    expect(columns.map((column) => column.name)).toEqual(expect.arrayContaining(["intervention_mode", "intervention_mode_version"]));
+    await expect(lease.database.get<{ name: string }>("select name from sqlite_master where type = 'index' and name = 'flow_settings_intervention_mode_idx'")).resolves.toEqual({ name: "flow_settings_intervention_mode_idx" });
+    await expect(lease.database.run("insert into flows (flow_id, name, scope_kind, status, created_at_ms, updated_at_ms) values ('flow.mode', 'Mode', 'global', 'draft', 1, 1)")).resolves.toMatchObject({ changes: 1 });
+    await expect(lease.database.run("insert into flow_settings (flow_id, intervention_mode, intervention_mode_version, updated_at_ms) values ('flow.mode', 'unsupported', 1, 1)")).rejects.toThrow();
+    await lease.release(); await admin.close(); await pool.closeAll();
+  });
+
+  it("migrates legacy rows additively and rolls back every 0014 statement on failure", async () => {
+    const baseline = AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.filter((migration) => migration.id < AUTOMATION_STUDIO_PROJECT_INTERVENTION_MODE_MIGRATION.id);
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const legacyLease = await pool.acquire("project.legacy-mode");
+    await new AutomationStudioSchemaMigrationRunner({ database: legacyLease.database, migrations: baseline }).migrate();
+    await legacyLease.database.run("insert into flows (flow_id, name, scope_kind, visibility, origin, source_mode, status, created_at_ms, updated_at_ms) values ('flow.legacy', 'Legacy', 'global', 'private', 'user', 'visual', 'draft', 1, 1)");
+    await legacyLease.database.run("insert into flow_settings (flow_id, execution_defaults_json, training_json, adaptation_json, llm_json, safety_json, revision, updated_at_ms) values (?, ?, ?, ?, ?, ?, ?, ?)", ["flow.legacy", "{}", "{}", JSON.stringify({ proposalMode: "manual" }), "{}", "{}", 1, 1]);
+    await new AutomationStudioSchemaMigrationRunner({ database: legacyLease.database, migrations: AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS }).migrate();
+    await expect(legacyLease.database.get("select intervention_mode, intervention_mode_version from flow_settings where flow_id = 'flow.legacy'")).resolves.toEqual({ intervention_mode: null, intervention_mode_version: 0 });
+    await expect(legacyLease.database.get("select migration_id from automation_schema_migrations where migration_id = '0014_canonical_intervention_mode'")).resolves.toEqual({ migration_id: "0014_canonical_intervention_mode" });
+    await legacyLease.release();
+    const legacyRepository = await AutomationStudioProjectFlowResourceRepository.open({ pool, projectId: "project.legacy-mode" });
+    await expect(legacyRepository.getFlow("flow.legacy")).resolves.toMatchObject({ settings: { interventionMode: "manual_approval", interventionModeVersion: 1 } });
+    await legacyRepository.upsertFlow({ flowId: "flow.legacy", parentFlowId: null, owningSubflowId: null, name: "Legacy", description: "", scopeKind: "global", scopeId: null, visibility: "private", origin: "user", sourceMode: "visual", status: "draft", compiledRevision: null, settings: { interventionMode: "manual_approval", interventionModeVersion: 1 } }, 1);
+    await legacyRepository.close();
+    const upgradedLease = await pool.acquire("project.legacy-mode");
+    await expect(upgradedLease.database.get("select intervention_mode, intervention_mode_version from flow_settings where flow_id = 'flow.legacy'")).resolves.toEqual({ intervention_mode: "manual_approval", intervention_mode_version: 1 });
+    await upgradedLease.release();
+
+    const rollbackLease = await pool.acquire("project.mode-rollback");
+    await new AutomationStudioSchemaMigrationRunner({ database: rollbackLease.database, migrations: baseline }).migrate();
+    await expect(new AutomationStudioSchemaMigrationRunner({ database: rollbackLease.database, migrations: [...baseline, { id: "0014_canonical_intervention_mode", statements: [AUTOMATION_STUDIO_PROJECT_INTERVENTION_MODE_MIGRATION.statements[0]!, "this is invalid sql"] }] }).migrate()).rejects.toThrow();
+    const rollbackColumns = await rollbackLease.database.all<{ name: string }>("pragma table_info(flow_settings)");
+    expect(rollbackColumns.some((column) => column.name === "intervention_mode")).toBe(false);
+    await expect(rollbackLease.database.get("select migration_id from automation_schema_migrations where migration_id = '0014_canonical_intervention_mode'")).resolves.toBeUndefined();
+    await rollbackLease.release(); await pool.closeAll();
+  });
+
+  it("adds a compact runtime summary envelope without rewriting legacy rows", async () => {
+    const baseline = AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.filter((migration) => migration.id < AUTOMATION_STUDIO_PROJECT_RUNTIME_SUMMARY_ENVELOPE_MIGRATION.id);
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const lease = await pool.acquire("project.runtime-summary-migration");
+    await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: baseline }).migrate();
+    await lease.database.run("insert into flows (flow_id, name, scope_kind, visibility, origin, source_mode, status, created_at_ms, updated_at_ms) values ('flow.legacy-run', 'Legacy', 'global', 'private', 'user', 'visual', 'draft', 1, 1)");
+    await lease.database.run("insert into runtime_runs (run_id, flow_id, flow_revision, status, trigger_kind, queued_at_ms, updated_at_ms) values ('run.legacy', 'flow.legacy-run', 1, 'queued', 'manual', 1, 1)");
+    await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS }).migrate();
+    await expect(lease.database.get("select summary_json from runtime_runs where run_id = 'run.legacy'")).resolves.toEqual({ summary_json: "{}" });
+    await lease.release(); await pool.closeAll();
   });
 
   it("accepts bounded row-level resource metadata without hydrating full project JSON", async () => {

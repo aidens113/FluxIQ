@@ -1,5 +1,4 @@
 "use client";
-
 import { useCallback, useEffect, useMemo } from "react";
 import { createAutomationHierarchyCommandExecutor } from "../hierarchy/command-executor";
 import { createAutomationHierarchyDialogStore } from "../hierarchy/dialog-store";
@@ -8,6 +7,7 @@ import { automationStudioViewId } from "../views/view-registry";
 import { AutomationStudioProjectGate } from "./AutomationStudioProjectGate";
 import {
   automationEntityCollectionSelector,
+  useAutomationProjectResource,
   useAutomationStoreSelector,
   type AutomationProjectEntityKind
 } from "../stores";
@@ -33,21 +33,24 @@ import { useAdaptationWorkspaceNavigation } from "./useAdaptationWorkspaceNaviga
 import { useAutomationExternalLifecycle } from "./useAutomationExternalLifecycle";
 import { useAutomationDeepLinkRuntime } from "./useAutomationDeepLinkRuntime";
 import { AutomationStudioWorkspaceComposition } from "./AutomationStudioWorkspaceComposition";
+import { useAutomationSessionDirtyGuards } from "./useAutomationSessionDirtyGuards";
 import { useStableAutomationEvent } from "./useStableAutomationEvent";
 import { runAutomationPresentationTransaction } from "../presentation/transaction";
 import type { AutomationCanonicalConnectorScope } from "./view-host/canonical-connected-views";
-import { useAutomationConnectedViewEntries } from "./view-host/connected-view-entries";
+import { useAutomationConnectedViewEntries, useAutomationConnectedViewSource } from "./view-host/connected-view-entries";
+import { useAutomationConnectorCommands } from "./view-host/useAutomationConnectorCommands";
 import {
   AutomationStudioConnectedHierarchy,
   AutomationStudioConnectedTimeline
 } from "./AutomationStudioConnectedRegions";
+import { listProjectProblems } from "../problems/problem-queries";
 import {
-  createAutomationSessionProjectViewReader,
   EMPTY_AUTOMATION_GATEWAY_SNAPSHOT,
   EMPTY_AUTOMATION_LIST,
   EMPTY_AUTOMATION_PROJECT_ARTIFACTS,
   EMPTY_AUTOMATION_RECORD
 } from "./session-project-view";
+import { createAutomationProjectViewModelCache } from "../model/project-view-model-cache";
 import {
   automationFlowEntryId,
   automationRecordingId,
@@ -59,8 +62,7 @@ export function AutomationStudioSession(props: {
   currentUser: CurrentUser;
   runtime: AutomationStudioRuntime;
 }) {
-  const { currentUser, runtime } = props;
-  const foundation = useAutomationStudioFoundation(runtime);
+  const { currentUser, runtime } = props; const foundation = useAutomationStudioFoundation(runtime);
   const { api, hierarchyPaging, liveCommands, liveCommandScope, projectDataPlatform, uiCache } = foundation;
   const { deepLink, pathname, searchSignature } = useAutomationBrowserEntry();
   const { studioStores, studioUiStore, workspaceRenderStore } = foundation.owners;
@@ -112,7 +114,7 @@ export function AutomationStudioSession(props: {
   const setAutomationActionStatus = storeCommands.actionStatus;
   const flowRunState = runtimeStatusState.flowRunState as any;
   const setFlowRunState = storeCommands.flowRunState;
-  const hasDirtyTaskGraph = resource("hasDirtyTaskGraph", false);
+  const hasDirtyTaskGraph = useAutomationProjectResource(studioStores, "hasDirtyTaskGraph", false);
   const setHasDirtyTaskGraph = storeCommands.resource<boolean>("hasDirtyTaskGraph");
   const taskGraphDrafts = resource<Record<string, { nodes: any[]; edges: any[] }>>("taskGraphDrafts", EMPTY_AUTOMATION_RECORD);
   const setTaskGraphDrafts = storeCommands.resource<Record<string, { nodes: any[]; edges: any[] }>>("taskGraphDrafts");
@@ -147,6 +149,7 @@ export function AutomationStudioSession(props: {
     activeProjectId,
     currentUserId: currentUser.id,
     loadedProjectHierarchyId,
+    constrained: isNarrowWorkspace,
     uiCache,
     workspaceRenderStore
   });
@@ -187,6 +190,7 @@ export function AutomationStudioSession(props: {
       stores: studioStores
     },
     hierarchy: {
+      getUiRevision: hierarchyUi.coordinator.getRevision,
       setLoadedProjectId: setLoadedProjectHierarchyId,
       setCustomNodes: setCustomHierarchyNodes,
       setDeletedIds: setDeletedHierarchyIds,
@@ -194,7 +198,11 @@ export function AutomationStudioSession(props: {
       markPersisted: hierarchyUi.markPersisted,
       reset: hierarchyUi.reset
     },
-    workspace: { replacePrefs: replaceWorkspaceRenderPrefs, resetCachedPrefs: resetCachedWorkspacePrefs },
+    workspace: {
+      getPrefsRevision: () => workspaceRenderStore.getRevision("prefs"),
+      replacePrefs: replaceWorkspaceRenderPrefs,
+      resetCachedPrefs: resetCachedWorkspacePrefs
+    },
     data: {
       setDirty: setHasDirtyTaskGraph,
       setProjectRecordings,
@@ -212,13 +220,14 @@ export function AutomationStudioSession(props: {
     refreshRuntime: refreshProjectRuntimeState } = projectRuntime;
 
   const refreshProjects = useAutomationProjectCatalogLoader(api, studioStores.catalog);
-  const getProjectView = useMemo(() => {
-    return createAutomationSessionProjectViewReader({
+  const projectViewCache = useMemo(() => {
+    return createAutomationProjectViewModelCache({
       activeProjectId,
       stores: studioStores,
       workspace: workspaceRenderStore
     });
   }, [activeProjectId, studioStores, workspaceRenderStore]);
+  const getProjectView = projectViewCache.read;
   const projectView = getProjectView();
   const activePane = workspacePrefs.panes.find((item) => item.id === workspacePrefs.activePaneId)
     ?? workspacePrefs.panes[0];
@@ -251,7 +260,6 @@ export function AutomationStudioSession(props: {
   useAutomationExternalLifecycle({
     actionStatus: automationActionStatus,
     activeProjectName: activeProject?.name ?? null,
-    hasDirtyGraph: hasDirtyTaskGraph,
     selectionKey: selection ? selection.kind + ":" + selection.id : "none",
     setNarrow: setIsNarrowWorkspace,
     narrowPanel: narrowWorkspacePanel,
@@ -273,6 +281,7 @@ export function AutomationStudioSession(props: {
     setDirty: setHasDirtyTaskGraph,
     setActionStatus: setAutomationActionStatus,
     notifyChanged: projectRuntime.notifyChanged,
+    reloadFlowDetail: loadFlowDetails,
     getSnapshot: () => {
       const current = getProjectView();
       const resources = studioStores.projectData.getState().resources;
@@ -452,8 +461,23 @@ export function AutomationStudioSession(props: {
       };
     }
   });
+  const { guardedCloseProject, selectTreeItem } = useAutomationSessionDirtyGuards({
+    activeProjectId,
+    selectedTaskGraph,
+    selectedFlow,
+    hasDirtyTaskGraph,
+    graphRuntime,
+    setDirty: setHasDirtyTaskGraph,
+    closeProject,
+    setTreeSelection: hierarchyBridge.setTreeSelection,
+    afterTreeSelection: () => setNarrowWorkspacePanel(null)
+  });
   function openAutomationProblems() {
     workspaceCommands.selectRightTab(automationStudioViewId.problems);
+    if (isNarrowWorkspace) setNarrowWorkspacePanel("inspector");
+  }
+  function openAutomationInspector() {
+    workspaceCommands.selectRightTab(automationStudioViewId.inspector);
     if (isNarrowWorkspace) setNarrowWorkspacePanel("inspector");
   }
   function openAutomationProblem(problem: any) {
@@ -469,28 +493,9 @@ export function AutomationStudioSession(props: {
     openProblems: openAutomationProblems,
     setSelection
   });
-  const deleteRecordingForRenderer = useStableAutomationEvent(recordingCommands.deleteOne);
-  const finalizeRecordingForRenderer = useStableAutomationEvent(recordingCommands.finalize);
-  const openTimelineEntryStateForRenderer = useStableAutomationEvent(openTimelineEntryState);
-  const openProblemForRenderer = useStableAutomationEvent(openAutomationProblem);
-  const openProblemsForRenderer = useStableAutomationEvent(openAutomationProblems);
-  const openSubflowForRenderer = useStableAutomationEvent(openSubflowInEditor);
-  const openStateForRenderer = useStableAutomationEvent(openStateView);
-  const appendRecordingMarkerForRenderer = useStableAutomationEvent(recordingCommands.appendMarker);
-  const appendRecordingNoteForRenderer = useStableAutomationEvent(recordingCommands.appendNote);
-  const saveTaskGraphForRenderer = useStableAutomationEvent(graphRuntime.saveGraph);
-  const updateTaskGraphDraftForRenderer = useStableAutomationEvent(graphRuntime.updateDraft);
-  const restoreTaskGraphDraftForRenderer = useStableAutomationEvent(graphRuntime.restoreDraft);
-  const discardTaskGraphForRenderer = useStableAutomationEvent(graphRuntime.discardDraft);
-  const updateRecordingForRenderer = useStableAutomationEvent(recordingCommands.update);
-  const setSelectionForRenderer = useStableAutomationEvent(setSelectionAndFollow);
-
-  const handleRefreshRecordingsForRenderer = useCallback(async () => {
-    await refreshProjectRuntimeState(activeProjectId);
-  }, [activeProjectId]);
-
   const connectorScope = useMemo<AutomationCanonicalConnectorScope>(() => ({
     projectId: activeProjectId,
+    projectView: projectViewCache,
     getWorkspacePrefs: workspaceRenderStore.getPrefs,
     loadFlowDetail: loadFlowDetails,
     loadNodeDefinitions,
@@ -514,57 +519,47 @@ export function AutomationStudioSession(props: {
     loadLatestNormalizedTimeline,
     loadNodeDefinitions,
     loadRecordingDetails,
+    projectViewCache,
     studioStores.projectData,
     workspaceRenderStore
   ]);
   const connectorStores = studioStores;
   const connectorGeneration = foundation.projectGeneration.current();
+  const connectorCommands = useAutomationConnectorCommands({
+    appendRecordingMarker: recordingCommands.appendMarker,
+    appendRecordingNote: recordingCommands.appendNote,
+    createSubflow: hierarchyBridge.createSubflow,
+    deleteRecording: recordingCommands.deleteOne,
+    discardGraphDraft: graphRuntime.discardDraft,
+    finalizeRecording: recordingCommands.finalize,
+    listProblems: (payload: Record<string, unknown>) => listProjectProblems(foundation.api, payload),
+    openAdaptation: adaptationNavigation.openAdaptation,
+    openInspector: openAutomationInspector,
+    openNodeState: (nodeId: string) => openStateView({ nodeId, phase: "input" }),
+    openProblem: openAutomationProblem,
+    openProblems: openAutomationProblems,
+    openReadinessTarget: adaptationNavigation.openReadinessTarget,
+    openState: openStateView,
+    openSubflow: openSubflowInEditor,
+    openTimelineEntryState,
+    refreshRecordings: () => refreshProjectRuntimeState(activeProjectId),
+    reloadGraph: graphRuntime.reloadGraph,
+    restoreGraphDraft: graphRuntime.restoreDraft,
+    saveGraph: graphRuntime.saveGraph,
+    selectAdaptation: adaptationNavigation.selectAdaptation,
+    setGraphDirty: setHasDirtyTaskGraph,
+    setSelection: setSelectionAndFollow,
+    updateGraphDraft: graphRuntime.updateDraft,
+    updateRecording: recordingCommands.update
+  });
   const connectedEntries = useAutomationConnectedViewEntries({
-    commands: {
-      [automationStudioViewId.clients]: {},
-      [automationStudioViewId.flowEditor]: {
-      onSaveGraph: saveTaskGraphForRenderer,
-      onGraphDraftChange: updateTaskGraphDraftForRenderer,
-      onDirtyChange: setHasDirtyTaskGraph,
-      onOpenProblems: openProblemsForRenderer,
-      onOpenNodeState: (nodeId: string) => openStateForRenderer({ nodeId, phase: "input" }),
-      onRestoreDraft: restoreTaskGraphDraftForRenderer,
-      onDiscardDraft: discardTaskGraphForRenderer,
-      setSelection: setSelectionForRenderer
-      },
-      [automationStudioViewId.recordingTimeline]: {
-      onAppendRecordingMarker: appendRecordingMarkerForRenderer,
-      onAppendRecordingNote: appendRecordingNoteForRenderer,
-      onDeleteRecording: deleteRecordingForRenderer,
-      onFinalizeRecording: finalizeRecordingForRenderer,
-      onOpenTimelineEntryState: openTimelineEntryStateForRenderer,
-      onRefreshRecordings: handleRefreshRecordingsForRenderer,
-      onUpdateRecording: updateRecordingForRenderer,
-      setSelection: setSelectionForRenderer
-      },
-      [automationStudioViewId.state]: { setSelection: setSelectionForRenderer },
-      [automationStudioViewId.runtime]: {
-        onOpenAdaptation: adaptationNavigation.openAdaptation,
-        onOpenReadinessTarget: adaptationNavigation.openReadinessTarget
-      },
-      [automationStudioViewId.problems]: { onOpenProblem: openProblemForRenderer },
-      [automationStudioViewId.inspector]: {
-        onOpenState: openStateForRenderer,
-        onUpdateEditorNodeSelection: setSelectionForRenderer
-      },
-      [automationStudioViewId.router]: { onCreateSubflow: hierarchyBridge.createSubflow },
-      [automationStudioViewId.subflows]: { onOpenSubflow: openSubflowForRenderer },
-      [automationStudioViewId.instructions]: {},
-      [automationStudioViewId.adaptations]: {
-        onSelectedAdaptationChange: adaptationNavigation.selectAdaptation
-      },
-      [automationStudioViewId.settings]: {}
-    },
+    commands: connectorCommands,
     generation: connectorGeneration,
     scope: connectorScope,
     stores: connectorStores,
     views: viewInstances
   });
+  const connectedViewSource = useAutomationConnectedViewSource(activeProjectId ?? "no-project", connectedEntries);
   const resolveWorkspaceBreadcrumbs = useCallback((targetViewId: string) => (
     workspaceBreadcrumbsForView(
       targetViewId,
@@ -578,7 +573,7 @@ export function AutomationStudioSession(props: {
         workspaceCommands.openView(automationStudioViewId.router, "preview");
       });
     } else if (crumb.kind === "subflow" && activeFlowScope?.flowId) {
-      void openSubflowForRenderer(activeFlowScope.flowId, crumb.id, "preview");
+      void openSubflowInEditor(activeFlowScope.flowId, crumb.id, "preview");
     }
   });
   const hierarchySurface = useMemo(() => (
@@ -590,27 +585,27 @@ export function AutomationStudioSession(props: {
         coordinator: hierarchyUiCoordinator,
         paging: hierarchyPaging,
         projectId: activeProject?.id ?? "",
-        onCloseProject: closeProject,
+        onCloseProject: guardedCloseProject,
         openSubflow: hierarchyBridge.openTreeSubflow,
         openView: hierarchyBridge.openTreeView,
         port: workspaceCommandPort,
         projectName: activeProject?.name ?? "",
         requestAction: hierarchyBridge.requestAction,
         setRecordingPrimaryKind: setRecordingTreePrimaryKind,
-        setSelection: hierarchyBridge.setTreeSelection,
+        setSelection: selectTreeItem,
         store: workspaceRenderStore
       }}
     />
   ), [
     activeProject?.id,
     activeProject?.name,
-    closeProject,
+    guardedCloseProject,
     getProjectView,
     hierarchyBridge.execute,
     hierarchyBridge.openTreeSubflow,
     hierarchyBridge.openTreeView,
     hierarchyBridge.requestAction,
-    hierarchyBridge.setTreeSelection,
+    selectTreeItem,
     hierarchyDialogStore,
     hierarchyPaging,
     hierarchyUiCoordinator,
@@ -632,6 +627,7 @@ export function AutomationStudioSession(props: {
     const current = getProjectView();
     return {
       selectedFlow: Boolean(current.selectedFlow),
+      selectedTopLevelFlow: Boolean(current.selectedFlow && current.selectedFlow.metadata?.subflowGraph !== true && typeof current.selectedFlow.metadata?.parentFlowId !== "string"),
       selectedRecording: Boolean(current.selectedRecording),
       selection: studioStores.selection.getState().selection
     };
@@ -657,15 +653,15 @@ export function AutomationStudioSession(props: {
     workspaceRenderStore
   ]);
   const viewBinding = useMemo(() => ({
-    entries: connectedEntries,
+    source: connectedViewSource,
     instances: viewInstances,
     openIds: openWorkspaceViewIds,
     resolveBreadcrumbs: resolveWorkspaceBreadcrumbs
-  }), [connectedEntries, openWorkspaceViewIds, resolveWorkspaceBreadcrumbs, viewInstances]);
+  }), [connectedViewSource, openWorkspaceViewIds, resolveWorkspaceBreadcrumbs, viewInstances]);
   const headerBinding = useMemo(() => ({
-    closeProject,
+    closeProject: guardedCloseProject,
     activateBreadcrumb: activateWorkspaceBreadcrumb
-  }), [activateWorkspaceBreadcrumb, closeProject]);
+  }), [activateWorkspaceBreadcrumb, guardedCloseProject]);
   const cacheStats = useCallback(() => projectDataPlatform.stats(), [projectDataPlatform]);
   const inspectorBinding = useMemo(() => ({ api, cacheStats }), [api, cacheStats]);
   if (restoringUrlProject || !activeProject) {

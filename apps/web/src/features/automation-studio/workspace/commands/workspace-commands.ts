@@ -16,6 +16,7 @@ import type {
 } from "./contracts";
 import type { AutomationWarmViewRegistry } from "./warm-activation";
 import { chooseAutomationMainPane, nextAutomationPaneId } from "./pane-choice";
+import { requestDirtyViewDecision } from "../dirty-view-registry";
 
 export const automationWorkspaceMaxMainPanes = 3;
 
@@ -91,7 +92,6 @@ export function createAutomationWorkspaceCommands(options: {
     if (changed) notifyRegion({ region: "right", paneId: "right-sidebar", viewId });
     return changed;
   };
-
   const commands: AutomationWorkspaceCommands = {
     openView(viewId, mode = "preview") {
       const region = automationWorkspaceRegionForView(viewId);
@@ -111,7 +111,7 @@ export function createAutomationWorkspaceCommands(options: {
       }
       if (region === "right") return activateRight(viewId);
       const current = port.read();
-      if (mode === "new-window" && !current.panes.some((pane) => pane.tabs.includes(viewId))) {
+      if (mode === "new-pane-or-focus" && !current.panes.some((pane) => pane.tabs.includes(viewId))) {
         if (current.panes.length >= automationWorkspaceMaxMainPanes) return false;
         const paneId = nextAutomationPaneId(current.panes);
         const changed = commit((latest) => latest.panes.length >= automationWorkspaceMaxMainPanes
@@ -131,16 +131,12 @@ export function createAutomationWorkspaceCommands(options: {
     addPaneTab: activateMain,
     closePaneTab(paneId, viewId) {
       if (!port.read().panes.some((pane) => pane.id === paneId && pane.tabs.includes(viewId))) return false;
-      return commit((current) => ({
-        ...current,
-        ...closeAutomationWorkspacePaneTab(
-          current.panes,
-          paneId,
-          viewId,
-          current.activePaneId,
-          current.mainLayoutPreset
-        )
-      }), true);
+      return requestDirtyViewDecision({ actionLabel: `closing ${viewId}`, viewIds: [viewId], proceed: () => {
+        commit((current) => ({
+          ...current,
+          ...closeAutomationWorkspacePaneTab(current.panes, paneId, viewId, current.activePaneId, current.mainLayoutPreset)
+        }), true);
+      } });
     },
     movePaneTab(sourcePaneId, targetPaneId, viewId, targetViewId = null, placement = "end") {
       if (sourcePaneId === targetPaneId && targetViewId === viewId) return false;
@@ -167,20 +163,20 @@ export function createAutomationWorkspaceCommands(options: {
     addRightTab: activateRight,
     closeRightTab(viewId) {
       if (!port.read().rightSidebar.tabs.includes(viewId)) return false;
-      return commit((current) => {
-        const tabs = current.rightSidebar.tabs.filter((tab) => tab !== viewId);
-        const nextTabs = tabs.length ? tabs : [defaultRightViewId];
-        return {
-          ...current,
-          rightSidebar: {
-            ...current.rightSidebar,
-            tabs: nextTabs,
-            activeViewId: current.rightSidebar.activeViewId === viewId
-              ? nextTabs[0] ?? defaultRightViewId
-              : current.rightSidebar.activeViewId
-          }
-        };
-      }, true);
+      return requestDirtyViewDecision({ actionLabel: `closing ${viewId}`, viewIds: [viewId], proceed: () => {
+        commit((current) => {
+          const tabs = current.rightSidebar.tabs.filter((tab) => tab !== viewId);
+          const nextTabs = tabs.length ? tabs : [defaultRightViewId];
+          return {
+            ...current,
+            rightSidebar: {
+              ...current.rightSidebar,
+              tabs: nextTabs,
+              activeViewId: current.rightSidebar.activeViewId === viewId ? nextTabs[0] ?? defaultRightViewId : current.rightSidebar.activeViewId
+            }
+          };
+        }, true);
+      } });
     },
     applyLayoutPreset(preset) {
       if (port.read().mainLayoutPreset === preset) return false;

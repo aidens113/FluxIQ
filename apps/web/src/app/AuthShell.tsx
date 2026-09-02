@@ -3,7 +3,12 @@
 import { Blocks, CheckCircle2, Eye, EyeOff, LogOut, Settings, ShieldCheck, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
-import { Breadcrumb, Button, Field, IconButton, InlineNotice, Menu, type AlertTone, type BreadcrumbItem } from "../features/programs/shared-ui";
+import { Breadcrumb, Button, Field, IconButton, InlineNotice, Menu, Modal, type AlertTone, type BreadcrumbItem } from "../features/programs/shared-ui";
+import {
+  programAuthenticationRequiredEvent,
+  resolveProgramAuthentication
+} from "../features/programs/program-auth-recovery";
+import { sanitizeAsciiDigits } from "../lib/input-sanitizers";
 
 export function AuthStatus(props: { displayName: string; roleId: string }) {
   async function logout() {
@@ -28,7 +33,84 @@ export function GlobalTopbar(props: {
       {props.breadcrumbs?.length ? <div className="global-topbar-context"><Breadcrumb items={props.breadcrumbs} /></div> : null}
       {props.actions ? <div className="global-topbar-actions">{props.actions}</div> : null}
       <AuthStatus displayName={props.user.displayName} roleId={props.user.roleId} />
+      <SessionReauthentication />
     </header>
+  );
+}
+
+function SessionReauthentication() {
+  const [open, setOpen] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [totp, setTotp] = useState("");
+  const [requiresTotp, setRequiresTotp] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const show = () => {
+      setError("");
+      setPassword("");
+      setTotp("");
+      setRequiresTotp(false);
+      setOpen(true);
+    };
+    window.addEventListener(programAuthenticationRequiredEvent, show);
+    return () => window.removeEventListener(programAuthenticationRequiredEvent, show);
+  }, []);
+
+  function close(authenticated = false) {
+    if (busy) return;
+    setOpen(false);
+    resolveProgramAuthentication(authenticated);
+  }
+
+  async function authenticate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: username.trim(), password, ...(totp ? { totp } : {}) })
+      });
+      const body = await response.json().catch(() => undefined) as { error?: string; requiresTotp?: boolean } | undefined;
+      if (response.ok) {
+        setOpen(false);
+        resolveProgramAuthentication(true);
+        return;
+      }
+      if (body?.requiresTotp) setRequiresTotp(true);
+      setError(body?.error ?? "The session could not be restored.");
+    } catch {
+      setError("The authentication service could not be reached. Your work remains open.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) return null;
+  return (
+    <Modal
+      busy={busy}
+      closeOnEscape={!busy}
+      description="Your session expired. Sign in again to retry the interrupted request without leaving this workspace."
+      onClose={() => close(false)}
+      title="Restore session"
+    >
+      <form className="dialog-form" onSubmit={authenticate}>
+        {error ? <InlineNotice message={error} title="Session not restored" tone="error" /> : null}
+        <Field label="Username" required><input autoComplete="username" data-autofocus onChange={(event) => setUsername(event.target.value)} value={username} /></Field>
+        <Field label="Password" required><input autoComplete="current-password" onChange={(event) => setPassword(event.target.value)} type="password" value={password} /></Field>
+        {requiresTotp ? <Field label="Authenticator code" required><input autoComplete="one-time-code" inputMode="numeric" onChange={(event) => setTotp(digits(event.target.value, 6))} value={totp} /></Field> : null}
+        <div className="modal-actions">
+          <Button disabled={busy} onClick={() => close(false)} type="button">Keep work open</Button>
+          <Button busy={busy} disabled={!username.trim() || !password || (requiresTotp && totp.length !== 6)} type="submit" variant="primary">Restore session</Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 type LoginPayload = {
@@ -69,7 +151,7 @@ export function LoginPanel() {
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ username: username.trim(), password, totp })
+        body: JSON.stringify({ username: username.trim(), password, ...(totp ? { totp } : {}) })
       });
       const body = await response.json().catch(() => undefined) as {
         error?: string;
@@ -185,5 +267,5 @@ export function setupPasswordError(password: string, confirmation: string): stri
 }
 
 function digits(value: string, maxLength: number): string {
-  return value.replace(/D/g, "").slice(0, maxLength);
+  return sanitizeAsciiDigits(value, maxLength);
 }

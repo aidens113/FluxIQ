@@ -1,8 +1,9 @@
-import { applyNodeChanges, type Node, type NodeChange, type Viewport } from "@xyflow/react";
+import { type Node, type NodeChange, type Viewport } from "@xyflow/react";
 import type { AutomationFlowNodeData } from "./node-types";
 
 type FlowNode = Node<AutomationFlowNodeData>;
 type Point = { x: number; y: number };
+export type FlowNodePositionPreview = { id: string; x: number; y: number };
 
 export type FlowCanvasMarqueeBox = {
   left: number;
@@ -20,7 +21,7 @@ export type FlowCanvasInteractionControllerOptions = {
   scheduler: FlowCanvasFrameScheduler;
   getNodes(): FlowNode[];
   screenToFlowPosition(point: Point): Point;
-  previewNodes(nodes: FlowNode[]): void;
+  renderNodePositions(positions: FlowNodePositionPreview[]): void;
   renderMarquee(box: FlowCanvasMarqueeBox | null): void;
   renderHover(nodeId: string | null): void;
   renderViewport(viewport: Viewport): void;
@@ -45,7 +46,7 @@ export function createFlowCanvasInteractionController(
 ) {
   let animationFrame = 0;
   let dragNodes: FlowNode[] | null = null;
-  let pendingNodePreview: FlowNode[] | null = null;
+  const pendingNodePositions = new Map<string, FlowNodePositionPreview>();
   let marquee: MarqueeGesture | null = null;
   let pendingMarquee: FlowCanvasMarqueeBox | null | undefined;
   let pendingHover: string | null | undefined;
@@ -53,10 +54,10 @@ export function createFlowCanvasInteractionController(
 
   const flush = () => {
     animationFrame = 0;
-    if (pendingNodePreview) {
-      const nodes = pendingNodePreview;
-      pendingNodePreview = null;
-      options.previewNodes(nodes);
+    if (pendingNodePositions.size) {
+      const positions = [...pendingNodePositions.values()];
+      pendingNodePositions.clear();
+      options.renderNodePositions(positions);
     }
     if (pendingMarquee !== undefined) {
       const box = pendingMarquee;
@@ -90,24 +91,30 @@ export function createFlowCanvasInteractionController(
   return {
     beginNodeDrag() {
       dragNodes = options.getNodes();
-      pendingNodePreview = null;
+      pendingNodePositions.clear();
     },
 
     previewNodeChanges(changes: Array<NodeChange<FlowNode>>) {
       if (!dragNodes) return false;
-      dragNodes = applyNodeChanges(changes, dragNodes);
-      pendingNodePreview = dragNodes;
-      schedule();
+      for (const change of changes) {
+        if (change.type !== "position" || !change.position) continue;
+        pendingNodePositions.set(change.id, {
+          id: change.id,
+          x: change.position.x,
+          y: change.position.y
+        });
+      }
+      if (pendingNodePositions.size) schedule();
       return true;
     },
 
     settleNodeDrag(settledNodes: FlowNode[] = []) {
       if (!dragNodes) return false;
       if (settledNodes.length) dragNodes = mergeSettledNodePositions(dragNodes, settledNodes);
-      pendingNodePreview = dragNodes;
       flushNow();
       const nodes = dragNodes;
       dragNodes = null;
+      pendingNodePositions.clear();
       options.settleNodeDrag(nodes);
       return true;
     },
@@ -194,7 +201,7 @@ export function createFlowCanvasInteractionController(
       if (animationFrame) options.scheduler.cancel(animationFrame);
       animationFrame = 0;
       dragNodes = null;
-      pendingNodePreview = null;
+      pendingNodePositions.clear();
       marquee = null;
       pendingMarquee = undefined;
       pendingHover = undefined;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readCssManifest } from "./css-manifest-test-helper";
 
-const css = readCssManifest(new URL("../../app/globals.css", import.meta.url));
+const css = readCssManifest(new URL("../../app/programs/automation-studio/automation-studio.css", import.meta.url));
 
 function mediaBlock(start: string, next?: string): string {
   const from = css.indexOf(start);
@@ -9,7 +9,7 @@ function mediaBlock(start: string, next?: string): string {
   return css.slice(from, to < 0 ? css.length : to);
 }
 
-describe("global responsive composition contract", () => {
+describe("Automation Studio responsive composition contract", () => {
   it("uses dynamic viewport ownership for pages and overlays", () => {
     expect(css).toContain("min-height: 100dvh");
     expect(css).toContain("max-height: calc(100dvh - (var(--space-md) * 2))");

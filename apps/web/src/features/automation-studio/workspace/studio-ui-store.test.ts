@@ -49,6 +49,18 @@ describe("AutomationStudioUiStore", () => {
     expect(store.getRevision()).toBe(0);
   });
 
+  it("publishes responsive panel changes on the narrow-workspace scope", () => {
+    const store = createAutomationStudioUiStore();
+    const listener = vi.fn();
+    store.subscribe(listener, "narrow-workspace");
+
+    expect(store.patch({ narrowWorkspacePanel: "hierarchy" })).toBe(true);
+
+    expect(listener).toHaveBeenCalledOnce();
+    expect(store.getRevision("narrow-workspace")).toBe(1);
+    expect(store.getState().narrowWorkspacePanel).toBe("hierarchy");
+  });
+
   it("shallowly gates parent-provided render inputs", () => {
     const stable = {};
     expect(shallowStudioUiRenderInputsSame(["project", stable], ["project", stable])).toBe(true);

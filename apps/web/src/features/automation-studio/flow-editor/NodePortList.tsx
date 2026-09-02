@@ -8,10 +8,10 @@ import { useFlowEditorActions } from "./FlowEditorActionsContext";
 export function NodePortList(props: { inputs: AutomationNodePort[]; outputs: AutomationNodePort[] }) {
   return (
     <div className="automation-node-port-list">
-      <div className="automation-node-port-column input">
+      <div className={props.inputs.length ? "automation-node-port-column input" : "automation-node-port-column input empty-column"}>
         {props.inputs.length ? props.inputs.map((port) => <AutomationNodePortRow key={port.id} port={port} direction="target" />) : <span className="empty">No inputs</span>}
       </div>
-      <div className="automation-node-port-column output">
+      <div className={props.outputs.length ? "automation-node-port-column output" : "automation-node-port-column output empty-column"}>
         {props.outputs.length ? props.outputs.map((port) => <AutomationNodePortRow key={port.id} port={port} direction="source" />) : <span className="empty">No outputs</span>}
       </div>
     </div>

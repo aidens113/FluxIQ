@@ -7,6 +7,7 @@ const stylesRoot = dirname(fileURLToPath(import.meta.url));
 const studioRoot = resolve(stylesRoot, "..");
 const appRoot = resolve(studioRoot, "../../app");
 const globalsPath = join(appRoot, "globals.css");
+const studioManifestPath = join(appRoot, "programs/automation-studio/automation-studio.css");
 const deletedLegacyStylesheets = [
   "instructions-settings-adaptations-problems/02-proposals.css",
   "instructions-settings-adaptations-problems/03-proposal-editor.css",
@@ -33,8 +34,8 @@ function productionSource(): string {
 }
 
 function imported(relativePath: string): boolean {
-  const expected = '@import "../features/automation-studio/styles/' + relativePath + '";';
-  return readFileSync(globalsPath, "utf8").includes(expected);
+  const expected = '@import "../../../features/automation-studio/styles/' + relativePath + '";';
+  return readFileSync(studioManifestPath, "utf8").includes(expected);
 }
 
 function retiredSelectorClasses(): string[] {
@@ -48,6 +49,9 @@ function retiredSelectorClasses(): string[] {
 }
 
 describe("retired Automation Studio styles", () => {
+  it("keeps the global stylesheet free of Studio feature imports", () => {
+    expect(readFileSync(globalsPath, "utf8")).not.toContain("automation-studio");
+  });
   it("does not retain deleted Proposal, run-workspace, or legacy Config packages", () => {
     const cssFiles = filesUnder(stylesRoot, new Set([".css"])).map(normalizePath);
 

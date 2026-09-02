@@ -75,7 +75,7 @@ export function AutomationProjectBrowser(props: AutomationProjectBrowserProps) {
           {query ? <small>{resultCount} found</small> : null}
         </label>
         <div className="automation-project-browser-actions">
-          <Button onClick={props.onRefresh} size="compact"><RefreshCw size={14} aria-hidden />Refresh</Button>
+          <Button onClick={props.onRefresh} size="compact"><RefreshCw size={14} aria-hidden />{props.status ? "Retry" : "Refresh"}</Button>
           <Button onClick={props.onCreateCategory} size="compact"><Plus size={14} aria-hidden />Category</Button>
           <Button onClick={() => props.onCreateProject()} size="compact" variant="primary"><Plus size={14} aria-hidden />Project</Button>
         </div>
@@ -121,7 +121,7 @@ export function AutomationProjectBrowser(props: AutomationProjectBrowserProps) {
             >
               <div className="automation-project-category-title">
                 {section.category ? <GripVertical size={14} aria-hidden /> : <FolderOpen size={14} aria-hidden />}
-                <h2 id={`project-category-${section.id}`}>{section.name}</h2>
+                <h2 id={`project-category-${section.id}`} title={section.name}>{section.name}</h2>
                 <span>{section.projects.length}</span>
               </div>
               <Menu
@@ -150,11 +150,11 @@ export function AutomationProjectBrowser(props: AutomationProjectBrowserProps) {
                   }}
                   role="listitem"
                 >
-                  <button className="automation-project-row-main" onClick={() => props.onOpenProject(project.id)} type="button">
+                  <button className="automation-project-row-main" onClick={() => props.onOpenProject(project.id)} title={project.name} type="button">
                     <span className="automation-project-row-icon"><FolderOpen size={16} aria-hidden /></span>
                     <span className="automation-project-row-copy">
-                      <strong>{project.name}</strong>
-                      <small>{project.description || "No description"}</small>
+                      <strong title={project.name}>{project.name}</strong>
+                      <small title={project.description || "No description"}>{project.description || "No description"}</small>
                     </span>
                     <time dateTime={new Date(project.updatedAt).toISOString()}>Updated {formatProjectUpdatedAt(project.updatedAt)}</time>
                   </button>

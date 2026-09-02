@@ -11,12 +11,13 @@ import {
   stopClientRecording
 } from "./client-commands";
 import type { ClientGatewayPort } from "./client-api-types";
-import { queryClientGatewaySnapshot } from "./client-queries";
+import { listClientGatewayItems, queryClientGatewaySnapshot } from "./client-queries";
 
 export function useClientGatewayPort(): ClientGatewayPort {
   const api = useProgramApi("automation-studio");
   return useMemo(() => ({
     querySnapshot: () => queryClientGatewaySnapshot(api),
+    listItems: (input) => listClientGatewayItems(api, input),
     startRecording: (input) => startClientRecording(api, input),
     stopRecording: (input) => stopClientRecording(api, input),
     captureSnapshot: (sessionId) => captureClientSnapshot(api, sessionId),
@@ -26,6 +27,6 @@ export function useClientGatewayPort(): ClientGatewayPort {
   }), [api]);
 }
 
-export { queryClientGatewaySnapshot } from "./client-queries";
+export { listClientGatewayItems, queryClientGatewaySnapshot } from "./client-queries";
 export { captureClientSnapshot, executeClientAction, resolveClientPairing, revokeClientTrust, startClientRecording, stopClientRecording } from "./client-commands";
 export type { ClientGatewayApi, ClientGatewayPort } from "./client-api-types";

@@ -208,7 +208,7 @@ describe("automation hierarchy selectors", () => {
 });
 
 describe("automation hierarchy controller", () => {
-  it("updates the primary snapshot without a redundant tree publication", () => {
+  it("commits same-selection activation without a redundant tree publication", () => {
     const store = createAutomationHierarchyStore();
     const order: string[] = [];
     store.subscribe(() => order.push("tree"));
@@ -225,7 +225,7 @@ describe("automation hierarchy controller", () => {
     controller.openNode(flow, "preview");
 
     expect(store.getSnapshot().primaryTreeNodeId).toBe(router.id);
-    expect(order).toEqual(["view"]);
+    expect(order).toEqual(["view", "selection"]);
   });
 
   it("keeps one controller while reading the latest command context", () => {
@@ -265,13 +265,13 @@ describe("automation hierarchy controller", () => {
       openView: latestOpenView
     };
 
-    controller.openNode(router, "new-window");
+    controller.openNode(router, "new-pane-or-focus");
     controller.toggleFolder(defaultCollapsedFolder.id);
 
     expect(controller).toBe(originalController);
     expect(firstOpenView).toHaveBeenCalledOnce();
     expect(latestSetSelection).toHaveBeenCalledWith({ kind: "flow", id: "flow.checkout" });
-    expect(latestOpenView).toHaveBeenCalledWith("flow-router", "new-window");
+    expect(latestOpenView).toHaveBeenCalledWith("flow-router", "new-pane-or-focus");
     expect(store.getSnapshot().expandedDefaultCollapsedIds).toEqual([defaultCollapsedFolder.id]);
   });
 

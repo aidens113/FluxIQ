@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { FluxIQ } from "fluxiq";
@@ -6,8 +6,16 @@ import { createAutomationStudioLargeProjectFixture } from "fluxiq/automation-stu
 
 const FIXTURE_MARKER = "fluxiq-e2e-fixture-v1";
 const FIXED_NOW_MS = Date.UTC(2026, 0, 15, 12, 0, 0);
+const FIXTURE_USERNAME = "admin";
+const FIXTURE_PASSWORD = "FluxIQ-E2E-Admin!";
+const FIXTURE_SECURITY_PIN = "123456";
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const fixtureRoot = path.resolve(process.env.FLUXIQ_E2E_FIXTURE_ROOT ?? path.join(webRoot, ".e2e-host"));
+const phase8Contract = JSON.parse(await readFile(new URL("./phase8-fixture-contract.json", import.meta.url), "utf8"));
+const phase8Selection = (process.env.FLUXIQ_E2E_PHASE8_PROFILE ?? "none").trim().toLowerCase();
+if (!["none", "ordinary", "scale", "all"].includes(phase8Selection)) {
+  throw new Error("FLUXIQ_E2E_PHASE8_PROFILE must be none, ordinary, scale, or all.");
+}
 const fixtureProfiles = Object.freeze({
   small: Object.freeze({
     flowCount: 2,
@@ -50,6 +58,8 @@ await resetOwnedFixtureRoot();
 
 const fluxiq = FluxIQ.create({ rootDir: fixtureRoot, loadEnv: false });
 await fluxiq.setup();
+await fluxiq.programs.identityAccess.setPassword(FIXTURE_USERNAME, FIXTURE_PASSWORD);
+await fluxiq.programs.identityAccess.setPin(FIXTURE_USERNAME, FIXTURE_SECURITY_PIN);
 const studio = fluxiq.programs.automationStudio;
 const category = await studio.createProjectCategory({ name: "UI Baselines" });
 
@@ -58,6 +68,8 @@ const emptyProject = await studio.createProject({
   description: "Deterministic empty states for Automation Studio.",
   categoryId: category.id,
 });
+
+const phase8EmptyProject = await seedPhase8Project("empty", phase8Contract.profiles.empty, category.id);
 
 const smallProject = await seedProject({
   name: "UI Fixture - Small",
@@ -80,13 +92,20 @@ const scale10kProject = fastStudioOnly ? smallProject : await seedProject({
   fixture: fixtureProfiles.scale10k,
 });
 
+const phase8OrdinaryProject = includesPhase8Profile("ordinary")
+  ? await seedPhase8Project("ordinary", phase8Contract.profiles.ordinary, category.id)
+  : null;
+const phase8ScaleProject = includesPhase8Profile("scale")
+  ? await seedPhase8Project("scale", phase8Contract.profiles.scale, category.id)
+  : null;
+
 const globalStress = fastStudioOnly ? {} : await seedGlobalStressFixtures();
 
 const manifest = {
   schemaVersion: 1,
   fixedNowMs: FIXED_NOW_MS,
   root: fixtureRoot,
-  credentials: { username: "admin", password: "admin" },
+  credentials: { username: FIXTURE_USERNAME, password: FIXTURE_PASSWORD, securityPin: FIXTURE_SECURITY_PIN },
   fixtureProfiles,
   projects: {
     empty: summarizeProject(emptyProject),
@@ -95,6 +114,18 @@ const manifest = {
     scale10k: scale10kProject,
     representative: smallProject,
     scale: scale1kProject,
+    phase8Empty: phase8EmptyProject,
+    phase8Ordinary: phase8OrdinaryProject,
+    phase8Scale: phase8ScaleProject,
+  },
+  phase8: {
+    contract: phase8Contract,
+    selection: phase8Selection,
+    materialized: {
+      empty: true,
+      ordinary: Boolean(phase8OrdinaryProject),
+      scale: Boolean(phase8ScaleProject),
+    },
   },
   globalStress,
 };
@@ -104,11 +135,11 @@ process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
 
 async function seedProject({ name, description, categoryId, fixture: fixtureOptions }) {
   const project = await studio.createProject({ name, description, categoryId });
-  const fixture = createAutomationStudioLargeProjectFixture({
+  const fixture = namespaceLargeFixtureIdentifiers(createAutomationStudioLargeProjectFixture({
     ...fixtureOptions,
     projectId: project.id,
     nowMs: FIXED_NOW_MS,
-  });
+  }), project.id);
 
   const graphNodeCount = fixtureOptions.graphNodeCount ?? 0;
   if (graphNodeCount > 0 && fixture.flows[0]) {
@@ -116,10 +147,10 @@ async function seedProject({ name, description, categoryId, fixture: fixtureOpti
   }
 
   for (const artifact of fixture.flows) {
-    await studio.saveProjectArtifact({ projectId: project.id, kind: "flow", artifact });
+    await studio.saveFlow({ projectId: project.id, flow: ownedFixtureFlow(project.id, artifact) });
   }
-  for (const router of fixture.routers) await studio.saveFlowRouter(router);
   for (const subflow of fixture.subflows) await studio.saveFlowSubflow(subflow);
+  for (const router of fixture.routers) await studio.saveFlowRouter(router);
   for (const instruction of fixture.instructions) await studio.saveFlowInstruction(project.id, instruction);
   for (const proposal of fixture.changeProposals) await studio.saveFlowChangeProposal(proposal);
   for (const detail of fixture.runDetails) await studio.saveFlowRunDetail(detail);
@@ -136,13 +167,15 @@ async function seedProject({ name, description, categoryId, fixture: fixtureOpti
   }
 
   const timelineEntryCount = fixtureOptions.timelineEntryCount ?? 0;
-  if (timelineEntryCount > 0) {
-    await seedStressRecording(project.id, timelineEntryCount);
-  }
+  const timelineRecordingId = timelineEntryCount > 0
+    ? await seedStressRecording(project.id, timelineEntryCount)
+    : null;
 
   return {
     ...summarizeProject(project),
     flowIds: fixture.flows.map((flow) => flow.flowId),
+    recordingIds: timelineRecordingId ? [timelineRecordingId] : [],
+    timelineRecordingId,
     counts: {
       flows: fixture.flows.length,
       subflows: fixture.subflows.length,
@@ -155,6 +188,208 @@ async function seedProject({ name, description, categoryId, fixture: fixtureOpti
       certificationSize: Math.max(graphNodeCount, hierarchyFolderCount, timelineEntryCount),
     },
   };
+}
+
+async function seedPhase8Project(profileName, counts, categoryId) {
+  const flowCount = counts.flows;
+  const subflowsPerFlow = flowCount > 0 ? counts.subflows / flowCount : 0;
+  const runsPerFlow = flowCount > 0 ? counts.runs / flowCount : 0;
+  const adaptationsPerFlow = flowCount > 0 ? counts.adaptations / flowCount : 0;
+  for (const [label, value] of Object.entries({ subflowsPerFlow, runsPerFlow, adaptationsPerFlow })) {
+    if (!Number.isInteger(value)) throw new Error(`Phase 8 ${profileName} ${label} must divide evenly by Flow count.`);
+  }
+  const project = await studio.createProject({
+    name: `Phase 8 - ${profileName[0].toUpperCase()}${profileName.slice(1)}`,
+    description: `Storage-seeded ${profileName} release fixture.`,
+    categoryId,
+  });
+  const fixture = namespaceLargeFixtureIdentifiers(createAutomationStudioLargeProjectFixture({
+    projectId: project.id,
+    nowMs: FIXED_NOW_MS,
+    flowCount,
+    subflowsPerFlow: Math.max(1, subflowsPerFlow),
+    runsPerFlow,
+    adaptationsPerFlow,
+    instructionsPerFlow: profileName === "empty" ? 0 : 2,
+    recordingCount: counts.recordings,
+  }), project.id);
+  if (counts.subflows === 0) {
+    fixture.subflows.length = 0;
+    fixture.routers.length = 0;
+    fixture.instructions.length = 0;
+    fixture.changeProposals.length = 0;
+    fixture.policies.length = 0;
+    fixture.adaptations.length = 0;
+    fixture.runDetails.length = 0;
+    fixture.flows[0] = withStressGraph({ ...fixture.flows[0], expansion: {} }, counts.activeGraphNodes);
+  } else {
+    fixture.flows[0] = withStressGraph(fixture.flows[0], counts.activeGraphNodes);
+    expandRoutes(fixture.routers, fixture.subflows, counts.routes);
+    expandRunEvents(fixture.runDetails, counts.runEvents);
+  }
+
+  const recordingIds = fixture.recordings.map((_, index) =>
+    projectOwnedRecordingId(project.id, `phase8-${profileName}-${index}`)
+  );
+  const recordingLabels = fixture.recordings.map((recording, index) =>
+    String(recording.metadata?.title ?? recording.metadata?.name ?? `Recording ${index + 1}`)
+  );
+
+  for (const artifact of fixture.flows) await studio.saveFlow({ projectId: project.id, flow: ownedFixtureFlow(project.id, artifact) });
+  for (const subflow of fixture.subflows) await studio.saveFlowSubflow(subflow);
+  for (const router of fixture.routers) await studio.saveFlowRouter(router);
+  for (const instruction of fixture.instructions) await studio.saveFlowInstruction(project.id, instruction);
+  for (const detail of fixture.runDetails) await studio.saveFlowRunDetail(detail);
+  for (const adaptation of fixture.adaptations) await studio.saveFlowAdaptation(adaptation);
+  for (const policy of fixture.policies) await studio.saveFlowAdaptationPolicy(project.id, policy);
+
+  for (let index = 0; index < fixture.recordings.length; index += 1) {
+    const persistedRecordingId = await persistFixtureRecording(project.id, fixture.recordings[index], `phase8-${profileName}-${index}`);
+    if (persistedRecordingId !== recordingIds[index]) {
+      throw new Error(`Phase 8 ${profileName} recording ${index} was persisted under an unexpected identifier.`);
+    }
+  }
+  if (recordingIds.length !== counts.recordings) {
+    throw new Error(`Expected ${counts.recordings} Phase 8 ${profileName} recordings, generated ${recordingIds.length}.`);
+  }
+
+  const customHierarchyCount = Math.max(0, counts.hierarchyObjects - counts.flows - counts.subflows);
+  if (customHierarchyCount > 0) {
+    const recordingNodes = phase8RecordingHierarchyNodes(fixture.flows[0], recordingIds, recordingLabels, profileName);
+    if (recordingNodes.length > customHierarchyCount) {
+      throw new Error(`Phase 8 ${profileName} hierarchy has no room for ${recordingNodes.length} recording entries.`);
+    }
+    await studio.saveProjectHierarchy(project.id, {
+      customHierarchyNodes: [
+        ...recordingNodes,
+        ...stressHierarchyNodes(customHierarchyCount - recordingNodes.length),
+      ],
+      deletedHierarchyIds: [],
+      workspacePrefs: {},
+    });
+  }
+  const certificationDir = path.join(fixtureRoot, "programs", "automation-studio", "projects", project.id, "certification");
+  await mkdir(certificationDir, { recursive: true });
+  await writeNdjson(path.join(certificationDir, "problems.ndjson"), counts.problems, (index) => ({
+    id: `problem.phase8.${index}`,
+    severity: index % 11 === 0 ? "error" : index % 3 === 0 ? "warning" : "info",
+    status: "open",
+    artifactKind: "flow",
+    artifactId: fixture.flows[index % fixture.flows.length]?.flowId,
+    message: `Deterministic certification problem ${index}`,
+  }));
+  await writeNdjson(path.join(certificationDir, "docs.ndjson"), counts.docs, (index) => ({
+    id: `doc.phase8.${index}`,
+    path: `phase8/${profileName}/page-${index}.md`,
+    title: `Certification document ${index}`,
+    body: `# Certification document ${index}\n\nDeterministic ${profileName} fixture content.`,
+  }));
+  const summary = {
+    ...summarizeProject(project),
+    flowIds: fixture.flows.map((flow) => flow.flowId),
+    runIds: fixture.runDetails.map((detail) => detail.summary.runId),
+    recordingIds,
+    recordingLabels,
+    counts,
+    storage: {
+      problems: path.join(certificationDir, "problems.ndjson"),
+      docs: path.join(certificationDir, "docs.ndjson"),
+    },
+  };
+  await writeFile(path.join(certificationDir, "phase8-counts.json"), `${JSON.stringify(summary, null, 2)}\n`, "utf8");
+  return summary;
+}
+
+function includesPhase8Profile(profile) {
+  return phase8Selection === "all" || phase8Selection === profile;
+}
+
+function ownedFixtureFlow(projectId, flow) {
+  return { ...flow, ownerKind: "project", ownerId: projectId };
+}
+
+function namespaceLargeFixtureIdentifiers(fixture, namespace) {
+  const prefix = String(namespace).replace(/[^a-zA-Z0-9_-]/g, "-");
+  const visit = (value) => {
+    if (Array.isArray(value)) return value.map(visit);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, visit(nested)]));
+    }
+    if (typeof value !== "string") return value;
+    return value.replace(
+      /^(flow|router|subflow|route|instruction|proposal|run|decision|entry|intervention|adaptation|adaptation-policy|expectation|recording)\.(large|validation)\./,
+      `$1.$2.${prefix}.`,
+    );
+  };
+  return visit(fixture);
+}
+
+function expandRoutes(routers, subflows, routeCount) {
+  let emitted = 0;
+  const subflowsByFlow = new Map();
+  for (const subflow of subflows) {
+    const values = subflowsByFlow.get(subflow.flowId) ?? [];
+    values.push(subflow);
+    subflowsByFlow.set(subflow.flowId, values);
+  }
+  for (let routerIndex = 0; routerIndex < routers.length; routerIndex += 1) {
+    const router = routers[routerIndex];
+    const remainingRouters = routers.length - routerIndex;
+    const localCount = Math.floor((routeCount - emitted) / remainingRouters);
+    const targets = subflowsByFlow.get(router.flowId) ?? [];
+    router.rules = Array.from({ length: localCount }, (_, index) => ({
+      schemaVersion: "0.1",
+      ruleId: `route.phase8.${routerIndex}.${index}`,
+      routerId: router.routerId,
+      name: `Certification route ${index}`,
+      target: { kind: "subflow", subflowId: targets[index % targets.length].subflowId },
+      condition: { signalPath: `inputs.route${index}`, operator: "equals", expected: true },
+      order: index,
+      status: "active",
+      createdAt: FIXED_NOW_MS + index,
+      updatedAt: FIXED_NOW_MS + index,
+    }));
+    emitted += localCount;
+  }
+  if (emitted !== routeCount) throw new Error(`Expected ${routeCount} routes, generated ${emitted}.`);
+}
+
+function expandRunEvents(runDetails, eventCount) {
+  let emitted = 0;
+  for (let runIndex = 0; runIndex < runDetails.length; runIndex += 1) {
+    const detail = runDetails[runIndex];
+    const remainingRuns = runDetails.length - runIndex;
+    const localCount = Math.floor((eventCount - emitted) / remainingRuns);
+    detail.actionAttempts = Array.from({ length: localCount }, (_, index) => ({
+      attemptId: `attempt.phase8.${runIndex}.${index}`,
+      nodeId: `node.stress.${index % Math.max(1, localCount)}`,
+      definitionId: "builtin.policy.action",
+      order: index,
+      status: index % 37 === 0 ? "failed" : "succeeded",
+      route: "success",
+      startedAt: FIXED_NOW_MS + index,
+      finishedAt: FIXED_NOW_MS + index + 1,
+      durationMs: 1,
+    }));
+    detail.summary.actionAttemptCount = localCount;
+    emitted += localCount;
+  }
+  if (emitted !== eventCount) throw new Error(`Expected ${eventCount} run events, generated ${emitted}.`);
+}
+
+async function writeNdjson(target, count, create) {
+  const handle = await open(target, "w");
+  try {
+    const batchSize = 1_000;
+    for (let start = 0; start < count; start += batchSize) {
+      const end = Math.min(count, start + batchSize);
+      let payload = "";
+      for (let index = start; index < end; index += 1) payload += `${JSON.stringify(create(index))}\n`;
+      await handle.write(payload);
+    }
+  } finally {
+    await handle.close();
+  }
 }
 
 function withStressGraph(flow, nodeCount) {
@@ -193,7 +428,7 @@ function stressHierarchyNodes(count) {
 }
 
 async function seedStressRecording(projectId, entryCount) {
-  const recordingId = "recording.ui-stress-timeline";
+  const recordingId = projectOwnedRecordingId(projectId, "ui-stress-timeline");
   await studio.createRecording({
     projectId,
     recordingId,
@@ -234,6 +469,62 @@ async function seedStressRecording(projectId, entryCount) {
     recordingId,
     endedAt: FIXED_NOW_MS + entryCount * 25,
   });
+  return recordingId;
+}
+
+async function persistFixtureRecording(projectId, recording, purpose) {
+  const recordingId = projectOwnedRecordingId(projectId, purpose);
+  await studio.createRecording({
+    projectId,
+    recordingId,
+    ...(recording.taskId ? { taskId: `${recording.taskId}.${projectId}` } : {}),
+    startedAt: recording.startedAt,
+    environment: recording.environment,
+    sources: recording.sources,
+    actionChannels: recording.actionChannels,
+    initialState: recording.initialState,
+    metadata: {
+      ...(recording.metadata ?? {}),
+      projectId,
+      fixtureOwned: true,
+      sourceRecordingId: recording.recordingId,
+    },
+  });
+  if (recording.timeline.length > 0) {
+    await studio.appendRecordingEvents({ projectId, recordingId, entries: recording.timeline });
+  }
+  if (recording.endedAt !== undefined) {
+    await studio.finalizeRecording({ projectId, recordingId, endedAt: recording.endedAt });
+  }
+  return recordingId;
+}
+
+function projectOwnedRecordingId(projectId, purpose) {
+  return `recording.${projectId}.${purpose}`;
+}
+
+function phase8RecordingHierarchyNodes(flow, recordingIds, recordingLabels, profileName) {
+  if (!flow?.flowId) return [];
+  const parentId = `flow-${hierarchyStableNodeId(flow.flowId)}-recordings`;
+  return recordingIds.map((recordingId, index) => ({
+    id: `fixture-recording-${profileName}-${index}`,
+    label: recordingLabels[index],
+    kind: "recording",
+    category: "flow",
+    parentId,
+    viewId: "timeline-recording",
+    sourceId: recordingId,
+    recordingId,
+    flowId: flow.flowId,
+  }));
+}
+
+function hierarchyStableNodeId(value) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash.toString(36);
 }
 
 async function seedGlobalStressFixtures() {

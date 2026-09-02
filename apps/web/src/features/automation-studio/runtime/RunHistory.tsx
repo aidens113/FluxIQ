@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { DataTable, StatusBadge } from "../../programs/shared-ui";
+import { useEffect, useRef, useState } from "react";
 import { RunActionLogView } from "./RunActionLogView";
 import { RunList } from "./RunList";
 import { RUNTIME_RUN_PAGE_SIZE, type RunHistoryQuery } from "./run-queries";
@@ -124,34 +123,4 @@ export function RunHistoryViewContent(props: RunHistoryProps & { historyCommands
 
 export function runtimeRunsForHistory(runs: any[], flowId?: string): any[] {
   return sortRuntimeRunsForDebugView(flowId ? runs.filter((run) => run?.flowId === flowId) : runs);
-}
-
-export function RuntimeDebugView(props: { projectId: string | null; pipelineArtifacts: any; runtimeSessions: any[] }) {
-  const replays = props.pipelineArtifacts?.replayResults ?? [];
-  const orderedSessions = useMemo(() => sortRuntimeRunsForDebugView(props.runtimeSessions), [props.runtimeSessions]);
-  const [activeSection, setActiveSection] = useState<"runs" | "replays">("runs");
-  return (
-    <section className="automation-runs-workspace">
-      <header>
-        <div><strong>Runs</strong><span>{activeSection === "runs" ? "Flow execution history" : "Recording validation history"}</span></div>
-        <div className="automation-runs-view-control" aria-label="Run history type" role="group">
-          <button aria-pressed={activeSection === "runs"} className={activeSection === "runs" ? "button button-primary" : "button"} onClick={() => setActiveSection("runs")} type="button">Runtime Runs</button>
-          <button aria-pressed={activeSection === "replays"} className={activeSection === "replays" ? "button button-primary" : "button"} onClick={() => setActiveSection("replays")} type="button">Replays</button>
-        </div>
-      </header>
-      {activeSection === "runs"
-        ? <RunHistory projectId={props.projectId} initialSessions={orderedSessions} />
-        : <section className="automation-runs-replay-view">
-            <header><div><strong>Replays</strong><span>{replays.length} validation {replays.length === 1 ? "run" : "runs"}</span></div></header>
-            <DataTable columns={["Replay", "Status", "Recording", "Flow", "Matched", "Warnings"]} rows={replays.map((replay: any) => [
-              replay.replayId,
-              <StatusBadge key={replay.replayId} value={replay.status ?? "unknown"} />,
-              replay.recordingId,
-              replay.policyId,
-              `${replay.matchedActions ?? 0}/${replay.expectedActions ?? 0}`,
-              replay.timingWarnings?.length ?? 0
-            ])} empty="No replay validations generated yet." />
-          </section>}
-    </section>
-  );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { Combobox, DataTable, Field, Menu, Modal, StatusBadge, StatusText, SummaryStrip } from "../../programs/shared-ui";
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, AlertTriangle, ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CircleCheck, Copy, Info, ListChecks, MoreHorizontal, Search, Pencil, Plus, Power, Route, Trash2, Workflow, X } from "lucide-react";
 import { JsonToggle, compactConditionLabel, flowMapFallbackLabel, formatRuntimeTimestamp } from "../runtime";
 import { adaptationReviewActions, adaptationReviewCopy, type AdaptationObjectTarget, type AdaptationReviewAction } from "./adaptation-model";
@@ -195,9 +195,9 @@ export function AdaptationsViewContent(props: AdaptationsViewProps & { commands:
           </div>
           <div aria-busy={loading} aria-label="Adaptations" className="automation-adaptation-table" role="table">
             <div className="automation-adaptation-table-head" role="row"><span role="columnheader">Trigger</span><span role="columnheader">Risk</span><span role="columnheader">Updated</span><span role="columnheader">Status</span></div>
-            {!loading && adaptations.map((adaptation) => <button aria-pressed={selectedAdaptation?.adaptationId === adaptation.adaptationId} className={selectedAdaptation?.adaptationId === adaptation.adaptationId ? "selected" : ""} key={adaptation.adaptationId} onClick={() => openAdaptation(adaptation.adaptationId)} role="row" type="button"><span role="cell"><strong>{adaptation.trigger || "Untitled adaptation"}</strong><small>{adaptation.adaptationId}</small></span><span role="cell"><StatusBadge value={adaptation.riskLevel ?? "low"} /></span><span role="cell">{formatRuntimeTimestamp(adaptation.updatedAt)}</span><span role="cell"><StatusBadge value={adaptation.status ?? "proposed"} /></span></button>)}
-            {loading ? <div className="automation-runtime-empty" role="status">Loading adaptations...</div> : null}
-            {!loading && !adaptations.length ? <div className="automation-runtime-empty">{search || status || risk ? "No adaptations match these filters." : flowId ? "No adaptations have been created for this Flow." : "Select a Flow to review adaptations."}</div> : null}
+            {!loading && adaptations.map((adaptation) => <button aria-selected={selectedAdaptation?.adaptationId === adaptation.adaptationId} className={selectedAdaptation?.adaptationId === adaptation.adaptationId ? "selected" : ""} key={adaptation.adaptationId} onClick={() => openAdaptation(adaptation.adaptationId)} role="row" type="button"><span role="cell"><strong>{adaptation.trigger || "Untitled adaptation"}</strong><small>{adaptation.adaptationId}</small></span><span role="cell"><StatusBadge value={adaptation.riskLevel ?? "low"} /></span><span role="cell">{formatRuntimeTimestamp(adaptation.updatedAt)}</span><span role="cell"><StatusBadge value={adaptation.status ?? "proposed"} /></span></button>)}
+            {loading ? <div className="automation-runtime-empty" role="row"><span aria-colspan={4} aria-live="polite" role="cell">Loading adaptations...</span></div> : null}
+            {!loading && !adaptations.length ? <div className="automation-runtime-empty" role="row"><span aria-colspan={4} role="cell">{search || status || risk ? "No adaptations match these filters." : flowId ? "No adaptations have been created for this Flow." : "Select a Flow to review adaptations."}</span></div> : null}
           </div>
           <footer className="automation-runtime-pagination-footer">
             <span>Page {page.total ? Math.floor(page.offset / page.limit) + 1 : 0} of {page.total ? Math.ceil(page.total / page.limit) : 0}</span>
@@ -235,7 +235,7 @@ export function AdaptationsViewContent(props: AdaptationsViewProps & { commands:
               ]} />
               <section className="automation-runtime-log-section">
                 <header><strong>Scope</strong><span>Where this change belongs</span></header>
-                <DataTable columns={["Flow", "Subflow", "Created", "Updated"]} rows={[[selectedAdaptation.flowId ?? "-", selectedAdaptation.subflowId ?? "Top-level Flow", formatRuntimeTimestamp(selectedAdaptation.createdAt), formatRuntimeTimestamp(selectedAdaptation.updatedAt)]]} empty="No scope information." />
+                <DataTable label="Adaptation scope" columns={["Flow", "Subflow", "Created", "Updated"]} rows={[[selectedAdaptation.flowId ?? "-", selectedAdaptation.subflowId ?? "Top-level Flow", formatRuntimeTimestamp(selectedAdaptation.createdAt), formatRuntimeTimestamp(selectedAdaptation.updatedAt)]]} empty="No scope information." />
               </section>
               {selectedAdaptation.metadata?.approvalDecision ? <section className="automation-runtime-log-section">
                 <header><strong>Current Decision</strong><span>{selectedAdaptation.metadata.approvalDecision.autoApply === true ? "Automatically allowed" : selectedAdaptation.metadata.approvalDecision.requiresManualApproval ? "Manual review required" : "Recorded"}</span></header>
@@ -255,11 +255,11 @@ export function AdaptationsViewContent(props: AdaptationsViewProps & { commands:
             {detailView === "evidence" ? <div className="automation-adaptation-detail-body">
               <section className="automation-runtime-log-section">
                 <header><strong>Source Evidence</strong><span>Records used to create this adaptation</span></header>
-                <DataTable columns={["Type", "Summary", "Reference", "Stored"]} rows={pagedEvidenceRows} empty="No source references were recorded." />
+                <DataTable label="Adaptation source evidence" columns={["Type", "Summary", "Reference", "Stored"]} rows={pagedEvidenceRows} empty="No source references were recorded." />
               </section>
               <section className="automation-runtime-log-section">
                 <header><strong>Observed Context</strong><span>What the runtime compared</span></header>
-                <DataTable columns={["Evidence", "Available"]} rows={[
+                <DataTable label="Adaptation observed context" columns={["Evidence", "Available"]} rows={[
                   ["Observed state", selectedAdaptation.observedState ? "Recorded" : "Not recorded"],
                   ["Expected state", selectedAdaptation.expectedState ? "Recorded" : "Not recorded"],
                   ["Failed action", selectedAdaptation.failedAction ? "Recorded" : "Not recorded"]
@@ -269,7 +269,7 @@ export function AdaptationsViewContent(props: AdaptationsViewProps & { commands:
             {detailView === "validation" ? <div className="automation-adaptation-detail-body">
               <section className="automation-runtime-log-section">
                 <header><strong>Validation Runs</strong><span>{selectedAdaptation.validationResults?.length ?? 0} checks</span></header>
-                <DataTable columns={["Run", "Result", "Checked", "Detail"]} rows={pagedValidationRows.map((validation: any) => [
+                <DataTable label="Adaptation validation runs" columns={["Run", "Result", "Checked", "Detail"]} rows={pagedValidationRows.map((validation: any) => [
                   validation.runId ?? "-",
                   <StatusBadge key={validation.runId ?? validation.checkedAt} value={validation.status ?? "unknown"} />,
                   formatRuntimeTimestamp(validation.checkedAt),
@@ -280,11 +280,11 @@ export function AdaptationsViewContent(props: AdaptationsViewProps & { commands:
             {detailView === "audit" ? <div className="automation-adaptation-detail-body">
               {selectedAdaptation.metadata?.approvalDecision ? <section className="automation-runtime-log-section">
                 <header><strong>Approval Decision</strong><span>{selectedAdaptation.metadata.approvalDecision.decisionId ?? "Runtime decision"}</span></header>
-                <DataTable columns={["Mode", "Risk", "Validation", "Manual", "Reason"]} rows={[[selectedAdaptation.metadata.approvalDecision.mode ?? "-", selectedAdaptation.metadata.approvalDecision.risk ?? selectedAdaptation.riskLevel ?? "-", selectedAdaptation.metadata.approvalDecision.validationStatus ?? "-", selectedAdaptation.metadata.approvalDecision.requiresManualApproval ? "Required" : "Not required", selectedAdaptation.metadata.approvalDecision.reason ?? "-"]]} empty="No approval decision." />
+                <DataTable label="Adaptation approval decision" columns={["Mode", "Risk", "Validation", "Manual", "Reason"]} rows={[[selectedAdaptation.metadata.approvalDecision.mode ?? "-", selectedAdaptation.metadata.approvalDecision.risk ?? selectedAdaptation.riskLevel ?? "-", selectedAdaptation.metadata.approvalDecision.validationStatus ?? "-", selectedAdaptation.metadata.approvalDecision.requiresManualApproval ? "Required" : "Not required", selectedAdaptation.metadata.approvalDecision.reason ?? "-"]]} empty="No approval decision." />
               </section> : null}
               <section className="automation-runtime-log-section">
                 <header><strong>Lifecycle Events</strong><span>{phase9.auditTotal ?? phase9AuditEvents.length} events</span></header>
-                <DataTable columns={["Event", "Status", "Actor", "Reason", "At"]} rows={pagedAuditEvents.map((event: any) => [event.eventType ?? "event", [event.fromStatus, event.toStatus].filter(Boolean).join(" -> ") || "-", event.actorId ?? "system", event.reason ?? "-", formatRuntimeTimestamp(event.createdAt)])} empty="No typed lifecycle events were recorded." />
+                <DataTable label="Adaptation lifecycle events" columns={["Event", "Status", "Actor", "Reason", "At"]} rows={pagedAuditEvents.map((event: any) => [event.eventType ?? "event", [event.fromStatus, event.toStatus].filter(Boolean).join(" -> ") || "-", event.actorId ?? "system", event.reason ?? "-", formatRuntimeTimestamp(event.createdAt)])} empty="No typed lifecycle events were recorded." />
               </section>
               <section className="automation-runtime-log-section">
                 <header><strong>Review Actions</strong><span>PIN required</span></header>

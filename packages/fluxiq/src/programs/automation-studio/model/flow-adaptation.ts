@@ -2,6 +2,7 @@ import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationConditionExpression } from "./conditions.ts";
 import type { EvidenceReference, StateFactReference } from "./evidence.ts";
 import type { AutomationStudioFlowScope } from "./flows.ts";
+import type { AutomationStudioInterventionMode } from "./flows.ts";
 
 export type AutomationStudioFlowExpansionStatus = "active" | "disabled" | "archived";
 
@@ -80,6 +81,7 @@ export type AutomationStudioFlowSubflow = {
   outputMapping?: Array<{ subflowOutputId: string; flowOutputId: string; required?: boolean }>;
   localInstructionIds?: string[];
   proposalModeOverride?: AutomationStudioChangeProposalMode;
+  interventionModeOverride?: AutomationStudioInterventionMode;
   stability?: {
     runCount: number;
     successCount: number;

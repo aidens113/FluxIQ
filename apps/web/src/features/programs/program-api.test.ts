@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { classifyProgramApiEndpoint, estimateProgramApiPayloadBytes, programApiMutationInvalidation } from "./program-api";
+import {
+  classifyProgramApiEndpoint,
+  estimateProgramApiPayloadBytes,
+  normalizeProgramApiResponse,
+  programApiMutationInvalidation
+} from "./program-api";
 
 describe("program API instrumentation helpers", () => {
   it("classifies summary, detail, mutation, and other endpoints", () => {
@@ -43,6 +48,39 @@ describe("program API instrumentation helpers", () => {
     expect(programApiMutationInvalidation("save-project-hierarchy", { projectId: "project.1" })).toEqual({
       cacheScopes: [],
       resourceIds: []
+    });
+  });
+
+  it("preserves actionable HTTP error details", () => {
+    const headers = new Headers({ "x-request-id": "request.42" });
+    expect(normalizeProgramApiResponse({
+      ok: false,
+      error: "Flow changed.",
+      code: "flow_conflict",
+      fieldErrors: { name: "Required" },
+      conflictRevision: 9
+    }, { ok: false, status: 409, headers })).toEqual({
+      ok: false,
+      error: "Flow changed.",
+      status: 409,
+      code: "flow_conflict",
+      fieldErrors: { name: "Required" },
+      conflictRevision: 9,
+      requestId: "request.42",
+      retryable: false
+    });
+  });
+
+  it("classifies rate limits and server failures as retryable", () => {
+    expect(normalizeProgramApiResponse(undefined, { ok: false, status: 429, headers: new Headers() })).toMatchObject({
+      ok: false,
+      status: 429,
+      code: "rate_limited",
+      retryable: true
+    });
+    expect(normalizeProgramApiResponse(undefined, { ok: false, status: 503, headers: new Headers() })).toMatchObject({
+      code: "server_error",
+      retryable: true
     });
   });
 });

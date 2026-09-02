@@ -7,7 +7,6 @@ import {
 } from "./selectors";
 import {
   automationHierarchyOpenTargetForNode,
-  automationHierarchySelectionSame,
   type AutomationHierarchyRoutableViewId
 } from "./routing";
 import type { AutomationHierarchyStore } from "./store";
@@ -19,8 +18,8 @@ export type AutomationHierarchyControllerContext = {
   recordingPrimaryKind: "recording" | null;
   setRecordingPrimaryKind(kind: "recording" | null): void;
   setSelection(selection: AutomationSelection): void;
-  openView(viewId: AutomationHierarchyRoutableViewId, mode?: "preview" | "new-window"): void;
-  openSubflow?(node: AutomationHierarchyNode, mode: "preview" | "new-window"): void;
+  openView(viewId: AutomationHierarchyRoutableViewId, mode?: "preview" | "new-pane-or-focus"): void;
+  openSubflow?(node: AutomationHierarchyNode, mode: "preview" | "new-pane-or-focus"): void;
   scheduleReconciliation?(commit: () => void): void;
 };
 
@@ -28,7 +27,7 @@ export type AutomationHierarchyControllerContextAccessor = () => AutomationHiera
 
 export type AutomationHierarchyController = {
   previewPrimaryNode(node: AutomationHierarchyNode): AutomationHierarchyNode;
-  openNode(node: AutomationHierarchyNode, mode: "preview" | "new-window"): void;
+  openNode(node: AutomationHierarchyNode, mode: "preview" | "new-pane-or-focus"): void;
   openSettings(node: AutomationHierarchyNode): void;
   toggleFolder(nodeId: string): void;
 };
@@ -69,9 +68,7 @@ export function createAutomationHierarchyController(
         if (context.recordingPrimaryKind !== target.recordingPrimaryKind) {
           context.setRecordingPrimaryKind(target.recordingPrimaryKind);
         }
-        if (target.selection && !automationHierarchySelectionSame(context.selection, target.selection)) {
-          context.setSelection(target.selection);
-        }
+        if (target.selection) context.setSelection(target.selection);
       };
       if (context.scheduleReconciliation) context.scheduleReconciliation(reconcile);
       else reconcile();
@@ -86,7 +83,7 @@ export function createAutomationHierarchyController(
       store.previewPrimary(automationHierarchySettingsPrimaryNodeId(node, context.nodes));
       const reconcile = () => {
         if (context.recordingPrimaryKind !== null) context.setRecordingPrimaryKind(null);
-        if (!automationHierarchySelectionSame(context.selection, targetSelection)) context.setSelection(targetSelection);
+        context.setSelection(targetSelection);
       };
       if (context.scheduleReconciliation) context.scheduleReconciliation(reconcile);
       else reconcile();

@@ -2,10 +2,12 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { defaultAutomationWorkspacePrefs } from "../layout";
 import {
   AUTOMATION_STUDIO_UI_CACHE_MAX_LOCAL_STORAGE_CHARS,
+  AUTOMATION_STUDIO_UI_CACHE_MAX_PROJECTS,
   AutomationStudioUiCacheCoordinator,
   LocalStorageAutomationStudioUiCacheBackend,
   ProgramApiAutomationStudioUiCacheBackend,
   automationStudioUiCacheKey,
+  pruneAutomationStudioUiCache,
   type AutomationStudioUiCacheBackend
 } from "./index";
 import { normalizeAutomationHierarchySidebarUiState } from "../../hierarchy/ui-coordinator";
@@ -314,6 +316,23 @@ describe("AutomationStudioUiCacheCoordinator", () => {
     } finally {
       Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
     }
+  });
+  it("prunes browser cache to explicit project and global ownership limits", () => {
+    const values = new Map<string, string>();
+    const storage = {
+      get length() { return values.size; },
+      key: (index: number) => [...values.keys()][index] ?? null,
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); },
+      removeItem: (key: string) => { values.delete(key); },
+      clear: () => values.clear(),
+    } as Storage;
+    for (let index = 0; index < AUTOMATION_STUDIO_UI_CACHE_MAX_PROJECTS + 3; index += 1) {
+      values.set(automationStudioUiCacheKey(`project-${index}`, "user", "sidebar"), JSON.stringify({ updatedAt: index, value: { search: "" } }));
+    }
+    pruneAutomationStudioUiCache(storage);
+    expect(new Set([...values.keys()].map((key) => key.split(":")[2])).size).toBe(AUTOMATION_STUDIO_UI_CACHE_MAX_PROJECTS);
+    expect([...values.keys()].some((key) => key.includes("project-0"))).toBe(false);
   });
   it("normalizes sidebar cache state with bounded lists and safe filter defaults", () => {
     const sidebar = normalizeAutomationHierarchySidebarUiState({

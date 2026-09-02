@@ -81,6 +81,50 @@
   gap: var(--space-xs);
 }
 
+.automation-project-tree-virtual {
+  position: relative;
+  height: 100%;
+  contain: layout paint style;
+}
+
+.automation-project-tree-virtual > .automation-folder-root {
+  display: block;
+  min-height: 100%;
+}
+
+.automation-tree-virtual-spacer {
+  position: relative;
+  min-width: 100%;
+}
+
+.automation-tree-virtual-row {
+  position: absolute;
+  inset: 0 0 auto;
+  box-sizing: border-box;
+  overflow: visible;
+  padding-block: 2px;
+  will-change: transform;
+}
+
+.automation-tree-virtual-item {
+  box-sizing: border-box;
+  width: 100%;
+  height: 44px;
+}
+
+.automation-tree-virtual-item > button.tree-row-main strong,
+.automation-tree-virtual-item > button.tree-row-main small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-tree-virtual-row .automation-tree-page-more-wrap {
+  box-sizing: border-box;
+  height: 44px;
+  margin: 0;
+}
+
 .automation-tree-children {
   display: grid;
   gap: var(--space-xs);
@@ -93,32 +137,27 @@
   margin-left: 10px;
 }
 
-.automation-project-tree button {
+.automation-tree-item .tree-row-main {
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr);
   align-items: center;
   gap: var(--space-sm);
-  min-height: 36px;
+  min-height: 44px;
   border: 1px solid transparent;
   border-radius: var(--radius-control);
   background: transparent;
-  padding: 5px 7px;
+  padding: 7px 9px;
   text-align: left;
   cursor: pointer;
   transition: none;
 }
 
-.automation-project-tree button svg {
+.automation-tree-item .tree-row-main > svg {
   width: 14px;
   height: 14px;
   min-width: 14px;
   max-width: 14px;
   justify-self: center;
-}
-
-.automation-project-tree button.folder-row {
-  grid-template-columns: 14px 16px minmax(0, 1fr);
-  gap: var(--space-compact);
 }
 
 .automation-project-tree .automation-hierarchy-tools button {
@@ -131,6 +170,7 @@
 .automation-tree-item > button.tree-row-main {
   flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
 }
 
 .automation-tree-row-menu {
@@ -144,7 +184,7 @@
   margin: var(--space-xs) 0;
 }
 
-.automation-project-tree button.automation-tree-page-more {
+.automation-tree-page-more {
   display: flex;
   grid-template-columns: none;
   justify-content: center;
@@ -167,7 +207,7 @@
   place-items: center;
   width: 28px;
   min-width: 28px;
-  min-height: 36px;
+  min-height: 44px;
   padding: 0;
 }
 
@@ -179,25 +219,44 @@
 }
 
 .automation-tree-item > button.tree-row-main strong {
-  overflow: visible;
-  overflow-wrap: anywhere;
-  text-overflow: clip;
-  white-space: normal;
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-tree-item .tree-row-disclosure-slot {
+  display: grid;
+  grid-template-columns: 1fr;
+  flex: 0 0 28px;
+  place-items: center;
+  width: 28px;
+  min-height: 44px;
 }
 
 .automation-tree-item .tree-row-disclosure {
   display: grid;
   grid-template-columns: 1fr;
-  flex: 0 0 22px;
   place-items: center;
-  width: 22px;
-  min-height: 36px;
+  width: 28px;
+  min-width: 28px;
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
   padding: 0;
   color: var(--color-text-muted);
 }
 
 .automation-tree-item .tree-row-disclosure svg {
   grid-column: 1;
+}
+
+.automation-tree-item .tree-row-disclosure:hover,
+.automation-tree-item .tree-row-disclosure:focus-visible {
+  border-color: var(--color-primary);
+  background: var(--surface-selected);
+  color: var(--color-primary);
 }
 
 .automation-tree-item .tree-row-action {
@@ -208,7 +267,7 @@
   align-self: stretch;
   min-width: 0;
   width: 28px;
-  min-height: 36px;
+  min-height: 44px;
   border: 1px solid transparent;
   border-radius: var(--radius-control);
   background: transparent;
@@ -238,59 +297,60 @@
   color: var(--color-danger);
 }
 
-.automation-project-tree button:hover,
-.automation-project-tree button.selected {
+.automation-tree-item .tree-row-main:hover,
+.automation-tree-item .tree-row-main.selected {
   border-color: var(--color-primary);
   background: var(--surface-selected);
 }
 
-.automation-project-tree button.selected {
+.automation-tree-item .tree-row-main.selected {
   box-shadow: inset 3px 0 0 var(--color-primary), 0 0 0 1px rgba(0, 104, 201, 0.12);
   color: var(--color-primary);
 }
 
-.automation-project-tree button.type-routine {
+.automation-tree-item .tree-row-main.type-routine {
   border-left: 3px solid #8c42b8;
 }
 
-.automation-project-tree button.type-folder {
+.automation-tree-item .tree-row-main.type-folder {
   border-left: 3px solid #6f7d8c;
   background: #fbfcfd;
 }
 
-.automation-project-tree button.type-task {
+.automation-tree-item .tree-row-main.type-task {
   border-left: 3px solid var(--color-primary);
 }
 
-.automation-project-tree button.type-config {
+.automation-tree-item .tree-row-main.type-config {
   border-left: 3px solid var(--color-text-subtle);
 }
 
-.automation-project-tree button.selected.correlated {
+.automation-tree-item .tree-row-main.selected.correlated {
   border-color: #c7ced6;
   border-left-color: #9aa5b1;
   background: #f4f6f8;
   color: #3f4954;
 }
 
-.automation-project-tree button.selected.correlated small {
+.automation-tree-item .tree-row-main.selected.correlated small {
   color: #697586;
 }
 
-.automation-project-tree button span {
+.automation-tree-item .tree-row-label {
   display: grid;
   gap: var(--space-xxs);
   min-width: 0;
+  overflow: hidden;
 }
 
-.automation-project-tree button strong,
-.automation-project-tree button small {
+.automation-tree-item .tree-row-label strong,
+.automation-tree-item .tree-row-label small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.automation-project-tree button small,
+.automation-tree-item .tree-row-label small,
 .automation-tree-empty {
   color: var(--color-text-muted);
   font-size: var(--font-size-compact);

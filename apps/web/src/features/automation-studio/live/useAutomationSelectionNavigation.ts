@@ -42,7 +42,7 @@ type NavigationOptions = {
 };
 
 export function useAutomationSelectionNavigation(options: NavigationOptions) {
-  const openView = useCallback((viewId: string, mode: "preview" | "new-window" = "preview") => {
+  const openView = useCallback((viewId: string, mode: "preview" | "new-pane-or-focus" = "preview") => {
     options.commands.openView(viewId, mode);
   }, [options.commands]);
   const showRecordingPreview = useCallback(() => {
@@ -52,7 +52,7 @@ export function useAutomationSelectionNavigation(options: NavigationOptions) {
       bottomTimelineCollapsed: false
     }), { persist: false });
   }, [options.updatePrefs]);
-  const selectAndFollow = useCallback((next: AutomationSelection, flowMode: "preview" | "new-window" = "preview") => {
+  const selectAndFollow = useCallback((next: AutomationSelection, flowMode: "preview" | "new-pane-or-focus" = "preview") => {
     runAutomationPresentationTransaction(() => {
       if (next.kind !== "state") options.setPendingStateOpen(null);
       if (next.kind === "timeline") options.setBottomPreviewEntryId(next.id);
@@ -129,7 +129,7 @@ export function useAutomationSelectionNavigation(options: NavigationOptions) {
     if (current.workspacePrefs.panes.some((pane) => pane.activeViewId === automationStudioViewId.state) && recordingId) return openTimelineEntryState(recordingId, entryId);
     selectAndFollow({ kind: "timeline", id: entryId });
   }, [openTimelineEntryState, options, selectAndFollow]);
-  const openSubflow = useCallback(async (parentFlowId: string, subflowId: string, mode: "preview" | "new-window" = "preview", knownGraphFlowId?: string) => {
+  const openSubflow = useCallback(async (parentFlowId: string, subflowId: string, mode: "preview" | "new-pane-or-focus" = "preview", knownGraphFlowId?: string) => {
     if (!parentFlowId || !subflowId) return;
     const outcome = await options.liveCommands.resolveSubflowEditor(parentFlowId, subflowId, knownGraphFlowId);
     if (outcome.status === "success") selectAndFollow({ kind: "flow", id: outcome.value.graphFlowId }, mode);

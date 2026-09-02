@@ -5,7 +5,12 @@ import { createAutomationConnectionEdge, rebalanceAutomationEdgeLanes } from "..
 import { roundedAutomationPosition, spawnAutomationNodePosition } from "../graph/interaction-geometry";
 import { automationConnectionIsValid } from "../graph/ports";
 import { automationVisualInputPorts, defaultAutomationParameterValues } from "../graph/node-parameters";
-import type { AutomationEditorNodeSpec, AutomationFlowNodeData } from "./node-types";
+import {
+  withAutomationFlowNodeDimensions,
+  automationFlowNodeDimensions,
+  type AutomationEditorNodeSpec,
+  type AutomationFlowNodeData
+} from "./node-types";
 import type { FlowEditorProps } from "./flow-editor-types";
 import { automationCompositeCallMetadata } from "./graph-interactions";
 import { flowEditorSelection } from "./selection-model";
@@ -24,6 +29,7 @@ export function useFlowEditorCommands(
   const addFlowNode = (spec: AutomationEditorNodeSpec) => {
     if (!graph.isFlowMode) return;
     graph.checkpointFlowGraph();
+    graph.markFlowGraphDirty(true);
     const id = "policy-" + spec.id + "-" + Date.now().toString(36);
     const compositeMetadata = automationCompositeCallMetadata(spec);
     const data: AutomationFlowNodeData = {
@@ -44,19 +50,23 @@ export function useFlowEditorCommands(
       ...(compositeMetadata ? { metadata: compositeMetadata } : {}),
       isStart: spec.id === "builtin.control.start"
     };
-    const node: Node<AutomationFlowNodeData> = {
+    const node = withAutomationFlowNodeDimensions({
       id,
       type: "policyNode",
       position: roundedAutomationPosition(spawnAutomationNodePosition(
         selection.selectedFlowNodeId,
-        graph.flowNodes,
-        graph.flowEdges,
+        graph.flowNodesRef.current,
+        graph.flowEdgesRef.current,
         selection.flowInstance,
-        selection.flowFrameRef.current
+        selection.flowFrameRef.current,
+        automationFlowNodeDimensions(data)
       )),
       data
-    };
-    const nextNodes = [...graph.flowNodesRef.current, node];
+    } satisfies Node<AutomationFlowNodeData>);
+    const nextNodes = [
+      ...graph.flowNodesRef.current.map((item) => item.selected ? { ...item, selected: false } : item),
+      { ...node, selected: true }
+    ];
     graph.flowNodesRef.current = nextNodes;
     graph.setFlowNodes(nextNodes);
     graph.publishFlowGraphDraft(nextNodes, graph.flowEdgesRef.current);
@@ -68,7 +78,9 @@ export function useFlowEditorCommands(
   };
 
   const deleteFlowSelection = () => {
+    if (!graph.isFlowMode || (!selection.selectedFlowNodeIds.length && !selection.selectedFlowEdgeIds.length)) return;
     graph.checkpointFlowGraph();
+    graph.markFlowGraphDirty(true);
     const nodeIds = new Set(selection.selectedFlowNodeIds);
     const edgeIds = new Set(selection.selectedFlowEdgeIds);
     const nextNodes = graph.flowNodesRef.current.filter(
@@ -88,12 +100,14 @@ export function useFlowEditorCommands(
     graph.setFlowEdges(nextEdges);
     graph.publishFlowGraphDraft(nextNodes, nextEdges);
     selection.setSelectedFlowNodeId("");
+    selection.setSelectedFlowNodeIds([]);
     selection.setSelectedFlowEdgeIds([]);
   };
 
   const deleteFlowNode = (nodeId: string) => {
     if (!graph.isFlowMode || !nodeId) return;
     graph.checkpointFlowGraph();
+    graph.markFlowGraphDirty(true);
     const nextNodes = graph.flowNodesRef.current.filter(
       (node) => node.id !== nodeId
     );
@@ -111,11 +125,15 @@ export function useFlowEditorCommands(
     selection.setSelectedFlowNodeId(
       (current: string) => current === nodeId ? "" : current
     );
+    selection.setSelectedFlowNodeIds(
+      (ids) => ids.filter((id) => id !== nodeId)
+    );
   };
 
   const deleteFlowEdge = (edgeId: string) => {
     if (!graph.isFlowMode || !edgeId) return;
     graph.checkpointFlowGraph();
+    graph.markFlowGraphDirty(true);
     graph.setFlowEdges((edges) => {
       const nextEdges = rebalanceAutomationEdgeLanes(
         edges.filter((edge) => edge.id !== edgeId),
@@ -134,6 +152,7 @@ export function useFlowEditorCommands(
     if (!graph.isFlowMode) return;
     if (direction === "undo") graph.undoFlowGraph();
     else graph.redoFlowGraph();
+    graph.reconcileFlowGraphDirty();
     graph.publishFlowGraphDraft(
       graph.flowNodesRef.current,
       graph.flowEdgesRef.current
@@ -142,8 +161,8 @@ export function useFlowEditorCommands(
 
 
   const moveFlowSelection = (x: number, y: number) => {
-    if (!graph.isFlowMode || !selection.selectedFlowNodeIds.length) return;
     graph.checkpointFlowGraph();
+    graph.markFlowGraphDirty(true);
     const selectedIds = new Set(selection.selectedFlowNodeIds);
     const nextNodes = graph.flowNodesRef.current.map((node) => (
       selectedIds.has(node.id)
@@ -194,6 +213,7 @@ export function useFlowEditorCommands(
       return;
     }
     graph.checkpointFlowGraph();
+    graph.markFlowGraphDirty(true);
     const edge = createAutomationConnectionEdge({
       source: source.id,
       target: target.id,

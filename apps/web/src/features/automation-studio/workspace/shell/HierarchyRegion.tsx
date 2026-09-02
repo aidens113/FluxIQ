@@ -20,6 +20,7 @@ export const AutomationHierarchyRegion = memo(function AutomationHierarchyRegion
       {props.content}
       {!state.collapsed ? (
         <button
+          aria-controls="automation-project-hierarchy"
           aria-label="Resize hierarchy"
           aria-orientation="vertical"
           aria-valuemax={420}

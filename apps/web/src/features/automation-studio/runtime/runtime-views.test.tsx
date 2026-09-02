@@ -7,7 +7,6 @@ vi.mock("next/navigation", () => ({
 }));
 
 import {
-  RuntimeDebugView,
   FlowRunView,
   RuntimeAttemptRow,
   buildAutomationRuntimeRunPayload,
@@ -27,7 +26,7 @@ import { cancelRuntimeSession, executeRuntimeSession, startRuntimeSession } from
 import { getRuntimeRunDetail, listRuntimeRunActions, listRuntimeRunEvents, listRuntimeRuns } from "./run-queries";
 import { subscribeToAutomationStudioMutations } from "../stores/mutation-transaction-store";
 import { RunActionLogViewContent } from "./RunActionLogView";
-import { RunHistoryViewContent } from "./RuntimeDebugView";
+import { RunHistoryViewContent } from "./RunHistory";
 import { FlowRunViewContent } from "./FlowRunView";
 
 const detailCommands = {
@@ -38,17 +37,19 @@ const detailCommands = {
 } as any;
 
 describe("Automation Runs workspace", () => {
-  it("separates runtime history from replay validation", () => {
-    const html = renderToStaticMarkup(createElement(RuntimeDebugView, {
+  it("keeps runtime history and replay validation in the canonical view", () => {
+    const html = renderToStaticMarkup(createElement(FlowRunView, {
       projectId: "project.runs",
+      flow: { flowId: "flow.a", name: "Flow A", nodes: [{ id: "node.a" }] },
       pipelineArtifacts: { replayResults: [{ replayId: "replay.hidden", status: "matched" }] },
-      runtimeSessions: [{ runId: "run.visible", flowId: "flow.a", status: "succeeded", updatedAt: 10 }]
+      runtimeSessions: [{ runId: "run.visible", flowId: "flow.a", status: "succeeded", updatedAt: 10 }],
+      timelines: [], models: [], policies: []
     }));
-    expect(html).toContain("Runtime Runs");
+    expect(html).toContain("Runs");
     expect(html).toContain("Replays");
     expect(html).toContain("run.visible");
     expect(html).not.toContain("replay.hidden");
-    expect(RuntimeDebugView.toString()).toContain('activeSection === "runs"');
+    expect(FlowRunViewContent.toString()).toContain("RuntimeHistoryAndReplays");
   });
 });
 
@@ -267,7 +268,7 @@ describe("Automation Runtime workspace", () => {
     };
     expect(runtimeFlowInputPorts(flow)).toHaveLength(4);
     expect(runtimeTypedInputErrors(flow, { attempts: 2, approved: true, context: { source: "test" } })).toEqual(["Email is required."]);
-    expect(runtimeFlowReadinessIssues(flow, { instructions: [], router: null, subflowTotal: 0, error: "" }).map((issue) => issue.action)).toEqual(["Open Instructions", "Open Nodes"]);
+    expect(runtimeFlowReadinessIssues(flow, { instructions: [], router: null, subflowTotal: 0, error: "" }).map((issue) => issue.action)).toEqual(["Open Instructions", "Open Subflows"]);
     expect(runtimeFlowReadinessIssues(flow, { instructions: [{ status: "active" }], router: { rules: [] }, subflowTotal: 2, error: "" }).map((issue) => issue.action)).toEqual(["Open Router"]);
   });
 
@@ -317,9 +318,9 @@ describe("Automation Runtime workspace", () => {
     expect(buildAutomationRuntimeRunPayload({
       projectId: "project.debug",
       flowId: "flow.checkout",
-      mode: "default",
+      mode: "fully_adaptive",
       inputText: "[1]",
       maxSteps: "10"
-    })).toEqual({ ok: false, error: "Inputs must be a JSON object." });
+    })).toEqual({ ok: false, error: "Advanced inputs must be a JSON object." });
   });
 });

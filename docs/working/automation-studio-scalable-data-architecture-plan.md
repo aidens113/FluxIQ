@@ -881,7 +881,12 @@ Exit gate: project open and one folder expansion are bounded.
 ### Phase 4: Flow-Owned Metadata
 
 4.1 Move Flow metadata, interfaces, variables, errors, and settings.  
-4.2 Move subflows/categories and preserve `graph_flow_id` ownership.  
+4.2 Move subflows/categories and preserve `graph_flow_id` ownership. Modern
+Subflow saves persist a generated graph ID. Compatibility projection for a
+legacy Subflow without that field derives the deterministic ID and synthesizes
+an empty graph when needed, but does not rewrite the legacy canonical Subflow
+JSON until a normal save occurs. Project referenced Subflows and graph Flows
+before their Router.
 4.3 Move Routers, groups, routes, fallback, and priorities.  
 4.4 Move instructions, scopes, tags, and bindings.  
 4.5 Add indexed effective-instruction resolution and digest cache.  
@@ -1139,7 +1144,7 @@ do not collapse multiple steps into a retrospective entry.
 | 3.7 Keyboard, selection, move, delete, and deep-link tests over pages | Done | 2026-08-27 | Added sidebar coverage for selected Flow-owned objects on later loaded pages, tree roles/levels/parent IDs, active view selection stability, and existing delete/create affordances over paged hierarchy rows | Focused `ProjectTree` suite passes 16/16 tests and paged-cache suite passes 2/2 tests | Phase 3.8 |
 | 3.8 Validate a 100k-subflow hierarchy fixture | Done | 2026-08-27 | Added a SQL-backed 100k-subflow hierarchy fixture that validates first-page expansion, deep tail keyset pagination, ancestor lookup, and query-plan rejection of hierarchy full scans | Focused FluxIQ hierarchy storage suite passes 9/9; 100k fixture test completed in about 3.0s and uses `hierarchy_entries_children_idx` for child expansion | Phase 4.1 |
 | 4.1 Move Flow metadata, interfaces, variables, errors, and settings | Done | 2026-08-27 | Added SQL-backed Flow resource repository for Flow metadata, settings, ports, variables, and errors; saved Flows now mirror non-graph metadata into typed project SQL | FluxIQ check passes; focused Phase 4 backend/API tests 9/9 pass | Phase 4.2 |
-| 4.2 Move subflows/categories and preserve `graph_flow_id` ownership | Done | 2026-08-27 | Added SQL subflow category and subflow repositories with keyset pages and graph Flow ownership preservation | FluxIQ check passes; focused Phase 4 backend/API tests 9/9 pass | Phase 4.3 |
+| 4.2 Move subflows/categories and preserve `graph_flow_id` ownership | Done | 2026-09-01 | Added SQL subflow category and subflow repositories with keyset pages and graph Flow ownership preservation. Modern saves persist a deterministic missing `graphFlowId`; legacy SQL projection derives that ID, creates a blank isolated graph when needed, and projects referenced Subflows before Routers. Projection intentionally does not rewrite legacy canonical Subflow JSON; a later normal save performs that canonical update. | Existing Phase 4 backend/API coverage passes; direct legacy-document projection, resolvable graph, and Router ordering remain explicit Phase 8 certification requirements | Phase 4.3 |
 | 4.3 Move Routers, groups, routes, fallback, and priorities | Done | 2026-08-27 | Added SQL Router detail repository with groups, priority-ordered routes, fallback targets, route conditions, and revisioned updates | FluxIQ check passes; focused Phase 4 backend/API tests 9/9 pass | Phase 4.4 |
 | 4.4 Move instructions, scopes, tags, and bindings | Done | 2026-08-27 | Added SQL instruction detail, scopes, tags, FTS maintenance, and instruction binding owner lookup | FluxIQ check passes; focused Phase 4 backend/API tests 9/9 pass | Phase 4.5 |
 | 4.5 Add indexed effective-instruction resolution and digest cache | Done | 2026-08-27 | Added indexed effective-instruction resolution across global/project/Flow/Router/subflow/node/error scopes plus digest cache invalidation on instruction writes | FluxIQ check passes; focused Phase 4 backend/API tests 9/9 pass | Phase 4.6 |

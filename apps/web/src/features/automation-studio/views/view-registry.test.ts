@@ -84,15 +84,24 @@ describe("Automation Studio view registry", () => {
     expect(automationStudioViewAvailable("flow-router", {
       hasProject: true,
       hasFlow: false,
+      hasTopLevelFlow: false,
       hasRecording: false,
       hasSelection: false
     })).toBe(false);
     expect(automationStudioViewAvailable("flow-router", {
       hasProject: true,
       hasFlow: true,
+      hasTopLevelFlow: true,
       hasRecording: false,
       hasSelection: false
     })).toBe(true);
+    expect(automationStudioViewAvailable("flow-router", {
+      hasProject: true,
+      hasFlow: true,
+      hasTopLevelFlow: false,
+      hasRecording: false,
+      hasSelection: false
+    })).toBe(false);
   });
 
   it("versions restored view cache state and rejects unknown cache owners", () => {

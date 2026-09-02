@@ -6,15 +6,10 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type KeyboardEvent,
   type ReactNode
 } from "react";
 import { createPortal } from "react-dom";
-import {
-  acquireOverlayEnvironment,
-  canCloseFloatingOverlay,
-  type FloatingOverlayCloseReason
-} from "./overlay-environment";
+import { acquireOverlayEnvironment } from "../../../programs/overlay-environment";
 
 export type OverlayAnchor = { top: number; right: number; bottom: number; left: number };
 
@@ -37,13 +32,28 @@ export function AccessibleFloatingOverlay(props: {
   preferredWidth: number;
 }) {
   const panelRef = useRef<HTMLElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const behaviorRef = useRef({ busy: Boolean(props.busy), onClose: props.onClose });
+  const updatePositionRef = useRef<() => void>(() => undefined);
   const titleId = useId();
   const [position, setPosition] = useState<FloatingPosition | null>(null);
+  behaviorRef.current = { busy: Boolean(props.busy), onClose: props.onClose };
 
   useEffect(() => {
     const panel = panelRef.current;
+    const root = rootRef.current;
     const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const releaseEnvironment = acquireOverlayEnvironment(document, returnFocus, { lockScroll: false });
+    if (!panel || !root) return;
+    const releaseEnvironment = acquireOverlayEnvironment(document, {
+      mode: "nonmodal",
+      panel,
+      root,
+      returnFocus,
+      canDismiss: () => !behaviorRef.current.busy,
+      onEscape: () => behaviorRef.current.onClose(),
+      onPointerDownOutside: () => behaviorRef.current.onClose(),
+      onViewportChange: () => updatePositionRef.current()
+    });
     const initial = panel?.querySelector<HTMLElement>(focusableSelector());
     (initial ?? panel)?.focus({ preventScroll: true });
     return releaseEnvironment;
@@ -65,47 +75,16 @@ export function AccessibleFloatingOverlay(props: {
         ));
       });
     };
+    updatePositionRef.current = update;
     update();
-    window.addEventListener("resize", update);
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
     observer?.observe(panel);
     return () => {
       cancelAnimationFrame(frame);
       observer?.disconnect();
-      window.removeEventListener("resize", update);
+      updatePositionRef.current = () => undefined;
     };
   }, [props.anchor, props.preferredWidth]);
-
-  function requestClose(reason: FloatingOverlayCloseReason) {
-    if (canCloseFloatingOverlay(Boolean(props.busy), reason)) props.onClose();
-  }
-
-  function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      requestClose("escape");
-      return;
-    }
-    if (event.key !== "Tab") return;
-    const focusable = Array.from(
-      event.currentTarget.querySelectorAll<HTMLElement>(focusableSelector())
-    ).filter((element) => !element.hidden && element.getAttribute("aria-hidden") !== "true");
-    if (!focusable.length) {
-      event.preventDefault();
-      event.currentTarget.focus();
-      return;
-    }
-    const first = focusable[0]!;
-    const last = focusable[focusable.length - 1]!;
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
 
   if (typeof document === "undefined") return null;
   const fallback = calculateFloatingPosition(
@@ -120,18 +99,15 @@ export function AccessibleFloatingOverlay(props: {
   return createPortal(
     <div
       aria-hidden="false"
-      onPointerDown={(event) => {
-        if (event.target === event.currentTarget) requestClose("backdrop");
-      }}
-      style={{ position: "fixed", inset: 0, zIndex: 80 }}
+      data-overlay-root="nonmodal"
+      ref={rootRef}
+      style={{ position: "fixed", inset: 0, zIndex: "var(--layer-popover)" }}
     >
       <section
         aria-busy={props.busy || undefined}
         aria-label={props.ariaLabel}
         aria-labelledby={titleId}
-        aria-modal="true"
         className={props.className}
-        onKeyDown={handleKeyDown}
         ref={panelRef}
         role="dialog"
         style={{

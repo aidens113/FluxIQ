@@ -10,20 +10,25 @@ export function syncGraphNodes<T extends Record<string, unknown>>(currentNodes: 
   });
 }
 
-export function spawnAutomationNodePosition<T extends Record<string, unknown>>(_selectedNodeId: string, nodes: Array<Node<T>>, _edges: Edge[], flow: Pick<ReactFlowInstance<Node<T>, Edge>, "screenToFlowPosition"> | null, canvasElement: HTMLElement | null): { x: number; y: number } {
+export function spawnAutomationNodePosition<T extends Record<string, unknown>>(_selectedNodeId: string, _nodes: Array<Node<T>>, _edges: Edge[], flow: Pick<ReactFlowInstance<Node<T>, Edge>, "screenToFlowPosition"> | null, canvasElement: HTMLElement | null, dimensions = { width: 280, height: 400 }): { x: number; y: number } {
   const bounds = canvasElement?.getBoundingClientRect();
+  let center: { x: number; y: number } | null = null;
+  let visibleBounds: { left: number; top: number; right: number; bottom: number } | null = null;
   if (flow?.screenToFlowPosition && bounds) {
-    const center = flow.screenToFlowPosition({
-      x: bounds.left + bounds.width / 2,
-      y: bounds.top + bounds.height / 2
-    });
-    return { x: center.x - 140, y: center.y - 98 };
+    const topLeft = flow.screenToFlowPosition({ x: bounds.left + 16, y: bounds.top + 56 });
+    const bottomRight = flow.screenToFlowPosition({ x: bounds.right - 16, y: bounds.bottom - 16 });
+    visibleBounds = { left: topLeft.x, top: topLeft.y, right: bottomRight.x, bottom: bottomRight.y };
+    center = {
+      x: (visibleBounds.left + visibleBounds.right) / 2,
+      y: (visibleBounds.top + visibleBounds.bottom) / 2
+    };
+  } else if (flow?.screenToFlowPosition) {
+    center = flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   }
-  if (flow?.screenToFlowPosition) {
-    const center = flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-    return { x: center.x - 140, y: center.y - 98 };
-  }
-  return { x: 80 + (nodes.length % 4) * 300, y: 80 + Math.floor(nodes.length / 4) * 190 };
+  const centered = center
+    ? { x: center.x - dimensions.width / 2, y: center.y - dimensions.height / 2 }
+    : { x: 80, y: 80 };
+  return centered;
 }
 
 export function startAutomationNodeMarquee<T extends Record<string, unknown>>(options: {

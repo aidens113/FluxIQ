@@ -66,7 +66,7 @@ export function createAutomationHierarchyStore(
       return replace({ ...snapshot, focusedTreeNodeId: nodeId }, true);
     },
     previewFocus(nodeId) {
-      return replace({ ...snapshot, focusedTreeNodeId: nodeId }, false, false);
+      return replace({ ...snapshot, focusedTreeNodeId: nodeId }, false);
     },
     setPrimary(nodeId) {
       return replace({ ...snapshot, primaryTreeNodeId: nodeId }, true);

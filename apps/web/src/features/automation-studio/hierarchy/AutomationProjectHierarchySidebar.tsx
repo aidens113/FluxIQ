@@ -19,8 +19,8 @@ export const AutomationProjectHierarchySidebar = memo(function AutomationProject
   nodes: AutomationHierarchyNode[];
   onCloseProject(): void;
   onToggleCollapsed(): void;
-  openSubflow(node: AutomationHierarchyNode, mode: "preview" | "new-window"): void;
-  openView(viewId: AutomationHierarchyRoutableViewId, mode?: "preview" | "new-window"): void;
+  openSubflow(node: AutomationHierarchyNode, mode: "preview" | "new-pane-or-focus"): void;
+  openView(viewId: AutomationHierarchyRoutableViewId, mode?: "preview" | "new-pane-or-focus"): void;
   projectName: string;
   recordingPrimaryKind: "recording" | null;
   requestAction(action: NonNullable<AutomationHierarchyAction>): void;
@@ -39,12 +39,12 @@ export const AutomationProjectHierarchySidebar = memo(function AutomationProject
   };
 
   return (
-    <aside aria-label="Project hierarchy" className="automation-studio-sidebar">
+    <aside aria-label="Project hierarchy" className="automation-studio-sidebar" id="automation-project-hierarchy">
       <div className="automation-studio-sidebar-heading">
         {!props.collapsed ? <strong title={props.projectName}>{props.projectName}</strong> : null}
         <div className="inline-actions">
-          {props.collapsed ? <button className="icon-button" onClick={props.onCloseProject} title="Back to projects" aria-label="Back to projects" type="button"><FolderOpen size={15} aria-hidden /></button> : null}
-          <button aria-expanded={!props.collapsed} className="icon-button" onClick={props.onToggleCollapsed} title={props.collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-label={props.collapsed ? "Expand sidebar" : "Collapse sidebar"} type="button">
+          {props.collapsed ? <button className="icon-button automation-sidebar-heading-action" onClick={props.onCloseProject} title="Back to projects" aria-label="Back to projects" type="button"><FolderOpen size={15} aria-hidden /></button> : null}
+          <button aria-controls="automation-project-hierarchy" aria-expanded={!props.collapsed} className="icon-button automation-sidebar-heading-action automation-sidebar-collapse-toggle" onClick={props.onToggleCollapsed} title={props.collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-label={props.collapsed ? "Expand sidebar" : "Collapse sidebar"} type="button">
             {props.collapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronLeft size={14} aria-hidden />}
           </button>
         </div>

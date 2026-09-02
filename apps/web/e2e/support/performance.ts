@@ -1,5 +1,6 @@
 import { writeFile } from "node:fs/promises";
-import type { Page, Request, TestInfo } from "@playwright/test";
+import { cpus, platform, release, totalmem } from "node:os";
+import type { Locator, Page, Request, TestInfo } from "@playwright/test";
 import type { UiRequestPerformanceMetric } from "../../src/features/programs/ui-performance-budgets";
 
 export type UiPerformanceSnapshot = {
@@ -34,6 +35,22 @@ export type BrowserHeapUsage = {
   collectedAt: number;
 };
 
+export type Phase8BrowserResourceSnapshot = {
+  listeners: number;
+  peakListeners: number;
+  subscriptions: number;
+  peakSubscriptions: number;
+  domNodes: number;
+  warmViews: number;
+  cache: {
+    entries: number;
+    projects: number;
+    totalChars: number;
+    largestEntryChars: number;
+    withinBounds: boolean;
+  };
+};
+
 export type StudioSettledInteractionMetrics = {
   duration: number;
   operationDuration: number;
@@ -44,6 +61,7 @@ export type StudioSettledInteractionMetrics = {
   lastActiveRequestNames: string[];
   domSamples: number[];
   timedOut: boolean;
+  feedbackMs?: number;
   apiMetricCount?: number;
   domBefore?: number;
   domAfter?: number;
@@ -135,6 +153,183 @@ export async function installUiPerformanceCollection(page: Page): Promise<void> 
       }
     }
   });
+}
+
+export async function installPhase8ResourceCollection(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    type ResourceOwner = Window & {
+      __FLUXIQ_ENABLE_PHASE8_RESOURCE_TELEMETRY__?: boolean;
+      __fluxiqPhase8Resources?: { listeners: number; peakListeners: number; subscriptions: number; peakSubscriptions: number };
+    };
+    const owner = window as ResourceOwner;
+    owner.__FLUXIQ_ENABLE_PHASE8_RESOURCE_TELEMETRY__ = true;
+    const state = owner.__fluxiqPhase8Resources ??= { listeners: 0, peakListeners: 0, subscriptions: 0, peakSubscriptions: 0 };
+    const registrations = new Map<EventTarget, Map<string, Map<EventListenerOrEventListenerObject, EventListenerOrEventListenerObject>>>();
+    const isDurableGlobalTarget = (target: EventTarget) => target === window || target === document || target === window.visualViewport;
+    const registrationKey = (type: string, options?: boolean | AddEventListenerOptions) => {
+      const capture = typeof options === "boolean" ? options : options?.capture === true;
+      return `${type}:${capture ? "capture" : "bubble"}`;
+    };
+    const releaseRegistration = (target: EventTarget, key: string, listener: EventListenerOrEventListenerObject) => {
+      const listeners = registrations.get(target)?.get(key);
+      if (!listeners?.delete(listener)) return;
+      state.listeners = Math.max(0, state.listeners - 1);
+      if (!listeners.size) registrations.get(target)?.delete(key);
+    };
+    const originalAdd = EventTarget.prototype.addEventListener;
+    const originalRemove = EventTarget.prototype.removeEventListener;
+    EventTarget.prototype.addEventListener = function(type, listener, options) {
+      if (listener && isDurableGlobalTarget(this)) {
+        const key = registrationKey(type, options);
+        const byType = registrations.get(this) ?? new Map<string, Map<EventListenerOrEventListenerObject, EventListenerOrEventListenerObject>>();
+        const listeners = byType.get(key) ?? new Map<EventListenerOrEventListenerObject, EventListenerOrEventListenerObject>();
+        if (!listeners.has(listener)) {
+          const once = typeof options === "object" && options?.once === true;
+          const registered = once
+            ? function(this: EventTarget, event: Event) {
+              releaseRegistration(this, key, listener);
+              if (typeof listener === "function") return listener.call(this, event);
+              return listener.handleEvent(event);
+            }
+            : listener;
+          listeners.set(listener, registered);
+          byType.set(key, listeners);
+          registrations.set(this, byType);
+          state.listeners += 1;
+          state.peakListeners = Math.max(state.peakListeners, state.listeners);
+          return originalAdd.call(this, type, registered, options);
+        }
+      }
+      return originalAdd.call(this, type, listener, options);
+    };
+    EventTarget.prototype.removeEventListener = function(type, listener, options) {
+      if (listener && isDurableGlobalTarget(this)) {
+        const key = registrationKey(type, options);
+        const listeners = registrations.get(this)?.get(key);
+        const registered = listeners?.get(listener) ?? listener;
+        releaseRegistration(this, key, listener);
+        return originalRemove.call(this, type, registered, options);
+      }
+      return originalRemove.call(this, type, listener, options);
+    };
+  });
+}
+
+export async function measureAttributeFeedback<Value>(
+  page: Page,
+  locator: Locator,
+  operation: () => Promise<Value>,
+  options: { attribute: string; expected: string; timeoutMs?: number }
+): Promise<{ feedbackMs: number; value: Value }> {
+  const key = `phase8-feedback-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  await locator.evaluate((element, input) => {
+    type FeedbackOwner = Window & {
+      __fluxiqPhase8Feedback?: Record<string, { completedAt: number | null; startedAt: number | null }>;
+    };
+    const owner = window as FeedbackOwner;
+    const state = { completedAt: null as number | null, startedAt: null as number | null };
+    (owner.__fluxiqPhase8Feedback ??= {})[input.key] = state;
+    element.addEventListener("click", () => {
+      state.startedAt = performance.now();
+      let frameScheduled = false;
+      const complete = () => {
+        if (element.getAttribute(input.attribute) !== input.expected || state.startedAt === null) return false;
+        if (frameScheduled) return true;
+        frameScheduled = true;
+        observer.disconnect();
+        requestAnimationFrame(() => { state.completedAt = performance.now(); });
+        return true;
+      };
+      const observer = new MutationObserver(complete);
+      observer.observe(element, { attributes: true, attributeFilter: [input.attribute] });
+      queueMicrotask(complete);
+    }, { capture: true, once: true });
+  }, { key, attribute: options.attribute, expected: options.expected });
+  const value = await operation();
+  await page.waitForFunction((measurementKey) => {
+    const state = (window as typeof window & {
+      __fluxiqPhase8Feedback?: Record<string, { completedAt: number | null; startedAt: number | null }>;
+    }).__fluxiqPhase8Feedback?.[measurementKey];
+    return state?.completedAt !== null && state?.startedAt !== null;
+  }, key, { timeout: options.timeoutMs ?? 2_000 });
+  const feedbackMs = await page.evaluate((measurementKey) => {
+    const owner = window as typeof window & {
+      __fluxiqPhase8Feedback?: Record<string, { completedAt: number | null; startedAt: number | null }>;
+    };
+    const state = owner.__fluxiqPhase8Feedback?.[measurementKey];
+    if (!state || state.completedAt === null || state.startedAt === null) throw new Error("Feedback measurement did not complete.");
+    delete owner.__fluxiqPhase8Feedback?.[measurementKey];
+    return state.completedAt - state.startedAt;
+  }, key);
+  return { feedbackMs, value };
+}
+
+export async function collectPhase8BrowserResources(page: Page): Promise<Phase8BrowserResourceSnapshot> {
+  return await page.evaluate(() => {
+    const resources = (window as typeof window & {
+      __fluxiqPhase8Resources?: { listeners: number; peakListeners: number; subscriptions: number; peakSubscriptions: number };
+    }).__fluxiqPhase8Resources ?? { listeners: 0, peakListeners: 0, subscriptions: 0, peakSubscriptions: 0 };
+    const namespace = "fluxiq%3Aautomation-studio%3Aui-cache";
+    const entries = Object.keys(localStorage).filter((key) => key.startsWith(namespace));
+    const sizes = entries.map((key) => (localStorage.getItem(key) ?? "").length);
+    const projects = new Set(entries.map((key) => key.split(":")[2]).filter(Boolean));
+    const totalChars = sizes.reduce((total, size) => total + size, 0);
+    const largestEntryChars = Math.max(0, ...sizes);
+    return {
+      ...resources,
+      domNodes: document.getElementsByTagName("*").length,
+      warmViews: document.querySelectorAll('.automation-mounted-view:not([data-active="true"])').length,
+      cache: {
+        entries: entries.length,
+        projects: projects.size,
+        totalChars,
+        largestEntryChars,
+        withinBounds: largestEntryChars <= 500_000 && totalChars <= 2_000_000 && projects.size <= 20,
+      },
+    };
+  });
+}
+
+export async function measureAnimationFrameDurations(page: Page, operation: () => Promise<void>): Promise<number[]> {
+  await page.evaluate(() => {
+    (window as typeof window & { __fluxiqPhase8Frames?: number[] }).__fluxiqPhase8Frames = [];
+    let previous = performance.now();
+    let active = true;
+    const sample = (now: number) => {
+      const owner = window as typeof window & { __fluxiqPhase8Frames?: number[]; __fluxiqStopPhase8Frames?: () => void };
+      owner.__fluxiqPhase8Frames?.push(now - previous);
+      previous = now;
+      if (active) requestAnimationFrame(sample);
+      owner.__fluxiqStopPhase8Frames = () => { active = false; };
+    };
+    requestAnimationFrame(sample);
+  });
+  await operation();
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  return await page.evaluate(() => {
+    const owner = window as typeof window & { __fluxiqPhase8Frames?: number[]; __fluxiqStopPhase8Frames?: () => void };
+    owner.__fluxiqStopPhase8Frames?.();
+    return owner.__fluxiqPhase8Frames ?? [];
+  });
+}
+
+export function phase8EnvironmentMetadata(testInfo: TestInfo) {
+  const cpu = cpus()[0];
+  return {
+    generatedAt: new Date().toISOString(),
+    project: testInfo.project.name,
+    browserEngine: testInfo.project.metadata.browserEngine ?? testInfo.project.name,
+    viewportProfile: testInfo.project.metadata.viewportProfile ?? "unknown",
+    baseURL: testInfo.project.use.baseURL ?? process.env.FLUXIQ_E2E_BASE_URL ?? "http://127.0.0.1:3000",
+    buildMode: process.env.FLUXIQ_E2E_BUILD_MODE ?? "unrecorded",
+    normalized: process.env.FLUXIQ_E2E_NORMALIZED === "true",
+    node: process.version,
+    os: `${platform()} ${release()}`,
+    cpu: cpu?.model ?? "unknown",
+    logicalCpuCount: cpus().length,
+    memoryGiB: Math.round(totalmem() / 1024 / 1024 / 1024),
+    extensionsRequiredDisabled: true,
+  };
 }
 
 function isTrackedRequest(request: Request, includeAllRequests: boolean): boolean {

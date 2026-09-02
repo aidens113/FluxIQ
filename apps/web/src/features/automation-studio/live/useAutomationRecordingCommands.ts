@@ -61,46 +61,47 @@ export function useAutomationRecordingCommands(options: RecordingCommandsOptions
     options.setActionStatus(outcome.value.recordingIds.length + " recording" + (outcome.value.recordingIds.length === 1 ? "" : "s") + " deleted.");
     return true;
   }, [options, removeLocal]);
-  const deleteOne = useCallback(async (recordingId: string) => {
-    const pin = window.prompt("Enter PIN to delete this recording") ?? "";
-    if (pin.length >= 4) await deleteMany([recordingId], pin);
+  const deleteOne = useCallback(async (recordingId: string, authorizationPin?: string) => {
+    const pin = authorizationPin ?? "";
+    if (pin.length < 4) throw new Error("Enter your security PIN.");
+    if (!await deleteMany([recordingId], pin)) throw new Error("Recording could not be deleted.");
   }, [deleteMany]);
-  const finalize = useCallback(async (recordingId: string) => {
-    const pin = window.prompt("Enter PIN to finalize this recording") ?? "";
-    if (pin.length < 4) return;
+  const finalize = useCallback(async (recordingId: string, authorizationPin?: string) => {
+    const pin = authorizationPin ?? "";
+    if (pin.length < 4) throw new Error("Enter your security PIN.");
     const outcome = await options.liveCommands.finalizeRecording<any>(recordingId, pin);
     if (outcome.status === "success") {
       options.setProjectRecordings((current: any[]) => mergeRecordingDetail(current, outcome.value.recording));
       options.notifyChanged(["recording", "timeline", "summary"], [recordingId]);
       options.setActionStatus("Recording finalized.");
-    } else if (outcome.status === "failure") options.setActionStatus(outcome.error);
+    } else if (outcome.status === "failure") { options.setActionStatus(outcome.error); throw new Error(outcome.error); }
   }, [options]);
-  const update = useCallback(async (recordingId: string, changes: JsonObject) => {
-    const pin = window.prompt("Enter PIN to update this recording") ?? "";
-    if (pin.length < 4) return;
+  const update = useCallback(async (recordingId: string, changes: JsonObject, authorizationPin?: string) => {
+    const pin = authorizationPin ?? "";
+    if (pin.length < 4) throw new Error("Enter your security PIN.");
     const outcome = await options.liveCommands.updateRecording<any>(recordingId, changes, pin);
     if (outcome.status === "success" && outcome.value.recording) {
       options.setProjectRecordings((current: any[]) => mergeRecordingDetail(current, outcome.value.recording));
       options.notifyChanged(["recording", "summary"], [recordingId]);
-    } else if (outcome.status === "failure") options.setActionStatus(outcome.error);
+    } else if (outcome.status === "failure") { options.setActionStatus(outcome.error); throw new Error(outcome.error); }
   }, [options]);
-  const appendNote = useCallback(async (recordingId: string, linkedEntryId?: string) => {
-    const text = window.prompt("Recording note") ?? "";
-    if (!text.trim()) return;
-    const pin = window.prompt("Enter PIN to add this note") ?? "";
-    if (pin.length < 4) return;
+  const appendNote = useCallback(async (recordingId: string, linkedEntryId?: string, textInput?: string, authorizationPin?: string) => {
+    const text = textInput ?? "";
+    if (!text.trim()) throw new Error("Enter note text.");
+    const pin = authorizationPin ?? "";
+    if (pin.length < 4) throw new Error("Enter your security PIN.");
     const outcome = await options.liveCommands.addRecordingNote<any>(recordingId, text, pin, linkedEntryId);
-    if (outcome.status === "success") options.notifyChanged(["recording", "timeline"], [recordingId]);
-    else if (outcome.status === "failure") options.setActionStatus(outcome.error);
+    if (outcome.status === "success") { if (outcome.value.recording) options.setProjectRecordings((current: any[]) => mergeRecordingDetail(current, outcome.value.recording)); options.notifyChanged(["recording", "timeline"], [recordingId]); }
+    else if (outcome.status === "failure") { options.setActionStatus(outcome.error); throw new Error(outcome.error); }
   }, [options]);
-  const appendMarker = useCallback(async (recordingId: string, linkedEntryId?: string, monotonicOffsetMs?: number) => {
-    const label = window.prompt("Marker label") ?? "";
-    if (!label.trim()) return;
-    const pin = window.prompt("Enter PIN to add this marker") ?? "";
-    if (pin.length < 4) return;
+  const appendMarker = useCallback(async (recordingId: string, linkedEntryId?: string, monotonicOffsetMs?: number, labelInput?: string, authorizationPin?: string) => {
+    const label = labelInput ?? "";
+    if (!label.trim()) throw new Error("Enter a marker label.");
+    const pin = authorizationPin ?? "";
+    if (pin.length < 4) throw new Error("Enter your security PIN.");
     const outcome = await options.liveCommands.addRecordingMarker<any>(recordingId, label, pin, linkedEntryId, monotonicOffsetMs);
-    if (outcome.status === "success") options.notifyChanged(["recording", "timeline"], [recordingId]);
-    else if (outcome.status === "failure") options.setActionStatus(outcome.error);
+    if (outcome.status === "success") { if (outcome.value.recording) options.setProjectRecordings((current: any[]) => mergeRecordingDetail(current, outcome.value.recording)); options.notifyChanged(["recording", "timeline"], [recordingId]); }
+    else if (outcome.status === "failure") { options.setActionStatus(outcome.error); throw new Error(outcome.error); }
   }, [options]);
   return { appendMarker, appendNote, deleteMany, deleteOne, finalize, update };
 }

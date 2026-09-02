@@ -6,6 +6,10 @@ import { describe, expect, it } from "vitest";
 const stylesRoot = dirname(fileURLToPath(import.meta.url));
 const appRoot = resolve(stylesRoot, "../../../app");
 const globalsPath = join(appRoot, "globals.css");
+const studioRouteRoot = join(appRoot, "programs/automation-studio");
+const studioManifestPath = join(studioRouteRoot, "automation-studio.css");
+const studioLayoutPath = join(studioRouteRoot, "layout.tsx");
+const rootLayoutPath = join(appRoot, "layout.tsx");
 const deletedLegacyStylesheet = normalize(
   join(stylesRoot, "instructions-settings-adaptations-problems/02-proposals.css"),
 );
@@ -32,7 +36,7 @@ function cssFilesUnder(root: string): string[] {
 }
 
 function importedCssFiles(): string[] {
-  return readFileSync(globalsPath, "utf8")
+  return readFileSync(studioManifestPath, "utf8")
     .split(/\r?\n/u)
     .filter(Boolean)
     .map((line) => {
@@ -40,16 +44,24 @@ function importedCssFiles(): string[] {
       if (!importPath) {
         throw new Error(`Invalid globals.css manifest entry: ${line}`);
       }
-      return normalize(resolve(appRoot, importPath));
+      return normalize(resolve(studioRouteRoot, importPath));
     });
 }
 
 describe("Automation Studio CSS architecture", () => {
-  it("keeps globals.css as an import-only manifest", () => {
+  it("keeps the global and Studio manifests import-only and route-scoped", () => {
     const globals = readFileSync(globalsPath, "utf8");
+    const studio = readFileSync(studioManifestPath, "utf8");
+    const rootLayout = readFileSync(rootLayoutPath, "utf8");
+    const studioLayout = readFileSync(studioLayoutPath, "utf8");
 
     expect(globals).not.toContain(".automation-");
     expect(globals).not.toContain("{");
+    expect(globals).not.toContain("automation-studio");
+    expect(studio).not.toContain("{");
+    expect(rootLayout).not.toContain("@xyflow/react/dist/style.css");
+    expect(studioLayout).toContain('import "@xyflow/react/dist/style.css"');
+    expect(studioLayout).toContain('import "./automation-studio.css"');
     expect(importedCssFiles().length).toBeGreaterThan(0);
   });
 
@@ -102,14 +114,15 @@ describe("Automation Studio CSS architecture", () => {
     }
   });
 
-  it("keeps feature style imports owned by the one global manifest", () => {
-    const appStyles = cssFilesUnder(appRoot).filter((file) => file !== normalize(globalsPath));
+  it("keeps feature style imports owned by the Studio route manifest", () => {
+    const appStyles = cssFilesUnder(appRoot).filter((file) => ![normalize(globalsPath), normalize(studioManifestPath)].includes(file));
 
     for (const file of appStyles) {
       const css = readFileSync(file, "utf8");
       expect(css, file).not.toMatch(/@import\s+["'][^"']*automation-studio[^"']*["']/u);
     }
 
+    expect(readFileSync(globalsPath, "utf8")).not.toMatch(/automation-studio|@xyflow/u);
     const imports = importedCssFiles().filter((path) => path.startsWith(normalize(stylesRoot)));
     expect(imports).toHaveLength(cssFilesUnder(stylesRoot).length - retiredStylesheets.size);
   });

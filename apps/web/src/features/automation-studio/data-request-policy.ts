@@ -11,6 +11,7 @@ export const AUTOMATION_STUDIO_FULL_DOCUMENT_ENDPOINTS = Object.freeze([
   "get-runtime-session",
   "get-normalized-timeline",
   "get-flow",
+  "get-flow-router",
   "get-flow-subflow",
   "get-flow-instruction-set",
   "get-flow-change-proposal",
@@ -23,6 +24,7 @@ export const AUTOMATION_STUDIO_BROWSER_BLOCKED_LEGACY_ENDPOINTS = Object.freeze(
   "list-project-artifacts",
   "list-flows",
   "get-flow",
+  "get-flow-router",
   "save-flow",
   "save-project-hierarchy",
   "repair-recording-state-index"
@@ -104,7 +106,7 @@ export function automationStudioLazyPreloadPlan(input: AutomationStudioLazyPrelo
     add(1, "summary", "list-flow-subflows", { projectId, flowId, limit: 25, offset: 0 }, "Warm the active Flow's first subflow page.");
     add(1, "summary", "list-flow-instructions", { projectId, flowId, limit: 25, offset: 0 }, "Warm the active Flow's instruction summary page.");
     add(1, "summary", "list-flow-runs", { projectId, flowId, limit: 25, offset: 0 }, "Warm the active Flow's latest run summary page.");
-    add(1, "detail", "get-flow-router", { projectId, flowId }, "Warm the active Flow router without loading graph documents.");
+    add(1, "summary", "get-flow-router-summary", { projectId, flowId }, "Warm bounded Router metadata without loading route collections.");
     if (input.graphViewportBounds) add(1, "detail", "get-graph-viewport", { projectId, flowId, bounds: input.graphViewportBounds, limit: 200 }, "Warm only the visible graph viewport.");
   }
 

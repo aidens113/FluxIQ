@@ -1,11 +1,12 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams()
 }));
-import { SettingsView, SubflowSettingsView, SubflowSettingsViewContent, FlowSettingsView, FlowSettingsViewContent, FLOW_LLM_PROVIDERS, SubflowMappingEditor, applyFlowAdaptationPreset, applyFlowTrainingMode, buildFlowSettingsSavePayload, flowAdaptationErrors, flowEffectiveSettings, flowGeneralRuntimeErrors, flowLimitsInterfaceErrors, flowLlmProvider, flowLlmSettingsErrors, flowSettingsDraftFromFlow, readSettingsSection, settingsDraftIsDirty, subflowSettingsDraft, subflowSettingsErrors } from "./index";
+import { SettingsView, SubflowSettingsView, SubflowSettingsViewContent, FlowSettingsView, FlowSettingsViewContent, FLOW_LLM_PROVIDERS, SubflowMappingEditor, applyFlowAdaptationPreset, applyFlowTrainingMode, buildFlowSettingsSavePayload, flowAdaptationErrors, flowEffectiveSettings, flowGeneralRuntimeErrors, flowLimitsInterfaceErrors, flowLlmProvider, flowLlmSettingsErrors, flowSettingsDraftFromFlow, flowSettingsFlowFromDetail, readSettingsSection, settingsConcurrentRevisionAction, settingsDraftIsDirty, subflowSettingsDraft, subflowSettingsErrors } from "./index";
 
 describe("Automation Settings workspace", () => {
   it("validates General and Runtime settings and renders user-facing runtime defaults", () => {
@@ -14,13 +15,50 @@ describe("Automation Settings workspace", () => {
     expect(flowGeneralRuntimeErrors({ ...valid, name: "", timeoutSeconds: "0", maxConcurrency: "1.5", trainingMode: "train_for_runs", trainForRunCount: "0" })).toEqual(expect.arrayContaining(["Flow name is required.", "Runtime timeout must be between 1 second and 1 hour.", "Concurrency must be a whole number from 1 to 100.", "Fixed training mode needs at least one run."]));
     const html = renderToStaticMarkup(createElement(SettingsView, { projectId: null, flow: { flowId: "flow.checkout", name: "Checkout", metadata: {}, executionDefaults: { timeoutMs: 45000, maxConcurrency: 4 } } }));
     expect(html).toContain("Fully adaptive");
-    expect(html).toContain("Fixed training runs");
-    expect(html).toContain("Until stable");
+    expect(html).toContain("Manual approval");
     expect(html).toContain("No LLM intervention");
     expect(html).toContain("Runtime Defaults");
     expect(html).toContain("Flow timeout");
     expect(html).toContain('value="45"');
     expect(html).toContain('value="4"');
+  });
+  it("maps persisted SQL settings details into the editable Flow form", () => {
+    const loaded = flowSettingsFlowFromDetail(
+      { flowId: "flow.checkout", name: "", metadata: { summaryOnly: true }, source: { mode: "visual" } },
+      {
+        flowId: "flow.checkout",
+        name: "Checkout",
+        description: "Complete an order",
+        visibility: "domain",
+        scopeKind: "domain",
+        scopeId: "web",
+        settingsRevision: 4,
+        updatedAt: 42,
+        settings: {
+          interventionMode: "manual_approval",
+          interventionModeVersion: 1,
+          executionDefaults: { timeoutMs: 45000, maxConcurrency: 3 },
+          training: { mode: "continuous_adaptive" },
+          adaptation: { preset: "adaptive", proposalMode: "manual", policyId: "policy.checkout" },
+          llm: { provider: "deepseek", model: "deepseek-chat", secretKeyId: "key.deepseek" },
+          revision: 4
+        },
+        inputs: [{ portId: "input.order", name: "Order", valueType: { kind: "json" }, required: true, defaultValue: null, description: "Order payload" }],
+        outputs: [{ portId: "output.result", name: "Result", valueType: { kind: "json" }, required: false, defaultValue: null, description: "" }]
+      }
+    );
+    expect(loaded).toMatchObject({ name: "Checkout", description: "Complete an order", visibility: "public", scope: { kind: "domain", domainId: "web" }, metadata: { summaryOnly: false, settingsRevision: 4 } });
+    expect(flowSettingsDraftFromFlow(loaded)).toMatchObject({
+      name: "Checkout",
+      timeoutSeconds: "45",
+      maxConcurrency: "3",
+      adaptationMode: "manual_approval",
+      llmProvider: "deepseek",
+      llmModel: "deepseek-chat",
+      llmSecretKeyId: "key.deepseek",
+      adaptationPolicyId: "policy.checkout",
+      interfaceInputs: [{ id: "input.order", name: "Order" }]
+    });
   });
   it("uses controlled LLM provider/model choices and encrypted key summaries", () => {
     expect(FLOW_LLM_PROVIDERS.map((provider) => provider.id)).toContain("deepseek");
@@ -43,12 +81,11 @@ describe("Automation Settings workspace", () => {
     expect(applyFlowAdaptationPreset(base, "adaptive")).toMatchObject({ adaptationPreset: "adaptive", allowAdaptationCreation: true, allowPromotion: true, allowDeleteOrDisableBehavior: false });
     expect(flowAdaptationErrors({ trainingMode: "normal", allowLlmIntervention: true, allowAdaptationCreation: true, allowPromotion: true, adaptationProposalMode: "manual" })).toHaveLength(2);
     const html = renderToStaticMarkup(createElement(SettingsView, { projectId: null, flow: { flowId: "flow.checkout", name: "Checkout", metadata: {} } }));
-    expect(html).toContain("Adaptation behavior");
+    expect(html).toContain("Runtime Mode");
     expect(html).toContain("Fully adaptive");
-    expect(html).toContain("Observe only");
-    expect(html).toContain("Manual for risky");
-    expect(html).toContain("Manual only");
-    expect(html).toContain("validated low-risk changes");
+    expect(html).toContain("Manual approval");
+    expect(html).toContain("No LLM intervention");
+    expect(html).toContain("Safe validated adaptations are applied automatically");
   });
   it("edits bounded recovery limits, friendly Flow interfaces, and dependencies", () => {
     const valid: any = { maxInterventionsPerRun: "2", maxTokensPerRun: "12000", maxCostUsdPerTrainingWindow: "5", maxAdaptationInterventionsPerRun: "3", maxAdaptationCostUsdPerRun: "1", maxRetriesPerAction: "1", maxRecoveryAttemptsPerSubflow: "2", maxReroutesPerRun: "2", interfaceInputs: [{ id: "input.customer", name: "Customer email", valueKind: "string", required: true, description: "", defaultValue: "" }], interfaceOutputs: [{ id: "output.result", name: "Result", valueKind: "json", required: false, description: "", defaultValue: '{"ok":true}' }] };
@@ -82,11 +119,17 @@ describe("Automation Settings workspace", () => {
     expect(html).toContain("Use Default");
     expect(html).toContain("Show Technical Metadata");
   });
-  it("gives Flow Settings anchored navigation and one dirty-aware sticky footer", () => {
+  it("gives Flow Settings persistent section navigation and one dirty-aware footer", () => {
     expect(settingsDraftIsDirty({ name: "A" }, { name: "A" })).toBe(false);
     expect(settingsDraftIsDirty({ name: "B" }, { name: "A" })).toBe(true);
     const html = renderToStaticMarkup(createElement(SettingsView, { projectId: null, flow: { flowId: "flow.checkout", name: "Checkout", metadata: {} } }));
     expect(html).toContain('aria-label="Flow settings sections"');
+    expect(html).toContain("automation-settings-section-sidebar");
+    expect(html).toContain("automation-settings-content");
+    expect(html).toContain("Choose an area to configure");
+    expect(html).toContain("Identity and visibility");
+    expect(html).toContain("Resolved configuration");
+    expect(html).toContain('aria-controls="flow-settings-general"');
     expect(html).toContain('id="flow-settings-general"');
     expect(html).toContain('id="flow-settings-runtime"');
     expect(html).toContain('id="flow-settings-adaptation"');
@@ -94,6 +137,28 @@ describe("Automation Settings workspace", () => {
     expect(html).toContain("automation-settings-form-footer");
     expect(html).toContain("Discard Changes");
     expect(html).toContain("All Flow settings saved");
+  });
+  it("keeps navigation and save controls outside the dedicated settings scroll owner", () => {
+    const layoutSource = readFileSync(new URL("./SettingsSectionLayout.tsx", import.meta.url), "utf8");
+    const flowSource = readFileSync(new URL("./FlowSettingsView.tsx", import.meta.url), "utf8");
+    const subflowSource = readFileSync(new URL("./SubflowSettingsView.tsx", import.meta.url), "utf8");
+    const css = readFileSync(new URL("../styles/instructions-settings-adaptations-problems/06-settings.css", import.meta.url), "utf8");
+
+    expect(layoutSource).toContain('className="automation-settings-content"');
+    expect(layoutSource).toContain("onScroll={trackSection}");
+    expect(layoutSource).toContain("visibleSettingsSection");
+    expect(layoutSource).toContain("keepSelectedSectionVisible");
+    expect(layoutSource).toContain("navigation.scrollTo({ top, left");
+    expect(layoutSource).toContain('behavior: "auto"');
+    expect(flowSource).not.toContain("scrollToSettingsSection");
+    expect(subflowSource).not.toContain("scrollToSettingsSection");
+    expect(flowSource).not.toContain("saving || settingsErrors.length > 0");
+    expect(flowSource).toContain("Fix the highlighted settings before saving.");
+    expect(css).toMatch(/\.automation-runs-workspace\.automation-flow-settings-workspace \{[^}]*overflow: hidden;/su);
+    expect(css).toMatch(/\.automation-settings-content \{[^}]*overflow-y: auto;/su);
+    expect(css).toMatch(/\.automation-settings-section-nav \{[^}]*overflow-y: auto;/su);
+    expect(css).toMatch(/\.automation-settings-form-footer \{[^}]*min-height: calc\(var\(--control-height-default\) \+ 21px\);/su);
+    expect(css).toMatch(/\.automation-settings-form-footer > div \{[^}]*min-height: var\(--control-height-default\);/su);
   });
   it("renders dedicated settings for a subflow graph instead of Flow training settings", () => {
     const html = renderToStaticMarkup(createElement(SettingsView, {
@@ -139,18 +204,29 @@ describe("Automation Settings workspace", () => {
     expect(FlowSettingsViewContent.toString()).toContain("expectedUpdatedAt");
     expect(SubflowSettingsViewContent.toString()).toContain("expectedUpdatedAt");
   });
+  it("preserves dirty drafts across concurrent Flow and Subflow revisions", () => {
+    expect(settingsConcurrentRevisionAction({ currentRevision: 10, incomingRevision: 10, dirty: true })).toBe("ignore");
+    expect(settingsConcurrentRevisionAction({ currentRevision: 10, incomingRevision: 11, dirty: false })).toBe("adopt");
+    expect(settingsConcurrentRevisionAction({ currentRevision: 10, incomingRevision: 11, dirty: true })).toBe("conflict");
+    for (const source of [FlowSettingsViewContent.toString(), SubflowSettingsViewContent.toString()]) {
+      expect(source).toContain("Reload Saved");
+      expect(source).toContain("Keep My Draft");
+      expect(source).toContain("Compare");
+      expect(source).toContain("settingsConcurrentRevisionAction");
+    }
+  });
   it("keeps friendly Flow settings visible while raw metadata remains opt-in", () => {
     const settingsHtml = renderToStaticMarkup(createElement(SettingsView, {
-      projectId: "project.debug",
+      projectId: null,
       flow: { flowId: "flow.checkout", metadata: { hiddenSecret: "should-not-render-until-expanded" } }
     }));
     expect(settingsHtml).toContain("automation-flow-settings-workspace");
     expect(settingsHtml).toContain("Save Settings");
     expect(settingsHtml).toContain("Flow Identity");
-    expect(settingsHtml).toContain("Training Mode");
+    expect(settingsHtml).toContain("Runtime Mode");
     expect(settingsHtml).toContain("<strong>Safety</strong>");
     expect(settingsHtml).toContain("Adaptations");
-    expect(settingsHtml).toContain("Adaptation behavior");
+    expect(settingsHtml).toContain("LLM intervention mode");
     expect(settingsHtml).toContain("Approval");
     expect(settingsHtml).toContain("Fully adaptive");
     expect(settingsHtml).toContain("Require first adaptation to be reviewed manually");

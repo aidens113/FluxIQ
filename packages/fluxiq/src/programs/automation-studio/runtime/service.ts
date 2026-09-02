@@ -8,10 +8,12 @@ import type { AutomationStudioHierarchyChildrenPage, AutomationStudioProject, Au
 import {
   appendRecordingEntry,
   appendRecordingNote,
+  automationStudioInterventionMode,
   createAutomationStudioFixture,
   createBlankAutomationStudioFlow,
   createBlankAutomationStudioFlowArtifact,
   defaultAutomationStudioFlowSettingsMetadata,
+  withAutomationStudioInterventionMode,
   createPublishedFlowSnapshot,
   getCallFlowConfiguration,
   createRecordingSession,
@@ -176,6 +178,7 @@ import {
   AutomationStudioProjectAdministration,
   AutomationStudioProjectAdaptationStore,
   AutomationStudioProjectDatabasePool,
+  AutomationStudioProjectGraphRepository,
   AutomationStudioProjectFlowResourceRepository,
   AutomationStudioProjectHierarchyRepository,
   AutomationStudioProjectRuntimeStreamStore,
@@ -184,8 +187,16 @@ import {
   type AutomationStudioSqlFlowRecord,
   type AutomationStudioSqlInstructionScope,
   type AutomationStudioSqlInstructionSummary,
+  type AutomationStudioSqlRouter,
+  type AutomationStudioSqlRouterRoute,
   type AutomationStudioSqlSubflow,
   type AutomationStudioRuntimeEventPage,
+  type AutomationStudioGraphPatchOperation,
+  type AutomationStudioGraphPatchResult,
+  automationStudioFilterHash,
+  automationStudioPageLimit,
+  decodeAutomationStudioPageCursor,
+  encodeAutomationStudioPageCursor,
   emptyFlowSummaryIndex
 } from "../storage/index.ts";
 import {
@@ -276,6 +287,7 @@ export type AutomationStudioFlowMigrationInspection = {
 type AutomationStudioProjectRecord = AutomationStudioProject & AutomationStudioProjectHierarchy;
 
 const PIPELINE_ARTIFACT_IO_CONCURRENCY = 16;
+const SUBFLOW_SUMMARY_MIGRATION_IO_CONCURRENCY = 16;
 const MAX_PRE_ACTION_STATE_CORRELATIONS = 12;
 const MAX_POST_ACTION_STATE_DELTAS = 12;
 
@@ -366,6 +378,41 @@ export type AutomationStudioSubflowSummaryPage = {
   offset: number;
 };
 
+export type AutomationStudioSubflowTargetPage = {
+  subflows: AutomationStudioSubflowSummary[];
+  total: number;
+  limit: number;
+  nextCursor: string | null;
+  hasMore: boolean;
+};
+
+export type AutomationStudioRouterRoutePage = {
+  routes: AutomationStudioFlowRouteRule[];
+  groups: AutomationStudioFlowRouteGroup[];
+  counts: { total: number; active: number; disabled: number; byGroup: Record<string, number> };
+  limit: number;
+  nextCursor: string | null;
+  hasMore: boolean;
+};
+
+export type AutomationStudioRouterTargetReferenceBatch = {
+  targets: Array<{
+    subflowId: string;
+    total: number;
+    hasMore: boolean;
+    references: Array<{
+      id: string;
+      kind: "route" | "fallback";
+      name: string;
+      status: string;
+      order: number | "fallback";
+      condition?: JsonValue;
+      conditionLabel?: string;
+    }>;
+  }>;
+  perTargetLimit: number;
+};
+
 export type AutomationStudioInstructionSummaryPage = {
   instructions: AutomationStudioInstructionSummary[];
   total: number;
@@ -385,6 +432,8 @@ export type AutomationStudioFlowRunActionPage = {
   total: number;
   limit: number;
   offset: number;
+  nextCursor?: string | null;
+  hasMore?: boolean;
 };
 
 export type AutomationStudioFlowRunSummaryPage = {
@@ -416,6 +465,15 @@ export type AutomationStudioRuntimeAdaptationContext = {
   diagnostics: string[];
 };
 
+export type AutomationStudioProblemPage = {
+  problems: import("../api/contracts.ts").AutomationStudioProblem[];
+  total: number;
+  counts: { error: number; warning: number; info: number };
+  limit: number;
+  nextCursor: string | null;
+  hasMore: boolean;
+};
+
 export type CreateFlowSubflowInput = {
   projectId: string;
   flowId: string;
@@ -441,6 +499,7 @@ export type UpdateFlowSubflowInput = {
   outputMapping?: AutomationStudioFlowSubflow["outputMapping"];
   localInstructionIds?: string[];
   proposalModeOverride?: AutomationStudioFlowSubflow["proposalModeOverride"] | null;
+  interventionModeOverride?: AutomationStudioFlowSubflow["interventionModeOverride"] | null;
   graphFlowId?: string;
 };
 
@@ -916,6 +975,7 @@ export class AutomationStudioService {
   async appendRecordingEvents(input: { projectId?: string | null; recordingId: string; entries: AppendRecordingEntryInput[] }): Promise<RecordingSession> {
     return await this.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
       const recording = await this.getRawRecordingSession(input.recordingId, input.projectId);
+      if (recording.endedAt !== undefined) throw new Error("Finalized recordings are immutable.");
       const preparedEntries = await this.prepareRecordingEntriesForStorage(input.projectId, input.recordingId, input.entries);
       const next = preparedEntries.reduce((current, entry) => appendRecordingEntry(current, entry), recording);
       const stored = await this.dehydrateRecordingStateSnapshotRefs(next, input.projectId);
@@ -939,6 +999,7 @@ export class AutomationStudioService {
   async finalizeRecording(input: { projectId?: string | null; recordingId: string; endedAt?: number }): Promise<RecordingSession> {
     return await this.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
       const recording = await this.getRawRecordingSession(input.recordingId, input.projectId);
+      if (recording.endedAt !== undefined) return recording;
       const finalized = finalizeRecordingSession(recording, input.endedAt);
       const stored = await this.dehydrateRecordingStateSnapshotRefs(finalized, input.projectId);
       await this.repositories.recordingSessions.put(stored);
@@ -1323,6 +1384,7 @@ export class AutomationStudioService {
   async appendRecordingNoteEntry(input: { projectId?: string | null; recordingId: string; text?: unknown; linkedEntryIds?: unknown; startOffsetMs?: unknown; endOffsetMs?: unknown }): Promise<RecordingSession> {
     return await this.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
       const recording = await this.getRecordingSession(input.recordingId, input.projectId);
+      if (recording.endedAt !== undefined) throw new Error("Finalized recordings are immutable.");
       const text = typeof input.text === "string" ? input.text.trim() : "";
       if (!text) throw new Error("Note text is required.");
       const linkedEntryIds = Array.isArray(input.linkedEntryIds) ? input.linkedEntryIds.map(String).filter(Boolean) : [];
@@ -1936,6 +1998,80 @@ export class AutomationStudioService {
 
   async saveFlow(input: { projectId: string; flow: AutomationStudioFlowArtifact; expectedUpdatedAt?: number }): Promise<AutomationStudioFlowArtifact> {
     return await this.saveFlowInternal(input, false);
+  }
+
+  async applyFlowGraphPatch(input: {
+    projectId: string;
+    flowId: string;
+    baseRevision: number;
+    mutationId: string;
+    operations: AutomationStudioGraphPatchOperation[];
+    authorId?: string | null;
+    message?: string;
+  }): Promise<{
+    result: AutomationStudioGraphPatchResult;
+    replayed: boolean;
+    flow?: AutomationStudioFlowArtifact & { graphRevision: number };
+  }> {
+    await this.findProject(input.projectId);
+    if (!this.projectDatabasePool) throw new Error("Project graph storage is unavailable.");
+    const canonical = await this.getFlow(input.projectId, input.flowId);
+    const graph = await AutomationStudioProjectGraphRepository.open({
+      pool: this.projectDatabasePool,
+      projectId: input.projectId
+    });
+    try {
+      const revisions = await graph.revisions({ flowId: input.flowId, limit: 1 });
+      if (!revisions.items.length) await graph.importMonolithicFlowGraph(canonical);
+      const applied = await graph.applyPatch({
+        pool: this.projectDatabasePool,
+        projectId: input.projectId,
+        flowId: input.flowId,
+        baseRevision: input.baseRevision,
+        mutationId: input.mutationId,
+        operations: input.operations,
+        ...(input.authorId === undefined ? {} : { authorId: input.authorId }),
+        ...(input.message ? { message: input.message } : {})
+      });
+      if (applied.response.status === "conflict") {
+        return { result: applied.response, replayed: applied.replayed };
+      }
+      const snapshot = await graph.exportSnapshotData(input.flowId);
+      const nextFlow: AutomationStudioFlowArtifact = {
+        ...canonical,
+        nodes: snapshot.nodes.map((node) => ({
+          id: node.nodeId,
+          definitionId: node.definitionId,
+          definitionVersion: node.definitionVersion,
+          label: node.label,
+          ...(node.description ? { description: node.description } : {}),
+          parameterValues: node.parameterValues,
+          position: { x: node.x, y: node.y },
+          metadata: node.metadata
+        })),
+        edges: snapshot.edges.map((edge) => ({
+          id: edge.edgeId,
+          sourceNodeId: edge.sourceNodeId,
+          targetNodeId: edge.targetNodeId,
+          ...(edge.sourcePortId ? { sourcePortId: edge.sourcePortId } : {}),
+          ...(edge.targetPortId ? { targetPortId: edge.targetPortId } : {}),
+          ...(edge.label ? { label: edge.label } : {}),
+          metadata: edge.metadata
+        })),
+        metadata: {
+          ...(canonical.metadata ?? {}),
+          graphRevision: applied.response.revisionNumber
+        }
+      };
+      const saved = await this.saveFlowInternal({ projectId: input.projectId, flow: nextFlow }, false);
+      return {
+        result: applied.response,
+        replayed: applied.replayed,
+        flow: { ...saved, graphRevision: applied.response.revisionNumber }
+      };
+    } finally {
+      await graph.close();
+    }
   }
 
   private async saveFlowInternal(input: { projectId: string; flow: AutomationStudioFlowArtifact; expectedUpdatedAt?: number }, allowPublicationMutation: boolean): Promise<AutomationStudioFlowArtifact> {
@@ -2963,7 +3099,7 @@ export class AutomationStudioService {
     inputs?: JsonObject;
     maxSteps?: number;
     authorizedDomainIds?: string[];
-    adaptiveMode?: "default" | "manual_approval" | "deterministic";
+    adaptiveMode?: AutomationStudioRuntimeInterventionMode;
     dryRunLlm?: boolean;
     authorizedExternalSideEffects?: boolean;
     subflowId?: string;
@@ -2985,7 +3121,8 @@ export class AutomationStudioService {
     if (idempotencyKey) startInput.metadata = { ...(startInput.metadata ?? {}), idempotencyKey };
     const session = existing ?? await this.startRuntimeSession(startInput);
     const startedAt = Date.now();
-    const adaptiveRunRequested = input.adaptiveMode !== "deterministic";
+    const runInterventionMode = normalizeAutomationStudioRuntimeInterventionMode(input.adaptiveMode);
+    const adaptiveRunRequested = runInterventionMode !== "no_llm_intervention";
     if (!existing && input.projectId && adaptiveRunRequested) {
       const activeAdaptiveRuns = (await this.listRuntimeSessions(input.projectId).catch(() => [])).filter((candidate) =>
         candidate.runId !== session.runId
@@ -3028,7 +3165,7 @@ export class AutomationStudioService {
         metadata: {
           ...(session.metadata ?? {}),
           adaptiveRuntime: Boolean(adaptationContext),
-          adaptiveMode: input.adaptiveMode ?? "default",
+          adaptiveMode: runInterventionMode,
           ...(idempotencyKey ? { idempotencyKey } : {})
         }
       });
@@ -3221,7 +3358,27 @@ export class AutomationStudioService {
       limit,
       offset
     }));
-    if (typedPage && typedPage.total > 0) return { subflows: typedPage.items.map((item) => subflowSummaryFromSql(item, input.projectId)), total: typedPage.total, limit: typedPage.limit, offset: typedPage.offset };
+    if (typedPage) {
+      const hasFilter = Boolean(input.flowId || input.status || input.role || search);
+      const typedInventory = hasFilter
+        ? await this.tryWithFlowResourceRepository(input.projectId, async (repository) => await repository.listSubflowSummariesPage({ limit: 1, offset: 0 }))
+        : typedPage;
+      const summaryInventory = await this.flowSubflowSummaryRepository(input.projectId).listPage({}, { limit: 1, offset: 0 }).catch(() => null);
+      const typedProjectionIsComplete = Boolean(
+        typedInventory
+        && summaryInventory
+        && summaryInventory.total > 0
+        && typedInventory.total >= summaryInventory.total
+      );
+      if (typedProjectionIsComplete) {
+        return {
+          subflows: typedPage.items.map((item) => subflowSummaryFromSql(item, input.projectId)),
+          total: typedPage.total,
+          limit: typedPage.limit,
+          offset: typedPage.offset
+        };
+      }
+    }
     await this.ensureFlowSubflowSummaryIndex(input.projectId);
     const repository = this.flowSubflowSummaryRepository(input.projectId);
     const clauses: string[] = [];
@@ -3395,6 +3552,149 @@ export class AutomationStudioService {
     return typeof stored.routerId === "string" ? stored as unknown as AutomationStudioFlowRouter : null;
   }
 
+  async listProjectProblems(input: { projectId: string; domainId?: string | null; severity?: string; source?: string; status?: string; scopeId?: string; search?: string; limit?: unknown; cursor?: unknown }): Promise<AutomationStudioProblemPage> {
+    await this.findProject(input.projectId);
+    const severity = input.severity?.trim().toLowerCase() || "";
+    const source = input.source?.trim().toLowerCase() || "";
+    const requestedStatus = input.status?.trim().toLowerCase() || "open";
+    if (severity && !["error", "warning", "info"].includes(severity)) throw new Error("Invalid problem severity filter.");
+    if (!["open", "resolved", "all"].includes(requestedStatus)) throw new Error("Invalid problem status filter.");
+    const status = requestedStatus === "all" ? "" : requestedStatus;
+    const scopeId = input.scopeId?.trim() || "";
+    const search = input.search?.trim().toLowerCase() || "";
+    const limit = automationStudioPageLimit(input.limit, 100);
+    const owner = `project-problems:${input.projectId}`;
+    const filterHash = automationStudioFilterHash({ severity, source, status, scopeId, search });
+    const cursor = decodeAutomationStudioPageCursor<{ rank: number; source: string; id: string }>(input.cursor, { owner, filterHash, validate: (values) => Number.isSafeInteger(values.rank) && typeof values.source === "string" && typeof values.id === "string" });
+    const base = baselineAutomationStudioProblems().filter((problem) => {
+      const problemSource = String(problem.artifactKind ?? "framework").toLowerCase();
+      const problemStatus = String((problem as any).status ?? "open").toLowerCase();
+      const problemScope = String(problem.artifactId ?? "");
+      const text = [problem.id, problem.message, problem.artifactKind, problem.artifactId].join(" ").toLowerCase();
+      return (!source || problemSource === source) && (!status || problemStatus === status)
+        && (!scopeId || problemScope === scopeId) && (!search || text.includes(search));
+    });
+    const all = base.filter((problem) => !severity || problem.severity === severity).sort((left, right) => problemSeverityRank(left.severity) - problemSeverityRank(right.severity)
+      || String(left.artifactKind ?? "framework").localeCompare(String(right.artifactKind ?? "framework"))
+      || left.id.localeCompare(right.id));
+    const after = cursor ? all.filter((problem) => {
+      const rank = problemSeverityRank(problem.severity);
+      const problemSource = String(problem.artifactKind ?? "framework");
+      return rank > cursor.rank || rank === cursor.rank && (problemSource > cursor.source || problemSource === cursor.source && problem.id > cursor.id);
+    }) : all;
+    const problems = after.slice(0, limit);
+    const last = problems.at(-1);
+    const counts = {
+      error: base.filter((problem) => problem.severity === "error").length,
+      warning: base.filter((problem) => problem.severity === "warning").length,
+      info: base.filter((problem) => problem.severity === "info").length
+    };
+    return {
+      problems,
+      total: all.length,
+      counts,
+      limit,
+      hasMore: after.length > limit,
+      nextCursor: after.length > limit && last ? encodeAutomationStudioPageCursor({ owner, filterHash, values: { rank: problemSeverityRank(last.severity), source: String(last.artifactKind ?? "framework"), id: last.id } }) : null
+    };
+  }
+
+  async getFlowRouterSummary(projectId: string, flowId: string): Promise<Omit<AutomationStudioFlowRouter, "rules"> & { rules?: never; ruleCount: number } | null> {
+    await this.findProject(projectId);
+    await this.ensureSqlFlowRouterProjection(projectId, flowId);
+    const projected = await this.tryWithFlowResourceRepository(projectId, async (item) => {
+      const summary = await item.getRouterSummaryForFlow(flowId);
+      if (!summary) return null;
+      const page = await item.listRouterRoutesPage({ flowId, limit: 1 });
+      return { summary, count: page.counts.total };
+    });
+    if (projected?.summary) {
+      const summary = projected.summary;
+      return {
+        schemaVersion: "0.1",
+        routerId: summary.routerId,
+        projectId,
+        flowId,
+        name: "Flow Router",
+        fallback: summary.fallbackKind === "subflow" && summary.fallbackSubflowId ? { kind: "subflow", subflowId: summary.fallbackSubflowId } : { kind: "fail", message: "No Flow Map route matched." },
+        status: "active",
+        createdAt: summary.createdAt,
+        updatedAt: summary.updatedAt,
+        metadata: { routeGroups: summary.groups.map(sqlRouterGroupToFlowGroup), revision: summary.revision },
+        ruleCount: projected.count
+      };
+    }
+    const legacy = await this.getFlowRouter(projectId, flowId);
+    if (!legacy) return null;
+    const { rules, ...summary } = legacy;
+    return { ...summary, ruleCount: rules.length };
+  }
+
+  async listFlowRouterRoutes(input: { projectId: string; flowId: string; groupId?: string | null; status?: "active" | "disabled"; search?: string; limit?: unknown; cursor?: unknown }): Promise<AutomationStudioRouterRoutePage> {
+    await this.findProject(input.projectId);
+    await this.ensureSqlFlowRouterProjection(input.projectId, input.flowId);
+    const typed = await this.tryWithFlowResourceRepository(input.projectId, async (repository) => {
+      const [page, summary] = await Promise.all([repository.listRouterRoutesPage(input), repository.getRouterSummaryForFlow(input.flowId)]);
+      return { page, summary };
+    });
+    if (typed?.summary) return {
+      routes: typed.page.items.map(sqlRouterRouteToFlowRule),
+      groups: typed.summary.groups.map(sqlRouterGroupToFlowGroup),
+      counts: typed.page.counts,
+      limit: typed.page.limit,
+      nextCursor: typed.page.nextCursor,
+      hasMore: typed.page.hasMore
+    };
+    return { routes: [], groups: [], counts: { total: 0, active: 0, disabled: 0, byGroup: {} }, limit: automationStudioPageLimit(input.limit, 100), nextCursor: null, hasMore: false };
+  }
+
+  async listFlowRouterTargetReferences(input: { projectId: string; flowId: string; subflowIds: string[]; perTargetLimit?: unknown }): Promise<AutomationStudioRouterTargetReferenceBatch> {
+    await this.findProject(input.projectId);
+    await this.ensureSqlFlowRouterProjection(input.projectId, input.flowId);
+    const projected = await this.tryWithFlowResourceRepository(input.projectId, async (repository) => repository.listRouterTargetReferences(input));
+    if (!projected) return { targets: input.subflowIds.map((subflowId) => ({ subflowId, total: 0, hasMore: false, references: [] })), perTargetLimit: automationStudioPageLimit(input.perTargetLimit, 20) };
+    return {
+      targets: projected.targets.map((target) => ({
+        subflowId: target.subflowId,
+        total: target.total,
+        hasMore: target.hasMore,
+        references: [
+          ...target.routes.map((route) => ({
+            id: route.routeId,
+            kind: "route" as const,
+            name: route.name,
+            status: route.enabled ? "active" : "disabled",
+            order: route.priority,
+            ...(route.conditionKind === "always" ? { conditionLabel: "Always" } : { condition: route.condition })
+          })),
+          ...(target.fallback ? [{
+            id: `fallback:${target.subflowId}`,
+            kind: "fallback" as const,
+            name: "Fallback",
+            status: "active",
+            order: "fallback" as const,
+            conditionLabel: "No rule matched"
+          }] : [])
+        ]
+      })),
+      perTargetLimit: projected.perTargetLimit
+    };
+  }
+
+  async getFlowRouterGraphSummary(input: { projectId: string; flowId: string; groupId?: string | null; status?: "active" | "disabled"; search?: string; limit?: unknown; cursor?: unknown }): Promise<JsonObject> {
+    const page = await this.listFlowRouterRoutes(input);
+    return {
+      schemaVersion: "0.1",
+      flowId: input.flowId,
+      counts: page.counts,
+      groups: page.groups.map((group) => ({ id: group.groupId, label: group.name, order: group.order })),
+      nodes: page.routes.map((route) => ({ id: route.ruleId, kind: "route", label: route.name, status: route.status, groupId: route.metadata?.groupId ?? null, order: route.order })),
+      edges: page.routes.map((route) => ({ id: `edge:${route.ruleId}`, source: route.ruleId, target: route.target.subflowId, kind: "routes_to" })),
+      nextCursor: page.nextCursor,
+      hasMore: page.hasMore
+    } as unknown as JsonObject;
+  }
+
   async getFlowSubflow(projectId: string, flowId: string, subflowId: string): Promise<AutomationStudioFlowSubflow | null> {
     await this.findProject(projectId);
     const stored = await new ProgramJsonStore<JsonObject>(this.flowSubflowFile(projectId, flowId, subflowId), () => ({})).read();
@@ -3422,9 +3722,9 @@ export class AutomationStudioService {
     return typeof stored.proposalId === "string" ? stored as unknown as AutomationStudioFlowChangeProposal : null;
   }
 
-  async getFlowRunDetail(projectId: string, runId: string): Promise<AutomationStudioFlowRunDetail | null> {
+  async getFlowRunDetail(projectId: string, runId: string, options: { includeCollections?: boolean } = {}): Promise<AutomationStudioFlowRunDetail | null> {
     await this.findProject(projectId);
-    const typed = await this.tryWithRuntimeStreamStore(projectId, async (store) => await store.getRunDetail(runId));
+    const typed = await this.tryWithRuntimeStreamStore(projectId, async (store) => await store.getRunDetail(runId, options));
     if (typed) return typed;
     const stored = await new ProgramJsonStore<JsonObject>(this.flowRunDetailFile(projectId, runId), () => ({})).read();
     if (typeof (stored.summary as { runId?: unknown } | undefined)?.runId === "string") return stored as unknown as AutomationStudioFlowRunDetail;
@@ -3439,11 +3739,11 @@ export class AutomationStudioService {
     });
   }
 
-  async listFlowRunActions(input: { projectId: string; runId: string; limit?: unknown; offset?: unknown }): Promise<AutomationStudioFlowRunActionPage> {
+  async listFlowRunActions(input: { projectId: string; runId: string; limit?: unknown; offset?: unknown; cursor?: unknown }): Promise<AutomationStudioFlowRunActionPage> {
     const limit = clampInteger(input.limit, 1, 100, 50);
     const offset = clampInteger(input.offset, 0, 10_000_000, 0);
     await this.findProject(input.projectId);
-    const typed = await this.tryWithRuntimeStreamStore(input.projectId, async (store) => await store.listRunActions({ runId: input.runId, limit, offset }));
+    const typed = await this.tryWithRuntimeStreamStore(input.projectId, async (store) => await store.listRunActions({ runId: input.runId, limit, offset, cursor: input.cursor }));
     if (typed && (typed.total > 0 || offset === 0)) return typed;
     if (!this.projectRootDir) {
       const detail = await this.getFlowRunDetail(input.projectId, input.runId);
@@ -3465,6 +3765,14 @@ export class AutomationStudioService {
       actions = recoveredActions.slice(offset, offset + limit);
     }
     return { actions, total: summary.actionAttemptCount ?? 0, limit, offset };
+  }
+
+  async getFlowRunActionDetail(input: { projectId: string; runId: string; attemptId: string }): Promise<AutomationStudioFlowRunActionAttemptRecord | null> {
+    await this.findProject(input.projectId);
+    const typed = await this.tryWithRuntimeStreamStore(input.projectId, (store) => store.getRunActionDetail({ runId: input.runId, attemptId: input.attemptId }));
+    if (typed) return typed;
+    const detail = await this.getFlowRunDetail(input.projectId, input.runId);
+    return detail?.actionAttempts?.find((action) => action.attemptId === input.attemptId) ?? null;
   }
   async exportFlowRunAudit(projectId: string, runId: string): Promise<JsonObject | null> {
     const detail = await this.getFlowRunDetail(projectId, runId);
@@ -3529,6 +3837,10 @@ export class AutomationStudioService {
   }
 
   async saveFlowRouter(router: AutomationStudioFlowRouter): Promise<AutomationStudioFlowRouter> {
+    const ownerFlow = await this.getFlow(router.projectId, router.flowId).catch(() => null);
+    if (ownerFlow?.metadata?.subflowGraph === true || typeof ownerFlow?.metadata?.parentFlowId === "string") {
+      throw new Error("Router is only available for a top-level Flow.");
+    }
     const subflowIndex = await this.readFlowSubflowIndex(router.projectId);
     const subflows = (await Promise.all(
       (subflowIndex.subflows ?? [])
@@ -3539,6 +3851,9 @@ export class AutomationStudioService {
     if (!validation.ok) throw new Error(`Invalid Automation Studio router: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
     await this.ensureProjectStructure(router.projectId);
     await new ProgramJsonStore<JsonObject>(this.flowRouterFile(router.projectId, router.flowId), () => ({})).write(router as unknown as JsonObject);
+    await this.writeSqlFlowRouterProjection(router).catch((error) => {
+      if (!String(error).includes("references missing subflows.subflow_id")) throw error;
+    });
     await this.writeFlowRouterIndex(router.projectId, (index) => ({ schemaVersion: "0.1", routers: upsertBy(index.routers ?? [], "routerId", routerSummaryFromRouter(router)) }));
     return router;
   }
@@ -3678,14 +3993,22 @@ export class AutomationStudioService {
     return await this.saveFlowRouter({ ...router, rules: router.rules.filter((rule) => rule.ruleId !== ruleId), updatedAt: now } as AutomationStudioFlowRouter);
   }
   async saveFlowSubflow(subflow: AutomationStudioFlowSubflow): Promise<AutomationStudioFlowSubflow> {
-    const validation = validateAutomationStudioFlowSubflow(subflow);
+    const persistedSubflow = subflow.graphFlowId ? subflow : {
+      ...subflow,
+      graphFlowId: `${subflow.flowId}.${subflow.subflowId}.graph`
+    };
+    const validation = validateAutomationStudioFlowSubflow(persistedSubflow);
     if (!validation.ok) throw new Error(`Invalid Automation Studio subflow: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
-    await this.ensureProjectStructure(subflow.projectId);
-    await this.writeSqlFlowSubflow(subflow.projectId, subflow);
-    await new ProgramJsonStore<JsonObject>(this.flowSubflowFile(subflow.projectId, subflow.flowId, subflow.subflowId), () => ({})).write(subflow as unknown as JsonObject);
-    await this.writeFlowSubflowIndex(subflow.projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: upsertBy(index.subflows ?? [], "subflowId", subflowSummaryFromSubflow(subflow)) }));
-    await this.writeFlowSubflowSummary(subflow.projectId, subflowSummaryFromSubflow(subflow));
-    return subflow;
+    await this.ensureProjectStructure(persistedSubflow.projectId);
+    await this.writeSqlFlowSubflow(persistedSubflow.projectId, persistedSubflow);
+    await new ProgramJsonStore<JsonObject>(this.flowSubflowFile(persistedSubflow.projectId, persistedSubflow.flowId, persistedSubflow.subflowId), () => ({})).write(persistedSubflow as unknown as JsonObject);
+    await this.writeFlowSubflowIndex(persistedSubflow.projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: upsertBy(index.subflows ?? [], "subflowId", subflowSummaryFromSubflow(persistedSubflow)) }));
+    await this.writeFlowSubflowSummary(persistedSubflow.projectId, subflowSummaryFromSubflow(persistedSubflow));
+    const router = await this.getFlowRouter(persistedSubflow.projectId, persistedSubflow.flowId);
+    if (router) await this.writeSqlFlowRouterProjection(router).catch((error) => {
+      if (!String(error).includes("references missing subflows.subflow_id")) throw error;
+    });
+    return persistedSubflow;
   }
 
   async createFlowSubflow(input: CreateFlowSubflowInput): Promise<AutomationStudioFlowSubflow> {
@@ -3756,6 +4079,7 @@ export class AutomationStudioService {
       ...(input.outputMapping !== undefined ? { outputMapping: input.outputMapping } : {}),
       ...(input.localInstructionIds !== undefined ? { localInstructionIds: uniqueStrings(input.localInstructionIds.map((id) => id.trim()).filter(Boolean)) } : {}),
       ...(input.proposalModeOverride !== undefined ? input.proposalModeOverride ? { proposalModeOverride: input.proposalModeOverride } : { proposalModeOverride: undefined } : {}),
+      ...(input.interventionModeOverride !== undefined ? input.interventionModeOverride ? { interventionModeOverride: input.interventionModeOverride } : { interventionModeOverride: undefined } : {}),
       ...(input.graphFlowId !== undefined ? { graphFlowId: input.graphFlowId.trim() } : {}),
       updatedAt: Date.now()
     };
@@ -4641,7 +4965,7 @@ export class AutomationStudioService {
   }
 
   async listProjectHierarchyChildren(input: { projectId: string; parentId?: unknown; cursor?: unknown; limit?: unknown }): Promise<AutomationStudioHierarchyChildrenPage> {
-    const project = await this.findProject(input.projectId);
+    const project = await this.findProjectSummary(input.projectId);
     if (!this.projectDatabasePool) return { items: [], nextCursor: null, hasMore: false };
 
     const repository = await AutomationStudioProjectHierarchyRepository.open({
@@ -4656,18 +4980,42 @@ export class AutomationStudioService {
       const limit = Math.max(1, Math.min(500, Math.trunc(Number(input.limit ?? 100)) || 100));
       let page = await repository.listChildrenPage({ parentEntryId, cursor, limit });
 
-      if (!cursor && page.items.length === 0 && project.customHierarchyNodes.length > 0) {
-        await repository.importLegacyHierarchy({
-          customHierarchyNodes: project.customHierarchyNodes,
-          deletedHierarchyIds: project.deletedHierarchyIds,
-          workspacePrefs: project.workspacePrefs ?? {}
-        });
-        page = await repository.listChildrenPage({ parentEntryId, limit });
+      if (!cursor && page.items.length === 0 && !(await repository.hasEntries())) {
+        const legacyProject = await this.readProjectRecord(project);
+        if (legacyProject.customHierarchyNodes.length > 0) {
+          await repository.importLegacyHierarchy({
+            customHierarchyNodes: legacyProject.customHierarchyNodes,
+            deletedHierarchyIds: legacyProject.deletedHierarchyIds,
+            workspacePrefs: legacyProject.workspacePrefs ?? {}
+          });
+          page = await repository.listChildrenPage({ parentEntryId, limit });
+        }
       }
       return page;
     } finally {
       await repository.close();
     }
+  }
+
+  async listFlowSubflowTargets(input: { projectId: string; flowId: string; status?: string; role?: string; search?: string; limit?: unknown; cursor?: unknown }): Promise<AutomationStudioSubflowTargetPage> {
+    await this.findProject(input.projectId);
+    const typed = await this.tryWithFlowResourceRepository(input.projectId, async (repository) => repository.listSubflowTargetsPage(input));
+    if (typed) return { subflows: typed.items.map((item) => subflowSummaryFromSql(item, input.projectId)), total: typed.total, limit: typed.limit, nextCursor: typed.nextCursor, hasMore: typed.hasMore };
+    const status = input.status?.trim() || "active";
+    const role = input.role?.trim() || "";
+    const search = input.search?.trim().toLowerCase() || "";
+    const limit = automationStudioPageLimit(input.limit);
+    const owner = `subflow-targets:${input.flowId}`;
+    const filterHash = automationStudioFilterHash({ status, role, search });
+    const cursor = decodeAutomationStudioPageCursor<{ name: string; subflowId: string }>(input.cursor, { owner, filterHash, validate: (values) => typeof values.name === "string" && typeof values.subflowId === "string" });
+    const index = await this.readFlowSubflowIndex(input.projectId);
+    const all = (index.subflows ?? []).filter((item) => item.flowId === input.flowId && item.status === status && (!role || item.role === role)
+      && (!search || item.name.toLowerCase().includes(search) || item.subflowId.toLowerCase().includes(search)))
+      .sort((left, right) => left.name.localeCompare(right.name) || left.subflowId.localeCompare(right.subflowId));
+    const after = cursor ? all.filter((item) => item.name.toLowerCase() > cursor.name || item.name.toLowerCase() === cursor.name && item.subflowId > cursor.subflowId) : all;
+    const subflows = after.slice(0, limit);
+    const last = subflows.at(-1);
+    return { subflows, total: all.length, limit, hasMore: after.length > limit, nextCursor: after.length > limit && last ? encodeAutomationStudioPageCursor({ owner, filterHash, values: { name: last.name.toLowerCase(), subflowId: last.subflowId } }) : null };
   }
   async listProjectChangeFeed(input: { projectId: string; afterSequence?: unknown; limit?: unknown }): Promise<AutomationStudioProjectChangeFeedPage> {
     await this.findProject(input.projectId);
@@ -4811,10 +5159,14 @@ export class AutomationStudioService {
   }
 
   private async findProject(projectId: string): Promise<AutomationStudioProjectRecord> {
+    return await this.readProjectRecord(await this.findProjectSummary(projectId));
+  }
+
+  private async findProjectSummary(projectId: string): Promise<AutomationStudioProject> {
     const state = await this.readProjectIndex();
     const project = state.projects.find((item) => item.id === projectId);
     if (!project) throw new Error(`Unknown Automation Studio project: ${projectId}`);
-    return await this.readProjectRecord(project);
+    return project;
   }
 
   private async readProjectRecord(project: AutomationStudioProject): Promise<AutomationStudioProjectRecord> {
@@ -5148,17 +5500,24 @@ export class AutomationStudioService {
     await this.findProject(projectId);
     if (!this.projectRootDir) return;
     let index: FlowSubflowIndex = await this.readFlowSubflowIndex(projectId).catch(() => ({ schemaVersion: "0.1", subflows: [] }));
-    if (index.summaryVersion !== 2 || (index.subflows ?? []).some((summary) => summary.summaryVersion !== 2)) {
-      const details = (await Promise.all((index.subflows ?? []).map((summary) => this.getFlowSubflow(projectId, summary.flowId, summary.subflowId))))
-        .filter((subflow): subflow is AutomationStudioFlowSubflow => Boolean(subflow));
-      index = await this.writeFlowSubflowIndex(projectId, () => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: details.map(subflowSummaryFromSubflow) }));
-    }
     const repository = this.flowSubflowSummaryRepository(projectId);
     const page = await repository.listPage({}, { limit: 1, offset: 0 });
     const legacyRow = await repository.transaction({}, (transaction) => transaction.get<{ total: number }>(
       "select count(*) as total from " + repository.tableName + " where json_extract(data, '$.summaryVersion') is null"
     ));
     if (page.total >= (index.subflows ?? []).length && (legacyRow?.total ?? 0) === 0) return;
+    if (index.summaryVersion !== 2 || (index.subflows ?? []).some((summary) => summary.summaryVersion !== 2)) {
+      const summaries = await mapWithConcurrency(index.subflows ?? [], SUBFLOW_SUMMARY_MIGRATION_IO_CONCURRENCY, async (summary) => {
+        const detail = await this.getFlowSubflow(projectId, summary.flowId, summary.subflowId);
+        return detail ? subflowSummaryFromSubflow(detail) : summary;
+      });
+      const fullyMigrated = summaries.every((summary) => summary.summaryVersion === 2);
+      index = await this.writeFlowSubflowIndex(projectId, () => ({
+        schemaVersion: "0.1",
+        ...(fullyMigrated ? { summaryVersion: 2 as const } : {}),
+        subflows: summaries
+      }));
+    }
     for (const summary of index.subflows ?? []) await this.writeFlowSubflowSummary(projectId, summary);
   }
 
@@ -5293,15 +5652,32 @@ export class AutomationStudioService {
     return written === true;
   }
 
-  async listFlowRunEvents(input: { projectId: string; runId: string; afterSequence?: unknown; limit?: unknown }): Promise<AutomationStudioRuntimeEventPage> {
-    const typed = await this.tryWithRuntimeStreamStore(input.projectId, async (store) => await store.listRuntimeEvents({ runId: input.runId, afterSequence: input.afterSequence, limit: input.limit }));
-    if (typed) return typed;
+  async listFlowRunEvents(input: { projectId: string; runId: string; afterSequence?: unknown; cursor?: unknown; limit?: unknown }): Promise<AutomationStudioRuntimeEventPage> {
+    await this.findProject(input.projectId);
+    const owner = `run-events:${input.runId}`;
+    const filterHash = automationStudioFilterHash({});
+    const cursor = decodeAutomationStudioPageCursor<{ sequence: number }>(input.cursor, { owner, filterHash, validate: (values) => Number.isSafeInteger(values.sequence) && Number(values.sequence) >= 0 });
+    const afterSequence = cursor?.sequence ?? clampInteger(input.afterSequence, 0, 10_000_000_000, 0);
+    const limit = automationStudioPageLimit(input.limit, 100);
+    const typed = await this.tryWithRuntimeStreamStore(input.projectId, async (store) => await store.listRuntimeEvents({ runId: input.runId, afterSequence, limit, includePayload: false }));
+    if (typed) return {
+      ...typed,
+      nextCursor: typed.hasMore ? encodeAutomationStudioPageCursor({ owner, filterHash, values: { sequence: typed.lastSequence } }) : null
+    };
     const detail = await this.getFlowRunDetail(input.projectId, input.runId);
     const actions = detail?.actionAttempts ?? [];
-    const afterSequence = clampInteger(input.afterSequence, 0, 10_000_000, 0);
-    const limit = clampInteger(input.limit, 1, 500, 100);
-    const events = actions.map((action, index) => ({ sequence: index + 1, eventId: `action_attempt:${action.attemptId}`, eventKind: "action_attempt" as const, timestampMs: action.startedAt, title: action.nodeId, status: action.status, entityId: action.attemptId, payload: action as unknown as JsonObject })).filter((event) => event.sequence > afterSequence).slice(0, limit);
-    return { events, nextCursor: events.length === limit ? String(events.at(-1)!.sequence) : null, hasMore: actions.length > afterSequence + events.length, lastSequence: events.at(-1)?.sequence ?? afterSequence };
+    const events = actions.map((action, index) => ({ sequence: index + 1, eventId: `action_attempt:${action.attemptId}`, eventKind: "action_attempt" as const, timestampMs: action.startedAt, title: action.nodeId, status: action.status, entityId: action.attemptId })).filter((event) => event.sequence > afterSequence).slice(0, limit);
+    const hasMore = actions.length > afterSequence + events.length;
+    const lastSequence = events.at(-1)?.sequence ?? afterSequence;
+    return { events, nextCursor: hasMore ? encodeAutomationStudioPageCursor({ owner, filterHash, values: { sequence: lastSequence } }) : null, hasMore, lastSequence };
+  }
+
+  async getFlowRunEventDetail(input: { projectId: string; runId: string; sequence: unknown }): Promise<import("../storage/index.ts").AutomationStudioRuntimeStreamEvent | null> {
+    await this.findProject(input.projectId);
+    const typed = await this.tryWithRuntimeStreamStore(input.projectId, (store) => store.getRuntimeEventDetail({ runId: input.runId, sequence: input.sequence }));
+    if (typed) return typed;
+    const page = await this.listFlowRunEvents({ projectId: input.projectId, runId: input.runId, afterSequence: Math.max(0, Number(input.sequence) - 1), limit: 1 });
+    return page.events[0] ?? null;
   }
 
   private async readPipelineIndex(projectId: string): Promise<PipelineIndex> {
@@ -6340,8 +6716,15 @@ export class AutomationStudioService {
         settings: {
           executionDefaults: (flow.executionDefaults ?? {}) as JsonObject,
           training: jsonObjectFromUnknown(metadata.trainingModeSettings) ?? {},
-          adaptation: jsonObjectFromUnknown(metadata.adaptationPolicySettings) ?? {},
-          llm: { provider: typeof metadata.llmProvider === "string" ? metadata.llmProvider : "host" },
+          adaptation: {
+            ...(jsonObjectFromUnknown(metadata.adaptationPolicySettings) ?? {}),
+            ...(typeof metadata.adaptationPolicyId === "string" ? { policyId: metadata.adaptationPolicyId } : {})
+          },
+          llm: {
+            provider: typeof metadata.llmProvider === "string" ? metadata.llmProvider : "host",
+            ...(typeof metadata.llmModel === "string" ? { model: metadata.llmModel } : {}),
+            ...(typeof metadata.llmSecretKeyId === "string" ? { secretKeyId: metadata.llmSecretKeyId } : {})
+          },
           safety: {}
         },
         inputs: flow.interface.inputs.map((port, index) => ({ portId: port.id, name: port.name, valueType: port.valueType as JsonValue, required: port.required === true, defaultValue: port.defaultValue ?? null, description: port.description ?? "", sortKey: String(index).padStart(8, "0") })),
@@ -6396,11 +6779,57 @@ export class AutomationStudioService {
       const graphFlowId = subflow.graphFlowId ?? `${subflow.flowId}.${subflow.subflowId}.graph`;
       if (!await repository.getFlow(graphFlowId)) {
         await this.loadProjectFlow(projectId, graphFlowId);
-        const graphFlow = await this.repositories.flows.get(graphFlowId);
-        if (!graphFlow || graphFlow.projectId !== projectId) return;
+        let graphFlow = await this.repositories.flows.get(graphFlowId);
+        if (!graphFlow || graphFlow.projectId !== projectId) {
+          if (!parentFlow || parentFlow.projectId !== projectId) return;
+          graphFlow = createBlankAutomationStudioFlowArtifact({
+            flowId: graphFlowId,
+            projectId,
+            name: `${subflow.name} Graph`,
+            scope: parentFlow.scope,
+            description: `Isolated graph for subflow ${subflow.name}.`,
+            origin: "manual",
+            now: subflow.createdAt,
+            metadata: { parentFlowId: subflow.flowId, parentSubflowId: subflow.subflowId, subflowGraph: true }
+          });
+          await this.writeProjectFlow(projectId, graphFlow);
+          await this.repositories.flows.put(graphFlow);
+        }
         await this.writeSqlFlowMetadata(projectId, graphFlow);
       }
       await repository.upsertSubflow(sqlSubflowFromFlowSubflow(subflow));
+    } finally {
+      await repository.close();
+    }
+  }
+
+  private async ensureSqlFlowRouterProjection(projectId: string, flowId: string): Promise<void> {
+    if (!this.projectDatabasePool) return;
+    const exists = await this.tryWithFlowResourceRepository(projectId, (repository) => repository.getRouterSummaryForFlow(flowId));
+    if (exists) return;
+    const router = await this.getFlowRouter(projectId, flowId);
+    if (!router) return;
+    const fallbackSubflowId = router.fallback?.kind === "subflow" && "subflowId" in router.fallback
+      ? router.fallback.subflowId
+      : null;
+    const referencedSubflowIds = uniqueStrings([
+      ...(fallbackSubflowId ? [fallbackSubflowId] : []),
+      ...router.rules.flatMap((rule) => rule.target.kind === "subflow" && "subflowId" in rule.target ? [rule.target.subflowId] : [])
+    ]);
+    for (const subflowId of referencedSubflowIds) {
+      const subflow = await this.getFlowSubflow(projectId, flowId, subflowId);
+      if (subflow) await this.writeSqlFlowSubflow(projectId, subflow);
+    }
+    await this.writeSqlFlowRouterProjection(router);
+  }
+
+  private async writeSqlFlowRouterProjection(router: AutomationStudioFlowRouter): Promise<void> {
+    if (!this.projectDatabasePool) return;
+    const ownerFlow = await this.getFlow(router.projectId, router.flowId).catch(() => null);
+    if (ownerFlow) await this.writeSqlFlowMetadata(router.projectId, ownerFlow);
+    const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool: this.projectDatabasePool, projectId: router.projectId });
+    try {
+      await repository.replaceRouterProjection(sqlRouterFromFlowRouter(router));
     } finally {
       await repository.close();
     }
@@ -6905,11 +7334,19 @@ function sortFlowRouterIndex(index: FlowRouterIndex): FlowRouterIndex {
 }
 
 function sortFlowSubflowIndex(index: FlowSubflowIndex): FlowSubflowIndex {
-  return { schemaVersion: "0.1", subflows: [...(index.subflows ?? [])].sort(compareSummaryByUpdatedAtThenId("subflowId")) };
+  return {
+    schemaVersion: "0.1",
+    ...(index.summaryVersion === 2 ? { summaryVersion: 2 as const } : {}),
+    subflows: [...(index.subflows ?? [])].sort(compareSummaryByUpdatedAtThenId("subflowId"))
+  };
 }
 
 function sortFlowInstructionIndex(index: FlowInstructionIndex): FlowInstructionIndex {
-  return { schemaVersion: "0.1", instructions: [...(index.instructions ?? [])].sort(compareSummaryByUpdatedAtThenId("instructionId")) };
+  return {
+    schemaVersion: "0.1",
+    ...(index.summaryVersion === 2 ? { summaryVersion: 2 as const } : {}),
+    instructions: [...(index.instructions ?? [])].sort(compareSummaryByUpdatedAtThenId("instructionId"))
+  };
 }
 
 function sortFlowChangeProposalIndex(index: FlowChangeProposalIndex): FlowChangeProposalIndex {
@@ -7023,6 +7460,7 @@ function sqlInstructionStatus(status: string): "draft" | "active" | "archived" |
 function sqlInstructionScopeFromInstruction(projectId: string, scope: AutomationStudioFlowInstruction["scope"]): AutomationStudioSqlInstructionScope {
   if (scope.kind === "global") return { scopeKind: "global", projectId: null, flowId: null, routerId: null, subflowId: null, nodeId: null, errorCode: null };
   if (scope.kind === "project") return { scopeKind: "project", projectId: scope.projectId, flowId: null, routerId: null, subflowId: null, nodeId: null, errorCode: null };
+  if (scope.kind === "flow") return { scopeKind: "flow", projectId: scope.projectId, flowId: scope.flowId, routerId: null, subflowId: null, nodeId: null, errorCode: null };
   if (scope.kind === "router") return { scopeKind: "router", projectId: scope.projectId, flowId: scope.flowId, routerId: scope.routerId, subflowId: null, nodeId: null, errorCode: null };
   if (scope.kind === "subflow") return { scopeKind: "subflow", projectId: scope.projectId, flowId: scope.flowId, routerId: null, subflowId: scope.subflowId, nodeId: null, errorCode: null };
   if (scope.kind === "node") return { scopeKind: "node", projectId: scope.projectId, flowId: scope.flowId, routerId: null, subflowId: scope.subflowId ?? null, nodeId: scope.nodeId, errorCode: null };
@@ -7040,6 +7478,81 @@ function sqlResourceStatus(status: string): "draft" | "active" | "archived" | "d
 
 function flowExpansionStatusFromSql(status: string): AutomationStudioFlowSubflow["status"] {
   return status === "archived" ? "archived" : "active";
+}
+
+function sqlRouterFromFlowRouter(router: AutomationStudioFlowRouter): AutomationStudioSqlRouter {
+  const fallback = router.fallback;
+  const fallbackSubflowId = fallback?.kind === "subflow" && "subflowId" in fallback ? fallback.subflowId : null;
+  return {
+    routerId: router.routerId,
+    flowId: router.flowId,
+    fallbackKind: fallbackSubflowId ? "subflow" : "error",
+    fallbackSubflowId,
+    revision: Math.max(1, Math.trunc(Number(router.metadata?.revision ?? 1))),
+    createdAt: router.createdAt,
+    updatedAt: router.updatedAt,
+    groups: flowMapRouteGroups(router).map((group) => ({
+      groupId: group.groupId,
+      routerId: router.routerId,
+      name: group.name,
+      description: group.description ?? "",
+      order: group.order,
+      status: group.status,
+      collapsed: group.collapsed === true,
+      sortKey: String(group.order).padStart(12, "0") + "." + group.groupId,
+      revision: Math.max(1, Math.trunc(Number(group.metadata?.revision ?? 1))),
+      createdAt: group.createdAt,
+      updatedAt: group.updatedAt,
+      metadata: group.metadata ?? {}
+    })),
+    routes: flowMapSortedRules(router.rules).map((rule) => ({
+      routeId: rule.ruleId,
+      routerId: router.routerId,
+      groupId: typeof rule.metadata?.groupId === "string" ? rule.metadata.groupId : null,
+      name: rule.name,
+      priority: rule.order,
+      enabled: rule.status === "active",
+      conditionKind: typeof (rule.condition as any)?.kind === "string" ? String((rule.condition as any).kind) : rule.condition ? "condition" : "always",
+      condition: (rule.condition ?? null) as JsonValue,
+      targetKind: "subflow",
+      targetSubflowId: rule.target.subflowId,
+      revision: Math.max(1, Math.trunc(Number(rule.metadata?.revision ?? 1))),
+      createdAt: rule.createdAt,
+      updatedAt: rule.updatedAt
+    }))
+  };
+}
+
+function sqlRouterGroupToFlowGroup(group: AutomationStudioSqlRouter["groups"][number], _index = 0): AutomationStudioFlowRouteGroup {
+  return {
+    schemaVersion: "0.1",
+    groupId: group.groupId,
+    routerId: group.routerId,
+    name: group.name,
+    ...(group.description ? { description: group.description } : {}),
+    order: group.order,
+    status: group.status,
+    collapsed: group.collapsed,
+    createdAt: group.createdAt,
+    updatedAt: group.updatedAt,
+    metadata: { ...group.metadata, revision: group.revision }
+  };
+}
+
+function sqlRouterRouteToFlowRule(route: AutomationStudioSqlRouterRoute): AutomationStudioFlowRouteRule {
+  return {
+    schemaVersion: "0.1",
+    ruleId: route.routeId,
+    routerId: route.routerId,
+    name: route.name,
+    target: { kind: "subflow", subflowId: route.targetSubflowId ?? "" },
+    order: route.priority,
+    status: route.enabled ? "active" : "disabled",
+    ...(route.conditionKind !== "always" && route.condition && typeof route.condition === "object" ? { condition: route.condition } : {}),
+    createdAt: route.createdAt,
+    updatedAt: route.updatedAt,
+    metadata: { ...(route.groupId ? { groupId: route.groupId } : {}), revision: route.revision }
+  } as unknown as AutomationStudioFlowRouteRule;
 }
 
 function flowMapRouteGroups(router: AutomationStudioFlowRouter): AutomationStudioFlowRouteGroup[] {
@@ -8126,6 +8639,15 @@ function confidenceForCorrelation(correlation: StateActionCorrelation): number {
   return 0.5;
 }
 
+function problemSeverityRank(value: string): number { return value === "error" ? 0 : value === "warning" ? 1 : 2; }
+function baselineAutomationStudioProblems(): import("../api/contracts.ts").AutomationStudioProblem[] {
+  return [{
+    id: "automation-studio.host-artifacts",
+    severity: "info",
+    message: "Automation Studio is ready for host-owned artifacts. Create or load a project to begin recording and authoring."
+  }];
+}
+
 function compactJsonObject(value: Record<string, unknown>): JsonObject {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as JsonObject;
 }
@@ -8294,7 +8816,7 @@ function sqlSubflowFromFlowSubflow(subflow: AutomationStudioFlowSubflow): Omit<A
     status: subflow.status === "disabled" ? "draft" : subflow.status,
     inputMapping: subflow.inputMapping ?? [],
     outputMapping: subflow.outputMapping ?? [],
-    approvalOverride: subflow.proposalModeOverride === "manual" ? "manual_approval" : subflow.proposalModeOverride === "auto" || subflow.proposalModeOverride === "mixed" ? "adaptive" : null,
+    approvalOverride: subflow.interventionModeOverride === "no_llm_intervention" ? "disabled" : subflow.interventionModeOverride === "manual_approval" ? "manual_approval" : subflow.interventionModeOverride === "fully_adaptive" ? "adaptive" : subflow.proposalModeOverride === "manual" ? "manual_approval" : subflow.proposalModeOverride === "auto" || subflow.proposalModeOverride === "mixed" ? "adaptive" : null,
     createdAt: subflow.createdAt,
     updatedAt: subflow.updatedAt,
     deletedAt: null
@@ -8313,7 +8835,7 @@ function sqlSubflowToFlowSubflow(projectId: string, row: AutomationStudioSqlSubf
     status: row.status === "draft" ? "active" : row.status,
     inputMapping: Array.isArray(row.inputMapping) ? row.inputMapping as AutomationStudioFlowSubflow["inputMapping"] : [],
     outputMapping: Array.isArray(row.outputMapping) ? row.outputMapping as AutomationStudioFlowSubflow["outputMapping"] : [],
-    ...(row.approvalOverride === "manual_approval" ? { proposalModeOverride: "manual" as const } : row.approvalOverride === "adaptive" ? { proposalModeOverride: "auto" as const } : row.approvalOverride === "disabled" ? { proposalModeOverride: "disabled" as const } : {}),
+    ...(row.approvalOverride === "manual_approval" ? { proposalModeOverride: "manual" as const, interventionModeOverride: "manual_approval" as const } : row.approvalOverride === "adaptive" ? { proposalModeOverride: "auto" as const, interventionModeOverride: "fully_adaptive" as const } : row.approvalOverride === "disabled" ? { interventionModeOverride: "no_llm_intervention" as const } : {}),
     graphFlowId: row.graphFlowId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -8766,9 +9288,33 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
 
+type AutomationStudioRuntimeInterventionMode = "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic";
+
+export function normalizeAutomationStudioRuntimeInterventionMode(mode: AutomationStudioRuntimeInterventionMode | undefined): "fully_adaptive" | "manual_approval" | "no_llm_intervention" {
+  if (mode === "manual_approval") return mode;
+  if (mode === "no_llm_intervention" || mode === "deterministic") return "no_llm_intervention";
+  return "fully_adaptive";
+}
+
 function mergedFlowSettingsMetadata(metadata: JsonObject | undefined): JsonObject {
   const defaults = defaultAutomationStudioFlowSettingsMetadata();
-  const source = metadata ?? {};
+  const canonical = withAutomationStudioInterventionMode(metadata, automationStudioInterventionMode(metadata));
+  const configuredTrainingMode = jsonObjectFromUnknown(metadata?.trainingModeSettings)?.mode ?? metadata?.trainingMode;
+  const legacy = metadata?.adaptationModeVersion !== 1 || configuredTrainingMode === "train_for_runs" || configuredTrainingMode === "train_until_stable";
+  const source = legacy ? {
+    ...canonical,
+    ...(metadata ?? {}),
+    adaptationModeVersion: 1,
+    adaptationMode: automationStudioInterventionMode(metadata),
+    trainingModeSettings: {
+      ...(jsonObjectFromUnknown(canonical.trainingModeSettings) ?? {}),
+      ...(jsonObjectFromUnknown(metadata?.trainingModeSettings) ?? {})
+    },
+    adaptationPolicySettings: {
+      ...(jsonObjectFromUnknown(canonical.adaptationPolicySettings) ?? {}),
+      ...(jsonObjectFromUnknown(metadata?.adaptationPolicySettings) ?? {})
+    }
+  } : canonical;
   return {
     ...defaults,
     ...source,
@@ -8883,13 +9429,13 @@ function runtimeAdaptationContextDiagnostics(
 
 function runtimeAdaptationContextWithRunOverride(
   context: AutomationStudioRuntimeAdaptationContext,
-  input: { adaptiveMode?: "default" | "manual_approval" | "deterministic"; dryRunLlm?: boolean }
+  input: { adaptiveMode?: AutomationStudioRuntimeInterventionMode; dryRunLlm?: boolean }
 ): AutomationStudioRuntimeAdaptationContext {
-  const mode = input.adaptiveMode ?? "default";
-  if (mode === "default" && input.dryRunLlm !== true) return context;
+  const mode = normalizeAutomationStudioRuntimeInterventionMode(input.adaptiveMode);
+  if (mode === "fully_adaptive" && input.dryRunLlm !== true) return context;
   const behavior = { ...context.behavior };
   const metadata: JsonObject = { ...(context.settings.metadata ?? {}), runtimeOverrideMode: mode };
-  if (mode === "deterministic") {
+  if (mode === "no_llm_intervention") {
     behavior.invokeLlm = false;
     behavior.createAdaptations = false;
     behavior.promoteAdaptations = false;
@@ -8917,7 +9463,7 @@ function runtimeAdaptationContextWithRunOverride(
     },
     diagnostics: [
       ...context.diagnostics,
-      ...(mode !== "default" ? [`Runtime override mode: ${mode}.`] : []),
+      ...(mode !== "fully_adaptive" ? [`Runtime override mode: ${mode}.`] : []),
       ...(input.dryRunLlm === true ? ["Runtime override enabled dry-run LLM adaptation suggestions."] : [])
     ]
   };

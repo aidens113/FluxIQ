@@ -41,7 +41,7 @@ const canonicalEntryViews = [
   "router/RouterView.tsx",
   "runtime/FlowRunView.tsx",
   "runtime/RunActionLogView.tsx",
-  "runtime/RuntimeDebugView.tsx",
+  "runtime/RunHistory.tsx",
   "settings/FlowSettingsView.tsx",
   "settings/SettingsViews.tsx",
   "settings/SubflowSettingsView.tsx",
@@ -583,14 +583,23 @@ describe("Automation Studio Phase 10I architecture enforcement", () => {
   it("keeps CSS ownership executable through the import manifest gate", () => {
     const styleGate = featurePath("styles/styles-architecture.test.ts");
     const globals = resolve(automationStudioFeaturePath, "../../app/globals.css");
+    const studioManifest = resolve(automationStudioFeaturePath, "../../app/programs/automation-studio/automation-studio.css");
+    const rootLayout = resolve(automationStudioFeaturePath, "../../app/layout.tsx");
+    const studioLayout = resolve(automationStudioFeaturePath, "../../app/programs/automation-studio/layout.tsx");
     expect(existsSync(styleGate)).toBe(true);
     const lines = readFileSync(globals, "utf8").split(/\r?\n/u).filter(Boolean);
+    const studioLines = readFileSync(studioManifest, "utf8").split(/\r?\n/u).filter(Boolean);
     expect(lines.every((line) => /^@import "[^"]+";$/u.test(line))).toBe(true);
-    expect(lines.some((line) => line.includes("features/automation-studio/styles/"))).toBe(true);
+    expect(lines.some((line) => line.includes("automation-studio"))).toBe(false);
+    expect(studioLines.every((line) => /^@import "[^"]+";$/u.test(line))).toBe(true);
+    expect(studioLines.every((line) => line.includes("features/automation-studio/styles/"))).toBe(true);
+    expect(readFileSync(rootLayout, "utf8")).not.toContain("@xyflow/react/dist/style.css");
+    expect(readFileSync(studioLayout, "utf8")).toContain("@xyflow/react/dist/style.css");
   });
 
   it("keeps removed compatibility paths absent and residual barrels frozen", () => {
     const removed = [
+      "hierarchy/ProjectHierarchySidebar.tsx",
       "legacy/routines/AutomationRoutineView.tsx",
       "views/selection-channel.ts",
       "graph/view-model.ts",

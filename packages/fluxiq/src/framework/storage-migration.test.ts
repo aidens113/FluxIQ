@@ -5,6 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import { SQLiteRepository, createRecord } from "../programs/database-manager/storage/sqlite-repository.ts";
 import { FluxIQ } from "./index.ts";
+import { writeMigrationJournal } from "./storage-layout.ts";
 
 const roots: string[] = [];
 
@@ -45,6 +46,7 @@ describe("FluxIQ storage layout migration", () => {
     expect(reopened.paths.domainRoot).toBe(path.join(fluxiqRoot, "domains", "importer_domain"));
     expect(reopened.paths.domainPrograms).toBe(path.join(root, "domains", "importer_domain", "programs"));
     expect((await reopened.programs.automationStudio.listProjects()).projects).toContainEqual(expect.objectContaining({ id: "project.legacy" }));
+    await expect(reopened.rollbackStorageMigration()).resolves.toEqual({ rolledBack: false, restoredRoots: [] });
   });
 
   it("stops divergent scoped/global collisions before archiving sources", async () => {
@@ -57,6 +59,34 @@ describe("FluxIQ storage layout migration", () => {
     await expect(fluxiq.migrateStorage()).rejects.toThrow("Divergent program-state collision");
     await expect(stat(path.join(fluxiqRoot, "data", "programs", "compute-control", "state.json"))).resolves.toBeTruthy();
     await expect(stat(path.join(fluxiqRoot, "example", "data", "programs", "compute-control", "state.json"))).resolves.toBeTruthy();
+  });
+
+  it("recovers an interrupted archived migration after process restart", async () => {
+    const root = await temporaryRoot();
+    const fluxiqRoot = path.join(root, ".fluxiq");
+    const original = path.join(fluxiqRoot, "data");
+    const archiveRoot = path.join(fluxiqRoot, "legacy", "v1-interrupted");
+    const archived = path.join(archiveRoot, path.relative(fluxiqRoot, original));
+    await writeProgramState(archived, { value: "recover me" });
+    await writeFile(path.join(fluxiqRoot, "global.sqlite"), "partial promoted database", "utf8");
+    await writeMigrationJournal(path.join(fluxiqRoot, ".migration", "v2", "journal.json"), {
+      version: 1,
+      migrationId: "migration.interrupted",
+      fromLayout: 1,
+      toLayout: 2,
+      stage: "archived",
+      startedAt: 1,
+      updatedAt: 2,
+      legacyRoots: [original],
+      archiveRoot
+    });
+
+    const restarted = FluxIQ.create({ rootDir: root, domainId: "example", loadEnv: false });
+    expect(restarted.inspectStorage().layout).toBe("migration_incomplete");
+    await expect(restarted.rollbackStorageMigration()).resolves.toMatchObject({ rolledBack: true, restoredRoots: [original] });
+    await expect(readFile(path.join(original, "programs", "compute-control", "state.json"), "utf8")).resolves.toContain("recover me");
+    await expect(stat(path.join(fluxiqRoot, "global.sqlite"))).rejects.toThrow();
+    expect(FluxIQ.create({ rootDir: root, domainId: "example", loadEnv: false }).inspectStorage().layout).toBe("v1");
   });
 });
 

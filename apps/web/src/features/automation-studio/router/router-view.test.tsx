@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams()
@@ -17,6 +18,18 @@ describe("Automation Router workspace", () => {
     expect(html).toContain("Select a Flow to edit its Router");
     expect(html).toContain("Router rules belong to one top-level Flow");
     expect(html).not.toContain("New Route");
+  });
+
+  it("does not load or render Router controls for a subflow graph", () => {
+    const commands = { loadRouter: vi.fn(), listSubflows: vi.fn() } as any;
+    const html = renderToStaticMarkup(createElement(RouterViewContent, {
+      projectId: "project.one",
+      flow: { flowId: "flow.subflow", metadata: { subflowGraph: true, parentFlowId: "flow.parent" } },
+      commands
+    }));
+    expect(html).toContain("Router belongs to the top-level Flow");
+    expect(html).not.toContain("New route");
+    expect(commands.loadRouter).not.toHaveBeenCalled();
   });
   it("orders Router rows by priority and then stable route name", () => {
     const routes = flowMapRoutes({ rules: [
@@ -37,7 +50,11 @@ describe("Automation Router workspace", () => {
       initialRouter: {
         name: "Checkout Router",
         metadata: { routeGroups: [{ groupId: "billing", name: "Billing", order: 10 }] },
-        rules: [{
+        rules: [],
+        fallback: { kind: "subflow", subflowId: "subflow.checkout" }
+      },
+      initialRoutePage: {
+        routes: [{
           ruleId: "route.refund",
           name: "Handle refund",
           order: 10,
@@ -45,7 +62,9 @@ describe("Automation Router workspace", () => {
           metadata: { groupId: "billing", conditionSummary: "Customer asks for a refund" },
           target: { kind: "subflow", subflowId: "subflow.refund" }
         }],
-        fallback: { kind: "subflow", subflowId: "subflow.checkout" }
+        counts: { total: 1, active: 1, disabled: 0, byGroup: { billing: 1 } },
+        nextCursor: null,
+        hasMore: false
       }
     }));
 
@@ -70,19 +89,49 @@ describe("Automation Router workspace", () => {
       flow: { flowId: "flow.large", name: "Large" },
       initialSubflows: [{ subflowId: "subflow.target", name: "Target", status: "active" }],
       initialRouter: {
-        rules: Array.from({ length: 101 }, (_, index) => ({
+        rules: []
+      },
+      initialRoutePage: {
+        routes: Array.from({ length: 100 }, (_, index) => ({
           ruleId: "route." + index,
           name: "Route " + index,
           order: index,
           status: "active",
           target: { kind: "subflow", subflowId: "subflow.target" }
-        }))
+        })),
+        counts: { total: 101, active: 101, disabled: 0, byGroup: { ungrouped: 101 } },
+        nextCursor: "next-page",
+        hasMore: true
       }
     }));
 
     expect((html.match(/automation-router-route-row"/g) ?? []).length).toBe(100);
     expect(html).toContain("1-100 of 101 routes");
     expect(html).toContain("Next");
+  });
+  it("loads Router production data from server pages without local route-map slicing", () => {
+    const viewSource = readFileSync(new URL("./RouterView.tsx", import.meta.url), "utf8");
+    const querySource = readFileSync(new URL("./router-queries.ts", import.meta.url), "utf8");
+    expect(querySource).toContain('"get-flow-router-summary"');
+    expect(querySource).toContain('"list-flow-router-routes"');
+    expect(querySource).toContain('"list-flow-subflow-targets"');
+    expect(viewSource).toContain("commands.listRoutes");
+    expect(viewSource).not.toContain("flowMapRoutes(flowMap)");
+    expect(viewSource).not.toContain("visibleRoutes.slice");
+  });
+  it("keeps ordinary Router preload, readiness, directory, and settings reads bounded", () => {
+    const preloadSource = readFileSync(new URL("../data-request-policy.ts", import.meta.url), "utf8");
+    const sources = [
+      "../instructions/instruction-queries.ts",
+      "../runtime/run-queries.ts",
+      "../subflows/subflow-queries.ts",
+      "../settings/settings-queries.ts"
+    ].map((file) => readFileSync(new URL(file, import.meta.url), "utf8")).join("\n");
+    expect(preloadSource).toContain('add(1, "summary", "get-flow-router-summary"');
+    expect(preloadSource).not.toContain('add(1, "detail", "get-flow-router"');
+    expect(sources).not.toMatch(/["']get-flow-router["']/);
+    expect(sources).toContain('"get-flow-router-summary"');
+    expect(sources).toContain('"list-flow-router-target-references"');
   });
   it("renders Router, instructions, adaptations, and settings as first-class Flow views", () => {
     const flow = { flowId: "flow.checkout", metadata: { trainingMode: "normal", proposalMode: "auto" } };
@@ -140,7 +189,7 @@ describe("Automation Router workspace", () => {
   });
   it("uses the shared searchable subflow picker for route and fallback targets", () => {
     const source = RouterViewContent.toString() + RouterContentView.toString();
-    expect(source).toContain("Search subflows");
+    expect(source).toContain("Search all subflows");
     expect(source).toContain("subflowOptions");
     expect(source).toContain("Choose a target subflow");
     expect(source).toContain("Choose a fallback subflow");

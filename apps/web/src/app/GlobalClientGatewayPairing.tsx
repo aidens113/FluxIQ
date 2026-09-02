@@ -24,6 +24,19 @@ type ClientGatewaySnapshot = {
   };
 };
 
+export function pairingSnapshot(payload: ClientGatewaySnapshot | undefined): ClientGatewaySnapshot {
+  if (!payload) return {};
+  return {
+    ...(payload.sessions ? { sessions: payload.sessions.map((session) => ({ ...session })) } : {}),
+    ...(payload.pairings ? { pairings: payload.pairings.map((pairing) => ({ ...pairing })) } : {}),
+    ...(payload.webRuntime ? { webRuntime: { ...payload.webRuntime } } : {})
+  };
+}
+
+export function pairingSnapshotsEqual(left: ClientGatewaySnapshot, right: ClientGatewaySnapshot): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 export function pendingPairingRequests(pairings: ClientPairingRequest[], nowMs: number, dismissedCodes: string[]): ClientPairingRequest[] {
   const dismissed = new Set(dismissedCodes);
   return pairings.filter((pairing) => pairing.requestedBySessionId && !pairing.consumedAt && pairing.expiresAt > nowMs && !dismissed.has(pairing.pairingCode));
@@ -57,8 +70,8 @@ export function GlobalClientGatewayPairing() {
       if (response?.status === 401) return;
       const result = response ? await response.json().catch(() => undefined) as { ok?: boolean; payload?: ClientGatewaySnapshot } | undefined : undefined;
       if (result?.ok) {
-        const next = result.payload ?? {};
-        setSnapshot(next);
+        const next = pairingSnapshot(result.payload);
+        setSnapshot((current) => pairingSnapshotsEqual(current, next) ? current : next);
         const hasPending = pendingPairingRequests(next.pairings ?? [], Date.now(), []).length > 0;
         delayMs = hasPending ? 1_000 : Math.min(10_000, Math.round(delayMs * 1.6));
       } else {
@@ -124,8 +137,14 @@ export function GlobalClientGatewayPairing() {
     }
   }
 
+  function dismissPairingPrompt() {
+    const pairingCode = pendingPairing?.pairingCode;
+    if (!pairingCode || busyAction) return;
+    removePairing(pairingCode);
+  }
+
   return (
-    <Modal busy={Boolean(busyAction)} closeOnEscape={!busyAction} description="Confirm that the reference code matches the client requesting access." title="Client pairing request" onClose={() => void resolvePairing("reject")}>
+    <Modal busy={Boolean(busyAction)} closeOnEscape={!busyAction} description="Confirm that the reference code matches the client requesting access." title="Client pairing request" onClose={dismissPairingPrompt}>
       {pending.length > 1 ? <InlineNotice message={`Showing request 1 of ${pending.length}. The next request will open after this one is resolved.`} tone="info" /> : null}
       {actionError ? <InlineNotice message={actionError} title="Pairing unchanged" tone="error" /> : null}
       {snapshot.webRuntime?.clientGatewayError ? <InlineNotice message={snapshot.webRuntime.clientGatewayError} title="Gateway issue" tone="warning" /> : null}

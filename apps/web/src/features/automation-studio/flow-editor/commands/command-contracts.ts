@@ -24,7 +24,7 @@ export const AUTOMATION_FLOW_ENDPOINTS = {
   nativeNodeDefinitions: "list-native-node-definitions",
   publishedFlowNodes: "list-published-flow-nodes",
   run: "run-runtime-session",
-  save: "save-flow",
+  applyGraphPatch: "apply-graph-patch",
   publish: "publish-flow",
   deprecate: "deprecate-flow-publication",
   subflow: "get-flow-subflow"

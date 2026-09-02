@@ -100,8 +100,14 @@ feature has two non-canonical acceleration layers:
 The UI cache backend is an interface, not a browser-product dependency. The
 current local fallback uses bounded `localStorage`; the program-API adapter
 mirrors the same envelopes through project UI-cache endpoints. Hydration and
-writes run as idle/background work, writes are debounced, and generation checks
-prevent a late cache read from overwriting a newer project interaction.
+writes run as idle/background work, writes are debounced, and both project
+generation checks and per-surface revision checks prevent a late cache read
+from overwriting a newer project interaction. Project opening records the
+workspace preferences revision and hierarchy UI revision after reset. Durable
+or cached state may replace one of those surfaces only while its recorded
+revision is still current; interacting with the workspace or hierarchy makes a
+later response stale for that surface without blocking hydration of unrelated
+project data.
 Transient selection is removed before workspace view state is persisted.
 
 Neither cache owns Flow, run, recording, instruction, adaptation, or State
@@ -181,7 +187,95 @@ cursorless empty read imports the legacy hierarchy once and retries the page.
 This compatibility import does not make the file summary the ongoing paging
 engine.
 
-Subflow directory summaries are synchronized into the project SQLite store as flow.subflows records. list-flow-subflows applies Flow, status, role, case-insensitive name/ID search, sorting, count, limit, and offset in SQL. Canonical Subflow writes update JSON detail, the compatibility summary index, and SQLite; deletion removes all three. Compact Subflow summaries carry a summary version and canonical graphFlowId; existing JSON and SQLite indexes are backfilled once before paged reads. Duplicating a Subflow clones its canonical graph into a new independently owned graph Flow. Deletion removes that graph Flow plus the Subflow JSON and summary records, and is refused while any Router route or fallback still targets the Subflow. In-memory installations preserve equivalent filter and paging semantics. The SQL directory contract is guarded with 10,000-summary deep-page and combined-filter tests; each local query must remain below 500 ms and no response may exceed the 50-row UI cap.
+Subflow directory summaries are synchronized into the project SQLite store as
+`flow.subflows` records. `list-flow-subflows` applies Flow, status, role,
+case-insensitive name/ID search, sorting, count, limit, and offset in SQL.
+Canonical Subflow writes update JSON detail, the compatibility summary index,
+and SQLite; deletion removes all three. Modern `saveFlowSubflow` writes always
+persist a `graphFlowId`, generating the deterministic
+`{flowId}.{subflowId}.graph` ID when the caller omits it.
+
+Older canonical Subflow JSON without `graphFlowId` remains read-compatible.
+When that record is projected into SQL, the service derives the same
+deterministic ID, loads an existing graph Flow when present, or synthesizes and
+persists an empty isolated graph Flow from the parent Flow before inserting the
+Subflow SQL row. This compatibility projection does **not** rewrite the older
+Subflow JSON document or its compatibility summary. Canonical backfill occurs
+only if the Subflow later passes through the normal save path; summary-version
+or SQLite projection repair must not be interpreted as detail-document
+backfill.
+
+Router SQL projection is dependency ordered. Before replacing a Router
+projection, the service resolves every Subflow referenced by a route or
+fallback and projects that Subflow and its resolvable graph Flow first. Router
+foreign keys therefore never depend on Router-first fixture or migration
+ordering. Duplicating a Subflow clones its canonical graph into a new
+independently owned graph Flow. Deletion removes that graph Flow plus the
+Subflow JSON and summary records, and is refused while any Router route or
+fallback still targets the Subflow. In-memory installations preserve equivalent
+filter and paging semantics. The SQL directory contract is guarded with
+10,000-summary deep-page and combined-filter tests; each local query must remain
+below 500 ms and no response may exceed the 50-row UI cap.
+
+## Router, runtime, and diagnostic paging contracts
+
+Automation Studio paging cursors are opaque base64url envelopes at version 1.
+Every envelope binds a stable owner, a hash of normalized filters, and the last
+sort tuple. A cursor from another project object or another filter set is
+rejected rather than silently restarting or changing the result set. New list
+clients should use the cursor. The legacy runtime action offset and runtime
+event `afterSequence` inputs remain read-compatible while cursor consumers are
+deployed.
+
+| Collection | Cursor owner and stable sort tuple | Filters and totals | Request limit | Supporting index |
+| --- | --- | --- | --- | --- |
+| Router subflow targets | `subflow-targets:{flowId}`; `lower(name), subflow_id` ascending | status, role, case-insensitive name/ID search; exact total | default 50, maximum 200 | `subflows_target_lookup_idx(parent_flow_id, status, name, subflow_id)` |
+| Router routes | `router-routes:{routerId}`; `priority, route_id` ascending | group/ungrouped, active/disabled, case-insensitive route/target search; exact total plus active, disabled, and per-group counts | default 100, maximum 200 | `router_routes_page_idx(router_id, group_id, enabled, priority, route_id)` |
+| Router target references | no cursor; one bounded batch of at most 50 Subflow IDs | exact route-plus-fallback total per target and a capped route preview | default 20, maximum 200 per target | `router_routes_target_page_idx(router_id, target_kind, target_subflow_id, priority, route_id)` |
+| Run actions | `run-actions:{runId}`; `sequence, attempt_id` ascending | no ordinary filters; exact total from the run projection | default 50, service maximum 100 | `runtime_action_summaries_page_idx(run_id, sequence, attempt_id)` |
+| Run events | `run-events:{runId}`; sequence ascending | no ordinary filters; `hasMore` and last sequence from chunk metadata | default 100, maximum 200 | ordered `runtime_event_chunks` sequence bounds and stream chunk indexes |
+| Project problems | `project-problems:{projectId}`; severity rank, source, problem ID ascending | severity, source, open/resolved status, object scope, and text search; exact total and severity counts | default 100, maximum 200 | bounded server diagnostic source; it does not call the broad Studio snapshot |
+| Client Gateway items | `client-gateway:{sessions|pairings|trustedClients}`; public item ID ascending | case-insensitive scalar search; exact per-kind total plus summary counts | default 50, maximum 200 | Gateway-owned live maps; snapshots return counts and empty collections |
+
+`get-flow-router-summary` returns fallback and group metadata without route
+rules. Group description, explicit order, status, collapsed state, timestamps,
+and metadata are columns added by migration
+`0012_router_runtime_summary_details`; mappings preserve them in both
+directions. `list-flow-router-routes` returns one SQL page and its counts, and
+`get-flow-router-graph-summary` returns compact nodes and edges for one page.
+`list-flow-router-target-references` accepts at most 50 Subflow IDs, reports
+an exact reference total for each, and returns only a capped preview. Migration
+`0013_router_target_reference_index` owns its lookup index. Preload,
+instruction targeting, and runtime readiness use the Router summary; Subflow
+directory and settings reads use the compact reference batch. The Router UI
+does not obtain a full route map and then slice it locally.
+Searchable target pages make subflows beyond the first 100 reachable without a
+full subflow-directory load.
+
+Runtime migration `0011_router_runtime_scaling` adds scalar action summaries.
+Migration `0012_router_runtime_summary_details` adds definition ID, route,
+comparison status, and message summary fields. New writes populate those fields
+from the real action attempt. Legacy rows carrying the additive migration's
+`unknown` definition default are detected and reprojected from the event
+stream before they are returned. Ordinary action pages exclude evidence,
+effects, and raw JSON; `get-flow-run-action-detail` loads one selected action.
+Runtime event pages omit payloads, append by event identity, preserve the
+existing scroll coordinate, and virtualize rendered rows.
+`get-flow-run-event-detail` loads one selected payload. Browser requests use
+both abort signals and generation checks so obsolete pages or details cannot
+replace the active run.
+
+The migrations are additive. The full `get-flow-router` endpoint remains only
+for runtime execution, mutation internals, exports, and documented legacy
+compatibility; browser preload, list, settings, instruction, and readiness
+paths block it as a full-document endpoint. A deployment can roll the web
+client back without reverting the database because old readers ignore the
+added tables, columns, and indexes.
+Schema rollback is backup restoration, not destructive down migration: stop
+writes, restore the pre-migration project database, and restart the prior
+binary. Remove compatibility reads only after endpoint telemetry shows no
+legacy UI callers and backfill verification confirms action-summary counts and
+non-placeholder definition IDs for retained runs.
 
 Flow expansion run details are deliberately split from run summaries. The
 previous-runs view reads `list-flow-runs` with SQL `limit`/`offset`
@@ -192,7 +286,12 @@ history follows the same pattern with `list-flow-adaptations` and
 are applied in SQLite before rows are returned to the service.
 
 Run detail stores compact action-attempt and recovery-attempt records for the
-runtime debug UI. Canonical saves also write ordered action attempts to `runtime/runs/{runId}/actions.jsonl`. The normal UI requests compact run detail with no embedded actions, then uses `list-flow-run-actions` for 1-100 streamed rows at a time. Paging stops after the requested JSONL window and uses the compact run summary for total count. A persisted 10,000-action regression reads offset 9,950 as exactly 50 ordered rows, keeps the serialized page below 100 KiB, and enforces a 1.5-second local deep-page budget. Older runs without the sequence mirror are repaired lazily from `run.json`; in-memory installations preserve equivalent slicing. Action records preserve order, node/definition IDs, status,
+runtime debug UI. The normal UI requests compact run detail with no embedded
+actions, then uses `list-flow-run-actions` for 1-100 scalar SQL rows at a time.
+The selected action's JSON and evidence are loaded separately. Older runs
+without the scalar projection are repaired lazily from their ordered runtime
+event chunks; file-only installations retain the bounded compatibility path.
+Action records preserve order, node/definition IDs, status,
 route, timing, comparison status, and small diff metadata. Recovery records
 preserve the selected ladder candidate, target edge/node, status, reason, and
 candidate metadata. Full runtime session traces may still exist for deep
@@ -294,8 +393,12 @@ The Automation Studio API exposes these as first-class framework endpoints:
 `list-flow-subflows`, `get-flow-subflow`, `list-flow-instructions`,
 `get-flow-instruction-set`, `list-flow-change-proposals`,
 `get-flow-change-proposal`, `list-flow-runs`, `get-flow-run-detail`,
-`list-flow-adaptations`, `get-flow-adaptation`, `get-flow-router`,
+`list-flow-adaptations`, `get-flow-adaptation`,
+`get-flow-router-summary`, `list-flow-router-routes`,
+`list-flow-router-target-references`,
 `cancel-runtime-session`, and `export-flow-run-audit`.
+The legacy `get-flow-router` read is retained for runtime/mutation
+compatibility and is not an ordinary browser data source.
 Flow Settings may persist llmProvider, llmModel, and llmSecretKeyId metadata. llmSecretKeyId is an opaque reference to an encrypted record owned by the global Secret Keys program; Automation Studio never persists, requests, or renders the decrypted value. Settings discovery uses only metadata returned by secret-keys/snapshot and filters it by enabled state, provider, and global/Flow scope. Canonical settings saves also persist typed Flow interface ports, code-source publication pins, execution timeout/concurrency/domain grants, and nested training recovery budgets. Recovery-budget defaults are framework-owned (1 retry per action, 2 recovery attempts per subflow, and 2 reroutes per run); metadata overrides are merged per field and passed into graph execution. Visual Flow dependencies remain graph-derived from Call Flow nodes instead of duplicated settings state. Interactive Settings writes are sparse for framework-owned defaults: default-valued controlled keys are removed from Flow metadata and executionDefaults, while unrelated metadata and execution grants are retained. This makes reset-to-default durable and keeps effective-source labels truthful for both new and historically materialized defaults.
 
 Instruction summaries are synchronized to flow.instructions SQLite records with an explicit summary migration version. List reads filter and page compact title/scope/status/requirement/priority metadata in SQL; instruction bodies remain in JSON detail and are loaded only by ID. Unsaved instruction edits are non-canonical recovery records in browser storage, keyed by project, Flow, and instruction ID (or new). Writes are debounced, successful saves and explicit discards remove the record, and restoration always requires a user action.
@@ -500,6 +603,24 @@ importer mapper stage for reviewed Flow/node candidates:
 Replay/validate is not part of the recording pipeline. It belongs in a later
 runtime view where runs, simulations, validations, and execution traces can be
 shown independently from recording-derived task authoring.
+
+## Canonical Mode And Runtime Summary Migrations
+
+Flow settings migration `0014_canonical_intervention_mode` adds the nullable
+canonical mode and a version column without destructively rewriting legacy
+rows. Existing rows retain version `0`; reads map legacy training/adaptation
+fields to `fully_adaptive`, `manual_approval`, or `no_llm_intervention`, and the
+next settings write stores version `1`. Migration execution is transactional,
+so a failed statement leaves neither columns nor a migration-ledger entry.
+
+Runtime migration `0015_runtime_summary_envelope` adds `summary_json` to
+`runtime_runs`. Indexed scalar columns remain authoritative for bounded SQL
+paging and sorting, while the compact envelope retains token usage,
+intervention summaries, and summary metadata. Legacy rows receive `{}` and
+continue to hydrate from their scalar columns. Run-detail event reconstruction
+uses the newest summary envelope, deduplicates domain events by stable event
+identity, and falls back to the compatibility file when a typed write stopped
+before producing a summary event.
 
 Domain scope is part of the document identity. Raw recordings read it from the
 recording environment; derived artifacts carry it in metadata until richer

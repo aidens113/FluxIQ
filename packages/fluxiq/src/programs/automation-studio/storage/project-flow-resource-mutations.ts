@@ -21,13 +21,14 @@ export class AutomationStudioProjectFlowResourceMutations {
     });
   }
 
-  updateFlowSettings(input: { mutationId: string; flowId: string; expectedRevision: number; executionDefaults?: JsonObject; training?: JsonObject; adaptation?: JsonObject; llm?: JsonObject; safety?: JsonObject; changedAt?: number }): Promise<AutomationStudioIdempotentMutationResult<{ flowId: string; revision: number }>> {
+  updateFlowSettings(input: { mutationId: string; flowId: string; expectedRevision: number; interventionMode?: "fully_adaptive" | "manual_approval" | "no_llm_intervention"; executionDefaults?: JsonObject; training?: JsonObject; adaptation?: JsonObject; llm?: JsonObject; safety?: JsonObject; changedAt?: number }): Promise<AutomationStudioIdempotentMutationResult<{ flowId: string; revision: number }>> {
     return this.unit.runIdempotent({ mutationId: input.mutationId, operationKind: "flow.settings.update", ownerKind: "flow", ownerId: input.flowId, request: withoutChangedAt(input), ...changedAt(input.changedAt) }, async (context) => {
       const current = await context.sql.get<SettingsRow>("select * from flow_settings where flow_id = ?", [requiredId(input.flowId, "Flow")]);
       if (!current) throw new Error(`Unknown Flow settings: ${input.flowId}`);
       if (current.revision !== input.expectedRevision) throw new Error(`Flow ${input.flowId} settings revision conflict.`);
       const revision = current.revision + 1;
-      await context.sql.run("update flow_settings set execution_defaults_json = ?, training_json = ?, adaptation_json = ?, llm_json = ?, safety_json = ?, revision = ?, updated_at_ms = ? where flow_id = ?", [json(input.executionDefaults ?? object(current.execution_defaults_json)), json(input.training ?? object(current.training_json)), json(input.adaptation ?? object(current.adaptation_json)), json(input.llm ?? object(current.llm_json)), json(input.safety ?? object(current.safety_json)), revision, context.changedAt, input.flowId]);
+      const interventionMode = input.interventionMode ?? canonicalInterventionMode(current);
+      await context.sql.run("update flow_settings set intervention_mode = ?, intervention_mode_version = 1, execution_defaults_json = ?, training_json = ?, adaptation_json = ?, llm_json = ?, safety_json = ?, revision = ?, updated_at_ms = ? where flow_id = ?", [interventionMode, json(input.executionDefaults ?? object(current.execution_defaults_json)), json(input.training ?? object(current.training_json)), json(input.adaptation ?? object(current.adaptation_json)), json(input.llm ?? object(current.llm_json)), json(input.safety ?? object(current.safety_json)), revision, context.changedAt, input.flowId]);
       await context.sql.run("update flows set settings_revision = ?, updated_at_ms = ? where flow_id = ?", [revision, context.changedAt, input.flowId]);
       await context.recordChange({ entityKind: "flow_settings", entityId: input.flowId, operation: "update", revision });
       return { flowId: input.flowId, revision };
@@ -69,11 +70,19 @@ export class AutomationStudioProjectFlowResourceMutations {
   }
 }
 
-type SettingsRow = { execution_defaults_json: string; training_json: string; adaptation_json: string; llm_json: string; safety_json: string; revision: number };
+type SettingsRow = { intervention_mode: string | null; intervention_mode_version: number; execution_defaults_json: string; training_json: string; adaptation_json: string; llm_json: string; safety_json: string; revision: number };
 
 async function insertFlow(sql: AutomationStudioSqlExecutor, input: { flowId: string; name: string; description: string; scopeKind: AutomationStudioSqlFlowRecord["scopeKind"]; scopeId: string | null; changedAt: number }): Promise<void> {
   await sql.run("insert into flows (flow_id, parent_flow_id, owning_subflow_id, name, description, scope_kind, scope_id, visibility, origin, source_mode, status, graph_revision, settings_revision, compiled_revision, created_at_ms, updated_at_ms, deleted_at_ms) values (?, null, null, ?, ?, ?, ?, 'private', 'user', 'visual', 'draft', 1, 1, null, ?, ?, null)", [requiredId(input.flowId, "Flow"), requiredName(input.name, "Flow"), input.description, input.scopeKind, input.scopeId, input.changedAt, input.changedAt]);
-  await sql.run("insert into flow_settings (flow_id, execution_defaults_json, training_json, adaptation_json, llm_json, safety_json, revision, updated_at_ms) values (?, '{}', '{}', '{}', '{}', '{}', 1, ?)", [input.flowId, input.changedAt]);
+  await sql.run("insert into flow_settings (flow_id, intervention_mode, intervention_mode_version, execution_defaults_json, training_json, adaptation_json, llm_json, safety_json, revision, updated_at_ms) values (?, 'fully_adaptive', 1, '{}', '{}', '{}', '{}', '{}', 1, ?)", [input.flowId, input.changedAt]);
+}
+
+function canonicalInterventionMode(row: SettingsRow): "fully_adaptive" | "manual_approval" | "no_llm_intervention" {
+  if (row.intervention_mode_version === 1 && (row.intervention_mode === "fully_adaptive" || row.intervention_mode === "manual_approval" || row.intervention_mode === "no_llm_intervention")) return row.intervention_mode;
+  const adaptation = object(row.adaptation_json) as Record<string, unknown>;
+  if (adaptation.adaptationMode === "manual_approval" || adaptation.proposalMode === "manual" || adaptation.approvalMode === "manual") return "manual_approval";
+  if (adaptation.adaptationMode === "no_llm_intervention" || adaptation.enabled === false || adaptation.allowLlm === false || adaptation.preset === "locked") return "no_llm_intervention";
+  return "fully_adaptive";
 }
 
 async function markDeleted(sql: AutomationStudioSqlExecutor, input: { entityKind: string; entityId: string; expectedRevision?: number }, changedAt: number): Promise<{ deleted: boolean; revision: number }> {

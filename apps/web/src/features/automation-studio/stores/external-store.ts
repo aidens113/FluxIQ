@@ -80,9 +80,10 @@ export function createScopedExternalStore<T>(initialState: T): ScopedExternalSto
       return replace(updater(state), scopes);
     },
     subscribe(listener, scope) {
+      const releaseTelemetry = trackAutomationSubscription();
       if (!scope) {
         globalListeners.add(listener);
-        return () => globalListeners.delete(listener);
+        return () => { globalListeners.delete(listener); releaseTelemetry(); };
       }
       const listeners = scopedListeners.get(scope) ?? new Set<StoreListener>();
       listeners.add(listener);
@@ -90,6 +91,7 @@ export function createScopedExternalStore<T>(initialState: T): ScopedExternalSto
       return () => {
         listeners.delete(listener);
         if (!listeners.size) scopedListeners.delete(scope);
+        releaseTelemetry();
       };
     },
     transaction(operation) {
@@ -103,3 +105,4 @@ export function createScopedExternalStore<T>(initialState: T): ScopedExternalSto
     }
   };
 }
+import { trackAutomationSubscription } from "../testing/resource-telemetry";

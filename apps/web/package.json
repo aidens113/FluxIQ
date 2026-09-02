@@ -6,9 +6,14 @@
     "scripts":  {
                     "dev":  "next dev --turbopack --hostname 127.0.0.1",
                     "build":  "next build --turbopack",
+                    "start":  "next start --hostname 127.0.0.1",
                     "check":  "tsc --noEmit",
                     "test":  "vitest run --passWithNoTests",
                     "test:e2e":  "playwright test",
+                    "test:e2e:phase8":  "playwright test phase8- --workers=1 --timeout=180000",
+                    "test:e2e:phase8:chromium":  "playwright test phase8- --workers=1 --timeout=180000 --project=desktop-chromium --project=short-tablet-chromium --project=mobile-chromium --project=zoom-200-chromium",
+                    "test:e2e:phase8:cross-browser":  "playwright test phase8- --workers=1 --timeout=180000 --project=desktop-chromium --project=desktop-edge --project=desktop-firefox",
+                    "test:e2e:phase8:performance":  "playwright test phase8-performance-certification.spec.ts --workers=1 --timeout=180000 --project=desktop-chromium",
                     "test:e2e:headed":  "playwright test --headed",
                     "test:e2e:report":  "playwright show-report",
                     "fixture:e2e":  "node e2e/support/seed-fixtures.mjs",
@@ -29,6 +34,8 @@
                             "@playwright/test":  "^1.51.1",
                             "@types/react":  "^19.0.0",
                             "@types/react-dom":  "^19.0.0",
+                            "@types/react-test-renderer":  "19.1.0",
+                            "react-test-renderer":  "19.2.8",
                             "typescript":  "^5.7.0",
                             "vitest":  "^2.1.0"
                         }

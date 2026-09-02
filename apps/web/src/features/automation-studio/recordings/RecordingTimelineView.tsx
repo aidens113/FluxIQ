@@ -56,8 +56,6 @@ export function RecordingTimelineView(props: {
     recordings: props.recordings
   });
   const recordingActions = useRecordingActionController({
-    dataPort,
-    projectId: props.projectId,
     selectedEntry: props.selectedEntry,
     selectedRecording: props.selectedRecording,
     onAppendRecordingMarker: props.onAppendRecordingMarker,
@@ -79,9 +77,7 @@ export function RecordingTimelineView(props: {
   const visibleTimelineSteps = useMemo(() => recordingTimelineStepsWindow(timelineEntries, timelineWindow.start, timelineWindow.end), [timelineEntries, timelineWindow.end, timelineWindow.start]);
   const timelineStepKey = (laneId: string, step: { entry: any; waitMs: number }, index: number) => `${laneId}:${index}:${step.entry.sequence ?? "seq"}:${step.entry.id ?? "entry"}`;
   const gridColumns = `repeat(${Math.max(1, visibleTimelineSteps.length)}, minmax(180px, 220px))`;
-  const selectedDuration = props.selectedRecording
-    ? props.selectedRecording.endedAt ? Math.max(0, props.selectedRecording.endedAt - props.selectedRecording.startedAt) : Math.max(0, Date.now() - props.selectedRecording.startedAt)
-    : 0;
+  const selectedDuration = useActiveRecordingDuration(props.selectedRecording);
   const selectedIsNormalized = props.selectedRecording ? props.timelines.some((timeline) => timeline.recordingId === props.selectedRecording.recordingId) : false;
   const processing = props.selectedRecording && props.recordingProcessing?.recordingId === props.selectedRecording.recordingId ? props.recordingProcessing : null;
   const scrollToTimelineStep = (index: number, behavior: ScrollBehavior = "smooth") => {
@@ -152,7 +148,6 @@ export function RecordingTimelineView(props: {
           <button className="button" onClick={() => void props.onRefreshRecordings()} type="button"><RefreshCcw size={13} aria-hidden />Refresh</button>
           <button className="button" disabled={!props.selectedRecording} onClick={() => recordingActions.open("rename")} type="button">Rename</button>
           <button className="button" disabled={!props.selectedRecording || Boolean(props.selectedRecording.endedAt)} onClick={() => recordingActions.open("finalize")} type="button"><CheckCircle2 size={13} aria-hidden />Finalize</button>
-          <button className="button" disabled={!props.selectedRecording} onClick={() => recordingActions.open("repair")} type="button">Repair Index</button>
           <button className="button danger" disabled={!props.selectedRecording} onClick={() => recordingActions.open("delete")} type="button"><Trash2 size={13} aria-hidden />Delete</button>
         </div>
         {props.actionStatus ? <StatusText value={props.actionStatus} /> : null}
@@ -165,8 +160,8 @@ export function RecordingTimelineView(props: {
             <span>{formatRecordingDuration(props.selectedEntry.monotonicOffsetMs ?? 0)}</span>
             <span>{props.selectedEntry.sourceId ?? "unknown source"}</span>
             <small>{selectedNote?.text ?? recordingEventSummary(props.selectedEntry)}</small>
-            {props.selectedRecording ? <button className="icon-button" onClick={() => recordingActions.open("note")} title="Add note" aria-label="Add note" type="button"><FileText size={14} aria-hidden /></button> : null}
-            {props.selectedRecording ? <button className="icon-button" onClick={() => recordingActions.open("marker")} title="Add marker" aria-label="Add marker" type="button"><CircleDot size={14} aria-hidden /></button> : null}
+            {props.selectedRecording && !props.selectedRecording.endedAt ? <button className="icon-button" onClick={() => recordingActions.open("note")} title="Add note" aria-label="Add note" type="button"><FileText size={14} aria-hidden /></button> : null}
+            {props.selectedRecording && !props.selectedRecording.endedAt ? <button className="icon-button" onClick={() => recordingActions.open("marker")} title="Add marker" aria-label="Add marker" type="button"><CircleDot size={14} aria-hidden /></button> : null}
             <button className="icon-button" disabled={selectedStepIndex <= 0} onClick={() => selectTimelineStepAt(selectedStepIndex - 1)} title="Previous event" aria-label="Previous event" type="button"><ChevronLeft size={14} aria-hidden /></button>
             <button className="icon-button" disabled={selectedStepIndex < 0 || selectedStepIndex >= timelineEntries.length - 1} onClick={() => selectTimelineStepAt(selectedStepIndex + 1)} title="Next event" aria-label="Next event" type="button"><ChevronRight size={14} aria-hidden /></button>
             {props.selectedRecording ? <button className="button compact" onClick={() => props.onOpenTimelineEntryState(props.selectedRecording.recordingId, props.selectedEntry.id)} type="button">Open State</button> : null}
@@ -231,6 +226,19 @@ export function RecordingTimelineView(props: {
     {recordingActions.kind ? <RecordingActionDialog busy={recordingActions.busy} error={recordingActions.error} kind={recordingActions.kind} pin={recordingActions.pin} value={recordingActions.value} onCancel={recordingActions.close} onPin={recordingActions.setPin} onSubmit={() => void recordingActions.submit()} onValue={recordingActions.setValue} /> : null}
     </section>
   );
+}
+
+export function useActiveRecordingDuration(recording: { recordingId: string; startedAt: number; endedAt?: number } | null | undefined): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!recording || recording.endedAt !== undefined) return;
+    const update = () => setNow(Date.now());
+    update();
+    const timer = globalThis.setInterval(update, 1_000);
+    return () => globalThis.clearInterval(timer);
+  }, [recording?.recordingId, recording?.endedAt]);
+  if (!recording) return 0;
+  return Math.max(0, (recording.endedAt ?? now) - recording.startedAt);
 }
 
 function RecordingInnerNavigation(props: { view: "list" | "timeline"; onView(view: "list" | "timeline"): void }) {

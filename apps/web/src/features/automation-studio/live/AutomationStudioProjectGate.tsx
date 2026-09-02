@@ -27,7 +27,7 @@ export function AutomationStudioProjectGate(props: AutomationStudioProjectGatePr
             </span>
           </div>
         </header>
-        <main aria-busy={restoring || undefined} className="automation-project-gate">
+        <div aria-busy={restoring || undefined} className="automation-project-gate">
           {restoring ? (
             <section aria-labelledby="automation-project-restoring-title" className="automation-project-browser">
               <FolderOpen aria-hidden size={34} />
@@ -39,7 +39,7 @@ export function AutomationStudioProjectGate(props: AutomationStudioProjectGatePr
           ) : (
             <AutomationProjectCatalogSurface {...catalogProps} />
           )}
-        </main>
+        </div>
       </div>
     </section>
   );

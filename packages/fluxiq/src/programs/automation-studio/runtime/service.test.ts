@@ -11,6 +11,7 @@ import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioImporterSd
 import { IoRegistry, createEnvelope } from "../../../io/index.ts";
 import type { JsonObject } from "../../../core/index.ts";
 import { SQLiteRepository } from "../../database-manager/storage/sqlite-repository.ts";
+import { AutomationStudioProjectDatabasePool, AutomationStudioProjectFlowResourceRepository } from "../storage/index.ts";
 
 let tempRoot: string;
 const services = new Set<AutomationStudioService>();
@@ -343,14 +344,35 @@ describe("AutomationStudioService recording persistence", () => {
   it("lists persisted Flow metadata from the project SQL index", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Flow metadata page" });
-    await service.createFlow({ projectId: project.id, flowId: "flow.metadata.1", name: "First metadata Flow" });
+    const first = await service.createFlow({ projectId: project.id, flowId: "flow.metadata.1", name: "First metadata Flow" });
     await service.createFlow({ projectId: project.id, flowId: "flow.metadata.2", name: "Second metadata Flow" });
+    await service.saveFlow({
+      projectId: project.id,
+      flow: {
+        ...first,
+        metadata: {
+          ...first.metadata,
+          llmProvider: "deepseek",
+          llmModel: "deepseek-chat",
+          llmSecretKeyId: "key.deepseek",
+          adaptationPolicyId: "policy.metadata"
+        }
+      }
+    });
 
     const page = await service.listFlowMetadataPage({ projectId: project.id, limit: 10 });
+    const detail = await service.getFlowMetadataDetail(project.id, first.flowId);
 
     expect(page.items.map((item) => item.flowId)).toEqual(expect.arrayContaining(["flow.metadata.1", "flow.metadata.2"]));
     expect(page.items[0]).not.toHaveProperty("nodes");
     expect(page.items[0]).not.toHaveProperty("edges");
+    expect(detail).toMatchObject({
+      name: "First metadata Flow",
+      settings: {
+        adaptation: { policyId: "policy.metadata" },
+        llm: { provider: "deepseek", model: "deepseek-chat", secretKeyId: "key.deepseek" }
+      }
+    });
   });
   it("resolves runtime adaptation behavior into Flow run detail metadata", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
@@ -1840,7 +1862,7 @@ describe("AutomationStudioService recording persistence", () => {
     expect((await service.listRuntimeSessionSummaries(project.id)).total).toBe(1);
   });
 
-  it("cancels queued runtime runs and recovers missing run detail from the session record", async () => {
+  it("cancels queued runtime runs and retains canonical typed detail when the legacy detail file is missing", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Runtime Cancellation" });
     const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.runtime-cancel" });
@@ -1854,7 +1876,7 @@ describe("AutomationStudioService recording persistence", () => {
 
     expect(cancelled).toMatchObject({ status: "cancelled", metadata: { cancellation: { reason: "Operator stopped the run." } } });
     expect(rerun.status).toBe("cancelled");
-    expect(recovered).toMatchObject({ summary: { runId: queued.runId, status: "cancelled" }, metadata: { partialWriteRecovery: { source: "runtime-session" } } });
+    expect(recovered).toMatchObject({ summary: { runId: queued.runId, status: "cancelled" }, metadata: { compatibilitySource: "runtime-session", message: "Operator stopped the run." } });
   });
 
   it("blocks a second active adaptive runtime run in the same project", async () => {
@@ -1950,9 +1972,13 @@ describe("AutomationStudioService recording persistence", () => {
     const primary = await service.createFlowSubflow({ projectId: project.id, flowId: flow.flowId, name: "Main Task", role: "primary" });
     const fallback = await service.createFlowSubflow({ projectId: project.id, flowId: flow.flowId, name: "Fallback Task", role: "fallback" });
 
-    const grouped = await service.upsertFlowMapRouteGroup({ projectId: project.id, flowId: flow.flowId, name: "Checkout", order: 10 });
+    const grouped = await service.upsertFlowMapRouteGroup({ projectId: project.id, flowId: flow.flowId, name: "Checkout", description: "Checkout traffic", order: 10, status: "disabled", collapsed: true });
     const group = (grouped.metadata?.routeGroups as any[])[0];
-    expect(group).toMatchObject({ name: "Checkout", order: 10, status: "active" });
+    expect(group).toMatchObject({ name: "Checkout", description: "Checkout traffic", order: 10, status: "disabled", collapsed: true });
+    await expect(service.getFlowRouterSummary(project.id, flow.flowId)).resolves.toMatchObject({
+      metadata: { routeGroups: [{ name: "Checkout", description: "Checkout traffic", order: 10, status: "disabled", collapsed: true }] },
+      ruleCount: 0
+    });
 
     const routed = await service.upsertFlowMapRoute({
       projectId: project.id,
@@ -2008,6 +2034,13 @@ describe("AutomationStudioService recording persistence", () => {
     const directFallback = await service.setFlowMapFallback({ projectId: project.id, flowId: flow.flowId, kind: "subflow", targetSubflowId: primary.subflowId });
     expect(directFallback.fallback).toEqual({ kind: "subflow", subflowId: primary.subflowId });
     expect(directFallback.rules).toHaveLength(2);
+    await expect(service.listFlowRouterTargetReferences({ projectId: project.id, flowId: flow.flowId, subflowIds: [primary.subflowId, fallback.subflowId], perTargetLimit: 1 })).resolves.toMatchObject({
+      perTargetLimit: 1,
+      targets: [
+        { subflowId: primary.subflowId, total: 2, hasMore: false, references: [{ name: "Primary Checkout" }, { kind: "fallback", conditionLabel: "No rule matched" }] },
+        { subflowId: fallback.subflowId, total: 1, hasMore: false, references: [{ name: "Fallback Route" }] }
+      ]
+    });
 
     const ungrouped = await service.deleteFlowMapRouteGroup({ projectId: project.id, flowId: flow.flowId, groupId: group.groupId });
     expect(ungrouped.metadata?.routeGroups).toEqual([]);
@@ -2015,6 +2048,95 @@ describe("AutomationStudioService recording persistence", () => {
 
     const withoutRoute = await service.deleteFlowMapRoute({ projectId: project.id, flowId: flow.flowId, ruleId: routed.rules[0]!.ruleId });
     expect(withoutRoute.rules.map((rule) => rule.name)).toEqual(["Fallback Route"]);
+  });
+
+  it("projects legacy subflows without graph IDs before their Router fallback", async () => {
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Legacy Subflow Projection" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.legacy-projection", name: "Legacy Projection" });
+    const subflowId = "subflow.legacy-projection";
+    const legacySubflow = {
+      schemaVersion: "0.1",
+      projectId: project.id,
+      flowId: flow.flowId,
+      subflowId,
+      name: "Legacy Task",
+      role: "primary",
+      status: "active",
+      createdAt: 10,
+      updatedAt: 10
+    };
+    const legacyRouter = {
+      schemaVersion: "0.1",
+      projectId: project.id,
+      flowId: flow.flowId,
+      routerId: "router.legacy-projection",
+      name: "Legacy Router",
+      rules: [],
+      fallback: { kind: "subflow", subflowId },
+      status: "active",
+      createdAt: 10,
+      updatedAt: 10
+    };
+    const flowDirectory = path.join(tempRoot, "programs", "automation-studio", "projects", project.id, "flows", flow.flowId);
+    const legacySubflowFile = path.join(flowDirectory, "subflows", subflowId, "subflow.json");
+    await mkdir(path.dirname(legacySubflowFile), { recursive: true });
+    await writeFile(legacySubflowFile, `${JSON.stringify({ version: 1, data: legacySubflow }, null, 2)}\n`, "utf8");
+    await writeFile(path.join(flowDirectory, "router.json"), `${JSON.stringify({ version: 1, data: legacyRouter }, null, 2)}\n`, "utf8");
+
+    await expect(service.getFlowSubflow(project.id, flow.flowId, subflowId)).resolves.not.toHaveProperty("graphFlowId");
+    await expect(service.getFlowRouterSummary(project.id, flow.flowId)).resolves.toMatchObject({
+      fallback: { kind: "subflow", subflowId }
+    });
+
+    const graphFlowId = `${flow.flowId}.${subflowId}.graph`;
+    await expect(service.getFlow(project.id, graphFlowId)).resolves.toMatchObject({
+      metadata: { parentFlowId: flow.flowId, parentSubflowId: subflowId, subflowGraph: true }
+    });
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir: path.join(tempRoot, "programs", "automation-studio") });
+    const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool, projectId: project.id });
+    try {
+      await expect(repository.getSubflow(subflowId)).resolves.toMatchObject({
+        parentFlowId: flow.flowId,
+        graphFlowId
+      });
+      await expect(repository.getFlow(graphFlowId)).resolves.toMatchObject({
+        flowId: graphFlowId,
+        parentFlowId: flow.flowId
+      });
+      await expect(repository.getRouterSummaryForFlow(flow.flowId)).resolves.toMatchObject({
+        fallbackKind: "subflow",
+        fallbackSubflowId: subflowId
+      });
+    } finally {
+      await repository.close();
+      await pool.closeAll();
+    }
+
+    const canonicalLegacy = JSON.parse(await readFile(legacySubflowFile, "utf8"));
+    expect(canonicalLegacy.data).not.toHaveProperty("graphFlowId");
+  });
+  it("returns opaque run-event cursors and rejects cross-run reuse", async () => {
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Runtime event cursors" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.runtime-event-cursors", name: "Runtime event cursors" });
+    const fixture = createAutomationStudioFlowExpansionFixture(2);
+    await service.saveFlowRunDetail({
+      ...fixture.runDetail,
+      summary: { ...fixture.runSummary, projectId: project.id, flowId: flow.flowId, runId: "run.cursor", actionAttemptCount: 2 },
+      actionAttempts: [
+        { attemptId: "attempt.cursor.1", nodeId: "node.cursor.1", definitionId: "action.click", order: 1, status: "succeeded", route: "success", startedAt: 10, finishedAt: 11 },
+        { attemptId: "attempt.cursor.2", nodeId: "node.cursor.2", definitionId: "action.type", order: 2, status: "succeeded", route: "success", startedAt: 12, finishedAt: 13 }
+      ]
+    });
+
+    const first = await service.listFlowRunEvents({ projectId: project.id, runId: "run.cursor", limit: 1 });
+    expect(first).toMatchObject({ events: [{ sequence: 1 }], hasMore: true, lastSequence: 1 });
+    expect(first.nextCursor).toEqual(expect.any(String));
+    expect(first.nextCursor).not.toBe("1");
+    const second = await service.listFlowRunEvents({ projectId: project.id, runId: "run.cursor", cursor: first.nextCursor, limit: 1 });
+    expect(second.events[0]?.sequence).toBe(2);
+    await expect(service.listFlowRunEvents({ projectId: project.id, runId: "run.other", cursor: first.nextCursor, limit: 1 })).rejects.toThrow(/does not match/);
   });
   it("persists Flow expansion summaries with paged run and adaptation detail reads", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
@@ -2564,6 +2686,19 @@ describe("AutomationStudioService recording persistence", () => {
       routeTags: ["checkout", "cart"]
     });
     const subflowGraph = await service.getFlow(project.id, created.graphFlowId!);
+    const now = Date.now();
+    await expect(service.saveFlowRouter({
+      schemaVersion: "0.1",
+      routerId: "router.subflow-invalid",
+      projectId: project.id,
+      flowId: created.graphFlowId!,
+      name: "Subflow Router",
+      rules: [],
+      fallback: { kind: "fail", message: "No route." },
+      status: "active",
+      createdAt: now,
+      updatedAt: now
+    })).rejects.toThrow("top-level Flow");
     const renamed = await service.renameFlowSubflow({ projectId: project.id, flowId: flow.flowId, subflowId: created.subflowId, name: "Checkout happy path" });
     const updated = await service.updateFlowSubflow({
       projectId: project.id,
@@ -3515,4 +3650,19 @@ describe("AutomationStudioService canonical Flow persistence", () => {
 
     await expect(service.saveFlow({ projectId: project.id, expectedUpdatedAt: saved.updatedAt + 1, flow: { ...saved, name: "Stale overwrite" } })).rejects.toThrow("FLOW_SAVE_CONFLICT");
     await expect(service.getFlow(project.id, created.flowId)).resolves.toMatchObject({ name: "Current revision" });
-  });});
+  });
+
+  it("finalizes recordings idempotently and rejects every later event, note, or marker mutation", async () => {
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Final recording immutability" });
+    const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.final", initialState: { timestamp: 1, namespaces: {} } });
+    await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "ready", payload: {}, timestamp: 10 } });
+    const first = await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId, endedAt: 20 });
+    const second = await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId, endedAt: 999 });
+    expect(second.endedAt).toBe(first.endedAt);
+    expect(second.timeline).toHaveLength(first.timeline.length);
+    await expect(service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "late", payload: {} } })).rejects.toThrow("Finalized recordings are immutable");
+    await expect(service.appendRecordingNoteEntry({ projectId: project.id, recordingId: recording.recordingId, text: "late note" })).rejects.toThrow("Finalized recordings are immutable");
+    await expect(service.appendRecordingMarkerEntry({ projectId: project.id, recordingId: recording.recordingId, label: "late marker" })).rejects.toThrow("Finalized recordings are immutable");
+  });
+});

@@ -17,8 +17,8 @@ describe("Automation Studio data inspector", () => {
   it("summarizes preload queue progress from recent metric events", () => {
     const summary = summarizePreloadMetrics([
       { phase: "queued", projectId: "project.one", generation: 2, queuedTasks: 3, completedTasks: 0, recordedAt: 1 },
-      { phase: "task-started", projectId: "project.one", generation: 2, taskId: "task.a", endpoint: "get-flow-router", recordedAt: 2 },
-      { phase: "task-finished", projectId: "project.one", generation: 2, taskId: "task.a", endpoint: "get-flow-router", queuedTasks: 3, completedTasks: 1, ok: true, elapsedMs: 12, recordedAt: 3 },
+      { phase: "task-started", projectId: "project.one", generation: 2, taskId: "task.a", endpoint: "get-flow-router-summary", recordedAt: 2 },
+      { phase: "task-finished", projectId: "project.one", generation: 2, taskId: "task.a", endpoint: "get-flow-router-summary", queuedTasks: 3, completedTasks: 1, ok: true, elapsedMs: 12, recordedAt: 3 },
       { phase: "task-started", projectId: "project.one", generation: 2, taskId: "task.b", endpoint: "list-flow-runs", recordedAt: 4 }
     ]);
 

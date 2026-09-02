@@ -5,7 +5,7 @@ import { AutomationStudioProjectDatabasePool } from "./project-database.ts";
 import { AutomationStudioProjectFlowResourceRepository } from "./project-flow-resource-repository.ts";
 import { AutomationStudioProjectFlowResourceMutations } from "./project-flow-resource-mutations.ts";
 
-const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-flow-resource-test");
+const rootDir = path.join(process.cwd(), ".tmp", `automation-studio-flow-resource-test-${process.pid}`);
 
 describe("AutomationStudioProjectFlowResourceRepository", () => {
   beforeEach(async () => {
@@ -125,6 +125,90 @@ describe("AutomationStudioProjectFlowResourceRepository", () => {
     await repository.close();
     await pool.closeAll();
   });
+
+  it("keyset-paginates searchable Router targets and routes beyond 100 rows", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool, projectId: "project.router-scale" });
+    await repository.upsertFlow(baseFlow("flow.main", "Main", 1));
+    const lease = await pool.acquire("project.router-scale");
+    await lease.database.transaction(async (sql) => {
+      for (let index = 0; index < 125; index += 1) {
+        const suffix = String(index).padStart(4, "0");
+        await sql.run("insert into flows (flow_id, parent_flow_id, owning_subflow_id, name, scope_kind, visibility, origin, source_mode, status, created_at_ms, updated_at_ms) values (?, 'flow.main', null, ?, 'project', 'project', 'user', 'visual', 'draft', ?, ?)", [`flow.graph.${suffix}`, `Worker ${suffix} graph`, index + 2, index + 2]);
+        await sql.run("insert into subflows (subflow_id, parent_flow_id, graph_flow_id, name, description, role, status, input_mapping_json, output_mapping_json, revision, created_at_ms, updated_at_ms) values (?, 'flow.main', ?, ?, '', ?, 'active', '[]', '[]', 1, ?, ?)", [`subflow.${suffix}`, `flow.graph.${suffix}`, `Worker ${suffix}`, index === 124 ? "recovery" : "utility", index + 2, index + 2]);
+      }
+    });
+    await lease.release();
+
+    const firstTargets = await repository.listSubflowTargetsPage({ flowId: "flow.main", limit: 100 });
+    const secondTargets = await repository.listSubflowTargetsPage({ flowId: "flow.main", limit: 100, cursor: firstTargets.nextCursor });
+    expect(firstTargets).toMatchObject({ total: 125, limit: 100, hasMore: true });
+    expect(firstTargets.items).toHaveLength(100);
+    expect(secondTargets.items).toHaveLength(25);
+    expect(new Set([...firstTargets.items, ...secondTargets.items].map((item) => item.subflowId)).size).toBe(125);
+    await expect(repository.listSubflowTargetsPage({ flowId: "flow.main", search: "worker 0124", role: "recovery", limit: 10 })).resolves.toMatchObject({ total: 1, items: [{ subflowId: "subflow.0124" }] });
+    await expect(repository.listSubflowTargetsPage({ flowId: "flow.main", search: "changed", cursor: firstTargets.nextCursor })).rejects.toThrow(/does not match/);
+
+    await repository.replaceRouterProjection({
+      routerId: "router.main",
+      flowId: "flow.main",
+      fallbackKind: "subflow",
+      fallbackSubflowId: "subflow.0000",
+      revision: 4,
+      createdAt: 10,
+      updatedAt: 20,
+      groups: [
+        { groupId: "group.primary", routerId: "router.main", name: "Primary", description: "High-priority traffic", order: 30, status: "disabled", collapsed: true, sortKey: "000000000001.group.primary", revision: 2, createdAt: 11, updatedAt: 19, metadata: { color: "red" } },
+        { groupId: "group.secondary", routerId: "router.main", name: "Secondary", description: "", order: 10, status: "active", collapsed: false, sortKey: "000000000999.group.secondary", revision: 1, createdAt: 12, updatedAt: 18, metadata: {} }
+      ],
+      routes: Array.from({ length: 125 }, (_, index) => ({
+        routeId: `route.${String(index).padStart(4, "0")}`,
+        routerId: "router.main",
+        groupId: index % 2 === 0 ? "group.primary" : null,
+        name: `Route ${String(index).padStart(4, "0")}`,
+        priority: index,
+        enabled: index % 2 === 0,
+        conditionKind: "always",
+        condition: { kind: "always" },
+        targetKind: "subflow",
+        targetSubflowId: `subflow.${String(index).padStart(4, "0")}`,
+        revision: 1,
+        createdAt: 30 + index,
+        updatedAt: 30 + index
+      }))
+    });
+
+    const summary = await repository.getRouterSummaryForFlow("flow.main");
+    expect(summary?.groups.map((group) => group.groupId)).toEqual(["group.secondary", "group.primary"]);
+    expect(summary?.groups[1]).toMatchObject({ description: "High-priority traffic", order: 30, status: "disabled", collapsed: true, createdAt: 11, updatedAt: 19, metadata: { color: "red" } });
+    const firstRoutes = await repository.listRouterRoutesPage({ flowId: "flow.main", limit: 100 });
+    const secondRoutes = await repository.listRouterRoutesPage({ flowId: "flow.main", limit: 100, cursor: firstRoutes.nextCursor });
+    expect(firstRoutes).toMatchObject({ counts: { total: 125, active: 63, disabled: 62 }, hasMore: true });
+    expect(firstRoutes.items).toHaveLength(100);
+    expect(secondRoutes.items).toHaveLength(25);
+    expect([...firstRoutes.items, ...secondRoutes.items].map((item) => item.priority)).toEqual(Array.from({ length: 125 }, (_, index) => index));
+    const activeGroupRoutes = await repository.listRouterRoutesPage({ flowId: "flow.main", groupId: "group.primary", status: "active", limit: 200 });
+    expect(activeGroupRoutes.counts.total).toBe(63);
+    expect(activeGroupRoutes.items.some((item) => item.routeId === "route.0000")).toBe(true);
+    await expect(repository.listRouterRoutesPage({ flowId: "flow.main", search: "route 0124", limit: 10 })).resolves.toMatchObject({ counts: { total: 1 }, items: [{ routeId: "route.0124" }] });
+    await expect(repository.listRouterRoutesPage({ flowId: "flow.main", status: "disabled", cursor: firstRoutes.nextCursor })).rejects.toThrow(/does not match/);
+    await expect(repository.listRouterRoutesPage({ flowId: "flow.main", status: "invalid" as any })).rejects.toThrow(/Invalid Router route status filter/);
+    await repository.upsertRouterRoute({ routeId: "route.extra", routerId: "router.main", groupId: null, name: "Extra target", priority: 126, enabled: true, conditionKind: "always", condition: { kind: "always" }, targetKind: "subflow", targetSubflowId: "subflow.0000" });
+    const references = await repository.listRouterTargetReferences({ flowId: "flow.main", subflowIds: ["subflow.0000", "subflow.0001", "subflow.missing"], perTargetLimit: 1 });
+    expect(references).toMatchObject({
+      perTargetLimit: 1,
+      targets: [
+        { subflowId: "subflow.0000", routeCount: 2, fallback: true, total: 3, hasMore: true },
+        { subflowId: "subflow.0001", routeCount: 1, fallback: false, total: 1, hasMore: false },
+        { subflowId: "subflow.missing", routeCount: 0, fallback: false, total: 0, hasMore: false }
+      ]
+    });
+    expect(references.targets[0]?.routes).toHaveLength(1);
+    await expect(repository.listRouterTargetReferences({ flowId: "flow.main", subflowIds: Array.from({ length: 51 }, (_, index) => `subflow.${index}`) })).rejects.toThrow(/limited to 50/);
+    await repository.close();
+    await pool.closeAll();
+  }, 30_000);
+
   it("stores Routers, routes, instructions, effective cache, and adaptation policies without JSON indexes", async () => {
     const pool = new AutomationStudioProjectDatabasePool({ rootDir });
     const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool, projectId: "project.detail" });
@@ -154,11 +238,14 @@ describe("AutomationStudioProjectFlowResourceRepository", () => {
     const mutations = await AutomationStudioProjectFlowResourceMutations.open({ pool, projectId: "project.mutations" });
     await mutations.createFlow({ mutationId: "mutation.flow", flowId: "flow.main", name: "Main", changedAt: 1 });
     await expect(mutations.createFlow({ mutationId: "mutation.flow", flowId: "flow.main", name: "Main", changedAt: 2 })).resolves.toMatchObject({ replayed: true, response: { flowId: "flow.main" } });
-    const settings = await mutations.updateFlowSettings({ mutationId: "mutation.settings", flowId: "flow.main", expectedRevision: 1, adaptation: { preset: "adaptive" }, changedAt: 3 });
+    const settings = await mutations.updateFlowSettings({ mutationId: "mutation.settings", flowId: "flow.main", expectedRevision: 1, interventionMode: "manual_approval", adaptation: { preset: "adaptive" }, changedAt: 3 });
     await mutations.saveInstruction({ mutationId: "mutation.instruction", instructionId: "instruction.one", title: "One", body: "Do one thing", scopes: [{ scopeKind: "flow", projectId: "project.mutations", flowId: "flow.main", routerId: null, subflowId: null, nodeId: null, errorCode: null }], changedAt: 4 });
     const deleted = await mutations.deleteResource({ mutationId: "mutation.delete", entityKind: "instruction", entityId: "instruction.one", expectedRevision: 1, changedAt: 5 });
     expect(settings.response.revision).toBe(2);
     expect(deleted.response.deleted).toBe(true);
+    const lease = await pool.acquire("project.mutations");
+    await expect(lease.database.get("select intervention_mode, intervention_mode_version from flow_settings where flow_id = 'flow.main'")).resolves.toEqual({ intervention_mode: "manual_approval", intervention_mode_version: 1 });
+    await lease.release();
     await mutations.close();
     await pool.closeAll();
   });

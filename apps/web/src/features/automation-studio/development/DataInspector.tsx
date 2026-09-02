@@ -122,7 +122,7 @@ export function AutomationStudioDataInspector(props: {
           <Metric label="Preload queue" value={preloadSummary.status} />
         </div>
         <InspectorSection title="Live ownership">
-          <DataTable columns={["Resource", "Current state"]} compact rows={[
+          <DataTable label="Studio live ownership" columns={["Resource", "Current state"]} compact rows={[
             ["Subscriptions", client.subscriptions.length ? client.subscriptions.map((item) => `${item.id} (${item.kind}${item.intervalMs ? `, ${item.intervalMs}ms` : ""})`).join(", ") : "None"],
             ["Worker queues", client.workerQueues.length ? client.workerQueues.map((item) => `${item.id}: ${item.queued} queued / ${item.active} active`).join(", ") : "None"],
             ["Query cache", `${cache.entryCount} entries across ${Object.keys(cache.scopes).length} scopes`],
@@ -137,19 +137,19 @@ export function AutomationStudioDataInspector(props: {
       </> : null}
       {view === "Requests" ? <>
         <InspectorSection title="Active requests">
-          <DataTable columns={["Endpoint", "Method", "Running"]} compact empty="No active requests." rows={client.activeRequests.map((metric) => [
+          <DataTable label="Active Studio requests" columns={["Endpoint", "Method", "Running"]} compact empty="No active requests." rows={client.activeRequests.map((metric) => [
             `${metric.programId}/${metric.endpoint}`, metric.method, formatDuration(performance.now() - metric.startedAt)
           ])} />
         </InspectorSection>
         <InspectorSection title="Recent client responses">
-          <DataTable columns={["Endpoint", "Type", "Time", "Bytes", "Result"]} compact empty="No response samples." rows={client.apiMetrics.slice(-100).reverse().map((metric) => [
+          <DataTable label="Recent Studio client responses" columns={["Endpoint", "Type", "Time", "Bytes", "Result"]} compact empty="No response samples." rows={client.apiMetrics.slice(-100).reverse().map((metric) => [
             metric.endpoint, metric.classification, formatDuration(metric.elapsedMs), formatBytes(metric.responseBytes), metric.ok ? "OK" : "Failed"
           ])} />
         </InspectorSection>
         <InspectorSection title="Recent server endpoints"><EndpointTable metrics={endpointMetrics} /></InspectorSection>
       </> : null}
       {view === "SQL" ? <InspectorSection title="Recent SQL operations">
-        <DataTable columns={["Repository", "Statement", "Time", "Rows", "Scan"]} compact empty={loading ? "Loading SQL metrics..." : "No SQL samples."} rows={sqlMetrics.map((metric) => [
+        <DataTable label="Recent Studio SQL operations" columns={["Repository", "Statement", "Time", "Rows", "Scan"]} compact empty={loading ? "Loading SQL metrics..." : "No SQL samples."} rows={sqlMetrics.map((metric) => [
           `${metric.repositoryKind ?? "unknown"} / ${metric.databaseName ?? "database"}`,
           `${metric.operation ?? "query"} ${metric.statementType ?? ""} [${metric.fingerprint ?? ""}]`,
           formatDuration(metric.elapsedMs),
@@ -159,7 +159,7 @@ export function AutomationStudioDataInspector(props: {
       </InspectorSection> : null}
       {view === "Browser" ? <>
         <InspectorSection title="Render and graph">
-          <DataTable columns={["Metric", "Value"]} compact rows={[
+          <DataTable label="Studio browser and graph metrics" columns={["Metric", "Value"]} compact rows={[
             ["Automation Studio renders", latestRender ? String(latestRender.count) : "0"],
             ["Latest commit delay", latestRender ? formatDuration(latestRender.commitDelayMs) : "No sample"],
             ["Graph mounted", client.graph ? `${client.graph.nodesMounted} nodes / ${client.graph.edgesMounted} edges` : "None"],
@@ -168,17 +168,17 @@ export function AutomationStudioDataInspector(props: {
           ]} />
         </InspectorSection>
         <InspectorSection title="Recent long tasks">
-          <DataTable columns={["Scope", "Start", "Duration"]} compact empty="No long tasks recorded." rows={recentLongTasks.map((metric) => [
+          <DataTable label="Recent Studio long tasks" columns={["Scope", "Start", "Duration"]} compact empty="No long tasks recorded." rows={recentLongTasks.map((metric) => [
             metric.scope, formatDuration(metric.startTime), formatDuration(metric.duration)
           ])} />
         </InspectorSection>
         <InspectorSection title="Cache scopes">
-          <DataTable columns={["Scope", "Entries"]} compact empty="Cache is empty." rows={Object.entries(cache.scopes).sort().map(([scope, count]) => [scope, String(count)])} />
+          <DataTable label="Studio cache scopes" columns={["Scope", "Entries"]} compact empty="Cache is empty." rows={Object.entries(cache.scopes).sort().map(([scope, count]) => [scope, String(count)])} />
         </InspectorSection>
       </> : null}
       {view === "Preload" ? <>
         <InspectorSection title="Lazy preload queue">
-          <DataTable columns={["Metric", "Value"]} compact rows={[
+          <DataTable label="Studio lazy preload metrics" columns={["Metric", "Value"]} compact rows={[
             ["Status", preloadSummary.status],
             ["Project", preloadSummary.projectId],
             ["Generation", preloadSummary.generation],
@@ -190,7 +190,7 @@ export function AutomationStudioDataInspector(props: {
           ]} />
         </InspectorSection>
         <InspectorSection title="Recent preload events">
-          <DataTable columns={["Phase", "Task", "Queue", "Time", "Result"]} compact empty="No preload events recorded yet." rows={recentPreloadMetrics.map((metric) => [
+          <DataTable label="Recent Studio preload events" columns={["Phase", "Task", "Queue", "Time", "Result"]} compact empty="No preload events recorded yet." rows={recentPreloadMetrics.map((metric) => [
             metric.phase,
             metric.endpoint ? `${metric.endpoint}${metric.taskId ? ` / ${metric.taskId}` : ""}` : metric.taskId ?? "Run",
             `${metric.completedTasks ?? "-"}/${metric.queuedTasks ?? "-"}`,
@@ -199,7 +199,7 @@ export function AutomationStudioDataInspector(props: {
           ])} />
         </InspectorSection>
         <InspectorSection title="Recovery">
-          <DataTable columns={["Action", "State"]} compact rows={[
+          <DataTable label="Studio inspector recovery actions" columns={["Action", "State"]} compact rows={[
             ["Clear UI cache", props.activeProjectId ? "Available for the active project." : "Open a project to enable cache clearing."],
             ["Metrics capture", "Only active while this development inspector is open."],
             ["Event buffer", `${preloadMetrics.length}/${MAX_PRELOAD_METRICS} recent preload events`]
@@ -271,7 +271,7 @@ function isPreloadMetric(value: unknown): value is PreloadMetric {
 }
 
 function EndpointTable(props: { metrics: ServerMetric[] }) {
-  return <DataTable columns={["Endpoint", "Time", "Bytes", "SQL", "Rows", "Result"]} compact empty="No endpoint samples." rows={props.metrics.map((metric) => [
+  return <DataTable label="Studio server endpoint metrics" columns={["Endpoint", "Time", "Bytes", "SQL", "Rows", "Result"]} compact empty="No endpoint samples." rows={props.metrics.map((metric) => [
     `${metric.programId ?? "program"}/${metric.endpoint ?? "endpoint"}`,
     formatDuration(metric.elapsedMs),
     formatBytes(metric.responseBytes ?? 0),

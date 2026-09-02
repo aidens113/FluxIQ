@@ -4,7 +4,7 @@ import type { AutomationViewType } from "./view-types";
 
 export type AutomationStudioViewRegion = "main" | "right" | "bottom";
 export type AutomationStudioViewGroup = "Flow" | "Evidence" | "Workspace";
-export type AutomationStudioViewRequirement = "hasProject" | "hasFlow" | "hasRecording" | "hasSelection";
+export type AutomationStudioViewRequirement = "hasProject" | "hasFlow" | "hasTopLevelFlow" | "hasRecording" | "hasSelection";
 export type AutomationStudioViewAvailability = Record<AutomationStudioViewRequirement, boolean>;
 export type AutomationViewDataIntensity = "light" | "paged" | "virtualized" | "graph";
 export type AutomationViewScope = "project" | "flow" | "subflow" | "recording" | "selection";

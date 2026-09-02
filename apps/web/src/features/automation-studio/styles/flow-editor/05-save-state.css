@@ -1,6 +1,8 @@
 .automation-graph-save-state {
   display: flex;
   flex: 0 0 auto;
+  width: 100%;
+  height: 24px;
   min-height: 24px;
   align-items: center;
   justify-content: flex-end;
@@ -8,6 +10,10 @@
   color: var(--color-text-muted);
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-bold);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  contain: layout paint;
 }
 
 .automation-graph-save-state > span {
@@ -33,6 +39,8 @@
 
 .automation-graph-viewport-state {
   display: flex;
+  width: 100%;
+  height: 28px;
   min-height: 28px;
   align-items: center;
   justify-content: flex-end;
@@ -40,6 +48,7 @@
   color: var(--color-text-muted);
   font-size: var(--font-size-caption);
   line-height: 1.2;
+  contain: strict;
 }
 
 .automation-graph-viewport-state > span {

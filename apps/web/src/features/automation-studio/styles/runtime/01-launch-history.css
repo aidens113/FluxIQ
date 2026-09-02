@@ -1,7 +1,7 @@
 .automation-runtime-debugger {
   display: grid;
   min-width: 0;
-  min-height: 520px;
+  min-height: 0;
   overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);

@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { requireFluxIQUser } from "../../../../../lib/auth";
 import { getFluxIQ } from "../../../../../lib/fluxiq";
+import { canUseOperationalRoute, operationalRouteContract } from "../../../../../lib/operational-route-contract";
 
 export async function POST(request: Request) {
   const auth = await requireFluxIQUser();
   if (!auth) return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
+  const contract = operationalRouteContract("POST", "/api/framework/io/validate");
+  if (!canUseOperationalRoute(auth.role.permissions, contract)) return NextResponse.json({ ok: false, error: `Permission required: ${contract.permission}` }, { status: 403 });
   const payload = await request.json().catch(() => ({})) as {
     domain_id?: string;
     domainId?: string;

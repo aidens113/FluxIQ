@@ -1,7 +1,8 @@
 "use client";
 
-import { memo, useEffect } from "react";
+import { memo, useEffect, useSyncExternalStore } from "react";
 import { AutomationViewHost } from "../../views/ViewHost";
+import { scheduleAutomationViewSurfacePreload } from "../../views/view-surface-preloader";
 import type { AutomationWarmViewRegistry } from "../commands/warm-activation";
 import type { AutomationWorkspaceViewSource } from "./contracts";
 import { useAutomationWorkspaceView } from "./view-source";
@@ -15,6 +16,8 @@ export const AutomationMountedViewStack = memo(function AutomationMountedViewSta
   tabIds: readonly string[];
   warm: AutomationWarmViewRegistry;
 }) {
+  const surfacePreloadKey = props.tabIds.join("\u001f");
+  useEffect(() => scheduleAutomationViewSurfacePreload(surfacePreloadKey.split("\u001f")), [surfacePreloadKey]);
   return (
     <div className="automation-mounted-view-stack">
       {props.tabIds.map((viewId) => (
@@ -39,13 +42,18 @@ const AutomationMountedView = memo(function AutomationMountedView(props: {
   warm: AutomationWarmViewRegistry;
 }) {
   const entry = useAutomationWorkspaceView(props.source, props.viewId);
+  useSyncExternalStore(props.warm.subscribe, props.warm.getRevision, props.warm.getRevision);
   const activity = props.warm.activity(props.paneId, props.viewId);
   activity.current = props.active;
   const keepMounted = props.active || props.warm.isWarm(props.paneId, props.viewId);
   useEffect(() => {
     if (props.active) props.warm.markWarm(props.paneId, props.viewId);
   }, [props.active, props.paneId, props.viewId, props.warm]);
+  useEffect(() => () => {
+    activity.current = false;
+  }, [activity]);
   if (!entry) return null;
+  if (!keepMounted) return null;
   return (
     <div
       aria-hidden={!props.active}

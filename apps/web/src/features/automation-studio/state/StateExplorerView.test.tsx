@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { StateExplorerView } from "./StateExplorerView";
@@ -5,6 +6,16 @@ import { boundedStateItems, stateLayerImageSrc } from "./state-canvas-model";
 import { stateWithImage, zIndexForLabel, zIndexForLabelIncludes } from "./state-view-test-fixtures";
 
 describe("State Explorer orchestration", () => {
+  it("allows raw JSON detail to be expanded and retracted", () => {
+    const source = readFileSync(new URL("./StateRawPanel.tsx", import.meta.url), "utf8");
+    expect(source).toContain("Show raw JSON");
+    expect(source).toContain("Hide raw JSON");
+    expect(source).toContain('aria-expanded="false"');
+    expect(source).toContain('aria-expanded="true"');
+    expect(source).toContain("aria-controls={regionId}");
+    expect(source).toContain('role="status"');
+  });
+
   it("opens an action state request from the indexed state source", () => {
       const afterState = stateWithImage("snapshot.after", 1_040, "/after.png");
       const html = renderToStaticMarkup(

@@ -36,9 +36,10 @@ export type FlowEditorProps = {
   onSaveGraph(graph: AutomationGraphDocument): Promise<AutomationGraphSaveResult>;
   onGraphDraftChange(graph: AutomationGraphDocument | null): void;
   onDirtyChange(dirty: boolean): void;
-  onOpenProblems(): void;
+  onOpenValidation(): void;
   onOpenNodeState(nodeId: string): void;
   onRestoreDraft(): void;
   onDiscardDraft(): void;
+  onReloadGraph(): void;
   setSelection(selection: AutomationSelection): void;
 };

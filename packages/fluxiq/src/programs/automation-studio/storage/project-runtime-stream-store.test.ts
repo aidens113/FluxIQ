@@ -65,6 +65,51 @@ describe("AutomationStudioProjectRuntimeStreamStore", () => {
     await store.close();
     await pool.closeAll();
   });
+
+  it("pages scalar action summaries and loads action and event JSON only on demand", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    await seedFlow(pool, "project.runtime", "flow.checkout");
+    const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: "project.runtime" });
+    const detailedAction = {
+      ...action("attempt.detail", 1, 40),
+      route: "success",
+      comparisonStatus: "matched",
+      message: "Clicked the checkout button",
+      effects: [{ kind: "dom", selector: "#checkout" }],
+      evidence: [{ evidenceId: "evidence.one" }]
+    };
+    await store.putRunDetail({
+      schemaVersion: "0.1",
+      summary: runSummary({ actionAttemptCount: 2 }),
+      routeDecisions: [],
+      subflows: [],
+      actionAttempts: [detailedAction, action("attempt.second", 2, 50)],
+      recoveryAttempts: [],
+      interventions: [],
+      adaptationIds: [],
+      changeProposalIds: []
+    });
+
+    const firstPage = await store.listRunActions({ runId: "run.checkout", limit: 1 });
+    expect(firstPage).toMatchObject({ total: 2, hasMore: true, actions: [{ attemptId: "attempt.detail", definitionId: "action.click", route: "success", comparisonStatus: "matched", message: "Clicked the checkout button", durationMs: 5, metadata: { summaryOnly: true } }] });
+    expect(firstPage.actions[0]).not.toHaveProperty("effects");
+    expect(firstPage.actions[0]).not.toHaveProperty("evidence");
+    const repairLease = await pool.acquire("project.runtime");
+    await repairLease.database.run("update runtime_action_summaries set definition_id = 'unknown' where run_id = ? and attempt_id = ?", ["run.checkout", "attempt.detail"]);
+    await repairLease.release();
+    await expect(store.listRunActions({ runId: "run.checkout", limit: 1 })).resolves.toMatchObject({ actions: [{ attemptId: "attempt.detail", definitionId: "action.click" }] });
+    await expect(store.listRunActions({ runId: "run.checkout", limit: 1, cursor: firstPage.nextCursor })).resolves.toMatchObject({ actions: [{ attemptId: "attempt.second", definitionId: "action.click" }], hasMore: false });
+    await expect(store.getRunActionDetail({ runId: "run.checkout", attemptId: "attempt.detail" })).resolves.toMatchObject({ effects: [{ selector: "#checkout" }], evidence: [{ evidenceId: "evidence.one" }] });
+
+    const events = await store.listRuntimeEvents({ runId: "run.checkout", afterSequence: 0, limit: 20, includePayload: false });
+    const compactEvent = events.events.find((event) => event.entityId === "attempt.detail");
+    expect(compactEvent).toBeDefined();
+    expect(compactEvent).not.toHaveProperty("payload");
+    await expect(store.getRuntimeEventDetail({ runId: "run.checkout", sequence: compactEvent!.sequence })).resolves.toMatchObject({ payload: { attemptId: "attempt.detail", effects: [{ selector: "#checkout" }] } });
+    await store.close();
+    await pool.closeAll();
+  });
+
   it("stores recording summaries and recording timelines as chunk streams", async () => {
     const pool = new AutomationStudioProjectDatabasePool({ rootDir });
     await seedProject(pool, "project.recording");

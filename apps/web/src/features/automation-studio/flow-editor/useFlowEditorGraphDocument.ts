@@ -7,7 +7,7 @@ import { rebalanceAutomationEdgeLanes } from "../graph/edge-routing";
 import { syncGraphNodes } from "../graph/interaction-geometry";
 import { useAutomationGraphController } from "../graph/useAutomationGraphController";
 import { scheduleAutomationGraphIdleTask, type AutomationGraphIdleTaskCancel } from "../graph/worker-tasks";
-import type { AutomationFlowNodeData } from "./node-types";
+import { withAutomationFlowNodeDimensions, type AutomationFlowNodeData } from "./node-types";
 import type { FlowEditorProps } from "./flow-editor-types";
 import {
   automationNativeNodeDefinitionSignature,
@@ -22,6 +22,7 @@ type SaveState = "saved" | "unsaved" | "saving" | "failed" | "conflict";
 type GraphDraft = { nodes: Array<Node<AutomationFlowNodeData>>; edges: Edge[] };
 
 export function useFlowEditorGraphDocument(props: FlowEditorProps) {
+  const locallyPublishedDraftRef = useRef<{ graph: GraphDraft; baseSourceRevision: string } | null>(null);
   const taskGraphSignature = useMemo(
     () => props.taskGraph ? automationTaskGraphSourceSignature(props.taskGraph) : "",
     [props.taskGraph]
@@ -34,18 +35,26 @@ export function useFlowEditorGraphDocument(props: FlowEditorProps) {
     () => automationNativeNodeDefinitionSignature(props.nativeNodeDefinitions),
     [props.nativeNodeDefinitions]
   );
-  const taskGraphDraftSignature = useMemo(
-    () => props.taskGraphDraft
-      ? graphSignature(props.taskGraphDraft.nodes, props.taskGraphDraft.edges)
-      : "",
-    [props.taskGraphDraft]
-  );
-  const sourceRevision = [
+  const baseSourceRevision = [
     taskGraphSignature,
     legacyPolicyGraphSignature,
-    nativeNodeDefinitionSignature,
-    taskGraphDraftSignature
+    nativeNodeDefinitionSignature
   ].join(":");
+  const taskGraphDraftIsLocalEcho = Boolean(
+    props.taskGraphDraft
+      && props.taskGraphDraft === locallyPublishedDraftRef.current?.graph
+      && locallyPublishedDraftRef.current.baseSourceRevision === baseSourceRevision
+  );
+  const taskGraphDraftSignature = useMemo(
+    () => props.taskGraphDraft && !taskGraphDraftIsLocalEcho
+      ? graphSignature(props.taskGraphDraft.nodes, props.taskGraphDraft.edges)
+      : "",
+    [props.taskGraphDraft, taskGraphDraftIsLocalEcho]
+  );
+  const candidateSourceRevision = [baseSourceRevision, taskGraphDraftSignature].join(":");
+  const acceptedSourceRevisionRef = useRef(candidateSourceRevision);
+  if (!taskGraphDraftIsLocalEcho) acceptedSourceRevisionRef.current = candidateSourceRevision;
+  const sourceRevision = acceptedSourceRevisionRef.current;
   const graph = useMemo(
     () => props.taskGraphDraft
       ?? (props.taskGraph
@@ -85,6 +94,7 @@ export function useFlowEditorGraphDocument(props: FlowEditorProps) {
   const [saveState, setSaveState] = useState<SaveState>(
     props.taskGraphDraft ? "unsaved" : "saved"
   );
+  const [saveMessage, setSaveMessage] = useState("");
   const [flowGraphProblems, setFlowGraphProblems] = useState<AutomationGraphProblem[]>([]);
   const [flowGraphValidationRevision, setFlowGraphValidationRevision] = useState(0);
 
@@ -100,6 +110,12 @@ export function useFlowEditorGraphDocument(props: FlowEditorProps) {
       ? (current === "saving" || current === "conflict" ? current : "unsaved")
       : "saved");
   }, [props.activeRef, props.onDirtyChange]);
+  const reconcileFlowGraphDirty = useCallback(() => {
+    markFlowGraphDirty(
+      graphSignature(flowNodesRef.current, flowEdgesRef.current)
+        !== savedGraphSignatureRef.current
+    );
+  }, [markFlowGraphDirty]);
 
   const publishFlowGraphDraft = useCallback((
     nodes: Array<Node<AutomationFlowNodeData>>,
@@ -114,9 +130,10 @@ export function useFlowEditorGraphDocument(props: FlowEditorProps) {
       const draft = pendingFlowGraphDraftRef.current;
       if (!draft) return;
       pendingFlowGraphDraftRef.current = null;
+      locallyPublishedDraftRef.current = { graph: draft, baseSourceRevision };
       props.onGraphDraftChange(draft);
     }, { delayMs: 160, timeoutMs: 1_000 });
-  }, [isFlowMode, props.onGraphDraftChange, props.taskGraph, scheduleFlowGraphValidation]);
+  }, [baseSourceRevision, isFlowMode, props.onGraphDraftChange, props.taskGraph, scheduleFlowGraphValidation]);
 
   useEffect(() => {
     const nextNodes = syncGraphNodes(flowNodesRef.current, graph.nodes);
@@ -126,6 +143,7 @@ export function useFlowEditorGraphDocument(props: FlowEditorProps) {
     flowGraphDirtyRef.current = Boolean(props.taskGraphDraft);
     if (props.activeRef.current) props.onDirtyChange(Boolean(props.taskGraphDraft));
     setSaveState(props.taskGraphDraft ? "unsaved" : "saved");
+    setSaveMessage("");
     scheduleFlowGraphValidation();
   }, [sourceRevision]);
 
@@ -156,6 +174,7 @@ export function useFlowEditorGraphDocument(props: FlowEditorProps) {
       && currentNode.data.customDescription !== props.selectedNode.customDescription;
     if (!parametersChanged && !descriptionChanged) return;
     checkpointFlowGraph();
+    markFlowGraphDirty(true);
     const nextNodes = flowNodesRef.current.map((node) => node.id === nodeId ? {
       ...node,
       data: {
@@ -209,12 +228,15 @@ export function useFlowEditorGraphDocument(props: FlowEditorProps) {
     [flowGraphProblems]
   );
   const validatedFlowNodes = useMemo(
-    () => flowNodes.map((node) => invalidFlowNodeIds.has(node.id)
+    () => flowNodes.map((sourceNode) => {
+      const node = withAutomationFlowNodeDimensions(sourceNode);
+      return invalidFlowNodeIds.has(node.id)
       ? {
         ...node,
         className: [node.className, "automation-validation-invalid"].filter(Boolean).join(" ")
       }
-      : node),
+      : node;
+    }),
     [flowNodes, invalidFlowNodeIds]
   );
   const validatedFlowEdges = useMemo(
@@ -230,11 +252,13 @@ export function useFlowEditorGraphDocument(props: FlowEditorProps) {
   const saveFlowGraph = useCallback(async () => {
     if (!props.activeRef.current || !props.editable || codeOwned) return;
     setSaveState("saving");
+    setSaveMessage("");
     const result = await props.onSaveGraph({
       nodes: flowNodesRef.current,
       edges: flowEdgesRef.current
     });
     setSaveState(result.state);
+    setSaveMessage(result.message);
     if (!result.ok) return;
     savedGraphSignatureRef.current = graphSignature(
       flowNodesRef.current,
@@ -247,6 +271,7 @@ export function useFlowEditorGraphDocument(props: FlowEditorProps) {
   return {
     sourceRevision,
     saveState,
+    saveMessage,
     saveFlowGraph,
     flowNodes,
     flowEdges,
@@ -272,6 +297,7 @@ export function useFlowEditorGraphDocument(props: FlowEditorProps) {
     scheduleFlowGraphValidation,
     publishFlowGraphDraft,
     markFlowGraphDirty,
+    reconcileFlowGraphDirty,
     validatedFlowNodes,
     validatedFlowEdges,
     codeOwned,

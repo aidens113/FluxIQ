@@ -17,6 +17,11 @@ export type AutomationStudioMutation =
       instructionId: string;
     }
   | {
+      kind: "router.changed";
+      projectId: string | null;
+      flowId: string;
+    }
+  | {
       kind: "runtime-run.changed";
       projectId: string | null;
       flowId?: string;

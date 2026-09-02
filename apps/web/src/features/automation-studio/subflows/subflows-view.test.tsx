@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams()
 }));
-import { SubflowsView, SubflowDirectoryContent, readSubflowDirectoryUrlState, routerReferencesForSubflow, subflowReadiness } from "./index";
+import { SubflowsView, SubflowDirectoryContent, readSubflowDirectoryUrlState, routerReferencesForSubflow, routerReferenceSummaryForSubflow, subflowReadiness } from "./index";
 
 describe("Automation Subflows workspace", () => {
   it("restores Subflow directory filters and pagination from URL state", () => {
@@ -48,6 +48,8 @@ describe("Automation Subflows workspace", () => {
     expect(html).toContain("Subflows per page");
     expect(html).toContain("First page");
     expect(html).toContain("Last page");
+    expect(html).toContain('class="automation-subflow-directory-list" role="list"');
+    expect(html).toContain('class="automation-subflow-directory-empty" role="listitem"');
   });
   it("caps restored Subflow directory pages at 50 rows", () => {
     expect(readSubflowDirectoryUrlState({ limit: 50, offset: 9950 })).toMatchObject({ limit: 50, offset: 9950 });
@@ -74,6 +76,15 @@ describe("Automation Subflows workspace", () => {
   it("summarizes Subflow readiness independently from Router usage", () => {
     expect(subflowReadiness({ status: "active", graphFlowId: "flow.checkout.graph" })).toEqual({ label: "Ready", tone: "ready", issues: [] });
     expect(subflowReadiness({ status: "disabled" })).toEqual({ label: "Needs setup", tone: "attention", issues: ["Nodes graph is missing", "Subflow is disabled"] });
+  });
+
+  it("uses compact server reference batches with exact totals", () => {
+    const batch = { targets: [{ subflowId: "subflow.checkout", total: 42, hasMore: true, references: [{ id: "route.checkout", name: "Checkout", status: "active", order: 1, conditionLabel: "Always" }] }] };
+    expect(routerReferenceSummaryForSubflow(batch, "subflow.checkout")).toEqual({
+      references: [{ id: "route.checkout", name: "Checkout", status: "active", order: 1, condition: "Always" }],
+      total: 42,
+      hasMore: true
+    });
   });
 
 });

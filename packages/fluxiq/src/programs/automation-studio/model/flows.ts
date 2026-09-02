@@ -20,6 +20,65 @@ export type AutomationStudioFlowSource =
   | { mode: "visual" }
   | { mode: "code"; moduleId: string; sourceDigest?: string; compiledDigest?: string; compilerVersion?: string; declaredDependencies?: string[] };
 
+export const AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION = 1;
+export type AutomationStudioInterventionMode = "fully_adaptive" | "manual_approval" | "no_llm_intervention";
+
+export function automationStudioInterventionMode(metadata: JsonObject | undefined): AutomationStudioInterventionMode {
+  const source = metadata ?? {};
+  if (source.adaptationModeVersion === AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION) {
+    const current = source.adaptationMode;
+    if (current === "fully_adaptive" || current === "manual_approval" || current === "no_llm_intervention") return current;
+  }
+  const training = isJsonObject(source.trainingModeSettings) ? source.trainingModeSettings : {};
+  const adaptation = isJsonObject(source.adaptationPolicySettings) ? source.adaptationPolicySettings : {};
+  const trainingMode = training.mode ?? source.trainingMode;
+  const preset = adaptation.preset;
+  const approval = adaptation.proposalMode ?? training.proposalApprovalMode ?? source.proposalApprovalMode ?? source.proposalMode;
+  if (trainingMode === "normal" || preset === "locked" || approval === "disabled" || approval === "deterministic") return "no_llm_intervention";
+  if (approval === "manual" || approval === "mixed" || approval === "manual_approval" || preset === "observe" || preset === "repair") return "manual_approval";
+  return "fully_adaptive";
+}
+
+export function withAutomationStudioInterventionMode(metadata: JsonObject | undefined, mode: AutomationStudioInterventionMode): JsonObject {
+  const source = metadata ?? {};
+  const training = isJsonObject(source.trainingModeSettings) ? source.trainingModeSettings : {};
+  const adaptation = isJsonObject(source.adaptationPolicySettings) ? source.adaptationPolicySettings : {};
+  const enabled = mode !== "no_llm_intervention";
+  const manual = mode === "manual_approval";
+  return {
+    ...source,
+    adaptationModeVersion: AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION,
+    adaptationMode: mode,
+    trainingMode: enabled ? "continuous_adaptive" : "normal",
+    proposalMode: manual ? "manual" : enabled ? "auto" : "manual",
+    proposalApprovalMode: manual ? "manual" : enabled ? "auto" : "manual",
+    trainingModeSettings: {
+      ...training,
+      mode: enabled ? "continuous_adaptive" : "normal",
+      allowLlmIntervention: enabled,
+      allowAdaptationCreation: enabled,
+      proposalApprovalMode: manual ? "manual" : enabled ? "auto" : "manual",
+      allowPromotion: mode === "fully_adaptive"
+    },
+    adaptationPolicySettings: {
+      ...adaptation,
+      preset: enabled ? "adaptive" : "locked",
+      proposalMode: manual ? "manual" : enabled ? "auto" : "manual",
+      allowRuntimeRecovery: enabled,
+      allowCreateRecoveryPaths: enabled,
+      allowModifySubflows: enabled,
+      allowCreateSubflows: enabled,
+      allowModifyRouter: enabled,
+      allowModifyExpectations: enabled,
+      allowModifyActionTargets: enabled
+    }
+  };
+}
+
+function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 export type AutomationStudioFlowValueType =
   | { kind: "string" }
   | { kind: "number" }
@@ -165,6 +224,8 @@ export function defaultAutomationStudioFlowSettingsMetadata(): JsonObject {
     maxEstimatedCostUsdPerRun: 1
   };
   return {
+    adaptationModeVersion: AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION,
+    adaptationMode: "fully_adaptive",
     trainingMode: trainingModeSettings.mode,
     proposalMode: trainingModeSettings.proposalApprovalMode,
     proposalApprovalMode: trainingModeSettings.proposalApprovalMode,

@@ -5,10 +5,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, AlertTriangle, ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CircleCheck, Copy, Info, ListChecks, MoreHorizontal, Search, Pencil, Plus, Power, Route, Trash2, Workflow, X } from "lucide-react";
 import { JsonToggle, flowMapFallbackLabel, formatRuntimeTimestamp } from "../runtime";
 import { commitAutomationStudioMutation, subscribeToAutomationStudioMutations } from "../stores/mutation-transaction-store";
-import { readSubflowDirectoryUrlState, routerReferencesForSubflow, subflowReadiness, type SubflowDirectoryState } from "./subflow-directory-model";
+import { readSubflowDirectoryUrlState, routerReferenceSummaryForSubflow, subflowReadiness, type SubflowDirectoryState } from "./subflow-directory-model";
 import { useSubflowCommands, type SubflowCommands } from "./subflow-host";
 
-export type SubflowsViewProps = { projectId: string | null; flow: any; onOpenSubflow?(flowId: string, subflowId: string, mode: "preview" | "new-window"): void };
+export type SubflowsViewProps = { projectId: string | null; flow: any; onOpenSubflow?(flowId: string, subflowId: string, mode: "preview" | "new-pane-or-focus"): void };
 
 export function SubflowsView(props: SubflowsViewProps) {
   const commands = useSubflowCommands();
@@ -41,6 +41,8 @@ export function SubflowDirectoryContent(props: SubflowsViewProps & { commands: S
 
   useEffect(() => {
     setSubflows([]);
+    setRouter(null);
+    setRouterLoaded(false);
     if (!props.projectId || !flowId) {
       setPage((current) => ({ ...current, offset: 0, total: 0 }));
       return;
@@ -48,25 +50,24 @@ export function SubflowDirectoryContent(props: SubflowsViewProps & { commands: S
     void loadSubflows(page.offset);
   }, [props.projectId, flowId, filters.search, filters.status, filters.role, filters.sort, filters.direction, page.limit]);
 
-  useEffect(() => {
-    setRouter(null);
-    setRouterLoaded(false);
-    if (!props.projectId || !flowId) return;
-    void loadRouter();
-  }, [props.projectId, flowId]);
-
   useEffect(() => subscribeToAutomationStudioMutations(
     () => void loadSubflows(page.offset),
     { kinds: ["subflow.changed"], projectId: props.projectId, flowId }
   ), [props.projectId, flowId, page.offset, page.limit, filters]);
 
 
-  const loadRouter = async () => {
+  const loadReferences = async (subflowIds: string[]) => {
     if (!props.projectId || !flowId) return;
     const requestId = ++routerRequestRef.current;
-    const result = await props.commands.loadRouter({ projectId: props.projectId, flowId });
+    setRouterLoaded(false);
+    if (!subflowIds.length) {
+      setRouter({ targets: [] });
+      setRouterLoaded(true);
+      return;
+    }
+    const result = await props.commands.loadReferences({ projectId: props.projectId, flowId, subflowIds, perTargetLimit: 20 });
     if (requestId !== routerRequestRef.current) return;
-    setRouter(result.ok ? result.payload?.router ?? null : null);
+    setRouter(result.ok ? result.payload?.batch ?? { targets: result.payload?.targets ?? [] } : null);
     setRouterLoaded(true);
   };
 
@@ -102,7 +103,7 @@ export function SubflowDirectoryContent(props: SubflowsViewProps & { commands: S
     }
     setSubflows(items);
     setPage((current) => ({ limit: resultPage?.limit ?? current.limit, offset: resultPage?.offset ?? offset, total }));
-
+    void loadReferences(items.map((item: any) => String(item.subflowId ?? "")).filter(Boolean));
   };
 
   const beginSubflowAction = (subflow: any, action: "rename" | "duplicate" | "enable" | "disable" | "archive" | "delete") => {
@@ -131,7 +132,7 @@ export function SubflowDirectoryContent(props: SubflowsViewProps & { commands: S
   const firstVisible = page.total ? page.offset + 1 : 0;
   const lastVisible = Math.min(page.total, page.offset + subflows.length);
   const filtered = Boolean(filters.search || filters.status || filters.role);
-  const actionReferences = subflowAction ? routerReferencesForSubflow(router, subflowAction.subflow.subflowId) : [];
+  const actionReferences = subflowAction ? routerReferenceSummaryForSubflow(router, subflowAction.subflow.subflowId).references : [];
 
   return (
     <section className="automation-runs-workspace automation-subflow-directory">
@@ -149,14 +150,14 @@ export function SubflowDirectoryContent(props: SubflowsViewProps & { commands: S
       </div>
       <div aria-busy={loading} className="automation-subflow-directory-list" role="list" aria-label="Flow subflows">
         {subflows.map((subflow) => {
-          const references = routerReferencesForSubflow(router, subflow.subflowId);
+          const referenceSummary = routerReferenceSummaryForSubflow(router, subflow.subflowId);
           const readiness = subflowReadiness(subflow);
           return (
           <div className="automation-subflow-directory-row" key={subflow.subflowId} role="listitem">
             <button aria-label={"Open " + (subflow.name ?? subflow.subflowId) + " in Flow editor"} className="automation-subflow-directory-open" onClick={() => props.onOpenSubflow?.(flowId, subflow.subflowId, "preview")} type="button">
               <span className="automation-subflow-directory-icon"><Workflow size={17} aria-hidden /></span>
               <span className="automation-subflow-directory-main"><strong>{subflow.name ?? subflow.subflowId}</strong><small>{subflow.subflowId}</small></span>
-              <span className="automation-subflow-directory-meta"><span>{subflow.role ?? "utility"}</span><StatusBadge value={subflow.status ?? "active"} /><span className={"automation-subflow-readiness " + readiness.tone}>{readiness.label}</span><span>{references.length ? references.length + (references.length === 1 ? " Router reference" : " Router references") : routerLoaded ? "Not routed" : "Checking routes"}</span><span>{formatRuntimeTimestamp(subflow.updatedAt)}</span></span>
+              <span className="automation-subflow-directory-meta"><span>{subflow.role ?? "utility"}</span><StatusBadge value={subflow.status ?? "active"} /><span className={"automation-subflow-readiness " + readiness.tone}>{readiness.label}</span><span>{referenceSummary.total ? referenceSummary.total + (referenceSummary.total === 1 ? " Router reference" : " Router references") : routerLoaded ? "Not routed" : "Checking routes"}</span><span>{formatRuntimeTimestamp(subflow.updatedAt)}</span></span>
               <ChevronRight size={16} aria-hidden />
             </button>
             <Menu icon={<MoreHorizontal size={15} aria-hidden />} iconOnly label={"Actions for " + String(subflow.name ?? subflow.subflowId)} options={[
@@ -169,8 +170,8 @@ export function SubflowDirectoryContent(props: SubflowsViewProps & { commands: S
           </div>
           );
         })}
-        {loading && !subflows.length ? <div className="automation-router-loading" aria-label="Loading subflows"><span /><span /><span /></div> : null}
-        {!loading && !subflows.length ? <div className="automation-subflow-directory-empty"><Workflow size={22} aria-hidden /><strong>{flowId ? filtered ? "No matching subflows" : "No subflows yet" : "Select a Flow"}</strong><span>{flowId ? filtered ? "Adjust the search or filters to see other subflows." : "Add subflows from the plus button beside the Subflows folder." : "Choose a Flow to view its subflows."}</span></div> : null}
+        {loading && !subflows.length ? <div className="automation-router-loading" aria-label="Loading subflows" role="listitem"><span /><span /><span /></div> : null}
+        {!loading && !subflows.length ? <div className="automation-subflow-directory-empty" role="listitem"><Workflow size={22} aria-hidden /><strong>{flowId ? filtered ? "No matching subflows" : "No subflows yet" : "Select a Flow"}</strong><span>{flowId ? filtered ? "Adjust the search or filters to see other subflows." : "Add subflows from the plus button beside the Subflows folder." : "Choose a Flow to view its subflows."}</span></div> : null}
       </div>
       <footer className="automation-subflow-directory-footer">
         <span>{firstVisible}-{lastVisible} of {page.total}</span>

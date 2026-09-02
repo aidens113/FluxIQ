@@ -60,6 +60,7 @@ export function automationKeyboardResizeValue(options: {
   step?: number;
 }): number | null {
   if (options.key === "Home") return options.home;
+  if (options.key === "End") return options.max;
   if (options.key !== options.decreaseKey && options.key !== options.increaseKey) return null;
   return clampNumber(
     options.value + (options.key === options.decreaseKey ? -(options.step ?? 16) : options.step ?? 16),
@@ -77,6 +78,14 @@ export function automationKeyboardSplitRatios(
 ): number[] | null {
   if (key === "Home") {
     return ratios.length ? Array.from({ length: ratios.length }, () => 1 / ratios.length) : ratios;
+  }
+  if (key === "End") {
+    if (splitIndex < 0 || splitIndex >= ratios.length - 1) return ratios;
+    const next = [...ratios];
+    const pairTotal = ratios[splitIndex]! + ratios[splitIndex + 1]!;
+    next[splitIndex] = pairTotal * 0.88;
+    next[splitIndex + 1] = pairTotal * 0.12;
+    return next;
   }
   const decrease = orientation === "horizontal" ? "ArrowLeft" : "ArrowUp";
   const increase = orientation === "horizontal" ? "ArrowRight" : "ArrowDown";

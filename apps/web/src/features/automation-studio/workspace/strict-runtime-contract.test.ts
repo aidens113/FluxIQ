@@ -41,6 +41,8 @@ describe("strict workspace runtime contract", () => {
     expect(drawers).toContain('props.panel === "inspector"');
     expect(drawers).toContain('props.panel === "timeline"');
     expect(rightPane).toContain('aria-label="Right utilities"');
+    expect(rightPane).toContain("aria-expanded={!state.collapsed}");
+    expect(timeline).toContain("aria-expanded={!state.collapsed}");
     expect(shell).toContain('const inspectorLabel = activeRightView?.view.label ?? "Inspector"');
     expect(drawers).toContain("title={props.inspectorTitle}");
     expect(source).toContain("source.subscribe(viewId, listener)");

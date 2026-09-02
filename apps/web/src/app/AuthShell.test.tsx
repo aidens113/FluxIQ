@@ -1,8 +1,16 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { GlobalTopbar, LoginPanel, setupPasswordError } from "./AuthShell";
 
 describe("FluxIQ login and first setup", () => {
+  it("restores expired sessions without replacing the current workspace", () => {
+    const source = readFileSync(new URL("./AuthShell.tsx", import.meta.url), "utf8");
+    expect(source).toContain("SessionReauthentication");
+    expect(source).toContain("resolveProgramAuthentication(true)");
+    expect(source).toContain("Keep work open");
+  });
+
   it("renders a password-manager-friendly login without publishing bootstrap credentials", () => {
     const html = renderToStaticMarkup(<LoginPanel />);
     expect(html).toContain('autoComplete="username"');

@@ -33,9 +33,12 @@ describe("Automation Studio hierarchy scale validation", () => {
       expect(tail.hasMore).toBe(false);
 
       await expect(repository.listAncestors("entry.subflow.099999")).resolves.toMatchObject([{ entryId: "entry.flow" }, { entryId: "entry.subflows" }]);
-      const plan = await explainAutomationStudioQueryPlan(lease.database, "select * from hierarchy_entries where parent_entry_id = ? and is_deleted = 0 and (sort_key > ? or (sort_key = ? and entry_id > ?)) order by sort_key, entry_id limit ?", ["entry.subflows", "subflow.099949", "subflow.099949", "entry.subflow.099949", 51]);
+      const plan = await explainAutomationStudioQueryPlan(lease.database, "select * from hierarchy_entries where parent_entry_id = ? and is_deleted = 0 and (sort_key, entry_id) > (?, ?) order by sort_key, entry_id limit ?", ["entry.subflows", "subflow.099949", "entry.subflow.099949", 51]);
       assertNoCriticalFullScan(plan, ["hierarchy_entries"]);
       assertPlanMentions(plan, "hierarchy_entries_children_idx");
+      const rootPlan = await explainAutomationStudioQueryPlan(lease.database, "select * from hierarchy_entries where is_deleted = 0 and parent_entry_id is null order by sort_key, entry_id limit ?", [51]);
+      assertNoCriticalFullScan(rootPlan, ["hierarchy_entries"]);
+      assertPlanMentions(rootPlan, "hierarchy_entries_children_idx");
     } finally {
       await lease.release();
       await repository.close();

@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { useProgramTransport } from "../data/use-program-transport";
 import { deleteFlowMapRoute, deleteFlowMapRouteGroup, mutateFlowMapRoute, saveFlowMapFallback, saveFlowMapRoute, saveFlowMapRouteGroup } from "./router-commands";
-import { getFlowRouter, listRouterSubflows, testFlowMapRouteCondition } from "./router-queries";
+import { getFlowRouterSummary, getRouterGraphSummary, listRouterRoutes, listRouterSubflowTargets, testFlowMapRouteCondition } from "./router-queries";
 export type RouterViewHostModel = {
   projectId: string | null;
   flow: any;
@@ -16,8 +16,10 @@ export type RouterViewHostCommands = {
 };
 
 export type RouterCommands = {
-  loadRouter(payload: Record<string, any>): ReturnType<typeof getFlowRouter>;
-  listSubflows(payload: Record<string, any>): ReturnType<typeof listRouterSubflows>;
+  loadRouter(payload: Record<string, any>): ReturnType<typeof getFlowRouterSummary>;
+  listRoutes(payload: Record<string, any>): ReturnType<typeof listRouterRoutes>;
+  listSubflows(payload: Record<string, any>): ReturnType<typeof listRouterSubflowTargets>;
+  loadGraphSummary(payload: Record<string, any>): ReturnType<typeof getRouterGraphSummary>;
   testCondition(payload: Record<string, any>): ReturnType<typeof testFlowMapRouteCondition>;
   saveRoute(payload: Record<string, any>): ReturnType<typeof saveFlowMapRoute>;
   deleteRoute(payload: Record<string, any>): ReturnType<typeof deleteFlowMapRoute>;
@@ -30,8 +32,10 @@ export type RouterCommands = {
 export function useRouterCommands(): RouterCommands {
   const transport = useProgramTransport("automation-studio");
   return useMemo(() => ({
-    loadRouter: (payload) => getFlowRouter(transport, payload),
-    listSubflows: (payload) => listRouterSubflows(transport, payload),
+    loadRouter: (payload) => getFlowRouterSummary(transport, payload),
+    listRoutes: (payload) => listRouterRoutes(transport, payload),
+    listSubflows: (payload) => listRouterSubflowTargets(transport, payload),
+    loadGraphSummary: (payload) => getRouterGraphSummary(transport, payload),
     testCondition: (payload) => testFlowMapRouteCondition(transport, payload),
     saveRoute: (payload) => saveFlowMapRoute(transport, payload),
     deleteRoute: (payload) => deleteFlowMapRoute(transport, payload),

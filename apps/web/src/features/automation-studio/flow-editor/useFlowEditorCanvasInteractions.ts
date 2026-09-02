@@ -72,8 +72,20 @@ export function useFlowEditorCanvasInteractions(
       getNodes: () => currentRef.current.graph.flowNodesRef.current,
       screenToFlowPosition: (point) => currentRef.current.selection
         .flowInstance?.screenToFlowPosition(point) ?? point,
-      previewNodes: (nodes) => {
-        currentRef.current.selection.flowInstance?.setNodes(nodes);
+      renderNodePositions: (positions) => {
+        const currentGraph = currentRef.current.graph;
+        const byId = new Map(positions.map((position) => [position.id, position]));
+        const currentNodes = currentGraph.flowNodesRef.current;
+        let changed = false;
+        const nextNodes = currentNodes.map((node) => {
+          const position = byId.get(node.id);
+          if (!position || node.position.x === position.x && node.position.y === position.y) return node;
+          changed = true;
+          return { ...node, position: { x: position.x, y: position.y }, dragging: true };
+        });
+        if (!changed) return;
+        currentGraph.flowNodesRef.current = nextNodes;
+        currentGraph.setTransientFlowNodes(nextNodes);
       },
       renderMarquee: (box) => {
         const element = flowDragSelectBoxRef.current;
@@ -288,10 +300,10 @@ export function useFlowEditorCanvasInteractions(
       ? currentGraph.setFlowEdges
       : currentGraph.setTransientFlowEdges;
     setNextEdges((edges) => {
-      const nextEdges = rebalanceAutomationEdgeLanes(
-        applyEdgeChanges(allowedChanges, edges),
-        currentGraph.flowNodesRef.current
-      );
+      const changedEdges = applyEdgeChanges(allowedChanges, edges);
+      const nextEdges = durableChange
+        ? rebalanceAutomationEdgeLanes(changedEdges, currentGraph.flowNodesRef.current)
+        : changedEdges;
       currentGraph.flowEdgesRef.current = nextEdges;
       if (durableChange) {
         currentGraph.publishFlowGraphDraft(
@@ -333,12 +345,18 @@ export function useFlowEditorCanvasInteractions(
     const { graph: currentGraph, selection: currentSelection } = currentRef.current;
     currentSelection.setSelectedFlowNodeId("");
     currentSelection.setSelectedFlowNodeIds([]);
-    currentSelection.setSelectedFlowEdgeIds([edge.id]);
+    currentSelection.setSelectedFlowEdgeIds(
+      (current) => sameStringList(current, [edge.id]) ? current : [edge.id]
+    );
     currentGraph.setTransientFlowEdges((edges) => {
-      const nextEdges = edges.map((item) => ({
-        ...item,
-        selected: item.id === edge.id
-      }));
+      let changed = false;
+      const nextEdges = edges.map((item) => {
+        const selected = item.id === edge.id;
+        if (item.selected === selected) return item;
+        changed = true;
+        return { ...item, selected };
+      });
+      if (!changed) return edges;
       currentGraph.flowEdgesRef.current = nextEdges;
       return nextEdges;
     });
@@ -400,7 +418,7 @@ export function useFlowEditorCanvasInteractions(
           : [["Status", "No structural graph problems"]]
       }]
     });
-    currentProps.onOpenProblems();
+    currentProps.onOpenValidation();
   }, []);
 
   const handleFlowCanvasKeyDown = useCallback((
@@ -527,13 +545,11 @@ function settleNodeDrag(
   nodes: Array<Node<AutomationFlowNodeData>>
 ) {
   graph.flowNodeDragActiveRef.current = false;
+  graph.flowNodesRef.current = nodes;
   graph.setFlowNodes(nodes);
-  const nextEdges = rebalanceAutomationEdgeLanes(graph.flowEdgesRef.current, nodes);
-  graph.flowEdgesRef.current = nextEdges;
-  graph.setTransientFlowEdges(nextEdges);
   if (!graph.commitFlowGraphCheckpoint()) return;
   graph.markFlowGraphDirty(true);
-  graph.publishFlowGraphDraft(nodes, nextEdges);
+  graph.publishFlowGraphDraft(nodes, graph.flowEdgesRef.current);
 }
 
 function settleMarquee(

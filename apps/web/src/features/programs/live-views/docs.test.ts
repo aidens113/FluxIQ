@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { buildDocumentationOutline, decorateDocumentationHeadings } from "./docs";
+import { buildDocumentationOutline, decorateDocumentationHeadings, flattenDocumentationTree } from "./docs";
 import { buildDocumentationTree } from "./shared";
 
 describe("DocsLive contract", () => {
@@ -22,16 +22,31 @@ describe("DocsLive contract", () => {
     expect(tree.children.map((node) => node.name)).toEqual(["One", "Two"]);
   });
 
-  it("exposes bounded, deep-linked, keyboard-operable states", () => {
+  it("virtualizes the complete source-aware tree and keeps history navigation", () => {
     const source = readFileSync(new URL("./docs.tsx", import.meta.url), "utf8");
-    expect(source).toContain("TREE_PAGE_LIMIT");
+    expect(source).not.toContain("TREE_PAGE_LIMIT");
+    expect(source).toContain("VirtualDocsTree");
+    expect(source).toContain("rows.slice(start, end)");
     expect(source).toContain("useDeferredValue");
     expect(source).toContain("const renderedHtml = useMemo");
     expect(source).toContain('searchParams.get("doc")');
+    expect(source).toContain("window.history.pushState");
+    expect(source).toContain('window.addEventListener("popstate"');
     expect(source).toContain('role="tree"');
     expect(source).toContain('"ArrowDown"');
     expect(source).toContain("does not match a page");
     expect(source).toContain("Rebuilding documentation");
     expect(source).toContain("<Drawer");
+  });
+
+  it("flattens only expanded branches without dropping indexed pages", () => {
+    const tree = buildDocumentationTree(Array.from({ length: 1_250 }, (_, index) => ({ id: `page-${index}`, sourceId: "source", title: `Page ${index}`, path: `group/page-${index}.md`, routePath: `/source/group/page-${index}` })));
+    const collapsed = flattenDocumentationTree(tree, new Set());
+    expect(collapsed).toHaveLength(1);
+    const source = collapsed[0]!;
+    const sourceRows = flattenDocumentationTree(tree, new Set([source.node.path]));
+    const group = sourceRows.find((row) => row.node.name === "Group")!;
+    const expanded = flattenDocumentationTree(tree, new Set([source.node.path, group.node.path]));
+    expect(expanded.filter((row) => row.node.page)).toHaveLength(1_250);
   });
 });

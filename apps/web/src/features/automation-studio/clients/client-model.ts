@@ -73,6 +73,17 @@ export function retainSelectedSession(sessions: ReadonlyArray<Pick<ClientSession
   return sessions.some((session) => session.sessionId === currentId) ? currentId : sessions[0]?.sessionId ?? "";
 }
 
+export type ClientSelectionLocation = "none" | "visible" | "checking" | "off-page" | "missing";
+
+export function clientSelectionLocation(input: { selectedSessionId: string; visibleSessions: ReadonlyArray<Pick<ClientSession, "sessionId">>; pinnedSessionId?: string | null; verifiedExists?: boolean | null }): ClientSelectionLocation {
+  if (!input.selectedSessionId) return "none";
+  if (input.visibleSessions.some((session) => session.sessionId === input.selectedSessionId)) return "visible";
+  if (input.pinnedSessionId !== input.selectedSessionId) return "missing";
+  if (input.verifiedExists === true) return "off-page";
+  if (input.verifiedExists === false) return "missing";
+  return "checking";
+}
+
 export function buildClientCommand(actionType: string, selector: string, text: string) {
   const parameters: Record<string, unknown> = {};
   if (selector.trim()) parameters.selector = selector.trim();

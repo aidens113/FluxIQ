@@ -98,8 +98,8 @@ export const automationStudioViews = defineAutomationStudioViews({
   },
   router: {
     id: "flow-router", aliases: [], kind: "router", label: "Router", icon: GitBranch,
-    group: "Flow", region: "main", allowedRegions: ["main"], scope: "Selected top-level Flow", requires: "hasFlow",
-    isAvailable: available("hasFlow"), addable: true, lifecycle: lifecycle(), cache,
+    group: "Flow", region: "main", allowedRegions: ["main"], scope: "Selected top-level Flow", requires: "hasTopLevelFlow",
+    isAvailable: available("hasTopLevelFlow"), addable: true, lifecycle: lifecycle(), cache,
     functionality: functionality("flow-router", "Route a top-level Flow into scalable Subflow paths.", ["flow"], ["Flow identity", "Subflow summaries"], ["routes", "conditions", "route diagnostics"], "graph"),
     host: routerHost
   },

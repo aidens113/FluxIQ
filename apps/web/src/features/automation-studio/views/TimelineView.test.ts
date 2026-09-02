@@ -25,7 +25,6 @@ describe("recordingListPageRange", () => {
     expect(recordingDialogCopy("note")).toMatchObject({ title: "Add note", fieldLabel: "Note" });
     expect(recordingDialogCopy("marker")).toMatchObject({ title: "Add marker", fieldLabel: "Label" });
     expect(recordingDialogCopy("finalize").description).toContain("stable Flow evidence");
-    expect(recordingDialogCopy("repair").action).toBe("Repair index");
     expect(recordingDialogCopy("delete").description).toContain("Permanently remove");
     const timelineSource = readFileSync(new URL("../recordings/RecordingTimelineView.tsx", import.meta.url), "utf8");
     const actionSource = readFileSync(new URL("../recordings/useRecordingActionController.ts", import.meta.url), "utf8");
@@ -33,6 +32,7 @@ describe("recordingListPageRange", () => {
     expect(timelineSource).not.toContain("window.confirm");
     expect(actionSource).not.toContain("window.prompt");
     expect(actionSource).not.toContain("window.confirm");
+    expect(timelineSource).not.toContain("Repair Index");
   });
 
   it("keeps bottom preview keyboard movement aligned with the full timeline", () => {

@@ -2,6 +2,7 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 import type { AutomationWorkspaceViewEntry, AutomationWorkspaceViewSource } from "./contracts";
+import { trackAutomationSubscription } from "../../testing/resource-telemetry";
 
 export const automationWorkspaceMaxSubscribedViews = 64;
 const automationWorkspaceMaxViewIdsExamined = automationWorkspaceMaxSubscribedViews * 2;
@@ -24,12 +25,14 @@ export function createAutomationWorkspaceViewSource(
       return true;
     },
     subscribe(viewId, listener) {
+      const releaseTelemetry = trackAutomationSubscription();
       const viewListeners = listeners.get(viewId) ?? new Set<() => void>();
       viewListeners.add(listener);
       listeners.set(viewId, viewListeners);
       return () => {
         viewListeners.delete(listener);
         if (!viewListeners.size) listeners.delete(viewId);
+        releaseTelemetry();
       };
     }
   };

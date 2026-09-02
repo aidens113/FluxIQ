@@ -10,4 +10,13 @@ describe("DeploymentSyncLive contract", () => {
     expect(source).toContain("DeploymentResultDetail");
     expect(source).not.toContain("JSON.stringify(selectedRun");
   });
+
+  it("distinguishes loading, request failure, repository unavailable, empty, and ready state", () => {
+    const source = readFileSync(new URL("./deployment-sync.tsx", import.meta.url), "utf8");
+    expect(source).toContain('label="Loading Deployment Sync"');
+    expect(source).toContain('title="Deployment Sync unavailable"');
+    expect(source).toContain('title="Git unavailable"');
+    expect(source).toContain('title="No deployment targets"');
+    expect(source).toContain("!activeTarget || !git?.available || busy");
+  });
 });

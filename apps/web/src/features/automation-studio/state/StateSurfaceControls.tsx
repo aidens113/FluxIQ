@@ -15,10 +15,10 @@ export function StateCanvasZoomControls(props: { zoom: number; onZoomChange(zoom
   const zoomIndex = nearestZoomIndex(props.zoom);
   return (
     <div className="automation-state-zoom-controls" aria-label="Canvas zoom controls">
-      <button disabled={zoomIndex <= 0} onClick={() => props.onZoomChange(stateCanvasZoomLevels[Math.max(0, zoomIndex - 1)]!)} title="Zoom out" type="button"><ZoomOut size={14} aria-hidden /></button>
+      <button aria-label="Zoom out" disabled={zoomIndex <= 0} onClick={() => props.onZoomChange(stateCanvasZoomLevels[Math.max(0, zoomIndex - 1)]!)} title="Zoom out" type="button"><ZoomOut size={14} aria-hidden /></button>
       <span aria-label="Canvas zoom">{Math.round(props.zoom * 100)}%</span>
-      <button disabled={zoomIndex >= stateCanvasZoomLevels.length - 1} onClick={() => props.onZoomChange(stateCanvasZoomLevels[Math.min(stateCanvasZoomLevels.length - 1, zoomIndex + 1)]!)} title="Zoom in" type="button"><ZoomIn size={14} aria-hidden /></button>
-      <button disabled={props.zoom === 1} onClick={() => props.onZoomChange(1)} title="Reset zoom" type="button"><RotateCcw size={14} aria-hidden /></button>
+      <button aria-label="Zoom in" disabled={zoomIndex >= stateCanvasZoomLevels.length - 1} onClick={() => props.onZoomChange(stateCanvasZoomLevels[Math.min(stateCanvasZoomLevels.length - 1, zoomIndex + 1)]!)} title="Zoom in" type="button"><ZoomIn size={14} aria-hidden /></button>
+      <button aria-label="Reset zoom" disabled={props.zoom === 1} onClick={() => props.onZoomChange(1)} title="Reset zoom" type="button"><RotateCcw size={14} aria-hidden /></button>
     </div>
   );
 }

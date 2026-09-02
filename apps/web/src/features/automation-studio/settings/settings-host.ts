@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import type { ApiResponse } from "../../programs/program-api";
 import { useProgramTransport } from "../data/use-program-transport";
 import { changeSubflowLifecycle, saveFlowSettings, updateSubflowSettings } from "./settings-commands";
-import { listFlowPublications, loadSubflowSettingsResources } from "./settings-queries";
+import { listFlowPublications, loadFlowSettingsDetail, loadSubflowSettingsResources } from "./settings-queries";
 export type SettingsViewHostModel = {
   projectId: string | null;
   flow: any;
@@ -15,6 +15,7 @@ export type SettingsViewHostCommands = Record<string, never>;
 export type SettingsCommands = {
   listLlmSecrets(): Promise<ApiResponse<{ keys?: any[] }>>;
   listPublications(payload: Record<string, any>): ReturnType<typeof listFlowPublications>;
+  loadFlow(payload: { projectId: string; flowId: string }): ReturnType<typeof loadFlowSettingsDetail>;
   loadSubflowResources(payload: { projectId: string; flowId: string; subflowId: string }): ReturnType<typeof loadSubflowSettingsResources>;
   saveFlow(payload: Record<string, any>): ReturnType<typeof saveFlowSettings>;
   updateSubflow(payload: Record<string, any>): ReturnType<typeof updateSubflowSettings>;
@@ -27,6 +28,7 @@ export function useSettingsCommands(): SettingsCommands {
   return useMemo(() => ({
     listLlmSecrets: () => secretTransport.get<{ keys?: any[] }>("snapshot"),
     listPublications: (payload) => listFlowPublications(automationTransport, payload),
+    loadFlow: (payload) => loadFlowSettingsDetail(automationTransport, payload),
     loadSubflowResources: (payload) => loadSubflowSettingsResources(automationTransport, payload),
     saveFlow: (payload) => saveFlowSettings(automationTransport, payload),
     updateSubflow: (payload) => updateSubflowSettings(automationTransport, payload),

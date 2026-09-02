@@ -1,4 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  dirtyViewRegistrySnapshot,
+  registerDirtyView,
+  resetDirtyViewRegistryForTests,
+  updateDirtyView
+} from "../dirty-view-registry";
 import { defaultAutomationWorkspacePrefs } from "../layout/defaults";
 import { createAutomationWorkspaceRenderStore } from "../render-store";
 import { createAutomationWorkspaceCommandPort } from "./port";
@@ -7,11 +13,16 @@ import {
   automationKeyboardSplitRatios,
   createAutomationResizeSession
 } from "./resize";
-import { createAutomationWarmViewRegistry } from "./warm-activation";
+import {
+  createAutomationWarmViewRegistry,
+  subscribeAutomationWarmViewRegistryToDirtyViews
+} from "./warm-activation";
 import {
   automationWorkspaceMaxMainPanes,
   createAutomationWorkspaceCommands
 } from "./workspace-commands";
+
+afterEach(resetDirtyViewRegistryForTests);
 
 describe("Phase 8 workspace commands", () => {
   it("keeps warm activity identity local to a pane and resets it between projects", () => {
@@ -26,6 +37,82 @@ describe("Phase 8 workspace commands", () => {
     warm.reset("project-b");
     expect(warm.activity("pane-1", "flow-nodes")).not.toBe(first);
     expect(warm.isWarm("pane-1", "flow-nodes")).toBe(false);
+  });
+
+  it("evicts least-recently-used warm views at desktop and constrained caps", () => {
+    const warm = createAutomationWarmViewRegistry({ projectKey: "project-a", limit: 6 });
+    for (let index = 0; index < 7; index += 1) warm.markWarm("pane-1", `view-${index}`);
+    expect(warm.retainedCount()).toBe(6);
+    expect(warm.isWarm("pane-1", "view-0")).toBe(false);
+    expect(warm.isWarm("pane-1", "view-6")).toBe(true);
+
+    warm.setLimit(3);
+    expect(warm.retainedCount()).toBe(3);
+    expect(warm.isWarm("pane-1", "view-3")).toBe(false);
+    expect(warm.isWarm("pane-1", "view-4")).toBe(true);
+  });
+
+  it("pins active and dirty warm views while preserving eligible revisit state", () => {
+    const dirty = new Set(["view-dirty"]);
+    const warm = createAutomationWarmViewRegistry({
+      projectKey: "project-a",
+      limit: 3,
+      isDirty: (viewId) => dirty.has(viewId),
+      eligible: (viewId) => viewId !== "view-cold"
+    });
+    const localState = { selectedRunId: "run-7", scrollTop: 240 };
+    warm.activity("pane-1", "view-active").current = true;
+    warm.markWarm("pane-1", "view-active");
+    warm.markWarm("pane-1", "view-dirty");
+    warm.markWarm("pane-1", "view-old");
+    warm.markWarm("pane-1", "view-new");
+
+    expect(warm.isWarm("pane-1", "view-active")).toBe(true);
+    expect(warm.isWarm("pane-1", "view-dirty")).toBe(true);
+    expect(warm.isWarm("pane-1", "view-old")).toBe(false);
+    expect(warm.isWarm("pane-1", "view-new")).toBe(true);
+    expect(localState).toEqual({ selectedRunId: "run-7", scrollTop: 240 });
+
+    warm.markWarm("pane-1", "view-cold");
+    expect(warm.isWarm("pane-1", "view-cold")).toBe(false);
+  });
+
+  it("immediately evicts an over-cap dirty pin when it becomes clean", () => {
+    registerDirtyView({
+      id: "settings:draft",
+      viewId: "view-dirty",
+      label: "Settings draft",
+      dirty: true,
+      save: vi.fn(),
+      discard: vi.fn()
+    });
+    registerDirtyView({
+      id: "graph:draft",
+      viewId: "view-still-dirty",
+      label: "Graph draft",
+      dirty: true,
+      save: vi.fn(),
+      discard: vi.fn()
+    });
+    const warm = createAutomationWarmViewRegistry({ projectKey: "project-a", limit: 1 });
+    const unsubscribe = subscribeAutomationWarmViewRegistryToDirtyViews(warm);
+    warm.markWarm("pane-1", "view-dirty");
+    warm.markWarm("pane-1", "view-still-dirty");
+    warm.activity("pane-1", "view-active").current = true;
+    warm.markWarm("pane-1", "view-active");
+
+    expect(warm.retainedCount()).toBe(3);
+    expect(warm.isWarm("pane-1", "view-dirty")).toBe(true);
+    expect(warm.isWarm("pane-1", "view-still-dirty")).toBe(true);
+    expect(warm.isWarm("pane-1", "view-active")).toBe(true);
+
+    updateDirtyView("settings:draft", { dirty: false });
+
+    expect(warm.retainedCount()).toBe(2);
+    expect(warm.isWarm("pane-1", "view-dirty")).toBe(false);
+    expect(warm.isWarm("pane-1", "view-still-dirty")).toBe(true);
+    expect(warm.isWarm("pane-1", "view-active")).toBe(true);
+    unsubscribe();
   });
 
   it("commits a tab selection synchronously exactly once and guards repeated selection", () => {
@@ -58,6 +145,36 @@ describe("Phase 8 workspace commands", () => {
     expect(listener).toHaveBeenCalledOnce();
     expect(onCommit).toHaveBeenCalledOnce();
     expect(onRegionActivated).toHaveBeenCalledOnce();
+  });
+
+  it("switches tabs without prompting while preserving dirty work", () => {
+    const initial = defaultAutomationWorkspacePrefs();
+    initial.panes[0] = {
+      ...initial.panes[0]!,
+      activeViewId: "flow-nodes",
+      tabs: ["flow-nodes", "runtime-debug"]
+    };
+    initial.activePaneId = initial.panes[0]!.id;
+    initial.activeViewId = "flow-nodes";
+    const store = createAutomationWorkspaceRenderStore(initial);
+    const discard = vi.fn();
+    registerDirtyView({
+      id: "graph:draft",
+      viewId: "flow-nodes",
+      label: "Node graph",
+      dirty: true,
+      save: vi.fn(),
+      discard
+    });
+    const commands = createAutomationWorkspaceCommands({
+      port: createAutomationWorkspaceCommandPort(store),
+      warm: createAutomationWarmViewRegistry({ projectKey: "p" })
+    });
+
+    expect(commands.selectPaneTab(initial.panes[0]!.id, "runtime-debug")).toBe(true);
+    expect(store.getPrefs().activeViewId).toBe("runtime-debug");
+    expect(dirtyViewRegistrySnapshot().pending).toBeNull();
+    expect(discard).not.toHaveBeenCalled();
   });
 
   it("moves a tab between panes with the keyboard command and keeps one active owner", () => {
@@ -137,7 +254,7 @@ describe("Phase 8 workspace commands", () => {
     });
     const before = store.getPrefs().panes.map((pane) => ({ ...pane, tabs: [...pane.tabs] }));
 
-    expect(commands.openView("flow-instructions", "new-window")).toBe(false);
+    expect(commands.openView("flow-instructions", "new-pane-or-focus")).toBe(false);
     expect(store.getPrefs().panes).toEqual(before);
     expect(store.getPrefs().panes).toHaveLength(automationWorkspaceMaxMainPanes);
   });
@@ -218,9 +335,14 @@ describe("Phase 8 workspace commands", () => {
       max: 420,
       home: 280
     })).toBe(280);
+    expect(automationKeyboardResizeValue({
+      key: "End", value: 280, decreaseKey: "ArrowLeft", increaseKey: "ArrowRight",
+      min: 220, max: 420, home: 280
+    })).toBe(420);
     const split = automationKeyboardSplitRatios([0.5, 0.5], 0, "ArrowRight", "horizontal");
     expect(split?.[0]).toBeCloseTo(0.54);
     expect(split?.[1]).toBeCloseTo(0.46);
     expect(automationKeyboardSplitRatios([0.7, 0.3], 0, "Home", "horizontal")).toEqual([0.5, 0.5]);
+    expect(automationKeyboardSplitRatios([0.5, 0.5], 0, "End", "horizontal")).toEqual([0.88, 0.12]);
   });
 });

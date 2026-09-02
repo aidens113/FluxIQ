@@ -9,6 +9,8 @@ function flowEditorSource(): string {
     "../flow-editor/useFlowEditorCommands.ts",
     "../flow-editor/useFlowEditorCanvasInteractions.ts",
     "../flow-editor/useFlowEditorPalette.ts",
+    "../flow-editor/useFlowEditorSurface.ts",
+    "./view-surface-preloader.ts",
     "../flow-editor/FlowGraphCanvas.tsx",
     "../flow-editor/FlowGraphStatus.tsx",
     "../flow-editor/FlowGraphToolbar.tsx",
@@ -116,8 +118,11 @@ describe("Nodes whiteboard toolbar and outline", () => {
     expect(problems.find((problem) => problem.targetId === "target")?.message).toContain("required");
   });
   it("renders explicit canvas modes, complete commands, and a semantic graph outline", () => {
-    const source = flowEditorSource();
-    for (const command of ["Fit graph", "Zoom in", "Zoom out", "Undo graph change", "Redo graph change", "Validate graph", "Toggle graph outline", "Add node"]) {
+    const source = flowEditorSource() + readFileSync(
+      new URL("../flow-editor/FlowGraphToolsMenu.tsx", import.meta.url),
+      "utf8"
+    );
+    for (const command of ["Fit graph", "Zoom in", "Zoom out", "Undo graph change", "Redo graph change", "Validate graph", "Add node", "More canvas tools"]) {
       expect(source).toContain('aria-label="' + command + '"');
     }
     expect(source).not.toContain('aria-label="Select mode"');
@@ -125,6 +130,9 @@ describe("Nodes whiteboard toolbar and outline", () => {
     expect(source).toContain('role="toolbar"');
     expect(source).toContain('role="tree"');
     expect(source).toContain('role="treeitem"');
+    expect(source).toContain("aria-controls={props.outlineId}");
+    expect(source).toContain("aria-controls={paletteId}");
+    expect(source).toContain('aria-controls={props.id + "-content"}');
     expect(source).toContain("automationGraphMiddleMousePanButtons");
     expect(source).toContain("panOnDrag={automationGraphMiddleMousePanButtons}");
     expect(source).toContain('selectionOnDrag={false}');
@@ -133,6 +141,8 @@ describe("Nodes whiteboard toolbar and outline", () => {
     expect(source).toContain("props.focusRequest?.problem");
     expect(source).not.toContain("automation-studio:focus-graph-problem");
     expect(source).toContain("validatedFlowNodes");
+    expect(source).toContain('label: "Graph Validation"');
+    expect(source).toContain("currentProps.onOpenValidation()");
     expect(source).toContain("flowGraphValidationRevision");
     expect(source).toContain("scheduleAutomationGraphIdleTask");
     expect(source).not.toContain("useMemo(() => automationFlowGraphProblems(flowNodes, flowEdges)");
@@ -140,7 +150,6 @@ describe("Nodes whiteboard toolbar and outline", () => {
     expect(source).toContain("automationGraphRevisionSignature");
     expect(source).toContain("automationGraphMiniMapNodeColor");
     expect(source).toContain("const nodesById = new Map");
-    expect(source).toContain("currentProps.onOpenProblems()");
     expect(source).not.toContain("startTransition");
     expect(source).toContain("currentProps.setSelection(");
     expect(source).not.toContain("publishAutomationGraphSelection");
@@ -171,15 +180,31 @@ describe("Node palette", () => {
     expect(automationNodeCompatibilityHint({ scope: "policy", availability: { kind: "domain", domainId: "billing" } } as any)).toBe("Domain: billing");
   });
 
-  it("provides search, all/favorite/recent modes, persisted favorites, and focused Add Node entry", () => {
+  it("provides category cards, search, all/favorite/recent modes, and persisted favorites", () => {
     const source = flowEditorSource();
+    const paletteCss = readFileSync(new URL("../styles/flow-editor/02-palette-actions.css", import.meta.url), "utf8");
     expect(source).toContain('aria-label="Search nodes"');
     expect(source).toContain('"all" | "favorites" | "recent"');
     expect(source).toContain('fluxiq:node-palette:favorites');
     expect(source).toContain('automation-node-compatibility');
+    expect(source).not.toContain('automation-node-palette-preview');
     expect(source).toContain('focusRevision');
     expect(source).not.toContain('automation-studio:focus-node-palette');
     expect(source).toContain('className="automation-node-palette-item"');
+    expect(source).toContain('current.filter((item) => item !== title)');
+    expect(source).toContain(': [...current, title]');
+    expect(source).toContain('window.requestAnimationFrame(materializeNext)');
+    expect(source).not.toContain('group.nodes.length * 82');
+    expect(source).not.toContain('translateY(${itemIndex * 82}px)');
+    expect(paletteCss).toMatch(/\.automation-policy-editor-grid[\s\S]*?contain: strict;/u);
+    expect(paletteCss).toMatch(/\.automation-policy-editor-grid > \.automation-node-palette[\s\S]*?position: absolute;/u);
+    expect(paletteCss).toContain("padding-right: calc(260px + var(--space-sm))");
+    expect(paletteCss).toMatch(/\.automation-node-palette-group-items[\s\S]*?display: grid;[\s\S]*?contain: layout paint style;/u);
+    expect(paletteCss).toMatch(/\.automation-node-palette-item[\s\S]*?position: relative;[\s\S]*?contain: layout paint style;/u);
+    const addNodeBlock = paletteCss.match(/\.automation-node-palette-add\s*\{([^}]*)\}/u)?.[1] ?? "";
+    expect(addNodeBlock).toContain("min-height: 78px");
+    expect(addNodeBlock).not.toMatch(/^\s*height:/mu);
+    expect(paletteCss).toMatch(/\.automation-node-palette-item \.automation-node-favorite[\s\S]*?position: absolute;[\s\S]*?top: 6px;[\s\S]*?right: 6px;[\s\S]*?width: 20px;/u);
   });
 });
 describe("Nodes whiteboard draft and save states", () => {
@@ -254,12 +279,37 @@ describe("Flow editor decomposition contracts", () => {
     "../flow-editor/useFlowEditorCommands.ts",
     "../flow-editor/useFlowEditorCanvasInteractions.ts",
     "../flow-editor/useFlowEditorPalette.ts",
+    "../flow-editor/useFlowEditorSurface.ts",
   ];
+
+  it("exposes truthful expanded state for editor disclosure controls", () => {
+    const toolbar = readFileSync(new URL("../flow-editor/FlowGraphToolbar.tsx", import.meta.url), "utf8");
+    const toolsMenu = readFileSync(new URL("../flow-editor/FlowGraphToolsMenu.tsx", import.meta.url), "utf8");
+    const palette = readFileSync(new URL("../flow-editor/FlowNodePalette.tsx", import.meta.url), "utf8");
+
+    expect(toolsMenu).toContain('aria-label={props.flowOutlineOpen ? "Close graph outline" : "Open graph outline"}');
+    expect(toolsMenu).toContain("aria-checked={props.flowOutlineOpen}");
+    expect(toolsMenu).toContain("aria-controls={props.outlineId}");
+    expect(palette).toContain("aria-expanded={!props.collapsed}");
+  });
 
   it("keeps active-tab changes behind the Flow editor render boundary", () => {
     const source = readFileSync(new URL("../flow-editor/FlowEditorView.tsx", import.meta.url), "utf8");
+    const definitions = readFileSync(new URL("./canonical-view-definitions.tsx", import.meta.url), "utf8");
+    const canvas = readFileSync(new URL("../flow-editor/FlowGraphCanvas.tsx", import.meta.url), "utf8");
+    const surface = readFileSync(new URL("../flow-editor/useFlowEditorSurface.ts", import.meta.url), "utf8");
+    const preloader = readFileSync(new URL("./view-surface-preloader.ts", import.meta.url), "utf8");
 
     expect(source).toContain("memo(function FlowEditorView");
+    expect(source).toContain('lazy(() => import("./FlowGraphCanvas")');
+    expect(source).not.toContain("if (!props.active) return null");
+    expect(definitions).toContain('ComponentProps<typeof FlowEditorView>, "activeRef"');
+    expect(definitions).toContain("({ activeRef: activity.activeRef })");
+    expect(definitions).not.toContain("({ active: activity.active, activeRef: activity.activeRef })");
+    expect(surface).toContain("useState(false)");
+    expect(canvas).toContain("{showMiniMap ? <MiniMap");
+    expect(preloader).toContain('"flow-nodes": () => import("../flow-editor/FlowGraphCanvas")');
+    expect(preloader).toContain("scheduleAutomationStudioAfterPaintIdleWork");
   });
 
   it("keeps implementation modules below the hard source limit", () => {
@@ -277,8 +327,10 @@ describe("Flow editor decomposition contracts", () => {
   it("keeps node and edge commands local to each mounted editor", () => {
     const files = [
       "../flow-editor/FlowEdge.tsx",
+      "../flow-editor/FlowReconnectPerformanceGuard.tsx",
       "../flow-editor/NodePortList.tsx",
       "../flow-editor/FlowGraphCanvas.tsx",
+      "../flow-editor/FlowGraphToolsMenu.tsx",
       "../flow-editor/useFlowEditorController.ts",
     ].map((path) => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n");
     expect(files).toContain("FlowEditorActionsProvider");
@@ -291,10 +343,28 @@ describe("Flow editor decomposition contracts", () => {
     const interactions = readFileSync(new URL("../flow-editor/useFlowEditorCanvasInteractions.ts", import.meta.url), "utf8");
     const controller = readFileSync(new URL("../flow-editor/flow-canvas-interaction-controller.ts", import.meta.url), "utf8");
     expect(canvas).toContain("panOnDrag={automationGraphMiddleMousePanButtons}");
+    expect(canvas).toContain("autoPanOnConnect={false}");
+    expect(canvas).toContain("autoPanOnNodeDrag={false}");
+    expect(canvas).toContain("elevateEdgesOnSelect");
+    expect(canvas).toContain("onReconnectStart=");
+    expect(canvas).toContain("onReconnectEnd=");
+    const reconnectGuard = readFileSync(new URL("../flow-editor/FlowReconnectPerformanceGuard.tsx", import.meta.url), "utf8");
+    expect(reconnectGuard).toContain("scopeNodeLookupValues");
+    expect(reconnectGuard).toContain("window.requestAnimationFrame(flush)");
+    expect(reconnectGuard).toContain("event.stopImmediatePropagation()");
+    expect(reconnectGuard).toContain('doc.addEventListener("mouseup", onMouseUp, true)');
     expect(canvas).toContain("selectionOnDrag={false}");
     expect(canvas).toContain("onPointerDownCapture={startFlowDragSelect}");
     expect(canvas).toContain("onNodeClick={selectClickedFlowNode}");
     expect(canvas).toContain("onNodeContextMenu={reserveFlowNodeContextMenu}");
+    const toolbar = readFileSync(new URL("../flow-editor/FlowGraphToolbar.tsx", import.meta.url), "utf8");
+    const toolsMenu = readFileSync(new URL("../flow-editor/FlowGraphToolsMenu.tsx", import.meta.url), "utf8");
+    expect(toolbar).toContain("FlowGraphToolsMenu");
+    expect(toolbar).toContain("selectedFlowNodeIds.length || selectedFlowEdgeIds.length || connectionSourceNodeId");
+    expect(toolsMenu).toContain('aria-label="More canvas tools"');
+    expect(toolsMenu).toContain('role="menuitemcheckbox"');
+    expect(toolsMenu).toContain('event.key === "ArrowDown"');
+    expect(toolsMenu).toContain("triggerRef.current?.focus()");
     expect(interactions).toContain("if (event.button !== 0) return");
     expect(interactions).toContain("event.button !== 2");
     expect(interactions).toContain('".react-flow__node, .react-flow__handle');

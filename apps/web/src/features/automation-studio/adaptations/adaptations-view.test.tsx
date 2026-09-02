@@ -66,8 +66,12 @@ describe("Automation Adaptations workspace", () => {
     expect(html).toContain("Last updated");
     expect(html).toContain("Page 0 of 0");
     expect(html).toContain("Select a Flow to review adaptations.");
+    expect(html).toContain('class="automation-adaptation-table" role="table"');
+    expect(html).toContain('class="automation-runtime-empty" role="row"');
+    expect(html).toContain('aria-colspan="4" role="cell"');
     expect(html).not.toContain("Training Status");
     const source = AdaptationsViewContent.toString();
+    expect(source).toContain("aria-selected");
     expect(source).toContain('"summary", "Summary"');
     expect(source).toContain('"changes", "Changes"');
     expect(source).toContain('"evidence", "Evidence"');

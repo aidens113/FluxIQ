@@ -33,8 +33,9 @@ export const AutomationRightPaneArea = memo(function AutomationRightPaneArea(pro
   const entries = useAutomationWorkspaceViews(props.source, state.tabs, state.activeViewId);
   const activeEntry = entries.find((entry) => entry.view.id === state.activeViewId) ?? entries[0];
   return (
-    <aside aria-label="Right utilities" className="automation-workspace-section right strict" data-workspace-region="inspector">
+    <aside aria-label="Right utilities" className="automation-workspace-section right strict" data-workspace-region="inspector" id="automation-right-utilities">
       <button
+        aria-controls="automation-right-utilities"
         aria-label="Resize right area"
         aria-orientation="vertical"
         aria-valuemax={620}
@@ -71,6 +72,8 @@ export const AutomationRightPaneArea = memo(function AutomationRightPaneArea(pro
       <header className="automation-workspace-section-header">
         <div className="automation-workspace-section-actions">
           <button
+            aria-controls="automation-right-utilities"
+            aria-expanded={!state.collapsed}
             aria-label={state.collapsed ? "Expand right area" : "Collapse right area"}
             className="icon-button"
             onClick={props.commands.toggleRightSidebar}

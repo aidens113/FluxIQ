@@ -6,6 +6,7 @@ import { automationWorkspaceRegionForView } from "./layout/regions";
 export type AutomationViewAdderContext = {
   hasProject: boolean;
   hasFlow: boolean;
+  hasTopLevelFlow: boolean;
   hasRecording: boolean;
   hasSelection: boolean;
 };
@@ -21,6 +22,7 @@ export type AutomationViewAdderOption = {
 const contextLabels: Record<keyof AutomationViewAdderContext, string> = {
   hasProject: "Open a project first",
   hasFlow: "Select a Flow or subflow first",
+  hasTopLevelFlow: "Select a top-level Flow first",
   hasRecording: "Select a recording first",
   hasSelection: "Select an object first"
 };

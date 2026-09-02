@@ -13,6 +13,7 @@ export type ClientGatewayApi = {
 
 export type ClientGatewayPort = {
   querySnapshot(): Promise<ClientGatewayResult<ClientGatewaySnapshot>>;
+  listItems(input: { kind: "sessions" | "pairings" | "trustedClients"; limit: number; cursor?: string | null; search?: string }): Promise<ClientGatewayResult<{ items?: any[]; page?: { total?: number; limit?: number; nextCursor?: string | null; hasMore?: boolean } }>>;
   startRecording(input: { sessionId: string; projectId: string | null; authorizationPin: string }): Promise<ClientGatewayResult<{ recording?: { recordingId?: string } }>>;
   stopRecording(input: { sessionId: string; authorizationPin: string }): Promise<ClientGatewayResult<{ recording?: { recordingId?: string } }>>;
   captureSnapshot(sessionId: string): Promise<ClientGatewayResult>;

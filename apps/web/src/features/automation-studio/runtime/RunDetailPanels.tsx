@@ -94,11 +94,11 @@ export function RuntimeRunStateEffectsPanel(props: { runDetail: any; runId: stri
         </div>
       </header>
       {view === "effects" ? <>
-        <DataTable columns={["#", "Action", "Type", "Payload"]} rows={visibleEffects.map((effect: any, index: number) => [effectOffset + index + 1, effect.nodeId ?? effect.attemptId ?? "-", effect.type ?? "-", <JsonToggle key={`${effectOffset + index}:effect`} label="Show payload" value={effect.payload ?? effect} />])} empty="No runtime effects were dispatched." />
+        <DataTable label="Runtime effects" columns={["#", "Action", "Type", "Payload"]} rows={visibleEffects.map((effect: any, index: number) => [effectOffset + index + 1, effect.nodeId ?? effect.attemptId ?? "-", effect.type ?? "-", <JsonToggle key={`${effectOffset + index}:effect`} label="Show payload" value={effect.payload ?? effect} />])} empty="No runtime effects were dispatched." />
         {effects.length > RUNTIME_ACTION_PAGE_SIZE ? <footer className="automation-runtime-pagination-footer"><span>{effectOffset + 1}-{Math.min(effects.length, effectOffset + RUNTIME_ACTION_PAGE_SIZE)} of {effects.length}</span><div className="automation-runtime-pagination"><button disabled={effectOffset <= 0} onClick={() => setEffectOffset(Math.max(0, effectOffset - RUNTIME_ACTION_PAGE_SIZE))} type="button">Previous</button><button disabled={effectOffset + RUNTIME_ACTION_PAGE_SIZE >= effects.length} onClick={() => setEffectOffset(effectOffset + RUNTIME_ACTION_PAGE_SIZE)} type="button">Next</button></div></footer> : null}
       </> : <>
         <div className="automation-runtime-decision-links"><RuntimeTargetAction label="Open State Viewer" target={{ kind: "state", ...(props.runId ? { targetId: props.runId } : {}) }} {...(props.onOpenTarget ? { onOpenTarget: props.onOpenTarget } : {})} /></div>
-        <DataTable columns={["Action", "Phase", "Reference", "Detail"]} rows={stateEvidence.map((item) => [item.action, item.phase, item.stateRef, <JsonToggle key={item.id} label="Show reference" value={item.detail} />])} empty="No state references were recorded for the visible actions." />
+        <DataTable label="Runtime state references" columns={["Action", "Phase", "Reference", "Detail"]} rows={stateEvidence.map((item) => [item.action, item.phase, item.stateRef, <JsonToggle key={item.id} label="Show reference" value={item.detail} />])} empty="No state references were recorded for the visible actions." />
         <JsonToggle label={`Show final state (${Object.keys(finalValues).length} keys)`} value={finalValues} />
       </>}
     </section>
@@ -226,7 +226,7 @@ export function RuntimeActionDetailPanel(props: { attempt: any; index: number; v
         {views.map(([id, label]) => <button aria-selected={props.view === id} className={props.view === id ? "active" : ""} key={id} onClick={() => props.onView(id)} role="tab" type="button">{label}</button>)}
       </div>
       <div className="automation-runtime-action-detail-body">
-        {props.view === "summary" ? <DataTable columns={["Field", "Value"]} rows={[
+        {props.view === "summary" ? <DataTable label="Runtime action summary" columns={["Field", "Value"]} rows={[
           ["Status", <StatusBadge key="status" value={attempt.status ?? "unknown"} />],
           ["Node", attempt.nodeId ?? "-"],
           ["Definition", attempt.definitionId ?? "-"],
@@ -237,7 +237,7 @@ export function RuntimeActionDetailPanel(props: { attempt: any; index: number; v
           ["Message", attempt.message ?? attempt.policyDecision?.reason ?? "-"]
         ]} empty="No action summary." /> : null}
         {props.view === "data" ? <div className="automation-runtime-action-detail-stack"><section><strong>Inputs</strong><JsonPreview value={attempt.inputs ?? {}} /></section><section><strong>Outputs</strong><JsonPreview value={attempt.outputs ?? {}} /></section></div> : null}
-        {props.view === "effects" ? <DataTable columns={["Type", "Payload"]} rows={(attempt.effects ?? []).map((effect: any, index: number) => [effect.type ?? `Effect ${index + 1}`, <JsonToggle key={index} label="Show payload" value={effect.payload ?? effect} />])} empty="No effects were emitted by this action." /> : null}
+        {props.view === "effects" ? <DataTable label="Runtime action effects" columns={["Type", "Payload"]} rows={(attempt.effects ?? []).map((effect: any, index: number) => [effect.type ?? `Effect ${index + 1}`, <JsonToggle key={index} label="Show payload" value={effect.payload ?? effect} />])} empty="No effects were emitted by this action." /> : null}
         {props.view === "state" ? <div className="automation-runtime-action-detail-stack"><section><strong>Before action</strong><JsonPreview value={stateRefs.beforeAction ?? {}} /></section><section><strong>After action</strong><JsonPreview value={stateRefs.afterAction ?? {}} /></section><section><strong>State diff</strong><JsonPreview value={stateRefs.stateDiff ?? attempt.metadata?.diffSummary ?? {}} /></section></div> : null}
         {props.view === "raw" ? <JsonPreview value={runtimeAttemptDetailsJson(attempt, attempt.metadata?.recoverySelected ?? attempt.recoveryDecision?.selected)} /> : null}
       </div>

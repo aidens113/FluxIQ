@@ -1,8 +1,8 @@
 import type { Edge, Node } from "@xyflow/react";
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import { createAutomationGraphOperationHistory, diffAutomationGraphDocuments, type AutomationGraphDocument, type AutomationGraphHistoryState, type AutomationGraphOperationHistory } from "./operation-history";
+import { createAutomationGraphOperationHistory, type AutomationGraphDocument, type AutomationGraphHistoryState, type AutomationGraphOperationBatch, type AutomationGraphOperationHistory } from "./operation-history";
 import { createAutomationGraphViewportStore, type AutomationGraphDensityState } from "./viewport-store";
-import { scheduleAutomationGraphIdleTask, type AutomationGraphIdleTaskCancel } from "./worker-tasks";
+import { runAutomationGraphWorkerTask, scheduleAutomationGraphIdleTask, type AutomationGraphIdleTaskCancel } from "./worker-tasks";
 
 export type AutomationGraphController<T extends Record<string, unknown>> = AutomationGraphDocument<T> & {
   nodesRef: { current: Array<Node<T>> };
@@ -46,6 +46,9 @@ export function useAutomationGraphController<T extends Record<string, unknown>>(
   const pendingHistoryFlushRef = useRef(false);
   const pendingHistoryFlushCancelRef = useRef<AutomationGraphIdleTaskCancel | null>(null);
   const [historyVersion, setHistoryVersion] = useState(0);
+  const historyVersionRef = useRef(0);
+  const historyGenerationRef = useRef(0);
+  const historyDiffQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [viewportState, setViewportState] = useState<AutomationGraphDensityState>(initialNodes.length || initialEdges.length ? "ready" : "empty");
 
   const reconcileThroughViewport = useCallback((document: AutomationGraphDocument<T>): AutomationGraphDocument<T> => {
@@ -60,12 +63,27 @@ export function useAutomationGraphController<T extends Record<string, unknown>>(
     pendingCheckpointRef.current = null;
     if (!before) return false;
     const after = { nodes: nodesRef.current, edges: edgesRef.current };
-    const batch = diffAutomationGraphDocuments(before, after, { baseRevision: String(historyVersion) });
-    if (!batch.operations.length) return false;
-    historyStore.push(batch);
-    setHistoryVersion((version) => version + 1);
+    if (before.nodes === after.nodes && before.edges === after.edges) return false;
+    const generation = historyGenerationRef.current;
+    const baseRevision = String(historyVersionRef.current);
+    historyDiffQueueRef.current = historyDiffQueueRef.current.then(async () => {
+      const result = await runAutomationGraphWorkerTask({
+        kind: "diff-graph",
+        before,
+        after,
+        baseRevision
+      }, { queueId: "flow-history-diff" });
+      if (generation !== historyGenerationRef.current || result.kind !== "diff-graph") return;
+      const batch = result.batch as AutomationGraphOperationBatch<T>;
+      if (!batch.operations.length) return;
+      historyStore.push(batch);
+      setHistoryVersion((version) => {
+        historyVersionRef.current = version + 1;
+        return version + 1;
+      });
+    }).catch(() => undefined);
     return true;
-  }, [historyVersion]);
+  }, [historyStore]);
 
   const flushPendingHistory = useCallback(() => {
     if (pendingHistoryFlushRef.current) return;
@@ -78,18 +96,37 @@ export function useAutomationGraphController<T extends Record<string, unknown>>(
   }, [commitCheckpoint]);
 
   useEffect(() => () => {
+    historyGenerationRef.current += 1;
     pendingHistoryFlushCancelRef.current?.();
     pendingHistoryFlushCancelRef.current = null;
   }, []);
 
   const applyGraphDocument = useCallback((document: AutomationGraphDocument<T>, durable: boolean) => {
+    const previousNodes = nodesRef.current;
+    const previousEdges = edgesRef.current;
     nodesRef.current = document.nodes;
     edgesRef.current = document.edges;
-    const visible = reconcileThroughViewport(document);
-    setNodeState(visible.nodes);
-    setEdgeState(visible.edges);
+    setNodeState((visibleNodes) => reconcileAutomationLocalGraphEntities(
+      visibleNodes,
+      previousNodes,
+      document.nodes,
+      viewportStore.maxRenderedNodes
+    ));
+    setEdgeState((visibleEdges) => reconcileAutomationLocalGraphEntities(
+      visibleEdges,
+      previousEdges,
+      document.edges,
+      viewportStore.maxRenderedEdges
+    ));
+    const nextViewportState: AutomationGraphDensityState = document.nodes.length > viewportStore.maxRenderedNodes
+      || document.edges.length > viewportStore.maxRenderedEdges
+      ? "capped"
+      : document.nodes.length || document.edges.length
+        ? "ready"
+        : "empty";
+    setViewportState((current) => current === nextViewportState ? current : nextViewportState);
     if (durable) flushPendingHistory();
-  }, [flushPendingHistory, reconcileThroughViewport]);
+  }, [flushPendingHistory, viewportStore]);
 
   const setNodes: Dispatch<SetStateAction<Array<Node<T>>>> = useCallback((update) => {
     const nextNodes = resolveAutomationGraphUpdate(nodesRef.current, update);
@@ -114,6 +151,7 @@ export function useAutomationGraphController<T extends Record<string, unknown>>(
   }, []);
 
   const replaceGraph = useCallback((document: AutomationGraphDocument<T>) => {
+    historyGenerationRef.current += 1;
     nodesRef.current = document.nodes;
     edgesRef.current = document.edges;
     const visible = reconcileThroughViewport(document);
@@ -121,7 +159,10 @@ export function useAutomationGraphController<T extends Record<string, unknown>>(
     setEdgeState(visible.edges);
     pendingCheckpointRef.current = null;
     historyStore.clear();
-    setHistoryVersion((version) => version + 1);
+    setHistoryVersion((version) => {
+      historyVersionRef.current = version + 1;
+      return version + 1;
+    });
   }, [reconcileThroughViewport]);
 
   const snapshot = useCallback(() => ({
@@ -139,7 +180,10 @@ export function useAutomationGraphController<T extends Record<string, unknown>>(
     const visible = reconcileThroughViewport(document);
     setNodeState(visible.nodes);
     setEdgeState(visible.edges);
-    setHistoryVersion((version) => version + 1);
+    setHistoryVersion((version) => {
+      historyVersionRef.current = version + 1;
+      return version + 1;
+    });
   }, [reconcileThroughViewport]);
 
   const undo = useCallback(() => {
@@ -205,4 +249,23 @@ function reconcileVisibleGraphEntities<TEntity extends { id: string }>(visibleEn
     nextVisible.push(next);
   }
   return changed ? nextVisible : visibleEntities;
+}
+
+export function reconcileAutomationLocalGraphEntities<TEntity extends { id: string }>(
+  visibleEntities: TEntity[],
+  previousEntities: TEntity[],
+  nextEntities: TEntity[],
+  maxVisible: number
+): TEntity[] {
+  if (nextEntities.length <= maxVisible) return nextEntities;
+  const reconciled = reconcileVisibleGraphEntities(visibleEntities, nextEntities);
+  if (nextEntities.length <= previousEntities.length) return reconciled;
+  const previousIds = new Set(previousEntities.map((entity) => entity.id));
+  const added = nextEntities.filter((entity) => !previousIds.has(entity.id));
+  if (!added.length) return reconciled;
+  const visibleAdded = added.slice(0, maxVisible);
+  return [
+    ...reconciled.slice(0, Math.max(0, maxVisible - visibleAdded.length)),
+    ...visibleAdded
+  ];
 }

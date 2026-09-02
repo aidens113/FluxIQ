@@ -40,9 +40,15 @@ describe("Phase 9 overlay architecture", () => {
 
   it("provides focus, Escape, non-blocking scroll, and viewport containment", () => {
     const floating = readFileSync(new URL("accessible-floating-overlay.tsx", overlayDirectory), "utf8");
-    expect(floating).toContain('event.key === "Escape"');
-    expect(floating).toContain('event.key !== "Tab"');
-    expect(floating).toContain("{ lockScroll: false }");
+    const environment = readFileSync(new URL("../../../programs/overlay-environment.ts", overlayDirectory), "utf8");
+    expect(floating).toContain('mode: "nonmodal"');
+    expect(floating).not.toContain('aria-modal="true"');
+    expect(floating).not.toContain("addEventListener(");
+    expect(environment).toContain('keyboardEvent.key === "Escape"');
+    expect(environment).toContain('keyboardEvent.key === "Tab"');
+    expect(environment).toContain('documentRef.addEventListener("pointerdown"');
+    expect(environment).toContain('documentRef.defaultView?.addEventListener("resize"');
+    expect(environment).toContain('mode === "modal" || mode === "drawer"');
     expect(floating).toContain("maxHeight:");
     expect(floating).toContain("maxWidth:");
     const modalSubscribers = [

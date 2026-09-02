@@ -76,6 +76,10 @@ export class AutomationStudioProjectHierarchyRepository {
     return row ? hierarchyFromRow(row) : null;
   }
 
+  async hasEntries(): Promise<boolean> {
+    return Boolean(await this.lease.database.get<{ present: number }>("select 1 as present from hierarchy_entries limit 1"));
+  }
+
   async listChildren(parentEntryId: string | null): Promise<AutomationStudioHierarchyEntry[]> {
     const rows = parentEntryId === null
       ? await this.lease.database.all<HierarchyRow>("select * from hierarchy_entries where parent_entry_id is null and is_deleted = 0 order by sort_key, entry_id")
@@ -90,7 +94,7 @@ export class AutomationStudioProjectHierarchyRepository {
     const params: unknown[] = [];
     if (input.parentEntryId === null) where.push("parent_entry_id is null");
     else { where.push("parent_entry_id = ?"); params.push(requiredId(input.parentEntryId, "parent hierarchy entry")); }
-    if (cursor) { where.push("(sort_key > ? or (sort_key = ? and entry_id > ?))"); params.push(cursor.sortKey, cursor.sortKey, cursor.entryId); }
+    if (cursor) { where.push("(sort_key, entry_id) > (?, ?)"); params.push(cursor.sortKey, cursor.entryId); }
     const rows = await this.lease.database.all<HierarchyRow>(`select * from hierarchy_entries where ${where.join(" and ")} order by sort_key, entry_id limit ?`, [...params, limit + 1]);
     return pageFromRows(rows, limit, (last) => ({ sortKey: last.sort_key, entryId: last.entry_id }));
   }

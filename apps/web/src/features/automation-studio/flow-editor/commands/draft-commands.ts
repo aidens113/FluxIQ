@@ -1,5 +1,5 @@
 import type { AutomationStudioFlowDocument } from "fluxiq/automation-studio";
-import { diffAutomationGraphDocuments } from "../../graph/operation-history";
+import { runAutomationGraphWorkerTask } from "../../graph/worker-tasks";
 import { graphToTaskFlow } from "../../model/project-artifacts";
 import {
   AUTOMATION_FLOW_ENDPOINTS,
@@ -15,6 +15,13 @@ import {
 import type { AutomationFlowDraftRepository } from "./draft-repository";
 
 export type AutomationEditableFlowGraph = { nodes: Array<Record<string, any>>; edges: Array<Record<string, any>> };
+type GraphPatchOperation =
+  | { op: "add_node"; node: Record<string, unknown> }
+  | { op: "move_node"; nodeId: string; x: number; y: number }
+  | { op: "set_node_parameters"; nodeId: string; values: Record<string, unknown> }
+  | { op: "delete_node"; nodeId: string }
+  | { op: "add_edge"; edge: Record<string, unknown> }
+  | { op: "delete_edge"; edgeId: string };
 export type AutomationRecoverableFlowDraft = {
   projectId: string;
   flowId: string;
@@ -91,7 +98,15 @@ export async function updateAutomationFlowDraft(
       return postflight ?? { status: "success", value: { graph: null, persisted: true, operationCount: 0 } };
     }
     if (!input.baseGraph) return { status: "success", value: { graph: input.graph, persisted: false, operationCount: 0 } };
-    const batch = diffAutomationGraphDocuments(input.baseGraph as any, input.graph as any, { baseRevision: input.baseRevision, ...(input.savedAt !== undefined ? { now: input.savedAt } : {}) });
+    const result = await runAutomationGraphWorkerTask({
+      kind: "diff-graph",
+      before: input.baseGraph as any,
+      after: input.graph as any,
+      baseRevision: input.baseRevision,
+      ...(input.savedAt !== undefined ? { now: input.savedAt } : {})
+    }, { queueId: "flow-draft-diff" });
+    if (result.kind !== "diff-graph") throw new Error("Flow draft worker returned an unexpected result.");
+    const batch = result.batch;
     const persisted = await capabilities.drafts.saveOperations({
       projectId: input.scope.projectId,
       flowId: input.flowId,
@@ -131,22 +146,29 @@ export async function saveAutomationFlowDraft(
     existingFlow: { ...input.flow, ownerKind: "flow", ownerId: input.flow.flowId } as any,
     graph: input.graph
   });
-  const { regions: _regions, regionHandoffs: _regionHandoffs, ...flow } = input.flow as AutomationStudioFlowDocument & { regions?: unknown; regionHandoffs?: unknown };
-  const expectedUpdatedAt = capabilities.drafts.loadSnapshot(input.scope.projectId, input.flow.flowId)?.baseUpdatedAt ?? input.flow.updatedAt;
+  const operations = createGraphPatchOperations(input.flow, serialized, input.graph);
+  const baseRevision = flowGraphRevision(input.flow);
   try {
-    const response = await capabilities.api.post<{ flow?: AutomationStudioFlowDocument }>(AUTOMATION_FLOW_ENDPOINTS.save, {
+    const response = await capabilities.api.post<{
+      result?: { status?: "applied" | "conflict"; currentRevision?: number };
+      flow?: AutomationStudioFlowDocument;
+    }>(AUTOMATION_FLOW_ENDPOINTS.applyGraphPatch, {
       projectId: input.scope.projectId,
+      flowId: input.flow.flowId,
       authorizationPin: input.authorizationPin,
-      expectedUpdatedAt,
-      flow: { ...flow, nodes: serialized.nodes, edges: serialized.edges }
+      baseRevision,
+      mutationId: createGraphMutationId(input.flow.flowId),
+      operations,
+      message: "Save Flow graph"
     }, input.signal ? { signal: input.signal } : {});
     const postflight = flowCommandPostflight<{ flow: AutomationStudioFlowDocument; flowId: string }>(input.scope, capabilities, input.signal);
     if (postflight) return postflight;
-    if (!response.ok || !response.payload?.flow) {
+    if (response.ok && response.payload?.result?.status === "conflict") {
+      return { status: "failure", code: "FLOW_SAVE_CONFLICT", error: "This Flow changed after the draft began. The draft has been preserved." };
+    }
+    if (!response.ok || response.payload?.result?.status !== "applied" || !response.payload.flow) {
       const failure = flowCommandRequestFailure<{ flow: AutomationStudioFlowDocument; flowId: string }>(response, "Flow could not be saved.");
-      return failure.status === "failure" && failure.error.includes("FLOW_SAVE_CONFLICT")
-        ? { status: "failure", code: "FLOW_SAVE_CONFLICT", error: "This Flow changed after the draft began. The draft has been preserved." }
-        : failure;
+      return failure;
     }
     capabilities.drafts.removeSnapshot(input.scope.projectId, input.flow.flowId);
     await capabilities.drafts.removeOperations(input.scope.projectId, input.flow.flowId);
@@ -154,4 +176,141 @@ export async function saveAutomationFlowDraft(
   } catch (error) {
     return flowCommandThrownFailure(error, input.signal, "Flow could not be saved.");
   }
+}
+
+function createGraphPatchOperations(
+  before: AutomationStudioFlowDocument,
+  after: AutomationStudioFlowDocument,
+  editorGraph: AutomationEditableFlowGraph
+): GraphPatchOperation[] {
+  const operations: GraphPatchOperation[] = [];
+  const beforeNodes = new Map(before.nodes.map((node) => [node.id, node]));
+  const afterNodes = new Map(after.nodes.map((node) => [node.id, node]));
+  const beforeEdges = new Map(before.edges.map((edge) => [edge.id, edge]));
+  const afterEdges = new Map(after.edges.map((edge) => [edge.id, edge]));
+  const editorNodes = new Map(editorGraph.nodes.map((node) => [String(node.id), node]));
+  const replacedNodeIds = new Set<string>();
+  const removedNodeIds = new Set<string>();
+
+  for (const [nodeId, node] of beforeNodes) {
+    const next = afterNodes.get(nodeId);
+    if (!next) removedNodeIds.add(nodeId);
+    else if (nodeStructureSignature(node) !== nodeStructureSignature(next)) replacedNodeIds.add(nodeId);
+  }
+  const disruptedNodeIds = new Set([...removedNodeIds, ...replacedNodeIds]);
+  const deletedEdgeIds = new Set<string>();
+  for (const [edgeId, edge] of beforeEdges) {
+    const next = afterEdges.get(edgeId);
+    if (!next || edgeStructureSignature(edge) !== edgeStructureSignature(next)
+      || disruptedNodeIds.has(edge.sourceNodeId) || disruptedNodeIds.has(edge.targetNodeId)) {
+      deletedEdgeIds.add(edgeId);
+      operations.push({ op: "delete_edge", edgeId });
+    }
+  }
+  for (const nodeId of removedNodeIds) operations.push({ op: "delete_node", nodeId });
+  for (const nodeId of replacedNodeIds) operations.push({ op: "delete_node", nodeId });
+  for (const [nodeId, node] of afterNodes) {
+    const previous = beforeNodes.get(nodeId);
+    if (!previous || replacedNodeIds.has(nodeId)) {
+      operations.push({ op: "add_node", node: graphPatchNode(before.flowId, node, editorNodes.get(nodeId)) });
+      continue;
+    }
+    const previousPosition = previous.position ?? { x: 0, y: 0 };
+    const nextPosition = node.position ?? { x: 0, y: 0 };
+    if (previousPosition.x !== nextPosition.x || previousPosition.y !== nextPosition.y) {
+      operations.push({ op: "move_node", nodeId, x: nextPosition.x, y: nextPosition.y });
+    }
+    if (graphValueSignature(previous.parameterValues ?? {}) !== graphValueSignature(node.parameterValues ?? {})) {
+      operations.push({ op: "set_node_parameters", nodeId, values: node.parameterValues ?? {} });
+    }
+  }
+  for (const [edgeId, edge] of afterEdges) {
+    const previous = beforeEdges.get(edgeId);
+    const connectedNodeReplaced = replacedNodeIds.has(edge.sourceNodeId) || replacedNodeIds.has(edge.targetNodeId);
+    if ((!previous || deletedEdgeIds.has(edgeId) || connectedNodeReplaced)
+      && afterNodes.has(edge.sourceNodeId) && afterNodes.has(edge.targetNodeId)) {
+      operations.push({ op: "add_edge", edge: graphPatchEdge(before.flowId, edge) });
+    }
+  }
+  return operations;
+}
+
+function graphPatchNode(flowId: string, node: AutomationStudioFlowDocument["nodes"][number], editorNode?: Record<string, any>): Record<string, unknown> {
+  return {
+    nodeId: node.id,
+    flowId,
+    definitionId: node.definitionId,
+    definitionVersion: node.definitionVersion ?? "legacy",
+    label: node.label ?? node.id,
+    description: node.description ?? "",
+    x: node.position?.x ?? 0,
+    y: node.position?.y ?? 0,
+    width: finiteDimension(editorNode?.measured?.width ?? editorNode?.width, 320),
+    height: finiteDimension(editorNode?.measured?.height ?? editorNode?.height, 180),
+    zIndex: Number.isFinite(Number(editorNode?.zIndex)) ? Math.trunc(Number(editorNode?.zIndex)) : 0,
+    disabled: editorNode?.data?.disabled === true || node.metadata?.disabled === true,
+    parameterValues: node.parameterValues ?? {},
+    metadata: node.metadata ?? {}
+  };
+}
+
+function graphPatchEdge(flowId: string, edge: AutomationStudioFlowDocument["edges"][number]): Record<string, unknown> {
+  return {
+    edgeId: edge.id,
+    flowId,
+    sourceNodeId: edge.sourceNodeId,
+    targetNodeId: edge.targetNodeId,
+    sourcePortId: edge.sourcePortId ?? null,
+    targetPortId: edge.targetPortId ?? null,
+    label: edge.label ?? "",
+    metadata: edge.metadata ?? {}
+  };
+}
+
+function nodeStructureSignature(node: AutomationStudioFlowDocument["nodes"][number]): string {
+  return graphValueSignature({
+    definitionId: node.definitionId,
+    definitionVersion: node.definitionVersion ?? "legacy",
+    label: node.label ?? node.id,
+    description: node.description ?? "",
+    metadata: durableGraphMetadata(node.metadata)
+  });
+}
+
+function edgeStructureSignature(edge: AutomationStudioFlowDocument["edges"][number]): string {
+  return graphValueSignature({
+    sourceNodeId: edge.sourceNodeId,
+    targetNodeId: edge.targetNodeId,
+    sourcePortId: edge.sourcePortId ?? null,
+    targetPortId: edge.targetPortId ?? null,
+    label: edge.label ?? "",
+    metadata: durableGraphMetadata(edge.metadata)
+  });
+}
+
+function durableGraphMetadata(metadata: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!metadata) return {};
+  const { order: _presentationOrder, ...durable } = metadata;
+  return durable;
+}
+
+function graphValueSignature(value: unknown): string {
+  return JSON.stringify(value);
+}
+
+function finiteDimension(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function flowGraphRevision(flow: AutomationStudioFlowDocument): number {
+  const revision = Number((flow as AutomationStudioFlowDocument & { graphRevision?: unknown }).graphRevision ?? flow.metadata?.graphRevision ?? 1);
+  return Number.isInteger(revision) && revision > 0 ? revision : 1;
+}
+
+function createGraphMutationId(flowId: string): string {
+  const suffix = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}.${Math.random().toString(36).slice(2)}`;
+  return `flow-editor.${flowId}.${suffix}`;
 }

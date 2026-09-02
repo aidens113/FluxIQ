@@ -6,7 +6,6 @@ import { notifyGlobalAlert } from "../../programs/shared-ui";
 type ExternalLifecycleOptions = {
   actionStatus: string;
   activeProjectName: string | null;
-  hasDirtyGraph: boolean;
   selectionKey: string;
   setNarrow: (narrow: boolean) => void;
   narrowPanel: string | null;
@@ -26,10 +25,6 @@ export function useAutomationExternalLifecycle(options: ExternalLifecycleOptions
   }, [options.setNarrow, options.setNarrowPanel]);
 
   useEffect(() => {
-    if (options.narrowPanel === "hierarchy") options.setNarrowPanel(null);
-  }, [options.narrowPanel, options.selectionKey, options.setNarrowPanel]);
-
-  useEffect(() => {
     document.title = options.activeProjectName
       ? options.activeProjectName + " - Automation Studio"
       : "Automation Studio";
@@ -47,13 +42,4 @@ export function useAutomationExternalLifecycle(options: ExternalLifecycleOptions
     });
   }, [options.actionStatus]);
 
-  useEffect(() => {
-    if (!options.hasDirtyGraph) return;
-    const warn = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [options.hasDirtyGraph]);
 }

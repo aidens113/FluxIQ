@@ -1,7 +1,7 @@
 export const recordingPageSize = 25;
 export const recordingTimelineWindowSize = 200;
 
-export type RecordingActionKind = "rename" | "note" | "marker" | "finalize" | "repair" | "delete";
+export type RecordingActionKind = "rename" | "note" | "marker" | "finalize" | "delete";
 
 export type RecordingPage = {
   recordings: any[];
@@ -19,7 +19,6 @@ export function recordingDialogCopy(kind: RecordingActionKind): { title: string;
   if (kind === "note") return { title: "Add note", description: "Attach a note to the selected recording event.", action: "Add note", fieldLabel: "Note" };
   if (kind === "marker") return { title: "Add marker", description: "Mark the selected point in the recording timeline.", action: "Add marker", fieldLabel: "Label" };
   if (kind === "finalize") return { title: "Finalize recording", description: "Close the raw capture so it can be used as stable Flow evidence.", action: "Finalize" };
-  if (kind === "repair") return { title: "Repair state index", description: "Rebuild this recording's state lookup index from its persisted timeline and snapshots.", action: "Repair index" };
   return { title: "Delete recording", description: "Permanently remove this raw recording and its recording-owned derived artifacts from the project.", action: "Delete recording" };
 }
 

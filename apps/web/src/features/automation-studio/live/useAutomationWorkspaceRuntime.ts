@@ -6,10 +6,16 @@ import type { AutomationStudioUiCachePort } from "../workspace/cache";
 import type { AutomationWorkspaceRenderStore } from "../workspace/render-store";
 import { createAutomationWorkspaceCommandPort } from "../workspace/commands/port";
 import { createAutomationWorkspaceCommands } from "../workspace/commands/workspace-commands";
-import { createAutomationWarmViewRegistry } from "../workspace/commands/warm-activation";
+import {
+  AUTOMATION_WARM_VIEW_CONSTRAINED_CAP,
+  AUTOMATION_WARM_VIEW_DESKTOP_CAP,
+  createAutomationWarmViewRegistry,
+  subscribeAutomationWarmViewRegistryToDirtyViews
+} from "../workspace/commands/warm-activation";
 import { normalizeAutomationWorkspacePrefs, type AutomationWorkspacePrefs } from "../workspace/layout";
 import { persistentAutomationWorkspacePrefs } from "../model/workspace-persistence";
 import { automationWorkspacePrefsSameRuntimeState } from "../model/workspace-persistence";
+import { automationStudioViewDefinition } from "../views/view-registry";
 
 export type AutomationWorkspaceRuntimeOptions = {
   activeProjectId: string | null;
@@ -17,6 +23,7 @@ export type AutomationWorkspaceRuntimeOptions = {
   loadedProjectHierarchyId: string | null;
   uiCache: AutomationStudioUiCachePort;
   workspaceRenderStore: AutomationWorkspaceRenderStore;
+  constrained?: boolean;
 };
 
 export function useAutomationWorkspaceRuntime(options: AutomationWorkspaceRuntimeOptions) {
@@ -53,10 +60,19 @@ export function useAutomationWorkspaceRuntime(options: AutomationWorkspaceRuntim
   }, []);
 
   const warm = useMemo(
-    () => createAutomationWarmViewRegistry({ projectKey: options.activeProjectId ?? "no-project" }),
+    () => createAutomationWarmViewRegistry({
+      projectKey: options.activeProjectId ?? "no-project",
+      limit: options.constrained ? AUTOMATION_WARM_VIEW_CONSTRAINED_CAP : AUTOMATION_WARM_VIEW_DESKTOP_CAP,
+      eligible: (viewId) => automationStudioViewDefinition(viewId)?.lifecycle.keepMounted === "warm"
+    }),
     [options.activeProjectId]
   );
+  useEffect(() => {
+    warm.setLimit(options.constrained ? AUTOMATION_WARM_VIEW_CONSTRAINED_CAP : AUTOMATION_WARM_VIEW_DESKTOP_CAP);
+  }, [options.constrained, warm]);
+  useEffect(() => subscribeAutomationWarmViewRegistryToDirtyViews(warm), [warm]);
   const port = useMemo(() => createAutomationWorkspaceCommandPort(options.workspaceRenderStore, {
+    schedule,
     onCommit: (prefs, commit) => {
       if (!options.activeProjectId || options.loadedProjectHierarchyId !== options.activeProjectId) return;
       const durablePrefs = persistentAutomationWorkspacePrefs(prefs);
@@ -76,6 +92,7 @@ export function useAutomationWorkspaceRuntime(options: AutomationWorkspaceRuntim
     options.activeProjectId,
     options.currentUserId,
     options.loadedProjectHierarchyId,
+    schedule,
     options.uiCache,
     options.workspaceRenderStore,
   ]);

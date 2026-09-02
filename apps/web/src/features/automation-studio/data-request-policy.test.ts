@@ -49,7 +49,7 @@ describe("Automation Studio ordinary request policy", () => {
       "list-flow-subflows",
       "list-flow-instructions",
       "list-flow-runs",
-      "get-flow-router",
+      "get-flow-router-summary",
       "get-graph-viewport",
       "list-flow-adaptations",
       "get-flow-metadata-detail",

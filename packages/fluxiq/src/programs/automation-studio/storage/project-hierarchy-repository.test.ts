@@ -60,7 +60,7 @@ describe("AutomationStudioProjectHierarchyRepository", () => {
     const repository = await AutomationStudioProjectHierarchyRepository.open({ pool, projectId: "project.hierarchy-pages" });
     await repository.putEntry({ entryId: "entry.root", parentEntryId: null, kind: "folder", ownerId: "entry.root", displayName: "Root", sortKey: "0", isSystem: true, isDeleted: false, createdAt: 1, updatedAt: 1 });
     for (let index = 0; index < 5; index += 1) {
-      await repository.putEntry({ entryId: `entry.child.${index}`, parentEntryId: "entry.root", kind: "flow", ownerId: `flow.${index}`, displayName: index === 3 ? "Checkout Flow" : `Flow ${index}`, sortKey: String(index), isSystem: false, isDeleted: false, createdAt: index + 2, updatedAt: index + 2 });
+      await repository.putEntry({ entryId: `entry.child.${index}`, parentEntryId: "entry.root", kind: "flow", ownerId: `flow.${index}`, displayName: index === 3 ? "Checkout Flow" : `Flow ${index}`, sortKey: index < 3 ? "0" : String(index), isSystem: false, isDeleted: false, createdAt: index + 2, updatedAt: index + 2 });
     }
     await repository.putEntry({ entryId: "entry.grandchild", parentEntryId: "entry.child.3", kind: "run", ownerId: "run.1", displayName: "Grandchild", sortKey: "0", isSystem: false, isDeleted: false, createdAt: 10, updatedAt: 10 });
     const first = await repository.listChildrenPage({ parentEntryId: "entry.root", limit: 2 });

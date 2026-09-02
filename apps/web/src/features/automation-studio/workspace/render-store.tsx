@@ -11,7 +11,7 @@ type AutomationWorkspaceRenderState = {
   saveRevision: number;
 };
 
-export type AutomationWorkspaceRenderStore = ScopedExternalStore<AutomationWorkspaceRenderState> & {
+export type AutomationWorkspaceRenderStore = Omit<ScopedExternalStore<AutomationWorkspaceRenderState>, "replace"> & {
   getPrefs(): AutomationWorkspacePrefs;
   getSaveRevision(): number;
   getSaveStatus(): string;
@@ -21,8 +21,9 @@ export type AutomationWorkspaceRenderStore = ScopedExternalStore<AutomationWorks
 };
 
 export function createAutomationWorkspaceRenderStore(initialPrefs: AutomationWorkspacePrefs): AutomationWorkspaceRenderStore {
+  const immutableInitialPrefs = immutableWorkspacePrefs(initialPrefs);
   const store = createScopedExternalStore<AutomationWorkspaceRenderState>({
-    prefs: initialPrefs,
+    prefs: immutableInitialPrefs,
     saveStatus: "All workspace changes saved",
     saveRevision: 0
   });
@@ -33,14 +34,25 @@ export function createAutomationWorkspaceRenderStore(initialPrefs: AutomationWor
     getSaveRevision: () => store.getState().saveRevision,
     getSaveStatus: () => store.getState().saveStatus,
     markSaveRequested: () => store.update((current) => ({ ...current, saveRevision: current.saveRevision + 1 }), ["save-request"]),
-    replace(nextPrefs) {
+    replace(nextPrefs: AutomationWorkspacePrefs) {
       const current = store.getState();
       if (nextPrefs === current.prefs) return false;
-      Object.assign(current.prefs, nextPrefs);
-      return store.replace({ ...current }, ["prefs"]);
+      return store.replace({ ...current, prefs: immutableWorkspacePrefs(nextPrefs) }, ["prefs"]);
     },
     setSaveStatus: (saveStatus) => store.update((current) => current.saveStatus === saveStatus ? current : { ...current, saveStatus }, ["save-status"])
   };
+}
+
+function immutableWorkspacePrefs(prefs: AutomationWorkspacePrefs): AutomationWorkspacePrefs {
+  const next = { ...prefs };
+  if (process.env.NODE_ENV !== "production") deepFreeze(next);
+  return next;
+}
+
+function deepFreeze<T>(value: T): T {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
+  for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
+  return Object.freeze(value);
 }
 
 export const AutomationWorkspaceRenderBoundary = memo(function AutomationWorkspaceRenderBoundary(props: {

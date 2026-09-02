@@ -16,7 +16,7 @@ describe("settings domain", () => {
     expect(subflowSettingsErrors(draft, [], [], [], [])).toEqual([]);
     const post = vi.fn().mockResolvedValue({ ok: true });
     await saveFlowSettings({ post } as any, { projectId: "p" });
-    expect(post).toHaveBeenCalledWith("save-flow", { projectId: "p" });
+    expect(post).toHaveBeenCalledWith("update-flow-settings", { projectId: "p" });
     expect(FlowSettingsViewContent.toString()).toContain("commitAutomationStudioMutation");
     expect(SubflowSettingsViewContent.toString()).toContain("commitAutomationStudioMutation");
   });

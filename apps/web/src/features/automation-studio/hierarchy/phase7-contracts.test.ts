@@ -197,6 +197,33 @@ describe("Phase 7 hierarchy mutation contracts", () => {
 });
 
 describe("Phase 7 SQL sibling pagination contracts", () => {
+  it("keeps canonical root Flows reachable when folders exceed the first sibling page", () => {
+    const folders = Array.from({ length: 150 }, (_, index) => ({
+      id: `folder.${index}`,
+      label: `Fixture folder ${index}`,
+      kind: "folder" as const,
+      category: "flow" as const,
+      parentId: null
+    }));
+    const canonicalFlow = {
+      id: "flow-z",
+      label: "Zebra Flow",
+      kind: "flow" as const,
+      category: "flow" as const,
+      parentId: null,
+      flowId: "flow.zebra"
+    };
+    const pager = new AutomationHierarchySiblingPager(async () => null);
+
+    pager.reset("project.1", [...folders, canonicalFlow]);
+
+    expect(pager.getSnapshot().nodes).toContainEqual(canonicalFlow);
+    expect(pager.getSnapshot().pageInfo[automationHierarchyPageKey(null)]).toMatchObject({
+      loadedCount: 100,
+      hasMore: true
+    });
+  });
+
   it("loads exactly one requested sibling page and advances only that parent cursor", async () => {
     const loader = vi.fn(async (request: {
       parentId: string | null;
@@ -255,9 +282,9 @@ describe("Phase 7 SQL sibling pagination contracts", () => {
     });
   });
 
-  it("forwards parent-owned page metadata through ProjectHierarchySidebar", () => {
+  it("forwards parent-owned page metadata through the canonical hierarchy sidebar", () => {
     const source = readFileSync(
-      fileURLToPath(new URL("./ProjectHierarchySidebar.tsx", import.meta.url)),
+      fileURLToPath(new URL("./AutomationProjectHierarchySidebar.tsx", import.meta.url)),
       "utf8"
     );
 

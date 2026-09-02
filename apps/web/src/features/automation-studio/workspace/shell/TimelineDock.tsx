@@ -24,8 +24,10 @@ export const AutomationTimelineDock = memo(function AutomationTimelineDock(props
       aria-label="Action preview timeline"
       className={state.collapsed ? "automation-bottom-timeline-region collapsed" : "automation-bottom-timeline-region"}
       data-workspace-region="timeline"
+      id="automation-action-preview"
     >
       <button
+        aria-controls="automation-action-preview"
         aria-label="Resize timeline"
         aria-orientation="horizontal"
         aria-valuemax={automationBottomDockMaxHeight}
@@ -66,6 +68,8 @@ export const AutomationTimelineDock = memo(function AutomationTimelineDock(props
         <div><Radio aria-hidden size={14} /><span><strong>Action Preview</strong><small>Selected recording or run action</small></span></div>
         <div className="automation-bottom-timeline-actions">
           <button
+            aria-controls="automation-action-preview"
+            aria-expanded={!state.collapsed}
             aria-label={state.collapsed ? "Expand timeline" : "Collapse timeline"}
             className="icon-button"
             onClick={props.commands.toggleTimeline}

@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import {
   authenticate,
+  assertResponsiveSurface,
   captureState,
   openFixtureProject,
   readUiFixtureManifest,
@@ -24,6 +25,7 @@ for (const [programId, title] of globalPrograms) {
     await authenticate(page, manifest);
     await page.goto(`/programs/${programId}`, { waitUntil: "domcontentloaded" });
     await expect(page.locator("main")).toBeVisible();
+    await assertResponsiveSurface(page);
     await captureState(page, testInfo, `program-${programId}-default`);
   });
 }
@@ -39,13 +41,16 @@ test("keeps capability inventories inside Technical Details", async ({ page }) =
   await expect(topbar.getByRole("tab", { name: "Storage" })).toHaveCount(0);
   await expect(topbar.getByRole("tab", { name: "Runtime" })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Technical details" }).click();
-  const details = page.getByRole("dialog", { name: "Database Manager technical details" });
+  const trigger = page.getByRole("button", { name: "Technical details" });
+  await trigger.click();
+  const details = page.getByRole("dialog", { name: "Technical details", exact: true });
   await expect(details).toBeVisible();
+  await expect(details).toHaveClass(/\bdrawer-panel\b/u);
   await details.getByRole("tab", { name: "Storage" }).click();
   await expect(details.getByRole("heading", { name: "Storage" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(details).toBeHidden();
+  await expect(trigger).toBeFocused();
 });
 const studioViews = [
   "Connected Clients",
@@ -73,6 +78,7 @@ test("captures every Automation Studio inner view", async ({ page }, testInfo) =
     await expect(palette).toBeVisible();
     await palette.getByRole("button", { name: new RegExp(`^${escapeRegex(title)}`) }).click();
     await expect(page.locator(".automation-view.active, .automation-view-container.active").filter({ hasText: title }).first()).toBeVisible();
+    await assertResponsiveSurface(page);
     await captureState(page, testInfo, `studio-view-${slug(title)}-default`);
   }
 });
@@ -89,6 +95,7 @@ test("captures the scale Flow whiteboard without clipped controls", async ({ pag
   const bounds = await frame.boundingBox();
   expect(bounds?.width ?? 0).toBeGreaterThan(240);
   expect(bounds?.height ?? 0).toBeGreaterThan(240);
+  await assertResponsiveSurface(page);
   await captureState(page, testInfo, `studio-large-graph-${testInfo.project.name}`);
 });
 function slug(value: string): string {

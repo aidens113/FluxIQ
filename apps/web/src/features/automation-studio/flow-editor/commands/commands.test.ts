@@ -277,8 +277,8 @@ describe("Flow draft commands", () => {
   });
 
   it("saves canonical graph data and clears recovery only after success", async () => {
-    const savedFlow = { flowId: "flow.one", name: "Flow", nodes: [], edges: [], updatedAt: 20 };
-    const post = vi.fn().mockResolvedValue({ ok: true, payload: { flow: savedFlow } });
+    const savedFlow = { flowId: "flow.one", name: "Flow", nodes: [], edges: [], updatedAt: 20, graphRevision: 2 };
+    const post = vi.fn().mockResolvedValue({ ok: true, payload: { result: { status: "applied", revisionNumber: 2 }, flow: savedFlow } });
     const capabilities = { ...createCapabilities(post), drafts: createDraftRepository() };
     await expect(saveAutomationFlowDraft({
       scope,
@@ -287,10 +287,18 @@ describe("Flow draft commands", () => {
       authorizationPin: "1234",
       canonical: true
     }, capabilities)).resolves.toMatchObject({ status: "success", value: { flowId: "flow.one" } });
-    expect(post).toHaveBeenCalledWith(AUTOMATION_FLOW_ENDPOINTS.save, expect.objectContaining({
+    expect(post).toHaveBeenCalledWith(AUTOMATION_FLOW_ENDPOINTS.applyGraphPatch, expect.objectContaining({
       projectId: "project.one",
+      flowId: "flow.one",
       authorizationPin: "1234",
-      flow: expect.objectContaining({ nodes: expect.any(Array), edges: expect.any(Array) })
+      baseRevision: 1,
+      mutationId: expect.stringContaining("flow-editor.flow.one."),
+      operations: expect.arrayContaining([
+        expect.objectContaining({
+          op: "add_node",
+          node: expect.objectContaining({ nodeId: "node.one", flowId: "flow.one", x: 0, y: 0 })
+        })
+      ])
     }), {});
     expect(capabilities.drafts.removeSnapshot).toHaveBeenCalled();
     expect(capabilities.drafts.removeOperations).toHaveBeenCalled();
@@ -298,7 +306,7 @@ describe("Flow draft commands", () => {
 
   it("preserves recovery on conflict and on stale mutation completion", async () => {
     const conflictDrafts = createDraftRepository();
-    const conflict = { ...createCapabilities(vi.fn().mockResolvedValue({ ok: false, error: "FLOW_SAVE_CONFLICT" })), drafts: conflictDrafts };
+    const conflict = { ...createCapabilities(vi.fn().mockResolvedValue({ ok: true, payload: { result: { status: "conflict", currentRevision: 2 } } })), drafts: conflictDrafts };
     const flow = { schemaVersion: "0.1", flowId: "flow.one", ownerKind: "project", ownerId: "project.one", name: "Flow", description: "", nodes: [], edges: [], createdAt: 1, updatedAt: 10 } as any;
     await expect(saveAutomationFlowDraft({ scope, flow, graph, authorizationPin: "1234", canonical: true }, conflict)).resolves.toMatchObject({
       status: "failure",
@@ -311,7 +319,7 @@ describe("Flow draft commands", () => {
     const stale = { ...createCapabilities(vi.fn().mockReturnValue(request.promise)), drafts: staleDrafts };
     const result = saveAutomationFlowDraft({ scope, flow, graph, authorizationPin: "1234", canonical: true }, stale);
     stale.setCurrent({ projectId: "project.two", generation: 2 });
-    request.resolve({ ok: true, payload: { flow } });
+    request.resolve({ ok: true, payload: { result: { status: "applied", revisionNumber: 2 }, flow } });
     await expect(result).resolves.toMatchObject({ status: "stale" });
     expect(staleDrafts.removeSnapshot).not.toHaveBeenCalled();
   });

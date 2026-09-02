@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams()
@@ -56,6 +57,14 @@ describe("Automation Problems workspace", () => {
     expect((html.match(/<li><button/g) ?? []).length).toBe(100);
     expect(html).toContain("1-100 of 101");
     expect(html).toContain("Next");
+  });
+
+  it("uses server pages for project Problems instead of slicing the broad snapshot", () => {
+    const source = readFileSync(new URL("./ProblemsView.tsx", import.meta.url), "utf8");
+    expect(source).toContain("props.onListProblems");
+    expect(source).toContain("cursor: string | null");
+    expect(source).toContain("props.projectId ? [] : props.problems");
+    expect(source).toContain("remotePage.nextCursor");
   });
 
   it.each([

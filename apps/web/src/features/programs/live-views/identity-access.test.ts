@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { User } from "fluxiq/identity-access";
 import { isLastEnabledAdmin, visibleIdentityUsers } from "./identity-access";
+import { readFileSync } from "node:fs";
 
 const users: User[] = [
   { id: "admin", username: "admin", displayName: "Primary Admin", roleId: "admin", enabled: true, totpEnabled: true, createdAtMs: 1, updatedAtMs: 2 },
@@ -18,5 +19,12 @@ describe("IdentityAccessLive view model", () => {
     expect(isLastEnabledAdmin(users, users[0]!)).toBe(true);
     expect(isLastEnabledAdmin([...users, { ...users[0]!, id: "admin.two" }], users[0]!)).toBe(false);
     expect(isLastEnabledAdmin(users, users[1]!)).toBe(false);
+  });
+
+  it("routes every privileged mutation through the operation gate", () => {
+    const source = readFileSync(new URL("./identity-access.tsx", import.meta.url), "utf8");
+    for (const operation of ["create-user", "update-user", "update-role", "update-credential", "begin-totp", "confirm-totp", "disable-totp"]) {
+      expect(source).toContain(`operation.run("${operation}"`);
+    }
   });
 });

@@ -31,6 +31,7 @@ export function useFlowEditorClipboardCommands(
     const copied = flowClipboardRef.current;
     if (!graph.isFlowMode || !copied?.nodes.length) return;
     graph.checkpointFlowGraph();
+    graph.markFlowGraphDirty(true);
     const stamp = Date.now().toString(36);
     const idMap = new Map(copied.nodes.map((node, index) => [
       node.id,

@@ -132,9 +132,9 @@ describe("Automation Studio extracted owner contracts", () => {
     expect(hierarchyUi.match(/scheduleSidebarWrite/g)).toHaveLength(2);
     expect(hierarchyUi).not.toContain("setWorkspacePrefs");
     expect(hierarchyUi).not.toContain("scheduleWorkspaceNavigation");
-    const sidebar = read("../hierarchy/ProjectHierarchySidebar.tsx");
-    expect(sidebar).toContain("const [filterState, setFilterState] = useState");
-    expect(sidebar).toContain("props.onFilterStateChange(next)");
+    const sidebar = read("../hierarchy/AutomationProjectHierarchySidebar.tsx");
+    expect(sidebar).toContain("useSyncExternalStore(props.coordinator.subscribe");
+    expect(sidebar).toContain("props.coordinator.setFilter(next)");
   });
 
   it("routes workspace preferences through the UI cache lane", () => {
@@ -150,17 +150,18 @@ describe("Automation Studio extracted owner contracts", () => {
     const pane = read("../workspace/shell/PaneArea.tsx");
     const mounted = read("../workspace/shell/MountedViewStack.tsx");
     const viewSource = read("../workspace/shell/view-source.ts");
-    expect(workspaceComposition).toContain("createAutomationWorkspaceViewSource(");
+    expect(connectedEntryRegistry).toContain("createAutomationWorkspaceViewSource(");
     expect(pane).toContain("useAutomationWorkspaceViews(props.source, props.pane.tabs, props.pane.activeViewId)");
     expect(mounted).toContain("const keepMounted = props.active || props.warm.isWarm(props.paneId, props.viewId)");
     expect(mounted).toContain("if (props.active) props.warm.markWarm(props.paneId, props.viewId)");
     expect(viewSource).toContain("useSyncExternalStore(subscribe, getSnapshot, getSnapshot)");
   });
 
-  it("derives the workspace view source without an effect-driven store feedback loop", () => {
-    expect(workspaceComposition).toContain("[props.views.entries]");
-    expect(workspaceComposition).not.toContain("source.replace(");
-    expect(workspaceComposition).not.toMatch(/useEffect\(\(\) => \{[\s\S]*props\.views\.entries/u);
+  it("owns one connected-view source for the project session", () => {
+    expect(composition).toContain("useAutomationConnectedViewSource(activeProjectId");
+    expect(connectedEntryRegistry).toContain("createAutomationConnectedViewSourceOwner(projectKey, entries)");
+    expect(workspaceComposition).toContain("source={props.views.source}");
+    expect(workspaceComposition).not.toContain("createAutomationWorkspaceViewSource");
   });
 
   it("wakes selected view bodies without a second Studio render", () => {
@@ -170,7 +171,10 @@ describe("Automation Studio extracted owner contracts", () => {
     expect(composition).not.toContain("readyActiveViewRenderSignature");
     expect(surface).toContain("const activeViewId = useAutomationWorkspaceSelector(props.store");
     expect(mounted).toContain("active={props.activePane && props.activeViewId === viewId}");
-    expect(mounted).not.toMatch(/localActiveViewId|setLocalActiveViewId|warm\.subscribe/u);
+    expect(mounted).not.toContain("requestAnimationFrame");
+    expect(mounted).not.toContain("requestIdleCallback");
+    expect(mounted).not.toMatch(/localActiveViewId|setLocalActiveViewId/u);
+    expect(mounted).toContain("useSyncExternalStore(props.warm.subscribe");
     expect(mounted).not.toContain("scheduleWorkspaceNavigation");
   });
 
@@ -178,10 +182,17 @@ describe("Automation Studio extracted owner contracts", () => {
     const commands = read("../workspace/commands/workspace-commands.ts");
     expect(navigation).toContain("options.commands.openView(viewId, mode)");
     expect(navigation).not.toMatch(/save-project-hierarchy|runLatest\(|api\.post\(/u);
+    expect(navigation).not.toContain("requestDirtyViewDecision");
     expect(commands).toContain("if (unchanged) return false");
     expect(commands).toContain("tabs: uniqueTabs([...candidate.tabs, viewId])");
     expect(commands).not.toContain("warm.activate");
     expect(commands).not.toContain("port.schedule");
+  });
+
+  it("subscribes the session dirty guard to graph edits instead of a stale store snapshot", () => {
+    expect(composition).toContain('useAutomationProjectResource(studioStores, "hasDirtyTaskGraph", false)');
+    expect(composition).not.toContain('const hasDirtyTaskGraph = resource("hasDirtyTaskGraph", false)');
+    expect(composition).toContain("hasDirtyTaskGraph,");
   });
 
   it("commits view navigation through the isolated synchronous render store", () => {
@@ -189,9 +200,11 @@ describe("Automation Studio extracted owner contracts", () => {
     const commands = read("../workspace/commands/workspace-commands.ts");
     expect(commands).toContain("port.commit(update");
     expect(port).toContain("store.replace(next)");
+    expect(workspaceRuntime).toContain("createAutomationWorkspaceCommandPort(options.workspaceRenderStore, {");
+    expect(workspaceRuntime).toContain("schedule,");
     expect(composition).toContain("useAutomationStudioFoundation(runtime)");
     expect(workspaceComposition).toContain("<AutomationStudioWorkspaceSurface");
-    expect(workspaceComposition).toContain("source={source}");
+    expect(workspaceComposition).toContain("source={props.views.source}");
     expect(workspaceComposition).toContain("store={props.workspace.store}");
     expect(navigation).toContain("runAutomationPresentationTransaction(() => {");
     expect(navigation).not.toContain("options.schedule");
@@ -236,7 +249,9 @@ describe("Automation Studio extracted owner contracts", () => {
     const commands = read("../workspace/commands/workspace-commands.ts");
     const warm = read("../workspace/commands/warm-activation.ts");
     expect(commands).not.toContain("warm.activate");
-    expect(warm).not.toContain("subscribe(");
+    expect(warm).toContain("subscribe(listener)");
+    expect(warm).toContain("AUTOMATION_WARM_VIEW_DESKTOP_CAP = 6");
+    expect(warm).toContain("AUTOMATION_WARM_VIEW_CONSTRAINED_CAP = 3");
     expect(warm).toContain("isWarm(paneId, viewId)");
     expect(warm).toContain("markWarm(paneId, viewId)");
     expect(warm).not.toContain("scheduleWorkspaceNavigation");

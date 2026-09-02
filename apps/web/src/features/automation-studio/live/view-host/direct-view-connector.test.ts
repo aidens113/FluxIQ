@@ -53,6 +53,7 @@ describe("direct view connector readiness", () => {
     const session = readFileSync(new URL("../AutomationStudioSession.tsx", import.meta.url), "utf8");
     const scope = {
       projectId: "project-a",
+      projectView: { getRevisionKey: () => "test", read: vi.fn() as never },
       getWorkspacePrefs: () => ({ viewStates: {} }) as any,
       loadFlowDetail: vi.fn(),
       loadFlowMetadata: vi.fn(),

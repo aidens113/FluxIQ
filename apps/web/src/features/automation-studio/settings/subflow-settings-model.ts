@@ -5,7 +5,7 @@ export type SubflowSettingsDraft = {
   routeTags: string;
   localInstructionIds: string[];
   status: "active" | "disabled" | "archived";
-  proposalModeOverride: "inherit" | "auto" | "manual" | "mixed";
+  interventionModeOverride: "inherit" | "fully_adaptive" | "manual_approval" | "no_llm_intervention";
   inputMapping: Array<{ flowInputId: string; subflowInputId: string; required?: boolean }>;
   outputMapping: Array<{ subflowOutputId: string; flowOutputId: string; required?: boolean }>;
 };
@@ -45,7 +45,7 @@ export function subflowSettingsDraft(subflow: any): SubflowSettingsDraft {
     routeTags: Array.isArray(subflow?.routeTags) ? subflow.routeTags.join(", ") : "",
     localInstructionIds: Array.isArray(subflow?.localInstructionIds) ? [...subflow.localInstructionIds] : [],
     status: subflow?.status === "disabled" || subflow?.status === "archived" ? subflow.status : "active",
-    proposalModeOverride: subflow?.proposalModeOverride === "auto" || subflow?.proposalModeOverride === "manual" || subflow?.proposalModeOverride === "mixed" ? subflow.proposalModeOverride : "inherit",
+    interventionModeOverride: subflow?.interventionModeOverride === "fully_adaptive" || subflow?.interventionModeOverride === "manual_approval" || subflow?.interventionModeOverride === "no_llm_intervention" ? subflow.interventionModeOverride : subflow?.proposalModeOverride === "manual" ? "manual_approval" : subflow?.proposalModeOverride === "auto" || subflow?.proposalModeOverride === "mixed" ? "fully_adaptive" : "inherit",
     inputMapping: Array.isArray(subflow?.inputMapping) ? subflow.inputMapping.map((mapping: any) => ({ ...mapping })) : [],
     outputMapping: Array.isArray(subflow?.outputMapping) ? subflow.outputMapping.map((mapping: any) => ({ ...mapping })) : []
   };

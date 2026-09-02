@@ -1,6 +1,6 @@
 import type { AutomationWorkspacePrefs, AutomationWorkspaceRegion } from "../layout/contracts";
 
-export type AutomationWorkspaceOpenMode = "preview" | "new-window";
+export type AutomationWorkspaceOpenMode = "preview" | "new-pane-or-focus";
 export type AutomationWorkspaceTabPlacement = "before" | "after" | "end";
 
 export type AutomationWorkspaceCommitOptions = {

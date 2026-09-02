@@ -20,6 +20,28 @@ describe("automation graph worker tasks", () => {
     expect(runAutomationGraphWorkerTaskInline({ kind: "validate-shape", graph })).toEqual({ kind: "validate-shape", problems: [{ id: "dangling:a.missing", message: "Connection references an unloaded or missing node." }] });
   });
 
+  it("diffs durable graph operations off the component path", async () => {
+    const before = { nodes: [{ id: "a", position: { x: 0, y: 0 }, selected: true, data: {} }], edges: [] } as any;
+    const after = { nodes: [{ id: "a", position: { x: 40, y: 20 }, selected: false, data: {} }], edges: [] } as any;
+    const result = await runAutomationGraphWorkerTask({
+      kind: "diff-graph",
+      before,
+      after,
+      baseRevision: "7",
+      now: 10
+    }, { useWorker: false });
+
+    expect(result.kind).toBe("diff-graph");
+    if (result.kind !== "diff-graph") return;
+    expect(result.batch.baseRevision).toBe("7");
+    expect(result.batch.operations).toEqual([{
+      kind: "node.update",
+      entityId: "a",
+      before: { id: "a", position: { x: 0, y: 0 }, data: {} },
+      after: { id: "a", position: { x: 40, y: 20 }, data: {} }
+    }]);
+  });
+
   it("idle-schedules and cancels graph tasks instead of running them in the current interaction", () => {
     vi.useFakeTimers();
     const callback = vi.fn();

@@ -1,7 +1,8 @@
 .automation-studio-shell {
   grid-template-columns: 280px minmax(0, 1fr);
-  height: min(900px, calc(100vh - 150px));
-  min-height: 720px;
+  height: calc(100dvh - 49px);
+  min-height: 0;
+  max-height: calc(100dvh - 49px);
 }
 
 .automation-studio-shell.page-window-fullscreen {
@@ -11,7 +12,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) !important;
   width: 100vw;
-  height: calc(100vh - 49px);
+  height: calc(100dvh - 49px);
   min-height: 0;
   border: 0;
   border-radius: 0;
@@ -354,6 +355,7 @@
   min-height: 0;
   overflow: hidden;
   padding: 0;
+  contain: strict;
 }
 
 .automation-studio-workbar {
@@ -372,18 +374,24 @@
 }
 
 .automation-studio-shell.sidebar-collapsed .automation-studio-sidebar-heading {
+  align-items: flex-start;
   justify-content: center;
   gap: 0;
 }
 
 .automation-studio-shell.sidebar-collapsed .automation-studio-sidebar-heading .inline-actions {
+  flex-direction: column;
   justify-content: center;
+  align-items: center;
+  gap: 4px;
   width: 100%;
 }
 
 .automation-studio-shell.sidebar-collapsed .automation-studio-sidebar-heading .icon-button {
   width: 32px;
   height: 32px;
+  min-width: 32px;
+  padding: 0;
 }
 
 .automation-workspace-actions {

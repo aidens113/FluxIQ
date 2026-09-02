@@ -1,0 +1,313 @@
+/* Final Phase 7 responsive and visual contracts for non-Studio programs. */
+.single-program,
+.program-fullscreen-shell,
+.program-main-panel,
+.program-content,
+.program-workspace-grid,
+.workspace-panel {
+  min-width: 0;
+  min-height: 0;
+}
+
+.program-content {
+  overflow-wrap: anywhere;
+}
+
+.program-inner-header,
+.program-list-toolbar,
+.inline-actions,
+.panel-heading,
+.pagination,
+.pagination-actions,
+.modal-actions {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.field,
+.field > :is(input, select, textarea),
+.combobox,
+.combobox-input-wrap,
+.segmented-control,
+.table-wrap,
+.data-table,
+.pagination {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.field > :is(input, select, textarea),
+.combobox-input-wrap,
+.button,
+.icon-button,
+.segmented-control button,
+.pagination select {
+  min-height: 34px;
+}
+
+.icon-button {
+  flex: 0 0 34px;
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+}
+
+.table-wrap,
+.db-grid-wrap,
+.background-run-table-wrap {
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.data-table :is(th, td),
+.db-grid :is(th, td),
+.background-run-table :is(th, td),
+.list-row-copy,
+.list-row-copy strong,
+.list-row-copy small,
+.program-inner-header > div,
+.panel-heading > div {
+  min-width: 0;
+}
+
+.list-row-copy strong,
+.list-row-copy small,
+.status-badge-pill > span,
+.program-chip,
+.panel-kicker {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel > .panel,
+.workspace-panel > .workspace-panel {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.loading-state,
+.empty-state,
+.inline-notice {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.modal-panel,
+.drawer-panel,
+.program-technical-drawer {
+  max-height: 100dvh;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.docs-program-layout,
+.db-explorer-shell,
+.background-task-shell,
+.compute-control-shell {
+  min-height: 0;
+}
+
+@media (max-height: 600px) {
+  .program-content {
+    padding-block: var(--space-sm);
+  }
+
+  .docs-program-layout,
+  .db-explorer-shell,
+  .background-task-shell,
+  .compute-control-shell {
+    height: calc(100dvh - 96px);
+    max-height: calc(100dvh - 96px);
+  }
+
+  .workspace-panel,
+  .empty-state,
+  .loading-state {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .db-explorer-shell {
+    grid-template-columns: minmax(220px, 34%) minmax(0, 1fr);
+  }
+
+  .db-inspector {
+    grid-column: 1 / -1;
+    max-height: 38dvh;
+    border-top: 1px solid var(--color-border);
+    border-left: 0;
+  }
+
+  .db-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .db-toolbar > :last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 768px) {
+  .program-content,
+  .panel,
+  .workspace-panel {
+    padding: var(--space-sm);
+  }
+
+  .program-inner-header,
+  .program-list-toolbar,
+  .panel-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .modal-panel > .panel-heading,
+  .drawer-panel > .panel-heading,
+  .program-technical-drawer > header {
+    align-items: flex-start;
+    flex-direction: row;
+  }
+
+  .program-workspace-grid,
+  .program-secondary-grid,
+  .identity-users-layout,
+  .secret-keys-list-detail,
+  .background-task-shell,
+  .compute-control-shell,
+  .db-explorer-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .docs-program-layout,
+  .db-explorer-shell,
+  .background-task-shell,
+  .compute-control-shell {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .docs-viewer-panel,
+  .db-main,
+  .background-run-panel,
+  .compute-node-detail {
+    min-height: min(420px, calc(100dvh - 110px));
+  }
+
+  .db-sidebar,
+  .compute-node-list,
+  .background-task-list-scroll {
+    max-height: min(280px, 42dvh);
+  }
+
+  .db-inspector,
+  .compute-activity-panel,
+  .background-task-detail {
+    max-height: none;
+  }
+
+  .db-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .db-toolbar > * {
+    grid-column: 1;
+  }
+
+  .modal-backdrop {
+    align-items: end;
+    padding: var(--space-sm);
+  }
+
+  .modal-panel {
+    width: 100%;
+    max-height: calc(100dvh - (var(--space-sm) * 2));
+  }
+
+  .modal-actions .button {
+    flex: 1 1 140px;
+  }
+
+  .pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pagination-actions {
+    justify-content: space-between;
+    width: 100%;
+  }
+}
+
+@media (max-width: 390px) {
+  .directory-topbar,
+  .program-global-topbar {
+    padding-inline: var(--space-sm);
+  }
+
+  .program-tabs {
+    overflow-x: auto;
+    scrollbar-gutter: stable;
+  }
+
+  .inline-actions,
+  .program-inner-header > .inline-actions,
+  .program-list-toolbar,
+  .modal-actions,
+  .db-page-footer,
+  .background-run-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inline-actions > .button,
+  .program-inner-header > .button,
+  .program-list-toolbar > *,
+  .modal-actions > .button {
+    width: 100%;
+  }
+
+  .segmented-control {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .segmented-control button {
+    min-width: 0;
+    border: 1px solid var(--color-border);
+  }
+
+  .modal-backdrop {
+    padding: 0;
+  }
+
+  .modal-panel,
+  .drawer-panel,
+  .program-technical-drawer {
+    width: 100vw;
+    min-height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+
+  .global-alert-viewport {
+    right: var(--space-sm);
+    bottom: var(--space-sm);
+    left: var(--space-sm);
+    width: auto;
+  }
+
+  .global-alert {
+    pointer-events: none;
+  }
+
+  .global-alert :is(button, a) {
+    pointer-events: auto;
+  }
+}

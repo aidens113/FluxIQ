@@ -1,14 +1,22 @@
 import { DEFAULT_SESSION_TTL_MS, TotpRequiredError } from "fluxiq";
 import { NextResponse } from "next/server";
+import path from "node:path";
 import { FLUXIQ_SESSION_COOKIE } from "../../../../lib/auth";
 import { getFluxIQ } from "../../../../lib/fluxiq";
-import { LoginAttemptTracker } from "../../../../lib/login-attempts";
+import { DurableLoginAttemptTracker, loginClientAddress } from "../../../../lib/login-attempts";
 
 const ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const LOCKOUT_MS = 60 * 1000;
 const MAX_ATTEMPTS = 5;
 
-const attempts = new LoginAttemptTracker({ windowMs: ATTEMPT_WINDOW_MS, lockoutMs: LOCKOUT_MS, maxAttempts: MAX_ATTEMPTS });
+let attempts: DurableLoginAttemptTracker | null = null;
+
+function loginAttempts(): DurableLoginAttemptTracker {
+  return attempts ??= new DurableLoginAttemptTracker(
+    path.join(getFluxIQ().paths.fluxiq, "security", "login-attempts.json"),
+    { windowMs: ATTEMPT_WINDOW_MS, lockoutMs: LOCKOUT_MS, maxAttempts: MAX_ATTEMPTS, maxEntries: 10_000 }
+  );
+}
 
 export async function POST(request: Request) {
   const payload = (await request.json().catch(() => undefined)) as
@@ -22,9 +30,13 @@ export async function POST(request: Request) {
   if (!payload?.username || !payload.password) {
     return NextResponse.json({ ok: false, error: "Username and password are required" }, { status: 400 });
   }
+  const totpError = loginTotpError(payload.totp);
+  if (totpError) {
+    return NextResponse.json({ ok: false, code: "invalid_totp", fieldErrors: { totp: totpError }, error: totpError }, { status: 400 });
+  }
 
   const attemptKey = rateLimitKey(request, payload.username);
-  const locked = attempts.remainingLockout(attemptKey);
+  const locked = await loginAttempts().remainingLockout(attemptKey);
   if (locked > 0) {
     return NextResponse.json(
       {
@@ -46,7 +58,7 @@ export async function POST(request: Request) {
       ...(payload.totp ? { totp: payload.totp } : {}),
       ttlMs: DEFAULT_SESSION_TTL_MS,
     });
-    attempts.clear(attemptKey);
+    await loginAttempts().clear(attemptKey);
     const response = NextResponse.json({
       ok: true,
       payload: {
@@ -65,7 +77,7 @@ export async function POST(request: Request) {
     });
     return response;
   } catch (error) {
-    const failed = attempts.registerFailure(attemptKey);
+    const failed = await loginAttempts().registerFailure(attemptKey);
     const status = failed.lockedUntilMs > Date.now() ? 429 : 401;
     const retryAfterMs = Math.max(0, failed.lockedUntilMs - Date.now());
     if (error instanceof TotpRequiredError) {
@@ -92,8 +104,11 @@ export async function POST(request: Request) {
   }
 }
 
-function rateLimitKey(request: Request, username: string): string {
-  const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const address = forwardedFor || request.headers.get("x-real-ip") || "local";
+export function rateLimitKey(request: Request, username: string): string {
+  const address = loginClientAddress(request, process.env.FLUXIQ_TRUST_PROXY === "true");
   return `${address}:${username.trim().toLowerCase()}`;
+}
+
+export function loginTotpError(totp: string | undefined): string | null {
+  return totp && !/^\d{6}$/.test(totp) ? "Authenticator code must contain exactly 6 digits." : null;
 }

@@ -133,6 +133,9 @@ describe("Automation Studio Phase 4 project ownership", () => {
 
     expect(gate).toContain("AutomationProjectCatalogSurface");
     expect(runtime).toContain("useAutomationProjectLifecycle");
+    expect(runtime).toContain("openingUiRevisionRef");
+    expect(runtime).toContain("options.workspace.getPrefsRevision() !== cacheHydrationRevision");
+    expect(runtime).toContain("options.hierarchy.getUiRevision() === cacheHierarchyRevision");
     expect(root).not.toContain("useProjectController(");
     expect(root).not.toContain("projectActionBusy");
     expect(root).not.toContain('"create-project"');

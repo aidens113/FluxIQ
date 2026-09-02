@@ -8,6 +8,8 @@ import {
 export const AUTOMATION_STUDIO_UI_CACHE_SCHEMA_VERSION = 1;
 export const AUTOMATION_STUDIO_UI_CACHE_NAMESPACE = "fluxiq:automation-studio:ui-cache";
 export const AUTOMATION_STUDIO_UI_CACHE_MAX_LOCAL_STORAGE_CHARS = 500_000;
+export const AUTOMATION_STUDIO_UI_CACHE_MAX_PROJECTS = 20;
+export const AUTOMATION_STUDIO_UI_CACHE_MAX_GLOBAL_CHARS = 2_000_000;
 
 export class ProgramApiAutomationStudioUiCacheBackend implements AutomationStudioUiCacheBackend {
   constructor(
@@ -90,13 +92,45 @@ export class LocalStorageAutomationStudioUiCacheBackend implements AutomationStu
       window.localStorage.removeItem(key);
       return;
     }
-    if (!options?.signal?.aborted) window.localStorage.setItem(key, raw);
+    if (!options?.signal?.aborted) {
+      window.localStorage.setItem(key, raw);
+      pruneAutomationStudioUiCache(window.localStorage);
+    }
   }
 
   async delete(key: string, options?: { signal?: AbortSignal }): Promise<void> {
     if (options?.signal?.aborted) return;
     if (typeof window === "undefined" || !window.localStorage) return;
     window.localStorage.removeItem(key);
+  }
+}
+
+export function pruneAutomationStudioUiCache(storage: Storage): void {
+  if (typeof storage.length !== "number" || typeof storage.key !== "function") return;
+  const entries: Array<{ key: string; projectId: string; chars: number; updatedAt: number }> = [];
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (!key) continue;
+    const parts = parseAutomationStudioUiCacheKey(key);
+    if (!parts) continue;
+    const raw = storage.getItem(key) ?? "";
+    let updatedAt = 0;
+    try { updatedAt = Number((JSON.parse(raw) as { updatedAt?: number }).updatedAt ?? 0); } catch { /* malformed values are oldest */ }
+    entries.push({ key, projectId: parts.projectId, chars: raw.length, updatedAt });
+  }
+  const newestByProject = new Map<string, number>();
+  for (const entry of entries) newestByProject.set(entry.projectId, Math.max(newestByProject.get(entry.projectId) ?? 0, entry.updatedAt));
+  const retainedProjects = new Set([...newestByProject.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, AUTOMATION_STUDIO_UI_CACHE_MAX_PROJECTS)
+    .map(([projectId]) => projectId));
+  const retained = entries.filter((entry) => retainedProjects.has(entry.projectId)).sort((left, right) => left.updatedAt - right.updatedAt);
+  let totalChars = retained.reduce((total, entry) => total + entry.chars, 0);
+  for (const entry of entries) if (!retainedProjects.has(entry.projectId)) storage.removeItem(entry.key);
+  while (totalChars > AUTOMATION_STUDIO_UI_CACHE_MAX_GLOBAL_CHARS && retained.length > 0) {
+    const oldest = retained.shift()!;
+    storage.removeItem(oldest.key);
+    totalChars -= oldest.chars;
   }
 }
 

@@ -119,11 +119,12 @@ const projectUiKeys = new Set<keyof AutomationStudioUiState>([
 ]);
 
 export function useAutomationNarrowWorkspace(store: AutomationStudioUiStore) {
-  const state = useSyncExternalStore(
+  useSyncExternalStore(
     (listener) => store.subscribe(listener, "narrow-workspace"),
-    () => store.getState(),
-    () => store.getState()
+    () => store.getRevision("narrow-workspace"),
+    () => store.getRevision("narrow-workspace")
   );
+  const state = store.getState();
   const setIsNarrowWorkspace = useCallback((isNarrowWorkspace: boolean) => {
     store.patch({ isNarrowWorkspace });
   }, [store]);

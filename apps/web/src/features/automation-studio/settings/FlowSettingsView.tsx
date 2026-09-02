@@ -2,14 +2,29 @@
 
 import { Combobox, Field, Modal, StatusBadge } from "../../programs/shared-ui";
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, AlertTriangle, CircleCheck, Info, Plus, Trash2 } from "lucide-react";
+import { AlertCircle, AlertTriangle, ArrowLeftRight, Bot, Boxes, CircleCheck, CircleDollarSign, Gauge, Info, ListChecks, Plus, Settings2, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
 import { commitAutomationStudioMutation } from "../stores/mutation-transaction-store";
 import { JsonToggle } from "../runtime";
-import { readSettingsSection, scrollToSettingsSection, settingsDraftIsDirty } from "./settings-model";
+import { readSettingsSection, settingsConcurrentRevisionAction, settingsDraftIsDirty } from "./settings-model";
 import { useSettingsCommands, type SettingsCommands } from "./settings-host";
-import { FLOW_LLM_PROVIDERS, FLOW_SETTINGS_DEFAULT_VALUES, applyFlowAdaptationPreset, applyFlowTrainingMode, buildFlowSettingsSavePayload, flowAdaptationErrors, flowEffectiveSettings, flowGeneralRuntimeErrors, flowLimitsInterfaceErrors, flowLlmProvider, flowLlmSettingsErrors, flowSettingsDraftFromFlow, flowSettingsMetadata, normalizedProviderLabel, type FlowPortSettingsDraft, type FlowSettingsDraft } from "./flow-settings-model";
+import { SettingsSectionLayout, type SettingsSectionDefinition } from "./SettingsSectionLayout";
+import { FLOW_LLM_PROVIDERS, FLOW_SETTINGS_DEFAULT_VALUES, applyFlowAdaptationMode, applyFlowAdaptationPreset, applyFlowTrainingMode, buildFlowSettingsSavePayload, flowAdaptationErrors, flowEffectiveSettings, flowGeneralRuntimeErrors, flowLimitsInterfaceErrors, flowLlmProvider, flowLlmSettingsErrors, flowSettingsDraftFromFlow, flowSettingsFlowFromDetail, flowSettingsMetadata, normalizedProviderLabel, type FlowPortSettingsDraft, type FlowSettingsDraft } from "./flow-settings-model";
+import { useDirtyViewRegistration } from "../workspace/DirtyViewGuard";
+import { automationStudioViewId } from "../views/view-registry";
 
 export type FlowSettingsViewProps = { projectId: string | null; flow: any };
+
+const FLOW_SETTINGS_SECTIONS = [
+  { id: "flow-settings-general", label: "General", description: "Identity and visibility", icon: Settings2 },
+  { id: "flow-settings-runtime", label: "Runtime", description: "Execution behavior", icon: Gauge },
+  { id: "flow-settings-safety", label: "Safety", description: "Approval gates", icon: ShieldCheck },
+  { id: "flow-settings-adaptation", label: "Adaptation", description: "Learning policy", icon: Sparkles },
+  { id: "flow-settings-limits", label: "Limits", description: "Budgets and retries", icon: CircleDollarSign },
+  { id: "flow-settings-inputs", label: "Inputs & Outputs", description: "Flow interface", icon: ArrowLeftRight },
+  { id: "flow-settings-dependencies", label: "Dependencies", description: "Published Flows", icon: Boxes },
+  { id: "flow-settings-llm", label: "LLM Connection", description: "Provider and model", icon: Bot },
+  { id: "flow-settings-effective", label: "Effective Values", description: "Resolved configuration", icon: ListChecks }
+] satisfies readonly SettingsSectionDefinition[];
 
 export function FlowSettingsView(props: FlowSettingsViewProps) {
   const commands = useSettingsCommands();
@@ -17,16 +32,18 @@ export function FlowSettingsView(props: FlowSettingsViewProps) {
 }
 
 export function FlowSettingsViewContent(props: FlowSettingsViewProps & { commands: SettingsCommands }) {
-  const [savedFlow, setSavedFlow] = useState<any | null>(null);
+  const [savedFlow, setSavedFlow] = useState<any | null>(() => props.flow?.metadata?.summaryOnly === true ? null : props.flow ?? null);
   const flow = savedFlow?.flowId && savedFlow.flowId === props.flow?.flowId ? savedFlow : props.flow;
   const metadata = flowSettingsMetadata(flow);
   const [draft, setDraft] = useState<FlowSettingsDraft>(() => flowSettingsDraftFromFlow(flow));
   const [baseDraft, setBaseDraft] = useState<FlowSettingsDraft>(() => flowSettingsDraftFromFlow(flow));
   const [activeSection, setActiveSection] = useState(() => readSettingsSection("", "flow"));
-  useEffect(() => { const timer = window.setTimeout(() => scrollToSettingsSection(activeSection), 0); return () => window.clearTimeout(timer); }, []);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [settingsLoading, setSettingsLoading] = useState(Boolean(props.projectId && props.flow?.flowId));
+  const [settingsLoadError, setSettingsLoadError] = useState("");
+  const [settingsLoadRevision, setSettingsLoadRevision] = useState(0);
   const [llmSecrets, setLlmSecrets] = useState<any[]>([]);
   const [llmSecretsLoading, setLlmSecretsLoading] = useState(false);
   const [llmSecretsError, setLlmSecretsError] = useState("");
@@ -37,14 +54,50 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
   const [saveAuthorizationOpen, setSaveAuthorizationOpen] = useState(false);
   const [saveAuthorizationPin, setSaveAuthorizationPin] = useState("");
   const [saveAuthorizationError, setSaveAuthorizationError] = useState("");
+  const [revisionConflict, setRevisionConflict] = useState<any | null>(null);
+  const [compareConflict, setCompareConflict] = useState(false);
   useEffect(() => {
-    setSavedFlow(null);
+    setSavedFlow(props.flow?.metadata?.summaryOnly === true ? null : props.flow ?? null);
     const nextDraft = flowSettingsDraftFromFlow(props.flow);
     setDraft(nextDraft);
     setBaseDraft(nextDraft);
     setMessage("");
     setError("");
+    setSettingsLoadError("");
+    setRevisionConflict(null);
+    setCompareConflict(false);
   }, [props.flow?.flowId]);
+  useEffect(() => {
+    let cancelled = false;
+    const projectId = props.projectId;
+    const flowId = props.flow?.flowId;
+    if (!projectId || !flowId) {
+      setSettingsLoading(false);
+      return;
+    }
+    setSettingsLoading(true);
+    setError("");
+    setSettingsLoadError("");
+    void props.commands.loadFlow({ projectId, flowId }).then((result) => {
+      if (cancelled) return;
+      setSettingsLoading(false);
+      if (!result.ok || !result.payload?.flow) {
+        const loadError = result.error ?? "Flow settings could not be loaded.";
+        setError(loadError);
+        setSettingsLoadError(loadError);
+        return;
+      }
+      const loadedFlow = flowSettingsFlowFromDetail(props.flow, result.payload.flow);
+      const nextDraft = flowSettingsDraftFromFlow(loadedFlow);
+      setSavedFlow(loadedFlow);
+      setDraft(nextDraft);
+      setBaseDraft(nextDraft);
+      setSettingsLoadError("");
+      setRevisionConflict(null);
+      setCompareConflict(false);
+    });
+    return () => { cancelled = true; };
+  }, [props.projectId, props.flow?.flowId, props.commands, settingsLoadRevision]);
   useEffect(() => {
     let cancelled = false;
     if (!props.projectId || !flow?.flowId) { setLlmSecrets([]); setLlmSecretsError(""); return; }
@@ -70,7 +123,21 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
     });
     return () => { cancelled = true; };
   }, [props.projectId, flow?.flowId]);  const draftDirty = settingsDraftIsDirty(draft, baseDraft);
-  useEffect(() => { const warn = (event: BeforeUnloadEvent) => { if (!draftDirty) return; event.preventDefault(); event.returnValue = ""; }; window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn); }, [draftDirty]);
+  useEffect(() => {
+    if (!props.flow?.flowId || props.flow.flowId !== flow?.flowId) return;
+    const revisionAction = settingsConcurrentRevisionAction({ currentRevision: flow?.updatedAt, incomingRevision: props.flow.updatedAt, dirty: draftDirty });
+    if (revisionAction === "ignore") return;
+    const incomingDraft = flowSettingsDraftFromFlow(props.flow);
+    if (revisionAction === "conflict") {
+      if (revisionConflict?.updatedAt !== props.flow.updatedAt) setRevisionConflict(props.flow);
+      return;
+    }
+    setSavedFlow(props.flow);
+    setDraft(incomingDraft);
+    setBaseDraft(incomingDraft);
+    setRevisionConflict(null);
+    setCompareConflict(false);
+  }, [props.flow?.flowId, props.flow?.updatedAt]);
   const generalRuntimeErrors = flowGeneralRuntimeErrors(draft);
   const effectiveSettings = flowEffectiveSettings(flow, draft);
   const resetEffectiveSetting = (key: keyof FlowSettingsDraft) => {
@@ -89,6 +156,7 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
   const adaptationErrors = flowAdaptationErrors(draft);
   const limitsInterfaceErrors = flowLimitsInterfaceErrors(draft);
   const settingsErrors = [...generalRuntimeErrors, ...llmSettingsErrors, ...adaptationErrors, ...limitsInterfaceErrors];
+  const settingsPending = settingsLoading;
   const updateDraft = <K extends keyof FlowSettingsDraft>(key: K, value: FlowSettingsDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));
   const saveSettings = async (authorizationPin: string) => {
     if (!props.projectId || !flow?.flowId || settingsErrors.length || authorizationPin.trim().length < 4) return;
@@ -98,6 +166,7 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
     setSaveAuthorizationError("");
     const result = await props.commands.saveFlow({
       projectId: props.projectId,
+      flowId: flow.flowId,
       authorizationPin: authorizationPin.trim(),
       expectedUpdatedAt: flow.updatedAt,
       flow: buildFlowSettingsSavePayload(flow, draft)
@@ -107,10 +176,12 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
       const saveError = result.error?.includes("FLOW_SAVE_CONFLICT") ? "Save conflict: this Flow changed elsewhere. Your Settings draft is preserved; reload after reviewing the other change." : result.error ?? "Flow settings could not be saved.";
       setError(saveError);
       setSaveAuthorizationError(saveError);
+      if (result.error?.includes("FLOW_SAVE_CONFLICT") && props.flow?.flowId === flow.flowId) setRevisionConflict(props.flow);
       return;
     }
-    setSavedFlow(result.payload.flow);
-    const nextDraft = flowSettingsDraftFromFlow(result.payload.flow);
+    const loadedFlow = flowSettingsFlowFromDetail(flow, result.payload.flow);
+    setSavedFlow(loadedFlow);
+    const nextDraft = flowSettingsDraftFromFlow(loadedFlow);
     setDraft(nextDraft);
     setBaseDraft(nextDraft);
     setMessage("Settings saved.");
@@ -122,16 +193,27 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
       flowId: flow.flowId
     });
   };
+  useDirtyViewRegistration({
+    id: `flow-settings:${props.projectId ?? "none"}:${flow?.flowId ?? "none"}`,
+    viewId: automationStudioViewId.settings,
+    label: `Flow Settings: ${flow?.name ?? "current Flow"}`,
+    dirty: draftDirty,
+    save: () => { setSaveAuthorizationPin(""); setSaveAuthorizationError(""); setSaveAuthorizationOpen(true); },
+    discard: () => setDraft(baseDraft)
+  });
   return (
     <section className="automation-runs-workspace automation-flow-settings-workspace">
       <header>
-        <div><strong>Settings</strong><span>{flow?.name ?? "Select a Flow"} | training, approval, LLM, and safety gates</span></div>
+        <div><strong>Settings</strong><span>{draft.name || flow?.name || "Select a Flow"} | training, approval, LLM, and safety gates</span></div>
         <span className={`automation-instruction-save-state ${draftDirty ? "unsaved" : "saved"}`}><span aria-hidden />{draftDirty ? "Unsaved changes" : "Saved"}</span>
       </header>
-      {error ? <p className="automation-runtime-message">{error}</p> : null}
-      {message ? <p className="automation-settings-success">{message}</p> : null}
-      {settingsErrors.length ? <div className="automation-settings-validation" role="alert"><AlertTriangle size={16} aria-hidden /><div><strong>Fix these settings before saving</strong>{settingsErrors.map((item) => <span key={item}>{item}</span>)}</div></div> : null}
-      <div className="automation-settings-layout"><nav aria-label="Flow settings sections" className="automation-settings-section-nav">{([["flow-settings-general", "General"], ["flow-settings-runtime", "Runtime"], ["flow-settings-llm", "LLM"], ["flow-settings-adaptation", "Adaptation"], ["flow-settings-limits", "Limits"], ["flow-settings-safety", "Safety"], ["flow-settings-inputs", "Inputs & Outputs"], ["flow-settings-dependencies", "Dependencies"], ["flow-settings-effective", "Effective Values"]] as const).map(([id, label]) => <button aria-current={activeSection === id ? "location" : undefined} className={activeSection === id ? "selected" : ""} key={id} onClick={() => { setActiveSection(id); scrollToSettingsSection(id); }} type="button">{label}</button>)}</nav><div className="automation-flow-settings-grid">
+      <div aria-live="polite" className="automation-settings-feedback">
+        {error ? <p className="automation-runtime-message">{error}</p> : null}
+        {message ? <p className="automation-settings-success">{message}</p> : null}
+        {revisionConflict ? <div className="automation-settings-conflict" role="alert"><AlertTriangle size={17} aria-hidden /><div><strong>This Flow changed elsewhere</strong><span>Your local draft is preserved. Compare the saved values, reload them, or rebase your draft onto the newer revision.</span>{compareConflict ? <details open><summary>Saved value comparison</summary><div className="automation-settings-conflict-compare"><section><strong>Your starting values</strong><pre>{JSON.stringify(baseDraft, null, 2)}</pre></section><section><strong>Newest saved values</strong><pre>{JSON.stringify(flowSettingsDraftFromFlow(revisionConflict), null, 2)}</pre></section></div></details> : null}</div><div><button className="button" onClick={() => setCompareConflict((current) => !current)} type="button">{compareConflict ? "Hide Compare" : "Compare"}</button><button className="button" onClick={() => { const next = flowSettingsDraftFromFlow(revisionConflict); setSavedFlow(revisionConflict); setDraft(next); setBaseDraft(next); setRevisionConflict(null); setCompareConflict(false); setError(""); }} type="button">Reload Saved</button><button className="button button-primary" onClick={() => { const nextBase = flowSettingsDraftFromFlow(revisionConflict); setSavedFlow(revisionConflict); setBaseDraft(nextBase); setRevisionConflict(null); setCompareConflict(false); setError(""); }} type="button">Keep My Draft</button></div></div> : null}
+        {settingsErrors.length ? <div className="automation-settings-validation" role="alert"><AlertTriangle size={16} aria-hidden /><div><strong>Fix these settings before saving</strong>{settingsErrors.map((item) => <span key={item}>{item}</span>)}</div></div> : null}
+      </div>
+      {settingsPending ? <div className="automation-runtime-empty"><span aria-hidden className="automation-inline-spinner" />Loading saved Flow settings...</div> : settingsLoadError ? <div className="automation-runtime-empty"><strong>Flow settings are unavailable</strong><span>{settingsLoadError}</span><button className="button" onClick={() => setSettingsLoadRevision((current) => current + 1)} type="button">Retry</button></div> : <SettingsSectionLayout activeSection={activeSection} ariaLabel="Flow settings sections" onActiveSectionChange={setActiveSection} sections={FLOW_SETTINGS_SECTIONS}>
         <section className="automation-settings-panel" id="flow-settings-general">
           <header><strong>Flow Identity</strong><span>Name, description, and catalog visibility</span></header>
           <label><span>Name</span><input aria-invalid={!draft.name.trim()} value={draft.name} onChange={(event) => updateDraft("name", event.target.value)} placeholder="Flow name" />{!draft.name.trim() ? <small>Flow name is required.</small> : null}</label>
@@ -139,9 +221,8 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
           <fieldset className="automation-settings-choice"><legend>Visibility</legend><div className="automation-instruction-segments"><button aria-pressed={draft.visibility === "private"} className={draft.visibility === "private" ? "selected" : ""} onClick={() => updateDraft("visibility", "private")} type="button">Private</button><button aria-pressed={draft.visibility === "public"} className={draft.visibility === "public" ? "selected" : ""} onClick={() => updateDraft("visibility", "public")} type="button">Public composite</button></div><small>Public Flows can be published for reuse when their interface is valid.</small></fieldset>
         </section>
         <section className="automation-settings-panel" id="flow-settings-runtime">
-          <header><strong>Training Mode</strong><span>How much help the runtime may ask from the LLM</span></header>
-          <fieldset className="automation-settings-choice automation-settings-mode-choice"><legend>LLM intervention mode</legend><div className="automation-settings-mode-grid">{([ ["continuous_adaptive", "Fully adaptive", "LLM recovery and validated adaptations are available continuously."], ["train_for_runs", "Fixed training runs", "Use LLM assistance for a bounded number of runs."], ["train_until_stable", "Until stable", "Use LLM assistance until the stability target is met."], ["normal", "No LLM intervention", "Run deterministic behavior without LLM assistance."] ] as const).map(([value, label, detail]) => <button aria-pressed={draft.trainingMode === value} className={draft.trainingMode === value ? "selected" : ""} key={value} onClick={() => setDraft((current) => applyFlowTrainingMode(current, value))} type="button"><strong>{label}</strong><span>{detail}</span></button>)}</div></fieldset>
-          {draft.trainingMode === "train_for_runs" ? <label><span>Training runs</span><input aria-invalid={Number(draft.trainForRunCount) < 1} min={1} type="number" value={draft.trainForRunCount} onChange={(event) => updateDraft("trainForRunCount", event.target.value)} /><small>After this many runs, the Flow returns to deterministic-only execution.</small></label> : null}{draft.trainingMode === "train_until_stable" ? <label><span>Stability target</span><input aria-invalid={Number(draft.minimumStabilityScore) <= 0 || Number(draft.minimumStabilityScore) > 1} max={1} min={0.01} step={0.01} type="number" value={draft.minimumStabilityScore} onChange={(event) => updateDraft("minimumStabilityScore", event.target.value)} /><small>Training ends when the measured stability score reaches this target.</small></label> : null}
+          <header><strong>Runtime Mode</strong><span>Choose how this Flow may use LLM assistance and adaptations</span></header>
+          <fieldset className="automation-settings-choice automation-settings-mode-choice"><legend>LLM intervention mode</legend><div className="automation-settings-mode-grid">{([ ["fully_adaptive", "Fully adaptive", "Use LLM recovery and auto-apply safe validated adaptations."], ["manual_approval", "Manual approval", "Use LLM recovery but hold every adaptation for review."], ["no_llm_intervention", "No LLM intervention", "Run only saved deterministic behavior."] ] as const).map(([value, label, detail]) => <button aria-pressed={draft.adaptationMode === value} className={draft.adaptationMode === value ? "selected" : ""} key={value} onClick={() => setDraft((current) => applyFlowAdaptationMode(current, value))} type="button"><strong>{label}</strong><span>{detail}</span></button>)}</div></fieldset>
 
         </section>
         <section className="automation-settings-panel" id="flow-settings-runtime-defaults">
@@ -150,15 +231,15 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
           <label><span>Maximum concurrent runs</span><input aria-invalid={!Number.isInteger(Number(draft.maxConcurrency)) || Number(draft.maxConcurrency) < 1 || Number(draft.maxConcurrency) > 100} min={1} max={100} step={1} type="number" value={draft.maxConcurrency} onChange={(event) => updateDraft("maxConcurrency", event.target.value)} /><small>Additional runs wait in the queue when this limit is reached.</small></label>
         </section>        <section className="automation-settings-panel" id="flow-settings-safety">
           <header><strong>Safety</strong><span>Deterministic gates that remain in force around learned behavior</span></header>
-          <SettingsToggle checked={draft.allowRuntimeRecovery} label="Allow deterministic recovery paths" onChange={(checked) => updateDraft("allowRuntimeRecovery", checked)} />
           <SettingsToggle checked={draft.manualReviewForStructuralChanges} label="Review structural changes manually" onChange={(checked) => updateDraft("manualReviewForStructuralChanges", checked)} />
           <SettingsToggle checked={draft.requireApprovalForDestructiveChanges} label="Require approval before deleting or disabling behavior" onChange={(checked) => updateDraft("requireApprovalForDestructiveChanges", checked)} />
           <div className="automation-settings-inline-notice"><Info size={16} aria-hidden /><span>Node permissions and side-effect access are enforced by runtime capability grants, not bypass switches in Flow Settings.</span></div>
         </section>
         <section className="automation-settings-panel automation-settings-panel-wide" id="flow-settings-adaptation">
           <header><strong>Adaptations</strong><span>What the runtime may learn, propose, edit, and promote</span></header><label><span>Adaptation policy</span><select value={draft.adaptationPolicyId} onChange={(event) => updateDraft("adaptationPolicyId", event.target.value)}>{draft.adaptationPolicyId && draft.adaptationPolicyId !== "policy.default" ? <option value={draft.adaptationPolicyId}>Current custom policy</option> : null}<option value="policy.default">Default adaptive policy</option></select></label>
-          <fieldset className="automation-settings-choice"><legend>Adaptation behavior</legend><div className="automation-settings-mode-grid">{([ ["adaptive", "Fully adaptive", "Create and auto-apply safe validated adaptations."], ["observe", "Observe only", "Create evidence and drafts without changing runtime behavior."], ["locked", "Locked", "Do not create or apply adaptations."], ["autonomous", "Broad autonomy", "Allow broader structural changes with destructive safeguards."] ] as const).map(([preset, label, detail]) => <button aria-pressed={draft.adaptationPreset === preset} className={draft.adaptationPreset === preset ? "selected" : ""} key={preset} onClick={() => setDraft((current) => applyFlowAdaptationPreset(current, preset))} type="button"><strong>{label}</strong><span>{detail}</span></button>)}</div></fieldset><fieldset className="automation-settings-choice"><legend>Approval</legend><div className="automation-instruction-segments"><button aria-pressed={draft.adaptationProposalMode === "auto"} className={draft.adaptationProposalMode === "auto" ? "selected" : ""} onClick={() => setDraft((current) => ({ ...current, adaptationProposalMode: "auto", proposalApprovalMode: "auto", allowPromotion: current.adaptationPreset !== "locked" && current.adaptationPreset !== "observe" }))} type="button">Automatic</button><button aria-pressed={draft.adaptationProposalMode === "mixed"} className={draft.adaptationProposalMode === "mixed" ? "selected" : ""} onClick={() => setDraft((current) => ({ ...current, adaptationProposalMode: "mixed", proposalApprovalMode: "mixed", allowPromotion: current.adaptationPreset !== "locked" && current.adaptationPreset !== "observe" }))} type="button">Manual for risky</button><button aria-pressed={draft.adaptationProposalMode === "manual"} className={draft.adaptationProposalMode === "manual" ? "selected" : ""} onClick={() => setDraft((current) => ({ ...current, adaptationProposalMode: "manual", proposalApprovalMode: "manual", allowPromotion: false }))} type="button">Manual only</button></div><small>Automatic approval applies only validated low-risk changes. Structural and destructive safeguards still apply.</small></fieldset><SettingsToggle checked={draft.requireFirstManualReviewBeforeAutoPromotion} label="Require first adaptation to be reviewed manually" onChange={(checked) => updateDraft("requireFirstManualReviewBeforeAutoPromotion", checked)} />
-          <div className="automation-settings-toggle-grid">
+          <div className="automation-settings-inline-notice"><Info size={16} aria-hidden /><span>{draft.adaptationMode === "fully_adaptive" ? "Safe validated adaptations are applied automatically." : draft.adaptationMode === "manual_approval" ? "Every generated adaptation waits for your approval." : "Adaptation creation and LLM intervention are disabled."}</span></div>
+          {draft.adaptationMode === "fully_adaptive" ? <SettingsToggle checked={draft.requireFirstManualReviewBeforeAutoPromotion} label="Require first adaptation to be reviewed manually" onChange={(checked) => updateDraft("requireFirstManualReviewBeforeAutoPromotion", checked)} /> : null}
+          {draft.adaptationMode !== "no_llm_intervention" ? <details className="automation-settings-technical-details"><summary>Advanced adaptation permissions</summary><div className="automation-settings-toggle-grid">
             <SettingsToggle checked={draft.manualReviewForStructuralChanges} label="Manual review for structural changes" onChange={(checked) => updateDraft("manualReviewForStructuralChanges", checked)} />
             <SettingsToggle checked={draft.allowCreateRecoveryPaths} label="Create recovery paths" onChange={(checked) => updateDraft("allowCreateRecoveryPaths", checked)} />
             <SettingsToggle checked={draft.allowModifyRouter} label="Modify Flow Map routes" onChange={(checked) => updateDraft("allowModifyRouter", checked)} />
@@ -167,7 +248,7 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
             <SettingsToggle checked={draft.allowModifyExpectations} label="Modify expectations" onChange={(checked) => updateDraft("allowModifyExpectations", checked)} />
             <SettingsToggle checked={draft.allowModifyActionTargets} label="Modify action targets" onChange={(checked) => updateDraft("allowModifyActionTargets", checked)} />
             <SettingsToggle checked={draft.allowDeleteOrDisableBehavior} label="Delete or disable behavior" onChange={(checked) => updateDraft("allowDeleteOrDisableBehavior", checked)} />
-          </div>
+          </div></details> : null}
           <div className="automation-settings-inline-fields">
             <label><span>Adaptation interventions/run</span><input min={0} type="number" value={draft.maxAdaptationInterventionsPerRun} onChange={(event) => updateDraft("maxAdaptationInterventionsPerRun", event.target.value)} /></label>
             <label><span>Adaptation cost/run</span><input min={0} step={0.01} type="number" value={draft.maxAdaptationCostUsdPerRun} onChange={(event) => updateDraft("maxAdaptationCostUsdPerRun", event.target.value)} /></label>
@@ -200,13 +281,14 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
           {llmSecretsError ? <div className="automation-settings-inline-notice error" role="alert"><AlertCircle size={16} aria-hidden /><span>{llmSecretsError}</span><a href="/programs/secret-keys">Open Key Manager</a></div> : null}
           {!llmSecretsLoading && !llmSecretsError && draft.llmProvider !== "host" && draft.llmProvider !== "ollama" && !compatibleLlmSecrets.length ? <div className="automation-settings-inline-notice warning"><AlertTriangle size={16} aria-hidden /><span>No enabled {selectedProvider.label} key is available for this Flow.</span><a href="/programs/secret-keys">Add Key</a></div> : null}
         </section>
-      </div></div>
       <section className="automation-settings-panel automation-settings-panel-wide automation-settings-effective" id="flow-settings-effective">
         <header><strong>Effective Values</strong><span>What this Flow will use after framework defaults and Flow overrides are resolved</span></header>
         <div className="automation-settings-inline-notice"><Info size={16} aria-hidden /><span>This installation has framework defaults and Flow overrides. No project-default settings layer is configured.</span></div>
         <div className="automation-settings-effective-list">{effectiveSettings.map((setting) => <div className="automation-settings-effective-row" key={setting.key}><span>{setting.group}</span><div><strong>{setting.label}</strong><small>{setting.value}</small></div><StatusBadge value={setting.source} />{setting.resettable ? <button className="button" onClick={() => resetEffectiveSetting(setting.key)} type="button">Use Default</button> : <span />}</div>)}</div>
         <JsonToggle label="Show Technical Metadata" value={metadata} />
-      </section>      <footer className="automation-settings-form-footer"><span>{draftDirty ? "Unsaved Flow settings" : "All Flow settings saved"}</span><div><button className="button" disabled={!draftDirty || saving} onClick={() => setDraft(baseDraft)} type="button">Discard Changes</button><button className="button button-primary" disabled={!props.projectId || !flow?.flowId || !draftDirty || saving || settingsErrors.length > 0} onClick={() => { setSaveAuthorizationPin(""); setSaveAuthorizationError(""); setSaveAuthorizationOpen(true); }} type="button">{saving ? "Saving..." : "Save Settings"}</button></div></footer>
+      </section>
+      </SettingsSectionLayout>}
+      {!settingsPending && !settingsLoadError ? <footer className="automation-settings-form-footer"><span>{draftDirty ? "Unsaved Flow settings" : "All Flow settings saved"}</span><div><button className="button" disabled={!draftDirty || saving} onClick={() => setDraft(baseDraft)} type="button">Discard Changes</button><button className="button button-primary" disabled={!props.projectId || !flow?.flowId || !draftDirty || saving} onClick={() => { if (settingsErrors.length) { setError("Fix the highlighted settings before saving."); return; } setError(""); setSaveAuthorizationPin(""); setSaveAuthorizationError(""); setSaveAuthorizationOpen(true); }} type="button">{saving ? "Saving..." : "Save Settings"}</button></div></footer> : null}
       {saveAuthorizationOpen ? <Modal title="Authorize Flow Settings Save" onClose={() => saving ? undefined : setSaveAuthorizationOpen(false)}><div className="automation-modal-form"><p className="automation-router-modal-intro">Confirm this Flow Settings write with your security PIN. Your draft remains intact if authorization or conflict checks fail.</p><Field label="Security PIN" {...(saveAuthorizationError ? { error: saveAuthorizationError } : {})}><input autoFocus inputMode="numeric" maxLength={12} onChange={(event) => { setSaveAuthorizationPin(event.target.value.replace(/\D/g, "")); setSaveAuthorizationError(""); }} type="password" value={saveAuthorizationPin} /></Field><div className="modal-actions"><button className="button" disabled={saving} onClick={() => setSaveAuthorizationOpen(false)} type="button">Cancel</button><button className="button button-primary" data-modal-submit disabled={saveAuthorizationPin.length < 4 || saving} onClick={() => void saveSettings(saveAuthorizationPin)} type="button">{saving ? "Saving..." : "Authorize and Save"}</button></div></div></Modal> : null}
 
     </section>

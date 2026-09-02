@@ -12,28 +12,30 @@ export const browserNodePalettePreferencesRepository: NodePalettePreferencesRepo
 };
 
 export function readNodePaletteFavoritesFromLocalStorage(): string[] {
-  if (typeof window === "undefined" || !window.localStorage) return [];
-  const raw = window.localStorage.getItem(NODE_PALETTE_FAVORITES_STORAGE_KEY);
-  if (!raw) return [];
-  if (raw.length > NODE_PALETTE_FAVORITES_MAX_LOCAL_STORAGE_CHARS) {
-    window.localStorage.removeItem(NODE_PALETTE_FAVORITES_STORAGE_KEY);
-    return [];
-  }
+  if (typeof window === "undefined") return [];
   try {
+    const storage = window.localStorage;
+    if (!storage) return [];
+    const raw = storage.getItem(NODE_PALETTE_FAVORITES_STORAGE_KEY);
+    if (!raw) return [];
+    if (raw.length > NODE_PALETTE_FAVORITES_MAX_LOCAL_STORAGE_CHARS) { storage.removeItem(NODE_PALETTE_FAVORITES_STORAGE_KEY); return []; }
     const stored = JSON.parse(raw);
-    return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : [];
+    return Array.isArray(stored) ? [...new Set(stored.filter((id): id is string => typeof id === "string"))] : [];
   } catch {
-    window.localStorage.removeItem(NODE_PALETTE_FAVORITES_STORAGE_KEY);
+    try { window.localStorage?.removeItem(NODE_PALETTE_FAVORITES_STORAGE_KEY); } catch {}
     return [];
   }
 }
 
 export function saveNodePaletteFavoritesToLocalStorage(next: string[]): void {
-  if (typeof window === "undefined" || !window.localStorage) return;
-  const raw = JSON.stringify(next);
-  if (raw.length > NODE_PALETTE_FAVORITES_MAX_LOCAL_STORAGE_CHARS) {
-    window.localStorage.removeItem(NODE_PALETTE_FAVORITES_STORAGE_KEY);
-    return;
+  if (typeof window === "undefined") return;
+  try {
+    const storage = window.localStorage;
+    if (!storage) return;
+    const raw = JSON.stringify([...new Set(next)]);
+    if (raw.length > NODE_PALETTE_FAVORITES_MAX_LOCAL_STORAGE_CHARS) { storage.removeItem(NODE_PALETTE_FAVORITES_STORAGE_KEY); return; }
+    storage.setItem(NODE_PALETTE_FAVORITES_STORAGE_KEY, raw);
+  } catch {
+    // Browser privacy settings may make storage unavailable; the in-memory selection remains usable.
   }
-  window.localStorage.setItem(NODE_PALETTE_FAVORITES_STORAGE_KEY, raw);
 }

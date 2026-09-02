@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, Plus, Search, X, XCircle } from "lucide-react";
-import { useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useId, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import type { Blocks } from "lucide-react";
 import type { AutomationViewInstance } from "../../views/view-types";
 import { useUiRenderMetric } from "../../../programs/ui-performance";
@@ -30,12 +30,24 @@ export function AutomationViewContainer(props: {
   useUiRenderMetric("AutomationStudioPaneBoundary");
   const frameLabel = props.frameLabel ?? "Window";
   const tabsRef = useRef<HTMLDivElement>(null);
+  const tabPickerButtonRef = useRef<HTMLButtonElement>(null);
+  const tabPickerId = `automation-tab-picker-${useId().replace(/:/g, "")}`;
   const [tabPickerOpen, setTabPickerOpen] = useState(false);
   const [tabQuery, setTabQuery] = useState("");
   const activeView = props.tabs.find((tab) => tab.id === props.activeViewId);
   const Icon = activeView?.icon ?? props.icon;
   const activeTabDomId = `automation-tab-${props.windowId}-${props.activeViewId}`.replace(/[^a-zA-Z0-9_-]/g, "-");
   const visiblePickerTabs = props.tabs.filter((tab) => tab.label.toLowerCase().includes(tabQuery.trim().toLowerCase()));
+  const requestTabSelection = (viewId: string) => {
+    props.onTabSelect(viewId);
+  };
+  const focusSelectedTab = () => window.requestAnimationFrame(() => {
+    tabsRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus({ preventScroll: true });
+  });
+  const closeTabAndRestoreFocus = (viewId: string) => {
+    props.onCloseTab(viewId);
+    focusSelectedTab();
+  };
   const handleWindowDragOver = props.onTabDrop
     ? (event: DragEvent<HTMLElement>) => {
       event.preventDefault();
@@ -61,7 +73,7 @@ export function AutomationViewContainer(props: {
         </div>
         <div className="automation-pane-actions">
           <button className="icon-button" onClick={(event) => { event.stopPropagation(); props.onAddTab(event); }} title="Add tab" aria-label="Add tab" type="button"><Plus size={13} aria-hidden /></button>
-          <button className="icon-button" onClick={(event) => { event.stopPropagation(); props.onClose(); }} title="Close active tab" aria-label="Close active tab" type="button"><XCircle size={13} aria-hidden /></button>
+          <button className="icon-button" onClick={(event) => { event.stopPropagation(); props.onClose(); focusSelectedTab(); }} title="Close active tab" aria-label="Close active tab" type="button"><XCircle size={13} aria-hidden /></button>
         </div>
       </header>
       <div className="automation-tabs-shell" onBlur={(event) => {
@@ -74,28 +86,37 @@ export function AutomationViewContainer(props: {
             const selected = tab.id === props.activeViewId;
             const tabId = `automation-tab-${props.windowId}-${tab.id}`.replace(/[^a-zA-Z0-9_-]/g, "-");
             return (
-              <div className={selected ? "automation-tab-item selected" : "automation-tab-item"} key={tab.id}>
-                <button
-                  aria-controls={selected ? `automation-panel-${props.windowId}` : undefined}
-                  aria-keyshortcuts={props.onMoveTab ? "Alt+Shift+ArrowLeft Alt+Shift+ArrowRight" : undefined}
-                  aria-selected={selected}
-                  className="automation-tab-select"
-                  draggable={Boolean(props.onTabDragStart)}
-                  id={tabId}
-                  onAuxClick={(event) => {
-                    if (event.button === 1) {
+              <button
+                aria-controls={`automation-panel-${props.windowId}`}
+                aria-keyshortcuts={props.onMoveTab ? "Alt+Shift+ArrowLeft Alt+Shift+ArrowRight Delete" : "Delete"}
+                aria-selected={selected}
+                className={selected ? "automation-tab-item selected" : "automation-tab-item"}
+                draggable={Boolean(props.onTabDragStart)}
+                id={tabId}
+                key={tab.id}
+                onAuxClick={(event) => {
+                  if (event.button === 1) {
+                    event.preventDefault();
+                    closeTabAndRestoreFocus(tab.id);
+                  }
+                }}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if ((event.target as HTMLElement).closest("[data-tab-close]")) closeTabAndRestoreFocus(tab.id);
+                  else requestTabSelection(tab.id);
+                }}
+                onDragOver={props.onTabDrop ? (event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; } : undefined}
+                onDragStart={props.onTabDragStart ? (event) => props.onTabDragStart?.(tab.id, event) : undefined}
+                onDrop={props.onTabDrop ? (event) => {
+                  const bounds = event.currentTarget.getBoundingClientRect();
+                  props.onTabDrop?.(tab.id, event.clientX > bounds.left + bounds.width / 2 ? "after" : "before", event);
+                } : undefined}
+                onKeyDown={(event: ReactKeyboardEvent<HTMLButtonElement>) => {
+                    if (event.key === "Delete") {
                       event.preventDefault();
-                      props.onCloseTab(tab.id);
+                      closeTabAndRestoreFocus(tab.id);
+                      return;
                     }
-                  }}
-                  onClick={(event) => { event.stopPropagation(); props.onTabSelect(tab.id); }}
-                  onDragOver={props.onTabDrop ? (event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; } : undefined}
-                  onDragStart={props.onTabDragStart ? (event) => props.onTabDragStart?.(tab.id, event) : undefined}
-                  onDrop={props.onTabDrop ? (event) => {
-                    const bounds = event.currentTarget.getBoundingClientRect();
-                    props.onTabDrop?.(tab.id, event.clientX > bounds.left + bounds.width / 2 ? "after" : "before", event);
-                  } : undefined}
-                  onKeyDown={(event: ReactKeyboardEvent<HTMLButtonElement>) => {
                     if (event.altKey && event.shiftKey && (event.key === "ArrowLeft" || event.key === "ArrowRight") && props.onMoveTab) {
                       event.preventDefault();
                       props.onMoveTab(tab.id, event.key === "ArrowLeft" ? -1 : 1);
@@ -103,7 +124,7 @@ export function AutomationViewContainer(props: {
                     }
                     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "w") {
                       event.preventDefault();
-                      props.onCloseTab(tab.id);
+                      closeTabAndRestoreFocus(tab.id);
                       return;
                     }
                     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -117,26 +138,32 @@ export function AutomationViewContainer(props: {
                           : (tabIndex + 1) % props.tabs.length;
                     const next = props.tabs[nextIndex];
                     if (!next) return;
-                    props.onTabSelect(next.id);
+                    requestTabSelection(next.id);
                     tabsRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]?.focus();
                   }}
-                  role="tab"
-                  tabIndex={selected ? 0 : -1}
-                  title={tab.label}
-                  type="button"
-                >
+                role="tab"
+                tabIndex={selected ? 0 : -1}
+                title={tab.label}
+                type="button"
+              >
+                <span className="automation-tab-select">
                   <TabIcon size={13} aria-hidden />
                   <span>{tab.label}</span>
-                </button>
-                <button aria-label={`Close ${tab.label}`} className="tab-close" onClick={(event) => { event.stopPropagation(); props.onCloseTab(tab.id); }} title={`Close ${tab.label}`} type="button"><X aria-hidden size={12} /></button>
-              </div>
+                </span>
+                <span aria-hidden className="tab-close" data-tab-close title={`Close ${tab.label}`}><X aria-hidden size={12} /></span>
+              </button>
             );
           })}
         </div>
         <button aria-label="Scroll tabs right" className="automation-tab-scroll" onClick={() => tabsRef.current?.scrollBy({ left: 220, behavior: "auto" })} type="button"><ChevronRight aria-hidden size={14} /></button>
-        <button aria-expanded={tabPickerOpen} aria-haspopup="dialog" aria-label="Find open tab" className="automation-tab-scroll" onClick={() => setTabPickerOpen((current) => !current)} type="button"><Search aria-hidden size={13} /></button>
+        <button aria-controls={tabPickerId} aria-expanded={tabPickerOpen} aria-haspopup="dialog" aria-label="Find open tab" className="automation-tab-scroll" onClick={() => setTabPickerOpen((current) => !current)} ref={tabPickerButtonRef} type="button"><Search aria-hidden size={13} /></button>
         {tabPickerOpen ? (
-          <div aria-label="Open tabs" className="automation-tab-picker" role="dialog">
+          <div aria-label="Open tabs" className="automation-tab-picker" id={tabPickerId} onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            event.preventDefault();
+            setTabPickerOpen(false);
+            tabPickerButtonRef.current?.focus({ preventScroll: true });
+          }} role="dialog">
             <label>
               <span>Find open tab</span>
               <input autoFocus onChange={(event) => setTabQuery(event.target.value)} placeholder="Search tabs" type="search" value={tabQuery} />
@@ -144,9 +171,10 @@ export function AutomationViewContainer(props: {
             <div>
               {visiblePickerTabs.length ? visiblePickerTabs.map((tab) => (
                 <button className={tab.id === props.activeViewId ? "selected" : undefined} key={tab.id} onClick={() => {
-                  props.onTabSelect(tab.id);
+                  requestTabSelection(tab.id);
                   setTabPickerOpen(false);
                   setTabQuery("");
+                  focusSelectedTab();
                 }} type="button">{tab.label}</button>
               )) : <span className="automation-tab-picker-empty">No matching tabs.</span>}
             </div>

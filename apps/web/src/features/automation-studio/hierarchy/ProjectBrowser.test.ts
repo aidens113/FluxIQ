@@ -50,4 +50,17 @@ describe("AutomationProjectBrowser", () => {
     expect(markup).toContain('class="automation-project-row"');
     expect(markup).toContain('aria-label="Invoice Flow actions"');
     expect(markup).not.toContain("automation-project-tile");
-  });});
+  });
+
+  it("labels catalog recovery as Retry when loading failed", () => {
+    const markup = renderToStaticMarkup(createElement(AutomationProjectBrowser, {
+      categories: [], dragOverCategoryId: null, loaded: true, projects: [], status: "Projects could not be loaded.",
+      onCreateCategory: () => undefined, onCreateProject: () => undefined, onDeleteCategory: () => undefined,
+      onDeleteProject: () => undefined, onDragLeaveCategory: () => undefined, onDragOverCategory: () => undefined,
+      onDrop: () => undefined, onOpenProject: () => undefined, onRefresh: () => undefined,
+      onRenameCategory: () => undefined, onRenameProject: () => undefined
+    }));
+    expect(markup).toContain("Retry");
+    expect(markup).not.toContain(">Refresh<");
+  });
+});

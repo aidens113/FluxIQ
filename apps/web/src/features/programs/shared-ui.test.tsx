@@ -2,16 +2,21 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Save } from "lucide-react";
-import { ActionLink, Breadcrumb, Button, CodeViewer, Combobox, DataTable, EmptyState, Field, IconButton, JsonViewer, List, ListRow, LoadingState, Menu, ModalContent, Pagination, Progress, Segmented, Skeleton, Splitter, StatusBadge, Toolbar, Tooltip, Tree, titleFromTone, toneFromMessage, VisualAlert } from "./shared-ui";
+import { ActionLink, Breadcrumb, Button, CodeViewer, Combobox, DataTable, EmptyState, Field, IconButton, JsonViewer, List, ListRow, LoadingState, Menu, ModalContent, Pagination, Progress, resolveTreeFocusId, Segmented, Skeleton, Splitter, StatusBadge, Toolbar, Tooltip, Tree, titleFromTone, toneFromMessage, VisualAlert } from "./shared-ui";
+import { OperationBusyBoundary } from "./use-operation-lock";
 
 describe("critical shared UI states", () => {
   it("isolates modal focus without mutating the entire application subtree", () => {
     const source = readFileSync(new URL("./shared-ui.tsx", import.meta.url), "utf8");
+    const environment = readFileSync(new URL("./overlay-environment.ts", import.meta.url), "utf8");
     const css = readFileSync(new URL("../../app/styles/global-foundation.css", import.meta.url), "utf8");
-    expect(source).not.toContain(".inert = true");
+    expect(source).toContain("acquireOverlayEnvironment(document");
     expect(source).not.toContain('document.body.style.overflow = "hidden"');
-    expect(source).toContain('document.addEventListener("wheel"');
+    expect(source).not.toContain('document.addEventListener("wheel"');
+    expect(environment).toContain('documentRef.addEventListener("wheel"');
+    expect(environment).toContain('element.inert = true');
     expect(source).toContain("focus({ preventScroll: true })");
+    expect(css).toContain("--layer-popover: 115");
     expect(css).toContain("scrollbar-gutter: stable");
     expect(css).toMatch(/\.drawer-backdrop[\s\S]*?contain: layout paint style/u);
     expect(css).toMatch(/\.drawer-panel[\s\S]*?overscroll-behavior: contain/u);
@@ -41,6 +46,20 @@ describe("critical shared UI states", () => {
     expect(html).toContain('type="password"');
   });
 
+  it("inherits an operation lock across a modal portal boundary", () => {
+    const html = renderToStaticMarkup(
+      <OperationBusyBoundary busy>
+        <ModalContent title="Rotate key" onClose={() => undefined}>
+          <button type="button">Rotate</button>
+        </ModalContent>
+      </OperationBusyBoundary>,
+    );
+
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('class="modal-operation-boundary" disabled=""');
+    expect(html).toContain('aria-label="Close"');
+  });
+
   it("exposes segmented choices as a labelled pressed-state group", () => {
     const html = renderToStaticMarkup(<Segmented label="Run mode" onChange={() => undefined} options={["Adaptive", "Manual"]} value="Adaptive" />);
     expect(html).toContain('role="group"');
@@ -56,6 +75,8 @@ describe("critical shared UI states", () => {
     ]} />);
     expect(html).toContain('aria-haspopup="menu"');
     expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain('aria-controls="menu-');
+    expect(html).toContain('aria-label="Flow actions"');
     expect(html).toContain('role="menu"');
     expect(html).toContain('role="menuitem"');
     expect(html).toContain('href="/programs/identity-access"');
@@ -73,11 +94,14 @@ describe("critical shared UI states", () => {
     expect(html).toContain('role="listbox"');
     expect(html).toContain('role="option"');
     expect(html).toContain('aria-selected="true"');
+    expect(html).not.toMatch(/<button[^>]*role="option"/u);
   });
 
   it("keeps tooltip text supplemental to the control accessible name", () => {
     const html = renderToStaticMarkup(<Tooltip content="Save current changes"><IconButton label="Save"><Save aria-hidden size={14} /></IconButton></Tooltip>);
-    expect(html).toContain('data-tooltip="Save current changes"');
+    expect(html).toContain('role="tooltip"');
+    expect(html).toContain("Save current changes");
+    expect(html).toContain('aria-describedby="tooltip-');
     expect(html).toContain('aria-label="Save"');
   });
   it("connects field labels, hints, validation, and required state", () => {
@@ -136,6 +160,9 @@ describe("critical shared UI states", () => {
     expect(html).toContain('aria-selected="true"');
     expect(html).toContain('tabindex="0"');
     expect(html).toContain('aria-label="Collapse Checkout"');
+    expect(html).toContain('aria-controls="tree-');
+    expect(resolveTreeFocusId(["flow", "settings"], "removed", "settings")).toBe("settings");
+    expect(resolveTreeFocusId(["flow"], "removed", "settings")).toBe("flow");
   });
   it("renders labelled toolbars, breadcrumbs, and keyboard splitters", () => {
     const html = renderToStaticMarkup(<div>
@@ -185,6 +212,21 @@ describe("critical shared UI states", () => {
     expect(html).toContain("Fresh credentials are required.");
     expect(toneFromMessage("Fresh credentials are required.")).toBe("error");
     expect(titleFromTone("error")).toBe("Action failed");
+  });
+
+  it("keeps global notifications pausable, actionable, and deduplicated", () => {
+    const source = readFileSync(new URL("./shared-ui.tsx", import.meta.url), "utf8");
+    expect(source).toContain("pausedIds");
+    expect(source).toContain("detail.actionLabel");
+    expect(source).toContain("current.filter((item) => item.id !== key)");
+    expect(source).not.toContain('className="global-alert-viewport" aria-live=');
+  });
+
+  it("announces shared copy and download command outcomes", () => {
+    const source = readFileSync(new URL("./shared-ui.tsx", import.meta.url), "utf8");
+    expect(source).toContain("could not be copied");
+    expect(source).toContain("download started");
+    expect(source).toContain("could not be downloaded");
   });
 
   it("renders explicit loading, skeleton, progress, and empty feedback states", () => {

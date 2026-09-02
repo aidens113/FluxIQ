@@ -28,8 +28,8 @@ type Options = {
   deleteRecordings: (ids: string[], pin: string) => Promise<boolean>;
   notifyChanged: (scopes: any[], ids?: string[]) => void;
   clearFlowDrafts: (flowId: string) => void;
-  openView: (viewId: string, mode?: "preview" | "new-window") => void;
-  openSubflow: (flowId: string, subflowId: string, mode: "preview" | "new-window", graphFlowId?: string) => Promise<void>;
+  openView: (viewId: string, mode?: "preview" | "new-pane-or-focus") => void;
+  openSubflow: (flowId: string, subflowId: string, mode: "preview" | "new-pane-or-focus", graphFlowId?: string) => Promise<void>;
   setSelection: (next: any) => void;
   updatePrefs: (updater: (current: AutomationWorkspacePrefs) => AutomationWorkspacePrefs, options?: { persist?: boolean }) => void;
   setProjectFlows: (next: any) => void;
@@ -110,10 +110,10 @@ export function useAutomationHierarchyCommandBridge(options: Options) {
     const current = withSnapshot(source);
     current.dialogStore.request(action, current.indexes.hierarchyNodeById);
   });
-  const openTreeView = stable((current, viewId: string, mode: "preview" | "new-window" = "preview") => {
+  const openTreeView = stable((current, viewId: string, mode: "preview" | "new-pane-or-focus" = "preview") => {
     current.openView(viewId, mode);
   });
-  const openTreeSubflow = stable((current, node: AutomationHierarchyNode, mode: "preview" | "new-window") => {
+  const openTreeSubflow = stable((current, node: AutomationHierarchyNode, mode: "preview" | "new-pane-or-focus") => {
     if (node.flowId && node.sourceId) void current.openSubflow(
       node.flowId, node.sourceId, mode,
       typeof node.metadata?.graphFlowId === "string" ? node.metadata.graphFlowId : undefined

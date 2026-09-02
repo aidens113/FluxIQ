@@ -3,7 +3,7 @@
   grid-template-columns: minmax(260px, 0.9fr) minmax(360px, 1.45fr);
   gap: var(--space-md);
   min-width: 0;
-  min-height: 520px;
+  min-height: 0;
   overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);

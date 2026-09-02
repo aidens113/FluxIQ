@@ -3,9 +3,16 @@ import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./project-administration.ts";
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "./project-database.ts";
 import { AutomationStudioSchemaMigrationRunner, type AutomationStudioSchemaMigration } from "./schema-migrations.ts";
+import { automationStudioFilterHash, automationStudioPageLimit, decodeAutomationStudioPageCursor, encodeAutomationStudioPageCursor } from "./paging.ts";
 
 export type AutomationStudioFlowResourcePage<T> = { items: T[]; nextCursor: string | null; hasMore: boolean; limit: number };
 export type AutomationStudioFlowResourceOffsetPage<T> = { items: T[]; total: number; limit: number; offset: number };
+export type AutomationStudioSqlSubflowTargetPage = { items: AutomationStudioSqlSubflow[]; total: number; limit: number; nextCursor: string | null; hasMore: boolean };
+export type AutomationStudioRouterRouteCounts = { total: number; active: number; disabled: number; byGroup: Record<string, number> };
+export type AutomationStudioSqlRouterRoutePage = { items: AutomationStudioSqlRouterRoute[]; counts: AutomationStudioRouterRouteCounts; limit: number; nextCursor: string | null; hasMore: boolean };
+export type AutomationStudioSqlRouterSummary = Omit<AutomationStudioSqlRouter, "groups" | "routes"> & { groups: AutomationStudioSqlRouterGroup[] };
+export type AutomationStudioSqlRouterTargetReference = { subflowId: string; routes: AutomationStudioSqlRouterRoute[]; routeCount: number; fallback: boolean; total: number; hasMore: boolean };
+export type AutomationStudioSqlRouterTargetReferenceBatch = { targets: AutomationStudioSqlRouterTargetReference[]; perTargetLimit: number };
 export type AutomationStudioSqlFlowRecord = {
   flowId: string; parentFlowId: string | null; owningSubflowId: string | null; name: string; description: string;
   scopeKind: "global" | "domain"; scopeId: string | null; visibility: "private" | "project" | "domain" | "global";
@@ -13,7 +20,7 @@ export type AutomationStudioSqlFlowRecord = {
   status: "draft" | "active" | "archived" | "deleted"; graphRevision: number; settingsRevision: number;
   compiledRevision: number | null; createdAt: number; updatedAt: number; deletedAt: number | null;
 };
-export type AutomationStudioSqlFlowSettings = { executionDefaults: JsonObject; training: JsonObject; adaptation: JsonObject; llm: JsonObject; safety: JsonObject; revision: number; updatedAt: number };
+export type AutomationStudioSqlFlowSettings = { interventionMode: "fully_adaptive" | "manual_approval" | "no_llm_intervention"; interventionModeVersion: 1; executionDefaults: JsonObject; training: JsonObject; adaptation: JsonObject; llm: JsonObject; safety: JsonObject; revision: number; updatedAt: number };
 export type AutomationStudioSqlFlowDetail = AutomationStudioSqlFlowRecord & { settings: AutomationStudioSqlFlowSettings | null; inputs: AutomationStudioSqlFlowPort[]; outputs: AutomationStudioSqlFlowPort[]; variables: AutomationStudioSqlFlowVariable[]; errors: AutomationStudioSqlFlowError[] };
 export type AutomationStudioSqlFlowPort = { portId: string; direction: "input" | "output"; name: string; valueType: JsonValue; required: boolean; defaultValue: JsonValue | null; description: string; sortKey: string; revision: number };
 export type AutomationStudioSqlFlowVariable = { variableId: string; name: string; valueType: JsonValue; initialValue: JsonValue | null; description: string; sortKey: string; revision: number };
@@ -21,7 +28,7 @@ export type AutomationStudioSqlFlowError = { errorId: string; code: string; desc
 export type AutomationStudioSqlSubflowCategory = { categoryId: string; flowId: string; parentCategoryId: string | null; name: string; sortKey: string; revision: number; createdAt: number; updatedAt: number };
 export type AutomationStudioSqlSubflow = { subflowId: string; parentFlowId: string; graphFlowId: string; parentCategoryId: string | null; name: string; description: string; role: string; status: "draft" | "active" | "archived" | "deleted"; inputMapping: JsonValue; outputMapping: JsonValue; approvalOverride: "adaptive" | "manual_approval" | "disabled" | null; revision: number; createdAt: number; updatedAt: number; deletedAt: number | null };
 export type AutomationStudioSqlRouter = { routerId: string; flowId: string; fallbackKind: "none" | "subflow" | "error"; fallbackSubflowId: string | null; revision: number; createdAt: number; updatedAt: number; groups: AutomationStudioSqlRouterGroup[]; routes: AutomationStudioSqlRouterRoute[] };
-export type AutomationStudioSqlRouterGroup = { groupId: string; routerId: string; name: string; sortKey: string; revision: number };
+export type AutomationStudioSqlRouterGroup = { groupId: string; routerId: string; name: string; description: string; order: number; status: "active" | "disabled" | "archived"; collapsed: boolean; sortKey: string; revision: number; createdAt: number; updatedAt: number; metadata: JsonObject };
 export type AutomationStudioSqlRouterRoute = { routeId: string; routerId: string; groupId: string | null; name: string; priority: number; enabled: boolean; conditionKind: string; condition: JsonValue; targetKind: "subflow" | "flow" | "error" | "none"; targetSubflowId: string | null; revision: number; createdAt: number; updatedAt: number };
 export type AutomationStudioSqlInstructionScope = { scopeKind: "global" | "project" | "flow" | "router" | "subflow" | "node" | "error"; projectId: string | null; flowId: string | null; routerId: string | null; subflowId: string | null; nodeId: string | null; errorCode: string | null };
 export type AutomationStudioSqlInstruction = { instructionId: string; title: string; bodyObjectId: string | null; inlineBody: string | null; requirement: "guidance" | "required" | "forbidden"; status: "draft" | "active" | "archived" | "deleted"; priority: number; contentDigest: string; revision: number; createdAt: number; updatedAt: number; deletedAt: number | null; scopes: AutomationStudioSqlInstructionScope[]; tags: string[] };
@@ -40,7 +47,10 @@ export const AUTOMATION_STUDIO_PROJECT_FLOW_RESOURCE_MIGRATION: AutomationStudio
   ]
 };
 
-const FLOW_RESOURCE_MIGRATIONS = [...AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AUTOMATION_STUDIO_PROJECT_FLOW_RESOURCE_MIGRATION] as const;
+const FLOW_RESOURCE_MIGRATIONS: readonly AutomationStudioSchemaMigration[] = [
+  ...AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS,
+  AUTOMATION_STUDIO_PROJECT_FLOW_RESOURCE_MIGRATION
+].sort((left, right) => left.id.localeCompare(right.id));
 
 export class AutomationStudioProjectFlowResourceRepository {
   private constructor(private readonly lease: AutomationStudioProjectDatabaseLease) {}
@@ -66,7 +76,8 @@ export class AutomationStudioProjectFlowResourceRepository {
       if (expectedSettingsRevision !== undefined && settings?.revision !== expectedSettingsRevision) throw new Error(`Flow ${input.flowId} settings revision conflict.`);
       const settingsRevision = settings ? settings.revision + 1 : positive(input.settingsRevision ?? 1, "settings revision");
       await sql.run(`insert into flows (flow_id, parent_flow_id, owning_subflow_id, name, description, scope_kind, scope_id, visibility, origin, source_mode, status, graph_revision, settings_revision, compiled_revision, created_at_ms, updated_at_ms, deleted_at_ms) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) on conflict(flow_id) do update set parent_flow_id = excluded.parent_flow_id, owning_subflow_id = excluded.owning_subflow_id, name = excluded.name, description = excluded.description, scope_kind = excluded.scope_kind, scope_id = excluded.scope_id, visibility = excluded.visibility, origin = excluded.origin, source_mode = excluded.source_mode, status = excluded.status, settings_revision = excluded.settings_revision, compiled_revision = excluded.compiled_revision, updated_at_ms = excluded.updated_at_ms, deleted_at_ms = excluded.deleted_at_ms`, [input.flowId, optionalId(input.parentFlowId), optionalId(input.owningSubflowId), requiredName(input.name, "Flow"), input.description ?? "", input.scopeKind, optionalId(input.scopeId), input.visibility, input.origin, input.sourceMode, input.status, existing?.graph_revision ?? positive(input.graphRevision ?? 1, "graph revision"), settingsRevision, input.compiledRevision ?? null, existing?.created_at_ms ?? input.createdAt ?? now, now, input.deletedAt ?? null]);
-      await sql.run(`insert into flow_settings (flow_id, execution_defaults_json, training_json, adaptation_json, llm_json, safety_json, revision, updated_at_ms) values (?, ?, ?, ?, ?, ?, ?, ?) on conflict(flow_id) do update set execution_defaults_json = excluded.execution_defaults_json, training_json = excluded.training_json, adaptation_json = excluded.adaptation_json, llm_json = excluded.llm_json, safety_json = excluded.safety_json, revision = excluded.revision, updated_at_ms = excluded.updated_at_ms`, [input.flowId, json(input.settings?.executionDefaults ?? {}), json(input.settings?.training ?? {}), json(input.settings?.adaptation ?? {}), json(input.settings?.llm ?? {}), json(input.settings?.safety ?? {}), settingsRevision, now]);
+      const interventionMode = input.settings?.interventionMode ?? interventionModeFromLegacySettings(input.settings?.training, input.settings?.adaptation);
+      await sql.run(`insert into flow_settings (flow_id, intervention_mode, intervention_mode_version, execution_defaults_json, training_json, adaptation_json, llm_json, safety_json, revision, updated_at_ms) values (?, ?, 1, ?, ?, ?, ?, ?, ?, ?) on conflict(flow_id) do update set intervention_mode = excluded.intervention_mode, intervention_mode_version = excluded.intervention_mode_version, execution_defaults_json = excluded.execution_defaults_json, training_json = excluded.training_json, adaptation_json = excluded.adaptation_json, llm_json = excluded.llm_json, safety_json = excluded.safety_json, revision = excluded.revision, updated_at_ms = excluded.updated_at_ms`, [input.flowId, interventionMode, json(input.settings?.executionDefaults ?? {}), json(input.settings?.training ?? {}), json(input.settings?.adaptation ?? {}), json(input.settings?.llm ?? {}), json(input.settings?.safety ?? {}), settingsRevision, now]);
       if (input.inputs || input.outputs) await replacePorts(sql, input.flowId, input.inputs ?? [], input.outputs ?? []);
       if (input.variables) await replaceVariables(sql, input.flowId, input.variables);
       if (input.errors) await replaceErrors(sql, input.flowId, input.errors);
@@ -170,6 +181,38 @@ export class AutomationStudioProjectFlowResourceRepository {
     return { items: result.rows.map(subflowFromRow), total: result.total, limit, offset };
   }
 
+  async listSubflowTargetsPage(input: { flowId: string; status?: string; role?: string; search?: string; limit?: unknown; cursor?: unknown }): Promise<AutomationStudioSqlSubflowTargetPage> {
+    const flowId = requiredId(input.flowId, "Flow");
+    const status = input.status?.trim() || "active";
+    const role = input.role?.trim() || "";
+    const search = input.search?.trim().toLowerCase() || "";
+    const limit = automationStudioPageLimit(input.limit);
+    const owner = `subflow-targets:${flowId}`;
+    const filterHash = automationStudioFilterHash({ status, role, search });
+    const cursor = decodeAutomationStudioPageCursor<{ name: string; subflowId: string }>(input.cursor, { owner, filterHash, validate: (values) => typeof values.name === "string" && typeof values.subflowId === "string" });
+    const where = ["parent_flow_id = ?", "deleted_at_ms is null", "status = ?"];
+    const params: unknown[] = [flowId, status];
+    if (role) { where.push("role = ?"); params.push(requiredKind(role, "subflow role")); }
+    if (search) { where.push("(lower(name) like ? or lower(subflow_id) like ? or lower(role) like ?)"); const needle = `%${search}%`; params.push(needle, needle, needle); }
+    if (cursor) { where.push("(lower(name) > ? or (lower(name) = ? and subflow_id > ?))"); params.push(cursor.name, cursor.name, cursor.subflowId); }
+    const countParams = params.slice(0, params.length - (cursor ? 3 : 0));
+    const countWhere = where.slice(0, where.length - (cursor ? 1 : 0));
+    const result = await this.lease.database.transaction(async (sql) => {
+      const total = await sql.get<{ total: number }>(`select count(*) as total from subflows where ${countWhere.join(" and ")}`, countParams);
+      const rows = await sql.all<SubflowRow>(`select * from subflows where ${where.join(" and ")} order by lower(name), subflow_id limit ?`, [...params, limit + 1]);
+      return { total: total?.total ?? 0, rows };
+    });
+    const pageRows = result.rows.slice(0, limit);
+    const last = pageRows.at(-1);
+    return {
+      items: pageRows.map(subflowFromRow),
+      total: result.total,
+      limit,
+      hasMore: result.rows.length > limit,
+      nextCursor: result.rows.length > limit && last ? encodeAutomationStudioPageCursor({ owner, filterHash, values: { name: last.name.toLowerCase(), subflowId: last.subflow_id } }) : null
+    };
+  }
+
   async upsertRouter(input: Omit<AutomationStudioSqlRouter, "revision" | "createdAt" | "updatedAt" | "groups" | "routes"> & { revision?: number; createdAt?: number; updatedAt?: number }, expectedRevision?: number): Promise<AutomationStudioSqlRouter> {
     const now = input.updatedAt ?? Date.now();
     return this.lease.database.transaction(async (sql) => {
@@ -181,12 +224,13 @@ export class AutomationStudioProjectFlowResourceRepository {
     });
   }
 
-  async upsertRouterGroup(input: Omit<AutomationStudioSqlRouterGroup, "revision"> & { revision?: number }, expectedRevision?: number): Promise<AutomationStudioSqlRouterGroup> {
+  async upsertRouterGroup(input: Omit<AutomationStudioSqlRouterGroup, "revision" | "description" | "order" | "status" | "collapsed" | "createdAt" | "updatedAt" | "metadata"> & Partial<Pick<AutomationStudioSqlRouterGroup, "description" | "order" | "status" | "collapsed" | "createdAt" | "updatedAt" | "metadata">> & { revision?: number }, expectedRevision?: number): Promise<AutomationStudioSqlRouterGroup> {
     return this.lease.database.transaction(async (sql) => {
       const existing = await sql.get<RouterGroupRow>("select * from router_groups where group_id = ?", [requiredId(input.groupId, "Router group")]);
       if (expectedRevision !== undefined && existing?.revision !== expectedRevision) throw new Error(`Router group ${input.groupId} revision conflict.`);
       const revision = existing ? existing.revision + 1 : positive(input.revision ?? 1, "router group revision");
-      await sql.run(`insert into router_groups (group_id, router_id, name, sort_key, revision) values (?, ?, ?, ?, ?) on conflict(group_id) do update set name = excluded.name, sort_key = excluded.sort_key, revision = excluded.revision`, [input.groupId, requiredId(input.routerId, "Router"), requiredName(input.name, "Router group"), input.sortKey || input.name.toLowerCase(), revision]);
+      const now = input.updatedAt ?? Date.now();
+      await sql.run(`insert into router_groups (group_id, router_id, name, sort_key, revision, description, order_value, status, collapsed, created_at_ms, updated_at_ms, metadata_json) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) on conflict(group_id) do update set name = excluded.name, sort_key = excluded.sort_key, revision = excluded.revision, description = excluded.description, order_value = excluded.order_value, status = excluded.status, collapsed = excluded.collapsed, updated_at_ms = excluded.updated_at_ms, metadata_json = excluded.metadata_json`, [input.groupId, requiredId(input.routerId, "Router"), requiredName(input.name, "Router group"), input.sortKey || input.name.toLowerCase(), revision, input.description ?? existing?.description ?? "", Math.trunc(input.order ?? existing?.order_value ?? 0), input.status ?? existing?.status ?? "active", (input.collapsed ?? existing?.collapsed === 1) ? 1 : 0, existing?.created_at_ms ?? input.createdAt ?? now, now, json(input.metadata ?? (existing ? object(existing.metadata_json) : {}))]);
       return routerGroupFromRow(required(await sql.get<RouterGroupRow>("select * from router_groups where group_id = ?", [input.groupId]), `Router group ${input.groupId} was not persisted.`));
     });
   }
@@ -205,6 +249,115 @@ export class AutomationStudioProjectFlowResourceRepository {
   async getRouterForFlow(flowId: string): Promise<AutomationStudioSqlRouter | null> {
     const row = await this.lease.database.get<RouterRow>("select * from routers where flow_id = ?", [requiredId(flowId, "Flow")]);
     return row ? readRouter(this.lease.database, row.router_id) : null;
+  }
+
+  async getRouterSummaryForFlow(flowId: string): Promise<AutomationStudioSqlRouterSummary | null> {
+    const row = await this.lease.database.get<RouterRow>("select * from routers where flow_id = ?", [requiredId(flowId, "Flow")]);
+    if (!row) return null;
+    const groups = await this.lease.database.all<RouterGroupRow>("select * from router_groups where router_id = ? order by order_value, group_id", [row.router_id]);
+    return { ...routerFromRow(row), groups: groups.map(routerGroupFromRow) };
+  }
+
+  async listRouterTargetReferences(input: { flowId: string; subflowIds: string[]; perTargetLimit?: unknown }): Promise<AutomationStudioSqlRouterTargetReferenceBatch> {
+    const flowId = requiredId(input.flowId, "Flow");
+    const subflowIds = unique(input.subflowIds.map((id) => requiredId(id, "Subflow")));
+    if (subflowIds.length > 50) throw new Error("Router target reference requests are limited to 50 Subflows.");
+    const perTargetLimit = automationStudioPageLimit(input.perTargetLimit, 20);
+    if (!subflowIds.length) return { targets: [], perTargetLimit };
+    const router = await this.lease.database.get<RouterRow>("select * from routers where flow_id = ?", [flowId]);
+    if (!router) return { targets: subflowIds.map((subflowId) => ({ subflowId, routes: [], routeCount: 0, fallback: false, total: 0, hasMore: false })), perTargetLimit };
+    const placeholders = subflowIds.map(() => "?").join(", ");
+    const baseParams: unknown[] = [router.router_id, ...subflowIds];
+    const result = await this.lease.database.transaction(async (sql) => {
+      const counts = await sql.all<{ target_subflow_id: string; total: number }>(`select target_subflow_id, count(*) as total from router_routes where router_id = ? and target_kind = 'subflow' and target_subflow_id in (${placeholders}) group by target_subflow_id`, baseParams);
+      const routes = await sql.all<RouterRouteRow & { target_rank: number }>(`select * from (
+        select router_routes.*, row_number() over (partition by target_subflow_id order by priority, route_id) as target_rank
+        from router_routes
+        where router_id = ? and target_kind = 'subflow' and target_subflow_id in (${placeholders})
+      ) where target_rank <= ? order by target_subflow_id, priority, route_id`, [...baseParams, perTargetLimit]);
+      return { counts, routes };
+    });
+    const countByTarget = new Map(result.counts.map((row) => [row.target_subflow_id, row.total]));
+    const routesByTarget = new Map<string, AutomationStudioSqlRouterRoute[]>();
+    for (const row of result.routes) {
+      const targetSubflowId = row.target_subflow_id;
+      if (!targetSubflowId) continue;
+      const routes = routesByTarget.get(targetSubflowId) ?? [];
+      routes.push(routerRouteFromRow(row));
+      routesByTarget.set(targetSubflowId, routes);
+    }
+    return {
+      targets: subflowIds.map((subflowId) => {
+        const routes = routesByTarget.get(subflowId) ?? [];
+        const routeCount = countByTarget.get(subflowId) ?? 0;
+        const fallback = router.fallback_kind === "subflow" && router.fallback_subflow_id === subflowId;
+        return { subflowId, routes, routeCount, fallback, total: routeCount + (fallback ? 1 : 0), hasMore: routeCount > routes.length };
+      }),
+      perTargetLimit
+    };
+  }
+
+  async replaceRouterProjection(input: AutomationStudioSqlRouter): Promise<void> {
+    await this.lease.database.transaction(async (sql) => {
+      await sql.run(`insert into routers (router_id, flow_id, fallback_kind, fallback_subflow_id, revision, created_at_ms, updated_at_ms)
+        values (?, ?, ?, ?, ?, ?, ?)
+        on conflict(router_id) do update set flow_id = excluded.flow_id, fallback_kind = excluded.fallback_kind, fallback_subflow_id = excluded.fallback_subflow_id, revision = excluded.revision, updated_at_ms = excluded.updated_at_ms`,
+      [requiredId(input.routerId, "Router"), requiredId(input.flowId, "Flow"), input.fallbackKind, optionalId(input.fallbackSubflowId), positive(input.revision, "router revision"), input.createdAt, input.updatedAt]);
+      const groupIds = input.groups.map((group) => requiredId(group.groupId, "Router group"));
+      const routeIds = input.routes.map((route) => requiredId(route.routeId, "Router route"));
+      await deleteMissing(sql, "router_routes", "router_id", input.routerId, "route_id", routeIds);
+      await deleteMissing(sql, "router_groups", "router_id", input.routerId, "group_id", groupIds);
+      for (const group of input.groups) await sql.run(`insert into router_groups (group_id, router_id, name, sort_key, revision, description, order_value, status, collapsed, created_at_ms, updated_at_ms, metadata_json) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(group_id) do update set router_id = excluded.router_id, name = excluded.name, sort_key = excluded.sort_key, revision = excluded.revision, description = excluded.description, order_value = excluded.order_value, status = excluded.status, collapsed = excluded.collapsed, updated_at_ms = excluded.updated_at_ms, metadata_json = excluded.metadata_json`,
+      [group.groupId, input.routerId, group.name, group.sortKey, positive(group.revision, "group revision"), group.description, Math.trunc(group.order), group.status, group.collapsed ? 1 : 0, group.createdAt, group.updatedAt, json(group.metadata)]);
+      for (const route of input.routes) await sql.run(`insert into router_routes (route_id, router_id, group_id, name, priority, enabled, condition_kind, condition_json, target_kind, target_subflow_id, revision, created_at_ms, updated_at_ms)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(route_id) do update set router_id = excluded.router_id, group_id = excluded.group_id, name = excluded.name, priority = excluded.priority, enabled = excluded.enabled, condition_kind = excluded.condition_kind, condition_json = excluded.condition_json, target_kind = excluded.target_kind, target_subflow_id = excluded.target_subflow_id, revision = excluded.revision, updated_at_ms = excluded.updated_at_ms`,
+      [route.routeId, input.routerId, optionalId(route.groupId), route.name, route.priority, route.enabled ? 1 : 0, route.conditionKind, json(route.condition), route.targetKind, optionalId(route.targetSubflowId), positive(route.revision, "route revision"), route.createdAt, route.updatedAt]);
+    });
+  }
+
+  async listRouterRoutesPage(input: { flowId: string; groupId?: string | null; status?: "active" | "disabled"; search?: string; limit?: unknown; cursor?: unknown }): Promise<AutomationStudioSqlRouterRoutePage> {
+    const flowId = requiredId(input.flowId, "Flow");
+    if (input.status !== undefined && input.status !== "active" && input.status !== "disabled") throw new Error("Invalid Router route status filter.");
+    const router = await this.lease.database.get<RouterRow>("select * from routers where flow_id = ?", [flowId]);
+    const limit = automationStudioPageLimit(input.limit, 100);
+    if (!router) return { items: [], counts: { total: 0, active: 0, disabled: 0, byGroup: {} }, limit, nextCursor: null, hasMore: false };
+    const groupId = input.groupId === undefined ? undefined : input.groupId === null || input.groupId === "ungrouped" ? null : requiredId(input.groupId, "Router group");
+    const status = input.status ?? "";
+    const search = input.search?.trim().toLowerCase() || "";
+    const owner = `router-routes:${router.router_id}`;
+    const filterHash = automationStudioFilterHash({ groupId: groupId ?? (input.groupId === undefined ? "*" : null), status, search });
+    const cursor = decodeAutomationStudioPageCursor<{ priority: number; routeId: string }>(input.cursor, { owner, filterHash, validate: (values) => Number.isSafeInteger(values.priority) && typeof values.routeId === "string" });
+    const where = ["router_id = ?"];
+    const params: unknown[] = [router.router_id];
+    if (input.groupId !== undefined) groupId === null ? where.push("group_id is null") : (where.push("group_id = ?"), params.push(groupId));
+    if (status) { where.push("enabled = ?"); params.push(status === "active" ? 1 : 0); }
+    if (search) { where.push("(lower(name) like ? or lower(route_id) like ? or lower(target_subflow_id) like ?)"); const needle = `%${search}%`; params.push(needle, needle, needle); }
+    const filterWhere = [...where];
+    const filterParams = [...params];
+    if (cursor) { where.push("(priority > ? or (priority = ? and route_id > ?))"); params.push(cursor.priority, cursor.priority, cursor.routeId); }
+    const result = await this.lease.database.transaction(async (sql) => {
+      const rows = await sql.all<RouterRouteRow>(`select * from router_routes where ${where.join(" and ")} order by priority, route_id limit ?`, [...params, limit + 1]);
+      const countRows = await sql.all<{ group_id: string | null; enabled: number; total: number }>(`select group_id, enabled, count(*) as total from router_routes where ${filterWhere.join(" and ")} group by group_id, enabled`, filterParams);
+      return { rows, countRows };
+    });
+    const counts: AutomationStudioRouterRouteCounts = { total: 0, active: 0, disabled: 0, byGroup: {} };
+    for (const row of result.countRows) {
+      counts.total += row.total;
+      if (row.enabled) counts.active += row.total; else counts.disabled += row.total;
+      const key = row.group_id ?? "ungrouped";
+      counts.byGroup[key] = (counts.byGroup[key] ?? 0) + row.total;
+    }
+    const pageRows = result.rows.slice(0, limit);
+    const last = pageRows.at(-1);
+    return {
+      items: pageRows.map(routerRouteFromRow),
+      counts,
+      limit,
+      hasMore: result.rows.length > limit,
+      nextCursor: result.rows.length > limit && last ? encodeAutomationStudioPageCursor({ owner, filterHash, values: { priority: last.priority, routeId: last.route_id } }) : null
+    };
   }
 
   async upsertInstruction(input: Omit<AutomationStudioSqlInstruction, "contentDigest" | "revision" | "createdAt" | "updatedAt" | "deletedAt"> & { contentDigest?: string; revision?: number; createdAt?: number; updatedAt?: number; deletedAt?: number | null }, expectedRevision?: number): Promise<AutomationStudioSqlInstruction> {
@@ -324,14 +477,14 @@ export class AutomationStudioProjectFlowResourceRepository {
 }
 
 type FlowRow = { flow_id: string; parent_flow_id: string | null; owning_subflow_id: string | null; name: string; description: string; scope_kind: "global" | "domain"; scope_id: string | null; visibility: AutomationStudioSqlFlowRecord["visibility"]; origin: AutomationStudioSqlFlowRecord["origin"]; source_mode: AutomationStudioSqlFlowRecord["sourceMode"]; status: AutomationStudioSqlFlowRecord["status"]; graph_revision: number; settings_revision: number; compiled_revision: number | null; created_at_ms: number; updated_at_ms: number; deleted_at_ms: number | null };
-type FlowSettingsRow = { flow_id: string; execution_defaults_json: string; training_json: string; adaptation_json: string; llm_json: string; safety_json: string; revision: number; updated_at_ms: number };
+type FlowSettingsRow = { flow_id: string; intervention_mode: AutomationStudioSqlFlowSettings["interventionMode"] | null; intervention_mode_version: number; execution_defaults_json: string; training_json: string; adaptation_json: string; llm_json: string; safety_json: string; revision: number; updated_at_ms: number };
 type PortRow = { port_id: string; direction: "input" | "output"; name: string; value_type: string; required: number; default_value_json: string | null; description: string; sort_key: string; revision: number };
 type VariableRow = { variable_id: string; name: string; value_type: string; initial_value_json: string | null; description: string; sort_key: string; revision: number };
 type ErrorRow = { error_id: string; code: string; description: string; metadata_json: string; revision: number };
 type SubflowCategoryRow = { category_id: string; flow_id: string; parent_category_id: string | null; name: string; sort_key: string; revision: number; created_at_ms: number; updated_at_ms: number };
 type SubflowRow = { subflow_id: string; parent_flow_id: string; graph_flow_id: string; parent_category_id: string | null; name: string; description: string; role: string; status: AutomationStudioSqlSubflow["status"]; input_mapping_json: string; output_mapping_json: string; approval_override: AutomationStudioSqlSubflow["approvalOverride"]; revision: number; created_at_ms: number; updated_at_ms: number; deleted_at_ms: number | null };
 type RouterRow = { router_id: string; flow_id: string; fallback_kind: AutomationStudioSqlRouter["fallbackKind"]; fallback_subflow_id: string | null; revision: number; created_at_ms: number; updated_at_ms: number };
-type RouterGroupRow = { group_id: string; router_id: string; name: string; sort_key: string; revision: number };
+type RouterGroupRow = { group_id: string; router_id: string; name: string; sort_key: string; revision: number; description: string; order_value: number; status: AutomationStudioSqlRouterGroup["status"]; collapsed: number; created_at_ms: number; updated_at_ms: number; metadata_json: string };
 type RouterRouteRow = { route_id: string; router_id: string; group_id: string | null; name: string; priority: number; enabled: number; condition_kind: string; condition_json: string; target_kind: AutomationStudioSqlRouterRoute["targetKind"]; target_subflow_id: string | null; revision: number; created_at_ms: number; updated_at_ms: number };
 type InstructionRow = { instruction_id: string; title: string; body_object_id: string | null; inline_body: string | null; requirement: AutomationStudioSqlInstruction["requirement"]; status: AutomationStudioSqlInstruction["status"]; priority: number; content_digest: string; revision: number; created_at_ms: number; updated_at_ms: number; deleted_at_ms: number | null };
 type InstructionScopeRow = AutomationStudioSqlInstructionScope;
@@ -344,10 +497,19 @@ async function readFlow(sql: AutomationStudioSqlExecutor, flowId: string): Promi
   const [settings, ports, variables, errors] = await Promise.all([sql.get<FlowSettingsRow>("select * from flow_settings where flow_id = ?", [flowId]), sql.all<PortRow>("select * from flow_ports where flow_id = ? order by direction, sort_key, port_id", [flowId]), sql.all<VariableRow>("select * from flow_variables where flow_id = ? order by sort_key, variable_id", [flowId]), sql.all<ErrorRow>("select * from flow_errors where flow_id = ? order by code, error_id", [flowId])]);
   return { ...flowFromRow(row), settings: settings ? settingsFromRow(settings) : null, inputs: ports.filter((port) => port.direction === "input").map(portFromRow), outputs: ports.filter((port) => port.direction === "output").map(portFromRow), variables: variables.map(variableFromRow), errors: errors.map(errorFromRow) };
 }
-async function readRouter(sql: AutomationStudioSqlExecutor, routerId: string): Promise<AutomationStudioSqlRouter> { const row = required(await sql.get<RouterRow>("select * from routers where router_id = ?", [routerId]), `Unknown Router: ${routerId}`); const [groups, routes] = await Promise.all([sql.all<RouterGroupRow>("select * from router_groups where router_id = ? order by sort_key, group_id", [routerId]), sql.all<RouterRouteRow>("select * from router_routes where router_id = ? order by enabled desc, priority desc, route_id", [routerId])]); return { ...routerFromRow(row), groups: groups.map(routerGroupFromRow), routes: routes.map(routerRouteFromRow) }; }
+async function readRouter(sql: AutomationStudioSqlExecutor, routerId: string): Promise<AutomationStudioSqlRouter> { const row = required(await sql.get<RouterRow>("select * from routers where router_id = ?", [routerId]), `Unknown Router: ${routerId}`); const [groups, routes] = await Promise.all([sql.all<RouterGroupRow>("select * from router_groups where router_id = ? order by order_value, group_id", [routerId]), sql.all<RouterRouteRow>("select * from router_routes where router_id = ? order by enabled desc, priority desc, route_id", [routerId])]); return { ...routerFromRow(row), groups: groups.map(routerGroupFromRow), routes: routes.map(routerRouteFromRow) }; }
 async function readInstruction(sql: AutomationStudioSqlExecutor, instructionId: string): Promise<AutomationStudioSqlInstruction> { const row = required(await sql.get<InstructionRow>("select * from instructions where instruction_id = ?", [instructionId]), `Unknown Instruction: ${instructionId}`); const [scopes, tags] = await Promise.all([sql.all<InstructionScopeRow>("select scope_kind as scopeKind, project_id as projectId, flow_id as flowId, router_id as routerId, subflow_id as subflowId, node_id as nodeId, error_code as errorCode from instruction_scopes where instruction_id = ? order by scope_kind", [instructionId]), sql.all<{ tag: string }>("select tag from instruction_tags where instruction_id = ? order by tag", [instructionId])]); return { instructionId: row.instruction_id, title: row.title, bodyObjectId: row.body_object_id, inlineBody: row.inline_body, requirement: row.requirement, status: row.status, priority: row.priority, contentDigest: row.content_digest, revision: row.revision, createdAt: row.created_at_ms, updatedAt: row.updated_at_ms, deletedAt: row.deleted_at_ms, scopes, tags: tags.map((tag) => tag.tag) }; }
 function flowFromRow(row: FlowRow): AutomationStudioSqlFlowRecord { return { flowId: row.flow_id, parentFlowId: row.parent_flow_id, owningSubflowId: row.owning_subflow_id, name: row.name, description: row.description, scopeKind: row.scope_kind, scopeId: row.scope_id, visibility: row.visibility, origin: row.origin, sourceMode: row.source_mode, status: row.status, graphRevision: row.graph_revision, settingsRevision: row.settings_revision, compiledRevision: row.compiled_revision, createdAt: row.created_at_ms, updatedAt: row.updated_at_ms, deletedAt: row.deleted_at_ms }; }
-function settingsFromRow(row: FlowSettingsRow): AutomationStudioSqlFlowSettings { return { executionDefaults: object(row.execution_defaults_json), training: object(row.training_json), adaptation: object(row.adaptation_json), llm: object(row.llm_json), safety: object(row.safety_json), revision: row.revision, updatedAt: row.updated_at_ms }; }
+function settingsFromRow(row: FlowSettingsRow): AutomationStudioSqlFlowSettings { const training = object(row.training_json); const adaptation = object(row.adaptation_json); return { interventionMode: row.intervention_mode_version === 1 && row.intervention_mode ? row.intervention_mode : interventionModeFromLegacySettings(training, adaptation), interventionModeVersion: 1, executionDefaults: object(row.execution_defaults_json), training, adaptation, llm: object(row.llm_json), safety: object(row.safety_json), revision: row.revision, updatedAt: row.updated_at_ms }; }
+
+function interventionModeFromLegacySettings(training: JsonObject | undefined, adaptation: JsonObject | undefined): AutomationStudioSqlFlowSettings["interventionMode"] {
+  const trainingMode = training?.mode;
+  const preset = adaptation?.preset;
+  const approval = adaptation?.proposalMode ?? training?.proposalApprovalMode;
+  if (trainingMode === "normal" || preset === "locked" || approval === "disabled" || approval === "deterministic") return "no_llm_intervention";
+  if (approval === "manual" || approval === "mixed" || approval === "manual_approval" || preset === "observe" || preset === "repair") return "manual_approval";
+  return "fully_adaptive";
+}
 function portFromRow(row: PortRow): AutomationStudioSqlFlowPort { return { portId: row.port_id, direction: row.direction, name: row.name, valueType: parse(row.value_type), required: row.required === 1, defaultValue: row.default_value_json === null ? null : parse(row.default_value_json), description: row.description, sortKey: row.sort_key, revision: row.revision }; }
 function variableFromRow(row: VariableRow): AutomationStudioSqlFlowVariable { return { variableId: row.variable_id, name: row.name, valueType: parse(row.value_type), initialValue: row.initial_value_json === null ? null : parse(row.initial_value_json), description: row.description, sortKey: row.sort_key, revision: row.revision }; }
 function errorFromRow(row: ErrorRow): AutomationStudioSqlFlowError { return { errorId: row.error_id, code: row.code, description: row.description, metadata: object(row.metadata_json), revision: row.revision }; }
@@ -355,13 +517,20 @@ function subflowCategoryFromRow(row: SubflowCategoryRow): AutomationStudioSqlSub
 function subflowFromRow(row: SubflowRow): AutomationStudioSqlSubflow { return { subflowId: row.subflow_id, parentFlowId: row.parent_flow_id, graphFlowId: row.graph_flow_id, parentCategoryId: row.parent_category_id, name: row.name, description: row.description, role: row.role, status: row.status, inputMapping: parse(row.input_mapping_json), outputMapping: parse(row.output_mapping_json), approvalOverride: row.approval_override, revision: row.revision, createdAt: row.created_at_ms, updatedAt: row.updated_at_ms, deletedAt: row.deleted_at_ms }; }
 function instructionSummaryFromRow(row: InstructionSummaryRow): AutomationStudioSqlInstructionSummary { return { instructionId: row.instruction_id, title: row.title, requirement: row.requirement, status: row.status, priority: row.priority, contentDigest: row.content_digest, revision: row.revision, createdAt: row.created_at_ms, updatedAt: row.updated_at_ms, deletedAt: row.deleted_at_ms, scope: row.scope_kind ? { scopeKind: row.scope_kind, projectId: row.project_id, flowId: row.flow_id, routerId: row.router_id, subflowId: row.subflow_id, nodeId: row.node_id, errorCode: row.error_code } : null }; }
 function routerFromRow(row: RouterRow): Omit<AutomationStudioSqlRouter, "groups" | "routes"> { return { routerId: row.router_id, flowId: row.flow_id, fallbackKind: row.fallback_kind, fallbackSubflowId: row.fallback_subflow_id, revision: row.revision, createdAt: row.created_at_ms, updatedAt: row.updated_at_ms }; }
-function routerGroupFromRow(row: RouterGroupRow): AutomationStudioSqlRouterGroup { return { groupId: row.group_id, routerId: row.router_id, name: row.name, sortKey: row.sort_key, revision: row.revision }; }
+function routerGroupFromRow(row: RouterGroupRow): AutomationStudioSqlRouterGroup { return { groupId: row.group_id, routerId: row.router_id, name: row.name, description: row.description, order: row.order_value, status: row.status, collapsed: row.collapsed === 1, sortKey: row.sort_key, revision: row.revision, createdAt: row.created_at_ms, updatedAt: row.updated_at_ms, metadata: object(row.metadata_json) }; }
 function routerRouteFromRow(row: RouterRouteRow): AutomationStudioSqlRouterRoute { return { routeId: row.route_id, routerId: row.router_id, groupId: row.group_id, name: row.name, priority: row.priority, enabled: row.enabled === 1, conditionKind: row.condition_kind, condition: parse(row.condition_json), targetKind: row.target_kind, targetSubflowId: row.target_subflow_id, revision: row.revision, createdAt: row.created_at_ms, updatedAt: row.updated_at_ms }; }
 function adaptationPolicyFromRow(row: AdaptationPolicyRow): AutomationStudioSqlAdaptationPolicy { return { policyId: row.policy_id, projectId: row.project_id, flowId: row.flow_id, subflowId: row.subflow_id, preset: row.preset, proposalMode: row.proposal_mode, settings: object(row.settings_json), revision: row.revision, createdAt: row.created_at_ms, updatedAt: row.updated_at_ms, deletedAt: row.deleted_at_ms }; }
 function bindingFromRow(row: InstructionBindingRow): AutomationStudioSqlInstructionBinding { return { bindingId: row.binding_id, ownerKind: row.owner_kind, ownerId: row.owner_id, instructionId: row.instruction_id, sortKey: row.sort_key, enabled: row.enabled === 1, revision: row.revision }; }
 async function replacePorts(sql: AutomationStudioSqlExecutor, flowId: string, inputs: Array<Omit<AutomationStudioSqlFlowPort, "direction" | "revision">>, outputs: Array<Omit<AutomationStudioSqlFlowPort, "direction" | "revision">>): Promise<void> { await sql.run("delete from flow_ports where flow_id = ?", [flowId]); for (const [direction, ports] of [["input", inputs], ["output", outputs]] as const) for (const [index, port] of ports.entries()) await sql.run("insert into flow_ports (port_id, flow_id, direction, name, value_type, required, default_value_json, description, sort_key, revision) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)", [port.portId, flowId, direction, requiredName(port.name, "Flow port"), json(port.valueType), port.required ? 1 : 0, port.defaultValue === null ? null : json(port.defaultValue), port.description, port.sortKey || String(index).padStart(8, "0")]); }
 async function replaceVariables(sql: AutomationStudioSqlExecutor, flowId: string, variables: Array<Omit<AutomationStudioSqlFlowVariable, "revision">>): Promise<void> { await sql.run("delete from flow_variables where flow_id = ?", [flowId]); for (const [index, variable] of variables.entries()) await sql.run("insert into flow_variables (variable_id, flow_id, name, value_type, initial_value_json, description, sort_key, revision) values (?, ?, ?, ?, ?, ?, ?, 1)", [variable.variableId, flowId, requiredName(variable.name, "Flow variable"), json(variable.valueType), variable.initialValue === null ? null : json(variable.initialValue), variable.description, variable.sortKey || String(index).padStart(8, "0")]); }
 async function replaceErrors(sql: AutomationStudioSqlExecutor, flowId: string, errors: Array<Omit<AutomationStudioSqlFlowError, "revision">>): Promise<void> { await sql.run("delete from flow_errors where flow_id = ?", [flowId]); for (const error of errors) await sql.run("insert into flow_errors (error_id, flow_id, code, description, metadata_json, revision) values (?, ?, ?, ?, ?, 1)", [error.errorId, flowId, requiredKind(error.code, "Flow error code"), error.description, json(error.metadata)]); }
+async function deleteMissing(sql: AutomationStudioSqlExecutor, table: "router_groups" | "router_routes", ownerColumn: "router_id", ownerId: string, idColumn: "group_id" | "route_id", ids: string[]): Promise<void> {
+  if (!ids.length) {
+    await sql.run(`delete from ${table} where ${ownerColumn} = ?`, [ownerId]);
+    return;
+  }
+  await sql.run(`delete from ${table} where ${ownerColumn} = ? and ${idColumn} not in (${ids.map(() => "?").join(", ")})`, [ownerId, ...ids]);
+}
 function page<TRow, TItem>(rows: TRow[], limit: number, map: (row: TRow) => TItem, cursorFor: (row: TRow) => unknown): AutomationStudioFlowResourcePage<TItem> { const pageRows = rows.slice(0, limit); const last = pageRows.at(-1); return { items: pageRows.map(map), limit, hasMore: rows.length > limit, nextCursor: rows.length > limit && last ? encodeCursor(cursorFor(last)) : null }; }
 function clampLimit(value?: number): number { return Math.max(1, Math.min(500, Math.trunc(value ?? 50))); }
 function clampOffset(value?: number): number { const normalized = Math.trunc(value ?? 0); return Number.isFinite(normalized) ? Math.max(0, Math.min(10_000_000, normalized)) : 0; }

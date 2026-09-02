@@ -3,6 +3,25 @@ import { CLIENT_GATEWAY_PROTOCOL_VERSION, type ClientGatewayClientMessage, type 
 import { ClientGatewayService, type ClientGatewayTrustedClientStore } from "./service.ts";
 
 describe("ClientGatewayService", () => {
+  it("returns bounded stable summary pages without exposing full snapshots", async () => {
+    const gateway = new ClientGatewayService();
+    for (let index = 0; index < 125; index += 1) {
+      const session = gateway.connect();
+      await gateway.receive(session.sessionId, clientMessage("client.hello", { clientId: `client-${String(index).padStart(4, "0")}`, clientType: "extension", name: `Client ${String(index).padStart(4, "0")}` }));
+    }
+    const first = gateway.listSummaryItems({ kind: "sessions", limit: 50 });
+    const second = gateway.listSummaryItems({ kind: "sessions", limit: 50, afterId: first.lastId });
+    const third = gateway.listSummaryItems({ kind: "sessions", limit: 50, afterId: second.lastId });
+    expect(first).toMatchObject({ total: 125, limit: 50, hasMore: true });
+    expect(first.items).toHaveLength(50);
+    expect(second.items).toHaveLength(50);
+    expect(third).toMatchObject({ items: expect.any(Array), hasMore: false });
+    expect(third.items).toHaveLength(25);
+    expect(new Set([...first.items, ...second.items, ...third.items].map((item) => "sessionId" in item ? item.sessionId : "")).size).toBe(125);
+    expect(gateway.listSummaryItems({ kind: "sessions", search: "client 0124", limit: 10 })).toMatchObject({ total: 1, items: [expect.objectContaining({ clientId: "client-0124" })] });
+    expect(gateway.summary()).toMatchObject({ counts: { sessions: 125, pairings: 125, trustedClients: 0 } });
+  });
+
   it("pairs a websocket-capable client and queues session messages", async () => {
     const gateway = new ClientGatewayService();
     const session = gateway.connect();

@@ -106,8 +106,8 @@
 }
 
 .automation-section-resize-handle:hover {
-  background: transparent;
-  opacity: 0;
+  background: var(--color-primary);
+  opacity: 0.7;
 }
 
 .automation-workspace-section-header {
@@ -250,7 +250,7 @@
 .automation-view-container {
   position: relative;
   display: grid;
-  grid-template-rows: 38px 36px minmax(0, 1fr);
+  grid-template-rows: minmax(38px, auto) minmax(36px, auto) minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   width: 100%;
@@ -280,12 +280,12 @@
   box-sizing: border-box;
   min-width: 0;
   width: 100%;
-  height: 38px;
+  min-height: 38px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
   padding: 6px 8px;
   cursor: move;
-  contain: layout style;
+  contain: layout paint style;
 }
 
 .automation-view-container > header.not-movable {
@@ -368,6 +368,17 @@
   display: grid;
   overflow: hidden;
   contain: layout paint style;
+}
+
+.automation-view-activation-placeholder {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  background: var(--surface-pane);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
 }
 
 .automation-mounted-view {
@@ -512,13 +523,13 @@
 
 .automation-window-resize-edge:hover,
 .automation-view-container.active .automation-window-resize-edge:hover {
-  background: transparent;
-  opacity: 0;
+  background: var(--color-primary);
+  opacity: 0.7;
 }
 
 .automation-window-resize-corner:hover {
-  background: transparent;
-  opacity: 0;
+  background: var(--color-primary);
+  opacity: 0.7;
 }
 
 .automation-section-resize-handle:focus,
@@ -530,8 +541,9 @@
 .automation-window-resize-corner:focus,
 .automation-window-resize-corner:focus-visible,
 .automation-window-resize-corner:active {
-  background: transparent;
-  outline: 0;
+  background: var(--color-primary);
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
   box-shadow: none;
-  opacity: 0;
+  opacity: 1;
 }

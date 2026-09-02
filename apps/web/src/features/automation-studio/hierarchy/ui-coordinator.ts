@@ -29,6 +29,7 @@ export function normalizeAutomationHierarchySidebarUiState(
 
 export type AutomationHierarchyUiCoordinator = {
   getSnapshot(): AutomationHierarchyUiSnapshot;
+  getRevision(): number;
   subscribe(listener: () => void): () => void;
   hydrate(snapshot: Partial<AutomationHierarchyUiSnapshot> | null | undefined): boolean;
   reset(): boolean;
@@ -46,17 +47,20 @@ export function createAutomationHierarchyUiCoordinator(
   initial: Partial<AutomationHierarchyUiSnapshot> | null | undefined = defaultSnapshot
 ): AutomationHierarchyUiCoordinator {
   let snapshot = normalizeSnapshot(initial);
+  let revision = 0;
   let onChange: ((snapshot: AutomationHierarchyUiSnapshot) => void) | undefined;
   const listeners = new Set<() => void>();
   const replace = (next: AutomationHierarchyUiSnapshot, publish: boolean): boolean => {
     if (snapshotEqual(snapshot, next)) return false;
     snapshot = next;
+    revision += 1;
     for (const listener of listeners) listener();
     if (publish) onChange?.(snapshot);
     return true;
   };
   return {
     getSnapshot: () => snapshot,
+    getRevision: () => revision,
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);

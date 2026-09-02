@@ -1,16 +1,18 @@
 "use client";
 
-import { StatusText } from "../../programs/shared-ui";
+import { EmptyState, StatusText } from "../../programs/shared-ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 
 import { subscribeToAutomationStudioMutations } from "../stores/mutation-transaction-store";
 import { useRouterCommands, type RouterCommands } from "./router-host";
-import { buildFlowMapRouteTestPayload, defaultFlowMapRouteDraft, flowMapConditionExpected, flowMapConditionSummary, flowMapRouteDraftFromRule, flowMapRouteGroupsFromRouter, flowMapRoutes, nextFlowMapGroupOrder } from "./route-condition-model";
+import { commitAutomationStudioMutation } from "../stores/mutation-transaction-store";
+import { buildFlowMapRouteTestPayload, defaultFlowMapRouteDraft, flowMapConditionExpected, flowMapConditionSummary, flowMapRouteDraftFromRule, flowMapRouteGroupsFromRouter, nextFlowMapGroupOrder } from "./route-condition-model";
 import { RouterContentView, ROUTER_ROUTE_PAGE_SIZE } from "./RouterContentView";
 
 
-export type RouterViewProps = { projectId: string | null; flow: any; initialRouter?: any; initialSubflows?: any[]; onCreateSubflow?(): void };
+type InitialRouterRoutePage = { routes: any[]; counts: { total: number; active: number; disabled: number; byGroup: Record<string, number> }; nextCursor: string | null; hasMore: boolean };
+export type RouterViewProps = { projectId: string | null; flow: any; initialRouter?: any; initialRoutePage?: InitialRouterRoutePage; initialSubflows?: any[]; onCreateSubflow?(): void };
 
 export function RouterView(props: RouterViewProps) {
   const commands = useRouterCommands();
@@ -19,10 +21,18 @@ export function RouterView(props: RouterViewProps) {
 
 export function RouterViewContent(props: RouterViewProps & { commands: RouterCommands }) {
   const flowId = props.flow?.flowId;
+  const isSubflowGraph = props.flow?.metadata?.subflowGraph === true || typeof props.flow?.metadata?.parentFlowId === "string";
   const [flowMap, setFlowMap] = useState<any | null>(() => props.initialRouter ?? null);
   const [subflows, setSubflows] = useState<any[]>(() => props.initialSubflows ?? []);
+  const [subflowTotal, setSubflowTotal] = useState(props.initialSubflows?.length ?? 0);
+  const [subflowQuery, setSubflowQuery] = useState("");
+  const [subflowsLoading, setSubflowsLoading] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState("all");
-  const [routePageOffset, setRoutePageOffset] = useState(0);
+  const [routePageIndex, setRoutePageIndex] = useState(0);
+  const [routeCursors, setRouteCursors] = useState<Array<string | null>>([null]);
+  const [routeQuery, setRouteQuery] = useState("");
+  const [routeStatus, setRouteStatus] = useState<"all" | "active" | "disabled">("all");
+  const [routePage, setRoutePage] = useState<InitialRouterRoutePage>(() => props.initialRoutePage ?? { routes: [], counts: { total: 0, active: 0, disabled: 0, byGroup: {} }, nextCursor: null, hasMore: false });
   const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
   const [routeDraft, setRouteDraft] = useState(() => defaultFlowMapRouteDraft());
   const [groupDraft, setGroupDraft] = useState({ groupId: "", name: "", description: "", order: 0, collapsed: false, status: "active" });
@@ -36,16 +46,17 @@ export function RouterViewContent(props: RouterViewProps & { commands: RouterCom
   const [authorization, setAuthorization] = useState<null | { action: "save-route" | "delete-route" | "save-group" | "delete-group" | "save-fallback" | "mutate-route" }>(null);
   const [authorizationPin, setAuthorizationPin] = useState("");
   const [routeMutation, setRouteMutation] = useState<null | { ruleId: string; action: "move_up" | "move_down" | "duplicate" | "toggle" | "delete" }>(null);
-  const [loading, setLoading] = useState(() => Boolean(props.projectId && flowId && !props.initialSubflows?.length));
+  const [loading, setLoading] = useState(() => Boolean(props.projectId && flowId && !isSubflowGraph && !props.initialSubflows?.length));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const scopeRef = useRef("");
   const routeGroups = useMemo(() => flowMapRouteGroupsFromRouter(flowMap), [flowMap]);
-  const sortedRoutes = useMemo(() => flowMapRoutes(flowMap), [flowMap]);
-  const visibleRoutes = useMemo(() => sortedRoutes.filter((route) => selectedGroupId === "all" ? true : selectedGroupId === "ungrouped" ? !route.metadata?.groupId : route.metadata?.groupId === selectedGroupId), [sortedRoutes, selectedGroupId]);
-  const visibleRoutePage = useMemo(() => visibleRoutes.slice(routePageOffset, routePageOffset + ROUTER_ROUTE_PAGE_SIZE), [routePageOffset, visibleRoutes]);
+  const sortedRoutes = routePage.routes;
+  const visibleRoutes = routePage.routes;
+  const visibleRoutePage = routePage.routes;
+  const routePageOffset = routePageIndex * ROUTER_ROUTE_PAGE_SIZE;
   const selectedRule = useMemo(() => sortedRoutes.find((route) => route.ruleId === selectedRuleId) ?? null, [sortedRoutes, selectedRuleId]);
-  const activeSubflows = useMemo(() => subflows.filter((subflow) => subflow.status !== "archived").sort((left, right) => String(left.name ?? left.subflowId).localeCompare(String(right.name ?? right.subflowId))), [subflows]);
+  const activeSubflows = subflows;
   const subflowOptions = useMemo(() => activeSubflows.map((subflow) => ({ value: subflow.subflowId, label: subflow.name ?? subflow.subflowId, description: [subflow.description, subflow.role ? "Role: " + subflow.role : "", subflow.subflowId].filter(Boolean).join(" | ") })), [activeSubflows]);
 
   useEffect(() => {
@@ -53,28 +64,45 @@ export function RouterViewContent(props: RouterViewProps & { commands: RouterCom
     setSelectedRuleId(null);
     setRouteDraft(defaultFlowMapRouteDraft());
     setRouteModalOpen(false);
-    if (!props.projectId || !flowId) return;
+    if (!props.projectId || !flowId || isSubflowGraph) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    void Promise.all([loadFlowMap(), loadSubflows()]).finally(() => setLoading(false));
-  }, [props.projectId, flowId]);
-  useEffect(() => setRoutePageOffset(0), [props.projectId, flowId, selectedGroupId]);
+    setRoutePageIndex(0);
+    setRouteCursors([null]);
+    void Promise.all([loadFlowMap(), loadRoutes(null), loadSubflows("")]).finally(() => setLoading(false));
+  }, [props.projectId, flowId, isSubflowGraph]);
   useEffect(() => {
-    if (routePageOffset < visibleRoutes.length || routePageOffset === 0) return;
-    setRoutePageOffset(Math.max(0, Math.floor((Math.max(0, visibleRoutes.length - 1)) / ROUTER_ROUTE_PAGE_SIZE) * ROUTER_ROUTE_PAGE_SIZE));
-  }, [routePageOffset, visibleRoutes.length]);
+    if (!props.projectId || !flowId || isSubflowGraph) return;
+    const timer = window.setTimeout(() => {
+      setRoutePageIndex(0);
+      setRouteCursors([null]);
+      void loadRoutes(null);
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [selectedGroupId, routeQuery, routeStatus]);
+  useEffect(() => {
+    if (!props.projectId || !flowId || isSubflowGraph) return;
+    const timer = window.setTimeout(() => void loadSubflows(subflowQuery), 180);
+    return () => window.clearTimeout(timer);
+  }, [subflowQuery]);
 
 
-  useEffect(() => subscribeToAutomationStudioMutations(
-    () => void loadSubflows(),
-    { kinds: ["subflow.changed"], projectId: props.projectId, flowId }
-  ), [props.projectId, flowId]);
+  useEffect(() => {
+    if (isSubflowGraph) return;
+    return subscribeToAutomationStudioMutations(
+      () => { void loadSubflows(subflowQuery); void loadRoutes(routeCursors[routePageIndex] ?? null); },
+      { kinds: ["subflow.changed"], projectId: props.projectId, flowId }
+    );
+  }, [props.projectId, flowId, isSubflowGraph]);
 
   useEffect(() => {
     if (selectedRule) setRouteDraft(flowMapRouteDraftFromRule(selectedRule));
   }, [selectedRuleId, selectedRule]);
 
   const loadFlowMap = async () => {
-    if (!props.projectId || !flowId) return;
+    if (!props.projectId || !flowId || isSubflowGraph) return;
     const requestScope = String(props.projectId) + ":" + String(flowId);
     setError("");
     const result = await props.commands.loadRouter({ projectId: props.projectId, flowId });
@@ -83,18 +111,49 @@ export function RouterViewContent(props: RouterViewProps & { commands: RouterCom
     else setFlowMap(result.payload?.router ?? null);
   };
 
-  const loadSubflows = async () => {
-    if (!props.projectId || !flowId) return;
+  const loadSubflows = async (search = subflowQuery) => {
+    if (!props.projectId || !flowId || isSubflowGraph) return;
     const requestScope = String(props.projectId) + ":" + String(flowId);
-    const result = await props.commands.listSubflows({ projectId: props.projectId, flowId, limit: 100, offset: 0 });
+    setSubflowsLoading(true);
+    const result = await props.commands.listSubflows({ projectId: props.projectId, flowId, limit: 50, status: "active", search });
     if (scopeRef.current !== requestScope) return;
+    setSubflowsLoading(false);
     if (!result.ok) setError(result.error ?? "Subflow targets could not be loaded.");
-    else setSubflows(result.payload?.subflows ?? result.payload?.page?.subflows ?? []);
+    else {
+      const page = result.payload?.page;
+      setSubflows(result.payload?.subflows ?? page?.subflows ?? []);
+      setSubflowTotal(page?.total ?? result.payload?.subflows?.length ?? 0);
+    }
+  };
+  const loadRoutes = async (cursor: string | null) => {
+    if (!props.projectId || !flowId || isSubflowGraph) return;
+    const requestScope = String(props.projectId) + ":" + String(flowId);
+    const result = await props.commands.listRoutes({
+      projectId: props.projectId,
+      flowId,
+      limit: ROUTER_ROUTE_PAGE_SIZE,
+      cursor,
+      ...(selectedGroupId === "ungrouped" ? { groupId: null } : selectedGroupId !== "all" ? { groupId: selectedGroupId } : {}),
+      ...(routeStatus !== "all" ? { status: routeStatus } : {}),
+      ...(routeQuery.trim() ? { search: routeQuery.trim() } : {})
+    });
+    if (scopeRef.current !== requestScope) return;
+    if (!result.ok) setError(result.error ?? "Router routes could not be loaded.");
+    else {
+      const page = result.payload?.page;
+      setRoutePage({
+        routes: result.payload?.routes ?? page?.routes ?? [],
+        counts: { total: page?.counts?.total ?? 0, active: page?.counts?.active ?? 0, disabled: page?.counts?.disabled ?? 0, byGroup: page?.counts?.byGroup ?? {} },
+        nextCursor: page?.nextCursor ?? null,
+        hasMore: page?.hasMore === true
+      });
+      if (result.payload?.groups) setFlowMap((current: any) => ({ ...(current ?? {}), metadata: { ...(current?.metadata ?? {}), routeGroups: result.payload?.groups } }));
+    }
   };
   const retryFlowMap = async () => {
     setLoading(true);
     setError("");
-    await Promise.all([loadFlowMap(), loadSubflows()]);
+    await Promise.all([loadFlowMap(), loadRoutes(routeCursors[routePageIndex] ?? null), loadSubflows(subflowQuery)]);
     setLoading(false);
   };
   const beginNewRoute = () => {
@@ -174,6 +233,8 @@ export function RouterViewContent(props: RouterViewProps & { commands: RouterCom
       return;
     }
     setFlowMap(result.payload.router);
+    commitAutomationStudioMutation({ kind: "router.changed", projectId: props.projectId, flowId });
+    await Promise.all([loadFlowMap(), loadRoutes(routeCursors[routePageIndex] ?? null)]);
     setAuthorization(null);
     setAuthorizationPin("");
     setGroupModalOpen(false);
@@ -188,6 +249,10 @@ export function RouterViewContent(props: RouterViewProps & { commands: RouterCom
     }
   };
 
+  if (isSubflowGraph) {
+    return <EmptyState compact title="Router belongs to the top-level Flow" description="Select the parent Flow to view or edit routing. Subflows contain node graphs and settings, but do not own Routers." />;
+  }
+
 return <RouterContentView
     {...{ activeSubflows, authorization, authorizationPin, beginFallbackEdit, beginNewGroup, beginNewRoute,
       completeAuthorizedAction, editGroup, editRoute, error, fallbackDraft, fallbackModalOpen, flowId,
@@ -195,8 +260,29 @@ return <RouterContentView
       retryFlowMap, routeDraft, routeGroups, routeModalOpen, routePageOffset, routeTestResult,
       routeTestValue, runRouteTest, saving, selectedGroupId, setAuthorization, setAuthorizationPin,
       setFallbackDraft, setFallbackModalOpen, setGroupDraft, setGroupModalOpen, setRouteDraft,
-      setRouteModalOpen, setRoutePageOffset, setRouteTestResult, setRouteTestValue, setSelectedGroupId,
+      setRouteModalOpen, setRouteTestResult, setRouteTestValue, setSelectedGroupId,
       sortedRoutes, subflowOptions, testingRoute, visibleRoutePage, visibleRoutes }}
+    routeCounts={routePage.counts}
+    routeHasMore={routePage.hasMore}
+    routeQuery={routeQuery}
+    routeStatus={routeStatus}
+    onNextRoutePage={() => {
+      if (!routePage.nextCursor) return;
+      const nextIndex = routePageIndex + 1;
+      setRouteCursors((current) => [...current.slice(0, nextIndex), routePage.nextCursor]);
+      setRoutePageIndex(nextIndex);
+      void loadRoutes(routePage.nextCursor);
+    }}
+    onPreviousRoutePage={() => {
+      const nextIndex = Math.max(0, routePageIndex - 1);
+      setRoutePageIndex(nextIndex);
+      void loadRoutes(routeCursors[nextIndex] ?? null);
+    }}
+    onRouteQuery={setRouteQuery}
+    onRouteStatus={setRouteStatus}
+    onSubflowQuery={setSubflowQuery}
+    subflowTotal={subflowTotal}
+    subflowsLoading={subflowsLoading}
     onCreateSubflow={props.onCreateSubflow}
   />;
 }

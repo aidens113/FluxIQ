@@ -194,7 +194,10 @@ export const AUTOMATION_STUDIO_PROJECT_MIGRATION_CUTOVER_MIGRATION: AutomationSt
   ]
 };
 
-const CUTOVER_MIGRATIONS = [...AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AUTOMATION_STUDIO_PROJECT_MIGRATION_CUTOVER_MIGRATION] as const;
+const CUTOVER_MIGRATIONS: readonly AutomationStudioSchemaMigration[] = [
+  ...AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS,
+  AUTOMATION_STUDIO_PROJECT_MIGRATION_CUTOVER_MIGRATION
+].sort((left, right) => left.id.localeCompare(right.id));
 
 export class AutomationStudioProjectMigrationCutoverStore {
   private constructor(private readonly lease: AutomationStudioProjectDatabaseLease) {}
