@@ -249,23 +249,26 @@ export function useFlowEditorGraphDocument(props: FlowEditorProps) {
     [flowEdges, invalidFlowEdgeIds]
   );
 
-  const saveFlowGraph = useCallback(async () => {
-    if (!props.activeRef.current || !props.editable || codeOwned) return;
+  const saveFlowGraph = useCallback(async (authorizationPin?: string) => {
+    if (!props.activeRef.current || !props.editable || codeOwned) {
+      return { ok: false, state: "failed" as const, message: "The active Flow graph is not editable." };
+    }
     setSaveState("saving");
     setSaveMessage("");
     const result = await props.onSaveGraph({
       nodes: flowNodesRef.current,
       edges: flowEdgesRef.current
-    });
+    }, authorizationPin);
     setSaveState(result.state);
     setSaveMessage(result.message);
-    if (!result.ok) return;
+    if (!result.ok) return result;
     savedGraphSignatureRef.current = graphSignature(
       flowNodesRef.current,
       flowEdgesRef.current
     );
     flowGraphDirtyRef.current = false;
     props.onDirtyChange(false);
+    return result;
   }, [codeOwned, props.activeRef, props.editable, props.onDirtyChange, props.onSaveGraph]);
 
   return {

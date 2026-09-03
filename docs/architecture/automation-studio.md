@@ -458,6 +458,45 @@ and capability configuration. Instructions are first-class scoped objects.
 State is a global inspection view that can follow a Flow, Subflow, recording,
 node, or run without becoming a Flow hierarchy object.
 
+The project workbar owns project-level undo, redo, play, pause, stop, and Save
+Project controls. Graph canvases publish active history commands to that bar
+instead of rendering a competing graph-save button. Save Project authorizes
+once and saves every dirty mounted editor in the open project, including Flow
+or Subflow Nodes, Settings, and Instructions, while workspace/hierarchy
+preferences continue through their debounced persistence path. Authorization
+uses the in-product modal exclusively; registered editors receive that same PIN
+without opening native browser prompts. A failed editor write keeps the modal
+open and reports the persistence error instead of presenting a false success.
+The active graph editor supplies its current node and edge refs directly to the
+save command; deferred draft/recovery publication is never used as the save
+payload, so an immediate save cannot persist the preceding editor snapshot.
+A returned
+Subflow graph is reconciled with its immutable parent Flow/Subflow ownership
+metadata so saving nodes cannot temporarily detach or hide the Subflow UI.
+Successful graph writes also replace the session's Flow-detail cache. Summary
+refreshes and older detail responses cannot replace a newer loaded graph, and
+explicit reload bypasses the cache. When project hydration has only a
+summary-only Flow stub—or a selected Subflow backing graph is not in the
+summary collection—the active connector loads that graph by ID with a fresh
+detail request through the bounded `get-graph-viewport` v2 API. The server
+imports a legacy monolithic graph into project graph storage when necessary;
+the browser follows cursors, composes the bounded pages, and never calls the
+retired `get-flow` document endpoint. Summary-only cache entries are never
+accepted as hydrated graphs. The Nodes surface remains in a loading state
+instead of initializing an empty canvas, then exposes the request error and an
+explicit retry action if detail hydration fails. Subflow Settings loads parent
+Flow ports and settings through `get-flow-metadata-detail` rather than the
+retired full-document read.
+
+Generated Subflows and nested Subflow categories are true hierarchy containers.
+Their disclosure controls remain user-operable even while a Subflow is the
+active graph. Router empty state creation resolves the generated Subflows
+container by its canonical flow-structure marker, so it uses the same typed
+creation transaction as the hierarchy add menu. Subflow Settings treats its
+main record as required and ancillary parent/instruction/router data as
+independent requests; a transport failure renders an actionable error rather
+than leaving the Settings view in a permanent loading state.
+
 Adaptations are the current user-facing review surface for LLM-assisted changes.
 Legacy proposal records and view IDs may remain for persistence compatibility
 and explicit read-only recovery, but proposal generation is not a current

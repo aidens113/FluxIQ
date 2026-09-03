@@ -193,6 +193,8 @@ import {
   type AutomationStudioRuntimeEventPage,
   type AutomationStudioGraphPatchOperation,
   type AutomationStudioGraphPatchResult,
+  type AutomationStudioGraphBounds,
+  type AutomationStudioGraphViewportPage,
   automationStudioFilterHash,
   automationStudioPageLimit,
   decodeAutomationStudioPageCursor,
@@ -1998,6 +2000,45 @@ export class AutomationStudioService {
 
   async saveFlow(input: { projectId: string; flow: AutomationStudioFlowArtifact; expectedUpdatedAt?: number }): Promise<AutomationStudioFlowArtifact> {
     return await this.saveFlowInternal(input, false);
+  }
+
+  async getFlowGraphViewport(input: {
+    projectId: string;
+    flowId: string;
+    bounds: AutomationStudioGraphBounds;
+    cursor?: string | null;
+    limit?: number;
+    pinnedNodeIds?: string[];
+  }): Promise<{ flow: AutomationStudioFlowArtifact; page: AutomationStudioGraphViewportPage }> {
+    await this.findProject(input.projectId);
+    if (!this.projectDatabasePool) throw new Error("Project graph storage is unavailable.");
+    const canonical = await this.getFlow(input.projectId, input.flowId);
+    const graph = await AutomationStudioProjectGraphRepository.open({
+      pool: this.projectDatabasePool,
+      projectId: input.projectId
+    });
+    try {
+      const revisions = await graph.revisions({ flowId: input.flowId, limit: 1 });
+      if (!revisions.items.length) await graph.importMonolithicFlowGraph(canonical);
+      const page = await graph.viewport({
+        flowId: input.flowId,
+        bounds: input.bounds,
+        ...(input.cursor !== undefined ? { cursor: input.cursor } : {}),
+        ...(input.limit !== undefined ? { limit: input.limit } : {}),
+        ...(input.pinnedNodeIds !== undefined ? { pinnedNodeIds: input.pinnedNodeIds } : {})
+      });
+      return {
+        flow: {
+          ...canonical,
+          nodes: [],
+          edges: [],
+          metadata: { ...(canonical.metadata ?? {}), graphRevision: page.graphRevision }
+        },
+        page
+      };
+    } finally {
+      await graph.close();
+    }
   }
 
   async applyFlowGraphPatch(input: {

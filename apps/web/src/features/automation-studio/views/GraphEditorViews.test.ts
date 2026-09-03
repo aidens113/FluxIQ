@@ -121,8 +121,8 @@ describe("Nodes whiteboard toolbar and outline", () => {
     const source = flowEditorSource() + readFileSync(
       new URL("../flow-editor/FlowGraphToolsMenu.tsx", import.meta.url),
       "utf8"
-    );
-    for (const command of ["Fit graph", "Zoom in", "Zoom out", "Undo graph change", "Redo graph change", "Validate graph", "Add node", "More canvas tools"]) {
+    ) + readFileSync(new URL("../workspace/shell/WorkspaceHeader.tsx", import.meta.url), "utf8");
+    for (const command of ["Fit graph", "Zoom in", "Zoom out", "Undo action", "Redo action", "Validate graph", "Add node", "More canvas tools", "Save entire project"]) {
       expect(source).toContain('aria-label="' + command + '"');
     }
     expect(source).not.toContain('aria-label="Select mode"');
@@ -301,6 +301,10 @@ describe("Flow editor decomposition contracts", () => {
     const preloader = readFileSync(new URL("./view-surface-preloader.ts", import.meta.url), "utf8");
 
     expect(source).toContain("memo(function FlowEditorView");
+    expect(source).toContain('aria-label="Opening node editor"');
+    expect(source).toContain("Saved Nodes could not be loaded:");
+    expect(source).toContain(">Retry</button>");
+    expect(source).toContain("props.taskGraph.metadata?.summaryOnly === true");
     expect(source).toContain('lazy(() => import("./FlowGraphCanvas")');
     expect(source).not.toContain("if (!props.active) return null");
     expect(definitions).toContain('ComponentProps<typeof FlowEditorView>, "activeRef"');

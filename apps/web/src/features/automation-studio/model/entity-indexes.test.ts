@@ -96,7 +96,7 @@ describe("Automation Studio entity indexes", () => {
     const sources = fixture(0);
     sources.hierarchyNodes.push(
       { id: "folder.general", kind: "folder", category: "flow" } as any,
-      { id: "subflows.root", kind: "folder", category: "flow", flowId: "flow.main", metadata: { subflowRoot: true } } as any,
+      { id: "subflows.root", kind: "folder", category: "flow", flowId: "flow.main", metadata: { flowStructure: "subflows" } } as any,
       { id: "subflows.category", kind: "folder", category: "flow", flowId: "flow.main", metadata: { subflowCategory: true } } as any
     );
     const indexes = buildAutomationEntityIndexes(sources);

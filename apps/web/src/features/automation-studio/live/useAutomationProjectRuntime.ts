@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import type { CurrentUser } from "../../programs/types";
-import { automationStudioCurrentSearchParams, replaceAutomationStudioBrowserUrl } from "../model/live-helpers";
+import { automationStudioCurrentSearchParams, isAutomationSelection, replaceAutomationStudioBrowserUrl } from "../model/live-helpers";
 import { automationStudioDeepLinkParams } from "../navigation";
 import { useAutomationProjectDeepLink, useAutomationProjectLifecycle, type AutomationProjectHydration } from "../project";
 import { defaultAutomationWorkspacePrefs, normalizeAutomationWorkspacePrefs, type AutomationWorkspacePrefs } from "../workspace/layout";
@@ -104,6 +104,10 @@ export function useAutomationProjectRuntime(options: Options) {
     if (workspaceIsUntouched) options.workspace.replacePrefs(loadedPrefs);
     const cacheHydrationRevision = options.workspace.getPrefsRevision();
     if (hydration.summary) applySummary(hydration.summary);
+    const savedActiveViewSelection = loadedPrefs.viewStates?.[loadedPrefs.activeViewId]?.selection;
+    if (workspaceIsUntouched && isAutomationSelection(savedActiveViewSelection)) {
+      options.foundation.stores.selection.select(savedActiveViewSelection);
+    }
     if (workspaceIsUntouched) options.foundation.uiCache.hydrateWorkspacePrefs({
       projectId,
       userId: options.currentUserId,
@@ -172,11 +176,32 @@ export function useAutomationProjectRuntime(options: Options) {
     if (summary === undefined || activeProjectRef.current !== projectId || !options.foundation.projectGeneration.isCurrent(generation)) return;
     return applySummary(summary);
   }, [applySummary, options.activeProjectId, options.foundation.projectDataPlatform, options.foundation.requests]);
-  const loadFlowDetails = useCallback(async (flowId: string) => {
+  const loadFlowDetails = useCallback(async (flowId: string, loadOptions: { refresh?: boolean } = {}) => {
     if (!flowId) return null;
     const generation = options.foundation.projectGeneration.current();
-    const outcome = await options.foundation.liveCommands.loadFlowDetail<any>(flowId);
-    if (outcome.status !== "success" || !options.foundation.projectGeneration.isCurrent(generation)) return null;
+    const outcome = await options.foundation.liveCommands.loadFlowDetail<any>(flowId, loadOptions);
+    if (!options.foundation.projectGeneration.isCurrent(generation)) return null;
+    if (outcome.status !== "success") {
+      if (outcome.status === "failure") {
+        options.schedule(() => options.data.setProjectFlows((current: any[]) => {
+          const existing = current.find((entry) => entry.flow?.flowId === flowId);
+          const flow = existing?.flow ?? { flowId, name: flowId, nodes: [], edges: [] };
+          return mergeFlowDetails(current, [{
+            source: "canonical",
+            readOnly: false,
+            flow: {
+              ...flow,
+              metadata: {
+                ...flow.metadata,
+                summaryOnly: true,
+                detailLoadError: outcome.error
+              }
+            }
+          }]);
+        }));
+      }
+      return null;
+    }
     options.schedule(() => options.data.setProjectFlows((current: any[]) => mergeFlowDetails(current, [{ source: "canonical", readOnly: false, flow: outcome.value.flow }])));
     return outcome.value.flow;
   }, [options.data, options.foundation.liveCommands, options.schedule]);

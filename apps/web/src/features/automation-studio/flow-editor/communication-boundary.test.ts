@@ -8,6 +8,9 @@ const controllerSource = [
   "./useFlowEditorCanvasInteractions.ts"
 ].map((path) => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n");
 const toolbarSource = readFileSync(new URL("./FlowGraphToolbar.tsx", import.meta.url), "utf8");
+const globalToolbarSource = readFileSync(new URL("../workspace/shell/WorkspaceHeader.tsx", import.meta.url), "utf8");
+const graphRuntimeSource = readFileSync(new URL("../live/useAutomationGraphRuntime.ts", import.meta.url), "utf8");
+const dirtyGuardSource = readFileSync(new URL("../workspace/DirtyViewGuard.tsx", import.meta.url), "utf8");
 const typeSource = readFileSync(new URL("./flow-editor-types.ts", import.meta.url), "utf8");
 
 describe("Flow editor communication boundary", () => {
@@ -19,11 +22,14 @@ describe("Flow editor communication boundary", () => {
     expect(controllerSource).toContain("props.focusRequest?.problem");
   });
 
-  it("owns save invocation in the active editor", () => {
-    expect(controllerSource).toContain("const saveFlowGraph = useCallback(async () =>");
+  it("routes keyboard and button saving through one project modal", () => {
+    expect(controllerSource).toContain("const saveFlowGraph = useCallback(async (authorizationPin?: string) =>");
     expect(controllerSource).toContain("await props.onSaveGraph");
-    expect(controllerSource).toContain('key === "s"');
-    expect(toolbarSource).toContain('aria-label="Save graph"');
-    expect(toolbarSource).toContain("void saveFlowGraph()");
+    expect(controllerSource).not.toContain('key === "s"');
+    expect(graphRuntimeSource).not.toContain("window.prompt");
+    expect(dirtyGuardSource).toContain("callbacks.current.save(authorizationPin)");
+    expect(toolbarSource).not.toContain('aria-label="Save graph"');
+    expect(globalToolbarSource).toContain('aria-label="Save entire project"');
+    expect(globalToolbarSource).toContain("saveDirtyAutomationViews(savePin)");
   });
 });

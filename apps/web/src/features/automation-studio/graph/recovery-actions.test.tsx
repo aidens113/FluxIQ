@@ -36,7 +36,8 @@ describe("graph recovery actions", () => {
 
   it("renders retry and reload recovery for a save conflict", () => {
     const html = renderToStaticMarkup(<FlowGraphStatus controller={{ codeOwned: false, flowEdges: [], flowHistoryState: { estimatedBytes: 0 }, flowNodes: [], flowViewportState: "ready", flowViewportStats: { cachedPartitions: 0 }, saveState: "conflict", saveFlowGraph: vi.fn() } as any} props={{ onReloadGraph: vi.fn() } as any} />);
-    expect(html).toContain("Retry Save");
+    expect(html).toContain("Use Save Project to retry");
+    expect(html).not.toContain("Retry Save");
     expect(html).toContain("Reload Saved Graph");
     expect(html).toContain("Your graph draft is preserved");
   });

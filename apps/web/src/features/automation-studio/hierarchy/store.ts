@@ -24,7 +24,7 @@ export type AutomationHierarchyStore = {
   previewFocus(nodeId: string): boolean;
   setPrimary(nodeId: string | null): boolean;
   previewPrimary(nodeId: string | null): boolean;
-  toggleFolder(folderId: string, defaultCollapsed?: boolean): boolean;
+  toggleFolder(folderId: string, defaultCollapsed?: boolean, activeDefaultExpanded?: boolean): boolean;
   expandContainer(folderId: string, defaultCollapsed?: boolean): boolean;
   ensureVisibleFocus(visibleIds: ReadonlySet<string>): boolean;
 };
@@ -74,9 +74,21 @@ export function createAutomationHierarchyStore(
     previewPrimary(nodeId) {
       return replace({ ...snapshot, primaryTreeNodeId: nodeId }, false, false);
     },
-    toggleFolder(folderId, defaultCollapsed = false) {
+    toggleFolder(folderId, defaultCollapsed = false, activeDefaultExpanded = false) {
       if (defaultCollapsed) {
-        return replace({ ...snapshot, expandedDefaultCollapsedIds: toggleString(snapshot.expandedDefaultCollapsedIds, folderId) }, true);
+        const explicitlyCollapsed = snapshot.collapsedFolderIds.includes(folderId);
+        const currentlyExpanded = activeDefaultExpanded
+          ? !explicitlyCollapsed
+          : snapshot.expandedDefaultCollapsedIds.includes(folderId);
+        return replace({
+          ...snapshot,
+          collapsedFolderIds: currentlyExpanded
+            ? withString(snapshot.collapsedFolderIds, folderId)
+            : withoutString(snapshot.collapsedFolderIds, folderId),
+          expandedDefaultCollapsedIds: currentlyExpanded
+            ? withoutString(snapshot.expandedDefaultCollapsedIds, folderId)
+            : withString(snapshot.expandedDefaultCollapsedIds, folderId)
+        }, true);
       }
       return replace({ ...snapshot, collapsedFolderIds: toggleString(snapshot.collapsedFolderIds, folderId) }, true);
     },

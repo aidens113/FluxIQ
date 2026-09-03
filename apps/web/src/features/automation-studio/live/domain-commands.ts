@@ -85,10 +85,15 @@ export class AutomationLiveDomainCommands {
     this.activeCacheProjectId = projectId;
   }
 
-  loadFlowDetail<TFlow>(flowId: string, options: CommandSignal = {}) {
+  loadFlowDetail<TFlow>(flowId: string, options: CommandSignal & { refresh?: boolean } = {}) {
     const scope = this.scopes.current();
     if (!scope) return Promise.resolve(flowFailure<{ flow: TFlow; source: "cache" | "network" }>("Open a project before loading a Flow."));
-    return loadAutomationFlowDetail<TFlow>({ scope, flowId, signal: options.signal ?? this.scopes.signal() }, {
+    return loadAutomationFlowDetail<TFlow>({
+      scope,
+      flowId,
+      ...(options.refresh !== undefined ? { refresh: options.refresh } : {}),
+      signal: options.signal ?? this.scopes.signal()
+    }, {
       api: this.api,
       cache: this.flowCache,
       isCurrent: (candidate) => this.scopes.isCurrent(candidate)
@@ -206,6 +211,7 @@ export class AutomationLiveDomainCommands {
     return saveAutomationFlowDraft({ scope, flow, graph, authorizationPin, canonical, signal: this.scopes.signal() }, {
       api: this.api,
       drafts: this.drafts,
+      cache: this.flowCache,
       isCurrent: (candidate) => this.scopes.isCurrent(candidate)
     });
   }
@@ -313,8 +319,13 @@ export class AutomationLiveDomainCommands {
     return this.postProject<{ flow?: any }>("save-flow", payload);
   }
 
-  getFlowDocument(flowId: string) {
-    return this.postProject<{ flow?: any }>("get-flow", { flowId });
+  async getFlowDocument(flowId: string) {
+    const outcome = await this.loadFlowDetail<any>(flowId, { refresh: true });
+    if (outcome.status === "success") return { ok: true as const, payload: { flow: outcome.value.flow } };
+    return {
+      ok: false as const,
+      error: outcome.status === "failure" ? outcome.error : outcome.reason
+    };
   }
 
   createFlowDocument(payload: JsonObject) {

@@ -8,7 +8,7 @@ import {
 } from "./workspace-persistence";
 
 describe("workspace persistence", () => {
-  it("removes transient selections while preserving durable view state", () => {
+  it("preserves each view's complete state for project reload and reopen", () => {
     const prefs = defaultAutomationWorkspacePrefs();
     const persisted = persistentAutomationWorkspacePrefs({
       ...prefs,
@@ -16,18 +16,21 @@ describe("workspace persistence", () => {
         "runtime-debug": { page: 2, selection: { kind: "flow", id: "flow.one" } }
       }
     });
-    expect(persisted.viewStates["runtime-debug"]).toEqual({ page: 2 });
+    expect(persisted.viewStates["runtime-debug"]).toEqual({
+      page: 2,
+      selection: { kind: "flow", id: "flow.one" }
+    });
   });
 
-  it("compares runtime state without serializing view selections", () => {
+  it("treats view selections as durable workspace state", () => {
     const defaults = defaultAutomationWorkspacePrefs();
     const left = { ...defaults, viewStates: { ...defaults.viewStates, "runtime-debug": { page: 2 } } };
     const right = {
       ...left,
       viewStates: { ...left.viewStates, "runtime-debug": { page: 2, selection: { kind: "flow", id: "flow.one" } } }
     };
-    expect(automationWorkspaceViewStatesSameRuntimeState(left.viewStates, right.viewStates)).toBe(true);
-    expect(automationWorkspacePrefsSameRuntimeState(left, right)).toBe(true);
+    expect(automationWorkspaceViewStatesSameRuntimeState(left.viewStates, right.viewStates)).toBe(false);
+    expect(automationWorkspacePrefsSameRuntimeState(left, right)).toBe(false);
   });
 
   it("separates active focus from non-active persistent layout state", () => {

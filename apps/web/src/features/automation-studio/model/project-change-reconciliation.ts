@@ -41,6 +41,7 @@ export function mergeFlowDetails(current: any[], incoming: any[]) {
     const replacement = incomingById.get(entry?.flow?.flowId);
     if (!replacement) return entry;
     if (replacement === entry || (replacement.flow === entry.flow && replacement.source === entry.source && replacement.readOnly === entry.readOnly)) return entry;
+    if (keepCurrentFlowDetail(entry?.flow, replacement?.flow)) return entry;
     changed = true;
     return replacement;
   });
@@ -51,6 +52,27 @@ export function mergeFlowDetails(current: any[], incoming: any[]) {
     }
   }
   return changed ? next : current;
+}
+
+function keepCurrentFlowDetail(current: any, incoming: any): boolean {
+  if (!current || !incoming) return false;
+  if (current.metadata?.summaryOnly !== true && incoming.metadata?.summaryOnly === true) return true;
+  if (current.metadata?.summaryOnly === true || incoming.metadata?.summaryOnly === true) return false;
+  const currentRevision = Number(current.graphRevision ?? current.metadata?.graphRevision ?? 0);
+  const incomingRevision = Number(incoming.graphRevision ?? incoming.metadata?.graphRevision ?? 0);
+  if (Number.isFinite(currentRevision) && Number.isFinite(incomingRevision) && currentRevision > incomingRevision) return true;
+  const currentUpdatedAt = comparableFlowTime(current.updatedAt);
+  const incomingUpdatedAt = comparableFlowTime(incoming.updatedAt);
+  return currentUpdatedAt > 0 && incomingUpdatedAt > 0 && currentUpdatedAt > incomingUpdatedAt;
+}
+
+function comparableFlowTime(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return 0;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) return numeric;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 export function mergeRecordingDetail(current: any[], recording: any): any[] {

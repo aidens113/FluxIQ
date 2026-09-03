@@ -281,7 +281,7 @@ export function AutomationStudioSession(props: {
     setDirty: setHasDirtyTaskGraph,
     setActionStatus: setAutomationActionStatus,
     notifyChanged: projectRuntime.notifyChanged,
-    reloadFlowDetail: loadFlowDetails,
+    reloadFlowDetail: (flowId) => loadFlowDetails(flowId, { refresh: true }),
     getSnapshot: () => {
       const current = getProjectView();
       const resources = studioStores.projectData.getState().resources;
@@ -660,8 +660,10 @@ export function AutomationStudioSession(props: {
   }), [connectedViewSource, openWorkspaceViewIds, resolveWorkspaceBreadcrumbs, viewInstances]);
   const headerBinding = useMemo(() => ({
     closeProject: guardedCloseProject,
-    activateBreadcrumb: activateWorkspaceBreadcrumb
-  }), [activateWorkspaceBreadcrumb, guardedCloseProject]);
+    activateBreadcrumb: activateWorkspaceBreadcrumb,
+    openRuntime: () => openView(automationStudioViewId.runtime, "preview"),
+    requestWorkspaceSave: workspaceRenderStore.markSaveRequested
+  }), [activateWorkspaceBreadcrumb, guardedCloseProject, openView, workspaceRenderStore]);
   const cacheStats = useCallback(() => projectDataPlatform.stats(), [projectDataPlatform]);
   const inspectorBinding = useMemo(() => ({ api, cacheStats }), [api, cacheStats]);
   if (restoringUrlProject || !activeProject) {

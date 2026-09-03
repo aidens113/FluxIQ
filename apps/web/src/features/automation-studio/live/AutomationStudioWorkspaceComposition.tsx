@@ -50,6 +50,8 @@ type ViewBinding = ViewBindingBase & {
 type HeaderBinding = {
   closeProject: () => void;
   activateBreadcrumb: (crumb: AutomationWorkspaceBreadcrumb) => void;
+  openRuntime: () => void;
+  requestWorkspaceSave: () => void;
 };
 type InspectorBinding = {
   api: NonNullable<ComponentProps<typeof AutomationStudioOverlays>["dataInspector"]>["api"];
@@ -120,8 +122,10 @@ export const AutomationStudioWorkspaceComposition = memo(function AutomationStud
     closeProject: props.header.closeProject,
     activateBreadcrumb: props.header.activateBreadcrumb,
     openDataInspector: overlays.openDataInspector,
-    openPreferences: overlays.openPreferences
-  }), [overlays, props.header.activateBreadcrumb, props.header.closeProject]);
+    openPreferences: overlays.openPreferences,
+    openRuntime: props.header.openRuntime,
+    requestWorkspaceSave: props.header.requestWorkspaceSave
+  }), [overlays, props.header.activateBreadcrumb, props.header.closeProject, props.header.openRuntime, props.header.requestWorkspaceSave]);
   const inspector = useMemo(
     () => ({ api: props.inspector.api, cacheStats: props.inspector.cacheStats }),
     [props.inspector.api, props.inspector.cacheStats]

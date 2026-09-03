@@ -23,6 +23,7 @@ import {
   type FlowExpansionSummaryRequest,
   type FlowInstructionRequest,
   type FlowMetadataPageRequest,
+  type GraphViewportRequest,
   type FlowIdProjectRequest,
   type FlowInstructionSetRequest,
   type FlowProjectRequest,
@@ -444,6 +445,29 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
           mutationId,
           operations: payload.operations as Parameters<AutomationStudioService["applyFlowGraphPatch"]>[0]["operations"],
           message: typeof payload.message === "string" ? payload.message : "Save Flow graph"
+        })
+      };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getGraphViewport,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<GraphViewportRequest>;
+      const bounds = payload.bounds && typeof payload.bounds === "object" ? payload.bounds : null;
+      if (!bounds || ![bounds.minX, bounds.minY, bounds.maxX, bounds.maxY].every((value) => Number.isFinite(value))) {
+        return { ok: false, error: "Finite graph viewport bounds are required." };
+      }
+      return {
+        ok: true,
+        payload: await service.getFlowGraphViewport({
+          projectId: String(payload.projectId ?? ""),
+          flowId: String(payload.flowId ?? ""),
+          bounds,
+          ...(typeof payload.cursor === "string" || payload.cursor === null ? { cursor: payload.cursor } : {}),
+          ...(typeof payload.limit === "number" ? { limit: payload.limit } : {}),
+          ...(Array.isArray(payload.pinnedNodeIds) ? { pinnedNodeIds: payload.pinnedNodeIds } : {})
         })
       };
     }

@@ -8,7 +8,7 @@ import { automationStudioViewId } from "../views/view-registry";
 import type { createAutomationWorkspaceCommands } from "../workspace/commands/workspace-commands";
 import type { AutomationLiveDomainCommands } from "./domain-commands";
 import type { AutomationStatePublication } from "../state/commands";
-import { recordingIdFromStateSourceId, stateOpenNodeMetadata } from "../model/live-helpers";
+import { isAutomationSelection, recordingIdFromStateSourceId, stateOpenNodeMetadata } from "../model/live-helpers";
 import { stringRecordValue } from "../model/timeline-resolution";
 import { resolveActionPreviewEntryId } from "../model/timeline-resolution";
 import { runAutomationPresentationTransaction } from "../presentation/transaction";
@@ -44,7 +44,14 @@ type NavigationOptions = {
 export function useAutomationSelectionNavigation(options: NavigationOptions) {
   const openView = useCallback((viewId: string, mode: "preview" | "new-pane-or-focus" = "preview") => {
     options.commands.openView(viewId, mode);
-  }, [options.commands]);
+    if (viewId !== automationStudioViewId.flowEditor) return;
+    const current = options.getSnapshot?.() ?? options;
+    if (current.selection?.kind === "flow"
+      || current.selection?.kind === "editor-node"
+      || current.selection?.kind === "editor-mode") return;
+    const savedSelection = current.workspacePrefs.viewStates?.[viewId]?.selection;
+    if (isAutomationSelection(savedSelection)) options.setSelection(savedSelection);
+  }, [options]);
   const showRecordingPreview = useCallback(() => {
     options.updatePrefs((current) => ({
       ...current,
@@ -58,6 +65,41 @@ export function useAutomationSelectionNavigation(options: NavigationOptions) {
       if (next.kind === "timeline") options.setBottomPreviewEntryId(next.id);
       else if (next.kind !== "state") options.setBottomPreviewEntryId(null);
       options.setSelection(next);
+      if ((next.kind === "editor-node" || next.kind === "editor-mode") && next.flowId) {
+        options.updatePrefs((current) => {
+          const currentFlowState = current.viewStates?.[automationStudioViewId.flowEditor] ?? {};
+          return {
+            ...current,
+            viewStates: {
+              ...current.viewStates,
+              [automationStudioViewId.flowEditor]: {
+                ...currentFlowState,
+                lastOpenFlowId: next.flowId,
+                selection: next
+              }
+            }
+          };
+        }, { persist: false });
+      }
+      const destinationViewId = next.kind === "recording" || next.kind === "timeline"
+        ? automationStudioViewId.recordingTimeline
+        : next.kind === "signal" || next.kind === "state"
+          ? automationStudioViewId.state
+          : next.kind === "policy"
+            ? automationStudioViewId.flowEditor
+            : null;
+      if (destinationViewId) {
+        options.updatePrefs((current) => ({
+          ...current,
+          viewStates: {
+            ...current.viewStates,
+            [destinationViewId]: {
+              ...(current.viewStates?.[destinationViewId] ?? {}),
+              selection: next
+            }
+          }
+        }), { persist: false });
+      }
       if (next.kind === "recording" || next.kind === "timeline") {
         options.setRecordingPrimaryKind("recording");
         showRecordingPreview();
@@ -67,12 +109,12 @@ export function useAutomationSelectionNavigation(options: NavigationOptions) {
       if (next.kind === "flow") {
         options.updatePrefs((current) => {
           const currentFlowState = current.viewStates?.[automationStudioViewId.flowEditor] ?? {};
-          if (currentFlowState.lastOpenFlowId === next.id) return current;
+          if (currentFlowState.lastOpenFlowId === next.id && currentFlowState.selection === next) return current;
           return {
             ...current,
             viewStates: {
               ...current.viewStates,
-              [automationStudioViewId.flowEditor]: { ...currentFlowState, lastOpenFlowId: next.id }
+              [automationStudioViewId.flowEditor]: { ...currentFlowState, lastOpenFlowId: next.id, selection: next }
             }
           };
         }, { persist: false });

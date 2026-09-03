@@ -1,10 +1,11 @@
 import type { AutomationSelection } from "../shared/selection-contracts";
 import type { AutomationFlowNodeData } from "./node-types";
 
-export function flowEditorSelection(id: string, data: AutomationFlowNodeData): AutomationSelection {
+export function flowEditorSelection(id: string, data: AutomationFlowNodeData, flowId?: string): AutomationSelection {
   return {
     kind: "editor-node",
     id,
+    ...(flowId ? { flowId } : {}),
     node: {
       label: data.label,
       nodeType: data.isStart ? "start" : "policy",

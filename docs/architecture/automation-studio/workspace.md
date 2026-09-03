@@ -148,10 +148,13 @@ data path for canonical destination views; destination connectors read their
 own normalized scopes directly.
 
 Global selection, Flow-editor canvas selection, hierarchy expansion, and
-view-local filters are different state domains. Canvas pointer movement and
-ordinary node selection stay local to the Flow editor. Hierarchy filtering and
-expansion stay local to the hierarchy owner. Pagination, sort, search, and
-detail disclosure stay with the view that owns them.
+view-local filters are different state domains. Canvas pointer movement stays
+local to the Flow editor. A Flow-editor node or mode selection carries its
+owning Flow ID so an inspector selection cannot make the canvas lose its graph
+identity or re-enter a loading state. Durable per-view selections are copied
+into project workspace preferences; hierarchy filtering and expansion remain
+with the hierarchy owner, while pagination, sort, search, and disclosure stay
+with the view that owns them.
 
 ## Project Lifecycle
 
@@ -329,6 +332,14 @@ unsubscribes from project, query, runtime, and selection stores. A cold view
 is unmounted until activation, at which point its local readiness boundary owns
 the opening surface. Warm eligibility comes from the canonical view lifecycle.
 Warm activity is project-keyed and reset on project change.
+
+The durable project workspace record preserves the complete pane layout,
+open tabs, active pane/tab, split ratios, dock/sidebar state, and each view's
+declared `viewStates` payload. Closing a tab removes it from the visible layout
+but does not delete that view's saved state. Reopening it in the same project
+therefore restores its recorded Flow identity and selection; loading a saved
+project restores the active view's validated selection after summary hydration.
+Transient overlays and hydrated domain documents remain outside this contract.
 
 Tab selection is one synchronous workspace command and one authoritative React
 render. The tab container does not walk or mutate sibling DOM nodes, maintain a

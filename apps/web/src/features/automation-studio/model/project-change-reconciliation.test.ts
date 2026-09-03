@@ -38,6 +38,21 @@ describe("project change reconciliation", () => {
     expect(removeDeletedFlowsFromProjectFlows(current, [])).toBe(current);
   });
 
+  it("does not replace loaded or newer graph data with empty summaries or stale details", () => {
+    const current = [{ source: "canonical", readOnly: false, flow: {
+      flowId: "flow.one", updatedAt: 20, graphRevision: 3,
+      nodes: [{ id: "current" }], edges: [], metadata: {}
+    } }];
+    const summary = flowSummariesToCatalogEntries([{ flowId: "flow.one", projectId: "project.one", updatedAt: 30 }]);
+    const stale = [{ source: "canonical", readOnly: false, flow: {
+      flowId: "flow.one", updatedAt: 10, graphRevision: 2,
+      nodes: [{ id: "stale" }], edges: [], metadata: {}
+    } }];
+
+    expect(mergeFlowDetails(current, summary)).toBe(current);
+    expect(mergeFlowDetails(current, stale)).toBe(current);
+  });
+
   it("upserts and removes compact subflow summaries locally", () => {
     const current = flowSummariesToCatalogEntries([{ flowId: "flow.parent", projectId: "project.one", updatedAt: 1 }]);
     const withSubflow = upsertSubflowSummaryIntoProjectFlows(current, "flow.parent", {

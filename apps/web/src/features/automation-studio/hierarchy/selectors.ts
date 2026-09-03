@@ -50,14 +50,15 @@ export function selectAutomationHierarchyEffectiveCollapsedIds(input: {
   expandedDefaultCollapsedIds: string[];
   selection: AutomationSelection | null;
 }): string[] {
-  const activeSubflowContainerIds = new Set(input.nodes
-    .filter((node) => node.kind === "subflow" && input.selection?.kind === "flow" && node.metadata?.graphFlowId === input.selection.id)
-    .map((node) => node.id));
   const expandedIds = new Set(input.expandedDefaultCollapsedIds);
+  const explicitlyCollapsedIds = new Set(input.collapsedFolderIds);
+  const activeGraphFlowId = input.selection?.kind === "flow" ? input.selection.id : null;
   return [
-    ...input.collapsedFolderIds.filter((id) => !activeSubflowContainerIds.has(id)),
+    ...input.collapsedFolderIds,
     ...input.nodes
-      .filter((node) => node.metadata?.defaultCollapsed === true && !expandedIds.has(node.id) && !activeSubflowContainerIds.has(node.id))
+      .filter((node) => node.metadata?.defaultCollapsed === true
+        && !expandedIds.has(node.id)
+        && (node.metadata?.graphFlowId !== activeGraphFlowId || explicitlyCollapsedIds.has(node.id)))
       .map((node) => node.id)
   ];
 }

@@ -5,7 +5,7 @@ export function persistentAutomationWorkspacePrefs(prefs: AutomationWorkspacePre
     ...prefs,
     panes: prefs.panes,
     rightSidebar: prefs.rightSidebar,
-    viewStates: persistentAutomationViewStates(prefs.viewStates)
+    viewStates: prefs.viewStates
   });
 }
 
@@ -61,8 +61,8 @@ export function automationWorkspaceViewStatesSameRuntimeState(left: AutomationWo
 
 function automationWorkspaceViewStateSameRuntimeState(left: Record<string, unknown> | undefined, right: Record<string, unknown> | undefined): boolean {
   if (left === right) return true;
-  const leftKeys = Object.keys(left ?? {}).filter((key) => key !== "selection").sort();
-  const rightKeys = Object.keys(right ?? {}).filter((key) => key !== "selection").sort();
+  const leftKeys = Object.keys(left ?? {}).sort();
+  const rightKeys = Object.keys(right ?? {}).sort();
   if (leftKeys.length !== rightKeys.length) return false;
   for (let index = 0; index < leftKeys.length; index += 1) {
     const key = leftKeys[index]!;
@@ -93,12 +93,5 @@ function automationWorkspaceBottomDockKey(bottomDock: AutomationWorkspacePrefs["
 
 function automationWorkspaceBottomDockNonActiveKey(bottomDock: AutomationWorkspacePrefs["bottomDock"]): string {
   return `${bottomDock.expanded === true}`;
-}
-
-function persistentAutomationViewStates(viewStates: AutomationWorkspacePrefs["viewStates"]): AutomationWorkspacePrefs["viewStates"] {
-  return Object.fromEntries(Object.entries(viewStates ?? {}).map(([viewId, state]) => {
-    const { selection: _selection, ...durableState } = state;
-    return [viewId, durableState];
-  }));
 }
 

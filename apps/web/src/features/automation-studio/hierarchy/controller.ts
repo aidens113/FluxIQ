@@ -91,7 +91,10 @@ export function createAutomationHierarchyController(
     toggleFolder(nodeId) {
       const context = readContext();
       const node = context.nodes.find((candidate) => candidate.id === nodeId);
-      store.toggleFolder(nodeId, node?.metadata?.defaultCollapsed === true);
+      const activeDefaultExpanded = node?.metadata?.defaultCollapsed === true
+        && context.selection?.kind === "flow"
+        && context.selection.id === node.metadata.graphFlowId;
+      store.toggleFolder(nodeId, node?.metadata?.defaultCollapsed === true, activeDefaultExpanded);
     }
   };
 }

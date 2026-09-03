@@ -23,7 +23,7 @@ export function FlowGraphStatus({ controller, props }: { controller: FlowEditorC
       <div><strong>{props.recoverableDraft.stale ? "Unsaved draft from an older Flow version" : "Unsaved draft available"}</strong><span>Recovered from {new Date(props.recoverableDraft.savedAt).toLocaleString()}.</span></div>
       <div><button className="button button-primary" onClick={props.onRestoreDraft} type="button">Restore Draft</button><button className="button" onClick={props.onDiscardDraft} type="button">Discard</button></div>
     </div> : null}
-    {saveState === "conflict" ? <div className="automation-draft-recovery stale" role="alert"><div><strong>The saved Flow changed</strong><span>Your graph draft is preserved. Retry against the current base or reload the newest saved graph; the recovery copy remains available.</span></div><div><button className="button button-primary" onClick={() => void controller.saveFlowGraph()} type="button">Retry Save</button><button className="button" onClick={props.onReloadGraph} type="button">Reload Saved Graph</button></div></div> : null}
+    {saveState === "conflict" ? <div className="automation-draft-recovery stale" role="alert"><div><strong>The saved Flow changed</strong><span>Your graph draft is preserved. Use Save Project to retry, or reload the newest saved graph; the recovery copy remains available.</span></div><div><button className="button" onClick={props.onReloadGraph} type="button">Reload Saved Graph</button></div></div> : null}
     {codeOwned ? <div className="automation-source-warning"><strong>Code-owned Flow</strong><span>The compiled graph is read-only. Change its module and recompile, or explicitly convert it back to visual ownership.</span></div> : null}
   </>;
 }

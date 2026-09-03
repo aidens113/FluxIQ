@@ -189,19 +189,30 @@ export function useAutomationGraphRuntime(options: GraphRuntimeOptions) {
       if (!outcome.ok) notifyGlobalAlert({ tone: "error", title: "Flow could not be reloaded", message: outcome.error, id: "automation-graph-reload-failed" });
     });
   }, [clearDrafts, options]);
-  const saveGraph = useCallback(async (graph: GraphDocument) => {
+  const saveGraph = useCallback(async (graph: GraphDocument, authorizationPin?: string) => {
     const current = options.getSnapshot?.() ?? options;
     if (!current.selectedFlow || current.selectedFlowEntry?.source !== "canonical") {
       return { ok: false, state: "failed" as const, message: "Only canonical Flows can be saved." };
     }
-    const pin = window.prompt("Enter PIN to save this Flow") ?? "";
+    const pin = authorizationPin?.trim() ?? "";
+    if (pin.length < 4) {
+      const message = "Enter your security PIN in the Save Project modal.";
+      options.setActionStatus(message);
+      return { ok: false, state: "failed" as const, message };
+    }
     const outcome = await options.liveCommands.saveFlowDraft(current.selectedFlow, graph, pin, true);
     if (outcome.status !== "success") {
       const message = outcome.status === "failure" ? outcome.error : "Flow save was cancelled.";
       options.setActionStatus(message);
       return { ok: false, state: outcome.status === "failure" && outcome.code === "FLOW_SAVE_CONFLICT" ? "conflict" as const : "failed" as const, message };
     }
-    options.setProjectFlows((current) => mergeFlowDetails(current, [{ source: "canonical", readOnly: false, flow: outcome.value.flow }]));
+    const mergedMetadata = { ...(current.selectedFlow.metadata ?? {}), ...(outcome.value.flow.metadata ?? {}) };
+    const { summaryOnly: _summaryOnly, ...savedMetadata } = mergedMetadata;
+    const savedFlow = {
+      ...outcome.value.flow,
+      metadata: savedMetadata
+    };
+    options.setProjectFlows((projectFlows) => mergeFlowDetails(projectFlows, [{ source: "canonical", readOnly: false, flow: savedFlow }]));
     clearDrafts(outcome.value.flowId);
     setRecoverable(null);
     options.setDirty(false);

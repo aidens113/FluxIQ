@@ -17,26 +17,109 @@ export type AutomationFlowReadCache = {
 type LoaderCapabilities = AutomationFlowCommandCapabilities & { cache?: AutomationFlowReadCache };
 
 export async function loadAutomationFlowDetail<TFlow>(
-  input: { scope: AutomationFlowCommandScope; flowId: string; signal?: AbortSignal },
+  input: { scope: AutomationFlowCommandScope; flowId: string; refresh?: boolean; signal?: AbortSignal },
   capabilities: LoaderCapabilities
 ): Promise<AutomationFlowCommandOutcome<{ flow: TFlow; source: "cache" | "network" }>> {
   const preflight = flowCommandPreflight<{ flow: TFlow; source: "cache" | "network" }>(input.scope, capabilities, input.signal);
   if (preflight) return preflight;
-  const cached = capabilities.cache?.get<TFlow>("flow", input.scope.projectId, input.flowId);
-  if (cached) return { status: "success", value: { flow: cached, source: "cache" } };
+  const cached = input.refresh ? null : capabilities.cache?.get<TFlow>("flow", input.scope.projectId, input.flowId);
+  if (cached && !isAutomationFlowSummary(cached)) {
+    return { status: "success", value: { flow: cached, source: "cache" } };
+  }
   try {
-    const response = await capabilities.api.post<{ flow?: TFlow }>(AUTOMATION_FLOW_ENDPOINTS.detail, {
-      projectId: input.scope.projectId,
-      flowId: input.flowId
-    }, input.signal ? { signal: input.signal } : {});
+    const nodes = new Map<string, GraphViewportNode>();
+    const edges = new Map<string, GraphViewportEdge>();
+    const seenCursors = new Set<string>();
+    let cursor: string | null = null;
+    let baseFlow: TFlow | null = null;
+    let graphRevision = 1;
+    do {
+      const response: GraphViewportApiResponse<TFlow> = await capabilities.api.post<GraphViewportResponse<TFlow>>(AUTOMATION_FLOW_ENDPOINTS.detail, {
+        projectId: input.scope.projectId,
+        flowId: input.flowId,
+        bounds: FULL_GRAPH_BOUNDS,
+        limit: 500,
+        ...(cursor ? { cursor } : {})
+      }, input.signal ? { signal: input.signal } : {});
+      if (!response.ok || !response.payload?.flow || !response.payload.page) {
+        return flowCommandRequestFailure(response, "Flow details could not be loaded.");
+      }
+      baseFlow ??= response.payload.flow;
+      graphRevision = response.payload.page.graphRevision;
+      for (const node of response.payload.page.nodes ?? []) nodes.set(node.nodeId, node);
+      for (const edge of [...(response.payload.page.edges ?? []), ...(response.payload.page.boundaryEdges ?? [])]) edges.set(edge.edgeId, edge);
+      const nextCursor: string | null = response.payload.page.hasMore ? response.payload.page.nextCursor : null;
+      if (nextCursor && seenCursors.has(nextCursor)) return { status: "failure", error: "Flow graph pagination returned a repeated cursor." };
+      if (nextCursor) seenCursors.add(nextCursor);
+      cursor = nextCursor;
+    } while (cursor);
     const postflight = flowCommandPostflight<{ flow: TFlow; source: "cache" | "network" }>(input.scope, capabilities, input.signal);
     if (postflight) return postflight;
-    if (!response.ok || !response.payload?.flow) return flowCommandRequestFailure(response, "Flow details could not be loaded.");
-    const flow = capabilities.cache?.set("flow", input.scope.projectId, input.flowId, response.payload.flow) ?? response.payload.flow;
-    return { status: "success", value: { flow, source: "network" } };
+    if (!baseFlow) return { status: "failure", error: "Flow details could not be loaded." };
+    const detail = loadedAutomationFlow({
+      ...(baseFlow as Record<string, unknown>),
+      nodes: [...nodes.values()].map(flowNodeFromViewport),
+      edges: [...edges.values()].map(flowEdgeFromViewport),
+      metadata: {
+        ...((baseFlow as { metadata?: Record<string, unknown> }).metadata ?? {}),
+        graphRevision
+      }
+    } as TFlow);
+    const cachedFlow = capabilities.cache?.set("flow", input.scope.projectId, input.flowId, detail) ?? detail;
+    return { status: "success", value: { flow: cachedFlow, source: "network" } };
   } catch (error) {
     return flowCommandThrownFailure(error, input.signal, "Flow details could not be loaded.");
   }
+}
+
+const FULL_GRAPH_BOUNDS = { minX: -9_000_000_000_000_000, minY: -9_000_000_000_000_000, maxX: 9_000_000_000_000_000, maxY: 9_000_000_000_000_000 };
+type GraphViewportNode = { nodeId: string; definitionId: string; definitionVersion: string; label: string; description: string; parameterValues: Record<string, unknown>; x: number; y: number; metadata: Record<string, unknown> };
+type GraphViewportEdge = { edgeId: string; sourceNodeId: string; targetNodeId: string; sourcePortId: string | null; targetPortId: string | null; label: string; metadata: Record<string, unknown> };
+type GraphViewportResponse<TFlow> = {
+  flow?: TFlow;
+  page?: { graphRevision: number; nodes?: GraphViewportNode[]; edges?: GraphViewportEdge[]; boundaryEdges?: GraphViewportEdge[]; nextCursor: string | null; hasMore: boolean };
+};
+type GraphViewportApiResponse<TFlow> = { ok: boolean; payload?: GraphViewportResponse<TFlow>; error?: string; aborted?: boolean };
+
+function flowNodeFromViewport(node: GraphViewportNode) {
+  return {
+    id: node.nodeId,
+    definitionId: node.definitionId,
+    definitionVersion: node.definitionVersion,
+    ...(node.label ? { label: node.label } : {}),
+    ...(node.description ? { description: node.description } : {}),
+    parameterValues: node.parameterValues,
+    position: { x: node.x, y: node.y },
+    metadata: node.metadata
+  };
+}
+
+function flowEdgeFromViewport(edge: GraphViewportEdge) {
+  return {
+    id: edge.edgeId,
+    sourceNodeId: edge.sourceNodeId,
+    targetNodeId: edge.targetNodeId,
+    ...(edge.sourcePortId ? { sourcePortId: edge.sourcePortId } : {}),
+    ...(edge.targetPortId ? { targetPortId: edge.targetPortId } : {}),
+    ...(edge.label ? { label: edge.label } : {}),
+    metadata: edge.metadata
+  };
+}
+
+function isAutomationFlowSummary(flow: unknown): boolean {
+  return Boolean(
+    flow
+    && typeof flow === "object"
+    && (flow as { metadata?: Record<string, unknown> }).metadata?.summaryOnly === true
+  );
+}
+
+export function loadedAutomationFlow<TFlow>(flow: TFlow): TFlow {
+  if (!flow || typeof flow !== "object") return flow;
+  const metadata = (flow as { metadata?: Record<string, unknown> }).metadata;
+  if (!metadata || !("summaryOnly" in metadata)) return flow;
+  const { summaryOnly: _summaryOnly, ...detailMetadata } = metadata;
+  return { ...(flow as Record<string, unknown>), metadata: detailMetadata } as TFlow;
 }
 
 export async function loadAutomationNodeDefinitions<TNode>(

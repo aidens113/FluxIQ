@@ -12,6 +12,7 @@ import {
   type AutomationFlowCommandScope,
   type AutomationFlowScopeGuard
 } from "./command-contracts";
+import { loadedAutomationFlow, type AutomationFlowReadCache } from "./loaders";
 import type { AutomationFlowDraftRepository } from "./draft-repository";
 
 export type AutomationEditableFlowGraph = { nodes: Array<Record<string, any>>; edges: Array<Record<string, any>> };
@@ -135,7 +136,7 @@ export async function saveAutomationFlowDraft(
     canonical: boolean;
     signal?: AbortSignal;
   },
-  capabilities: AutomationFlowCommandCapabilities & { drafts: AutomationFlowDraftRepository }
+  capabilities: AutomationFlowCommandCapabilities & { drafts: AutomationFlowDraftRepository; cache?: AutomationFlowReadCache }
 ): Promise<AutomationFlowCommandOutcome<{ flow: AutomationStudioFlowDocument; flowId: string }>> {
   const preflight = flowCommandPreflight<{ flow: AutomationStudioFlowDocument; flowId: string }>(input.scope, capabilities, input.signal);
   if (preflight) return preflight;
@@ -170,9 +171,11 @@ export async function saveAutomationFlowDraft(
       const failure = flowCommandRequestFailure<{ flow: AutomationStudioFlowDocument; flowId: string }>(response, "Flow could not be saved.");
       return failure;
     }
+    const savedFlow = loadedAutomationFlow(response.payload.flow);
+    capabilities.cache?.set("flow", input.scope.projectId, input.flow.flowId, savedFlow);
     capabilities.drafts.removeSnapshot(input.scope.projectId, input.flow.flowId);
     await capabilities.drafts.removeOperations(input.scope.projectId, input.flow.flowId);
-    return { status: "success", value: { flow: response.payload.flow, flowId: input.flow.flowId } };
+    return { status: "success", value: { flow: savedFlow, flowId: input.flow.flowId } };
   } catch (error) {
     return flowCommandThrownFailure(error, input.signal, "Flow could not be saved.");
   }

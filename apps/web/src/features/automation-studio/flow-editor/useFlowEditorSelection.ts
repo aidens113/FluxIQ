@@ -42,10 +42,10 @@ export function useFlowEditorSelection(
   const flowCanvasSelectionForNode = useCallback((
     node: Node<AutomationFlowNodeData>
   ): AutomationSelection => {
-    if (props.taskGraph) return flowEditorSelection(node.id, node.data);
+    if (props.taskGraph) return flowEditorSelection(node.id, node.data, props.taskGraph.flowId);
     return props.policy?.nodes?.some((policyNode: any) => policyNode.id === node.id)
       ? { kind: "node", id: node.id }
-      : flowEditorSelection(node.id, node.data);
+      : flowEditorSelection(node.id, node.data, props.taskGraph?.flowId);
   }, [props.policy, props.taskGraph]);
 
   const publishFlowSelection = useCallback((selection: AutomationSelection) => {

@@ -108,7 +108,13 @@ or cached state may replace one of those surfaces only while its recorded
 revision is still current; interacting with the workspace or hierarchy makes a
 later response stale for that surface without blocking hydration of unrelated
 project data.
-Transient selection is removed before workspace view state is persisted.
+Durable `workspace.json` preferences preserve the complete declared state for
+each view, including its selection when the view records one. The selected
+Flow editor node also carries its owning Flow ID, allowing project reload and
+tab reopen to restore the graph without confusing an inspector selection for a
+different graph. Persisted selections are validated before hydration publishes
+them. Pointer-hover state, open overlays, and hydrated domain documents are not
+part of the workspace record.
 
 Neither cache owns Flow, run, recording, instruction, adaptation, or State
 truth. Warm mounted views may preserve local component state during a session,

@@ -4,7 +4,8 @@ import {
   registerDirtyView,
   requestDirtyViewDecision,
   resetDirtyViewRegistryForTests,
-  resolveDirtyViewDecision
+  resolveDirtyViewDecision,
+  saveDirtyAutomationViews
 } from "./dirty-view-registry";
 
 afterEach(resetDirtyViewRegistryForTests);
@@ -40,5 +41,32 @@ describe("Automation Studio dirty-view decisions", () => {
     registerDirtyView({ id: "clean", viewId: "flow-settings", label: "Settings", dirty: false, save: vi.fn(), discard: vi.fn() });
     expect(requestDirtyViewDecision({ actionLabel: "closing runtime", viewIds: ["runtime-debug"], proceed })).toBe(true);
     expect(proceed).toHaveBeenCalledOnce();
+  });
+
+  it("saves every dirty project editor with one authorization PIN", async () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    registerDirtyView({ id: "graph", viewId: "flow-nodes", label: "Graph", dirty: true, save: first, discard: vi.fn() });
+    registerDirtyView({ id: "settings", viewId: "flow-settings", label: "Settings", dirty: true, save: second, discard: vi.fn() });
+    registerDirtyView({ id: "clean", viewId: "instructions", label: "Instructions", dirty: false, save: vi.fn(), discard: vi.fn() });
+
+    await expect(saveDirtyAutomationViews("1234")).resolves.toBe(2);
+    expect(first).toHaveBeenCalledWith("1234");
+    expect(second).toHaveBeenCalledWith("1234");
+  });
+
+  it("keeps a pending save decision open when persistence fails", async () => {
+    registerDirtyView({
+      id: "graph",
+      viewId: "flow-nodes",
+      label: "Graph",
+      dirty: true,
+      save: vi.fn(async () => { throw new Error("PIN rejected"); }),
+      discard: vi.fn()
+    });
+    requestDirtyViewDecision({ actionLabel: "changing selection", proceed: vi.fn() });
+
+    await expect(resolveDirtyViewDecision("save", "1234")).rejects.toThrow("PIN rejected");
+    expect(dirtyViewRegistrySnapshot().pending?.entries.map((entry) => entry.id)).toEqual(["graph"]);
   });
 });

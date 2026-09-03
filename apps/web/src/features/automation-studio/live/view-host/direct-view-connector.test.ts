@@ -87,6 +87,78 @@ describe("direct view connector readiness", () => {
     unsubscribe();
   });
 
+  it("retains a selected backing graph identity until its full detail is loaded", () => {
+    const stores = createAutomationStudioStores();
+    stores.selection.select({ kind: "flow", id: "flow.subflow.graph" });
+    const selected = selectAutomationConnectorFlow({
+      projectData: stores.projectData.getState(),
+      runtimeStatus: stores.runtimeStatus.getState(),
+      selection: stores.selection.getState()
+    }, {
+      projectId: "project-a",
+      projectView: { getRevisionKey: () => "test", read: vi.fn() as never },
+      getWorkspacePrefs: () => ({ viewStates: {} }) as any,
+      loadFlowDetail: vi.fn(), loadFlowMetadata: vi.fn(), loadNodeDefinitions: vi.fn(), loadRecording: vi.fn(), loadTimeline: vi.fn()
+    });
+
+    expect(selected.entry).toBeNull();
+    expect(selected.flow).toMatchObject({ flowId: "flow.subflow.graph", metadata: { summaryOnly: true } });
+  });
+
+  it("keeps the active graph while an editor node is selected", () => {
+    const stores = createAutomationStudioStores();
+    stores.selection.select({
+      kind: "editor-node",
+      id: "node-a",
+      flowId: "flow-a",
+      node: {
+        label: "Node A", nodeType: "policy", family: "control", description: "",
+        inputs: [], outputs: [], parameters: [], parameterValues: {}
+      }
+    });
+    stores.projectData.upsert("flows", "flow-a", {
+      source: "canonical",
+      flow: { flowId: "flow-a", name: "Flow A", nodes: [{ id: "node-a" }], edges: [] }
+    });
+
+    const selected = selectAutomationConnectorFlow({
+      projectData: stores.projectData.getState(),
+      runtimeStatus: stores.runtimeStatus.getState(),
+      selection: stores.selection.getState()
+    }, {
+      projectId: "project-a",
+      projectView: { getRevisionKey: () => "test", read: vi.fn() as never },
+      getWorkspacePrefs: () => ({ viewStates: {} }) as any,
+      loadFlowDetail: vi.fn(), loadFlowMetadata: vi.fn(), loadNodeDefinitions: vi.fn(), loadRecording: vi.fn(), loadTimeline: vi.fn()
+    });
+
+    expect(selected.flow).toMatchObject({ flowId: "flow-a", nodes: [{ id: "node-a" }] });
+  });
+
+  it("opens the resolved project Flow on first load without requiring a manual selection", () => {
+    const stores = createAutomationStudioStores();
+    stores.projectData.upsert("flows", "flow-first", {
+      source: "canonical",
+      flow: { flowId: "flow-first", name: "First Flow", nodes: [{ id: "start" }], edges: [] }
+    });
+
+    const selected = selectAutomationConnectorFlow({
+      projectData: stores.projectData.getState(),
+      runtimeStatus: stores.runtimeStatus.getState(),
+      selection: stores.selection.getState()
+    }, {
+      projectId: "project-a",
+      projectView: {
+        getRevisionKey: () => "test",
+        read: vi.fn(() => ({ selectedTaskGraph: { flowId: "flow-first", name: "First Flow" } })) as never
+      },
+      getWorkspacePrefs: () => ({ viewStates: {} }) as any,
+      loadFlowDetail: vi.fn(), loadFlowMetadata: vi.fn(), loadNodeDefinitions: vi.fn(), loadRecording: vi.fn(), loadTimeline: vi.fn()
+    });
+
+    expect(selected.flow).toMatchObject({ flowId: "flow-first", nodes: [{ id: "start" }] });
+  });
+
   it("keeps a missing bounded query local to the destination loading state", () => {
     const stores = createAutomationStudioStores();
     const snapshot = stores.queries.getQuery(query);

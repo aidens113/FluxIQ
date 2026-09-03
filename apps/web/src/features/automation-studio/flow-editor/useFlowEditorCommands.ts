@@ -73,7 +73,7 @@ export function useFlowEditorCommands(
     selection.setSelectedFlowNodeId(id);
     selection.setSelectedFlowNodeIds([id]);
     selection.setSelectedFlowEdgeIds([]);
-    selection.publishFlowSelection(flowEditorSelection(id, data));
+    selection.publishFlowSelection(flowEditorSelection(id, data, props.taskGraph?.flowId));
     selection.flowSelectionRef.current = "node:" + id;
   };
 

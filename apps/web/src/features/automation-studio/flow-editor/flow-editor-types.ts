@@ -33,7 +33,7 @@ export type FlowEditorProps = {
   focusRequest?: AutomationGraphFocusRequest | null;
   selectedTimeline: any;
   signals: any[];
-  onSaveGraph(graph: AutomationGraphDocument): Promise<AutomationGraphSaveResult>;
+  onSaveGraph(graph: AutomationGraphDocument, authorizationPin?: string): Promise<AutomationGraphSaveResult>;
   onGraphDraftChange(graph: AutomationGraphDocument | null): void;
   onDirtyChange(dirty: boolean): void;
   onOpenValidation(): void;

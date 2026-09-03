@@ -44,7 +44,7 @@ import {
 import { defaultAutomationWorkspacePrefs } from "./workspace/layout";
 
 describe("AutomationStudioLive public behavior", () => {
-  it("keeps transient selection out of persisted workspace prefs while preserving active tabs", () => {
+  it("preserves complete per-view state and active tabs in project workspace prefs", () => {
     const prefs = defaultAutomationWorkspacePrefs();
     const persisted = persistentAutomationWorkspacePrefs({
       ...prefs,
@@ -68,8 +68,8 @@ describe("AutomationStudioLive public behavior", () => {
     expect(persisted.panes[0]?.activeViewId).toBe("flow-nodes");
     expect(persisted.panes[1]?.activeViewId).toBe("runtime-debug");
     expect(persisted.rightSidebar.activeViewId).toBe("problems-view");
-    expect(persisted.viewStates["runtime-debug"]).toEqual({ page: 2 });
-    expect(persisted.viewStates["state-explorer"]).toEqual({ expanded: true });
+    expect(persisted.viewStates["runtime-debug"]).toEqual({ selection: { kind: "flow", id: "flow.checkout" }, page: 2 });
+    expect(persisted.viewStates["state-explorer"]).toEqual({ selection: { kind: "state", id: "state.node" }, expanded: true });
   });
 
   it("updates browser history for Studio URL sync without routing", () => {

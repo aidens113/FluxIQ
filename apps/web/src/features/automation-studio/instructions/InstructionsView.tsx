@@ -190,11 +190,17 @@ export function InstructionsViewContent(props: InstructionsViewProps & { command
     viewId: automationStudioViewId.instructions,
     label: selectedInstruction?.title ? `Instruction: ${selectedInstruction.title}` : "New instruction",
     dirty: draftDirty,
-    save: requestSaveInstruction,
+    save: async (authorizationPin) => {
+      if (authorizationPin) await saveInstruction(authorizationPin, true);
+      else requestSaveInstruction();
+    },
     discard: discardInstructionChanges
   });
-  const saveInstruction = async (authorizationPin: string) => {
-    if (!props.projectId || !flowId || authorizationPin.trim().length < 4) return;
+  const saveInstruction = async (authorizationPin: string, propagateError = false) => {
+    if (!props.projectId || !flowId || authorizationPin.trim().length < 4) {
+      if (propagateError) throw new Error("The Instruction is not ready to save.");
+      return false;
+    }
     setError("");
     setSaveAuthorizationError("");
     setSaveState("saving");
@@ -218,7 +224,8 @@ export function InstructionsViewContent(props: InstructionsViewProps & { command
       setError(message);
       setSaveAuthorizationError(message);
       setSaveState("failed");
-      return;
+      if (propagateError) throw new Error(message);
+      return false;
     }
     const savedDraft = instructionDraftFromInstruction(result.payload.instruction);
     if (draftKey) removeStoredInstructionDraft(draftKey);
@@ -238,6 +245,7 @@ export function InstructionsViewContent(props: InstructionsViewProps & { command
       instructionId: result.payload.instruction.instructionId
     });
     await loadInstructions(page.offset);
+    return true;
   };  const draftDiagnosticInstruction = { instructionId: draftInstruction.instructionId || "new-instruction", title: draftInstruction.title, body: draftInstruction.body, priority: draftInstruction.priority, requirement: draftInstruction.requirement, status: draftInstruction.status, scope: { kind: draftInstruction.scopeKind, routerId: draftInstruction.routerId, subflowId: draftInstruction.subflowId, nodeId: draftInstruction.nodeId } };
   const diagnostics = instructionDiagnostics([draftDiagnosticInstruction]);
   const effectiveDiagnostics = instructionDiagnostics(effectiveInstructions);

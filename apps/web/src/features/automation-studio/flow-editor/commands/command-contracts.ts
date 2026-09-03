@@ -20,7 +20,7 @@ export type AutomationFlowCommandCapabilities = AutomationFlowScopeGuard & {
 };
 
 export const AUTOMATION_FLOW_ENDPOINTS = {
-  detail: "get-flow",
+  detail: "get-graph-viewport",
   nativeNodeDefinitions: "list-native-node-definitions",
   publishedFlowNodes: "list-published-flow-nodes",
   run: "run-runtime-session",

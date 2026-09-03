@@ -15,6 +15,8 @@ export type AutomationWorkspaceHeaderCommands = {
   activateBreadcrumb(crumb: AutomationWorkspaceBreadcrumb): void;
   openDataInspector(): void;
   openPreferences(): void;
+  openRuntime(): void;
+  requestWorkspaceSave(): void;
 };
 
 export type AutomationWorkspaceChromeCommands = {

@@ -13,7 +13,7 @@ export type AutomationCanonicalConnectorScope = {
   projectId: string | null;
   projectView: AutomationProjectViewModelCache;
   getWorkspacePrefs(): AutomationWorkspacePrefs;
-  loadFlowDetail(flowId: string): Promise<unknown>;
+  loadFlowDetail(flowId: string, options?: { refresh?: boolean }): Promise<unknown>;
   loadFlowMetadata(flowId: string): Promise<void>;
   loadNodeDefinitions(): Promise<void>;
   loadRecording(recordingId: string): Promise<unknown>;
@@ -71,14 +71,31 @@ const selectedFlowScopes = () => [
 export function selectAutomationConnectorFlow(state: AutomationDirectViewConnectorState, scope: AutomationCanonicalConnectorScope) {
   const selection = state.selection.selection;
   const prefs = scope.getWorkspacePrefs();
+  const resolvedProjectFlow = scope.projectView.read()?.selectedTaskGraph ?? null;
   const selectedId = selection?.kind === "flow"
     ? selection.id
-    : typeof prefs.viewStates?.[automationStudioViewId.flowEditor]?.lastOpenFlowId === "string"
-      ? prefs.viewStates[automationStudioViewId.flowEditor]!.lastOpenFlowId as string
-      : null;
+    : (selection?.kind === "editor-node" || selection?.kind === "editor-mode") && selection.flowId
+      ? selection.flowId
+      : typeof prefs.viewStates?.[automationStudioViewId.flowEditor]?.lastOpenFlowId === "string"
+        ? prefs.viewStates[automationStudioViewId.flowEditor]!.lastOpenFlowId as string
+        : typeof resolvedProjectFlow?.flowId === "string"
+          ? resolvedProjectFlow.flowId
+          : null;
   if (!selectedId) return { entry: null, flow: null };
   const entry = state.projectData.entities.flows.get(selectedId) as any;
-  return { entry: entry ?? null, flow: entry?.flow ?? entry ?? null };
+  return {
+    entry: entry ?? null,
+    flow: entry?.flow
+      ?? entry
+      ?? (resolvedProjectFlow?.flowId === selectedId ? resolvedProjectFlow : null)
+      ?? {
+        flowId: selectedId,
+        name: selectedId,
+        nodes: [],
+        edges: [],
+        metadata: { summaryOnly: true }
+      }
+  };
 }
 
 export const AutomationClientsConnectedView = createAutomationDirectViewConnector({
@@ -99,8 +116,8 @@ export const AutomationFlowEditorConnectedView = createAutomationDirectViewConne
   activationKey: (state, scope: AutomationCanonicalConnectorScope) => selectAutomationConnectorFlow(state, scope).flow?.flowId ?? "none",
   onActive: (state, scope: AutomationCanonicalConnectorScope, model: any) => {
     const flow = selectAutomationConnectorFlow(state, scope);
-    if (flow.entry?.source === "canonical" && flow.flow?.metadata?.summaryOnly === true) {
-      void scope.loadFlowDetail(flow.flow.flowId);
+    if (flow.flow?.flowId && (!flow.entry || (flow.entry.source === "canonical" && flow.flow.metadata?.summaryOnly === true))) {
+      void scope.loadFlowDetail(flow.flow.flowId, { refresh: true });
     }
     if (!(model.nativeNodeDefinitions?.length ?? 0)) void scope.loadNodeDefinitions();
   },
@@ -175,8 +192,8 @@ function createFlowDetailConnector(id:
     activationKey: (state, scope) => selectAutomationConnectorFlow(state, scope).flow?.flowId ?? "none",
     onActive: (state, scope) => {
       const selected = selectAutomationConnectorFlow(state, scope);
-      if (selected.entry?.source === "canonical" && selected.flow?.metadata?.summaryOnly === true) {
-        void scope.loadFlowDetail(selected.flow.flowId);
+      if (selected.flow?.flowId && (!selected.entry || (selected.entry.source === "canonical" && selected.flow.metadata?.summaryOnly === true))) {
+        void scope.loadFlowDetail(selected.flow.flowId, { refresh: true });
       }
     },
     selectModel: (state, scope) => ({
@@ -199,8 +216,8 @@ export const AutomationAdaptationsConnectedView = createAutomationDirectViewConn
   activationKey: (state, scope: AutomationCanonicalConnectorScope) => selectAutomationConnectorFlow(state, scope).flow?.flowId ?? "none",
   onActive: (state, scope: AutomationCanonicalConnectorScope) => {
     const selected = selectAutomationConnectorFlow(state, scope);
-    if (selected.entry?.source === "canonical" && selected.flow?.metadata?.summaryOnly === true) {
-      void scope.loadFlowDetail(selected.flow.flowId);
+    if (selected.flow?.flowId && (!selected.entry || (selected.entry.source === "canonical" && selected.flow.metadata?.summaryOnly === true))) {
+      void scope.loadFlowDetail(selected.flow.flowId, { refresh: true });
     }
   },
   selectModel: (state, scope: AutomationCanonicalConnectorScope) => {

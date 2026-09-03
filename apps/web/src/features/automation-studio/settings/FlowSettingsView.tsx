@@ -158,8 +158,11 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
   const settingsErrors = [...generalRuntimeErrors, ...llmSettingsErrors, ...adaptationErrors, ...limitsInterfaceErrors];
   const settingsPending = settingsLoading;
   const updateDraft = <K extends keyof FlowSettingsDraft>(key: K, value: FlowSettingsDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));
-  const saveSettings = async (authorizationPin: string) => {
-    if (!props.projectId || !flow?.flowId || settingsErrors.length || authorizationPin.trim().length < 4) return;
+  const saveSettings = async (authorizationPin: string, propagateError = false) => {
+    if (!props.projectId || !flow?.flowId || settingsErrors.length || authorizationPin.trim().length < 4) {
+      if (propagateError) throw new Error(settingsErrors[0] ?? "Flow Settings are not ready to save.");
+      return false;
+    }
     setSaving(true);
     setMessage("");
     setError("");
@@ -177,7 +180,8 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
       setError(saveError);
       setSaveAuthorizationError(saveError);
       if (result.error?.includes("FLOW_SAVE_CONFLICT") && props.flow?.flowId === flow.flowId) setRevisionConflict(props.flow);
-      return;
+      if (propagateError) throw new Error(saveError);
+      return false;
     }
     const loadedFlow = flowSettingsFlowFromDetail(flow, result.payload.flow);
     setSavedFlow(loadedFlow);
@@ -192,13 +196,17 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
       projectId: props.projectId,
       flowId: flow.flowId
     });
+    return true;
   };
   useDirtyViewRegistration({
     id: `flow-settings:${props.projectId ?? "none"}:${flow?.flowId ?? "none"}`,
     viewId: automationStudioViewId.settings,
     label: `Flow Settings: ${flow?.name ?? "current Flow"}`,
     dirty: draftDirty,
-    save: () => { setSaveAuthorizationPin(""); setSaveAuthorizationError(""); setSaveAuthorizationOpen(true); },
+    save: async (authorizationPin) => {
+      if (authorizationPin) await saveSettings(authorizationPin, true);
+      else { setSaveAuthorizationPin(""); setSaveAuthorizationError(""); setSaveAuthorizationOpen(true); }
+    },
     discard: () => setDraft(baseDraft)
   });
   return (

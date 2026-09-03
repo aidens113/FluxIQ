@@ -173,8 +173,10 @@ export function buildAutomationEntityIndexes(sources: AutomationEntityIndexSourc
       const folders = folderHierarchyNodesByCategory.get(node.category);
       if (folders) folders.push(node); else folderHierarchyNodesByCategory.set(node.category, [node]);
     }
-    const isSubflowRoot = node?.kind === "folder" && node?.metadata?.subflowRoot === true;
-    const isSubflowCategory = node?.kind === "folder" && node?.metadata?.subflowCategory === true;
+    const isSubflowRoot = node?.kind === "folder"
+      && (node?.metadata?.subflowRoot === true || node?.metadata?.flowStructure === "subflows");
+    const isSubflowCategory = node?.kind === "folder"
+      && (node?.metadata?.subflowCategory === true || node?.metadata?.flowStructure === "subflow-category");
     if (flowId && isSubflowRoot) subflowRootByFlowId.set(flowId, node);
     if (flowId && (isSubflowRoot || isSubflowCategory)) {
       const containers = subflowContainerNodesByFlowId.get(flowId);

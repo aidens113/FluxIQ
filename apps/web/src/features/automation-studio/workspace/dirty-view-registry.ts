@@ -3,7 +3,7 @@ export type DirtyViewRegistration = {
   viewId: string;
   label: string;
   dirty: boolean;
-  save(): void | Promise<void>;
+  save(authorizationPin?: string): void | Promise<void>;
   discard(): void;
 };
 
@@ -50,22 +50,32 @@ export function requestDirtyViewDecision(options: { actionLabel: string; viewIds
   return false;
 }
 
-export async function resolveDirtyViewDecision(decision: "save" | "discard" | "cancel"): Promise<void> {
+export async function resolveDirtyViewDecision(decision: "save" | "discard" | "cancel", authorizationPin?: string): Promise<void> {
   const current = pending;
   if (!current) return;
+  if (decision === "save") {
+    await Promise.all(current.entries.map((entry) => entry.save(authorizationPin)));
+    if (pending === current) {
+      pending = null;
+      publish();
+    }
+    return;
+  }
   pending = null;
   publish();
   if (decision === "cancel") return;
-  if (decision === "save") {
-    await Promise.all(current.entries.map((entry) => entry.save()));
-    return;
-  }
   for (const entry of current.entries) entry.discard();
   current.proceed();
 }
 
 export function hasDirtyAutomationViews(): boolean {
   return [...entries.values()].some((entry) => entry.dirty);
+}
+
+export async function saveDirtyAutomationViews(authorizationPin: string): Promise<number> {
+  const dirty = [...entries.values()].filter((entry) => entry.dirty);
+  for (const entry of dirty) await entry.save(authorizationPin);
+  return dirty.length;
 }
 
 export function isDirtyAutomationView(viewId: string): boolean {

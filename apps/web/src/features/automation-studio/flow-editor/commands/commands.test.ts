@@ -66,22 +66,110 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function graphViewportResponse(flow: Record<string, any>, nodeIds: string[] = []): any {
+  return {
+    ok: true,
+    payload: {
+      flow,
+      page: {
+        graphRevision: 1,
+        nodes: nodeIds.map((nodeId) => ({
+          nodeId,
+          definitionId: "native.test",
+          definitionVersion: "1",
+          label: nodeId,
+          description: "",
+          parameterValues: {},
+          x: 0,
+          y: 0,
+          metadata: {}
+        })),
+        edges: [],
+        boundaryEdges: [],
+        nextCursor: null,
+        hasMore: false
+      }
+    }
+  };
+}
+
 describe("Flow detail and node-definition commands", () => {
   it("loads and caches Flow detail through the owned endpoint", async () => {
-    const post = vi.fn().mockResolvedValue({ ok: true, payload: { flow: { flowId: "flow.one" } } });
+    const post = vi.fn().mockResolvedValue(graphViewportResponse({ flowId: "flow.one" }));
     const capabilities = createCapabilities(post);
     const cache = createCache();
 
     await expect(loadAutomationFlowDetail({ scope, flowId: "flow.one" }, { ...capabilities, cache })).resolves.toEqual({
       status: "success",
-      value: { flow: { flowId: "flow.one" }, source: "network" }
+      value: { flow: { flowId: "flow.one", nodes: [], edges: [], metadata: { graphRevision: 1 } }, source: "network" }
     });
     await expect(loadAutomationFlowDetail({ scope, flowId: "flow.one" }, { ...capabilities, cache })).resolves.toMatchObject({
       status: "success",
       value: { source: "cache" }
     });
     expect(post).toHaveBeenCalledTimes(1);
-    expect(post).toHaveBeenCalledWith(AUTOMATION_FLOW_ENDPOINTS.detail, { projectId: "project.one", flowId: "flow.one" }, {});
+    expect(post).toHaveBeenCalledWith(AUTOMATION_FLOW_ENDPOINTS.detail, expect.objectContaining({ projectId: "project.one", flowId: "flow.one", limit: 500, bounds: expect.any(Object) }), {});
+  });
+
+  it("bypasses stale Flow detail cache on refresh and removes summary-only markers", async () => {
+    const post = vi.fn()
+      .mockResolvedValueOnce(graphViewportResponse({ flowId: "flow.one", metadata: { summaryOnly: true } }, ["old"]))
+      .mockResolvedValueOnce(graphViewportResponse({ flowId: "flow.one", metadata: { summaryOnly: true } }, ["new"]));
+    const capabilities = createCapabilities(post);
+    const cache = createCache();
+
+    await expect(loadAutomationFlowDetail({ scope, flowId: "flow.one" }, { ...capabilities, cache })).resolves.toMatchObject({
+      status: "success",
+      value: { flow: { nodes: [{ id: "old" }], metadata: { graphRevision: 1 } }, source: "network" }
+    });
+    await expect(loadAutomationFlowDetail({ scope, flowId: "flow.one", refresh: true }, { ...capabilities, cache })).resolves.toMatchObject({
+      status: "success",
+      value: { flow: { nodes: [{ id: "new" }], metadata: { graphRevision: 1 } }, source: "network" }
+    });
+    expect(post).toHaveBeenCalledTimes(2);
+  });
+
+  it("never treats a summary-only cache entry as hydrated Flow detail", async () => {
+    const post = vi.fn().mockResolvedValue(graphViewportResponse({ flowId: "flow.one", metadata: {} }, ["saved"]));
+    const capabilities = createCapabilities(post);
+    const cache = createCache();
+    cache.set("flow", scope.projectId, "flow.one", {
+      flowId: "flow.one",
+      nodes: [],
+      edges: [],
+      metadata: { summaryOnly: true }
+    });
+
+    await expect(loadAutomationFlowDetail({ scope, flowId: "flow.one" }, { ...capabilities, cache })).resolves.toMatchObject({
+      status: "success",
+      value: { flow: { nodes: [{ id: "saved" }] }, source: "network" }
+    });
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it("assembles all bounded graph viewport pages without duplicating boundary edges", async () => {
+    const first = graphViewportResponse({ flowId: "flow.one" }, ["first"]);
+    first.payload.page.hasMore = true;
+    first.payload.page.nextCursor = "next-page";
+    first.payload.page.boundaryEdges = [{
+      edgeId: "edge.first.second", sourceNodeId: "first", targetNodeId: "second",
+      sourcePortId: null, targetPortId: null, label: "", metadata: {}
+    }];
+    const second = graphViewportResponse({ flowId: "flow.one" }, ["second"]);
+    second.payload.page.edges = [...first.payload.page.boundaryEdges];
+    const post = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+
+    await expect(loadAutomationFlowDetail({ scope, flowId: "flow.one" }, createCapabilities(post))).resolves.toMatchObject({
+      status: "success",
+      value: {
+        flow: {
+          nodes: [{ id: "first" }, { id: "second" }],
+          edges: [{ id: "edge.first.second", sourceNodeId: "first", targetNodeId: "second" }]
+        },
+        source: "network"
+      }
+    });
+    expect(post).toHaveBeenNthCalledWith(2, AUTOMATION_FLOW_ENDPOINTS.detail, expect.objectContaining({ cursor: "next-page" }), {});
   });
 
   it("returns explicit failures and preflight cancellation", async () => {
@@ -105,7 +193,7 @@ describe("Flow detail and node-definition commands", () => {
     const capabilities = createCapabilities(vi.fn().mockReturnValue(request.promise));
     const result = loadAutomationFlowDetail({ scope, flowId: "flow.one" }, capabilities);
     capabilities.setCurrent({ projectId: "project.two", generation: 2 });
-    request.resolve({ ok: true, payload: { flow: { flowId: "flow.one" } } });
+    request.resolve(graphViewportResponse({ flowId: "flow.one" }));
     await expect(result).resolves.toMatchObject({ status: "stale" });
   });
 
@@ -279,7 +367,8 @@ describe("Flow draft commands", () => {
   it("saves canonical graph data and clears recovery only after success", async () => {
     const savedFlow = { flowId: "flow.one", name: "Flow", nodes: [], edges: [], updatedAt: 20, graphRevision: 2 };
     const post = vi.fn().mockResolvedValue({ ok: true, payload: { result: { status: "applied", revisionNumber: 2 }, flow: savedFlow } });
-    const capabilities = { ...createCapabilities(post), drafts: createDraftRepository() };
+    const cache = createCache();
+    const capabilities = { ...createCapabilities(post), drafts: createDraftRepository(), cache };
     await expect(saveAutomationFlowDraft({
       scope,
       flow: { schemaVersion: "0.1", flowId: "flow.one", ownerKind: "project", ownerId: "project.one", name: "Flow", description: "", nodes: [], edges: [], createdAt: 1, updatedAt: 10 } as any,
@@ -302,6 +391,7 @@ describe("Flow draft commands", () => {
     }), {});
     expect(capabilities.drafts.removeSnapshot).toHaveBeenCalled();
     expect(capabilities.drafts.removeOperations).toHaveBeenCalled();
+    expect(cache.get("flow", "project.one", "flow.one")).toEqual(savedFlow);
   });
 
   it("preserves recovery on conflict and on stale mutation completion", async () => {

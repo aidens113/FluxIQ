@@ -83,6 +83,11 @@ describe("Automation Studio graph patch API", () => {
         endpoint: AUTOMATION_STUDIO_ENDPOINTS.applyGraphPatch,
         permission: "flows.write"
       });
+      expect(registry.endpoints()).toContainEqual({
+        programId: "automation-studio",
+        endpoint: AUTOMATION_STUDIO_ENDPOINTS.getGraphViewport,
+        permission: "programs.read"
+      });
 
       const response = await registry.call({
         programId: "automation-studio",
@@ -166,6 +171,25 @@ describe("Automation Studio graph patch API", () => {
       expect(saved.nodes.map((node) => node.id).sort()).toEqual(["node.end", "node.start"]);
       expect(saved.edges.map((edge) => edge.id)).toEqual(["edge.start.end"]);
       expect(saved.metadata?.graphRevision).toBe(2);
+      const viewport = await registry.call({
+        programId: "automation-studio",
+        endpoint: AUTOMATION_STUDIO_ENDPOINTS.getGraphViewport,
+        scope: {},
+        actor: cacheActor("user.graph"),
+        payload: {
+          projectId: project.id,
+          flowId: flow.flowId,
+          bounds: { minX: -100, minY: -100, maxX: 1_000, maxY: 1_000 },
+          limit: 500
+        }
+      });
+      expect(viewport).toMatchObject({
+        ok: true,
+        payload: {
+          flow: { flowId: flow.flowId, nodes: [], edges: [], metadata: { graphRevision: 2 } },
+          page: { graphRevision: 2, hasMore: false, nodes: [{ nodeId: "node.end" }, { nodeId: "node.start" }], edges: [{ edgeId: "edge.start.end" }] }
+        }
+      });
     } finally {
       await cleanup();
     }

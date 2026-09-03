@@ -4,6 +4,7 @@ import type { AutomationSelection } from "../shared/selection-contracts";
 import { automationStudioViewId } from "../views/view-registry";
 import { useDirtyViewRegistration } from "../workspace/DirtyViewGuard";
 import { requestDirtyViewDecision } from "../workspace/dirty-view-registry";
+import { saveActiveAutomationStudioGraph } from "../workspace/studio-action-registry";
 import type { useAutomationGraphRuntime } from "./useAutomationGraphRuntime";
 import { useStableAutomationEvent } from "./useStableAutomationEvent";
 
@@ -25,7 +26,16 @@ export function useAutomationSessionDirtyGuards(options: {
     viewId: automationStudioViewId.flowEditor,
     label: `Node graph: ${options.selectedTaskGraph?.name ?? options.selectedFlow?.name ?? "current Flow"}`,
     dirty: options.hasDirtyTaskGraph,
-    save: async () => { if (options.graphRuntime.draft) await options.graphRuntime.saveGraph(options.graphRuntime.draft); },
+    save: async (authorizationPin) => {
+      if (!authorizationPin) throw new Error("A security PIN is required to save the graph.");
+      const activeEditorSave = saveActiveAutomationStudioGraph(authorizationPin);
+      const result = activeEditorSave
+        ? await activeEditorSave
+        : options.graphRuntime.draft
+          ? await options.graphRuntime.saveGraph(options.graphRuntime.draft, authorizationPin)
+          : { ok: false, message: "The current graph draft is unavailable." };
+      if (!result.ok) throw new Error(result.message);
+    },
     discard: () => {
       options.graphRuntime.updateDraft(null);
       options.graphRuntime.discardDraft();

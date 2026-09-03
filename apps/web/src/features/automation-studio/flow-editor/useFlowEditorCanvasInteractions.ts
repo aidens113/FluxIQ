@@ -406,6 +406,7 @@ export function useFlowEditorCanvasInteractions(
     currentProps.setSelection({
       kind: "editor-mode",
       id: "graph-validation",
+      ...(currentProps.taskGraph?.flowId ? { flowId: currentProps.taskGraph.flowId } : {}),
       editor: "flow",
       label: "Graph Validation",
       description: problems.length
@@ -470,11 +471,6 @@ export function useFlowEditorCanvasInteractions(
     if (key === "c" && currentGraph.isFlowMode) {
       event.preventDefault();
       currentCommands.connectFlowSelection();
-      return;
-    }
-    if ((event.ctrlKey || event.metaKey) && key === "s") {
-      event.preventDefault();
-      void currentGraph.saveFlowGraph();
       return;
     }
     if ((event.ctrlKey || event.metaKey) && key === "z") {

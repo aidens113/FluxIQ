@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, AlertTriangle, ArrowDownToLine, ArrowUpFromLine, ChevronRight, GitBranch, Plus, Settings2, Trash2 } from "lucide-react";
 import { commitAutomationStudioMutation } from "../stores/mutation-transaction-store";
 import { routerReferencesForSubflow } from "../subflows";
-import { flowSettingsDraftFromFlow } from "./flow-settings-model";
+import { flowSettingsDraftFromFlow, flowSettingsFlowFromDetail } from "./flow-settings-model";
 import { readSettingsSection, settingsConcurrentRevisionAction, settingsDraftIsDirty } from "./settings-model";
 import { useSettingsCommands, type SettingsCommands } from "./settings-host";
 import { SettingsSectionLayout, type SettingsSectionDefinition } from "./SettingsSectionLayout";
@@ -65,7 +65,7 @@ export function SubflowSettingsViewContent(props: SubflowSettingsViewProps & { c
     setLoading(false);
     if (!result.ok || !result.payload?.subflow) { setError(result.error ?? "Subflow settings could not be loaded."); return; }
     const incoming = result.payload.subflow;
-    setParentFlow(flowResult.ok ? flowResult.payload?.flow ?? null : null);
+    setParentFlow(flowResult.ok ? flowSettingsFlowFromDetail(null, flowResult.payload?.flow) : null);
     setInstructionOptions(instructionResult.ok ? instructionResult.payload?.instructions ?? [] : []);
     setRouter(routerResult.ok ? routerResult.payload?.batch ?? { targets: routerResult.payload?.targets ?? [] } : null);
     const dirty = Boolean(draftRef.current && savedDraftRef.current && settingsDraftIsDirty(draftRef.current, savedDraftRef.current));
@@ -99,8 +99,11 @@ export function SubflowSettingsViewContent(props: SubflowSettingsViewProps & { c
   const settingsErrors = draft ? subflowSettingsErrors(draft, flowInputs, flowOutputs, subflowInputs, subflowOutputs) : [];
   const routeReferences = routerReferencesForSubflow(router, props.ownership.subflowId);
   const inheritedMode = flowSettingsDraftFromFlow(parentFlow).adaptationMode;
-  const saveSettings = async (authorizationPin: string) => {
-    if (!props.projectId || !draft || authorizationPin.trim().length < 4) return;
+  const saveSettings = async (authorizationPin: string, propagateError = false) => {
+    if (!props.projectId || !draft || authorizationPin.trim().length < 4) {
+      if (propagateError) throw new Error("Subflow Settings are not ready to save.");
+      return false;
+    }
     setSaving(true);
     setMessage("");
     setError("");
@@ -130,7 +133,8 @@ export function SubflowSettingsViewContent(props: SubflowSettingsViewProps & { c
       setError(saveError);
       setSaveAuthorizationError(saveError);
       if (result.error?.includes("SUBFLOW_SAVE_CONFLICT")) void loadResources(false);
-      return;
+      if (propagateError) throw new Error(saveError);
+      return false;
     }
     setSubflow(result.payload.subflow);
     const nextDraft = subflowSettingsDraft(result.payload.subflow);
@@ -146,13 +150,17 @@ export function SubflowSettingsViewContent(props: SubflowSettingsViewProps & { c
       flowId: props.ownership.parentFlowId,
       subflowId: props.ownership.subflowId
     });
+    return true;
   };
   useDirtyViewRegistration({
     id: `subflow-settings:${props.projectId ?? "none"}:${props.ownership.subflowId}`,
     viewId: automationStudioViewId.settings,
     label: `Subflow Settings: ${subflow?.name ?? props.flow?.name ?? props.ownership.subflowId}`,
     dirty: draftDirty,
-    save: () => { setSaveAuthorizationPin(""); setSaveAuthorizationError(""); setSaveAuthorizationOpen(true); },
+    save: async (authorizationPin) => {
+      if (authorizationPin) await saveSettings(authorizationPin, true);
+      else { setSaveAuthorizationPin(""); setSaveAuthorizationError(""); setSaveAuthorizationOpen(true); }
+    },
     discard: () => { if (savedDraft) setDraft(savedDraft); }
   });
   return (

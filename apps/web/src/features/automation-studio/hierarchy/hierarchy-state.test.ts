@@ -7,6 +7,7 @@ import { indexAutomationHierarchyNodes } from "./model";
 import {
   automationHierarchyNodeSelectionState,
   createAutomationHierarchyProjectionSelector,
+  selectAutomationHierarchyEffectiveCollapsedIds,
   selectAutomationHierarchyPrimaryTreeNodeId
 } from "./selectors";
 import { createAutomationHierarchyStore } from "./store";
@@ -124,6 +125,28 @@ describe("automation hierarchy store", () => {
 });
 
 describe("automation hierarchy selectors", () => {
+  it("expands the active subflow until the user explicitly collapses it", () => {
+    const subflow = {
+      id: "subflow-a",
+      label: "Checkout",
+      kind: "subflow",
+      category: "flow",
+      parentId: flow.id,
+      metadata: { defaultCollapsed: true, graphFlowId: "flow.checkout.subflow.graph" }
+    } as AutomationHierarchyNode;
+    const input = {
+      nodes: [flow, subflow],
+      collapsedFolderIds: [],
+      expandedDefaultCollapsedIds: [],
+      selection: { kind: "flow", id: "flow.checkout.subflow.graph" }
+    } satisfies Parameters<typeof selectAutomationHierarchyEffectiveCollapsedIds>[0];
+    expect(selectAutomationHierarchyEffectiveCollapsedIds(input)).not.toContain("subflow-a");
+    expect(selectAutomationHierarchyEffectiveCollapsedIds({
+      ...input,
+      collapsedFolderIds: ["subflow-a"]
+    })).toContain("subflow-a");
+  });
+
   it("marks exactly the selected object for each active Flow view", () => {
     const nodes = [flow, router, settings];
     const index = indexAutomationHierarchyNodes(nodes);

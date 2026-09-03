@@ -82,9 +82,11 @@ describe("Automation Studio extracted owner contracts", () => {
 
   it("remembers active Flow identity separately from node selection", () => {
     expect(navigation).toContain('current.viewStates?.[automationStudioViewId.flowEditor]');
-    expect(navigation).toContain("if (currentFlowState.lastOpenFlowId === next.id) return current;");
-    expect(navigation).toContain('[automationStudioViewId.flowEditor]: { ...currentFlowState, lastOpenFlowId: next.id }');
+    expect(navigation).toContain("if (currentFlowState.lastOpenFlowId === next.id && currentFlowState.selection === next) return current;");
+    expect(navigation).toContain('[automationStudioViewId.flowEditor]: { ...currentFlowState, lastOpenFlowId: next.id, selection: next }');
     expect(deepLinks).toContain("options.selectedFlow?.flowId ?? options.lastOpenFlowId");
+    expect(navigation).toContain("selection: next");
+    expect(projectRuntime).toContain("isAutomationSelection(savedActiveViewSelection)");
   });
 
   it("does not feed active tab focus into lazy preloading", () => {

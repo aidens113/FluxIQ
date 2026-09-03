@@ -22,7 +22,11 @@ import {
 import { automationEdgeTypes, automationNodeTypes } from "./renderer-registry";
 import type { FlowEditorProps } from "./flow-editor-types";
 import type { FlowEditorController } from "./useFlowEditorController";
-import { useCallback, useId, useRef } from "react";
+import { useCallback, useEffect, useId, useRef } from "react";
+import {
+  registerAutomationStudioGraphActions,
+  updateAutomationStudioGraphActions
+} from "../workspace/studio-action-registry";
 
 export function FlowGraphCanvas({ controller, props }: { controller: FlowEditorController; props: FlowEditorProps }) {
   const graphRegionId = `automation-graph-${useId().replace(/:/g, "")}`;
@@ -72,6 +76,16 @@ export function FlowGraphCanvas({ controller, props }: { controller: FlowEditorC
     addFlowNode,
     setPaletteCollapsed
   } = controller;
+  const studioActions = {
+    active: () => props.activeRef.current,
+    canUndo: controller.canUndoFlowGraph && controller.isFlowMode,
+    canRedo: controller.canRedoFlowGraph && controller.isFlowMode,
+    undo: () => controller.applyFlowHistory("undo"),
+    redo: () => controller.applyFlowHistory("redo"),
+    save: (authorizationPin: string) => controller.saveFlowGraph(authorizationPin)
+  };
+  useEffect(() => registerAutomationStudioGraphActions(graphRegionId, studioActions), [graphRegionId]);
+  useEffect(() => updateAutomationStudioGraphActions(graphRegionId, studioActions));
   const addFlowNodeRef = useRef(addFlowNode);
   const reconnectPerformanceGuardRef = useRef<FlowReconnectPerformanceGuardHandle>(null);
   addFlowNodeRef.current = addFlowNode;

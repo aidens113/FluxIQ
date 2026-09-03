@@ -21,6 +21,7 @@ import {
 } from "./run-input-model";
 import { useRuntimeExecutionCommands, type RuntimeExecutionCommands } from "./runtime-host";
 import { subscribeToAutomationStudioMutations } from "../stores/mutation-transaction-store";
+import { registerAutomationStudioRuntimeActions, updateAutomationStudioRuntimeActions } from "../workspace/studio-action-registry";
 export type FlowRunViewProps = {
   projectId: string | null;
   flow?: any;
@@ -50,6 +51,7 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
   const [lastMode, setLastMode] = useState<AutomationRuntimeRunMode>("fully_adaptive");
   const [readiness, setReadiness] = useState<{ loading: boolean; instructions: any[]; router: any | null; subflowTotal: number; error: string }>({ loading: false, instructions: [], router: null, subflowTotal: 0, error: "" });
   const readinessRequestGateRef = useRef<ReturnType<typeof createRuntimeReadinessRequestGate> | null>(null);
+  const studioRuntimeActionId = React.useId();
   if (!readinessRequestGateRef.current) readinessRequestGateRef.current = createRuntimeReadinessRequestGate();
   const loadReadiness = useCallback(async () => {
     if (!props.projectId || !props.flow?.flowId) {
@@ -105,6 +107,16 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
     if (!result.ok) setRunError(result.error ?? "Run could not be stopped.");
     else commitRuntimeRunChanged({ projectId: props.projectId, flowId: props.flow?.flowId, runId: activeRunId });
   };
+  const studioRuntimeActions = {
+    canPlay: Boolean(props.projectId && props.flow?.flowId && !runningMode && !activeRunId),
+    canPause: false,
+    canStop: Boolean(props.projectId && activeRunId),
+    play: () => { void runFlow(lastMode); },
+    pause: () => undefined,
+    stop: () => { void stopRun(); }
+  };
+  useEffect(() => registerAutomationStudioRuntimeActions(studioRuntimeActionId, studioRuntimeActions), [studioRuntimeActionId]);
+  useEffect(() => updateAutomationStudioRuntimeActions(studioRuntimeActionId, studioRuntimeActions));
   return (
     <section className="automation-runtime-stage">
       <SummaryStrip items={[

@@ -7,8 +7,8 @@ export type AutomationSelection =
   | { kind: "flow"; id: string }
   | { kind: "policy"; id: string }
   | { kind: "node"; id: string }
-  | { kind: "editor-node"; id: string; node: { label: string; nodeType: string; family: string; description: string; customDescription?: string; nodeDefinitionId?: string; icon?: string; inputs: AutomationNodePort[]; outputs: AutomationNodePort[]; parameters: AutomationNodeParameter[]; parameterValues: JsonObject; metadata?: JsonObject; privileged?: boolean; actionTypes?: string[] } }
-  | { kind: "editor-mode"; id: string; editor: "flow" | "routine"; label: string; description: string; sections: Array<{ title: string; rows: Array<[string, string]> }> }
+  | { kind: "editor-node"; id: string; flowId?: string; node: { label: string; nodeType: string; family: string; description: string; customDescription?: string; nodeDefinitionId?: string; icon?: string; inputs: AutomationNodePort[]; outputs: AutomationNodePort[]; parameters: AutomationNodeParameter[]; parameterValues: JsonObject; metadata?: JsonObject; privileged?: boolean; actionTypes?: string[] } }
+  | { kind: "editor-mode"; id: string; flowId?: string; editor: "flow" | "routine"; label: string; description: string; sections: Array<{ title: string; rows: Array<[string, string]> }> }
   | { kind: "recording"; id: string }
   | { kind: "timeline"; id: string }
   | { kind: "signal"; id: string }
