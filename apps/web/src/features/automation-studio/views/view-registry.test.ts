@@ -3,6 +3,9 @@ import {
   automationStudioViewAvailable,
   automationStudioViewDefinition,
   automationStudioViewDefinitions,
+  automationStudioObjectViewInstanceId,
+  automationStudioViewBaseId,
+  automationStudioViewObjectId,
   canonicalAutomationStudioViewId,
   isAutomationStudioViewId,
   migrateAutomationStudioViewState,
@@ -10,6 +13,22 @@ import {
 } from "./view-registry";
 
 describe("Automation Studio view registry", () => {
+  it("keeps canonical view type separate from an owning object instance", () => {
+    const instanceId = automationStudioObjectViewInstanceId("flow-instructions", "flow.checkout/subflow.review");
+    expect(instanceId).toBe("flow-instructions::object::flow.checkout%2Fsubflow.review");
+    expect(automationStudioViewBaseId(instanceId)).toBe("flow-instructions");
+    expect(automationStudioViewObjectId(instanceId)).toBe("flow.checkout/subflow.review");
+    expect(automationStudioViewDefinition(instanceId, { hasFlow: true })?.id).toBe("flow-instructions");
+    expect(automationStudioObjectViewInstanceId("global-inspector", "flow.checkout")).toBe("global-inspector");
+
+    for (const definition of automationStudioViewDefinitions()) {
+      const objectScoped = definition.functionality.scope.some((scope) => scope === "flow" || scope === "subflow");
+      const parent = automationStudioObjectViewInstanceId(definition.id, "flow.parent");
+      const child = automationStudioObjectViewInstanceId(definition.id, "flow.child");
+      expect(parent === child).toBe(!objectScoped);
+    }
+  });
+
   it("contains unique canonical IDs with complete host and cache metadata", () => {
     const definitions = automationStudioViewDefinitions();
     const ids = definitions.map((definition) => definition.id);

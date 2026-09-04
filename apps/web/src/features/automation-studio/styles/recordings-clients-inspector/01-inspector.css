@@ -56,6 +56,21 @@
   margin-top: 6px;
 }
 
+.automation-inspector-primary {
+  display: grid;
+  min-width: 0;
+}
+
+.automation-inspector-primary .automation-node-parameters {
+  border-color: color-mix(in srgb, var(--color-primary) 32%, var(--color-border));
+}
+
+.automation-node-description-field {
+  margin-top: 2px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 10px;
+}
+
 .automation-inspector-tools .button {
   min-height: 26px;
   padding: 3px 8px;

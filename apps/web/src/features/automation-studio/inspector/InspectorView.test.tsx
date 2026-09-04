@@ -1,5 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 import { InspectorView } from "./InspectorView";
 import {
@@ -80,7 +81,7 @@ describe("canonical Automation Inspector", () => {
         description: "Charge the account",
         inputs: [],
         outputs: [],
-        parameters: [],
+        parameters: [{ id: "amount", label: "Amount", valueType: "number" as const }],
         parameterValues: { amount: 10 }
       }
     };
@@ -102,6 +103,42 @@ describe("canonical Automation Inspector", () => {
     }));
     expect(html).toContain("Node description");
     expect(html).toContain("Charge the account");
+    expect(html.indexOf("<summary>Parameters</summary>")).toBeLessThan(html.indexOf("Copy selected object ID"));
+    expect(html.match(/<summary>Parameters<\/summary>/gu)).toHaveLength(1);
+  });
+
+  it("routes edits from the top parameter controls into the selected editor node", async () => {
+    const selection = {
+      kind: "editor-node" as const,
+      id: "node.output",
+      node: {
+        label: "Custom output",
+        nodeType: "custom",
+        family: "output",
+        description: "Emit a configured value",
+        inputs: [],
+        outputs: [],
+        parameters: [{ id: "message", label: "Message", valueType: "string" as const }],
+        parameterValues: { message: "Before" }
+      }
+    };
+    const update = vi.fn();
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<InspectorView
+        context={context(selection, { node: { id: selection.id, ...selection.node } })}
+        onOpenState={vi.fn()}
+        onUpdateEditorNodeSelection={update}
+      />);
+    });
+    const valueInput = renderer.root.findAllByType("input").find((input) => input.props.value === "Before");
+    expect(valueInput).toBeTruthy();
+    await act(async () => valueInput!.props.onChange({ target: { value: "After" } }));
+    expect(update).toHaveBeenCalledWith({
+      ...selection,
+      node: { ...selection.node, parameterValues: { message: "After" } }
+    });
+    await act(async () => renderer.unmount());
   });
 
   it("builds a typed State command retaining scoped coordinates", () => {

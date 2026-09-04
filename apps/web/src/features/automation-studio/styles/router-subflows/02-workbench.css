@@ -5,7 +5,7 @@
 
 .automation-router-workbench {
   display: grid;
-  grid-template-rows: auto auto minmax(120px, 1fr) auto;
+  grid-template-rows: auto auto auto minmax(120px, 1fr) auto auto;
   min-height: 0;
   overflow: hidden;
   border: 1px solid var(--color-border);
@@ -93,6 +93,97 @@
 
 .automation-router-new-group {
   flex: 0 0 auto;
+}
+
+.automation-router-list-controls {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(150px, auto) auto;
+  align-items: end;
+  gap: 10px;
+  min-width: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--surface-tool);
+  padding: 10px 12px;
+}
+
+.automation-router-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  border: 1px solid var(--color-border-strong, var(--color-border));
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 0 10px;
+}
+
+.automation-router-search:focus-within {
+  border-color: var(--color-primary);
+  outline: 2px solid color-mix(in srgb, var(--color-primary) 16%, transparent);
+}
+
+.automation-router-search > svg {
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+}
+
+.automation-router-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+}
+
+.automation-router-search button {
+  display: grid;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-medium);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.automation-router-search button:hover {
+  background: var(--surface-selected);
+  color: var(--color-text);
+}
+
+.automation-router-status-filter {
+  display: grid;
+  gap: 4px;
+}
+
+.automation-router-status-filter > span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-router-status-filter select {
+  min-width: 150px;
+  min-height: 38px;
+  border: 1px solid var(--color-border-strong, var(--color-border));
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 6px 30px 6px 10px;
+  font: inherit;
+}
+
+.automation-router-filter-summary {
+  align-self: center;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  white-space: nowrap;
 }
 
 .automation-router-route-list-heading,
@@ -221,10 +312,18 @@
   grid-template-columns: 36px minmax(160px, 1fr) minmax(140px, auto) 20px;
   align-items: center;
   gap: var(--space-dense);
-  min-height: 56px;
+  min-height: 72px;
   border-top: 1px solid var(--color-border);
   background: color-mix(in srgb, #f59e0b 6%, var(--color-surface));
-  padding: 8px 14px;
+  padding: 10px 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.automation-router-fallback-row:hover,
+.automation-router-fallback-row:focus-visible {
+  background: color-mix(in srgb, #f59e0b 11%, var(--color-surface));
+  outline: none;
 }
 
 .automation-router-fallback-icon {
@@ -254,6 +353,8 @@
 }
 
 .automation-router-fallback-target {
+  display: grid;
+  gap: 3px;
   overflow: hidden;
   color: var(--color-text);
   font-size: var(--font-size-compact);
@@ -263,8 +364,27 @@
   white-space: nowrap;
 }
 
+.automation-router-fallback-target small,
+.automation-router-fallback-target strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.automation-router-fallback-target small {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-normal);
+}
+
+.automation-router-fallback-kicker {
+  color: #b45309 !important;
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
 .modal-panel.automation-router-modal {
-  width: min(100%, 760px);
+  width: min(100%, 820px);
   max-height: calc(100vh - 48px);
   overflow-x: hidden;
   overflow-y: auto;
@@ -281,6 +401,145 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-md);
+}
+
+.automation-router-editor-section {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface-subtle, var(--color-surface));
+  padding: 14px;
+}
+
+.automation-router-editor-section-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+}
+
+.automation-router-editor-section-heading > span {
+  display: grid;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  color: var(--color-primary);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-router-editor-section-heading > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.automation-router-editor-section-heading strong {
+  color: var(--color-text);
+  font-size: var(--font-size-compact);
+}
+
+.automation-router-editor-section-heading small {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  line-height: 1.4;
+}
+
+.automation-router-editor-grid-secondary {
+  grid-template-columns: minmax(0, 1fr) minmax(120px, .45fr);
+}
+
+.automation-router-fallback-choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.automation-router-fallback-choices > button {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 10px;
+  min-height: 82px;
+  border: 1px solid var(--color-border-strong, var(--color-border));
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.automation-router-fallback-choices > button:hover,
+.automation-router-fallback-choices > button:focus-visible {
+  border-color: var(--color-primary);
+  outline: none;
+}
+
+.automation-router-fallback-choices > button[aria-checked="true"] {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+.automation-router-fallback-choices > button > span:nth-child(2) {
+  display: grid;
+  gap: 4px;
+}
+
+.automation-router-fallback-choices strong {
+  font-size: var(--font-size-body-small);
+}
+
+.automation-router-fallback-choices small,
+.automation-router-fallback-config-copy small {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  line-height: 1.4;
+}
+
+.automation-router-fallback-choice-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: var(--radius-medium);
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
+  color: var(--color-primary);
+}
+
+.automation-router-fallback-choice-icon.danger {
+  background: color-mix(in srgb, var(--color-danger) 9%, var(--color-surface));
+  color: var(--color-danger);
+}
+
+.automation-router-choice-indicator {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-border-strong, var(--color-border));
+  border-radius: 50%;
+}
+
+[aria-checked="true"] > .automation-router-choice-indicator {
+  border: 5px solid var(--color-primary);
+}
+
+.automation-router-fallback-config {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--surface-tool);
+  padding: 14px;
+}
+
+.automation-router-fallback-config-copy {
+  display: grid;
+  gap: 3px;
 }
 
 .automation-router-route-editor input,
@@ -325,6 +584,14 @@
     min-height: 430px;
   }
 
+  .automation-router-list-controls {
+    grid-template-columns: minmax(0, 1fr) minmax(130px, auto);
+  }
+
+  .automation-router-filter-summary {
+    display: none;
+  }
+
   .automation-router-route-list-heading,
   .automation-router-route-row {
     grid-template-columns: 50px minmax(190px, 1.4fr) minmax(140px, 1fr) 84px 20px;
@@ -349,7 +616,21 @@
     grid-template-columns: 1fr;
   }
 
+  .automation-router-fallback-choices {
+    grid-template-columns: 1fr;
+  }
+
   .modal-panel.automation-router-modal {
+    width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  .automation-router-list-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .automation-router-status-filter select {
     width: 100%;
   }
 }

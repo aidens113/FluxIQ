@@ -63,16 +63,22 @@ describe("AutomationStudioUiCacheCoordinator", () => {
     await vi.runOnlyPendingTimersAsync();
     await flushAsyncTasks();
     expect(onHydrate).toHaveBeenCalledTimes(1);
-    expect(onHydrate.mock.calls[0]?.[0].activeViewId).toBe(durablePrefs.activeViewId);
-    expect(onHydrate.mock.calls[0]?.[0].panes).toEqual(durablePrefs.panes);
+    expect(onHydrate.mock.calls[0]?.[0].activeViewId).toBe("runtime-debug");
+    expect(onHydrate.mock.calls[0]?.[0].panes).toEqual(cachedPrefs.panes);
     expect(onHydrate.mock.calls[0]?.[0].sidebarWidth).toBe(333);
   });
 
-  it("debounces workspace writes and stores only the latest compact non-navigation state", async () => {
+  it("debounces workspace writes and stores the latest complete window and view state", async () => {
     const backend = new MemoryUiCacheBackend();
     const coordinator = new AutomationStudioUiCacheCoordinator(backend);
     const first = { ...defaultAutomationWorkspacePrefs(), activeViewId: "flow-nodes", sidebarWidth: 280 };
-    const latest = { ...defaultAutomationWorkspacePrefs(), activeViewId: "runtime-debug", sidebarWidth: 360, panes: [{ id: "pane-main-1", activeViewId: "runtime-debug", tabs: ["runtime-debug"] }] };
+    const latest = {
+      ...defaultAutomationWorkspacePrefs(),
+      activeViewId: "runtime-debug",
+      sidebarWidth: 360,
+      panes: [{ id: "pane-main-1", activeViewId: "runtime-debug", tabs: ["runtime-debug"] }],
+      viewStates: { "runtime-debug": { flowId: "flow.one", page: 2 } }
+    };
 
     coordinator.scheduleWorkspacePrefsWrite({ projectId: "project-a", userId: "user-a", prefs: first, delayMs: 50 });
     coordinator.scheduleWorkspacePrefsWrite({ projectId: "project-a", userId: "user-a", prefs: latest, delayMs: 50 });
@@ -86,9 +92,9 @@ describe("AutomationStudioUiCacheCoordinator", () => {
 
     expect(backend.writes).toHaveLength(1);
     expect((backend.writes[0]?.value as any).value.sidebarWidth).toBe(360);
-    expect((backend.writes[0]?.value as any).value.activeViewId).toBeUndefined();
-    expect((backend.writes[0]?.value as any).value.panes).toBeUndefined();
-    expect((backend.writes[0]?.value as any).value.viewStates).toBeUndefined();
+    expect((backend.writes[0]?.value as any).value.activeViewId).toBe("runtime-debug");
+    expect((backend.writes[0]?.value as any).value.panes).toEqual(latest.panes);
+    expect((backend.writes[0]?.value as any).value.viewStates).toEqual(latest.viewStates);
   });
 
   it("does not apply stale hydration after a local UI mutation", async () => {

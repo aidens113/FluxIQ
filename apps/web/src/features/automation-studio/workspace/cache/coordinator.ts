@@ -364,6 +364,9 @@ export function navigationSafeWorkspaceSeed(
   });
   return {
     ...durable,
+    activePaneId: cached.activePaneId,
+    activeViewId: cached.activeViewId,
+    panes: cached.panes,
     sidebarWidth: cached.sidebarWidth,
     leftSidebarCollapsed: cached.leftSidebarCollapsed,
     inspectorWidth: cached.inspectorWidth,
@@ -371,8 +374,9 @@ export function navigationSafeWorkspaceSeed(
     bottomTimelineCollapsed: cached.bottomTimelineCollapsed,
     mainLayoutPreset: cached.mainLayoutPreset,
     mainSplitRatios: cached.mainSplitRatios,
-    rightSidebar: { ...durable.rightSidebar, collapsed: cached.rightSidebar.collapsed },
-    bottomDock: { ...durable.bottomDock, expanded: cached.bottomDock.expanded },
+    rightSidebar: cached.rightSidebar,
+    bottomDock: cached.bottomDock,
+    viewStates: cached.viewStates,
     rightSidebarCollapsed: cached.rightSidebarCollapsed,
     density: cached.density,
     motion: cached.motion
@@ -384,6 +388,9 @@ export function compactWorkspaceCacheSeed(
 ): AutomationStudioCachedWorkspaceSeed {
   const normalized = normalizeAutomationWorkspacePrefs(prefs);
   return {
+    activePaneId: normalized.activePaneId,
+    activeViewId: normalized.activeViewId,
+    panes: normalized.panes.map((pane) => ({ ...pane, tabs: [...pane.tabs] })),
     sidebarWidth: normalized.sidebarWidth,
     leftSidebarCollapsed: normalized.leftSidebarCollapsed,
     inspectorWidth: normalized.inspectorWidth,
@@ -392,6 +399,9 @@ export function compactWorkspaceCacheSeed(
     mainLayoutPreset: normalized.mainLayoutPreset,
     mainSplitRatios: [...normalized.mainSplitRatios],
     rightSidebarCollapsed: normalized.rightSidebarCollapsed,
+    rightSidebar: { ...normalized.rightSidebar, tabs: [...normalized.rightSidebar.tabs] },
+    bottomDock: { ...normalized.bottomDock },
+    viewStates: normalized.viewStates,
     density: normalized.density,
     motion: normalized.motion,
     rightSidebarCollapsedState: normalized.rightSidebar.collapsed,

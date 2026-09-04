@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import { Combobox, Field, Menu, Modal, StatusBadge, StatusText } from "../../programs/shared-ui";
-import { AlertCircle, AlertTriangle, ArrowDown, ArrowUp, ChevronLeft, ChevronRight, CircleCheck, Copy, Info, ListChecks, MoreHorizontal, Pencil, Plus, Power, Route, Search, Trash2, Workflow, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, ChevronLeft, ChevronRight, CircleCheck, Copy, MoreHorizontal, Pencil, Plus, Power, Route, Search, Trash2, Workflow, X } from "lucide-react";
 import { flowMapFallbackLabel } from "../runtime";
 import { FLOW_MAP_CONDITION_OPERATORS, flowMapConditionOperatorLabel, flowMapConditionSummary, flowMapConditionText, targetSubflowLabel } from "./route-condition-model";
 
@@ -119,13 +119,14 @@ export function RouterContentView(props: RouterContentViewProps) {
         </div>
 
         <div className="automation-router-list-controls">
-          <label className="automation-runtime-search">
+          <label className="automation-router-search">
             <Search aria-hidden size={15} />
             <span className="sr-only">Search routes</span>
             <input onChange={(event) => onRouteQuery(event.target.value)} placeholder="Search routes or targets" type="search" value={routeQuery} />
             {routeQuery ? <button aria-label="Clear route search" onClick={() => onRouteQuery("")} type="button"><X aria-hidden size={14} /></button> : null}
           </label>
-          <label className="field compact"><span className="field-label">Status</span><select onChange={(event) => onRouteStatus(event.target.value as "all" | "active" | "disabled")} value={routeStatus}><option value="all">All statuses</option><option value="active">Active</option><option value="disabled">Disabled</option></select></label>
+          <label className="automation-router-status-filter"><span>Status</span><select aria-label="Filter routes by status" onChange={(event) => onRouteStatus(event.target.value as "all" | "active" | "disabled")} value={routeStatus}><option value="all">All statuses</option><option value="active">Active</option><option value="disabled">Disabled</option></select></label>
+          <span className="automation-router-filter-summary">{routeCounts.total} route{routeCounts.total === 1 ? "" : "s"}</span>
         </div>
 
         <div className="automation-router-route-list-heading" aria-hidden>
@@ -176,25 +177,30 @@ export function RouterContentView(props: RouterContentViewProps) {
 
         <button aria-label="Edit fallback behavior" className="automation-router-fallback-row" onClick={beginFallbackEdit} type="button">
           <span className="automation-router-fallback-icon"><Route size={16} aria-hidden /></span>
-          <span><strong>Fallback</strong><small>Used when no route condition matches</small></span>
-          <span className="automation-router-fallback-target">{flowMap?.fallback?.kind === "subflow" ? targetSubflowLabel(activeSubflows, flowMap.fallback.subflowId) : flowMapFallbackLabel(flowMap) === "-" ? "Not configured" : flowMapFallbackLabel(flowMap)}</span>
+          <span><small className="automation-router-fallback-kicker">Final destination</small><strong>Fallback behavior</strong><small>Runs arrive here when no active route matches.</small></span>
+          <span className="automation-router-fallback-target"><small>{flowMap?.fallback?.kind === "subflow" ? "Send to subflow" : "Stop the run"}</small><strong>{flowMap?.fallback?.kind === "subflow" ? targetSubflowLabel(activeSubflows, flowMap.fallback.subflowId) : flowMapFallbackLabel(flowMap) === "-" ? "Not configured" : flowMapFallbackLabel(flowMap)}</strong></span>
           <ChevronRight className="automation-router-route-chevron" size={16} aria-hidden />
         </button>
       </section>
-      {routeModalOpen ? <Modal className="automation-router-modal" title={routeDraft.ruleId ? "Edit Route" : "New Route"} onClose={() => setRouteModalOpen(false)}>
+      {routeModalOpen && !authorization ? <Modal className="automation-router-modal" title={routeDraft.ruleId ? "Edit route" : "Create a route"} description="Routes are checked from lowest priority number to highest. The first matching route chooses the destination subflow." onClose={() => setRouteModalOpen(false)}>
         <div className="automation-modal-form automation-router-route-editor">
-          <div className="automation-router-editor-grid">
-            <Field label="Route name"><input autoFocus value={routeDraft.name} onChange={(event) => setRouteDraft((current) => ({ ...current, name: event.target.value }))} placeholder="For example, Handle refund requests" /></Field>
-            <Combobox {...(!routeDraft.targetSubflowId ? { error: "Choose a target subflow." } : {})} label="Target subflow" loading={subflowsLoading} onQueryChange={onSubflowQuery} onChange={(value) => setRouteDraft((current) => ({ ...current, targetSubflowId: value }))} options={subflowOptions} placeholder="Search all subflows" value={routeDraft.targetSubflowId} />
-            <Field label="Route group"><select value={routeDraft.groupId} onChange={(event) => setRouteDraft((current) => ({ ...current, groupId: event.target.value }))}><option value="">Ungrouped</option>{routeGroups.map((group) => <option key={group.groupId} value={group.groupId}>{group.name}</option>)}</select></Field>
-            <Field label="Priority"><input min="0" step="1" type="number" value={routeDraft.order} onChange={(event) => setRouteDraft((current) => ({ ...current, order: Number(event.target.value) }))} /></Field>
-          </div>
+          <section className="automation-router-editor-section automation-router-destination-section" aria-labelledby="route-destination-heading">
+            <div className="automation-router-editor-section-heading"><span>1</span><div><strong id="route-destination-heading">Choose a destination</strong><small>Name the route and select where matching runs should go.</small></div></div>
+            <div className="automation-router-editor-grid">
+              <Field label="Route name"><input autoFocus value={routeDraft.name} onChange={(event) => setRouteDraft((current) => ({ ...current, name: event.target.value }))} placeholder="For example, Handle refund requests" /></Field>
+              <Combobox {...(!routeDraft.targetSubflowId ? { error: "Choose a target subflow." } : {})} label="Destination subflow" loading={subflowsLoading} onQueryChange={onSubflowQuery} onChange={(value) => setRouteDraft((current) => ({ ...current, targetSubflowId: value }))} options={subflowOptions} placeholder="Search subflows" value={routeDraft.targetSubflowId} />
+            </div>
+            <div className="automation-router-editor-grid automation-router-editor-grid-secondary">
+              <Field label="Route group"><select value={routeDraft.groupId} onChange={(event) => setRouteDraft((current) => ({ ...current, groupId: event.target.value }))}><option value="">Ungrouped</option>{routeGroups.map((group) => <option key={group.groupId} value={group.groupId}>{group.name}</option>)}</select></Field>
+              <Field label="Priority" hint="Lower numbers are checked first."><input min="0" step="1" type="number" value={routeDraft.order} onChange={(event) => setRouteDraft((current) => ({ ...current, order: Number(event.target.value) }))} /></Field>
+            </div>
+          </section>
           <section className="automation-router-condition-builder" aria-labelledby="route-match-heading">
             <header>
-              <div><strong id="route-match-heading">Match behavior</strong><span>{routeDraft.conditionMode === "always" ? "This route is considered whenever earlier routes do not match." : flowMapConditionSummary(routeDraft)}</span></div>
+              <div className="automation-router-editor-section-heading"><span>2</span><div><strong id="route-match-heading">Define when it matches</strong><small>{routeDraft.conditionMode === "always" ? "Use this route whenever it reaches this priority." : flowMapConditionSummary(routeDraft)}</small></div></div>
               <div className="automation-segmented-control" role="group" aria-label="Route match behavior">
-                <button aria-pressed={routeDraft.conditionMode === "always"} onClick={() => setRouteDraft((current) => ({ ...current, conditionMode: "always" }))} type="button">Always</button>
-                <button aria-pressed={routeDraft.conditionMode === "when"} onClick={() => setRouteDraft((current) => ({ ...current, conditionMode: "when" }))} type="button">When</button>
+                <button aria-pressed={routeDraft.conditionMode === "always"} onClick={() => { setRouteDraft((current) => ({ ...current, conditionMode: "always" })); setRouteTestResult(null); }} type="button">Always</button>
+                <button aria-pressed={routeDraft.conditionMode === "when"} onClick={() => { setRouteDraft((current) => ({ ...current, conditionMode: "when" })); setRouteTestResult(null); }} type="button">Only when…</button>
               </div>
             </header>
             {routeDraft.conditionMode === "when" ? <div className="automation-router-condition-row">
@@ -205,12 +211,12 @@ export function RouterContentView(props: RouterContentViewProps) {
               {routeDraft.conditionOperator !== "exists" ? <Field label="Expected value">{routeDraft.conditionValueType === "boolean" ? <select value={routeDraft.conditionExpected} onChange={(event) => setRouteDraft((current) => ({ ...current, conditionExpected: event.target.value }))}><option value="true">True</option><option value="false">False</option></select> : <input type={routeDraft.conditionValueType === "number" ? "number" : "text"} value={routeDraft.conditionExpected} onChange={(event) => setRouteDraft((current) => ({ ...current, conditionExpected: event.target.value }))} placeholder={routeDraft.conditionValueType === "number" ? "0" : "Value to compare"} />}</Field> : null}
             </div> : null}
           </section>
-          <section className="automation-router-route-test" aria-labelledby="route-test-heading">
-            <div><strong id="route-test-heading">Test this route</strong><span>Check this condition with a sample value before saving.</span></div>
-            {routeDraft.conditionMode === "when" ? <Field label={"Sample " + (routeDraft.conditionSource === "state" ? "state" : "input") + " value"}>{routeDraft.conditionValueType === "boolean" ? <select value={routeTestValue} onChange={(event) => { setRouteTestValue(event.target.value); setRouteTestResult(null); }}><option value="">Choose value</option><option value="true">True</option><option value="false">False</option></select> : <input type={routeDraft.conditionValueType === "number" ? "number" : "text"} value={routeTestValue} onChange={(event) => { setRouteTestValue(event.target.value); setRouteTestResult(null); }} placeholder="Value received at runtime" />}</Field> : null}
+          {routeDraft.conditionMode === "when" ? <section className="automation-router-route-test" aria-labelledby="route-test-heading">
+            <div className="automation-router-editor-section-heading"><span>3</span><div><strong id="route-test-heading">Try a sample value</strong><small>Confirm the condition behaves as expected before saving.</small></div></div>
+            <Field label={"Sample " + (routeDraft.conditionSource === "state" ? "state" : "input") + " value"}>{routeDraft.conditionValueType === "boolean" ? <select value={routeTestValue} onChange={(event) => { setRouteTestValue(event.target.value); setRouteTestResult(null); }}><option value="">Choose value</option><option value="true">True</option><option value="false">False</option></select> : <input type={routeDraft.conditionValueType === "number" ? "number" : "text"} value={routeTestValue} onChange={(event) => { setRouteTestValue(event.target.value); setRouteTestResult(null); }} placeholder="Value received at runtime" />}</Field>
             <button className="button" disabled={testingRoute || (routeDraft.conditionMode === "when" && routeTestValue === "")} onClick={() => void runRouteTest()} type="button">{testingRoute ? "Testing..." : "Test condition"}</button>
             {routeTestResult ? <div className={"automation-router-test-result " + (routeTestResult.matched ? "matched" : "not-matched")} role="status"><CircleCheck size={15} aria-hidden /><span><strong>{routeTestResult.matched ? "Route matches" : "Route does not match"}</strong><small>{routeTestResult.reason}</small></span></div> : null}
-          </section>
+          </section> : null}
           <details className="automation-router-route-details">
             <summary>Route details</summary>
             <div className="automation-router-editor-grid">
@@ -225,22 +231,29 @@ export function RouterContentView(props: RouterContentViewProps) {
           </div>
         </div>
       </Modal> : null}
-      {fallbackModalOpen ? <Modal className="automation-router-modal" title="Fallback Behavior" onClose={() => setFallbackModalOpen(false)}>
+      {fallbackModalOpen && !authorization ? <Modal className="automation-router-modal automation-router-fallback-modal" title="Fallback behavior" description="Choose the safe outcome for runs that reach the end of the route list without a match." onClose={() => setFallbackModalOpen(false)}>
         <div className="automation-modal-form automation-router-route-editor">
-          <p className="automation-router-modal-intro">Choose what the Router should do when no active route matches.</p>
-          <Field label="Behavior">
-            <select value={fallbackDraft.kind} onChange={(event) => setFallbackDraft((current) => ({ ...current, kind: event.target.value === "subflow" ? "subflow" : "fail" }))}>
-              <option value="subflow">Send to a subflow</option>
-              <option value="fail">Stop the run</option>
-            </select>
-          </Field>
-          {fallbackDraft.kind === "subflow"
-            ? <Combobox {...(!fallbackDraft.targetSubflowId ? { error: "Choose a fallback subflow." } : {})} label="Fallback subflow" loading={subflowsLoading} onQueryChange={onSubflowQuery} onChange={(value) => setFallbackDraft((current) => ({ ...current, targetSubflowId: value }))} options={subflowOptions} placeholder="Search all subflows" value={fallbackDraft.targetSubflowId} />
-            : <Field label="Run message"><textarea autoFocus rows={3} value={fallbackDraft.message} onChange={(event) => setFallbackDraft((current) => ({ ...current, message: event.target.value }))} placeholder="Explain why the run stopped" /></Field>}
+          <div className="automation-router-fallback-choices" role="radiogroup" aria-label="Fallback behavior">
+            <button aria-checked={fallbackDraft.kind === "subflow"} onClick={() => setFallbackDraft((current) => ({ ...current, kind: "subflow" }))} role="radio" type="button">
+              <span className="automation-router-fallback-choice-icon"><Workflow size={18} aria-hidden /></span>
+              <span><strong>Continue to a subflow</strong><small>Use a known destination to keep the run moving.</small></span>
+              <span className="automation-router-choice-indicator" aria-hidden />
+            </button>
+            <button aria-checked={fallbackDraft.kind === "fail"} onClick={() => setFallbackDraft((current) => ({ ...current, kind: "fail" }))} role="radio" type="button">
+              <span className="automation-router-fallback-choice-icon danger"><AlertTriangle size={18} aria-hidden /></span>
+              <span><strong>Stop the run</strong><small>End safely and return a clear explanation.</small></span>
+              <span className="automation-router-choice-indicator" aria-hidden />
+            </button>
+          </div>
+          <section className="automation-router-fallback-config">
+            {fallbackDraft.kind === "subflow"
+              ? <><div className="automation-router-fallback-config-copy"><strong>Destination</strong><small>This subflow runs only when every active route was skipped.</small></div><Combobox {...(!fallbackDraft.targetSubflowId ? { error: "Choose a fallback subflow." } : {})} label="Fallback subflow" loading={subflowsLoading} onQueryChange={onSubflowQuery} onChange={(value) => setFallbackDraft((current) => ({ ...current, targetSubflowId: value }))} options={subflowOptions} placeholder="Search subflows" value={fallbackDraft.targetSubflowId} /></>
+              : <><div className="automation-router-fallback-config-copy"><strong>Failure response</strong><small>Write a message that explains why routing could not continue.</small></div><Field label="Run message"><textarea autoFocus rows={3} value={fallbackDraft.message} onChange={(event) => setFallbackDraft((current) => ({ ...current, message: event.target.value }))} placeholder="No route matched this run." /></Field></>}
+          </section>
           <div className="modal-actions"><button className="button" onClick={() => setFallbackModalOpen(false)} type="button">Cancel</button><button className="button button-primary" onClick={() => requestAuthorization("save-fallback")} disabled={saving || (fallbackDraft.kind === "subflow" ? !fallbackDraft.targetSubflowId : !fallbackDraft.message.trim())} type="button">Save Fallback</button></div>
         </div>
       </Modal> : null}
-      {groupModalOpen ? <Modal title={groupDraft.groupId ? "Edit Route Group" : "New Route Group"} onClose={() => setGroupModalOpen(false)}>
+      {groupModalOpen && !authorization ? <Modal title={groupDraft.groupId ? "Edit Route Group" : "New Route Group"} onClose={() => setGroupModalOpen(false)}>
         <div className="automation-modal-form">
           <Field label="Name"><input autoFocus value={groupDraft.name} onChange={(event) => setGroupDraft((current) => ({ ...current, name: event.target.value }))} /></Field>
           <Field label="Description"><input value={groupDraft.description} onChange={(event) => setGroupDraft((current) => ({ ...current, description: event.target.value }))} /></Field>
@@ -253,8 +266,9 @@ export function RouterContentView(props: RouterContentViewProps) {
       {authorization ? <Modal title="Authorize Router Change" onClose={() => setAuthorization(null)}>
         <div className="automation-modal-form">
           <p className="automation-router-modal-intro">Confirm this Router change with your security PIN.</p>
-          <Field label="Security PIN"><input autoFocus inputMode="numeric" value={authorizationPin} onChange={(event) => setAuthorizationPin(event.target.value.replace(/\D/g, ""))} /></Field>
-          <div className="modal-actions"><button className="button" onClick={() => setAuthorization(null)} type="button">Cancel</button><button className="button button-primary" data-modal-submit disabled={!authorizationPin.trim() || saving} onClick={() => void completeAuthorizedAction()} type="button">{saving ? "Saving..." : "Confirm"}</button></div>
+          <StatusText value={error} />
+          <Field label="Security PIN"><input autoFocus inputMode="numeric" maxLength={12} type="password" value={authorizationPin} onChange={(event) => setAuthorizationPin(event.target.value.replace(/\D/g, ""))} /></Field>
+          <div className="modal-actions"><button className="button" onClick={() => setAuthorization(null)} type="button">Back</button><button className="button button-primary" data-modal-submit disabled={authorizationPin.length < 4 || saving} onClick={() => void completeAuthorizedAction()} type="button">{saving ? "Saving..." : "Authorize and save"}</button></div>
         </div>
       </Modal> : null}
     </section>

@@ -34,7 +34,6 @@ const registry: InspectorPanelRegistry = {
     if (evidence.length) sections.push({ title: "Evidence", rows: evidence });
     if (metadata["fluxiq.callFlow"]) sections.push({ title: "Pinned Call Flow", rows: callFlowInspectorRows(metadata["fluxiq.callFlow"]) });
     sections.push({ title: "Ports", rows: [["Inputs", inspectorPortSummary(context.node.inputs)], ["Outputs", inspectorPortSummary(context.node.outputs)], ["Privileged", context.node.privileged ? "Yes" : "No"], ["Actions", (context.node.actionTypes ?? []).join(", ") || "-"]] });
-    sections.push({ title: "Parameters", rows: [["Configured", String(Object.keys(context.node.parameterValues ?? {}).length)], ["Available", String(context.node.parameters?.length ?? 0)], ["Editing", "Flow editor"]] });
     return { sections };
   },
   "editor-mode": (context) => {

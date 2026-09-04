@@ -62,7 +62,7 @@ export function createAutomationWorkspaceCommands(options: {
           ? { ...candidate, activeViewId: viewId, tabs: uniqueTabs([...candidate.tabs, viewId]) }
           : candidate)
       };
-    });
+    }, true);
     if (changed) notifyRegion({ region: "main", paneId, viewId });
     return changed;
   };
@@ -88,7 +88,7 @@ export function createAutomationWorkspaceCommands(options: {
           tabs: uniqueTabs([...latest.rightSidebar.tabs, viewId])
         }
       };
-    });
+    }, true);
     if (changed) notifyRegion({ region: "right", paneId: "right-sidebar", viewId });
     return changed;
   };
@@ -105,7 +105,7 @@ export function createAutomationWorkspaceCommands(options: {
             bottomTimelineCollapsed: false,
             bottomDock: { ...current.bottomDock, expanded: true },
             maximizedWindowId: null
-          });
+          }, true);
         if (changed) notifyRegion({ region, paneId: "bottom-dock", viewId });
         return changed;
       }

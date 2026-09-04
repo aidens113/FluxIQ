@@ -6,6 +6,19 @@ import { normalizeAutomationWorkspacePrefs } from "./layout/persistence";
 import { automationWorkspaceRegionForView } from "./layout/regions";
 
 describe("Automation Studio strict workspace layout", () => {
+  it("migrates a restored Flow-scoped tab and its state to an object instance", () => {
+    const prefs = normalizeAutomationWorkspacePrefs({
+      ...defaultAutomationWorkspacePrefs(),
+      activeViewId: "flow-instructions",
+      panes: [{ id: "pane-main-1", activeViewId: "flow-instructions", tabs: ["flow-instructions"] }],
+      viewStates: { "flow-instructions": { flowId: "flow.checkout", selection: { kind: "flow", id: "flow.checkout" } } }
+    }, { hasFlow: true });
+    const instanceId = "flow-instructions::object::flow.checkout";
+    expect(prefs.panes[0]).toMatchObject({ activeViewId: instanceId, tabs: [instanceId] });
+    expect(prefs.viewStates[instanceId]).toMatchObject({ flowId: "flow.checkout" });
+    expect(prefs.viewStates["flow-instructions"]).toBeUndefined();
+  });
+
   it("migrates and deduplicates the legacy Flow editor ID while preserving canonical state", () => {
     const prefs = normalizeAutomationWorkspacePrefs({
       ...defaultAutomationWorkspacePrefs(),

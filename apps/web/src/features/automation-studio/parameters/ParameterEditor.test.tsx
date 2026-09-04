@@ -1,6 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { describe, expect, it, vi } from "vitest";
 import { AutomationNodeParameterEditor, automationParameterError } from "./ParameterEditor";
 
 describe("automationParameterError", () => {
@@ -25,6 +26,54 @@ describe("automationParameterError", () => {
 });
 
 describe("AutomationNodeParameterEditor reference picker", () => {
+  it("renders one parameter with interchangeable manual and state sources", () => {
+    const html = renderToStaticMarkup(
+      <AutomationNodeParameterEditor
+        node={{
+          parameters: [{ id: "message", label: "Message", valueType: "string" }],
+          parameterValues: { message: { $state: { path: "app.currentMessage", fallback: "Manual message" } } }
+        }}
+        referenceOptions={{ state: [{ id: "app.currentMessage", label: "Current message", detail: "string" }] }}
+        onChange={() => undefined}
+        onDescriptionChange={() => undefined}
+      />
+    );
+
+    expect(html).toContain("Message source");
+    expect(html).toContain("Manual value");
+    expect(html).toContain("State value");
+    expect(html).toContain('value="app.currentMessage"');
+    expect(html).toContain("last manual value remains the fallback");
+  });
+
+  it("preserves the manual value when switching to state and restores it when switching back", async () => {
+    const onChange = vi.fn();
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <AutomationNodeParameterEditor
+          node={{ parameters: [{ id: "message", label: "Message", valueType: "string" }], parameterValues: { message: "Manual message" } }}
+          referenceOptions={{ state: [{ id: "app.currentMessage", label: "Current message" }] }}
+          onChange={onChange}
+          onDescriptionChange={() => undefined}
+        />
+      );
+    });
+    await act(async () => renderer.root.findByProps({ "aria-label": "Message source" }).props.onChange({ target: { value: "state" } }));
+    expect(onChange).toHaveBeenLastCalledWith({ message: { $state: { path: "app.currentMessage", fallback: "Manual message" } } });
+    await act(async () => renderer.update(
+      <AutomationNodeParameterEditor
+        node={{ parameters: [{ id: "message", label: "Message", valueType: "string" }], parameterValues: { message: { $state: { path: "app.currentMessage", fallback: "Manual message" } } } }}
+        referenceOptions={{ state: [{ id: "app.currentMessage", label: "Current message" }] }}
+        onChange={onChange}
+        onDescriptionChange={() => undefined}
+      />
+    ));
+    await act(async () => renderer.root.findByProps({ "aria-label": "Message source" }).props.onChange({ target: { value: "manual" } }));
+    expect(onChange).toHaveBeenLastCalledWith({ message: "Manual message" });
+    await act(async () => renderer.unmount());
+  });
+
   it("renders friendly searchable options without exposing IDs", () => {
     const html = renderToStaticMarkup(
       <AutomationNodeParameterEditor

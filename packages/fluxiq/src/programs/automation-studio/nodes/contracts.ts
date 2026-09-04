@@ -49,6 +49,8 @@ export type AutomationNodeParameter = {
     placeholder?: string;
   };
   required?: boolean;
+  /** Parameters are state-bindable by default; set false to restrict this field to manual values. */
+  allowStateBinding?: boolean;
   example?: JsonValue;
   constraints?: {
     minimum?: number;
@@ -57,6 +59,14 @@ export type AutomationNodeParameter = {
     maxLength?: number;
     pattern?: string;
     integer?: boolean;
+  };
+};
+
+export type AutomationNodeParameterStateBinding = {
+  $state: {
+    path: string;
+    /** The last literal value, used when the selected state path is unavailable. */
+    fallback?: JsonValue;
   };
 };
 

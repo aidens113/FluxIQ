@@ -15,6 +15,10 @@ import type { createAutomationWorkspaceCommandPort } from "../workspace/commands
 import type { createAutomationWarmViewRegistry } from "../workspace/commands/warm-activation";
 import { DirtyViewGuard } from "../workspace/DirtyViewGuard";
 import type { useAutomationStudioStoreOwners } from "../stores";
+import {
+  automationStudioObjectViewInstanceId,
+  automationStudioViewObjectId
+} from "../views/view-registry";
 
 type Owners = ReturnType<typeof useAutomationStudioStoreOwners>;
 type WorkspaceCommands = ReturnType<typeof createAutomationWorkspaceCommands>;
@@ -78,8 +82,13 @@ export const AutomationStudioWorkspaceComposition = memo(function AutomationStud
     getPreferencesSaveStatus: props.workspace.store.getSaveStatus,
     getViewAdderOptions: (area) => {
       const context = props.project.getViewAdderContext();
+      const flowId = flowIdForSelection(context.selection);
+      const canonicalViews = props.views.instances.filter((view) => !automationStudioViewObjectId(view.id));
+      const contextualOpenViewIds = new Set(canonicalViews.flatMap((view) => (
+        props.views.openIds.has(automationStudioObjectViewInstanceId(view.id, flowId)) ? [view.id] : []
+      )));
       return automationViewAdderOptions(
-        props.views.instances,
+        canonicalViews,
         area,
         {
           hasProject: true,
@@ -88,16 +97,19 @@ export const AutomationStudioWorkspaceComposition = memo(function AutomationStud
           hasRecording: context.selectedRecording,
           hasSelection: Boolean(context.selection)
         },
-        props.views.openIds
+        contextualOpenViewIds
       );
     },
     replacePreferences: (command) => {
       props.workspace.updatePrefs(() => command.prefs as AutomationWorkspacePrefs, { persist: true });
     },
     addView: (command) => {
-      if (command.targetWindowId === "right-sidebar") props.workspace.commands.addRightTab(command.viewId);
-      else if (command.targetWindowId) props.workspace.commands.addPaneTab(command.targetWindowId, command.viewId);
-      else props.workspace.commands.openView(command.viewId);
+      const selection = props.project.getViewAdderContext().selection;
+      const flowId = flowIdForSelection(selection);
+      const instanceId = automationStudioObjectViewInstanceId(command.viewId, flowId);
+      if (command.targetWindowId === "right-sidebar") props.workspace.commands.addRightTab(instanceId);
+      else if (command.targetWindowId) props.workspace.commands.addPaneTab(command.targetWindowId, instanceId);
+      else props.workspace.commands.openView(instanceId);
     },
     arrangeLayout: (command) => {
       const preset = command.preset === "two-columns" ? "two-even"
@@ -156,6 +168,12 @@ export const AutomationStudioWorkspaceComposition = memo(function AutomationStud
     <DirtyViewGuard />
   </>;
 });
+
+function flowIdForSelection(selection: AutomationSelection | null): string | null {
+  if (selection?.kind === "flow") return selection.id;
+  if (selection?.kind === "editor-node" || selection?.kind === "editor-mode") return selection.flowId ?? null;
+  return null;
+}
 
 function rect(anchor: DOMRect) {
   return { top: anchor.top, right: anchor.right, bottom: anchor.bottom, left: anchor.left };

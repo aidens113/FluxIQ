@@ -4,7 +4,12 @@ import { useCallback } from "react";
 import type { NodeStatePhase } from "fluxiq/automation-studio";
 import type { AutomationSelection } from "../shared/selection-contracts";
 import type { AutomationWorkspacePrefs } from "../workspace/layout";
-import { automationStudioViewId } from "../views/view-registry";
+import {
+  automationStudioObjectViewInstanceId,
+  automationStudioViewBaseId,
+  automationStudioViewId,
+  automationStudioViewObjectId
+} from "../views/view-registry";
 import type { createAutomationWorkspaceCommands } from "../workspace/commands/workspace-commands";
 import type { AutomationLiveDomainCommands } from "./domain-commands";
 import type { AutomationStatePublication } from "../state/commands";
@@ -43,13 +48,18 @@ type NavigationOptions = {
 
 export function useAutomationSelectionNavigation(options: NavigationOptions) {
   const openView = useCallback((viewId: string, mode: "preview" | "new-pane-or-focus" = "preview") => {
-    options.commands.openView(viewId, mode);
-    if (viewId !== automationStudioViewId.flowEditor) return;
     const current = options.getSnapshot?.() ?? options;
+    const flowId = automationStudioViewObjectId(viewId)
+      ?? flowIdForSelection(current.selection)
+      ?? current.selectedFlow?.flowId
+      ?? null;
+    const instanceId = automationStudioObjectViewInstanceId(viewId, flowId);
+    options.commands.openView(instanceId, mode);
+    if (automationStudioViewBaseId(viewId) !== automationStudioViewId.flowEditor) return;
     if (current.selection?.kind === "flow"
       || current.selection?.kind === "editor-node"
       || current.selection?.kind === "editor-mode") return;
-    const savedSelection = current.workspacePrefs.viewStates?.[viewId]?.selection;
+    const savedSelection = current.workspacePrefs.viewStates?.[instanceId]?.selection;
     if (isAutomationSelection(savedSelection)) options.setSelection(savedSelection);
   }, [options]);
   const showRecordingPreview = useCallback(() => {
@@ -57,7 +67,7 @@ export function useAutomationSelectionNavigation(options: NavigationOptions) {
       ...current,
       bottomDock: { ...current.bottomDock, activeViewId: "recording-action-preview", expanded: true },
       bottomTimelineCollapsed: false
-    }), { persist: false });
+    }), { persist: true });
   }, [options.updatePrefs]);
   const selectAndFollow = useCallback((next: AutomationSelection, flowMode: "preview" | "new-pane-or-focus" = "preview") => {
     runAutomationPresentationTransaction(() => {
@@ -67,19 +77,20 @@ export function useAutomationSelectionNavigation(options: NavigationOptions) {
       options.setSelection(next);
       if ((next.kind === "editor-node" || next.kind === "editor-mode") && next.flowId) {
         options.updatePrefs((current) => {
-          const currentFlowState = current.viewStates?.[automationStudioViewId.flowEditor] ?? {};
+          const instanceId = automationStudioObjectViewInstanceId(automationStudioViewId.flowEditor, next.flowId);
+          const currentFlowState = current.viewStates?.[instanceId] ?? {};
           return {
             ...current,
             viewStates: {
               ...current.viewStates,
-              [automationStudioViewId.flowEditor]: {
+              [instanceId]: {
                 ...currentFlowState,
                 lastOpenFlowId: next.flowId,
                 selection: next
               }
             }
           };
-        }, { persist: false });
+        }, { persist: true });
       }
       const destinationViewId = next.kind === "recording" || next.kind === "timeline"
         ? automationStudioViewId.recordingTimeline
@@ -98,7 +109,7 @@ export function useAutomationSelectionNavigation(options: NavigationOptions) {
               selection: next
             }
           }
-        }), { persist: false });
+        }), { persist: true });
       }
       if (next.kind === "recording" || next.kind === "timeline") {
         options.setRecordingPrimaryKind("recording");
@@ -108,16 +119,17 @@ export function useAutomationSelectionNavigation(options: NavigationOptions) {
       if (next.kind === "policy") openView(automationStudioViewId.flowEditor);
       if (next.kind === "flow") {
         options.updatePrefs((current) => {
-          const currentFlowState = current.viewStates?.[automationStudioViewId.flowEditor] ?? {};
+          const instanceId = automationStudioObjectViewInstanceId(automationStudioViewId.flowEditor, next.id);
+          const currentFlowState = current.viewStates?.[instanceId] ?? {};
           if (currentFlowState.lastOpenFlowId === next.id && currentFlowState.selection === next) return current;
           return {
             ...current,
             viewStates: {
               ...current.viewStates,
-              [automationStudioViewId.flowEditor]: { ...currentFlowState, lastOpenFlowId: next.id, selection: next }
+              [instanceId]: { ...currentFlowState, lastOpenFlowId: next.id, selection: next }
             }
           };
-        }, { persist: false });
+        }, { persist: true });
         openView(automationStudioViewId.flowEditor, flowMode);
       }
     });
@@ -163,12 +175,12 @@ export function useAutomationSelectionNavigation(options: NavigationOptions) {
     const current = options.getSnapshot?.() ?? options;
     const recordingId = current.selectedRecording?.recordingId ?? current.timelineEntryById.get(entryId)?.recordingId;
     const activePane = current.workspacePrefs.panes.find((pane) => pane.id === current.workspacePrefs.activePaneId) ?? current.workspacePrefs.panes[0];
-    if (activePane?.activeViewId === automationStudioViewId.state && recordingId) return openTimelineEntryState(recordingId, entryId);
-    if (activePane?.activeViewId === automationStudioViewId.recordingTimeline || current.workspacePrefs.panes.some((pane) => pane.activeViewId === automationStudioViewId.recordingTimeline)) {
+    if (automationStudioViewBaseId(activePane?.activeViewId ?? "") === automationStudioViewId.state && recordingId) return openTimelineEntryState(recordingId, entryId);
+    if (automationStudioViewBaseId(activePane?.activeViewId ?? "") === automationStudioViewId.recordingTimeline || current.workspacePrefs.panes.some((pane) => automationStudioViewBaseId(pane.activeViewId) === automationStudioViewId.recordingTimeline)) {
       selectAndFollow({ kind: "timeline", id: entryId });
       return;
     }
-    if (current.workspacePrefs.panes.some((pane) => pane.activeViewId === automationStudioViewId.state) && recordingId) return openTimelineEntryState(recordingId, entryId);
+    if (current.workspacePrefs.panes.some((pane) => automationStudioViewBaseId(pane.activeViewId) === automationStudioViewId.state) && recordingId) return openTimelineEntryState(recordingId, entryId);
     selectAndFollow({ kind: "timeline", id: entryId });
   }, [openTimelineEntryState, options, selectAndFollow]);
   const openSubflow = useCallback(async (parentFlowId: string, subflowId: string, mode: "preview" | "new-pane-or-focus" = "preview", knownGraphFlowId?: string) => {
@@ -179,6 +191,12 @@ export function useAutomationSelectionNavigation(options: NavigationOptions) {
   }, [options.liveCommands, options.setActionStatus, selectAndFollow]);
 
   return { openState, openSubflow, openTimelineEntryState, openView, selectAndFollow, selectPreviewEntry };
+}
+
+function flowIdForSelection(selection: AutomationSelection | null): string | null {
+  if (selection?.kind === "flow") return selection.id;
+  if (selection?.kind === "editor-node" || selection?.kind === "editor-mode") return selection.flowId ?? null;
+  return null;
 }
 
 function publishState(

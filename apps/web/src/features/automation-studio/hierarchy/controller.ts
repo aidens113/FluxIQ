@@ -1,4 +1,4 @@
-import { automationStudioViewId } from "../views/view-registry";
+import { automationStudioObjectViewInstanceId, automationStudioViewId } from "../views/view-registry";
 import type { AutomationSelection } from "../shared/selection-contracts";
 import type { AutomationHierarchyNode } from "./contracts";
 import {
@@ -18,7 +18,7 @@ export type AutomationHierarchyControllerContext = {
   recordingPrimaryKind: "recording" | null;
   setRecordingPrimaryKind(kind: "recording" | null): void;
   setSelection(selection: AutomationSelection): void;
-  openView(viewId: AutomationHierarchyRoutableViewId, mode?: "preview" | "new-pane-or-focus"): void;
+  openView(viewId: string, mode?: "preview" | "new-pane-or-focus"): void;
   openSubflow?(node: AutomationHierarchyNode, mode: "preview" | "new-pane-or-focus"): void;
   scheduleReconciliation?(commit: () => void): void;
 };
@@ -59,16 +59,17 @@ export function createAutomationHierarchyController(
       const targetNode = previewPrimaryNode(node, context);
       const resolvedTarget = automationHierarchyOpenTargetForNode(targetNode);
       const target = node.kind === "subflow" ? { ...resolvedTarget, navigation: "subflow" as const } : resolvedTarget;
-      if (target.navigation === "subflow" && context.openSubflow) {
+      const subflowOwnsSelection = target.navigation === "subflow" && Boolean(context.openSubflow);
+      if (subflowOwnsSelection && context.openSubflow) {
         context.openSubflow(node, mode);
       } else {
-        context.openView(target.viewId, mode);
+        context.openView(automationStudioObjectViewInstanceId(target.viewId, flowIdForSelection(target.selection)), mode);
       }
       const reconcile = () => {
         if (context.recordingPrimaryKind !== target.recordingPrimaryKind) {
           context.setRecordingPrimaryKind(target.recordingPrimaryKind);
         }
-        if (target.selection) context.setSelection(target.selection);
+        if (!subflowOwnsSelection && target.selection) context.setSelection(target.selection);
       };
       if (context.scheduleReconciliation) context.scheduleReconciliation(reconcile);
       else reconcile();
@@ -79,7 +80,7 @@ export function createAutomationHierarchyController(
       const targetSelection: AutomationSelection = node.kind === "flow"
         ? { kind: "flow", id: node.sourceId }
         : { kind: "policy", id: node.sourceId };
-      context.openView(automationStudioViewId.settings, "preview");
+      context.openView(automationStudioObjectViewInstanceId(automationStudioViewId.settings, flowIdForSelection(targetSelection)), "preview");
       store.previewPrimary(automationHierarchySettingsPrimaryNodeId(node, context.nodes));
       const reconcile = () => {
         if (context.recordingPrimaryKind !== null) context.setRecordingPrimaryKind(null);
@@ -92,9 +93,17 @@ export function createAutomationHierarchyController(
       const context = readContext();
       const node = context.nodes.find((candidate) => candidate.id === nodeId);
       const activeDefaultExpanded = node?.metadata?.defaultCollapsed === true
-        && context.selection?.kind === "flow"
-        && context.selection.id === node.metadata.graphFlowId;
+        && (
+          (context.selection?.kind === "flow" && context.selection.id === node.metadata.graphFlowId)
+          || ((context.selection?.kind === "editor-node" || context.selection?.kind === "editor-mode") && context.selection.flowId === node.metadata.graphFlowId)
+        );
       store.toggleFolder(nodeId, node?.metadata?.defaultCollapsed === true, activeDefaultExpanded);
     }
   };
+}
+
+function flowIdForSelection(selection: AutomationSelection | null): string | null {
+  if (selection?.kind === "flow") return selection.id;
+  if (selection?.kind === "editor-node" || selection?.kind === "editor-mode") return selection.flowId ?? null;
+  return null;
 }

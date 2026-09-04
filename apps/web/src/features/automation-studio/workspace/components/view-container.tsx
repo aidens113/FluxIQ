@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, Plus, Search, X, XCircle } from "lucide-react";
-import { useId, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import type { Blocks } from "lucide-react";
 import type { AutomationViewInstance } from "../../views/view-types";
 import { useUiRenderMetric } from "../../../programs/ui-performance";
@@ -37,7 +37,20 @@ export function AutomationViewContainer(props: {
   const activeView = props.tabs.find((tab) => tab.id === props.activeViewId);
   const Icon = activeView?.icon ?? props.icon;
   const activeTabDomId = `automation-tab-${props.windowId}-${props.activeViewId}`.replace(/[^a-zA-Z0-9_-]/g, "-");
+  const tabOrderKey = props.tabs.map((tab) => tab.id).join("\u001f");
   const visiblePickerTabs = props.tabs.filter((tab) => tab.label.toLowerCase().includes(tabQuery.trim().toLowerCase()));
+  useLayoutEffect(() => {
+    const container = tabsRef.current;
+    const selectedTab = container?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+    if (!container || !selectedTab) return;
+    const left = automationActiveTabScrollLeft({
+      clientWidth: container.clientWidth,
+      scrollLeft: container.scrollLeft,
+      tabLeft: selectedTab.offsetLeft,
+      tabWidth: selectedTab.offsetWidth
+    });
+    if (left !== container.scrollLeft) container.scrollTo({ left, behavior: "auto" });
+  }, [props.active, props.activeViewId, tabOrderKey]);
   const requestTabSelection = (viewId: string) => {
     props.onTabSelect(viewId);
   };
@@ -183,4 +196,19 @@ export function AutomationViewContainer(props: {
       </div>      <div aria-labelledby={activeTabDomId} className="automation-view-body" id={`automation-panel-${props.windowId}`} role="tabpanel">{props.children}</div>
     </section>
   );
+}
+
+export function automationActiveTabScrollLeft(input: {
+  clientWidth: number;
+  scrollLeft: number;
+  tabLeft: number;
+  tabWidth: number;
+}): number {
+  const edgePadding = 6;
+  const visibleLeft = input.scrollLeft;
+  const visibleRight = visibleLeft + input.clientWidth;
+  const tabRight = input.tabLeft + input.tabWidth;
+  if (input.tabLeft < visibleLeft + edgePadding) return Math.max(0, input.tabLeft - edgePadding);
+  if (tabRight > visibleRight - edgePadding) return Math.max(0, tabRight - input.clientWidth + edgePadding);
+  return input.scrollLeft;
 }

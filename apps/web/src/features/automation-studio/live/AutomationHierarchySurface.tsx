@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import type { AutomationSelection } from "../shared/selection-contracts";
 import type {
   AutomationHierarchyAction,
@@ -12,12 +12,14 @@ import {
   type AutomationHierarchyStaticMergeInput
 } from "../hierarchy/browser-hierarchy-paging";
 import type { AutomationHierarchyPageInfo } from "../hierarchy/paged-cache";
-import type { AutomationHierarchyRoutableViewId } from "../hierarchy/routing";
 import type { AutomationHierarchyUiCoordinator } from "../hierarchy/ui-coordinator";
 import { AutomationProjectHierarchySidebar } from "../hierarchy/AutomationProjectHierarchySidebar";
 import type { AutomationWorkspaceCommandPort } from "../workspace/commands/contracts";
 import type { AutomationWorkspaceRenderStore } from "../workspace/render-store";
 import { useAutomationWorkspaceSelector } from "../workspace/shell/selectors";
+import { automationActiveWorkspaceSelection } from "./active-workspace-selection";
+import { useActiveWorkspaceSelectionSync } from "./useActiveWorkspaceSelectionSync";
+import { automationStudioViewBaseId } from "../views/view-registry";
 
 type AutomationHierarchySurfaceCommonProps = {
   childPageInfo?: Record<string, AutomationHierarchyPageInfo>;
@@ -26,7 +28,7 @@ type AutomationHierarchySurfaceCommonProps = {
   nodes: AutomationHierarchyNode[];
   onCloseProject(): void;
   openSubflow(node: AutomationHierarchyNode, mode: "preview" | "new-pane-or-focus"): void;
-  openView(viewId: AutomationHierarchyRoutableViewId, mode?: "preview" | "new-pane-or-focus"): void;
+  openView(viewId: string, mode?: "preview" | "new-pane-or-focus"): void;
   port: AutomationWorkspaceCommandPort;
   projectName: string;
   recordingPrimaryKind: "recording" | null;
@@ -56,11 +58,19 @@ export function AutomationHierarchySurface(props: AutomationHierarchySurfaceProp
   const workspace = useAutomationWorkspaceSelector(props.store, (prefs) => {
     const activePane = prefs.panes.find((pane) => pane.id === prefs.activePaneId) ?? prefs.panes[0];
     return {
-      activeViewId: activePane?.activeViewId ?? prefs.activeViewId,
-      collapsed: prefs.leftSidebarCollapsed
+      activeViewId: automationStudioViewBaseId(activePane?.activeViewId ?? prefs.activeViewId),
+      collapsed: prefs.leftSidebarCollapsed,
+      viewStates: prefs.viewStates
     };
   }, (left, right) => left.activeViewId === right.activeViewId
-    && left.collapsed === right.collapsed);
+    && left.collapsed === right.collapsed
+    && left.viewStates === right.viewStates);
+  const currentPrefs = props.store.getPrefs();
+  const persistActiveViewSelection = useCallback((update: (prefs: typeof currentPrefs) => typeof currentPrefs) => {
+    props.port.commit(update, { persist: true, scope: "workspace" });
+  }, [props.port]);
+  useActiveWorkspaceSelectionSync(currentPrefs, props.selection, props.setSelection, persistActiveViewSelection);
+  const hierarchySelection = automationActiveWorkspaceSelection(currentPrefs, props.selection);
   const projectId = props.projectId ?? null;
   const staticMergeRef = useRef<AutomationHierarchyStaticMergeInput>(staticMerge(props));
   staticMergeRef.current = staticMerge(props);
@@ -110,7 +120,7 @@ export function AutomationHierarchySurface(props: AutomationHierarchySurfaceProp
       projectName={props.projectName}
       recordingPrimaryKind={props.recordingPrimaryKind}
       requestAction={props.requestAction}
-      selection={props.selection}
+      selection={hierarchySelection}
       setRecordingPrimaryKind={props.setRecordingPrimaryKind}
       setSelection={props.setSelection}
       {...(pagingState.childPageInfo ? { childPageInfo: pagingState.childPageInfo } : {})}

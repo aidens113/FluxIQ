@@ -13,6 +13,7 @@ import { automationSelectionSame } from "../model/live-helpers";
 import { commitAutomationStudioMutation } from "../stores/mutation-transaction-store";
 import { runAutomationPresentationTransaction } from "../presentation/transaction";
 import { automationViewStateReferencesAny } from "./view-state-references";
+import { bindAutomationActiveFlowView } from "./active-workspace-selection";
 
 type Options = {
   activeProjectId: string | null;
@@ -48,8 +49,9 @@ export function useAutomationHierarchyCommandBridge(options: Options) {
   const setTreeSelection = useCallback((next: AutomationSelection) => {
     runAutomationPresentationTransaction(() => {
       options.setSelection((current: AutomationSelection | null) => automationSelectionSame(current, next) ? current : next);
+      options.updatePrefs((current) => bindAutomationActiveFlowView(current, next), { persist: true });
     });
-  }, [options.setSelection]);
+  }, [options.setSelection, options.updatePrefs]);
   const closeDeletedViews = stable((source, deletingNodes: AutomationHierarchyNode[]) => {
     const current = withSnapshot(source);
     const sourceIds = new Set(deletingNodes.map((node) => node.sourceId).filter((id): id is string => Boolean(id)));

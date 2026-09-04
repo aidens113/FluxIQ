@@ -43,7 +43,7 @@ export function mergeFlowDetails(current: any[], incoming: any[]) {
     if (replacement === entry || (replacement.flow === entry.flow && replacement.source === entry.source && replacement.readOnly === entry.readOnly)) return entry;
     if (keepCurrentFlowDetail(entry?.flow, replacement?.flow)) return entry;
     changed = true;
-    return replacement;
+    return retainFlowCatalogMetadata(entry, replacement);
   });
   for (const entry of incoming) {
     if (entry?.flow?.flowId && !next.some((item) => item?.flow?.flowId === entry.flow.flowId)) {
@@ -52,6 +52,26 @@ export function mergeFlowDetails(current: any[], incoming: any[]) {
     }
   }
   return changed ? next : current;
+}
+
+function retainFlowCatalogMetadata(currentEntry: any, replacementEntry: any): any {
+  const currentMetadata = currentEntry?.flow?.metadata;
+  const replacementFlow = replacementEntry?.flow;
+  if (!replacementFlow || !currentMetadata || typeof currentMetadata !== "object" || Array.isArray(currentMetadata)) {
+    return replacementEntry;
+  }
+  const { summaryOnly: _summaryOnly, ...catalogMetadata } = currentMetadata;
+  if (!Object.keys(catalogMetadata).length) return replacementEntry;
+  return {
+    ...replacementEntry,
+    flow: {
+      ...replacementFlow,
+      metadata: {
+        ...catalogMetadata,
+        ...(replacementFlow.metadata ?? {})
+      }
+    }
+  };
 }
 
 function keepCurrentFlowDetail(current: any, incoming: any): boolean {

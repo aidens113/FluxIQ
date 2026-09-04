@@ -3,16 +3,19 @@
 import { automationInspectorReferenceOptions, type InspectorPanelContext } from "../../inspector";
 import { automationGraphDraftIdentity } from "../../graph/draft-store";
 import type { AutomationProjectViewModelCache } from "../../model/project-view-model-cache";
+import { isAutomationSelection } from "../../model/live-helpers";
 import type { AutomationSelection } from "../../shared/selection-contracts";
 import { automationEntityCollectionSelector, automationEntityScope } from "../../stores/project-data-store";
 import type { AutomationWorkspacePrefs } from "../../workspace/layout";
-import { automationStudioViewId } from "../../views/view-registry";
+import { automationWorkspaceViewStateForBase } from "../../workspace/view-state";
+import { automationStudioViewBaseId, automationStudioViewId, automationStudioViewObjectId } from "../../views/view-registry";
 import { createAutomationDirectViewConnector, type AutomationDirectViewConnectorState } from "./direct-view-connector";
 
 export type AutomationCanonicalConnectorScope = {
   projectId: string | null;
   projectView: AutomationProjectViewModelCache;
   getWorkspacePrefs(): AutomationWorkspacePrefs;
+  viewInstanceId?: string;
   loadFlowDetail(flowId: string, options?: { refresh?: boolean }): Promise<unknown>;
   loadFlowMetadata(flowId: string): Promise<void>;
   loadNodeDefinitions(): Promise<void>;
@@ -68,19 +71,38 @@ const selectedFlowScopes = () => [
   "resource:snapshot"
 ] as const;
 
-export function selectAutomationConnectorFlow(state: AutomationDirectViewConnectorState, scope: AutomationCanonicalConnectorScope) {
+export function selectAutomationConnectorFlow(
+  state: AutomationDirectViewConnectorState,
+  scope: AutomationCanonicalConnectorScope,
+  viewId?: string
+) {
   const selection = state.selection.selection;
   const prefs = scope.getWorkspacePrefs();
   const resolvedProjectFlow = scope.projectView.read()?.selectedTaskGraph ?? null;
-  const selectedId = selection?.kind === "flow"
+  const activePane = prefs.panes?.find((pane) => pane.id === prefs.activePaneId) ?? prefs.panes?.[0];
+  const requestedViewId = viewId ?? activePane?.activeViewId ?? prefs.activeViewId ?? "";
+  const boundViewId = scope.viewInstanceId
+    && automationStudioViewBaseId(scope.viewInstanceId) === automationStudioViewBaseId(requestedViewId)
+    ? scope.viewInstanceId
+    : requestedViewId;
+  const boundState = prefs.viewStates?.[boundViewId];
+  const boundSelection = isAutomationSelection(boundState?.selection) ? boundState.selection : null;
+  const boundFlowId = typeof boundState?.flowId === "string"
+    ? boundState.flowId
+    : boundSelection?.kind === "flow"
+      ? boundSelection.id
+      : (boundSelection?.kind === "editor-node" || boundSelection?.kind === "editor-mode") && typeof boundSelection.flowId === "string"
+        ? boundSelection.flowId
+        : null;
+  const selectedId = automationStudioViewObjectId(boundViewId) ?? boundFlowId ?? (selection?.kind === "flow"
     ? selection.id
     : (selection?.kind === "editor-node" || selection?.kind === "editor-mode") && selection.flowId
       ? selection.flowId
-      : typeof prefs.viewStates?.[automationStudioViewId.flowEditor]?.lastOpenFlowId === "string"
-        ? prefs.viewStates[automationStudioViewId.flowEditor]!.lastOpenFlowId as string
+      : typeof automationWorkspaceViewStateForBase(prefs, automationStudioViewId.flowEditor)?.lastOpenFlowId === "string"
+        ? automationWorkspaceViewStateForBase(prefs, automationStudioViewId.flowEditor)!.lastOpenFlowId as string
         : typeof resolvedProjectFlow?.flowId === "string"
           ? resolvedProjectFlow.flowId
-          : null;
+          : null);
   if (!selectedId) return { entry: null, flow: null };
   const entry = state.projectData.entities.flows.get(selectedId) as any;
   return {
@@ -113,9 +135,9 @@ export const AutomationFlowEditorConnectedView = createAutomationDirectViewConne
   }) as any,
   projectScopes: flowScopes,
   selectionScopes,
-  activationKey: (state, scope: AutomationCanonicalConnectorScope) => selectAutomationConnectorFlow(state, scope).flow?.flowId ?? "none",
+  activationKey: (state, scope: AutomationCanonicalConnectorScope) => selectAutomationConnectorFlow(state, scope, automationStudioViewId.flowEditor).flow?.flowId ?? "none",
   onActive: (state, scope: AutomationCanonicalConnectorScope, model: any) => {
-    const flow = selectAutomationConnectorFlow(state, scope);
+    const flow = selectAutomationConnectorFlow(state, scope, automationStudioViewId.flowEditor);
     if (flow.flow?.flowId && (!flow.entry || (flow.entry.source === "canonical" && flow.flow.metadata?.summaryOnly === true))) {
       void scope.loadFlowDetail(flow.flow.flowId, { refresh: true });
     }
@@ -189,15 +211,15 @@ function createFlowDetailConnector(id:
     placeholder: (scope: AutomationCanonicalConnectorScope) => ({ flow: null, projectId: scope.projectId }) as any,
     projectScopes: selectedFlowScopes,
     selectionScopes,
-    activationKey: (state, scope) => selectAutomationConnectorFlow(state, scope).flow?.flowId ?? "none",
+    activationKey: (state, scope) => selectAutomationConnectorFlow(state, scope, id).flow?.flowId ?? "none",
     onActive: (state, scope) => {
-      const selected = selectAutomationConnectorFlow(state, scope);
+      const selected = selectAutomationConnectorFlow(state, scope, id);
       if (selected.flow?.flowId && (!selected.entry || (selected.entry.source === "canonical" && selected.flow.metadata?.summaryOnly === true))) {
         void scope.loadFlowDetail(selected.flow.flowId, { refresh: true });
       }
     },
     selectModel: (state, scope) => ({
-      flow: selectAutomationConnectorFlow(state, scope).flow,
+      flow: selectAutomationConnectorFlow(state, scope, id).flow,
       projectId: scope.projectId
     }) as any
   });
@@ -213,17 +235,17 @@ export const AutomationAdaptationsConnectedView = createAutomationDirectViewConn
   placeholder: (scope: AutomationCanonicalConnectorScope) => ({ flow: null, projectId: scope.projectId }),
   projectScopes: selectedFlowScopes,
   selectionScopes,
-  activationKey: (state, scope: AutomationCanonicalConnectorScope) => selectAutomationConnectorFlow(state, scope).flow?.flowId ?? "none",
+  activationKey: (state, scope: AutomationCanonicalConnectorScope) => selectAutomationConnectorFlow(state, scope, automationStudioViewId.adaptations).flow?.flowId ?? "none",
   onActive: (state, scope: AutomationCanonicalConnectorScope) => {
-    const selected = selectAutomationConnectorFlow(state, scope);
+    const selected = selectAutomationConnectorFlow(state, scope, automationStudioViewId.adaptations);
     if (selected.flow?.flowId && (!selected.entry || (selected.entry.source === "canonical" && selected.flow.metadata?.summaryOnly === true))) {
       void scope.loadFlowDetail(selected.flow.flowId, { refresh: true });
     }
   },
   selectModel: (state, scope: AutomationCanonicalConnectorScope) => {
       const prefs = scope.getWorkspacePrefs();
-      const flow = selectAutomationConnectorFlow(state, scope).flow;
-      const saved = prefs.viewStates?.[automationStudioViewId.adaptations];
+      const flow = selectAutomationConnectorFlow(state, scope, automationStudioViewId.adaptations).flow;
+      const saved = prefs.viewStates?.[scope.viewInstanceId ?? automationStudioViewId.adaptations];
       return {
         flow,
         projectId: scope.projectId,
@@ -243,7 +265,7 @@ export const AutomationRuntimeConnectedView = createAutomationDirectViewConnecto
   projectScopes: runtimeScopes,
   selectionScopes,
   selectModel: (state, scope) => {
-      const flow = selectAutomationConnectorFlow(state, scope).flow;
+      const flow = selectAutomationConnectorFlow(state, scope, automationStudioViewId.runtime).flow;
       const canonical = resource<any>(state, "snapshot", null)?.payload?.canonical ?? emptyRecord;
       const pipeline = resource(state, "pipelineArtifacts", emptyPipeline);
       const timelines = collection(state, "timelines");
@@ -322,7 +344,8 @@ export const AutomationInspectorConnectedView = createAutomationDirectViewConnec
             flow: view.selectedTaskGraph,
             nodeDefinitions: view.availableNodeDefinitions,
             policies: view.policies,
-            pipelineArtifacts: resource(state, "pipelineArtifacts", emptyPipeline)
+            pipelineArtifacts: resource(state, "pipelineArtifacts", emptyPipeline),
+            signals: view.signals
           })
           : {},
         statePanel: null

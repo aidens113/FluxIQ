@@ -37,6 +37,7 @@ export function InspectorPanel(props: {
         {props.identity ? <small>{props.identity.label}</small> : null}
         {props.identity?.breadcrumb.length ? <nav aria-label="Selected object path">{props.identity.breadcrumb.map((item, index) => <span key={item}>{index ? " / " : ""}{item}</span>)}</nav> : null}
       </header>
+      {props.identity && props.model?.primaryContent ? <div className="automation-inspector-primary">{props.model.primaryContent}</div> : null}
       {props.identity ? <div className="automation-inspector-tools">
         <button aria-label="Copy selected object ID" className="button" onClick={() => void copySelectionId()} title="Copy selected object ID" type="button">{copyStatus === "Copied" ? <Check size={14} aria-hidden /> : <Copy size={14} aria-hidden />}{copyStatus || "Copy ID"}</button>
         {props.identity.href && props.identity.openLabel ? <a className="button" href={props.identity.href}><ExternalLink size={14} aria-hidden />{props.identity.openLabel}</a> : null}

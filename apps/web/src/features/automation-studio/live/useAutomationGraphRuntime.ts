@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { notifyGlobalAlert } from "../../programs/shared-ui";
 import type { AutomationWorkspacePrefs } from "../workspace/layout";
-import { automationStudioViewId } from "../views/view-registry";
+import { automationStudioViewBaseId, automationStudioViewId } from "../views/view-registry";
 import type { AutomationGraphFocusRequest } from "../flow-editor/flow-editor-types";
 import {
   automationGraphDerivationKeys,
@@ -50,7 +50,7 @@ export function useAutomationGraphRuntime(options: GraphRuntimeOptions) {
   const [derivationSnapshot, setDerivationSnapshot] = useState(() => derivationJob.getSnapshot());
   const draftKey = automationGraphDraftIdentity(options.selectedTaskGraph);
   const draft = draftKey ? options.taskGraphDrafts[draftKey] ?? null : null;
-  const graphVisible = options.workspacePrefs.panes.some((pane) => pane.activeViewId === automationStudioViewId.flowEditor);
+  const graphVisible = options.workspacePrefs.panes.some((pane) => automationStudioViewBaseId(pane.activeViewId) === automationStudioViewId.flowEditor);
   const problemsVisible = options.workspacePrefs.panes.some((pane) => pane.activeViewId === automationStudioViewId.problems)
     || (!options.workspacePrefs.rightSidebar.collapsed
       && !options.workspacePrefs.rightSidebarCollapsed

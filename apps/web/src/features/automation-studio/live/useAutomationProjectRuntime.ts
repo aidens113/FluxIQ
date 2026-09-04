@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import type { CurrentUser } from "../../programs/types";
-import { automationStudioCurrentSearchParams, isAutomationSelection, replaceAutomationStudioBrowserUrl } from "../model/live-helpers";
+import { automationStudioCurrentSearchParams, replaceAutomationStudioBrowserUrl } from "../model/live-helpers";
 import { automationStudioDeepLinkParams } from "../navigation";
 import { useAutomationProjectDeepLink, useAutomationProjectLifecycle, type AutomationProjectHydration } from "../project";
 import { defaultAutomationWorkspacePrefs, normalizeAutomationWorkspacePrefs, type AutomationWorkspacePrefs } from "../workspace/layout";
 import { automationWorkspacePrefsSameRuntimeState } from "../model/workspace-persistence";
 import { mergeById } from "../model/project-artifacts";
 import { mergeFlowDetails, mergeRecordingDetail } from "../model/project-change-reconciliation";
+import { automationActiveWorkspaceSelection, bindAutomationUnboundFlowViews } from "./active-workspace-selection";
 import { projectRuntimeSummaryFlowState, projectRuntimeSummaryPipelineState, projectRuntimeSummaryProjection, projectRuntimeSummaryRecordingState } from "../model/project-runtime-summary";
 import type { AutomationLiveDomainCommands } from "./domain-commands";
 import type { useAutomationStudioFoundation } from "./useAutomationStudioFoundation";
@@ -93,7 +94,9 @@ export function useAutomationProjectRuntime(options: Options) {
   const commit = useCallback((projectId: string, hydration: AutomationProjectHydration) => {
     if (activeProjectRef.current !== projectId) return;
     const commitGeneration = options.foundation.projectGeneration.current();
-    const loadedPrefs = normalizeAutomationWorkspacePrefs(hydration.hierarchy.workspacePrefs ?? defaultAutomationWorkspacePrefs());
+    const loadedPrefs = bindAutomationUnboundFlowViews(normalizeAutomationWorkspacePrefs(
+      hydration.hierarchy.workspacePrefs ?? defaultAutomationWorkspacePrefs()
+    ));
     options.hierarchy.setCustomNodes(hydration.hierarchy.customHierarchyNodes);
     options.hierarchy.setDeletedIds(hydration.hierarchy.deletedHierarchyIds);
     const openingUi = openingUiRevisionRef.current;
@@ -104,9 +107,9 @@ export function useAutomationProjectRuntime(options: Options) {
     if (workspaceIsUntouched) options.workspace.replacePrefs(loadedPrefs);
     const cacheHydrationRevision = options.workspace.getPrefsRevision();
     if (hydration.summary) applySummary(hydration.summary);
-    const savedActiveViewSelection = loadedPrefs.viewStates?.[loadedPrefs.activeViewId]?.selection;
-    if (workspaceIsUntouched && isAutomationSelection(savedActiveViewSelection)) {
-      options.foundation.stores.selection.select(savedActiveViewSelection);
+    const restoredSelection = automationRestoredWorkspaceSelection(loadedPrefs);
+    if (workspaceIsUntouched && restoredSelection) {
+      options.foundation.stores.selection.select(restoredSelection);
     }
     if (workspaceIsUntouched) options.foundation.uiCache.hydrateWorkspacePrefs({
       projectId,
@@ -235,4 +238,8 @@ export function useAutomationProjectRuntime(options: Options) {
     return recording;
   }, [options.data, options.foundation.liveCommands, options.schedule]);
   return { ...lifecycle, activeProjectRef, loadFlowDetails, loadNodeDefinitions, loadRecording, loadTimeline, notifyChanged, refreshRuntime };
+}
+
+export function automationRestoredWorkspaceSelection(prefs: AutomationWorkspacePrefs) {
+  return automationActiveWorkspaceSelection(prefs, null);
 }

@@ -1,4 +1,4 @@
-import { automationStudioViewId, type AutomationStudioViewMigrationContext } from "../../views/view-registry";
+import { automationStudioObjectViewInstanceId, automationStudioViewId, automationStudioViewObjectId, type AutomationStudioViewMigrationContext } from "../../views/view-registry";
 import type { AutomationWorkspaceArea, AutomationWorkspacePrefs, AutomationWorkspaceWindow } from "./contracts";
 import { automationBottomDockMaxHeight, automationBottomDockMinHeight, defaultAutomationWorkspacePrefs, defaultAutomationWorkspaceWindows } from "./defaults";
 import { normalizeAutomationMainSplitRatios } from "./mutations";
@@ -59,7 +59,19 @@ export function normalizeAutomationWorkspacePrefs(
     : normalizedWindows;
   const rightSidebarCollapsed = Boolean(value.rightSidebarCollapsed ?? value.rightSidebar?.collapsed);
   const mainLayoutPreset = normalizeAutomationStrictMainLayoutPreset(sourceValue.mainLayoutPreset, windows);
-  const panes = normalizeAutomationWorkspacePanes(sourceValue.panes, windows, value.activeWindowId, mainLayoutPreset, context);
+  const sourceViewStates = value.viewStates && typeof value.viewStates === "object" && !Array.isArray(value.viewStates) ? value.viewStates : {};
+  const instanceIdForSavedBinding = (viewId: string) => {
+    if (automationStudioViewObjectId(viewId)) return viewId;
+    const state = sourceViewStates[viewId];
+    const flowId = state && typeof state.flowId === "string" && state.flowId ? state.flowId : null;
+    return automationStudioObjectViewInstanceId(viewId, flowId);
+  };
+  const panes = normalizeAutomationWorkspacePanes(sourceValue.panes, windows, value.activeWindowId, mainLayoutPreset, context)
+    .map((pane) => {
+      const tabs = pane.tabs.map(instanceIdForSavedBinding).filter((tab, index, allTabs) => allTabs.indexOf(tab) === index);
+      const activeViewId = instanceIdForSavedBinding(pane.activeViewId);
+      return { ...pane, tabs, activeViewId: tabs.includes(activeViewId) ? activeViewId : tabs[0] ?? activeViewId };
+    });
   const activePaneId = panes.some((item) => item.id === value.activePaneId)
     ? value.activePaneId
     : panes.find((item) => item.tabs.includes(String(value.activeViewId ?? "")))?.id ?? panes[0]?.id ?? "";
@@ -67,9 +79,8 @@ export function normalizeAutomationWorkspacePrefs(
   const activeViewId = activePane?.activeViewId ?? fallback.activeViewId;
   const rightSidebar = normalizeAutomationRightSidebarPrefs(sourceValue.rightSidebar, windows, rightSidebarCollapsed, context);
   const bottomDock = normalizeAutomationBottomDockPrefs(sourceValue.bottomDock, windows);
-  const sourceViewStates = value.viewStates && typeof value.viewStates === "object" && !Array.isArray(value.viewStates) ? value.viewStates : {};
   const viewStates = Object.entries(sourceViewStates).reduce<Record<string, Record<string, unknown>>>((result, [viewId, state]) => {
-    const canonicalId = canonicalAutomationWorkspaceViewId(viewId, context);
+    const canonicalId = instanceIdForSavedBinding(canonicalAutomationWorkspaceViewId(viewId, context));
     if (canonicalId !== viewId && Object.prototype.hasOwnProperty.call(sourceViewStates, canonicalId)) return result;
     result[canonicalId] = state;
     return result;

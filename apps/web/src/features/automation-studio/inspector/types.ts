@@ -7,6 +7,8 @@ export type InspectorSectionModel = { title: string; rows: InspectorRow[] };
 export type InspectorPanelModel = {
   sections: InspectorSectionModel[];
   widgets?: InspectorWidgetModel[];
+  /** High-priority interactive content rendered directly below the Inspector identity. */
+  primaryContent?: ReactNode;
   customContent?: ReactNode;
   provenance?: { current: string; source: string };
 };
@@ -22,7 +24,7 @@ export type InspectorIdentity = {
 
 export type InspectorReferenceOption = { id: string; label: string; detail?: string };
 export type InspectorReferenceOptions = Partial<Record<
-  "action" | "task" | "policy" | "routine" | "database-collection" | "variable",
+  "action" | "task" | "policy" | "routine" | "database-collection" | "variable" | "state",
   InspectorReferenceOption[]
 >>;
 

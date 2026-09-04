@@ -1,7 +1,8 @@
 import type { AutomationViewInstance } from "../../views/view-types";
-import { automationStudioViewDefinition } from "../../views/view-registry";
+import { automationStudioViewDefinition, automationStudioViewObjectId } from "../../views/view-registry";
 
 export function viewTitle(view: AutomationViewInstance): string {
+  if (automationStudioViewObjectId(view.id)) return view.label;
   const canonical = automationStudioViewDefinition(view.id, { hasFlow: true });
   if (canonical) return canonical.label;
   if (view.type === "design") return "Flow";

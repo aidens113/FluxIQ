@@ -52,21 +52,68 @@ export function selectAutomationHierarchyEffectiveCollapsedIds(input: {
 }): string[] {
   const expandedIds = new Set(input.expandedDefaultCollapsedIds);
   const explicitlyCollapsedIds = new Set(input.collapsedFolderIds);
-  const activeGraphFlowId = input.selection?.kind === "flow" ? input.selection.id : null;
+  const activeGraphFlowId = automationHierarchySelectionFlowId(input.selection);
   return [
     ...input.collapsedFolderIds,
     ...input.nodes
       .filter((node) => node.metadata?.defaultCollapsed === true
         && !expandedIds.has(node.id)
-        && (node.metadata?.graphFlowId !== activeGraphFlowId || explicitlyCollapsedIds.has(node.id)))
+        && (
+          node.metadata?.graphFlowId !== activeGraphFlowId
+          || explicitlyCollapsedIds.has(node.id)
+        ))
       .map((node) => node.id)
   ];
 }
 
+export function automationHierarchyDefaultContainersForSelection(
+  nodes: AutomationHierarchyNode[],
+  selection: AutomationSelection | null,
+  explicitlyCollapsedIds: readonly string[]
+): string[] {
+  const selectedFlowId = automationHierarchySelectionFlowId(selection);
+  if (!selectedFlowId) return [];
+  const collapsedIds = new Set(explicitlyCollapsedIds);
+  return nodes
+    .filter((node) => node.metadata?.defaultCollapsed === true
+      && node.metadata?.graphFlowId === selectedFlowId
+      && !collapsedIds.has(node.id))
+    .map((node) => node.id);
+}
+
+export function automationHierarchyAncestorContainersForSelection(
+  nodes: AutomationHierarchyNode[],
+  selection: AutomationSelection | null,
+  activeViewId?: string
+): string[] {
+  const selectedFlowId = automationHierarchySelectionFlowId(selection);
+  if (!selectedFlowId) return [];
+  const target = nodes.find((node) => Boolean(
+    activeViewId
+    && node.viewId === activeViewId
+    && node.flowId === selectedFlowId
+  )) ?? nodes.find((node) => Boolean(
+    (node.kind === "flow" && node.sourceId === selectedFlowId)
+    || (node.kind === "subflow" && node.metadata?.graphFlowId === selectedFlowId)
+  ));
+  if (!target) return [];
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const ancestors: string[] = [];
+  const visited = new Set<string>();
+  let parentId = target.parentId;
+  while (parentId && !visited.has(parentId)) {
+    visited.add(parentId);
+    ancestors.unshift(parentId);
+    parentId = byId.get(parentId)?.parentId ?? null;
+  }
+  return ancestors;
+}
+
 export function automationHierarchyNodeMatchesSelection(node: AutomationHierarchyNode, selection: AutomationSelection | null): boolean {
+  const selectedFlowId = automationHierarchySelectionFlowId(selection);
   return Boolean(node.sourceId && (
-    (selection?.kind === "flow" && node.kind === "flow" && selection.id === node.sourceId)
-    || (selection?.kind === "flow" && node.kind === "subflow" && selection.id === node.metadata?.graphFlowId)
+    (selectedFlowId && node.kind === "flow" && selectedFlowId === node.sourceId)
+    || (selectedFlowId && node.kind === "subflow" && selectedFlowId === node.metadata?.graphFlowId)
     || (selection?.kind === "policy" && selection.id === node.sourceId)
     || (selection?.kind === "recording" && selection.id === node.sourceId)
     || (selection?.kind === "recording" && selection.id === node.recordingId)
@@ -80,13 +127,13 @@ export function automationHierarchyNodeMatchesActiveFlowView(
   selection: AutomationSelection | null,
   activeViewId?: string
 ): boolean {
+  const selectedFlowId = automationHierarchySelectionFlowId(selection);
   return Boolean(
     activeViewId
     && node.viewId === activeViewId
     && node.flowId
     && node.kind !== "flow"
-    && selection?.kind === "flow"
-    && selection.id === node.flowId
+    && selectedFlowId === node.flowId
   );
 }
 
@@ -96,6 +143,7 @@ export function automationHierarchyActiveChildOwnsFlowSelection(
   selection: AutomationSelection | null,
   activeViewId?: string
 ): boolean {
+  const selectedFlowId = automationHierarchySelectionFlowId(selection);
   const ownedFlowId = node.kind === "flow"
     ? node.sourceId
     : node.kind === "subflow" && typeof node.metadata?.graphFlowId === "string"
@@ -103,8 +151,7 @@ export function automationHierarchyActiveChildOwnsFlowSelection(
       : null;
   return Boolean(
     ownedFlowId
-    && selection?.kind === "flow"
-    && selection.id === ownedFlowId
+    && selectedFlowId === ownedFlowId
     && activeViewId
     && (hierarchyIndex.childrenByParentId.get(node.id) ?? [])
       .some((candidate) => candidate.flowId === ownedFlowId && candidate.viewId === activeViewId)
@@ -137,11 +184,17 @@ export function automationHierarchyNodeCanRemainPrimary(
   activeViewId?: string
 ): boolean {
   if (automationHierarchyNodeMatchesSelection(node, selection)) return true;
+  const selectedFlowId = automationHierarchySelectionFlowId(selection);
   return Boolean(node.flowId
     && node.kind !== "flow"
-    && selection?.kind === "flow"
-    && selection.id === node.flowId
+    && selectedFlowId === node.flowId
     && (!activeViewId || !node.viewId || node.viewId === activeViewId));
+}
+
+export function automationHierarchySelectionFlowId(selection: AutomationSelection | null): string | null {
+  if (selection?.kind === "flow") return selection.id;
+  if ((selection?.kind === "editor-node" || selection?.kind === "editor-mode") && selection.flowId) return selection.flowId;
+  return null;
 }
 
 export function selectAutomationHierarchyPrimaryTreeNodeId(input: {

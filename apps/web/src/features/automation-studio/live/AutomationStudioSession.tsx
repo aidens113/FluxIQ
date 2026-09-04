@@ -3,7 +3,8 @@ import { useCallback, useEffect, useMemo } from "react";
 import { createAutomationHierarchyCommandExecutor } from "../hierarchy/command-executor";
 import { createAutomationHierarchyDialogStore } from "../hierarchy/dialog-store";
 import type { AutomationWorkspaceBreadcrumb } from "../workspace/shell/contracts";
-import { automationStudioViewId } from "../views/view-registry";
+import { automationWorkspaceViewStateForBase } from "../workspace/view-state";
+import { automationStudioViewBaseId, automationStudioViewDefinition, automationStudioViewId, automationStudioViewObjectId } from "../views/view-registry";
 import { AutomationStudioProjectGate } from "./AutomationStudioProjectGate";
 import {
   automationEntityCollectionSelector,
@@ -35,6 +36,11 @@ import { useAutomationDeepLinkRuntime } from "./useAutomationDeepLinkRuntime";
 import { AutomationStudioWorkspaceComposition } from "./AutomationStudioWorkspaceComposition";
 import { useAutomationSessionDirtyGuards } from "./useAutomationSessionDirtyGuards";
 import { useStableAutomationEvent } from "./useStableAutomationEvent";
+import {
+  automationWorkspaceViewRegistrationEqual,
+  selectAutomationWorkspaceViewRegistration
+} from "./workspace-view-registration";
+import { useAutomationWorkspaceSelector } from "../workspace/shell/selectors";
 import { runAutomationPresentationTransaction } from "../presentation/transaction";
 import type { AutomationCanonicalConnectorScope } from "./view-host/canonical-connected-views";
 import { useAutomationConnectedViewEntries, useAutomationConnectedViewSource } from "./view-host/connected-view-entries";
@@ -142,10 +148,16 @@ export function AutomationStudioSession(props: {
   const setBottomPreviewEntryId = storeCommands.bottomPreview;
   const { runLatest, cancelAll: cancelAllRequests } = foundation.requests;
   const urlProjectId = deepLink.projectId;
+  const workspaceViewRegistration = useAutomationWorkspaceSelector(
+    workspaceRenderStore,
+    selectAutomationWorkspaceViewRegistration,
+    automationWorkspaceViewRegistrationEqual
+  );
   const workspacePrefs = workspaceRenderStore.getPrefs();
   const { isNarrowWorkspace, narrowWorkspacePanel, setIsNarrowWorkspace, setNarrowWorkspacePanel } = useAutomationNarrowWorkspace(studioUiStore);const hierarchyDialogStore = useMemo(createAutomationHierarchyDialogStore, []);
   const hierarchyCommandExecutor = useMemo(createAutomationHierarchyCommandExecutor, []);
   const workspaceRuntime = useAutomationWorkspaceRuntime({
+    transport: api,
     activeProjectId,
     currentUserId: currentUser.id,
     loadedProjectHierarchyId,
@@ -229,13 +241,8 @@ export function AutomationStudioSession(props: {
   }, [activeProjectId, studioStores, workspaceRenderStore]);
   const getProjectView = projectViewCache.read;
   const projectView = getProjectView();
-  const activePane = workspacePrefs.panes.find((item) => item.id === workspacePrefs.activePaneId)
-    ?? workspacePrefs.panes[0];
-  const activeViewId = activePane?.activeViewId ?? workspacePrefs.activeViewId ?? automationStudioViewId.flowEditor;
-  const openWorkspaceViewIdList = [...new Set([
-    ...workspacePrefs.panes.flatMap((pane) => pane.tabs),
-    ...workspacePrefs.rightSidebar.tabs
-  ])];
+  const activeViewId = workspaceViewRegistration.activeViewId ?? automationStudioViewId.flowEditor;
+  const openWorkspaceViewIdList = workspaceViewRegistration.openViewIds;
   const openWorkspaceViewIds = new Set(openWorkspaceViewIdList);
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
   const restoringUrlProject = Boolean(
@@ -244,8 +251,6 @@ export function AutomationStudioSession(props: {
     && !projectCatalogError
     && (!projectsLoaded || activeProjectId === urlProjectId)
   );
-  const viewInstances = useMemo(() => createAutomationStudioViewInstances(), []);
-  const viewById = new Map(viewInstances.map((view) => [view.id, view]));
   const {
     recordings, timelines, registries, models, proposals, recordingFlowProposals, hierarchyProposals,
     policies, snapshotProblems, signals, availableNodeDefinitions, indexedStateSourceList, projectTasks,
@@ -257,6 +262,20 @@ export function AutomationStudioSession(props: {
     viewLabelForSelection, viewWithTitleData, flowForSelection, recordingForSelection, proposalForSelection,
     taskForSelection, policyForSelection, workspaceBreadcrumbsForView
   } = projectView;
+  const openWorkspaceViewKey = openWorkspaceViewIdList.join("\u001f");
+  const viewInstances = useMemo(() => {
+    const labels: Record<string, string> = {};
+    for (const instanceId of openWorkspaceViewIdList) {
+      const objectId = automationStudioViewObjectId(instanceId);
+      if (!objectId) continue;
+      const definition = automationStudioViewDefinition(instanceId, { hasFlow: true });
+      const entry = projectEntityIndexes.canonicalFlowEntryById.get(objectId);
+      const flow = entry?.flow ?? entry;
+      labels[instanceId] = `${definition?.label ?? automationStudioViewBaseId(instanceId)}: ${flow?.name ?? objectId}`;
+    }
+    return createAutomationStudioViewInstances(labels, openWorkspaceViewIdList);
+  }, [openWorkspaceViewKey, projectEntityIndexes.canonicalFlowEntryById]);
+  const viewById = new Map(viewInstances.map((view) => [view.id, view]));
   useAutomationExternalLifecycle({
     actionStatus: automationActionStatus,
     activeProjectName: activeProject?.name ?? null,
@@ -303,7 +322,7 @@ export function AutomationStudioSession(props: {
     projectId: activeProjectId,
     activeFlowId: selectedFlowEntry?.source === "canonical" ? selectedFlow?.flowId ?? null : null,
     activeRunId: activePreloadRunId,
-    openViewIds: openWorkspaceViewIdList
+    openViewIds: openWorkspaceViewIdList.map(automationStudioViewBaseId)
   });
   const selectedTaskGraphDraft = graphRuntime.draft;
   const baseTaskGraphDocument = graphRuntime.baseGraph;
@@ -395,8 +414,8 @@ export function AutomationStudioSession(props: {
     projectFlows,
     selection,
     selectedFlow,
-    lastOpenFlowId: typeof workspacePrefs.viewStates?.[automationStudioViewId.flowEditor]?.lastOpenFlowId === "string"
-      ? workspacePrefs.viewStates?.[automationStudioViewId.flowEditor]?.lastOpenFlowId as string
+    lastOpenFlowId: typeof automationWorkspaceViewStateForBase(workspacePrefs, automationStudioViewId.flowEditor)?.lastOpenFlowId === "string"
+      ? automationWorkspaceViewStateForBase(workspacePrefs, automationStudioViewId.flowEditor)?.lastOpenFlowId as string
       : null,
     flowById: projectEntityIndexes.flowById,
     loadFlow: loadFlowDetails,
@@ -560,12 +579,13 @@ export function AutomationStudioSession(props: {
     views: viewInstances
   });
   const connectedViewSource = useAutomationConnectedViewSource(activeProjectId ?? "no-project", connectedEntries);
-  const resolveWorkspaceBreadcrumbs = useCallback((targetViewId: string) => (
-    workspaceBreadcrumbsForView(
-      targetViewId,
-      targetViewId === automationStudioViewId.flowEditor ? "Nodes" : viewById.get(targetViewId)?.label ?? "Workspace"
-    )
-  ), [viewById, workspaceBreadcrumbsForView]);
+  const resolveWorkspaceBreadcrumbs = useCallback((targetViewId: string) => {
+    const baseViewId = automationStudioViewBaseId(targetViewId);
+    return workspaceBreadcrumbsForView(
+      baseViewId,
+      viewById.get(targetViewId)?.label ?? (baseViewId === automationStudioViewId.flowEditor ? "Nodes" : "Workspace")
+    );
+  }, [viewById, workspaceBreadcrumbsForView]);
   const activateWorkspaceBreadcrumb = useStableAutomationEvent((crumb: AutomationWorkspaceBreadcrumb) => {
     if (crumb.kind === "flow") {
       runAutomationPresentationTransaction(() => {

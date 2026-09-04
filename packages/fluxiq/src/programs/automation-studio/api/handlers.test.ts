@@ -302,6 +302,81 @@ describe("Automation Studio project UI cache API", () => {
 });
 
 describe("Automation Studio hierarchy page API", () => {
+  it("registers bounded hierarchy mutations and preserves unrelated hierarchy state", async () => {
+    const { service, cleanup } = await createCacheApiTestService();
+    try {
+      const project = await service.createProject({ name: "Bounded hierarchy mutations" });
+      await service.saveProjectHierarchy(project.id, {
+        customHierarchyNodes: [
+          { id: "folder.root", label: "Root", kind: "folder", category: "flow", parentId: null },
+          { id: "folder.child", label: "Child", kind: "folder", category: "flow", parentId: "folder.root" },
+          { id: "folder.sibling", label: "Sibling", kind: "folder", category: "flow", parentId: null }
+        ],
+        deletedHierarchyIds: ["folder.previously-deleted"],
+        workspacePrefs: { mainLayoutPreset: "single" }
+      });
+      const registry = new GlobalProgramApiRegistry();
+      registerAutomationStudioApi(registry, service);
+
+      expect(AUTOMATION_STUDIO_ENDPOINTS.putProjectHierarchyNode).toBe("put-project-hierarchy-node");
+      expect(AUTOMATION_STUDIO_ENDPOINTS.deleteProjectHierarchyNode).toBe("delete-project-hierarchy-node");
+      expect(registry.endpoints()).toEqual(expect.arrayContaining([
+        { programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.putProjectHierarchyNode, permission: "programs.write" },
+        { programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectHierarchyNode, permission: "programs.write" }
+      ]));
+
+      const put = await registry.call({
+        programId: "automation-studio",
+        endpoint: AUTOMATION_STUDIO_ENDPOINTS.putProjectHierarchyNode,
+        scope: {},
+        actor: cacheActor("user.hierarchy"),
+        payload: {
+          projectId: project.id,
+          mutationId: "hierarchy.put.root",
+          node: { id: "folder.root", label: "Root renamed", kind: "folder", category: "flow", parentId: null }
+        }
+      });
+      expect(put).toMatchObject({ ok: true, payload: { nodeId: "folder.root" } });
+      expect(await service.getProjectHierarchy(project.id)).toEqual({
+        customHierarchyNodes: [
+          { id: "folder.root", label: "Root renamed", kind: "folder", category: "flow", parentId: null },
+          { id: "folder.child", label: "Child", kind: "folder", category: "flow", parentId: "folder.root" },
+          { id: "folder.sibling", label: "Sibling", kind: "folder", category: "flow", parentId: null }
+        ],
+        deletedHierarchyIds: ["folder.previously-deleted"],
+        workspacePrefs: { mainLayoutPreset: "single" }
+      });
+
+      const deleted = await registry.call({
+        programId: "automation-studio",
+        endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectHierarchyNode,
+        scope: {},
+        actor: cacheActor("user.hierarchy"),
+        payload: { projectId: project.id, nodeId: "folder.root", mutationId: "hierarchy.delete.root" }
+      });
+      expect(deleted).toMatchObject({ ok: true, payload: { nodeId: "folder.root", deletedCount: 2 } });
+      expect(await service.getProjectHierarchy(project.id)).toEqual({
+        customHierarchyNodes: [
+          { id: "folder.sibling", label: "Sibling", kind: "folder", category: "flow", parentId: null }
+        ],
+        deletedHierarchyIds: ["folder.previously-deleted", "folder.root", "folder.child"],
+        workspacePrefs: { mainLayoutPreset: "single" }
+      });
+
+      const malformed = await registry.call({
+        programId: "automation-studio",
+        endpoint: AUTOMATION_STUDIO_ENDPOINTS.putProjectHierarchyNode,
+        scope: {},
+        actor: cacheActor("user.hierarchy"),
+        payload: { projectId: project.id, node: { id: "", label: "Broken", kind: "folder", category: "flow", parentId: null } }
+      });
+      expect(malformed.ok).toBe(false);
+      expect(malformed.error).toContain("node.id is required");
+    } finally {
+      await cleanup();
+    }
+  });
+
   it("imports legacy hierarchy once and returns stable SQL sibling pages", async () => {
     const { service, dataDir, cleanup } = await createCacheApiTestService();
     try {

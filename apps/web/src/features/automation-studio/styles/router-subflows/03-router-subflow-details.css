@@ -115,10 +115,10 @@
   gap: 16px;
 }
 
-.automation-router-condition-builder > header > div:first-child {
-  display: grid;
+.automation-router-condition-builder > header > .automation-router-editor-section-heading {
+  display: flex;
   min-width: 0;
-  gap: 3px;
+  gap: 9px;
 }
 
 .automation-router-condition-builder > header strong {
@@ -126,7 +126,7 @@
   font-size: var(--font-size-compact);
 }
 
-.automation-router-condition-builder > header span {
+.automation-router-condition-builder > header .automation-router-editor-section-heading small {
   overflow: hidden;
   color: var(--color-text-muted);
   font-size: var(--font-size-caption);
@@ -174,7 +174,7 @@
 
 .automation-router-condition-row {
   display: grid;
-  grid-template-columns: minmax(110px, .8fr) minmax(150px, 1.2fr) minmax(145px, 1fr) minmax(120px, .8fr) minmax(150px, 1fr);
+  grid-template-columns: minmax(120px, .75fr) minmax(180px, 1.25fr) minmax(160px, 1fr);
   align-items: end;
   gap: 10px;
 }
@@ -280,18 +280,18 @@
   padding-top: 12px;
 }
 
-.automation-router-route-test > div:first-child {
-  display: grid;
+.automation-router-route-test > .automation-router-editor-section-heading {
+  display: flex;
   align-self: center;
-  gap: 3px;
+  gap: 9px;
 }
 
-.automation-router-route-test > div:first-child strong {
+.automation-router-route-test > .automation-router-editor-section-heading strong {
   color: var(--color-text);
   font-size: var(--font-size-compact);
 }
 
-.automation-router-route-test > div:first-child span {
+.automation-router-route-test > .automation-router-editor-section-heading small {
   color: var(--color-text-muted);
   font-size: var(--font-size-caption);
 }

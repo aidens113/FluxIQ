@@ -14,7 +14,6 @@ import {
 import type { AutomationHierarchyAction, AutomationHierarchyKind, AutomationHierarchyNode } from "./model";
 import type { AutomationHierarchyPageInfo } from "./paged-cache";
 import { automationHierarchyKeyboardAction } from "./keyboard";
-import type { AutomationHierarchyRoutableViewId } from "./routing";
 import {
   createAutomationHierarchyProjectionSelector,
   selectAutomationHierarchyEffectiveCollapsedIds,
@@ -29,6 +28,7 @@ import {
 import { AutomationHierarchyTreeRow } from "./tree-rows";
 import { useAutomationHierarchyPrimaryTreeNodeId } from "./usePrimaryTreeNodeId";
 import { usePostPaintHierarchyReconciliation } from "./usePostPaintHierarchyReconciliation";
+import { useSelectionDisclosure } from "./useSelectionDisclosure";
 import {
   AUTOMATION_HIERARCHY_DEFAULT_VIEWPORT_HEIGHT,
   AUTOMATION_HIERARCHY_ROW_HEIGHT,
@@ -48,7 +48,7 @@ export const AutomationProjectTree = memo(function AutomationProjectTree(props: 
   recordingPrimaryKind: "recording" | null;
   setRecordingPrimaryKind(kind: "recording" | null): void;
   setSelection(selection: AutomationSelection): void;
-  openView(viewId: AutomationHierarchyRoutableViewId, mode?: "preview" | "new-pane-or-focus"): void;
+  openView(viewId: string, mode?: "preview" | "new-pane-or-focus"): void;
   openSubflow?(node: AutomationHierarchyNode, mode: "preview" | "new-pane-or-focus"): void;
   childPageInfo?: Record<string, AutomationHierarchyPageInfo>;
   loadMoreChildren?(parentId: string | null): void;
@@ -69,6 +69,7 @@ export const AutomationProjectTree = memo(function AutomationProjectTree(props: 
   const scheduleHierarchyReconciliation = usePostPaintHierarchyReconciliation();
   const appliedIncomingUiStateSignatureRef = useRef(incomingUiStateSignature);
   const uiState = useSyncExternalStore(hierarchyStore.subscribe, hierarchyStore.getSnapshot, hierarchyStore.getSnapshot);
+  useSelectionDisclosure(props.nodes, props.selection, props.activeViewId, hierarchyStore);
 
   const projectionSelectorRef = useRef<ReturnType<typeof createAutomationHierarchyProjectionSelector> | null>(null);
   if (!projectionSelectorRef.current) projectionSelectorRef.current = createAutomationHierarchyProjectionSelector();

@@ -1,4 +1,5 @@
 import { automationStudioViewId } from "../views/view-registry";
+import { automationWorkspaceViewStateForBase } from "../workspace/view-state";
 import {
   automationEntityCollectionSelector,
   type AutomationProjectDataState,
@@ -84,7 +85,8 @@ export function automationProjectViewModelInput(args: {
   const entities = (kind: AutomationProjectEntityKind) => (
     automationEntityCollectionSelector(kind)(args.projectData) as any[]
   );
-  const flowEditorState = args.workspace.getPrefs().viewStates?.[automationStudioViewId.flowEditor];
+  const workspacePrefs = args.workspace.getPrefs();
+  const flowEditorState = automationWorkspaceViewStateForBase(workspacePrefs, automationStudioViewId.flowEditor);
   return {
     hasActiveProject: Boolean(args.activeProjectId),
     canonical: resource<any>("snapshot", null)?.payload?.canonical ?? EMPTY_AUTOMATION_RECORD,

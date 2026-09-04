@@ -3,6 +3,35 @@ import type { AutomationStudioFlowDocument } from "../model/index.ts";
 import { runAutomationStudioGraph } from "./executor.ts";
 
 describe("Automation Studio graph executor", () => {
+  it("passes state-bound parameters to a custom node through the normal parameter values", async () => {
+    const flow: AutomationStudioFlowDocument = {
+      schemaVersion: "0.1",
+      flowId: "flow.state-parameter",
+      ownerKind: "routine",
+      ownerId: "routine.state-parameter",
+      name: "State parameter",
+      createdAt: 1,
+      updatedAt: 1,
+      nodes: [
+        { id: "custom", definitionId: "importer.custom-output", parameterValues: { message: { $state: { path: "runtime.message", fallback: "manual" } } } },
+        { id: "end", definitionId: "builtin.control.end", parameterValues: { resultStatus: "success" } }
+      ],
+      edges: [{ id: "custom.end", sourceNodeId: "custom", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }]
+    };
+    let receivedMessage: unknown;
+
+    const trace = await runAutomationStudioGraph(flow, {
+      inputs: { runtime: { message: "from state" } },
+      nativeNodeExecutor: async ({ node }) => {
+        receivedMessage = node.parameterValues?.message;
+        return { result: { status: "success", route: "success", outputs: {} } };
+      }
+    });
+
+    expect(trace.status).toBe("succeeded");
+    expect(receivedMessage).toBe("from state");
+  });
+
   it("runs built-in nodes, follows named routes, and records attempts/effects", async () => {
     const flow: AutomationStudioFlowDocument = {
       schemaVersion: "0.1",

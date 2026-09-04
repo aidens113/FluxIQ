@@ -10,6 +10,7 @@ const navigation = read("./useAutomationSelectionNavigation.ts");
 const deepLinks = read("./useAutomationDeepLinkRuntime.ts");
 const graphRuntime = read("./useAutomationGraphRuntime.ts");
 const projectRuntime = read("./useAutomationProjectRuntime.ts");
+const activeWorkspaceSelection = read("./active-workspace-selection.ts");
 const hierarchyUi = read("./useAutomationHierarchyUiRuntime.ts");
 const hierarchyBridge = read("./useAutomationHierarchyCommandBridge.ts");
 const connectedViews = read("./view-host/canonical-connected-views.tsx");
@@ -86,7 +87,8 @@ describe("Automation Studio extracted owner contracts", () => {
     expect(navigation).toContain('[automationStudioViewId.flowEditor]: { ...currentFlowState, lastOpenFlowId: next.id, selection: next }');
     expect(deepLinks).toContain("options.selectedFlow?.flowId ?? options.lastOpenFlowId");
     expect(navigation).toContain("selection: next");
-    expect(projectRuntime).toContain("isAutomationSelection(savedActiveViewSelection)");
+    expect(projectRuntime).toContain("automationActiveWorkspaceSelection(prefs, null)");
+    expect(activeWorkspaceSelection).toContain("isAutomationSelection(savedActiveSelection)");
   });
 
   it("does not feed active tab focus into lazy preloading", () => {

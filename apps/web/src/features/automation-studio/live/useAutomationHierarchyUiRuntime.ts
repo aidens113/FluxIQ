@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { notifyGlobalAlert } from "../../programs/shared-ui";
 import type { AutomationHierarchyKind, AutomationHierarchyNode } from "../hierarchy/model";
 import { normalizeAutomationHierarchyUiState, type AutomationHierarchyUiState } from "../hierarchy/store";
+import { notifyGlobalAlert } from "../../programs/shared-ui";
 import {
   createAutomationHierarchyUiCoordinator,
   normalizeAutomationHierarchySidebarUiState,
@@ -34,6 +34,14 @@ export function useAutomationHierarchyUiRuntime(options: Options) {
   const filterRef = useRef<{ search: string; typeFilter: "all" | AutomationHierarchyKind }>({ search: "", typeFilter: "all" });
   const coordinator = useMemo(() => createAutomationHierarchyUiCoordinator(), []);
   const persistence = useHierarchyPersistence({
+    transport: options.transport,
+    reportSaveError: (message) =>
+      notifyGlobalAlert({
+        tone: "error",
+        title: "Workspace save failed",
+        message,
+        id: "automation-workspace-save-failed",
+      }),
     transport: options.transport,
     projectId: options.activeProjectId,
     loadedProjectId: options.loadedProjectId,

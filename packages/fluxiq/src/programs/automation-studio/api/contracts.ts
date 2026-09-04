@@ -32,6 +32,8 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   listProjectHierarchyChildren: "list-project-hierarchy-children",
   listProjectChangeFeed: "list-project-change-feed",
   saveProjectHierarchy: "save-project-hierarchy",
+  putProjectHierarchyNode: "put-project-hierarchy-node",
+  deleteProjectHierarchyNode: "delete-project-hierarchy-node",
   getProjectUiCache: "get-project-ui-cache",
   saveProjectUiCache: "save-project-ui-cache",
   deleteProjectUiCache: "delete-project-ui-cache",

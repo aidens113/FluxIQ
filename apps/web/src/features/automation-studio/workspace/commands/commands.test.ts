@@ -201,7 +201,7 @@ describe("Phase 8 workspace commands", () => {
     expect(store.getPrefs()).toMatchObject({ activePaneId: "pane-2", activeViewId: "runtime-debug" });
   });
 
-  it("reports persistent commits through the command port without persisting preview activation", () => {
+  it("persists active tabs and layout commits through the command port", () => {
     const onCommit = vi.fn();
     const store = createAutomationWorkspaceRenderStore(defaultAutomationWorkspacePrefs());
     const port = createAutomationWorkspaceCommandPort(store, { onCommit });
@@ -211,7 +211,7 @@ describe("Phase 8 workspace commands", () => {
     });
 
     expect(commands.openView("runtime-debug")).toBe(true);
-    expect(onCommit).toHaveBeenLastCalledWith(store.getPrefs(), { persist: false, scope: "workspace" });
+    expect(onCommit).toHaveBeenLastCalledWith(store.getPrefs(), { persist: true, scope: "workspace" });
 
     expect(commands.applyLayoutPreset("two-main-side")).toBe(true);
     expect(onCommit).toHaveBeenLastCalledWith(store.getPrefs(), { persist: true, scope: "workspace" });

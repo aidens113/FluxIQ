@@ -157,6 +157,7 @@ export function RouterViewContent(props: RouterViewProps & { commands: RouterCom
     setLoading(false);
   };
   const beginNewRoute = () => {
+    setSubflowQuery("");
     setSelectedRuleId(null);
     setRouteDraft(defaultFlowMapRouteDraft({ targetSubflowId: activeSubflows[0]?.subflowId ?? "", groupId: selectedGroupId !== "all" && selectedGroupId !== "ungrouped" ? selectedGroupId : "" }));
     setRouteTestValue("");
@@ -165,6 +166,7 @@ export function RouterViewContent(props: RouterViewProps & { commands: RouterCom
   };
 
   const editRoute = (rule: any) => {
+    setSubflowQuery("");
     setSelectedRuleId(rule.ruleId ?? null);
     setRouteDraft(flowMapRouteDraftFromRule(rule));
     setRouteTestValue("");
@@ -183,6 +185,7 @@ export function RouterViewContent(props: RouterViewProps & { commands: RouterCom
   };
 
   const beginFallbackEdit = () => {
+    setSubflowQuery("");
     const fallback = flowMap?.fallback;
     setFallbackDraft({
       kind: fallback?.kind === "subflow" ? "subflow" : "fail",
@@ -192,6 +195,7 @@ export function RouterViewContent(props: RouterViewProps & { commands: RouterCom
     setFallbackModalOpen(true);
   };
   const requestAuthorization = (action: "save-route" | "delete-route" | "save-group" | "delete-group" | "save-fallback" | "mutate-route") => {
+    setError("");
     setAuthorization({ action });
     setAuthorizationPin("");
   };
@@ -238,6 +242,7 @@ export function RouterViewContent(props: RouterViewProps & { commands: RouterCom
     setAuthorization(null);
     setAuthorizationPin("");
     setGroupModalOpen(false);
+    if (authorization.action === "save-fallback") setFallbackModalOpen(false);
     if (authorization.action === "save-route") {
       setSelectedRuleId((result.payload.router.rules ?? []).find((rule: any) => rule.name === routeDraft.name)?.ruleId ?? routeDraft.ruleId ?? null);
       setRouteModalOpen(false);

@@ -1,6 +1,6 @@
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../model/index.ts";
-import { getAutomationNodeDefinition } from "../nodes/index.ts";
+import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues } from "../nodes/index.ts";
 import type { AutomationNodeExecutionResult } from "../nodes/contracts.ts";
 import type { AutomationStudioNativeLogEntry } from "../nodes/importer-sdk.ts";
 import { hostRuntimeCapabilityIds, type AutomationStudioHostRuntimeBoundary, type AutomationStudioHostStateSnapshotRef } from "./host-runtime.ts";
@@ -355,30 +355,54 @@ async function executeAutomationStudioNode(
   const attemptId = `${node.id}.attempt.${attemptNumber}`;
   const definition = getAutomationNodeDefinition(node.definitionId);
   const inputs = collectNodeInputs(flow, node, values);
+  const resolvedParameters = resolveAutomationNodeParameterValues(node.parameterValues ?? {}, {
+    ...(options.inputs ?? {}),
+    ...(options.variables ?? {}),
+    ...values,
+    ...inputs
+  });
+  const executionNode = resolvedParameters.missingPaths.length
+    ? node
+    : { ...node, parameterValues: resolvedParameters.values };
   const hostCapabilities = hostRuntimeCapabilityIds(options.hostRuntime);
-  const beforeAction = await captureHostState(options, { node, attemptId, inputs, point: "before_action" });
+  if (resolvedParameters.missingPaths.length) {
+    return {
+      attemptId,
+      nodeId: node.id,
+      definitionId: node.definitionId,
+      startedAt,
+      finishedAt: options.now?.() ?? Date.now(),
+      status: "failed",
+      route: "failed",
+      inputs,
+      outputs: {},
+      effects: [],
+      message: `State-bound parameter path${resolvedParameters.missingPaths.length === 1 ? "" : "s"} could not be resolved: ${resolvedParameters.missingPaths.join(", ")}.`
+    };
+  }
+  const beforeAction = await captureHostState(options, { node: executionNode, attemptId, inputs, point: "before_action" });
   if (definition && node.definitionVersion && node.definitionVersion !== "1.0.0") {
     return await enrichAttemptWithHostState({ attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: options.now?.() ?? Date.now(), status: "failed", route: "failed", inputs, outputs: {}, effects: [], message: `Node ${node.definitionId} pins ${node.definitionVersion}, but built-in version 1.0.0 is available.` }, options, beforeAction, hostCapabilities);
   }
   if (!definition?.execute) {
     const native = await options.nativeNodeExecutor?.({
-      node,
+      node: executionNode,
       inputs,
       ...(options.signal ? { signal: options.signal } : {}),
       hostContext: {
         capabilityIds: hostCapabilities,
-        sideEffectClass: sideEffectClassForNode(node),
+        sideEffectClass: sideEffectClassForNode(executionNode),
         ...(beforeAction ? { currentStateRef: beforeAction, previousStateRef: beforeAction } : {}),
-        ...(node.parameterValues?.target !== undefined ? { target: node.parameterValues.target } : {})
+        ...(executionNode.parameterValues?.target !== undefined ? { target: executionNode.parameterValues.target } : {})
       }
     });
     if (native) {
       const result = await dispatchAutomationStudioEffects(native.result, options);
-      return await enrichAttemptWithHostState({ ...nodeAttemptFromResult(node, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...(native.logs?.length ? { logs: native.logs } : {}) }, options, beforeAction, hostCapabilities);
+      return await enrichAttemptWithHostState({ ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...(native.logs?.length ? { logs: native.logs } : {}) }, options, beforeAction, hostCapabilities);
     }
-    const composite = await options.compositeExecutor?.({ node, inputs, options });
+    const composite = await options.compositeExecutor?.({ node: executionNode, inputs, options });
     if (composite) {
-      return await enrichAttemptWithHostState({ ...nodeAttemptFromResult(node, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, composite.result), ...(composite.childTrace ? { childTrace: composite.childTrace } : {}), ...(composite.compositeTarget ? { compositeTarget: composite.compositeTarget } : {}) }, options, beforeAction, hostCapabilities);
+      return await enrichAttemptWithHostState({ ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, composite.result), ...(composite.childTrace ? { childTrace: composite.childTrace } : {}), ...(composite.compositeTarget ? { compositeTarget: composite.compositeTarget } : {}) }, options, beforeAction, hostCapabilities);
     }
     return await enrichAttemptWithHostState({
       attemptId,
@@ -397,7 +421,7 @@ async function executeAutomationStudioNode(
   try {
     const context = {
       inputs,
-      parameters: node.parameterValues ?? {},
+      parameters: resolvedParameters.values,
       variables: new Map(Object.entries(options.variables ?? {})),
       ...(options.random ? { random: options.random } : {}),
       ...(options.now ? { now: options.now } : {}),
@@ -405,7 +429,7 @@ async function executeAutomationStudioNode(
     };
     let result = await definition.execute(context);
     result = await dispatchAutomationStudioEffects(result, options);
-    return await enrichAttemptWithHostState(nodeAttemptFromResult(node, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), options, beforeAction, hostCapabilities);
+    return await enrichAttemptWithHostState(nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), options, beforeAction, hostCapabilities);
   } catch (error) {
     return await enrichAttemptWithHostState({
       attemptId,

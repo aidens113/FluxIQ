@@ -5,6 +5,7 @@ export function automationInspectorReferenceOptions(props: {
   nodeDefinitions: any[];
   policies: any[];
   pipelineArtifacts: any;
+  signals?: any[];
 }): InspectorReferenceOptions {
   const pipeline = props.pipelineArtifacts ?? {};
   const option = (id: unknown, label: unknown, detail?: unknown) => ({
@@ -25,13 +26,19 @@ export function automationInspectorReferenceOptions(props: {
     .map((collection: any) => option(collection.collectionId ?? collection.id ?? collection.name, collection.label ?? collection.name ?? collection.id, collection.description));
   const variables = (props.flow?.variables ?? [])
     .map((variable: any) => typeof variable === "string" ? option(variable, variable) : option(variable.id ?? variable.name, variable.label ?? variable.name ?? variable.id, variable.description));
+  const state = (props.signals ?? []).map((signal: any) => option(
+    signal.path ?? signal.signalId ?? signal.id,
+    signal.metadata?.label ?? signal.label ?? signal.path ?? signal.signalId ?? signal.id,
+    signal.description ?? signal.type
+  ));
   return {
     action: uniqueReferenceOptions(actions),
     task: uniqueReferenceOptions(tasks),
     policy: uniqueReferenceOptions(policies),
     routine: uniqueReferenceOptions(routines),
     "database-collection": uniqueReferenceOptions(collections),
-    variable: uniqueReferenceOptions(variables)
+    variable: uniqueReferenceOptions(variables),
+    state: uniqueReferenceOptions(state)
   };
 }
 

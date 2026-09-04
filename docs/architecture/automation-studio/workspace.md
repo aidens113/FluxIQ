@@ -339,6 +339,10 @@ declared `viewStates` payload. Closing a tab removes it from the visible layout
 but does not delete that view's saved state. Reopening it in the same project
 therefore restores its recorded Flow identity and selection; loading a saved
 project restores the active view's validated selection after summary hydration.
+If the active Flow-scoped view has no view-local selection, restoration falls
+back to the Nodes view's saved selection and then its `lastOpenFlowId`. This
+keeps the owning Flow or subflow Nodes row selected in the hierarchy when a
+project first appears, including when the saved selection is an editor node.
 Transient overlays and hydrated domain documents remain outside this contract.
 
 Tab selection is one synchronous workspace command and one authoritative React
@@ -419,6 +423,31 @@ window, and then restores roving focus. `aria-level`, `aria-posinset`,
 though recursive DOM groups are not retained. SQL-owned child pages remain
 explicit Load More rows; already-loaded siblings are never hidden behind a
 second client-only row cap.
+
+Flow, editor-node, and editor-mode selections all resolve to their owning Flow
+identity for hierarchy styling. Selecting Router, Settings, or another object
+of a Flow does not re-collapse a subflow branch that was already opened. Opening
+a subflow records its selection-driven expansion in the saved sidebar disclosure
+state; unopened branches remain default-collapsed, while an explicit user collapse
+remains authoritative. The active view and owning Flow together select one blue
+primary row after both direct interaction and project restoration. Restoration
+expands the saved selection's ancestor chain from the project root through its
+parent Flow and subflow, only as far as needed to reveal that selected object;
+unrelated branches keep their saved disclosure state.
+The connected hierarchy derives that primary context from the active pane and
+its saved Flow view state as well as the live selection, so a transient unrelated
+selection cannot leave a restored Flow window without its matching blue row.
+Every Flow- or subflow-scoped inner view uses an object-qualified workspace
+instance ID. Two Instructions, Settings, Nodes, or other scoped windows for
+different objects can therefore coexist, retain independent state and content,
+and use titles such as `Instructions: Checkout`. Activating a previously opened
+instance restores that instance's Flow or subflow instead of inheriting the most
+recent global selection. Pane tabs, the active pane, and view state changes
+request durable per-project workspace persistence; legacy unbound tabs are bound
+once from their saved Flow context during project hydration.
+The per-project browser cache mirrors panes, active tabs, right and bottom regions,
+and `viewStates` so a reload can restore the latest window state even while the
+debounced durable project write is still completing.
 
 Hierarchy navigation exposes two truthful modes. `preview` activates the
 chosen object in the current pane. `new-pane-or-focus` creates another main
@@ -508,6 +537,17 @@ empty, error, permission, and large-data behavior. In particular:
 Every data-intensive view must keep prior usable content while refreshing when
 safe, distinguish loading from empty and error states, and preserve the user's
 selection when the selected entity remains present.
+
+The Router workbench presents group filters separately from a full-width route
+search and status filter. Route authoring follows destination, condition, and
+optional sample-test steps; lower priority numbers are explained as evaluating
+first, while status, confidence, and description remain secondary details.
+Fallback editing uses explicit continue-to-subflow and stop-run choices with a
+choice-specific configuration panel. PIN authorization temporarily replaces
+the owning editor instead of stacking modal focus traps, and returning from
+authorization restores the draft. Successful writes close both authorization
+and the owning editor, while failures remain visible in the authorization
+surface without discarding the draft.
 
 ### Canonical View Diagnostics Audit
 

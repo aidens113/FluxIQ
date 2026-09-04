@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { flowSummariesToCatalogEntries } from "./project-summary-converters";
+import { flowHierarchyNodes } from "../hierarchy/flow-generation";
 import {
   mergeFlowDetails,
   mergeRecordingDetail,
@@ -51,6 +52,30 @@ describe("project change reconciliation", () => {
 
     expect(mergeFlowDetails(current, summary)).toBe(current);
     expect(mergeFlowDetails(current, stale)).toBe(current);
+  });
+
+  it("retains catalog subflow hierarchy when loading a Flow detail for Router", () => {
+    const current = flowSummariesToCatalogEntries([{
+      flowId: "flow.parent",
+      projectId: "project.one",
+      updatedAt: 10,
+      hierarchySubflows: [{ subflowId: "subflow.child", name: "Child", graphFlowId: "flow.child.graph" }]
+    }]);
+    const detail = [{ source: "canonical", readOnly: false, flow: {
+      flowId: "flow.parent",
+      updatedAt: 10,
+      nodes: [{ id: "router" }],
+      edges: [],
+      metadata: {}
+    } }];
+
+    const merged = mergeFlowDetails(current, detail);
+
+    expect(merged[0].flow.metadata.summaryOnly).toBeUndefined();
+    expect(merged[0].flow.metadata.hierarchySubflows).toEqual([
+      { subflowId: "subflow.child", name: "Child", graphFlowId: "flow.child.graph" }
+    ]);
+    expect(flowHierarchyNodes(merged).some((node) => node.metadata?.graphFlowId === "flow.child.graph")).toBe(true);
   });
 
   it("upserts and removes compact subflow summaries locally", () => {

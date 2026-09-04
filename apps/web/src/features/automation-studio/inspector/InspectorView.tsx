@@ -58,6 +58,6 @@ function editorPanel(
   );
   return {
     ...panel,
-    customContent: panel.customContent ? <>{panel.customContent}{editor}</> : editor
+    primaryContent: panel.primaryContent ? <>{editor}{panel.primaryContent}</> : editor
   };
 }

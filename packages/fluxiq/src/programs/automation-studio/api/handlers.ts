@@ -261,6 +261,37 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   });
   registry.register({
     programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.putProjectHierarchyNode,
+    permission: "programs.write",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object"
+        ? request.payload as { projectId?: unknown; node?: unknown }
+        : {};
+      return {
+        ok: true,
+        payload: await service.putProjectHierarchyNode(
+          String(payload.projectId ?? ""),
+          payload.node as Parameters<AutomationStudioService["putProjectHierarchyNode"]>[1]
+        )
+      };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectHierarchyNode,
+    permission: "programs.write",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object"
+        ? request.payload as { projectId?: unknown; nodeId?: unknown }
+        : {};
+      return {
+        ok: true,
+        payload: await service.deleteProjectHierarchyNode(String(payload.projectId ?? ""), String(payload.nodeId ?? ""))
+      };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProjectUiCache,
     permission: "programs.read",
     handler: async (request) => {

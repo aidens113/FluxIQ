@@ -161,9 +161,13 @@ describe("Automation Router workspace", () => {
 
   it("keeps Router fallback and route-group lifecycle editing explicit", () => {
     const source = RouterViewContent.toString() + RouterContentView.toString();
-    expect(source).toContain("Fallback Behavior");
+    expect(source).toContain("Fallback behavior");
     expect(source).toContain("Save Fallback");
     expect(source).toContain("commands.saveFallback");
+    expect(source).toContain('authorization.action === "save-fallback"');
+    expect(source).toContain("setFallbackModalOpen(false)");
+    expect(source).toContain("fallbackModalOpen && !authorization");
+    expect(source).toContain("Continue to a subflow");
     expect(source).toContain("groupDraft.status");
     expect(source).toContain("Stop the run");
   });
@@ -182,14 +186,14 @@ describe("Automation Router workspace", () => {
     expect(flowMapConditionExpected(draft)).toBe(true);
     expect(flowMapConditionSummary(draft)).toBe("Run input approved equals true");
     const source = RouterViewContent.toString() + RouterContentView.toString();
-    expect(source).toContain("Match behavior");
+    expect(source).toContain("Define when it matches");
     expect(source).toContain("Run input");
     expect(source).toContain("Current state");
     expect(source).not.toContain("Advanced matching");
   });
   it("uses the shared searchable subflow picker for route and fallback targets", () => {
     const source = RouterViewContent.toString() + RouterContentView.toString();
-    expect(source).toContain("Search all subflows");
+    expect(source).toContain("Search subflows");
     expect(source).toContain("subflowOptions");
     expect(source).toContain("Choose a target subflow");
     expect(source).toContain("Choose a fallback subflow");
@@ -217,7 +221,7 @@ describe("Automation Router workspace", () => {
     });
     expect(buildFlowMapRouteTestPayload({ ...draft, conditionMode: "always" }, "")).toEqual({});
     const source = RouterViewContent.toString() + RouterContentView.toString();
-    expect(source).toContain("Test this route");
+    expect(source).toContain("Try a sample value");
     expect(source).toContain("Test condition");
     expect(source).toContain("Route does not match");
     expect(source).toContain("commands.testCondition");
@@ -228,6 +232,19 @@ describe("Automation Router workspace", () => {
     expect(source).toContain("Retry");
     expect(source).toContain("Saving changes");
     expect(source).toContain("Authorize Router Change");
+    expect(source).toContain("routeModalOpen && !authorization");
     expect(source).toContain("scopeRef.current");
+  });
+
+  it("gives Router search and editor workflows dedicated responsive UI contracts", () => {
+    const viewSource = readFileSync(new URL("./RouterContentView.tsx", import.meta.url), "utf8");
+    const styles = readFileSync(new URL("../styles/router-subflows/02-workbench.css", import.meta.url), "utf8");
+    expect(viewSource).toContain("automation-router-search");
+    expect(viewSource).toContain("Choose a destination");
+    expect(viewSource).toContain("Try a sample value");
+    expect(viewSource).toContain('role="radiogroup"');
+    expect(styles).toContain("grid-template-columns: minmax(240px, 1fr)");
+    expect(styles).toContain(".automation-router-fallback-choices");
+    expect(styles).toContain("@media (max-width: 520px)");
   });
 });

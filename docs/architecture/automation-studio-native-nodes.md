@@ -54,6 +54,42 @@ palette. Domain nodes cannot appear globally or in another domain. Code-owned
 Flow compilation uses the same bound registry, making missing or out-of-scope
 definitions compile errors.
 
+## Inspector parameters and state binding
+
+Importer and custom output-node definitions declare Inspector fields through
+their `parameters` array. The Flow editor carries each definition's parameter
+schema into the global Inspector and persists the edited values in the node's
+`parameterValues`; these values are part of the Flow document and are saved
+with the project rather than by an Inspector-local save operation.
+
+A declared parameter exposes one value-source selector by default: `Manual
+value` or `State value`. An importer may set `allowStateBinding: false` for a
+strictly literal-only field. Both sources feed the same parameter ID and
+implementations continue to read the final value from their normal
+`parameters` object. State mode stores a `$state` binding containing the
+registered signal path and the last manual value as a fallback. At execution,
+FluxIQ resolves that path from run inputs, variables, prior graph outputs, or a
+`StateSnapshot` supplied under `inputs.state`, before calling built-in, native,
+or composite implementations. A missing path uses the retained manual fallback;
+without a fallback the node fails with the unresolved path in its trace.
+
+For example, an importing repository can declare:
+
+```ts
+{
+  id: "message",
+  label: "Message",
+  valueType: "string",
+  required: true
+}
+```
+
+The saved node value remains a literal such as `"hello"` in Manual mode. In
+State mode the same field is represented as
+`{ $state: { path: "app.currentMessage", fallback: "hello" } }`; the custom
+implementation still receives only the resolved string at
+`context.parameters.message`.
+
 ## Output safety
 
 Importer action nodes must declare a fixed or enumerated `outputAction`

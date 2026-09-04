@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
+import { automationStudioViewId } from "../../views/view-registry";
 import { createAutomationStudioStores } from "../../stores/studio-stores";
 import { automationEntityScope } from "../../stores/project-data-store";
 import { createAutomationConnectedViewHostRequest } from "../../views/view-host-types";
@@ -133,6 +134,57 @@ describe("direct view connector readiness", () => {
     });
 
     expect(selected.flow).toMatchObject({ flowId: "flow-a", nodes: [{ id: "node-a" }] });
+  });
+
+  it("uses a Flow-scoped tab binding instead of the newer global Flow selection", () => {
+    const stores = createAutomationStudioStores();
+    stores.selection.select({ kind: "flow", id: "flow.child.graph" });
+    stores.projectData.upsert("flows", "flow.parent", {
+      source: "canonical",
+      flow: { flowId: "flow.parent", name: "Parent Flow", nodes: [], edges: [] }
+    });
+    stores.projectData.upsert("flows", "flow.child.graph", {
+      source: "canonical",
+      flow: { flowId: "flow.child.graph", name: "Child Flow", nodes: [], edges: [] }
+    });
+
+    const selected = selectAutomationConnectorFlow({
+      projectData: stores.projectData.getState(),
+      runtimeStatus: stores.runtimeStatus.getState(),
+      selection: stores.selection.getState()
+    }, {
+      projectId: "project-a",
+      projectView: { getRevisionKey: () => "test", read: vi.fn() as never },
+      getWorkspacePrefs: () => ({
+        activePaneId: "pane-1",
+        activeViewId: automationStudioViewId.router,
+        panes: [{ id: "pane-1", activeViewId: automationStudioViewId.router, tabs: [automationStudioViewId.router] }],
+        viewStates: { [automationStudioViewId.router]: { flowId: "flow.parent" } }
+      }) as any,
+      loadFlowDetail: vi.fn(), loadFlowMetadata: vi.fn(), loadNodeDefinitions: vi.fn(), loadRecording: vi.fn(), loadTimeline: vi.fn()
+    }, automationStudioViewId.router);
+
+    expect(selected.flow).toMatchObject({ flowId: "flow.parent", name: "Parent Flow" });
+  });
+
+  it("keeps an object-instance Flow immutable when global selection moves to another Flow", () => {
+    const stores = createAutomationStudioStores();
+    stores.selection.select({ kind: "flow", id: "flow.child.graph" });
+    stores.projectData.upsert("flows", "flow.parent", { source: "canonical", flow: { flowId: "flow.parent", name: "Parent Flow", nodes: [], edges: [] } });
+    stores.projectData.upsert("flows", "flow.child.graph", { source: "canonical", flow: { flowId: "flow.child.graph", name: "Child Subflow", nodes: [], edges: [] } });
+    const instanceId = "flow-instructions::object::flow.parent";
+    const selected = selectAutomationConnectorFlow({
+      projectData: stores.projectData.getState(),
+      runtimeStatus: stores.runtimeStatus.getState(),
+      selection: stores.selection.getState()
+    }, {
+      projectId: "project-a",
+      projectView: { getRevisionKey: () => "test", read: vi.fn() as never },
+      getWorkspacePrefs: () => ({ activeViewId: instanceId, panes: [{ id: "pane-1", activeViewId: instanceId, tabs: [instanceId] }], viewStates: {} }) as any,
+      viewInstanceId: instanceId,
+      loadFlowDetail: vi.fn(), loadFlowMetadata: vi.fn(), loadNodeDefinitions: vi.fn(), loadRecording: vi.fn(), loadTimeline: vi.fn()
+    }, automationStudioViewId.instructions);
+    expect(selected.flow).toMatchObject({ flowId: "flow.parent", name: "Parent Flow" });
   });
 
   it("opens the resolved project Flow on first load without requiring a manual selection", () => {

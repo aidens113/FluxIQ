@@ -4,7 +4,7 @@ import { createAutomationConnectedViewHostRequest } from "../../views/view-host-
 import type { AutomationWorkspaceViewEntry } from "../../workspace/shell/contracts";
 import { createAutomationWorkspaceViewSource } from "../../workspace/shell/view-source";
 import { createAutomationStudioViewInstances } from "../../views/view-instances";
-import { automationStudioViewId } from "../../views/view-registry";
+import { automationStudioViewBaseId, automationStudioViewId } from "../../views/view-registry";
 import {
   AutomationAdaptationsConnectedView,
   AutomationClientsConnectedView,
@@ -40,6 +40,7 @@ type CachedEntry = {
   commands: Record<string, unknown>;
   generation: number;
   scope: AutomationCanonicalConnectorScope;
+  sourceScope: AutomationCanonicalConnectorScope;
   stores: AutomationStudioStores;
   view: ReturnType<typeof createAutomationStudioViewInstances>[number];
   entry: AutomationWorkspaceViewEntry;
@@ -58,18 +59,22 @@ export function createAutomationConnectedViewEntryCache(): AutomationConnectedVi
       const entry = (viewId: string, Connector: any) => {
         const view = byId.get(viewId);
         if (!view) throw new Error(`Missing Automation Studio view instance: ${viewId}`);
-        const commands = options.commands[viewId] ?? emptyCommands;
+        const baseViewId = automationStudioViewBaseId(viewId);
+        const commands = options.commands[baseViewId] ?? emptyCommands;
         const current = cached.get(viewId);
+        const connectorScope = current?.sourceScope === options.scope
+          ? current.scope
+          : { ...options.scope, viewInstanceId: viewId };
         if (current
           && current.commands === commands
           && current.generation === options.generation
-          && current.scope === options.scope
+          && current.sourceScope === options.scope
           && current.stores === options.stores
           && current.view === view) return current.entry;
         const connect = createAutomationDirectViewConnection(Connector as never, {
           commands,
           projectGeneration: options.generation,
-          scope: options.scope,
+          scope: connectorScope,
           stores: options.stores,
           view: view as never
         } as never);
@@ -77,23 +82,13 @@ export function createAutomationConnectedViewEntryCache(): AutomationConnectedVi
           view,
           request: createAutomationConnectedViewHostRequest(view as never, connect)
         } as AutomationWorkspaceViewEntry;
-        cached.set(viewId, { commands, generation: options.generation, scope: options.scope, stores: options.stores, view, entry });
+        cached.set(viewId, { commands, generation: options.generation, scope: connectorScope, sourceScope: options.scope, stores: options.stores, view, entry });
         return entry;
       };
-      const next = [
-        entry(automationStudioViewId.clients, AutomationClientsConnectedView),
-        entry(automationStudioViewId.flowEditor, AutomationFlowEditorConnectedView),
-        entry(automationStudioViewId.recordingTimeline, AutomationRecordingConnectedView),
-        entry(automationStudioViewId.state, AutomationStateConnectedView),
-        entry(automationStudioViewId.runtime, AutomationRuntimeConnectedView),
-        entry(automationStudioViewId.problems, AutomationProblemsConnectedView),
-        entry(automationStudioViewId.inspector, AutomationInspectorConnectedView),
-        entry(automationStudioViewId.router, AutomationRouterConnectedView),
-        entry(automationStudioViewId.subflows, AutomationSubflowsConnectedView),
-        entry(automationStudioViewId.instructions, AutomationInstructionsConnectedView),
-        entry(automationStudioViewId.adaptations, AutomationAdaptationsConnectedView),
-        entry(automationStudioViewId.settings, AutomationSettingsConnectedView)
-      ];
+      const next = options.views.flatMap((view) => {
+        const Connector = connectorByViewId.get(automationStudioViewBaseId(view.id));
+        return Connector ? [entry(view.id, Connector)] : [];
+      });
       for (const viewId of cached.keys()) {
         if (!byId.has(viewId)) cached.delete(viewId);
       }
@@ -108,13 +103,23 @@ export function useAutomationConnectedViewSource(
   projectKey: string,
   entries: readonly AutomationWorkspaceViewEntry[]
 ) {
-  const ownerRef = useRef<AutomationConnectedViewSourceOwner | null>(null);
-  if (!ownerRef.current || ownerRef.current.projectKey !== projectKey) {
-    ownerRef.current = createAutomationConnectedViewSourceOwner(projectKey, entries);
+  const entryKey = automationConnectedViewEntryKey(entries);
+  const ownerRef = useRef<{ entryKey: string; owner: AutomationConnectedViewSourceOwner } | null>(null);
+  if (!ownerRef.current
+    || ownerRef.current.owner.projectKey !== projectKey
+    || ownerRef.current.entryKey !== entryKey) {
+    ownerRef.current = {
+      entryKey,
+      owner: createAutomationConnectedViewSourceOwner(projectKey, entries)
+    };
   }
-  const owner = ownerRef.current;
+  const owner = ownerRef.current.owner;
   useLayoutEffect(() => owner.update(entries), [entries, owner]);
   return owner.source;
+}
+
+export function automationConnectedViewEntryKey(entries: readonly AutomationWorkspaceViewEntry[]): string {
+  return entries.map((entry) => entry.view.id).join("\u001f");
 }
 
 export type AutomationConnectedViewSourceOwner = {
@@ -154,3 +159,18 @@ export function createAutomationConnectedViewEntries(args: {
 }
 
 const emptyCommands = Object.freeze({}) as Record<string, unknown>;
+
+const connectorByViewId = new Map<string, any>([
+  [automationStudioViewId.clients, AutomationClientsConnectedView],
+  [automationStudioViewId.flowEditor, AutomationFlowEditorConnectedView],
+  [automationStudioViewId.recordingTimeline, AutomationRecordingConnectedView],
+  [automationStudioViewId.state, AutomationStateConnectedView],
+  [automationStudioViewId.runtime, AutomationRuntimeConnectedView],
+  [automationStudioViewId.problems, AutomationProblemsConnectedView],
+  [automationStudioViewId.inspector, AutomationInspectorConnectedView],
+  [automationStudioViewId.router, AutomationRouterConnectedView],
+  [automationStudioViewId.subflows, AutomationSubflowsConnectedView],
+  [automationStudioViewId.instructions, AutomationInstructionsConnectedView],
+  [automationStudioViewId.adaptations, AutomationAdaptationsConnectedView],
+  [automationStudioViewId.settings, AutomationSettingsConnectedView]
+]);

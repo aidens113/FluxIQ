@@ -1,5 +1,8 @@
 import {
+  automationStudioObjectViewInstanceId,
+  automationStudioViewObjectId,
   automationStudioViewId,
+  automationStudioViewBaseId,
   canonicalAutomationStudioViewId,
   type AutomationStudioViewMigrationContext
 } from "../../views/view-registry";
@@ -18,7 +21,9 @@ export function canonicalAutomationWorkspaceViewId(
   viewId: string,
   context: AutomationStudioViewMigrationContext = { hasFlow: false }
 ): string {
-  return canonicalAutomationStudioViewId(viewId, context);
+  const objectId = automationStudioViewObjectId(viewId);
+  const canonical = canonicalAutomationStudioViewId(automationStudioViewBaseId(viewId), context);
+  return automationStudioObjectViewInstanceId(canonical, objectId);
 }
 
 export function normalizeAutomationStrictMainLayoutPreset(

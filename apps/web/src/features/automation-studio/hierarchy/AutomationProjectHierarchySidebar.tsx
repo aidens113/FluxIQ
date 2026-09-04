@@ -6,7 +6,6 @@ import type { AutomationSelection } from "../shared/selection-contracts";
 import type { AutomationHierarchyAction, AutomationHierarchyKind, AutomationHierarchyNode } from "./contracts";
 import type { AutomationHierarchyPageInfo } from "./paged-cache";
 import { AutomationProjectTree } from "./ProjectTree";
-import type { AutomationHierarchyRoutableViewId } from "./routing";
 import { createAutomationHierarchyProjectionSelector } from "./selectors";
 import type { AutomationHierarchyUiCoordinator } from "./ui-coordinator";
 
@@ -20,7 +19,7 @@ export const AutomationProjectHierarchySidebar = memo(function AutomationProject
   onCloseProject(): void;
   onToggleCollapsed(): void;
   openSubflow(node: AutomationHierarchyNode, mode: "preview" | "new-pane-or-focus"): void;
-  openView(viewId: AutomationHierarchyRoutableViewId, mode?: "preview" | "new-pane-or-focus"): void;
+  openView(viewId: string, mode?: "preview" | "new-pane-or-focus"): void;
   projectName: string;
   recordingPrimaryKind: "recording" | null;
   requestAction(action: NonNullable<AutomationHierarchyAction>): void;

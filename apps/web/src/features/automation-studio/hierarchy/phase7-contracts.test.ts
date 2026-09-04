@@ -142,7 +142,8 @@ describe("Phase 7 hierarchy routing contracts", () => {
     controller.openNode(subflow, "preview");
 
     expect(store.getSnapshot().primaryTreeNodeId).toBe(nodes.id);
-    expect(order.slice(-2)).toEqual(["subflow", "selection"]);
+    expect(order.at(-1)).toBe("subflow");
+    expect(order).not.toContain("selection");
     expect(order.filter((event) => event === "row")).toHaveLength(1);
     expect(openSubflow).toHaveBeenCalledWith(subflow, "preview");
   });

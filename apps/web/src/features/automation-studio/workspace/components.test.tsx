@@ -2,11 +2,32 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Blocks, Settings } from "lucide-react";
 import { describe, expect, it } from "vitest";
-import { AutomationViewContainer } from "./components/view-container";
+import { AutomationViewContainer, automationActiveTabScrollLeft } from "./components/view-container";
 import { AutomationWorkspacePreferences } from "./components/workspace-preferences";
 import { defaultAutomationWorkspacePrefs } from "./layout/defaults";
 
 describe("AutomationViewContainer tabs", () => {
+  it("scrolls an active tab into the visible horizontal range", () => {
+    expect(automationActiveTabScrollLeft({
+      clientWidth: 300,
+      scrollLeft: 100,
+      tabLeft: 380,
+      tabWidth: 80
+    })).toBe(166);
+    expect(automationActiveTabScrollLeft({
+      clientWidth: 300,
+      scrollLeft: 280,
+      tabLeft: 100,
+      tabWidth: 80
+    })).toBe(94);
+    expect(automationActiveTabScrollLeft({
+      clientWidth: 300,
+      scrollLeft: 100,
+      tabLeft: 180,
+      tabWidth: 80
+    })).toBe(100);
+  });
+
   it("renders an accessible overflow-safe tab strip and linked panel", () => {
     const html = renderToStaticMarkup(<AutomationViewContainer
       active

@@ -1,7 +1,7 @@
 "use client";
 
 import type { AutomationSelection } from "../shared/selection-contracts";
-import { automationStudioViewId } from "../views/view-registry";
+import { automationStudioObjectViewInstanceId, automationStudioViewId } from "../views/view-registry";
 import { useStableAutomationEvent } from "./useStableAutomationEvent";
 
 type WorkspacePrefs = { viewStates?: Record<string, Record<string, unknown>> };
@@ -9,23 +9,24 @@ type ReadinessTarget = "instructions" | "router" | "nodes" | "subflows";
 
 export function useAdaptationWorkspaceNavigation(options: {
   selectedFlowId?: string;
-  updatePrefs(update: (current: WorkspacePrefs) => WorkspacePrefs): void;
+  updatePrefs(update: (current: WorkspacePrefs) => WorkspacePrefs, options?: { persist?: boolean }): void;
   openView(viewId: string, mode?: "preview" | "new-pane-or-focus"): void;
   openProblems(): void;
   setSelection(selection: AutomationSelection): void;
 }) {
   function persistSelection(flowId: string | undefined, adaptationId: string) {
     options.updatePrefs((current) => {
-      const currentState = current.viewStates?.[automationStudioViewId.adaptations] ?? {};
+      const instanceId = automationStudioObjectViewInstanceId(automationStudioViewId.adaptations, flowId);
+      const currentState = current.viewStates?.[instanceId] ?? {};
       if (currentState.flowId === flowId && currentState.selectedAdaptationId === adaptationId) return current;
       return {
         ...current,
         viewStates: {
           ...current.viewStates,
-          [automationStudioViewId.adaptations]: { ...currentState, flowId, selectedAdaptationId: adaptationId }
+          [instanceId]: { ...currentState, flowId, selectedAdaptationId: adaptationId }
         }
       };
-    });
+    }, { persist: true });
   }
 
   const openAdaptation = useStableAutomationEvent((flowId: string | undefined, adaptationId: string) => {

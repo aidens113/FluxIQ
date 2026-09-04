@@ -9,6 +9,7 @@ import { createAutomationWorkspaceCommandPort } from "../../workspace/commands/p
 import { createAutomationWorkspaceCommands } from "../../workspace/commands/workspace-commands";
 import { createAutomationProjectViewModelCache } from "../../model/project-view-model-cache";
 import {
+  automationConnectedViewEntryKey,
   createAutomationConnectedViewEntryCache,
   createAutomationConnectedViewSourceOwner
 } from "./connected-view-entries";
@@ -78,6 +79,13 @@ describe("Phase 3 connected-view render stability", () => {
 
     const secondSession = createAutomationConnectedViewSourceOwner("project-b", entries);
     expect(secondSession.source).not.toBe(source);
+  });
+
+  it("changes the source seed key when an object-qualified view is restored", () => {
+    const canonical = [fakeEntry(automationStudioViewId.instructions)];
+    const restored = [fakeEntry(`${automationStudioViewId.instructions}::object::flow.child`)];
+
+    expect(automationConnectedViewEntryKey(restored)).not.toBe(automationConnectedViewEntryKey(canonical));
   });
 });
 

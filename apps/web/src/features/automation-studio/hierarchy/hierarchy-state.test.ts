@@ -5,6 +5,8 @@ import { createAutomationHierarchyController } from "./controller";
 import type { AutomationHierarchyNode } from "./model";
 import { indexAutomationHierarchyNodes } from "./model";
 import {
+  automationHierarchyAncestorContainersForSelection,
+  automationHierarchyDefaultContainersForSelection,
   automationHierarchyNodeSelectionState,
   createAutomationHierarchyProjectionSelector,
   selectAutomationHierarchyEffectiveCollapsedIds,
@@ -125,6 +127,33 @@ describe("automation hierarchy store", () => {
 });
 
 describe("automation hierarchy selectors", () => {
+  it("returns only the ancestor chain needed to reveal a restored nested inner view", () => {
+    const subflow = {
+      id: "subflow-review",
+      label: "Review",
+      kind: "subflow",
+      category: "flow",
+      parentId: flow.id,
+      flowId: "flow.checkout",
+      metadata: { defaultCollapsed: true, graphFlowId: "flow.review.graph" }
+    } as AutomationHierarchyNode;
+    const instructions = {
+      id: "subflow-review-instructions",
+      label: "Instructions",
+      kind: "flow-object",
+      category: "flow",
+      parentId: subflow.id,
+      flowId: "flow.review.graph",
+      viewId: "flow-instructions",
+      sourceId: "flow.review.graph"
+    } as AutomationHierarchyNode;
+    expect(automationHierarchyAncestorContainersForSelection(
+      [flow, subflow, instructions],
+      { kind: "flow", id: "flow.review.graph" },
+      "flow-instructions"
+    )).toEqual([flow.id, subflow.id]);
+  });
+
   it("expands the active subflow until the user explicitly collapses it", () => {
     const subflow = {
       id: "subflow-a",
@@ -145,6 +174,114 @@ describe("automation hierarchy selectors", () => {
       ...input,
       collapsedFolderIds: ["subflow-a"]
     })).toContain("subflow-a");
+  });
+
+  it("keeps a Flow's subflow branches visible while selecting Router or another Flow object", () => {
+    const subflow = {
+      id: "subflow-a",
+      label: "Checkout",
+      kind: "subflow",
+      category: "flow",
+      parentId: flow.id,
+      flowId: "flow.checkout",
+      metadata: { defaultCollapsed: true, graphFlowId: "flow.checkout.subflow.graph" }
+    } as AutomationHierarchyNode;
+    const selectedSubflow = { kind: "flow", id: "flow.checkout.subflow.graph" } as const;
+    const store = createAutomationHierarchyStore();
+    for (const containerId of automationHierarchyDefaultContainersForSelection(
+      [flow, router, subflow],
+      selectedSubflow,
+      store.getSnapshot().collapsedFolderIds
+    )) {
+      store.expandContainer(containerId, true);
+    }
+    const input = {
+      nodes: [flow, router, subflow],
+      collapsedFolderIds: store.getSnapshot().collapsedFolderIds,
+      expandedDefaultCollapsedIds: store.getSnapshot().expandedDefaultCollapsedIds,
+      selection: { kind: "flow", id: "flow.checkout" }
+    } satisfies Parameters<typeof selectAutomationHierarchyEffectiveCollapsedIds>[0];
+
+    expect(selectAutomationHierarchyEffectiveCollapsedIds(input)).not.toContain(subflow.id);
+    expect(selectAutomationHierarchyEffectiveCollapsedIds({
+      ...input,
+      collapsedFolderIds: [subflow.id]
+    })).toContain(subflow.id);
+  });
+
+  it("leaves unopened subflows default-collapsed when their parent Flow is selected", () => {
+    const subflow = {
+      id: "subflow-a",
+      label: "Checkout",
+      kind: "subflow",
+      category: "flow",
+      parentId: flow.id,
+      flowId: "flow.checkout",
+      metadata: { defaultCollapsed: true, graphFlowId: "flow.checkout.subflow.graph" }
+    } as AutomationHierarchyNode;
+
+    expect(selectAutomationHierarchyEffectiveCollapsedIds({
+      nodes: [flow, subflow],
+      collapsedFolderIds: [],
+      expandedDefaultCollapsedIds: [],
+      selection: { kind: "flow", id: "flow.checkout" }
+    })).toContain(subflow.id);
+  });
+
+  it("highlights the Nodes row that owns a restored editor-node selection", () => {
+    const subflow = {
+      id: "subflow-a",
+      label: "Primary",
+      kind: "subflow",
+      category: "flow",
+      parentId: flow.id,
+      viewId: "flow-nodes",
+      sourceId: "subflow.primary",
+      flowId: "flow.checkout",
+      metadata: { graphFlowId: "flow.checkout.primary.graph", defaultCollapsed: true }
+    } as AutomationHierarchyNode;
+    const nodesBoard = {
+      id: "subflow-a-nodes",
+      label: "Nodes",
+      kind: "flow-object",
+      category: "flow",
+      parentId: subflow.id,
+      viewId: "flow-nodes",
+      sourceId: "flow.checkout.primary.graph",
+      flowId: "flow.checkout.primary.graph"
+    } as AutomationHierarchyNode;
+    const selection = {
+      kind: "editor-node" as const,
+      id: "node.output",
+      flowId: "flow.checkout.primary.graph",
+      node: {
+        label: "Output",
+        nodeType: "custom",
+        family: "output",
+        description: "Output",
+        inputs: [],
+        outputs: [],
+        parameters: [],
+        parameterValues: {}
+      }
+    };
+    const nodes = [flow, subflow, nodesBoard];
+    const index = indexAutomationHierarchyNodes(nodes);
+
+    expect(automationHierarchyNodeSelectionState({
+      node: nodesBoard,
+      index,
+      selection,
+      activeViewId: "flow-nodes",
+      primaryTreeNodeId: null,
+      recordingPrimaryKind: null
+    }).primarySelected).toBe(true);
+    expect(selectAutomationHierarchyEffectiveCollapsedIds({
+      nodes,
+      collapsedFolderIds: [],
+      expandedDefaultCollapsedIds: [],
+      selection
+    })).not.toContain(subflow.id);
   });
 
   it("marks exactly the selected object for each active Flow view", () => {
@@ -294,7 +431,7 @@ describe("automation hierarchy controller", () => {
     expect(controller).toBe(originalController);
     expect(firstOpenView).toHaveBeenCalledOnce();
     expect(latestSetSelection).toHaveBeenCalledWith({ kind: "flow", id: "flow.checkout" });
-    expect(latestOpenView).toHaveBeenCalledWith("flow-router", "new-pane-or-focus");
+    expect(latestOpenView).toHaveBeenCalledWith("flow-router::object::flow.checkout", "new-pane-or-focus");
     expect(store.getSnapshot().expandedDefaultCollapsedIds).toEqual([defaultCollapsedFolder.id]);
   });
 
@@ -332,7 +469,7 @@ describe("automation hierarchy controller", () => {
     expect(setSelection).not.toHaveBeenCalled();
     expect(openView).not.toHaveBeenCalled();
   });
-  it("opens a subflow through its single graph-shell path and selects Nodes", () => {
+  it("delegates subflow selection to its single asynchronous graph-shell path", () => {
     const subflow: AutomationHierarchyNode = {
       id: "subflow-a",
       label: "Primary",
@@ -380,7 +517,7 @@ describe("automation hierarchy controller", () => {
     expect(store.getSnapshot().expandedDefaultCollapsedIds).toEqual([subflow.id]);
     expect(openSubflow).toHaveBeenCalledOnce();
     expect(openView).not.toHaveBeenCalled();
-    expect(setSelection).toHaveBeenCalledWith({ kind: "flow", id: "flow.checkout.primary.graph" });
+    expect(setSelection).not.toHaveBeenCalled();
   });
 });
 

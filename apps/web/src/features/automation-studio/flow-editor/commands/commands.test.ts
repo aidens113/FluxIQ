@@ -299,7 +299,7 @@ describe("run-current-Flow command", () => {
 
 describe("Flow draft commands", () => {
   const graph = {
-    nodes: [{ id: "node.one", position: { x: 0, y: 0 }, data: { label: "One" } }],
+    nodes: [{ id: "node.one", position: { x: 0, y: 0 }, data: { label: "One", parameterValues: { message: { $state: { path: "app.currentMessage", fallback: "Manual message" } } } } }],
     edges: []
   };
 
@@ -385,7 +385,13 @@ describe("Flow draft commands", () => {
       operations: expect.arrayContaining([
         expect.objectContaining({
           op: "add_node",
-          node: expect.objectContaining({ nodeId: "node.one", flowId: "flow.one", x: 0, y: 0 })
+          node: expect.objectContaining({
+            nodeId: "node.one",
+            flowId: "flow.one",
+            x: 0,
+            y: 0,
+            parameterValues: expect.objectContaining({ message: { $state: { path: "app.currentMessage", fallback: "Manual message" } } })
+          })
         })
       ])
     }), {});

@@ -1,9 +1,14 @@
 import { Plus, Search, Trash2 } from "lucide-react";
 import { useId, useRef, useState } from "react";
-import type { AutomationNodeParameter } from "fluxiq/automation-studio/nodes";
+import {
+  automationNodeStateBinding,
+  isAutomationNodeParameterStateBinding,
+  type AutomationNodeParameter
+} from "fluxiq/automation-studio/nodes";
+import type { JsonValue } from "fluxiq/core";
 import type { JsonObject } from "../../programs/program-api";
 
-export type AutomationReferenceType = "action" | "task" | "policy" | "routine" | "database-collection" | "variable";
+export type AutomationReferenceType = "action" | "task" | "policy" | "routine" | "database-collection" | "variable" | "state";
 export type AutomationReferenceOption = { id: string; label: string; detail?: string };
 export type AutomationReferenceOptions = Partial<Record<AutomationReferenceType, AutomationReferenceOption[]>>;
 
@@ -28,15 +33,6 @@ export function AutomationNodeParameterEditor(props: {
     <details className="automation-inspector-section automation-node-parameters" open>
       <summary>Parameters</summary>
       <div className="automation-parameter-stack">
-        <label className="automation-parameter-field">
-          <span>Node description</span>
-          <textarea
-            className="automation-description-input"
-            placeholder={props.node.description ?? "Describe what this node does in this flow"}
-            value={props.node.customDescription ?? ""}
-            onChange={(event) => props.onDescriptionChange(event.target.value)}
-          />
-        </label>
         {parameters.length ? parameters.map((parameter) => (
           <AutomationNodeParameterField
             key={parameter.id}
@@ -46,6 +42,15 @@ export function AutomationNodeParameterEditor(props: {
             onChange={(value) => setValue(parameter, value)}
           />
         )) : <span className="muted-text">This node has no editable parameters.</span>}
+        <label className="automation-parameter-field automation-node-description-field">
+          <span>Node description</span>
+          <textarea
+            className="automation-description-input"
+            placeholder={props.node.description ?? "Describe what this node does in this flow"}
+            value={props.node.customDescription ?? ""}
+            onChange={(event) => props.onDescriptionChange(event.target.value)}
+          />
+        </label>
       </div>
     </details>
   );
@@ -53,12 +58,57 @@ export function AutomationNodeParameterEditor(props: {
 
 function AutomationNodeParameterField(props: { parameter: AutomationNodeParameter; value: unknown; referenceOptions?: AutomationReferenceOptions; onChange(value: unknown): void }) {
   const error = automationParameterError(props.parameter, props.value, props.referenceOptions);
+  const stateBinding = isAutomationNodeParameterStateBinding(props.value) ? props.value : null;
+  const literalValue = stateBinding?.$state.fallback ?? props.parameter.defaultValue;
+  const stateOptions = props.referenceOptions?.state ?? [];
   return (
     <div className={error ? "automation-parameter-field-shell invalid" : "automation-parameter-field-shell"}>
-      <AutomationNodeParameterControl {...props} />
+      {props.parameter.allowStateBinding !== false ? (
+        <label className="automation-parameter-field automation-parameter-source">
+          <span>{props.parameter.label} source</span>
+          <select
+            aria-label={`${props.parameter.label} source`}
+            value={stateBinding ? "state" : "manual"}
+            onChange={(event) => props.onChange(event.target.value === "state"
+              ? automationNodeStateBinding(stateOptions[0]?.id ?? "", props.value as JsonValue)
+              : literalValue)}
+          >
+            <option value="manual">Manual value</option>
+            <option value="state">State value</option>
+          </select>
+        </label>
+      ) : null}
+      {stateBinding ? (
+        <AutomationStateParameterField
+          parameter={props.parameter}
+          path={stateBinding.$state.path}
+          options={stateOptions}
+          onChange={(path) => props.onChange(automationNodeStateBinding(path, stateBinding.$state.fallback))}
+        />
+      ) : <AutomationNodeParameterControl {...props} value={props.value ?? props.parameter.defaultValue} />}
       {props.parameter.example !== undefined ? <small className="automation-parameter-example">Example: {automationParameterPrimitiveText(props.parameter.example)}</small> : null}
       {error ? <small className="automation-parameter-error" role="alert">{error}</small> : null}
     </div>
+  );
+}
+
+function AutomationStateParameterField(props: { parameter: AutomationNodeParameter; path: string; options: AutomationReferenceOption[]; onChange(path: string): void }) {
+  const dataListId = "automation-state-path-" + useId().replace(/:/g, "");
+  return (
+    <label className="automation-parameter-field automation-state-parameter">
+      <span>{props.parameter.label}{props.parameter.required ? " *" : ""}</span>
+      <input
+        aria-label={`${props.parameter.label} state path`}
+        list={dataListId}
+        onChange={(event) => props.onChange(event.target.value)}
+        placeholder="namespace.path"
+        value={props.path}
+      />
+      <datalist id={dataListId}>
+        {props.options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+      </datalist>
+      <small className="automation-parameter-help">Uses this state value at runtime. The last manual value remains the fallback.</small>
+    </label>
   );
 }
 
@@ -319,6 +369,7 @@ function AutomationArrayParameterEditor(props: { value: unknown; onChange(value:
 }
 
 export function automationParameterError(parameter: AutomationNodeParameter, value: unknown, referenceOptions?: AutomationReferenceOptions): string | null {
+  if (isAutomationNodeParameterStateBinding(value)) return value.$state.path.trim() ? null : "Choose or enter a state path.";
   const empty = value === undefined || value === null || (typeof value === "string" && !value.trim());
   if (parameter.required && empty) return parameter.label + " is required.";
   if (empty) return null;
