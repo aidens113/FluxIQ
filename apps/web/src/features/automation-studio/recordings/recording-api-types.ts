@@ -24,10 +24,22 @@ export type RecordingRepairRequest = {
   authorizationPin: string;
 };
 
+export type RecordingSubflowGenerationRequest = {
+  projectId: string;
+  recordingId: string;
+  flowId: string;
+  authorizationPin: string;
+};
+
 export type RecordingViewDataPort = {
   queryPage(input: RecordingPageQuery): Promise<RecordingApiResult<{
     recordings?: unknown[];
     page?: { limit: number; offset: number; total: number };
   }>>;
   repairStateIndex(input: RecordingRepairRequest): Promise<RecordingApiResult>;
+  generateDeterministicSubflow(input: RecordingSubflowGenerationRequest): Promise<RecordingApiResult<{
+    proposal: Record<string, unknown>;
+    flow: Record<string, unknown>;
+    issues: string[];
+  }>>;
 };

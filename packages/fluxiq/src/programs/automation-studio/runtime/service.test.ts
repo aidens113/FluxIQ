@@ -246,8 +246,43 @@ describe("AutomationStudioService recording persistence", () => {
     const reviewedGraph = await getPrimarySubflowGraph(service, project.id, reviewed.flow!.flowId);
     expect(reviewed.flow?.nodes).toEqual([]);
     expect(reviewedGraph.nodes[0]).toMatchObject({ definitionId: "builtin.policy.action", parameterValues: { outputId: "click", confirmationInputId: "clicked" }, metadata: { actionEntryId: proposal?.candidates[0]?.actionEntryId, timelineEntryId: proposal?.candidates[0]?.actionEntryId, rawEvidenceImmutable: true } });
-    const savedEdit = await service.saveFlow({ projectId: project.id, flow: { ...reviewedGraph, nodes: reviewedGraph.nodes.map((node) => ({ ...node, label: "Edited click", metadata: { ...(node.metadata ?? {}), sourceObservationIds: ["forged"] } })) } });
+
+    const routedFlow = await service.createFlow({ projectId: project.id, flowId: "flow.routed-recording-proposal", name: "Routed recording proposal" });
+    const routedFallback = await service.createFlowSubflow({ projectId: project.id, flowId: routedFlow.flowId, name: "Browser work", role: "utility" });
+    await service.setFlowMapFallback({ projectId: project.id, flowId: routedFlow.flowId, kind: "subflow", targetSubflowId: routedFallback.subflowId });
+    const { proposals: [routedProposal] } = await service.createRecordingFlowProposals({ projectId: project.id, recordingId: recording.recordingId, force: true });
+    await service.reviewRecordingFlowProposal({
+      projectId: project.id,
+      proposalId: routedProposal!.proposalId,
+      decision: "approved",
+      destination: { kind: "flow", flowId: routedFlow.flowId, writeMode: "replace_recording_derived" }
+    });
+    const routedSubflows = await service.listFlowSubflowSummaries({ projectId: project.id, flowId: routedFlow.flowId });
+    expect(routedSubflows.subflows.map((item) => item.subflowId)).toEqual([routedFallback.subflowId]);
+    expect((await service.getFlow(project.id, routedFallback.graphFlowId!)).nodes).toHaveLength(1);
+    const indexedBeforeReplacement = await service.getFlowGraphViewport({ projectId: project.id, flowId: reviewedGraph.flowId, bounds: { minX: -10_000, minY: -10_000, maxX: 10_000, maxY: 10_000 }, limit: 100 });
+    expect(indexedBeforeReplacement.page.nodes.map((node) => node.nodeId)).toEqual([reviewedGraph.nodes[0]!.id]);
+    const { proposals: [replacementProposal] } = await service.createRecordingFlowProposals({ projectId: project.id, recordingId: recording.recordingId, force: true });
+    const replaced = await service.reviewRecordingFlowProposal({
+      projectId: project.id,
+      proposalId: replacementProposal!.proposalId,
+      decision: "approved",
+      destination: { kind: "flow", flowId: reviewed.flow!.flowId, writeMode: "replace_recording_derived" }
+    });
+    const replacementGraph = await getPrimarySubflowGraph(service, project.id, reviewed.flow!.flowId);
+    expect(replaced.proposal.review?.destination).toMatchObject({ kind: "flow", flowId: reviewed.flow!.flowId, writeMode: "replace_recording_derived" });
+    expect(replacementGraph.nodes).toHaveLength(1);
+    const indexedAfterReplacement = await service.getFlowGraphViewport({ projectId: project.id, flowId: replacementGraph.flowId, bounds: { minX: -10_000, minY: -10_000, maxX: 10_000, maxY: 10_000 }, limit: 100 });
+    expect(indexedAfterReplacement.page.nodes.map((node) => node.nodeId)).toEqual([replacementGraph.nodes[0]!.id]);
+    const savedEdit = await service.saveFlow({ projectId: project.id, flow: { ...replacementGraph, nodes: replacementGraph.nodes.map((node) => ({ ...node, label: "Edited click", metadata: { ...(node.metadata ?? {}), sourceObservationIds: ["forged"] } })) } });
     expect(savedEdit.nodes[0]).toMatchObject({ label: "Edited click", metadata: { sourceObservationIds: proposal!.candidates[0]!.sourceObservationIds, manualProvenance: [{ changedFields: ["label"] }] } });
+    const { proposals: [unsafeReplacement] } = await service.createRecordingFlowProposals({ projectId: project.id, recordingId: recording.recordingId, force: true });
+    await expect(service.reviewRecordingFlowProposal({
+      projectId: project.id,
+      proposalId: unsafeReplacement!.proposalId,
+      decision: "approved",
+      destination: { kind: "flow", flowId: reviewed.flow!.flowId, writeMode: "replace_recording_derived" }
+    })).rejects.toThrow("entirely unedited recording-derived behavior");
     const session = await service.runRuntimeSession({ projectId: project.id, flowId: reviewed.flow!.flowId });
     expect(session.status).toBe("succeeded");
     expect(dispatches).toBe(1);
@@ -262,7 +297,7 @@ describe("AutomationStudioService recording persistence", () => {
     const changedManifest = { ...manifest, packageVersion: "2.0.0", recordingMappers: [{ ...manifest.recordingMappers![0]!, version: "2.0.0" }] };
     const changedRuntime = new AutomationStudioNativeNodeRuntime().register(changedManifest, { packageId: "example.importer", packageVersion: "2.0.0", implementations: {}, recordingMappers: { "click-mapper": () => null } });
     service.bindNativeNodeRuntime(changedRuntime);
-    const invalidated = (await service.listPipelineArtifacts(project.id, { revalidateRecordingFlowProposals: true })).recordingFlowProposals.find((item) => item.proposalId === proposal!.proposalId);
+    const invalidated = (await service.listPipelineArtifacts(project.id, { revalidateRecordingFlowProposals: true })).recordingFlowProposals.find((item) => item.proposalId === replacementProposal!.proposalId);
     expect(invalidated).toMatchObject({ status: "invalidated", invalidation: { affectedFlowIds: [reviewed.flow!.flowId] } });
   });
 

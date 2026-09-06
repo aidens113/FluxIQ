@@ -51,6 +51,7 @@ type AutomationProjectDerivedSources = {
   availableNodeDefinitions: any[];
   indexedStateSourceList: any[];
   projectTasks: any[];
+  projectFlows: any[];
   artifactFlows: any[];
   hierarchyNodes: AutomationHierarchyNode[];
   projectFlowUrlScopeSignature: string;
@@ -175,6 +176,7 @@ export function createAutomationProjectViewModelSelector() {
       availableNodeDefinitions,
       indexedStateSourceList,
       projectTasks,
+      projectFlows: input.projectFlows,
       artifactFlows,
       hierarchyNodes,
       projectFlowUrlScopeSignature: flowScopeSignature(input.projectFlows),

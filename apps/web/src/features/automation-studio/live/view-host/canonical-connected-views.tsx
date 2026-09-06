@@ -178,7 +178,7 @@ export function selectAutomationConnectorSubflowGraph(
 export const AutomationRecordingConnectedView = createAutomationDirectViewConnector({
   id: automationStudioViewId.recordingTimeline,
   placeholder: (scope: AutomationCanonicalConnectorScope) => ({
-    actionStatus: "", projectId: scope.projectId, entries: [], notes: [], recordings: [],
+    actionStatus: "", projectId: scope.projectId, entries: [], notes: [], recordings: [], topLevelFlows: [],
     recordingProcessing: null, selectedEntry: null, selectedRecording: null,
     selectedTimeline: null, timelines: []
   }) as any,
@@ -202,6 +202,7 @@ export const AutomationRecordingConnectedView = createAutomationDirectViewConnec
         entries: view.selectedTimelineEntries,
         notes: view.selectedRecordingNotes,
         recordings: view.recordings,
+        topLevelFlows: view.projectFlows.map((entry: any) => entry?.flow ?? entry).filter((flow: any) => flow?.metadata?.subflowGraph !== true && typeof flow?.metadata?.parentFlowId !== "string"),
         recordingProcessing: state.runtimeStatus.recordingProcessing,
         selectedEntry: view.selectedEntry,
         selectedRecording: view.selectedRecording,

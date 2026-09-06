@@ -24,7 +24,7 @@ export type AutomationStudioClientGatewayBridgeOptions = {
 };
 
 export type ClientRecordingContext =
-  | { ok: true; projectId: string }
+  | { ok: true; projectId: string; taskId?: string }
   | { ok: false; message: string; code?: string; metadata?: JsonObject };
 
 export type ClientRecordingContextProvider = (input: {
@@ -215,10 +215,11 @@ export class AutomationStudioClientGatewayBridge {
     }
     const domainId = input.domainId ?? stringMetadataValue(input.metadata, "domainId") ?? stringMetadataValue(session.metadata, "domainId") ?? null;
     const projectId = input.projectId ?? context.projectId;
+    const taskId = input.taskId ?? context.taskId;
     const recording = await this.automationStudio.createRecording({
       projectId,
       recordingId: input.recordingId,
-      ...(input.taskId !== undefined ? { taskId: input.taskId } : {}),
+      ...(taskId !== undefined ? { taskId } : {}),
       ...(input.startedAt !== undefined ? { startedAt: input.startedAt } : {}),
       environment: input.environment
         ? input.environment as unknown as Partial<EnvironmentDescriptor>

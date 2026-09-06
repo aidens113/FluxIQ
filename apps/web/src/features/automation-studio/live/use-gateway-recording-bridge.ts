@@ -12,6 +12,7 @@ import type { AutomationLiveCommandScopeController } from "./command-scope";
 
 export function useAutomationGatewayRecordingBridge(input: {
   projectId: string | null;
+  flowId: string | null;
   scopes: AutomationLiveCommandScopeController;
   snapshot: any;
   publishSnapshot(snapshot: any): void;
@@ -26,26 +27,26 @@ export function useAutomationGatewayRecordingBridge(input: {
 
   useEffect(() => {
     const unregister = registerAutomationStudioDevelopmentSubscription({ id: "project-context", kind: "event" });
-    const publishContext = async (activeProjectId: string | null) => {
+    const publishContext = async (activeProjectId: string | null, activeFlowId: string | null) => {
       await fetch("/api/client-gateway/automation-studio-context", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ activeProjectId })
+        body: JSON.stringify({ activeProjectId, activeFlowId })
       }).catch(() => undefined);
     };
     const publishVisibleContext = () => {
-      if (document.visibilityState === "visible") void publishContext(callbacksRef.current.projectId);
+      if (document.visibilityState === "visible") void publishContext(callbacksRef.current.projectId, callbacksRef.current.flowId);
     };
-    void publishContext(input.projectId);
+    void publishContext(input.projectId, input.flowId);
     window.addEventListener("focus", publishVisibleContext);
     document.addEventListener("visibilitychange", publishVisibleContext);
     return () => {
       unregister();
       window.removeEventListener("focus", publishVisibleContext);
       document.removeEventListener("visibilitychange", publishVisibleContext);
-      void publishContext(null);
+      void publishContext(null, null);
     };
-  }, [input.projectId]);
+  }, [input.projectId, input.flowId]);
 
   useEffect(() => {
     let cancelled = false;

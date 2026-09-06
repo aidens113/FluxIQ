@@ -16,10 +16,12 @@ describe("project summary converters", () => {
       recordingId: "recording.one",
       domainId: "web",
       startedAt: 10,
+      status: "completed",
       eventCount: 4
     }]);
     expect(recording).toMatchObject({
       recordingId: "recording.one",
+      status: "completed",
       environment: { id: "web", domainId: "web" },
       metadata: { summaryOnly: true, eventCount: 4 },
       timeline: []

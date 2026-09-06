@@ -216,10 +216,11 @@ describe("AutomationStudioClientGatewayBridge", () => {
     const gateway = new ClientGatewayService();
     const automationStudio = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
     const project = await automationStudio.createProject({ name: "Open Project" });
+    const flow = await automationStudio.createFlow({ projectId: project.id, name: "Recorded Flow" });
     new AutomationStudioClientGatewayBridge({
       gateway,
       automationStudio,
-      clientRecordingContextProvider: () => ({ ok: true, projectId: project.id })
+      clientRecordingContextProvider: () => ({ ok: true, projectId: project.id, taskId: flow.flowId })
     });
     const session = gateway.connect();
     await gateway.receive(session.sessionId, clientMessage("client.hello", { clientId: "recorder.test", clientType: "custom", name: "Recorder" }));
@@ -241,6 +242,8 @@ describe("AutomationStudioClientGatewayBridge", () => {
     }));
 
     const stored = await automationStudio.getRecordingSession("recording.client-start", project.id);
+    expect(stored.taskId).toBe(flow.flowId);
+    expect((await automationStudio.getFlow(project.id, flow.flowId)).expansion?.recordingIds).toEqual([stored.recordingId]);
     expect(stored.environment.domainId).toBe("example.lifecycle");
     expect(stored.timeline).toHaveLength(1);
     expect(stored.endedAt).toBe(10);

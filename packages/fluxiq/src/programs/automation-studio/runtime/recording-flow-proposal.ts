@@ -27,7 +27,7 @@ export type RecordingFlowActionCandidate = {
 };
 
 export type RecordingFlowProposalDestination =
-  | { kind: "flow"; flowId: string; created: boolean }
+  | { kind: "flow"; flowId: string; created: boolean; writeMode?: "append" | "replace_recording_derived" }
   | { kind: "node"; visibility: "private" | "public"; definitionIds: string[] };
 
 export type RecordingFlowProposalReview = {

@@ -41,6 +41,7 @@ export function getFluxIQWebRuntimeStatus(operatorUserId?: string) {
     clientGatewayError: state.clientGatewayServer?.status.error ?? null,
     automationStudio: {
       activeProjectId: context?.activeProjectId ?? null,
+      activeFlowId: context?.activeFlowId ?? null,
       updatedAt: context?.updatedAt ?? 0,
       contextCount: Object.keys(state.automationStudioContexts).length,
       nativeImporterRuntimeBound: nativeRuntime.bound,
@@ -50,7 +51,7 @@ export function getFluxIQWebRuntimeStatus(operatorUserId?: string) {
   };
 }
 
-export function setAutomationStudioWebContext(input: { operatorUserId: string; clientId?: string; activeProjectId: string | null }): void {
+export function setAutomationStudioWebContext(input: { operatorUserId: string; clientId?: string; activeProjectId: string | null; activeFlowId?: string | null }): void {
   const state = getWebRuntimeState();
   setAutomationStudioContext(state.automationStudioContexts, input);
 }

@@ -19,6 +19,7 @@ export function emptyPipelineArtifacts() {
 export function recordingSummariesToRecordingStubs(summaries: any[]): any[] {
   return summaries.map((summary) => ({
     recordingId: summary.recordingId,
+    status: summary.status,
     ...(summary.taskId ? { taskId: summary.taskId } : {}),
     startedAt: summary.startedAt ?? 0,
     ...(summary.endedAt !== undefined ? { endedAt: summary.endedAt } : {}),

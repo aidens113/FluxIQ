@@ -3,7 +3,7 @@
 import { CheckCircle2, ChevronLeft, ChevronRight, CircleDot, Clock, FileText, List, RefreshCcw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, MouseEvent, PointerEvent } from "react";
-import { StatusText } from "../../programs/shared-ui";
+import { Field, Modal, StatusText } from "../../programs/shared-ui";
 import type { AutomationSelection } from "../shared/selection-contracts";
 import type { RecordingProcessingStatus } from "./recording-status";
 import { formatRecordingDuration, recordingEventSummary, recordingEventTitle } from "./recording-event-format";
@@ -38,6 +38,7 @@ export function RecordingTimelineView(props: {
   selectedRecording: any;
   selectedTimeline: any;
   timelines: any[];
+  topLevelFlows: any[];
   onAppendRecordingMarker(recordingId: string, linkedEntryId?: string, monotonicOffsetMs?: number, label?: string, authorizationPin?: string): Promise<void>;
   onAppendRecordingNote(recordingId: string, linkedEntryId?: string, text?: string, authorizationPin?: string): Promise<void>;
   onDeleteRecording(recordingId: string, authorizationPin?: string): Promise<void>;
@@ -66,6 +67,12 @@ export function RecordingTimelineView(props: {
     onUpdateRecording: props.onUpdateRecording
   });
   const [timelineOffset, setTimelineOffset] = useState(0);
+  const [generationOpen, setGenerationOpen] = useState(false);
+  const [generationFlowId, setGenerationFlowId] = useState("");
+  const [generationPin, setGenerationPin] = useState("");
+  const [generationBusy, setGenerationBusy] = useState(false);
+  const [generationError, setGenerationError] = useState("");
+  const [generationStatus, setGenerationStatus] = useState("");
   const timelineEditorRef = useRef<HTMLDivElement>(null);
   const suppressOverviewClickRef = useRef(false);
   const noteById = useMemo(() => new Map(props.notes.map((note) => [note.id, note])), [props.notes]);
@@ -80,6 +87,34 @@ export function RecordingTimelineView(props: {
   const selectedDuration = useActiveRecordingDuration(props.selectedRecording);
   const selectedIsNormalized = props.selectedRecording ? props.timelines.some((timeline) => timeline.recordingId === props.selectedRecording.recordingId) : false;
   const processing = props.selectedRecording && props.recordingProcessing?.recordingId === props.selectedRecording.recordingId ? props.recordingProcessing : null;
+  const generationFlows = useMemo(() => {
+    const flows = [...props.topLevelFlows];
+    const associatedFlowId = typeof props.selectedRecording?.taskId === "string" ? props.selectedRecording.taskId : "";
+    if (associatedFlowId && !flows.some((flow) => flow.flowId === associatedFlowId)) flows.unshift({ flowId: associatedFlowId, name: "Associated Flow" });
+    return flows;
+  }, [props.selectedRecording?.taskId, props.topLevelFlows]);
+  const selectedRecordingFinalized = Boolean(props.selectedRecording?.endedAt) || props.selectedRecording?.status === "completed";
+  const openGeneration = () => {
+    const associated = generationFlows.find((flow) => flow.flowId === props.selectedRecording?.taskId);
+    setGenerationFlowId(associated?.flowId ?? generationFlows[0]?.flowId ?? "");
+    setGenerationPin("");
+    setGenerationError("");
+    setGenerationOpen(true);
+  };
+  const generateSubflow = async () => {
+    if (!props.projectId || !props.selectedRecording?.recordingId || !generationFlowId) return;
+    setGenerationBusy(true);
+    setGenerationError("");
+    try {
+      const result = await dataPort.generateDeterministicSubflow({ projectId: props.projectId, recordingId: props.selectedRecording.recordingId, flowId: generationFlowId, authorizationPin: generationPin });
+      if (!result.ok) { setGenerationError(result.error ?? "Subflow generation failed."); return; }
+      await props.onRefreshRecordings();
+      setGenerationStatus("Deterministic Subflow generated from this recording.");
+      setGenerationOpen(false);
+    } finally {
+      setGenerationBusy(false);
+    }
+  };
   const scrollToTimelineStep = (index: number, behavior: ScrollBehavior = "smooth") => {
     window.requestAnimationFrame(() => {
       const editor = timelineEditorRef.current;
@@ -147,10 +182,12 @@ export function RecordingTimelineView(props: {
         <div className="automation-timeline-toolbar-actions">
           <button className="button" onClick={() => void props.onRefreshRecordings()} type="button"><RefreshCcw size={13} aria-hidden />Refresh</button>
           <button className="button" disabled={!props.selectedRecording} onClick={() => recordingActions.open("rename")} type="button">Rename</button>
+          <button className="button button-primary" data-generation-finalized={selectedRecordingFinalized ? "true" : "false"} data-generation-flow-count={generationFlows.length} disabled={!props.selectedRecording} onClick={openGeneration} title={!selectedRecordingFinalized ? "Core validates recording readiness when generation is submitted." : undefined} type="button">Generate Subflow</button>
           <button className="button" disabled={!props.selectedRecording || Boolean(props.selectedRecording.endedAt)} onClick={() => recordingActions.open("finalize")} type="button"><CheckCircle2 size={13} aria-hidden />Finalize</button>
           <button className="button danger" disabled={!props.selectedRecording} onClick={() => recordingActions.open("delete")} type="button"><Trash2 size={13} aria-hidden />Delete</button>
         </div>
         {props.actionStatus ? <StatusText value={props.actionStatus} /> : null}
+        {generationStatus ? <StatusText value={generationStatus} /> : null}
       </header>
       <div className="automation-timeline-stage">
         <RecordingProcessingOverlay processing={processing} />
@@ -224,6 +261,7 @@ export function RecordingTimelineView(props: {
         </footer>
       </div>
     {recordingActions.kind ? <RecordingActionDialog busy={recordingActions.busy} error={recordingActions.error} kind={recordingActions.kind} pin={recordingActions.pin} value={recordingActions.value} onCancel={recordingActions.close} onPin={recordingActions.setPin} onSubmit={() => void recordingActions.submit()} onValue={recordingActions.setValue} /> : null}
+    {generationOpen ? <Modal busy={generationBusy} closeOnEscape={!generationBusy} description="Map this finalized recording through its domain mapper and replace only an empty or unedited recording-derived primary Subflow." title="Generate deterministic Subflow" onClose={() => setGenerationOpen(false)}><div className="dialog-form">{generationError ? <p className="automation-runtime-message" role="alert">{generationError}</p> : null}<Field label="Destination Flow" required><select value={generationFlowId} onChange={(event) => setGenerationFlowId(event.target.value)}>{generationFlows.map((flow) => <option key={flow.flowId} value={flow.flowId}>{flow.name}</option>)}</select></Field><Field hint="Use your current security PIN." label="Security PIN" required><input autoComplete="off" inputMode="numeric" type="password" value={generationPin} onChange={(event) => setGenerationPin(event.target.value.replace(/\D/g, "").slice(0, 12))} /></Field></div><div className="modal-actions"><button className="button" disabled={generationBusy} onClick={() => setGenerationOpen(false)} type="button">Cancel</button><button className="button button-primary" data-modal-submit disabled={generationBusy || generationPin.length < 4 || !generationFlowId} onClick={() => void generateSubflow()} type="button">{generationBusy ? "Generating..." : "Generate Subflow"}</button></div></Modal> : null}
     </section>
   );
 }

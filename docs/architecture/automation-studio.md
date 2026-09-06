@@ -35,6 +35,25 @@ context. Generated policy nodes then surface pre-action evidence as
 eligibility/readiness signals and post-action evidence as success expectations.
 Recording mapper action inputs are preserved as action evidence and are not
 promoted into policy state.
+### Deterministic recording-derived Subflows
+
+The Recording Timeline exposes a direct **Generate Subflow** operation for a
+finalized recording. The operator selects a destination Flow and authorizes the
+mutation; Core runs the registered domain mapper, approves the resulting direct
+proposal, and writes executable `builtin.policy.action` nodes into the
+destination Flow's primary Subflow graph. Core keeps the top-level orchestration
+Flow graph-empty. If its Router already has a fallback Subflow, generation
+reuses that exact Subflow instead of selecting or creating an unrelated child.
+
+Generated action nodes retain immutable recording/proposal evidence and use a
+340-pixel horizontal interval so standard node cards do not overlap. Repeating
+generation may replace only an empty graph or a graph composed entirely of
+unedited recording-derived nodes and edges. Any manual provenance or foreign
+graph member makes replacement fail closed. After a permitted replacement,
+Core reconciles the canonical Flow document into the project SQL graph index,
+removing stale indexed nodes and edges before adding the current graph. This
+keeps the paged Nodes viewport, execution document, and persisted source in
+agreement even when the viewport was materialized before regeneration.
 
 ## Folder Ownership
 

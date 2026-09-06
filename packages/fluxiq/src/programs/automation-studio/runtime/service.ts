@@ -969,8 +969,23 @@ export class AutomationStudioService {
       ? { ...created, metadata: { ...(created.metadata ?? {}), projectId: input.projectId } }
       : created;
     await this.repositories.recordingSessions.put(recording);
-    if (input.projectId) await this.writeProjectRecordingSession(input.projectId, recording);
+    if (input.projectId) {
+      await this.writeProjectRecordingSession(input.projectId, recording);
+      if (recording.taskId) await this.linkRecordingToCanonicalFlow(input.projectId, recording.taskId, recording.recordingId);
+    }
     return recording;
+  }
+
+  private async linkRecordingToCanonicalFlow(projectId: string, flowId: string, recordingId: string): Promise<void> {
+    const flow = await this.getFlow(projectId, flowId).catch(() => null);
+    if (!flow || this.persistedFlowRepresentation(flow) === "subflow_graph") return;
+    const previousRecordingIds = flow.expansion?.recordingIds ?? [];
+    const recordingIds = uniqueStrings([...previousRecordingIds, recordingId]);
+    if (recordingIds.length === previousRecordingIds.length) return;
+    await this.saveFlow({
+      projectId,
+      flow: { ...flow, expansion: { ...(flow.expansion ?? {}), recordingIds }, updatedAt: Date.now() }
+    });
   }
 
   async appendRecordingEvent(input: { projectId?: string | null; recordingId: string; entry: AppendRecordingEntryInput }): Promise<RecordingSession> {
@@ -2137,6 +2152,48 @@ export class AutomationStudioService {
     }
   }
 
+  private async replaceFlowGraphIndex(projectId: string, flow: AutomationStudioFlowArtifact): Promise<void> {
+    if (!this.projectDatabasePool) return;
+    const graph = await AutomationStudioProjectGraphRepository.open({ pool: this.projectDatabasePool, projectId });
+    try {
+      const revisions = await graph.revisions({ flowId: flow.flowId, limit: 1 });
+      if (!revisions.items.length) {
+        await graph.importMonolithicFlowGraph(flow, { changedAt: flow.updatedAt });
+        return;
+      }
+      const current = await graph.exportSnapshotData(flow.flowId);
+      const operations: AutomationStudioGraphPatchOperation[] = [
+        ...current.edges.map((edge) => ({ op: "delete_edge" as const, edgeId: edge.edgeId })),
+        ...current.nodes.map((node) => ({ op: "delete_node" as const, nodeId: node.nodeId })),
+        ...flow.nodes.map((node) => ({
+          op: "add_node" as const,
+          node: {
+            nodeId: node.id, flowId: flow.flowId, definitionId: node.definitionId, definitionVersion: node.definitionVersion ?? "legacy",
+            label: node.label ?? node.id, description: node.description ?? "", x: node.position?.x ?? 0, y: node.position?.y ?? 0,
+            width: typeof node.metadata?.width === "number" ? node.metadata.width : 240, height: typeof node.metadata?.height === "number" ? node.metadata.height : 96,
+            zIndex: typeof node.metadata?.zIndex === "number" ? Math.trunc(node.metadata.zIndex) : 0, disabled: node.metadata?.disabled === true,
+            parameterValues: node.parameterValues ?? {}, metadata: node.metadata ?? {}
+          }
+        })),
+        ...flow.edges.map((edge) => ({
+          op: "add_edge" as const,
+          edge: {
+            edgeId: edge.id, flowId: flow.flowId, sourceNodeId: edge.sourceNodeId, targetNodeId: edge.targetNodeId,
+            sourcePortId: edge.sourcePortId ?? null, targetPortId: edge.targetPortId ?? null, label: edge.label ?? "", metadata: edge.metadata ?? {}
+          }
+        }))
+      ];
+      await graph.applyPatch({
+        pool: this.projectDatabasePool, projectId, flowId: flow.flowId, baseRevision: current.flow.graphRevision,
+        mutationId: `flow-document-replace.${safeSegment(flow.flowId)}.${randomUUID()}`, operations,
+        authorId: "automation-studio", message: "Reconcile recording-generated Flow graph", changedAt: flow.updatedAt
+      });
+    } finally {
+      await graph.close();
+    }
+  }
+
+
   private async saveFlowInternal(
     input: { projectId: string; flow: AutomationStudioFlowArtifact; expectedUpdatedAt?: number },
     allowPublicationMutation: boolean,
@@ -2542,7 +2599,7 @@ export class AutomationStudioService {
     decision: "approved" | "rejected";
     notes?: string;
     reviewerId?: string;
-    destination?: { kind: "flow"; flowId?: string; name?: string } | { kind: "node"; visibility: "private" | "public" };
+    destination?: { kind: "flow"; flowId?: string; name?: string; writeMode?: "append" | "replace_recording_derived" } | { kind: "node"; visibility: "private" | "public" };
     policyOverride?: PolicyGraph;
   }): Promise<{ proposal: RecordingFlowProposalArtifact; flow?: AutomationStudioFlowArtifact }> {
     const original = await this.readPipelineArtifact<RecordingFlowProposalArtifact>(input.projectId, "recordingFlowProposals", input.proposalId);
@@ -2589,8 +2646,13 @@ export class AutomationStudioService {
           }
         } });
       } else {
-        await this.saveFlow({ projectId: input.projectId, flow: appendRecordingProposalToFlow(proposalTarget.graphFlow, checked) });
+        const proposalBase = input.destination.writeMode === "replace_recording_derived"
+          ? recordingProposalReplacementBase(proposalTarget.graphFlow)
+          : proposalTarget.graphFlow;
+        await this.saveFlow({ projectId: input.projectId, flow: appendRecordingProposalToFlow(proposalBase, checked) });
       }
+      const savedGraphFlow = await this.getFlow(input.projectId, proposalTarget.graphFlow.flowId);
+      await this.replaceFlowGraphIndex(input.projectId, savedGraphFlow);
       flow = await this.saveFlow({ projectId: input.projectId, flow: {
         ...flow,
         publication: { status: "draft" },
@@ -2603,7 +2665,7 @@ export class AutomationStudioService {
           mapperVersion: checked.mapper.version
         }
       } });
-      destination = { kind: "flow", flowId: flow.flowId, created };
+      destination = { kind: "flow", flowId: flow.flowId, created, ...(input.destination.writeMode ? { writeMode: input.destination.writeMode } : {}) };
     } else {
       const nodeDestination = input.destination;
       approvedDefinitions = checked.candidates.map((candidate) => recordingCandidateDefinition(checked, candidate, nodeDestination.visibility));
@@ -4402,7 +4464,11 @@ export class AutomationStudioService {
       limit: 1,
       offset: 0
     });
-    const subflow = primaryPage.subflows[0]
+    const configuredRouter = await this.getFlowRouter(parentFlow.projectId, parentFlow.flowId);
+    const fallbackSubflow = configuredRouter?.fallback?.kind === "subflow"
+      ? await this.getFlowSubflow(parentFlow.projectId, parentFlow.flowId, configuredRouter.fallback.subflowId)
+      : null;
+    const subflow = fallbackSubflow ?? (primaryPage.subflows[0]
       ? await this.getFlowSubflow(parentFlow.projectId, parentFlow.flowId, primaryPage.subflows[0].subflowId)
       : await this.createFlowSubflow({
         projectId: parentFlow.projectId,
@@ -4410,7 +4476,7 @@ export class AutomationStudioService {
         name: "Primary",
         description: `Primary executable graph for ${parentFlow.name}.`,
         role: "primary"
-      });
+      }));
     if (!subflow?.graphFlowId) throw new Error("Primary Subflow does not own an executable graph Flow.");
     const graphFlow = await this.getFlow(parentFlow.projectId, subflow.graphFlowId);
     if (this.persistedFlowRepresentation(parentFlow) === "orchestration") {
@@ -9081,7 +9147,7 @@ function appendRecordingProposalToFlow(flow: AutomationStudioFlowArtifact, propo
         parameters: structuredClone(candidate.parameters),
         ...(candidate.expectedConfirmation ? { confirmationInputId: candidate.expectedConfirmation.inputId, confirmationTimeoutMs: candidate.expectedConfirmation.timeoutMs ?? 5_000 } : {})
       }),
-      position: { x: 120 + index * 260, y: 240 },
+      position: { x: 120 + index * 340, y: 240 },
       metadata: {
         recordingProposalId: proposal.proposalId,
         recordingCandidateId: candidate.candidateId,
@@ -9106,6 +9172,21 @@ function appendRecordingProposalToFlow(flow: AutomationStudioFlowArtifact, propo
     metadata: { recordingProposalId: proposal.proposalId }
   }));
   return { ...flow, nodes: [...flow.nodes, ...nodes], edges: [...flow.edges, ...edges], metadata: { ...(flow.metadata ?? {}), recordingProposalIds: uniqueStrings([...(Array.isArray(flow.metadata?.recordingProposalIds) ? flow.metadata.recordingProposalIds.map(String) : []), proposal.proposalId]) } };
+}
+
+function recordingProposalReplacementBase(flow: AutomationStudioFlowArtifact): AutomationStudioFlowArtifact {
+  const generatedNodes = flow.nodes.every((node) => typeof node.metadata?.recordingProposalId === "string"
+    && (!Array.isArray(node.metadata.manualProvenance) || node.metadata.manualProvenance.length === 0));
+  const generatedEdges = flow.edges.every((edge) => typeof edge.metadata?.recordingProposalId === "string");
+  if ((flow.nodes.length || flow.edges.length) && (!generatedNodes || !generatedEdges)) {
+    throw new Error("Replacing a primary Subflow is allowed only when its graph is empty or entirely unedited recording-derived behavior.");
+  }
+  return {
+    ...flow,
+    nodes: [],
+    edges: [],
+    metadata: { ...(flow.metadata ?? {}), recordingProposalIds: [] }
+  };
 }
 
 function sameAutomationStudioFlowGraph(left: AutomationStudioFlowArtifact, right: AutomationStudioFlowArtifact): boolean {

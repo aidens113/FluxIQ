@@ -408,6 +408,9 @@ export function AutomationStudioSession(props: {
   });
   useAutomationGatewayRecordingBridge({
     projectId: activeProjectId,
+    flowId: isAutomationTopLevelFlow(selectedFlow)
+      ? selectedFlow.flowId
+      : typeof selectedFlow?.metadata?.parentFlowId === "string" ? selectedFlow.metadata.parentFlowId : null,
     scopes: liveCommandScope,
     snapshot: gatewaySnapshot,
     publishSnapshot: setGatewaySnapshot,
