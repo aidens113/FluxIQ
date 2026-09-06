@@ -19,9 +19,9 @@ const flow = {
   ] }
 };
 
-function Harness(props: { onRun: ReturnType<typeof vi.fn>; readiness?: typeof ready }) {
+function Harness(props: { onRun: ReturnType<typeof vi.fn>; readiness?: typeof ready; flowOverride?: typeof flow }) {
   const [inputText, setInputText] = useState('{"attempts":2}');
-  return <RuntimeRunControlPanel activeRunId={null} activeRunStartedAt={null} canRetry={false} disabled={false} flow={flow} inputText={inputText} maxSteps="50" readiness={props.readiness ?? ready} runningMode={null} onInputText={setInputText} onMaxSteps={() => undefined} onOpenLiveLog={() => undefined} onRetry={() => undefined} onRetryReadiness={() => undefined} onRun={props.onRun} onStop={() => undefined} />;
+  return <RuntimeRunControlPanel activeRunId={null} activeRunStartedAt={null} canRetry={false} disabled={false} flow={props.flowOverride ?? flow} inputText={inputText} maxSteps="50" readiness={props.readiness ?? ready} runningMode={null} onInputText={setInputText} onMaxSteps={() => undefined} onOpenLiveLog={() => undefined} onRetry={() => undefined} onRetryReadiness={() => undefined} onRun={props.onRun} onStop={() => undefined} />;
 }
 
 function button(renderer: ReactTestRenderer, text: string) {
@@ -54,7 +54,7 @@ describe("runtime run-input interactions", () => {
     await act(async () => manual.props.onClick());
     await act(async () => button(renderer, "Run")!.props.onClick());
     expect(onRun).toHaveBeenCalledWith("manual_approval");
-    const labels = renderer.root.findAllByType("strong").flatMap((item) => item.children.filter((child) => typeof child === "string"));
+    const labels = renderer.root.findAllByType("button").flatMap((item) => item.children.filter((child) => typeof child === "string"));
     expect(labels).toEqual(expect.arrayContaining(["Fully adaptive", "Manual approval", "No LLM intervention"]));
     await act(async () => renderer.unmount());
   });
@@ -80,6 +80,27 @@ describe("runtime run-input interactions", () => {
     expect(button(renderer, "Run")?.props.disabled).toBe(true);
     await act(async () => button(renderer, "Retry")!.props.onClick());
     expect(retry).toHaveBeenCalledTimes(1);
+    await act(async () => renderer.unmount());
+  });
+
+  it("allows a saved graph to run without instructions when No LLM intervention is selected", () => {
+    const context = { instructions: [], router: null, subflowTotal: 0, error: "" };
+    expect(runtimeFlowReadinessIssues(flow, context, "fully_adaptive")).toEqual([
+      { label: "Add at least one active instruction.", action: "Open Instructions", target: "instructions" }
+    ]);
+    expect(runtimeFlowReadinessIssues(flow, context, "no_llm_intervention")).toEqual([]);
+  });
+
+  it("enables the Run control after selecting No LLM intervention for an instruction-free graph", async () => {
+    const onRun = vi.fn();
+    let renderer!: ReactTestRenderer;
+    const readiness = { loading: false, instructions: [], router: null, subflowTotal: 0, error: "" };
+    await act(async () => { renderer = create(<Harness onRun={onRun} readiness={readiness} flowOverride={{ ...flow, interface: { inputs: [] } }} />); });
+    expect(button(renderer, "Run")?.props.disabled).toBe(true);
+    await act(async () => button(renderer, "No LLM intervention")!.props.onClick());
+    expect(button(renderer, "Run")?.props.disabled).toBe(false);
+    await act(async () => button(renderer, "Run")!.props.onClick());
+    expect(onRun).toHaveBeenCalledWith("no_llm_intervention");
     await act(async () => renderer.unmount());
   });
 

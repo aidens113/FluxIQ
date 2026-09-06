@@ -15,6 +15,43 @@ export type AutomationStudioFlowVisibility = "private" | "public";
 
 export type AutomationStudioFlowOrigin = "manual" | "recorded" | "imported" | "migrated";
 
+export const AUTOMATION_STUDIO_FLOW_REPRESENTATION_VERSION = 1;
+export type AutomationStudioFlowRepresentationKind = "orchestration" | "subflow_graph" | "legacy_single_graph";
+
+/**
+ * Returns the explicit representation written by current Automation Studio
+ * authoring paths. Missing values belong to pre-invariant documents and must
+ * be classified by the service while it still has persisted-history context.
+ */
+export function automationStudioFlowRepresentationKind(flow: Pick<AutomationStudioFlowArtifact, "metadata">): AutomationStudioFlowRepresentationKind | undefined {
+  const metadata = flow.metadata;
+  if (metadata?.flowRepresentationVersion !== AUTOMATION_STUDIO_FLOW_REPRESENTATION_VERSION) return undefined;
+  const kind = metadata.flowRepresentationKind;
+  return kind === "orchestration" || kind === "subflow_graph" || kind === "legacy_single_graph" ? kind : undefined;
+}
+
+/** Recognizes current or exact pre-marker Subflow graph ownership metadata. */
+export function isAutomationStudioSubflowGraphMetadata(metadata: JsonObject | undefined): boolean {
+  const parentFlowId = typeof metadata?.parentFlowId === "string" ? metadata.parentFlowId.trim() : "";
+  const parentSubflowId = typeof metadata?.parentSubflowId === "string" ? metadata.parentSubflowId.trim() : "";
+  if (metadata?.subflowGraph !== true || !parentFlowId || !parentSubflowId) return false;
+  const hasRepresentationMarker = metadata.flowRepresentationVersion !== undefined || metadata.flowRepresentationKind !== undefined;
+  return !hasRepresentationMarker
+    || (metadata.flowRepresentationVersion === AUTOMATION_STUDIO_FLOW_REPRESENTATION_VERSION
+      && metadata.flowRepresentationKind === "subflow_graph");
+}
+
+export function withAutomationStudioFlowRepresentation(
+  metadata: JsonObject | undefined,
+  kind: AutomationStudioFlowRepresentationKind
+): JsonObject {
+  return {
+    ...(metadata ?? {}),
+    flowRepresentationVersion: AUTOMATION_STUDIO_FLOW_REPRESENTATION_VERSION,
+    flowRepresentationKind: kind
+  };
+}
+
 /** Controls which authoring surface owns the canonical Flow definition. */
 export type AutomationStudioFlowSource =
   | { mode: "visual" }
@@ -291,6 +328,9 @@ export function createBlankAutomationStudioFlowArtifact(input: {
     publication: { status: "draft" },
     createdAt: now,
     updatedAt: now,
-    metadata: { ...defaultAutomationStudioFlowSettingsMetadata(), ...(input.metadata ?? {}) }
+    metadata: withAutomationStudioFlowRepresentation(
+      { ...defaultAutomationStudioFlowSettingsMetadata(), ...(input.metadata ?? {}) },
+      isAutomationStudioSubflowGraphMetadata(input.metadata) ? "subflow_graph" : "orchestration"
+    )
   };
 }

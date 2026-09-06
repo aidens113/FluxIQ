@@ -511,6 +511,15 @@ Subflows own a Nodes editor and their scoped objects but do not own a Router;
 routing belongs to the top-level Flow. State is a global view that can inspect
 the selected Flow, Subflow, recording, node, or run context.
 
+The Nodes view is available and bindable only for a canonical
+`subflow_graph` whose metadata also names its parent Flow and owning Subflow.
+Top-level Flow rows and newly created parent Flows open Subflows instead. If a
+saved workspace restores an old Nodes tab against a parent Flow, the workspace
+replaces that tab with the same parent's Subflows view and reports the recovery
+through the normal action-status notice. The connected Nodes host repeats the
+ownership check, so a stale tab or direct view request cannot expose the parent
+graph while workspace recovery catches up.
+
 Adaptations are the current review surface for LLM-assisted changes. Legacy
 proposal records may remain as compatibility persistence and can recover into a
 clearly labelled read-only surface, but proposal generation is not a current navigation object or authoring workflow.

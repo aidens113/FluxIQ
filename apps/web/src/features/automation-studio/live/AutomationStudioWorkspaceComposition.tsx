@@ -31,6 +31,7 @@ type ProjectBinding = {
   getViewAdderContext(): {
     selectedFlow: boolean;
     selectedTopLevelFlow: boolean;
+    selectedSubflowGraph: boolean;
     selectedRecording: boolean;
     selection: AutomationSelection | null;
   };
@@ -94,6 +95,7 @@ export const AutomationStudioWorkspaceComposition = memo(function AutomationStud
           hasProject: true,
           hasFlow: context.selectedFlow,
           hasTopLevelFlow: context.selectedTopLevelFlow,
+          hasSubflowGraph: context.selectedSubflowGraph,
           hasRecording: context.selectedRecording,
           hasSelection: Boolean(context.selection)
         },

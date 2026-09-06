@@ -77,4 +77,43 @@ describe("AutomationStudioProjectGraphRepository", () => {
     await graph.close();
     await pool.closeAll();
   });
+  it("rehomes globally identified nodes and edges when a graph patch targets another flow", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const graph = await AutomationStudioProjectGraphRepository.open({ pool, projectId: "project.rehome" });
+    const legacy = createBlankAutomationStudioFlowArtifact({ flowId: "flow.legacy", projectId: "project.rehome", name: "Legacy", now: 1 });
+    legacy.nodes = [
+      { id: "node.a", definitionId: "builtin.start", position: { x: 0, y: 0 } },
+      { id: "node.b", definitionId: "builtin.step", position: { x: 200, y: 0 } }
+    ];
+    legacy.edges = [{ id: "edge.ab", sourceNodeId: "node.a", targetNodeId: "node.b" }];
+    await graph.importMonolithicFlowGraph(legacy, { changedAt: 1 });
+    const target = createBlankAutomationStudioFlowArtifact({ flowId: "flow.subflow-graph", projectId: "project.rehome", name: "Subflow graph", now: 2 });
+    await graph.upsertFlowFromArtifact(target, 1);
+
+    const moved = await graph.applyPatch({
+      pool,
+      projectId: "project.rehome",
+      flowId: target.flowId,
+      baseRevision: 1,
+      mutationId: "mutation.rehome",
+      operations: [
+        { op: "add_node", node: { nodeId: "node.a", flowId: target.flowId, definitionId: "builtin.start", definitionVersion: "legacy", label: "Start", description: "", x: 0, y: 0, width: 240, height: 120, zIndex: 0, disabled: false, parameterValues: {}, metadata: {} } },
+        { op: "add_node", node: { nodeId: "node.b", flowId: target.flowId, definitionId: "builtin.step", definitionVersion: "legacy", label: "Step", description: "", x: 200, y: 0, width: 240, height: 120, zIndex: 0, disabled: false, parameterValues: {}, metadata: {} } },
+        { op: "add_edge", edge: { edgeId: "edge.ab", flowId: target.flowId, sourceNodeId: "node.a", targetNodeId: "node.b", sourcePortId: null, targetPortId: null, label: "", metadata: {} } }
+      ],
+      changedAt: 3
+    });
+
+    expect(moved.response).toMatchObject({ status: "applied", revisionNumber: 2 });
+    const targetSnapshot = await graph.exportSnapshotData(target.flowId);
+    expect(targetSnapshot.nodes.map((node) => node.nodeId)).toEqual(["node.a", "node.b"]);
+    expect(targetSnapshot.edges).toMatchObject([{ edgeId: "edge.ab", flowId: target.flowId, sourceNodeId: "node.a", targetNodeId: "node.b" }]);
+    const oldSnapshot = await graph.exportSnapshotData(legacy.flowId);
+    expect(oldSnapshot.nodes).toEqual([]);
+    expect(oldSnapshot.edges).toEqual([]);
+    await expect(graph.aggregates({ flowId: target.flowId, bounds: { minX: -1, minY: -1, maxX: 1000, maxY: 1000 } })).resolves.toMatchObject([{ nodeCount: 2, edgeCount: 1 }]);
+    await expect(graph.aggregates({ flowId: legacy.flowId, bounds: { minX: -1, minY: -1, maxX: 1000, maxY: 1000 } })).resolves.toMatchObject([{ nodeCount: 0, edgeCount: 0 }]);
+    await graph.close();
+    await pool.closeAll();
+  });
 });

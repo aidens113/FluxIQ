@@ -10,6 +10,7 @@ import { automationWorkspacePrefsSameRuntimeState } from "../model/workspace-per
 import { mergeById } from "../model/project-artifacts";
 import { mergeFlowDetails, mergeRecordingDetail } from "../model/project-change-reconciliation";
 import { automationActiveWorkspaceSelection, bindAutomationUnboundFlowViews } from "./active-workspace-selection";
+import { recoverParentBoundFlowEditorViews } from "./flow-editor-view-recovery";
 import { projectRuntimeSummaryFlowState, projectRuntimeSummaryPipelineState, projectRuntimeSummaryProjection, projectRuntimeSummaryRecordingState } from "../model/project-runtime-summary";
 import type { AutomationLiveDomainCommands } from "./domain-commands";
 import type { useAutomationStudioFoundation } from "./useAutomationStudioFoundation";
@@ -94,9 +95,15 @@ export function useAutomationProjectRuntime(options: Options) {
   const commit = useCallback((projectId: string, hydration: AutomationProjectHydration) => {
     if (activeProjectRef.current !== projectId) return;
     const commitGeneration = options.foundation.projectGeneration.current();
-    const loadedPrefs = bindAutomationUnboundFlowViews(normalizeAutomationWorkspacePrefs(
+    const normalizedPrefs = bindAutomationUnboundFlowViews(normalizeAutomationWorkspacePrefs(
       hydration.hierarchy.workspacePrefs ?? defaultAutomationWorkspacePrefs()
     ));
+    const summaryFlows = hydration.summary ? projectRuntimeSummaryFlowState(hydration.summary, []) : [];
+    const restoredRecovery = recoverParentBoundFlowEditorViews(normalizedPrefs, summaryFlows);
+    const loadedPrefs = restoredRecovery.prefs;
+    if (restoredRecovery.recoveredFlowIds.length) {
+      options.foundation.stores.runtimeStatus.setActionStatus("Nodes are owned by Subflows. The parent Flow was reopened in Subflows.");
+    }
     options.hierarchy.setCustomNodes(hydration.hierarchy.customHierarchyNodes);
     options.hierarchy.setDeletedIds(hydration.hierarchy.deletedHierarchyIds);
     const openingUi = openingUiRevisionRef.current;
@@ -119,7 +126,11 @@ export function useAutomationProjectRuntime(options: Options) {
         if (activeProjectRef.current !== projectId
           || !options.foundation.projectGeneration.isCurrent(commitGeneration)
           || options.workspace.getPrefsRevision() !== cacheHydrationRevision) return;
-        options.workspace.replacePrefs((current) => automationWorkspacePrefsSameRuntimeState(current, cachedPrefs) ? current : cachedPrefs);
+        const cachedRecovery = recoverParentBoundFlowEditorViews(cachedPrefs, summaryFlows);
+        if (cachedRecovery.recoveredFlowIds.length) {
+          options.foundation.stores.runtimeStatus.setActionStatus("Nodes are owned by Subflows. The parent Flow was reopened in Subflows.");
+        }
+        options.workspace.replacePrefs((current) => automationWorkspacePrefsSameRuntimeState(current, cachedRecovery.prefs) ? current : cachedRecovery.prefs);
       }
     });
     const cacheHierarchyRevision = options.hierarchy.getUiRevision();

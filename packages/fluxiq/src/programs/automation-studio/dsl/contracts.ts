@@ -3,6 +3,15 @@ import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../mode
 
 export type AutomationStudioFlowDependency = { id: string; version: string; kind: "flow" | "node" | "schema" };
 
+/** Framework-owned identity fields that must survive the generated-source round trip. */
+export type AutomationStudioFlowDefinitionMetadata = {
+  flowRepresentationVersion?: 1;
+  flowRepresentationKind?: "orchestration" | "subflow_graph" | "legacy_single_graph";
+  subflowGraph?: boolean;
+  parentFlowId?: string;
+  parentSubflowId?: string;
+};
+
 /** Declarative input accepted by defineFlow. It contains data, never callbacks. */
 export type AutomationStudioFlowDefinition = {
   flowId: string;
@@ -11,6 +20,7 @@ export type AutomationStudioFlowDefinition = {
   scope?: AutomationStudioFlowScope;
   visibility?: AutomationStudioFlowVisibility;
   origin?: AutomationStudioFlowOrigin;
+  metadata?: AutomationStudioFlowDefinitionMetadata;
   interface?: AutomationStudioFlowInterface;
   errors?: AutomationStudioFlowErrorDefinition[];
   variables?: AutomationStudioFlowVariable[];

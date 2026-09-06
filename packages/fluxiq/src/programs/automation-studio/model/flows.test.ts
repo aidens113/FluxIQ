@@ -22,6 +22,7 @@ describe("canonical Automation Studio Flow contract", () => {
       origin: "manual",
       source: { mode: "visual" },
       publication: { status: "draft" },
+      metadata: { flowRepresentationVersion: 1, flowRepresentationKind: "orchestration" },
       createdAt: 1_000,
       updatedAt: 1_000
     });

@@ -8,11 +8,14 @@ import type { AutomationStudioHierarchyChildrenPage, AutomationStudioHierarchyNo
 import {
   appendRecordingEntry,
   appendRecordingNote,
+  automationStudioFlowRepresentationKind,
   automationStudioInterventionMode,
   createAutomationStudioFixture,
   createBlankAutomationStudioFlow,
   createBlankAutomationStudioFlowArtifact,
   defaultAutomationStudioFlowSettingsMetadata,
+  isAutomationStudioSubflowGraphMetadata,
+  withAutomationStudioFlowRepresentation,
   withAutomationStudioInterventionMode,
   createPublishedFlowSnapshot,
   getCallFlowConfiguration,
@@ -31,6 +34,7 @@ import {
   type AutomationStudioFlowMigrationLedger,
   type AutomationStudioFlowMigrationOutcome,
   type AutomationStudioFlowPublicationRecord,
+  type AutomationStudioFlowRepresentationKind,
   type AutomationStudioFlowRouter,
   type AutomationStudioFlowRouteGroup,
   type AutomationStudioFlowRouteRule,
@@ -483,7 +487,6 @@ export type CreateFlowSubflowInput = {
   description?: string;
   role?: AutomationStudioFlowSubflow["role"];
   parentCategoryId?: string | null;
-  graphFlowId?: string;
   routeTags?: string[];
 };
 
@@ -1747,14 +1750,32 @@ export class AutomationStudioService {
       proposalId: proposal.proposalId
     };
     if (typeof proposal.metadata?.recordingId === "string") flowInput.recordingId = proposal.metadata.recordingId;
-    const projected = policyGraphToAutomationStudioFlow(mergedPolicy, flowInput);
-    const baseFlow = existingFlow ?? createBlankAutomationStudioFlowArtifact({ flowId: projected.flowId, projectId: input.projectId, name: existingTask?.name ?? humanTaskName(mergedPolicy.taskId), description: proposal.summary, scope: flowScopeForProject(project), origin: "recorded" });
+    const baseFlow = existingFlow ?? await this.saveFlow({ projectId: input.projectId, flow: createBlankAutomationStudioFlowArtifact({
+      flowId: resolvedFlowId,
+      projectId: input.projectId,
+      name: existingTask?.name ?? humanTaskName(mergedPolicy.taskId),
+      description: proposal.summary,
+      scope: flowScopeForProject(project),
+      origin: "recorded"
+    }) });
+    const { graphFlow } = await this.ensureProposalPrimarySubflow(baseFlow);
+    const projected = policyGraphToAutomationStudioFlow(mergedPolicy, {
+      ...flowInput,
+      flowId: graphFlow.flowId,
+      existingFlow: canonicalFlowDocument(graphFlow)
+    });
+    await this.saveFlow({ projectId: input.projectId, flow: {
+      ...graphFlow,
+      nodes: projected.nodes,
+      edges: projected.edges,
+      evidenceReferences: uniqueEvidenceReferences([...(graphFlow.evidenceReferences ?? []), ...(mergedPolicy.sourceEvidence ?? [])]),
+      publication: { status: "draft" },
+      metadata: { ...(graphFlow.metadata ?? {}), source: "policy_proposal", policyId: mergedPolicy.policyId, policyTaskId: mergedPolicy.taskId, sourceRecordingIds: asStringArray(mergedPolicy.metadata?.sourceRecordingIds), lastProposalId: proposal.proposalId, ...(typeof proposal.metadata?.recordingId === "string" ? { lastRecordingId: proposal.metadata.recordingId } : {}) }
+    } });
     const savedFlow = await this.saveFlow({ projectId: input.projectId, flow: {
       ...baseFlow,
       name: existingFlow?.name ?? existingTask?.name ?? humanTaskName(mergedPolicy.taskId),
       description: proposal.summary,
-      nodes: projected.nodes,
-      edges: projected.edges,
       evidenceReferences: uniqueEvidenceReferences([...(baseFlow.evidenceReferences ?? []), ...(mergedPolicy.sourceEvidence ?? [])]),
       publication: { status: "draft" },
       metadata: { ...(baseFlow.metadata ?? {}), source: "policy_proposal", policyId: mergedPolicy.policyId, policyTaskId: mergedPolicy.taskId, sourceRecordingIds: asStringArray(mergedPolicy.metadata?.sourceRecordingIds), lastProposalId: proposal.proposalId, ...(typeof proposal.metadata?.recordingId === "string" ? { lastRecordingId: proposal.metadata.recordingId } : {}) }
@@ -2057,6 +2078,7 @@ export class AutomationStudioService {
     await this.findProject(input.projectId);
     if (!this.projectDatabasePool) throw new Error("Project graph storage is unavailable.");
     const canonical = await this.getFlow(input.projectId, input.flowId);
+    await this.assertFlowGraphMutationAllowed(input.projectId, canonical);
     const graph = await AutomationStudioProjectGraphRepository.open({
       pool: this.projectDatabasePool,
       projectId: input.projectId
@@ -2115,7 +2137,11 @@ export class AutomationStudioService {
     }
   }
 
-  private async saveFlowInternal(input: { projectId: string; flow: AutomationStudioFlowArtifact; expectedUpdatedAt?: number }, allowPublicationMutation: boolean): Promise<AutomationStudioFlowArtifact> {
+  private async saveFlowInternal(
+    input: { projectId: string; flow: AutomationStudioFlowArtifact; expectedUpdatedAt?: number },
+    allowPublicationMutation: boolean,
+    representationCreationKind?: AutomationStudioFlowRepresentationKind
+  ): Promise<AutomationStudioFlowArtifact> {
     const project = await this.findProject(input.projectId);
     if (input.flow.projectId !== project.id) throw new Error("Flow projectId must match the target project.");
     const expectedScope = flowScopeForProject(project);
@@ -2128,11 +2154,14 @@ export class AutomationStudioService {
     else if (!allowPublicationMutation && (input.flow.publication.status === "published" || input.flow.publication.status === "deprecated" || input.flow.publicationHistory?.length)) throw new Error("Published Flow state can only be created through publishFlow().");
     const now = Date.now();
     const createdAt = existing?.createdAt ?? input.flow.createdAt ?? now;
+    const representationKind = this.resolveFlowRepresentationForSave(existing, input.flow, representationCreationKind);
     let flow: AutomationStudioFlowArtifact = {
       ...input.flow,
       createdAt,
-      updatedAt: Math.max(now, createdAt)
+      updatedAt: Math.max(now, createdAt),
+      metadata: withAutomationStudioFlowRepresentation(input.flow.metadata, representationKind)
     };
+    await this.assertFlowRepresentationSaveAllowed(project.id, existing, flow, representationKind, representationCreationKind);
     if (existing) flow = recordManualRecordingProposalChanges(existing, flow, now);
     const validation = validateAutomationStudioFlow(flow);
     if (!validation.ok) throw new Error(`Invalid Automation Studio Flow: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
@@ -2158,13 +2187,88 @@ export class AutomationStudioService {
     return saved;
   }
 
+  private resolveFlowRepresentationForSave(
+    existing: AutomationStudioFlowArtifact | null | undefined,
+    next: AutomationStudioFlowArtifact,
+    representationCreationKind?: AutomationStudioFlowRepresentationKind
+  ): AutomationStudioFlowRepresentationKind {
+    if (!existing) {
+      if (representationCreationKind === "subflow_graph") return "subflow_graph";
+      if (representationCreationKind === "legacy_single_graph") return "legacy_single_graph";
+      return "orchestration";
+    }
+    const existingKind = this.persistedFlowRepresentation(existing);
+    const requestedKind = automationStudioFlowRepresentationKind(next);
+    if (existingKind === "legacy_single_graph" && requestedKind === "orchestration"
+      && representationCreationKind === "orchestration" && next.nodes.length === 0 && next.edges.length === 0) return "orchestration";
+    return existingKind;
+  }
+
+  private persistedFlowRepresentation(flow: AutomationStudioFlowArtifact): AutomationStudioFlowRepresentationKind {
+    const explicit = automationStudioFlowRepresentationKind(flow);
+    if (explicit) return explicit;
+    if (isAutomationStudioSubflowGraphMetadata(flow.metadata)) return "subflow_graph";
+    if (flow.legacyProvenance || flow.nodes.length > 0 || flow.edges.length > 0) return "legacy_single_graph";
+    return "orchestration";
+  }
+
+  private async assertFlowRepresentationSaveAllowed(
+    projectId: string,
+    existing: AutomationStudioFlowArtifact | null | undefined,
+    flow: AutomationStudioFlowArtifact,
+    representationKind: AutomationStudioFlowRepresentationKind,
+    representationCreationKind?: AutomationStudioFlowRepresentationKind
+  ): Promise<void> {
+    const hasOwnershipMetadata = flow.metadata?.subflowGraph === true
+      || typeof flow.metadata?.parentFlowId === "string"
+      || typeof flow.metadata?.parentSubflowId === "string";
+    if (representationKind !== "subflow_graph" && hasOwnershipMetadata) {
+      throw new Error("Top-level and legacy Flows cannot declare Subflow graph ownership metadata.");
+    }
+    if (representationKind === "orchestration") {
+      if (flow.nodes.length || flow.edges.length) throw new Error("Top-level orchestration Flows cannot own Nodes or edges; create a Subflow and edit its graph Flow instead.");
+      return;
+    }
+    if (representationKind === "legacy_single_graph") {
+      if (!existing && representationCreationKind !== "legacy_single_graph") throw new Error("Legacy single-graph compatibility cannot be selected for a newly created Flow.");
+      return;
+    }
+    if (!existing && representationCreationKind === "subflow_graph") return;
+    await this.assertOwnedSubflowGraph(projectId, flow);
+  }
+
+  private async assertFlowGraphMutationAllowed(projectId: string, flow: AutomationStudioFlowArtifact): Promise<void> {
+    const kind = this.persistedFlowRepresentation(flow);
+    if (kind === "legacy_single_graph") return;
+    if (kind === "orchestration") throw new Error("Top-level orchestration Flows cannot own Nodes or edges; apply graph patches to a Subflow graph Flow instead.");
+    await this.assertOwnedSubflowGraph(projectId, flow);
+  }
+
+  private async assertOwnedSubflowGraph(projectId: string, flow: AutomationStudioFlowArtifact): Promise<void> {
+    const parentFlowId = typeof flow.metadata?.parentFlowId === "string" ? flow.metadata.parentFlowId.trim() : "";
+    const parentSubflowId = typeof flow.metadata?.parentSubflowId === "string" ? flow.metadata.parentSubflowId.trim() : "";
+    if (!parentFlowId || !parentSubflowId || flow.metadata?.subflowGraph !== true) throw new Error("Subflow graph metadata is incomplete; graph mutation refused.");
+    const subflow = await this.getFlowSubflow(projectId, parentFlowId, parentSubflowId);
+    if (!subflow || subflow.graphFlowId !== flow.flowId) throw new Error("Flow is not the graph owned by its declared Subflow; graph mutation refused.");
+  }
+
   async compileAndSaveFlowSource(input: { projectId: string; flowId: string; moduleId: string; sourceText: string }): Promise<{ compilation: AutomationStudioFlowCompilation; flow?: AutomationStudioFlowArtifact }> {
     const existing = await this.getFlow(input.projectId, input.flowId);
     const compilation = compileFlowSource(input.sourceText, { projectId: input.projectId, moduleId: input.moduleId, ...(this.nativeNodeRuntime ? { registry: this.nativeNodeRuntime.sdk.nodes } : {}) });
     if (!compilation.ok) return { compilation };
     if (compilation.plan.flow.flowId !== existing.flowId) throw new Error("Compiled Flow ID must match the Flow being converted.");
     if (!sameFlowScope(compilation.plan.flow.scope, existing.scope)) throw new Error("Compiled Flow scope must match the project scope.");
-    const flow: AutomationStudioFlowArtifact = withFlowSourceFileMetadata({ ...compilation.plan.flow, projectId: existing.projectId, createdAt: existing.createdAt, updatedAt: Date.now(), publication: { status: "draft" as const }, ...(existing.publicationHistory ? { publicationHistory: existing.publicationHistory } : {}) });
+    const representationKind = this.persistedFlowRepresentation(existing);
+    const flow: AutomationStudioFlowArtifact = withFlowSourceFileMetadata({
+      ...compilation.plan.flow,
+      projectId: existing.projectId,
+      createdAt: existing.createdAt,
+      updatedAt: Date.now(),
+      publication: { status: "draft" as const },
+      ...(existing.publicationHistory ? { publicationHistory: existing.publicationHistory } : {}),
+      metadata: withAutomationStudioFlowRepresentation({ ...(existing.metadata ?? {}), ...(compilation.plan.flow.metadata ?? {}) }, representationKind)
+    });
+    await this.assertFlowRepresentationSaveAllowed(input.projectId, existing, flow, representationKind);
     const saved = await this.repositories.flows.put(flow);
     await this.writeProjectFlow(input.projectId, saved);
     await this.writeFlowSourceFile(input.projectId, saved, input.sourceText);
@@ -2175,7 +2279,12 @@ export class AutomationStudioService {
   async convertFlowToVisual(input: { projectId: string; flowId: string }): Promise<AutomationStudioFlowArtifact> {
     const existing = await this.getFlow(input.projectId, input.flowId);
     if (existing.source.mode !== "code") return existing;
-    const flow = withFlowSourceFileMetadata(convertCodeOwnedFlowToVisual(existing));
+    const representationKind = this.persistedFlowRepresentation(existing);
+    const flow = withFlowSourceFileMetadata({
+      ...convertCodeOwnedFlowToVisual(existing),
+      metadata: withAutomationStudioFlowRepresentation(existing.metadata, representationKind)
+    });
+    await this.assertFlowRepresentationSaveAllowed(input.projectId, existing, flow, representationKind);
     const saved = await this.repositories.flows.put(flow);
     await this.writeProjectFlow(input.projectId, saved);
     await this.writeFlowSourceFile(input.projectId, saved);
@@ -2184,7 +2293,17 @@ export class AutomationStudioService {
   }
 
   async deleteFlow(input: { projectId: string; flowId: string }): Promise<{ deletedFlowId: string }> {
+    return await this.deleteFlowArtifact(input, false);
+  }
+
+  private async deleteFlowArtifact(
+    input: { projectId: string; flowId: string },
+    allowOwnedSubflowGraph: boolean
+  ): Promise<{ deletedFlowId: string }> {
     const flow = await this.getFlow(input.projectId, input.flowId);
+    if (!allowOwnedSubflowGraph && this.persistedFlowRepresentation(flow) === "subflow_graph") {
+      throw new Error("Owned Subflow graph Flows must be deleted through their owning Subflow.");
+    }
     const deletedAt = Date.now();
     const sqlFlow = await this.markSqlFlowDeleted(input.projectId, input.flowId, deletedAt);
     await this.repositories.flows.delete(input.flowId);
@@ -2445,21 +2564,23 @@ export class AutomationStudioService {
       flow = input.destination.flowId
         ? await this.getFlow(input.projectId, input.destination.flowId)
         : await this.createFlow({ projectId: input.projectId, name: input.destination.name?.trim() || `Recorded flow ${new Date(original.generatedAt).toLocaleString()}` });
+      const proposalTarget = await this.ensureProposalPrimarySubflow(flow);
+      flow = proposalTarget.parentFlow;
       if (input.policyOverride) {
         const projected = policyGraphToAutomationStudioFlow(withPolicyOutgoingEdges(input.policyOverride), {
-          flowId: flow.flowId,
-          existingFlow: canonicalFlowDocument(flow),
+          flowId: proposalTarget.graphFlow.flowId,
+          existingFlow: canonicalFlowDocument(proposalTarget.graphFlow),
           proposalId: checked.proposalId,
           recordingId: checked.recordingId
         });
-        flow = await this.saveFlow({ projectId: input.projectId, flow: {
-          ...flow,
+        await this.saveFlow({ projectId: input.projectId, flow: {
+          ...proposalTarget.graphFlow,
           nodes: projected.nodes,
           edges: projected.edges,
-          evidenceReferences: uniqueEvidenceReferences([...(flow.evidenceReferences ?? []), ...(input.policyOverride.sourceEvidence ?? [])]),
+          evidenceReferences: uniqueEvidenceReferences([...(proposalTarget.graphFlow.evidenceReferences ?? []), ...(input.policyOverride.sourceEvidence ?? [])]),
           publication: { status: "draft" },
           metadata: {
-            ...(flow.metadata ?? {}),
+            ...(proposalTarget.graphFlow.metadata ?? {}),
             source: "recording_flow_proposal",
             lastProposalId: checked.proposalId,
             lastRecordingId: checked.recordingId,
@@ -2468,8 +2589,20 @@ export class AutomationStudioService {
           }
         } });
       } else {
-        flow = await this.saveFlow({ projectId: input.projectId, flow: appendRecordingProposalToFlow(flow, checked) });
+        await this.saveFlow({ projectId: input.projectId, flow: appendRecordingProposalToFlow(proposalTarget.graphFlow, checked) });
       }
+      flow = await this.saveFlow({ projectId: input.projectId, flow: {
+        ...flow,
+        publication: { status: "draft" },
+        metadata: {
+          ...(flow.metadata ?? {}),
+          source: "recording_flow_proposal",
+          lastProposalId: checked.proposalId,
+          lastRecordingId: checked.recordingId,
+          mapperId: checked.mapper.id,
+          mapperVersion: checked.mapper.version
+        }
+      } });
       destination = { kind: "flow", flowId: flow.flowId, created };
     } else {
       const nodeDestination = input.destination;
@@ -2661,7 +2794,7 @@ export class AutomationStudioService {
         continue;
       }
       try {
-        const saved = await this.saveFlow({ projectId, flow: entry.flow });
+        const saved = await this.saveFlowInternal({ projectId, flow: entry.flow }, false, "legacy_single_graph");
         outcomes.push({ ...outcome, canonicalUpdatedAt: saved.updatedAt, canonicalDigest: canonicalFlowDigest(saved) });
       } catch (error) {
         outcomes.push({ ...outcome, status: "blocked", message: errorMessage(error, "Canonical Flow could not be written.") });
@@ -2866,6 +2999,7 @@ export class AutomationStudioService {
     detail: AutomationStudioFlowRunDetail;
     context: AutomationStudioRuntimeAdaptationContext | null;
     runtimeFlow?: AutomationStudioFlowDocument;
+    subflowId?: string;
     failedTraceAttempt?: Parameters<typeof executeAutomationStudioRuntimePatch>[0]["failedAttempt"];
     authorizedExternalSideEffects?: boolean;
     graphOptions?: Parameters<typeof runAutomationStudioGraph>[1];
@@ -2939,6 +3073,7 @@ export class AutomationStudioService {
         const tested = await executeAutomationStudioRuntimePatch({
           projectId: input.context.projectId,
           flowId: input.context.flowId,
+          ...(input.subflowId ? { subflowId: input.subflowId } : {}),
           runId: input.detail.summary.runId,
           flow: input.runtimeFlow,
           patch,
@@ -3093,13 +3228,27 @@ export class AutomationStudioService {
     detail: AutomationStudioFlowRunDetail;
     graphOptions: Parameters<typeof runAutomationStudioGraph>[1];
     adaptationContext: AutomationStudioRuntimeAdaptationContext;
+    subflowId?: string;
   }): Promise<AutomationStudioRuntimeSession | null> {
     if (input.session.status !== "failed") return null;
     const attempts = Array.isArray(input.detail.metadata?.runtimePatchAttempts) ? input.detail.metadata.runtimePatchAttempts.filter(isJsonRecord) : [];
     const shouldRetry = attempts.some((attempt) => attempt.retryOriginalAction === true && isJsonRecord(attempt.approvalDecision) && attempt.approvalDecision.autoApply === true);
     if (!shouldRetry) return null;
-    const updatedFlow = await this.getFlow(input.projectId, input.session.flowId).catch(() => null);
+    let updatedFlow: AutomationStudioFlowArtifact | null = null;
+    if (input.subflowId) {
+      const selectedSubflow = await this.getFlowSubflow(input.projectId, input.session.flowId, input.subflowId).catch(() => null);
+      if (!selectedSubflow?.graphFlowId) return null;
+      updatedFlow = await this.getFlow(input.projectId, selectedSubflow.graphFlowId).catch(() => null);
+      if (!updatedFlow) return null;
+      if (updatedFlow.metadata?.parentFlowId !== input.session.flowId
+        || updatedFlow.metadata?.parentSubflowId !== input.subflowId) {
+        throw new Error("Adaptive retry Subflow graph ownership no longer matches the selected parent and Subflow.");
+      }
+    } else {
+      updatedFlow = await this.getFlow(input.projectId, input.session.flowId).catch(() => null);
+    }
     if (!updatedFlow) return null;
+    if (input.subflowId) await this.assertOwnedSubflowGraph(input.projectId, updatedFlow);
     const retryTrace = await runCanonicalAutomationStudioFlow(updatedFlow, await this.listPublishedFlowSnapshots(), input.graphOptions, (await this.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`));
     const retrySession: AutomationStudioRuntimeSession = {
       ...input.session,
@@ -3113,7 +3262,33 @@ export class AutomationStudioService {
       }
     };
     await this.writeRuntimeSession(input.projectId, retrySession);
-    const retryDetail = runtimeRunDetailWithAdaptationContext(runtimeSessionToFlowRunDetail(retrySession, input.projectId), input.adaptationContext);
+    const retriedSubflows = input.detail.subflows.map((entry) => {
+      if (!input.subflowId || entry.subflowId !== input.subflowId) return entry;
+      const { failureReason: _initialFailureReason, ...retainedMetadata } = entry.metadata ?? {};
+      const finishedAt = retryTrace.finishedAt ?? Date.now();
+      return {
+        ...entry,
+        exitedAt: finishedAt,
+        status: retryTrace.status,
+        metadata: {
+          ...retainedMetadata,
+          durationMs: Math.max(0, finishedAt - entry.enteredAt),
+          adaptiveRetryAttemptCount: retryTrace.attempts.length,
+          ...(retryTrace.status !== "succeeded" && retryTrace.message ? { failureReason: retryTrace.message } : {})
+        }
+      };
+    });
+    const retryBase = runtimeSessionToFlowRunDetail(retrySession, input.projectId);
+    const retryDetail = runtimeRunDetailWithAdaptationContext({
+      ...retryBase,
+      summary: {
+        ...retryBase.summary,
+        routeDecisionCount: input.detail.routeDecisions.length,
+        subflowEntryCount: retriedSubflows.length
+      },
+      routeDecisions: input.detail.routeDecisions,
+      subflows: retriedSubflows
+    }, input.adaptationContext);
     await this.saveFlowRunDetail({
       ...retryDetail,
       interventions: input.detail.interventions,
@@ -3228,13 +3403,28 @@ export class AutomationStudioService {
           currentStateSummary: jsonObjectFromUnknown((graphOptions.inputs as Record<string, unknown>).state) ?? {},
           now: () => startedAt
         });
-        const selectedFlowId = route.selectedSubflow?.graphFlowId ?? runtimeCanonical.flowId;
-        const selectedFlow = selectedFlowId === runtimeCanonical.flowId
-          ? runtimeCanonical
-          : await this.getFlow(input.projectId, selectedFlowId).then((flow) => this.materializeRecordingDerivedFlow(input.projectId!, flow)).catch(() => runtimeCanonical);
-        const trace = route.selectedSubflow
+        const selectedFlowId = route.selectedSubflow?.graphFlowId ?? "";
+        const selectedFlow = selectedFlowId
+          ? await this.getFlow(input.projectId, selectedFlowId).then((flow) => this.materializeRecordingDerivedFlow(input.projectId!, flow)).catch(() => undefined)
+          : undefined;
+        const selectedFlowIsOwned = Boolean(route.selectedSubflow && selectedFlow
+          && this.persistedFlowRepresentation(selectedFlow) === "subflow_graph"
+          && selectedFlow.metadata?.subflowGraph === true
+          && selectedFlow.metadata?.parentFlowId === runtimeCanonical.flowId
+          && selectedFlow.metadata?.parentSubflowId === route.selectedSubflow.subflowId);
+        const trace = route.selectedSubflow && selectedFlow && selectedFlowIsOwned
           ? await runCanonicalAutomationStudioFlow(selectedFlow, await this.listPublishedFlowSnapshots(), graphOptions, (await this.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`))
-          : { status: "failed" as const, startedAt, finishedAt: Date.now(), attempts: [], values: {}, effects: [], message: route.diagnostics.map((diagnostic) => diagnostic.message).join(" ") };
+          : {
+            status: "failed" as const,
+            startedAt,
+            finishedAt: Date.now(),
+            attempts: [],
+            values: {},
+            effects: [],
+            message: route.selectedSubflow
+              ? `Router selected Subflow ${route.selectedSubflow.subflowId}, but its graph Flow ${selectedFlowId || "was not configured"} could not be loaded or did not prove matching Subflow ownership.`
+              : route.diagnostics.map((diagnostic) => diagnostic.message).join(" ")
+          };
         const next: AutomationStudioRuntimeSession = {
           ...session,
           status: trace.status,
@@ -3263,18 +3453,45 @@ export class AutomationStudioService {
           }] : []
         }, adaptationContext);
         const routedFailedTraceAttempt = [...trace.attempts].reverse().find((attempt) => attempt.status === "failed");
-        await this.saveFlowRunDetail(await this.maybeAnnotateRunDetailWithRuntimeLlm({
+        const annotatedDetail = await this.maybeAnnotateRunDetailWithRuntimeLlm({
           detail: routedRunDetail,
           context: adaptationContext,
-          runtimeFlow: canonicalFlowDocument(selectedFlow),
+          runtimeFlow: canonicalFlowDocument(selectedFlow ?? runtimeCanonical),
+          ...(route.selectedSubflow ? { subflowId: route.selectedSubflow.subflowId } : {}),
           ...(input.authorizedExternalSideEffects !== undefined ? { authorizedExternalSideEffects: input.authorizedExternalSideEffects } : {}),
           graphOptions,
           ...(routedFailedTraceAttempt ? { failedTraceAttempt: routedFailedTraceAttempt } : {})
-        }));
+        });
+        const retry = adaptationContext ? await this.retryRuntimeSessionAfterAutoAppliedPatch({
+          projectId: input.projectId,
+          session: next,
+          detail: annotatedDetail,
+          graphOptions,
+          adaptationContext,
+          ...(route.selectedSubflow ? { subflowId: route.selectedSubflow.subflowId } : {})
+        }) : null;
+        if (retry) return retry;
+        await this.saveFlowRunDetail(annotatedDetail);
         return next;
       }
     }
-    const trace = runtimeCanonical
+    const directRepresentation = runtimeCanonical ? this.persistedFlowRepresentation(runtimeCanonical) : undefined;
+    const representationDiagnostic = runtimeCanonical && directRepresentation === "legacy_single_graph"
+      ? { code: "flow.legacy_single_graph_execution", message: "Executed through bounded legacy single-graph compatibility. Migrate this Flow to a Router and Subflow graph." }
+      : undefined;
+    const trace = runtimeCanonical && directRepresentation !== "legacy_single_graph"
+      ? {
+        status: "failed" as const,
+        startedAt,
+        finishedAt: Date.now(),
+        attempts: [],
+        values: {},
+        effects: [],
+        message: directRepresentation === "subflow_graph"
+          ? "Subflow graph Flows cannot be launched directly; run their parent orchestration Flow."
+          : "Top-level orchestration Flow has no Router-selected Subflow execution path."
+      }
+      : runtimeCanonical
       ? await runCanonicalAutomationStudioFlow(runtimeCanonical, await this.listPublishedFlowSnapshots(), graphOptions, (await this.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`))
       : await runAutomationStudioGraph(runtimeFlow, graphOptions);
     const next: AutomationStudioRuntimeSession = {
@@ -3282,7 +3499,8 @@ export class AutomationStudioService {
       status: trace.status,
       startedAt: session.startedAt ?? startedAt,
       ...(trace.finishedAt !== undefined ? { finishedAt: trace.finishedAt } : {}),
-      trace
+      trace,
+      ...(representationDiagnostic ? { metadata: { ...(session.metadata ?? {}), compatibilityDiagnostics: [representationDiagnostic] } } : {})
     };
     if (input.projectId) await this.writeRuntimeSession(input.projectId, next);
     if (input.projectId && adaptationContext) {
@@ -3878,8 +4096,8 @@ export class AutomationStudioService {
   }
 
   async saveFlowRouter(router: AutomationStudioFlowRouter): Promise<AutomationStudioFlowRouter> {
-    const ownerFlow = await this.getFlow(router.projectId, router.flowId).catch(() => null);
-    if (ownerFlow?.metadata?.subflowGraph === true || typeof ownerFlow?.metadata?.parentFlowId === "string") {
+    const ownerFlow = await this.getFlow(router.projectId, router.flowId);
+    if (this.persistedFlowRepresentation(ownerFlow) === "subflow_graph") {
       throw new Error("Router is only available for a top-level Flow.");
     }
     const subflowIndex = await this.readFlowSubflowIndex(router.projectId);
@@ -4034,12 +4252,29 @@ export class AutomationStudioService {
     return await this.saveFlowRouter({ ...router, rules: router.rules.filter((rule) => rule.ruleId !== ruleId), updatedAt: now } as AutomationStudioFlowRouter);
   }
   async saveFlowSubflow(subflow: AutomationStudioFlowSubflow): Promise<AutomationStudioFlowSubflow> {
-    const persistedSubflow = subflow.graphFlowId ? subflow : {
-      ...subflow,
-      graphFlowId: `${subflow.flowId}.${subflow.subflowId}.graph`
-    };
+    const parentFlow = await this.getFlow(subflow.projectId, subflow.flowId);
+    if (this.persistedFlowRepresentation(parentFlow) === "subflow_graph") {
+      throw new Error("Subflows can only be owned by a top-level Flow.");
+    }
+    if (!subflow.graphFlowId?.trim()) throw new Error("Subflow graph Flow is required.");
+    const persistedSubflow = { ...subflow, graphFlowId: subflow.graphFlowId.trim() };
+    const existingSubflow = await this.getFlowSubflow(subflow.projectId, subflow.flowId, subflow.subflowId);
+    if (existingSubflow?.graphFlowId && existingSubflow.graphFlowId !== persistedSubflow.graphFlowId) {
+      throw new Error("A Subflow graph Flow cannot be reassigned; create or duplicate a Subflow instead.");
+    }
     const validation = validateAutomationStudioFlowSubflow(persistedSubflow);
     if (!validation.ok) throw new Error(`Invalid Automation Studio subflow: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
+    const declaredGraph = await this.getFlow(persistedSubflow.projectId, persistedSubflow.graphFlowId!).catch(() => null);
+    if (declaredGraph) {
+      if (this.persistedFlowRepresentation(declaredGraph) !== "subflow_graph"
+        || declaredGraph.metadata?.subflowGraph !== true
+        || declaredGraph.metadata?.parentFlowId !== persistedSubflow.flowId
+        || declaredGraph.metadata?.parentSubflowId !== persistedSubflow.subflowId) {
+        throw new Error("Subflow graph Flow does not prove matching parent and Subflow ownership.");
+      }
+    } else {
+      throw new Error("Subflow graph Flow does not exist.");
+    }
     await this.ensureProjectStructure(persistedSubflow.projectId);
     await this.writeSqlFlowSubflow(persistedSubflow.projectId, persistedSubflow);
     await new ProgramJsonStore<JsonObject>(this.flowSubflowFile(persistedSubflow.projectId, persistedSubflow.flowId, persistedSubflow.subflowId), () => ({})).write(persistedSubflow as unknown as JsonObject);
@@ -4054,12 +4289,14 @@ export class AutomationStudioService {
 
   async createFlowSubflow(input: CreateFlowSubflowInput): Promise<AutomationStudioFlowSubflow> {
     const parentFlow = await this.getFlow(input.projectId, input.flowId);
+    if (this.persistedFlowRepresentation(parentFlow) === "subflow_graph") {
+      throw new Error("Subflows can only be owned by a top-level Flow.");
+    }
     const now = Date.now();
     const subflowId = `subflow.${randomUUID()}`;
-    const graphFlowId = input.graphFlowId ?? `${input.flowId}.${subflowId}.graph`;
+    const graphFlowId = `${input.flowId}.${subflowId}.graph`;
     let createdGraph = false;
-    if (!input.graphFlowId) {
-      await this.saveFlow({
+      await this.saveFlowInternal({
         projectId: input.projectId,
         flow: createBlankAutomationStudioFlowArtifact({
           flowId: graphFlowId,
@@ -4071,9 +4308,8 @@ export class AutomationStudioService {
           now,
           metadata: { parentFlowId: input.flowId, parentSubflowId: subflowId, subflowGraph: true }
         })
-      });
+      }, false, "subflow_graph");
       createdGraph = true;
-    }
     const subflow: AutomationStudioFlowSubflow = {
       schemaVersion: "0.1",
       subflowId,
@@ -4098,16 +4334,190 @@ export class AutomationStudioService {
       await this.writeFlowSubflowIndex(input.projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: (index.subflows ?? []).filter((item) => item.subflowId !== subflowId) })).catch(() => undefined);
       if (this.projectRootDir) await this.flowSubflowSummaryRepository(input.projectId).delete(subflowId).catch(() => undefined);
       await this.markSqlFlowSubflowDeleted(input.projectId, subflow, Date.now()).catch(() => undefined);
-      if (createdGraph) await this.deleteFlow({ projectId: input.projectId, flowId: graphFlowId }).catch(() => undefined);
+      if (createdGraph) await this.deleteFlowArtifact({ projectId: input.projectId, flowId: graphFlowId }, true).catch(() => undefined);
       throw error;
     }
     await this.appendFlowSubflowMutationChangeFeed(saved, "create");
     return saved;
   }
 
+  async migrateLegacyFlowRepresentation(input: { projectId: string; flowId: string; subflowId: string }): Promise<{
+    parentFlow: AutomationStudioFlowArtifact;
+    subflow: AutomationStudioFlowSubflow;
+    graphFlow: AutomationStudioFlowArtifact;
+  }> {
+    const parentFlow = await this.getFlow(input.projectId, input.flowId);
+    const representation = this.persistedFlowRepresentation(parentFlow);
+    if (representation === "subflow_graph") throw new Error("Legacy representation migration requires a top-level parent Flow.");
+    const subflow = await this.getFlowSubflow(input.projectId, input.flowId, input.subflowId);
+    if (!subflow?.graphFlowId) throw new Error("The requested Subflow does not exist or does not own an executable graph Flow.");
+    const graphFlow = await this.getFlow(input.projectId, subflow.graphFlowId);
+    await this.assertOwnedSubflowGraph(input.projectId, graphFlow);
+    if (graphFlow.metadata?.parentFlowId !== parentFlow.flowId
+      || graphFlow.metadata?.parentSubflowId !== subflow.subflowId
+      || subflow.flowId !== parentFlow.flowId
+      || subflow.graphFlowId !== graphFlow.flowId) {
+      throw new Error("The requested Subflow graph does not prove exact project, parent Flow, and Subflow ownership.");
+    }
+    if (representation === "orchestration") {
+      if (parentFlow.nodes.length || parentFlow.edges.length) throw new Error("Orchestration Flow representation is invalid because the parent still owns graph content.");
+      const router = await this.getFlowRouter(input.projectId, input.flowId);
+      if (router?.fallback?.kind !== "subflow" || router.fallback.subflowId !== subflow.subflowId) {
+        throw new Error("Flow is already orchestration, but its Router fallback does not target the requested Subflow.");
+      }
+      const savedParent = automationStudioFlowRepresentationKind(parentFlow) === "orchestration"
+        ? parentFlow
+        : await this.saveFlowInternal({
+          projectId: input.projectId,
+          flow: {
+            ...parentFlow,
+            metadata: withAutomationStudioFlowRepresentation(parentFlow.metadata, "orchestration")
+          }
+        }, false, "orchestration");
+      return { parentFlow: savedParent, subflow, graphFlow };
+    }
+    if (parentFlow.source.mode === "code") {
+      throw new Error("Code-owned legacy Flows require an explicit source migration before Subflow/Router conversion.");
+    }
+    return await this.migrateLegacyParentIntoOwnedSubflow(parentFlow, subflow, graphFlow);
+  }
+
+  private async ensureProposalPrimarySubflow(parentFlow: AutomationStudioFlowArtifact): Promise<{
+    parentFlow: AutomationStudioFlowArtifact;
+    subflow: AutomationStudioFlowSubflow;
+    graphFlow: AutomationStudioFlowArtifact;
+  }> {
+    if (this.persistedFlowRepresentation(parentFlow) === "subflow_graph") {
+      throw new Error("Proposal Flow destinations must be top-level orchestration Flows, not Subflow graph Flows.");
+    }
+    if (this.persistedFlowRepresentation(parentFlow) === "legacy_single_graph" && parentFlow.source.mode === "code") {
+      throw new Error("Code-owned legacy Flows require an explicit source migration before Subflow/Router conversion.");
+    }
+    const primaryPage = await this.listFlowSubflowSummaries({
+      projectId: parentFlow.projectId,
+      flowId: parentFlow.flowId,
+      role: "primary",
+      sort: "updated",
+      direction: "asc",
+      limit: 1,
+      offset: 0
+    });
+    const subflow = primaryPage.subflows[0]
+      ? await this.getFlowSubflow(parentFlow.projectId, parentFlow.flowId, primaryPage.subflows[0].subflowId)
+      : await this.createFlowSubflow({
+        projectId: parentFlow.projectId,
+        flowId: parentFlow.flowId,
+        name: "Primary",
+        description: `Primary executable graph for ${parentFlow.name}.`,
+        role: "primary"
+      });
+    if (!subflow?.graphFlowId) throw new Error("Primary Subflow does not own an executable graph Flow.");
+    const graphFlow = await this.getFlow(parentFlow.projectId, subflow.graphFlowId);
+    if (this.persistedFlowRepresentation(parentFlow) === "orchestration") {
+      await this.setFlowMapFallback({
+        projectId: parentFlow.projectId,
+        flowId: parentFlow.flowId,
+        kind: "subflow",
+        targetSubflowId: subflow.subflowId
+      });
+      const router = await this.getFlowRouter(parentFlow.projectId, parentFlow.flowId);
+      if (router?.fallback?.kind !== "subflow" || router.fallback.subflowId !== subflow.subflowId) {
+        throw new Error("Primary Subflow Router fallback verification failed.");
+      }
+      return { parentFlow, subflow, graphFlow };
+    }
+    return await this.migrateLegacyParentIntoOwnedSubflow(parentFlow, subflow, graphFlow);
+  }
+
+  private async migrateLegacyParentIntoOwnedSubflow(
+    parentFlow: AutomationStudioFlowArtifact,
+    subflow: AutomationStudioFlowSubflow,
+    initialGraphFlow: AutomationStudioFlowArtifact
+  ): Promise<{
+    parentFlow: AutomationStudioFlowArtifact;
+    subflow: AutomationStudioFlowSubflow;
+    graphFlow: AutomationStudioFlowArtifact;
+  }> {
+    if (this.persistedFlowRepresentation(parentFlow) !== "legacy_single_graph") {
+      throw new Error("Only a legacy single-graph parent Flow can be migrated into a Subflow graph.");
+    }
+    if (!subflow.graphFlowId || subflow.projectId !== parentFlow.projectId || subflow.flowId !== parentFlow.flowId
+      || initialGraphFlow.flowId !== subflow.graphFlowId) {
+      throw new Error("The migration target does not prove exact parent Flow and Subflow ownership.");
+    }
+    await this.assertOwnedSubflowGraph(parentFlow.projectId, initialGraphFlow);
+    let graphFlow = initialGraphFlow;
+    if (parentFlow.nodes.length === 0 && parentFlow.edges.length === 0) {
+      await this.setFlowMapFallback({
+        projectId: parentFlow.projectId,
+        flowId: parentFlow.flowId,
+        kind: "subflow",
+        targetSubflowId: subflow.subflowId
+      });
+      const router = await this.getFlowRouter(parentFlow.projectId, parentFlow.flowId);
+      if (router?.fallback?.kind !== "subflow" || router.fallback.subflowId !== subflow.subflowId) {
+        throw new Error("Subflow Router fallback verification failed; interrupted legacy migration was not finalized.");
+      }
+      const savedParent = await this.saveFlowInternal({
+        projectId: parentFlow.projectId,
+        flow: {
+          ...parentFlow,
+          metadata: withAutomationStudioFlowRepresentation(parentFlow.metadata, "orchestration")
+        }
+      }, false, "orchestration");
+      return { parentFlow: savedParent, subflow, graphFlow };
+    }
+    const graphAlreadyMatchesParent = sameAutomationStudioFlowGraph(graphFlow, parentFlow);
+    if ((graphFlow.nodes.length || graphFlow.edges.length) && !graphAlreadyMatchesParent) {
+      throw new Error("Cannot migrate a legacy parent graph into a non-empty Subflow graph that does not match it exactly.");
+    }
+    const expectedEvidence = uniqueEvidenceReferences([...(graphFlow.evidenceReferences ?? []), ...(parentFlow.evidenceReferences ?? [])]);
+    const executionDefaultsMatch = JSON.stringify(graphFlow.executionDefaults ?? null) === JSON.stringify(parentFlow.executionDefaults ?? null);
+    const evidenceMatches = JSON.stringify(graphFlow.evidenceReferences ?? []) === JSON.stringify(expectedEvidence);
+    if (!graphAlreadyMatchesParent || !executionDefaultsMatch || !evidenceMatches) {
+      const { executionDefaults: _existingExecutionDefaults, ...graphWithoutExecutionDefaults } = graphFlow;
+      graphFlow = await this.saveFlow({
+        projectId: parentFlow.projectId,
+        flow: {
+          ...graphWithoutExecutionDefaults,
+          nodes: parentFlow.nodes,
+          edges: parentFlow.edges,
+          evidenceReferences: expectedEvidence,
+          ...(parentFlow.executionDefaults ? { executionDefaults: structuredClone(parentFlow.executionDefaults) } : {})
+        }
+      });
+    }
+    graphFlow = await this.getFlow(parentFlow.projectId, subflow.graphFlowId);
+    if (!sameAutomationStudioFlowGraph(graphFlow, parentFlow)
+      || JSON.stringify(graphFlow.executionDefaults ?? null) !== JSON.stringify(parentFlow.executionDefaults ?? null)) {
+      throw new Error("Subflow graph and dependency verification failed; the legacy parent graph was not cleared.");
+    }
+    await this.setFlowMapFallback({
+      projectId: parentFlow.projectId,
+      flowId: parentFlow.flowId,
+      kind: "subflow",
+      targetSubflowId: subflow.subflowId
+    });
+    const router = await this.getFlowRouter(parentFlow.projectId, parentFlow.flowId);
+    if (router?.fallback?.kind !== "subflow" || router.fallback.subflowId !== subflow.subflowId) {
+      throw new Error("Subflow Router fallback verification failed; the parent graph was not cleared.");
+    }
+    const { executionDefaults: _migratedExecutionDefaults, ...parentWithoutGraphDependencies } = parentFlow;
+    const savedParent = await this.saveFlowInternal({
+      projectId: parentFlow.projectId,
+      flow: {
+        ...parentWithoutGraphDependencies,
+        nodes: [],
+        edges: [],
+        metadata: withAutomationStudioFlowRepresentation(parentFlow.metadata, "orchestration")
+      }
+    }, false, "orchestration");
+    return { parentFlow: savedParent, subflow, graphFlow };
+  }
   async updateFlowSubflow(input: UpdateFlowSubflowInput): Promise<AutomationStudioFlowSubflow> {
     const existing = await this.getFlowSubflow(input.projectId, input.flowId, input.subflowId);
     if (!existing) throw new Error(`Unknown Automation Studio subflow: ${input.subflowId}`);
+    if (input.graphFlowId !== undefined && input.graphFlowId.trim() !== existing.graphFlowId) throw new Error("A Subflow graph Flow cannot be reassigned; create or duplicate a Subflow instead.");
     if (input.expectedUpdatedAt !== undefined && existing.updatedAt !== input.expectedUpdatedAt) throw new Error("SUBFLOW_SAVE_CONFLICT: This subflow changed after Settings loaded.");
     const next = {
       ...existing,
@@ -4143,7 +4553,7 @@ export class AutomationStudioService {
     const graphFlowId = input.flowId + "." + subflowId + ".graph";
     const sourceGraph = await this.getFlow(input.projectId, existing.graphFlowId);
     const name = input.name?.trim() || existing.name + " Copy";
-    await this.saveFlow({
+    await this.saveFlowInternal({
       projectId: input.projectId,
       flow: {
         ...sourceGraph,
@@ -4153,7 +4563,7 @@ export class AutomationStudioService {
         updatedAt: now,
         metadata: { ...(sourceGraph.metadata ?? {}), parentFlowId: input.flowId, parentSubflowId: subflowId, subflowGraph: true, duplicatedFromFlowId: existing.graphFlowId }
       }
-    });
+    }, false, "subflow_graph");
     const saved = await this.saveFlowSubflow({
       ...existing,
       subflowId,
@@ -4201,7 +4611,7 @@ export class AutomationStudioService {
     if (referenced) throw new Error("Remove this Subflow from Router routes and fallback before deleting it.");
     const deletedAt = Date.now();
     await this.markSqlFlowSubflowDeleted(input.projectId, existing, deletedAt);
-    await this.deleteFlow({ projectId: input.projectId, flowId: existing.graphFlowId });
+    await this.deleteFlowArtifact({ projectId: input.projectId, flowId: existing.graphFlowId }, true);
     await ProgramJsonStore.deletePath(this.flowSubflowFile(input.projectId, input.flowId, input.subflowId));
     await this.writeFlowSubflowIndex(input.projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: (index.subflows ?? []).filter((item) => item.subflowId !== input.subflowId) }));
     if (this.projectRootDir) await this.flowSubflowSummaryRepository(input.projectId).delete(input.subflowId);
@@ -4411,7 +4821,8 @@ export class AutomationStudioService {
     now: number
   ): Promise<JsonObject> {
     if (!patch.targetId) throw new Error(`Patch ${patch.kind} is missing a target node.`);
-    const before = await this.getFlow(adaptation.projectId, adaptation.flowId);
+    const target = await this.resolveFlowNodeAdaptationTarget(adaptation);
+    const before = target.graphFlow;
     const nodeIndex = before.nodes.findIndex((node) => node.id === patch.targetId);
     if (nodeIndex < 0) throw new Error(`Unknown Flow node for adaptation patch: ${patch.targetId}`);
     const nodes = structuredClone(before.nodes);
@@ -4442,8 +4853,41 @@ export class AutomationStudioService {
       targetId: patch.targetId,
       before,
       after: saved,
-      validation: validateAutomationStudioFlow(saved)
+      validation: validateAutomationStudioFlow(saved),
+      ...(target.subflowId ? {
+        rollback: compactJsonObject({
+          kind: "restore_owned_subflow_graph",
+          parentFlowId: adaptation.flowId,
+          subflowId: target.subflowId,
+          graphFlowId: saved.flowId
+        })
+      } : {})
     });
+  }
+
+  private async resolveFlowNodeAdaptationTarget(
+    adaptation: AutomationStudioFlowAdaptation
+  ): Promise<{ graphFlow: AutomationStudioFlowArtifact; subflowId?: string }> {
+    const parent = await this.getFlow(adaptation.projectId, adaptation.flowId);
+    const representation = this.persistedFlowRepresentation(parent);
+    if (representation === "legacy_single_graph") {
+      if (adaptation.subflowId) throw new Error("Legacy single-graph adaptations cannot declare a Subflow target.");
+      return { graphFlow: parent };
+    }
+    if (representation !== "orchestration") throw new Error("Flow adaptations must remain scoped to a top-level orchestration Flow.");
+    const subflowId = adaptation.subflowId?.trim();
+    if (!subflowId) throw new Error("Node adaptation on an orchestration Flow requires an explicit Subflow target.");
+    const subflow = await this.getFlowSubflow(adaptation.projectId, parent.flowId, subflowId);
+    if (!subflow) throw new Error(`Subflow ${subflowId} is not owned by orchestration Flow ${parent.flowId}; node adaptation refused.`);
+    const graphFlowId = subflow.graphFlowId?.trim();
+    if (!graphFlowId) throw new Error(`Subflow ${subflowId} does not own a graph Flow; node adaptation refused.`);
+    const graphFlow = await this.getFlow(adaptation.projectId, graphFlowId).catch(() => null);
+    if (!graphFlow) throw new Error(`Subflow ${subflowId} graph Flow ${graphFlowId} could not be loaded; node adaptation refused.`);
+    await this.assertOwnedSubflowGraph(adaptation.projectId, graphFlow);
+    if (graphFlow.metadata?.parentFlowId !== parent.flowId || graphFlow.metadata?.parentSubflowId !== subflowId) {
+      throw new Error(`Subflow ${subflowId} graph ownership does not match orchestration Flow ${parent.flowId}; node adaptation refused.`);
+    }
+    return { graphFlow, subflowId };
   }
 
   private async applyRouterAdaptationPatch(
@@ -4455,7 +4899,8 @@ export class AutomationStudioService {
     const toNodeId = typeof patch.after.toNodeId === "string" ? patch.after.toNodeId.trim() : "";
     if (toNodeId) {
       if (!patch.targetId) throw new Error("Router reroute patches must include the source node as targetId.");
-      const before = await this.getFlow(adaptation.projectId, adaptation.flowId);
+      const target = await this.resolveFlowNodeAdaptationTarget(adaptation);
+      const before = target.graphFlow;
       if (!before.nodes.some((node) => node.id === patch.targetId)) throw new Error(`Unknown source node for router reroute patch: ${patch.targetId}`);
       if (!before.nodes.some((node) => node.id === toNodeId)) throw new Error(`Unknown target node for router reroute patch: ${toNodeId}`);
       const edgeId = `adaptation.${safeSegment(adaptation.adaptationId)}.${safeSegment(patch.targetId)}.${safeSegment(toNodeId)}`;
@@ -4473,7 +4918,15 @@ export class AutomationStudioService {
         targetId: patch.targetId,
         before,
         after: saved,
-        validation: validateAutomationStudioFlow(saved)
+        validation: validateAutomationStudioFlow(saved),
+        ...(target.subflowId ? {
+          rollback: compactJsonObject({
+            kind: "restore_owned_subflow_graph",
+            parentFlowId: adaptation.flowId,
+            subflowId: target.subflowId,
+            graphFlowId: saved.flowId
+          })
+        } : {})
       });
     }
     const router = await this.getFlowRouter(adaptation.projectId, adaptation.flowId);
@@ -4543,22 +4996,20 @@ export class AutomationStudioService {
   ): Promise<JsonObject> {
     const after = isJsonRecord(patch.after) ? patch.after : {};
     const name = typeof after.name === "string" && after.name.trim() ? after.name.trim() : patch.summary.trim() || "Adapted subflow";
-    const graphFlowId = typeof after.graphFlowId === "string" && after.graphFlowId.trim() ? after.graphFlowId.trim() : undefined;
     const created = await this.createFlowSubflow({
       projectId: adaptation.projectId,
       flowId: adaptation.flowId,
       name,
       ...(typeof after.description === "string" ? { description: after.description } : {}),
       ...(typeof after.role === "string" ? { role: after.role as AutomationStudioFlowSubflow["role"] } : {}),
-      ...(Array.isArray(after.routeTags) ? { routeTags: after.routeTags.filter((tag): tag is string => typeof tag === "string") } : {}),
-      ...(graphFlowId ? { graphFlowId } : {})
+      ...(Array.isArray(after.routeTags) ? { routeTags: after.routeTags.filter((tag): tag is string => typeof tag === "string") } : {})
     });
     const saved = await this.saveFlowSubflow({
       ...created,
       metadata: {
         ...(created.metadata ?? {}),
         createdByAdaptationId: adaptation.adaptationId,
-        createdGraphFlow: !graphFlowId
+        createdGraphFlow: true
       },
       updatedAt: Math.max(now, created.createdAt)
     });
@@ -4629,6 +5080,19 @@ export class AutomationStudioService {
         if (!isJsonRecord(before)) {
           await this.deleteFlow({ projectId, flowId: artifactId });
         } else {
+          const rollback = isJsonRecord(mutation.rollback) ? mutation.rollback : undefined;
+          if (rollback?.kind === "restore_owned_subflow_graph") {
+            const parentFlowId = typeof rollback.parentFlowId === "string" ? rollback.parentFlowId.trim() : "";
+            const subflowId = typeof rollback.subflowId === "string" ? rollback.subflowId.trim() : "";
+            const graphFlowId = typeof rollback.graphFlowId === "string" ? rollback.graphFlowId.trim() : "";
+            if (!parentFlowId || !subflowId || !graphFlowId || graphFlowId !== artifactId || before.flowId !== graphFlowId) {
+              throw new Error(`Owned Subflow graph rollback metadata for ${artifactId} is invalid; rollback refused.`);
+            }
+            const subflow = await this.getFlowSubflow(projectId, parentFlowId, subflowId);
+            if (!subflow || subflow.graphFlowId !== graphFlowId) throw new Error(`Subflow graph ownership changed for ${graphFlowId}; rollback refused.`);
+            const current = await this.getFlow(projectId, graphFlowId);
+            await this.assertOwnedSubflowGraph(projectId, current);
+          }
           await this.saveFlow({ projectId, flow: before as unknown as AutomationStudioFlowArtifact });
         }
       } else if (artifactKind === "router") {
@@ -4651,7 +5115,7 @@ export class AutomationStudioService {
     const existing = flowId && subflowId ? await this.getFlowSubflow(projectId, flowId, subflowId).catch(() => null) : null;
     const deletedAt = Date.now();
     if (existing) await this.markSqlFlowSubflowDeleted(projectId, existing, deletedAt);
-    if (deleteGraphFlow && graphFlowId) await this.deleteFlow({ projectId, flowId: graphFlowId }).catch(() => ({ deletedFlowId: graphFlowId }));
+    if (deleteGraphFlow && graphFlowId) await this.deleteFlowArtifact({ projectId, flowId: graphFlowId }, true).catch(() => ({ deletedFlowId: graphFlowId }));
     if (flowId && subflowId) {
       await ProgramJsonStore.deletePath(this.flowSubflowFile(projectId, flowId, subflowId));
       await this.writeFlowSubflowIndex(projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: (index.subflows ?? []).filter((item) => item.subflowId !== subflowId) }));
@@ -4759,7 +5223,9 @@ export class AutomationStudioService {
     }
     if (!reasons.length || proposal.status === "rejected") return proposal;
     const flows = await this.listCanonicalFlowArtifacts(projectId);
-    const affectedFlowIds = flows.filter((flow) => flow.nodes.some((node) => node.metadata?.recordingProposalId === proposal.proposalId || (proposal.approvedDefinitions ?? []).some((definition) => definition.id === node.definitionId))).map((flow) => flow.flowId);
+    const affectedFlowIds = uniqueStrings(flows
+      .filter((flow) => flow.nodes.some((node) => node.metadata?.recordingProposalId === proposal.proposalId || (proposal.approvedDefinitions ?? []).some((definition) => definition.id === node.definitionId)))
+      .map((flow) => typeof flow.metadata?.parentFlowId === "string" ? flow.metadata.parentFlowId : flow.flowId));
     return { ...proposal, status: "invalidated", invalidation: { invalidatedAt: proposal.invalidation?.invalidatedAt ?? Date.now(), reasons: uniqueStrings(reasons), affectedFlowIds }, updatedAt: Date.now() };
   }
 
@@ -8642,6 +9108,11 @@ function appendRecordingProposalToFlow(flow: AutomationStudioFlowArtifact, propo
   return { ...flow, nodes: [...flow.nodes, ...nodes], edges: [...flow.edges, ...edges], metadata: { ...(flow.metadata ?? {}), recordingProposalIds: uniqueStrings([...(Array.isArray(flow.metadata?.recordingProposalIds) ? flow.metadata.recordingProposalIds.map(String) : []), proposal.proposalId]) } };
 }
 
+function sameAutomationStudioFlowGraph(left: AutomationStudioFlowArtifact, right: AutomationStudioFlowArtifact): boolean {
+  return JSON.stringify(left.nodes) === JSON.stringify(right.nodes)
+    && JSON.stringify(left.edges) === JSON.stringify(right.edges);
+}
+
 function recordManualRecordingProposalChanges(existing: AutomationStudioFlowArtifact, next: AutomationStudioFlowArtifact, editedAt: number): AutomationStudioFlowArtifact {
   const existingById = new Map(existing.nodes.map((node) => [node.id, node]));
   const immutableKeys = ["recordingProposalId", "recordingCandidateId", "mapperId", "mapperVersion", "sourceObservationIds", "evidence", "rawEvidenceImmutable"] as const;
@@ -8930,6 +9401,12 @@ function sqlSubflowToFlowSubflow(projectId: string, row: AutomationStudioSqlSubf
 function flowSummaryFromFlow(flow: AutomationStudioFlowArtifact): AutomationStudioFlowSummary {
   const hierarchySubflows = flowHierarchySubflowsFromFlow(flow);
   const subflowCategories = flowSubflowCategoriesFromFlow(flow);
+  const flowRepresentationKind = automationStudioFlowRepresentationKind(flow)
+    ?? (isAutomationStudioSubflowGraphMetadata(flow.metadata)
+      ? "subflow_graph"
+      : flow.nodes.length || flow.edges.length || flow.legacyProvenance
+        ? "legacy_single_graph"
+        : "orchestration");
   return {
     flowId: flow.flowId,
     name: flow.name,
@@ -8942,6 +9419,8 @@ function flowSummaryFromFlow(flow: AutomationStudioFlowArtifact): AutomationStud
     edgeCount: flow.edges.length,
     updatedAt: flow.updatedAt,
     ...(Array.isArray(flow.metadata?.recordingProposalIds) ? { recordingProposalIds: flow.metadata.recordingProposalIds.map(String) } : {}),
+    flowRepresentationVersion: 1,
+    flowRepresentationKind,
     ...(flow.metadata?.subflowGraph === true ? { subflowGraph: true } : {}),
     ...(typeof flow.metadata?.parentFlowId === "string" ? { parentFlowId: flow.metadata.parentFlowId } : {}),
     ...(typeof flow.metadata?.parentSubflowId === "string" ? { parentSubflowId: flow.metadata.parentSubflowId } : {}),
@@ -9677,6 +10156,9 @@ function flowRunSummaryWithInterventionSummaries(detail: AutomationStudioFlowRun
   const hasTokenUsage = Object.values(tokenUsage).some((value) => typeof value === "number" && value > 0);
   return {
     ...detail.summary,
+    routeDecisionCount: detail.routeDecisions.length,
+    subflowEntryCount: detail.subflows.length,
+    actionAttemptCount: detail.actionAttempts?.length ?? detail.summary.actionAttemptCount,
     interventionCount: interventionSummaries.length,
     ...(hasTokenUsage ? { tokenUsage } : {}),
     ...(interventionSummaries.length ? { interventionSummaries } : {})

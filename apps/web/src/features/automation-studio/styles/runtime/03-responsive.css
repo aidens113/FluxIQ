@@ -5,7 +5,7 @@
 
   .automation-runtime-list-page,
   .automation-runtime-log-page {
-    max-height: 70vh;
+    max-height: none;
   }
 
   .automation-runtime-pagination-footer {
@@ -16,6 +16,25 @@
   .automation-runtime-run-command,
   .automation-runtime-input-fields > div,
   .automation-runtime-advanced-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .automation-runtime-run-actions {
+    grid-template-columns: minmax(88px, 120px) minmax(116px, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .automation-runtime-stage-header {
+    align-items: flex-start;
+  }
+
+  .automation-runtime-stage-header p,
+  .automation-runtime-stage-header > span {
+    display: none;
+  }
+
+  .automation-runtime-run-actions {
     grid-template-columns: 1fr;
   }
 }

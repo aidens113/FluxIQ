@@ -8,6 +8,57 @@
   padding: var(--space-xxs);
 }
 
+.automation-runtime-stage {
+  align-content: start;
+}
+
+.automation-runtime-stage-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  min-width: 0;
+  padding: var(--space-sm) var(--space-xs);
+}
+
+.automation-runtime-stage-header > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.automation-runtime-stage-header > div > span {
+  color: var(--color-primary);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.automation-runtime-stage-header strong {
+  overflow: hidden;
+  font-size: var(--font-size-title);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-runtime-stage-header p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.automation-runtime-stage-header > span {
+  flex: 0 0 auto;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  padding: 5px 9px;
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+}
+
 .automation-recording-stage > header {
   display: flex;
   align-items: baseline;

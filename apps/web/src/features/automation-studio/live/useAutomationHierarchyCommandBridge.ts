@@ -92,8 +92,8 @@ export function useAutomationHierarchyCommandBridge(options: Options) {
       });
     },
     notifyChanged: current.notifyChanged,
-    openCreatedFlow(flowId) { selectCreated(current, flowId); },
-    openCreatedSubflow(flowId) { selectCreated(current, flowId); },
+    openCreatedFlow(flowId) { selectCreated(current, flowId, automationStudioViewId.subflows); },
+    openCreatedSubflow(flowId) { selectCreated(current, flowId, automationStudioViewId.flowEditor); },
     closeDeletedViews,
     clearFlowDrafts: current.clearFlowDrafts,
     setSelection: current.setSelection,
@@ -138,9 +138,9 @@ function withSnapshot(options: Options): Options {
   return options.getSnapshot ? { ...options, ...options.getSnapshot() } : options;
 }
 
-function selectCreated(options: Options, flowId: string): void {
+function selectCreated(options: Options, flowId: string, viewId: string): void {
   runAutomationPresentationTransaction(() => {
     options.setSelection({ kind: "flow", id: flowId });
-    options.openView(automationStudioViewId.flowEditor, "preview");
+    options.openView(viewId, "preview");
   });
 }

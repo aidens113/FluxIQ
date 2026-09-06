@@ -29,7 +29,7 @@ export function flowHierarchyNodes(flowEntries: any[], options: { recordings?: a
       kind: "flow",
       category: "flow",
       parentId: typeof flow.metadata?.parentId === "string" ? flow.metadata.parentId : null,
-      viewId: automationStudioViewId.flowEditor,
+      viewId: automationStudioViewId.subflows,
       sourceId: flowId,
       flowId,
       metadata: { hierarchyContainer: true }
@@ -168,7 +168,7 @@ function appendSubflowCategoryNodes(nodes: AutomationHierarchyNode[], flow: any,
       kind: "folder",
       category: "flow",
       parentId: parentCategoryId && nodeIds.has(parentCategoryId) ? nodeIds.get(parentCategoryId)! : subflowsFolderNodeId,
-      viewId: automationStudioViewId.flowEditor,
+      viewId: automationStudioViewId.subflows,
       sourceId: category.id,
       flowId,
       metadata: { flowStructure: "subflow-category", parentCategoryId: parentCategoryId ?? null }

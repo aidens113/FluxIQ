@@ -24,6 +24,35 @@ describe("Automation Studio TypeScript Flow DSL", () => {
     expect(compileFlowSource(source, { projectId: "project", moduleId: "flows/dsl.flow.ts", now: 123 })).toMatchObject({ ok: true, plan: { digest: code.plan.digest } });
   });
 
+  it("round-trips only representation and Subflow ownership metadata", () => {
+    const graph = createBlankAutomationStudioFlowArtifact({ flowId: "flow.graph", projectId: "project", name: "Graph", now: 1 });
+    graph.metadata = {
+      flowRepresentationVersion: 1,
+      flowRepresentationKind: "subflow_graph",
+      subflowGraph: true,
+      parentFlowId: "flow.parent",
+      parentSubflowId: "subflow.primary",
+      generatedSource: { relativePath: "private/generated.ts" },
+      privateRuntimeState: "must-not-leak"
+    };
+
+    const source = generateFlowTypeScript(graph);
+    expect(source).toContain('"flowRepresentationKind": "subflow_graph"');
+    expect(source).not.toContain("generatedSource");
+    expect(source).not.toContain("privateRuntimeState");
+
+    const compiled = compileFlowSource(source, { projectId: "project", moduleId: "flows/graph.flow.ts", now: 2 });
+    expect(compiled.ok).toBe(true);
+    if (!compiled.ok) return;
+    expect(compiled.plan.flow.metadata).toEqual({
+      flowRepresentationVersion: 1,
+      flowRepresentationKind: "subflow_graph",
+      subflowGraph: true,
+      parentFlowId: "flow.parent",
+      parentSubflowId: "subflow.primary"
+    });
+  });
+
   it("returns module locations and never evaluates unsupported TypeScript", () => {
     const source = 'import fs from "node:fs";\nexport default (() => fs.readFileSync("secret"))();';
     const result = compileFlowSource(source, { projectId: "project", moduleId: "flows/unsafe.flow.ts" });

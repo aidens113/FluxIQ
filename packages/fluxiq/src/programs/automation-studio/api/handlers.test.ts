@@ -75,6 +75,9 @@ describe("Automation Studio graph patch API", () => {
     try {
       const project = await service.createProject({ name: "Graph patch API" });
       const flow = await service.createFlow({ projectId: project.id, name: "Patched Flow" });
+      const subflow = await service.createFlowSubflow({ projectId: project.id, flowId: flow.flowId, name: "Primary", role: "primary" });
+      if (!subflow.graphFlowId) throw new Error("Expected the primary Subflow to own a graph Flow.");
+      const graphFlowId = subflow.graphFlowId;
       const registry = new GlobalProgramApiRegistry();
       const authorizeSessionPin = vi.fn().mockResolvedValue({ authorized: true });
       registerAutomationStudioApi(registry, service, { authorizeSessionPin } as any);
@@ -96,7 +99,7 @@ describe("Automation Studio graph patch API", () => {
         actor: { ...cacheActor("user.graph"), permissions: ["programs.read", "programs.write", "flows.write"] },
         payload: {
           projectId: project.id,
-          flowId: flow.flowId,
+          flowId: graphFlowId,
           authSessionId: "session.user.graph",
           authorizationPin: "123456",
           baseRevision: 1,
@@ -106,7 +109,7 @@ describe("Automation Studio graph patch API", () => {
               op: "add_node",
               node: {
                 nodeId: "node.start",
-                flowId: flow.flowId,
+                flowId: graphFlowId,
                 definitionId: "builtin.control.start",
                 definitionVersion: "1.0.0",
                 label: "Start",
@@ -125,7 +128,7 @@ describe("Automation Studio graph patch API", () => {
               op: "add_node",
               node: {
                 nodeId: "node.end",
-                flowId: flow.flowId,
+                flowId: graphFlowId,
                 definitionId: "builtin.control.end",
                 definitionVersion: "1.0.0",
                 label: "End",
@@ -144,7 +147,7 @@ describe("Automation Studio graph patch API", () => {
               op: "add_edge",
               edge: {
                 edgeId: "edge.start.end",
-                flowId: flow.flowId,
+                flowId: graphFlowId,
                 sourceNodeId: "node.start",
                 targetNodeId: "node.end",
                 sourcePortId: "success",
@@ -163,14 +166,17 @@ describe("Automation Studio graph patch API", () => {
         payload: {
           result: { status: "applied", baseRevision: 1, revisionNumber: 2 },
           replayed: false,
-          flow: { flowId: flow.flowId, graphRevision: 2 }
+          flow: { flowId: graphFlowId, graphRevision: 2 }
         }
       });
       expect(authorizeSessionPin).toHaveBeenCalledWith({ sessionId: "session.user.graph", pin: "123456" });
-      const saved = await service.getFlow(project.id, flow.flowId);
+      const saved = await service.getFlow(project.id, graphFlowId);
       expect(saved.nodes.map((node) => node.id).sort()).toEqual(["node.end", "node.start"]);
       expect(saved.edges.map((edge) => edge.id)).toEqual(["edge.start.end"]);
       expect(saved.metadata?.graphRevision).toBe(2);
+      const parent = await service.getFlow(project.id, flow.flowId);
+      expect(parent.nodes).toEqual([]);
+      expect(parent.edges).toEqual([]);
       const viewport = await registry.call({
         programId: "automation-studio",
         endpoint: AUTOMATION_STUDIO_ENDPOINTS.getGraphViewport,
@@ -178,7 +184,7 @@ describe("Automation Studio graph patch API", () => {
         actor: cacheActor("user.graph"),
         payload: {
           projectId: project.id,
-          flowId: flow.flowId,
+          flowId: graphFlowId,
           bounds: { minX: -100, minY: -100, maxX: 1_000, maxY: 1_000 },
           limit: 500
         }
@@ -186,7 +192,7 @@ describe("Automation Studio graph patch API", () => {
       expect(viewport).toMatchObject({
         ok: true,
         payload: {
-          flow: { flowId: flow.flowId, nodes: [], edges: [], metadata: { graphRevision: 2 } },
+          flow: { flowId: graphFlowId, nodes: [], edges: [], metadata: { graphRevision: 2 } },
           page: { graphRevision: 2, hasMore: false, nodes: [{ nodeId: "node.end" }, { nodeId: "node.start" }], edges: [{ edgeId: "edge.start.end" }] }
         }
       });
@@ -544,5 +550,40 @@ describe("Automation Studio Router target-reference API", () => {
     } finally {
       await cleanup();
     }
+  });
+});
+describe("Automation Studio explicit legacy representation migration API", () => {
+  it("requires flows.write and PIN authorization before forwarding the exact target", async () => {
+    const migrateLegacyFlowRepresentation = vi.fn().mockResolvedValue({
+      parentFlow: { flowId: "flow.parent" },
+      subflow: { subflowId: "subflow.primary" },
+      graphFlow: { flowId: "flow.graph" }
+    });
+    const authorizeSessionPin = vi.fn().mockResolvedValue({ authorized: true });
+    const registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, { migrateLegacyFlowRepresentation } as any, { authorizeSessionPin } as any);
+
+    expect(registry.endpoints()).toContainEqual({
+      programId: "automation-studio",
+      endpoint: AUTOMATION_STUDIO_ENDPOINTS.migrateLegacyFlowRepresentation,
+      permission: "flows.write"
+    });
+    const response = await registry.call({
+      programId: "automation-studio",
+      endpoint: AUTOMATION_STUDIO_ENDPOINTS.migrateLegacyFlowRepresentation,
+      scope: {},
+      actor: { ...cacheActor("user.migration"), permissions: ["programs.read", "programs.write", "flows.write"] },
+      payload: {
+        projectId: "project.one",
+        flowId: "flow.parent",
+        subflowId: "subflow.primary",
+        authSessionId: "session.user.migration",
+        authorizationPin: "123456"
+      }
+    });
+
+    expect(authorizeSessionPin).toHaveBeenCalledWith({ sessionId: "session.user.migration", pin: "123456" });
+    expect(migrateLegacyFlowRepresentation).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.parent", subflowId: "subflow.primary" });
+    expect(response).toMatchObject({ ok: true, payload: { parentFlow: { flowId: "flow.parent" }, subflow: { subflowId: "subflow.primary" }, graphFlow: { flowId: "flow.graph" } } });
   });
 });

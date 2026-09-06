@@ -91,9 +91,9 @@ export const automationStudioViews = defineAutomationStudioViews({
   },
   flowEditor: {
     id: "flow-nodes", aliases: ["policy-primary"], kind: "design", label: "Nodes", icon: GitBranch,
-    group: "Flow", region: "main", allowedRegions: ["main"], scope: "Selected Flow or subflow", requires: "hasFlow",
-    isAvailable: available("hasFlow"), addable: true, lifecycle: lifecycle(), cache,
-    functionality: functionality("flow-nodes", "Build and edit the selected Flow or Subflow node graph.", ["flow", "subflow"], ["Flow identity", "graph revision"], ["nodes", "edges", "node definitions", "problems"], "graph"),
+    group: "Flow", region: "main", allowedRegions: ["main"], scope: "Selected subflow", requires: "hasSubflowGraph",
+    isAvailable: available("hasSubflowGraph"), addable: true, lifecycle: lifecycle(), cache,
+    functionality: functionality("flow-nodes", "Build and edit the selected Subflow node graph.", ["subflow"], ["Subflow graph identity", "graph revision"], ["nodes", "edges", "node definitions", "problems"], "graph"),
     host: flowEditorHost
   },
   router: {

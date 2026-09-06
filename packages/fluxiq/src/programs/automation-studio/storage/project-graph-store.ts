@@ -219,7 +219,7 @@ export class AutomationStudioProjectGraphRepository {
     const revision = bumpRevision && existing ? existing.revision + 1 : 1;
     await sql.run(`insert into graph_edges (edge_id, flow_id, source_node_id, target_node_id, source_port_id, target_port_id, label, metadata_json, revision, created_at_ms, updated_at_ms, deleted_at_ms)
       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)
-      on conflict(edge_id) do update set source_node_id = excluded.source_node_id, target_node_id = excluded.target_node_id, source_port_id = excluded.source_port_id, target_port_id = excluded.target_port_id, label = excluded.label, metadata_json = excluded.metadata_json, revision = excluded.revision, updated_at_ms = excluded.updated_at_ms, deleted_at_ms = null`,
+      on conflict(edge_id) do update set flow_id = excluded.flow_id, source_node_id = excluded.source_node_id, target_node_id = excluded.target_node_id, source_port_id = excluded.source_port_id, target_port_id = excluded.target_port_id, label = excluded.label, metadata_json = excluded.metadata_json, revision = excluded.revision, updated_at_ms = excluded.updated_at_ms, deleted_at_ms = null`,
       [id(input.edgeId, "edge"), id(input.flowId, "flow"), id(input.sourceNodeId, "source node"), id(input.targetNodeId, "target node"), input.sourcePortId ?? null, input.targetPortId ?? null, input.label, JSON.stringify(input.metadata ?? {}), revision, existing?.createdAt ?? changedAt, changedAt]);
     await this.refreshPartitionCounts([source.partitionId, target.partitionId].filter((value): value is string => Boolean(value)), changedAt, sql);
     const saved = await this.getEdge(input.edgeId, sql);

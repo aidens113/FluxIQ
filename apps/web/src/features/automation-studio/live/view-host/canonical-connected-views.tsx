@@ -4,6 +4,7 @@ import { automationInspectorReferenceOptions, type InspectorPanelContext } from 
 import { automationGraphDraftIdentity } from "../../graph/draft-store";
 import type { AutomationProjectViewModelCache } from "../../model/project-view-model-cache";
 import { isAutomationSelection } from "../../model/live-helpers";
+import { isAutomationSubflowGraph } from "../../model/flow-ownership";
 import type { AutomationSelection } from "../../shared/selection-contracts";
 import { automationEntityCollectionSelector, automationEntityScope } from "../../stores/project-data-store";
 import type { AutomationWorkspacePrefs } from "../../workspace/layout";
@@ -108,8 +109,8 @@ export function selectAutomationConnectorFlow(
   return {
     entry: entry ?? null,
     flow: entry?.flow
-      ?? entry
       ?? (resolvedProjectFlow?.flowId === selectedId ? resolvedProjectFlow : null)
+      ?? entry
       ?? {
         flowId: selectedId,
         name: selectedId,
@@ -135,9 +136,9 @@ export const AutomationFlowEditorConnectedView = createAutomationDirectViewConne
   }) as any,
   projectScopes: flowScopes,
   selectionScopes,
-  activationKey: (state, scope: AutomationCanonicalConnectorScope) => selectAutomationConnectorFlow(state, scope, automationStudioViewId.flowEditor).flow?.flowId ?? "none",
+  activationKey: (state, scope: AutomationCanonicalConnectorScope) => selectAutomationConnectorSubflowGraph(state, scope).flow?.flowId ?? "none",
   onActive: (state, scope: AutomationCanonicalConnectorScope, model: any) => {
-    const flow = selectAutomationConnectorFlow(state, scope, automationStudioViewId.flowEditor);
+    const flow = selectAutomationConnectorSubflowGraph(state, scope);
     if (flow.flow?.flowId && (!flow.entry || (flow.entry.source === "canonical" && flow.flow.metadata?.summaryOnly === true))) {
       void scope.loadFlowDetail(flow.flow.flowId, { refresh: true });
     }
@@ -146,13 +147,15 @@ export const AutomationFlowEditorConnectedView = createAutomationDirectViewConne
   selectModel: () => emptyRecord as any,
   createModelSelector: () => (state, scope) => {
       const view = (scope as AutomationCanonicalConnectorScope).projectView.read();
+      const selected = selectAutomationConnectorSubflowGraph(state, scope as AutomationCanonicalConnectorScope);
+      const taskGraph = selected.flow?.flowId === view.selectedTaskGraph?.flowId ? view.selectedTaskGraph : selected.flow;
       const drafts = resource<Record<string, any>>(state, "taskGraphDrafts", emptyRecord);
-      const draftKey = automationGraphDraftIdentity(view.selectedTaskGraph);
+      const draftKey = automationGraphDraftIdentity(taskGraph);
       return {
-        editable: view.selectedFlowEntry?.source === "canonical",
+        editable: Boolean(taskGraph && selected.entry?.source === "canonical"),
         entries: view.selectedTimelineEntries,
         policy: view.selectedPolicy,
-        taskGraph: view.selectedTaskGraph,
+        taskGraph,
         ...(draftKey && drafts[draftKey] ? { taskGraphDraft: drafts[draftKey] } : {}),
         nativeNodeDefinitions: view.availableNodeDefinitions,
         recordings: view.recordings,
@@ -163,6 +166,14 @@ export const AutomationFlowEditorConnectedView = createAutomationDirectViewConne
       } as any;
     }
 });
+
+export function selectAutomationConnectorSubflowGraph(
+  state: AutomationDirectViewConnectorState,
+  scope: AutomationCanonicalConnectorScope
+) {
+  const selected = selectAutomationConnectorFlow(state, scope, automationStudioViewId.flowEditor);
+  return isAutomationSubflowGraph(selected.flow) ? selected : { entry: null, flow: null };
+}
 
 export const AutomationRecordingConnectedView = createAutomationDirectViewConnector({
   id: automationStudioViewId.recordingTimeline,
@@ -264,6 +275,11 @@ export const AutomationRuntimeConnectedView = createAutomationDirectViewConnecto
   }) as any,
   projectScopes: runtimeScopes,
   selectionScopes,
+  activationKey: (state, scope: AutomationCanonicalConnectorScope) => selectAutomationConnectorFlow(state, scope, automationStudioViewId.runtime).flow?.flowId ?? "none",
+  onActive: (state, scope: AutomationCanonicalConnectorScope) => {
+    const selected = selectAutomationConnectorFlow(state, scope, automationStudioViewId.runtime);
+    if (selected.flow?.flowId) void scope.loadFlowDetail(selected.flow.flowId, { refresh: true });
+  },
   selectModel: (state, scope) => {
       const flow = selectAutomationConnectorFlow(state, scope, automationStudioViewId.runtime).flow;
       const canonical = resource<any>(state, "snapshot", null)?.payload?.canonical ?? emptyRecord;

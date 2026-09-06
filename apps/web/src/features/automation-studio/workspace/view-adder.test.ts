@@ -15,7 +15,7 @@ const views: AutomationViewInstance[] = [
 
 describe("Automation Studio View Adder options", () => {
   it("keeps main and Inspector options in their fixed regions", () => {
-    const context = { hasProject: true, hasFlow: true, hasTopLevelFlow: true, hasRecording: true, hasSelection: true };
+    const context = { hasProject: true, hasFlow: true, hasTopLevelFlow: false, hasSubflowGraph: true, hasRecording: true, hasSelection: true };
     expect(automationViewAdderOptions(views, "main", context, new Set()).map((item) => item.view.id)).toEqual([
       "flow-nodes",
       "flow-router",
@@ -32,16 +32,16 @@ describe("Automation Studio View Adder options", () => {
     const options = automationViewAdderOptions(
       views,
       "main",
-      { hasProject: true, hasFlow: false, hasTopLevelFlow: false, hasRecording: false, hasSelection: false },
+      { hasProject: true, hasFlow: false, hasTopLevelFlow: false, hasSubflowGraph: false, hasRecording: false, hasSelection: false },
       new Set(["runtime-debug"])
     );
-    expect(options.find((item) => item.view.id === "flow-nodes")?.disabledReason).toBe("Select a Flow or subflow first");
+    expect(options.find((item) => item.view.id === "flow-nodes")?.disabledReason).toBe("Select a Subflow first");
     expect(options.find((item) => item.view.id === "timeline-recording")?.disabledReason).toBe("Select a recording first");
     expect(options.find((item) => item.view.id === "runtime-debug")?.disabledReason).toBe("Select a Flow or subflow first");
     const duplicate = automationViewAdderOptions(
       views,
       "main",
-      { hasProject: true, hasFlow: true, hasTopLevelFlow: true, hasRecording: true, hasSelection: true },
+      { hasProject: true, hasFlow: true, hasTopLevelFlow: true, hasSubflowGraph: false, hasRecording: true, hasSelection: true },
       new Set(["runtime-debug"])
     );
     expect(duplicate.find((item) => item.view.id === "runtime-debug")?.disabledReason).toBe("Already open in this workspace");
@@ -51,7 +51,7 @@ describe("Automation Studio View Adder options", () => {
     const options = automationViewAdderOptions(
       views,
       "main",
-      { hasProject: true, hasFlow: true, hasTopLevelFlow: true, hasRecording: true, hasSelection: true },
+      { hasProject: true, hasFlow: true, hasTopLevelFlow: true, hasSubflowGraph: false, hasRecording: true, hasSelection: true },
       new Set()
     );
     expect(options.map((item) => item.view.id)).not.toContain("proposal-generator");

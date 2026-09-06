@@ -24,6 +24,7 @@ import {
   type FlowInstructionRequest,
   type FlowMetadataPageRequest,
   type GraphViewportRequest,
+  type MigrateLegacyFlowRepresentationRequest,
   type FlowIdProjectRequest,
   type FlowInstructionSetRequest,
   type FlowProjectRequest,
@@ -1067,9 +1068,25 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
       if (typeof payload.description === "string") input.description = payload.description;
       if (typeof payload.role === "string") input.role = payload.role as any;
       if (typeof payload.parentCategoryId === "string" || payload.parentCategoryId === null) input.parentCategoryId = payload.parentCategoryId;
-      if (typeof payload.graphFlowId === "string") input.graphFlowId = payload.graphFlowId;
       if (Array.isArray(payload.routeTags)) input.routeTags = payload.routeTags.filter((tag): tag is string => typeof tag === "string");
       return { ok: true, payload: { subflow: await service.createFlowSubflow(input) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.migrateLegacyFlowRepresentation,
+    permission: "flows.write",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as MigrateLegacyFlowRepresentationRequest : {} as MigrateLegacyFlowRepresentationRequest;
+      await authorizeProgramPin(identityAccess, payload);
+      return {
+        ok: true,
+        payload: await service.migrateLegacyFlowRepresentation({
+          projectId: String(payload.projectId ?? ""),
+          flowId: String(payload.flowId ?? ""),
+          subflowId: String(payload.subflowId ?? "")
+        })
+      };
     }
   });
   registry.register({

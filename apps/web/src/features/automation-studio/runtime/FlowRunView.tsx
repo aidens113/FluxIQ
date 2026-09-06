@@ -119,13 +119,14 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
   useEffect(() => updateAutomationStudioRuntimeActions(studioRuntimeActionId, studioRuntimeActions));
   return (
     <section className="automation-runtime-stage">
-      <SummaryStrip items={[
-        ["Runs", props.runtimeSessions.length],
-        ["Timelines", props.timelines.length],
-        ["Models", props.models.length],
-        ["Adaptations", props.pipelineArtifacts?.policyProposals?.length ?? 0],
-        ["Runnable Nodes", props.policies.reduce((total, policy) => total + (policy.nodes?.length ?? 0), 0)]
-      ]} />
+      <header className="automation-runtime-stage-header">
+        <div>
+          <span>Runtime Debug</span>
+          <strong>{props.flow?.name ?? props.flow?.flowId ?? "Select a Flow"}</strong>
+          <p>Start a controlled run, then inspect its actions, decisions, and state changes.</p>
+        </div>
+        <span>{props.runtimeSessions.length} {props.runtimeSessions.length === 1 ? "run" : "runs"}</span>
+      </header>
       <RuntimeRunControlPanel
         disabled={!props.projectId || !props.flow?.flowId || Boolean(runningMode)}
         readiness={readiness}
@@ -146,7 +147,6 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
         {...(props.onOpenReadinessTarget ? { onOpenTarget: props.onOpenReadinessTarget } : {})}
       />
       {runError ? <p className="automation-runtime-message">{runError}</p> : null}
-      {lastRun ? <RuntimePostRunSummary result={lastRun} {...(props.onOpenAdaptation ? { onOpenAdaptation: props.onOpenAdaptation } : {})} /> : null}
       <RuntimeHistoryAndReplays
         flowId={props.flow?.flowId}
         focusRunId={liveRunId ?? lastRun?.runtimeSession?.runId}
@@ -184,10 +184,10 @@ export function RuntimeRunControlPanel(props: {
   onRun(mode: AutomationRuntimeRunMode): void;
 }) {
   const [selectedMode, setSelectedMode] = useState<AutomationRuntimeRunMode>("fully_adaptive");
-  const runModes: Array<{ mode: AutomationRuntimeRunMode; label: string; detail: string }> = [
-    { mode: "fully_adaptive", label: "Fully adaptive", detail: "Use the saved policy and auto-apply safe validated adaptations." },
-    { mode: "manual_approval", label: "Manual approval", detail: "Allow LLM help but queue every adaptation for review." },
-    { mode: "no_llm_intervention", label: "No LLM intervention", detail: "Run only saved deterministic behavior." }
+  const runModes: Array<{ mode: AutomationRuntimeRunMode; label: string }> = [
+    { mode: "fully_adaptive", label: "Fully adaptive" },
+    { mode: "manual_approval", label: "Manual approval" },
+    { mode: "no_llm_intervention", label: "No LLM intervention" }
   ];
   const warnings = [
     props.flow?.metadata?.trainingMode === "continuous_adaptive" ? "Continuous adaptive mode can create runtime adaptations." : "",
@@ -197,29 +197,33 @@ export function RuntimeRunControlPanel(props: {
   const inputValues = runtimeRunInputValues(props.inputText);
   const inputErrors = runtimeTypedInputErrors(props.flow, inputValues);
   const inputDocument = parseRuntimeRunInputDocument(props.inputText);
-  const readinessIssues = runtimeFlowReadinessIssues(props.flow, props.readiness);
+  const readinessIssues = runtimeFlowReadinessIssues(props.flow, props.readiness, selectedMode);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   useEffect(() => { if (!props.activeRunStartedAt) { setElapsedSeconds(0); return; } const update = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - props.activeRunStartedAt!) / 1000))); update(); const timer = window.setInterval(update, 1000); return () => window.clearInterval(timer); }, [props.activeRunStartedAt]);
   return (
     <section className="automation-runtime-run-panel">
       <header>
         <div>
-          <strong>Run This Flow</strong>
-          <span>{props.flow?.name ?? props.flow?.flowId ?? "Select a Flow"}</span>
+          <strong>New run</strong>
+          <span>Choose how this Flow should execute.</span>
         </div>
+        {!props.readiness.loading && !props.readiness.error && !readinessIssues.length ? <span className="automation-runtime-ready"><CircleCheck size={15} aria-hidden />Ready</span> : null}
       </header>
       {warnings.length ? <div className="automation-runtime-message">{warnings.join(" ")}</div> : null}
-      {props.readiness.loading ? <div className="automation-settings-inline-notice"><span aria-hidden className="automation-inline-spinner" /><span>Checking Flow readiness...</span></div> : props.readiness.error ? <div className="automation-runtime-readiness" role="alert"><AlertTriangle size={17} aria-hidden /><div><strong>Readiness check failed</strong><span>{props.readiness.error}</span></div><div><button className="button" onClick={props.onRetryReadiness} type="button">Retry</button></div></div> : readinessIssues.length ? <div className="automation-runtime-readiness" role="status"><AlertTriangle size={17} aria-hidden /><div><strong>Complete setup before running</strong>{readinessIssues.map((issue) => <span key={issue.label}>{issue.label}</span>)}</div><div>{readinessIssues.map((issue) => <button className="button" key={issue.target} onClick={() => props.onOpenTarget?.(issue.target)} type="button">{issue.action}</button>)}</div></div> : <div className="automation-settings-inline-notice"><CircleCheck size={17} aria-hidden /><span>Flow is ready to run.</span></div>}
       <div className="automation-runtime-run-command">
         <fieldset className="automation-runtime-mode-control">
-          <legend>Run mode</legend>
-          <div>{runModes.map((mode) => <button aria-pressed={selectedMode === mode.mode} className={selectedMode === mode.mode ? "selected" : ""} disabled={Boolean(props.runningMode)} key={mode.mode} onClick={() => setSelectedMode(mode.mode)} type="button"><strong>{mode.label}</strong><span>{mode.detail}</span></button>)}</div>
+          <legend>Execution mode</legend>
+          <div>{runModes.map((mode) => <button aria-pressed={selectedMode === mode.mode} className={selectedMode === mode.mode ? "selected" : ""} disabled={Boolean(props.runningMode)} key={mode.mode} onClick={() => setSelectedMode(mode.mode)} type="button">{mode.label}</button>)}</div>
           <small>{runtimeModeDescription(selectedMode)}</small>
         </fieldset>
-        <button className="button button-primary" disabled={props.disabled || props.readiness.loading || Boolean(props.readiness.error) || readinessIssues.length > 0 || inputErrors.length > 0 || !inputDocument.ok} onClick={() => props.onRun(selectedMode)} type="button">
-          {props.runningMode ? "Running..." : "Run"}
-        </button>
+        <div className="automation-runtime-run-actions">
+          <label><span>Step limit</span><input min={1} type="number" value={props.maxSteps} onChange={(event) => props.onMaxSteps(event.target.value)} /></label>
+          <button className="button button-primary" disabled={props.disabled || props.readiness.loading || Boolean(props.readiness.error) || readinessIssues.length > 0 || inputErrors.length > 0 || !inputDocument.ok} onClick={() => props.onRun(selectedMode)} type="button">
+            {props.runningMode ? "Running..." : "Run"}
+          </button>
+        </div>
       </div>
+      {props.readiness.loading ? <div className="automation-runtime-readiness-check"><span aria-hidden className="automation-inline-spinner" /><span>Checking Flow readiness...</span></div> : props.readiness.error ? <div className="automation-runtime-readiness" role="alert"><AlertTriangle size={17} aria-hidden /><div><strong>Readiness check failed</strong><span>{props.readiness.error}</span></div><div><button className="button" onClick={props.onRetryReadiness} type="button">Retry</button></div></div> : readinessIssues.length ? <div className="automation-runtime-readiness" role="status"><AlertTriangle size={17} aria-hidden /><div><strong>Complete setup before running</strong>{readinessIssues.map((issue) => <span key={issue.label}>{issue.label}</span>)}</div><div>{readinessIssues.map((issue) => <button className="button" key={issue.target} onClick={() => props.onOpenTarget?.(issue.target)} type="button">{issue.action}</button>)}</div></div> : null}
       {declaredInputs.length ? <div className="automation-runtime-input-fields">
         <header><strong>Run Inputs</strong><span>Values passed into this run</span></header>
         <div>
@@ -235,9 +239,6 @@ export function RuntimeRunControlPanel(props: {
         <span>This Flow will run with its saved defaults.</span>
       </div>}
       {props.activeRunId ? <div className="automation-runtime-live-control" role="status"><span className="automation-inline-spinner" aria-hidden /><div><strong>Run in progress</strong><span>{elapsedSeconds}s elapsed | {props.activeRunId}</span></div><button className="button" onClick={props.onOpenLiveLog} type="button">Open Live Log</button><button className="button danger" onClick={props.onStop} type="button">Stop</button></div> : props.canRetry ? <div className="automation-runtime-retry-control"><span>Run the same inputs and mode again.</span><button className="button" disabled={props.disabled} onClick={props.onRetry} type="button">Retry Run</button></div> : null}
-      <div className="automation-runtime-advanced-grid">
-        <label><span>Step limit</span><input min={1} type="number" value={props.maxSteps} onChange={(event) => props.onMaxSteps(event.target.value)} /></label>
-      </div>
       <details className="automation-runtime-advanced-inputs">
         <summary>Advanced JSON</summary>
         <label><span>Complete run input object</span><textarea aria-invalid={!inputDocument.ok} rows={8} spellCheck={false} value={props.inputText} onChange={(event) => props.onInputText(event.target.value)} />{!inputDocument.ok ? <small className="automation-field-error" role="alert">{inputDocument.error}</small> : <small>Changes here stay synchronized with the fields above.</small>}</label>
@@ -251,9 +252,9 @@ function RuntimeHistoryAndReplays(props: { projectId: string | null; flowId?: st
   const replays = props.flowId
     ? props.replays.filter((replay) => !replay.flowId || replay.flowId === props.flowId)
     : props.replays;
-  return <section className="automation-runs-workspace">
-    <header><div><strong>History</strong><span>{section === "runs" ? "Flow execution history" : "Recording replay validation"}</span></div><div aria-label="Runtime history type" className="automation-runs-view-control" role="group"><button aria-pressed={section === "runs"} className={section === "runs" ? "button button-primary" : "button"} onClick={() => setSection("runs")} type="button">Runs</button><button aria-pressed={section === "replays"} className={section === "replays" ? "button button-primary" : "button"} onClick={() => setSection("replays")} type="button">Replays</button></div></header>
-    {section === "runs" ? <RunHistory {...(props.flowId ? { flowId: props.flowId } : {})} {...(props.focusRunId ? { focusRunId: props.focusRunId } : {})} projectId={props.projectId} initialSessions={props.sessions} /> : <DataTable label="Replay validation history" columns={["Replay", "Status", "Recording", "Flow", "Matched", "Warnings"]} rows={replays.map((replay: any) => [replay.replayId, <StatusBadge key={replay.replayId} value={replay.status ?? "unknown"} />, replay.recordingId, replay.policyId ?? replay.flowId ?? "-", `${replay.matchedActions ?? 0}/${replay.expectedActions ?? 0}`, replay.timingWarnings?.length ?? 0])} empty="No replay validations generated yet." />}
+  return <section className="automation-runtime-history">
+    <header><div><strong>{section === "runs" ? "Previous Runs" : "Replay History"}</strong><span>{section === "runs" ? "Inspect previous executions" : "Compare recording replays"}</span></div><div aria-label="Runtime history type" className="automation-runs-view-control" role="tablist"><button aria-selected={section === "runs"} className={section === "runs" ? "active" : ""} onClick={() => setSection("runs")} role="tab" type="button">Runs</button><button aria-selected={section === "replays"} className={section === "replays" ? "active" : ""} onClick={() => setSection("replays")} role="tab" type="button">Replays</button></div></header>
+    <div className="automation-runtime-history-body" role="tabpanel">{section === "runs" ? <RunHistory {...(props.flowId ? { flowId: props.flowId } : {})} {...(props.focusRunId ? { focusRunId: props.focusRunId } : {})} projectId={props.projectId} initialSessions={props.sessions} /> : <div className="automation-runs-replay-view"><DataTable label="Replay validation history" columns={["Replay", "Status", "Recording", "Flow", "Matched", "Warnings"]} rows={replays.map((replay: any) => [replay.replayId, <StatusBadge key={replay.replayId} value={replay.status ?? "unknown"} />, replay.recordingId, replay.policyId ?? replay.flowId ?? "-", `${replay.matchedActions ?? 0}/${replay.expectedActions ?? 0}`, replay.timingWarnings?.length ?? 0])} empty="No replay validations generated yet." /></div>}</div>
   </section>;
 }
 

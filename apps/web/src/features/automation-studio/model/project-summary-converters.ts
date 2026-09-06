@@ -129,6 +129,8 @@ export function flowSummariesToCatalogEntries(summaries: any[]): any[] {
         ...(Array.isArray(summary.subflowCategories) ? { subflowCategories: summary.subflowCategories.map((category: any) => ({ id: category.id, name: category.name, parentId: category.parentId ?? null })) } : {}),
         ...(summary.recordingProposalIds ? { recordingProposalIds: summary.recordingProposalIds } : {}),
         ...(summary.subflowGraph === true ? { subflowGraph: true } : {}),
+        ...(typeof summary.flowRepresentationKind === "string" ? { flowRepresentationKind: summary.flowRepresentationKind } : {}),
+        ...(typeof summary.flowRepresentationVersion === "number" ? { flowRepresentationVersion: summary.flowRepresentationVersion } : {}),
         ...(typeof summary.parentFlowId === "string" ? { parentFlowId: summary.parentFlowId } : {}),
         ...(typeof summary.parentSubflowId === "string" ? { parentSubflowId: summary.parentSubflowId } : {})
       }

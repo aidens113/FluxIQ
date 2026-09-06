@@ -58,6 +58,8 @@ describe("project summary converters", () => {
       projectId: "project.one",
       name: "Parent",
       updatedAt: 50,
+      flowRepresentationVersion: 1,
+      flowRepresentationKind: "orchestration",
       hierarchySubflows: [{ subflowId: "subflow.child", name: "Child", parentCategoryId: "category.one" }]
     }]);
     expect(entry).toMatchObject({
@@ -68,6 +70,8 @@ describe("project summary converters", () => {
         nodes: [],
         metadata: {
           summaryOnly: true,
+          flowRepresentationVersion: 1,
+          flowRepresentationKind: "orchestration",
           hierarchySubflows: [{
             subflowId: "subflow.child",
             name: "Child",

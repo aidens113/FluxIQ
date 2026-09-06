@@ -57,6 +57,8 @@ import {
   EMPTY_AUTOMATION_RECORD
 } from "./session-project-view";
 import { createAutomationProjectViewModelCache } from "../model/project-view-model-cache";
+import { isAutomationSubflowGraph, isAutomationTopLevelFlow } from "../model/flow-ownership";
+import { recoverParentBoundFlowEditorViews } from "./flow-editor-view-recovery";
 import {
   automationFlowEntryId,
   automationRecordingId,
@@ -263,6 +265,13 @@ export function AutomationStudioSession(props: {
     taskForSelection, policyForSelection, workspaceBreadcrumbsForView
   } = projectView;
   const openWorkspaceViewKey = openWorkspaceViewIdList.join("\u001f");
+  useEffect(() => {
+    if (!activeProjectId) return;
+    const recovery = recoverParentBoundFlowEditorViews(workspaceRenderStore.getPrefs(), projectFlows);
+    if (!recovery.recoveredFlowIds.length) return;
+    updateWorkspacePrefs(() => recovery.prefs, { persist: true });
+    setAutomationActionStatus("Nodes are owned by Subflows. The parent Flow was reopened in Subflows.");
+  }, [activeProjectId, openWorkspaceViewKey, projectFlowUrlScopeSignature, projectFlows, setAutomationActionStatus, updateWorkspacePrefs, workspaceRenderStore]);
   const viewInstances = useMemo(() => {
     const labels: Record<string, string> = {};
     for (const instanceId of openWorkspaceViewIdList) {
@@ -334,6 +343,7 @@ export function AutomationStudioSession(props: {
     commands: workspaceCommands,
     updatePrefs: updateWorkspacePrefs,
     liveCommands,
+    loadFlowDetail: loadFlowDetails,
     selection,
     selectedNode,
     selectedFlow,
@@ -647,7 +657,8 @@ export function AutomationStudioSession(props: {
     const current = getProjectView();
     return {
       selectedFlow: Boolean(current.selectedFlow),
-      selectedTopLevelFlow: Boolean(current.selectedFlow && current.selectedFlow.metadata?.subflowGraph !== true && typeof current.selectedFlow.metadata?.parentFlowId !== "string"),
+      selectedTopLevelFlow: isAutomationTopLevelFlow(current.selectedFlow),
+      selectedSubflowGraph: isAutomationSubflowGraph(current.selectedFlow),
       selectedRecording: Boolean(current.selectedRecording),
       selection: studioStores.selection.getState().selection
     };

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { safeSegment } from "../../_shared/storage.ts";
 import type { AutomationStudioProject } from "../api/contracts.ts";
-import type { AutomationStudioFlowPublication, AutomationStudioFlowScope } from "../model/flows.ts";
+import type { AutomationStudioFlowPublication, AutomationStudioFlowRepresentationKind, AutomationStudioFlowScope } from "../model/flows.ts";
 import type { RecordingFlowProposalArtifact } from "../runtime/recording-flow-proposal.ts";
 import type { PolicyProposalArtifact } from "../runtime/policy-model.ts";
 
@@ -90,6 +90,8 @@ export type AutomationStudioFlowSummary = {
   edgeCount: number;
   updatedAt: number;
   recordingProposalIds?: string[];
+  flowRepresentationVersion?: 1;
+  flowRepresentationKind?: AutomationStudioFlowRepresentationKind;
   subflowGraph?: boolean;
   parentFlowId?: string;
   parentSubflowId?: string;

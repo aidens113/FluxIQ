@@ -161,15 +161,49 @@ history fail closed until divergence detection provides that history.
 
 When a canonical Flow has a saved router, `runRuntimeSession` evaluates the
 router before graph execution. A matching route executes the selected subflow's
-`graphFlowId` through the existing canonical Flow executor. Existing single
-graph Flows can be projected as a generated primary default subflow, so current
-execution behavior remains compatible while router/subflow authoring matures.
+`graphFlowId` through the existing canonical Flow executor. The selected graph
+must carry the current `subflow_graph` representation marker and matching
+parent Flow/Subflow ownership metadata. A missing, unrelated, or unreadable
+graph fails closed; runtime never substitutes the parent Flow.
 
+Current documents carry `metadata.flowRepresentationVersion = 1` and one of
+three Core-owned representation kinds:
+
+- `orchestration` is a top-level Flow. It owns Router and Subflow resources and
+  cannot persist graph nodes or edges.
+- `subflow_graph` is a dedicated graph Flow owned by exactly one Subflow. Its
+  parent Flow ID, Subflow ID, and Subflow row must agree before graph mutation
+  or routed execution.
+- `legacy_single_graph` is a bounded compatibility representation for artifacts
+  that already contained a parent graph before this invariant, or that entered
+  through the explicit legacy migration path. It may still execute directly,
+  but the run records `flow.legacy_single_graph_execution` diagnostics.
+
+New unmarked documents are classified as `orchestration`; callers cannot opt a
+new Flow into legacy behavior by supplying metadata. Pre-invariant, unmarked
+documents with an existing graph are classified as legacy so upgrades do not
+destroy working data. A pre-marker Subflow graph remains readable only when its
+`subflowGraph`, parent Flow ID, and parent Subflow ID ownership triple is
+complete; partial or contradictory ownership metadata fails closed.
+
+Public saves cannot downgrade a legacy graph to `orchestration`. The internal
+visual migration creates or reuses a dedicated primary Subflow, copies and
+verifies nodes, edges, evidence, and execution defaults, installs and reads back
+the Router fallback, and only then clears the parent graph and execution
+defaults. The PIN-authorized `migrate-legacy-flow-representation` endpoint gives
+non-editor automation the same verified transition for one caller-specified,
+existing owned Subflow; it requires `flows.write`, refuses mismatched ownership
+or graph content, and returns the migrated parent Flow, Subflow, and graph Flow.
+Repeating it against the same valid orchestration target is idempotent.
+Code-owned legacy Flows require an explicit source migration before this
+conversion, so no partial Router/Subflow state is written. Once upgraded, the
+parent cannot return to a direct graph representation.
 Route decisions are persisted in Flow run detail. The record includes selected
 rule/subflow, rejected rule IDs, fallback use, decision time, evaluation count,
 and optional reroute source metadata. The summary index stores only counts and
 navigation fields; users open a specific run detail to see the full route and
-subflow boundary trace.
+subflow boundary trace. Route-decision, Subflow-entry, and action-attempt
+summary counts are derived from that completed detail and must match it.
 
 Runtime action attempts now carry deterministic transition comparisons before
 any LLM diagnosis is considered. Each attempt records expected transition
@@ -188,6 +222,13 @@ default so editing a subflow does not mutate the parent Flow/router graph. The
 Subflows workspace is only a paginated directory; selecting a row resolves the
 subflow's graphFlowId and opens that graph in the normal Flow editor. Backing
 subflow graph Flows are not shown as separate top-level Flows.
+
+Router and Subflow saves require an existing top-level owner. Subflow graph IDs
+are Core-generated, must resolve to a graph with matching ownership, and cannot
+be reassigned. Public graph deletion rejects owned Subflow graphs; the owning
+Subflow deletion path performs the guarded cascade. Routed adaptive retries
+revalidate the exact parent/Subflow pair and preserve Router decisions and
+Subflow-entry evidence in run detail.
 
 Legacy Subflow documents that predate `graphFlowId` remain compatible. SQL
 projection derives the deterministic backing Flow ID and, when no graph exists,
@@ -477,8 +518,9 @@ Successful graph writes also replace the session's Flow-detail cache. Summary
 refreshes and older detail responses cannot replace a newer loaded graph, and
 explicit reload bypasses the cache. When project hydration has only a
 summary-only Flow stub—or a selected Subflow backing graph is not in the
-summary collection—the active connector loads that graph by ID with a fresh
-detail request through the bounded `get-graph-viewport` v2 API. The server
+summary collection—Subflow navigation hydrates that owned graph before opening
+its Nodes view, and the active connector refreshes stale canonical summaries by
+ID through the bounded `get-graph-viewport` v2 API. The server
 imports a legacy monolithic graph into project graph storage when necessary;
 the browser follows cursors, composes the bounded pages, and never calls the
 retired `get-flow` document endpoint. Summary-only cache entries are never

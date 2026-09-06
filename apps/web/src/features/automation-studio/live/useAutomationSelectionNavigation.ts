@@ -26,6 +26,7 @@ type NavigationOptions = {
   commands: WorkspaceCommands;
   updatePrefs: (updater: (current: AutomationWorkspacePrefs) => AutomationWorkspacePrefs, options?: { persist?: boolean }) => void;
   liveCommands: AutomationLiveDomainCommands;
+  loadFlowDetail(flowId: string, options?: { refresh?: boolean }): Promise<unknown | null>;
   selection: AutomationSelection | null;
   selectedNode: any;
   selectedFlow: any;
@@ -186,9 +187,12 @@ export function useAutomationSelectionNavigation(options: NavigationOptions) {
   const openSubflow = useCallback(async (parentFlowId: string, subflowId: string, mode: "preview" | "new-pane-or-focus" = "preview", knownGraphFlowId?: string) => {
     if (!parentFlowId || !subflowId) return;
     const outcome = await options.liveCommands.resolveSubflowEditor(parentFlowId, subflowId, knownGraphFlowId);
-    if (outcome.status === "success") selectAndFollow({ kind: "flow", id: outcome.value.graphFlowId }, mode);
+    if (outcome.status === "success") {
+      await options.loadFlowDetail(outcome.value.graphFlowId, { refresh: true });
+      selectAndFollow({ kind: "flow", id: outcome.value.graphFlowId }, mode);
+    }
     else if (outcome.status === "failure") options.setActionStatus(outcome.error);
-  }, [options.liveCommands, options.setActionStatus, selectAndFollow]);
+  }, [options.liveCommands, options.loadFlowDetail, options.setActionStatus, selectAndFollow]);
 
   return { openState, openSubflow, openTimelineEntryState, openView, selectAndFollow, selectPreviewEntry };
 }

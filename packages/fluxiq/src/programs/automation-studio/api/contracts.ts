@@ -111,6 +111,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   listFlowSubflowTargets: "list-flow-subflow-targets",
   getFlowSubflow: "get-flow-subflow",
   createFlowSubflow: "create-flow-subflow",
+  migrateLegacyFlowRepresentation: "migrate-legacy-flow-representation",
   updateFlowSubflow: "update-flow-subflow",
   renameFlowSubflow: "rename-flow-subflow",
   duplicateFlowSubflow: "duplicate-flow-subflow",
@@ -587,6 +588,11 @@ export type FlowSubflowRequest = FlowIdProjectRequest & {
   subflowId: string;
 };
 
+export type MigrateLegacyFlowRepresentationRequest = FlowSubflowRequest & {
+  authorizationPin: string;
+  authSessionId?: string;
+};
+
 export type FlowInstructionRequest = FlowProjectRequest & {
   instructionId: string;
 };
@@ -596,7 +602,6 @@ export type CreateFlowSubflowRequest = FlowIdProjectRequest & {
   description?: string;
   role?: string;
   parentCategoryId?: string | null;
-  graphFlowId?: string;
   routeTags?: string[];
 };
 

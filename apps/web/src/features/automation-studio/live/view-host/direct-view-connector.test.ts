@@ -6,7 +6,7 @@ import { automationEntityScope } from "../../stores/project-data-store";
 import { createAutomationConnectedViewHostRequest } from "../../views/view-host-types";
 import { resolveAutomationDirectViewReadiness } from "./direct-view-connector";
 import { createAutomationDirectViewConnector } from "./direct-view-connector";
-import { selectAutomationConnectorFlow, type AutomationCanonicalConnectorScope } from "./canonical-connected-views";
+import { selectAutomationConnectorFlow, selectAutomationConnectorSubflowGraph, type AutomationCanonicalConnectorScope } from "./canonical-connected-views";
 
 const query = {
   projectId: "project-a",
@@ -104,6 +104,70 @@ describe("direct view connector readiness", () => {
 
     expect(selected.entry).toBeNull();
     expect(selected.flow).toMatchObject({ flowId: "flow.subflow.graph", metadata: { summaryOnly: true } });
+  });
+
+  it("refuses to bind the Nodes connector to a top-level Flow", () => {
+    const stores = createAutomationStudioStores();
+    stores.selection.select({ kind: "flow", id: "flow.parent" });
+    stores.projectData.upsert("flows", "flow.parent", {
+      source: "canonical",
+      flow: { flowId: "flow.parent", name: "Parent", nodes: [{ id: "start" }], edges: [], metadata: { flowRepresentationKind: "orchestration" } }
+    });
+    const selected = selectAutomationConnectorSubflowGraph({
+      projectData: stores.projectData.getState(),
+      runtimeStatus: stores.runtimeStatus.getState(),
+      selection: stores.selection.getState()
+    }, {
+      projectId: "project-a", projectView: { getRevisionKey: () => "test", read: vi.fn() as never }, getWorkspacePrefs: () => ({ viewStates: {} }) as any,
+      loadFlowDetail: vi.fn(), loadFlowMetadata: vi.fn(), loadNodeDefinitions: vi.fn(), loadRecording: vi.fn(), loadTimeline: vi.fn()
+    });
+    expect(selected).toEqual({ entry: null, flow: null });
+  });
+
+  it("binds Nodes only to a marked and owned Subflow graph", () => {
+    const stores = createAutomationStudioStores();
+    stores.selection.select({ kind: "flow", id: "flow.child.graph" });
+    stores.projectData.upsert("flows", "flow.child.graph", {
+      source: "canonical",
+      flow: { flowId: "flow.child.graph", name: "Child", nodes: [], edges: [], metadata: {
+        flowRepresentationVersion: 1, flowRepresentationKind: "subflow_graph", subflowGraph: true, parentFlowId: "flow.parent", parentSubflowId: "subflow.child"
+      } }
+    });
+    const selected = selectAutomationConnectorSubflowGraph({
+      projectData: stores.projectData.getState(),
+      runtimeStatus: stores.runtimeStatus.getState(),
+      selection: stores.selection.getState()
+    }, {
+      projectId: "project-a", projectView: { getRevisionKey: () => "test", read: vi.fn() as never }, getWorkspacePrefs: () => ({ viewStates: {} }) as any,
+      loadFlowDetail: vi.fn(), loadFlowMetadata: vi.fn(), loadNodeDefinitions: vi.fn(), loadRecording: vi.fn(), loadTimeline: vi.fn()
+    });
+    expect(selected.flow).toMatchObject({ flowId: "flow.child.graph", name: "Child" });
+  });
+
+  it("prefers the loaded project Flow over a summary-only entity", () => {
+    const stores = createAutomationStudioStores();
+    stores.selection.select({ kind: "flow", id: "flow-a" });
+    stores.projectData.upsert("flows", "flow-a", {
+      flowId: "flow-a",
+      name: "Flow summary",
+      nodeCount: 2,
+      edgeCount: 1
+    });
+    const fullFlow = { flowId: "flow-a", name: "Full Flow", nodes: [{ id: "start" }, { id: "end" }], edges: [{ id: "edge" }] };
+
+    const selected = selectAutomationConnectorFlow({
+      projectData: stores.projectData.getState(),
+      runtimeStatus: stores.runtimeStatus.getState(),
+      selection: stores.selection.getState()
+    }, {
+      projectId: "project-a",
+      projectView: { getRevisionKey: () => "test", read: vi.fn(() => ({ selectedTaskGraph: fullFlow })) as never },
+      getWorkspacePrefs: () => ({ viewStates: {} }) as any,
+      loadFlowDetail: vi.fn(), loadFlowMetadata: vi.fn(), loadNodeDefinitions: vi.fn(), loadRecording: vi.fn(), loadTimeline: vi.fn()
+    });
+
+    expect(selected.entry).toMatchObject({ flowId: "flow-a", nodeCount: 2 });
+    expect(selected.flow).toBe(fullFlow);
   });
 
   it("keeps the active graph while an editor node is selected", () => {

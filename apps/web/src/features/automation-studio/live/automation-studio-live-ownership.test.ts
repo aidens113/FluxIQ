@@ -59,13 +59,14 @@ describe("Automation Studio extracted owner contracts", () => {
     expect(gatewayBridge).not.toContain('addEventListener("keydown"');
   });
 
-  it("uses known subflow graph IDs and leaves detail hydration to the active-view owner", () => {
+  it("hydrates known subflow graph IDs before opening their strict owned Nodes view", () => {
     const loaders = read("../flow-editor/commands/loaders.ts");
     expect(hierarchyBridge).toContain("typeof node.metadata?.graphFlowId === \"string\"");
     expect(hierarchyBridge).toContain("node.metadata.graphFlowId : undefined");
     expect(navigation).toContain("resolveSubflowEditor(parentFlowId, subflowId, knownGraphFlowId)");
+    expect(navigation).toContain("await options.loadFlowDetail(outcome.value.graphFlowId, { refresh: true })");
     expect(navigation).toContain('selectAndFollow({ kind: "flow", id: outcome.value.graphFlowId }, mode)');
-    expect(navigation).not.toContain("loadFlowDetails(");
+    expect(composition).toContain("loadFlowDetail: loadFlowDetails");
     expect(loaders).toContain("if (input.knownGraphFlowId)");
     expect(loaders).toContain('source: "known"');
     expect(connectedViews).toContain("onActive: (state, scope: AutomationCanonicalConnectorScope");
@@ -282,7 +283,8 @@ describe("Automation Studio extracted owner contracts", () => {
     expect(start).toBeGreaterThan(-1);
     expect(block).toContain("dependencies.openCreatedSubflow(");
     expect(block).not.toContain("loadHierarchyFlow(");
-    expect(hierarchyBridge).toContain("openCreatedSubflow(flowId) { selectCreated(current, flowId); }");
+    expect(hierarchyBridge).toContain("openCreatedFlow(flowId) { selectCreated(current, flowId, automationStudioViewId.subflows); }");
+    expect(hierarchyBridge).toContain("openCreatedSubflow(flowId) { selectCreated(current, flowId, automationStudioViewId.flowEditor); }");
     expect(hierarchyBridge).not.toContain("loadFlowDetails(");
     expect(connectedViews).toContain("scope.loadFlowDetail");
   });

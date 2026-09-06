@@ -28,6 +28,7 @@ export type AutomationStudioRuntimePatchExecutionResult = {
 export type AutomationStudioRuntimePatchExecutionInput = {
   projectId: string;
   flowId: string;
+  subflowId?: string;
   runId: string;
   flow: AutomationStudioFlowDocument;
   patch: AutomationStudioRuntimePatch;
@@ -102,6 +103,7 @@ export function adaptationFromRuntimePatch(input: AutomationStudioRuntimePatchEx
     adaptationId: `adaptation.${input.runId}.${safePatchSegment(input.patch.kind)}.${now}`,
     flowId: input.flowId,
     projectId: input.projectId,
+    ...(input.subflowId ? { subflowId: input.subflowId } : {}),
     sourceRunId: input.runId,
     trigger: `Runtime patch ${input.patch.kind} ${restoredExpectedState ? "restored expected state" : "failed to restore expected state"}.`,
     failedAction: {
@@ -139,6 +141,7 @@ function changeProposalFromRuntimePatch(input: AutomationStudioRuntimePatchExecu
     proposalId: `proposal.${adaptation.adaptationId}`,
     flowId: input.flowId,
     projectId: input.projectId,
+    ...(input.subflowId ? { subflowId: input.subflowId } : {}),
     sourceRunId: input.runId,
     sourceAdaptationId: adaptation.adaptationId,
     mode: input.proposalMode ?? "auto",

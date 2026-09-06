@@ -36,15 +36,41 @@ function stateFixture(id: string, timestamp: number, title: string): StateSnapsh
   };
 }
 
+async function getPrimarySubflowGraph(
+  service: AutomationStudioService,
+  projectId: string,
+  flowId: string
+) {
+  const page = await service.listFlowSubflowSummaries({ projectId, flowId, role: "primary", limit: 10, offset: 0 });
+  const primary = page.subflows[0];
+  if (!primary?.graphFlowId) throw new Error(`Flow ${flowId} does not have a primary Subflow graph.`);
+  return service.getFlow(projectId, primary.graphFlowId);
+}
+
+async function installPrimaryRouter(
+  service: AutomationStudioService,
+  projectId: string,
+  flowId: string,
+  graph: { nodes: any[]; edges: any[]; regions?: any[] }
+) {
+  const subflow = await service.createFlowSubflow({ projectId, flowId, name: "Primary", role: "primary" });
+  const blankGraph = await service.getFlow(projectId, subflow.graphFlowId!);
+  const savedGraph = await service.saveFlow({ projectId, flow: { ...blankGraph, ...graph } });
+  await service.setFlowMapFallback({ projectId, flowId, kind: "subflow", targetSubflowId: subflow.subflowId });
+  return { subflow, graph: savedGraph };
+}
+
 async function createRunnableCanonicalFlow(
   service: AutomationStudioService,
   projectId: string,
   input: { flowId: string; metadata?: JsonObject }
 ) {
   const flow = await service.createFlow({ projectId, flowId: input.flowId, name: input.flowId });
-  const runnable = {
+  const runnable = await service.saveFlow({ projectId, flow: {
     ...flow,
-    metadata: { ...(flow.metadata ?? {}), ...(input.metadata ?? {}) },
+    metadata: { ...(flow.metadata ?? {}), ...(input.metadata ?? {}) }
+  } });
+  await installPrimaryRouter(service, projectId, runnable.flowId, {
     nodes: [
       { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
       { id: "constant", definitionId: "builtin.data.constant", parameterValues: { value: "ok" } },
@@ -54,8 +80,7 @@ async function createRunnableCanonicalFlow(
       { id: "start.constant", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "constant", targetPortId: "in" },
       { id: "constant.end", sourceNodeId: "constant", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }
     ]
-  };
-  await service.saveFlow({ projectId, flow: runnable });
+  });
   return runnable;
 }
 
@@ -65,9 +90,11 @@ async function createFailingCanonicalFlow(
   input: { flowId: string; metadata?: JsonObject }
 ) {
   const flow = await service.createFlow({ projectId, flowId: input.flowId, name: input.flowId });
-  const failing = {
+  const failing = await service.saveFlow({ projectId, flow: {
     ...flow,
-    metadata: { ...(flow.metadata ?? {}), ...(input.metadata ?? {}) },
+    metadata: { ...(flow.metadata ?? {}), ...(input.metadata ?? {}) }
+  } });
+  await installPrimaryRouter(service, projectId, failing.flowId, {
     nodes: [
       { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
       { id: "divide", definitionId: "builtin.math.divide", parameterValues: {} }
@@ -75,8 +102,7 @@ async function createFailingCanonicalFlow(
     edges: [
       { id: "start.divide", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "divide", targetPortId: "in" }
     ]
-  };
-  await service.saveFlow({ projectId, flow: failing });
+  });
   return failing;
 }
 
@@ -217,8 +243,10 @@ describe("AutomationStudioService recording persistence", () => {
       decision: "approved",
       destination: { kind: "flow", name: "Approved clicks" }
     });
-    expect(reviewed.flow?.nodes[0]).toMatchObject({ definitionId: "builtin.policy.action", parameterValues: { outputId: "click", confirmationInputId: "clicked" }, metadata: { actionEntryId: proposal?.candidates[0]?.actionEntryId, timelineEntryId: proposal?.candidates[0]?.actionEntryId, rawEvidenceImmutable: true } });
-    const savedEdit = await service.saveFlow({ projectId: project.id, flow: { ...reviewed.flow!, nodes: reviewed.flow!.nodes.map((node) => ({ ...node, label: "Edited click", metadata: { ...(node.metadata ?? {}), sourceObservationIds: ["forged"] } })) } });
+    const reviewedGraph = await getPrimarySubflowGraph(service, project.id, reviewed.flow!.flowId);
+    expect(reviewed.flow?.nodes).toEqual([]);
+    expect(reviewedGraph.nodes[0]).toMatchObject({ definitionId: "builtin.policy.action", parameterValues: { outputId: "click", confirmationInputId: "clicked" }, metadata: { actionEntryId: proposal?.candidates[0]?.actionEntryId, timelineEntryId: proposal?.candidates[0]?.actionEntryId, rawEvidenceImmutable: true } });
+    const savedEdit = await service.saveFlow({ projectId: project.id, flow: { ...reviewedGraph, nodes: reviewedGraph.nodes.map((node) => ({ ...node, label: "Edited click", metadata: { ...(node.metadata ?? {}), sourceObservationIds: ["forged"] } })) } });
     expect(savedEdit.nodes[0]).toMatchObject({ label: "Edited click", metadata: { sourceObservationIds: proposal!.candidates[0]!.sourceObservationIds, manualProvenance: [{ changedFields: ["label"] }] } });
     const session = await service.runRuntimeSession({ projectId: project.id, flowId: reviewed.flow!.flowId });
     expect(session.status).toBe("succeeded");
@@ -631,11 +659,8 @@ describe("AutomationStudioService recording persistence", () => {
     });
     const project = await service.createProject({ name: "Runtime patch" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.runtime-patch", name: "Runtime patch Flow" });
-    await service.saveFlow({
-      projectId: project.id,
-      flow: {
-        ...flow,
-        metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() },
+    await service.saveFlow({ projectId: project.id, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() } } });
+    await installPrimaryRouter(service, project.id, flow.flowId, {
         nodes: [
           { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
           { id: "constant", definitionId: "builtin.data.constant", parameterValues: { value: "ok" } },
@@ -646,7 +671,6 @@ describe("AutomationStudioService recording persistence", () => {
           { id: "start.constant", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "constant", targetPortId: "in" },
           { id: "constant.broken", sourceNodeId: "constant", sourcePortId: "success", targetNodeId: "broken", targetPortId: "in" }
         ]
-      }
     });
 
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
@@ -700,11 +724,8 @@ describe("AutomationStudioService recording persistence", () => {
     });
     const project = await service.createProject({ name: "Runtime auto promote" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.runtime-auto-promote", name: "Runtime auto promote Flow" });
-    await service.saveFlow({
-      projectId: project.id,
-      flow: {
-        ...flow,
-        metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() },
+    await service.saveFlow({ projectId: project.id, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() } } });
+    await installPrimaryRouter(service, project.id, flow.flowId, {
         nodes: [
           { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
           { id: "divide", definitionId: "builtin.math.divide", parameterValues: {} },
@@ -715,7 +736,6 @@ describe("AutomationStudioService recording persistence", () => {
           { id: "start.divide", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "divide", targetPortId: "in" },
           { id: "constant.end", sourceNodeId: "constant", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }
         ]
-      }
     });
 
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
@@ -734,7 +754,7 @@ describe("AutomationStudioService recording persistence", () => {
         applicationRecord: { durable: true }
       }
     });
-    await expect(service.getFlow(project.id, flow.flowId)).resolves.toMatchObject({
+    await expect(getPrimarySubflowGraph(service, project.id, flow.flowId)).resolves.toMatchObject({
       nodes: expect.arrayContaining([expect.objectContaining({ id: "constant", parameterValues: { value: "ok", timeoutMs: 250, retryCount: 2 } })])
     });
     expect(detail?.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({
@@ -802,11 +822,8 @@ describe("AutomationStudioService recording persistence", () => {
     }).bindNativeNodeRuntime(nativeRuntime);
     const project = await service.createProject({ name: "Adaptive Loop", domainId: "example" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.adaptive-loop", name: "Adaptive Loop Flow" });
-    await service.saveFlow({
-      projectId: project.id,
-      flow: {
-        ...flow,
-        metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() },
+    await service.saveFlow({ projectId: project.id, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() } } });
+    await installPrimaryRouter(service, project.id, flow.flowId, {
         nodes: [
           { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
           { id: "drift", definitionId: "example.drift-action", parameterValues: {} },
@@ -816,12 +833,11 @@ describe("AutomationStudioService recording persistence", () => {
           { id: "start.drift", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "drift", targetPortId: "in" },
           { id: "drift.end", sourceNodeId: "drift", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }
         ]
-      }
     });
 
     const first = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
     const firstDetail = await service.getFlowRunDetail(project.id, first.runId);
-    const learnedFlow = await service.getFlow(project.id, flow.flowId);
+    const learnedFlow = await getPrimarySubflowGraph(service, project.id, flow.flowId);
     const second = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
     const secondDetail = await service.getFlowRunDetail(project.id, second.runId);
 
@@ -1305,7 +1321,8 @@ describe("AutomationStudioService recording persistence", () => {
       }
     });
 
-    expect(reviewed.flow?.nodes[0]).toMatchObject({ label: "Edited click proposal", definitionId: "builtin.policy.action", parameterValues: { outputId: "click" } });
+    expect(reviewed.flow?.nodes).toEqual([]);
+    expect((await getPrimarySubflowGraph(service, project.id, reviewed.flow!.flowId)).nodes[0]).toMatchObject({ label: "Edited click proposal", definitionId: "builtin.policy.action", parameterValues: { outputId: "click" } });
 
     const reapplied = await service.reviewRecordingFlowProposal({
       projectId: project.id,
@@ -1340,7 +1357,8 @@ describe("AutomationStudioService recording persistence", () => {
 
     expect(reapplied.proposal.status).toBe("approved");
     expect(reapplied.flow?.flowId).toBe(reviewed.flow!.flowId);
-    expect(reapplied.flow?.nodes[0]).toMatchObject({ label: "Reapplied click proposal", definitionId: "builtin.policy.action" });
+    expect(reapplied.flow?.nodes).toEqual([]);
+    expect((await getPrimarySubflowGraph(service, project.id, reapplied.flow!.flowId)).nodes[0]).toMatchObject({ label: "Reapplied click proposal", definitionId: "builtin.policy.action" });
   });
 
   it("explains mapper miss diagnostics when no recording Flow candidates are accepted", async () => {
@@ -2141,11 +2159,23 @@ describe("AutomationStudioService recording persistence", () => {
   it("persists Flow expansion summaries with paged run and adaptation detail reads", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Expansion Pages" });
-    const flow = await service.createDefaultFlow({ projectId: project.id, ownerKind: "routine", ownerId: "routine.expansion-pages", name: "Expansion Pages Flow" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.expansion-pages", name: "Expansion Pages Flow" });
     const fixture = createAutomationStudioFlowExpansionFixture(10_000);
-    const subflows = fixture.subflows.map((subflow) => ({ ...subflow, projectId: project.id, flowId: flow.flowId }));
-    await service.saveFlowRouter({ ...fixture.router, projectId: project.id, flowId: flow.flowId, rules: fixture.router.rules.map((rule) => ({ ...rule, target: { kind: "subflow", subflowId: subflows[0]!.subflowId } })) });
-    for (const subflow of subflows) await service.saveFlowSubflow(subflow);
+    const subflows = await Promise.all(fixture.subflows.map((candidate) => service.createFlowSubflow({
+      projectId: project.id,
+      flowId: flow.flowId,
+      name: candidate.name,
+      ...(candidate.description ? { description: candidate.description } : {}),
+      role: candidate.role,
+      ...(candidate.routeTags ? { routeTags: candidate.routeTags } : {})
+    })));
+    await service.saveFlowRouter({
+      ...fixture.router,
+      projectId: project.id,
+      flowId: flow.flowId,
+      rules: fixture.router.rules.map((rule) => ({ ...rule, target: { kind: "subflow", subflowId: subflows[0]!.subflowId } })),
+      fallback: { kind: "subflow", subflowId: subflows[1]!.subflowId }
+    });
     await service.saveFlowInstruction(project.id, { ...fixture.instructions[0]!, scope: { kind: "flow", projectId: project.id, flowId: flow.flowId } });
     await service.saveFlowChangeProposal({ ...fixture.changeProposal, projectId: project.id, flowId: flow.flowId, subflowId: subflows[1]!.subflowId });
     const { proposalId: _missingProposalId, ...adaptationWithoutProposal } = fixture.adaptation;
@@ -2270,13 +2300,43 @@ describe("AutomationStudioService recording persistence", () => {
     const [flow] = fixture.flows;
     if (!flow) throw new Error("Large fixture did not create a flow.");
 
-    for (const artifact of fixture.flows) await service.saveProjectArtifact({ projectId: project.id, kind: "flow", artifact });
-    for (const router of fixture.routers) await service.saveFlowRouter(router);
-    for (const subflow of fixture.subflows) await service.saveFlowSubflow(subflow);
-    for (const instruction of fixture.instructions) await service.saveFlowInstruction(project.id, instruction);
-    for (const proposal of fixture.changeProposals) await service.saveFlowChangeProposal(proposal);
-    for (const adaptation of fixture.adaptations) await service.saveFlowAdaptation(adaptation);
-    for (const detail of fixture.runDetails) await service.saveFlowRunDetail(detail);
+    for (const artifact of fixture.flows) await service.saveFlow({ projectId: project.id, flow: artifact });
+    const subflowIdMap = new Map<string, string>();
+    for (const subflow of fixture.subflows) {
+      const created = await service.createFlowSubflow({
+        projectId: project.id,
+        flowId: subflow.flowId,
+        name: subflow.name,
+        ...(subflow.description ? { description: subflow.description } : {}),
+        role: subflow.role,
+        ...(subflow.routeTags ? { routeTags: subflow.routeTags } : {})
+      });
+      subflowIdMap.set(subflow.subflowId, created.subflowId);
+    }
+    const mappedSubflowId = (subflowId: string) => subflowIdMap.get(subflowId) ?? subflowId;
+    for (const router of fixture.routers) await service.saveFlowRouter({
+      ...router,
+      rules: router.rules.map((rule) => ({ ...rule, target: { ...rule.target, subflowId: mappedSubflowId(rule.target.subflowId) } })),
+      ...(router.fallback ? { fallback: router.fallback.kind === "subflow" ? { ...router.fallback, subflowId: mappedSubflowId(router.fallback.subflowId) } : router.fallback } : {})
+    });
+    for (const instruction of fixture.instructions) await service.saveFlowInstruction(project.id, {
+      ...instruction,
+      scope: instruction.scope.kind === "subflow" ? { ...instruction.scope, subflowId: mappedSubflowId(instruction.scope.subflowId) } : instruction.scope
+    });
+    for (const proposal of fixture.changeProposals) await service.saveFlowChangeProposal({
+      ...proposal,
+      ...(proposal.subflowId ? { subflowId: mappedSubflowId(proposal.subflowId) } : {}),
+      patches: proposal.patches.map((patch) => patch.targetId && subflowIdMap.has(patch.targetId) ? { ...patch, targetId: mappedSubflowId(patch.targetId) } : patch)
+    });
+    for (const adaptation of fixture.adaptations) await service.saveFlowAdaptation({
+      ...adaptation,
+      ...(adaptation.subflowId ? { subflowId: mappedSubflowId(adaptation.subflowId) } : {})
+    });
+    for (const detail of fixture.runDetails) await service.saveFlowRunDetail({
+      ...detail,
+      routeDecisions: detail.routeDecisions.map((decision) => ({ ...decision, ...(decision.selectedSubflowId ? { selectedSubflowId: mappedSubflowId(decision.selectedSubflowId) } : {}) })),
+      subflows: detail.subflows.map((entry) => ({ ...entry, subflowId: mappedSubflowId(entry.subflowId) }))
+    });
 
 
     const subflowPage = await service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId, limit: 5, offset: 2 });
@@ -2398,20 +2458,17 @@ describe("AutomationStudioService recording persistence", () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Adaptation Review" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.adaptation-review", name: "Adaptation Review Flow" });
-    await service.saveFlow({
-      projectId: project.id,
-      flow: {
-        ...flow,
+    const primary = await installPrimaryRouter(service, project.id, flow.flowId, {
         nodes: [
           { id: "expect.ready", definitionId: "builtin.policy.expectation", parameterValues: { timeoutMs: 100 } },
           { id: "action.submit", definitionId: "builtin.policy.action", parameterValues: { target: { selector: "#old" } } }
         ],
         edges: []
-      }
     });
     const base = {
       schemaVersion: "0.1" as const,
       flowId: flow.flowId,
+      subflowId: primary.subflow.subflowId,
       projectId: project.id,
       trigger: "Expected state changed",
       patch: [{ kind: "edit_expectation" as const, targetId: "expect.ready", summary: "Wait for ready state.", after: { timeoutMs: 500, retryCount: 3 } }],
@@ -2436,11 +2493,13 @@ describe("AutomationStudioService recording persistence", () => {
       metadata: { applicationRecord: { reversible: true, durable: true } }
     });
     await expect(service.getFlow(project.id, flow.flowId)).resolves.toMatchObject({
-      metadata: { appliedAdaptationIds: ["adaptation.apply"] },
+      metadata: { appliedAdaptationIds: ["adaptation.apply"] }
+    });
+    await expect(getPrimarySubflowGraph(service, project.id, flow.flowId)).resolves.toMatchObject({
       nodes: expect.arrayContaining([expect.objectContaining({ id: "expect.ready", parameterValues: { timeoutMs: 500, retryCount: 3 } })])
     });
     await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.apply", action: "revert" })).resolves.toMatchObject({ status: "reverted" });
-    await expect(service.getFlow(project.id, flow.flowId)).resolves.toMatchObject({
+    await expect(getPrimarySubflowGraph(service, project.id, flow.flowId)).resolves.toMatchObject({
       nodes: expect.arrayContaining([expect.objectContaining({ id: "expect.ready", parameterValues: { timeoutMs: 100 } })])
     });
     await expect(service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.reject", action: "reject", reason: "Conflicts with operator instruction." })).resolves.toMatchObject({ status: "rejected" });
@@ -2454,22 +2513,19 @@ describe("AutomationStudioService recording persistence", () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Durable Adaptations" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.durable-adaptations", name: "Durable Adaptations Flow" });
-    await service.saveFlow({
-      projectId: project.id,
-      flow: {
-        ...flow,
+    const primary = await installPrimaryRouter(service, project.id, flow.flowId, {
         nodes: [
           { id: "action.submit", definitionId: "builtin.policy.action", parameterValues: { target: { selector: "#old" } } },
           { id: "broken", definitionId: "builtin.math.divide", parameterValues: {} },
           { id: "end", definitionId: "builtin.control.end", parameterValues: { status: "success" } }
         ],
         edges: []
-      }
     });
 
     const base = {
       schemaVersion: "0.1" as const,
       flowId: flow.flowId,
+      subflowId: primary.subflow.subflowId,
       projectId: project.id,
       trigger: "Runtime drift",
       validationResults: [{ runId: "run.validation.1", status: "succeeded" as const, checkedAt: 20 }],
@@ -2510,11 +2566,11 @@ describe("AutomationStudioService recording persistence", () => {
         })])
       })]
     });
-    await expect(service.getFlow(project.id, flow.flowId)).resolves.toMatchObject({
+    await expect(getPrimarySubflowGraph(service, project.id, flow.flowId)).resolves.toMatchObject({
       nodes: expect.arrayContaining([expect.objectContaining({ id: "action.submit", parameterValues: { target: { selector: "#new" } } })])
     });
     await service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.target", action: "revert" });
-    await expect(service.getFlow(project.id, flow.flowId)).resolves.toMatchObject({
+    await expect(getPrimarySubflowGraph(service, project.id, flow.flowId)).resolves.toMatchObject({
       nodes: expect.arrayContaining([expect.objectContaining({ id: "action.submit", parameterValues: { target: { selector: "#old" } } })])
     });
 
@@ -2540,11 +2596,11 @@ describe("AutomationStudioService recording persistence", () => {
     });
     const appliedRouter = await service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.reroute", action: "apply" });
     expect(appliedRouter.metadata?.applicationRecord).toMatchObject({ durable: true, mutations: expect.any(Array) });
-    expect((await service.getFlow(project.id, flow.flowId)).edges).toEqual(expect.arrayContaining([
+    expect((await getPrimarySubflowGraph(service, project.id, flow.flowId)).edges).toEqual(expect.arrayContaining([
       expect.objectContaining({ sourceNodeId: "broken", sourcePortId: "failed", targetNodeId: "end" })
     ]));
     await service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.reroute", action: "revert" });
-    expect((await service.getFlow(project.id, flow.flowId)).edges).toEqual([]);
+    expect((await getPrimarySubflowGraph(service, project.id, flow.flowId)).edges).toEqual([]);
   });
 
   it("rolls back created subflows and rejects invalid durable mutations", async () => {
@@ -2590,8 +2646,10 @@ describe("AutomationStudioService recording persistence", () => {
     await service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: "adaptation.create-subflow", action: "revert" });
     await expect(service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId })).resolves.toMatchObject({ total: 0 });
 
+    const primary = await installPrimaryRouter(service, project.id, flow.flowId, { nodes: [], edges: [] });
     await service.saveFlowAdaptation({
       ...base,
+      subflowId: primary.subflow.subflowId,
       adaptationId: "adaptation.invalid-target",
       status: "validated",
       author: "runtime",
@@ -2602,6 +2660,7 @@ describe("AutomationStudioService recording persistence", () => {
 
     await service.saveFlowAdaptation({
       ...base,
+      subflowId: primary.subflow.subflowId,
       adaptationId: "adaptation.destructive",
       status: "validated",
       riskLevel: "destructive",
@@ -2614,41 +2673,27 @@ describe("AutomationStudioService recording persistence", () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Routed Runtime" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.routed-runtime", name: "Routed Flow" });
-    await service.saveFlow({
-      projectId: project.id,
-      flow: {
-        ...flow,
+    const { subflow, graph } = await installPrimaryRouter(service, project.id, flow.flowId, {
         nodes: [
           { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
           { id: "end", definitionId: "builtin.control.end", parameterValues: { status: "success" } }
         ],
         edges: [{ id: "start.end", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }]
-      }
     });
     const now = 50_000;
-    const subflow = {
-      schemaVersion: "0.1" as const,
-      subflowId: "subflow.routed.primary",
-      flowId: flow.flowId,
-      projectId: project.id,
-      name: "Primary path",
-      role: "primary" as const,
-      status: "active" as const,
-      graphFlowId: flow.flowId,
-      createdAt: now,
-      updatedAt: now
-    };
-    await service.saveFlowSubflow(subflow);
+    const installedRouter = await service.getFlowRouter(project.id, flow.flowId);
+    if (!installedRouter) throw new Error("Primary Router was not created.");
     await service.saveFlowRouter({
+      ...installedRouter,
       schemaVersion: "0.1",
-      routerId: "router.routed",
+      routerId: installedRouter.routerId,
       flowId: flow.flowId,
       projectId: project.id,
       name: "Routed Flow Router",
       rules: [{
         schemaVersion: "0.1",
         ruleId: "rule.primary",
-        routerId: "router.routed",
+        routerId: installedRouter.routerId,
         name: "Primary mode",
         target: { kind: "subflow", subflowId: subflow.subflowId },
         order: 1,
@@ -2670,7 +2715,10 @@ describe("AutomationStudioService recording persistence", () => {
     expect(detail).not.toBeNull();
     expect(detail?.routeDecisions).toEqual([expect.objectContaining({ selectedRuleId: "rule.primary", selectedSubflowId: subflow.subflowId })]);
     const routeDecisionId = detail!.routeDecisions[0]?.decisionId;
-    expect(detail?.subflows).toEqual([expect.objectContaining({ subflowId: subflow.subflowId, status: "succeeded", metadata: expect.objectContaining({ graphFlowId: flow.flowId, routeDecisionId }) })]);
+    expect(detail?.subflows).toEqual([expect.objectContaining({ subflowId: subflow.subflowId, status: "succeeded", metadata: expect.objectContaining({ graphFlowId: graph.flowId, routeDecisionId }) })]);
+    expect(detail?.summary).toMatchObject({ routeDecisionCount: 1, subflowEntryCount: 1, actionAttemptCount: 2 });
+    const summaries = await service.listFlowRunSummaries({ projectId: project.id, flowId: flow.flowId, limit: 10, offset: 0 });
+    expect(summaries.runs.find((summary) => summary.runId === run.runId)).toMatchObject({ routeDecisionCount: 1, subflowEntryCount: 1, actionAttemptCount: 2 });
   });
 
   it("creates, updates, duplicates, disables, and archives Flow subflows", async () => {
@@ -2946,6 +2994,7 @@ describe("AutomationStudioService recording persistence", () => {
     const replay = await service.replayPolicyAgainstRecording({ projectId: project.id, recordingId: recording.recordingId, policyId: approved.policy.policyId });
     const artifacts = await service.listPipelineArtifacts(project.id);
     const approvedFlow = await service.getFlow(project.id, String(approved.metadata?.approvedFlowId));
+    const approvedGraph = await getPrimarySubflowGraph(service, project.id, approvedFlow.flowId);
 
     expect(review.waitClips[0]).toMatchObject({ waitMs: 800 });
     expect(proposal.patch).toMatchObject({ targetTaskId: "task.pipeline", mergeStrategy: "append_or_branch" });
@@ -2957,7 +3006,8 @@ describe("AutomationStudioService recording persistence", () => {
     expect(artifacts.policyProposals[0]).toMatchObject({ proposalId: proposal.proposalId, status: "approved" });
     expect(replay.policyId).toBe(approved.policy.policyId);
     expect(approvedFlow).toMatchObject({ flowId: "flow.task.pipeline", origin: "recorded", metadata: { policyId: approved.policy.policyId } });
-    expect(approvedFlow.nodes.length).toBe(approved.policy.nodes.length);
+    expect(approvedFlow.nodes).toEqual([]);
+    expect(approvedGraph.nodes.length).toBe(approved.policy.nodes.length);
 
     const projectRoot = path.join(tempRoot, "programs", "automation-studio", "projects", project.id);
     await expect(readFile(path.join(projectRoot, "indexes", "pipeline.json"), "utf8")).resolves.toContain(proposal.proposalId);
@@ -3148,11 +3198,13 @@ describe("AutomationStudioService recording persistence", () => {
     }
 
     const flow = await service.getFlow(project.id, "flow.task.branching");
+    const graph = await getPrimarySubflowGraph(service, project.id, flow.flowId);
 
     expect((flow.metadata?.sourceRecordingIds as string[]).sort()).toEqual(["recording.branch-a", "recording.branch-b"]);
-    expect(flow.nodes.map((node) => node.parameterValues?.outputId)).toEqual(expect.arrayContaining(["output.shared-start", "output.branch.a", "output.branch.b"]));
-    expect(flow.nodes.length).toBeGreaterThanOrEqual(3);
-    expect(flow.edges.some((edge) => edge.label === "Recorded branch")).toBe(true);
+    expect(flow.nodes).toEqual([]);
+    expect(graph.nodes.map((node) => node.parameterValues?.outputId)).toEqual(expect.arrayContaining(["output.shared-start", "output.branch.a", "output.branch.b"]));
+    expect(graph.nodes.length).toBeGreaterThanOrEqual(3);
+    expect(graph.edges.some((edge) => edge.label === "Recorded branch")).toBe(true);
   });
 
   it("applies edited proposal overrides exactly instead of preserving deleted nodes", async () => {
@@ -3500,12 +3552,11 @@ describe("AutomationStudioService canonical Flow persistence", () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Canonical runtime" });
     const blank = await service.createFlow({ projectId: project.id, flowId: "flow.canonical.runtime", name: "Canonical runtime" });
-    await service.saveFlow({ projectId: project.id, flow: {
-      ...blank,
+    await installPrimaryRouter(service, project.id, blank.flowId, {
       nodes: [{ id: "start", definitionId: "builtin.control.start" }, { id: "value", definitionId: "builtin.data.constant", parameterValues: { value: "canonical" } }],
       edges: [{ id: "start.value", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "value", targetPortId: "in" }],
       regions: [{ id: "deterministic", name: "Deterministic", kind: "deterministic", nodeIds: ["start", "value"], entryPorts: [], exitPorts: [] }]
-    } });
+    });
 
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: blank.flowId });
     expect(run).toMatchObject({ status: "succeeded", targetKind: "flow", flowId: blank.flowId, metadata: { canonicalFlow: true } });
@@ -3518,12 +3569,13 @@ describe("AutomationStudioService canonical Flow persistence", () => {
     const domainProject = await service.createProject({ name: "Orders", domainId: "orders" });
     const globalProject = await service.createProject({ name: "Global orchestrator" });
     const child = await service.createFlow({ projectId: domainProject.id, flowId: "flow.orders.child", name: "Orders child" });
-    await service.saveFlow({ projectId: domainProject.id, flow: { ...child, nodes: [{ id: "start", definitionId: "builtin.control.start" }, { id: "end", definitionId: "builtin.control.end" }], edges: [{ id: "start.end", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }] } });
-    const publishedChild = await service.publishFlow({ projectId: domainProject.id, flowId: child.flowId, version: "1.0.0" });
+    const childExecutable = await installPrimaryRouter(service, domainProject.id, child.flowId, { nodes: [{ id: "start", definitionId: "builtin.control.start" }, { id: "end", definitionId: "builtin.control.end" }], edges: [{ id: "start.end", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }] });
+    const publishedChild = await service.publishFlow({ projectId: domainProject.id, flowId: childExecutable.graph.flowId, version: "1.0.0" });
     expect((publishedChild.publication as any).snapshot.nodes).toEqual(expect.arrayContaining([expect.objectContaining({ definitionId: "builtin.control.start", definitionVersion: "1.0.0" })]));
     const parent = await service.createFlow({ projectId: globalProject.id, flowId: "flow.global.parent", name: "Global parent" });
-    await service.saveFlow({ projectId: globalProject.id, flow: { ...parent, executionDefaults: { authorizedDomainIds: ["orders"] }, nodes: [{ id: "start", definitionId: "builtin.control.start" }, createCallFlowNode({ id: "call", target: { flowId: child.flowId, version: "1.0.0", scope: { kind: "domain", domainId: "orders" } } })], edges: [{ id: "start.call", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "call", targetPortId: "in" }] } });
-    expect((await service.inspectFlowDependencies(domainProject.id, child.flowId)).usedBy).toEqual([]);
+    const parentExecutable = await installPrimaryRouter(service, globalProject.id, parent.flowId, { nodes: [{ id: "start", definitionId: "builtin.control.start" }, createCallFlowNode({ id: "call", target: { flowId: childExecutable.graph.flowId, version: "1.0.0", scope: { kind: "domain", domainId: "orders" } } })], edges: [{ id: "start.call", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "call", targetPortId: "in" }] });
+    await service.saveFlow({ projectId: globalProject.id, flow: { ...parentExecutable.graph, executionDefaults: { authorizedDomainIds: ["orders"] } } });
+    expect((await service.inspectFlowDependencies(domainProject.id, childExecutable.graph.flowId)).usedBy).toEqual([]);
     await expect(service.runRuntimeSession({ projectId: globalProject.id, flowId: parent.flowId })).resolves.toMatchObject({ status: "failed", trace: { message: expect.stringContaining("cross_scope_call_not_authorized") } });
     const granted = await service.runRuntimeSession({ projectId: globalProject.id, flowId: parent.flowId, authorizedDomainIds: ["orders"] });
     expect(granted).toMatchObject({
@@ -3533,7 +3585,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
           expect.objectContaining({
             nodeId: "call",
             compositeTarget: {
-              flowId: child.flowId,
+              flowId: childExecutable.graph.flowId,
               version: "1.0.0",
               flowDigest: (publishedChild.publication as any).flowDigest
             }
@@ -3546,34 +3598,36 @@ describe("AutomationStudioService canonical Flow persistence", () => {
   it("converts source ownership explicitly and rejects uncompiled code-owned edits", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Source ownership" });
-    const blank = await service.createFlow({ projectId: project.id, flowId: "flow.source", name: "Source" });
-    const generatedSourcePath = path.join(tempRoot, "programs", "automation-studio", "projects", project.id, "flows", "flow.source", "source", "flows", "flow.source.flow.ts");
-    await expect(readFile(generatedSourcePath, "utf8")).resolves.toContain('flowId": "flow.source"');
-    expect(blank.metadata).toMatchObject({ generatedSource: { moduleId: "flows/flow.source.flow.ts", relativePath: "flows/flow.source/source/flows/flow.source.flow.ts", authoritative: false } });
-    await expect(service.getProjectArtifact(project.id, "config", "flow.flow.source.config")).resolves.toMatchObject({
-      configId: "flow.flow.source.config",
-      metadata: { generated: true, ownerKind: "flow", flowId: "flow.source" },
-      values: { flowId: "flow.source", name: "Source", source: { mode: "visual" } }
+    const parent = await service.createFlow({ projectId: project.id, flowId: "flow.source", name: "Source" });
+    const { graph: blank, subflow } = await installPrimaryRouter(service, project.id, parent.flowId, { nodes: [], edges: [] });
+    const generatedSourcePath = path.join(tempRoot, "programs", "automation-studio", "projects", project.id, "flows", blank.flowId, "source", "flows", `${blank.flowId}.flow.ts`);
+    await expect(readFile(generatedSourcePath, "utf8")).resolves.toContain(`flowId": "${blank.flowId}"`);
+    expect(blank.metadata).toMatchObject({ generatedSource: { moduleId: `flows/${blank.flowId}.flow.ts`, relativePath: `flows/${blank.flowId}/source/flows/${blank.flowId}.flow.ts`, authoritative: false } });
+    await expect(service.getProjectArtifact(project.id, "config", `flow.${blank.flowId}.config`)).resolves.toMatchObject({
+      configId: `flow.${blank.flowId}.config`,
+      metadata: { generated: true, ownerKind: "flow", flowId: blank.flowId },
+      values: { flowId: blank.flowId, name: "Primary Graph", source: { mode: "visual" } }
     });
     const visual = await service.saveFlow({ projectId: project.id, flow: { ...blank, nodes: [{ id: "value", definitionId: "builtin.data.constant", parameterValues: { value: "ok" } }] } });
-    await expect(service.getProjectArtifact(project.id, "config", "flow.flow.source.config")).resolves.toMatchObject({
-      values: { flowId: "flow.source", source: { mode: "visual" } }
+    await expect(service.getProjectArtifact(project.id, "config", `flow.${blank.flowId}.config`)).resolves.toMatchObject({
+      values: { flowId: blank.flowId, source: { mode: "visual" } }
     });
     const converted = await service.compileAndSaveFlowSource({ projectId: project.id, flowId: visual.flowId, moduleId: "flows/source.flow.ts", sourceText: generateFlowTypeScript(visual) });
     expect(converted.compilation.ok).toBe(true);
     expect(converted.flow?.source).toMatchObject({ mode: "code", moduleId: "flows/source.flow.ts", compilerVersion: "0.1" });
-    await expect(readFile(path.join(tempRoot, "programs", "automation-studio", "projects", project.id, "flows", "flow.source", "source", "flows", "source.flow.ts"), "utf8")).resolves.toContain('flowId": "flow.source"');
-    await expect(service.getProjectArtifact(project.id, "config", "flow.flow.source.config")).resolves.toMatchObject({
-      values: { flowId: "flow.source", source: { mode: "code", moduleId: "flows/source.flow.ts" } }
+    await expect(readFile(path.join(tempRoot, "programs", "automation-studio", "projects", project.id, "flows", blank.flowId, "source", "flows", "source.flow.ts"), "utf8")).resolves.toContain(`flowId": "${blank.flowId}"`);
+    await expect(service.getProjectArtifact(project.id, "config", `flow.${blank.flowId}.config`)).resolves.toMatchObject({
+      values: { flowId: blank.flowId, source: { mode: "code", moduleId: "flows/source.flow.ts" } }
     });
     await expect(service.saveFlow({ projectId: project.id, flow: { ...converted.flow!, nodes: [...converted.flow!.nodes, { id: "tampered", definitionId: "builtin.control.end" }] } })).rejects.toThrow("compiler digest");
     await expect(service.saveFlow({ projectId: project.id, flow: { ...converted.flow!, source: { mode: "visual" } } })).rejects.toThrow("explicit conversion");
     await expect(service.convertFlowToVisual({ projectId: project.id, flowId: visual.flowId })).resolves.toMatchObject({ source: { mode: "visual" }, publication: { status: "draft" } });
-    await expect(service.getProjectArtifact(project.id, "config", "flow.flow.source.config")).resolves.toMatchObject({
-      values: { flowId: "flow.source", source: { mode: "visual" } }
+    await expect(service.getProjectArtifact(project.id, "config", `flow.${blank.flowId}.config`)).resolves.toMatchObject({
+      values: { flowId: blank.flowId, source: { mode: "visual" } }
     });
-    await expect(service.deleteFlow({ projectId: project.id, flowId: visual.flowId })).resolves.toMatchObject({ deletedFlowId: visual.flowId });
-    await expect(service.getProjectArtifact(project.id, "config", "flow.flow.source.config")).rejects.toThrow("Unknown Automation Studio config");
+    await service.setFlowMapFallback({ projectId: project.id, flowId: parent.flowId, kind: "fail", message: "Source graph removed." });
+    await expect(service.deleteFlowSubflow({ projectId: project.id, flowId: parent.flowId, subflowId: subflow.subflowId })).resolves.toMatchObject({ deletedSubflowId: subflow.subflowId, deletedGraphFlowId: visual.flowId });
+    await expect(service.getProjectArtifact(project.id, "config", `flow.${blank.flowId}.config`)).rejects.toThrow("Unknown Automation Studio config");
   });
 
   it("exposes and executes explicitly bound domain-native nodes only in their project scope", async () => {
@@ -3584,7 +3638,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
     const domainProject = await service.createProject({ name: "Orders", domainId: "orders" }); const globalProject = await service.createProject({ name: "Global" });
     expect(await service.listNativeNodeDefinitions(domainProject.id)).toMatchObject([{ id: "orders.total" }]); expect(await service.listNativeNodeDefinitions(globalProject.id)).toEqual([]);
     const blank = await service.createFlow({ projectId: domainProject.id, flowId: "flow.orders.native", name: "Native" });
-    await service.saveFlow({ projectId: domainProject.id, flow: { ...blank, nodes: [{ id: "total", definitionId: "orders.total" }] } });
+    await installPrimaryRouter(service, domainProject.id, blank.flowId, { nodes: [{ id: "total", definitionId: "orders.total" }], edges: [] });
     await expect(service.runRuntimeSession({ projectId: domainProject.id, flowId: blank.flowId })).resolves.toMatchObject({ status: "succeeded", trace: { values: { total: 42 } } });
   });
 

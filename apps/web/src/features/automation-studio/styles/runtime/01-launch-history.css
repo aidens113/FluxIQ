@@ -2,10 +2,7 @@
   display: grid;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: #f8fafc;
+  overflow: visible;
 }
 
 .automation-runtime-list-page,
@@ -16,8 +13,8 @@
   gap: var(--space-md);
   min-width: 0;
   min-height: 0;
-  overflow: auto;
-  padding: var(--space-md);
+  overflow: visible;
+  padding: 0;
 }
 
 .automation-runtime-list-page > header,
@@ -194,11 +191,43 @@
   white-space: nowrap;
 }
 
+.automation-runtime-pagination-footer label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-runtime-pagination-footer select {
+  min-height: 28px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 3px 22px 3px 7px;
+}
+
+.automation-runtime-pagination button {
+  display: inline-grid;
+  place-items: center;
+}
+
+.automation-runtime-ready {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  color: var(--color-success, #15803d) !important;
+  font-weight: var(--font-weight-bold);
+}
+
 .automation-runtime-run-command {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto;
+  grid-template-columns: minmax(280px, 1fr) auto;
   gap: var(--space-dense);
-  align-items: end;
+  align-items: start;
   min-width: 0;
 }
 
@@ -238,8 +267,33 @@
   white-space: nowrap;
 }
 
-.automation-runtime-run-command button {
-  min-width: 120px;
+.automation-runtime-run-actions {
+  display: grid;
+  grid-template-columns: 90px 116px;
+  align-items: end;
+  gap: var(--space-sm);
+}
+
+.automation-runtime-run-actions label {
+  display: grid;
+  gap: 5px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-runtime-run-actions input {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 6px 8px;
+}
+
+.automation-runtime-run-actions .button {
+  min-width: 116px;
   min-height: 36px;
   margin: 0;
 }
@@ -248,9 +302,9 @@
   display: grid;
   gap: var(--space-dense);
   min-width: 0;
-  border: 1px solid #dbeafe;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
-  background: #f8fbff;
+  background: var(--color-surface-subtle);
   padding: var(--space-dense);
 }
 
@@ -335,15 +389,16 @@
   align-content: start;
   gap: var(--space-xs);
   min-width: 0;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: visible;
 }
 
 .automation-runtime-run-header {
   display: grid;
-  grid-template-columns: minmax(180px, 1.4fr) minmax(150px, 1.2fr) 92px minmax(132px, 0.9fr) minmax(92px, 0.7fr) minmax(86px, 0.65fr) minmax(82px, 0.65fr);
+  grid-template-columns: minmax(190px, 1.4fr) 92px minmax(138px, 1fr) minmax(88px, 0.65fr) minmax(150px, 1fr);
   gap: var(--space-sm);
   align-items: center;
-  min-width: 830px;
+  min-width: 700px;
   min-height: 28px;
   border: 1px solid #dbeafe;
   border-radius: var(--radius-control);
@@ -357,10 +412,10 @@
 
 .automation-runtime-run-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1.4fr) minmax(150px, 1.2fr) 92px minmax(132px, 0.9fr) minmax(92px, 0.7fr) minmax(86px, 0.65fr) minmax(82px, 0.65fr);
+  grid-template-columns: minmax(190px, 1.4fr) 92px minmax(138px, 1fr) minmax(88px, 0.65fr) minmax(150px, 1fr);
   gap: var(--space-sm);
   align-items: center;
-  min-width: 830px;
+  min-width: 700px;
   min-height: 34px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);

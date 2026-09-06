@@ -27,7 +27,7 @@ describe("flowHierarchyNodes", () => {
     const subflowsFolder = nodes.find((node) => node.kind === "folder" && node.label === "Subflows");
     const subflows = nodes.filter((node) => node.kind === "subflow");
 
-    expect(flow).toMatchObject({ label: "Checkout", parentId: null, viewId: "flow-nodes", sourceId: "flow.checkout" });
+    expect(flow).toMatchObject({ label: "Checkout", parentId: null, viewId: "flow-subflows", sourceId: "flow.checkout" });
     expect(nodes).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "flow-object", label: "Instructions", parentId: flow?.id, viewId: "flow-instructions", flowId: "flow.checkout" }),
       expect.objectContaining({ kind: "folder", label: "Recordings", parentId: flow?.id, viewId: "timeline-recording", flowId: "flow.checkout" }),

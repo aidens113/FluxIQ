@@ -76,6 +76,11 @@ describe("Automation Runtime workspace", () => {
     }));
 
     expect(html).toContain("Previous Runs");
+    expect(html).toContain("Runtime Debug");
+    expect(html).toContain("Start a controlled run");
+    expect(html).toContain('role="tablist"');
+    expect(html).toContain("Recently updated");
+    expect(html).toContain("actions · 0 effects");
     expect(html).toContain('role="button"');
     expect(html).not.toContain("View Log");
     expect(html).toContain("run.debug.1");
@@ -83,6 +88,9 @@ describe("Automation Runtime workspace", () => {
     expect(html).toContain("First page");
     expect(html).toContain("Last page");
     expect(html).toContain("automation-runtime-run-row");
+    expect(html).not.toContain("Runnable Nodes");
+    expect(html).not.toContain("<span>Target</span>");
+    expect(html).not.toContain("Direction</span>");
     expect(html).not.toContain("automation-runtime-run-card");
   });
 

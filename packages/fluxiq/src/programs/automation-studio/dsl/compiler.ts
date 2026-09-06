@@ -17,7 +17,7 @@ export function compileFlowDefinition(definition: AutomationStudioFlowDefinition
   const base: AutomationStudioFlowArtifact = {
     schemaVersion: "0.1", flowId: definition.flowId, projectId: options.projectId, name: definition.name,
     ...(definition.description !== undefined ? { description: definition.description } : {}), scope: definition.scope ?? { kind: "global" },
-    visibility: definition.visibility ?? "private", origin: definition.origin ?? "manual",
+    visibility: definition.visibility ?? "private", origin: definition.origin ?? "manual", ...(definition.metadata ? { metadata: definition.metadata } : {}),
     source: options.moduleId ? { mode: "code", moduleId: options.moduleId, sourceDigest: options.sourceDigest ?? "", compilerVersion, compiledDigest: "pending", declaredDependencies: dependencies.map((item) => `${item.kind}:${item.id}@${item.version}`) } : { mode: "visual" },
     interface: definition.interface ?? { inputs: [], outputs: [] }, errors: definition.errors ?? [], variables: definition.variables ?? [],
     nodes: definition.nodes ?? [], edges: definition.edges ?? [], ...(definition.regions ? { regions: definition.regions } : {}), ...(definition.regionHandoffs ? { regionHandoffs: definition.regionHandoffs } : {}),

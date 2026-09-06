@@ -7,6 +7,7 @@ export type AutomationViewAdderContext = {
   hasProject: boolean;
   hasFlow: boolean;
   hasTopLevelFlow: boolean;
+  hasSubflowGraph: boolean;
   hasRecording: boolean;
   hasSelection: boolean;
 };
@@ -23,6 +24,7 @@ const contextLabels: Record<keyof AutomationViewAdderContext, string> = {
   hasProject: "Open a project first",
   hasFlow: "Select a Flow or subflow first",
   hasTopLevelFlow: "Select a top-level Flow first",
+  hasSubflowGraph: "Select a Subflow first",
   hasRecording: "Select a recording first",
   hasSelection: "Select an object first"
 };

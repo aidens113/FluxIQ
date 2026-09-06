@@ -35,22 +35,18 @@ describe("AutomationStudioService subflow pagination fallbacks", () => {
       flowId: "flow.subflow-pagination",
       name: "Subflow pagination"
     });
+    const subflows: AutomationStudioFlowSubflow[] = [];
     for (let index = 0; index < count; index += 1) {
-      const subflow: AutomationStudioFlowSubflow = {
-        schemaVersion: "0.1",
-        subflowId: `subflow.pagination.${String(index).padStart(3, "0")}`,
+      const created = await service.createFlowSubflow({
         projectId: project.id,
         flowId: flow.flowId,
-        graphFlowId: `${flow.flowId}.graph.${index}`,
         name: `Subflow ${index}`,
-        role: "utility",
-        status: "active",
-        createdAt: 10_000 + index,
-        updatedAt: 10_000 + index
-      };
-      await service.saveFlowSubflow(subflow);
+        role: "utility"
+      });
+      const subflow = await service.saveFlowSubflow({ ...created, createdAt: 10_000 + index, updatedAt: 10_000 + index });
+      subflows.push(subflow);
     }
-    return { project, flow };
+    return { project, flow, subflows };
   }
 
   async function downgradeLegacyIndex(projectId: string) {
@@ -170,14 +166,15 @@ describe("AutomationStudioService subflow pagination fallbacks", () => {
     expect(page).toMatchObject({ total: 64, limit: 25, offset: 0 });
     expect(peakReads).toBeGreaterThan(0);
     expect(peakReads).toBeLessThanOrEqual(16);
-  });
+  }, 30_000);
 
   it("preserves a legacy summary when its detail document cannot be hydrated", async () => {
-    const { project, flow } = await createSubflows(2);
+    const { project, flow, subflows } = await createSubflows(2);
     await downgradeLegacyIndex(project.id);
     await clearSummaryRows(project.id);
     const readDetail = service.getFlowSubflow.bind(service);
-    service.getFlowSubflow = async (projectId, flowId, subflowId) => subflowId.endsWith("001")
+    const unavailableSubflowId = subflows[1]!.subflowId;
+    service.getFlowSubflow = async (projectId, flowId, subflowId) => subflowId === unavailableSubflowId
       ? null
       : await readDetail(projectId, flowId, subflowId);
     const internalService = service as unknown as { tryWithFlowResourceRepository: () => Promise<null> };
@@ -188,9 +185,10 @@ describe("AutomationStudioService subflow pagination fallbacks", () => {
     const envelope = JSON.parse(await readFile(indexFile, "utf8")) as LegacySubflowIndexEnvelope;
 
     expect(page.total).toBe(2);
-    expect(envelope.data.subflows.map((summary) => summary.subflowId)).toEqual([
-      "subflow.pagination.001",
-      "subflow.pagination.000"
-    ]);
+    expect(envelope.data.subflows.map((summary) => summary.subflowId)).toEqual(
+      [...subflows]
+        .sort((left, right) => (right.updatedAt - left.updatedAt) || left.subflowId.localeCompare(right.subflowId))
+        .map((subflow) => subflow.subflowId)
+    );
   });
 });
