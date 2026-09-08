@@ -23,6 +23,26 @@ describe("trusted-local native node runtime", () => {
     expect(trace.attempts[0]?.logs).toEqual([{ level: "info", message: "done", data: { token: "[REDACTED]", visible: "yes" } }]);
   });
 
+  it("projects defensive registry resolution from the runtime grants", () => {
+    const runtime = new AutomationStudioNativeNodeRuntime({
+      permissions: ["native.execute"],
+      runtimeCapabilities: ["native.actions"]
+    });
+    const first = runtime.getRegistryResolution({ kind: "domain", domainId: "example" });
+    expect(first).toEqual({
+      scope: { kind: "domain", domainId: "example" },
+      permissions: ["native.execute"],
+      runtimeCapabilities: ["native.actions"]
+    });
+    (first.permissions as string[]).push("mutated");
+    (first.runtimeCapabilities as string[]).push("mutated");
+    expect(runtime.getRegistryResolution({ kind: "domain", domainId: "example" })).toEqual({
+      scope: { kind: "domain", domainId: "example" },
+      permissions: ["native.execute"],
+      runtimeCapabilities: ["native.actions"]
+    });
+  });
+
   it("provides the common element matcher to native implementations", async () => {
     const runtime = new AutomationStudioNativeNodeRuntime().register(manifest(), {
       packageId: "example.package",

@@ -148,6 +148,16 @@ describe("FluxIQ", () => {
     }
   });
 
+  it("closes owned Automation Studio and Secret Keys services exactly once", async () => {
+    const fluxiq = FluxIQ.create({ loadEnv: false });
+    const calls: string[] = [];
+    (fluxiq.programs.automationStudio as any).close = async () => { calls.push("automation-studio"); };
+    (fluxiq.programs.secretKeys as any).close = () => { calls.push("secret-keys"); };
+
+    await Promise.all([fluxiq.close(), fluxiq.close()]);
+
+    expect(calls).toEqual(["automation-studio", "secret-keys"]);
+  });
   it("builds a scoped program directory from registered domains", () => {
     const fluxiq = FluxIQ.create({ loadEnv: false });
     fluxiq.registerDomain({

@@ -9,6 +9,13 @@ export function startRuntimeSession(api: ProgramCommandTransport, payload: Recor
 export function executeRuntimeSession(api: ProgramCommandTransport, payload: Record<string, any>) {
   return api.post<{ runtimeSession?: any; runSummary?: any; createdAdaptationIds?: string[]; interventionCount?: number; terminalReason?: string; durableBehaviorChanged?: boolean }>("run-runtime-session", payload);
 }
+export function preflightLlmExecution(api: ProgramCommandTransport, payload: Record<string, any>) {
+  return api.post<{ preflight?: any }>("preflight-llm-execution", payload);
+}
+
+export function issueLlmExecutionGrant(api: ProgramCommandTransport, payload: Record<string, any>) {
+  return api.post<{ grant?: { grantId?: string } }>("issue-llm-execution-grant", payload);
+}
 
 export function cancelRuntimeSession(api: ProgramCommandTransport, payload: { projectId: string; runId: string }) {
   return api.post("cancel-runtime-session", payload);

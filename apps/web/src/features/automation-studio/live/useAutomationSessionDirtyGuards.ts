@@ -7,25 +7,27 @@ import { requestDirtyViewDecision } from "../workspace/dirty-view-registry";
 import { saveActiveAutomationStudioGraph } from "../workspace/studio-action-registry";
 import type { useAutomationGraphRuntime } from "./useAutomationGraphRuntime";
 import { useStableAutomationEvent } from "./useStableAutomationEvent";
+import { useAutomationProjectResource, type AutomationStudioStores } from "../stores";
 
 type GraphRuntime = ReturnType<typeof useAutomationGraphRuntime>;
 
 export function useAutomationSessionDirtyGuards(options: {
   activeProjectId: string | null;
+  stores: AutomationStudioStores;
   selectedTaskGraph: any;
   selectedFlow: any;
-  hasDirtyTaskGraph: boolean;
   graphRuntime: GraphRuntime;
   setDirty(dirty: boolean): void;
   closeProject(): void;
   setTreeSelection(next: AutomationSelection): void;
   afterTreeSelection?(): void;
 }) {
+  const hasDirtyTaskGraph = useAutomationProjectResource(options.stores, "hasDirtyTaskGraph", false);
   useDirtyViewRegistration({
     id: `flow-graph:${options.activeProjectId ?? "none"}:${options.selectedTaskGraph?.flowId ?? "none"}`,
     viewId: automationStudioViewId.flowEditor,
     label: `Node graph: ${options.selectedTaskGraph?.name ?? options.selectedFlow?.name ?? "current Flow"}`,
-    dirty: options.hasDirtyTaskGraph,
+    dirty: hasDirtyTaskGraph,
     save: async (authorizationPin) => {
       if (!authorizationPin) throw new Error("A security PIN is required to save the graph.");
       const activeEditorSave = saveActiveAutomationStudioGraph(authorizationPin);

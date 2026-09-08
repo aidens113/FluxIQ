@@ -5,8 +5,9 @@ export function flowHierarchyNodes(flowEntries: any[], options: { recordings?: a
   const nodes: AutomationHierarchyNode[] = [];
   const recordings = options.recordings ?? [];
   const proposals = options.proposals ?? [];
+  const ownedFlowEntries = canonicalFlowEntries(flowEntries);
   const subflowGraphs = new Map<string, { flowId: string; name: string; flow: any }>();
-  for (const entry of flowEntries) {
+  for (const entry of ownedFlowEntries) {
     const candidate = entry?.flow ?? entry;
     const parentFlowId = typeof candidate?.metadata?.parentFlowId === "string" ? candidate.metadata.parentFlowId : "";
     const parentSubflowId = typeof candidate?.metadata?.parentSubflowId === "string" ? candidate.metadata.parentSubflowId : "";
@@ -18,7 +19,7 @@ export function flowHierarchyNodes(flowEntries: any[], options: { recordings?: a
       });
     }
   }
-  for (const entry of flowEntries) {
+  for (const entry of ownedFlowEntries) {
     const flow = entry?.flow ?? entry;
     if (!flow?.flowId || flow.metadata?.subflowGraph === true) continue;
     const flowId = String(flow.flowId);
@@ -50,6 +51,23 @@ export function flowHierarchyNodes(flowEntries: any[], options: { recordings?: a
   return nodes;
 }
 
+function canonicalFlowEntries(flowEntries: any[]): any[] {
+  const selected = new Map<string, any>();
+  const order: string[] = [];
+  for (const entry of flowEntries) {
+    const flow = entry?.flow ?? entry;
+    const flowId = typeof flow?.flowId === "string" ? flow.flowId : "";
+    if (!flowId) continue;
+    const existing = selected.get(flowId);
+    if (!existing) {
+      selected.set(flowId, entry);
+      order.push(flowId);
+      continue;
+    }
+    if (entry?.source === "canonical" && existing?.source !== "canonical") selected.set(flowId, entry);
+  }
+  return order.map((flowId) => selected.get(flowId));
+}
 function appendFlowObjectHierarchy(input: {
   nodes: AutomationHierarchyNode[];
   ownerFlow: any;

@@ -34,6 +34,7 @@ import {
   type AutomationStudioFlowMigrationLedger,
   type AutomationStudioFlowMigrationOutcome,
   type AutomationStudioFlowPublicationRecord,
+  type AutomationStudioPublishedFlowSnapshot,
   type AutomationStudioFlowRepresentationKind,
   type AutomationStudioFlowRouter,
   type AutomationStudioFlowRouteGroup,
@@ -105,9 +106,21 @@ import {
   type AutomationStudioTrainingModeSettings
 } from "./training-modes.ts";
 import {
+  resolveAutomationStudioLlmInstructions,
   runAutomationStudioLlmHarness,
-  type AutomationStudioLlmProvider
+  type AutomationStudioLlmProvider,
+  type AutomationStudioLlmTokenLimits
 } from "./llm-harness.ts";
+import { AutomationStudioLlmRunBudgetLedger } from "./llm-run-budget.ts";
+import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap-generation-failure.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapCatalogByteBudget, buildAutomationStudioFlowBootstrapContext, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap.ts";
+import {
+  assertAutomationStudioBootstrapHasNoRecordingProvenance,
+  normalizeAutomationStudioFlowBuildPlan,
+  type AutomationStudioBootstrapAccounting,
+  type AutomationStudioBootstrapAdaptation,
+  type AutomationStudioBootstrapAuditEvent
+} from "./flow-bootstrap-adaptation.ts";
 import { executeAutomationStudioRuntimePatch } from "./live-patch.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "./host-runtime.ts";
 import type { AutomationStudioNativeNodeRuntime } from "./native-node-runtime.ts";
@@ -220,10 +233,20 @@ export type AutomationStudioServiceOptions = {
   storageRootDir?: string;
   customNodeRootDir?: string;
   repositories?: CanonicalAutomationStudioRepositories;
-  llmProviderResolver?: (input: AutomationStudioLlmProviderResolverInput) => AutomationStudioLlmProvider | undefined | Promise<AutomationStudioLlmProvider | undefined>;
+  llmProviderResolver?: (input: AutomationStudioLlmProviderResolverInput) => AutomationStudioLlmProviderResolution | AutomationStudioLlmProvider | undefined | Promise<AutomationStudioLlmProviderResolution | AutomationStudioLlmProvider | undefined>;
+  revokeLlmExecutionGrant?: (grantId: string) => void;
+  closeLlmExecutionGrants?: () => void;
   hostRuntime?: AutomationStudioHostRuntimeBoundary;
   uiCacheStore?: AutomationStudioUiCacheStore;
   seedFixture?: boolean;
+};
+
+export type AutomationStudioLlmProviderResolution = {
+  provider: AutomationStudioLlmProvider;
+  tokenLimits?: Partial<AutomationStudioLlmTokenLimits>;
+  maxCallsPerRun?: number;
+  maxEstimatedCostUsd?: number;
+  timeoutMs?: number;
 };
 
 export type AutomationStudioLlmProviderResolverInput = {
@@ -232,8 +255,46 @@ export type AutomationStudioLlmProviderResolverInput = {
   providerId?: string;
   modelId?: string;
   metadata?: JsonObject;
+  executionGrant?:
+    | { grantId: string; actorUserId: string; actorSessionId: string; purpose: "diagnosis_only" }
+    | AutomationStudioBuildAndAdaptExecutionGrant;
 };
 
+export type AutomationStudioBuildAndAdaptExecutionGrant = {
+  grantId: string;
+  actorUserId: string;
+  actorSessionId: string;
+  purpose: "build_and_adapt";
+  executionDigest: string;
+  settingsRevision: number;
+};
+
+export type AutomationStudioGenerateFlowBootstrapAdaptationInput = {
+  projectId: string;
+  flowId: string;
+  executionGrant: AutomationStudioBuildAndAdaptExecutionGrant;
+};
+
+export type AutomationStudioGenerateFlowBootstrapAdaptationResult = {
+  projectId: string;
+  flowId: string;
+  adaptationId: string;
+  status: "proposed";
+  riskLevel: AutomationStudioBootstrapAdaptation["riskLevel"];
+  sourceInstructionIds: string[];
+  baseDependencyDigest: string;
+  baseSettingsRevision: number;
+  accounting: {
+    requestId: string;
+    estimatedInputTokens: number;
+    provider?: string;
+    model?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    estimatedCostUsd?: number;
+  };
+};
 export type AutomationStudioWriteProjectObjectAssetInput = {
   projectId: string;
   recordingId?: string;
@@ -698,6 +759,9 @@ export class AutomationStudioService {
   private readonly runtimeProjectDatabasePool?: AutomationStudioProjectDatabasePool;
   private readonly uiCacheStore: AutomationStudioUiCacheStore;
   private readonly recordingMutationLocks = new Map<string, Promise<void>>();
+  private readonly bootstrapAdaptationLocks = new Map<string, Promise<void>>();
+  private readonly bootstrapGenerationLocks = new Map<string, Promise<void>>();
+  private readonly memoryBootstrapAdaptations = new Map<string, AutomationStudioBootstrapAdaptation>();
   private readonly repairedRecordingStateIndexReads = new Set<string>();
   private readonly ready: Promise<void>;
   private storageReady?: Promise<void>;
@@ -705,16 +769,21 @@ export class AutomationStudioService {
   private nativeNodeRuntime?: AutomationStudioNativeNodeRuntime;
   private hostRuntime: AutomationStudioHostRuntimeBoundary | undefined;
   private runtimeService?: RuntimeService;
-  private readonly llmProviderResolver?: AutomationStudioServiceOptions["llmProviderResolver"];
+  private llmProviderResolver?: AutomationStudioServiceOptions["llmProviderResolver"];
+  private revokeLlmExecutionGrant?: AutomationStudioServiceOptions["revokeLlmExecutionGrant"];
+  private closeLlmExecutionGrants?: AutomationStudioServiceOptions["closeLlmExecutionGrants"];
   private readonly memoryLegacyRetirementStates = new Map<string, AutomationStudioLegacyRetirementState>();
   private readonly memoryLegacyBackups = new Map<string, AutomationStudioLegacyBackup>();
   private readonly memoryLegacyAudit = new Map<string, AutomationStudioLegacyRetirementAuditEvent[]>();
   private readonly legacyProjectArtifactReads = new Map<string, Promise<AutomationStudioProjectArtifacts>>();
   private readonly runtimeAbortControllers = new Map<string, AbortController>();
+  private readonly adaptiveRuntimeAdmissions = new Set<string>();
 
   constructor(options: AutomationStudioServiceOptions = {}) {
     this.repositories = options.repositories ?? createCanonicalAutomationStudioMemoryRepositories();
     this.llmProviderResolver = options.llmProviderResolver;
+    this.revokeLlmExecutionGrant = options.revokeLlmExecutionGrant;
+    this.closeLlmExecutionGrants = options.closeLlmExecutionGrants;
     this.hostRuntime = options.hostRuntime;
     let uiCacheStore = options.uiCacheStore;
     if (options.dataDir || options.storageRootDir) {
@@ -736,7 +805,19 @@ export class AutomationStudioService {
     this.ready = options.seedFixture === true ? this.seedFixture() : Promise.resolve();
   }
 
+  bindLlmExecutionProvider(
+    resolver: NonNullable<AutomationStudioServiceOptions["llmProviderResolver"]>,
+    revoke: NonNullable<AutomationStudioServiceOptions["revokeLlmExecutionGrant"]>,
+    close?: NonNullable<AutomationStudioServiceOptions["closeLlmExecutionGrants"]>
+  ): this {
+    this.llmProviderResolver = resolver;
+    this.revokeLlmExecutionGrant = revoke;
+    this.closeLlmExecutionGrants = close;
+    return this;
+  }
+
   async close(): Promise<void> {
+    this.closeLlmExecutionGrants?.();
     await this.uiCacheStore.close();
     await this.runtimeProjectDatabasePool?.closeAll();
   }
@@ -1144,16 +1225,17 @@ export class AutomationStudioService {
 
   async generateRecordingProposal(input: GenerateRecordingProposalInput): Promise<GenerateRecordingProposalResult> {
     const mode = input.mode === "llm_assisted" ? "llm_assisted" : "direct";
+    const generationMode = "direct";
     const replaceProposalId = input.replaceProposalId?.trim();
     const generationMetadata = compactJsonObject({
       recordingId: input.recordingId,
-      generationMode: mode,
+      generationMode,
+      ...(mode === "llm_assisted" ? { requestedGenerationMode: mode, llmAssistanceStatus: "not_invoked" } : {}),
       ...(input.title?.trim() ? { title: input.title.trim() } : {}),
       ...(input.instructions?.trim() ? { instructions: input.instructions.trim() } : {}),
       ...(input.constraints?.trim() ? { constraints: input.constraints.trim() } : {}),
       createdFromView: "proposal-generator",
-      generatedBy: mode === "llm_assisted" ? "llm_assistant" : "recording_mapper",
-      ...(mode === "llm_assisted" ? { llm: { provider: "pending", model: "deterministic-fallback", promptVersion: "proposal-generator.v1" } } : {})
+      generatedBy: "recording_mapper"
     });
     let flowResult: CreateRecordingFlowProposalsResult = { proposals: [], issues: [] };
     try {
@@ -1169,7 +1251,7 @@ export class AutomationStudioService {
           metadata: compactJsonObject({
             ...(proposal.metadata ?? {}),
             ...generationMetadata,
-            generatedBy: mode === "llm_assisted" ? "llm_assistant" : "recording_mapper"
+            generatedBy: "recording_mapper"
           })
         };
         await this.writePipelineArtifact(input.projectId, "recordingFlowProposals", next.proposalId, next as unknown as JsonObject);
@@ -1194,7 +1276,7 @@ export class AutomationStudioService {
         metadata: compactJsonObject({
           ...(proposal.metadata ?? {}),
           ...generationMetadata,
-          generatedBy: mode === "llm_assisted" ? "llm_assistant" : "evidence_miner"
+          generatedBy: "evidence_miner"
         })
       };
       await this.writePipelineArtifact(input.projectId, "policyProposals", proposal.proposalId, proposal as unknown as JsonObject);
@@ -1206,7 +1288,7 @@ export class AutomationStudioService {
           metadata: compactJsonObject({
             ...(item.metadata ?? {}),
             ...generationMetadata,
-            generatedBy: mode === "llm_assisted" ? "llm_assistant" : "recording_mapper"
+            generatedBy: "recording_mapper"
           })
         };
         await this.writePipelineArtifact(input.projectId, "recordingFlowProposals", next.proposalId, next as unknown as JsonObject);
@@ -1970,9 +2052,12 @@ export class AutomationStudioService {
   async getFlowMetadataDetail(projectId: string, flowId: string): Promise<AutomationStudioSqlFlowDetail | null> {
     await this.findProject(projectId);
     if (!this.projectDatabasePool) return null;
+    const canonical = await this.getFlow(projectId, flowId).catch(() => null);
     const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool: this.projectDatabasePool, projectId });
     try {
-      return await repository.getFlow(flowId);
+      const detail = await repository.getFlow(flowId);
+      if (!detail || !canonical || detail.updatedAt === canonical.updatedAt) return detail;
+      return { ...detail, updatedAt: canonical.updatedAt };
     } finally {
       await repository.close();
     }
@@ -2034,6 +2119,373 @@ export class AutomationStudioService {
     return flow;
   }
 
+  async getLlmExecutionDependencyDigest(projectId: string, flowId: string): Promise<string> {
+    const flow = await this.getFlow(projectId, flowId);
+    const router = await this.getFlowRouter(projectId, flowId);
+    const subflows: AutomationStudioFlowSubflow[] = [];
+    for (let offset = 0; ; offset += 100) {
+      const page = await this.listFlowSubflowSummaries({ projectId, flowId, limit: 100, offset });
+      const batch = await Promise.all(page.subflows.map((item) => this.getFlowSubflow(projectId, flowId, item.subflowId)));
+      subflows.push(...batch.filter((item): item is AutomationStudioFlowSubflow => Boolean(item)));
+      if (offset + page.subflows.length >= page.total || page.subflows.length === 0) break;
+    }
+    const graphFlows = (await Promise.all(subflows.map((subflow) =>
+      subflow.graphFlowId ? this.getFlow(projectId, subflow.graphFlowId).catch(() => null) : Promise.resolve(null)
+    ))).filter((item): item is AutomationStudioFlowArtifact => Boolean(item));
+    const instructionIds = new Set<string>();
+    for (const scope of [{ projectId, flowId }, ...subflows.map((subflow) => ({ projectId, flowId, subflowId: subflow.subflowId }))]) {
+      for (let offset = 0; ; offset += 100) {
+        const page = await this.listFlowInstructionSummaries({ ...scope, limit: 100, offset });
+        for (const instruction of page.instructions) instructionIds.add(instruction.instructionId);
+        if (offset + page.instructions.length >= page.total || page.instructions.length === 0) break;
+      }
+    }
+    const instructions = (await Promise.all([...instructionIds].map((instructionId) => this.getFlowInstruction(projectId, instructionId))))
+      .filter((item): item is AutomationStudioFlowInstruction => Boolean(item))
+      .sort((left, right) => left.instructionId.localeCompare(right.instructionId));
+    const sortedGraphFlows = graphFlows.sort((left, right) => left.flowId.localeCompare(right.flowId));
+    const publicationDependencies = executionPublicationDependencyState(
+      [flow, ...sortedGraphFlows],
+      await this.listFlowPublicationRecords()
+    );
+    return createHash("sha256").update(stableJson({
+      flow,
+      router,
+      subflows: subflows.sort((left, right) => left.subflowId.localeCompare(right.subflowId)),
+      graphFlows: sortedGraphFlows,
+      instructions,
+      publicationDependencies
+    })).digest("hex");
+  }
+  getFlowBootstrapGenerationRuntimeReadiness(): {
+    providerResolverConfigured: boolean;
+    nativeNodeRegistryConfigured: boolean;
+  } {
+    const native = this.nativeNodeRuntime;
+    const nativeDefinitions = native?.listDefinitions() ?? [];
+    const hasControlFoundation = Boolean(
+      native?.sdk.nodes.get("builtin.control.start")
+      && native.sdk.nodes.get("builtin.control.end")
+    );
+    const hasExecutableDomainNode = nativeDefinitions.some((definition) => definition.id !== "builtin.control.start" && definition.id !== "builtin.control.end" && definition.capabilities.executable === true);
+    return {
+      providerResolverConfigured: typeof this.llmProviderResolver === "function",
+      nativeNodeRegistryConfigured: hasControlFoundation && hasExecutableDomainNode
+    };
+  }
+
+  async getLlmExecutionBinding(projectId: string, flowId: string): Promise<{ executionDigest: string; settingsRevision: number }> {
+    const [flow, executionDigest] = await Promise.all([
+      this.getFlow(projectId, flowId),
+      this.getLlmExecutionDependencyDigest(projectId, flowId)
+    ]);
+    let settingsRevision: number;
+    if (this.projectDatabasePool && this.projectRootDir) {
+      const repository = await AutomationStudioProjectFlowResourceRepository.open({
+        pool: this.projectDatabasePool,
+        projectId
+      });
+      try {
+        const persisted = await repository.getFlow(flowId);
+        if (!persisted) throw new Error(`Flow ${flowId} has no canonical settings revision.`);
+        settingsRevision = persisted.settingsRevision;
+      } finally {
+        await repository.close();
+      }
+    } else {
+      settingsRevision = automationStudioFlowSettingsFingerprint(flow);
+    }
+    return { executionDigest, settingsRevision };
+  }
+
+  private async runFlowBootstrapLlmHarness(
+    input: Parameters<typeof runAutomationStudioLlmHarness>[0]
+  ): ReturnType<typeof runAutomationStudioLlmHarness> {
+    return await runAutomationStudioLlmHarness(input);
+  }
+
+  async generateFlowBootstrapAdaptation(
+    input: AutomationStudioGenerateFlowBootstrapAdaptationInput
+  ): Promise<AutomationStudioGenerateFlowBootstrapAdaptationResult> {
+    const unsafeInput = input as unknown as Record<string, unknown>;
+    const unsafeGrant = unsafeInput.executionGrant as Record<string, unknown> | undefined;
+    const grantId = typeof unsafeGrant?.grantId === "string" ? unsafeGrant.grantId : "";
+    let failureStage: AutomationStudioFlowBootstrapFailureStage = "pre_provider_validation";
+    let failureCode: AutomationStudioFlowBootstrapPhaseFailureCode = "flow_bootstrap.invalid_input";
+    let failureAccounting: AutomationStudioBootstrapAccounting | undefined;
+    try {
+      assertExactObjectFields(unsafeInput, ["projectId", "flowId", "executionGrant"], "Flow Bootstrap generation input");
+      if (!unsafeGrant) throw new Error("A build_and_adapt execution grant is required.");
+      assertExactObjectFields(unsafeGrant, [
+        "grantId",
+        "actorUserId",
+        "actorSessionId",
+        "purpose",
+        "executionDigest",
+        "settingsRevision"
+      ], "Flow Bootstrap execution grant");
+      if (unsafeGrant.purpose !== "build_and_adapt") throw new Error("Flow Bootstrap generation requires a build_and_adapt execution grant.");
+      const projectId = requiredBootstrapCommandId(unsafeInput.projectId, "project");
+      const flowId = requiredBootstrapCommandId(unsafeInput.flowId, "Flow");
+      const executionGrant: AutomationStudioBuildAndAdaptExecutionGrant = {
+        grantId: requiredBootstrapCommandId(unsafeGrant.grantId, "execution grant"),
+        actorUserId: requiredBootstrapCommandId(unsafeGrant.actorUserId, "actor user"),
+        actorSessionId: requiredBootstrapCommandId(unsafeGrant.actorSessionId, "actor session"),
+        purpose: "build_and_adapt",
+        executionDigest: requiredBootstrapDigest(unsafeGrant.executionDigest),
+        settingsRevision: requiredBootstrapSettingsRevision(unsafeGrant.settingsRevision)
+      };
+      failureCode = "flow_bootstrap.pre_provider_validation_failed";
+      return await this.withBootstrapGenerationLock(projectId, flowId, async () => {
+        failureCode = "flow_bootstrap.blank_target_required";
+        const parent = await this.assertBlankBootstrapTarget(projectId, flowId);
+        failureCode = "flow_bootstrap.canonical_settings_binding_unavailable";
+        const binding = await this.getLlmExecutionBinding(projectId, flowId);
+        if (executionGrant.executionDigest !== binding.executionDigest
+          || executionGrant.settingsRevision !== binding.settingsRevision) {
+          throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.stale_grant_binding");
+        }
+        failureCode = "flow_bootstrap.pre_provider_validation_failed";
+        const pending = (await this.listFlowBootstrapAdaptations(projectId, flowId))
+          .find((adaptation) => adaptation.status === "proposed" || adaptation.status === "validated");
+        if (pending) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.pending_adaptation_exists");
+        failureCode = "flow_bootstrap.pre_provider_validation_failed";
+        const instructions = await this.getAllFlowInstructionsForBootstrap(projectId, flowId);
+        const resolvedInstructions = resolveAutomationStudioLlmInstructions({
+          instructions,
+          projectId,
+          flowId
+        });
+        if (!resolvedInstructions.instructions.length
+          || resolvedInstructions.diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
+          throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.active_instructions_required");
+        }
+        const registry = this.nativeNodeRuntime?.sdk.nodes ?? new AutomationStudioNodeRegistry();
+        const resolution = this.nativeNodeRuntime?.getRegistryResolution(parent.scope) ?? {
+          scope: parent.scope,
+          runtimeCapabilities: [],
+          permissions: []
+        };
+const bootstrapInstructionText = resolvedInstructions.instructions
+          .map((instruction) => `${instruction.title}\n${instruction.body}`)
+          .join("\n");
+        const bootstrapContext = buildAutomationStudioFlowBootstrapContext({
+          registry,
+          resolution,
+          instructionText: bootstrapInstructionText,
+          maxCatalogBytes: automationStudioFlowBootstrapCatalogByteBudget({
+            maxInputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens,
+            instructionBytes: Buffer.byteLength(JSON.stringify(resolvedInstructions), "utf8")
+          })
+        });
+        if (!bootstrapContext.nodeCatalog.length) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.node_catalog_unavailable");
+        if (bootstrapContext.catalogSelection.missingRequiredTerms.length) {
+          throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.required_capabilities_unavailable");
+        }
+        failureStage = "provider_resolution";
+        failureCode = "flow_bootstrap.provider_resolver_unavailable";
+        if (!this.llmProviderResolver) throw flowBootstrapPhaseFailure("provider_resolution", undefined, "flow_bootstrap.provider_resolver_unavailable");
+        failureCode = "flow_bootstrap.provider_resolution_failed";
+        const unresolvedProvider = await this.llmProviderResolver({
+          projectId,
+          flowId,
+          executionGrant
+        });
+        if (!unresolvedProvider || !("provider" in unresolvedProvider)) {
+          throw flowBootstrapPhaseFailure("provider_resolution", undefined, "flow_bootstrap.provider_resolution_invalid");
+        }
+        failureStage = "provider_request";
+        failureCode = "flow_bootstrap.provider_request_failed";
+        const result = await this.runFlowBootstrapLlmHarness({
+          taskKind: "flow_bootstrap",
+          projectId,
+          flowId,
+          instructions,
+          flowBootstrap: { registry, resolution, maxInputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens },
+          provider: unresolvedProvider.provider,
+          ...(unresolvedProvider.tokenLimits ? { tokenLimits: unresolvedProvider.tokenLimits } : {}),
+          ...(unresolvedProvider.maxEstimatedCostUsd !== undefined ? { maxEstimatedCostUsd: unresolvedProvider.maxEstimatedCostUsd } : {}),
+          ...(unresolvedProvider.timeoutMs !== undefined ? { timeoutMs: unresolvedProvider.timeoutMs } : {}),
+          expectedOutput: "flow_bootstrap",
+          metadata: { source: "generateFlowBootstrapAdaptation" }
+        });
+        if (!result.ok || result.response?.kind !== "flow_bootstrap") {
+          throw flowBootstrapHarnessFailure(result);
+        }
+        failureStage = "provider_output_validation";
+        failureCode = "flow_bootstrap.provider_output_validation_failed";
+        const accounting = sanitizedBootstrapAccounting({
+          requestId: result.request.requestId,
+          estimatedInputTokens: result.request.estimatedInputTokens,
+          ...(result.provider?.provider ? { provider: result.provider.provider } : {}),
+          ...(result.provider?.model ? { model: result.provider.model } : {}),
+          ...(result.usage?.inputTokens !== undefined ? { inputTokens: result.usage.inputTokens } : {}),
+          ...(result.usage?.outputTokens !== undefined ? { outputTokens: result.usage.outputTokens } : {}),
+          ...(result.usage?.totalTokens !== undefined ? { totalTokens: result.usage.totalTokens } : {}),
+          ...(result.usage?.estimatedCostUsd !== undefined ? { estimatedCostUsd: result.usage.estimatedCostUsd } : {})
+        });
+        failureAccounting = accounting;
+        const validated = validateAutomationStudioFlowBootstrapPlan({
+          plan: result.response.plan,
+          registry,
+          resolution
+        });
+        if (!validated.ok || !validated.validated) throw new Error("Flow Bootstrap generation returned an invalid plan.");
+        failureStage = "post_provider_validation";
+        failureCode = "flow_bootstrap.post_provider_validation_failed";
+        const currentBinding = await this.getLlmExecutionBinding(projectId, flowId);
+        if (currentBinding.executionDigest !== binding.executionDigest
+          || currentBinding.settingsRevision !== binding.settingsRevision) {
+          throw new Error("FLOW_BOOTSTRAP_STALE: Flow or settings changed during generation.");
+        }
+
+        failureStage = "persistence";
+        failureCode = "flow_bootstrap.persistence_failed";
+        const adaptation = await this.createFlowBootstrapAdaptation({
+          projectId,
+          flowId,
+          baseDependencyDigest: binding.executionDigest,
+          sourceInstructionIds: resolvedInstructions.instructionIds,
+          summary: result.response.summary,
+          buildPlan: validated.validated,
+          accounting,
+          actorId: executionGrant.actorUserId
+        });
+        return {
+          projectId,
+          flowId,
+          adaptationId: adaptation.adaptationId,
+          status: "proposed",
+          riskLevel: adaptation.riskLevel,
+          sourceInstructionIds: [...adaptation.sourceInstructionIds],
+          baseDependencyDigest: adaptation.baseDependencyDigest,
+          baseSettingsRevision: adaptation.baseSettingsRevision,
+          accounting: structuredClone(accounting)
+
+        };
+      });
+    } catch (error) {
+      const diagnostic = parseAutomationStudioFlowBootstrapGenerationError(error);
+      if (diagnostic) throw new AutomationStudioFlowBootstrapGenerationError(diagnostic);
+      throw flowBootstrapPhaseFailure(failureStage, failureAccounting, failureCode);
+    } finally {
+      if (grantId) this.revokeLlmExecutionGrant?.(grantId);
+    }
+  }
+  async createFlowBootstrapAdaptation(input: {
+    projectId: string;
+    flowId: string;
+    baseDependencyDigest: string;
+    sourceInstructionIds: string[];
+    summary: string;
+    buildPlan: AutomationStudioFlowBuildPlan;
+    accounting?: AutomationStudioBootstrapAccounting;
+    actorId?: string;
+  }): Promise<AutomationStudioBootstrapAdaptation> {
+    return await this.withBootstrapAdaptationLock(input.projectId, input.flowId, async () => {
+      const parent = await this.assertBlankBootstrapTarget(input.projectId, input.flowId);
+      const binding = await this.getLlmExecutionBinding(input.projectId, input.flowId);
+      if (!input.baseDependencyDigest.trim() || input.baseDependencyDigest !== binding.executionDigest) {
+        throw new Error("FLOW_BOOTSTRAP_STALE: base dependency digest does not match the current Flow.");
+      }
+      assertAutomationStudioBootstrapHasNoRecordingProvenance(input);
+      const validation = validateAutomationStudioFlowBootstrapPlan({
+        plan: input.buildPlan.plan,
+        registry: this.nativeNodeRuntime?.sdk.nodes ?? new AutomationStudioNodeRegistry(),
+        resolution: this.nativeNodeRuntime?.getRegistryResolution(parent.scope) ?? {
+          scope: parent.scope,
+          runtimeCapabilities: [],
+          permissions: []
+        }
+      });
+      if (!validation.ok || !validation.validated) {
+        throw new Error(`Invalid Automation Studio Flow Bootstrap plan: ${validation.issues.map((issue) => `${issue.path ?? "plan"} (${issue.code})`).join(", ")}`);
+      }
+      const sourceInstructionIds = uniqueStrings(input.sourceInstructionIds.map((value) => value.trim()).filter(Boolean)).sort();
+      if (!sourceInstructionIds.length) throw new Error("Flow Bootstrap requires at least one active source instruction.");
+      for (const instructionId of sourceInstructionIds) {
+        const instruction = await this.getFlowInstruction(input.projectId, instructionId);
+        const scope = instruction?.scope;
+        const inScope = scope?.kind === "global"
+          || scope?.kind === "project" && scope.projectId === input.projectId
+          || scope?.kind === "flow" && scope.projectId === input.projectId && scope.flowId === input.flowId;
+        if (!instruction || instruction.status !== "active" || !inScope) {
+          throw new Error(`Flow Bootstrap source instruction is missing, inactive, or outside the target Flow scope: ${instructionId}`);
+        }
+      }
+      const summary = input.summary.trim();
+      if (!summary) throw new Error("Flow Bootstrap adaptation summary is required.");
+      const adaptationId = `adaptation.bootstrap.${randomUUID()}`;
+      const now = Date.now();
+      const buildPlan = validation.validated;
+      const adaptation: AutomationStudioBootstrapAdaptation = {
+        schemaVersion: "0.1",
+        kind: "flow_bootstrap",
+        adaptationId,
+        projectId: input.projectId,
+        flowId: input.flowId,
+        baseDependencyDigest: binding.executionDigest,
+        baseSettingsRevision: binding.settingsRevision,
+        sourceInstructionIds,
+        summary,
+        riskLevel: buildPlan.risk,
+        ...(input.accounting ? { accounting: sanitizedBootstrapAccounting(input.accounting) } : {}),
+        buildPlan,
+        topology: normalizeAutomationStudioFlowBuildPlan({
+          adaptationId,
+          parentFlow: parent,
+          buildPlan,
+          sourceInstructionIds,
+          now
+        }),
+        status: "proposed",
+        createdAt: now,
+        updatedAt: now,
+        auditEvents: [bootstrapAdaptationAuditEvent({ adaptationId, eventType: "created", actorId: input.actorId ?? null, fromStatus: null, toStatus: "proposed", createdAt: now })]
+      };
+      await this.saveFlowBootstrapAdaptation(adaptation);
+      await this.appendBootstrapAdaptationChangeFeed(adaptation, "create");
+      return structuredClone(adaptation);
+    });
+  }
+
+  async getFlowBootstrapAdaptation(projectId: string, flowId: string, adaptationId: string): Promise<AutomationStudioBootstrapAdaptation | null> {
+    await this.findProject(projectId);
+    const key = bootstrapAdaptationMemoryKey(projectId, flowId, adaptationId);
+    const memory = this.memoryBootstrapAdaptations.get(key);
+    if (memory) return structuredClone(memory);
+    if (!this.projectRootDir) return null;
+    const stored = await new ProgramJsonStore<JsonObject>(this.flowBootstrapAdaptationFile(projectId, flowId, adaptationId), () => ({})).read();
+    if (stored.kind !== "flow_bootstrap" || stored.adaptationId !== adaptationId || stored.projectId !== projectId || stored.flowId !== flowId) return null;
+    assertAutomationStudioBootstrapHasNoRecordingProvenance(stored);
+    const adaptation = stored as unknown as AutomationStudioBootstrapAdaptation;
+    this.memoryBootstrapAdaptations.set(key, structuredClone(adaptation));
+    return adaptation;
+  }
+
+  async reviewFlowBootstrapAdaptation(input: {
+    projectId: string;
+    flowId: string;
+    adaptationId: string;
+    action: "approve" | "reject" | "apply" | "revert";
+    actorId?: string;
+    reason?: string;
+  }): Promise<AutomationStudioBootstrapAdaptation> {
+    return await this.withBootstrapAdaptationLock(input.projectId, input.flowId, async () => {
+      const adaptation = await this.getFlowBootstrapAdaptation(input.projectId, input.flowId, input.adaptationId);
+      if (!adaptation) throw new Error(`Unknown Flow Bootstrap adaptation: ${input.adaptationId}`);
+      if (input.action === "approve") {
+        if (adaptation.status !== "proposed") throw new Error("Only a proposed Flow Bootstrap adaptation can be approved.");
+        return await this.transitionFlowBootstrapAdaptation(adaptation, "validated", "approved", input.actorId ?? null);
+      }
+      if (input.action === "reject") {
+        if (adaptation.status !== "proposed" && adaptation.status !== "validated") throw new Error("Only a proposed or validated Flow Bootstrap adaptation can be rejected.");
+        return await this.transitionFlowBootstrapAdaptation(adaptation, "rejected", "rejected", input.actorId ?? null);
+      }
+      if (input.action === "apply") return await this.applyFlowBootstrapAdaptation(adaptation, input.actorId ?? "runtime");
+      return await this.revertFlowBootstrapAdaptation(adaptation, input.actorId ?? "runtime");
+    });
+  }
   async saveFlow(input: { projectId: string; flow: AutomationStudioFlowArtifact; expectedUpdatedAt?: number }): Promise<AutomationStudioFlowArtifact> {
     return await this.saveFlowInternal(input, false);
   }
@@ -3065,6 +3517,7 @@ export class AutomationStudioService {
     failedTraceAttempt?: Parameters<typeof executeAutomationStudioRuntimePatch>[0]["failedAttempt"];
     authorizedExternalSideEffects?: boolean;
     graphOptions?: Parameters<typeof runAutomationStudioGraph>[1];
+    executionGrant?: AutomationStudioLlmProviderResolverInput["executionGrant"];
   }): Promise<AutomationStudioFlowRunDetail> {
     if (!input.context) return input.detail;
     if (input.detail.summary.status !== "failed") return input.detail;
@@ -3082,16 +3535,57 @@ export class AutomationStudioService {
     }
     const failedAttempt = [...(input.detail.actionAttempts ?? [])].reverse().find((attempt) => attempt.status === "failed" || attempt.status === "unknown");
     const providerId = stringSetting(input.context.policy.metadata?.llmProvider, stringSetting(input.context.policy.policyId, "host"));
-    const provider = await this.llmProviderResolver?.({
-      projectId: input.context.projectId,
-      flowId: input.context.flowId,
+    let provider: AutomationStudioLlmProvider | undefined;
+    let providerResolution: AutomationStudioLlmProviderResolution | undefined;
+    try {
+      const resolvedProvider = await this.llmProviderResolver?.({
+        projectId: input.context.projectId,
+        flowId: input.context.flowId,
       providerId,
-      ...(input.context.policy.metadata ? { metadata: input.context.policy.metadata } : {})
-    });
+      ...(input.executionGrant ? { executionGrant: input.executionGrant } : {}),
+        ...(input.context.policy.metadata ? { metadata: input.context.policy.metadata } : {})
+      });
+      if (resolvedProvider && "provider" in resolvedProvider) {
+        providerResolution = resolvedProvider;
+        provider = resolvedProvider.provider;
+      } else {
+        provider = resolvedProvider;
+      }
+    } catch {
+      return {
+        ...input.detail,
+        interventions: [...(input.detail.interventions ?? []), {
+          schemaVersion: "0.1",
+          interventionId: `llm.provider-resolution.${input.detail.summary.runId}`,
+          runId: input.detail.summary.runId,
+          flowId: input.context.flowId,
+          projectId: input.context.projectId,
+          kind: "diagnosis",
+          reason: "LLM provider resolution failed.",
+          validation: { ok: false, issues: ["llm.provider_resolution_failed: LLM provider resolution failed."] },
+          createdAt: input.detail.summary.updatedAt || Date.now()
+        }],
+        metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, reason: "LLM provider resolution failed.", code: "llm.provider_resolution_failed" } }
+      };
+    }
     const instructions = await this.getFlowInstructionSet({
       projectId: input.context.projectId,
       flowId: input.context.flowId
     }).catch(() => []);
+    const configuredCallLimits = [input.context.policy.maxInterventionsPerRun, input.context.settings.budgets?.maxInterventionsPerRun, providerResolution?.maxCallsPerRun]
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
+    const maxCallsPerRun = Math.max(1, Math.trunc(configuredCallLimits.length ? Math.min(...configuredCallLimits) : 2));
+    const requestedTokenLimits = providerResolution?.tokenLimits;
+    const maxTotalTokensPerRun = Math.max(1, Math.trunc(Math.min(input.context.settings.budgets?.maxTokensPerRun ?? 12_000, (requestedTokenLimits?.maxTotalTokens ?? 10_000) * maxCallsPerRun)));
+    const maxOutputTokensPerRun = Math.max(1, Math.trunc((requestedTokenLimits?.maxOutputTokens ?? maxTotalTokensPerRun) * maxCallsPerRun));
+    const maxEstimatedCostUsdPerRun = Math.min(0.25, input.context.policy.maxEstimatedCostUsdPerRun ?? 0.25, (providerResolution?.maxEstimatedCostUsd ?? 0.25) * maxCallsPerRun);
+    const maxEstimatedCostUsdPerCall = maxEstimatedCostUsdPerRun / maxCallsPerRun;
+    const runBudget = new AutomationStudioLlmRunBudgetLedger({
+      maxCallsPerRun,
+      maxTotalTokensPerRun,
+      maxOutputTokensPerRun,
+      maxEstimatedCostUsdPerRun
+    });
     const result = await runAutomationStudioLlmHarness({
       taskKind: "runtime_diagnosis",
       projectId: input.context.projectId,
@@ -3102,6 +3596,11 @@ export class AutomationStudioService {
       runDetail: input.detail,
       policy: input.context.policy,
       ...(provider ? { provider } : {}),
+      runBudget,
+      ...(requestedTokenLimits ? { tokenLimits: requestedTokenLimits } : {}),
+      ...(providerResolution?.timeoutMs !== undefined ? { timeoutMs: providerResolution.timeoutMs } : {}),
+      maxEstimatedCostUsd: maxEstimatedCostUsdPerCall,
+      ...(input.graphOptions?.signal ? { signal: input.graphOptions.signal } : {}),
       now: () => input.detail.summary.updatedAt || Date.now(),
       metadata: {
         source: "runRuntimeSession",
@@ -3119,6 +3618,9 @@ export class AutomationStudioService {
         runDetail: input.detail,
         policy: input.context.policy,
         provider,
+        runBudget,
+        maxEstimatedCostUsd: maxEstimatedCostUsdPerCall,
+        ...(input.graphOptions?.signal ? { signal: input.graphOptions.signal } : {}),
         expectedOutput: "runtime_patch",
         now: () => input.detail.summary.updatedAt || Date.now(),
         metadata: {
@@ -3184,6 +3686,7 @@ export class AutomationStudioService {
           invoked: Boolean(provider),
           providerConfigured: Boolean(provider),
           ok: result.ok && (patchResult?.ok ?? true),
+          costAccounting: runBudget.snapshot(input.detail.summary.runId),
           diagnostics: [...result.diagnostics, ...(patchResult?.diagnostics ?? [])].map((diagnostic) => ({ code: diagnostic.code, severity: diagnostic.severity, message: diagnostic.message }))
         },
         ...(runtimePatchAttempts.length ? { runtimePatchAttempts: runtimePatchAttempts as unknown as JsonObject[] } : {})
@@ -3382,8 +3885,26 @@ export class AutomationStudioService {
     authorizedExternalSideEffects?: boolean;
     subflowId?: string;
     idempotencyKey?: string;
+    llmExecution?: { grantId: string; actorUserId: string; actorSessionId: string; purpose: "diagnosis_only" };
   }): Promise<AutomationStudioRuntimeSession> {
+    if (input.llmExecution) {
+      const incompatible = input.llmExecution.purpose !== "diagnosis_only"
+        || (input.adaptiveMode !== undefined && input.adaptiveMode !== "manual_approval")
+        || input.dryRunLlm === true
+        || input.authorizedExternalSideEffects === true
+        || (input.authorizedDomainIds?.length ?? 0) > 0
+        || input.runId !== undefined;
+      if (incompatible) {
+        this.revokeLlmExecutionGrant?.(input.llmExecution.grantId);
+        throw new Error("diagnosis_only LLM execution flags are incompatible.");
+      }
+      input = { ...input, adaptiveMode: "manual_approval", authorizedExternalSideEffects: false };
+    }
     const idempotencyKey = typeof input.idempotencyKey === "string" && input.idempotencyKey.trim() ? input.idempotencyKey.trim() : "";
+    if (input.llmExecution && idempotencyKey) {
+      this.revokeLlmExecutionGrant?.(input.llmExecution.grantId);
+      throw new Error("diagnosis_only LLM execution does not accept idempotency keys.");
+    }
     if (input.projectId && idempotencyKey) {
       const matching = (await this.listRuntimeSessions(input.projectId).catch(() => [])).find((candidate) => candidate.metadata?.idempotencyKey === idempotencyKey);
       if (matching) return matching;
@@ -3397,18 +3918,29 @@ export class AutomationStudioService {
     if (input.inputs !== undefined) startInput.inputs = input.inputs;
     if (input.authorizedDomainIds !== undefined) startInput.authorizedDomainIds = input.authorizedDomainIds;
     if (idempotencyKey) startInput.metadata = { ...(startInput.metadata ?? {}), idempotencyKey };
-    const session = existing ?? await this.startRuntimeSession(startInput);
-    const startedAt = Date.now();
     const runInterventionMode = normalizeAutomationStudioRuntimeInterventionMode(input.adaptiveMode);
     const adaptiveRunRequested = runInterventionMode !== "no_llm_intervention";
-    if (!existing && input.projectId && adaptiveRunRequested) {
-      const activeAdaptiveRuns = (await this.listRuntimeSessions(input.projectId).catch(() => [])).filter((candidate) =>
-        candidate.runId !== session.runId
-        && (candidate.status === "queued" || candidate.status === "running" || candidate.status === "waiting")
-        && candidate.metadata?.adaptiveRuntime === true
-      );
-      if (activeAdaptiveRuns.length >= 1) throw new Error("Only one adaptive runtime run can be active per project.");
+    if (adaptiveRunRequested) startInput.metadata = { ...(startInput.metadata ?? {}), adaptiveRuntime: true, adaptiveMode: runInterventionMode };
+    let session: AutomationStudioRuntimeSession;
+    if (existing) {
+      session = existing;
+    } else if (input.projectId && adaptiveRunRequested) {
+      if (this.adaptiveRuntimeAdmissions.has(input.projectId)) throw new Error("Only one adaptive runtime run can be admitted per project at a time.");
+      this.adaptiveRuntimeAdmissions.add(input.projectId);
+      try {
+        const activeAdaptiveRuns = (await this.listRuntimeSessions(input.projectId).catch(() => [])).filter((candidate) =>
+          (candidate.status === "queued" || candidate.status === "running" || candidate.status === "waiting")
+          && candidate.metadata?.adaptiveRuntime === true
+        );
+        if (activeAdaptiveRuns.length >= 1) throw new Error("Only one adaptive runtime run can be active per project.");
+        session = await this.startRuntimeSession(startInput);
+      } finally {
+        this.adaptiveRuntimeAdmissions.delete(input.projectId);
+      }
+    } else {
+      session = await this.startRuntimeSession(startInput);
     }
+    const startedAt = Date.now();
     const abortController = new AbortController();
     const graphOptions: Parameters<typeof runAutomationStudioGraph>[1] = {
       inputs: (input.inputs ?? session.metadata?.inputs ?? {}) as Record<string, any>,
@@ -3419,7 +3951,7 @@ export class AutomationStudioService {
         ? createRuntimePolicyEffectDispatcher(this.ioRuntime.io, this.ioRuntime.domainId, this.runtimeService)
         : createIoPolicyEffectDispatcher(this.ioRuntime.io, this.ioRuntime.domainId);
       graphOptions.runtimeCapabilities = ["policy-output", "io"];
-      const requestedDomainIds = uniqueStrings(input.authorizedDomainIds ?? asStringArray(session.metadata?.authorizedDomainIds));
+      const requestedDomainIds = input.llmExecution ? [] : uniqueStrings(input.authorizedDomainIds ?? asStringArray(session.metadata?.authorizedDomainIds));
       if (this.ioRuntime.domainId) graphOptions.authorizedDomainIds = requestedDomainIds.filter((domainId) => domainId === this.ioRuntime!.domainId);
     }
     if (this.nativeNodeRuntime) graphOptions.runtimeCapabilities = [...new Set([...(graphOptions.runtimeCapabilities ?? []), ...this.nativeNodeRuntime.getRuntimeCapabilities()])];
@@ -3430,7 +3962,7 @@ export class AutomationStudioService {
       ? await this.getFlow(input.projectId, session.flowId).catch(() => undefined)
       : undefined;
     if (canonical?.source.mode === "code" && !verifyCodeOwnedFlowCompilation(canonical)) throw new Error("Code-owned Flow compilation is stale or invalid; execution refused.");
-    const adaptationContext = input.projectId && canonical
+    let adaptationContext = input.projectId && canonical
       ? runtimeAdaptationContextWithRunOverride(await this.resolveRuntimeAdaptationContext({ projectId: input.projectId, flow: canonical, currentRunId: session.runId }), input)
       : null;
     if (adaptationContext) graphOptions.recoveryBudget = recoveryBudgetFromRuntimeAdaptationContext(adaptationContext);
@@ -3522,9 +4054,10 @@ export class AutomationStudioService {
           ...(route.selectedSubflow ? { subflowId: route.selectedSubflow.subflowId } : {}),
           ...(input.authorizedExternalSideEffects !== undefined ? { authorizedExternalSideEffects: input.authorizedExternalSideEffects } : {}),
           graphOptions,
+          ...(input.llmExecution ? { executionGrant: input.llmExecution } : {}),
           ...(routedFailedTraceAttempt ? { failedTraceAttempt: routedFailedTraceAttempt } : {})
         });
-        const retry = adaptationContext ? await this.retryRuntimeSessionAfterAutoAppliedPatch({
+        const retry = adaptationContext && !input.llmExecution ? await this.retryRuntimeSessionAfterAutoAppliedPatch({
           projectId: input.projectId,
           session: next,
           detail: annotatedDetail,
@@ -3574,9 +4107,10 @@ export class AutomationStudioService {
         runtimeFlow: runtimeCanonical ? canonicalFlowDocument(runtimeCanonical) : runtimeFlow,
         ...(input.authorizedExternalSideEffects !== undefined ? { authorizedExternalSideEffects: input.authorizedExternalSideEffects } : {}),
         graphOptions,
+        ...(input.llmExecution ? { executionGrant: input.llmExecution } : {}),
         ...(failedTraceAttempt ? { failedTraceAttempt } : {})
       });
-      const retry = await this.retryRuntimeSessionAfterAutoAppliedPatch({
+      const retry = input.llmExecution ? null : await this.retryRuntimeSessionAfterAutoAppliedPatch({
         projectId: input.projectId,
         session: next,
         detail: annotatedDetail,
@@ -3588,6 +4122,7 @@ export class AutomationStudioService {
     }
     return next;
     } finally {
+      if (input.llmExecution) this.revokeLlmExecutionGrant?.(input.llmExecution.grantId);
       if (input.projectId) this.runtimeAbortControllers.delete(`${input.projectId}:${session.runId}`);
     }
   }
@@ -3830,16 +4365,38 @@ export class AutomationStudioService {
     const search = input.search?.trim().toLowerCase();
     const sort = input.sort ?? "updated";
     const direction = input.direction === "asc" ? "asc" : "desc";
+    const bootstrap = (await this.listProjectFlowBootstrapAdaptations(input.projectId, input.flowId))
+      .map(bootstrapAdaptationSummary)
+      .filter((item) =>
+        (!input.subflowId || item.subflowId === input.subflowId)
+        && (!input.status || item.status === input.status)
+        && (!input.risk || item.riskLevel === input.risk)
+        && (!search || item.adaptationId.toLowerCase().includes(search) || item.trigger.toLowerCase().includes(search))
+      );
+    if (!bootstrap.length) return await this.listOrdinaryFlowAdaptationSummaries(input, { limit, offset, ...(search ? { search } : {}), sort, direction });
+
+    const ordinary = await this.listAllOrdinaryFlowAdaptationSummaries(input, { ...(search ? { search } : {}), sort, direction });
+    const merged = new Map<string, AutomationStudioAdaptationSummary>();
+    for (const item of ordinary) merged.set(item.adaptationId, item);
+    for (const item of bootstrap) merged.set(item.adaptationId, item);
+    const adaptations = [...merged.values()].sort((left, right) => compareFlowAdaptationSummaries(left, right, sort, direction));
+    return { adaptations: adaptations.slice(offset, offset + limit), total: adaptations.length, limit, offset };
+  }
+
+  private async listOrdinaryFlowAdaptationSummaries(
+    input: { projectId: string; flowId?: string; subflowId?: string; status?: string; risk?: string },
+    page: { limit: number; offset: number; search?: string; sort: "updated" | "status" | "risk" | "trigger"; direction: "asc" | "desc" }
+  ): Promise<AutomationStudioAdaptationSummaryPage> {
     const typedPage = await this.tryWithAdaptationStore(input.projectId, async (store) => await store.listAdaptationsPage({
       ...(input.flowId ? { flowId: input.flowId } : {}),
       ...(input.subflowId ? { subflowId: input.subflowId } : {}),
       ...(input.status ? { status: input.status } : {}),
       ...(input.risk ? { risk: input.risk } : {}),
-      ...(search ? { search } : {}),
-      sort,
-      direction,
-      limit,
-      offset
+      ...(page.search ? { search: page.search } : {}),
+      sort: page.sort,
+      direction: page.direction,
+      limit: page.limit,
+      offset: page.offset
     }));
     if (typedPage && typedPage.total > 0) return { adaptations: typedPage.adaptations.map(adaptationSummaryFromTypedStore), total: typedPage.total, limit: typedPage.limit, offset: typedPage.offset };
     if (!this.projectRootDir) {
@@ -3849,9 +4406,9 @@ export class AutomationStudioService {
         && (!input.subflowId || item.subflowId === input.subflowId)
         && (!input.status || item.status === input.status)
         && (!input.risk || item.riskLevel === input.risk)
-        && (!search || item.adaptationId.toLowerCase().includes(search) || item.trigger.toLowerCase().includes(search))
-      ).sort((left, right) => compareFlowAdaptationSummaries(left, right, sort, direction));
-      return { adaptations: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
+        && (!page.search || item.adaptationId.toLowerCase().includes(page.search) || item.trigger.toLowerCase().includes(page.search))
+      ).sort((left, right) => compareFlowAdaptationSummaries(left, right, page.sort, page.direction));
+      return { adaptations: scoped.slice(page.offset, page.offset + page.limit), total: scoped.length, limit: page.limit, offset: page.offset };
     }
     await this.ensureFlowAdaptationSummaryIndex(input.projectId);
     return await this.listSqlFlowAdaptationSummaryPage(this.flowAdaptationSummaryRepository(input.projectId), {
@@ -3859,14 +4416,26 @@ export class AutomationStudioService {
       ...(input.subflowId ? { subflowId: input.subflowId } : {}),
       ...(input.status ? { status: input.status } : {}),
       ...(input.risk ? { risk: input.risk } : {}),
-      ...(search ? { search } : {}),
-      sort,
-      direction,
-      limit,
-      offset
+      ...(page.search ? { search: page.search } : {}),
+      sort: page.sort,
+      direction: page.direction,
+      limit: page.limit,
+      offset: page.offset
     });
   }
 
+  private async listAllOrdinaryFlowAdaptationSummaries(
+    input: { projectId: string; flowId?: string; subflowId?: string; status?: string; risk?: string },
+    options: { search?: string; sort: "updated" | "status" | "risk" | "trigger"; direction: "asc" | "desc" }
+  ): Promise<AutomationStudioAdaptationSummary[]> {
+    const result: AutomationStudioAdaptationSummary[] = [];
+    for (let offset = 0; ; offset += 100) {
+      const page = await this.listOrdinaryFlowAdaptationSummaries(input, { ...options, limit: 100, offset });
+      result.push(...page.adaptations);
+      if (offset + page.adaptations.length >= page.total || page.adaptations.length === 0) break;
+    }
+    return result;
+  }
   async getFlowRouter(projectId: string, flowId: string): Promise<AutomationStudioFlowRouter | null> {
     await this.findProject(projectId);
     const stored = await new ProgramJsonStore<JsonObject>(this.flowRouterFile(projectId, flowId), () => ({})).read();
@@ -4154,7 +4723,10 @@ export class AutomationStudioService {
     });
     if (typed && typed.flowId === flowId) return adaptationFromTypedStoreDetail(typed);
     const stored = await new ProgramJsonStore<JsonObject>(this.flowAdaptationFile(projectId, flowId, adaptationId), () => ({})).read();
-    return typeof stored.adaptationId === "string" ? stored as unknown as AutomationStudioFlowAdaptation : null;
+    if (typeof stored.adaptationId === "string") return stored as unknown as AutomationStudioFlowAdaptation;
+    const bootstrap = await this.getFlowBootstrapAdaptation(projectId, flowId, adaptationId);
+    if (!bootstrap) return null;
+    return bootstrapAdaptationAsFlowAdaptation(bootstrap, await this.getLlmExecutionBinding(projectId, flowId));
   }
 
   async saveFlowRouter(router: AutomationStudioFlowRouter): Promise<AutomationStudioFlowRouter> {
@@ -4750,6 +5322,21 @@ export class AutomationStudioService {
   async reviewFlowAdaptation(input: ReviewFlowAdaptationInput): Promise<AutomationStudioFlowAdaptation> {
     const typedReview = await this.reviewTypedFlowAdaptation(input);
     if (typedReview) return typedReview;
+    const bootstrap = await this.getFlowBootstrapAdaptation(input.projectId, input.flowId, input.adaptationId);
+    if (bootstrap) {
+      if (input.action !== "approve" && input.action !== "reject" && input.action !== "apply" && input.action !== "revert") {
+        throw new Error(`Flow Bootstrap adaptations do not support ${input.action}.`);
+      }
+      const reviewed = await this.reviewFlowBootstrapAdaptation({
+        projectId: input.projectId,
+        flowId: input.flowId,
+        adaptationId: input.adaptationId,
+        action: input.action,
+        ...(input.actorId ? { actorId: input.actorId } : {}),
+        ...(input.reason ? { reason: input.reason } : {})
+      });
+      return bootstrapAdaptationAsFlowAdaptation(reviewed, await this.getLlmExecutionBinding(input.projectId, input.flowId));
+    }
     const adaptation = await this.getFlowAdaptation(input.projectId, input.flowId, input.adaptationId);
     if (!adaptation) throw new Error(`Unknown adaptation: ${input.adaptationId}`);
     const now = Date.now();
@@ -5183,7 +5770,9 @@ export class AutomationStudioService {
     if (existing) await this.markSqlFlowSubflowDeleted(projectId, existing, deletedAt);
     if (deleteGraphFlow && graphFlowId) await this.deleteFlowArtifact({ projectId, flowId: graphFlowId }, true).catch(() => ({ deletedFlowId: graphFlowId }));
     if (flowId && subflowId) {
-      await ProgramJsonStore.deletePath(this.flowSubflowFile(projectId, flowId, subflowId));
+      const subflowFile = this.flowSubflowFile(projectId, flowId, subflowId);
+      await ProgramJsonStore.deletePath(subflowFile);
+      await rm(subflowFile, { force: true });
       await this.writeFlowSubflowIndex(projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: (index.subflows ?? []).filter((item) => item.subflowId !== subflowId) }));
       if (this.projectRootDir) await this.flowSubflowSummaryRepository(projectId).delete(subflowId);
     }
@@ -5199,6 +5788,429 @@ export class AutomationStudioService {
     });
   }
 
+  private async withBootstrapGenerationLock<T>(projectId: string, flowId: string, operation: () => Promise<T>): Promise<T> {
+    const key = `${projectId}:${flowId}`;
+    const previous = this.bootstrapGenerationLocks.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => { release = resolve; });
+    const tail = previous.then(() => current);
+    this.bootstrapGenerationLocks.set(key, tail);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.bootstrapGenerationLocks.get(key) === tail) this.bootstrapGenerationLocks.delete(key);
+    }
+  }
+
+  private async getAllFlowInstructionsForBootstrap(projectId: string, flowId: string): Promise<AutomationStudioFlowInstruction[]> {
+    const instructionIds = new Set<string>();
+    for (let offset = 0; ; offset += 100) {
+      const page = await this.listFlowInstructionSummaries({
+        projectId,
+        flowId,
+        status: "active",
+        limit: 100,
+        offset
+      });
+      for (const instruction of page.instructions) instructionIds.add(instruction.instructionId);
+      if (offset + page.instructions.length >= page.total || page.instructions.length === 0) break;
+    }
+    return (await Promise.all([...instructionIds].sort().map((instructionId) => this.getFlowInstruction(projectId, instructionId))))
+      .filter((instruction): instruction is AutomationStudioFlowInstruction => instruction?.status === "active");
+  }
+
+  private async listProjectFlowBootstrapAdaptations(projectId: string, flowId?: string): Promise<AutomationStudioBootstrapAdaptation[]> {
+    if (flowId) return await this.listFlowBootstrapAdaptations(projectId, flowId);
+    await this.findProject(projectId);
+    const byId = new Map<string, AutomationStudioBootstrapAdaptation>();
+    for (const adaptation of this.memoryBootstrapAdaptations.values()) {
+      if (adaptation.projectId === projectId) byId.set(adaptation.adaptationId, structuredClone(adaptation));
+    }
+    if (!this.projectRootDir) return [...byId.values()];
+    const flowEntries = await readdir(this.projectFile(projectId, "flows"), { withFileTypes: true }).catch(() => []);
+    for (const flowEntry of flowEntries) {
+      if (!flowEntry.isDirectory()) continue;
+      const root = path.join(this.projectFile(projectId, "flows"), flowEntry.name, "adaptations");
+      const projected = await ProgramJsonStore.listDirectoryDocuments<JsonObject>(root, "bootstrap.json");
+      const storedAdaptations = projected ?? await Promise.all((await readdir(root, { withFileTypes: true }).catch(() => []))
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => new ProgramJsonStore<JsonObject>(path.join(root, entry.name, "bootstrap.json"), () => ({})).read()));
+      for (const stored of storedAdaptations) {
+        if (stored.kind !== "flow_bootstrap" || stored.projectId !== projectId || typeof stored.flowId !== "string" || typeof stored.adaptationId !== "string") continue;
+        assertAutomationStudioBootstrapHasNoRecordingProvenance(stored);
+        byId.set(stored.adaptationId, stored as unknown as AutomationStudioBootstrapAdaptation);
+      }
+    }
+    return [...byId.values()].sort((left, right) => left.createdAt - right.createdAt || left.adaptationId.localeCompare(right.adaptationId));
+  }
+  private async listFlowBootstrapAdaptations(projectId: string, flowId: string): Promise<AutomationStudioBootstrapAdaptation[]> {
+    const byId = new Map<string, AutomationStudioBootstrapAdaptation>();
+    for (const adaptation of this.memoryBootstrapAdaptations.values()) {
+      if (adaptation.projectId === projectId && adaptation.flowId === flowId) {
+        byId.set(adaptation.adaptationId, structuredClone(adaptation));
+      }
+    }
+    if (!this.projectRootDir) return [...byId.values()];
+    const root = this.flowAdaptationsDirectory(projectId, flowId);
+    const projected = await ProgramJsonStore.listDirectoryDocuments<JsonObject>(root, "bootstrap.json");
+    if (projected) {
+      for (const stored of projected) {
+        if (stored.kind === "flow_bootstrap" && stored.projectId === projectId && stored.flowId === flowId && typeof stored.adaptationId === "string") {
+          assertAutomationStudioBootstrapHasNoRecordingProvenance(stored);
+          byId.set(stored.adaptationId, stored as unknown as AutomationStudioBootstrapAdaptation);
+        }
+      }
+    } else {
+      const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const stored = await new ProgramJsonStore<JsonObject>(path.join(root, entry.name, "bootstrap.json"), () => ({})).read();
+        if (stored.kind === "flow_bootstrap" && stored.projectId === projectId && stored.flowId === flowId && typeof stored.adaptationId === "string") {
+          assertAutomationStudioBootstrapHasNoRecordingProvenance(stored);
+          byId.set(stored.adaptationId, stored as unknown as AutomationStudioBootstrapAdaptation);
+        }
+      }
+    }
+    return [...byId.values()].sort((left, right) => left.createdAt - right.createdAt || left.adaptationId.localeCompare(right.adaptationId));
+  }
+  private async withBootstrapAdaptationLock<T>(projectId: string, flowId: string, operation: () => Promise<T>): Promise<T> {
+    const key = `${projectId}:${flowId}`;
+    const previous = this.bootstrapAdaptationLocks.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => { release = resolve; });
+    const tail = previous.then(() => current);
+    this.bootstrapAdaptationLocks.set(key, tail);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.bootstrapAdaptationLocks.get(key) === tail) this.bootstrapAdaptationLocks.delete(key);
+    }
+  }
+
+  private async assertBlankBootstrapTarget(projectId: string, flowId: string): Promise<AutomationStudioFlowArtifact> {
+    const parent = await this.getFlow(projectId, flowId);
+    if (this.persistedFlowRepresentation(parent) !== "orchestration" || parent.nodes.length || parent.edges.length) {
+      throw new Error("Flow Bootstrap requires a blank top-level orchestration Flow.");
+    }
+    if (await this.getFlowRouter(projectId, flowId)) throw new Error("Flow Bootstrap requires a Flow without a Router.");
+    const page = await this.listFlowSubflowSummaries({ projectId, flowId, limit: 1, offset: 0 });
+    if (page.total > 0) throw new Error("Flow Bootstrap requires a Flow without Subflows.");
+    return parent;
+  }
+
+  private async saveFlowBootstrapAdaptation(adaptation: AutomationStudioBootstrapAdaptation): Promise<AutomationStudioBootstrapAdaptation> {
+    assertAutomationStudioBootstrapHasNoRecordingProvenance(adaptation);
+    const key = bootstrapAdaptationMemoryKey(adaptation.projectId, adaptation.flowId, adaptation.adaptationId);
+    this.memoryBootstrapAdaptations.set(key, structuredClone(adaptation));
+    if (this.projectRootDir) {
+      await this.ensureProjectStructure(adaptation.projectId);
+      await new ProgramJsonStore<JsonObject>(
+        this.flowBootstrapAdaptationFile(adaptation.projectId, adaptation.flowId, adaptation.adaptationId),
+        () => ({})
+      ).write(adaptation as unknown as JsonObject);
+    }
+    return adaptation;
+  }
+
+  private async transitionFlowBootstrapAdaptation(
+    adaptation: AutomationStudioBootstrapAdaptation,
+    status: AutomationStudioBootstrapAdaptation["status"],
+    eventType: "approved" | "rejected",
+    actorId: string | null
+  ): Promise<AutomationStudioBootstrapAdaptation> {
+    const now = Date.now();
+    const next = {
+      ...adaptation,
+      status,
+      updatedAt: now,
+      auditEvents: [...(adaptation.auditEvents ?? []), bootstrapAdaptationAuditEvent({
+        adaptationId: adaptation.adaptationId,
+        eventType,
+        actorId,
+        fromStatus: adaptation.status,
+        toStatus: status,
+        createdAt: now
+      })]
+    };
+    await this.saveFlowBootstrapAdaptation(next);
+    await this.appendBootstrapAdaptationChangeFeed(next, "update");
+    return structuredClone(next);
+  }
+
+  private async applyFlowBootstrapAdaptation(
+    adaptation: AutomationStudioBootstrapAdaptation,
+    appliedBy: string
+  ): Promise<AutomationStudioBootstrapAdaptation> {
+    if (adaptation.status !== "validated") throw new Error("Only a validated Flow Bootstrap adaptation can be applied.");
+    const parent = await this.assertBlankBootstrapTarget(adaptation.projectId, adaptation.flowId);
+    const currentDigest = await this.getLlmExecutionDependencyDigest(adaptation.projectId, adaptation.flowId);
+    if (currentDigest !== adaptation.baseDependencyDigest) {
+      throw new Error("FLOW_BOOTSTRAP_STALE: Flow dependencies changed after this Bootstrap adaptation was proposed.");
+    }
+    assertAutomationStudioBootstrapHasNoRecordingProvenance(adaptation);
+    const validation = validateAutomationStudioFlowBootstrapPlan({
+      plan: adaptation.buildPlan.plan,
+      registry: this.nativeNodeRuntime?.sdk.nodes ?? new AutomationStudioNodeRegistry(),
+      resolution: this.nativeNodeRuntime?.getRegistryResolution(parent.scope) ?? {
+        scope: parent.scope,
+        runtimeCapabilities: [],
+        permissions: []
+      }
+    });
+    if (!validation.ok || !validation.validated || stableJson(validation.validated) !== stableJson(adaptation.buildPlan)) {
+      throw new Error("Flow Bootstrap plan is invalid or no longer matches the current Core registry.");
+    }
+    const expectedTopology = normalizeAutomationStudioFlowBuildPlan({
+      adaptationId: adaptation.adaptationId,
+      parentFlow: parent,
+      buildPlan: validation.validated,
+      sourceInstructionIds: adaptation.sourceInstructionIds,
+      now: adaptation.createdAt
+    });
+    if (stableJson(expectedTopology) !== stableJson(adaptation.topology)) {
+      throw new Error("Flow Bootstrap topology is not the Core-owned normalization of its validated plan.");
+    }
+    const parentBefore = {
+      ...(parent.metadata ? { metadata: structuredClone(parent.metadata) } : {}),
+      ...(parent.expansion ? { expansion: structuredClone(parent.expansion) } : {}),
+      updatedAt: parent.updatedAt
+    };
+    const createdSubflows: AutomationStudioFlowSubflow[] = [];
+    let routerCreated = false;
+    let parentChanged = false;
+    try {
+      for (const entry of adaptation.topology.subflows) {
+        await this.saveFlowInternal({ projectId: adaptation.projectId, flow: structuredClone(entry.graphFlow) }, false, "subflow_graph");
+        const savedSubflow = await this.saveFlowSubflow(structuredClone(entry.subflow));
+        createdSubflows.push(savedSubflow);
+        await this.appendFlowSubflowMutationChangeFeed(savedSubflow, "create");
+      }
+      await this.saveFlowRouter(structuredClone(adaptation.topology.router));
+      routerCreated = true;
+      const nextParent = await this.saveFlow({
+        projectId: adaptation.projectId,
+        expectedUpdatedAt: parent.updatedAt,
+        flow: {
+          ...parent,
+          metadata: {
+            ...(parent.metadata ?? {}),
+            bootstrapAdaptationId: adaptation.adaptationId,
+            bootstrapSourceInstructionIds: [...adaptation.sourceInstructionIds]
+          }
+        }
+      });
+      parentChanged = true;
+      const appliedDependencyDigest = await this.getLlmExecutionDependencyDigest(adaptation.projectId, adaptation.flowId);
+      const now = Date.now();
+      const next: AutomationStudioBootstrapAdaptation = {
+        ...adaptation,
+        status: "applied",
+        updatedAt: now,
+        application: {
+          appliedAt: now,
+          appliedBy,
+          appliedDependencyDigest,
+          parentBefore
+        },
+        auditEvents: [...(adaptation.auditEvents ?? []), bootstrapAdaptationAuditEvent({
+          adaptationId: adaptation.adaptationId,
+          eventType: "applied",
+          actorId: appliedBy,
+          fromStatus: adaptation.status,
+          toStatus: "applied",
+          createdAt: now
+        })]
+      };
+      await this.saveFlowBootstrapAdaptation(next);
+      await this.appendBootstrapAdaptationChangeFeed(next, "update");
+      void nextParent;
+      return structuredClone(next);
+    } catch (error) {
+      const rollbackFailures: string[] = [];
+      if (routerCreated) await this.deleteFlowBootstrapRouter(adaptation).catch((rollbackError) => rollbackFailures.push(String(rollbackError)));
+      for (const entry of createdSubflows.slice().reverse()) {
+        await this.deleteCreatedFlowSubflow(
+          adaptation.projectId,
+          adaptation.flowId,
+          entry.subflowId,
+          entry.graphFlowId,
+          true
+        ).catch((rollbackError) => rollbackFailures.push(String(rollbackError)));
+      }
+      const currentParent = await this.getFlow(adaptation.projectId, adaptation.flowId).catch(() => null);
+      if (currentParent && (parentChanged || currentParent.metadata?.bootstrapAdaptationId === adaptation.adaptationId)) {
+        await this.saveFlow({
+          projectId: adaptation.projectId,
+          flow: {
+            ...currentParent,
+            ...(parentBefore.expansion ? { expansion: structuredClone(parentBefore.expansion) } : {}),
+            metadata: parentBefore.metadata ? structuredClone(parentBefore.metadata) : {}
+          }
+        }).catch((rollbackError) => rollbackFailures.push(String(rollbackError)));
+      }
+      if (rollbackFailures.length) {
+        throw new Error(`Flow Bootstrap application failed and rollback was incomplete: ${String(error)}; ${rollbackFailures.join("; ")}`);
+      }
+      throw error;
+    }
+  }
+
+  private async revertFlowBootstrapAdaptation(
+    adaptation: AutomationStudioBootstrapAdaptation,
+    revertedBy: string
+  ): Promise<AutomationStudioBootstrapAdaptation> {
+    if (adaptation.status !== "applied" || !adaptation.application) throw new Error("Only an applied Flow Bootstrap adaptation can be reverted.");
+    const currentDigest = await this.getLlmExecutionDependencyDigest(adaptation.projectId, adaptation.flowId);
+    if (currentDigest !== adaptation.application.appliedDependencyDigest) {
+      throw new Error("FLOW_BOOTSTRAP_STALE: Flow dependencies changed after this Bootstrap adaptation was applied.");
+    }
+    const appliedParent = await this.getFlow(adaptation.projectId, adaptation.flowId);
+    const router = await this.getFlowRouter(adaptation.projectId, adaptation.flowId);
+    if (!router || router.routerId !== adaptation.topology.router.routerId
+      || router.metadata?.bootstrapAdaptationId !== adaptation.adaptationId) {
+      throw new Error("Flow Bootstrap Router ownership changed; revert refused.");
+    }
+    for (const entry of adaptation.topology.subflows) {
+      const current = await this.getFlowSubflow(adaptation.projectId, adaptation.flowId, entry.subflow.subflowId);
+      const graph = await this.getFlow(adaptation.projectId, entry.graphFlow.flowId).catch(() => null);
+      if (!current || current.graphFlowId !== entry.subflow.graphFlowId
+        || current.metadata?.bootstrapAdaptationId !== adaptation.adaptationId
+        || !graph || graph.metadata?.parentFlowId !== adaptation.flowId
+        || graph.metadata?.parentSubflowId !== current.subflowId
+        || graph.metadata?.bootstrapAdaptationId !== adaptation.adaptationId) {
+        throw new Error("Flow Bootstrap topology ownership changed; revert refused.");
+      }
+    }
+    try {
+      await this.deleteFlowBootstrapRouter(adaptation);
+      for (const entry of adaptation.topology.subflows.slice().reverse()) {
+        await this.deleteCreatedFlowSubflow(
+          adaptation.projectId,
+          adaptation.flowId,
+          entry.subflow.subflowId,
+          entry.subflow.graphFlowId,
+          true
+        );
+      }
+      const parent = await this.getFlow(adaptation.projectId, adaptation.flowId);
+      const before = adaptation.application.parentBefore;
+      await this.saveFlow({
+        projectId: adaptation.projectId,
+        flow: {
+          ...parent,
+          ...(before.expansion ? { expansion: structuredClone(before.expansion) } : {}),
+          metadata: before.metadata ? structuredClone(before.metadata) : {}
+        }
+      });
+      const now = Date.now();
+      const next: AutomationStudioBootstrapAdaptation = {
+        ...adaptation,
+        status: "reverted",
+        updatedAt: now,
+        application: adaptation.application,
+        revert: { revertedAt: now, revertedBy },
+        auditEvents: [...(adaptation.auditEvents ?? []), bootstrapAdaptationAuditEvent({
+          adaptationId: adaptation.adaptationId,
+          eventType: "rollback",
+          actorId: revertedBy,
+          fromStatus: adaptation.status,
+          toStatus: "reverted",
+          createdAt: now
+        })]
+      };
+      await this.saveFlowBootstrapAdaptation(next);
+      await this.appendBootstrapAdaptationChangeFeed(next, "update");
+      return structuredClone(next);
+    } catch (error) {
+      const rollbackFailures: string[] = [];
+      for (const entry of adaptation.topology.subflows) {
+        const graph = await this.getFlow(adaptation.projectId, entry.graphFlow.flowId).catch(() => null);
+        if (!graph) {
+          await this.saveFlowInternal({
+            projectId: adaptation.projectId,
+            flow: structuredClone(entry.graphFlow)
+          }, false, "subflow_graph").catch((rollbackError) => rollbackFailures.push(String(rollbackError)));
+        }
+        const subflow = await this.getFlowSubflow(adaptation.projectId, adaptation.flowId, entry.subflow.subflowId);
+        if (!subflow) {
+          await this.saveFlowSubflow(structuredClone(entry.subflow))
+            .catch((rollbackError) => rollbackFailures.push(String(rollbackError)));
+        }
+      }
+      if (!await this.getFlowRouter(adaptation.projectId, adaptation.flowId)) {
+        await this.saveFlowRouter(structuredClone(adaptation.topology.router))
+          .catch((rollbackError) => rollbackFailures.push(String(rollbackError)));
+      }
+      const currentParent = await this.getFlow(adaptation.projectId, adaptation.flowId).catch(() => null);
+      if (currentParent && stableJson(currentParent) !== stableJson(appliedParent)) {
+        await this.saveFlow({
+          projectId: adaptation.projectId,
+          flow: { ...appliedParent, updatedAt: currentParent.updatedAt }
+        }).catch((rollbackError) => rollbackFailures.push(String(rollbackError)));
+      }
+      if (rollbackFailures.length) {
+        throw new Error(`Flow Bootstrap revert failed and rollback was incomplete: ${String(error)}; ${rollbackFailures.join("; ")}`);
+      }
+      throw error;
+    }
+  }
+  private async deleteFlowBootstrapRouter(adaptation: AutomationStudioBootstrapAdaptation): Promise<void> {
+    const current = await this.getFlowRouter(adaptation.projectId, adaptation.flowId);
+    if (!current) return;
+    if (current.routerId !== adaptation.topology.router.routerId
+      || current.metadata?.bootstrapAdaptationId !== adaptation.adaptationId) {
+      throw new Error("Flow Bootstrap Router ownership changed; mutation refused.");
+    }
+    const routerFile = this.flowRouterFile(adaptation.projectId, adaptation.flowId);
+    await ProgramJsonStore.deletePath(routerFile);
+    await rm(routerFile, { force: true });
+    await this.writeFlowRouterIndex(adaptation.projectId, (index) => ({
+      schemaVersion: "0.1",
+      routers: (index.routers ?? []).filter((item) => item.routerId !== current.routerId)
+    }));
+    if (this.projectDatabasePool) {
+      const lease = await this.projectDatabasePool.acquire(adaptation.projectId);
+      try {
+        await lease.database.transaction(async (sql) => {
+          await sql.run("delete from router_routes where router_id = ?", [current.routerId]);
+          await sql.run("delete from router_groups where router_id = ?", [current.routerId]);
+          await sql.run("delete from routers where router_id = ?", [current.routerId]);
+        });
+      } finally {
+        await lease.release();
+      }
+    }
+    await this.appendProjectMutationChangeFeed({
+      projectId: adaptation.projectId,
+      entityKind: "router",
+      entityId: current.routerId,
+      parentId: adaptation.flowId,
+      operation: "delete",
+      revision: Math.max(1, Math.trunc(current.updatedAt)),
+      changedAt: Date.now(),
+      hierarchyScope: { kind: "flow", id: adaptation.flowId }
+    });
+  }
+
+  private async appendBootstrapAdaptationChangeFeed(
+    adaptation: AutomationStudioBootstrapAdaptation,
+    operation: "create" | "update"
+  ): Promise<void> {
+    await this.appendProjectMutationChangeFeed({
+      projectId: adaptation.projectId,
+      entityKind: "bootstrap_adaptation",
+      entityId: adaptation.adaptationId,
+      parentId: adaptation.flowId,
+      operation,
+      revision: Math.max(1, Math.trunc(adaptation.updatedAt)),
+      changedAt: adaptation.updatedAt,
+      hierarchyScope: { kind: "flow", id: adaptation.flowId }
+    });
+  }
   private async getFlowSubflowsForValidation(projectId: string, flowId: string): Promise<AutomationStudioFlowSubflow[]> {
     const index = await this.readFlowSubflowIndex(projectId);
     return (await Promise.all(
@@ -6607,12 +7619,19 @@ export class AutomationStudioService {
     return path.join(this.flowChangeProposalDirectory(projectId, flowId, proposalId), "proposal.json");
   }
 
+  private flowAdaptationsDirectory(projectId: string, flowId: string): string {
+    return path.join(this.flowDirectory(projectId, flowId), "adaptations");
+  }
   private flowAdaptationDirectory(projectId: string, flowId: string, adaptationId: string): string {
-    return path.join(this.flowDirectory(projectId, flowId), "adaptations", safeSegment(adaptationId));
+    return path.join(this.flowAdaptationsDirectory(projectId, flowId), safeSegment(adaptationId));
   }
 
   private flowAdaptationFile(projectId: string, flowId: string, adaptationId: string): string {
     return path.join(this.flowAdaptationDirectory(projectId, flowId, adaptationId), "adaptation.json");
+  }
+
+  private flowBootstrapAdaptationFile(projectId: string, flowId: string, adaptationId: string): string {
+    return path.join(this.flowAdaptationDirectory(projectId, flowId, adaptationId), "bootstrap.json");
   }
 
   private flowAdaptationPolicyFile(projectId: string, flowId: string, policyId: string): string {
@@ -7339,7 +8358,8 @@ export class AutomationStudioService {
           llm: {
             provider: typeof metadata.llmProvider === "string" ? metadata.llmProvider : "host",
             ...(typeof metadata.llmModel === "string" ? { model: metadata.llmModel } : {}),
-            ...(typeof metadata.llmSecretKeyId === "string" ? { secretKeyId: metadata.llmSecretKeyId } : {})
+            ...(typeof metadata.llmSecretKeyId === "string" ? { secretKeyId: metadata.llmSecretKeyId } : {}),
+            execution: jsonObjectFromUnknown(metadata.llmExecutionSettings) ?? {}
           },
           safety: {}
         },
@@ -8038,7 +9058,7 @@ function instructionSummaryFromSql(instruction: AutomationStudioSqlInstructionSu
     ...(scope?.subflowId ? { subflowId: scope.subflowId } : {}),
     title: instruction.title,
     scopeKind: instructionScopeKindFromSql(scope?.scopeKind),
-    status: flowExpansionStatusFromSql(instruction.status),
+    status: instructionStatusFromSql(instruction.status),
     requirement: instructionRequirementFromSql(instruction.requirement),
     priority: instruction.priority,
     updatedAt: instruction.updatedAt
@@ -8069,8 +9089,13 @@ function instructionRequirementFromSql(requirement: "guidance" | "required" | "f
 function sqlInstructionStatus(status: string): "draft" | "active" | "archived" | "deleted" {
   if (status === "archived") return "archived";
   if (status === "deleted") return "deleted";
-  if (status === "draft") return "draft";
+  if (status === "disabled" || status === "draft") return "draft";
   return "active";
+}
+
+function instructionStatusFromSql(status: "draft" | "active" | "archived" | "deleted"): AutomationStudioInstructionSummary["status"] {
+  if (status === "draft" || status === "deleted") return "disabled";
+  return status;
 }
 
 function sqlInstructionScopeFromInstruction(projectId: string, scope: AutomationStudioFlowInstruction["scope"]): AutomationStudioSqlInstructionScope {
@@ -8290,6 +9315,17 @@ function changeProposalSummaryFromProposal(proposal: AutomationStudioFlowChangeP
   };
 }
 
+function bootstrapAdaptationSummary(adaptation: AutomationStudioBootstrapAdaptation): AutomationStudioAdaptationSummary {
+  return {
+    adaptationId: adaptation.adaptationId,
+    flowId: adaptation.flowId,
+    projectId: adaptation.projectId,
+    status: adaptation.status,
+    riskLevel: adaptation.riskLevel,
+    trigger: "Instruction-built Flow Bootstrap",
+    updatedAt: adaptation.updatedAt
+  };
+}
 function adaptationSummaryFromAdaptation(adaptation: AutomationStudioFlowAdaptation): AutomationStudioAdaptationSummary {
   return {
     adaptationId: adaptation.adaptationId,
@@ -9516,6 +10552,44 @@ function flowSourceModuleId(flow: AutomationStudioFlowArtifact): string {
     : `flows/${safeSegment(flow.flowId)}.flow.ts`;
 }
 
+function assertExactObjectFields(value: Record<string, unknown>, allowed: readonly string[], label: string): void {
+  const unexpected = Object.keys(value).filter((key) => !allowed.includes(key));
+  if (unexpected.length) throw new Error(`${label} contains unsupported fields: ${unexpected.sort().join(", ")}`);
+}
+
+function requiredBootstrapCommandId(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value.trim() || value.length > 500) throw new Error(`Flow Bootstrap ${label} ID is invalid.`);
+  return value.trim();
+}
+
+function requiredBootstrapDigest(value: unknown): string {
+  if (typeof value !== "string" || !/^[a-f0-9]{64}$/i.test(value)) throw new Error("Flow Bootstrap execution digest is invalid.");
+  return value.toLowerCase();
+}
+
+function requiredBootstrapSettingsRevision(value: unknown): number {
+  if (!Number.isSafeInteger(value) || (value as number) <= 0) throw new Error("Flow Bootstrap settings revision is invalid.");
+  return value as number;
+}
+function bootstrapAdaptationMemoryKey(projectId: string, flowId: string, adaptationId: string): string {
+  return `${projectId}:${flowId}:${adaptationId}`;
+}
+
+function automationStudioFlowSettingsFingerprint(flow: AutomationStudioFlowArtifact): number {
+  const metadata = jsonObjectFromUnknown(flow.metadata) ?? {};
+  const digest = createHash("sha256").update(stableJson({
+    executionDefaults: flow.executionDefaults ?? {},
+    trainingModeSettings: metadata.trainingModeSettings ?? {},
+    adaptationPolicyId: metadata.adaptationPolicyId ?? null,
+    adaptationPolicySettings: metadata.adaptationPolicySettings ?? {},
+    llmProvider: metadata.llmProvider ?? "host",
+    llmModel: metadata.llmModel ?? null,
+    llmSecretKeyId: metadata.llmSecretKeyId ?? null,
+    llmExecutionSettings: metadata.llmExecutionSettings ?? {}
+  })).digest("hex");
+  return Math.max(1, Number.parseInt(digest.slice(0, 8), 16));
+}
+
 function flowFeedRevision(flow: Pick<AutomationStudioSqlFlowRecord, "graphRevision" | "settingsRevision"> | null): number {
   if (!flow) return 1;
   return Math.max(1, Math.trunc(Math.max(flow.graphRevision, flow.settingsRevision)));
@@ -9926,6 +11000,209 @@ function addAutomationStudioObjectSha256s(refs: Set<string>, value: unknown, pro
   for (const item of Object.values(record)) addAutomationStudioObjectSha256s(refs, item, projectId, seen);
 }
 
+function executionPublicationDependencyState(
+  roots: AutomationStudioFlowArtifact[],
+  records: AutomationStudioFlowPublicationRecord[]
+): JsonObject {
+  const byTarget = new Map(records.map((record) => [`${record.flowId}@${record.version}`, record]));
+  const pending = roots.flatMap((root) => root.nodes.flatMap((node) => {
+    const call = getCallFlowConfiguration(node);
+    return call ? [`${call.target.flowId}@${call.target.version}`] : [];
+  }));
+  const visited = new Set<string>();
+  const missingTargets = new Set<string>();
+  const reachable: AutomationStudioFlowPublicationRecord[] = [];
+  while (pending.length) {
+    const target = pending.pop()!;
+    if (visited.has(target)) continue;
+    visited.add(target);
+    const record = byTarget.get(target);
+    if (!record) {
+      missingTargets.add(target);
+      continue;
+    }
+    reachable.push(record);
+    for (const node of record.snapshot.nodes) {
+      const call = getCallFlowConfiguration(node);
+      if (call) pending.push(`${call.target.flowId}@${call.target.version}`);
+    }
+  }
+  reachable.sort((left, right) => left.publicationId.localeCompare(right.publicationId));
+  const allSnapshots = records.map((record) => record.snapshot);
+  const deprecatedPublicationIds = records
+    .filter((record) => record.status === "deprecated")
+    .map((record) => `${record.flowId}@${record.version}`)
+    .sort();
+  const validationDocuments: Array<AutomationStudioFlowArtifact | AutomationStudioPublishedFlowSnapshot> = [
+    ...roots,
+    ...reachable.map((record) => record.snapshot)
+  ];
+  const compositionValidity = validationDocuments
+    .map((document) => {
+      const result = validateFlowComposition({
+        flow: document as AutomationStudioFlowArtifact,
+        publishedSnapshots: allSnapshots,
+        deprecatedPublicationIds,
+        authorizedDomainIds: []
+      });
+      return {
+        documentId: "version" in document ? `${document.flowId}@${document.version}` : `${document.flowId}@draft`,
+        ok: result.ok,
+        issues: result.issues.map((issue) => ({ severity: issue.severity, code: issue.code, path: issue.path }))
+      };
+    })
+    .sort((left, right) => left.documentId.localeCompare(right.documentId));
+  return {
+    reachablePublications: reachable.map((record) => ({
+      publicationId: record.publicationId,
+      projectId: record.projectId,
+      flowId: record.flowId,
+      version: record.version,
+      status: record.status,
+      snapshot: record.snapshot as unknown as JsonObject
+    })),
+    missingTargets: [...missingTargets].sort(),
+    compositionValidity
+  } as unknown as JsonObject;
+}
+function bootstrapAdaptationAuditEvent(input: {
+  adaptationId: string;
+  eventType: AutomationStudioBootstrapAuditEvent["eventType"];
+  actorId: string | null;
+  fromStatus: AutomationStudioBootstrapAuditEvent["fromStatus"];
+  toStatus: AutomationStudioBootstrapAuditEvent["toStatus"];
+  createdAt: number;
+}): AutomationStudioBootstrapAuditEvent {
+  const reason = input.eventType === "created"
+    ? "Flow Bootstrap adaptation recorded."
+    : input.eventType === "approved"
+      ? "Flow Bootstrap adaptation approved for application."
+      : input.eventType === "rejected"
+        ? "Flow Bootstrap adaptation rejected by reviewer."
+        : input.eventType === "applied"
+          ? "Flow Bootstrap topology applied."
+          : "Flow Bootstrap topology reverted.";
+  return {
+    eventId: `adaptation.audit.${input.adaptationId}.${input.eventType}`,
+    adaptationId: input.adaptationId,
+    eventType: input.eventType,
+    actorId: input.actorId,
+    fromStatus: input.fromStatus,
+    toStatus: input.toStatus,
+    reason,
+    detail: { adaptationKind: "flow_bootstrap" },
+    detailObjectId: null,
+    createdAt: input.createdAt
+  };
+}
+function sanitizedBootstrapAccounting(value: AutomationStudioBootstrapAccounting): AutomationStudioBootstrapAccounting {
+  const boundedText = (item: unknown, label: string): string => {
+    if (typeof item !== "string" || !item.trim() || item.length > 200 || /[\u0000-\u001f\u007f]/.test(item)) throw new Error(`Flow Bootstrap ${label} is invalid.`);
+    return item.trim();
+  };
+  const boundedInteger = (item: unknown, label: string): number => {
+    if (!Number.isSafeInteger(item) || (item as number) < 0 || (item as number) > 50_000) throw new Error(`Flow Bootstrap ${label} is invalid.`);
+    return item as number;
+  };
+  const boundedCost = (item: unknown): number => {
+    if (typeof item !== "number" || !Number.isFinite(item) || item < 0 || item > 10) throw new Error("Flow Bootstrap estimated cost is invalid.");
+    return item;
+  };
+  return {
+    requestId: boundedText(value.requestId, "request ID"),
+    estimatedInputTokens: boundedInteger(value.estimatedInputTokens, "estimated input tokens"),
+    ...(value.provider !== undefined ? { provider: boundedText(value.provider, "provider") } : {}),
+    ...(value.model !== undefined ? { model: boundedText(value.model, "model") } : {}),
+    ...(value.inputTokens !== undefined ? { inputTokens: boundedInteger(value.inputTokens, "input tokens") } : {}),
+    ...(value.outputTokens !== undefined ? { outputTokens: boundedInteger(value.outputTokens, "output tokens") } : {}),
+    ...(value.totalTokens !== undefined ? { totalTokens: boundedInteger(value.totalTokens, "total tokens") } : {}),
+    ...(value.estimatedCostUsd !== undefined ? { estimatedCostUsd: boundedCost(value.estimatedCostUsd) } : {})
+  };
+}
+
+function bootstrapAdaptationAsFlowAdaptation(
+  adaptation: AutomationStudioBootstrapAdaptation,
+  currentBinding: { executionDigest: string; settingsRevision: number }
+): AutomationStudioFlowAdaptation {
+  assertAutomationStudioBootstrapHasNoRecordingProvenance(adaptation);
+  const accounting = adaptation.accounting ? sanitizedBootstrapAccounting(adaptation.accounting) : undefined;
+  const topologySummary = {
+    routerId: adaptation.topology.router.routerId,
+    subflowCount: adaptation.topology.subflows.length,
+    nodeCount: adaptation.topology.subflows.reduce((total, entry) => total + entry.graphFlow.nodes.length, 0),
+    edgeCount: adaptation.topology.subflows.reduce((total, entry) => total + entry.graphFlow.edges.length, 0)
+  };
+  return {
+    schemaVersion: "0.1",
+    adaptationId: adaptation.adaptationId,
+    flowId: adaptation.flowId,
+    projectId: adaptation.projectId,
+    sourceInstructionIds: [...adaptation.sourceInstructionIds],
+    trigger: "Instruction-built Flow Bootstrap",
+    diagnosis: adaptation.summary,
+    patch: [
+      {
+        kind: "edit_router",
+        targetId: adaptation.topology.router.routerId,
+        summary: `Create Router ${adaptation.topology.router.name} with ${adaptation.topology.router.rules.length} rules.`,
+        after: {
+          routerId: adaptation.topology.router.routerId,
+          name: adaptation.topology.router.name,
+          ruleCount: adaptation.topology.router.rules.length,
+          fallbackKind: adaptation.topology.router.fallback?.kind ?? "none"
+        }
+      },
+      ...adaptation.topology.subflows.map((entry) => ({
+        kind: "create_subflow" as const,
+        targetId: entry.subflow.subflowId,
+        summary: `Create ${entry.subflow.name} with ${entry.graphFlow.nodes.length} nodes and ${entry.graphFlow.edges.length} edges.`,
+        after: {
+          subflowId: entry.subflow.subflowId,
+          graphFlowId: entry.graphFlow.flowId,
+          name: entry.subflow.name,
+          role: entry.subflow.role,
+          nodeCount: entry.graphFlow.nodes.length,
+          edgeCount: entry.graphFlow.edges.length
+        }
+      }))
+    ],
+    ...(adaptation.status === "applied" ? {
+      appliedTo: [
+        { kind: "router" as const, id: adaptation.topology.router.routerId },
+        ...adaptation.topology.subflows.map((entry) => ({ kind: "subflow" as const, id: entry.subflow.subflowId }))
+      ]
+    } : {}),
+    status: adaptation.status,
+    author: "llm",
+    riskLevel: adaptation.riskLevel,
+    createdAt: adaptation.createdAt,
+    updatedAt: adaptation.updatedAt,
+    metadata: {
+      adaptationKind: "flow_bootstrap",
+      bootstrap: {
+        baseExecutionDigest: adaptation.baseDependencyDigest,
+        baseSettingsRevision: adaptation.baseSettingsRevision,
+        currentExecutionDigest: currentBinding.executionDigest,
+        currentSettingsRevision: currentBinding.settingsRevision,
+        ...topologySummary,
+        ...(accounting ? { accounting } : {}),
+        ...(adaptation.application ? {
+          application: {
+            appliedAt: adaptation.application.appliedAt,
+            appliedBy: adaptation.application.appliedBy,
+            appliedExecutionDigest: adaptation.application.appliedDependencyDigest
+          }
+        } : {}),
+        ...(adaptation.revert ? { revert: { ...adaptation.revert } } : {})
+      },
+      phase9: {
+        auditEvents: (adaptation.auditEvents ?? []).map((event) => structuredClone(event)),
+        auditTotal: adaptation.auditEvents?.length ?? 0,
+        approvalMode: "manual_approval"
+      }
+    }
+  };
+}
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
   if (value && typeof value === "object") return `{${Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`).join(",")}}`;
@@ -10086,8 +11363,8 @@ function runtimeAdaptationContextWithRunOverride(
   }
   if (mode === "manual_approval") {
     behavior.invokeLlm = true;
-    behavior.runRecovery = true;
-    behavior.createAdaptations = true;
+    behavior.runRecovery = false;
+    behavior.createAdaptations = false;
     behavior.promoteAdaptations = false;
     context = { ...context, policy: { ...context.policy, proposalMode: "manual" } };
   }

@@ -44,7 +44,13 @@ export function adaptationObjectTarget(kind: string, targetId?: string): Adaptat
 
 export type AdaptationReviewAction = "approve" | "reject" | "apply" | "disable" | "revert" | "supersede" | "request_validation" | "switch_manual";
 
-export function adaptationReviewActions(status: string): AdaptationReviewAction[] {
+export function adaptationReviewActions(status: string, adaptationKind?: string): AdaptationReviewAction[] {
+  if (adaptationKind === "flow_bootstrap") {
+    if (status === "proposed") return ["approve", "reject"];
+    if (status === "validated") return ["apply", "reject"];
+    if (status === "applied") return ["revert"];
+    return [];
+  }
   if (status === "proposed") return ["approve", "reject", "request_validation", "switch_manual"];
   if (status === "testing") return ["approve", "reject", "request_validation", "switch_manual"];
   if (status === "validated") return ["apply", "reject", "disable", "supersede", "request_validation", "switch_manual"];

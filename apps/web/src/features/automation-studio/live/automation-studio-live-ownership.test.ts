@@ -9,6 +9,7 @@ const workspaceRuntime = read("./useAutomationWorkspaceRuntime.ts");
 const navigation = read("./useAutomationSelectionNavigation.ts");
 const deepLinks = read("./useAutomationDeepLinkRuntime.ts");
 const graphRuntime = read("./useAutomationGraphRuntime.ts");
+const dirtyGuards = read("./useAutomationSessionDirtyGuards.ts");
 const projectRuntime = read("./useAutomationProjectRuntime.ts");
 const activeWorkspaceSelection = read("./active-workspace-selection.ts");
 const hierarchyUi = read("./useAutomationHierarchyUiRuntime.ts");
@@ -83,9 +84,10 @@ describe("Automation Studio extracted owner contracts", () => {
   });
 
   it("remembers active Flow identity separately from node selection", () => {
-    expect(navigation).toContain('current.viewStates?.[automationStudioViewId.flowEditor]');
+    expect(navigation).toContain("automationStudioObjectViewInstanceId(automationStudioViewId.flowEditor, next.id)");
+    expect(navigation).toContain("current.viewStates?.[instanceId]");
     expect(navigation).toContain("if (currentFlowState.lastOpenFlowId === next.id && currentFlowState.selection === next) return current;");
-    expect(navigation).toContain('[automationStudioViewId.flowEditor]: { ...currentFlowState, lastOpenFlowId: next.id, selection: next }');
+    expect(navigation).toContain("[instanceId]: { ...currentFlowState, lastOpenFlowId: next.id, selection: next }");
     expect(deepLinks).toContain("options.selectedFlow?.flowId ?? options.lastOpenFlowId");
     expect(navigation).toContain("selection: next");
     expect(projectRuntime).toContain("automationActiveWorkspaceSelection(prefs, null)");
@@ -185,7 +187,7 @@ describe("Automation Studio extracted owner contracts", () => {
 
   it("keeps empty view switching out of hierarchy saves and requests", () => {
     const commands = read("../workspace/commands/workspace-commands.ts");
-    expect(navigation).toContain("options.commands.openView(viewId, mode)");
+    expect(navigation).toContain("options.commands.openView(instanceId, mode)");
     expect(navigation).not.toMatch(/save-project-hierarchy|runLatest\(|api\.post\(/u);
     expect(navigation).not.toContain("requestDirtyViewDecision");
     expect(commands).toContain("if (unchanged) return false");
@@ -195,9 +197,9 @@ describe("Automation Studio extracted owner contracts", () => {
   });
 
   it("subscribes the session dirty guard to graph edits instead of a stale store snapshot", () => {
-    expect(composition).toContain('useAutomationProjectResource(studioStores, "hasDirtyTaskGraph", false)');
-    expect(composition).not.toContain('const hasDirtyTaskGraph = resource("hasDirtyTaskGraph", false)');
-    expect(composition).toContain("hasDirtyTaskGraph,");
+    expect(composition).not.toContain("useAutomationProjectResource");
+    expect(dirtyGuards).toContain('useAutomationProjectResource(options.stores, "hasDirtyTaskGraph", false)');
+    expect(composition).toContain("stores: studioStores,");
   });
 
   it("commits view navigation through the isolated synchronous render store", () => {

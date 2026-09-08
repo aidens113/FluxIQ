@@ -14,6 +14,8 @@ type FluxIQWebGlobal = typeof globalThis & {
     clientGatewayServer: ClientGatewayWebSocketServerHandle | null;
     runtimeId: string;
     automationStudioContexts: Record<string, AutomationStudioWebContext>;
+    closePromise?: Promise<void> | null;
+    shutdownHandlers?: { sigint: () => void; sigterm: () => void } | null;
   };
 };
 
@@ -58,12 +60,38 @@ export function setAutomationStudioWebContext(input: { operatorUserId: string; c
 
 export async function reloadFluxIQWebInstance(): Promise<FluxIQ> {
   const state = getWebRuntimeState();
-  if (state.clientGatewayServer) await state.clientGatewayServer.close();
-  state.instance = createFluxIQWebInstance();
+  const gateway = state.clientGatewayServer;
   state.clientGatewayServer = null;
+  try {
+    if (gateway) await gateway.close();
+  } finally {
+    await state.instance.close();
+  }
+  state.instance = createFluxIQWebInstance();
+  state.closePromise = null;
   state.automationStudioContexts = {};
   startSharedClientGateway(state);
   return state.instance;
+}
+
+export async function closeFluxIQWebRuntime(): Promise<void> {
+  const globalState = globalThis as FluxIQWebGlobal;
+  const state = globalState.__fluxiqWebRuntime;
+  if (!state) return;
+  state.closePromise ??= (async () => {
+    const gateway = state.clientGatewayServer;
+    state.clientGatewayServer = null;
+    try {
+      if (gateway) await gateway.close();
+    } finally {
+      try {
+        await state.instance.close();
+      } finally {
+        removeFluxIQWebShutdownHooks(state);
+      }
+    }
+  })();
+  await state.closePromise;
 }
 
 function getWebRuntimeState(): NonNullable<FluxIQWebGlobal["__fluxiqWebRuntime"]> {
@@ -76,6 +104,7 @@ function getWebRuntimeState(): NonNullable<FluxIQWebGlobal["__fluxiqWebRuntime"]
     automationStudioContexts: {}
   };
   globalState.__fluxiqWebRuntime.automationStudioContexts ??= {};
+  registerFluxIQWebShutdownHooks(globalState.__fluxiqWebRuntime);
   globalState.__fluxiqWebRuntime.instance.programs.automationStudioClientGateway.setClientRecordingContextProvider(({ session, request }) => {
     const contexts = globalState.__fluxiqWebRuntime?.automationStudioContexts ?? {};
     const resolved = resolveClientRecordingProject(contexts, {
@@ -158,6 +187,25 @@ function startSharedClientGateway(state: NonNullable<FluxIQWebGlobal["__fluxiqWe
   console.info(`[FluxIQ] Client gateway WebSocket bound to shared runtime ${state.runtimeId} at ${state.clientGatewayServer.publicUrl}`);
 }
 
+function registerFluxIQWebShutdownHooks(state: NonNullable<FluxIQWebGlobal["__fluxiqWebRuntime"]>): void {
+  if (state.shutdownHandlers) return;
+  const shutdown = (exitCode: number) => {
+    void closeFluxIQWebRuntime().finally(() => process.exit(exitCode));
+  };
+  const sigint = () => shutdown(130);
+  const sigterm = () => shutdown(143);
+  state.shutdownHandlers = { sigint, sigterm };
+  process.once("SIGINT", sigint);
+  process.once("SIGTERM", sigterm);
+}
+
+function removeFluxIQWebShutdownHooks(state: NonNullable<FluxIQWebGlobal["__fluxiqWebRuntime"]>): void {
+  const handlers = state.shutdownHandlers;
+  if (!handlers) return;
+  process.off("SIGINT", handlers.sigint);
+  process.off("SIGTERM", handlers.sigterm);
+  state.shutdownHandlers = null;
+}
 function findWorkspaceRoot(startDir: string): string {
   let current = path.resolve(startDir);
   while (true) {

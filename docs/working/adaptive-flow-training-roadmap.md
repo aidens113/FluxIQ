@@ -473,6 +473,329 @@ Deliverables:
 9. Add stabilization status and patch review.
 10. Add high-leverage deterministic integration primitives.
 
+## 2026-09-06 Production LLM Phase 0 Safety Baseline
+
+Status: implemented and focused validation complete.
+
+Assignment: Core safety subagent, operating under this repository's
+`AGENTS.md`. No browser/domain concepts or secret values were introduced.
+
+Completed:
+
+- new Flows now default to normal/no-LLM execution, manual proposals, locked
+  mutation policy, no adaptation creation, and no promotion;
+- explicit manual-approval runs are diagnosis-only and cannot request or
+  promote patches;
+- deterministic recording generation remains direct even when the unavailable
+  LLM option was requested, with `requestedGenerationMode` and
+  `llmAssistanceStatus: not_invoked` replacing fabricated LLM provenance;
+- provider results cross an `unknown` boundary and are strictly parsed,
+  bounded, and checked for unexpected fields before use;
+- provider throws, missing providers, malformed output, and over-limit usage
+  produce failed intervention validation instead of escaping or appearing
+  successful;
+- per-request input/output/total limits are part of the provider request, with
+  8,000/2,000/10,000 defaults and an immutable 50,000 total-token ceiling;
+- estimated input plus requested output is checked before provider invocation;
+- persisted intervention results retain compact kind/risk/count provenance,
+  not provider free-text or arbitrary response metadata; and
+- adaptive admission is serialized per project and rejected attempts do not
+  leave orphan queued sessions.
+
+Compatibility:
+
+- existing Flows with a recognized canonical intervention mode retain that
+  mode;
+- explicit fully adaptive settings and auto-promotion remain available, but
+  tests and callers must opt in rather than inheriting them from a new Flow;
+- provider adapters must accept the request's `tokenLimits` and return an
+  untrusted envelope that passes runtime parsing;
+- abort signals, request IDs, timeouts, actual provider transport, scoped
+  secret unsealing, and cross-call budget reservation remain Phase 1 work.
+
+Validation:
+
+- `pnpm --filter fluxiq check` passed;
+- focused intervention-mode and LLM-harness suites passed;
+- `programs/automation-studio/runtime/service.test.ts` passed 90/90 after
+  explicit adaptive fixtures were updated to opt in.
+
+## 2026-09-06 Production LLM Phase 1A Provider Seam
+
+Status: implemented and focused validation complete.
+
+Assignment: Core provider subagent, operating under this repository's
+`AGENTS.md`. Scope is the domain-neutral request/reservation contract and a
+production DeepSeek transport adapter with mocked tests. Secret unsealing,
+Programs UI composition, and live provider calls remain sequential follow-up
+work.
+
+Completed:
+
+- the provider boundary now carries a bounded timeout, `AbortSignal`, request
+  ID, idempotency key, estimated input usage, and concrete token limits, while
+  treating all transport output as `unknown` until Core validation succeeds;
+- the built-in DeepSeek adapter is fixed to
+  `https://api.deepseek.com/chat/completions` and `deepseek-chat`; it exposes no
+  Flow/user endpoint override, requests JSON output with a concrete
+  `max_tokens`, rejects redirects, and performs no hidden retries;
+- the adapter enforces a 20-second default and 25-second maximum timeout, a
+  1-MiB default and 2-MiB absolute response limit, strict response-envelope
+  parsing, consistent non-negative usage, and normalized auth, rate-limit,
+  timeout, abort, redirect, oversize, malformed, HTTP, and network failures;
+- provider composition accepts only a scoped opaque secret resolver. The
+  adapter does not read environment variables or durable secret storage and
+  does not expose the resolved credential in results or diagnostics;
+- a synchronous per-run ledger reserves calls, estimated input plus maximum
+  output, and output allowance before dispatch. Diagnosis and patch calls in a
+  runtime session share the ledger, so concurrent calls and later retry seams
+  cannot independently oversubscribe the same run budget; and
+- request identity, timeout, estimated input, and effective limits are retained
+  as bounded intervention provenance, while provider free-text remains absent.
+
+Compatibility:
+
+- `AutomationStudioLlmProvider.runTask` now receives the expanded request and
+  an optional execution object containing `signal`; existing provider mocks
+  must accept the request shape but may ignore the optional second argument;
+- the DeepSeek adapter is exported but is not instantiated by the default
+  runtime, so existing non-LLM and injected-provider execution is unchanged;
+- provider responses without trustworthy usage are charged conservatively at
+  the reserved allowance; and
+- scoped secret leasing, Secret Keys/LLM Keys Programs UI composition, durable
+  provider selection, and live API validation are intentionally deferred to
+  the sequential Phase 1B integration.
+
+Validation:
+
+- `pnpm --filter fluxiq check` passed;
+- focused LLM harness, DeepSeek transport, and run-budget suites passed 19/19;
+- `programs/automation-studio/runtime/service.test.ts` passed 91/91 after the
+  shared diagnosis/patch reservation was added; and
+- no live provider request was made and no secret source was read.
+
+Independent Phase 1A hardening review:
+
+- Phase 1B composition was paused until the provider boundary was hardened;
+- direct adapter calls now revalidate request identity, task/output consistency,
+  limits, and timeout, then bound the exact UTF-8 outbound body before asking
+  the opaque resolver for a secret;
+- secret references are typed opaque objects with validated secret-reference
+  IDs; raw/key-like values are rejected, and the concrete adapter is no longer
+  re-exported by the broad runtime barrel;
+- the harness enforces its own abort/timeout race even for non-cooperative
+  providers, bounds nested JSON depth/key/array traversal, replaces
+  provider-controlled diagnostic codes/messages, and normalizes parser throws;
+- usage totals must be internally consistent before they reach the ledger.
+  Missing, malformed, inconsistent, or over-reservation usage consumes the
+  full reservation, and every provider/parser terminal path settles the lease;
+- the DeepSeek response requires the fixed origin, JSON media type, fatal
+  UTF-8 decoding, one choice, and a successful finish reason; and
+- ledger identifiers and numeric inputs are validated before state allocation.
+
+Hardened focused validation: Core typecheck passed and provider/harness/ledger
+tests passed 22/22. Phase 1B secret leasing and production composition remain
+paused until this hardening is independently reviewed.
+
+Round-two review corrections:
+
+- DeepSeek usage is rejected directly when prompt, completion, or total usage
+  exceeds the corresponding request limit;
+- run reservations now reserve the configured maximum input allowance rather
+  than an estimate, preventing valid actual input usage from being
+  under-accounted;
+- provider-resolution throws become a fixed, sanitized failed intervention and
+  gate in the run detail, which both runtime completion paths persist;
+- the concrete provider is reachable only through the dedicated provider
+  factory seam rather than the broad adapter module export;
+- direct request context receives bounded, cycle-safe validation before
+  serialization, and provider diagnostics/nested arrays have explicit breadth
+  limits without provider-controlled field names in durable issues; and
+- each direct input/output limit must be within the total limit and the total
+  remains capped at 50,000.
+
+Round-two validation: Core typecheck passed, provider/harness/ledger tests
+passed 22/22, and the complete Automation Studio service suite passed 92/92.
+Phase 1B was blocked on atomic cost reservation/settlement (or an equally
+conservative per-request cost admission rule); no nominal dollar default may
+be treated as enforced until that seam exists.
+
+Cost-accounting blocker resolution:
+
+- Core exposes a user-configurable per-request estimated-cost allowance with a
+  conservative $0.25 default and a server-enforced $10 absolute ceiling;
+- the shared run ledger atomically reserves the full per-call allowance against
+  the run ceiling before dispatch, so concurrent diagnosis, patch, and future
+  retry calls cannot oversubscribe cost;
+- missing, malformed, over-reservation, failed, aborted, or timed-out calls
+  retain the full reservation. Only finite non-negative provider cost at or
+  below the reservation may release unused capacity;
+- runtime composition applies the stricter $0.25 production run ceiling and
+  persists only sanitized aggregate accounting in the LLM gate; and
+- no provider pricing claim is trusted or inferred. A future versioned-rate
+  calculator may reduce reservations only after independent validation.
+
+Final acceptance correction:
+
+- the exported ledger now distinguishes admission reservation from accounting:
+  internally consistent actual token/cost usage is always charged even when it
+  exceeds the reservation, and the sanitized snapshot increments the budget
+  breach count; malformed or unknown usage still charges the reservation;
+- oversized patch, instruction, diagnostic, and object containers short-circuit
+  without per-item findings; and
+- a cycle-safe aggregate guard caps depth, visited nodes, and container breadth
+  before provider-result parsing. Enumeration/proxy failures are normalized by
+  the harness parser boundary without retaining provider error text.
+
+Final focused validation: Core typecheck passed and provider/harness/ledger
+tests passed 25/25, including direct valid-overage accounting and sparse
+million-entry/proxy bomb regressions.
+
+## 2026-09-06 Production LLM Phase 1B Backend Grants
+
+Status: backend grant/composition correction and deterministic executor
+causality are implemented and locally validated. The authorized diagnosis-only
+lane runs only the already-authored Flow with its existing scoped capabilities;
+downstream domain policy remains responsible for constraining the live test to
+its local fixture target.
+
+Assignment: Core backend grant subagent, following this repository's
+`AGENTS.md`. No environment secret was read and no live provider request was
+made.
+
+Implemented:
+
+- authenticated mutation endpoints perform sanitized local preflight and issue
+  opaque one-use `diagnosis_only` grants only after password plus configured
+  PIN verification;
+- grants bind actor/session, enabled LLM key ID and revision, DeepSeek provider,
+  `deepseek-chat` model, canonical project/Flow and execution dependency digest,
+  purpose,
+  caller-selected effective token/timeout/cost limits, a fixed one-call limit,
+  TTL, and remaining uses;
+- request token limits retain the immutable 50,000 hard ceiling, timeout retains
+  the 25-second provider ceiling, and estimated cost retains the stricter $0.25
+  production ceiling;
+- grant claiming is synchronous and atomic before async validation, preventing
+  concurrent resolution; live diagnosis requests reject idempotency keys;
+- unused grants are actively revoked on an unreferenced expiry timer and all
+  grants are revoked when Automation Studio closes;
+- key/session/Flow/provider/model/scope/digest are checked again at claim and
+  immediately around just-in-time Secret Keys resolution; secret values and
+  authorization material are never written to durable state or returned;
+- the provider rejects an outbound request body containing the resolved
+  credential literal before transport;
+- production runtime composition reaches DeepSeek only through the narrow
+  provider factory and grant resolver, and propagates the grant's effective
+  limits into the harness and atomic run ledger; and
+- `diagnosis_only` remains one diagnosis call with no patch, adaptation,
+  promotion, auto-recovery, or LLM-authorized external side effects.
+
+Independent review correction completed:
+
+- Secret Keys now owns a generic opaque one-use reveal authorization. It stores
+  only a zeroizable password-derived decryption key in process memory; the LLM
+  grant stores only the opaque authorization ID and retains neither login
+  credentials nor provider secrets;
+- grant issuance performs no provider-secret reveal. Decryption happens only
+  when the fixed provider is ready to dispatch, and both Secret Keys and the
+  LLM grant recheck active membership, claim state, expiry, key revision,
+  actor/session scope, and execution digest after asynchronous work;
+- the canonical execution digest includes the parent Flow and effective
+  settings, Flow Map Router, Subflow records, routed Subflow graph Flows,
+  applicable project/Flow/Subflow instructions, and every transitively
+  reachable pinned published snapshot. Reachable publication/deprecation
+  status, missing targets, and composition-validity results are bound too;
+  content hashing detects same-millisecond snapshot and dependency drift. Its
+  publication lookup uses canonical execution's global publication universe,
+  so a domain Flow calling a globally published Flow in an external project is
+  covered, while unrelated, unreachable publication records are not hashed;
+- key update, rotation, deletion, capability expiry, cancellation, run failure,
+  Automation Studio close, framework close, web-runtime reload, SIGINT, and
+  SIGTERM revoke outstanding capability state; and
+- focused regressions cover no reveal at grant issue, one-use/atomic claim,
+  derived-key zeroization, timer/key/lifecycle invalidation, delayed reveal and
+  persistence crossing TTL, same-millisecond dependency mutations, framework
+  close idempotency, and production web-owner cleanup.
+
+Validation:
+
+- `pnpm --filter fluxiq check` passed;
+- focused API, provider, harness, budget, grant, Secret Keys, and framework
+  suites passed 68/68;
+- the complete Automation Studio service suite passed 97/97 in 69.36 seconds,
+  including the canonical execution-dependency digest regression;
+- the publication-universe correction was independently rerun against the same
+  97/97 service suite (81.37 seconds of tests): domain-to-external-global
+  snapshot mutation and deprecation, missing-target appearance, cyclic traversal,
+  insertion-order stability, and just-in-time grant invalidation all passed. A
+  focused follow-up also passed 1/1, proving unrelated global publication
+  creation and same-millisecond mutation leave the digest unchanged;
+- after the authorized executor-causality correction, focused diagnosis grant and
+  action-order coverage passed 2/2, and the complete Automation Studio service
+  suite passed 98/98 (96.24 seconds of tests). The regression proves one existing
+  scoped action executes before the single diagnosis call, its bounded failure is
+  included in diagnosis context, no LLM retry or graph mutation occurs, external
+  and cross-domain escalation flags are rejected, and a subsequent ordinary
+  no-LLM run retains normal IO behavior;
+- the complete `fluxiq` package suite passed 91 files / 586 tests with zero
+  provider calls, covering IO bridges, executors, grants, budgets, Secret Keys,
+  framework lifecycle, persistence, and ordinary runtime behavior;
+- `pnpm --filter fluxiq build` passed after the causality correction;
+- after the pre-staged-session correction, focused service coverage passed 3/3
+  for IO/host causality, domain-native causality, and staged-grant rejection;
+  the focused API regression passed 1/1 and the mounted Runtime Debug suite
+  passed 3/3;
+- the complete Core run passed 587/588 tests; one unrelated pagination
+  performance test exceeded its 15-second threshold by 37 milliseconds while
+  other checks ran concurrently, then passed alone in 9.49 seconds. The complete
+  Automation Studio service file passed all 100 tests in that same full run;
+- the Core check and build passed. The web check remains blocked only by the
+  previously recorded unrelated `AutomationStudioSession.tsx` transport option
+  and duplicate hierarchy-runtime object properties;
+- the production web-owner lifecycle suite passed 8/8;
+- `pnpm docs:reference` regenerated both deterministic framework references and
+  `pnpm docs:check` passed; and
+- `git diff --check` passed. The full web-package typecheck remains blocked by
+  unrelated concurrent work: an unsupported `transport` property in
+  `AutomationStudioSession.tsx` and duplicate object properties in
+  `useAutomationHierarchyUiRuntime.ts`. The changed lifecycle module is covered
+  by its passing focused suite.
+
+Deferred Phase 1C UI defect:
+
+- `flowHierarchyNodes` can currently emit canonical and legacy entries for the
+  same Flow ID with the same `data-tree-item-id` while their labels differ.
+  Filtering and clearing the hierarchy can therefore make `.first()` select the
+  legacy entry. Phase 1C must deduplicate by canonical Flow identity and add a
+  regression for unique tree IDs and stable selection.
+
+Independent acceptance security correction:
+
+- a diagnosis grant cannot attach to a pre-existing runtime session. The API and
+  service reject any supplied `runId` and revoke the one-use grant before
+  provider resolution or deterministic action execution;
+- Runtime Debug issues diagnosis directly as a fresh run and no longer calls
+  start-runtime-session for this lane; ordinary modes retain their queued run
+  lifecycle;
+- graph `authorizedDomainIds` is forced to an empty set for `diagnosis_only`, so
+  staged session metadata cannot restore cross-domain authorization. Fresh run
+  construction does not copy arbitrary metadata or external-side-effect flags;
+- focused service coverage stages a queued session with a cross-domain grant
+  and proves rejection occurs with zero provider resolutions and zero actions;
+  API coverage proves rejection occurs before the runtime service call; and
+- the executor regression now directly covers scoped IO action dispatch,
+  before/after host evidence capture, and a separately bound domain-native node.
+Authorized executor-causality correction:
+
+- explicit authorization now permits `diagnosis_only` to run the existing
+  deterministic Flow through its ordinary bound IO, importer-native, and host
+  runtime capabilities. The grant adds no domain authorization: explicit
+  cross-domain grants remain incompatible, `authorizedExternalSideEffects` is
+  forced false, and all LLM patching, recovery retry, adaptation, and promotion
+  paths remain disabled. Core stays domain-neutral; the downstream testing
+  facility/domain policy must enforce the local-loopback-only target boundary.
+
 ## Non-Goals
 
 - Do not clone n8n's integration catalog.
@@ -493,4 +816,3 @@ Deliverables:
 - What minimum model/provider abstraction is needed before connecting LLM
   generation?
 - Should "Train until stable" be available before manual patch review is solid?
-

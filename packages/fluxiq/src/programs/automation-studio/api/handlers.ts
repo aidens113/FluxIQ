@@ -3,7 +3,10 @@ import { authorizeProgramPin } from "../../_shared/authorization.ts";
 import { fluxiqPerformanceMetricsSnapshot } from "../../_shared/performance-metrics.ts";
 import {
   AUTOMATION_STUDIO_ENDPOINTS,
+  AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS,
   type AppendRecordingMarkerRequest,
+  type AutomationStudioLlmExecutionGrantRequest,
+  type AutomationStudioLlmExecutionPreflightRequest,
   type AppendRecordingNoteRequest,
   type AppendRecordingDomainEventRequest,
   type AppendRecordingEntryRequest,
@@ -41,6 +44,9 @@ import {
   type AutomationStudioDeleteProjectUiCacheRequest,
   type AutomationStudioListProjectUiCacheStatsRequest,
   type GetRecordingEntryStateRequest,
+  type GenerateFlowBootstrapAdaptationRequest,
+  type GenerateFlowBootstrapAdaptationResponse,
+  type GenerateFlowBootstrapAdaptationFailureDiagnostic,
   type GetProposalRequest,
   type GetStateSnapshotRequest,
   type ProcessFinalizedRecordingRequest,
@@ -73,13 +79,15 @@ import {
 } from "./contracts.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowInstruction, AutomationStudioInstructionScope, AutomationStudioInstructionTag, AutomationStudioProjectArtifactKind } from "../model/index.ts";
 import type { AutomationStudioService } from "../runtime/service.ts";
+import { parseAutomationStudioFlowBootstrapGenerationError } from "../runtime/flow-bootstrap-generation-failure.ts";
+import type { AutomationStudioLlmExecutionGrantService } from "../runtime/llm-execution-grants.ts";
 import { evaluateAutomationStudioRouteCondition } from "../runtime/router-runtime.ts";
 import type { IdentityAccessService } from "../../identity-access/index.ts";
 import type { AutomationStudioClientGatewayBridge } from "../client-gateway/index.ts";
 import type { ClientGatewayService } from "../../../client-gateway/index.ts";
 import { automationStudioFilterHash, automationStudioPageLimit, decodeAutomationStudioPageCursor, encodeAutomationStudioPageCursor } from "../storage/index.ts";
 
-export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, service: AutomationStudioService, identityAccess?: IdentityAccessService, clientGatewayBridge?: AutomationStudioClientGatewayBridge, clientGateway?: ClientGatewayService): void {
+export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, service: AutomationStudioService, identityAccess?: IdentityAccessService, clientGatewayBridge?: AutomationStudioClientGatewayBridge, clientGateway?: ClientGatewayService, llmExecutionGrants?: AutomationStudioLlmExecutionGrantService): void {
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.performanceMetrics,
@@ -436,6 +444,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
       const current = await service.getFlow(projectId, flowId);
       const patch = payload.flow as Record<string, any>;
       const metadata = patch.metadata && typeof patch.metadata === "object" ? patch.metadata : {};
+      assertFlowLlmExecutionSettings(metadata as Record<string, unknown>);
       const next = {
         ...current,
         ...(typeof patch.name === "string" ? { name: patch.name } : {}),
@@ -1381,6 +1390,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
             flowId: String(payload.flowId ?? ""),
             adaptationId: String(payload.adaptationId ?? ""),
             action: payload.action,
+            ...(request.actor?.userId ? { actorId: request.actor.userId } : {}),
             ...(payload.reason ? { reason: payload.reason } : {}),
             ...(payload.supersededByAdaptationId ? { supersededByAdaptationId: payload.supersededByAdaptationId } : {})
           })
@@ -1555,6 +1565,106 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   });
   registry.register({
     programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowBootstrapGenerationReadiness,
+    permission: "programs.read",
+    handler: (request) => {
+      const payload = request.payload;
+      if (payload !== undefined && (!payload || typeof payload !== "object" || Array.isArray(payload) || Object.keys(payload).length !== 0)) {
+        return { ok: false, error: "Flow bootstrap readiness does not accept request fields." };
+      }
+      return { ok: true, payload: { readiness: flowBootstrapGenerationReadiness(service, llmExecutionGrants) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.preflightLlmExecution,
+    permission: "runtime.control",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<AutomationStudioLlmExecutionPreflightRequest> & Record<string, unknown> : {};
+      if (payload.purpose === "build_and_adapt") {
+        const readiness = flowBootstrapGenerationReadiness(service, llmExecutionGrants);
+        if (!readiness.supported) return flowBootstrapRuntimeUnavailable(readiness);
+      }
+      if (!llmExecutionGrants) return { ok: false, error: "LLM execution is unavailable." };
+      if (payload.purpose === "build_and_adapt" && hasIncompatibleBuildGrantFlags(payload)) return { ok: false, error: "build_and_adapt grants require a fresh execution session and cannot authorize runtime flags." };
+      return { ok: true, payload: { preflight: await llmExecutionGrants.preflight({ keyId: String(payload.keyId ?? ""), projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), purpose: payload.purpose, provider: payload.provider, model: payload.model, tokenLimits: payload.tokenLimits, maxCalls: payload.maxCalls, maxEstimatedCostUsd: payload.maxEstimatedCostUsd, maxTotalEstimatedCostUsd: payload.maxTotalEstimatedCostUsd, timeoutMs: payload.timeoutMs, providerRetryCount: payload.providerRetryCount } as Parameters<AutomationStudioLlmExecutionGrantService["preflight"]>[0]) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.issueLlmExecutionGrant,
+    permission: "runtime.control",
+    handler: async (request) => {
+      if (!request.actor) return { ok: false, error: "LLM execution is unavailable." };
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<AutomationStudioLlmExecutionGrantRequest> & Record<string, unknown> : {};
+      if (payload.purpose === "build_and_adapt") {
+        const readiness = flowBootstrapGenerationReadiness(service, llmExecutionGrants);
+        if (!readiness.supported) return flowBootstrapRuntimeUnavailable(readiness);
+      }
+      if (!llmExecutionGrants) return { ok: false, error: "LLM execution is unavailable." };
+      if (payload.authSessionId !== request.actor.sessionId) return { ok: false, error: "Authorization session mismatch." };
+      if (payload.purpose === "build_and_adapt" && hasIncompatibleBuildGrantFlags(payload)) return { ok: false, error: "build_and_adapt grants require a fresh execution session and cannot authorize runtime flags." };
+      return { ok: true, payload: { grant: await llmExecutionGrants.issue({ actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId, authorizationPassword: payload.authorizationPassword, authorizationPin: payload.authorizationPin, keyId: String(payload.keyId ?? ""), projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), purpose: payload.purpose, provider: payload.provider, model: payload.model, tokenLimits: payload.tokenLimits, maxCalls: payload.maxCalls, maxEstimatedCostUsd: payload.maxEstimatedCostUsd, maxTotalEstimatedCostUsd: payload.maxTotalEstimatedCostUsd, timeoutMs: payload.timeoutMs, providerRetryCount: payload.providerRetryCount, ttlMs: payload.ttlMs, maxUses: payload.maxUses } as Parameters<AutomationStudioLlmExecutionGrantService["issue"]>[0]) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation,
+    permission: "flows.write",
+    handler: async (request) => {
+      if (!request.actor) return { ok: false, error: "Flow bootstrap generation is unavailable." };
+      const payload = request.payload && typeof request.payload === "object" && !Array.isArray(request.payload)
+        ? request.payload as Partial<GenerateFlowBootstrapAdaptationRequest> & Record<string, unknown>
+        : {};
+      const unknownField = Object.keys(payload).find((key) => !FLOW_BOOTSTRAP_GENERATION_REQUEST_FIELDS.has(key));
+      if (unknownField) return { ok: false, error: "Flow bootstrap generation request contains unsupported fields." };
+      const readiness = flowBootstrapGenerationReadiness(service, llmExecutionGrants);
+      if (!readiness.supported) return flowBootstrapRuntimeUnavailable(readiness);
+      if (!llmExecutionGrants) return { ok: false, error: "Flow bootstrap generation is unavailable." };
+
+      if (payload.authSessionId !== request.actor.sessionId) return { ok: false, error: "Authorization session mismatch." };
+      const projectId = boundedIdentifier(payload.projectId, "Project");
+      const flowId = boundedIdentifier(payload.flowId, "Flow");
+      const grantId = boundedIdentifier(payload.llmExecutionGrantId, "LLM execution grant");
+      const grant = await llmExecutionGrants.inspectAvailable({
+        grantId,
+        actorUserId: request.actor.userId,
+        actorSessionId: request.actor.sessionId,
+        projectId,
+        flowId,
+        purpose: "build_and_adapt"
+      });
+      if (grant.purpose !== "build_and_adapt" || grant.settingsRevision === undefined) throw new Error("A valid build_and_adapt grant is required.");
+      let generated: GenerateFlowBootstrapAdaptationResponse;
+      try {
+        generated = await service.generateFlowBootstrapAdaptation({
+          projectId,
+          flowId,
+          executionGrant: {
+            grantId,
+            actorUserId: request.actor.userId,
+            actorSessionId: request.actor.sessionId,
+            purpose: "build_and_adapt",
+            executionDigest: grant.executionDigest,
+            settingsRevision: grant.settingsRevision
+          }
+        });
+      } catch (error) {
+        const diagnostic = parseAutomationStudioFlowBootstrapGenerationError(error);
+        if (diagnostic) {
+          return {
+            ok: false,
+            error: `Flow Bootstrap generation failed (${diagnostic.code}).`,
+            payload: { diagnostic }
+          };
+        }
+        return { ok: false, error: "Flow Bootstrap generation failed (flow_bootstrap.unclassified_failure)." };
+      }
+      return { ok: true, payload: { adaptation: sanitizedFlowBootstrapGeneration(generated) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.startRuntimeSession,
     permission: "runtime.control",
     handler: async (request) => {
@@ -1567,8 +1677,14 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession,
     permission: "runtime.control",
     handler: async (request) => {
-      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[]; adaptiveMode?: "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic"; dryRunLlm?: boolean; authorizedExternalSideEffects?: boolean; subflowId?: string; idempotencyKey?: string } : {};
-      const runtimeSession = await service.runRuntimeSession(payload);
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[]; adaptiveMode?: "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic"; dryRunLlm?: boolean; authorizedExternalSideEffects?: boolean; subflowId?: string; idempotencyKey?: string; llmExecutionGrantId?: string; runIntent?: string } : {};
+      const llmExecution = payload.runIntent === "diagnosis_only" && payload.llmExecutionGrantId && request.actor ? { grantId: payload.llmExecutionGrantId, actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId, purpose: "diagnosis_only" as const } : undefined;
+      if ((payload.runIntent || payload.llmExecutionGrantId) && !llmExecution) return { ok: false, error: "A diagnosis_only intent and grant are required together." };
+      if (llmExecution && payload.runId !== undefined) {
+        llmExecutionGrants?.revoke(llmExecution.grantId);
+        return { ok: false, error: "A diagnosis_only run must create a fresh runtime session." };
+      }
+      const runtimeSession = await service.runRuntimeSession({ ...payload, ...(llmExecution ? { llmExecution } : {}) });
       const projectId = typeof payload.projectId === "string" ? payload.projectId : null;
       const runDetail = projectId ? await service.getFlowRunDetail(projectId, runtimeSession.runId).catch(() => null) : null;
       const durableBehaviorChanged = Boolean(runDetail?.adaptationIds?.length && runDetail.adaptationIds.some((adaptationId) => {
@@ -1744,4 +1860,126 @@ export function flowInstructionScopeFromPayload(projectId: string, flowId: strin
 function slugSegment(value: string): string {
   const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "").slice(0, 48);
   return slug || "instruction";
+}
+
+export function assertFlowLlmExecutionSettings(metadata: Record<string, unknown>): void {
+  if (metadata.llmProvider !== undefined && metadata.llmProvider !== "deepseek") throw new Error("Only DeepSeek is supported for live LLM execution.");
+  if (metadata.llmModel !== undefined && metadata.llmModel !== "deepseek-chat") throw new Error("Only deepseek-chat is supported for live LLM execution.");
+  if (metadata.llmExecutionSettings === undefined) return;
+  const execution = metadata.llmExecutionSettings;
+  if (!execution || typeof execution !== "object" || Array.isArray(execution)) throw new Error("LLM execution settings are invalid.");
+  const value = execution as Record<string, unknown>;
+  const tokens = value.tokenLimits;
+  if (!tokens || typeof tokens !== "object" || Array.isArray(tokens)) throw new Error("LLM token limits are invalid.");
+  const tokenLimits = tokens as Record<string, unknown>;
+  const maxInputTokens = boundedWholeNumber(tokenLimits.maxInputTokens, 1, 50_000);
+  const maxOutputTokens = boundedWholeNumber(tokenLimits.maxOutputTokens, 1, 50_000);
+  const maxTotalTokens = boundedWholeNumber(tokenLimits.maxTotalTokens, 1, 50_000);
+  if (maxInputTokens + maxOutputTokens > maxTotalTokens) throw new Error("LLM input and output limits exceed the total-token limit.");
+  if (value.maxCalls !== 1) throw new Error("diagnosis_only permits exactly one LLM call.");
+  boundedWholeNumber(value.timeoutMs, 1, 25_000);
+  if (typeof value.maxEstimatedCostUsd !== "number" || !Number.isFinite(value.maxEstimatedCostUsd) || value.maxEstimatedCostUsd <= 0 || value.maxEstimatedCostUsd > 0.25) throw new Error("LLM estimated-cost limit is invalid.");
+  if (value.retryCount !== 0) throw new Error("diagnosis_only does not permit provider retries.");
+}
+
+const FLOW_BOOTSTRAP_GENERATION_REQUEST_FIELDS = new Set([
+  "projectId",
+  "flowId",
+  "llmExecutionGrantId",
+  "authSessionId"
+]);
+
+function flowBootstrapGenerationReadiness(
+  service: AutomationStudioService,
+  llmExecutionGrants: AutomationStudioLlmExecutionGrantService | undefined
+) {
+  const runtime = service.getFlowBootstrapGenerationRuntimeReadiness();
+  const readiness = structuredClone(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS);
+  readiness.runtime = {
+    llmExecutionGrantsConfigured: Boolean(llmExecutionGrants),
+    providerResolverConfigured: runtime.providerResolverConfigured,
+    nativeNodeRegistryConfigured: runtime.nativeNodeRegistryConfigured
+  };
+  readiness.supported = Object.values(readiness.runtime).every((configured) => configured === true);
+  return readiness;
+}
+
+function flowBootstrapRuntimeUnavailable(readiness: ReturnType<typeof flowBootstrapGenerationReadiness>) {
+  return { ok: false, error: "Flow bootstrap generation runtime is unavailable.", payload: { readiness } } as const;
+}
+
+
+function sanitizedFlowBootstrapGeneration(value: GenerateFlowBootstrapAdaptationResponse): GenerateFlowBootstrapAdaptationResponse {
+  const status = value.status;
+  if (status !== "proposed") throw new Error("Flow bootstrap generation returned an invalid status.");
+  if (!["low", "medium", "high", "destructive"].includes(value.riskLevel)) throw new Error("Flow bootstrap generation returned an invalid risk level.");
+  if (!Array.isArray(value.sourceInstructionIds) || value.sourceInstructionIds.length > 100) throw new Error("Flow bootstrap generation returned invalid instruction references.");
+  const sourceInstructionIds = value.sourceInstructionIds.map((id) => boundedIdentifier(id, "Instruction"));
+  const accounting = value.accounting;
+  if (!accounting || typeof accounting !== "object") throw new Error("Flow bootstrap generation accounting is missing.");
+  const sanitizedAccounting: GenerateFlowBootstrapAdaptationResponse["accounting"] = {
+    requestId: boundedIdentifier(accounting.requestId, "LLM request"),
+    estimatedInputTokens: boundedAccountingInteger(accounting.estimatedInputTokens, "estimated input tokens"),
+    ...(accounting.provider !== undefined ? { provider: boundedLabel(accounting.provider, "LLM provider") } : {}),
+    ...(accounting.model !== undefined ? { model: boundedLabel(accounting.model, "LLM model") } : {}),
+    ...(accounting.inputTokens !== undefined ? { inputTokens: boundedAccountingInteger(accounting.inputTokens, "input tokens") } : {}),
+    ...(accounting.outputTokens !== undefined ? { outputTokens: boundedAccountingInteger(accounting.outputTokens, "output tokens") } : {}),
+    ...(accounting.totalTokens !== undefined ? { totalTokens: boundedAccountingInteger(accounting.totalTokens, "total tokens") } : {}),
+    ...(accounting.estimatedCostUsd !== undefined ? { estimatedCostUsd: boundedAccountingCost(accounting.estimatedCostUsd) } : {})
+  };
+  return {
+    projectId: boundedIdentifier(value.projectId, "Project"),
+    flowId: boundedIdentifier(value.flowId, "Flow"),
+    adaptationId: boundedIdentifier(value.adaptationId, "Adaptation"),
+    status,
+    riskLevel: value.riskLevel,
+    sourceInstructionIds,
+    baseDependencyDigest: boundedIdentifier(value.baseDependencyDigest, "Dependency digest"),
+    baseSettingsRevision: boundedWholeNumber(value.baseSettingsRevision, 0, Number.MAX_SAFE_INTEGER),
+    accounting: sanitizedAccounting
+  };
+}
+
+function boundedIdentifier(value: unknown, label: string): string {
+  if (typeof value !== "string") throw new Error(`${label} identifier is required.`);
+  const clean = value.trim();
+  if (!clean || clean.length > 200 || /[\u0000-\u001f\u007f]/.test(clean)) throw new Error(`${label} identifier is invalid.`);
+  return clean;
+}
+
+function boundedLabel(value: unknown, label: string): string {
+  if (typeof value !== "string") throw new Error(`${label} is invalid.`);
+  const clean = value.trim();
+  if (!clean || clean.length > 100 || /[\u0000-\u001f\u007f]/.test(clean)) throw new Error(`${label} is invalid.`);
+  return clean;
+}
+
+function boundedAccountingInteger(value: unknown, label: string): number {
+  if (!Number.isInteger(value) || (value as number) < 0 || (value as number) > 50_000) throw new Error(`Flow bootstrap generation ${label} are invalid.`);
+  return value as number;
+}
+
+function boundedAccountingCost(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 10) throw new Error("Flow bootstrap generation cost accounting is invalid.");
+  return value;
+}
+
+const BUILD_GRANT_INCOMPATIBLE_FLAGS = [
+  "runId",
+  "runtimeSessionId",
+  "idempotencyKey",
+  "runIntent",
+  "llmExecutionGrantId",
+  "adaptiveMode",
+  "dryRunLlm",
+  "authorizedExternalSideEffects"
+] as const;
+
+function hasIncompatibleBuildGrantFlags(payload: Record<string, unknown>): boolean {
+  return BUILD_GRANT_INCOMPATIBLE_FLAGS.some((key) => Object.prototype.hasOwnProperty.call(payload, key));
+}
+
+function boundedWholeNumber(value: unknown, minimum: number, maximum: number): number {
+  if (!Number.isInteger(value) || (value as number) < minimum || (value as number) > maximum) throw new Error("LLM execution limit is invalid.");
+  return value as number;
 }

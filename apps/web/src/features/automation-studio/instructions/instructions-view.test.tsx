@@ -170,6 +170,11 @@ describe("Automation Instructions workspace", () => {
       await act(async () => createInstruction!.props.onClick());
       expect(renderer!.root.findByProps({ className: "automation-instruction-editor-pane" }).props.hidden).toBe(false);
       expect(renderer!.root.findAllByType("textarea")).toHaveLength(1);
+      expect(renderer!.root.findByProps({ "aria-label": "Instruction" }).type).toBe("textarea");
+      const scope = renderer!.root.findByProps({ "aria-label": "Scope" });
+      expect(scope.type).toBe("select");
+      await act(async () => scope.props.onChange({ target: { value: "on_error" } }));
+      expect(renderer!.root.findByProps({ "aria-label": "Target level" }).type).toBe("select");
       expect(renderer!.root.findAllByProps({ role: "tab" }).find((tab) => tab.children.includes("Editor"))?.props["aria-selected"]).toBe(true);
     } finally {
       if (renderer) await act(async () => renderer!.unmount());

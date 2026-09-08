@@ -18,7 +18,7 @@ export function listRuntimeRuns(api: ProgramCommandTransport, payload: Record<st
 
 export async function getRuntimeFlowReadiness(api: ProgramCommandTransport, payload: { projectId: string; flowId: string }) {
   const [instructions, router, subflows] = await Promise.all([
-    api.post<{ instructions?: any[] }>("get-flow-instruction-set", payload),
+    api.post<{ instructions?: any[]; page?: { total?: number } }>("list-flow-instructions", { ...payload, status: "active", limit: 1, offset: 0 }),
     api.post<{ router?: any }>("get-flow-router-summary", payload),
     api.post<{ page?: { total?: number } }>("list-flow-subflows", { ...payload, limit: 1, offset: 0, status: "active" })
   ]);

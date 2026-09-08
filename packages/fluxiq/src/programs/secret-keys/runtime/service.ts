@@ -62,15 +62,34 @@ type RevealSecretKeyInput = {
   nowMs?: number;
 };
 
+export type SecretRevealAuthorizationMetadata = {
+  authorizationId: string;
+  keyId: string;
+  keyUpdatedAtMs: number;
+  expiresAtMs: number;
+  remainingUses: 1;
+};
+
+type StoredSecretRevealAuthorization = SecretRevealAuthorizationMetadata & {
+  decryptionKey: Buffer;
+  state: "available" | "claimed";
+  expiryTimer: ReturnType<typeof setTimeout>;
+};
+
+const MAX_SECRET_REVEAL_AUTHORIZATION_TTL_MS = 300_000;
+
 export class SecretKeysService {
   static readonly storeKind = "secret.keys";
 
   private readonly records = new Map<string, SecretKeyRecord>();
   private readonly repository: Repository | undefined;
+  private readonly revealAuthorizations = new Map<string, StoredSecretRevealAuthorization>();
+  private readonly now: () => number;
   private loaded = false;
 
-  constructor(options: { repository?: Repository } = {}) {
+  constructor(options: { repository?: Repository; now?: () => number } = {}) {
     this.repository = options.repository;
+    this.now = options.now ?? Date.now;
   }
 
   async snapshot(): Promise<SecretKeysSnapshot> {
@@ -80,6 +99,12 @@ export class SecretKeysService {
         .map(toSummary)
         .sort((left, right) => right.updatedAtMs - left.updatedAtMs || left.name.localeCompare(right.name))
     };
+  }
+
+  async getKeySummary(id: string): Promise<SecretKeySummary | null> {
+    await this.load();
+    const record = this.records.get(id);
+    return record ? toSummary(record) : null;
   }
 
   async createKey(input: CreateSecretKeyInput): Promise<SecretKeySummary> {
@@ -112,7 +137,7 @@ export class SecretKeysService {
   async updateKey(input: UpdateSecretKeyInput): Promise<SecretKeySummary> {
     await this.load();
     const existing = this.requireRecord(input.id);
-    const updatedAtMs = input.nowMs ?? Date.now();
+    const updatedAtMs = Math.max(input.nowMs ?? Date.now(), existing.updatedAtMs + 1);
     const next: SecretKeyRecord = {
       ...existing,
       ...(input.name !== undefined ? { name: cleanRequired(input.name, "name") } : {}),
@@ -126,6 +151,7 @@ export class SecretKeysService {
       updatedAtMs
     };
     this.records.set(existing.id, next);
+    this.revokeRevealAuthorizationsForKey(existing.id);
     await this.persistRecord(next);
     return toSummary(next);
   }
@@ -133,7 +159,7 @@ export class SecretKeysService {
   async rotateKey(input: RotateSecretKeyInput): Promise<SecretKeySummary> {
     await this.load();
     const existing = this.requireRecord(input.id);
-    const now = input.nowMs ?? Date.now();
+    const now = Math.max(input.nowMs ?? Date.now(), existing.updatedAtMs + 1);
     const next: SecretKeyRecord = {
       ...existing,
       updatedAtMs: now,
@@ -141,6 +167,7 @@ export class SecretKeysService {
       sealed: encryptSecretValue({ id: existing.id, value: input.value, updatedAtMs: now }, requirePassword(input.authorizationPassword))
     };
     this.records.set(existing.id, next);
+    this.revokeRevealAuthorizationsForKey(existing.id);
     await this.persistRecord(next);
     return toSummary(next);
   }
@@ -161,6 +188,7 @@ export class SecretKeysService {
 
   async deleteKey(id: string): Promise<boolean> {
     await this.load();
+    this.revokeRevealAuthorizationsForKey(id);
     const deleted = this.records.delete(id);
     if (this.repository) return this.repository.delete(id, {});
     return deleted;
@@ -170,6 +198,82 @@ export class SecretKeysService {
     return (await this.revealKey(input)).value;
   }
 
+  async createRevealAuthorization(input: { id: string; authorizationPassword?: string; ttlMs?: number; nowMs?: number }): Promise<SecretRevealAuthorizationMetadata> {
+    await this.load();
+    const existing = this.requireRecord(input.id);
+    const ttlMs = input.ttlMs ?? 60_000;
+    if (!Number.isInteger(ttlMs) || ttlMs < 1000 || ttlMs > MAX_SECRET_REVEAL_AUTHORIZATION_TTL_MS) throw new Error("Secret reveal authorization TTL is invalid");
+    const authorizationId = `secret-reveal:${randomUUID()}`;
+    const decryptionKey = deriveSecretKey(requirePassword(input.authorizationPassword), existing.sealed.salt).key;
+    const expiryTimer = setTimeout(() => this.revokeRevealAuthorization(authorizationId), ttlMs);
+    expiryTimer.unref?.();
+    const authorization: StoredSecretRevealAuthorization = {
+      authorizationId,
+      keyId: existing.id,
+      keyUpdatedAtMs: existing.updatedAtMs,
+      expiresAtMs: (input.nowMs ?? this.now()) + ttlMs,
+      remainingUses: 1,
+      decryptionKey,
+      state: "available",
+      expiryTimer
+    };
+    this.revealAuthorizations.set(authorizationId, authorization);
+    return publicRevealAuthorization(authorization);
+  }
+
+  async revealKeyWithAuthorization(input: { authorizationId: string; id: string; nowMs?: number }): Promise<{ key: SecretKeySummary; value: string }> {
+    const authorization = this.revealAuthorizations.get(input.authorizationId);
+    const nowMs = input.nowMs ?? this.now();
+    if (!authorization || authorization.state !== "available" || authorization.keyId !== input.id) throw new Error("Secret reveal authorization is unavailable");
+    if (authorization.expiresAtMs <= nowMs) {
+      this.revokeRevealAuthorization(input.authorizationId);
+      throw new Error("Secret reveal authorization is unavailable");
+    }
+    authorization.state = "claimed";
+    try {
+      await this.load();
+      const existing = this.requireRecord(input.id);
+      if (existing.updatedAtMs !== authorization.keyUpdatedAtMs) throw new Error("Secret reveal authorization is no longer valid");
+      const secret = decryptSecretValueWithKey(existing.sealed, authorization.decryptionKey);
+      if (secret.id !== existing.id || secret.updatedAtMs !== existing.updatedAtMs) throw new Error("Invalid secret key payload");
+      const next: SecretKeyRecord = { ...existing, lastRevealedAtMs: nowMs };
+      this.records.set(existing.id, next);
+      await this.persistRecord(next);
+      const active = this.revealAuthorizations.get(input.authorizationId);
+      if (active !== authorization || authorization.state !== "claimed" || authorization.expiresAtMs <= this.now()) {
+        secret.value = "";
+        throw new Error("Secret reveal authorization is unavailable");
+      }
+      const value = secret.value;
+      this.revokeRevealAuthorization(input.authorizationId);
+      return { key: toSummary(next), value };
+    } catch (error) {
+      this.revokeRevealAuthorization(input.authorizationId);
+      throw error;
+    }
+  }
+
+  revokeRevealAuthorization(authorizationId: string): void {
+    const authorization = this.revealAuthorizations.get(authorizationId);
+    if (!authorization) return;
+    clearTimeout(authorization.expiryTimer);
+    authorization.decryptionKey.fill(0);
+    this.revealAuthorizations.delete(authorizationId);
+  }
+
+  activeRevealAuthorizationCount(): number {
+    return this.revealAuthorizations.size;
+  }
+
+  close(): void {
+    for (const authorizationId of [...this.revealAuthorizations.keys()]) this.revokeRevealAuthorization(authorizationId);
+  }
+
+  private revokeRevealAuthorizationsForKey(keyId: string): void {
+    for (const authorization of [...this.revealAuthorizations.values()]) {
+      if (authorization.keyId === keyId) this.revokeRevealAuthorization(authorization.authorizationId);
+    }
+  }
   private requireRecord(id: string): SecretKeyRecord {
     const record = this.records.get(id);
     if (!record) throw new Error(`Unknown secret key: ${id}`);
@@ -277,7 +381,15 @@ function encryptSecretValue(secret: SecretKeyValue, password: string): Encrypted
 
 function decryptSecretValue(sealed: EncryptedSecretValueRecord, password: string): SecretKeyValue {
   const secretKey = deriveSecretKey(password, sealed.salt);
-  const decipher = createDecipheriv("aes-256-gcm", secretKey.key, Buffer.from(sealed.iv, "base64url"));
+  try {
+    return decryptSecretValueWithKey(sealed, secretKey.key);
+  } finally {
+    secretKey.key.fill(0);
+  }
+}
+
+function decryptSecretValueWithKey(sealed: EncryptedSecretValueRecord, key: Buffer): SecretKeyValue {
+  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(sealed.iv, "base64url"));
   decipher.setAuthTag(Buffer.from(sealed.tag, "base64url"));
   const plaintext = Buffer.concat([
     decipher.update(Buffer.from(sealed.ciphertext, "base64url")),
@@ -288,6 +400,16 @@ function decryptSecretValue(sealed: EncryptedSecretValueRecord, password: string
     throw new Error("Invalid encrypted secret key payload");
   }
   return parsed as SecretKeyValue;
+}
+
+function publicRevealAuthorization(authorization: StoredSecretRevealAuthorization): SecretRevealAuthorizationMetadata {
+  return {
+    authorizationId: authorization.authorizationId,
+    keyId: authorization.keyId,
+    keyUpdatedAtMs: authorization.keyUpdatedAtMs,
+    expiresAtMs: authorization.expiresAtMs,
+    remainingUses: 1
+  };
 }
 
 function isSecretKeyRecord(value: unknown): value is SecretKeyRecord {

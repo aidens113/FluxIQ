@@ -1,16 +1,19 @@
-export const FLOW_LLM_PROVIDERS = [
-  { id: "host", label: "Host default", models: ["host-default"] },
-  { id: "openai", label: "OpenAI", models: ["gpt-5", "gpt-5-mini", "gpt-4.1"] },
-  { id: "anthropic", label: "Anthropic", models: ["claude-opus-4-1", "claude-sonnet-4"] },
-  { id: "google-gemini", label: "Google Gemini", models: ["gemini-2.5-pro", "gemini-2.5-flash"] },
-  { id: "azure-openai", label: "Azure OpenAI", models: ["deployment-default"] },
-  { id: "groq", label: "Groq", models: ["llama-3.3-70b-versatile"] },
-  { id: "mistral", label: "Mistral", models: ["mistral-large-latest", "codestral-latest"] },
-  { id: "deepseek", label: "DeepSeek", models: ["deepseek-chat", "deepseek-reasoner"] },
-  { id: "openrouter", label: "OpenRouter", models: ["openrouter/auto"] },
-  { id: "ollama", label: "Ollama", models: ["llama3.3", "qwen3"] }
-] as const;
+export const FLOW_LLM_HARD_MAX_TOKENS = 50_000;
+export const FLOW_LLM_MAX_TIMEOUT_SECONDS = 25;
+export const FLOW_LLM_DIAGNOSIS_MAX_COST_USD = 0.25;
+export const FLOW_LLM_EXECUTION_DEFAULTS = {
+  maxInputTokens: "8000",
+  maxOutputTokens: "2000",
+  maxTotalTokens: "10000",
+  maxCalls: "1",
+  timeoutSeconds: "20",
+  maxCostUsd: "0.25",
+  retryCount: "0"
+} as const;
 
+export const FLOW_LLM_PROVIDERS = [
+  { id: "deepseek", label: "DeepSeek", models: ["deepseek-chat"] }
+] as const;
 export function flowLlmProvider(providerId: string) {
   return FLOW_LLM_PROVIDERS.find((provider) => provider.id === providerId) ?? FLOW_LLM_PROVIDERS[0];
 }
@@ -63,6 +66,13 @@ export type FlowSettingsDraft = {
   llmProvider: string;
   llmModel: string;
   llmSecretKeyId: string;
+  llmMaxInputTokens: string;
+  llmMaxOutputTokens: string;
+  llmMaxTotalTokens: string;
+  llmMaxCalls: string;
+  llmTimeoutSeconds: string;
+  llmMaxCostUsd: string;
+  llmRetryCount: string;
   adaptationPolicyId: string;
 };
 
@@ -87,8 +97,9 @@ export function flowLimitsInterfaceErrors(draft: Pick<FlowSettingsDraft, "maxInt
 type FlowEffectiveSetting = { key: keyof FlowSettingsDraft; group: string; label: string; value: string; source: "Flow override" | "Framework default" | "Flow contract"; resettable: boolean };
 
 export const FLOW_SETTINGS_DEFAULT_VALUES: Partial<FlowSettingsDraft> = {
-  timeoutSeconds: "30", maxConcurrency: "1", adaptationMode: "fully_adaptive", trainingMode: "continuous_adaptive", llmProvider: "host", llmModel: "host-default",
+  timeoutSeconds: "30", maxConcurrency: "1", adaptationMode: "fully_adaptive", trainingMode: "continuous_adaptive", llmProvider: "deepseek", llmModel: "deepseek-chat",
   adaptationPreset: "adaptive", adaptationProposalMode: "auto", maxInterventionsPerRun: "2", maxTokensPerRun: "12000",
+  llmMaxInputTokens: "8000", llmMaxOutputTokens: "2000", llmMaxTotalTokens: "10000", llmMaxCalls: "1", llmTimeoutSeconds: "20", llmMaxCostUsd: "0.25", llmRetryCount: "0",
   maxCostUsdPerTrainingWindow: "5", maxRetriesPerAction: "1", maxRecoveryAttemptsPerSubflow: "2", maxReroutesPerRun: "2"
 };
 
@@ -101,8 +112,8 @@ export function flowEffectiveSettings(flow: any, draft: FlowSettingsDraft): Flow
     { key: "adaptationMode", group: "Runtime", label: "LLM intervention mode", value: draft.adaptationMode === "fully_adaptive" ? "Fully adaptive" : draft.adaptationMode === "manual_approval" ? "Manual approval" : "No LLM intervention", overridden: draft.adaptationMode !== "fully_adaptive" },
     { key: "timeoutSeconds", group: "Runtime", label: "Flow timeout", value: draft.timeoutSeconds + " seconds", overridden: Number(draft.timeoutSeconds) !== 30 },
     { key: "maxConcurrency", group: "Runtime", label: "Maximum concurrent runs", value: draft.maxConcurrency, overridden: Number(draft.maxConcurrency) !== 1 },
-    { key: "llmProvider", group: "LLM", label: "Provider", value: flowLlmProvider(draft.llmProvider).label, overridden: draft.llmProvider !== "host" },
-    { key: "llmModel", group: "LLM", label: "Model", value: draft.llmModel || "Host default", overridden: draft.llmModel !== "host-default" },
+    { key: "llmProvider", group: "LLM", label: "Provider", value: flowLlmProvider(draft.llmProvider).label, overridden: false },
+    { key: "llmModel", group: "LLM", label: "Model", value: draft.llmModel || "deepseek-chat", overridden: false },
     { key: "adaptationPreset", group: "Adaptation", label: "Behavior", value: draft.adaptationPreset === "adaptive" ? "Fully adaptive" : draft.adaptationPreset === "observe" ? "Observe only" : draft.adaptationPreset === "locked" ? "Locked" : "Broad autonomy", overridden: draft.adaptationPreset !== "adaptive" },
     { key: "adaptationProposalMode", group: "Adaptation", label: "Approval", value: describeApproval(draft.adaptationProposalMode), overridden: draft.adaptationProposalMode !== "auto" },
     { key: "maxInterventionsPerRun", group: "Limits", label: "LLM interventions per run", value: draft.maxInterventionsPerRun, overridden: Number(draft.maxInterventionsPerRun) !== 2 },
@@ -149,13 +160,25 @@ export function flowGeneralRuntimeErrors(draft: Pick<FlowSettingsDraft, "name" |
   if (draft.trainingMode === "train_until_stable" && (!Number.isFinite(Number(draft.minimumStabilityScore)) || Number(draft.minimumStabilityScore) <= 0 || Number(draft.minimumStabilityScore) > 1)) errors.push("Stability target must be greater than 0 and no more than 1.");
   return errors;
 }
-export function flowLlmSettingsErrors(draft: Pick<FlowSettingsDraft, "allowLlmIntervention" | "llmProvider" | "llmModel" | "llmSecretKeyId">, compatibleKeys: any[], keysReady: boolean): string[] {
+export function flowLlmSettingsErrors(draft: Pick<FlowSettingsDraft, "allowLlmIntervention" | "llmProvider" | "llmModel" | "llmSecretKeyId" | "llmMaxInputTokens" | "llmMaxOutputTokens" | "llmMaxTotalTokens" | "llmMaxCalls" | "llmTimeoutSeconds" | "llmMaxCostUsd" | "llmRetryCount">, compatibleKeys: any[], keysReady: boolean): string[] {
   if (!draft.allowLlmIntervention) return [];
   const errors: string[] = [];
-  if (!flowLlmProvider(draft.llmProvider)) errors.push("Choose an LLM provider.");
-  if (!draft.llmModel.trim()) errors.push("Choose an LLM model.");
-  const needsSecret = draft.llmProvider !== "host" && draft.llmProvider !== "ollama";
-  if (needsSecret && keysReady && !draft.llmSecretKeyId) errors.push("Choose an enabled encrypted key for this provider.");
+  if (draft.llmProvider !== "deepseek") errors.push("Only DeepSeek is supported for live LLM execution.");
+  if (draft.llmModel !== "deepseek-chat") errors.push("Only deepseek-chat is supported for live LLM execution.");
+  const tokenFields = [
+    ["Input-token limit", draft.llmMaxInputTokens],
+    ["Output-token limit", draft.llmMaxOutputTokens],
+    ["Total-token limit", draft.llmMaxTotalTokens]
+  ] as const;
+  for (const [label, value] of tokenFields) {
+    if (!Number.isInteger(Number(value)) || Number(value) < 1 || Number(value) > FLOW_LLM_HARD_MAX_TOKENS) errors.push(label + " must be a whole number from 1 to 50,000.");
+  }
+  if (Number(draft.llmMaxInputTokens) + Number(draft.llmMaxOutputTokens) > Number(draft.llmMaxTotalTokens)) errors.push("Input and output token limits together cannot exceed the total-token limit.");
+  if (draft.llmMaxCalls !== "1") errors.push("Diagnosis mode permits exactly one LLM call.");
+  if (!Number.isInteger(Number(draft.llmTimeoutSeconds)) || Number(draft.llmTimeoutSeconds) < 1 || Number(draft.llmTimeoutSeconds) > FLOW_LLM_MAX_TIMEOUT_SECONDS) errors.push("LLM timeout must be a whole number from 1 to 25 seconds.");
+  if (!Number.isFinite(Number(draft.llmMaxCostUsd)) || Number(draft.llmMaxCostUsd) <= 0 || Number(draft.llmMaxCostUsd) > FLOW_LLM_DIAGNOSIS_MAX_COST_USD) errors.push("Diagnosis cost limit must be greater than 0 and no more than 0.25 USD.");
+  if (draft.llmRetryCount !== "0") errors.push("Diagnosis mode does not permit provider retries.");
+  if (keysReady && !draft.llmSecretKeyId) errors.push("Choose an enabled encrypted key for DeepSeek.");
   if (draft.llmSecretKeyId && keysReady && !compatibleKeys.some((key) => key.id === draft.llmSecretKeyId)) errors.push("The selected encrypted key is unavailable, disabled, or belongs to another provider.");
   return errors;
 }
@@ -182,6 +205,7 @@ export function flowSettingsFlowFromDetail(baseFlow: any, detail: any): any {
   const training = settings.training && typeof settings.training === "object" ? settings.training : {};
   const adaptation = settings.adaptation && typeof settings.adaptation === "object" ? settings.adaptation : {};
   const llm = settings.llm && typeof settings.llm === "object" ? settings.llm : {};
+  const llmExecution = llm.execution && typeof llm.execution === "object" ? llm.execution : {};
   const metadata = baseFlow?.metadata && typeof baseFlow.metadata === "object" ? baseFlow.metadata : {};
   const port = (value: any) => ({
     id: String(value?.portId ?? value?.id ?? ""),
@@ -215,7 +239,7 @@ export function flowSettingsFlowFromDetail(baseFlow: any, detail: any): any {
       ...(settings.executionDefaults && typeof settings.executionDefaults === "object" ? settings.executionDefaults : {})
     },
     createdAt: detail.createdAt ?? baseFlow?.createdAt,
-    updatedAt: detail.updatedAt ?? settings.updatedAt ?? baseFlow?.updatedAt,
+    updatedAt: latestFlowSettingsTimestamp(detail.updatedAt, settings.updatedAt, baseFlow?.updatedAt),
     metadata: {
       ...metadata,
       summaryOnly: false,
@@ -226,9 +250,15 @@ export function flowSettingsFlowFromDetail(baseFlow: any, detail: any): any {
       ...(llmProvider ? { llmProvider } : {}),
       ...(llmModel ? { llmModel } : {}),
       ...(llmSecretKeyId ? { llmSecretKeyId } : {}),
+      ...(Object.keys(llmExecution).length ? { llmExecutionSettings: llmExecution } : {}),
       ...(adaptationPolicyId ? { adaptationPolicyId } : {})
     }
   };
+}
+
+function latestFlowSettingsTimestamp(...values: unknown[]): number | undefined {
+  const timestamps = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return timestamps.length ? Math.max(...timestamps) : undefined;
 }
 
 export function flowSettingsDraftFromFlow(flow: any): FlowSettingsDraft {
@@ -236,6 +266,8 @@ export function flowSettingsDraftFromFlow(flow: any): FlowSettingsDraft {
   const trainingSettings = metadata.trainingModeSettings && typeof metadata.trainingModeSettings === "object" ? metadata.trainingModeSettings : {};
   const adaptationSettings = metadata.adaptationPolicySettings && typeof metadata.adaptationPolicySettings === "object" ? metadata.adaptationPolicySettings : {};
   const budgets = trainingSettings.budgets && typeof trainingSettings.budgets === "object" ? trainingSettings.budgets : {};
+  const llmExecution = metadata.llmExecutionSettings && typeof metadata.llmExecutionSettings === "object" ? metadata.llmExecutionSettings : {};
+  const llmTokenLimits = llmExecution.tokenLimits && typeof llmExecution.tokenLimits === "object" ? llmExecution.tokenLimits : {};
   const trainingMode = flowSettingsTrainingMode(trainingSettings.mode ?? metadata.trainingMode);
   const proposalApprovalMode = flowSettingsProposalMode(trainingSettings.proposalApprovalMode ?? metadata.proposalApprovalMode ?? metadata.proposalMode);
   const adaptationProposalMode = flowSettingsProposalMode(adaptationSettings.proposalMode ?? proposalApprovalMode);
@@ -280,9 +312,16 @@ export function flowSettingsDraftFromFlow(flow: any): FlowSettingsDraft {
     maxAdaptationInterventionsPerRun: numberInputValue(adaptationSettings.maxInterventionsPerRun),
     maxAdaptationCostUsdPerRun: numberInputValue(adaptationSettings.maxEstimatedCostUsdPerRun),
     budgetExhaustedBehavior: budgets.exhaustedBehavior === "stop" || metadata.budgetExhaustedBehavior === "stop" ? "stop" : "ask",
-    llmProvider: String(metadata.llmProvider ?? ""),
-    llmModel: String(metadata.llmModel ?? flowLlmProvider(String(metadata.llmProvider ?? "host")).models[0]),
+    llmProvider: "deepseek",
+    llmModel: "deepseek-chat",
     llmSecretKeyId: String(metadata.llmSecretKeyId ?? ""),
+    llmMaxInputTokens: numberInputValue(llmTokenLimits.maxInputTokens ?? 8000),
+    llmMaxOutputTokens: numberInputValue(llmTokenLimits.maxOutputTokens ?? 2000),
+    llmMaxTotalTokens: numberInputValue(llmTokenLimits.maxTotalTokens ?? 10000),
+    llmMaxCalls: numberInputValue(llmExecution.maxCalls ?? 1),
+    llmTimeoutSeconds: numberInputValue(Number(llmExecution.timeoutMs ?? 20000) / 1000),
+    llmMaxCostUsd: numberInputValue(llmExecution.maxEstimatedCostUsd ?? 0.25),
+    llmRetryCount: numberInputValue(llmExecution.retryCount ?? 0),
     adaptationPolicyId: String(metadata.adaptationPolicyId ?? "")
   };
 }
@@ -294,12 +333,16 @@ export function buildFlowSettingsSavePayload(flow: any, draft: FlowSettingsDraft
     requireFirstManualReviewBeforeAutoPromotion: _oldFirstReview, manualReviewForStructuralChanges: _oldStructuralReview,
     trainingModeSettings: _oldTrainingSettings, adaptationPolicySettings: _oldAdaptationSettings,
     budgetExhaustedBehavior: _oldBudgetBehavior, llmProvider: _oldLlmProvider, llmModel: _oldLlmModel,
-    llmSecretKeyId: _oldLlmSecretKeyId, adaptationPolicyId: _oldAdaptationPolicyId, ...retainedMetadata
+    llmSecretKeyId: _oldLlmSecretKeyId, llmExecutionSettings: _oldLlmExecutionSettings, adaptationPolicyId: _oldAdaptationPolicyId, ...retainedMetadata
   } = rawMetadata;
   const llmProvider = draft.llmProvider.trim();
   const llmModel = draft.llmModel.trim();
   const llmSecretKeyId = draft.llmSecretKeyId.trim();
   const adaptationPolicyId = draft.adaptationPolicyId.trim();
+  const llmExecutionSettings = {
+    tokenLimits: { maxInputTokens: Number(draft.llmMaxInputTokens), maxOutputTokens: Number(draft.llmMaxOutputTokens), maxTotalTokens: Number(draft.llmMaxTotalTokens) },
+    maxCalls: Number(draft.llmMaxCalls), timeoutMs: Math.round(Number(draft.llmTimeoutSeconds) * 1000), maxEstimatedCostUsd: Number(draft.llmMaxCostUsd), retryCount: Number(draft.llmRetryCount)
+  };
   const recoveryBudget = {
     ...(Number(draft.maxRetriesPerAction) !== 1 ? { maxRetriesPerAction: Math.round(Number(draft.maxRetriesPerAction)) } : {}),
     ...(Number(draft.maxRecoveryAttemptsPerSubflow) !== 2 ? { maxRecoveryAttemptsPerSubflow: Math.round(Number(draft.maxRecoveryAttemptsPerSubflow)) } : {}),
@@ -364,6 +407,7 @@ export function buildFlowSettingsSavePayload(flow: any, draft: FlowSettingsDraft
       ...(llmProvider && llmProvider !== "host" ? { llmProvider } : {}),
       ...(llmModel && llmModel !== "host-default" ? { llmModel } : {}),
       ...(llmSecretKeyId ? { llmSecretKeyId } : {}),
+      llmExecutionSettings,
       ...(adaptationPolicyId && adaptationPolicyId !== "policy.default" ? { adaptationPolicyId } : {})
     }
   };
@@ -419,7 +463,9 @@ export function flowSettingsMetadata(flow: any) {
     trainingMode: trainingModeSettings.mode,
     proposalMode: trainingModeSettings.proposalApprovalMode,
     proposalApprovalMode: trainingModeSettings.proposalApprovalMode,
-    llmProvider: "host",
+    llmProvider: "deepseek",
+    llmModel: "deepseek-chat",
+    llmExecutionSettings: { tokenLimits: { maxInputTokens: 8000, maxOutputTokens: 2000, maxTotalTokens: 10000 }, maxCalls: 1, timeoutMs: 20000, maxEstimatedCostUsd: 0.25, retryCount: 0 },
     adaptationPolicyId: "policy.default",
     adaptationPolicySettings: { ...adaptationPolicySettings, ...existingAdaptationSettings },
     budgetExhaustedBehavior: "ask",

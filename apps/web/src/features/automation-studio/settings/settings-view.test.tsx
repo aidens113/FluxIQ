@@ -1,5 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
@@ -7,6 +8,8 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams()
 }));
 import { SettingsView, SubflowSettingsView, SubflowSettingsViewContent, FlowSettingsView, FlowSettingsViewContent, FLOW_LLM_PROVIDERS, SubflowMappingEditor, applyFlowAdaptationPreset, applyFlowTrainingMode, buildFlowSettingsSavePayload, flowAdaptationErrors, flowEffectiveSettings, flowGeneralRuntimeErrors, flowLimitsInterfaceErrors, flowLlmProvider, flowLlmSettingsErrors, flowSettingsDraftFromFlow, flowSettingsFlowFromDetail, readSettingsSection, settingsConcurrentRevisionAction, settingsDraftIsDirty, subflowSettingsDraft, subflowSettingsErrors } from "./index";
+
+(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe("Automation Settings workspace", () => {
   it("validates General and Runtime settings and renders user-facing runtime defaults", () => {
@@ -60,16 +63,64 @@ describe("Automation Settings workspace", () => {
       interfaceInputs: [{ id: "input.order", name: "Order" }]
     });
   });
+  it("keeps the newest canonical Flow timestamp when the SQL settings projection is stale", () => {
+    const loaded = flowSettingsFlowFromDetail(
+      { flowId: "flow.stale-settings", name: "Current", updatedAt: 84, metadata: { summaryOnly: true }, source: { mode: "visual" } },
+      {
+        flowId: "flow.stale-settings",
+        name: "Current",
+        updatedAt: 42,
+        settings: { updatedAt: 42, training: {}, adaptation: {}, llm: {} },
+        inputs: [],
+        outputs: []
+      }
+    );
+    expect(loaded.updatedAt).toBe(84);
+  });
+  it("exposes exact stable accessible names for mounted LLM settings controls", async () => {
+    const previousWindow = (globalThis as any).window;
+    (globalThis as any).window = { requestAnimationFrame: () => 1, cancelAnimationFrame: () => undefined };
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(createElement(FlowSettingsViewContent, {
+        projectId: null,
+        flow: { flowId: "flow.accessible-llm", name: "Accessible LLM", metadata: { llmProvider: "deepseek", llmModel: "deepseek-chat" } },
+        commands: {} as any
+      }));
+    });
+    const getByRoleAndExactName = (role: "combobox" | "spinbutton", name: string) => {
+      const matches = renderer.root.findAll((node) => {
+        const implicitRole = node.type === "select" ? "combobox" : node.type === "input" && node.props.type === "number" ? "spinbutton" : undefined;
+        return implicitRole === role && node.props["aria-label"] === name;
+      });
+      expect(matches, `${role} named ${name}`).toHaveLength(1);
+      return matches[0]!;
+    };
+    expect(getByRoleAndExactName("combobox", "Provider").props.value).toBe("deepseek");
+    expect(getByRoleAndExactName("combobox", "Model").props.value).toBe("deepseek-chat");
+    for (const name of ["Input tokens", "Output tokens", "Total tokens", "Max calls", "Timeout (seconds)", "Max cost (USD)", "Provider retries"]) {
+      getByRoleAndExactName("spinbutton", name);
+    }
+    expect(renderer.root.findAll((node) => typeof node.props?.["aria-label"] === "string" && node.props["aria-label"].startsWith("Provider"))).toHaveLength(2);
+    await act(async () => { renderer.unmount(); });
+    if (previousWindow === undefined) delete (globalThis as any).window;
+    else (globalThis as any).window = previousWindow;
+  });
   it("uses controlled LLM provider/model choices and encrypted key summaries", () => {
     expect(FLOW_LLM_PROVIDERS.map((provider) => provider.id)).toContain("deepseek");
-    expect(flowLlmProvider("deepseek").models).toContain("deepseek-reasoner");
-    const draft = { allowLlmIntervention: true, llmProvider: "deepseek", llmModel: "deepseek-chat", llmSecretKeyId: "" };
-    expect(flowLlmSettingsErrors(draft, [], true)).toContain("Choose an enabled encrypted key for this provider.");
+    expect(flowLlmProvider("deepseek").models).toEqual(["deepseek-chat"]);
+    const draft = { allowLlmIntervention: true, llmProvider: "deepseek", llmModel: "deepseek-chat", llmSecretKeyId: "", llmMaxInputTokens: "8000", llmMaxOutputTokens: "2000", llmMaxTotalTokens: "10000", llmMaxCalls: "1", llmTimeoutSeconds: "20", llmMaxCostUsd: "0.25", llmRetryCount: "0" };
+    expect(flowLlmSettingsErrors(draft, [], true)).toContain("Choose an enabled encrypted key for DeepSeek.");
     expect(flowLlmSettingsErrors({ ...draft, llmSecretKeyId: "secret.deepseek" }, [{ id: "secret.deepseek" }], true)).toEqual([]);
+    expect(flowLlmSettingsErrors({ ...draft, llmSecretKeyId: "secret.deepseek", llmMaxTotalTokens: "50001" }, [{ id: "secret.deepseek" }], true)).toContain("Total-token limit must be a whole number from 1 to 50,000.");
+    expect(flowLlmSettingsErrors({ ...draft, llmSecretKeyId: "secret.deepseek", llmMaxInputTokens: "9000", llmMaxOutputTokens: "2000" }, [{ id: "secret.deepseek" }], true)).toContain("Input and output token limits together cannot exceed the total-token limit.");
     const html = renderToStaticMarkup(createElement(SettingsView, { projectId: null, flow: { flowId: "flow.checkout", name: "Checkout", metadata: { llmProvider: "deepseek", llmModel: "deepseek-reasoner" } } }));
     expect(html).toContain("LLM Connection");
     expect(html).toContain("DeepSeek");
-    expect(html).toContain("deepseek-reasoner");
+    expect(html).toContain("deepseek-chat");
+    expect(html).not.toContain("deepseek-reasoner");
+    expect(html).toContain("Per-request diagnosis limits");
+    expect(html).toContain("50,000 total tokens");
     expect(html).toContain("Encrypted API key");
     expect(html).toContain("Manage Keys");
     expect(html).toContain("Secret values are never loaded here");
@@ -109,10 +160,11 @@ describe("Automation Settings workspace", () => {
       expect.objectContaining({ key: "maxConcurrency", source: "Framework default", resettable: false }),
       expect.objectContaining({ key: "maxRetriesPerAction", value: "4", source: "Flow override" })
     ]));
-    const payload = buildFlowSettingsSavePayload(flow, { ...draft, timeoutSeconds: "30", llmProvider: "host", llmModel: "host-default", maxRetriesPerAction: "1" });
+    const payload = buildFlowSettingsSavePayload(flow, { ...draft, timeoutSeconds: "30", maxRetriesPerAction: "1" });
     expect(payload.executionDefaults).not.toHaveProperty("timeoutMs");
-    expect(payload.metadata).not.toHaveProperty("llmProvider");
+    expect(payload.metadata).toHaveProperty("llmProvider", "deepseek");
     expect(payload.metadata.trainingModeSettings ?? {}).not.toHaveProperty("recoveryBudget");
+    expect(payload.metadata.llmExecutionSettings).toEqual({ tokenLimits: { maxInputTokens: 8000, maxOutputTokens: 2000, maxTotalTokens: 10000 }, maxCalls: 1, timeoutMs: 20000, maxEstimatedCostUsd: 0.25, retryCount: 0 });
     const html = renderToStaticMarkup(createElement(SettingsView, { projectId: null, flow }));
     expect(html).toContain("Framework default");
     expect(html).toContain("Flow override");
@@ -236,7 +288,7 @@ describe("Automation Settings workspace", () => {
     expect(settingsHtml).not.toContain("Allow browser/API actions");
     expect(settingsHtml).not.toContain("Require approval before browser/API actions");
     expect(settingsHtml).toContain("LLM Budget");
-    expect(settingsHtml).toContain("value=\"host\"");
+    expect(settingsHtml).toContain("value=\"deepseek\"");
     expect(settingsHtml).toContain("value=\"policy.default\"");
     expect(settingsHtml).toContain("value=\"12000\"");
     expect(settingsHtml).not.toContain("summary-strip");

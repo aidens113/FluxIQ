@@ -124,6 +124,7 @@ export class FluxIQ {
   readonly runtime: GlobalProgramRuntime["runtime"];
   readonly activeDomainId: string | null;
   readonly storage: FluxIQStorageInspection;
+  private closePromise: Promise<void> | null = null;
 
   constructor(options: FluxIQOptions = {}) {
     const cwd = process.cwd();
@@ -193,6 +194,16 @@ export class FluxIQ {
     });
   }
 
+  close(): Promise<void> {
+    this.closePromise ??= (async () => {
+      try {
+        await this.programs.automationStudio.close();
+      } finally {
+        this.programs.secretKeys.close();
+      }
+    })();
+    return this.closePromise;
+  }
   static create(options: FluxIQOptions = {}): FluxIQ {
     return new FluxIQ(options);
   }

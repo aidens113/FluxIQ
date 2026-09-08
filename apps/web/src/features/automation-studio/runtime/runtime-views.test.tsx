@@ -15,6 +15,7 @@ import {
   runtimeFlowInputPorts,
   runtimeFlowReadinessIssues,
   runtimeLlmAdaptationEvents,
+  runtimeLlmExecutionRequestFromFlow,
   runtimeRecoveryRoutingEvents,
   runtimeRunEffects,
   runtimeRunStateEvidence,
@@ -23,7 +24,7 @@ import {
   sortRuntimeRunsForDebugView
 } from "./index";
 import { cancelRuntimeSession, executeRuntimeSession, startRuntimeSession } from "./run-commands";
-import { getRuntimeRunDetail, listRuntimeRunActions, listRuntimeRunEvents, listRuntimeRuns } from "./run-queries";
+import { getRuntimeFlowReadiness, getRuntimeRunDetail, listRuntimeRunActions, listRuntimeRunEvents, listRuntimeRuns } from "./run-queries";
 import { subscribeToAutomationStudioMutations } from "../stores/mutation-transaction-store";
 import { RunActionLogViewContent } from "./RunActionLogView";
 import { RunHistoryViewContent } from "./RunHistory";
@@ -280,6 +281,33 @@ describe("Automation Runtime workspace", () => {
     expect(runtimeFlowReadinessIssues(flow, { instructions: [{ status: "active" }], router: { rules: [] }, subflowTotal: 2, error: "" }).map((issue) => issue.action)).toEqual(["Open Router"]);
   });
 
+  it("checks instruction readiness with one filtered active row beyond the old 100-item page", async () => {
+    const stored = [
+      ...Array.from({ length: 101 }, (_, index) => ({ instructionId: `disabled.${index}`, status: "disabled" })),
+      { instructionId: "active.beyond-old-page", status: "active" }
+    ];
+    const transport = {
+      post: vi.fn(async (endpoint: string, payload: Record<string, any>) => {
+        if (endpoint === "list-flow-instructions") {
+          const matching = stored.filter((instruction) => !payload.status || instruction.status === payload.status);
+          return { ok: true as const, payload: { instructions: matching.slice(payload.offset, payload.offset + payload.limit), page: { total: matching.length } } };
+        }
+        if (endpoint === "get-flow-router-summary") return { ok: true as const, payload: { router: null } };
+        return { ok: true as const, payload: { page: { total: 0 } } };
+      })
+    } as any;
+    const readiness = await getRuntimeFlowReadiness(transport, { projectId: "project.one", flowId: "flow.one" });
+    expect(transport.post).toHaveBeenCalledWith("list-flow-instructions", { projectId: "project.one", flowId: "flow.one", status: "active", limit: 1, offset: 0 });
+    expect(readiness.instructions).toEqual([{ instructionId: "active.beyond-old-page", status: "active" }]);
+
+    const allInactive = { ...transport, post: vi.fn(async (endpoint: string, payload: Record<string, any>) => {
+      if (endpoint === "list-flow-instructions") return { ok: true as const, payload: { instructions: [], page: { total: 0 } } };
+      if (endpoint === "get-flow-router-summary") return { ok: true as const, payload: { router: null } };
+      return { ok: true as const, payload: { page: { total: 0 } } };
+    }) } as any;
+    const inactiveReadiness = await getRuntimeFlowReadiness(allInactive, { projectId: "project.one", flowId: "flow.one" });
+    expect(inactiveReadiness.instructions).toEqual([]);
+  });
   it("shares SQL-backed run history and scopes initial rows", () => {
     const runs = [{ runId: "run.a", flowId: "flow.a", updatedAt: 1 }, { runId: "run.b", flowId: "flow.b", updatedAt: 2 }];
     expect(runtimeRunsForHistory(runs, "flow.a").map((run) => run.runId)).toEqual(["run.a"]);
@@ -293,12 +321,35 @@ describe("Automation Runtime workspace", () => {
     expect(source).not.toContain("setInterval");
   });
 
+  it("maps saved diagnosis limits and keeps password-plus-PIN authorization in Runtime Debug", () => {
+    expect(runtimeLlmExecutionRequestFromFlow("project.one", {
+      flowId: "flow.one",
+      metadata: {
+        llmSecretKeyId: "key.deepseek",
+        llmExecutionSettings: {
+          tokenLimits: { maxInputTokens: 2000, maxOutputTokens: 512, maxTotalTokens: 3000 },
+          maxCalls: 1,
+          timeoutMs: 15000,
+          maxEstimatedCostUsd: 0.1,
+          retryCount: 0
+        }
+      }
+    })).toEqual({ ok: true, payload: { projectId: "project.one", flowId: "flow.one", keyId: "key.deepseek", provider: "deepseek", model: "deepseek-chat", tokenLimits: { maxInputTokens: 2000, maxOutputTokens: 512, maxTotalTokens: 3000 }, maxCalls: 1, timeoutMs: 15000, maxEstimatedCostUsd: 0.1 } });
+    const source = FlowRunViewContent.toString();
+    expect(source).toContain("commands.preflightLlm");
+    expect(source).toContain("commands.issueLlmGrant");
+    expect(source).toContain("authorizationPassword");
+    expect(source).toContain("authorizationPin");
+    expect(source).toContain('runIntent: "diagnosis_only"');
+    expect(source).toContain("setDiagnosisPassword");
+    expect(source).not.toContain("authorizedExternalSideEffects");
+  });
   it("queues runs before execution so active runs can be stopped", () => {
     const source = FlowRunViewContent.toString();
     expect(source).toContain("commands.start");
     expect(source).toContain("commands.execute");
     expect(source).toContain("commands.cancel");
-    expect(source.indexOf("commands.start")).toBeLessThan(source.indexOf("commands.execute"));
+    expect(source.indexOf("commands.start")).toBeLessThan(source.indexOf("commands.execute({ ...payload.payload, runId })"));
     expect(startRuntimeSession.toString()).toContain("start-runtime-session");
     expect(executeRuntimeSession.toString()).toContain("run-runtime-session");
     expect(cancelRuntimeSession.toString()).toContain("cancel-runtime-session");

@@ -2,8 +2,9 @@
 
 import { useMemo } from "react";
 import { useProgramTransport } from "../data/use-program-transport";
-import { cancelRuntimeSession, executeRuntimeSession, exportRuntimeRunAudit, startRuntimeSession } from "./run-commands";
+import { cancelRuntimeSession, executeRuntimeSession, exportRuntimeRunAudit, issueLlmExecutionGrant, preflightLlmExecution, startRuntimeSession } from "./run-commands";
 import { getRuntimeFlowReadiness, getRuntimeRunActionDetail, getRuntimeRunDetail, getRuntimeRunEventDetail, listRuntimeRunActions, listRuntimeRunEvents, listRuntimeRuns } from "./run-queries";
+import { generateFlowBootstrapAdaptation } from "../authoring/authoring-commands";
 export type RuntimeViewHostModel = {
   projectId: string | null;
   flow?: any;
@@ -43,6 +44,9 @@ export type RuntimeExecutionCommands = {
   loadReadiness(payload: { projectId: string; flowId: string }): ReturnType<typeof getRuntimeFlowReadiness>;
   start(payload: Record<string, any>): ReturnType<typeof startRuntimeSession>;
   execute(payload: Record<string, any>): ReturnType<typeof executeRuntimeSession>;
+  preflightLlm(payload: Record<string, any>): ReturnType<typeof preflightLlmExecution>;
+  issueLlmGrant(payload: Record<string, any>): ReturnType<typeof issueLlmExecutionGrant>;
+  generateBootstrap(payload: { projectId: string; flowId: string; llmExecutionGrantId: string }): ReturnType<typeof generateFlowBootstrapAdaptation>;
   cancel(payload: { projectId: string; runId: string }): ReturnType<typeof cancelRuntimeSession>;
 };
 
@@ -69,6 +73,9 @@ export function useRuntimeExecutionCommands(): RuntimeExecutionCommands {
     loadReadiness: (payload) => getRuntimeFlowReadiness(transport, payload),
     start: (payload) => startRuntimeSession(transport, payload),
     execute: (payload) => executeRuntimeSession(transport, payload),
+    preflightLlm: (payload) => preflightLlmExecution(transport, payload),
+    issueLlmGrant: (payload) => issueLlmExecutionGrant(transport, payload),
+    generateBootstrap: (payload) => generateFlowBootstrapAdaptation(transport, payload),
     cancel: (payload) => cancelRuntimeSession(transport, payload)
   }), [transport]);
 }

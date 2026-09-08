@@ -8,10 +8,15 @@ import {
 } from "./flows.ts";
 
 describe("Automation Studio intervention mode compatibility", () => {
-  it("defaults new Flows to the current fully adaptive mode", () => {
+  it("defaults new Flows to deterministic execution with manual proposals and no promotion", () => {
     const metadata = defaultAutomationStudioFlowSettingsMetadata();
-    expect(metadata).toMatchObject({ adaptationMode: "fully_adaptive", adaptationModeVersion: AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION });
-    expect(automationStudioInterventionMode(metadata)).toBe("fully_adaptive");
+    expect(metadata).toMatchObject({
+      adaptationMode: "no_llm_intervention",
+      adaptationModeVersion: AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION,
+      proposalMode: "manual",
+      trainingModeSettings: { mode: "normal", allowLlmIntervention: false, allowAdaptationCreation: false, allowPromotion: false }
+    });
+    expect(automationStudioInterventionMode(metadata)).toBe("no_llm_intervention");
   });
 
   it.each([

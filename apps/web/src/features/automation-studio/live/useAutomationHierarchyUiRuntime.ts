@@ -35,14 +35,6 @@ export function useAutomationHierarchyUiRuntime(options: Options) {
   const coordinator = useMemo(() => createAutomationHierarchyUiCoordinator(), []);
   const persistence = useHierarchyPersistence({
     transport: options.transport,
-    reportSaveError: (message) =>
-      notifyGlobalAlert({
-        tone: "error",
-        title: "Workspace save failed",
-        message,
-        id: "automation-workspace-save-failed",
-      }),
-    transport: options.transport,
     projectId: options.activeProjectId,
     loadedProjectId: options.loadedProjectId,
     getCustomNodes: options.getCustomNodes,

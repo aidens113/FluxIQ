@@ -8,7 +8,6 @@ import { automationStudioViewBaseId, automationStudioViewDefinition, automationS
 import { AutomationStudioProjectGate } from "./AutomationStudioProjectGate";
 import {
   automationEntityCollectionSelector,
-  useAutomationProjectResource,
   useAutomationStoreSelector,
   type AutomationProjectEntityKind
 } from "../stores";
@@ -45,10 +44,7 @@ import { runAutomationPresentationTransaction } from "../presentation/transactio
 import type { AutomationCanonicalConnectorScope } from "./view-host/canonical-connected-views";
 import { useAutomationConnectedViewEntries, useAutomationConnectedViewSource } from "./view-host/connected-view-entries";
 import { useAutomationConnectorCommands } from "./view-host/useAutomationConnectorCommands";
-import {
-  AutomationStudioConnectedHierarchy,
-  AutomationStudioConnectedTimeline
-} from "./AutomationStudioConnectedRegions";
+import { useAutomationConnectedRegionSurfaces } from "./useAutomationConnectedRegionSurfaces";
 import { listProjectProblems } from "../problems/problem-queries";
 import {
   EMPTY_AUTOMATION_GATEWAY_SNAPSHOT,
@@ -122,7 +118,6 @@ export function AutomationStudioSession(props: {
   const setAutomationActionStatus = storeCommands.actionStatus;
   const flowRunState = runtimeStatusState.flowRunState as any;
   const setFlowRunState = storeCommands.flowRunState;
-  const hasDirtyTaskGraph = useAutomationProjectResource(studioStores, "hasDirtyTaskGraph", false);
   const setHasDirtyTaskGraph = storeCommands.resource<boolean>("hasDirtyTaskGraph");
   const taskGraphDrafts = resource<Record<string, { nodes: any[]; edges: any[] }>>("taskGraphDrafts", EMPTY_AUTOMATION_RECORD);
   const setTaskGraphDrafts = storeCommands.resource<Record<string, { nodes: any[]; edges: any[] }>>("taskGraphDrafts");
@@ -159,7 +154,6 @@ export function AutomationStudioSession(props: {
   const { isNarrowWorkspace, narrowWorkspacePanel, setIsNarrowWorkspace, setNarrowWorkspacePanel } = useAutomationNarrowWorkspace(studioUiStore);const hierarchyDialogStore = useMemo(createAutomationHierarchyDialogStore, []);
   const hierarchyCommandExecutor = useMemo(createAutomationHierarchyCommandExecutor, []);
   const workspaceRuntime = useAutomationWorkspaceRuntime({
-    transport: api,
     activeProjectId,
     currentUserId: currentUser.id,
     loadedProjectHierarchyId,
@@ -495,9 +489,9 @@ export function AutomationStudioSession(props: {
   });
   const { guardedCloseProject, selectTreeItem } = useAutomationSessionDirtyGuards({
     activeProjectId,
+    stores: studioStores,
     selectedTaskGraph,
     selectedFlow,
-    hasDirtyTaskGraph,
     graphRuntime,
     setDirty: setHasDirtyTaskGraph,
     closeProject,
@@ -609,53 +603,25 @@ export function AutomationStudioSession(props: {
       void openSubflowInEditor(activeFlowScope.flowId, crumb.id, "preview");
     }
   });
-  const hierarchySurface = useMemo(() => (
-    <AutomationStudioConnectedHierarchy
-      dialog={{ execute: hierarchyBridge.execute, store: hierarchyDialogStore }}
-      getProjectView={getProjectView}
-      stores={studioStores}
-      surface={{
-        coordinator: hierarchyUiCoordinator,
-        paging: hierarchyPaging,
-        projectId: activeProject?.id ?? "",
-        onCloseProject: guardedCloseProject,
-        openSubflow: hierarchyBridge.openTreeSubflow,
-        openView: hierarchyBridge.openTreeView,
-        port: workspaceCommandPort,
-        projectName: activeProject?.name ?? "",
-        requestAction: hierarchyBridge.requestAction,
-        setRecordingPrimaryKind: setRecordingTreePrimaryKind,
-        setSelection: selectTreeItem,
-        store: workspaceRenderStore
-      }}
-    />
-  ), [
-    activeProject?.id,
-    activeProject?.name,
-    guardedCloseProject,
+  const { hierarchySurface, timelineSurface } = useAutomationConnectedRegionSurfaces({
+    coordinator: hierarchyUiCoordinator,
+    dialogStore: hierarchyDialogStore,
+    executeDialog: hierarchyBridge.execute,
     getProjectView,
-    hierarchyBridge.execute,
-    hierarchyBridge.openTreeSubflow,
-    hierarchyBridge.openTreeView,
-    hierarchyBridge.requestAction,
-    selectTreeItem,
-    hierarchyDialogStore,
-    hierarchyPaging,
-    hierarchyUiCoordinator,
-    setRecordingTreePrimaryKind,
-    studioStores,
-    workspaceCommandPort,
-    workspaceRenderStore
-  ]);
-  const timelineSurface = useMemo(() => (
-    <AutomationStudioConnectedTimeline
-      onSelectAction={handleBottomPreviewActionClick}
-      stores={studioStores}
-    />
-  ), [
-    handleBottomPreviewActionClick,
-    studioStores
-  ]);
+    onCloseProject: guardedCloseProject,
+    onSelectAction: handleBottomPreviewActionClick,
+    openSubflow: hierarchyBridge.openTreeSubflow,
+    openView: hierarchyBridge.openTreeView,
+    paging: hierarchyPaging,
+    port: workspaceCommandPort,
+    projectId: activeProject?.id ?? "",
+    projectName: activeProject?.name ?? "",
+    requestAction: hierarchyBridge.requestAction,
+    setRecordingPrimaryKind: setRecordingTreePrimaryKind,
+    setSelection: selectTreeItem,
+    stores: studioStores,
+    workspaceStore: workspaceRenderStore
+  });
   const getViewAdderContext = useCallback(() => {
     const current = getProjectView();
     return {

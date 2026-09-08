@@ -72,7 +72,7 @@ const productDomains = new Set([
 ]);
 
 const approvedTopLevelDirectories = [
-  "adaptations", "bootstrap", "cache", "clients", "data", "development", "flow-editor", "graph",
+  "adaptations", "authoring", "bootstrap", "cache", "clients", "data", "development", "flow-editor", "graph",
   "hierarchy", "inspector", "instructions", "live", "model", "parameters", "problems",
   "presentation", "project", "recordings", "router", "runtime", "settings", "shared", "state", "stores", "styles",
   "subflows", "sync", "testing", "views", "workspace"
@@ -384,12 +384,13 @@ describe("Automation Studio Phase 10I architecture enforcement", () => {
     const connector = architectureSource("live/view-host/direct-view-connector.tsx").source;
     const host = architectureSource("views/ViewHost.tsx").source;
     const connectorProperties = [...entries.matchAll(
-      /\bentry\s*\(\s*automationStudioViewId\.([A-Za-z][A-Za-z0-9]*)\s*,/gu
+      /\[\s*automationStudioViewId\.([A-Za-z][A-Za-z0-9]*)\s*,/gu
     )].map((match) => match[1] as keyof typeof automationStudioViewId);
     const connectedIds = connectorProperties.map((property) => automationStudioViewId[property]).sort();
 
     expect(connectedIds).toEqual([...automationStudioViewIds].sort());
     expect(new Set(connectedIds).size).toBe(automationStudioViewIds.length);
+    expect(entries).toContain("const connectorByViewId = new Map");
     expect(entries).toContain("createAutomationConnectedViewHostRequest(view as never, connect)");
     expect(entries).toContain("createAutomationDirectViewConnection(Connector");
     expect(session).toContain("useAutomationConnectedViewEntries({");

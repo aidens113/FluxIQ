@@ -151,6 +151,112 @@ The LLM harness is used to generate, repair, adapt, and improve deterministic
 automation, then successful behavior is compiled back into durable Flow
 structure so token usage scales with novelty rather than execution count.
 
+New Flows are fail-closed: normal execution, no LLM intervention, manual
+proposal review, and no automatic adaptation promotion. Fully adaptive
+behavior remains an explicit opt-in. The manual-approval runtime override is
+currently diagnosis-only: it may make one diagnosis request but cannot request,
+apply, or promote a runtime patch.
+
+Every provider request carries server-enforced input, output, and total token
+limits. Core defaults are 8,000 input, 2,000 output, and 10,000 total tokens.
+No request setting may raise the absolute total-token ceiling above 50,000,
+and Core rejects a request before provider invocation when its estimated input
+plus output allowance exceeds the effective total. Provider transport output
+is untrusted: the harness parses strict registered structures, rejects extra
+fields and malformed usage, normalizes provider throws to terminal diagnostics,
+and persists only a compact structured-result summary without provider
+free-text or arbitrary metadata.
+
+Core also exports a production transport seam and a built-in DeepSeek adapter.
+The adapter has one fixed HTTPS chat-completions URL and the explicit
+`deepseek-chat` model; user/Flow endpoint overrides, redirects, hidden retries,
+and unbounded response reads are not supported. Requests use a concrete output
+allowance, a bounded timeout and abort signal, request/idempotency identifiers,
+and an opaque scoped secret resolver. A per-run reservation ledger is shared
+across diagnosis and patch calls so the call, total-token, and output-token
+budgets are reserved before transport dispatch. Failed or usage-less calls are
+charged conservatively. The default runtime composes this adapter only through
+an opaque, one-use `diagnosis_only` execution grant. Grant issue requires the
+request actor's current session, password, and configured PIN; binds the
+enabled LLM key and revision, `deepseek-chat`, a canonical execution digest,
+effective token/call/cost/timeout limits, purpose, and expiry; and returns no
+secret. The execution digest covers the parent Flow, Flow Map Router, Subflow
+records, routed Subflow graphs, effective settings, applicable project/Flow/
+Subflow instructions, and every transitively reachable version-pinned
+published snapshot. Reachable publication lifecycle status, missing targets,
+and composition-validity results are included. Publication resolution uses the
+same process-wide publication universe as canonical execution, including a
+domain Flow's calls to globally published Flows owned by another project, but
+the digest hashes only records transitively reachable from the executed Flow.
+Consequently unrelated publication churn is excluded while same-millisecond
+snapshot, dependency, publication, and deprecation changes invalidate a grant.
+Claiming is atomic. Secret Keys creates a separate opaque,
+one-use reveal authorization after identity verification and owns only its
+zeroizable password-derived key; the LLM grant retains only that opaque ID.
+The provider secret is first decrypted just in time at dispatch, and both the
+Secret Keys authorization and LLM grant recheck active state and expiry after
+asynchronous work before returning it. Neither login credentials nor provider
+secrets are retained by the grant or persisted. Unused capabilities expire
+actively and are cleared on consume, failure, cancellation, key change,
+service shutdown, web-runtime reload, SIGINT, or SIGTERM. Core never reads a
+provider key from the environment. Flow Settings exposes only DeepSeek and
+deepseek-chat, selects only enabled Secret Keys metadata in global or current
+Flow scope, and persists per-request input/output/total token limits, one-call
+limit, timeout, estimated-cost cap, and zero-retry policy. The settings API
+rejects totals above 50,000, input-plus-output reservations above the total,
+calls other than one, retries other than zero, timeouts above 25 seconds, and
+cost caps above USD 0.25. Runtime Debug performs preflight and then opens a
+password-plus-PIN authorization dialog for diagnosis_only; browser fields
+are cleared before the grant request and after every completion path, and
+server failures are presented as fixed, sanitized messages. The one-use grant
+is attached only to run-runtime-session; the ordinary deterministic modes do
+not receive it. Diagnosis-only must create a fresh runtime session: both the API
+and service reject a supplied `runId`, revoke the invalid grant, and Runtime Debug
+skips the queue endpoint for that lane. As defense in depth, diagnosis execution
+sets graph cross-domain authorization to an empty set instead of reconstructing
+it from session metadata. A diagnosis-only run executes the already-authored deterministic
+Flow through the same bound IO, importer-native, and host-runtime capabilities
+as an ordinary run, preserving its existing Flow and domain authorization. The
+grant cannot add cross-domain grants or authorize external side effects, and it
+disables LLM patching, recovery retries, adaptation, and promotion. Target-level
+restrictions, such as a downstream test lane permitting only local fixtures,
+remain the responsibility of the importing domain policy rather than generic
+Core.
+
+The execution-grant module additionally exports a fail-closed
+`build_and_adapt` capability foundation for non-recording authoring and live
+adaptation orchestration. Purpose-aware preflight and issue endpoints and the
+production provider resolver now expose the capability. The typed
+`generate-flow-bootstrap-adaptation` endpoint accepts only the project, blank
+Flow, current authenticated session, and opaque `build_and_adapt` grant ID. It
+revalidates the available grant, passes the exact dependency digest and settings
+revision to the service generation seam, and returns only the proposed
+adaptation identity, status, risk, source-instruction IDs, base binding, and
+bounded provider accounting. The endpoint neither applies the proposal nor
+mutates or runs the Flow; UI review/application and runtime adaptation remain
+separate phases. Build grant issue is
+bound to the current authenticated actor session and rejects existing-run,
+idempotency, adaptation-mode, dry-run, and external-side-effect flags.
+Authoring grants require an exact project/Flow dependency digest plus the
+canonical persisted Flow settings revision, bind the enabled key revision, and
+become invalid when any of those revisions or the authorized user session
+changes. The purpose is runtime-enum validated. Production resolution currently
+permits `build_and_adapt` only for the initial `flow_bootstrap` task/output;
+the module's bounded diagnosis, patch, proposal, and instruction task pairs
+remain unreachable until the live adaptation phase explicitly enables them. Calls
+are sequential and atomically claimed; each call consumes a separate opaque,
+one-use Secret Keys authorization and receives a grant-owned abort signal. A
+grant allows at most eight explicitly configured calls, no provider retries,
+at most 50,000 total tokens per request, a finite per-call timeout and cost
+ceiling, and a finite aggregate estimated-cost ceiling. Provider completion is
+not result acceptance: Core revalidates expiry, active membership, actor/
+session, key revision, dependency digest, and settings revision at a mandatory
+commit boundary before returning a result for parsing or accounting. Expiry,
+explicit cancellation, abort, user/session revocation, failure, or service
+close aborts the in-flight call and revokes all unused authorizations. No password, PIN, or provider plaintext is retained or
+persisted. A durable Flow or settings mutation changes the binding, so later
+calls require a newly authorized grant against the new revision.
+
 Recordings remain immutable evidence when users choose to provide them, but
 they are no longer the required center of Flow creation. Text description and
 scoped instructions are first-class inputs. Adaptations are the approval and
@@ -396,6 +502,9 @@ payload to reconcile locally.
   canonical Flow artifacts;
 - `listFlows` combines canonical Flows with explicitly read-only legacy
   compatibility entries;
+  hierarchy projection resolves entries by Flow ID before generating rows,
+  with the canonical entry winning over a legacy compatibility duplicate so
+  every rendered tree item has one stable identity;
 - `publishFlow` records an immutable published interface/version snapshot and
   its dependency digests with the project-owned Flow document;
 - `listFlowPublications`, `deprecateFlowPublication`, and

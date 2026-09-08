@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../model/index.ts";
+import { AutomationStudioLlmProviderError } from "./llm-provider-contract.ts";
 import {
   AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS,
+  AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST,
   packAutomationStudioLlmContext,
   resolveAutomationStudioLlmInstructions,
+  resolveAutomationStudioLlmTokenLimits,
   runAutomationStudioLlmHarness,
   validateAutomationStudioLlmOutput,
   type AutomationStudioLlmProvider
@@ -155,8 +158,9 @@ describe("Automation Studio LLM harness", () => {
     const provider: AutomationStudioLlmProvider = {
       metadata: { provider: "mock", model: "debug-model" },
       runTask: async () => ({
-        response: { kind: "diagnosis", summary: "The confirmation signal is missing.", confidence: 0.8 },
-        usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.01 }
+        response: { kind: "diagnosis", summary: "The confirmation signal is missing.", confidence: 0.8, metadata: { untrusted: "discard me" } },
+        usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.01 },
+        diagnostics: [{ severity: "warning", code: "provider.notice", message: "untrusted provider detail" }]
       })
     };
 
@@ -167,17 +171,111 @@ describe("Automation Studio LLM harness", () => {
       runId: "run.failed",
       instructions: [],
       provider,
+      requestId: "request.test.99",
+      idempotencyKey: "request.test.idempotent",
+      timeoutMs: 1234,
       now: () => 99
     });
 
     expect(result.ok).toBe(true);
     expect(result.provider).toEqual({ provider: "mock", model: "debug-model" });
+    expect(result.request.tokenLimits).toEqual({ maxInputTokens: 8000, maxOutputTokens: 2000, maxTotalTokens: 10000 });
+    expect(result.response).not.toHaveProperty("metadata");
+    expect(result.diagnostics).toEqual(expect.arrayContaining([{ severity: "warning", code: "llm.provider_diagnostic", message: "Provider reported a warning diagnostic." }]));
     expect(result.intervention).toMatchObject({
       provider: "mock",
       model: "debug-model",
       tokenUsage: { totalTokens: 15 },
-      structuredResult: { kind: "diagnosis" }
+      structuredResult: { kind: "diagnosis" },
+      metadata: {
+        requestId: "request.test.99",
+        idempotencyKey: "request.test.idempotent",
+        timeoutMs: 1234,
+        tokenLimits: { maxInputTokens: 8000, maxOutputTokens: 2000, maxTotalTokens: 10000 }
+      }
     });
+    expect(result.intervention.structuredResult).not.toHaveProperty("summary");
+  });
+
+  it("enforces the absolute request ceiling before invoking a provider", async () => {
+    let calls = 0;
+    const provider: AutomationStudioLlmProvider = {
+      metadata: { provider: "mock", model: "debug-model" },
+      runTask: async () => {
+        calls += 1;
+        return { response: { kind: "diagnosis", summary: "Should not run." } };
+      }
+    };
+    const limits = resolveAutomationStudioLlmTokenLimits({ maxTotalTokens: AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST + 1 });
+    expect(limits.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_budget.absolute_token_ceiling");
+
+    const result = await runAutomationStudioLlmHarness({
+      taskKind: "runtime_diagnosis",
+      projectId: "project.llm",
+      flowId: "flow.checkout",
+      instructions: [],
+      provider,
+      tokenLimits: { maxInputTokens: 1000, maxOutputTokens: 1000, maxTotalTokens: AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST + 1 }
+    });
+
+    expect(calls).toBe(0);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_budget.absolute_token_ceiling");
+  });
+
+  it("normalizes provider throws and malformed responses into failed interventions", async () => {
+    const thrown = await runAutomationStudioLlmHarness({
+      taskKind: "runtime_diagnosis",
+      projectId: "project.llm",
+      flowId: "flow.checkout",
+      runId: "run.throw",
+      instructions: [],
+      provider: { metadata: { provider: "mock", model: "throw" }, runTask: async () => { throw new Error("sensitive transport detail"); } },
+      now: () => 100
+    });
+    expect(thrown.ok).toBe(false);
+    expect(thrown.diagnostics).toEqual(expect.arrayContaining([expect.objectContaining({ code: "llm.provider_request_failed", message: expect.not.stringContaining("sensitive") })]));
+    expect(thrown.intervention).toMatchObject({ validation: { ok: false } });
+
+    const typedFailure = await runAutomationStudioLlmHarness({
+      taskKind: "runtime_diagnosis",
+      projectId: "project.llm",
+      flowId: "flow.checkout",
+      runId: "run.rate-limit",
+      instructions: [],
+      provider: {
+        metadata: { provider: "mock", model: "rate-limit" },
+        runTask: async () => { throw new AutomationStudioLlmProviderError("llm.provider_rate_limited", "secret-bearing provider detail", true, 429); }
+      }
+    });
+    expect(typedFailure.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "llm.provider_rate_limited", message: "The LLM provider rate limited the request.", metadata: { retryable: true, providerStatus: 429 } })
+    ]));
+
+    const malformed = await runAutomationStudioLlmHarness({
+      taskKind: "runtime_diagnosis",
+      projectId: "project.llm",
+      flowId: "flow.checkout",
+      runId: "run.malformed",
+      instructions: [],
+      provider: { metadata: { provider: "mock", model: "malformed" }, runTask: async () => ({ response: { kind: "diagnosis", summary: 42, unexpected: true } }) },
+      now: () => 101
+    });
+    expect(malformed.ok).toBe(false);
+    expect(malformed.response).toBeUndefined();
+    expect(malformed.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(expect.arrayContaining(["llm_output.invalid_summary", "llm_output.unexpected_field"]));
+    expect(malformed.intervention).toMatchObject({ validation: { ok: false } });
+  });
+
+  it("short-circuits million-entry and proxy provider-result bombs", async () => {
+    const million = new Array(1_000_000);
+    const bomb = await runAutomationStudioLlmHarness({ taskKind: "runtime_patch", projectId: "project.llm", flowId: "flow.checkout", instructions: [], provider: { metadata: { provider: "mock", model: "bomb" }, runTask: async () => ({ response: { kind: "runtime_patch", summary: "x", riskLevel: "low", patches: million } }) } });
+    expect(bomb.ok).toBe(false);
+    expect(bomb.diagnostics).toHaveLength(1);
+    expect(bomb.diagnostics[0]?.code).toBe("llm_output.provider_result_too_large");
+    const proxy = new Proxy({}, { ownKeys: () => { throw new Error("enumeration detail"); } });
+    const trapped = await runAutomationStudioLlmHarness({ taskKind: "runtime_diagnosis", projectId: "project.llm", flowId: "flow.checkout", instructions: [], provider: { metadata: { provider: "mock", model: "proxy" }, runTask: async () => proxy } });
+    expect(trapped.diagnostics).toEqual(expect.arrayContaining([expect.objectContaining({ code: "llm_output.invalid_provider_result", message: expect.not.stringContaining("enumeration") })]));
   });
 });
 

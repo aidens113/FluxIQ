@@ -7,13 +7,14 @@ import { useAutomationStudioRuntime } from "../bootstrap/useAutomationStudioRunt
 import { useAutomationStudioDevelopmentTelemetry } from "../development/telemetry";
 import { AutomationStudioSession } from "./AutomationStudioSession";
 import { scheduleAutomationViewSurfacePreload } from "../views/view-surface-preloader";
+import { automationStudioViewId } from "../views/view-registry";
 
 export function AutomationStudioComposition(props: { currentUser: CurrentUser }) {
   useUiRenderMetric("AutomationStudioLive");
   useUiLongTaskMetrics("AutomationStudio");
   useAutomationStudioDevelopmentTelemetry();
   const runtime = useAutomationStudioRuntime();
-  useEffect(() => scheduleAutomationViewSurfacePreload(["flow-nodes"]), []);
+  useEffect(() => scheduleAutomationViewSurfacePreload([automationStudioViewId.flowEditor]), []);
 
   return <AutomationStudioSession currentUser={props.currentUser} runtime={runtime} />;
 }

@@ -3,10 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { FluxIQ } from "fluxiq";
 import { afterEach, describe, expect, it } from "vitest";
-import { applyFluxIQHostModule, createFluxIQWebInstance, resolveFluxIQHostModulePath, resolveFluxIQWebHostRoot } from "./fluxiq";
+import { applyFluxIQHostModule, closeFluxIQWebRuntime, createFluxIQWebInstance, getFluxIQ, reloadFluxIQWebInstance, resolveFluxIQHostModulePath, resolveFluxIQWebHostRoot } from "./fluxiq";
 
 const originalEnv = {
   FLUXIQ_ALLOW_FRAMEWORK_REPO_ROOT: process.env.FLUXIQ_ALLOW_FRAMEWORK_REPO_ROOT,
+  FLUXIQ_CLIENT_GATEWAY_ENABLED: process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED,
   FLUXIQ_DOMAIN_ID: process.env.FLUXIQ_DOMAIN_ID,
   FLUXIQ_HOST_DOMAIN: process.env.FLUXIQ_HOST_DOMAIN,
   FLUXIQ_HOST_MODULE: process.env.FLUXIQ_HOST_MODULE,
@@ -93,6 +94,37 @@ module.exports.registerFluxIQHost = (fluxiq) => {
   });
 });
 
+describe("FluxIQ web runtime lifecycle", () => {
+  it("closes the previous instance on reload and the active instance on owner shutdown", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "fluxiq-web-lifecycle-"));
+    process.env.FLUXIQ_IMPORTER_ROOT = root;
+    process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED = "false";
+    const globalState = globalThis as typeof globalThis & { __fluxiqWebRuntime?: unknown };
+    delete globalState.__fluxiqWebRuntime;
+    const sigintListeners = process.listenerCount("SIGINT");
+    const sigtermListeners = process.listenerCount("SIGTERM");
+    try {
+      const first = getFluxIQ();
+      expect(process.listenerCount("SIGINT")).toBe(sigintListeners + 1);
+      expect(process.listenerCount("SIGTERM")).toBe(sigtermListeners + 1);
+      let firstCloseCount = 0;
+      (first as any).close = async () => { firstCloseCount += 1; };
+      const second = await reloadFluxIQWebInstance();
+      expect(firstCloseCount).toBe(1);
+
+      let secondCloseCount = 0;
+      (second as any).close = async () => { secondCloseCount += 1; };
+      await Promise.all([closeFluxIQWebRuntime(), closeFluxIQWebRuntime()]);
+      expect(secondCloseCount).toBe(1);
+      expect(process.listenerCount("SIGINT")).toBe(sigintListeners);
+      expect(process.listenerCount("SIGTERM")).toBe(sigtermListeners);
+    } finally {
+      await closeFluxIQWebRuntime();
+      delete globalState.__fluxiqWebRuntime;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
 describe("FluxIQ web host root resolution", () => {
   it("prefers the explicit importer root", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "fluxiq-importer-root-"));

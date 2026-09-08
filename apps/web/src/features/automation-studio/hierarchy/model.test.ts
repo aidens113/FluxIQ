@@ -3,6 +3,19 @@ import type { AutomationHierarchyNode } from "./model";
 import { automationHierarchyNodeCanCreateChildFolder, automationHierarchyNodeCanDelete, automationHierarchyNodeIsGeneratedFlowStructure, flowHierarchyNodes, indexAutomationHierarchyNodes, visibleAutomationHierarchyNodeIds } from "./model";
 
 describe("flowHierarchyNodes", () => {
+  it("uses the canonical owner once when canonical and legacy entries share a Flow ID", () => {
+    const nodes = flowHierarchyNodes([
+      { source: "legacy", flow: { flowId: "flow.checkout", name: "Checkout legacy", expansion: {} } },
+      { source: "canonical", flow: { flowId: "flow.checkout", name: "Checkout", expansion: {} } }
+    ]);
+
+    expect(nodes.filter((node) => node.kind === "flow")).toEqual([
+      expect.objectContaining({ label: "Checkout", sourceId: "flow.checkout" })
+    ]);
+    expect(new Set(nodes.map((node) => node.id)).size).toBe(nodes.length);
+    expect(nodes.some((node) => node.label.includes("legacy"))).toBe(false);
+  });
+
   it("expands Flows into sidebar folders and Flow-owned object rows", () => {
     const nodes = flowHierarchyNodes([{
       source: "canonical",

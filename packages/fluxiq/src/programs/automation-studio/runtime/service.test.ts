@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAutomationStudioFlowExpansionFixture, createAutomationStudioLargeProjectFixture, createCallFlowNode, stateValue, type StateSnapshot } from "../model/index.ts";
 import { generateFlowTypeScript } from "../dsl/index.ts";
 import { AutomationStudioService } from "./service.ts";
+import { AutomationStudioLlmExecutionGrantService } from "./llm-execution-grants.ts";
 import { AutomationStudioNativeNodeRuntime } from "./native-node-runtime.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioImporterSdkManifest } from "../nodes/index.ts";
 import { IoRegistry, createEnvelope } from "../../../io/index.ts";
@@ -108,6 +109,19 @@ async function createFailingCanonicalFlow(
 
 function adaptiveTrainingMetadata(): JsonObject {
   return {
+    adaptationModeVersion: 1,
+    adaptationMode: "fully_adaptive",
+    adaptationPolicySettings: {
+      preset: "adaptive",
+      proposalMode: "auto",
+      allowRuntimeRecovery: true,
+      allowCreateRecoveryPaths: true,
+      allowModifySubflows: true,
+      allowCreateSubflows: true,
+      allowModifyRouter: true,
+      allowModifyExpectations: true,
+      allowModifyActionTargets: true
+    },
     trainingModeSettings: {
       mode: "continuous_adaptive",
       allowLlmIntervention: true,
@@ -115,6 +129,7 @@ function adaptiveTrainingMetadata(): JsonObject {
       allowAdaptationCreation: true,
       proposalApprovalMode: "auto",
       allowPromotion: true,
+      requireFirstManualReviewBeforeAutoPromotion: false,
       budgets: { maxInterventionsPerRun: 2, maxTokensPerRun: 12000, maxCostUsdPerTrainingWindow: 5, exhaustedBehavior: "ask" }
     }
   };
@@ -322,7 +337,15 @@ describe("AutomationStudioService recording persistence", () => {
     expect(firstProposalId).not.toBe(secondProposalId);
     expect(firstCandidate.actionEntryId).toBe(firstCandidate.sourceObservationIds[0]);
     expect(firstCandidate.sourceObservationIds).toContain("entry.shared-state");
-    expect(second.recordingFlowProposals![0]!.metadata).toMatchObject({ generationMode: "llm_assisted", title: "Clean checkout", instructions: "Prefer one reusable click action." });
+    expect(second.recordingFlowProposals![0]!.metadata).toMatchObject({
+      generationMode: "direct",
+      requestedGenerationMode: "llm_assisted",
+      llmAssistanceStatus: "not_invoked",
+      generatedBy: "recording_mapper",
+      title: "Clean checkout",
+      instructions: "Prefer one reusable click action."
+    });
+    expect(second.recordingFlowProposals![0]!.metadata).not.toHaveProperty("llm");
     expect((await service.listPipelineArtifacts(project.id)).recordingFlowProposals.map((proposal) => proposal.proposalId)).toEqual(expect.arrayContaining([firstProposalId, secondProposalId]));
 
     await service.deleteProposal({ projectId: project.id, proposalId: firstProposalId });
@@ -362,22 +385,22 @@ describe("AutomationStudioService recording persistence", () => {
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.defaults", name: "Default settings Flow" });
 
     expect(flow.metadata).toMatchObject({
-      trainingMode: "continuous_adaptive",
-      proposalMode: "auto",
-      proposalApprovalMode: "auto",
+      trainingMode: "normal",
+      proposalMode: "manual",
+      proposalApprovalMode: "manual",
       llmProvider: "host",
       adaptationPolicyId: "policy.default",
       budgetExhaustedBehavior: "ask",
       adaptationPolicySettings: {
-        preset: "adaptive",
-        proposalMode: "auto",
+        preset: "locked",
+        proposalMode: "manual",
         allowRuntimeRecovery: true,
-        allowCreateRecoveryPaths: true,
-        allowModifySubflows: true,
-        allowCreateSubflows: true,
-        allowModifyRouter: true,
-        allowModifyExpectations: true,
-        allowModifyActionTargets: true,
+        allowCreateRecoveryPaths: false,
+        allowModifySubflows: false,
+        allowCreateSubflows: false,
+        allowModifyRouter: false,
+        allowModifyExpectations: false,
+        allowModifyActionTargets: false,
         allowDeleteOrDisableBehavior: false,
         allowExternalSideEffects: false,
         requireApprovalForDestructiveChanges: true,
@@ -386,14 +409,14 @@ describe("AutomationStudioService recording persistence", () => {
         maxEstimatedCostUsdPerRun: 1
       },
       trainingModeSettings: {
-        mode: "continuous_adaptive",
+        mode: "normal",
         trainForRunCount: 3,
         minimumStabilityScore: 0.9,
-        allowLlmIntervention: true,
+        allowLlmIntervention: false,
         allowRuntimeRecovery: true,
-        allowAdaptationCreation: true,
-        proposalApprovalMode: "auto",
-        allowPromotion: true,
+        allowAdaptationCreation: false,
+        proposalApprovalMode: "manual",
+        allowPromotion: false,
         budgets: {
           maxInterventionsPerRun: 2,
           maxTokensPerRun: 12000,
@@ -418,6 +441,7 @@ describe("AutomationStudioService recording persistence", () => {
           llmProvider: "deepseek",
           llmModel: "deepseek-chat",
           llmSecretKeyId: "key.deepseek",
+          llmExecutionSettings: { tokenLimits: { maxInputTokens: 2000, maxOutputTokens: 512, maxTotalTokens: 3000 }, maxCalls: 1, timeoutMs: 15000, maxEstimatedCostUsd: 0.1, retryCount: 0 },
           adaptationPolicyId: "policy.metadata"
         }
       }
@@ -433,9 +457,20 @@ describe("AutomationStudioService recording persistence", () => {
       name: "First metadata Flow",
       settings: {
         adaptation: { policyId: "policy.metadata" },
-        llm: { provider: "deepseek", model: "deepseek-chat", secretKeyId: "key.deepseek" }
+        llm: { provider: "deepseek", model: "deepseek-chat", secretKeyId: "key.deepseek", execution: { tokenLimits: { maxInputTokens: 2000, maxOutputTokens: 512, maxTotalTokens: 3000 }, maxCalls: 1, timeoutMs: 15000, maxEstimatedCostUsd: 0.1, retryCount: 0 } }
       }
     });
+  });
+  it("reports the canonical Flow timestamp when the SQL settings projection is stale", async () => {
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Stale Flow metadata projection" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.metadata.stale", name: "Stale metadata Flow" });
+    const canonicalUpdatedAt = flow.updatedAt + 100;
+    await (service as any).repositories.flows.put({ ...flow, updatedAt: canonicalUpdatedAt });
+
+    const detail = await service.getFlowMetadataDetail(project.id, flow.flowId);
+
+    expect(detail?.updatedAt).toBe(canonicalUpdatedAt);
   });
   it("resolves runtime adaptation behavior into Flow run detail metadata", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
@@ -446,22 +481,27 @@ describe("AutomationStudioService recording persistence", () => {
     const detail = await service.getFlowRunDetail(project.id, run.runId);
 
     expect(detail?.metadata).toMatchObject({
-      trainingMode: "continuous_adaptive",
+      trainingMode: "normal",
       trainingBehavior: {
-        invokeLlm: true,
+        invokeLlm: false,
         runRecovery: true,
-        createAdaptations: true,
-        promoteAdaptations: true
+        createAdaptations: false,
+        promoteAdaptations: false
       },
       runtimeAdaptationContext: {
         flowId: flow.flowId,
-        mode: "continuous_adaptive",
+        mode: "normal",
         policyId: "policy.default",
-        policyPreset: "adaptive",
-        approvalMode: "auto",
+        policyPreset: "locked",
+        approvalMode: "manual",
         runsCompleted: 0,
         budget: { ok: true },
-        diagnostics: []
+        diagnostics: expect.arrayContaining([
+          "LLM intervention is disabled by training mode or settings.",
+          "Adaptation creation is disabled by training mode or settings.",
+          "Runtime recovery is disabled by adaptation policy.",
+          "Normal mode records adaptive context without invoking LLM."
+        ])
       }
     });
   });
@@ -525,6 +565,7 @@ describe("AutomationStudioService recording persistence", () => {
     const stableFlow = await createRunnableCanonicalFlow(service, project.id, {
       flowId: "flow.train-until-stable",
       metadata: {
+        ...adaptiveTrainingMetadata(),
         trainingModeSettings: {
           mode: "train_until_stable",
           minimumStabilityScore: 0.5,
@@ -540,6 +581,7 @@ describe("AutomationStudioService recording persistence", () => {
     const continuousFlow = await createRunnableCanonicalFlow(service, project.id, {
       flowId: "flow.continuous",
       metadata: {
+        ...adaptiveTrainingMetadata(),
         trainingModeSettings: {
           mode: "continuous_adaptive",
           allowLlmIntervention: true,
@@ -628,7 +670,7 @@ describe("AutomationStudioService recording persistence", () => {
     expect(run.status).toBe("failed");
     expect(harnessIntervention).toMatchObject({
       kind: "diagnosis",
-      validation: { ok: true, issues: [expect.stringContaining("llm.provider_missing")] }
+      validation: { ok: false, issues: [expect.stringContaining("llm.provider_missing")] }
     });
     expect(detail?.metadata).toMatchObject({
       llmGate: {
@@ -662,12 +704,331 @@ describe("AutomationStudioService recording persistence", () => {
       provider: "mock",
       model: "diagnosis-model",
       tokenUsage: { totalTokens: 18 },
-      structuredResult: { kind: "diagnosis", summary: "Division failed because denominator is zero." }
+      structuredResult: { kind: "diagnosis", confidence: 0.9 }
     });
     expect(detail?.summary).toMatchObject({
       interventionCount: 3,
       tokenUsage: { inputTokens: 22, outputTokens: 14, totalTokens: 36, estimatedCostUsd: 0.004 }
     });
+  });
+
+  it("persists a sanitized terminal intervention when provider resolution throws", async () => {
+    const service = createService({
+      dataDir: tempRoot,
+      seedFixture: false,
+      llmProviderResolver: async () => { throw new Error("secret resolver detail must not persist"); }
+    });
+    const project = await service.createProject({ name: "Resolver failure" });
+    const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.resolver-failure", metadata: adaptiveTrainingMetadata() });
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
+    const detail = await service.getFlowRunDetail(project.id, run.runId);
+    expect(detail?.metadata).toMatchObject({ llmGate: { invoked: false, code: "llm.provider_resolution_failed" } });
+    expect(detail?.interventions).toEqual(expect.arrayContaining([expect.objectContaining({ reason: "LLM provider resolution failed.", validation: { ok: false, issues: [expect.stringContaining("llm.provider_resolution_failed")] } })]));
+    expect(JSON.stringify(detail)).not.toContain("secret resolver detail");
+  });
+
+  it("uses manual approval runtime mode as diagnosis-only with no patch or promotion call", async () => {
+    const taskKinds: string[] = [];
+    const service = createService({
+      dataDir: tempRoot,
+      seedFixture: false,
+      llmProviderResolver: () => ({
+        metadata: { provider: "mock", model: "diagnosis-only-model" },
+        runTask: async (request) => {
+          taskKinds.push(request.taskKind);
+          return {
+            response: { kind: "diagnosis", summary: "The denominator is zero." },
+            usage: { inputTokens: 5, outputTokens: 3, totalTokens: 8 }
+          };
+        }
+      })
+    });
+    const project = await service.createProject({ name: "Diagnosis only" });
+    const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.diagnosis-only", metadata: adaptiveTrainingMetadata() });
+
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 }, adaptiveMode: "manual_approval" });
+    const detail = await service.getFlowRunDetail(project.id, run.runId);
+
+    expect(taskKinds).toEqual(["runtime_diagnosis"]);
+    expect(detail?.adaptationIds).toEqual([]);
+    expect(detail?.changeProposalIds).toEqual([]);
+    expect(detail?.metadata).toMatchObject({
+      trainingBehavior: { invokeLlm: true, createAdaptations: false, promoteAdaptations: false },
+      llmGate: { invoked: true, providerConfigured: true, ok: true }
+    });
+  });
+
+  it("binds and revokes a diagnosis-only execution grant without persisting session identity", async () => {
+    const resolved: unknown[] = [];
+    const revoked: string[] = [];
+    let grantServiceClosed = false;
+    const taskKinds: string[] = [];
+    const service = createService({
+      dataDir: tempRoot,
+      seedFixture: false,
+      llmProviderResolver: (input) => {
+        resolved.push(input);
+        return {
+          provider: { metadata: { provider: "mock", model: "grant-model" }, runTask: async (request) => { taskKinds.push(request.taskKind); expect(request).toMatchObject({ tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 }, maxEstimatedCostUsd: 0.1, timeoutMs: 10000 }); return { response: { kind: "diagnosis", summary: "safe" }, usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } }; } },
+          tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 },
+          maxCallsPerRun: 1,
+          maxEstimatedCostUsd: 0.1,
+          timeoutMs: 10000
+        };
+      },
+      revokeLlmExecutionGrant: (grantId) => revoked.push(grantId),
+      closeLlmExecutionGrants: () => { grantServiceClosed = true; }
+    });
+    const project = await service.createProject({ name: "Grant diagnosis" });
+    const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.grant-diagnosis", metadata: adaptiveTrainingMetadata() });
+    const grant = { grantId: "llm-grant:test", actorUserId: "user.test", actorSessionId: "session.sensitive", purpose: "diagnosis_only" as const };
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 }, llmExecution: grant });
+    const detail = await service.getFlowRunDetail(project.id, run.runId);
+    expect(taskKinds).toEqual(["runtime_diagnosis"]);
+    expect(detail?.actionAttempts).toEqual(expect.arrayContaining([expect.objectContaining({ nodeId: "divide", status: "failed" })]));
+    expect(resolved).toEqual([expect.objectContaining({ executionGrant: grant })]);
+    expect(revoked).toEqual(["llm-grant:test"]);
+    expect(detail?.adaptationIds).toEqual([]);
+    expect(JSON.stringify(detail)).not.toContain("session.sensitive");
+    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, dryRunLlm: true })).rejects.toThrow("incompatible");
+    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, authorizedExternalSideEffects: true })).rejects.toThrow("incompatible");
+    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, authorizedDomainIds: ["example"] })).rejects.toThrow("incompatible");
+    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant, idempotencyKey: "live-diagnosis" })).rejects.toThrow("does not accept idempotency");
+    await service.close();
+    expect(grantServiceClosed).toBe(true);
+  });
+
+  it("executes the existing scoped domain action before diagnosis without LLM retry or mutation", async () => {
+    const sequence: string[] = [];
+    const taskKinds: string[] = [];
+    const hostPoints: string[] = [];
+    let dispatchCount = 0;
+    const io = new IoRegistry();
+    io.registerOutput("example", {
+      definition: { id: "click", title: "Click" },
+      mode: "request",
+      dispatch: (request) => {
+        dispatchCount += 1;
+        sequence.push(`action:${dispatchCount}`);
+        return dispatchCount === 1
+          ? { ok: false, domainId: "example", outputId: request.outputId, error: "Loopback target drift." }
+          : { ok: true, domainId: "example", outputId: request.outputId, payload: { clicked: true } };
+      }
+    });
+    const revoked: string[] = [];
+    const service = createService({
+      dataDir: tempRoot,
+      seedFixture: false,
+      llmProviderResolver: () => ({
+        provider: {
+          metadata: { provider: "mock", model: "diagnosis-causality-model" },
+          runTask: async (request) => {
+            taskKinds.push(request.taskKind);
+            sequence.push("diagnosis");
+            expect(sequence).toEqual(["action:1", "diagnosis"]);
+            expect(request.context.recentActions).toEqual(expect.arrayContaining([
+              expect.objectContaining({ nodeId: "click", status: "failed", outputs: expect.objectContaining({ error: "Loopback target drift." }) })
+            ]));
+            expect(request.estimatedInputTokens).toBeLessThanOrEqual(request.tokenLimits.maxInputTokens);
+            expect(request.context.policyGates).toMatchObject({ allowExternalSideEffects: false });
+            return { response: { kind: "diagnosis", summary: "The recorded target drifted." }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } };
+          }
+        },
+        tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 },
+        maxCallsPerRun: 1,
+        maxEstimatedCostUsd: 0.1,
+        timeoutMs: 10000
+      }),
+      revokeLlmExecutionGrant: (grantId) => revoked.push(grantId),
+      hostRuntime: {
+        capabilities: ["state-snapshot"],
+        captureStateSnapshot: ({ node, attemptId, point }) => {
+          hostPoints.push(`${node.id}:${point}`);
+          return { stateSnapshotId: `${attemptId}.${point}`, stateRef: `state://${attemptId}/${point}`, capturedAt: 1 };
+        }
+      }
+    }).bindIoRuntime(io, "example");
+    const project = await service.createProject({ name: "Diagnosis action causality", domainId: "example" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.diagnosis-action-causality", name: "Diagnosis action causality" });
+    const configured = await service.saveFlow({ projectId: project.id, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() } } });
+    const installed = await installPrimaryRouter(service, project.id, configured.flowId, {
+      nodes: [
+        { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
+        { id: "click", definitionId: "builtin.policy.action", parameterValues: { outputId: "click", parameters: { target: "scenario-button" } } }
+      ],
+      edges: [{ id: "start.click", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "click", targetPortId: "in" }]
+    });
+    const graphBefore = JSON.stringify(installed.graph);
+    const grant = { grantId: "llm-grant:causality", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnosis_only" as const };
+
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: configured.flowId, llmExecution: grant });
+    const detail = await service.getFlowRunDetail(project.id, run.runId);
+
+    expect(run.status).toBe("failed");
+    expect(dispatchCount).toBe(1);
+    expect(sequence).toEqual(["action:1", "diagnosis"]);
+    expect(taskKinds).toEqual(["runtime_diagnosis"]);
+    expect(revoked).toEqual([grant.grantId]);
+    expect(detail?.actionAttempts?.filter((attempt) => attempt.nodeId === "click")).toHaveLength(1);
+    expect(hostPoints).toEqual(expect.arrayContaining(["click:before_action", "click:after_action"]));
+    expect(detail?.actionAttempts?.find((attempt) => attempt.nodeId === "click")?.metadata).toMatchObject({ stateRefs: { beforeAction: { stateRef: expect.stringContaining("state://") }, afterAction: { stateRef: expect.stringContaining("state://") } } });
+    expect(detail?.adaptationIds).toEqual([]);
+    expect(detail?.changeProposalIds).toEqual([]);
+    expect(detail?.metadata).not.toHaveProperty("runtimePatchAttempts");
+    expect(JSON.stringify(await service.getFlow(project.id, installed.graph.flowId))).toBe(graphBefore);
+
+    const ordinary = await service.runRuntimeSession({ projectId: project.id, flowId: configured.flowId, adaptiveMode: "no_llm_intervention" });
+    expect(ordinary.status).toBe("succeeded");
+    expect(dispatchCount).toBe(2);
+    expect(taskKinds).toEqual(["runtime_diagnosis"]);
+  });
+  it("executes an existing domain-native node before diagnosis-only annotation", async () => {
+    let nativeExecutionCount = 0;
+    const taskKinds: string[] = [];
+    const definition = {
+      schemaVersion: "0.1" as const,
+      id: "example.native-failure",
+      version: "1.0.0",
+      label: "Native failure",
+      description: "Produces a bounded deterministic failure",
+      category: "Example",
+      source: { kind: "importer" as const, domainId: "example", packageId: "example.package", implementationKey: "fail" },
+      availability: { kind: "domain" as const, domainId: "example" },
+      capabilities: { executable: true as const },
+      inputs: [],
+      outputs: [{ id: "error", label: "Error", valueType: "string" as const }],
+      parameters: []
+    };
+    const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "example.package", packageVersion: "1.0.0", domainId: "example", nodes: [definition] };
+    const native = new AutomationStudioNativeNodeRuntime().register(manifest, {
+      packageId: "example.package",
+      packageVersion: "1.0.0",
+      implementations: {
+        fail: () => {
+          nativeExecutionCount += 1;
+          return { status: "failed", outputs: { error: "Native loopback failure." } };
+        }
+      }
+    });
+    const service = createService({
+      dataDir: tempRoot,
+      seedFixture: false,
+      llmProviderResolver: () => ({
+        provider: {
+          metadata: { provider: "mock", model: "native-diagnosis-model" },
+          runTask: async (request) => {
+            taskKinds.push(request.taskKind);
+            expect(nativeExecutionCount).toBe(1);
+            expect(request.context.recentActions).toEqual(expect.arrayContaining([
+              expect.objectContaining({ nodeId: "native-failure", status: "failed", outputs: { error: "Native loopback failure." } })
+            ]));
+            return { response: { kind: "diagnosis", summary: "The native action failed." }, usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12 } };
+          }
+        },
+        tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 },
+        maxCallsPerRun: 1,
+        maxEstimatedCostUsd: 0.1,
+        timeoutMs: 10000
+      })
+    }).bindNativeNodeRuntime(native);
+    const project = await service.createProject({ name: "Native diagnosis", domainId: "example" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.native-diagnosis", name: "Native diagnosis" });
+    const configured = await service.saveFlow({ projectId: project.id, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() } } });
+    await installPrimaryRouter(service, project.id, configured.flowId, {
+      nodes: [{ id: "native-failure", definitionId: definition.id }],
+      edges: []
+    });
+
+    const run = await service.runRuntimeSession({
+      projectId: project.id,
+      flowId: configured.flowId,
+      llmExecution: { grantId: "llm-grant:native", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnosis_only" }
+    });
+
+    expect(run.status).toBe("failed");
+    expect(nativeExecutionCount).toBe(1);
+    expect(taskKinds).toEqual(["runtime_diagnosis"]);
+  });
+  it("rejects a diagnosis grant attached to a pre-staged cross-domain runtime session", async () => {
+    let dispatchCount = 0;
+    let providerResolutionCount = 0;
+    const revoked: string[] = [];
+    const io = new IoRegistry();
+    io.registerOutput("example", {
+      definition: { id: "click", title: "Click" },
+      mode: "request",
+      dispatch: (request) => {
+        dispatchCount += 1;
+        return { ok: true, domainId: "example", outputId: request.outputId };
+      }
+    });
+    const service = createService({
+      dataDir: tempRoot,
+      seedFixture: false,
+      llmProviderResolver: () => {
+        providerResolutionCount += 1;
+        return undefined;
+      },
+      revokeLlmExecutionGrant: (grantId) => revoked.push(grantId)
+    }).bindIoRuntime(io, "example");
+    const project = await service.createProject({ name: "Staged grant rejection", domainId: "example" });
+    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.staged-grant-rejection", name: "Staged grant rejection" });
+    const configured = await service.saveFlow({ projectId: project.id, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() } } });
+    await installPrimaryRouter(service, project.id, configured.flowId, {
+      nodes: [{ id: "click", definitionId: "builtin.policy.action", parameterValues: { outputId: "click", parameters: {} } }],
+      edges: []
+    });
+    const queued = await service.startRuntimeSession({ projectId: project.id, flowId: configured.flowId, authorizedDomainIds: ["other-domain"] });
+    const grant = { grantId: "llm-grant:staged", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnosis_only" as const };
+
+    await expect(service.runRuntimeSession({ projectId: project.id, flowId: configured.flowId, runId: queued.runId, llmExecution: grant })).rejects.toThrow("incompatible");
+    await expect(service.runRuntimeSession({ projectId: project.id, flowId: configured.flowId, runId: "", llmExecution: grant })).rejects.toThrow("incompatible");
+
+    expect(providerResolutionCount).toBe(0);
+    expect(dispatchCount).toBe(0);
+    expect(revoked).toEqual([grant.grantId, grant.grantId]);
+    await expect(service.getRuntimeSession(project.id, queued.runId)).resolves.toMatchObject({
+      status: "queued",
+      metadata: { authorizedDomainIds: ["other-domain"] }
+    });
+  });
+  it("shares one atomic call budget across diagnosis and patch requests", async () => {
+    const taskKinds: string[] = [];
+    const service = createService({
+      dataDir: tempRoot,
+      seedFixture: false,
+      llmProviderResolver: () => ({
+        metadata: { provider: "mock", model: "one-call-model" },
+        runTask: async (request) => {
+          taskKinds.push(request.taskKind);
+          return request.taskKind === "runtime_patch"
+            ? { response: { kind: "runtime_patch", summary: "Should be blocked.", riskLevel: "low", patches: [{ kind: "temporary_wait_retry", targetNodeId: "divide", reason: "Blocked by run budget." }] }, usage: { inputTokens: 5, outputTokens: 5, totalTokens: 10 } }
+            : { response: { kind: "diagnosis", summary: "The denominator is zero." }, usage: { inputTokens: 5, outputTokens: 3, totalTokens: 8 } };
+        }
+      })
+    });
+    const project = await service.createProject({ name: "Atomic LLM budget" });
+    const adaptive = adaptiveTrainingMetadata();
+    const training = adaptive.trainingModeSettings as JsonObject;
+    const flow = await createFailingCanonicalFlow(service, project.id, {
+      flowId: "flow.atomic-llm-budget",
+      metadata: {
+        ...adaptive,
+        trainingModeSettings: {
+          ...training,
+          budgets: { ...(training.budgets as JsonObject), maxInterventionsPerRun: 1 }
+        }
+      }
+    });
+
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
+    const detail = await service.getFlowRunDetail(project.id, run.runId);
+
+    expect(taskKinds).toEqual(["runtime_diagnosis"]);
+    expect(detail?.adaptationIds).toEqual([]);
+    expect(detail?.interventions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "runtime_patch", validation: { ok: false, issues: [expect.stringContaining("llm_budget.run_call_limit")] } })
+    ]));
   });
 
   it("tests runtime patch responses and persists resulting adaptation evidence", async () => {
@@ -1938,7 +2299,9 @@ describe("AutomationStudioService recording persistence", () => {
     const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.runtime-concurrency", metadata: adaptiveTrainingMetadata() });
     await service.startRuntimeSession({ projectId: project.id, flowId: flow.flowId, metadata: { adaptiveRuntime: true } });
 
-    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, adaptiveMode: "default" })).rejects.toThrow("Only one adaptive runtime run can be active per project.");
+    const before = await service.listRuntimeSessions(project.id);
+    await expect(service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, adaptiveMode: "fully_adaptive" })).rejects.toThrow("Only one adaptive runtime run can be active per project.");
+    expect(await service.listRuntimeSessions(project.id)).toHaveLength(before.length);
   });
 
   it("persists compact action comparisons and recovery ladder records in Flow run detail", async () => {
@@ -3462,6 +3825,38 @@ describe("AutomationStudioService recording persistence", () => {
   });
 });
 
+describe("AutomationStudioService instruction readiness summaries", () => {
+  it("finds one active applicable instruction beyond an unfiltered 100-item page and reports none when all are inactive", async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-instruction-readiness-"));
+    const service = new AutomationStudioService({ dataDir: path.join(rootDir, ".fluxiq", "data"), seedFixture: false });
+    try {
+      const project = await service.createProject({ name: "Instruction readiness boundary" });
+      const fixture = createAutomationStudioLargeProjectFixture({ projectId: project.id, flowCount: 1, subflowsPerFlow: 1, instructionsPerFlow: 102, runsPerFlow: 0, adaptationsPerFlow: 0, recordingCount: 0, nowMs: 10_000 });
+      const flow = fixture.flows[0]!;
+      const instructions = fixture.instructions.map((instruction) => ({
+        ...instruction,
+        scope: { kind: "flow" as const, projectId: project.id, flowId: flow.flowId }
+      }));
+      await service.saveFlow({ projectId: project.id, flow });
+      for (const [index, instruction] of instructions.entries()) {
+        await service.saveFlowInstruction(project.id, { ...instruction, status: index === 0 ? "active" : "disabled" });
+      }
+
+      const oldUnfilteredPage = await service.listFlowInstructionSummaries({ projectId: project.id, flowId: flow.flowId, limit: 100, offset: 0 });
+      expect(oldUnfilteredPage).toMatchObject({ total: 102, limit: 100, offset: 0 });
+      expect(oldUnfilteredPage.instructions.some((instruction) => instruction.status === "active")).toBe(false);
+      const activePage = await service.listFlowInstructionSummaries({ projectId: project.id, flowId: flow.flowId, status: "active", limit: 1, offset: 0 });
+      expect(activePage).toMatchObject({ total: 1, limit: 1, offset: 0 });
+      expect(activePage.instructions).toEqual([expect.objectContaining({ instructionId: instructions[0]!.instructionId, status: "active" })]);
+
+      await service.saveFlowInstruction(project.id, { ...instructions[0]!, status: "disabled" });
+      await expect(service.listFlowInstructionSummaries({ projectId: project.id, flowId: flow.flowId, status: "active", limit: 1, offset: 0 })).resolves.toMatchObject({ instructions: [], total: 0, limit: 1, offset: 0 });
+    } finally {
+      await service.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+});
 describe("AutomationStudioService canonical Flow persistence", () => {
   beforeEach(async () => {
     tempRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-automation-studio-service-"));
@@ -3496,6 +3891,268 @@ describe("AutomationStudioService canonical Flow persistence", () => {
     await expect(reloaded.getFlow(globalProject.id, flow.flowId)).rejects.toThrow("Unknown Automation Studio Flow");
   });
 
+  it("changes the LLM execution digest for same-timestamp parent and routed dependencies", async () => {
+    const originalNow = Date.now;
+    Date.now = () => 10_000;
+    try {
+      const service = createService({ dataDir: tempRoot, seedFixture: false });
+      const project = await service.createProject({ name: "Execution Digest" });
+      const parent = await service.createFlow({ projectId: project.id, flowId: "flow.execution-digest", name: "Execution Digest" });
+      const installed = await installPrimaryRouter(service, project.id, parent.flowId, {
+        nodes: [{ id: "start", definitionId: "builtin.control.start", parameterValues: {} }],
+        edges: []
+      });
+      const initial = await service.getLlmExecutionDependencyDigest(project.id, parent.flowId);
+
+      const changedParent = await service.saveFlow({ projectId: project.id, flow: { ...parent, description: "same millisecond parent mutation" } });
+      expect(changedParent.updatedAt).toBe(parent.updatedAt);
+      const afterParent = await service.getLlmExecutionDependencyDigest(project.id, parent.flowId);
+      expect(afterParent).not.toBe(initial);
+
+      const changedGraph = await service.saveFlow({ projectId: project.id, flow: { ...installed.graph, description: "same millisecond graph mutation" } });
+      expect(changedGraph.updatedAt).toBe(installed.graph.updatedAt);
+      const afterGraph = await service.getLlmExecutionDependencyDigest(project.id, parent.flowId);
+      expect(afterGraph).not.toBe(afterParent);
+
+      const router = await service.getFlowRouter(project.id, parent.flowId);
+      if (!router) throw new Error("Expected Flow Map router");
+      await service.saveFlowRouter({ ...router, description: "same millisecond router mutation" });
+      const afterRouter = await service.getLlmExecutionDependencyDigest(project.id, parent.flowId);
+      expect(afterRouter).not.toBe(afterGraph);
+
+      await service.updateFlowSubflow({
+        projectId: project.id,
+        flowId: parent.flowId,
+        subflowId: installed.subflow.subflowId,
+        name: "Renamed dependency"
+      });
+      const afterSubflow = await service.getLlmExecutionDependencyDigest(project.id, parent.flowId);
+      expect(afterSubflow).not.toBe(afterRouter);
+
+      const instruction = createAutomationStudioFlowExpansionFixture(1).instructions[0]!;
+      await service.saveFlowInstruction(project.id, {
+        ...instruction,
+        scope: { kind: "flow", projectId: project.id, flowId: parent.flowId }
+      });
+      const afterInstruction = await service.getLlmExecutionDependencyDigest(project.id, parent.flowId);
+      expect(afterInstruction).not.toBe(afterSubflow);
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+  it("binds the execution digest to transitive pinned publications and lifecycle validity", async () => {
+    const originalNow = Date.now;
+    Date.now = () => 20_000;
+    try {
+      const service = createService({ dataDir: tempRoot, seedFixture: false });
+      const project = await service.createProject({ name: "Published dependency digest" });
+
+      const leafParent = await service.createFlow({ projectId: project.id, flowId: "flow.digest.leaf-parent", name: "Leaf parent" });
+      const leaf = await installPrimaryRouter(service, project.id, leafParent.flowId, {
+        nodes: [
+          { id: "start", definitionId: "builtin.control.start" },
+          { id: "end", definitionId: "builtin.control.end" }
+        ],
+        edges: [{ id: "start.end", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }]
+      });
+      const publishedLeaf = await service.publishFlow({ projectId: project.id, flowId: leaf.graph.flowId, version: "1.0.0" });
+
+      const middleParent = await service.createFlow({ projectId: project.id, flowId: "flow.digest.middle-parent", name: "Middle parent" });
+      const middle = await installPrimaryRouter(service, project.id, middleParent.flowId, {
+        nodes: [
+          { id: "start", definitionId: "builtin.control.start" },
+          createCallFlowNode({ id: "call-leaf", target: { flowId: leaf.graph.flowId, version: "1.0.0", scope: { kind: "global" } } })
+        ],
+        edges: [{ id: "start.leaf", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "call-leaf", targetPortId: "in" }]
+      });
+      const publishedMiddle = await service.publishFlow({ projectId: project.id, flowId: middle.graph.flowId, version: "1.0.0" });
+
+      const root = await service.createFlow({ projectId: project.id, flowId: "flow.digest.root", name: "Root" });
+      await installPrimaryRouter(service, project.id, root.flowId, {
+        nodes: [
+          { id: "start", definitionId: "builtin.control.start" },
+          createCallFlowNode({ id: "call-middle", target: { flowId: middle.graph.flowId, version: "1.0.0", scope: { kind: "global" } } })
+        ],
+        edges: [{ id: "start.middle", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "call-middle", targetPortId: "in" }]
+      });
+
+      const authorized = await service.getLlmExecutionDependencyDigest(project.id, root.flowId);
+      await expect(service.getLlmExecutionDependencyDigest(project.id, root.flowId)).resolves.toBe(authorized);
+
+      const records = await service.listFlowPublications(project.id);
+      const leafRecord = records.find((record) => record.flowId === leaf.graph.flowId && record.version === "1.0.0");
+      if (!leafRecord) throw new Error("Expected pinned leaf publication");
+      const publicationRepository = (service as any).repositories.flowPublications;
+      await publicationRepository.put({
+        ...leafRecord,
+        snapshot: {
+          ...leafRecord.snapshot,
+          name: "Tampered at the same millisecond",
+          publishedAt: (publishedLeaf.publication as any).snapshot.publishedAt,
+          flowDigest: leafRecord.snapshot.flowDigest
+        }
+      });
+      const afterTransitiveSnapshotMutation = await service.getLlmExecutionDependencyDigest(project.id, root.flowId);
+      expect(afterTransitiveSnapshotMutation).not.toBe(authorized);
+
+      await publicationRepository.put(leafRecord);
+      await expect(service.getLlmExecutionDependencyDigest(project.id, root.flowId)).resolves.toBe(authorized);
+
+      await service.deprecateFlowPublication({ projectId: project.id, flowId: leaf.graph.flowId, version: "1.0.0" });
+      const afterTransitiveDeprecation = await service.getLlmExecutionDependencyDigest(project.id, root.flowId);
+      expect(afterTransitiveDeprecation).not.toBe(authorized);
+      expect((publishedMiddle.publication as any).snapshot.dependencies).toEqual(expect.arrayContaining([
+        expect.objectContaining({ flowId: leaf.graph.flowId, version: "1.0.0" })
+      ]));
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+  it("binds domain grants to external global publications and invalidates JIT use", async () => {
+    const originalNow = Date.now;
+    Date.now = () => 30_000;
+    try {
+      const service = createService({ dataDir: tempRoot, seedFixture: false });
+      const globalProject = await service.createProject({ name: "External global publications" });
+      const domainProject = await service.createProject({ name: "Domain caller", domainId: "orders" });
+      const external = await service.createFlow({ projectId: globalProject.id, flowId: "flow.external-global", name: "External global" });
+      const publishedExternal = await service.publishFlow({ projectId: globalProject.id, flowId: external.flowId, version: "1.0.0" });
+      const caller = await service.createFlow({ projectId: domainProject.id, flowId: "flow.domain-caller", name: "Domain caller" });
+      await installPrimaryRouter(service, domainProject.id, caller.flowId, {
+        nodes: [createCallFlowNode({ id: "call-external", target: { flowId: external.flowId, version: "1.0.0", scope: { kind: "global" } } })],
+        edges: []
+      });
+
+      const authorizedDigest = await service.getLlmExecutionDependencyDigest(domainProject.id, caller.flowId);
+      await expect(service.getLlmExecutionDependencyDigest(domainProject.id, caller.flowId)).resolves.toBe(authorizedDigest);
+
+      const unrelated = await service.createFlow({ projectId: globalProject.id, flowId: "flow.unrelated-global", name: "Unrelated global" });
+      await service.publishFlow({ projectId: globalProject.id, flowId: unrelated.flowId, version: "1.0.0" });
+      await expect(service.getLlmExecutionDependencyDigest(domainProject.id, caller.flowId)).resolves.toBe(authorizedDigest);
+      const unrelatedRecord = (await service.listFlowPublications(globalProject.id, unrelated.flowId))[0];
+      if (!unrelatedRecord) throw new Error("Expected unrelated global publication");
+      await (service as any).repositories.flowPublications.put({
+        ...unrelatedRecord,
+        snapshot: { ...unrelatedRecord.snapshot, name: "Unrelated same-millisecond mutation" }
+      });
+      await expect(service.getLlmExecutionDependencyDigest(domainProject.id, caller.flowId)).resolves.toBe(authorizedDigest);
+
+      const key = { id: "secret:external", name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "flow", scopeRef: caller.flowId, enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-chat" } };
+      let revealCount = 0;
+      let fetchCount = 0;
+      const grants = new AutomationStudioLlmExecutionGrantService({
+        now: () => 30_000,
+        resolveExecutionDigest: (projectId, flowId) => service.getLlmExecutionDependencyDigest(projectId, flowId),
+        identityAccess: {
+          authorizeSessionPasswordPin: async () => ({ id: "user.one", passwordConfigured: true, pinConfigured: true }),
+          validateSession: async () => ({ user: { id: "user.one", passwordConfigured: true, pinConfigured: true }, session: {}, role: {} })
+        } as any,
+        secretKeys: {
+          getKeySummary: async () => ({ ...key }),
+          createRevealAuthorization: async () => ({ authorizationId: "secret-reveal:external", keyId: key.id, keyUpdatedAtMs: key.updatedAtMs, expiresAtMs: 90_000, remainingUses: 1 }),
+          revealKeyWithAuthorization: async () => { revealCount += 1; return { key: { ...key }, value: "test-provider-secret" }; },
+          revokeRevealAuthorization: () => {}
+        } as any,
+        fetchImpl: (async () => { fetchCount += 1; throw new Error("transport must not run"); }) as typeof fetch
+      });
+      const grant = await grants.issue({ actorUserId: "user.one", actorSessionId: "session.one", authorizationPassword: "password", authorizationPin: "123456", keyId: key.id, projectId: domainProject.id, flowId: caller.flowId });
+      const resolved = await grants.resolve({ grantId: grant.grantId, actorUserId: "user.one", actorSessionId: "session.one", projectId: domainProject.id, flowId: caller.flowId, purpose: "diagnosis_only" });
+
+      const externalRecord = (await service.listFlowPublications(globalProject.id, external.flowId))[0];
+      if (!externalRecord) throw new Error("Expected external global publication");
+      const publicationRepository = (service as any).repositories.flowPublications;
+      await publicationRepository.put({
+        ...externalRecord,
+        snapshot: {
+          ...externalRecord.snapshot,
+          name: "Same-millisecond external mutation",
+          publishedAt: (publishedExternal.publication as any).snapshot.publishedAt,
+          flowDigest: externalRecord.snapshot.flowDigest
+        }
+      });
+      expect(await service.getLlmExecutionDependencyDigest(domainProject.id, caller.flowId)).not.toBe(authorizedDigest);
+      await expect(resolved.provider.runTask({
+        requestId: "request.external",
+        idempotencyKey: "request.external",
+        timeoutMs: 20_000,
+        estimatedInputTokens: 100,
+        maxEstimatedCostUsd: 0.25,
+        taskKind: "runtime_diagnosis",
+        promptVersion: "v1",
+        expectedOutput: "diagnosis",
+        tokenLimits: { maxInputTokens: 8000, maxOutputTokens: 2000, maxTotalTokens: 10000 },
+        context: { schemaVersion: "0.1", taskKind: "runtime_diagnosis", promptVersion: "v1", projectId: domainProject.id, flowId: caller.flowId, instructions: { instructions: [], instructionIds: [], diagnostics: [], tokenBudget: 8000, estimatedTokens: 0 } }
+      })).rejects.toThrow("LLM execution grant is no longer valid.");
+      expect(revealCount).toBe(0);
+      expect(fetchCount).toBe(0);
+
+      await publicationRepository.put(externalRecord);
+      await expect(service.getLlmExecutionDependencyDigest(domainProject.id, caller.flowId)).resolves.toBe(authorizedDigest);
+      await service.deprecateFlowPublication({ projectId: globalProject.id, flowId: external.flowId, version: "1.0.0" });
+      expect(await service.getLlmExecutionDependencyDigest(domainProject.id, caller.flowId)).not.toBe(authorizedDigest);
+      grants.close();
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
+  it("tracks missing publication appearance and cyclic dependencies independent of insertion order", async () => {
+    const originalNow = Date.now;
+    Date.now = () => 40_000;
+    try {
+      const service = createService({ dataDir: tempRoot, seedFixture: false });
+      const globalProject = await service.createProject({ name: "Global publication universe" });
+      const domainProject = await service.createProject({ name: "Domain publication caller", domainId: "billing" });
+      const missingCaller = await service.createFlow({ projectId: domainProject.id, flowId: "flow.missing-publication-caller", name: "Missing caller" });
+      await installPrimaryRouter(service, domainProject.id, missingCaller.flowId, {
+        nodes: [createCallFlowNode({ id: "call-late", target: { flowId: "flow.global-late", version: "1.0.0", scope: { kind: "global" } } })],
+        edges: []
+      });
+      const missingDigest = await service.getLlmExecutionDependencyDigest(domainProject.id, missingCaller.flowId);
+      const late = await service.createFlow({ projectId: globalProject.id, flowId: "flow.global-late", name: "Late global" });
+      await service.publishFlow({ projectId: globalProject.id, flowId: late.flowId, version: "1.0.0" });
+      expect(await service.getLlmExecutionDependencyDigest(domainProject.id, missingCaller.flowId)).not.toBe(missingDigest);
+
+      const flowA = await service.createFlow({ projectId: globalProject.id, flowId: "flow.cycle-a", name: "Cycle A" });
+      await service.publishFlow({ projectId: globalProject.id, flowId: flowA.flowId, version: "1.0.0" });
+      const flowBParent = await service.createFlow({ projectId: globalProject.id, flowId: "flow.cycle-b-parent", name: "Cycle B parent" });
+      const flowB = await installPrimaryRouter(service, globalProject.id, flowBParent.flowId, {
+        nodes: [createCallFlowNode({ id: "call-a", target: { flowId: flowA.flowId, version: "1.0.0", scope: { kind: "global" } } })],
+        edges: []
+      });
+      await service.publishFlow({ projectId: globalProject.id, flowId: flowB.graph.flowId, version: "1.0.0" });
+      const cycleCaller = await service.createFlow({ projectId: domainProject.id, flowId: "flow.cycle-caller", name: "Cycle caller" });
+      await installPrimaryRouter(service, domainProject.id, cycleCaller.flowId, {
+        nodes: [createCallFlowNode({ id: "call-a", target: { flowId: flowA.flowId, version: "1.0.0", scope: { kind: "global" } } })],
+        edges: []
+      });
+      const publicationRepository = (service as any).repositories.flowPublications;
+      const records = await service.listFlowPublications(globalProject.id);
+      const recordA = records.find((record) => record.flowId === flowA.flowId && record.version === "1.0.0");
+      if (!recordA) throw new Error("Expected cycle A publication");
+      await publicationRepository.put({
+        ...recordA,
+        snapshot: {
+          ...recordA.snapshot,
+          nodes: [createCallFlowNode({ id: "call-b", target: { flowId: flowB.graph.flowId, version: "1.0.0", scope: { kind: "global" } } })],
+          flowDigest: recordA.snapshot.flowDigest,
+          publishedAt: recordA.snapshot.publishedAt
+        }
+      });
+      const cyclicDigest = await service.getLlmExecutionDependencyDigest(domainProject.id, cycleCaller.flowId);
+      await expect(service.getLlmExecutionDependencyDigest(domainProject.id, cycleCaller.flowId)).resolves.toBe(cyclicDigest);
+
+      const reordered = await service.listFlowPublications(globalProject.id);
+      for (const record of reordered) await publicationRepository.delete(record.publicationId);
+      for (const record of [...reordered].reverse()) await publicationRepository.put(record.flowId === flowA.flowId ? {
+        ...record,
+        snapshot: { ...record.snapshot, nodes: [createCallFlowNode({ id: "call-b", target: { flowId: flowB.graph.flowId, version: "1.0.0", scope: { kind: "global" } } })] }
+      } : record);
+      await expect(service.getLlmExecutionDependencyDigest(domainProject.id, cycleCaller.flowId)).resolves.toBe(cyclicDigest);
+    } finally {
+      Date.now = originalNow;
+    }
+  });
   it("creates Flows without hydrating every persisted Flow in the project", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Large Flow Project" });

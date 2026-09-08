@@ -3,7 +3,7 @@ import { ClientGatewayService, type ClientGatewayTrustedClient, type ClientGatew
 import type { JsonObject } from "../../core/index.ts";
 import type { FluxIQHostPaths } from "../../framework/index.ts";
 import { ClientGatewayRuntimeTransport, FileRuntimeStore, RuntimeService } from "../../runtime/index.ts";
-import { AutomationStudioClientGatewayBridge, AutomationStudioService, registerAutomationStudioApi } from "../automation-studio/index.ts";
+import { AutomationStudioClientGatewayBridge, AutomationStudioLlmExecutionGrantService, AutomationStudioService, registerAutomationStudioApi } from "../automation-studio/index.ts";
 import { BackgroundTasksService, registerBackgroundTasksApi } from "../background-tasks/index.ts";
 import { ComputeControlService, registerComputeControlApi } from "../compute-control/index.ts";
 import { DatabaseManagerService, registerDatabaseManagerApi, SQLiteRepository } from "../database-manager/index.ts";
@@ -31,6 +31,7 @@ export type GlobalProgramRuntime = {
   productionRunner: ProductionRunnerService;
   runtime: RuntimeService;
   secretKeys: SecretKeysService;
+  llmExecutionGrants: AutomationStudioLlmExecutionGrantService;
 };
 
 export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgramRuntime {
@@ -68,6 +69,17 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
   } : storageOptions);
   const identityAccess = new IdentityAccessService(identityUsersRepository ? { repository: identityUsersRepository } : {});
   const secretKeys = new SecretKeysService(secretKeysRepository ? { repository: secretKeysRepository } : {});
+  const llmExecutionGrants = new AutomationStudioLlmExecutionGrantService({ identityAccess, secretKeys, resolveExecutionDigest: async (projectId, flowId) => automationStudio.getLlmExecutionBinding(projectId, flowId) });
+  automationStudio.bindLlmExecutionProvider(
+    (input) => input.executionGrant
+      ? llmExecutionGrants.resolve(
+        { ...input.executionGrant, projectId: input.projectId, flowId: input.flowId },
+        { allowedTaskKinds: input.executionGrant.purpose === "build_and_adapt" ? ["flow_bootstrap"] : ["runtime_diagnosis"] }
+      )
+      : undefined,
+    (grantId) => llmExecutionGrants.revoke(grantId),
+    () => llmExecutionGrants.close()
+  );
   const productionRunner = new ProductionRunnerService(undefined, storageOptions);
   const runtime = new RuntimeService(paths ? { store: new FileRuntimeStore({ rootDir: path.join(paths.artifacts ?? path.join(paths.fluxiq, "artifacts"), "runtime") }) } : {});
   runtime.registerTransport(new ClientGatewayRuntimeTransport({ gateway: clientGateway }));
@@ -111,7 +123,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
 
   }
 
-  registerAutomationStudioApi(api, automationStudio, identityAccess, automationStudioClientGateway, clientGateway);
+  registerAutomationStudioApi(api, automationStudio, identityAccess, automationStudioClientGateway, clientGateway, llmExecutionGrants);
   registerBackgroundTasksApi(api, backgroundTasks);
   registerComputeControlApi(api, computeControl);
   registerDatabaseManagerApi(api, databaseManager, identityAccess);
@@ -147,6 +159,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
     productionRunner,
     runtime,
     secretKeys
+    , llmExecutionGrants
   };
 }
 

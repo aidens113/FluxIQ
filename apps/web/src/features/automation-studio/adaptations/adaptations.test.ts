@@ -6,6 +6,9 @@ describe("adaptation domain", () => {
     expect(adaptationChangedFields({ enabled: false }, { enabled: true })).toEqual([{ path: "enabled", before: "No", after: "Yes" }]);
     expect(adaptationObjectTarget("edit_subflow", "s")).toMatchObject({ view: "subflows", targetId: "s" });
     expect(adaptationReviewActions("proposed")).toContain("approve");
+    expect(adaptationReviewActions("proposed", "flow_bootstrap")).toEqual(["approve", "reject"]);
+    expect(adaptationReviewActions("validated", "flow_bootstrap")).toEqual(["apply", "reject"]);
+    expect(adaptationReviewActions("applied", "flow_bootstrap")).toEqual(["revert"]);
   });
   it("owns review mutations", async () => {
     const post = vi.fn().mockResolvedValue({ ok: true });

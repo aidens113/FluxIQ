@@ -1,4 +1,5 @@
 export type AutomationRuntimeRunMode = "fully_adaptive" | "manual_approval" | "no_llm_intervention";
+export type AutomationRuntimeUiRunMode = AutomationRuntimeRunMode | "diagnosis_only";
 
 export type RuntimeRunInputDocument =
   | { ok: true; value: Record<string, any> }
@@ -61,7 +62,7 @@ export function runtimeTypedInputErrors(flow: any, values: Record<string, any>):
 
 export type RuntimeReadinessIssue = { label: string; action: string; target: "instructions" | "router" | "nodes" | "subflows" };
 
-export function runtimeFlowReadinessIssues(flow: any, context: { instructions: any[]; router: any | null; subflowTotal: number; error: string }, mode: AutomationRuntimeRunMode = "fully_adaptive"): RuntimeReadinessIssue[] {
+export function runtimeFlowReadinessIssues(flow: any, context: { instructions: any[]; router: any | null; subflowTotal: number; error: string }, mode: AutomationRuntimeUiRunMode = "fully_adaptive"): RuntimeReadinessIssue[] {
   const issues: RuntimeReadinessIssue[] = [];
   if (context.error) return issues;
   if (mode !== "no_llm_intervention" && !context.instructions.some((instruction) => instruction.status === "active")) issues.push({ label: "Add at least one active instruction.", action: "Open Instructions", target: "instructions" });
@@ -88,4 +89,30 @@ export function updateRuntimeRunInputText(inputText: string, key: string, value:
   } catch { parsed = {}; }
   if (value === undefined) delete parsed[key]; else parsed[key] = value;
   return JSON.stringify(parsed);
+}
+
+export function runtimeLlmExecutionRequestFromFlow(projectId: string | null, flow: any): { ok: true; payload: Record<string, any> } | { ok: false; error: string } {
+  const metadata = flow?.metadata && typeof flow.metadata === "object" ? flow.metadata : {};
+  const settings = metadata.llmExecutionSettings && typeof metadata.llmExecutionSettings === "object" ? metadata.llmExecutionSettings : {};
+  const tokenLimits = settings.tokenLimits && typeof settings.tokenLimits === "object" ? settings.tokenLimits : {};
+  if (!projectId || !flow?.flowId) return { ok: false, error: "Select a Flow before authorizing LLM diagnosis." };
+  if (typeof metadata.llmSecretKeyId !== "string" || !metadata.llmSecretKeyId) return { ok: false, error: "Configure an enabled DeepSeek key in Flow Settings first." };
+  return {
+    ok: true,
+    payload: {
+      projectId,
+      flowId: flow.flowId,
+      keyId: metadata.llmSecretKeyId,
+      provider: "deepseek",
+      model: "deepseek-chat",
+      tokenLimits: {
+        maxInputTokens: tokenLimits.maxInputTokens ?? 8000,
+        maxOutputTokens: tokenLimits.maxOutputTokens ?? 2000,
+        maxTotalTokens: tokenLimits.maxTotalTokens ?? 10000
+      },
+      maxCalls: settings.maxCalls ?? 1,
+      timeoutMs: settings.timeoutMs ?? 20000,
+      maxEstimatedCostUsd: settings.maxEstimatedCostUsd ?? 0.25
+    }
+  };
 }

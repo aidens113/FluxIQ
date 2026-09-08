@@ -222,15 +222,15 @@ export type AutomationStudioFlowArtifact = {
 
 export function defaultAutomationStudioFlowSettingsMetadata(): JsonObject {
   const trainingModeSettings = {
-    mode: "continuous_adaptive",
+    mode: "normal",
     trainForRunCount: 3,
     minimumStabilityScore: 0.9,
-    allowLlmIntervention: true,
+    allowLlmIntervention: false,
     allowRuntimeRecovery: true,
-    allowAdaptationCreation: true,
-    proposalApprovalMode: "auto",
-    allowPromotion: true,
-    requireFirstManualReviewBeforeAutoPromotion: false,
+    allowAdaptationCreation: false,
+    proposalApprovalMode: "manual",
+    allowPromotion: false,
+    requireFirstManualReviewBeforeAutoPromotion: true,
     recoveryBudget: {
       maxRetriesPerAction: 1,
       maxRecoveryAttemptsPerSubflow: 2,
@@ -244,15 +244,15 @@ export function defaultAutomationStudioFlowSettingsMetadata(): JsonObject {
     }
   };
   const adaptationPolicySettings = {
-    preset: "adaptive",
-    proposalMode: "auto",
+    preset: "locked",
+    proposalMode: "manual",
     allowRuntimeRecovery: true,
-    allowCreateRecoveryPaths: true,
-    allowModifySubflows: true,
-    allowCreateSubflows: true,
-    allowModifyRouter: true,
-    allowModifyExpectations: true,
-    allowModifyActionTargets: true,
+    allowCreateRecoveryPaths: false,
+    allowModifySubflows: false,
+    allowCreateSubflows: false,
+    allowModifyRouter: false,
+    allowModifyExpectations: false,
+    allowModifyActionTargets: false,
     allowDeleteOrDisableBehavior: false,
     allowExternalSideEffects: false,
     requireApprovalForDestructiveChanges: true,
@@ -262,7 +262,7 @@ export function defaultAutomationStudioFlowSettingsMetadata(): JsonObject {
   };
   return {
     adaptationModeVersion: AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION,
-    adaptationMode: "fully_adaptive",
+    adaptationMode: "no_llm_intervention",
     trainingMode: trainingModeSettings.mode,
     proposalMode: trainingModeSettings.proposalApprovalMode,
     proposalApprovalMode: trainingModeSettings.proposalApprovalMode,
@@ -310,6 +310,22 @@ export function createBlankAutomationStudioFlowArtifact(input: {
   metadata?: JsonObject;
 }): AutomationStudioFlowArtifact {
   const now = input.now ?? Date.now();
+  const suppliedMetadata = input.metadata ?? {};
+  const hasLegacyInterventionSettings = suppliedMetadata.trainingMode !== undefined
+    || suppliedMetadata.proposalMode !== undefined
+    || suppliedMetadata.proposalApprovalMode !== undefined
+    || suppliedMetadata.trainingModeSettings !== undefined
+    || suppliedMetadata.adaptationPolicySettings !== undefined;
+  const settingsMetadata = {
+    ...defaultAutomationStudioFlowSettingsMetadata(),
+    ...suppliedMetadata,
+    ...(suppliedMetadata.adaptationModeVersion !== AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION && hasLegacyInterventionSettings
+      ? {
+        adaptationModeVersion: AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION,
+        adaptationMode: automationStudioInterventionMode(suppliedMetadata)
+      }
+      : {})
+  };
   return {
     schemaVersion: "0.1",
     flowId: input.flowId,
@@ -329,7 +345,7 @@ export function createBlankAutomationStudioFlowArtifact(input: {
     createdAt: now,
     updatedAt: now,
     metadata: withAutomationStudioFlowRepresentation(
-      { ...defaultAutomationStudioFlowSettingsMetadata(), ...(input.metadata ?? {}) },
+      settingsMetadata,
       isAutomationStudioSubflowGraphMetadata(input.metadata) ? "subflow_graph" : "orchestration"
     )
   };

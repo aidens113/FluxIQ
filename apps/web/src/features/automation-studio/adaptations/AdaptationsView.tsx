@@ -288,7 +288,7 @@ export function AdaptationsViewContent(props: AdaptationsViewProps & { commands:
               </section>
               <section className="automation-runtime-log-section">
                 <header><strong>Review Actions</strong><span>PIN required</span></header>
-                <div className="automation-runtime-json-actions">{adaptationReviewActions(selectedAdaptation.status).map((action) => <button className={adaptationReviewCopy(action).danger ? "button button-danger" : action === "apply" ? "button button-primary" : "button"} key={action} onClick={() => requestAdaptationReview(action)} type="button">{adaptationReviewCopy(action).label}</button>)}{!adaptationReviewActions(selectedAdaptation.status).length ? <span className="automation-adaptation-copy">This adaptation is in a terminal state. Its audit record remains available.</span> : null}</div>
+                <div className="automation-runtime-json-actions">{adaptationReviewActions(selectedAdaptation.status, selectedAdaptation.metadata?.adaptationKind).map((action) => <button className={adaptationReviewCopy(action).danger ? "button button-danger" : action === "apply" ? "button button-primary" : "button"} key={action} onClick={() => requestAdaptationReview(action)} type="button">{adaptationReviewCopy(action).label}</button>)}{!adaptationReviewActions(selectedAdaptation.status).length ? <span className="automation-adaptation-copy">This adaptation is in a terminal state. Its audit record remains available.</span> : null}</div>
               </section>
               <JsonToggle label="Show complete adaptation JSON" value={selectedAdaptation} />
             </div> : null}

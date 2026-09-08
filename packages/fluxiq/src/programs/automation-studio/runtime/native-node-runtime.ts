@@ -1,7 +1,7 @@
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import { createAutomationStudioElementMatcher } from "../fingerprinting/index.ts";
-import type { AutomationStudioFlowNode } from "../model/index.ts";
-import { AutomationStudioImporterSdkRegistry, type AutomationStudioComparatorImplementation, type AutomationStudioImporterImplementationBundle, type AutomationStudioImporterSdkManifest, type AutomationStudioNativeLogEntry, type AutomationStudioNativeNodeImplementation, type AutomationStudioNodeDefinition, type AutomationStudioRecordingMapperImplementation, type AutomationStudioTargetResolverImplementation } from "../nodes/index.ts";
+import type { AutomationStudioFlowNode, AutomationStudioFlowScope } from "../model/index.ts";
+import { AutomationStudioImporterSdkRegistry, type AutomationStudioComparatorImplementation, type AutomationStudioImporterImplementationBundle, type AutomationStudioImporterSdkManifest, type AutomationStudioNativeLogEntry, type AutomationStudioNativeNodeImplementation, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution, type AutomationStudioRecordingMapperImplementation, type AutomationStudioTargetResolverImplementation } from "../nodes/index.ts";
 import type { AutomationNodeExecutionResult } from "../nodes/contracts.ts";
 
 export type AutomationStudioNativeRuntimeGrants = {
@@ -54,6 +54,9 @@ export class AutomationStudioNativeNodeRuntime {
   getDefinition(nodeId: string): AutomationStudioNodeDefinition | undefined { return this.sdk.nodes.get(nodeId); }
   listDefinitions(): AutomationStudioNodeDefinition[] { return this.sdk.list().flatMap((manifest) => manifest.nodes); }
   getRuntimeCapabilities(): string[] { return [...this.grants.runtimeCapabilities]; }
+  getRegistryResolution(scope: AutomationStudioFlowScope): AutomationStudioNodeRegistryResolution {
+    return { scope: structuredClone(scope), runtimeCapabilities: [...this.grants.runtimeCapabilities], permissions: [...this.grants.permissions] };
+  }
   getRecordingMapper(domainId: string, id: string): AutomationStudioRecordingMapperImplementation | undefined { return this.recordingMappers.get(`${domainId}:${id}`); }
   listRecordingMappers(domainId: string): Array<{ definition: NonNullable<AutomationStudioImporterSdkManifest["recordingMappers"]>[number]; packageId: string; packageVersion: string; implementation: AutomationStudioRecordingMapperImplementation }> {
     return this.sdk.list().filter((manifest) => manifest.domainId === domainId).flatMap((manifest) => (manifest.recordingMappers ?? []).flatMap((definition) => {
