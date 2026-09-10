@@ -1,24 +1,64 @@
 # Agent Instructions
 
+## Start Here
+
+What you need to read depends on who asked you. Context is a budget; do not
+spend it on documents your task will not use.
+
+**Primary agent, responding to a human prompt.** Read this file, then the
+[working document index](docs/working/README.md) and the `Current State`
+section of the relevant document before touching work already in progress.
+
+**Subagent, working from a brief.** Read your brief, the files it names, and
+the `Current State` of the working document it points to. Do not read the
+rest of a working document or the rest of this file unless your brief says
+to. If your brief is not enough to do the work correctly, say so instead of
+reading broadly. A subagent sent here from the downstream FluxIQ Web
+Extension repository should also read the [Repository
+Boundary](#repository-boundary) section, since keeping this framework
+domain-neutral is the constraint most easily broken from outside.
+
+**Everyone.** The repository boundary, documentation, and validation rules in
+this file are binding whether or not you read the background documents.
+
+Re-read background documents only when the task changes scope or the user
+asks for their current guidance.
+
+## Working Documents Are Agent Memory
+
+Agent context does not survive a session, and subagents share no context with
+each other or with the primary agent. Documents under `docs/working/` are the
+only channel through which one agent's knowledge reaches the next.
+
+- Record findings, decisions, and validation results as the work happens, not
+  as an end-of-task summary.
+- Give subagents a written brief before dispatch; each writes back to its own
+  report file. Subagents never edit a shared document.
+- Commit working document updates with the work that changed them.
+
+The [agent working document protocol](docs/working/agent-working-doc-protocol.md)
+defines layout, status vocabulary, ledger format, compaction, brief format,
+and cross-repository pairing. Read it when creating or restructuring a working
+document, not for routine updates. Its normative sections are mirrored
+verbatim in the downstream repository; a change to either must be mirrored in
+the same work unit.
+
 ## Workflow Modes
 
-For every user prompt, the agent must attempt to classify the requested work
-into one of the following workflow modes. Classification should follow the
-user's intent and the newest instruction takes precedence when the requested
-mode changes. These are repository workflow modes, not Codex product or
+Classify each user prompt into one of the modes below and state it in your
+first user-facing response as `Mode: <mode name>`, listing several in
+execution order if more than one applies. Do not repeat the label in later
+follow-ups or progress updates for the same prompt, but announce a transition
+once when it happens. This applies to the primary agent only; subagents work
+from their brief and do not declare modes. Classification follows the user's
+intent, and the newest instruction takes precedence.
+
+If you are genuinely unsure which mode the user intends, ask them to choose
+or clarify before beginning substantive work. Minimal inspection needed to
+explain the ambiguity is allowed, but do not silently choose a broad planning
+or implementation workflow when that choice could conflict with the user's
+intent. These are repository workflow modes, not Codex product or
 collaboration-mode settings.
-
-In the first user-facing response after each new user prompt, state the active
-workflow mode using `Mode: <mode name>`. If more than one mode is active, list
-them in execution order. Do not repeat the mode label in every follow-up or
-substantive progress update for the same prompt. When transitioning modes
-during a task, announce the new mode once in the next progress update.
-
-If the agent is genuinely unsure which mode the user intends, ask the user to
-choose or clarify the mode before beginning substantive work. The agent may
-still perform minimal inspection needed to explain the ambiguity, but must not
-silently choose a broad planning or implementation workflow when that choice
-could conflict with the user's intent.
 
 ### 1. Plan And Write Working Doc
 
