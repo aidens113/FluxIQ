@@ -52,12 +52,24 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await getFluxIQ().programs.identityAccess.authenticate({
+    const fluxiq = getFluxIQ();
+    const result = await fluxiq.programs.identityAccess.authenticate({
       username: payload.username,
       password: payload.password,
       ...(payload.totp ? { totp: payload.totp } : {}),
       ttlMs: DEFAULT_SESSION_TTL_MS,
     });
+    try {
+      await fluxiq.programs.secretKeys.unlockSession({
+        sessionId: result.session.id,
+        userId: result.user.id,
+        authorizationPassword: payload.password,
+        expiresAtMs: result.session.expiresAtMs,
+      });
+    } catch (error) {
+      await fluxiq.programs.identityAccess.revokeSession(result.session.id);
+      throw error;
+    }
     await loginAttempts().clear(attemptKey);
     const response = NextResponse.json({
       ok: true,

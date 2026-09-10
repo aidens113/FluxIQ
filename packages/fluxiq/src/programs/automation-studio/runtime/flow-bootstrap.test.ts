@@ -2,13 +2,22 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../core/index.ts";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../nodes/index.ts";
 import {
+  AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA,
+  AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS,
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS,
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA,
+  automationStudioFlowBootstrapCatalogByteBudget,
   buildAutomationStudioFlowBootstrapContext,
+  isAutomationStudioEvidenceFlowBootstrapResultWithinLimits,
   parseAutomationStudioFlowBootstrapPlan,
   validateAutomationStudioFlowBootstrapPlan,
   type AutomationStudioFlowBootstrapPlan
 } from "./flow-bootstrap.ts";
+import {
+  AUTOMATION_STUDIO_LLM_CONSERVATIVE_UTF8_BYTES_PER_TOKEN,
+  automationStudioLlmTokenBudgetBytes,
+  estimateAutomationStudioLlmTokensFromUtf8Bytes
+} from "./llm-token-estimation.ts";
 
 type NodeDefinitionOverrides = Omit<Partial<AutomationStudioNodeDefinition>, "outputAction"> & { outputAction?: AutomationStudioNodeDefinition["outputAction"] | undefined };
 
@@ -100,10 +109,83 @@ const resolution = {
 };
 
 describe("Automation Studio Flow bootstrap contract", () => {
+  it("keeps the evidence-guided completion contract self-contained and a minimal three-action plan far below 4k output tokens", () => {
+    const serializedSchema = JSON.stringify(AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA);
+    expect(serializedSchema).not.toContain("$ref");
+    expect(serializedSchema).not.toContain("$defs");
+    expect(Buffer.byteLength(serializedSchema, "utf8")).toBeLessThan(5_000);
+
+    const minimalWebPlan: AutomationStudioFlowBootstrapPlan = {
+      schemaVersion: "0.1",
+      router: { name: "Website task", rules: [], fallback: { kind: "subflow", targetSubflowKey: "primary" } },
+      subflows: [{
+        key: "primary", name: "Complete website task", role: "primary",
+        nodes: [
+          { key: "enter_name", definitionId: "web.output.dom-type", definitionVersion: "1.0.0", parameters: { selector: "[data-testid=instruction-name]", text: "Ada" }, outputActionId: "web.dom.type" },
+          { key: "choose_plan", definitionId: "web.output.dom-select", definitionVersion: "1.0.0", parameters: { selector: "[data-testid=instruction-plan]", value: "team" }, outputActionId: "web.dom.select" },
+          { key: "submit", definitionId: "web.output.dom-click", definitionVersion: "1.0.0", parameters: { selector: "[data-testid=instruction-submit]" }, outputActionId: "web.dom.click" }
+        ],
+        edges: [
+          { key: "enter_choose", source: { nodeKey: "enter_name", portId: "success" }, target: { nodeKey: "choose_plan", portId: "in" } },
+          { key: "choose_submit", source: { nodeKey: "choose_plan", portId: "success" }, target: { nodeKey: "submit", portId: "in" } }
+        ]
+      }]
+    };
+    const result = { summary: "Enter a name, choose the requested plan, and submit.", plan: minimalWebPlan };
+    const resultBytes = Buffer.byteLength(JSON.stringify(result), "utf8");
+    expect(resultBytes).toBeLessThan(1_500);
+    expect(estimateAutomationStudioLlmTokensFromUtf8Bytes(resultBytes)).toBeLessThan(500);
+    expect(isAutomationStudioEvidenceFlowBootstrapResultWithinLimits(result)).toBe(true);
+
+    const oversized = structuredClone(result);
+    oversized.summary = "x".repeat(AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxSummaryLength + 1);
+    expect(isAutomationStudioEvidenceFlowBootstrapResultWithinLimits(oversized)).toBe(false);
+  });
+
   it("publishes a compact schema with no recording or timeline vocabulary", () => {
     const serialized = JSON.stringify(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA);
     expect(serialized).toContain("flow_bootstrap");
     expect(serialized).not.toMatch(/recording|timeline|event/i);
+    expect(Buffer.byteLength(serialized, "utf8")).toBeLessThan(4_700);
+    const firstLiveCatalogBytes = automationStudioFlowBootstrapCatalogByteBudget({
+      maxInputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens,
+      instructionBytes: 1_536
+    });
+    expect(AUTOMATION_STUDIO_LLM_CONSERVATIVE_UTF8_BYTES_PER_TOKEN).toBe(3);
+    expect(automationStudioLlmTokenBudgetBytes(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens)).toBe(12_000);
+    expect(estimateAutomationStudioLlmTokensFromUtf8Bytes(12_000)).toBe(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens);
+    expect(firstLiveCatalogBytes).toBe(5_366);
+  });
+
+  it("publishes the strict parser shape and conditional catalog-bound node fields", () => {
+    const schema = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA as Record<string, any>;
+    const planSchema = schema.properties.plan;
+    const defs = schema.$defs;
+
+    expect(schema).toMatchObject({ type: "object", additionalProperties: false, required: ["kind", "summary", "plan"] });
+    expect(planSchema).toMatchObject({ type: "object", additionalProperties: false, required: ["schemaVersion", "router", "subflows"] });
+    expect(planSchema.properties.router).toMatchObject({ additionalProperties: false, required: ["name", "rules", "fallback"] });
+    expect(planSchema.properties.subflows).toMatchObject({ minItems: 1, maxItems: 8, minContains: 1, maxContains: 1 });
+    expect(defs.symbol.pattern).toBe("^[a-z][a-z0-9_-]{0,63}$");
+    expect(defs.fallback.oneOf).toEqual([
+      expect.objectContaining({ additionalProperties: false, required: ["kind", "targetSubflowKey"] }),
+      expect.objectContaining({ additionalProperties: false, required: ["kind"] })
+    ]);
+    expect(defs.subflow.properties.nodes).toMatchObject({ minItems: 1, maxItems: 64 });
+    expect(defs.subflow.properties.edges).toMatchObject({ minItems: 0, maxItems: 128 });
+    expect(defs.node).toMatchObject({
+      additionalProperties: false,
+      required: ["key", "definitionId", "definitionVersion"],
+      properties: {
+        parameters: { type: "object", maxProperties: 256 },
+        outputActionId: expect.objectContaining({ description: expect.stringContaining("Emit iff") })
+      }
+    });
+    const evidencePlan = (AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA as Record<string, any>).properties.plan;
+    const evidenceSubflow = evidencePlan.properties.subflows.items;
+    expect(evidencePlan.description ?? AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA.description).toBeDefined();
+    expect(evidenceSubflow.properties.nodes.description).toContain("outputActionId is mandatory");
+    expect(evidenceSubflow.properties.edges.description).toContain("Connect every input marked required");
   });
 
   it("builds a deterministic catalog already filtered by scope, capabilities, and permissions", () => {
@@ -112,9 +194,64 @@ describe("Automation Studio Flow bootstrap contract", () => {
     expect(context.nodeCatalog[0]).toMatchObject({
       version: "1.2.3",
       inputs: [{ id: "input", type: "string" }],
-      outputAction: { allowed: ["demo.click"] }
+      outputAction: { required: true, allowed: ["demo.click"] }
     });
     expect(JSON.stringify(context).length).toBeLessThan(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogBytes);
+  });
+
+  it("publishes every contract needed to author a registry-valid action chain", () => {
+    const controlInput = { id: "in", label: "In", valueType: "signal" as const, required: true };
+    const actionOutput = { id: "success", label: "Success", valueType: "any" as const };
+    const definitions = [
+      definition({
+        id: "domain.demo.start", version: "2.0.0", label: "Start", inputs: [],
+        outputs: [{ id: "next", label: "Next", valueType: "any" }], parameters: [], outputAction: undefined
+      }),
+      ...["type", "select", "click"].map((action) => definition({
+        id: `domain.demo.${action}`, version: "3.1.0", label: action,
+        inputs: [controlInput], outputs: [actionOutput],
+        parameters: [{ id: "selector", label: "Selector", valueType: "string", required: true }],
+        outputAction: { fixedOutputId: `demo.${action}` }
+      })),
+      definition({
+        id: "domain.demo.end", version: "2.0.0", label: "End", inputs: [controlInput],
+        outputs: [], parameters: [], outputAction: undefined
+      })
+    ];
+    const scopedRegistry = new AutomationStudioNodeRegistry(definitions);
+    const context = buildAutomationStudioFlowBootstrapContext({
+      registry: scopedRegistry, resolution,
+      instructionText: "Type a value, select an option, click submit"
+    });
+    expect(context.nodeCatalog).toHaveLength(5);
+    expect(context.nodeCatalog.filter((entry) => entry.outputAction).every((entry) => entry.outputAction?.required === true)).toBe(true);
+    expect(context.nodeCatalog.find((entry) => entry.id === "domain.demo.select")).toMatchObject({
+      version: "3.1.0",
+      inputs: [{ id: "in", type: "signal", required: true }],
+      outputs: [{ id: "success", type: "any" }],
+      parameters: [{ id: "selector", type: "string", required: true }],
+      outputAction: { required: true, fixed: "demo.select" }
+    });
+
+    const authored: AutomationStudioFlowBootstrapPlan = {
+      schemaVersion: "0.1",
+      router: { name: "Demo", rules: [], fallback: { kind: "subflow", targetSubflowKey: "primary" } },
+      subflows: [{
+        key: "primary", name: "Primary", role: "primary",
+        nodes: definitions.map((item) => ({
+          key: item.id.split(".").at(-1)!, definitionId: item.id, definitionVersion: item.version,
+          ...(item.parameters.some((parameter) => parameter.required) ? { parameters: { selector: "#target" } } : {}),
+          ...(item.outputAction?.fixedOutputId ? { outputActionId: item.outputAction.fixedOutputId } : {})
+        })),
+        edges: [
+          { key: "start_type", source: { nodeKey: "start", portId: "next" }, target: { nodeKey: "type", portId: "in" } },
+          { key: "type_select", source: { nodeKey: "type", portId: "success" }, target: { nodeKey: "select", portId: "in" } },
+          { key: "select_click", source: { nodeKey: "select", portId: "success" }, target: { nodeKey: "click", portId: "in" } },
+          { key: "click_end", source: { nodeKey: "click", portId: "success" }, target: { nodeKey: "end", portId: "in" } }
+        ]
+      }]
+    };
+    expect(validateAutomationStudioFlowBootstrapPlan({ plan: authored, registry: scopedRegistry, resolution })).toMatchObject({ ok: true, issues: [] });
   });
 
   it("retains required instruction synonyms before lower-ranked catalog entries", () => {
@@ -164,6 +301,25 @@ describe("Automation Studio Flow bootstrap contract", () => {
     expect(context.catalogTruncated).toBe(true);
     expect(context.nodeCatalog.length).toBeLessThanOrEqual(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogEntries);
     expect(context.nodeCatalog.map((entry) => entry.id)).toEqual([...context.nodeCatalog.map((entry) => entry.id)].sort());
+  });
+
+  it("supports a ranked evidence catalog entry cap without changing the ordinary catalog ceiling", () => {
+    const definitions = Array.from({ length: 20 }, (_, index) => definition({
+      id: `domain.demo.node_${String(index).padStart(2, "0")}`,
+      label: index === 19 ? "Submit" : `Unrelated ${index}`,
+      source: { kind: "importer", domainId: "demo", implementationKey: `demo.node_${index}` },
+      outputAction: index === 19 ? { fixedOutputId: "demo.click" } : undefined
+    }));
+    const limited = buildAutomationStudioFlowBootstrapContext({
+      registry: new AutomationStudioNodeRegistry(definitions), resolution,
+      instructionText: "Submit the form", maxCatalogEntries: 12
+    });
+    const ordinary = buildAutomationStudioFlowBootstrapContext({ registry: new AutomationStudioNodeRegistry(definitions), resolution });
+    expect(limited.nodeCatalog.length).toBeLessThanOrEqual(12);
+    expect(limited.nodeCatalog.length).toBeGreaterThan(0);
+    expect(limited.nodeCatalog.some((entry) => entry.id === "domain.demo.node_19")).toBe(true);
+    expect(limited.catalogSelection.missingRequiredTerms).toEqual([]);
+    expect(ordinary.nodeCatalog).toHaveLength(20);
   });
 
   it("rejects recording fields and durable-looking symbolic keys at the parser boundary", () => {

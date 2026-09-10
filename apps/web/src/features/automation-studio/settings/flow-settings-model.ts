@@ -1,6 +1,7 @@
 export const FLOW_LLM_HARD_MAX_TOKENS = 50_000;
 export const FLOW_LLM_MAX_TIMEOUT_SECONDS = 25;
 export const FLOW_LLM_DIAGNOSIS_MAX_COST_USD = 0.25;
+export const FLOW_LLM_MAX_CALLS = 8;
 export const FLOW_LLM_EXECUTION_DEFAULTS = {
   maxInputTokens: "8000",
   maxOutputTokens: "2000",
@@ -174,10 +175,10 @@ export function flowLlmSettingsErrors(draft: Pick<FlowSettingsDraft, "allowLlmIn
     if (!Number.isInteger(Number(value)) || Number(value) < 1 || Number(value) > FLOW_LLM_HARD_MAX_TOKENS) errors.push(label + " must be a whole number from 1 to 50,000.");
   }
   if (Number(draft.llmMaxInputTokens) + Number(draft.llmMaxOutputTokens) > Number(draft.llmMaxTotalTokens)) errors.push("Input and output token limits together cannot exceed the total-token limit.");
-  if (draft.llmMaxCalls !== "1") errors.push("Diagnosis mode permits exactly one LLM call.");
+  if (!Number.isInteger(Number(draft.llmMaxCalls)) || Number(draft.llmMaxCalls) < 1 || Number(draft.llmMaxCalls) > FLOW_LLM_MAX_CALLS) errors.push(`LLM call limit must be between 1 and ${FLOW_LLM_MAX_CALLS}.`);
   if (!Number.isInteger(Number(draft.llmTimeoutSeconds)) || Number(draft.llmTimeoutSeconds) < 1 || Number(draft.llmTimeoutSeconds) > FLOW_LLM_MAX_TIMEOUT_SECONDS) errors.push("LLM timeout must be a whole number from 1 to 25 seconds.");
   if (!Number.isFinite(Number(draft.llmMaxCostUsd)) || Number(draft.llmMaxCostUsd) <= 0 || Number(draft.llmMaxCostUsd) > FLOW_LLM_DIAGNOSIS_MAX_COST_USD) errors.push("Diagnosis cost limit must be greater than 0 and no more than 0.25 USD.");
-  if (draft.llmRetryCount !== "0") errors.push("Diagnosis mode does not permit provider retries.");
+  if (draft.llmRetryCount !== "0") errors.push("Flow LLM execution does not permit provider retries.");
   if (keysReady && !draft.llmSecretKeyId) errors.push("Choose an enabled encrypted key for DeepSeek.");
   if (draft.llmSecretKeyId && keysReady && !compatibleKeys.some((key) => key.id === draft.llmSecretKeyId)) errors.push("The selected encrypted key is unavailable, disabled, or belongs to another provider.");
   return errors;

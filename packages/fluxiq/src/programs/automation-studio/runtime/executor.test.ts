@@ -129,6 +129,28 @@ describe("Automation Studio graph executor", () => {
     expect(trace.message).toContain("done");
   });
 
+  it("routes the Start node through its advertised next port", async () => {
+    const flow: AutomationStudioFlowDocument = {
+      schemaVersion: "0.1",
+      flowId: "flow.start-next",
+      ownerKind: "routine",
+      ownerId: "routine.test",
+      name: "Start next compatibility",
+      createdAt: 1,
+      updatedAt: 1,
+      nodes: [
+        { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
+        { id: "end", definitionId: "builtin.control.end", parameterValues: { resultStatus: "success" } }
+      ],
+      edges: [{ id: "start.end", sourceNodeId: "start", sourcePortId: "next", targetNodeId: "end", targetPortId: "in" }]
+    };
+
+    const trace = await runAutomationStudioGraph(flow);
+
+    expect(trace.status).toBe("succeeded");
+    expect(trace.attempts.map((attempt) => attempt.nodeId)).toEqual(["start", "end"]);
+  });
+
   it("requires an explicit End node for successful terminal completion", async () => {
     const flow: AutomationStudioFlowDocument = {
       schemaVersion: "0.1",

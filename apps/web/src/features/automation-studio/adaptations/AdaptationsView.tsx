@@ -51,14 +51,19 @@ export function AdaptationsViewContent(props: AdaptationsViewProps & { commands:
   const detailRequestRef = useRef(0);
   const requestedDetailRef = useRef("");
   useEffect(() => {
-    const timeout = window.setTimeout(() => setSearch(searchDraft.trim()), 250);
-    return () => window.clearTimeout(timeout);
+    const timeout = setTimeout(() => setSearch(searchDraft.trim()), 250);
+    return () => clearTimeout(timeout);
   }, [searchDraft]);
   useEffect(() => {
-    listRequestRef.current += 1;
     detailRequestRef.current += 1;
+    requestedDetailRef.current = "";
     setSelectedAdaptation(null);
+    setLoadingDetail(false);
+  }, [props.projectId, flowId]);
+  useEffect(() => {
+    listRequestRef.current += 1;
     if (!props.projectId || !flowId) {
+      setLoading(false);
       setAdaptations([]);
       setPage({ limit: ADAPTATION_PAGE_SIZE, offset: 0, total: 0 });
       return;

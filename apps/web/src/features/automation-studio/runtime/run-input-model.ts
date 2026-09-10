@@ -1,5 +1,6 @@
 export type AutomationRuntimeRunMode = "fully_adaptive" | "manual_approval" | "no_llm_intervention";
-export type AutomationRuntimeUiRunMode = AutomationRuntimeRunMode | "diagnosis_only";
+export type AutomationRuntimeExplicitLlmRunMode = "diagnosis_only" | "diagnose_and_adapt";
+export type AutomationRuntimeUiRunMode = AutomationRuntimeRunMode | AutomationRuntimeExplicitLlmRunMode;
 
 export type RuntimeRunInputDocument =
   | { ok: true; value: Record<string, any> }
@@ -91,11 +92,11 @@ export function updateRuntimeRunInputText(inputText: string, key: string, value:
   return JSON.stringify(parsed);
 }
 
-export function runtimeLlmExecutionRequestFromFlow(projectId: string | null, flow: any): { ok: true; payload: Record<string, any> } | { ok: false; error: string } {
+export function runtimeLlmExecutionRequestFromFlow(projectId: string | null, flow: any, purpose: AutomationRuntimeExplicitLlmRunMode = "diagnosis_only"): { ok: true; payload: Record<string, any> } | { ok: false; error: string } {
   const metadata = flow?.metadata && typeof flow.metadata === "object" ? flow.metadata : {};
   const settings = metadata.llmExecutionSettings && typeof metadata.llmExecutionSettings === "object" ? metadata.llmExecutionSettings : {};
   const tokenLimits = settings.tokenLimits && typeof settings.tokenLimits === "object" ? settings.tokenLimits : {};
-  if (!projectId || !flow?.flowId) return { ok: false, error: "Select a Flow before authorizing LLM diagnosis." };
+  if (!projectId || !flow?.flowId) return { ok: false, error: "Select a Flow before authorizing LLM assistance." };
   if (typeof metadata.llmSecretKeyId !== "string" || !metadata.llmSecretKeyId) return { ok: false, error: "Configure an enabled DeepSeek key in Flow Settings first." };
   return {
     ok: true,
@@ -105,12 +106,13 @@ export function runtimeLlmExecutionRequestFromFlow(projectId: string | null, flo
       keyId: metadata.llmSecretKeyId,
       provider: "deepseek",
       model: "deepseek-chat",
+      purpose,
       tokenLimits: {
         maxInputTokens: tokenLimits.maxInputTokens ?? 8000,
         maxOutputTokens: tokenLimits.maxOutputTokens ?? 2000,
         maxTotalTokens: tokenLimits.maxTotalTokens ?? 10000
       },
-      maxCalls: settings.maxCalls ?? 1,
+      maxCalls: purpose === "diagnose_and_adapt" ? 2 : 1,
       timeoutMs: settings.timeoutMs ?? 20000,
       maxEstimatedCostUsd: settings.maxEstimatedCostUsd ?? 0.25
     }

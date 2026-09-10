@@ -2,6 +2,7 @@ import { mkdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutomationStudioProjectContentStore } from "./project-content-store.ts";
+import { AutomationStudioAesGcmProjectContentProtection } from "./project-content-protection.ts";
 import { AutomationStudioProjectDatabasePool } from "./project-database.ts";
 
 const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-project-content-store-test");
@@ -47,6 +48,34 @@ describe("AutomationStudioProjectContentStore", () => {
     await pool.closeAll();
   });
 
+  it("uses a stable bounded reference ID when readable ownership would exceed storage limits", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const store = await AutomationStudioProjectContentStore.open({ pool, projectId: "project.long-reference" });
+    const ownerId = `compiled:${"flow.long-subflow-graph.".repeat(5)}:2:compiled-plan.v1`;
+    const first = await store.putJson({ value: { compiled: true }, owner: { ownerKind: "compiled_artifact", ownerId, purpose: "compiled_plan" }, createdAt: 1 });
+    const second = await store.putJson({ value: { compiled: true }, owner: { ownerKind: "compiled_artifact", ownerId, purpose: "compiled_plan" }, createdAt: 2 });
+    expect(first.reference?.referenceId).toMatch(/^reference:sha256:[a-f0-9]{64}$/);
+    expect(first.reference?.referenceId.length).toBeLessThanOrEqual(200);
+    expect(second.reference?.referenceId).toBe(first.reference?.referenceId);
+    await store.close();
+    await pool.closeAll();
+  });
+
+  it("protects bytes at rest and fails closed without the configured provider", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const protection = new AutomationStudioAesGcmProjectContentProtection(() => ({ keyId: "test.key", key: Buffer.alloc(32, 9) }));
+    const store = await AutomationStudioProjectContentStore.open({ pool, projectId: "project.protected", protection });
+    const result = await store.putBytes({ content: Buffer.from("private projection"), mediaType: "application/json", protect: true, createdAt: 1 });
+    expect(result.object.encryption).toContain(protection.providerId);
+    expect(await readFile(result.contentPath, "utf8")).not.toContain("private projection");
+    await expect(store.readBytesByObjectId(result.object.objectId)).resolves.toMatchObject({ content: Buffer.from("private projection") });
+    await store.close();
+    const unconfigured = await AutomationStudioProjectContentStore.open({ pool, projectId: "project.protected" });
+    await expect(unconfigured.readBytesByObjectId(result.object.objectId)).rejects.toThrow("without its protection provider");
+    await expect(unconfigured.putBytes({ content: Buffer.from("no"), mediaType: "text/plain", protect: true })).rejects.toThrow("requires a configured protection provider");
+    await unconfigured.close(); await pool.closeAll();
+  });
+
   it("cleans old interrupted staging directories without touching fresh staging", async () => {
     const pool = new AutomationStudioProjectDatabasePool({ rootDir });
     const store = await AutomationStudioProjectContentStore.open({ pool, projectId: "project.cleanup" });
@@ -66,4 +95,3 @@ describe("AutomationStudioProjectContentStore", () => {
     await pool.closeAll();
   });
 });
-

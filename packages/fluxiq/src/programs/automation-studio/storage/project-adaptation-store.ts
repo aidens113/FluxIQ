@@ -51,24 +51,33 @@ export class AutomationStudioProjectAdaptationStore {
     const validation = validateAutomationStudioFlowAdaptation(input.adaptation);
     if (!validation.ok) throw new Error(`Invalid Automation Studio adaptation: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
     const now = input.changedAt ?? input.adaptation.updatedAt ?? Date.now();
-    const revisions = await this.currentRevisionBindings(input.adaptation.flowId);
-    const status = normalizeAdaptationStatus(input.adaptation.status);
-    const approvalMode = input.approvalMode ?? approvalModeFromAdaptation(input.adaptation);
-    const patchWrite = await this.writeArtifact({ adaptationId: input.adaptation.adaptationId, kind: "patch", value: input.adaptation.patch, sequence: 0, summary: `${input.adaptation.patch.length} changes`, createdAt: now });
+    const graphTarget = await this.graphTransactionTarget(input.adaptation);
+    const revisions = await this.currentRevisionBindings(input.adaptation);
+    const declaredGraphTarget = stringValue(input.adaptation.metadata?.graphRevisionTargetFlowId);
+    const baseRevision = input.adaptation.subflowId && declaredGraphTarget !== graphTarget.flowId
+      ? revisions.flowRevision
+      : positive(input.adaptation.metadata?.baseRevision, revisions.flowRevision);
+    const adaptation: AutomationStudioFlowAdaptation = {
+      ...input.adaptation,
+      metadata: compact({ ...(input.adaptation.metadata ?? {}), baseRevision, graphRevisionTargetFlowId: graphTarget.flowId })
+    };
+    const status = normalizeAdaptationStatus(adaptation.status);
+    const approvalMode = input.approvalMode ?? approvalModeFromAdaptation(adaptation);
+    const patchWrite = await this.writeArtifact({ adaptationId: adaptation.adaptationId, kind: "patch", value: adaptation.patch, sequence: 0, summary: `${adaptation.patch.length} changes`, createdAt: now });
     const promptWrite = input.prompt === undefined ? null : await this.writeArtifact({ adaptationId: input.adaptation.adaptationId, kind: "prompt", value: input.prompt, sequence: 0, summary: "LLM prompt", createdAt: now });
     const responseWrite = input.response === undefined ? null : await this.writeArtifact({ adaptationId: input.adaptation.adaptationId, kind: "response", value: input.response, sequence: 0, summary: "LLM response", createdAt: now });
     const evidenceWrite = input.evidence === undefined ? null : await this.writeArtifact({ adaptationId: input.adaptation.adaptationId, kind: "evidence", value: input.evidence, sequence: 0, summary: "Runtime evidence", createdAt: now });
-    const statusDetail = adaptationStatusDetail(input.adaptation, status);
+    const statusDetail = adaptationStatusDetail(adaptation, status);
     await this.lease.database.transaction(async (sql) => {
       await sql.run(`insert into adaptations (adaptation_id, flow_id, subflow_id, base_revision, proposed_revision, trigger, status, risk_level, approval_mode, patch_object_id, evidence_object_id, created_at_ms, updated_at_ms, reviewed_at_ms, applied_at_ms, source_run_id, author, status_reason, status_detail_json, base_flow_revision, base_router_revision, base_settings_revision, base_instruction_revision, applied_revision, prompt_object_id, response_object_id, rollback_object_id, audit_object_id, patch_digest, evidence_digest, superseded_by_adaptation_id)
         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         on conflict(adaptation_id) do update set subflow_id = excluded.subflow_id, base_revision = excluded.base_revision, proposed_revision = excluded.proposed_revision, trigger = excluded.trigger, status = excluded.status, risk_level = excluded.risk_level, approval_mode = excluded.approval_mode, patch_object_id = excluded.patch_object_id, evidence_object_id = excluded.evidence_object_id, updated_at_ms = excluded.updated_at_ms, reviewed_at_ms = excluded.reviewed_at_ms, applied_at_ms = excluded.applied_at_ms, source_run_id = excluded.source_run_id, author = excluded.author, status_reason = excluded.status_reason, status_detail_json = excluded.status_detail_json, base_flow_revision = excluded.base_flow_revision, base_router_revision = excluded.base_router_revision, base_settings_revision = excluded.base_settings_revision, base_instruction_revision = excluded.base_instruction_revision, applied_revision = excluded.applied_revision, prompt_object_id = coalesce(excluded.prompt_object_id, adaptations.prompt_object_id), response_object_id = coalesce(excluded.response_object_id, adaptations.response_object_id), patch_digest = excluded.patch_digest, evidence_digest = excluded.evidence_digest, superseded_by_adaptation_id = excluded.superseded_by_adaptation_id`,
-        [input.adaptation.adaptationId, input.adaptation.flowId, input.adaptation.subflowId ?? null, positive(input.adaptation.metadata?.baseRevision, revisions.flowRevision), positive(input.adaptation.metadata?.proposedRevision, revisions.flowRevision + 1), input.adaptation.trigger, dbStatus(status), dbRisk(input.adaptation.riskLevel), approvalMode, patchWrite.objectId, evidenceWrite?.objectId ?? null, input.adaptation.createdAt, now, reviewedAtFor(status, now), status === "applied" ? now : null, input.adaptation.sourceRunId ?? null, input.adaptation.author, input.statusReason ?? "", JSON.stringify(statusDetail), revisions.flowRevision, revisions.routerRevision, revisions.settingsRevision, revisions.instructionRevision, status === "applied" ? positive(input.adaptation.metadata?.appliedRevision, revisions.flowRevision) : null, promptWrite?.objectId ?? null, responseWrite?.objectId ?? null, null, null, patchWrite.digest, evidenceWrite?.digest ?? "", stringValue(input.adaptation.metadata?.supersededByAdaptationId) ?? null]
+        [adaptation.adaptationId, adaptation.flowId, adaptation.subflowId ?? null, baseRevision, positive(adaptation.metadata?.proposedRevision, baseRevision + 1), adaptation.trigger, dbStatus(status), dbRisk(adaptation.riskLevel), approvalMode, patchWrite.objectId, evidenceWrite?.objectId ?? null, adaptation.createdAt, now, reviewedAtFor(status, now), status === "applied" ? now : null, adaptation.sourceRunId ?? null, adaptation.author, input.statusReason ?? "", JSON.stringify(statusDetail), baseRevision, revisions.routerRevision, revisions.settingsRevision, revisions.instructionRevision, status === "applied" ? positive(adaptation.metadata?.appliedRevision, baseRevision) : null, promptWrite?.objectId ?? null, responseWrite?.objectId ?? null, null, null, patchWrite.digest, evidenceWrite?.digest ?? "", stringValue(adaptation.metadata?.supersededByAdaptationId) ?? null]
       );
-      for (const artifact of [patchWrite, promptWrite, responseWrite, evidenceWrite].filter((item): item is WrittenArtifact => Boolean(item))) await this.upsertArtifactRow(sql, input.adaptation.adaptationId, artifact);
+      for (const artifact of [patchWrite, promptWrite, responseWrite, evidenceWrite].filter((item): item is WrittenArtifact => Boolean(item))) await this.upsertArtifactRow(sql, adaptation.adaptationId, artifact);
     });
-    await this.appendAuditEvent({ adaptationId: input.adaptation.adaptationId, eventType: "created", actorId: input.actorId ?? input.adaptation.author, toStatus: status, reason: input.statusReason ?? "Adaptation recorded.", detail: { approvalMode, revisions }, createdAt: now });
-    return this.mustGetAdaptation(input.adaptation.adaptationId);
+    await this.appendAuditEvent({ adaptationId: adaptation.adaptationId, eventType: "created", actorId: input.actorId ?? adaptation.author, toStatus: status, reason: input.statusReason ?? "Adaptation recorded.", detail: { approvalMode, revisions, graphTargetFlowId: graphTarget.flowId }, createdAt: now });
+    return this.mustGetAdaptation(adaptation.adaptationId);
   }
 
   async listAdaptationsPage(input: ListInput = {}): Promise<{ adaptations: AutomationStudioAdaptationSummaryRecord[]; total: number; limit: number; offset: number }> {
@@ -102,9 +111,10 @@ export class AutomationStudioProjectAdaptationStore {
 
   async supportsGraphTransaction(adaptation: AutomationStudioFlowAdaptation): Promise<boolean> {
     if (!isGraphTransactionCompatibleAdaptation(adaptation)) return false;
+    const target = await this.graphTransactionTarget(adaptation);
     const revision = await this.lease.database.get<{ revision_number: number }>(
       "select revision_number from graph_revisions where flow_id = ? order by revision_number desc limit 1",
-      [requiredId(adaptation.flowId, "flow")]
+      [target.flowId]
     );
     return revision !== undefined;
   }
@@ -156,21 +166,25 @@ export class AutomationStudioProjectAdaptationStore {
     }
     const graph = await AutomationStudioProjectGraphRepository.open({ pool: this.pool, projectId: this.lease.projectId });
     try {
-      const currentRevision = await graph.getFlowRevision(detail.flowId);
-      if (currentRevision !== detail.baseRevision) {
-        await this.appendAuditEvent({ adaptationId: detail.adaptationId, eventType: "stale_base", actorId: input.actorId ?? null, fromStatus: detail.status, toStatus: detail.status, reason: `Flow is at revision ${currentRevision}; adaptation base is ${detail.baseRevision}.`, detail: { currentRevision, baseRevision: detail.baseRevision }, createdAt: input.changedAt ?? Date.now() });
+      const target = await this.graphTransactionTarget(detail.adaptation);
+      const baseRevision = await this.graphTransactionBaseRevision(detail, target.flowId);
+      const mutationId = input.mutationId ?? adaptationGraphMutationId("apply", detail.adaptation, target.flowId);
+      const existingMutation = await this.lease.database.get<{ status: string }>("select status from mutation_records where mutation_id = ?", [mutationId]);
+      const currentRevision = await graph.getFlowRevision(target.flowId);
+      if (currentRevision !== baseRevision && existingMutation?.status !== "committed") {
+        await this.appendAuditEvent({ adaptationId: detail.adaptationId, eventType: "stale_base", actorId: input.actorId ?? null, fromStatus: detail.status, toStatus: detail.status, reason: `Flow is at revision ${currentRevision}; adaptation base is ${baseRevision}.`, detail: { currentRevision, baseRevision, graphTargetFlowId: target.flowId }, createdAt: input.changedAt ?? Date.now() });
         throw new Error(`Adaptation ${detail.adaptationId} has a stale base revision.`);
       }
-      const operations = await graphPatchOperationsForAdaptation(graph, detail.adaptation);
-      const patched = await graph.applyPatch({ pool: this.pool, projectId: this.lease.projectId, flowId: detail.flowId, baseRevision: detail.baseRevision, mutationId: input.mutationId ?? `adaptation.apply.${detail.adaptationId}`, operations, authorId: input.actorId ?? "adaptation", message: `Apply adaptation ${detail.adaptationId}`, ...(input.changedAt === undefined ? {} : { changedAt: input.changedAt }) });
+      const operations = await graphPatchOperationsForAdaptation(graph, detail.adaptation, target.flowId);
+      const patched = await graph.applyPatch({ pool: this.pool, projectId: this.lease.projectId, flowId: target.flowId, baseRevision, mutationId, operations, authorId: input.actorId ?? "adaptation", message: `Apply adaptation ${detail.adaptationId}`, ...(input.changedAt === undefined ? {} : { changedAt: input.changedAt }) });
       if (patched.response.status !== "applied") throw new Error(`Adaptation ${detail.adaptationId} could not apply cleanly.`);
       const applied = patched.response as AutomationStudioGraphPatchApplied;
-      const compiledArtifact = input.compile === false ? null : await this.compileAppliedRevision(detail.flowId, applied.revisionNumber, input.changedAt);
+      const compiledArtifact = input.compile === false ? null : await this.compileAppliedRevision(target.flowId, applied.revisionNumber, input.changedAt);
       const rollback = await this.writeArtifact({ adaptationId: detail.adaptationId, kind: "rollback", value: applied.inverseOperations, sequence: 0, summary: "Inverse graph patch", createdAt: input.changedAt ?? Date.now() });
       await this.upsertArtifactRow(this.lease.database, detail.adaptationId, rollback);
-      const nextAdaptation: AutomationStudioFlowAdaptation = { ...detail.adaptation, status: "applied", updatedAt: input.changedAt ?? Date.now(), appliedTo: applied.changedEntities.map((entity) => ({ kind: entity.entityKind === "node" ? "action_target" : "router", id: entity.entityId })), metadata: compact({ ...(detail.adaptation.metadata ?? {}), appliedRevision: applied.revisionNumber, ...(applied.validationJobId ? { validationJobId: applied.validationJobId } : {}), ...(compiledArtifact ? { compiledArtifactId: compiledArtifact.artifactId } : {}), graphPatchMutationId: patched.mutationId }) };
+      const nextAdaptation: AutomationStudioFlowAdaptation = { ...detail.adaptation, status: "applied", updatedAt: input.changedAt ?? Date.now(), appliedTo: applied.changedEntities.map((entity) => ({ kind: entity.entityKind === "node" ? "action_target" : "router", id: entity.entityId })), metadata: compact({ ...(detail.adaptation.metadata ?? {}), baseRevision, graphRevisionTargetFlowId: target.flowId, appliedRevision: applied.revisionNumber, ...(applied.validationJobId ? { validationJobId: applied.validationJobId } : {}), ...(compiledArtifact ? { compiledArtifactId: compiledArtifact.artifactId } : {}), graphPatchMutationId: patched.mutationId }) };
       await this.updateStatusFields(nextAdaptation, { rollbackObjectId: rollback.objectId, appliedRevision: applied.revisionNumber, appliedAt: nextAdaptation.updatedAt, statusReason: policy.reason });
-      const auditEvent = await this.appendAuditEvent({ adaptationId: detail.adaptationId, eventType: "applied", actorId: input.actorId ?? null, fromStatus: detail.status, toStatus: "applied", reason: policy.reason, detail: compact({ revisionNumber: applied.revisionNumber, changedEntities: applied.changedEntities as unknown as JsonValue, ...(compiledArtifact ? { compiledArtifactId: compiledArtifact.artifactId } : {}) }), createdAt: nextAdaptation.updatedAt });
+      const auditEvent = await this.appendAuditEvent({ adaptationId: detail.adaptationId, eventType: "applied", actorId: input.actorId ?? null, fromStatus: detail.status, toStatus: "applied", reason: policy.reason, detail: compact({ graphTargetFlowId: target.flowId, revisionNumber: applied.revisionNumber, changedEntities: applied.changedEntities as unknown as JsonValue, ...(compiledArtifact ? { compiledArtifactId: compiledArtifact.artifactId } : {}) }), createdAt: nextAdaptation.updatedAt });
       return { adaptation: await this.mustGetAdaptation(detail.adaptationId), patch: patched.response, compiledArtifact, auditEvent };
     } catch (error) {
       await this.appendAuditEvent({ adaptationId: detail.adaptationId, eventType: "apply_failed", actorId: input.actorId ?? null, fromStatus: detail.status, toStatus: "rejected", reason: error instanceof Error ? error.message : String(error), detail: {}, createdAt: input.changedAt ?? Date.now() }).catch(() => undefined);
@@ -191,15 +205,16 @@ export class AutomationStudioProjectAdaptationStore {
 
   async rebaseAdaptation(input: { adaptationId: string; actorId?: string; reason?: string; changedAt?: number }): Promise<AutomationStudioStoredAdaptationDetail> {
     const current = await this.mustGetAdaptation(input.adaptationId);
-    const revisions = await this.currentRevisionBindings(current.flowId);
+    const target = await this.graphTransactionTarget(current.adaptation);
+    const revisions = await this.currentRevisionBindings(current.adaptation);
     const now = input.changedAt ?? Date.now();
-    const metadata = compact({ ...(current.adaptation.metadata ?? {}), previousBaseRevision: current.baseRevision, rebasedAt: now });
+    const metadata = compact({ ...(current.adaptation.metadata ?? {}), previousBaseRevision: current.baseRevision, graphRevisionTargetFlowId: target.flowId, baseRevision: revisions.flowRevision, rebasedAt: now });
     const detail = adaptationStatusDetail({ ...current.adaptation, metadata }, current.status);
     await this.lease.database.run(
       "update adaptations set base_revision = ?, proposed_revision = ?, base_flow_revision = ?, base_router_revision = ?, base_settings_revision = ?, base_instruction_revision = ?, status_detail_json = ?, status_reason = ?, updated_at_ms = ? where adaptation_id = ?",
       [revisions.flowRevision, revisions.flowRevision + 1, revisions.flowRevision, revisions.routerRevision, revisions.settingsRevision, revisions.instructionRevision, JSON.stringify(detail), input.reason ?? "Rebased onto current Flow revisions.", now, input.adaptationId]
     );
-    await this.appendAuditEvent({ adaptationId: input.adaptationId, eventType: "rebased", actorId: input.actorId ?? null, fromStatus: current.status, toStatus: current.status, reason: input.reason ?? "Rebased onto current Flow revisions.", detail: { previous: current.revisions, next: revisions }, createdAt: now });
+    await this.appendAuditEvent({ adaptationId: input.adaptationId, eventType: "rebased", actorId: input.actorId ?? null, fromStatus: current.status, toStatus: current.status, reason: input.reason ?? "Rebased onto current Flow revisions.", detail: { previous: current.revisions, next: revisions, graphTargetFlowId: target.flowId }, createdAt: now });
     return this.mustGetAdaptation(input.adaptationId);
   }
 
@@ -212,12 +227,13 @@ export class AutomationStudioProjectAdaptationStore {
     const graph = await AutomationStudioProjectGraphRepository.open({ pool: this.pool, projectId: this.lease.projectId });
     const now = input.changedAt ?? Date.now();
     try {
-      const baseRevision = await graph.getFlowRevision(current.flowId);
-      const patched = await graph.applyPatch({ pool: this.pool, projectId: this.lease.projectId, flowId: current.flowId, baseRevision, mutationId: input.mutationId ?? `adaptation.rollback.${current.adaptationId}`, operations: rollback as AutomationStudioGraphPatchOperation[], authorId: input.actorId ?? "adaptation", message: input.reason ?? `Rollback adaptation ${current.adaptationId}`, changedAt: now });
+      const target = await this.graphTransactionTarget(current.adaptation);
+      const baseRevision = await graph.getFlowRevision(target.flowId);
+      const patched = await graph.applyPatch({ pool: this.pool, projectId: this.lease.projectId, flowId: target.flowId, baseRevision, mutationId: input.mutationId ?? adaptationGraphMutationId("rollback", current.adaptation, target.flowId), operations: rollback as AutomationStudioGraphPatchOperation[], authorId: input.actorId ?? "adaptation", message: input.reason ?? `Rollback adaptation ${current.adaptationId}`, changedAt: now });
       if (patched.response.status !== "applied") throw new Error(`Adaptation ${current.adaptationId} rollback could not apply cleanly.`);
       const metadata = compact({ ...(current.adaptation.metadata ?? {}), rollbackRevision: patched.response.revisionNumber, rollbackMutationId: patched.mutationId });
       await this.lease.database.run("update adaptations set status = 'failed', status_detail_json = ?, status_reason = ?, updated_at_ms = ? where adaptation_id = ?", [JSON.stringify(adaptationStatusDetail({ ...current.adaptation, metadata }, "reverted")), input.reason ?? "Applied stored rollback graph patch.", now, current.adaptationId]);
-      const auditEvent = await this.appendAuditEvent({ adaptationId: current.adaptationId, eventType: "rollback", actorId: input.actorId ?? null, fromStatus: current.status, toStatus: "reverted", reason: input.reason ?? "Applied stored rollback graph patch.", detail: { baseRevision, rollbackRevision: patched.response.revisionNumber }, createdAt: now });
+      const auditEvent = await this.appendAuditEvent({ adaptationId: current.adaptationId, eventType: "rollback", actorId: input.actorId ?? null, fromStatus: current.status, toStatus: "reverted", reason: input.reason ?? "Applied stored rollback graph patch.", detail: { graphTargetFlowId: target.flowId, baseRevision, rollbackRevision: patched.response.revisionNumber }, createdAt: now });
       return { adaptation: await this.mustGetAdaptation(current.adaptationId), patch: patched.response, auditEvent };
     } finally {
       await graph.close();
@@ -262,12 +278,37 @@ export class AutomationStudioProjectAdaptationStore {
     }
   }
 
-  private async currentRevisionBindings(flowId: string): Promise<AutomationStudioAdaptationRevisionBindings> {
-    const flow = await this.lease.database.get<{ graph_revision: number; settings_revision: number }>("select graph_revision, settings_revision from flows where flow_id = ?", [requiredId(flowId, "flow")]);
-    if (!flow) throw new Error(`Unknown Flow: ${flowId}`);
-    const router = await this.lease.database.get<{ revision: number }>("select revision from routers where flow_id = ?", [flowId]);
-    const instruction = await this.lease.database.get<{ revision: number | null }>("select max(i.revision) as revision from instructions i left join instruction_scopes s on s.instruction_id = i.instruction_id where i.deleted_at_ms is null and (s.flow_id = ? or s.scope_kind in ('global', 'project'))", [flowId]);
-    return { flowRevision: flow.graph_revision, routerRevision: router?.revision ?? null, settingsRevision: flow.settings_revision ?? null, instructionRevision: instruction?.revision ?? null };
+  private async currentRevisionBindings(adaptation: AutomationStudioFlowAdaptation): Promise<AutomationStudioAdaptationRevisionBindings> {
+    const target = await this.graphTransactionTarget(adaptation);
+    const flow = await this.lease.database.get<{ graph_revision: number }>("select graph_revision from flows where flow_id = ?", [target.flowId]);
+    if (!flow) throw new Error(`Unknown Flow: ${target.flowId}`);
+    const parent = await this.lease.database.get<{ settings_revision: number }>("select settings_revision from flows where flow_id = ?", [requiredId(adaptation.flowId, "flow")]);
+    if (!parent) throw new Error(`Unknown Flow: ${adaptation.flowId}`);
+    const router = await this.lease.database.get<{ revision: number }>("select revision from routers where flow_id = ?", [adaptation.flowId]);
+    const instruction = await this.lease.database.get<{ revision: number | null }>("select max(i.revision) as revision from instructions i left join instruction_scopes s on s.instruction_id = i.instruction_id where i.deleted_at_ms is null and (s.flow_id = ? or s.scope_kind in ('global', 'project'))", [adaptation.flowId]);
+    return { flowRevision: flow.graph_revision, routerRevision: router?.revision ?? null, settingsRevision: parent.settings_revision ?? null, instructionRevision: instruction?.revision ?? null };
+  }
+
+  private async graphTransactionTarget(adaptation: AutomationStudioFlowAdaptation): Promise<{ flowId: string }> {
+    const parentFlowId = requiredId(adaptation.flowId, "flow");
+    const subflowId = stringValue(adaptation.subflowId);
+    if (!subflowId) return { flowId: parentFlowId };
+    const owned = await this.lease.database.get<{ graph_flow_id: string }>(
+      "select graph_flow_id from subflows where subflow_id = ? and parent_flow_id = ? and deleted_at_ms is null",
+      [requiredId(subflowId, "subflow"), parentFlowId]
+    );
+    if (!owned) throw new Error(`Subflow ${subflowId} is not owned by orchestration Flow ${parentFlowId}; adaptation refused.`);
+    return { flowId: requiredId(owned.graph_flow_id, "Subflow graph Flow") };
+  }
+
+  private async graphTransactionBaseRevision(detail: AutomationStudioStoredAdaptationDetail, targetFlowId: string): Promise<number> {
+    if (!detail.adaptation.subflowId || stringValue(detail.adaptation.metadata?.graphRevisionTargetFlowId) === targetFlowId) return detail.baseRevision;
+    const historical = await this.lease.database.get<{ revision_number: number }>(
+      "select revision_number from graph_revisions where flow_id = ? and created_at_ms <= ? order by revision_number desc limit 1",
+      [targetFlowId, detail.createdAt]
+    );
+    if (!historical) throw new Error(`Adaptation ${detail.adaptationId} has no recoverable Subflow graph base revision.`);
+    return historical.revision_number;
   }
 
   private async writeArtifact(input: { adaptationId: string; kind: AutomationStudioStoredAdaptationArtifactKind; value: unknown; sequence: number; summary: string; createdAt: number }): Promise<WrittenArtifact> {
@@ -284,8 +325,9 @@ export class AutomationStudioProjectAdaptationStore {
   }
 
   private async adaptationFromRow(row: AdaptationRow): Promise<AutomationStudioFlowAdaptation> {
-    const patch = await this.readArtifactJson(row.patch_object_id).catch(() => []);
-    const evidence = row.evidence_object_id ? await this.readArtifactJson(row.evidence_object_id).catch(() => null) : null;
+    const patch = await this.readArtifactJson(row.patch_object_id);
+    if (!Array.isArray(patch)) throw new Error(`Adaptation ${row.adaptation_id} patch object is invalid.`);
+    const evidence = row.evidence_object_id ? await this.readArtifactJson(row.evidence_object_id) : null;
     const detail = object(row.status_detail_json);
     const metadata = objectValue(detail.metadata);
     const evidenceObject = objectValue(evidence);
@@ -307,7 +349,7 @@ export class AutomationStudioProjectAdaptationStore {
       ...(expectedState ? { expectedState } : {}),
       ...(failedAction ? { failedAction } : {}),
       ...(typeof metadata.diagnosis === "string" ? { diagnosis: metadata.diagnosis } : {}),
-      patch: Array.isArray(patch) ? patch as AutomationStudioChangeProposalPatch[] : [],
+      patch: patch as AutomationStudioChangeProposalPatch[],
       ...(validationResults ? { validationResults } : {}),
       ...(appliedTo ? { appliedTo } : {}),
       status: normalizeAdaptationStatus((detail.canonicalStatus as string | undefined) ?? row.status),
@@ -327,13 +369,13 @@ export class AutomationStudioProjectAdaptationStore {
   }
 }
 
-async function graphPatchOperationsForAdaptation(graph: AutomationStudioProjectGraphRepository, adaptation: AutomationStudioFlowAdaptation): Promise<AutomationStudioGraphPatchOperation[]> {
+async function graphPatchOperationsForAdaptation(graph: AutomationStudioProjectGraphRepository, adaptation: AutomationStudioFlowAdaptation, targetFlowId: string): Promise<AutomationStudioGraphPatchOperation[]> {
   const operations: AutomationStudioGraphPatchOperation[] = [];
   for (const patch of adaptation.patch) {
     if (patch.kind === "edit_expectation" || patch.kind === "edit_action_target" || patch.kind === "edit_recovery") {
       if (!patch.targetId) throw new Error(`Patch ${patch.kind} requires a target node.`);
       const node = await graph.getNode(patch.targetId);
-      if (!node) throw new Error(`Unknown node: ${patch.targetId}`);
+      if (!node || node.flowId !== targetFlowId || node.deletedAt !== null) throw new Error(`Unknown node: ${patch.targetId}`);
       const values = { ...node.parameterValues };
       if (patch.kind === "edit_expectation") Object.assign(values, objectValue(patch.after));
       else if (patch.kind === "edit_action_target") values.target = patch.after as JsonValue;
@@ -343,7 +385,7 @@ async function graphPatchOperationsForAdaptation(graph: AutomationStudioProjectG
     }
     const after = objectValue(patch.after);
     if (patch.kind === "edit_router" && typeof after.toNodeId === "string" && patch.targetId) {
-      operations.push({ op: "add_edge", edge: { edgeId: `adaptation.${safeSegment(adaptation.adaptationId)}.${safeSegment(patch.targetId)}.${safeSegment(after.toNodeId)}`, flowId: adaptation.flowId, sourceNodeId: patch.targetId, targetNodeId: after.toNodeId, sourcePortId: "failed", targetPortId: "in", label: patch.summary, metadata: { adaptationId: adaptation.adaptationId } } });
+      operations.push({ op: "add_edge", edge: { edgeId: `adaptation.${safeSegment(adaptation.adaptationId)}.${safeSegment(patch.targetId)}.${safeSegment(after.toNodeId)}`, flowId: targetFlowId, sourceNodeId: patch.targetId, targetNodeId: after.toNodeId, sourcePortId: "failed", targetPortId: "in", label: patch.summary, metadata: { adaptationId: adaptation.adaptationId } } });
       continue;
     }
     throw new Error(`Adaptation patch ${patch.kind} is not graph-transaction compatible yet.`);
@@ -404,6 +446,12 @@ function stringValue(value: unknown): string | undefined { return typeof value =
 function numberValue(value: unknown, fallback: number): number { return typeof value === "number" && Number.isFinite(value) ? value : fallback; }
 function requiredId(value: string, label: string): string { const id = value.trim(); if (!id || id.length > 200 || !/^[A-Za-z0-9._:-]+$/.test(id)) throw new Error(`Invalid ${label} ID.`); return id; }
 function safeSegment(value: string): string { return requiredId(value, "path segment").replace(/:/g, "."); }
+function adaptationGraphMutationId(operation: "apply" | "rollback", adaptation: AutomationStudioFlowAdaptation, targetFlowId: string): string {
+  const base = `adaptation.${operation}.${safeSegment(adaptation.adaptationId)}`;
+  if (!adaptation.subflowId) return base;
+  const targetDigest = createHash("sha256").update(targetFlowId).digest("hex").slice(0, 12);
+  return `${base.slice(0, 180)}.graph-${targetDigest}`;
+}
 function positive(value: unknown, fallback: number): number { const next = typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : fallback; if (next < 1) throw new Error("Revision must be positive."); return next; }
 function clamp(value: number | undefined, min: number, max: number, fallback: number): number { const next = Math.trunc(value ?? fallback); return Math.max(min, Math.min(max, Number.isFinite(next) ? next : fallback)); }
 function compact(value: JsonObject): JsonObject { return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as JsonObject; }

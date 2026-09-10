@@ -67,6 +67,7 @@ export function RuntimeLlmAdaptationPanel(props: { flowId?: string; runDetail: a
               {event.provider ? <span>Provider: {event.provider}</span> : null}
               {event.model ? <span>Model: {event.model}</span> : null}
               {event.usage ? <span>{event.usage}</span> : null}
+              {event.evidenceProvenance ? <span aria-label="LLM failure evidence provenance">{event.evidenceProvenance}</span> : null}
               {event.adaptationId ? <RuntimeTargetAction label="Open Adaptation" target={{ kind: "adaptation-detail", targetId: event.adaptationId }} {...(props.onOpenTarget ? { onOpenTarget: props.onOpenTarget } : {})} /> : null}
             </div>
           </div>

@@ -18,8 +18,9 @@ const COST_USD = 0.25;
 const MAX_TTL_MS = 300_000;
 export const AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS = 8;
 const MAX_TOTAL_COST_USD = 2;
+export const AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD = 100_000;
 
-export type AutomationStudioLlmExecutionGrantPurpose = "diagnosis_only" | "build_and_adapt";
+export type AutomationStudioLlmExecutionGrantPurpose = "diagnosis_only" | "diagnose_and_adapt" | "build_and_adapt";
 
 export type AutomationStudioLlmExecutionGrantResolvePolicy = {
   allowedTaskKinds?: readonly AutomationStudioLlmTaskKind[];
@@ -101,9 +102,10 @@ export class AutomationStudioLlmExecutionGrantService {
     const flowId = required(input.flowId);
     const purpose = executionGrantPurpose(input.purpose);
     const binding = executionBinding(await this.options.resolveExecutionDigest(projectId, flowId), purpose);
-    const maxCalls = input.maxCalls ?? (purpose === "diagnosis_only" ? 1 : 4);
+    const maxCalls = input.maxCalls ?? (purpose === "diagnosis_only" ? 1 : purpose === "diagnose_and_adapt" ? 2 : 4);
     if (!Number.isInteger(maxCalls) || maxCalls <= 0 || maxCalls > AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS) throw new Error("LLM execution call limit is invalid.");
     if (purpose === "diagnosis_only" && maxCalls !== 1) throw new Error("diagnosis_only permits exactly one LLM call.");
+    if (purpose === "diagnose_and_adapt" && maxCalls !== 2) throw new Error("diagnose_and_adapt permits exactly two LLM calls.");
     if ((input.providerRetryCount ?? 0) !== 0) throw new Error("LLM execution grants do not permit provider retries.");
     const tokenResolution = resolveAutomationStudioLlmTokenLimits(input.tokenLimits ?? LIMITS);
     if (tokenResolution.diagnostics.length) throw new Error("LLM token limits are invalid.");
@@ -136,8 +138,7 @@ export class AutomationStudioLlmExecutionGrantService {
   async issue(input: {
     actorUserId: string;
     actorSessionId: string;
-    authorizationPassword?: string;
-    authorizationPin?: string;
+    highTokenConfirmation?: boolean;
     keyId: string;
     projectId: string;
     flowId: string;
@@ -147,11 +148,13 @@ export class AutomationStudioLlmExecutionGrantService {
     maxUses?: number;
   } & RequestedExecutionLimits): Promise<AutomationStudioLlmExecutionGrantMetadata> {
     if ((input.purpose ?? "diagnosis_only") === "diagnosis_only" && (input.maxUses ?? 1) !== 1) throw new Error("LLM execution grants are one-use.");
-    if (!input.authorizationPassword || !input.authorizationPin) throw new Error("Password and PIN are required for LLM execution.");
-    const actor = await this.options.identityAccess.authorizeSessionPasswordPin({ sessionId: input.actorSessionId, password: input.authorizationPassword, pin: input.authorizationPin });
-    if (actor.id !== input.actorUserId) throw new Error("LLM execution actor mismatch.");
-    if (actor.passwordConfigured !== true || actor.pinConfigured !== true) throw new Error("A configured password and PIN are required for LLM execution.");
+    const session = await this.options.identityAccess.validateSession(input.actorSessionId, this.now());
+    if (!session || session.user.id !== input.actorUserId) throw new Error("LLM execution actor session is unavailable.");
     const safe = await this.preflight(input);
+    const aggregateAuthorizedTokens = safe.tokenLimits.maxTotalTokens * safe.maxCalls;
+    if (aggregateAuthorizedTokens > AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD && input.highTokenConfirmation !== true) {
+      throw new Error("High-token LLM execution requires explicit confirmation.");
+    }
     if (input.maxUses !== undefined && input.maxUses !== safe.maxCalls) throw new Error("LLM execution grant uses must match its call limit.");
     const ttlMs = input.ttlMs ?? 60_000;
     if (!Number.isInteger(ttlMs) || ttlMs < 1000 || ttlMs > MAX_TTL_MS) throw new Error("LLM execution grant TTL is invalid.");
@@ -162,9 +165,10 @@ export class AutomationStudioLlmExecutionGrantService {
     const revealAuthorizationExpiryTimes: number[] = [];
     try {
       for (let index = 0; index < safe.maxCalls; index += 1) {
-        const authorization = await this.options.secretKeys.createRevealAuthorization({
+        const authorization = await this.options.secretKeys.createSessionRevealAuthorization({
           id: input.keyId,
-          authorizationPassword: input.authorizationPassword,
+          sessionId: input.actorSessionId,
+          userId: input.actorUserId,
           ttlMs,
           nowMs: this.now()
         });
@@ -190,7 +194,7 @@ export class AutomationStudioLlmExecutionGrantService {
       for (const authorizationId of revealAuthorizationIds) this.options.secretKeys.revokeRevealAuthorization(authorizationId);
       throw new Error("LLM execution grant expired during authorization.");
     }
-    const expiryTimer = setTimeout(() => this.revoke(grantId), remainingTtlMs);
+    const expiryTimer = setTimeout(() => this.revoke(grantId, new DOMException("LLM execution grant deadline exceeded.", "TimeoutError")), remainingTtlMs);
     expiryTimer.unref?.();
     const grant: StoredGrant = {
       ...safe,
@@ -232,7 +236,7 @@ export class AutomationStudioLlmExecutionGrantService {
       this.revoke(input.grantId);
       throw new Error("LLM execution grant is unavailable.");
     }
-    if (!session || session.user.id !== input.actorUserId || session.user.pinConfigured !== true || session.user.passwordConfigured !== true
+    if (!session || session.user.id !== input.actorUserId
       || !key || !key.enabled || key.kind !== "llm" || key.updatedAtMs !== grant.keyUpdatedAtMs
       || binding.executionDigest !== grant.executionDigest || binding.settingsRevision !== grant.settingsRevision) {
       this.revoke(input.grantId);
@@ -323,11 +327,11 @@ export class AutomationStudioLlmExecutionGrantService {
       providerRetryCount: 0
     };
   }
-  revoke(grantId: string): void {
+  revoke(grantId: string, reason?: unknown): void {
     const grant = this.grants.get(grantId);
     if (!grant) return;
     clearTimeout(grant.expiryTimer);
-    grant.inFlightAbortController?.abort();
+    grant.inFlightAbortController?.abort(reason);
     grant.inFlightAbortController = undefined;
     for (const authorizationId of grant.revealAuthorizationIds) this.options.secretKeys.revokeRevealAuthorization(authorizationId);
     if (grant.inFlightAuthorizationId) this.options.secretKeys.revokeRevealAuthorization(grant.inFlightAuthorizationId);
@@ -417,7 +421,7 @@ export class AutomationStudioLlmExecutionGrantService {
     ]);
     const binding = executionBinding(unresolvedBinding, grant.purpose);
     if (this.grants.get(grant.grantId) !== grant || grant.state !== "claimed" || grant.expiresAtMs <= this.now()) throw new Error("LLM execution grant is unavailable.");
-    if (!session || session.user.id !== input.actorUserId || session.user.pinConfigured !== true || session.user.passwordConfigured !== true
+    if (!session || session.user.id !== input.actorUserId
       || !key || !key.enabled || key.kind !== "llm" || key.updatedAtMs !== grant.keyUpdatedAtMs
       || binding.executionDigest !== grant.executionDigest || binding.settingsRevision !== grant.settingsRevision) {
       throw new Error("LLM execution grant is no longer valid.");
@@ -471,13 +475,14 @@ function publicGrant(grant: StoredGrant): AutomationStudioLlmExecutionGrantMetad
 
 function executionGrantPurpose(value: unknown): AutomationStudioLlmExecutionGrantPurpose {
   if (value === undefined || value === "diagnosis_only") return "diagnosis_only";
+  if (value === "diagnose_and_adapt") return "diagnose_and_adapt";
   if (value === "build_and_adapt") return "build_and_adapt";
   throw new Error("LLM execution grant purpose is unsupported.");
 }
 
 function executionBinding(value: string | AutomationStudioLlmExecutionBinding, purpose: AutomationStudioLlmExecutionGrantPurpose): { executionDigest: string; settingsRevision?: number } {
   if (typeof value === "string") {
-    if (purpose === "build_and_adapt") throw new Error("build_and_adapt requires an exact Flow settings revision.");
+    if (purpose !== "diagnosis_only") throw new Error(`${purpose} requires an exact Flow settings revision.`);
     return { executionDigest: requiredDigest(value) };
   }
   const executionDigest = requiredDigest(value.executionDigest);
@@ -492,8 +497,13 @@ function requestMatchesGrant(request: AutomationStudioLlmTaskRequest, grant: Sto
     case "diagnosis_only":
       taskAllowed = request.taskKind === "runtime_diagnosis" && request.expectedOutput === "diagnosis";
       break;
+    case "diagnose_and_adapt":
+      taskAllowed = (request.taskKind === "runtime_diagnosis" && request.expectedOutput === "diagnosis")
+        || (request.taskKind === "runtime_patch" && request.expectedOutput === "runtime_patch");
+      break;
     case "build_and_adapt":
       taskAllowed = (request.taskKind === "flow_bootstrap" && request.expectedOutput === "flow_bootstrap")
+        || (request.taskKind === "evidence_tool_decision" && request.expectedOutput === "evidence_tool_decision")
         || (request.taskKind === "runtime_diagnosis" && request.expectedOutput === "diagnosis")
         || (request.taskKind === "runtime_patch" && request.expectedOutput === "runtime_patch")
         || (request.taskKind === "instruction_suggestion" && request.expectedOutput === "instruction_suggestion")

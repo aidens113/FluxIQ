@@ -6,7 +6,7 @@ import type {
   AutomationStudioFlowDocument
 } from "../model/index.ts";
 import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace, type AutomationStudioTransitionComparison } from "./executor.ts";
-import type { AutomationStudioRuntimePatch } from "./llm-harness.ts";
+import { isAutomationStudioRuntimeTargetOverrideTarget, type AutomationStudioRuntimePatch, type AutomationStudioRuntimeTargetOverrideTarget } from "./llm-harness.ts";
 
 export type AutomationStudioRuntimePatchPreflight = {
   ok: boolean;
@@ -25,6 +25,17 @@ export type AutomationStudioRuntimePatchExecutionResult = {
   metadata?: JsonObject;
 };
 
+export type AutomationStudioRuntimeTargetOverrideEvidenceValidation =
+  | { status: "matched" }
+  | { status: "resolved"; target: AutomationStudioRuntimeTargetOverrideTarget }
+  | { status: "absent" | "ambiguous" };
+
+/** Bounded, domain-neutral identity of the action whose target failed. */
+export type AutomationStudioRuntimeTargetOverrideFailedAction = Readonly<{
+  nodeId: string;
+  definitionId: string;
+}>;
+
 export type AutomationStudioRuntimePatchExecutionInput = {
   projectId: string;
   flowId: string;
@@ -38,6 +49,11 @@ export type AutomationStudioRuntimePatchExecutionInput = {
   proposalMode?: "auto" | "manual" | "mixed";
   authorizedExternalSideEffects?: boolean;
   hostCapabilities?: Iterable<string>;
+  /** Domain-owned validation against sanitized evidence, bound to the failed action kind without exposing trace values. */
+  validateTargetOverrideEvidence?: (
+    target: { selector: string },
+    failedAction: AutomationStudioRuntimeTargetOverrideFailedAction
+  ) => AutomationStudioRuntimeTargetOverrideEvidenceValidation;
   options?: AutomationStudioGraphExecutionOptions;
   now?: () => number;
 };
@@ -64,6 +80,89 @@ export function preflightAutomationStudioRuntimePatch(input: AutomationStudioRun
     ok: issues.length === 0,
     issues,
     requiresExternalSideEffectApproval: sideEffecting && policy?.requireApprovalForExternalSideEffects === true
+  };
+}
+
+/**
+ * Validates a target override as a durable manual-review proposal without
+ * authorizing or executing the proposed target against a host runtime.
+ */
+export function preflightAutomationStudioRuntimeTargetOverrideProposal(input: AutomationStudioRuntimePatchExecutionInput): AutomationStudioRuntimePatchPreflight {
+  return evaluateAutomationStudioRuntimeTargetOverrideProposal(input).preflight;
+}
+
+function evaluateAutomationStudioRuntimeTargetOverrideProposal(input: AutomationStudioRuntimePatchExecutionInput): {
+  preflight: AutomationStudioRuntimePatchPreflight;
+  patch: AutomationStudioRuntimePatch;
+  targetResolution?: "matched" | "resolved";
+  targetNodeResolution?: "matched" | "resolved";
+} {
+  const issues: string[] = [];
+  let patch = input.patch;
+  let targetResolution: "matched" | "resolved" | undefined;
+  let targetNodeResolution: "matched" | "resolved" | undefined;
+  if (input.patch.kind !== "temporary_target_override") issues.push("Proposal-only runtime patch validation supports target overrides only.");
+  if (input.patch.kind === "temporary_target_override" && input.policy && !input.policy.allowModifyActionTargets) issues.push("Action target overrides are disabled by adaptation policy.");
+  if (input.patch.kind === "temporary_target_override") {
+    if (!input.flow.nodes.some((node) => node.id === input.failedAttempt.nodeId)) {
+      issues.push("Failed action node is not present in this Flow.");
+    } else if (input.patch.targetNodeId === input.failedAttempt.nodeId) {
+      targetNodeResolution = "matched";
+    } else {
+      patch = { ...input.patch, targetNodeId: input.failedAttempt.nodeId };
+      targetNodeResolution = "resolved";
+    }
+  } else if (!runtimePatchTargetsFlow(input.flow, input.patch)) {
+    issues.push("Runtime patch points at a node or subflow that is not present in this Flow.");
+  }
+  if (input.patch.kind === "temporary_target_override" && input.validateTargetOverrideEvidence) {
+    const validation = input.validateTargetOverrideEvidence(input.patch.target, {
+      nodeId: input.failedAttempt.nodeId,
+      definitionId: input.failedAttempt.definitionId
+    });
+    if (validation.status === "absent") issues.push("Target override is absent from current sanitized evidence.");
+    if (validation.status === "ambiguous") issues.push("Target override is ambiguous in current sanitized evidence.");
+    if (validation.status === "matched") targetResolution = "matched";
+    if (validation.status === "resolved") {
+      if (isAutomationStudioRuntimeTargetOverrideTarget(validation.target) && patch.kind === "temporary_target_override") {
+        // Preserve any authoritative failed-node rewrite performed above when
+        // the domain also resolves the selector from sanitized evidence.
+        patch = { ...patch, target: validation.target };
+        targetResolution = "resolved";
+      } else {
+        issues.push("Resolved target override is invalid.");
+      }
+    }
+  }
+  return {
+    preflight: { ok: issues.length === 0, issues, requiresExternalSideEffectApproval: true },
+    patch,
+    ...(targetResolution ? { targetResolution } : {}),
+    ...(targetNodeResolution ? { targetNodeResolution } : {})
+  };
+}
+
+export function proposeAutomationStudioRuntimeTargetOverride(input: AutomationStudioRuntimePatchExecutionInput): AutomationStudioRuntimePatchExecutionResult {
+  const evaluated = evaluateAutomationStudioRuntimeTargetOverrideProposal(input);
+  const { preflight } = evaluated;
+  if (!preflight.ok || input.patch.kind !== "temporary_target_override") {
+    return { patch: input.patch, preflight, restoredExpectedState: false, retryOriginalAction: false };
+  }
+  const resolvedInput = { ...input, patch: evaluated.patch };
+  const adaptation = targetOverrideProposalAdaptation(resolvedInput, evaluated.targetResolution, evaluated.targetNodeResolution);
+  return {
+    patch: evaluated.patch,
+    preflight,
+    restoredExpectedState: false,
+    retryOriginalAction: false,
+    adaptation,
+    changeProposal: changeProposalFromRuntimePatch(resolvedInput, adaptation),
+    metadata: {
+      proposalOnly: true,
+      executed: false,
+      ...(evaluated.targetResolution ? { targetResolution: evaluated.targetResolution } : {}),
+      ...(evaluated.targetNodeResolution ? { targetNodeResolution: evaluated.targetNodeResolution } : {})
+    }
   };
 }
 
@@ -155,6 +254,52 @@ function changeProposalFromRuntimePatch(input: AutomationStudioRuntimePatchExecu
   };
 }
 
+function targetOverrideProposalAdaptation(
+  input: AutomationStudioRuntimePatchExecutionInput,
+  targetResolution?: "matched" | "resolved",
+  targetNodeResolution?: "matched" | "resolved"
+): AutomationStudioFlowAdaptation {
+  const now = input.now?.() ?? Date.now();
+  return {
+    schemaVersion: "0.1",
+    adaptationId: `adaptation.${input.runId}.${safePatchSegment(input.patch.kind)}.${now}`,
+    flowId: input.flowId,
+    projectId: input.projectId,
+    ...(input.subflowId ? { subflowId: input.subflowId } : {}),
+    sourceRunId: input.runId,
+    trigger: "Runtime target override was structurally validated for manual review without execution.",
+    failedAction: {
+      attemptId: input.failedAttempt.attemptId,
+      nodeId: input.failedAttempt.nodeId,
+      definitionId: input.failedAttempt.definitionId,
+      status: input.failedAttempt.status,
+      route: input.failedAttempt.route ?? ""
+    },
+    diagnosis: input.patch.reason,
+    patch: [changePatchFromRuntimePatch(input.patch)],
+    validationResults: [{
+      runId: input.runId,
+      status: "succeeded",
+      checkedAt: now,
+      detail: "Proposal-only structural validation succeeded; the target override was not executed."
+    }],
+    status: "proposed",
+    author: "runtime",
+    riskLevel: "high",
+    createdAt: now,
+    updatedAt: now,
+    metadata: {
+      runtimePatchKind: input.patch.kind,
+      proposalOnly: true,
+      executed: false,
+      traceStatus: "not-run",
+      retryOriginalAction: false,
+      ...(targetResolution ? { targetResolution } : {}),
+      ...(targetNodeResolution ? { targetNodeResolution } : {})
+    }
+  };
+}
+
 function applyRuntimePatchToFlow(flow: AutomationStudioFlowDocument, patch: AutomationStudioRuntimePatch): AutomationStudioFlowDocument {
   const next: AutomationStudioFlowDocument = structuredClone(flow);
   if (patch.kind === "temporary_wait_retry") {
@@ -181,7 +326,7 @@ function runtimePatchRestoredExpectedState(trace: AutomationStudioGraphExecution
 
 function changePatchFromRuntimePatch(patch: AutomationStudioRuntimePatch): AutomationStudioFlowAdaptation["patch"][number] {
   if (patch.kind === "temporary_reroute") return { kind: "edit_router", targetId: patch.fromNodeId, summary: patch.reason, after: { toNodeId: patch.toNodeId } };
-  if (patch.kind === "temporary_target_override") return { kind: "edit_action_target", targetId: patch.targetNodeId, summary: patch.reason, after: patch.target };
+  if (patch.kind === "temporary_target_override") return { kind: "edit_action_target", targetId: patch.targetNodeId, summary: patch.reason, after: patch.target, metadata: { externalSideEffect: true } };
   if (patch.kind === "temporary_recovery_subflow_call") return { kind: "edit_recovery", targetId: patch.subflowId, summary: patch.reason };
   if (patch.kind === "temporary_wait_retry") return { kind: "edit_expectation", targetId: patch.targetNodeId, summary: patch.reason, after: { timeoutMs: patch.timeoutMs ?? null, retryCount: patch.retryCount ?? null } };
   return { kind: "edit_recovery", targetId: patch.targetNodeId, summary: patch.reason, after: { actionDefinitionIds: patch.actionDefinitionIds } };

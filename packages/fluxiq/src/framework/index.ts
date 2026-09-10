@@ -12,7 +12,7 @@ import {
   validateDomainIo,
   validateIoRequirements
 } from "../io/index.ts";
-import { AutomationStudioIoRecorder, buildProgramDirectory, createGlobalProgramRuntime, registerHostDocumentationGenerators, type AutomationStudioNativeNodeRuntime, type GlobalProgramRuntime, type ProgramDirectory } from "../programs/index.ts";
+import { AutomationStudioIoRecorder, buildProgramDirectory, createGlobalProgramRuntime, registerHostDocumentationGenerators, type AutomationStudioNativeNodeRuntime, type AutomationStudioReusableLlmContextHostConfiguration, type GlobalProgramRuntime, type ProgramDirectory } from "../programs/index.ts";
 import { initializeFluxIQStorage, inspectFluxIQStorage, type FluxIQStorageInspection } from "./storage-layout.ts";
 import { migrateFluxIQStorage, rollbackFluxIQStorageMigration, type FluxIQStorageMigrationResult } from "./storage-migration.ts";
 
@@ -225,6 +225,12 @@ export class FluxIQ {
 
   bindAutomationStudioNativeNodeRuntime(runtime: AutomationStudioNativeNodeRuntime): this {
     this.programs.automationStudio.bindNativeNodeRuntime(runtime);
+    return this;
+  }
+
+  /** Host-owned protected reusable-context configuration. The host module owns key custody and rotation. */
+  bindAutomationStudioReusableLlmContext(configuration: AutomationStudioReusableLlmContextHostConfiguration): this {
+    this.programs.automationStudio.bindReusableLlmContext(configuration);
     return this;
   }
 

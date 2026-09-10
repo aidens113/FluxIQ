@@ -51,7 +51,7 @@ export function createAutomationHierarchyController(
   return {
     previewPrimaryNode,
     openNode(node, mode) {
-      if (node.kind === "folder") return;
+      if (node.kind === "folder" && !node.viewId) return;
       const context = readContext();
       if (node.metadata?.hierarchyContainer === true) {
         store.expandContainer(node.id, node.metadata?.defaultCollapsed === true);

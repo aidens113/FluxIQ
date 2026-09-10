@@ -42,6 +42,35 @@ describe("Automation Studio LLM execution grants", () => {
     await expect(first).resolves.toMatchObject({ maxCallsPerRun: 1 });
   });
 
+  it("requires an active matching actor session at issue time without credential resubmission", async () => {
+    const fixture = setup();
+    fixture.sessionValid = false;
+    await expect(fixture.service.issue(issueInput())).rejects.toThrow("actor session");
+    expect(fixture.revealAuthorizationCount).toBe(0);
+  });
+
+  it("requires explicit confirmation when a future supported profile exceeds 100,000 total tokens", async () => {
+    const fixture = setup();
+    const ordinary = await fixture.service.preflight(issueInput());
+    vi.spyOn(fixture.service, "preflight").mockResolvedValue({
+      ...ordinary,
+      tokenLimits: { maxInputTokens: 100_000, maxOutputTokens: 1_000, maxTotalTokens: 100_001 }
+    });
+    await expect(fixture.service.issue(issueInput())).rejects.toThrow("explicit confirmation");
+    await expect(fixture.service.issue({ ...issueInput(), highTokenConfirmation: true })).resolves.toMatchObject({
+      tokenLimits: { maxTotalTokens: 100_001 }
+    });
+  });
+
+  it("requires confirmation only when aggregate multi-call authorization exceeds 100,000 tokens", async () => {
+    const fixture = setup();
+    fixture.exactBinding = true;
+    const aggregate = { ...issueInput(), purpose: "build_and_adapt" as const, maxCalls: 3, maxUses: 3, tokenLimits: { maxInputTokens: 30_000, maxOutputTokens: 3_333, maxTotalTokens: 33_333 }, maxTotalEstimatedCostUsd: 0.75 };
+    await expect(fixture.service.issue(aggregate)).resolves.toMatchObject({ maxCalls: 3 });
+    await expect(fixture.service.issue({ ...aggregate, tokenLimits: { maxInputTokens: 30_000, maxOutputTokens: 3_334, maxTotalTokens: 33_334 } })).rejects.toThrow("explicit confirmation");
+    await expect(fixture.service.issue({ ...aggregate, tokenLimits: { maxInputTokens: 30_000, maxOutputTokens: 3_334, maxTotalTokens: 33_334 }, highTokenConfirmation: true })).resolves.toMatchObject({ maxCalls: 3 });
+  });
+
   it("rechecks active state after delayed just-in-time reveal crosses expiry", async () => {
     const fixture = setup();
     fixture.delayReveal = true;
@@ -105,16 +134,17 @@ describe("Automation Studio LLM execution grants", () => {
       tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 },
       maxCalls: 1,
       maxEstimatedCostUsd: 0.1,
-      timeoutMs: 10_000
+      timeoutMs: 45_000
     })).resolves.toMatchObject({
       tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 },
       maxCalls: 1,
       maxEstimatedCostUsd: 0.1,
-      timeoutMs: 10_000
+      timeoutMs: 45_000
     });
     await expect(fixture.service.preflight({ keyId: "secret:key", projectId: "project.one", flowId: "flow.one", tokenLimits: { maxTotalTokens: 50_001 } })).rejects.toThrow("token limits");
     await expect(fixture.service.preflight({ keyId: "secret:key", projectId: "project.one", flowId: "flow.one", maxCalls: 2 })).rejects.toThrow("exactly one");
     await expect(fixture.service.preflight({ keyId: "secret:key", projectId: "project.one", flowId: "flow.one", maxEstimatedCostUsd: 0.251 })).rejects.toThrow("cost");
+    await expect(fixture.service.preflight({ keyId: "secret:key", projectId: "project.one", flowId: "flow.one", timeoutMs: 45_001 })).rejects.toThrow("timeout");
   });
 
   it("issues revision-bound build_and_adapt grants with bounded sequential per-call authorization", async () => {
@@ -153,6 +183,27 @@ describe("Automation Studio LLM execution grants", () => {
     }
     expect(fixture.revealCount).toBe(3);
     expect(fixture.service.activeGrantCount()).toBe(0);
+  });
+
+  it("issues an exact-revision two-call grant limited to diagnosis and runtime patch", async () => {
+    const fixture = setup();
+    fixture.exactBinding = true;
+    const grant = await fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt" });
+    expect(grant).toMatchObject({ purpose: "diagnose_and_adapt", settingsRevision: 7, maxCalls: 2, remainingUses: 2 });
+    const resolved = await fixture.service.resolve({ ...resolveInput(grant.grantId), purpose: "diagnose_and_adapt" }, {
+      allowedTaskKinds: ["runtime_diagnosis", "runtime_patch"]
+    });
+    await expect(resolved.provider.runTask(request())).resolves.toBeDefined();
+    const patchRequest = request();
+    await expect(resolved.provider.runTask({ ...patchRequest, requestId: "request.patch", idempotencyKey: "request.patch", taskKind: "runtime_patch", expectedOutput: "runtime_patch", context: { ...patchRequest.context, taskKind: "runtime_patch" } })).resolves.toBeDefined();
+    expect(fixture.revealCount).toBe(2);
+    expect(fixture.service.activeGrantCount()).toBe(0);
+
+    const forbidden = await fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt" });
+    const forbiddenResolved = await fixture.service.resolve({ ...resolveInput(forbidden.grantId), purpose: "diagnose_and_adapt" }, {
+      allowedTaskKinds: ["runtime_diagnosis", "runtime_patch"]
+    });
+    await expect(forbiddenResolved.provider.runTask({ ...request(), taskKind: "flow_bootstrap", expectedOutput: "flow_bootstrap" })).rejects.toThrow("request mismatch");
   });
 
   it("inspects an available revision-bound build grant without claiming or revealing it", async () => {
@@ -272,7 +323,7 @@ describe("Automation Studio LLM execution grants", () => {
     resolved = await fixture.service.resolve({ ...resolveInput(grant.grantId), purpose: "build_and_adapt" });
     pending = resolved.provider.runTask({ ...request(), requestId: "request.expiry", idempotencyKey: "request.expiry", maxEstimatedCostUsd: 0.1 });
     await fixture.providerStarted;
-    const expiryRejection = expect(pending).rejects.toThrow();
+    const expiryRejection = expect(pending).rejects.toMatchObject({ code: "llm.provider_timeout" });
     await vi.advanceTimersByTimeAsync(1000);
     await expiryRejection;
     expect(fixture.service.activeGrantCount()).toBe(0);
@@ -302,12 +353,12 @@ describe("Automation Studio LLM execution grants", () => {
     await expect(fixture.service.preflight({ ...issueInput(), purpose: "build_and_adapt", tokenLimits: { maxTotalTokens: 50_001 } })).rejects.toThrow("token limits");
   });
 
-  it("requires configured password and PIN and rejects incompatible provider metadata", async () => {
+  it("accepts authenticated sessions regardless of credential-configuration metadata and rejects incompatible provider metadata", async () => {
     const fixture = setup();
     await expect(fixture.service.preflight({ keyId: "secret:key", projectId: "project.one", flowId: "flow.one", provider: "other" })).rejects.toThrow("provider");
     await expect(fixture.service.issue({ ...issueInput(), maxUses: 2 })).rejects.toThrow("one-use");
     fixture.pinConfigured = false;
-    await expect(fixture.service.issue(issueInput())).rejects.toThrow("configured password and PIN");
+    await expect(fixture.service.issue(issueInput())).resolves.toMatchObject({ remainingUses: 1 });
   });
 });
 
@@ -379,12 +430,11 @@ function setup() {
       return exactBinding ? { executionDigest, settingsRevision } : executionDigest;
     },
     identityAccess: {
-      authorizeSessionPasswordPin: async () => ({ id: "user.one", passwordConfigured: true, pinConfigured }),
       validateSession: async () => sessionValid ? { user: { id: "user.one", passwordConfigured: true, pinConfigured }, session: {}, role: {} } : null
     } as any,
     secretKeys: {
       getKeySummary: async () => ({ ...key }),
-      createRevealAuthorization: async (input: { ttlMs?: number }) => {
+      createSessionRevealAuthorization: async (input: { ttlMs?: number }) => {
         revealAuthorizationCount += 1;
         return { authorizationId: `secret-reveal:${revealAuthorizationCount}`, keyId: key.id, keyUpdatedAtMs: key.updatedAtMs, expiresAtMs: now + (input.ttlMs ?? 60_000), remainingUses: 1 };
       },
@@ -410,7 +460,13 @@ function setup() {
           }, reject);
         });
       }
-      return new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ kind: "diagnosis", summary: "safe" }) } }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } }), { status: 200, headers: { "content-type": "application/json" } });
+      const body = JSON.parse(String(init?.body ?? "{}")) as { messages?: Array<{ role?: string; content?: string }> };
+      const userMessage = body.messages?.find((message) => message.role === "user")?.content;
+      const task = userMessage ? JSON.parse(userMessage) as { taskKind?: string } : {};
+      const content = task.taskKind === "runtime_patch"
+        ? { kind: "runtime_patch", summary: "safe", riskLevel: "high", patches: [{ kind: "temporary_target_override", targetNodeId: "node.one", target: { selector: "#current" }, reason: "Use observed target." }] }
+        : { kind: "diagnosis", summary: "safe" };
+      return new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } }), { status: 200, headers: { "content-type": "application/json" } });
     }) as typeof fetch
   });
   return fixture as {
@@ -435,7 +491,7 @@ function setup() {
 }
 
 function issueInput() {
-  return { actorUserId: "user.one", actorSessionId: "session.one", authorizationPassword: "password", authorizationPin: "123456", keyId: "secret:key", projectId: "project.one", flowId: "flow.one", provider: "deepseek", model: "deepseek-chat" };
+  return { actorUserId: "user.one", actorSessionId: "session.one", keyId: "secret:key", projectId: "project.one", flowId: "flow.one", provider: "deepseek", model: "deepseek-chat" };
 }
 function resolveInput(grantId: string) {
   return { grantId, actorUserId: "user.one", actorSessionId: "session.one", projectId: "project.one", flowId: "flow.one", purpose: "diagnosis_only" as const };

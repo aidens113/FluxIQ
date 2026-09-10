@@ -4,6 +4,7 @@ import type {
   AutomationStudioLlmTaskRequest,
   AutomationStudioLlmUsageSummary
 } from "./llm-harness.ts";
+import type { AutomationStudioLlmEvidenceLoopFailureCode, AutomationStudioLlmEvidenceLoopResult } from "./llm-evidence-loop.ts";
 
 export type AutomationStudioFlowBootstrapFailureStage =
   | "pre_provider_validation"
@@ -45,12 +46,27 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
   ],
   provider_output_validation: [
     "flow_bootstrap.provider_output_validation_failed",
+    "flow_bootstrap.evidence_completion_wrapper_invalid",
+    "flow_bootstrap.evidence_completion_plan_invalid",
+    "flow_bootstrap.evidence_completion_profile_limit_exceeded",
     "flow_bootstrap.provider_response_malformed",
     "flow_bootstrap.provider_response_oversize",
+    "flow_bootstrap.provider_output_padding_truncated",
+    "flow_bootstrap.provider_output_truncated",
     "flow_bootstrap.provider_usage_invalid",
     "flow_bootstrap.provider_usage_limit_exceeded",
     "flow_bootstrap.provider_output_invalid",
-    "flow_bootstrap.provider_output_oversize"
+    "flow_bootstrap.provider_output_oversize",
+    "flow_bootstrap.evidence_invalid_configuration",
+    "flow_bootstrap.evidence_invalid_decision",
+    "flow_bootstrap.evidence_unknown_tool",
+    "flow_bootstrap.evidence_duplicate_call",
+    "flow_bootstrap.evidence_duplicate_tool_request",
+    "flow_bootstrap.evidence_repeat_without_progress",
+    "flow_bootstrap.evidence_tool_failed",
+    "flow_bootstrap.evidence_limit",
+    "flow_bootstrap.evidence_iteration_limit",
+    "flow_bootstrap.evidence_cancelled"
   ],
   post_provider_validation: ["flow_bootstrap.post_provider_validation_failed"],
   persistence: ["flow_bootstrap.persistence_failed"]
@@ -81,12 +97,23 @@ export type AutomationStudioFlowBootstrapFailureDiagnostic = {
     totalTokens?: number;
     estimatedCostUsd?: number;
   };
+  evidenceLoop?: {
+    iterationCount: number;
+    decisionCount: number;
+    toolCallCount: number;
+    evidenceBytes: number;
+    steps?: Array<{
+      toolId: string;
+      effectApplied?: boolean;
+      resultCode?: string;
+    }>;
+  };
 };
 
 export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
   value: unknown
 ): AutomationStudioFlowBootstrapFailureDiagnostic | null {
-  if (!isRecord(value) || !hasExactFields(value, ["code", "stage", "retryable", "providerInvocation", "providerResponse", "accounting"])) return null;
+  if (!isRecord(value) || !hasExactFields(value, ["code", "stage", "retryable", "providerInvocation", "providerResponse", "accounting", "evidenceLoop"])) return null;
   if (typeof value.code !== "string" || !FLOW_BOOTSTRAP_PHASE_FAILURE_CODE_STAGE.has(value.code)) return null;
   if (!FLOW_BOOTSTRAP_FAILURE_STAGES.has(value.stage as AutomationStudioFlowBootstrapFailureStage)) return null;
   if (value.retryable !== true && value.retryable !== false) return null;
@@ -96,13 +123,79 @@ export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
   if (phaseFailureStage && !phaseFailureStateMatches(value, phaseFailureStage)) return null;
   const accounting = parseAccounting(value.accounting);
   if (value.accounting !== undefined && !accounting) return null;
+  const evidenceLoop = parseEvidenceLoopCounts(value.evidenceLoop);
+  if (value.evidenceLoop !== undefined && !evidenceLoop) return null;
   return {
     code: value.code,
     stage: value.stage as AutomationStudioFlowBootstrapFailureStage,
     retryable: value.retryable,
     providerInvocation: value.providerInvocation,
     providerResponse: value.providerResponse,
-    ...(accounting ? { accounting } : {})
+    ...(accounting ? { accounting } : {}),
+    ...(evidenceLoop ? { evidenceLoop } : {})
+  };
+}
+
+const EVIDENCE_LOOP_FAILURE_CODES: Record<AutomationStudioLlmEvidenceLoopFailureCode, AutomationStudioFlowBootstrapPhaseFailureCode> = {
+  "llm_evidence_loop.invalid_configuration": "flow_bootstrap.evidence_invalid_configuration",
+  "llm_evidence_loop.invalid_decision": "flow_bootstrap.evidence_invalid_decision",
+  "llm_evidence_loop.unknown_tool": "flow_bootstrap.evidence_unknown_tool",
+  "llm_evidence_loop.duplicate_call": "flow_bootstrap.evidence_duplicate_call",
+  "llm_evidence_loop.duplicate_tool_request": "flow_bootstrap.evidence_duplicate_tool_request",
+  "llm_evidence_loop.repeat_without_progress": "flow_bootstrap.evidence_repeat_without_progress",
+  "llm_evidence_loop.tool_failed": "flow_bootstrap.evidence_tool_failed",
+  "llm_evidence_loop.evidence_limit": "flow_bootstrap.evidence_limit",
+  "llm_evidence_loop.iteration_limit": "flow_bootstrap.evidence_iteration_limit",
+  "llm_evidence_loop.cancelled": "flow_bootstrap.evidence_cancelled"
+};
+
+export function flowBootstrapEvidenceLoopFailure(
+  result: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: false }>
+): AutomationStudioFlowBootstrapGenerationError {
+  return new AutomationStudioFlowBootstrapGenerationError({
+    code: EVIDENCE_LOOP_FAILURE_CODES[result.code],
+    stage: "provider_output_validation",
+    retryable: false,
+    providerInvocation: "attempted",
+    providerResponse: "received",
+    evidenceLoop: evidenceLoopDiagnostic(result)
+  });
+}
+
+export function flowBootstrapEvidenceCompletionFailure(
+  result: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: true }>,
+  accounting: NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["accounting"]>,
+  code: Extract<AutomationStudioFlowBootstrapPhaseFailureCode,
+    | "flow_bootstrap.evidence_completion_wrapper_invalid"
+    | "flow_bootstrap.evidence_completion_plan_invalid"
+    | "flow_bootstrap.evidence_completion_profile_limit_exceeded">
+): AutomationStudioFlowBootstrapGenerationError {
+  return new AutomationStudioFlowBootstrapGenerationError({
+    code,
+    stage: "provider_output_validation",
+    retryable: false,
+    providerInvocation: "attempted",
+    providerResponse: "received",
+    accounting,
+    evidenceLoop: evidenceLoopDiagnostic(result)
+  });
+}
+
+function evidenceLoopDiagnostic(
+  result: AutomationStudioLlmEvidenceLoopResult
+): NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]> {
+  return {
+    iterationCount: result.accounting.iterations,
+    decisionCount: result.trace.length,
+    toolCallCount: result.accounting.toolCalls,
+    evidenceBytes: result.accounting.evidenceBytes,
+    ...(result.trace.some((entry) => entry.decision === "tool_call" && entry.toolId) ? {
+      steps: result.trace.flatMap((entry) => entry.decision === "tool_call" && entry.toolId ? [{
+        toolId: entry.toolId,
+        ...(entry.effectApplied !== undefined ? { effectApplied: entry.effectApplied } : {}),
+        ...(entry.resultCode ? { resultCode: entry.resultCode } : {})
+      }] : [])
+    } : {})
   };
 }
 
@@ -175,7 +268,10 @@ export function flowBootstrapHarnessFailure(input: {
   usage?: AutomationStudioLlmUsageSummary;
 }): AutomationStudioFlowBootstrapGenerationError {
   if (!input.provider) return flowBootstrapPhaseFailure("pre_provider_validation");
-  const error = input.diagnostics.find((diagnostic) => diagnostic.severity === "error");
+  // Harness-owned provider/output diagnostics are appended after instruction
+  // diagnostics. Select the newest error so an earlier instruction diagnostic
+  // cannot mask the actual provider failure at this projection boundary.
+  const error = findLastError(input.diagnostics);
   const providerStatus = safeProviderStatus(error?.metadata?.providerStatus);
   const failure = providerHarnessFailureProjection(error?.code, providerStatus);
   return new AutomationStudioFlowBootstrapGenerationError({
@@ -196,6 +292,13 @@ export function flowBootstrapHarnessFailure(input: {
       ...(input.usage?.estimatedCostUsd !== undefined ? { estimatedCostUsd: input.usage.estimatedCostUsd } : {})
     }
   });
+}
+
+function findLastError(diagnostics: AutomationStudioLlmDiagnostic[]): AutomationStudioLlmDiagnostic | undefined {
+  for (let index = diagnostics.length - 1; index >= 0; index -= 1) {
+    if (diagnostics[index]?.severity === "error") return diagnostics[index];
+  }
+  return undefined;
 }
 
 type ProviderHarnessFailureProjection = {
@@ -221,8 +324,12 @@ function providerHarnessFailureProjection(code: unknown, status: number | undefi
     case "llm.provider_secret_unavailable": return providerRequestProjection("flow_bootstrap.provider_secret_unavailable", false, "not_received");
     case "llm.provider_configuration_invalid": return providerRequestProjection("flow_bootstrap.provider_configuration_invalid", false, "not_received");
     case "llm.provider_malformed_response": return providerOutputProjection("flow_bootstrap.provider_response_malformed");
+    case "llm.provider_output_invalid": return providerOutputProjection("flow_bootstrap.provider_output_invalid");
     case "llm.provider_response_oversize": return providerOutputProjection("flow_bootstrap.provider_response_oversize");
+    case "llm.provider_output_padding_truncated": return providerOutputProjection("flow_bootstrap.provider_output_padding_truncated");
+    case "llm.provider_output_truncated": return providerOutputProjection("flow_bootstrap.provider_output_truncated");
     case "llm.provider_usage_invalid": return providerOutputProjection("flow_bootstrap.provider_usage_invalid");
+    case "llm.provider_usage_limit_exceeded": return providerOutputProjection("flow_bootstrap.provider_usage_limit_exceeded");
     case "llm_output.provider_result_too_large": return providerOutputProjection("flow_bootstrap.provider_output_oversize");
     case "llm_usage.input_limit_exceeded":
     case "llm_usage.output_limit_exceeded":
@@ -305,10 +412,15 @@ function fixedProviderFailureState(
     case "flow_bootstrap.provider_transport_unknown": return { retryable: false, providerResponse: "unknown" };
     case "flow_bootstrap.provider_response_malformed":
     case "flow_bootstrap.provider_response_oversize":
+    case "flow_bootstrap.provider_output_padding_truncated":
+    case "flow_bootstrap.provider_output_truncated":
     case "flow_bootstrap.provider_usage_invalid":
     case "flow_bootstrap.provider_usage_limit_exceeded":
     case "flow_bootstrap.provider_output_invalid":
     case "flow_bootstrap.provider_output_oversize":
+    case "flow_bootstrap.evidence_completion_wrapper_invalid":
+    case "flow_bootstrap.evidence_completion_plan_invalid":
+    case "flow_bootstrap.evidence_completion_profile_limit_exceeded":
       return { retryable: false, providerResponse: "received" };
     default: return null;
   }
@@ -339,6 +451,36 @@ function parseAccounting(value: unknown): NonNullable<AutomationStudioFlowBootst
     ...(value.outputTokens !== undefined ? { outputTokens: value.outputTokens as number } : {}),
     ...(value.totalTokens !== undefined ? { totalTokens: value.totalTokens as number } : {}),
     ...(value.estimatedCostUsd !== undefined ? { estimatedCostUsd: value.estimatedCostUsd } : {})
+  };
+}
+
+function parseEvidenceLoopCounts(value: unknown): NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]> | null | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || !hasExactFields(value, ["iterationCount", "decisionCount", "toolCallCount", "evidenceBytes", "steps"])) return null;
+  if (!boundedInteger(value.iterationCount, 16) || !boundedInteger(value.decisionCount, 16)
+    || !boundedInteger(value.toolCallCount, 16) || !boundedInteger(value.evidenceBytes, 1_048_576)) return null;
+  let steps: NonNullable<NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]>["steps"]> | undefined;
+  if (value.steps !== undefined) {
+    if (!Array.isArray(value.steps) || value.steps.length > 16) return null;
+    steps = [];
+    for (const step of value.steps) {
+      if (!isRecord(step) || !hasExactFields(step, ["toolId", "effectApplied", "resultCode"])
+        || typeof step.toolId !== "string" || !/^[a-z0-9_.:-]{1,200}$/i.test(step.toolId)
+        || (step.effectApplied !== undefined && typeof step.effectApplied !== "boolean")
+        || (step.resultCode !== undefined && (typeof step.resultCode !== "string" || !/^[a-z0-9_.:-]{1,100}$/i.test(step.resultCode)))) return null;
+      steps.push({
+        toolId: step.toolId,
+        ...(step.effectApplied !== undefined ? { effectApplied: step.effectApplied } : {}),
+        ...(step.resultCode !== undefined ? { resultCode: step.resultCode } : {})
+      });
+    }
+  }
+  return {
+    iterationCount: value.iterationCount as number,
+    decisionCount: value.decisionCount as number,
+    toolCallCount: value.toolCallCount as number,
+    evidenceBytes: value.evidenceBytes as number,
+    ...(steps ? { steps } : {})
   };
 }
 

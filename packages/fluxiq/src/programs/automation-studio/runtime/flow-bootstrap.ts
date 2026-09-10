@@ -5,6 +5,7 @@ import {
   type AutomationStudioNodeDefinition,
   type AutomationStudioNodeRegistryResolution
 } from "../nodes/index.ts";
+import { automationStudioLlmTokenBudgetBytes } from "./llm-token-estimation.ts";
 
 export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS = {
   maxSubflows: 8,
@@ -16,11 +17,23 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS = {
   maxPlanBytes: 65_536,
   maxCatalogEntries: 100,
   maxCatalogBytes: 49_152,
-  firstLiveMaxInputTokens: 2_000,
+  firstLiveMaxInputTokens: 4_000,
   bootstrapInstructionTokens: 384,
   maxStringLength: 2_000,
   horizontalSpacing: 320,
   verticalSpacing: 180
+} as const;
+
+export const AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS = {
+  maxResultBytes: 12_000,
+  maxSummaryLength: 240,
+  maxNameLength: 120,
+  maxSubflows: 4,
+  maxRules: 8,
+  maxRouteTags: 8,
+  maxNodesPerSubflow: 16,
+  maxEdgesPerSubflow: 24,
+  maxParametersPerNode: 16
 } as const;
 
 export type AutomationStudioFlowBootstrapRisk = "low" | "medium" | "high";
@@ -82,7 +95,7 @@ export type AutomationStudioFlowBootstrapCatalogEntry = {
     options?: string[];
     constraints?: AutomationNodeParameter["constraints"];
   }>;
-  outputAction?: { fixed?: string; allowed?: string[] };
+  outputAction?: { required: true; fixed?: string; allowed?: string[] };
 };
 
 export type AutomationStudioFlowBootstrapContext = {
@@ -116,40 +129,218 @@ export type AutomationStudioFlowBuildPlan = AutomationStudioValidatedFlowBootstr
 
 
 export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA: JsonObject = {
-  kind: "flow_bootstrap",
-  summary: "string",
-  plan: {
-    schemaVersion: "0.1",
-    router: {
-      name: "string",
-      rules: [{ key: "symbol", name: "string", targetSubflowKey: "symbol", routeTags: ["string"] }],
-      fallback: { kind: "subflow|fail", targetSubflowKey: "symbol when kind=subflow" }
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  type: "object",
+  additionalProperties: false,
+  required: ["kind", "summary", "plan"],
+  properties: {
+    kind: { const: "flow_bootstrap" },
+    summary: { $ref: "#/$defs/text" },
+    plan: {
+      type: "object",
+      additionalProperties: false,
+      required: ["schemaVersion", "router", "subflows"],
+      properties: {
+        schemaVersion: { const: "0.1" },
+        router: {
+          type: "object",
+          additionalProperties: false,
+          required: ["name", "rules", "fallback"],
+          properties: {
+            name: { $ref: "#/$defs/text" },
+            rules: { type: "array", minItems: 0, maxItems: 8, items: { $ref: "#/$defs/rule" } },
+            fallback: { $ref: "#/$defs/fallback" }
+          }
+        },
+        subflows: {
+          type: "array",
+          minItems: 1,
+          maxItems: 8,
+          items: { $ref: "#/$defs/subflow" },
+          contains: { type: "object", required: ["role"], properties: { role: { const: "primary" } } },
+          minContains: 1,
+          maxContains: 1
+        }
+      }
+    }
+  },
+  $defs: {
+    symbol: { type: "string", pattern: "^[a-z][a-z0-9_-]{0,63}$" },
+    identifier: { type: "string", minLength: 1, maxLength: 200, pattern: "^[A-Za-z0-9_.:-]+$" },
+    text: { type: "string", minLength: 1, maxLength: 2_000, pattern: "\\S" },
+    endpoint: {
+      type: "object",
+      additionalProperties: false,
+      required: ["nodeKey", "portId"],
+      properties: { nodeKey: { $ref: "#/$defs/symbol" }, portId: { $ref: "#/$defs/identifier" } }
     },
-    subflows: [{
-      key: "symbol",
-      name: "string",
-      role: "primary|integration|recovery|fallback|utility",
-      nodes: [{
-        key: "symbol",
-        definitionId: "catalog id",
-        definitionVersion: "exact catalog version",
-        parameters: { parameterId: "JSON value" },
-        outputActionId: "required only when catalog outputAction exists"
-      }],
-      edges: [{
-        key: "symbol",
-        source: { nodeKey: "symbol", portId: "catalog output port" },
-        target: { nodeKey: "symbol", portId: "catalog input port" }
-      }]
-    }]
+    rule: {
+      type: "object",
+      additionalProperties: false,
+      required: ["key", "name", "targetSubflowKey", "routeTags"],
+      properties: {
+        key: { $ref: "#/$defs/symbol" },
+        name: { $ref: "#/$defs/text" },
+        targetSubflowKey: { $ref: "#/$defs/symbol" },
+        routeTags: { type: "array", minItems: 0, maxItems: 16, items: { type: "string", minLength: 1, maxLength: 100 } }
+      }
+    },
+    fallback: {
+      oneOf: [
+        { type: "object", additionalProperties: false, required: ["kind", "targetSubflowKey"], properties: { kind: { const: "subflow" }, targetSubflowKey: { $ref: "#/$defs/symbol" } } },
+        { type: "object", additionalProperties: false, required: ["kind"], properties: { kind: { const: "fail" } } }
+      ]
+    },
+    node: {
+      type: "object",
+      additionalProperties: false,
+      required: ["key", "definitionId", "definitionVersion"],
+      properties: {
+        key: { $ref: "#/$defs/symbol" },
+        definitionId: { ...({ $ref: "#/$defs/identifier" }), description: "Use an id from nodeCatalog." },
+        definitionVersion: { ...({ $ref: "#/$defs/text" }), description: "Use the exact version paired with definitionId in nodeCatalog." },
+        parameters: { type: "object", maxProperties: 256, description: "Emit only parameter IDs declared by the selected nodeCatalog entry, with JSON values satisfying those parameter contracts.", additionalProperties: {} },
+        outputActionId: { ...({ $ref: "#/$defs/identifier" }), description: "Emit iff the selected nodeCatalog entry has outputAction; use its fixed value or one allowed value." }
+      }
+    },
+    edge: {
+      type: "object",
+      additionalProperties: false,
+      required: ["key", "source", "target"],
+      properties: { key: { $ref: "#/$defs/symbol" }, source: { $ref: "#/$defs/endpoint" }, target: { $ref: "#/$defs/endpoint" } }
+    },
+    subflow: {
+      type: "object",
+      additionalProperties: false,
+      required: ["key", "name", "role", "nodes", "edges"],
+      properties: {
+        key: { $ref: "#/$defs/symbol" },
+        name: { $ref: "#/$defs/text" },
+        role: { enum: ["primary", "integration", "recovery", "fallback", "utility"] },
+        nodes: { type: "array", minItems: 1, maxItems: 64, items: { $ref: "#/$defs/node" } },
+        edges: { type: "array", minItems: 0, maxItems: 128, items: { $ref: "#/$defs/edge" } }
+      }
+    }
   }
 };
+
+/** A self-contained, reference-free completion schema for bounded evidence-guided
+ * Bootstrap calls. It retains the canonical public plan shape while preventing a
+ * provider from spending a whole completion on optional topology or prose. */
+export const AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA: JsonObject = {
+  type: "object",
+  additionalProperties: false,
+  required: ["summary", "plan"],
+  description: "Return a minimal Flow Bootstrap result under 12000 UTF-8 bytes. Prefer one primary Subflow routed by the Router fallback. Add Subflows or Router rules only when the instruction requires them. Every Router target must equal a Subflow key. Include only required nodes and edges.",
+  properties: {
+    summary: { type: "string", minLength: 1, maxLength: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxSummaryLength },
+    plan: {
+      type: "object",
+      additionalProperties: false,
+      required: ["schemaVersion", "router", "subflows"],
+      properties: {
+        schemaVersion: { const: "0.1" },
+        router: {
+          type: "object",
+          additionalProperties: false,
+          required: ["name", "rules", "fallback"],
+          properties: {
+            name: boundedBootstrapTextSchema(AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxNameLength),
+            rules: {
+              type: "array", minItems: 0, maxItems: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxRules,
+              items: {
+                type: "object", additionalProperties: false, required: ["key", "name", "targetSubflowKey", "routeTags"],
+                properties: {
+                  key: bootstrapSymbolSchema(), name: boundedBootstrapTextSchema(AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxNameLength),
+                  targetSubflowKey: bootstrapSymbolSchema(),
+                  routeTags: { type: "array", minItems: 0, maxItems: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxRouteTags, items: boundedBootstrapTextSchema(100) }
+                }
+              }
+            },
+            fallback: {
+              oneOf: [
+                { type: "object", additionalProperties: false, required: ["kind", "targetSubflowKey"], properties: { kind: { const: "subflow" }, targetSubflowKey: bootstrapSymbolSchema() } },
+                { type: "object", additionalProperties: false, required: ["kind"], properties: { kind: { const: "fail" } } }
+              ]
+            }
+          }
+        },
+        subflows: {
+          type: "array", minItems: 1, maxItems: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxSubflows,
+          contains: { type: "object", required: ["role"], properties: { role: { const: "primary" } } }, minContains: 1, maxContains: 1,
+          items: {
+            type: "object", additionalProperties: false, required: ["key", "name", "role", "nodes", "edges"],
+            properties: {
+              key: bootstrapSymbolSchema(), name: boundedBootstrapTextSchema(AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxNameLength),
+              role: { enum: ["primary", "integration", "recovery", "fallback", "utility"] },
+              nodes: {
+                type: "array", minItems: 1, maxItems: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxNodesPerSubflow,
+                description: "For every node, copy definitionId and definitionVersion exactly from one nodeCatalog entry. Include every required parameter. If that entry has outputAction, outputActionId is mandatory and must equal fixed or one allowed value.",
+                items: {
+                  type: "object", additionalProperties: false, required: ["key", "definitionId", "definitionVersion"],
+                  properties: {
+                    key: bootstrapSymbolSchema(), definitionId: bootstrapIdentifierSchema(),
+                    definitionVersion: boundedBootstrapTextSchema(40),
+                    parameters: { type: "object", maxProperties: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxParametersPerNode, additionalProperties: {} },
+                    outputActionId: bootstrapIdentifierSchema()
+                  }
+                }
+              },
+              edges: {
+                type: "array", minItems: 0, maxItems: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxEdgesPerSubflow,
+                description: "Create one connected acyclic graph. Use only output port IDs from each source node's catalog entry and input port IDs from each target node's entry. Connect every input marked required and do not reuse a port unless it is marked multiple.",
+                items: {
+                  type: "object", additionalProperties: false, required: ["key", "source", "target"],
+                  properties: { key: bootstrapSymbolSchema(), source: bootstrapEndpointSchema(), target: bootstrapEndpointSchema() }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
+export function isAutomationStudioEvidenceFlowBootstrapResultWithinLimits(value: { summary: string; plan: AutomationStudioFlowBootstrapPlan }): boolean {
+  const limits = AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS;
+  return value.summary.length <= limits.maxSummaryLength
+    && Buffer.byteLength(JSON.stringify(value), "utf8") <= limits.maxResultBytes
+    && value.plan.router.name.length <= limits.maxNameLength
+    && value.plan.router.rules.length <= limits.maxRules
+    && value.plan.router.rules.every((rule) => rule.name.length <= limits.maxNameLength && rule.routeTags.length <= limits.maxRouteTags)
+    && value.plan.subflows.length <= limits.maxSubflows
+    && value.plan.subflows.every((subflow) => subflow.name.length <= limits.maxNameLength
+      && subflow.nodes.length <= limits.maxNodesPerSubflow
+      && subflow.edges.length <= limits.maxEdgesPerSubflow
+      && subflow.nodes.every((node) => !node.parameters || Object.keys(node.parameters).length <= limits.maxParametersPerNode));
+}
+
+function boundedBootstrapTextSchema(maxLength: number): JsonObject {
+  return { type: "string", minLength: 1, maxLength, pattern: "\\S" };
+}
+
+function bootstrapSymbolSchema(): JsonObject {
+  return { type: "string", pattern: "^[a-z][a-z0-9_-]{0,63}$" };
+}
+
+function bootstrapIdentifierSchema(): JsonObject {
+  return { type: "string", minLength: 1, maxLength: 200, pattern: "^[A-Za-z0-9_.:-]+$" };
+}
+
+function bootstrapEndpointSchema(): JsonObject {
+  return {
+    type: "object", additionalProperties: false, required: ["nodeKey", "portId"],
+    properties: { nodeKey: bootstrapSymbolSchema(), portId: bootstrapIdentifierSchema() }
+  };
+}
 
 export function buildAutomationStudioFlowBootstrapContext(input: {
   registry?: AutomationStudioNodeRegistry;
   resolution: AutomationStudioNodeRegistryResolution;
   instructionText?: string;
   maxCatalogBytes?: number;
+  maxCatalogEntries?: number;
 }): AutomationStudioFlowBootstrapContext {
   const registry = input.registry ?? new AutomationStudioNodeRegistry();
   const definitions = registry.list(input.resolution).sort((left, right) => left.id.localeCompare(right.id));
@@ -158,6 +349,10 @@ export function buildAutomationStudioFlowBootstrapContext(input: {
     Math.trunc(input.maxCatalogBytes ?? AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogBytes)
   ));
   const selection = rankBootstrapDefinitions(definitions, input.instructionText ?? "");
+  const maxCatalogEntries = Math.max(1, Math.min(
+    AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogEntries,
+    Math.trunc(input.maxCatalogEntries ?? AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogEntries)
+  ));
   const nodeCatalog: AutomationStudioFlowBootstrapCatalogEntry[] = [];
   const selectedIds = new Set<string>();
   const missingRequiredTerms: string[] = [];
@@ -166,7 +361,7 @@ export function buildAutomationStudioFlowBootstrapContext(input: {
     if (selectedIds.has(definition.id)) return true;
     const entry = compactDefinition(definition);
     const entryBytes = Buffer.byteLength(JSON.stringify(entry), "utf8") + (nodeCatalog.length ? 1 : 0);
-    if (nodeCatalog.length >= AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxCatalogEntries
+    if (nodeCatalog.length >= maxCatalogEntries
       || usedBytes + entryBytes > byteBudget) return false;
     nodeCatalog.push(entry);
     selectedIds.add(definition.id);
@@ -195,7 +390,7 @@ export function automationStudioFlowBootstrapCatalogByteBudget(input: {
   maxInputTokens: number;
   instructionBytes: number;
 }): number {
-  const totalBytes = Math.max(0, Math.trunc(input.maxInputTokens)) * 4;
+  const totalBytes = automationStudioLlmTokenBudgetBytes(input.maxInputTokens);
   const schemaBytes = Buffer.byteLength(JSON.stringify(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA), "utf8");
   const fixedEnvelopeReserveBytes = 1_800;
   return Math.max(0, Math.min(
@@ -677,6 +872,7 @@ function compactDefinition(definition: AutomationStudioNodeDefinition): Automati
       ...(parameter.constraints ? { constraints: parameter.constraints } : {})
     })),
     ...(definition.outputAction ? { outputAction: {
+      required: true as const,
       ...(definition.outputAction.fixedOutputId ? { fixed: definition.outputAction.fixedOutputId } : {}),
       ...(definition.outputAction.allowedOutputIds ? { allowed: definition.outputAction.allowedOutputIds } : {})
     } } : {})

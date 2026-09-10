@@ -106,14 +106,21 @@ import {
   type AutomationStudioTrainingModeSettings
 } from "./training-modes.ts";
 import {
+  AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_ESTIMATED_COST_USD,
+  AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST,
+  AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES,
   resolveAutomationStudioLlmInstructions,
+  resolveAutomationStudioLlmTokenLimits,
   runAutomationStudioLlmHarness,
+  sanitizeAutomationStudioLlmFailureEvidence,
+  type AutomationStudioLlmFailureEvidenceCaptureInput,
   type AutomationStudioLlmProvider,
   type AutomationStudioLlmTokenLimits
 } from "./llm-harness.ts";
 import { AutomationStudioLlmRunBudgetLedger } from "./llm-run-budget.ts";
-import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap-generation-failure.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapCatalogByteBudget, buildAutomationStudioFlowBootstrapContext, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap.ts";
+import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm-evidence-loop.ts";
+import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapEvidenceCompletionFailure, flowBootstrapEvidenceLoopFailure, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap-generation-failure.ts";
+import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapCatalogByteBudget, buildAutomationStudioFlowBootstrapContext, isAutomationStudioEvidenceFlowBootstrapResultWithinLimits, parseAutomationStudioFlowBootstrapPlan, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap.ts";
 import {
   assertAutomationStudioBootstrapHasNoRecordingProvenance,
   normalizeAutomationStudioFlowBuildPlan,
@@ -121,7 +128,8 @@ import {
   type AutomationStudioBootstrapAdaptation,
   type AutomationStudioBootstrapAuditEvent
 } from "./flow-bootstrap-adaptation.ts";
-import { executeAutomationStudioRuntimePatch } from "./live-patch.ts";
+import { executeAutomationStudioRuntimePatch, proposeAutomationStudioRuntimeTargetOverride, type AutomationStudioRuntimeTargetOverrideEvidenceValidation, type AutomationStudioRuntimeTargetOverrideFailedAction } from "./live-patch.ts";
+import { packAutomationStudioReusableLlmContext, type AutomationStudioReusableLlmContextPacket, type AutomationStudioReusableLlmContextPackingResult } from "./reusable-llm-context.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "./host-runtime.ts";
 import type { AutomationStudioNativeNodeRuntime } from "./native-node-runtime.ts";
 import { finalizeRecordingStateLinks } from "./state-linker.ts";
@@ -199,6 +207,11 @@ import {
   AutomationStudioProjectFlowResourceRepository,
   AutomationStudioProjectHierarchyRepository,
   AutomationStudioProjectRuntimeStreamStore,
+  AutomationStudioProjectReusableLlmContextStore,
+  type AutomationStudioProjectContentProtection,
+  type AutomationStudioReusableLlmContextList,
+  type AutomationStudioReusableLlmContextRecord,
+  type AutomationStudioReusableLlmContextWrite,
   type AutomationStudioFlowResourcePage,
   type AutomationStudioSqlFlowDetail,
   type AutomationStudioSqlFlowRecord,
@@ -234,11 +247,49 @@ export type AutomationStudioServiceOptions = {
   customNodeRootDir?: string;
   repositories?: CanonicalAutomationStudioRepositories;
   llmProviderResolver?: (input: AutomationStudioLlmProviderResolverInput) => AutomationStudioLlmProviderResolution | AutomationStudioLlmProvider | undefined | Promise<AutomationStudioLlmProviderResolution | AutomationStudioLlmProvider | undefined>;
+  llmEvidenceRuntime?: {
+    tools: AutomationStudioLlmEvidenceTool[];
+    executeTool(input: { projectId: string; flowId: string; callId: string; toolId: string; value: JsonObject; maxEvidenceBytes: number; signal?: AbortSignal }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
+    captureSanitizedFailureEvidence?(input: AutomationStudioLlmFailureEvidenceCaptureInput): Promise<JsonObject | undefined>;
+    validateTargetOverrideEvidence?(evidence: JsonObject, target: { selector: string }, failedAction: AutomationStudioRuntimeTargetOverrideFailedAction): AutomationStudioRuntimeTargetOverrideEvidenceValidation;
+  };
   revokeLlmExecutionGrant?: (grantId: string) => void;
   closeLlmExecutionGrants?: () => void;
   hostRuntime?: AutomationStudioHostRuntimeBoundary;
   uiCacheStore?: AutomationStudioUiCacheStore;
   seedFixture?: boolean;
+  reusableLlmContext?: {
+    enabled?: boolean;
+    contentProtection?: AutomationStudioProjectContentProtection;
+    selectForFreshEvidence?: (input: AutomationStudioReusableLlmContextFreshEvidenceInput) => AutomationStudioReusableLlmContextSelection | undefined | Promise<AutomationStudioReusableLlmContextSelection | undefined>;
+  };
+};
+
+export type AutomationStudioReusableLlmContextFreshEvidenceInput = {
+  taskKind: "flow_bootstrap" | "runtime_diagnosis" | "runtime_patch";
+  projectId: string;
+  flowId: string;
+  subflowId?: string;
+  freshEvidence: JsonValue;
+  freshEvidenceCount: number;
+};
+
+export type AutomationStudioReusableLlmContextSelection = Pick<AutomationStudioReusableLlmContextList,
+  "domainId" | "evidenceKind" | "evidenceSchemaVersion" | "sanitizerVersion" | "compatibilityTags"
+>;
+
+export type AutomationStudioReusableLlmContextHostConfiguration = {
+  enabled: true;
+  contentProtection: AutomationStudioProjectContentProtection;
+  selectForFreshEvidence: NonNullable<NonNullable<AutomationStudioServiceOptions["reusableLlmContext"]>["selectForFreshEvidence"]>;
+};
+
+export type AutomationStudioReusableLlmContextSummary = Omit<AutomationStudioReusableLlmContextRecord, "promptProjection">;
+export type AutomationStudioReusableLlmContextFeatureStatus = {
+  enabled: boolean;
+  writeEnabled: boolean;
+  contentProtection: string;
+  blockerCode?: "reusable_context.content_protection_unavailable";
 };
 
 export type AutomationStudioLlmProviderResolution = {
@@ -246,6 +297,7 @@ export type AutomationStudioLlmProviderResolution = {
   tokenLimits?: Partial<AutomationStudioLlmTokenLimits>;
   maxCallsPerRun?: number;
   maxEstimatedCostUsd?: number;
+  maxTotalEstimatedCostUsd?: number;
   timeoutMs?: number;
 };
 
@@ -257,6 +309,7 @@ export type AutomationStudioLlmProviderResolverInput = {
   metadata?: JsonObject;
   executionGrant?:
     | { grantId: string; actorUserId: string; actorSessionId: string; purpose: "diagnosis_only" }
+    | { grantId: string; actorUserId: string; actorSessionId: string; purpose: "diagnose_and_adapt" }
     | AutomationStudioBuildAndAdaptExecutionGrant;
 };
 
@@ -273,6 +326,8 @@ export type AutomationStudioGenerateFlowBootstrapAdaptationInput = {
   projectId: string;
   flowId: string;
   executionGrant: AutomationStudioBuildAndAdaptExecutionGrant;
+  evidenceGuided?: true;
+  useReusableContext?: true;
 };
 
 export type AutomationStudioGenerateFlowBootstrapAdaptationResult = {
@@ -770,6 +825,7 @@ export class AutomationStudioService {
   private hostRuntime: AutomationStudioHostRuntimeBoundary | undefined;
   private runtimeService?: RuntimeService;
   private llmProviderResolver?: AutomationStudioServiceOptions["llmProviderResolver"];
+  private llmEvidenceRuntime?: AutomationStudioServiceOptions["llmEvidenceRuntime"];
   private revokeLlmExecutionGrant?: AutomationStudioServiceOptions["revokeLlmExecutionGrant"];
   private closeLlmExecutionGrants?: AutomationStudioServiceOptions["closeLlmExecutionGrants"];
   private readonly memoryLegacyRetirementStates = new Map<string, AutomationStudioLegacyRetirementState>();
@@ -778,13 +834,20 @@ export class AutomationStudioService {
   private readonly legacyProjectArtifactReads = new Map<string, Promise<AutomationStudioProjectArtifacts>>();
   private readonly runtimeAbortControllers = new Map<string, AbortController>();
   private readonly adaptiveRuntimeAdmissions = new Set<string>();
+  private reusableLlmContextEnabled: boolean;
+  private reusableLlmContextContentProtection: AutomationStudioProjectContentProtection | undefined;
+  private reusableLlmContextFreshEvidenceSelector: NonNullable<AutomationStudioServiceOptions["reusableLlmContext"]>["selectForFreshEvidence"];
 
   constructor(options: AutomationStudioServiceOptions = {}) {
     this.repositories = options.repositories ?? createCanonicalAutomationStudioMemoryRepositories();
     this.llmProviderResolver = options.llmProviderResolver;
+    this.llmEvidenceRuntime = options.llmEvidenceRuntime;
     this.revokeLlmExecutionGrant = options.revokeLlmExecutionGrant;
     this.closeLlmExecutionGrants = options.closeLlmExecutionGrants;
     this.hostRuntime = options.hostRuntime;
+    this.reusableLlmContextEnabled = options.reusableLlmContext?.enabled === true;
+    this.reusableLlmContextContentProtection = options.reusableLlmContext?.contentProtection;
+    this.reusableLlmContextFreshEvidenceSelector = options.reusableLlmContext?.selectForFreshEvidence;
     let uiCacheStore = options.uiCacheStore;
     if (options.dataDir || options.storageRootDir) {
       const automationDataDir = options.storageRootDir ?? path.join(options.dataDir!, "programs", "automation-studio");
@@ -813,6 +876,27 @@ export class AutomationStudioService {
     this.llmProviderResolver = resolver;
     this.revokeLlmExecutionGrant = revoke;
     this.closeLlmExecutionGrants = close;
+    return this;
+  }
+
+  bindLlmEvidenceRuntime(runtime: NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>): this {
+    this.llmEvidenceRuntime = runtime;
+    return this;
+  }
+
+  bindReusableLlmContext(configuration: AutomationStudioReusableLlmContextHostConfiguration): this {
+    if (configuration.enabled !== true
+      || !configuration.contentProtection
+      || typeof configuration.contentProtection.providerId !== "string"
+      || !/^[A-Za-z0-9._:-]{1,200}$/u.test(configuration.contentProtection.providerId)
+      || typeof configuration.contentProtection.seal !== "function"
+      || typeof configuration.contentProtection.open !== "function"
+      || typeof configuration.selectForFreshEvidence !== "function") {
+      throw new Error("Reusable LLM context host configuration is invalid.");
+    }
+    this.reusableLlmContextEnabled = true;
+    this.reusableLlmContextContentProtection = configuration.contentProtection;
+    this.reusableLlmContextFreshEvidenceSelector = configuration.selectForFreshEvidence;
     return this;
   }
 
@@ -2116,7 +2200,7 @@ export class AutomationStudioService {
     await this.loadProjectFlow(projectId, flowId);
     const flow = await this.repositories.flows.get(flowId);
     if (!flow || flow.projectId !== projectId) throw new Error(`Unknown Automation Studio Flow: ${flowId}`);
-    return flow;
+    return await this.materializeCanonicalGraphFlow(projectId, flow);
   }
 
   async getLlmExecutionDependencyDigest(projectId: string, flowId: string): Promise<string> {
@@ -2144,6 +2228,10 @@ export class AutomationStudioService {
       .filter((item): item is AutomationStudioFlowInstruction => Boolean(item))
       .sort((left, right) => left.instructionId.localeCompare(right.instructionId));
     const sortedGraphFlows = graphFlows.sort((left, right) => left.flowId.localeCompare(right.flowId));
+    const graphRevisionBindings = await this.getLlmExecutionGraphRevisionBindings(
+      projectId,
+      [flow.flowId, ...sortedGraphFlows.map((graphFlow) => graphFlow.flowId)]
+    );
     const publicationDependencies = executionPublicationDependencyState(
       [flow, ...sortedGraphFlows],
       await this.listFlowPublicationRecords()
@@ -2153,9 +2241,104 @@ export class AutomationStudioService {
       router,
       subflows: subflows.sort((left, right) => left.subflowId.localeCompare(right.subflowId)),
       graphFlows: sortedGraphFlows,
+      graphRevisionBindings,
       instructions,
       publicationDependencies
     })).digest("hex");
+  }
+
+  reusableLlmContextStatus(): AutomationStudioReusableLlmContextFeatureStatus {
+    const enabled = this.reusableLlmContextEnabled && Boolean(this.runtimeProjectDatabasePool);
+    const protection = this.reusableLlmContextContentProtection;
+    return protection && enabled
+      ? { enabled: true, writeEnabled: true, contentProtection: protection.providerId }
+      : { enabled, writeEnabled: false, contentProtection: "unavailable", blockerCode: "reusable_context.content_protection_unavailable" };
+  }
+
+  async assertProjectDomainAccess(projectId: string, domainId?: string | null): Promise<void> {
+    const project = await this.findProjectSummary(projectId);
+    if ((project.domainId ?? null) !== (domainId ?? null)) throw new Error("Automation Studio project is unavailable in this domain scope.");
+  }
+
+  async listReusableLlmContexts(input: { projectId: string } & AutomationStudioReusableLlmContextList): Promise<AutomationStudioReusableLlmContextSummary[]> {
+    return this.withReusableLlmContextStore(input.projectId, async (store) => (await store.list(input)).map(reusableLlmContextSummary));
+  }
+
+  async getReusableLlmContext(input: { projectId: string; recordId: string; now?: number; touch?: boolean }): Promise<AutomationStudioReusableLlmContextRecord | null> {
+    return this.withReusableLlmContextStore(input.projectId, async (store) => store.get(input.recordId, { ...(input.now === undefined ? {} : { now: input.now }), ...(input.touch === undefined ? {} : { touch: input.touch }) }));
+  }
+
+  async putReusableLlmContext(input: { projectId: string; record: AutomationStudioReusableLlmContextWrite; actorId?: string }): Promise<AutomationStudioReusableLlmContextRecord> {
+    if (!this.reusableLlmContextEnabled) throw new Error("Reusable LLM context is disabled.");
+    if (!this.reusableLlmContextContentProtection) throw new Error("Reusable LLM context API writes are disabled because project content protection is unavailable.");
+    return this.withReusableLlmContextStore(input.projectId, (store) => store.put(input.record, input.actorId ? { actorId: input.actorId } : {}));
+  }
+
+  async deleteReusableLlmContext(input: { projectId: string; recordId: string; actorId?: string; changedAt?: number }): Promise<boolean> {
+    return this.withReusableLlmContextStore(input.projectId, (store) => store.delete(input.recordId, { ...(input.actorId ? { actorId: input.actorId } : {}), ...(input.changedAt === undefined ? {} : { changedAt: input.changedAt }) }));
+  }
+
+  async clearReusableLlmContextScope(input: { projectId: string; flowId: string; subflowId?: string | null; domainId?: string; actorId?: string; changedAt?: number }): Promise<{ deleted: string[] }> {
+    return this.withReusableLlmContextStore(input.projectId, (store) => store.clearScope({ flowId: input.flowId, ...(input.subflowId === undefined ? {} : { subflowId: input.subflowId }), ...(input.domainId ? { domainId: input.domainId } : {}), ...(input.actorId ? { actorId: input.actorId } : {}), ...(input.changedAt === undefined ? {} : { changedAt: input.changedAt }) }));
+  }
+
+  async purgeExpiredReusableLlmContexts(input: { projectId: string; now?: number; limit?: number; domainId?: string; actorId?: string }): Promise<{ deleted: string[] }> {
+    return this.withReusableLlmContextStore(input.projectId, (store) => store.purgeExpired({ ...(input.now === undefined ? {} : { now: input.now }), ...(input.limit === undefined ? {} : { limit: input.limit }), ...(input.domainId ? { domainId: input.domainId } : {}), ...(input.actorId ? { actorId: input.actorId } : {}) }));
+  }
+
+  async packReusableLlmContexts(input: { projectId: string; flowId: string; subflowId?: string | null; domainId: string; evidenceKind: string; evidenceSchemaVersion: string; sanitizerVersion: string; compatibilityTags?: AutomationStudioReusableLlmContextList["compatibilityTags"]; maxInputTokens: number; actorId?: string; now?: number }): Promise<AutomationStudioReusableLlmContextPackingResult> {
+    return this.withReusableLlmContextStore(input.projectId, async (store) => {
+      const candidates = await store.list({ flowId: input.flowId, subflowId: input.subflowId ?? null, domainId: input.domainId, evidenceKind: input.evidenceKind, evidenceSchemaVersion: input.evidenceSchemaVersion, sanitizerVersion: input.sanitizerVersion, compatibilityTags: input.compatibilityTags ?? [], compatibilityMode: "exact", ...(input.now === undefined ? {} : { now: input.now }), limit: 100 });
+      const packed = packAutomationStudioReusableLlmContext({ candidates, maxInputTokens: input.maxInputTokens });
+      await store.appendAudit({ eventType: "packed", flowId: input.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}), domainId: input.domainId, ...(input.actorId ? { actorId: input.actorId } : {}), detail: { consideredCount: packed.consideredCount, selectedCount: packed.selectedRecordIds.length, deduplicatedCount: packed.deduplicatedCount, excludedDispositionCount: packed.excludedDispositionCount, packedBytes: packed.packedBytes, estimatedTokens: packed.estimatedTokens, selectedRecordIds: packed.selectedRecordIds.join(","), sourceRunIds: packed.selectedSourceRunIds.join(","), sourceAdaptationIds: packed.selectedSourceAdaptationIds.join(",") }, ...(input.now === undefined ? {} : { createdAt: input.now }) });
+      return packed;
+    });
+  }
+
+  private async reusableLlmContextForFreshEvidence(input: AutomationStudioReusableLlmContextFreshEvidenceInput & { optedIn: boolean; maxInputTokens: number; actorId?: string; now?: number }): Promise<{ packet?: AutomationStudioReusableLlmContextPacket; metadata: JsonObject } | undefined> {
+    if (!input.optedIn || !this.reusableLlmContextEnabled) return undefined;
+    const miss = (reason: string): { metadata: JsonObject } => ({ metadata: { status: "miss", reason, freshContributionCount: input.freshEvidenceCount, reusedContributionCount: 0, sourceRecordIds: [], sourceRunIds: [], sourceAdaptationIds: [] } });
+    if (!this.reusableLlmContextContentProtection || !this.reusableLlmContextFreshEvidenceSelector) return miss("unavailable");
+    if (!Number.isSafeInteger(input.freshEvidenceCount) || input.freshEvidenceCount < 1) return miss("fresh_evidence_required");
+    try {
+      const selection = await this.reusableLlmContextFreshEvidenceSelector(input);
+      if (!selection?.domainId || !selection.evidenceKind || !selection.evidenceSchemaVersion || !selection.sanitizerVersion) return miss("selection_unavailable");
+      const packed = await this.packReusableLlmContexts({
+        projectId: input.projectId, flowId: input.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}), domainId: selection.domainId,
+        evidenceKind: selection.evidenceKind, evidenceSchemaVersion: selection.evidenceSchemaVersion, sanitizerVersion: selection.sanitizerVersion,
+        compatibilityTags: selection.compatibilityTags ?? [], maxInputTokens: input.maxInputTokens,
+        ...(input.actorId ? { actorId: input.actorId } : {}), ...(input.now === undefined ? {} : { now: input.now })
+      });
+      const metadata: JsonObject = {
+        status: packed.selectedRecordIds.length ? "hit" : "miss",
+        reason: packed.selectedRecordIds.length ? "compatible_context_selected" : "no_compatible_context",
+        freshContributionCount: input.freshEvidenceCount,
+        reusedContributionCount: packed.selectedRecordIds.length,
+        consideredCount: packed.consideredCount,
+        packedBytes: packed.packedBytes,
+        estimatedTokens: packed.estimatedTokens,
+        sourceRecordIds: packed.selectedRecordIds,
+        sourceRunIds: packed.selectedSourceRunIds,
+        sourceAdaptationIds: packed.selectedSourceAdaptationIds
+      };
+      return { ...(packed.packet?.items.length ? { packet: packed.packet } : {}), metadata };
+    } catch {
+      return miss("retrieval_failed");
+    }
+  }
+
+  private async getLlmExecutionGraphRevisionBindings(projectId: string, flowIds: string[]): Promise<Array<{ flowId: string; graphRevision: number }>> {
+    if (!this.projectDatabasePool) return [];
+    const graph = await AutomationStudioProjectGraphRepository.open({ pool: this.projectDatabasePool, projectId });
+    try {
+      const bindings = await Promise.all([...new Set(flowIds)].sort().map(async (dependencyFlowId) => ({
+        flowId: dependencyFlowId,
+        graphRevision: await graph.getFlowRevision(dependencyFlowId)
+      })));
+      return bindings;
+    } finally {
+      await graph.close();
+    }
   }
   getFlowBootstrapGenerationRuntimeReadiness(): {
     providerResolverConfigured: boolean;
@@ -2214,7 +2397,10 @@ export class AutomationStudioService {
     let failureCode: AutomationStudioFlowBootstrapPhaseFailureCode = "flow_bootstrap.invalid_input";
     let failureAccounting: AutomationStudioBootstrapAccounting | undefined;
     try {
-      assertExactObjectFields(unsafeInput, ["projectId", "flowId", "executionGrant"], "Flow Bootstrap generation input");
+      assertExactObjectFields(unsafeInput, ["projectId", "flowId", "executionGrant", "evidenceGuided", "useReusableContext"], "Flow Bootstrap generation input");
+      if (unsafeInput.evidenceGuided !== undefined && unsafeInput.evidenceGuided !== true) throw new Error("Evidence-guided generation flag is invalid.");
+      if (unsafeInput.useReusableContext !== undefined && unsafeInput.useReusableContext !== true) throw new Error("Reusable-context generation flag is invalid.");
+      if (unsafeInput.useReusableContext === true && unsafeInput.evidenceGuided !== true) throw new Error("Reusable context requires evidence-guided generation with a fresh inspection.");
       if (!unsafeGrant) throw new Error("A build_and_adapt execution grant is required.");
       assertExactObjectFields(unsafeGrant, [
         "grantId",
@@ -2273,6 +2459,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           registry,
           resolution,
           instructionText: bootstrapInstructionText,
+          ...(input.evidenceGuided ? { maxCatalogEntries: 12 } : {}),
           maxCatalogBytes: automationStudioFlowBootstrapCatalogByteBudget({
             maxInputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens,
             instructionBytes: Buffer.byteLength(JSON.stringify(resolvedInstructions), "utf8")
@@ -2296,41 +2483,108 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         }
         failureStage = "provider_request";
         failureCode = "flow_bootstrap.provider_request_failed";
-        const result = await this.runFlowBootstrapLlmHarness({
-          taskKind: "flow_bootstrap",
-          projectId,
-          flowId,
-          instructions,
-          flowBootstrap: { registry, resolution, maxInputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens },
-          provider: unresolvedProvider.provider,
-          ...(unresolvedProvider.tokenLimits ? { tokenLimits: unresolvedProvider.tokenLimits } : {}),
-          ...(unresolvedProvider.maxEstimatedCostUsd !== undefined ? { maxEstimatedCostUsd: unresolvedProvider.maxEstimatedCostUsd } : {}),
-          ...(unresolvedProvider.timeoutMs !== undefined ? { timeoutMs: unresolvedProvider.timeoutMs } : {}),
-          expectedOutput: "flow_bootstrap",
-          metadata: { source: "generateFlowBootstrapAdaptation" }
-        });
-        if (!result.ok || result.response?.kind !== "flow_bootstrap") {
-          throw flowBootstrapHarnessFailure(result);
+        let generatedSummary: string;
+        let generatedPlan: AutomationStudioFlowBootstrapPlan;
+        let evidenceTrace: AutomationStudioLlmEvidenceLoopTrace[] | undefined;
+        let evidenceLoopResult: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: true }> | undefined;
+        let reusableContextResult: { packet?: AutomationStudioReusableLlmContextPacket; metadata: JsonObject } | undefined;
+        let accounting: AutomationStudioBootstrapAccounting;
+        if (input.evidenceGuided) {
+          if (!this.llmEvidenceRuntime?.tools.length) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.pre_provider_validation_failed");
+          let estimatedInputTokens = 0;
+          const completionSchema = AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA;
+          const loop = await runAutomationStudioLlmEvidenceLoop({
+            tools: this.llmEvidenceRuntime.tools,
+            minToolCalls: 1,
+            propagateDecisionErrors: true,
+            maxEvidenceBytes: 64_000,
+            maxEvidenceContextBytes: 8_000,
+            completionSchema,
+            maxIterations: Math.min(unresolvedProvider.maxCallsPerRun ?? 4, 8),
+            maxToolCalls: 7,
+            decide: async ({ iteration, tools, evidence, decisionSchema, canComplete, signal }) => {
+              if (input.useReusableContext === true && evidence.length) {
+                reusableContextResult = await this.reusableLlmContextForFreshEvidence({
+                  optedIn: true, taskKind: "flow_bootstrap", projectId, flowId,
+                  freshEvidence: evidence.map((item) => item.value), freshEvidenceCount: evidence.length,
+                  maxInputTokens: resolveAutomationStudioLlmTokenLimits(unresolvedProvider.tokenLimits).limits.maxInputTokens,
+                  actorId: executionGrant.actorUserId
+                });
+              }
+              const decision = await this.runFlowBootstrapLlmHarness({
+                taskKind: "evidence_tool_decision", projectId, flowId, instructions,
+                evidenceLoop: { iteration, tools, evidence: evidence.map((item) => ({ ...item })), decisionSchema, completionSchema, canComplete },
+                // Reserve evidence-decision input capacity for the dynamic tool
+                // schema and accumulated evidence instead of allowing the node
+                // catalog to consume the ordinary Bootstrap input allocation.
+                flowBootstrap: { registry, resolution, maxInputTokens: 5_000 },
+                ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
+                provider: unresolvedProvider.provider, ...(unresolvedProvider.tokenLimits ? { tokenLimits: unresolvedProvider.tokenLimits } : {}),
+                ...(unresolvedProvider.maxEstimatedCostUsd !== undefined ? { maxEstimatedCostUsd: unresolvedProvider.maxEstimatedCostUsd } : {}),
+                ...(unresolvedProvider.timeoutMs !== undefined ? { timeoutMs: unresolvedProvider.timeoutMs } : {}),
+                expectedOutput: "evidence_tool_decision", ...(signal ? { signal } : {})
+              });
+              estimatedInputTokens += decision.request.estimatedInputTokens;
+              if (!decision.ok || decision.response?.kind !== "evidence_tool_decision") throw flowBootstrapHarnessFailure(decision);
+              return { ...decision.response.decision, ...(decision.usage ? { usage: decision.usage } : {}) };
+            },
+            executeTool: ({ callId, toolId, value, maxEvidenceBytes, signal }) => this.llmEvidenceRuntime!.executeTool({ projectId, flowId, callId, toolId, value, maxEvidenceBytes, ...(signal ? { signal } : {}) })
+          });
+          if (!loop.ok) throw flowBootstrapEvidenceLoopFailure(loop);
+          evidenceLoopResult = loop;
+          evidenceTrace = loop.trace;
+          failureStage = "provider_output_validation";
+          accounting = sanitizedBootstrapAccounting({ requestId: `evidence.${randomUUID()}`, estimatedInputTokens,
+            provider: unresolvedProvider.provider.metadata.provider, model: unresolvedProvider.provider.metadata.model,
+            inputTokens: loop.accounting.inputTokens, outputTokens: loop.accounting.outputTokens,
+            totalTokens: loop.accounting.totalTokens, estimatedCostUsd: loop.accounting.estimatedCostUsd });
+          failureAccounting = accounting;
+          const candidate = loop.result;
+          if (Object.keys(candidate).some((key) => !["summary", "plan"].includes(key)) || typeof candidate.summary !== "string" || !candidate.summary.trim()) {
+            throw flowBootstrapEvidenceCompletionFailure(loop, accounting, "flow_bootstrap.evidence_completion_wrapper_invalid");
+          }
+          const parsedCandidate = parseAutomationStudioFlowBootstrapPlan(candidate.plan);
+          if (!parsedCandidate.plan || parsedCandidate.issues.some((issue) => issue.severity === "error")) {
+            throw flowBootstrapEvidenceCompletionFailure(loop, accounting, "flow_bootstrap.evidence_completion_plan_invalid");
+          }
+          if (!isAutomationStudioEvidenceFlowBootstrapResultWithinLimits({ summary: candidate.summary, plan: parsedCandidate.plan })) {
+            throw flowBootstrapEvidenceCompletionFailure(loop, accounting, "flow_bootstrap.evidence_completion_profile_limit_exceeded");
+          }
+          generatedSummary = candidate.summary;
+          generatedPlan = parsedCandidate.plan;
+        } else {
+          const result = await this.runFlowBootstrapLlmHarness({
+            taskKind: "flow_bootstrap", projectId, flowId, instructions,
+            flowBootstrap: { registry, resolution, maxInputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.firstLiveMaxInputTokens },
+            provider: unresolvedProvider.provider, ...(unresolvedProvider.tokenLimits ? { tokenLimits: unresolvedProvider.tokenLimits } : {}),
+            ...(unresolvedProvider.maxEstimatedCostUsd !== undefined ? { maxEstimatedCostUsd: unresolvedProvider.maxEstimatedCostUsd } : {}),
+            ...(unresolvedProvider.timeoutMs !== undefined ? { timeoutMs: unresolvedProvider.timeoutMs } : {}),
+            expectedOutput: "flow_bootstrap", metadata: { source: "generateFlowBootstrapAdaptation" }
+          });
+          if (!result.ok || result.response?.kind !== "flow_bootstrap") throw flowBootstrapHarnessFailure(result);
+          generatedSummary = result.response.summary;
+          generatedPlan = result.response.plan;
+          accounting = sanitizedBootstrapAccounting({ requestId: result.request.requestId, estimatedInputTokens: result.request.estimatedInputTokens,
+            ...(result.provider?.provider ? { provider: result.provider.provider } : {}), ...(result.provider?.model ? { model: result.provider.model } : {}),
+            ...(result.usage?.inputTokens !== undefined ? { inputTokens: result.usage.inputTokens } : {}), ...(result.usage?.outputTokens !== undefined ? { outputTokens: result.usage.outputTokens } : {}),
+            ...(result.usage?.totalTokens !== undefined ? { totalTokens: result.usage.totalTokens } : {}), ...(result.usage?.estimatedCostUsd !== undefined ? { estimatedCostUsd: result.usage.estimatedCostUsd } : {}) });
         }
         failureStage = "provider_output_validation";
-        failureCode = "flow_bootstrap.provider_output_validation_failed";
-        const accounting = sanitizedBootstrapAccounting({
-          requestId: result.request.requestId,
-          estimatedInputTokens: result.request.estimatedInputTokens,
-          ...(result.provider?.provider ? { provider: result.provider.provider } : {}),
-          ...(result.provider?.model ? { model: result.provider.model } : {}),
-          ...(result.usage?.inputTokens !== undefined ? { inputTokens: result.usage.inputTokens } : {}),
-          ...(result.usage?.outputTokens !== undefined ? { outputTokens: result.usage.outputTokens } : {}),
-          ...(result.usage?.totalTokens !== undefined ? { totalTokens: result.usage.totalTokens } : {}),
-          ...(result.usage?.estimatedCostUsd !== undefined ? { estimatedCostUsd: result.usage.estimatedCostUsd } : {})
-        });
+        failureCode = input.evidenceGuided
+          ? "flow_bootstrap.evidence_completion_plan_invalid"
+          : "flow_bootstrap.provider_output_validation_failed";
         failureAccounting = accounting;
         const validated = validateAutomationStudioFlowBootstrapPlan({
-          plan: result.response.plan,
+          plan: generatedPlan,
           registry,
           resolution
         });
-        if (!validated.ok || !validated.validated) throw new Error("Flow Bootstrap generation returned an invalid plan.");
+        if (!validated.ok || !validated.validated) {
+          if (evidenceLoopResult) {
+            throw flowBootstrapEvidenceCompletionFailure(evidenceLoopResult, accounting, "flow_bootstrap.evidence_completion_plan_invalid");
+          }
+          throw new Error("Flow Bootstrap generation returned an invalid plan.");
+        }
         failureStage = "post_provider_validation";
         failureCode = "flow_bootstrap.post_provider_validation_failed";
         const currentBinding = await this.getLlmExecutionBinding(projectId, flowId);
@@ -2346,9 +2600,11 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           flowId,
           baseDependencyDigest: binding.executionDigest,
           sourceInstructionIds: resolvedInstructions.instructionIds,
-          summary: result.response.summary,
+          summary: generatedSummary,
           buildPlan: validated.validated,
           accounting,
+          ...(evidenceTrace ? { evidenceTrace } : {}),
+          ...(reusableContextResult ? { reusableContext: reusableContextResult.metadata } : {}),
           actorId: executionGrant.actorUserId
         });
         return {
@@ -2380,6 +2636,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     summary: string;
     buildPlan: AutomationStudioFlowBuildPlan;
     accounting?: AutomationStudioBootstrapAccounting;
+    evidenceTrace?: AutomationStudioLlmEvidenceLoopTrace[];
+    reusableContext?: JsonObject;
     actorId?: string;
   }): Promise<AutomationStudioBootstrapAdaptation> {
     return await this.withBootstrapAdaptationLock(input.projectId, input.flowId, async () => {
@@ -2430,6 +2688,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         summary,
         riskLevel: buildPlan.risk,
         ...(input.accounting ? { accounting: sanitizedBootstrapAccounting(input.accounting) } : {}),
+        ...(input.evidenceTrace ? { evidenceTrace: sanitizeEvidenceLoopTrace(input.evidenceTrace) } : {}),
+        ...(input.reusableContext ? { reusableContext: structuredClone(input.reusableContext) } : {}),
         buildPlan,
         topology: normalizeAutomationStudioFlowBuildPlan({
           adaptationId,
@@ -2441,7 +2701,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         status: "proposed",
         createdAt: now,
         updatedAt: now,
-        auditEvents: [bootstrapAdaptationAuditEvent({ adaptationId, eventType: "created", actorId: input.actorId ?? null, fromStatus: null, toStatus: "proposed", createdAt: now })]
+        auditEvents: [bootstrapAdaptationAuditEvent({ adaptationId, eventType: "created", actorId: input.actorId ?? null, fromStatus: null, toStatus: "proposed", createdAt: now, ...((input.evidenceTrace || input.reusableContext) ? { detail: { ...(input.evidenceTrace ? evidenceTraceAuditDetail(input.evidenceTrace) : {}), ...(input.reusableContext ? { reusableContext: structuredClone(input.reusableContext) } : {}) } } : {}) })]
       };
       await this.saveFlowBootstrapAdaptation(adaptation);
       await this.appendBootstrapAdaptationChangeFeed(adaptation, "create");
@@ -3518,10 +3778,12 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     authorizedExternalSideEffects?: boolean;
     graphOptions?: Parameters<typeof runAutomationStudioGraph>[1];
     executionGrant?: AutomationStudioLlmProviderResolverInput["executionGrant"];
+    useReusableContext?: true;
   }): Promise<AutomationStudioFlowRunDetail> {
     if (!input.context) return input.detail;
     if (input.detail.summary.status !== "failed") return input.detail;
-    if (!input.context.behavior.invokeLlm || !input.context.budgetDecision.ok) {
+    const explicitGrantBudget = input.executionGrant?.purpose === "diagnose_and_adapt" || input.executionGrant?.purpose === "diagnosis_only";
+    if (!input.context.behavior.invokeLlm || (!explicitGrantBudget && !input.context.budgetDecision.ok)) {
       return {
         ...input.detail,
         metadata: {
@@ -3572,13 +3834,74 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       projectId: input.context.projectId,
       flowId: input.context.flowId
     }).catch(() => []);
+    const explicitCallLimit = input.executionGrant?.purpose === "diagnose_and_adapt"
+      ? 2
+      : input.executionGrant?.purpose === "diagnosis_only"
+        ? 1
+        : undefined;
     const configuredCallLimits = [input.context.policy.maxInterventionsPerRun, input.context.settings.budgets?.maxInterventionsPerRun, providerResolution?.maxCallsPerRun]
       .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
-    const maxCallsPerRun = Math.max(1, Math.trunc(configuredCallLimits.length ? Math.min(...configuredCallLimits) : 2));
+    const maxCallsPerRun = explicitCallLimit ?? Math.max(1, Math.trunc(configuredCallLimits.length ? Math.min(...configuredCallLimits) : 2));
     const requestedTokenLimits = providerResolution?.tokenLimits;
-    const maxTotalTokensPerRun = Math.max(1, Math.trunc(Math.min(input.context.settings.budgets?.maxTokensPerRun ?? 12_000, (requestedTokenLimits?.maxTotalTokens ?? 10_000) * maxCallsPerRun)));
-    const maxOutputTokensPerRun = Math.max(1, Math.trunc((requestedTokenLimits?.maxOutputTokens ?? maxTotalTokensPerRun) * maxCallsPerRun));
-    const maxEstimatedCostUsdPerRun = Math.min(0.25, input.context.policy.maxEstimatedCostUsdPerRun ?? 0.25, (providerResolution?.maxEstimatedCostUsd ?? 0.25) * maxCallsPerRun);
+    let failureEvidence: JsonObject | undefined;
+    if (provider && failedAttempt && this.llmEvidenceRuntime?.captureSanitizedFailureEvidence) {
+      const resolvedTokenLimits = resolveAutomationStudioLlmTokenLimits(requestedTokenLimits).limits;
+      const maxEvidenceBytes = Math.max(1, Math.min(
+        AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES,
+        Math.floor(resolvedTokenLimits.maxInputTokens * 3 * 0.2)
+      ));
+      try {
+        const captured = await this.llmEvidenceRuntime.captureSanitizedFailureEvidence({
+          projectId: input.context.projectId,
+          flowId: input.context.flowId,
+          runId: input.detail.summary.runId,
+          failedAction: {
+            attemptId: failedAttempt.attemptId,
+            nodeId: failedAttempt.nodeId,
+            definitionId: failedAttempt.definitionId,
+            status: failedAttempt.status,
+            ...(failedAttempt.route ? { route: failedAttempt.route } : {})
+          },
+          maxEvidenceBytes,
+          ...(input.graphOptions?.signal ? { signal: input.graphOptions.signal } : {})
+        });
+        if (captured !== undefined) {
+          const sanitized = sanitizeAutomationStudioLlmFailureEvidence("runtime_diagnosis", captured);
+          if (Buffer.byteLength(JSON.stringify(sanitized), "utf8") > maxEvidenceBytes) {
+            throw new Error("Sanitized failure evidence exceeds the dynamic request allowance.");
+          }
+          failureEvidence = sanitized;
+        }
+      } catch {
+        return {
+          ...input.detail,
+          interventions: [...input.detail.interventions, {
+            schemaVersion: "0.1",
+            interventionId: `llm.failure-evidence.${input.detail.summary.runId}`,
+            runId: input.detail.summary.runId,
+            flowId: input.context.flowId,
+            projectId: input.context.projectId,
+            kind: "diagnosis",
+            reason: "Sanitized runtime failure evidence was unavailable.",
+            validation: { ok: false, issues: ["llm.failure_evidence_invalid: Sanitized runtime failure evidence was unavailable."] },
+            createdAt: input.detail.summary.updatedAt || Date.now()
+          }],
+          metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, providerConfigured: true, code: "llm.failure_evidence_invalid" } }
+        };
+      }
+    }
+    const requestedTotalTokensPerRun = (requestedTokenLimits?.maxTotalTokens ?? 10_000) * maxCallsPerRun;
+    const maxTotalTokensPerRun = Math.max(1, Math.trunc(Math.min(
+      AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST * maxCallsPerRun,
+      explicitGrantBudget
+        ? requestedTotalTokensPerRun
+        : Math.min(input.context.settings.budgets?.maxTokensPerRun ?? 12_000, requestedTotalTokensPerRun)
+    )));
+    const maxOutputTokensPerRun = Math.max(1, Math.trunc(Math.min(maxTotalTokensPerRun, (requestedTokenLimits?.maxOutputTokens ?? maxTotalTokensPerRun) * maxCallsPerRun)));
+    const requestedEstimatedCostUsdPerRun = providerResolution?.maxTotalEstimatedCostUsd ?? (providerResolution?.maxEstimatedCostUsd ?? 0.25) * maxCallsPerRun;
+    const maxEstimatedCostUsdPerRun = explicitGrantBudget
+      ? Math.min(AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_ESTIMATED_COST_USD, requestedEstimatedCostUsdPerRun)
+      : Math.min(0.25, input.context.policy.maxEstimatedCostUsdPerRun ?? 0.25, requestedEstimatedCostUsdPerRun);
     const maxEstimatedCostUsdPerCall = maxEstimatedCostUsdPerRun / maxCallsPerRun;
     const runBudget = new AutomationStudioLlmRunBudgetLedger({
       maxCallsPerRun,
@@ -3586,6 +3909,16 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       maxOutputTokensPerRun,
       maxEstimatedCostUsdPerRun
     });
+    const reusableContextResult = input.useReusableContext === true && failureEvidence
+      ? await this.reusableLlmContextForFreshEvidence({
+        optedIn: true, taskKind: "runtime_diagnosis", projectId: input.context.projectId, flowId: input.context.flowId,
+        ...(input.subflowId ? { subflowId: input.subflowId } : {}), freshEvidence: failureEvidence, freshEvidenceCount: 1,
+        maxInputTokens: resolveAutomationStudioLlmTokenLimits(requestedTokenLimits).limits.maxInputTokens,
+        ...(input.executionGrant?.actorUserId ? { actorId: input.executionGrant.actorUserId } : {}), now: input.detail.summary.updatedAt || Date.now()
+      })
+      : input.useReusableContext === true && this.reusableLlmContextEnabled
+        ? { metadata: { status: "miss", reason: "fresh_evidence_required", freshContributionCount: 0, reusedContributionCount: 0, sourceRecordIds: [], sourceRunIds: [], sourceAdaptationIds: [] } as JsonObject }
+        : undefined;
     const result = await runAutomationStudioLlmHarness({
       taskKind: "runtime_diagnosis",
       projectId: input.context.projectId,
@@ -3594,6 +3927,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       ...(failedAttempt?.nodeId ? { nodeId: failedAttempt.nodeId } : {}),
       instructions,
       runDetail: input.detail,
+      ...(failureEvidence ? { failureEvidence } : {}),
+      ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
       policy: input.context.policy,
       ...(provider ? { provider } : {}),
       runBudget,
@@ -3604,7 +3939,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       now: () => input.detail.summary.updatedAt || Date.now(),
       metadata: {
         source: "runRuntimeSession",
-        expectedOutput: "diagnosis"
+        expectedOutput: "diagnosis",
+        ...(input.executionGrant?.purpose === "diagnose_and_adapt" ? { executionPurpose: "diagnose_and_adapt" } : {})
       }
     });
     const patchResult = provider && input.runtimeFlow && input.failedTraceAttempt && input.context.behavior.createAdaptations
@@ -3616,16 +3952,21 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         ...(failedAttempt?.nodeId ? { nodeId: failedAttempt.nodeId } : {}),
         instructions,
         runDetail: input.detail,
+        ...(failureEvidence ? { failureEvidence } : {}),
+        ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
         policy: input.context.policy,
         provider,
         runBudget,
+        ...(requestedTokenLimits ? { tokenLimits: requestedTokenLimits } : {}),
+        ...(providerResolution?.timeoutMs !== undefined ? { timeoutMs: providerResolution.timeoutMs } : {}),
         maxEstimatedCostUsd: maxEstimatedCostUsdPerCall,
         ...(input.graphOptions?.signal ? { signal: input.graphOptions.signal } : {}),
         expectedOutput: "runtime_patch",
         now: () => input.detail.summary.updatedAt || Date.now(),
         metadata: {
           source: "runRuntimeSession",
-          expectedOutput: "runtime_patch"
+          expectedOutput: "runtime_patch",
+          ...(input.executionGrant?.purpose === "diagnose_and_adapt" ? { executionPurpose: "diagnose_and_adapt" } : {})
         }
       })
       : null;
@@ -3633,8 +3974,27 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const adaptationIds: string[] = [];
     const changeProposalIds: string[] = [];
     if (patchResult?.response?.kind === "runtime_patch" && input.runtimeFlow && input.failedTraceAttempt) {
-      for (const patch of patchResult.response.patches) {
-        const tested = await executeAutomationStudioRuntimePatch({
+      const explicitProposalIssue = input.executionGrant?.purpose === "diagnose_and_adapt"
+        ? patchResult.response.patches.length !== 1
+          ? "diagnose_and_adapt requires exactly one runtime patch."
+          : patchResult.response.patches[0]?.kind !== "temporary_target_override"
+            ? "diagnose_and_adapt supports temporary_target_override proposals only."
+            : undefined
+        : undefined;
+      if (explicitProposalIssue) {
+        runtimePatchAttempts.push(compactJsonObject({
+          kind: patchResult.response.patches.length === 1 ? patchResult.response.patches[0]?.kind : "runtime_patch_response",
+          proposalOnly: true,
+          executed: false,
+          preflightOk: false,
+          restoredExpectedState: false,
+          retryOriginalAction: false,
+          issues: [explicitProposalIssue],
+          traceStatus: "not-run"
+        }));
+      }
+      for (const patch of explicitProposalIssue ? [] : patchResult.response.patches) {
+        const patchInput = {
           projectId: input.context.projectId,
           flowId: input.context.flowId,
           ...(input.subflowId ? { subflowId: input.subflowId } : {}),
@@ -3645,11 +4005,25 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           ...(input.failedTraceAttempt.transitionComparison ? { expectedComparison: input.failedTraceAttempt.transitionComparison } : {}),
           policy: input.context.policy,
           proposalMode: input.context.policy.proposalMode,
+          ...(failureEvidence && this.llmEvidenceRuntime?.validateTargetOverrideEvidence ? {
+            validateTargetOverrideEvidence: (target: { selector: string }, failedAction: AutomationStudioRuntimeTargetOverrideFailedAction) => {
+              try { return this.llmEvidenceRuntime!.validateTargetOverrideEvidence!(failureEvidence!, target, failedAction); }
+              catch { return { status: "absent" as const }; }
+            }
+          } : {}),
           ...(input.authorizedExternalSideEffects !== undefined ? { authorizedExternalSideEffects: input.authorizedExternalSideEffects } : {}),
           ...(input.graphOptions ? { options: input.graphOptions } : {})
-        });
+        };
+        const proposalOnlyTargetOverride = input.executionGrant?.purpose === "diagnose_and_adapt" && patch.kind === "temporary_target_override";
+        const tested = proposalOnlyTargetOverride
+          ? proposeAutomationStudioRuntimeTargetOverride(patchInput)
+          : await executeAutomationStudioRuntimePatch(patchInput);
         runtimePatchAttempts.push(compactJsonObject({
           kind: patch.kind,
+          proposalOnly: tested.metadata?.proposalOnly,
+          executed: tested.metadata?.executed,
+          targetResolution: tested.metadata?.targetResolution,
+          targetNodeResolution: tested.metadata?.targetNodeResolution,
           preflightOk: tested.preflight.ok,
           restoredExpectedState: tested.restoredExpectedState,
           retryOriginalAction: tested.retryOriginalAction,
@@ -3663,7 +4037,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           changeProposalIds.push(tested.changeProposal.proposalId);
         }
         if (tested.adaptation) {
-          const adaptation = tested.changeProposal ? { ...tested.adaptation, proposalId: tested.changeProposal.proposalId } : tested.adaptation;
+          const adaptationBase = tested.changeProposal ? { ...tested.adaptation, proposalId: tested.changeProposal.proposalId } : tested.adaptation;
+          const adaptation = reusableContextResult ? { ...adaptationBase, metadata: { ...(adaptationBase.metadata ?? {}), reusableContext: reusableContextResult.metadata } } : adaptationBase;
           const savedAdaptation = await this.saveFlowAdaptation(adaptation);
           const promoted = await this.maybePromoteRuntimeAdaptation({
             adaptation: savedAdaptation,
@@ -3687,7 +4062,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           providerConfigured: Boolean(provider),
           ok: result.ok && (patchResult?.ok ?? true),
           costAccounting: runBudget.snapshot(input.detail.summary.runId),
-          diagnostics: [...result.diagnostics, ...(patchResult?.diagnostics ?? [])].map((diagnostic) => ({ code: diagnostic.code, severity: diagnostic.severity, message: diagnostic.message }))
+          ...(failureEvidence && result.intervention.contextSummary?.failureEvidence ? { failureEvidence: result.intervention.contextSummary.failureEvidence } : {}),
+          diagnostics: [...result.diagnostics, ...(patchResult?.diagnostics ?? [])].map((diagnostic) => ({ code: diagnostic.code, severity: diagnostic.severity, message: diagnostic.message })),
+          ...(reusableContextResult ? { reusableContext: reusableContextResult.metadata } : {})
         },
         ...(runtimePatchAttempts.length ? { runtimePatchAttempts: runtimePatchAttempts as unknown as JsonObject[] } : {})
       }
@@ -3885,10 +4262,12 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     authorizedExternalSideEffects?: boolean;
     subflowId?: string;
     idempotencyKey?: string;
-    llmExecution?: { grantId: string; actorUserId: string; actorSessionId: string; purpose: "diagnosis_only" };
+    llmExecution?: { grantId: string; actorUserId: string; actorSessionId: string; purpose: "diagnosis_only" | "diagnose_and_adapt" };
+    useReusableContext?: true;
   }): Promise<AutomationStudioRuntimeSession> {
     if (input.llmExecution) {
-      const incompatible = input.llmExecution.purpose !== "diagnosis_only"
+      const compatiblePurpose = input.llmExecution.purpose === "diagnosis_only" || input.llmExecution.purpose === "diagnose_and_adapt";
+      const incompatible = !compatiblePurpose
         || (input.adaptiveMode !== undefined && input.adaptiveMode !== "manual_approval")
         || input.dryRunLlm === true
         || input.authorizedExternalSideEffects === true
@@ -3896,14 +4275,18 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         || input.runId !== undefined;
       if (incompatible) {
         this.revokeLlmExecutionGrant?.(input.llmExecution.grantId);
-        throw new Error("diagnosis_only LLM execution flags are incompatible.");
+        throw new Error("Explicit LLM execution flags are incompatible.");
       }
-      input = { ...input, adaptiveMode: "manual_approval", authorizedExternalSideEffects: false };
+      input = {
+        ...input,
+        adaptiveMode: "manual_approval",
+        authorizedExternalSideEffects: false
+      };
     }
     const idempotencyKey = typeof input.idempotencyKey === "string" && input.idempotencyKey.trim() ? input.idempotencyKey.trim() : "";
     if (input.llmExecution && idempotencyKey) {
       this.revokeLlmExecutionGrant?.(input.llmExecution.grantId);
-      throw new Error("diagnosis_only LLM execution does not accept idempotency keys.");
+      throw new Error("Explicit LLM execution does not accept idempotency keys.");
     }
     if (input.projectId && idempotencyKey) {
       const matching = (await this.listRuntimeSessions(input.projectId).catch(() => [])).find((candidate) => candidate.metadata?.idempotencyKey === idempotencyKey);
@@ -3965,6 +4348,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     let adaptationContext = input.projectId && canonical
       ? runtimeAdaptationContextWithRunOverride(await this.resolveRuntimeAdaptationContext({ projectId: input.projectId, flow: canonical, currentRunId: session.runId }), input)
       : null;
+    if (adaptationContext && input.llmExecution?.purpose === "diagnose_and_adapt") {
+      adaptationContext = runtimeAdaptationContextForExplicitProposal(adaptationContext);
+    }
     if (adaptationContext) graphOptions.recoveryBudget = recoveryBudgetFromRuntimeAdaptationContext(adaptationContext);
     if (input.projectId) {
       this.runtimeAbortControllers.set(`${input.projectId}:${session.runId}`, abortController);
@@ -4055,6 +4441,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           ...(input.authorizedExternalSideEffects !== undefined ? { authorizedExternalSideEffects: input.authorizedExternalSideEffects } : {}),
           graphOptions,
           ...(input.llmExecution ? { executionGrant: input.llmExecution } : {}),
+          ...(input.useReusableContext ? { useReusableContext: true as const } : {}),
           ...(routedFailedTraceAttempt ? { failedTraceAttempt: routedFailedTraceAttempt } : {})
         });
         const retry = adaptationContext && !input.llmExecution ? await this.retryRuntimeSessionAfterAutoAppliedPatch({
@@ -4108,6 +4495,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         ...(input.authorizedExternalSideEffects !== undefined ? { authorizedExternalSideEffects: input.authorizedExternalSideEffects } : {}),
         graphOptions,
         ...(input.llmExecution ? { executionGrant: input.llmExecution } : {}),
+        ...(input.useReusableContext ? { useReusableContext: true as const } : {}),
         ...(failedTraceAttempt ? { failedTraceAttempt } : {})
       });
       const retry = input.llmExecution ? null : await this.retryRuntimeSessionAfterAutoAppliedPatch({
@@ -4387,17 +4775,34 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     input: { projectId: string; flowId?: string; subflowId?: string; status?: string; risk?: string },
     page: { limit: number; offset: number; search?: string; sort: "updated" | "status" | "risk" | "trigger"; direction: "asc" | "desc" }
   ): Promise<AutomationStudioAdaptationSummaryPage> {
-    const typedPage = await this.tryWithAdaptationStore(input.projectId, async (store) => await store.listAdaptationsPage({
-      ...(input.flowId ? { flowId: input.flowId } : {}),
-      ...(input.subflowId ? { subflowId: input.subflowId } : {}),
-      ...(input.status ? { status: input.status } : {}),
-      ...(input.risk ? { risk: input.risk } : {}),
-      ...(page.search ? { search: page.search } : {}),
-      sort: page.sort,
-      direction: page.direction,
-      limit: page.limit,
-      offset: page.offset
-    }));
+    let typedPage: Awaited<ReturnType<AutomationStudioProjectAdaptationStore["listAdaptationsPage"]>> | null = null;
+    if (this.runtimeProjectDatabasePool && this.projectRootDir) {
+      const store = await AutomationStudioProjectAdaptationStore.open({ pool: this.runtimeProjectDatabasePool, projectId: input.projectId });
+      try {
+        typedPage = await store.listAdaptationsPage({
+          ...(input.flowId ? { flowId: input.flowId } : {}),
+          ...(input.subflowId ? { subflowId: input.subflowId } : {}),
+          ...(input.status ? { status: input.status } : {}),
+          ...(input.risk ? { risk: input.risk } : {}),
+          ...(page.search ? { search: page.search } : {}),
+          sort: page.sort,
+          direction: page.direction,
+          limit: page.limit,
+          offset: page.offset
+        });
+        if (typedPage.total === 0 && (input.status || input.risk || page.search)) {
+          const canonicalScope = await store.listAdaptationsPage({
+            ...(input.flowId ? { flowId: input.flowId } : {}),
+            ...(input.subflowId ? { subflowId: input.subflowId } : {}),
+            limit: 1,
+            offset: 0
+          });
+          if (canonicalScope.total > 0) return { adaptations: [], total: 0, limit: typedPage.limit, offset: typedPage.offset };
+        }
+      } finally {
+        await store.close();
+      }
+    }
     if (typedPage && typedPage.total > 0) return { adaptations: typedPage.adaptations.map(adaptationSummaryFromTypedStore), total: typedPage.total, limit: typedPage.limit, offset: typedPage.offset };
     if (!this.projectRootDir) {
       const index = await this.readFlowAdaptationIndex(input.projectId);
@@ -4715,13 +5120,19 @@ const bootstrapInstructionText = resolvedInstructions.instructions
 
   async getFlowAdaptation(projectId: string, flowId: string, adaptationId: string): Promise<AutomationStudioFlowAdaptation | null> {
     await this.findProject(projectId);
-    const typed = await this.tryWithAdaptationStore(projectId, async (store) => {
-      const detail = await store.getAdaptation(adaptationId);
-      if (!detail) return null;
-      const audit = await store.listAuditEvents({ adaptationId, limit: 25, offset: 0 });
-      return { ...detail, auditEvents: audit.events, auditTotal: audit.total };
-    });
-    if (typed && typed.flowId === flowId) return adaptationFromTypedStoreDetail(typed);
+    if (this.runtimeProjectDatabasePool && this.projectRootDir) {
+      const store = await AutomationStudioProjectAdaptationStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
+      try {
+        const detail = await store.getAdaptation(adaptationId);
+        if (detail) {
+          if (detail.flowId !== flowId) return null;
+          const audit = await store.listAuditEvents({ adaptationId, limit: 25, offset: 0 });
+          return adaptationFromTypedStoreDetail({ ...detail, auditEvents: audit.events, auditTotal: audit.total });
+        }
+      } finally {
+        await store.close();
+      }
+    }
     const stored = await new ProgramJsonStore<JsonObject>(this.flowAdaptationFile(projectId, flowId, adaptationId), () => ({})).read();
     if (typeof stored.adaptationId === "string") return stored as unknown as AutomationStudioFlowAdaptation;
     const bootstrap = await this.getFlowBootstrapAdaptation(projectId, flowId, adaptationId);
@@ -5274,6 +5685,31 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     await this.writeFlowInstructionSummary(projectId, { ...summary, projectId });
     await this.writeSqlFlowInstruction(projectId, instruction).catch(() => undefined);
     return instruction;
+  }
+
+  async saveFlowGenerationInstruction(input: { projectId: string; flowId: string; instruction: string }): Promise<AutomationStudioFlowInstruction> {
+    const projectId = requiredBootstrapCommandId(input.projectId, "project");
+    const flowId = requiredBootstrapCommandId(input.flowId, "Flow");
+    const body = typeof input.instruction === "string" ? input.instruction.trim() : "";
+    if (!body || body.length > 4_000) throw new Error("Flow generation instruction must contain 1 to 4,000 characters.");
+    await this.assertBlankBootstrapTarget(projectId, flowId);
+    const existing = (await this.getAllFlowInstructionsForBootstrap(projectId, flowId)).find((item) => item.metadata?.source === "evidence_guided_generation");
+    const now = Date.now();
+    return await this.saveFlowInstruction(projectId, {
+      schemaVersion: "0.1",
+      instructionId: existing?.instructionId ?? `instruction.exploration.${randomUUID()}`,
+      title: "Evidence-guided generation goal",
+      body,
+      scope: { kind: "flow", projectId, flowId },
+      priority: 50,
+      status: "active",
+      requirement: "required",
+      tags: ["generation"],
+      linkedRunIds: existing?.linkedRunIds ?? [], linkedAdaptationIds: existing?.linkedAdaptationIds ?? [],
+      linkedRecordingIds: existing?.linkedRecordingIds ?? [], linkedSubflowIds: existing?.linkedSubflowIds ?? [],
+      createdAt: existing?.createdAt ?? now, updatedAt: now,
+      metadata: { source: "evidence_guided_generation" }
+    });
   }
 
   async saveFlowChangeProposal(proposal: AutomationStudioFlowChangeProposal): Promise<AutomationStudioFlowChangeProposal> {
@@ -7231,8 +7667,16 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       if (!detail || detail.flowId !== input.flowId) return null;
       if ((input.action === "apply" || input.action === "revert") && !await store.supportsGraphTransaction(detail.adaptation)) return null;
       const actorId = input.actorId ?? "reviewer";
-      if (input.action === "apply") return adaptationFromTypedStoreDetail((await store.applyApprovedAdaptation({ adaptationId: input.adaptationId, actorId })).adaptation);
-      if (input.action === "revert") return adaptationFromTypedStoreDetail((await store.rollbackAdaptation({ adaptationId: input.adaptationId, actorId, ...(input.reason ? { reason: input.reason } : {}) })).adaptation);
+      if (input.action === "apply") {
+        const applied = await store.applyApprovedAdaptation({ adaptationId: input.adaptationId, actorId });
+        await this.synchronizeCanonicalFlowGraphProjection(input.projectId, applied.adaptation.adaptation, applied.adaptation.updatedAt).catch(() => undefined);
+        return adaptationFromTypedStoreDetail(applied.adaptation);
+      }
+      if (input.action === "revert") {
+        const reverted = await store.rollbackAdaptation({ adaptationId: input.adaptationId, actorId, ...(input.reason ? { reason: input.reason } : {}) });
+        await this.synchronizeCanonicalFlowGraphProjection(input.projectId, reverted.adaptation.adaptation, reverted.adaptation.updatedAt).catch(() => undefined);
+        return adaptationFromTypedStoreDetail(reverted.adaptation);
+      }
       if (input.action === "supersede") {
         if (!input.supersededByAdaptationId) throw new Error("Supersede requires a replacement adaptation ID.");
         return adaptationFromTypedStoreDetail(await store.supersedeAdaptation({ adaptationId: input.adaptationId, supersededByAdaptationId: input.supersededByAdaptationId, actorId, ...(input.reason ? { reason: input.reason } : {}) }));
@@ -7621,6 +8065,78 @@ const bootstrapInstructionText = resolvedInstructions.instructions
 
   private flowAdaptationsDirectory(projectId: string, flowId: string): string {
     return path.join(this.flowDirectory(projectId, flowId), "adaptations");
+  }
+
+  private async withReusableLlmContextStore<T>(projectId: string, operation: (store: AutomationStudioProjectReusableLlmContextStore) => Promise<T>): Promise<T> {
+    if (!this.reusableLlmContextEnabled) throw new Error("Reusable LLM context is disabled.");
+    if (!this.runtimeProjectDatabasePool || !this.projectRootDir) throw new Error("Reusable LLM context requires project storage.");
+    await this.findProject(projectId);
+    const store = await AutomationStudioProjectReusableLlmContextStore.open({ pool: this.runtimeProjectDatabasePool, projectId, enabled: true, ...(this.reusableLlmContextContentProtection ? { contentProtection: this.reusableLlmContextContentProtection } : {}) });
+    try { return await operation(store); }
+    finally { await store.close(); }
+  }
+
+  /**
+   * Graph-table revisions are the canonical execution source once a Flow has
+   * entered revisioned graph storage. File/cache artifacts remain the owner of
+   * non-graph metadata, but may lag a transactional graph adaptation.
+   */
+  private async materializeCanonicalGraphFlow(projectId: string, flow: AutomationStudioFlowArtifact): Promise<AutomationStudioFlowArtifact> {
+    if (!this.projectDatabasePool) return flow;
+    const graph = await AutomationStudioProjectGraphRepository.open({ pool: this.projectDatabasePool, projectId });
+    try {
+      const revisions = await graph.revisions({ flowId: flow.flowId, limit: 1 });
+      if (!revisions.items.length) return flow;
+      const snapshot = await graph.exportSnapshotData(flow.flowId);
+      return {
+        ...flow,
+        nodes: snapshot.nodes.map((node) => ({
+          id: node.nodeId,
+          definitionId: node.definitionId,
+          definitionVersion: node.definitionVersion,
+          label: node.label,
+          ...(node.description ? { description: node.description } : {}),
+          parameterValues: node.parameterValues,
+          position: { x: node.x, y: node.y },
+          metadata: node.metadata
+        })),
+        edges: snapshot.edges.map((edge) => ({
+          id: edge.edgeId,
+          sourceNodeId: edge.sourceNodeId,
+          targetNodeId: edge.targetNodeId,
+          ...(edge.sourcePortId ? { sourcePortId: edge.sourcePortId } : {}),
+          ...(edge.targetPortId ? { targetPortId: edge.targetPortId } : {}),
+          ...(edge.label ? { label: edge.label } : {}),
+          metadata: edge.metadata
+        })),
+        metadata: { ...(flow.metadata ?? {}), graphRevision: snapshot.flow.graphRevision }
+      };
+    } finally {
+      await graph.close();
+    }
+  }
+
+  private async synchronizeCanonicalFlowGraphProjection(
+    projectId: string,
+    adaptation: AutomationStudioFlowAdaptation,
+    changedAt: number
+  ): Promise<void> {
+    const graphFlowId = typeof adaptation.metadata?.graphRevisionTargetFlowId === "string"
+      ? adaptation.metadata.graphRevisionTargetFlowId.trim()
+      : adaptation.flowId;
+    if (!graphFlowId) throw new Error("Applied adaptation is missing its canonical graph target.");
+    const stored = await this.getFlow(projectId, graphFlowId);
+    const materialized = await this.materializeCanonicalGraphFlow(projectId, stored);
+    const synchronized: AutomationStudioFlowArtifact = {
+      ...materialized,
+      updatedAt: Math.max(stored.updatedAt, changedAt)
+    };
+    const validation = validateAutomationStudioFlow(synchronized);
+    if (!validation.ok) throw new Error(`Canonical adaptation graph projection is invalid: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
+    await this.repositories.flows.put(synchronized);
+    await this.writeProjectFlow(projectId, synchronized);
+    await this.writeFlowSourceFile(projectId, synchronized);
+    await this.writeGeneratedFlowConfig(projectId, synchronized);
   }
   private flowAdaptationDirectory(projectId: string, flowId: string, adaptationId: string): string {
     return path.join(this.flowAdaptationsDirectory(projectId, flowId), safeSegment(adaptationId));
@@ -11072,6 +11588,7 @@ function bootstrapAdaptationAuditEvent(input: {
   fromStatus: AutomationStudioBootstrapAuditEvent["fromStatus"];
   toStatus: AutomationStudioBootstrapAuditEvent["toStatus"];
   createdAt: number;
+  detail?: JsonObject;
 }): AutomationStudioBootstrapAuditEvent {
   const reason = input.eventType === "created"
     ? "Flow Bootstrap adaptation recorded."
@@ -11090,9 +11607,41 @@ function bootstrapAdaptationAuditEvent(input: {
     fromStatus: input.fromStatus,
     toStatus: input.toStatus,
     reason,
-    detail: { adaptationKind: "flow_bootstrap" },
+    detail: { adaptationKind: "flow_bootstrap", ...(input.detail ?? {}) },
     detailObjectId: null,
     createdAt: input.createdAt
+  };
+}
+function sanitizeEvidenceLoopTrace(trace: AutomationStudioLlmEvidenceLoopTrace[]): AutomationStudioLlmEvidenceLoopTrace[] {
+  if (!Array.isArray(trace) || trace.length > 17) throw new Error("Flow Bootstrap evidence trace is invalid.");
+  return trace.map((item) => {
+    if (!Number.isInteger(item.iteration) || item.iteration < 0 || item.iteration > 16 || !["tool_call", "complete"].includes(item.decision)) throw new Error("Flow Bootstrap evidence trace is invalid.");
+    const clean: AutomationStudioLlmEvidenceLoopTrace = { iteration: item.iteration, decision: item.decision };
+    if (item.callId !== undefined) clean.callId = requiredBootstrapCommandId(item.callId, "evidence call");
+    if (item.toolId !== undefined) clean.toolId = requiredBootstrapCommandId(item.toolId, "evidence tool");
+    if (item.evidenceBytes !== undefined) {
+      if (!Number.isSafeInteger(item.evidenceBytes) || item.evidenceBytes < 0 || item.evidenceBytes > 1_048_576) throw new Error("Flow Bootstrap evidence byte count is invalid.");
+      clean.evidenceBytes = item.evidenceBytes;
+    }
+    if (item.usage) clean.usage = { ...item.usage };
+    return clean;
+  });
+}
+function evidenceTraceAuditDetail(trace: AutomationStudioLlmEvidenceLoopTrace[]): JsonObject {
+  const clean = sanitizeEvidenceLoopTrace(trace);
+  const providerDecisions = clean.filter((item) => item.iteration > 0);
+  return {
+    evidenceGuided: true,
+    // Retained for compatibility with existing audit readers. This is the
+    // total trace length and can include the deterministic iteration-0
+    // observation, so it must not be interpreted as provider-call accounting.
+    iterationCount: clean.length,
+    traceStepCount: clean.length,
+    providerCallCount: providerDecisions.length,
+    decisionCount: providerDecisions.length,
+    toolCallCount: clean.filter((item) => item.decision === "tool_call").length,
+    evidenceBytes: clean.reduce((sum, item) => sum + (item.evidenceBytes ?? 0), 0),
+    toolIds: [...new Set(clean.flatMap((item) => item.toolId ? [item.toolId] : []))].sort()
   };
 }
 function sanitizedBootstrapAccounting(value: AutomationStudioBootstrapAccounting): AutomationStudioBootstrapAccounting {
@@ -11390,6 +11939,28 @@ function runtimeAdaptationContextWithRunOverride(
   };
 }
 
+function runtimeAdaptationContextForExplicitProposal(context: AutomationStudioRuntimeAdaptationContext): AutomationStudioRuntimeAdaptationContext {
+  return {
+    ...context,
+    behavior: {
+      ...context.behavior,
+      invokeLlm: true,
+      runRecovery: false,
+      createAdaptations: true,
+      promoteAdaptations: true
+    },
+    policy: {
+      ...context.policy,
+      proposalMode: "manual",
+      // The explicit grant is schema-bound to one target-override proposal.
+      // Permit only that mutation class; preflight still forbids execution and
+      // the ordinary PIN-gated review path remains required for application.
+      allowModifyActionTargets: true
+    },
+    diagnostics: [...context.diagnostics, "Explicit diagnose_and_adapt run permits one target-override proposal with manual review only."]
+  };
+}
+
 function recoveryBudgetFromRuntimeAdaptationContext(context: AutomationStudioRuntimeAdaptationContext): AutomationStudioRecoveryBudget {
   const maxAdaptationOrLlmAttemptsPerRun = firstFiniteNumber(context.policy.maxInterventionsPerRun, context.settings.budgets?.maxInterventionsPerRun);
   return {
@@ -11518,6 +12089,7 @@ function flowRunSummaryWithInterventionSummaries(detail: AutomationStudioFlowRun
     subflowEntryCount: detail.subflows.length,
     actionAttemptCount: detail.actionAttempts?.length ?? detail.summary.actionAttemptCount,
     interventionCount: interventionSummaries.length,
+    adaptationCount: new Set(detail.adaptationIds ?? []).size,
     ...(hasTokenUsage ? { tokenUsage } : {}),
     ...(interventionSummaries.length ? { interventionSummaries } : {})
   };
@@ -11902,4 +12474,9 @@ async function mapWithConcurrency<TItem, TResult>(
     }
   }));
   return results;
+}
+
+function reusableLlmContextSummary(record: AutomationStudioReusableLlmContextRecord): AutomationStudioReusableLlmContextSummary {
+  const { promptProjection: _promptProjection, ...summary } = record;
+  return summary;
 }

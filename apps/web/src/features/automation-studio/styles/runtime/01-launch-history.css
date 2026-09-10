@@ -191,6 +191,53 @@
   white-space: nowrap;
 }
 
+.automation-runtime-run-panel > header .automation-flow-authoring-description {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.automation-flow-exploration-task {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-flow-exploration-task textarea {
+  width: 100%;
+  min-width: 0;
+  resize: vertical;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 8px;
+  font: inherit;
+  font-weight: var(--font-weight-normal);
+}
+
+.automation-flow-exploration-task textarea:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  outline: none;
+}
+
+.automation-flow-exploration-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.automation-flow-exploration-progress progress {
+  flex: 0 0 min(140px, 30%);
+}
+
 .automation-runtime-pagination-footer label {
   display: flex;
   align-items: center;
@@ -272,6 +319,18 @@
   grid-template-columns: 90px 116px;
   align-items: end;
   gap: var(--space-sm);
+}
+
+.automation-runtime-run-command > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.automation-runtime-run-command > div > small {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .automation-runtime-run-actions label {

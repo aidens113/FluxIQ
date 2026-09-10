@@ -7,7 +7,10 @@ export async function POST() {
   const cookieStore = await cookies();
   const sessionId = cookieStore.get(FLUXIQ_SESSION_COOKIE)?.value;
   if (sessionId) {
-    await getFluxIQ().programs.identityAccess.revokeSession(sessionId);
+    const fluxiq = getFluxIQ();
+    fluxiq.programs.llmExecutionGrants.revokeForSession(sessionId);
+    fluxiq.programs.secretKeys.revokeSessionUnlock(sessionId);
+    await fluxiq.programs.identityAccess.revokeSession(sessionId);
   }
   const response = NextResponse.json({ ok: true });
   response.cookies.delete(FLUXIQ_SESSION_COOKIE);

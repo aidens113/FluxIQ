@@ -22,6 +22,16 @@
   .automation-runtime-run-actions {
     grid-template-columns: minmax(88px, 120px) minmax(116px, 1fr);
   }
+
+  .automation-flow-exploration-progress {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .automation-flow-exploration-progress progress {
+    width: 100%;
+    max-width: none;
+  }
 }
 
 @media (max-width: 560px) {

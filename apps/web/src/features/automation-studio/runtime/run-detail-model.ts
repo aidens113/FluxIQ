@@ -105,7 +105,7 @@ export function runtimeRecoveryRoutingEvents(routeDecisions: any[], recoveryAtte
   return [...routes, ...recovery].sort((left, right) => left.timestamp - right.timestamp || left.id.localeCompare(right.id));
 }
 
-export function runtimeLlmAdaptationEvents(runDetail: any): Array<{ id: string; stage: string; title: string; status: string; summary: string; provider?: string; model?: string; usage?: string; adaptationId?: string; detail: any }> {
+export function runtimeLlmAdaptationEvents(runDetail: any): Array<{ id: string; stage: string; title: string; status: string; summary: string; provider?: string; model?: string; usage?: string; evidenceProvenance?: string; adaptationId?: string; detail: any }> {
   const interventions = Array.isArray(runDetail?.interventions) ? runDetail.interventions : [];
   const patchAttempts = Array.isArray(runDetail?.metadata?.runtimePatchAttempts) ? runDetail.metadata.runtimePatchAttempts : [];
   const adaptationIds = Array.isArray(runDetail?.adaptationIds) ? runDetail.adaptationIds : [];
@@ -119,7 +119,8 @@ export function runtimeLlmAdaptationEvents(runDetail: any): Array<{ id: string; 
     ...(intervention.provider ? { provider: String(intervention.provider) } : {}),
     ...(intervention.model ? { model: String(intervention.model) } : {}),
     usage: `${runtimeTokenLabel(intervention.tokenUsage)} tokens | ${runtimeCostLabel(intervention.tokenUsage?.estimatedCostUsd)}`,
-    detail: intervention
+    ...(runtimeFailureEvidenceProvenance(intervention) ? { evidenceProvenance: runtimeFailureEvidenceProvenance(intervention) } : {}),
+    detail: sanitizedRuntimeInterventionDetail(intervention)
   }));
   const patchEvents = patchAttempts.map((attempt: any, index: number) => ({
     id: String(attempt.patchAttemptId ?? attempt.attemptId ?? `patch.${index}`),
@@ -147,6 +148,28 @@ export function runtimeLlmAdaptationEvents(runDetail: any): Array<{ id: string; 
     detail: retry
   }] : [];
   return [...interventionEvents, ...patchEvents, ...adaptationEvents, ...retryEvents];
+}
+
+function runtimeFailureEvidenceProvenance(intervention: any): string | undefined {
+  const context = isRuntimeJsonRecord(intervention?.contextSummary) ? intervention.contextSummary : null;
+  const evidence = isRuntimeJsonRecord(context?.failureEvidence) ? context.failureEvidence : null;
+  const schemaVersion = typeof evidence?.schemaVersion === "string" ? evidence.schemaVersion.trim() : "";
+  const byteCount = evidence?.byteCount;
+  if (!schemaVersion || !Number.isSafeInteger(byteCount) || byteCount < 0 || typeof evidence?.truncated !== "boolean") return undefined;
+  return `Sanitized live evidence attached · ${schemaVersion} · ${byteCount} bytes · ${evidence.truncated ? "truncated" : "full"}`;
+}
+
+function sanitizedRuntimeInterventionDetail(intervention: any): any {
+  if (!isRuntimeJsonRecord(intervention)) return intervention;
+  const context = isRuntimeJsonRecord(intervention.contextSummary) ? intervention.contextSummary : null;
+  const evidence = isRuntimeJsonRecord(context?.failureEvidence) ? context.failureEvidence : null;
+  if (!context || !evidence) return intervention;
+  const safeEvidence = {
+    ...(typeof evidence.schemaVersion === "string" ? { schemaVersion: evidence.schemaVersion } : {}),
+    ...(Number.isSafeInteger(evidence.byteCount) && evidence.byteCount >= 0 ? { byteCount: evidence.byteCount } : {}),
+    ...(typeof evidence.truncated === "boolean" ? { truncated: evidence.truncated } : {})
+  };
+  return { ...intervention, contextSummary: { ...context, failureEvidence: safeEvidence } };
 }
 
 export function runtimeRunEffects(runDetail: any, attempts: any[]): any[] {

@@ -112,6 +112,9 @@ describe("Automation Settings workspace", () => {
     const draft = { allowLlmIntervention: true, llmProvider: "deepseek", llmModel: "deepseek-chat", llmSecretKeyId: "", llmMaxInputTokens: "8000", llmMaxOutputTokens: "2000", llmMaxTotalTokens: "10000", llmMaxCalls: "1", llmTimeoutSeconds: "20", llmMaxCostUsd: "0.25", llmRetryCount: "0" };
     expect(flowLlmSettingsErrors(draft, [], true)).toContain("Choose an enabled encrypted key for DeepSeek.");
     expect(flowLlmSettingsErrors({ ...draft, llmSecretKeyId: "secret.deepseek" }, [{ id: "secret.deepseek" }], true)).toEqual([]);
+    expect(flowLlmSettingsErrors({ ...draft, llmSecretKeyId: "secret.deepseek", llmMaxCalls: "2" }, [{ id: "secret.deepseek" }], true)).toEqual([]);
+    expect(flowLlmSettingsErrors({ ...draft, llmSecretKeyId: "secret.deepseek", llmMaxCalls: "8" }, [{ id: "secret.deepseek" }], true)).toEqual([]);
+    expect(flowLlmSettingsErrors({ ...draft, llmSecretKeyId: "secret.deepseek", llmMaxCalls: "9" }, [{ id: "secret.deepseek" }], true)).toContain("LLM call limit must be between 1 and 8.");
     expect(flowLlmSettingsErrors({ ...draft, llmSecretKeyId: "secret.deepseek", llmMaxTotalTokens: "50001" }, [{ id: "secret.deepseek" }], true)).toContain("Total-token limit must be a whole number from 1 to 50,000.");
     expect(flowLlmSettingsErrors({ ...draft, llmSecretKeyId: "secret.deepseek", llmMaxInputTokens: "9000", llmMaxOutputTokens: "2000" }, [{ id: "secret.deepseek" }], true)).toContain("Input and output token limits together cannot exceed the total-token limit.");
     const html = renderToStaticMarkup(createElement(SettingsView, { projectId: null, flow: { flowId: "flow.checkout", name: "Checkout", metadata: { llmProvider: "deepseek", llmModel: "deepseek-reasoner" } } }));
@@ -119,7 +122,7 @@ describe("Automation Settings workspace", () => {
     expect(html).toContain("DeepSeek");
     expect(html).toContain("deepseek-chat");
     expect(html).not.toContain("deepseek-reasoner");
-    expect(html).toContain("Per-request diagnosis limits");
+    expect(html).toContain("Per-request LLM limits");
     expect(html).toContain("50,000 total tokens");
     expect(html).toContain("Encrypted API key");
     expect(html).toContain("Manage Keys");
@@ -170,6 +173,7 @@ describe("Automation Settings workspace", () => {
     expect(html).toContain("Flow override");
     expect(html).toContain("Use Default");
     expect(html).toContain("Show Technical Metadata");
+    expect(html).toContain("Use 1 for diagnosis-only, 2 for diagnose-and-adapt, or up to 8 for bounded evidence-guided generation.");
   });
   it("gives Flow Settings persistent section navigation and one dirty-aware footer", () => {
     expect(settingsDraftIsDirty({ name: "A" }, { name: "A" })).toBe(false);

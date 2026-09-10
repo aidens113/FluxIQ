@@ -87,7 +87,7 @@ export const AutomationHierarchyTreeRow = memo(function AutomationHierarchyTreeR
         onClick={(event) => {
           if (event.detail > 1) return;
           if (isFolder) props.toggleFolder(node.id);
-          else props.openNode(node, "preview");
+          props.openNode(node, "preview");
         }}
         onDoubleClick={() => props.openNode(node, "new-pane-or-focus")}
         tabIndex={-1}

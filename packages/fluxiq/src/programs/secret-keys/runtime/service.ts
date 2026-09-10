@@ -72,7 +72,16 @@ export type SecretRevealAuthorizationMetadata = {
 
 type StoredSecretRevealAuthorization = SecretRevealAuthorizationMetadata & {
   decryptionKey: Buffer;
+  sessionId?: string;
   state: "available" | "claimed";
+  expiryTimer: ReturnType<typeof setTimeout>;
+};
+
+type StoredSecretSessionUnlock = {
+  sessionId: string;
+  userId: string;
+  expiresAtMs: number;
+  decryptionKeys: Map<string, { keyUpdatedAtMs: number; decryptionKey: Buffer }>;
   expiryTimer: ReturnType<typeof setTimeout>;
 };
 
@@ -84,6 +93,7 @@ export class SecretKeysService {
   private readonly records = new Map<string, SecretKeyRecord>();
   private readonly repository: Repository | undefined;
   private readonly revealAuthorizations = new Map<string, StoredSecretRevealAuthorization>();
+  private readonly sessionUnlocks = new Map<string, StoredSecretSessionUnlock>();
   private readonly now: () => number;
   private loaded = false;
 
@@ -221,6 +231,72 @@ export class SecretKeysService {
     return publicRevealAuthorization(authorization);
   }
 
+  async unlockSession(input: { sessionId: string; userId: string; authorizationPassword: string; expiresAtMs: number; nowMs?: number }): Promise<{ sessionId: string; expiresAtMs: number; unlockedKeyCount: number }> {
+    await this.load();
+    const nowMs = input.nowMs ?? this.now();
+    if (!input.sessionId || !input.userId || !input.authorizationPassword || !Number.isFinite(input.expiresAtMs) || input.expiresAtMs <= nowMs) {
+      throw new Error("Secret key session unlock is invalid");
+    }
+    this.revokeSessionUnlock(input.sessionId);
+    const decryptionKeys = new Map<string, { keyUpdatedAtMs: number; decryptionKey: Buffer }>();
+    for (const record of this.records.values()) {
+      const decryptionKey = deriveSecretKey(input.authorizationPassword, record.sealed.salt).key;
+      try {
+        const secret = decryptSecretValueWithKey(record.sealed, decryptionKey);
+        if (secret.id !== record.id || secret.updatedAtMs !== record.updatedAtMs) throw new Error("Invalid secret key payload");
+        secret.value = "";
+        decryptionKeys.set(record.id, { keyUpdatedAtMs: record.updatedAtMs, decryptionKey });
+      } catch {
+        decryptionKey.fill(0);
+      }
+    }
+    const ttlMs = input.expiresAtMs - nowMs;
+    const expiryTimer = setTimeout(() => this.revokeSessionUnlock(input.sessionId), ttlMs);
+    expiryTimer.unref?.();
+    this.sessionUnlocks.set(input.sessionId, {
+      sessionId: input.sessionId,
+      userId: input.userId,
+      expiresAtMs: input.expiresAtMs,
+      decryptionKeys,
+      expiryTimer
+    });
+    return { sessionId: input.sessionId, expiresAtMs: input.expiresAtMs, unlockedKeyCount: decryptionKeys.size };
+  }
+
+  async createSessionRevealAuthorization(input: { sessionId: string; userId: string; id: string; ttlMs?: number; nowMs?: number }): Promise<SecretRevealAuthorizationMetadata> {
+    await this.load();
+    const nowMs = input.nowMs ?? this.now();
+    const unlock = this.sessionUnlocks.get(input.sessionId);
+    if (!unlock || unlock.userId !== input.userId || unlock.expiresAtMs <= nowMs) {
+      this.revokeSessionUnlock(input.sessionId);
+      throw new Error("Secret key session unlock is unavailable");
+    }
+    const existing = this.requireRecord(input.id);
+    const unlockedKey = unlock.decryptionKeys.get(existing.id);
+    if (!unlockedKey || unlockedKey.keyUpdatedAtMs !== existing.updatedAtMs) throw new Error("Secret key session unlock is unavailable");
+    const requestedTtlMs = input.ttlMs ?? 60_000;
+    const ttlMs = Math.min(requestedTtlMs, unlock.expiresAtMs - nowMs);
+    if (!Number.isInteger(requestedTtlMs) || requestedTtlMs < 1000 || requestedTtlMs > MAX_SECRET_REVEAL_AUTHORIZATION_TTL_MS || ttlMs < 1) {
+      throw new Error("Secret reveal authorization TTL is invalid");
+    }
+    const authorizationId = `secret-reveal:${randomUUID()}`;
+    const expiryTimer = setTimeout(() => this.revokeRevealAuthorization(authorizationId), ttlMs);
+    expiryTimer.unref?.();
+    const authorization: StoredSecretRevealAuthorization = {
+      authorizationId,
+      keyId: existing.id,
+      keyUpdatedAtMs: existing.updatedAtMs,
+      expiresAtMs: nowMs + ttlMs,
+      remainingUses: 1,
+      decryptionKey: Buffer.from(unlockedKey.decryptionKey),
+      sessionId: input.sessionId,
+      state: "available",
+      expiryTimer
+    };
+    this.revealAuthorizations.set(authorizationId, authorization);
+    return publicRevealAuthorization(authorization);
+  }
+
   async revealKeyWithAuthorization(input: { authorizationId: string; id: string; nowMs?: number }): Promise<{ key: SecretKeySummary; value: string }> {
     const authorization = this.revealAuthorizations.get(input.authorizationId);
     const nowMs = input.nowMs ?? this.now();
@@ -265,13 +341,37 @@ export class SecretKeysService {
     return this.revealAuthorizations.size;
   }
 
+  activeSessionUnlockCount(): number {
+    return this.sessionUnlocks.size;
+  }
+
+  revokeSessionUnlock(sessionId: string): void {
+    const unlock = this.sessionUnlocks.get(sessionId);
+    if (unlock) {
+      clearTimeout(unlock.expiryTimer);
+      for (const entry of unlock.decryptionKeys.values()) entry.decryptionKey.fill(0);
+      unlock.decryptionKeys.clear();
+      this.sessionUnlocks.delete(sessionId);
+    }
+    for (const authorization of [...this.revealAuthorizations.values()]) {
+      if (authorization.sessionId === sessionId) this.revokeRevealAuthorization(authorization.authorizationId);
+    }
+  }
+
   close(): void {
     for (const authorizationId of [...this.revealAuthorizations.keys()]) this.revokeRevealAuthorization(authorizationId);
+    for (const sessionId of [...this.sessionUnlocks.keys()]) this.revokeSessionUnlock(sessionId);
   }
 
   private revokeRevealAuthorizationsForKey(keyId: string): void {
     for (const authorization of [...this.revealAuthorizations.values()]) {
       if (authorization.keyId === keyId) this.revokeRevealAuthorization(authorization.authorizationId);
+    }
+    for (const unlock of this.sessionUnlocks.values()) {
+      const entry = unlock.decryptionKeys.get(keyId);
+      if (!entry) continue;
+      entry.decryptionKey.fill(0);
+      unlock.decryptionKeys.delete(keyId);
     }
   }
   private requireRecord(id: string): SecretKeyRecord {

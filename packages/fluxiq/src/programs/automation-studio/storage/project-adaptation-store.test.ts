@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -74,6 +75,7 @@ describe("AutomationStudioProjectAdaptationStore", () => {
       total: 4,
       artifacts: expect.arrayContaining([expect.objectContaining({ artifactKind: "patch" }), expect.objectContaining({ artifactKind: "prompt" }), expect.objectContaining({ artifactKind: "response" }), expect.objectContaining({ artifactKind: "evidence" })])
     });
+    await expect(store.getAdaptation("adaptation.metadata-only")).rejects.toThrow(/adaptation object|ENOENT/i);
     await store.close();
   });
   it("pages adaptation lists and detail sections without loading every detail item", async () => {
@@ -112,6 +114,79 @@ describe("AutomationStudioProjectAdaptationStore", () => {
     expect(rolledBack.adaptation.status).toBe("reverted");
     await expect(readNodeParameters(pool, "project.apply", "node.action")).resolves.toMatchObject({ target: "#old" });
     await expect(store.listAuditEvents({ adaptationId: "adaptation.apply", limit: 10 })).resolves.toMatchObject({ total: 3, events: expect.arrayContaining([expect.objectContaining({ eventType: "applied" }), expect.objectContaining({ eventType: "rollback" })]) });
+    await store.close();
+  });
+
+  it("keeps parent API scope while applying and revision-checking an owned Subflow graph", async () => {
+    const pool = createPool();
+    const projectId = "project.subflow-apply";
+    await seedFlow(pool, projectId, "flow.parent");
+    await seedFlow(pool, projectId, "flow.child");
+    const lease = await pool.acquire(projectId);
+    await lease.database.run("insert into subflows (subflow_id, parent_flow_id, graph_flow_id, name, description, role, status, input_mapping_json, output_mapping_json, revision, created_at_ms, updated_at_ms) values ('subflow.primary', 'flow.parent', 'flow.child', 'Primary', '', 'primary', 'active', '[]', '[]', 1, 2, 2)");
+    await lease.release();
+    const graph = await AutomationStudioProjectGraphRepository.open({ pool, projectId });
+    await graph.applyPatch({ pool, projectId, flowId: "flow.child", baseRevision: 1, mutationId: "child.prepare", operations: [{ op: "move_node", nodeId: "node.other", x: 250, y: 0 }], changedAt: 5 });
+    await graph.close();
+    const store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId });
+    const adaptation = subflowAdaptationFixture({ projectId, adaptationId: "adaptation.subflow", createdAt: 10 });
+
+    await expect(store.putAdaptation({ adaptation, approvalMode: "manual_approval", changedAt: 10 })).resolves.toMatchObject({
+      flowId: "flow.parent",
+      subflowId: "subflow.primary",
+      baseRevision: 2,
+      revisions: { flowRevision: 2 },
+      adaptation: { metadata: { graphRevisionTargetFlowId: "flow.child" } }
+    });
+    const legacyLease = await pool.acquire(projectId);
+    const legacyRow = await legacyLease.database.get<{ status_detail_json: string }>("select status_detail_json from adaptations where adaptation_id = ?", [adaptation.adaptationId]);
+    const legacyStatusDetail = JSON.parse(legacyRow?.status_detail_json ?? "{}") as { metadata?: Record<string, unknown> };
+    if (legacyStatusDetail.metadata) {
+      delete legacyStatusDetail.metadata.graphRevisionTargetFlowId;
+      delete legacyStatusDetail.metadata.baseRevision;
+    }
+    await legacyLease.database.run("update adaptations set base_revision = 1, base_flow_revision = 1, status_detail_json = ? where adaptation_id = ?", [JSON.stringify(legacyStatusDetail), adaptation.adaptationId]);
+    await legacyLease.release();
+    const oldApplyGraph = await AutomationStudioProjectGraphRepository.open({ pool, projectId });
+    await expect(oldApplyGraph.applyPatch({
+      pool,
+      projectId,
+      flowId: "flow.parent",
+      baseRevision: 1,
+      mutationId: `adaptation.apply.${adaptation.adaptationId}`,
+      operations: [{ op: "set_node_parameters", nodeId: "node.action", values: { target: { selector: "#subflow-new" } } }],
+      changedAt: 15
+    })).rejects.toThrow(/Unknown node/);
+    await oldApplyGraph.close();
+    const committedApplyGraph = await AutomationStudioProjectGraphRepository.open({ pool, projectId });
+    const targetDigest = createHash("sha256").update("flow.child").digest("hex").slice(0, 12);
+    await expect(committedApplyGraph.applyPatch({
+      pool,
+      projectId,
+      flowId: "flow.child",
+      baseRevision: 2,
+      mutationId: `adaptation.apply.${adaptation.adaptationId}.graph-${targetDigest}`,
+      operations: [{ op: "set_node_parameters", nodeId: "node.action", values: { target: { selector: "#subflow-new" } } }],
+      authorId: "reviewer",
+      message: `Apply adaptation ${adaptation.adaptationId}`,
+      changedAt: 18
+    })).resolves.toMatchObject({ response: { status: "applied", flowId: "flow.child", revisionNumber: 3 } });
+    await committedApplyGraph.close();
+    await expect(store.applyApprovedAdaptation({ adaptationId: adaptation.adaptationId, actorId: "reviewer", changedAt: 20, compile: false })).resolves.toMatchObject({
+      adaptation: { flowId: "flow.parent", subflowId: "subflow.primary", status: "applied", appliedRevision: 3 },
+      patch: { flowId: "flow.child", revisionNumber: 3 }
+    });
+    await expect(readNodeParameters(pool, projectId, "node.action")).resolves.toMatchObject({ target: { selector: "#subflow-new" } });
+    await expect(readFlowRevision(pool, projectId, "flow.parent")).resolves.toBe(1);
+    await expect(store.rollbackAdaptation({ adaptationId: adaptation.adaptationId, actorId: "reviewer", changedAt: 25 })).resolves.toMatchObject({ patch: { flowId: "flow.child", revisionNumber: 4 } });
+    await expect(readNodeParameters(pool, projectId, "node.action")).resolves.toMatchObject({ target: "#old" });
+
+    const stale = subflowAdaptationFixture({ projectId, adaptationId: "adaptation.subflow.stale", createdAt: 30 });
+    await store.putAdaptation({ adaptation: stale, approvalMode: "manual_approval", changedAt: 30 });
+    const laterGraph = await AutomationStudioProjectGraphRepository.open({ pool, projectId });
+    await laterGraph.applyPatch({ pool, projectId, flowId: "flow.child", baseRevision: 4, mutationId: "child.changed", operations: [{ op: "move_node", nodeId: "node.other", x: 300, y: 0 }], changedAt: 31 });
+    await laterGraph.close();
+    await expect(store.applyApprovedAdaptation({ adaptationId: stale.adaptationId, actorId: "reviewer", changedAt: 32, compile: false })).rejects.toThrow(/stale base/);
     await store.close();
   });
 
@@ -156,9 +231,12 @@ async function seedFlow(pool: AutomationStudioProjectDatabasePool, projectId: st
   await graph.close();
   const lease = await pool.acquire(projectId);
   await lease.database.transaction(async (sql) => {
-    await sql.run("insert into routers (router_id, flow_id, fallback_kind, revision, created_at_ms, updated_at_ms) values ('router.main', ?, 'none', 3, 1, 1)", [flowId]);
-    await sql.run("insert into instructions (instruction_id, title, inline_body, requirement, status, priority, content_digest, revision, created_at_ms, updated_at_ms) values ('instruction.main', 'Instruction', 'Use precise selectors.', 'required', 'active', 10, 'digest.instruction', 7, 1, 1)");
-    await sql.run("insert into instruction_scopes (instruction_id, scope_kind, project_id, flow_id) values ('instruction.main', 'flow', ?, ?)", [projectId, flowId]);
+    const suffix = flowId.replace(/[^A-Za-z0-9._:-]/g, ".");
+    const routerId = `router.${suffix}`;
+    const instructionId = `instruction.${suffix}`;
+    await sql.run("insert into routers (router_id, flow_id, fallback_kind, revision, created_at_ms, updated_at_ms) values (?, ?, 'none', 3, 1, 1)", [routerId, flowId]);
+    await sql.run("insert into instructions (instruction_id, title, inline_body, requirement, status, priority, content_digest, revision, created_at_ms, updated_at_ms) values (?, 'Instruction', 'Use precise selectors.', 'required', 'active', 10, 'digest.instruction', 7, 1, 1)", [instructionId]);
+    await sql.run("insert into instruction_scopes (instruction_id, scope_kind, project_id, flow_id) values (?, 'flow', ?, ?)", [instructionId, projectId, flowId]);
   });
   await lease.release();
 }
@@ -182,11 +260,40 @@ function adaptationFixture(input: { adaptationId: string; status?: AutomationStu
   };
 }
 
+function subflowAdaptationFixture(input: { projectId: string; adaptationId: string; createdAt: number }): AutomationStudioFlowAdaptation {
+  return {
+    schemaVersion: "0.1",
+    adaptationId: input.adaptationId,
+    flowId: "flow.parent",
+    subflowId: "subflow.primary",
+    projectId: input.projectId,
+    trigger: "Subflow action target changed.",
+    patch: [{ kind: "edit_action_target", targetId: "node.action", summary: "Use the new Subflow target.", before: "#old", after: { selector: "#subflow-new" } }],
+    validationResults: [{ runId: "run.validation.subflow", status: "succeeded", checkedAt: input.createdAt }],
+    status: "validated",
+    author: "runtime",
+    riskLevel: "high",
+    createdAt: input.createdAt,
+    updatedAt: input.createdAt,
+    metadata: { proposalModeOverride: "manual" }
+  };
+}
+
 async function readNodeParameters(pool: AutomationStudioProjectDatabasePool, projectId: string, nodeId: string): Promise<Record<string, unknown>> {
   const lease = await pool.acquire(projectId);
   try {
     const row = await lease.database.get<{ parameter_values_json: string }>("select parameter_values_json from graph_nodes where node_id = ?", [nodeId]);
     return JSON.parse(row?.parameter_values_json ?? "{}") as Record<string, unknown>;
+  } finally {
+    await lease.release();
+  }
+}
+
+async function readFlowRevision(pool: AutomationStudioProjectDatabasePool, projectId: string, flowId: string): Promise<number> {
+  const lease = await pool.acquire(projectId);
+  try {
+    const row = await lease.database.get<{ graph_revision: number }>("select graph_revision from flows where flow_id = ?", [flowId]);
+    return row?.graph_revision ?? 0;
   } finally {
     await lease.release();
   }

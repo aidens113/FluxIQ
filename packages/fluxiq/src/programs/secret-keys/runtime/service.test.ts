@@ -84,6 +84,62 @@ describe("SecretKeysService", () => {
     await expect(service.revealKeyWithAuthorization({ authorizationId: authorization.authorizationId, id: key.id, nowMs: 1000 })).rejects.toThrow("unavailable");
   });
 
+  it("derives session-scoped unlock keys at login and revokes all copied key material", async () => {
+    vi.useFakeTimers();
+    let now = 1000;
+    const service = new SecretKeysService({ now: () => now });
+    const key = await service.createKey({
+      name: "DeepSeek",
+      value: "provider-secret",
+      authorizationPassword: "account-password",
+      provider: "deepseek",
+      nowMs: now
+    });
+
+    const unlock = await service.unlockSession({
+      sessionId: "session.one",
+      userId: "user.one",
+      authorizationPassword: "account-password",
+      expiresAtMs: 3000,
+      nowMs: now
+    });
+    expect(unlock).toEqual({ sessionId: "session.one", expiresAtMs: 3000, unlockedKeyCount: 1 });
+    expect(JSON.stringify(unlock)).not.toContain("account-password");
+    const storedUnlock = (service as any).sessionUnlocks.get("session.one");
+    expect(storedUnlock).not.toHaveProperty("authorizationPassword");
+    const sessionKey = storedUnlock.decryptionKeys.get(key.id).decryptionKey as Buffer;
+
+    const authorization = await service.createSessionRevealAuthorization({
+      sessionId: "session.one",
+      userId: "user.one",
+      id: key.id,
+      ttlMs: 1000,
+      nowMs: now
+    });
+    const authorizationKey = (service as any).revealAuthorizations.get(authorization.authorizationId).decryptionKey as Buffer;
+    expect(authorizationKey).not.toBe(sessionKey);
+    service.revokeSessionUnlock("session.one");
+    expect(service.activeSessionUnlockCount()).toBe(0);
+    expect(service.activeRevealAuthorizationCount()).toBe(0);
+    expect([...sessionKey].every((byte) => byte === 0)).toBe(true);
+    expect([...authorizationKey].every((byte) => byte === 0)).toBe(true);
+    await expect(service.createSessionRevealAuthorization({ sessionId: "session.one", userId: "user.one", id: key.id })).rejects.toThrow("unavailable");
+  });
+
+  it("expires session unlocks and does not retain unusable password-derived keys", async () => {
+    vi.useFakeTimers();
+    let now = 1000;
+    const service = new SecretKeysService({ now: () => now });
+    await service.createKey({ name: "DeepSeek", value: "provider-secret", authorizationPassword: "right", nowMs: now });
+    const wrong = await service.unlockSession({ sessionId: "session.wrong", userId: "user.one", authorizationPassword: "wrong", expiresAtMs: 2000, nowMs: now });
+    expect(wrong.unlockedKeyCount).toBe(0);
+    const unlocked = await service.unlockSession({ sessionId: "session.right", userId: "user.one", authorizationPassword: "right", expiresAtMs: 2000, nowMs: now });
+    expect(unlocked.unlockedKeyCount).toBe(1);
+    now = 2000;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(service.activeSessionUnlockCount()).toBe(0);
+  });
+
   it("actively expires, closes, and invalidates reveal authorizations when a key changes", async () => {
     vi.useFakeTimers();
     let now = 1000;

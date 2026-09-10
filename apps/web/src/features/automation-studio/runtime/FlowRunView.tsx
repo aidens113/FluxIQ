@@ -1,6 +1,6 @@
 "use client";
 
-import { DataTable, Field, Modal, StatusBadge, SummaryStrip } from "../../programs/shared-ui";
+import { DataTable, Modal, StatusBadge, SummaryStrip } from "../../programs/shared-ui";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CircleCheck } from "lucide-react";
 import { RunHistory } from "./RunHistory";
@@ -17,6 +17,7 @@ import {
   runtimeTypedInputError,
   runtimeTypedInputErrors,
   updateRuntimeRunInputText,
+  type AutomationRuntimeExplicitLlmRunMode,
   type AutomationRuntimeRunMode,
   type AutomationRuntimeUiRunMode,
   type RuntimeReadinessIssue
@@ -25,6 +26,7 @@ import { useRuntimeExecutionCommands, type RuntimeExecutionCommands } from "./ru
 import { subscribeToAutomationStudioMutations } from "../stores/mutation-transaction-store";
 import { registerAutomationStudioRuntimeActions, updateAutomationStudioRuntimeActions } from "../workspace/studio-action-registry";
 import { BlankFlowAuthoringPanel } from "../authoring";
+import { AUTOMATION_LLM_PROGRESS_LABELS, llmRequestRequiresHighTokenWarning } from "../authoring/blank-flow-authoring-model";
 export type FlowRunViewProps = {
   projectId: string | null;
   flow?: any;
@@ -52,11 +54,9 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
   const [activeRunStartedAt, setActiveRunStartedAt] = useState<number | null>(null);
   const [liveRunId, setLiveRunId] = useState<string | null>(null);
   const [lastMode, setLastMode] = useState<AutomationRuntimeUiRunMode>("fully_adaptive");
-  const [diagnosisAuthorizationOpen, setDiagnosisAuthorizationOpen] = useState(false);
-  const [diagnosisPassword, setDiagnosisPassword] = useState("");
-  const [diagnosisPin, setDiagnosisPin] = useState("");
-  const [diagnosisAuthorizationError, setDiagnosisAuthorizationError] = useState("");
-  const [diagnosisAuthorizing, setDiagnosisAuthorizing] = useState(false);
+  const [llmAuthorizationMode, setLlmAuthorizationMode] = useState<AutomationRuntimeExplicitLlmRunMode | null>(null);
+  const [llmAuthorizationError, setLlmAuthorizationError] = useState("");
+  const [llmAuthorizing, setLlmAuthorizing] = useState(false);
   const [readiness, setReadiness] = useState<{ loading: boolean; instructions: any[]; router: any | null; subflowTotal: number; error: string }>({ loading: false, instructions: [], router: null, subflowTotal: 0, error: "" });
   const readinessRequestGateRef = useRef<ReturnType<typeof createRuntimeReadinessRequestGate> | null>(null);
   const studioRuntimeActionId = React.useId();
@@ -86,15 +86,14 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
       flowId: props.flow.flowId
     });
   }, [loadReadiness, props.flow?.flowId, props.projectId]);
-  const closeDiagnosisAuthorization = () => {
-    if (diagnosisAuthorizing) return;
-    setDiagnosisPassword("");
-    setDiagnosisPin("");
-    setDiagnosisAuthorizationError("");
-    setDiagnosisAuthorizationOpen(false);
+  const closeLlmAuthorization = () => {
+    if (llmAuthorizing) return;
+    setLlmAuthorizationError("");
+    setLlmAuthorizationMode(null);
   };
   const runFlow = async (mode: AutomationRuntimeUiRunMode, llmExecutionGrantId?: string) => {
-    const runtimeMode: AutomationRuntimeRunMode = mode === "diagnosis_only" ? "manual_approval" : mode;
+    const explicitLlmMode = mode === "diagnosis_only" || mode === "diagnose_and_adapt";
+    const runtimeMode: AutomationRuntimeRunMode = explicitLlmMode ? "manual_approval" : mode;
     setRunningMode(mode);
     setRunError("");
     const inputErrors = runtimeTypedInputErrors(props.flow, runtimeRunInputValues(inputText));
@@ -102,14 +101,14 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
     const payload = buildAutomationRuntimeRunPayload({ projectId: props.projectId, flowId: props.flow?.flowId, mode: runtimeMode, inputText, maxSteps });
     if (!payload.ok) { setRunError(payload.error); setRunningMode(null); return; }
     setLastMode(mode);
-    if (mode === "diagnosis_only") {
+    if (explicitLlmMode) {
       const result = await props.commands.execute({
         ...payload.payload,
-        ...(llmExecutionGrantId ? { runIntent: "diagnosis_only", llmExecutionGrantId } : {})
+        ...(llmExecutionGrantId ? { runIntent: mode, llmExecutionGrantId } : {})
       });
       setRunningMode(null);
       const runId = result.payload?.runtimeSession?.runId;
-      if (!result.ok || !result.payload?.runtimeSession || !runId) { setRunError("The authorized diagnosis run could not be completed."); return; }
+      if (!result.ok || !result.payload?.runtimeSession || !runId) { setRunError("The authorized LLM run could not be completed."); return; }
       commitRuntimeRunChanged({ projectId: props.projectId, flowId: props.flow?.flowId, runId });
       setLiveRunId(runId);
       setLastRun(result.payload);
@@ -131,47 +130,44 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
     setLastRun(result.payload);
   };
   const requestRun = (mode: AutomationRuntimeUiRunMode) => {
-    if (mode !== "diagnosis_only") { void runFlow(mode); return; }
-    const request = runtimeLlmExecutionRequestFromFlow(props.projectId, props.flow);
+    if (mode !== "diagnosis_only" && mode !== "diagnose_and_adapt") { void runFlow(mode); return; }
+    const request = runtimeLlmExecutionRequestFromFlow(props.projectId, props.flow, mode);
     if (!request.ok) { setRunError(request.error); return; }
-    setDiagnosisPassword("");
-    setDiagnosisPin("");
-    setDiagnosisAuthorizationError("");
-    setDiagnosisAuthorizationOpen(true);
+    setLlmAuthorizationError("");
+    void authorizeLlm(mode, false);
   };
-  const authorizeDiagnosis = async () => {
-    const request = runtimeLlmExecutionRequestFromFlow(props.projectId, props.flow);
-    if (!request.ok || !diagnosisPassword || diagnosisPin.length < 4) {
-      setDiagnosisAuthorizationError(request.ok ? "Password and security PIN are required." : request.error);
-      return;
-    }
-    const authorizationPassword = diagnosisPassword;
-    const authorizationPin = diagnosisPin;
-    setDiagnosisPassword("");
-    setDiagnosisPin("");
-    setDiagnosisAuthorizing(true);
-    setDiagnosisAuthorizationError("");
+  const authorizeLlm = async (mode: AutomationRuntimeExplicitLlmRunMode, highTokenConfirmation = false) => {
+    const request = runtimeLlmExecutionRequestFromFlow(props.projectId, props.flow, mode);
+    if (!request.ok) { setLlmAuthorizationError(request.error); return; }
+    setLlmAuthorizing(true);
+    setLlmAuthorizationError("");
     try {
       const preflight = await props.commands.preflightLlm(request.payload);
       if (!preflight.ok) {
-        setDiagnosisAuthorizationError("LLM diagnosis preflight was rejected. Review the saved Flow limits and key selection.");
+        const message = "LLM execution preflight was rejected. Review the saved Flow limits and key selection.";
+        setLlmAuthorizationError(message);
+        setRunError(message);
         return;
       }
-      const issued = await props.commands.issueLlmGrant({ ...request.payload, authorizationPassword, authorizationPin, maxUses: 1 });
+      if (llmRequestRequiresHighTokenWarning(preflight.payload) && !highTokenConfirmation) { setLlmAuthorizationMode(mode); return; }
+      const maxUses = mode === "diagnose_and_adapt" ? 2 : 1;
+      const issued = await props.commands.issueLlmGrant({ ...request.payload, ...(highTokenConfirmation ? { highTokenConfirmation: true } : {}), maxUses });
       const grantId = issued.payload?.grant?.grantId;
       if (!issued.ok || !grantId) {
-        setDiagnosisAuthorizationError("LLM diagnosis authorization failed. Verify your password, PIN, and enabled key.");
+        const message = "LLM execution authorization failed. Verify your session and enabled key.";
+        setLlmAuthorizationError(message);
+        setRunError(message);
         return;
       }
-      setDiagnosisAuthorizationOpen(false);
-      setDiagnosisAuthorizationError("");
-      await runFlow("diagnosis_only", grantId);
+      setLlmAuthorizationMode(null);
+      setLlmAuthorizationError("");
+      await runFlow(mode, grantId);
     } catch {
-      setDiagnosisAuthorizationError("LLM diagnosis authorization could not be completed.");
+      const message = "LLM execution authorization could not be completed.";
+      setLlmAuthorizationError(message);
+      setRunError(message);
     } finally {
-      setDiagnosisAuthorizing(false);
-      setDiagnosisPassword("");
-      setDiagnosisPin("");
+      setLlmAuthorizing(false);
     }
   };  const stopRun = async () => {
     if (!props.projectId || !activeRunId) return;
@@ -219,8 +215,9 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
         onOpenLiveLog={() => activeRunId && setLiveRunId(activeRunId)}
         {...(props.onOpenReadinessTarget ? { onOpenTarget: props.onOpenReadinessTarget } : {})}
       />
-      {runError ? <p className="automation-runtime-message">{runError}</p> : null}
-      {diagnosisAuthorizationOpen ? <Modal busy={diagnosisAuthorizing} closeOnEscape={!diagnosisAuthorizing} title="Authorize LLM Diagnosis" onClose={closeDiagnosisAuthorization}><div className="automation-modal-form"><p className="automation-router-modal-intro">Authorize one DeepSeek diagnosis call for this exact Flow revision. The run cannot patch, retry, promote, or enable external side effects.</p>{diagnosisAuthorizationError ? <p className="automation-runtime-message" role="alert">{diagnosisAuthorizationError}</p> : null}<Field label="Account password" required><input autoComplete="current-password" autoFocus disabled={diagnosisAuthorizing} onChange={(event) => { setDiagnosisPassword(event.target.value); setDiagnosisAuthorizationError(""); }} type="password" value={diagnosisPassword} /></Field><Field label="Security PIN" required><input autoComplete="off" disabled={diagnosisAuthorizing} inputMode="numeric" maxLength={12} onChange={(event) => { setDiagnosisPin(event.target.value.replace(/\D/g, "")); setDiagnosisAuthorizationError(""); }} type="password" value={diagnosisPin} /></Field><div className="modal-actions"><button className="button" disabled={diagnosisAuthorizing} onClick={closeDiagnosisAuthorization} type="button">Cancel</button><button className="button button-primary" data-modal-submit disabled={diagnosisAuthorizing || !diagnosisPassword || diagnosisPin.length < 4} onClick={() => void authorizeDiagnosis()} type="button">{diagnosisAuthorizing ? "Authorizing..." : "Authorize One Diagnosis"}</button></div></div></Modal> : null}
+      {runError ? <p className="automation-runtime-message" role="alert">{runError}</p> : null}
+      {lastRun ? <RuntimePostRunSummary result={lastRun} {...(props.onOpenAdaptation ? { onOpenAdaptation: props.onOpenAdaptation } : {})} /> : null}
+      {llmAuthorizationMode ? <Modal busy={llmAuthorizing} closeOnEscape={!llmAuthorizing} title="Confirm high-token LLM Execution" onClose={closeLlmAuthorization}><div className="automation-modal-form"><p className="automation-router-modal-intro">This request can use more than 100,000 tokens. Review the configured limits before continuing.</p>{llmAuthorizationError ? <p className="automation-runtime-message" role="alert">{llmAuthorizationError}</p> : null}<div className="modal-actions"><button className="button" disabled={llmAuthorizing} onClick={closeLlmAuthorization} type="button">Cancel</button><button className="button button-primary" data-modal-submit disabled={llmAuthorizing} onClick={() => void authorizeLlm(llmAuthorizationMode, true)} type="button">{llmAuthorizing ? "Starting..." : "Continue high-token execution"}</button></div></div></Modal> : null}
       <RuntimeHistoryAndReplays
         flowId={props.flow?.flowId}
         focusRunId={liveRunId ?? lastRun?.runtimeSession?.runId}
@@ -233,7 +230,8 @@ export function FlowRunViewContent(props: FlowRunViewProps & { commands: Runtime
 }
 
 function runtimeModeDescription(mode: AutomationRuntimeUiRunMode): string {
-  if (mode === "diagnosis_only") return "Authorize one bounded DeepSeek diagnosis call; no patching, retry, promotion, or external side effects.";
+  if (mode === "diagnosis_only") return "Run one bounded DeepSeek diagnosis call; no patching, retry, promotion, or external side effects.";
+  if (mode === "diagnose_and_adapt") return "Diagnose once, generate one bounded runtime patch, and queue any resulting adaptation for manual review; nothing is auto-applied.";
   if (mode === "manual_approval") return "Use LLM assistance, but keep generated adaptations queued for review.";
   if (mode === "no_llm_intervention") return "Run without LLM intervention or adaptation creation.";
   return "Use this Flow's adaptive policy and auto-apply safe validated adaptations.";
@@ -263,7 +261,8 @@ export function RuntimeRunControlPanel(props: {
     { mode: "fully_adaptive", label: "Fully adaptive" },
     { mode: "manual_approval", label: "Manual approval" },
     { mode: "no_llm_intervention", label: "No LLM intervention" },
-    { mode: "diagnosis_only", label: "LLM diagnosis" }
+    { mode: "diagnosis_only", label: "LLM diagnosis" },
+    { mode: "diagnose_and_adapt", label: "Diagnose and propose adaptation" }
   ];
   const warnings = [
     props.flow?.metadata?.trainingMode === "continuous_adaptive" ? "Continuous adaptive mode can create runtime adaptations." : "",
@@ -295,7 +294,7 @@ export function RuntimeRunControlPanel(props: {
         <div className="automation-runtime-run-actions">
           <label><span>Step limit</span><input min={1} type="number" value={props.maxSteps} onChange={(event) => props.onMaxSteps(event.target.value)} /></label>
           <button className="button button-primary" disabled={props.disabled || props.readiness.loading || Boolean(props.readiness.error) || readinessIssues.length > 0 || inputErrors.length > 0 || !inputDocument.ok} onClick={() => props.onRun(selectedMode)} type="button">
-            {props.runningMode ? "Running..." : "Run"}
+            {props.runningMode === "diagnose_and_adapt" ? `${AUTOMATION_LLM_PROGRESS_LABELS.generatingProposal}...` : props.runningMode ? "Running..." : "Run"}
           </button>
         </div>
       </div>
@@ -336,21 +335,23 @@ function RuntimeHistoryAndReplays(props: { projectId: string | null; flowId?: st
 
 export function RuntimePostRunSummary(props: { result: any; onOpenAdaptation?(flowId: string | undefined, adaptationId: string): void }) {
   const session = props.result.runtimeSession ?? {};
+  const adaptationIds = Array.isArray(props.result.createdAdaptationIds) ? props.result.createdAdaptationIds : [];
   return (
     <section className="automation-runtime-log-section">
       <header><strong>Last Run</strong><span>{session.runId ?? "-"}</span></header>
+      {adaptationIds.length ? <p className="automation-runtime-message" role="status"><strong>{AUTOMATION_LLM_PROGRESS_LABELS.readyForReview}.</strong> {adaptationIds.length === 1 ? "One adaptation" : `${adaptationIds.length} adaptations`} must be reviewed and approved before applying.</p> : null}
       <SummaryStrip items={[
         ["Status", session.status ?? "-"],
         ["Actions", props.result.runSummary?.actionAttemptCount ?? session.trace?.attempts?.length ?? 0],
         ["Recovery", props.result.runSummary?.metadata?.recoveryAttemptCount ?? 0],
         ["Interventions", props.result.interventionCount ?? 0],
-        ["Adaptations", props.result.createdAdaptationIds?.length ?? 0],
+        ["Adaptations", adaptationIds.length],
         ["Durable", props.result.durableBehaviorChanged ? "yes" : "no"]
       ]} />
       <DataTable label="Run result summary" columns={["Field", "Value"]} rows={[
         ["Terminal reason", props.result.terminalReason ?? session.trace?.message ?? session.status ?? "-"],
         ["Run detail", props.result.runDetailLink?.runId ?? session.runId ?? "-"],
-        ["Adaptations", props.result.createdAdaptationIds?.length ? props.result.createdAdaptationIds.map((adaptationId: string) => <button className="automation-runtime-row-action" key={adaptationId} onClick={() => props.onOpenAdaptation?.(props.result.runSummary?.flowId ?? session.flowId, adaptationId)} type="button">{adaptationId}</button>) : "-"]
+        ["Adaptations", adaptationIds.length ? adaptationIds.map((adaptationId: string) => <button aria-label={`Review ${adaptationId}`} className="automation-runtime-row-action" key={adaptationId} onClick={() => props.onOpenAdaptation?.(props.result.runSummary?.flowId ?? session.flowId, adaptationId)} type="button">Review {adaptationId}</button>) : "-"]
       ]} empty="No run result." />
     </section>
   );

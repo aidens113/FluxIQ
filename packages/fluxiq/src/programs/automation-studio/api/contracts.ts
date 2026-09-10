@@ -15,6 +15,7 @@ import type {
 import type { NormalizationOptions } from "../normalization/index.ts";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { ClientGatewayActionCommand } from "../../../client-gateway/index.ts";
+import type { AutomationStudioReusableLlmContextList, AutomationStudioReusableLlmContextTag, AutomationStudioReusableLlmContextWrite } from "../storage/project-reusable-llm-context-store.ts";
 
 export const AUTOMATION_STUDIO_ENDPOINTS = {
   performanceMetrics: "get-performance-metrics",
@@ -38,6 +39,14 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   saveProjectUiCache: "save-project-ui-cache",
   deleteProjectUiCache: "delete-project-ui-cache",
   listProjectUiCacheStats: "list-project-ui-cache-stats",
+  getReusableLlmContextStatus: "get-reusable-llm-context-status",
+  listReusableLlmContexts: "list-reusable-llm-contexts",
+  getReusableLlmContext: "get-reusable-llm-context",
+  putReusableLlmContext: "put-reusable-llm-context",
+  deleteReusableLlmContext: "delete-reusable-llm-context",
+  clearReusableLlmContextScope: "clear-reusable-llm-context-scope",
+  purgeExpiredReusableLlmContexts: "purge-expired-reusable-llm-contexts",
+  packReusableLlmContexts: "pack-reusable-llm-contexts",
   getProjectWorkspaceSummary: "get-project-workspace-summary",
   listRecordings: "list-recordings",
   listProjectArtifacts: "list-project-artifacts",
@@ -151,6 +160,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   preflightLlmExecution: "preflight-llm-execution",
   issueLlmExecutionGrant: "issue-llm-execution-grant",
   generateFlowBootstrapAdaptation: "generate-flow-bootstrap-adaptation",
+  saveFlowGenerationInstruction: "save-flow-generation-instruction",
   runRuntimeSession: "run-runtime-session",
   cancelRuntimeSession: "cancel-runtime-session",
   exportFlowRunAudit: "export-flow-run-audit",
@@ -167,6 +177,18 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   captureClientSnapshot: "capture-client-snapshot",
   executeClientAction: "execute-client-action"
 } as const;
+
+export type AutomationStudioListReusableLlmContextsRequest = { projectId: string } & AutomationStudioReusableLlmContextList;
+export type AutomationStudioGetReusableLlmContextRequest = { projectId: string; recordId: string; now?: number; touch?: boolean };
+export type AutomationStudioPutReusableLlmContextRequest = { projectId: string; record: AutomationStudioReusableLlmContextWrite };
+export type AutomationStudioDeleteReusableLlmContextRequest = { projectId: string; recordId: string; changedAt?: number };
+export type AutomationStudioClearReusableLlmContextScopeRequest = { projectId: string; flowId: string; subflowId?: string | null; domainId?: string; changedAt?: number };
+export type AutomationStudioPurgeExpiredReusableLlmContextsRequest = { projectId: string; domainId?: string; now?: number; limit?: number };
+export type AutomationStudioPackReusableLlmContextsRequest = {
+  projectId: string; flowId: string; subflowId?: string | null; domainId: string; evidenceKind: string;
+  evidenceSchemaVersion: string; sanitizerVersion: string; compatibilityTags?: AutomationStudioReusableLlmContextTag[];
+  maxInputTokens: number; now?: number;
+};
 
 export type AutomationStudioProject = {
   id: string;
@@ -723,7 +745,7 @@ export type FlowRunEventPageRequest = FlowProjectRequest & {
   limit?: unknown;
 };
 
-export type AutomationStudioLlmExecutionPurpose = "diagnosis_only" | "build_and_adapt";
+export type AutomationStudioLlmExecutionPurpose = "diagnosis_only" | "diagnose_and_adapt" | "build_and_adapt";
 
 export type AutomationStudioLlmExecutionLimitRequest = {
   tokenLimits?: { maxInputTokens?: number; maxOutputTokens?: number; maxTotalTokens?: number };
@@ -743,8 +765,7 @@ export type AutomationStudioLlmExecutionPreflightRequest = FlowIdProjectRequest 
 
 export type AutomationStudioLlmExecutionGrantRequest = AutomationStudioLlmExecutionPreflightRequest & {
   authSessionId: string;
-  authorizationPassword?: string;
-  authorizationPin?: string;
+  highTokenConfirmation?: boolean;
   ttlMs?: number;
   maxUses?: number;
 };
@@ -855,6 +876,13 @@ function readinessStringArray(value: unknown, expected: readonly string[]): bool
 export type GenerateFlowBootstrapAdaptationRequest = FlowIdProjectRequest & {
   authSessionId: string;
   llmExecutionGrantId: string;
+  evidenceGuided?: true;
+  useReusableContext?: true;
+};
+
+export type SaveFlowGenerationInstructionRequest = FlowIdProjectRequest & {
+  authSessionId: string;
+  instruction: string;
 };
 
 export type GenerateFlowBootstrapAdaptationFailureDiagnostic = {

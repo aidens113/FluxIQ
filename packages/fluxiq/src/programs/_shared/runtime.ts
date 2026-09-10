@@ -74,7 +74,11 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
     (input) => input.executionGrant
       ? llmExecutionGrants.resolve(
         { ...input.executionGrant, projectId: input.projectId, flowId: input.flowId },
-        { allowedTaskKinds: input.executionGrant.purpose === "build_and_adapt" ? ["flow_bootstrap"] : ["runtime_diagnosis"] }
+        { allowedTaskKinds: input.executionGrant.purpose === "build_and_adapt"
+          ? ["flow_bootstrap", "evidence_tool_decision"]
+          : input.executionGrant.purpose === "diagnose_and_adapt"
+            ? ["runtime_diagnosis", "runtime_patch"]
+            : ["runtime_diagnosis"] }
       )
       : undefined,
     (grantId) => llmExecutionGrants.revoke(grantId),

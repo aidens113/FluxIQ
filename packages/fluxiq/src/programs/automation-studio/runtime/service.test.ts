@@ -12,7 +12,8 @@ import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioImporterSd
 import { IoRegistry, createEnvelope } from "../../../io/index.ts";
 import type { JsonObject } from "../../../core/index.ts";
 import { SQLiteRepository } from "../../database-manager/storage/sqlite-repository.ts";
-import { AutomationStudioProjectDatabasePool, AutomationStudioProjectFlowResourceRepository } from "../storage/index.ts";
+import { AutomationStudioAesGcmProjectContentProtection, AutomationStudioProjectDatabasePool, AutomationStudioProjectFlowResourceRepository } from "../storage/index.ts";
+import { AutomationStudioProjectGraphRepository } from "../storage/project-graph-store.ts";
 
 let tempRoot: string;
 const services = new Set<AutomationStudioService>();
@@ -712,6 +713,179 @@ describe("AutomationStudioService recording persistence", () => {
     });
   });
 
+  it("captures sanitized failure evidence once and reuses it for diagnosis and patch without persisting contents", async () => {
+    const requests: any[] = [];
+    const captures: any[] = [];
+    const targetValidations: any[] = [];
+    const evidence = { schemaVersion: "web-llm-evidence.v1", trust: "untrusted-page-evidence", location: "https://example.test/form", elements: [{ target: "target.1", tag: "button", selector: "#replacement", name: "SAFE_EVIDENCE_LABEL" }], truncated: false };
+    const contentProtection = new AutomationStudioAesGcmProjectContentProtection(() => ({ keyId: "test.key", key: Buffer.alloc(32, 4) }));
+    const service = createService({
+      dataDir: tempRoot,
+      seedFixture: false,
+      llmProviderResolver: () => ({
+        provider: {
+          metadata: { provider: "mock", model: "evidence-model" },
+          runTask: async (request) => {
+            requests.push(request);
+            return { response: request.taskKind === "runtime_patch"
+              ? { kind: "runtime_patch", summary: "Use the observed replacement.", riskLevel: "high", patches: [{ kind: "temporary_target_override", targetNodeId: "divide", target: { selector: "#replacement" }, reason: "The target changed." }] }
+              : { kind: "diagnosis", summary: "The target changed." }, usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12 } };
+          }
+        },
+        tokenLimits: { maxInputTokens: 4_000, maxOutputTokens: 1_000, maxTotalTokens: 5_000 },
+        maxCallsPerRun: 2
+      }),
+      llmEvidenceRuntime: {
+        tools: [],
+        executeTool: async () => ({}),
+        captureSanitizedFailureEvidence: async (input) => { captures.push(input); return evidence; },
+        validateTargetOverrideEvidence: (captured, target, failedAction) => {
+          targetValidations.push({ captured, target, failedAction });
+          return { status: "resolved", target: { selector: "#replacement-resolved" } };
+        }
+      },
+      reusableLlmContext: {
+        enabled: true,
+        contentProtection,
+        selectForFreshEvidence: () => ({ domainId: "domain.test", evidenceKind: "runtime_failure", evidenceSchemaVersion: "web-llm-evidence.v1", sanitizerVersion: "sanitizer.v1", compatibilityTags: [{ name: "page", value: "form" }] })
+      }
+    });
+    const project = await service.createProject({ name: "Failure evidence" });
+    const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.failure-evidence", metadata: adaptiveTrainingMetadata() });
+    const runtimeSubflowId = (await service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId, limit: 10, offset: 0 })).subflows[0]?.subflowId;
+    expect(runtimeSubflowId).toBeTruthy();
+    await service.putReusableLlmContext({ projectId: project.id, actorId: "fixture", record: {
+      recordId: "context.runtime", flowId: flow.flowId, subflowId: runtimeSubflowId!, domainId: "domain.test", evidenceKind: "runtime_failure",
+      evidenceSchemaVersion: "web-llm-evidence.v1", sanitizerVersion: "sanitizer.v1", compatibilityTags: [{ name: "page", value: "form" }],
+      promptProjection: { facts: [{ kind: "action", definitionId: "web.click", status: "succeeded" }] }, outcome: "succeeded", reviewerState: "approved",
+      sourceRunIds: ["run.prior"], sourceAdaptationIds: ["adaptation.prior"], ttlMs: 10_000
+    } });
+
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 }, useReusableContext: true, llmExecution: { grantId: "grant.failure-evidence", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnose_and_adapt" } });
+    const detail = await service.getFlowRunDetail(project.id, run.runId);
+
+    expect(captures).toHaveLength(1);
+    expect(captures[0]).toMatchObject({
+      projectId: project.id,
+      flowId: flow.flowId,
+      runId: run.runId,
+      failedAction: { nodeId: "divide", definitionId: "builtin.math.divide", status: "failed" },
+      maxEvidenceBytes: 2_400
+    });
+    expect(Object.keys(captures[0].failedAction).sort()).toEqual(["attemptId", "definitionId", "nodeId", "route", "status"]);
+    expect(requests.map((request) => request.taskKind)).toEqual(["runtime_diagnosis", "runtime_patch"]);
+    expect(requests[0].context.failureEvidence).toEqual(evidence);
+    expect(requests[1].context.failureEvidence).toEqual(evidence);
+    expect(requests[0].context.reusableContext).toMatchObject({ items: [{ advisory: true, recordId: "context.runtime", sourceRunIds: ["run.prior"], sourceAdaptationIds: ["adaptation.prior"] }] });
+    expect(requests[1].context.reusableContext).toEqual(requests[0].context.reusableContext);
+    expect(targetValidations).toEqual([{
+      captured: evidence,
+      target: { selector: "#replacement" },
+      failedAction: { nodeId: "divide", definitionId: "builtin.math.divide" }
+    }]);
+    expect(JSON.stringify(requests)).not.toContain("denominator");
+    expect(detail?.interventions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ contextSummary: expect.objectContaining({ failureEvidence: expect.objectContaining({ schemaVersion: "web-llm-evidence.v1", byteCount: expect.any(Number), truncated: false, digest: expect.stringMatching(/^[a-f0-9]{64}$/) }) }) })
+    ]));
+    expect(detail?.metadata).toMatchObject({ llmGate: { failureEvidence: { schemaVersion: "web-llm-evidence.v1", truncated: false, digest: expect.stringMatching(/^[a-f0-9]{64}$/) }, reusableContext: { status: "hit", freshContributionCount: 1, reusedContributionCount: 1, sourceRunIds: ["run.prior"], sourceAdaptationIds: ["adaptation.prior"] } } });
+    expect(JSON.stringify(detail)).not.toContain("SAFE_EVIDENCE_LABEL");
+    expect(JSON.stringify(detail)).not.toContain("#replacement");
+    expect(detail?.adaptationIds).toHaveLength(1);
+    expect(detail?.changeProposalIds).toHaveLength(1);
+    expect(detail?.summary.adaptationCount).toBe(1);
+    const persistedSummary = (await service.listFlowRunSummaries({ projectId: project.id, flowId: flow.flowId, limit: 10, offset: 0 })).runs.find((summary) => summary.runId === run.runId);
+    expect(persistedSummary?.adaptationCount).toBe(1);
+    await expect(service.getFlowAdaptation(project.id, flow.flowId, detail!.adaptationIds[0]!)).resolves.toMatchObject({
+      patch: [{ kind: "edit_action_target", after: { selector: "#replacement-resolved" } }],
+      metadata: { targetResolution: "resolved", reusableContext: { status: "hit", sourceRecordIds: ["context.runtime"] } }
+    });
+  });
+
+  it("stops before provider invocation when applicable failure evidence is malformed", async () => {
+    let providerCalls = 0;
+    const service = createService({
+      dataDir: tempRoot,
+      seedFixture: false,
+      llmProviderResolver: () => ({ metadata: { provider: "mock", model: "unused" }, runTask: async () => { providerCalls += 1; return { response: { kind: "diagnosis", summary: "unused" } }; } }),
+      llmEvidenceRuntime: {
+        tools: [],
+        executeTool: async () => ({}),
+        captureSanitizedFailureEvidence: async () => ({ schemaVersion: "web-llm-evidence.v1", snapshot: { html: "PRIVATE_RAW_HTML" } })
+      }
+    });
+    const project = await service.createProject({ name: "Invalid failure evidence" });
+    const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.invalid-failure-evidence", metadata: adaptiveTrainingMetadata() });
+
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
+    const detail = await service.getFlowRunDetail(project.id, run.runId);
+
+    expect(providerCalls).toBe(0);
+    expect(detail?.metadata).toMatchObject({ llmGate: { invoked: false, providerConfigured: true, code: "llm.failure_evidence_invalid" } });
+    expect(detail?.interventions).toEqual(expect.arrayContaining([expect.objectContaining({ validation: { ok: false, issues: [expect.stringContaining("llm.failure_evidence_invalid")] } })]));
+    expect(JSON.stringify(detail)).not.toContain("PRIVATE_RAW_HTML");
+  });
+
+  it("stops before provider invocation when sanitized failure evidence exceeds the dynamic allowance", async () => {
+    let providerCalls = 0;
+    const service = createService({
+      dataDir: tempRoot,
+      seedFixture: false,
+      llmProviderResolver: () => ({
+        provider: { metadata: { provider: "mock", model: "unused" }, runTask: async () => { providerCalls += 1; return { response: { kind: "diagnosis", summary: "unused" } }; } },
+        tokenLimits: { maxInputTokens: 1_000, maxOutputTokens: 500, maxTotalTokens: 1_500 }
+      }),
+      llmEvidenceRuntime: {
+        tools: [],
+        executeTool: async () => ({}),
+        captureSanitizedFailureEvidence: async () => ({ schemaVersion: "web-llm-evidence.v1", summary: "x".repeat(700) })
+      }
+    });
+    const project = await service.createProject({ name: "Oversized failure evidence" });
+    const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.oversized-failure-evidence", metadata: adaptiveTrainingMetadata() });
+
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
+    const detail = await service.getFlowRunDetail(project.id, run.runId);
+
+    expect(providerCalls).toBe(0);
+    expect(detail?.metadata).toMatchObject({ llmGate: { invoked: false, providerConfigured: true, code: "llm.failure_evidence_invalid" } });
+    expect(JSON.stringify(detail)).not.toContain("xxx");
+  });
+
+  it("creates no proposal when a target override is absent from captured sanitized evidence", async () => {
+    const service = createService({
+      dataDir: tempRoot,
+      seedFixture: false,
+      llmProviderResolver: () => ({
+        provider: { metadata: { provider: "mock", model: "absent-target" }, runTask: async (request) => ({
+          response: request.taskKind === "runtime_patch"
+            ? { kind: "runtime_patch", summary: "Candidate.", riskLevel: "high", patches: [{ kind: "temporary_target_override", targetNodeId: "divide", target: { selector: "#missing" }, reason: "Try another target." }] }
+            : { kind: "diagnosis", summary: "Target drift." },
+          usage: { inputTokens: 5, outputTokens: 3, totalTokens: 8 }
+        }) },
+        tokenLimits: { maxInputTokens: 4_000, maxOutputTokens: 1_000, maxTotalTokens: 5_000 },
+        maxCallsPerRun: 2
+      }),
+      llmEvidenceRuntime: {
+        tools: [],
+        executeTool: async () => ({}),
+        captureSanitizedFailureEvidence: async () => ({ schemaVersion: "web-llm-evidence.v1", elements: [], truncated: false }),
+        validateTargetOverrideEvidence: () => ({ status: "absent" })
+      }
+    });
+    const project = await service.createProject({ name: "Absent target evidence" });
+    const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.absent-target-evidence", metadata: adaptiveTrainingMetadata() });
+
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 }, llmExecution: { grantId: "grant.absent-evidence", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnose_and_adapt" } });
+    const detail = await service.getFlowRunDetail(project.id, run.runId);
+
+    expect(detail?.adaptationIds).toEqual([]);
+    expect(detail?.changeProposalIds).toEqual([]);
+    expect(detail?.metadata?.runtimePatchAttempts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ preflightOk: false, issues: ["Target override is absent from current sanitized evidence."] })
+    ]));
+    expect(JSON.stringify(detail)).not.toContain("#missing");
+  });
+
   it("persists a sanitized terminal intervention when provider resolution throws", async () => {
     const service = createService({
       dataDir: tempRoot,
@@ -827,10 +1001,13 @@ describe("AutomationStudioService recording persistence", () => {
             sequence.push("diagnosis");
             expect(sequence).toEqual(["action:1", "diagnosis"]);
             expect(request.context.recentActions).toEqual(expect.arrayContaining([
-              expect.objectContaining({ nodeId: "click", status: "failed", outputs: expect.objectContaining({ error: "Loopback target drift." }) })
+              expect.objectContaining({ nodeId: "click", status: "failed" })
             ]));
+            expect(request.context.recentActions?.[0]).not.toHaveProperty("outputs");
+            expect(request.context.recentActions?.[0]).not.toHaveProperty("metadata");
+            expect(request.context.recentActions?.[0]).not.toHaveProperty("message");
             expect(request.estimatedInputTokens).toBeLessThanOrEqual(request.tokenLimits.maxInputTokens);
-            expect(request.context.policyGates).toMatchObject({ allowExternalSideEffects: false });
+            expect(request.context.policyGates).toMatchObject({ allowExternalSideEffects: false, allowModifyActionTargets: true });
             return { response: { kind: "diagnosis", summary: "The recorded target drifted." }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } };
           }
         },
@@ -920,8 +1097,9 @@ describe("AutomationStudioService recording persistence", () => {
             taskKinds.push(request.taskKind);
             expect(nativeExecutionCount).toBe(1);
             expect(request.context.recentActions).toEqual(expect.arrayContaining([
-              expect.objectContaining({ nodeId: "native-failure", status: "failed", outputs: { error: "Native loopback failure." } })
+              expect.objectContaining({ nodeId: "native-failure", status: "failed" })
             ]));
+            expect(request.context.recentActions?.[0]).not.toHaveProperty("outputs");
             return { response: { kind: "diagnosis", summary: "The native action failed." }, usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12 } };
           }
         },
@@ -1031,27 +1209,40 @@ describe("AutomationStudioService recording persistence", () => {
     ]));
   });
 
-  it("tests runtime patch responses and persists resulting adaptation evidence", async () => {
+  it("rejects a non-target patch from an explicit diagnose_and_adapt grant without executing it", async () => {
+    const resolved: any[] = [];
+    const revoked: string[] = [];
+    const taskKinds: string[] = [];
     const service = createService({
       dataDir: tempRoot,
       seedFixture: false,
-      llmProviderResolver: () => ({
-        metadata: { provider: "mock", model: "patch-model" },
-        runTask: async (request) => request.taskKind === "runtime_patch"
-          ? {
-            response: {
-              kind: "runtime_patch",
-              summary: "Route around the broken confirmation node.",
-              riskLevel: "medium",
-              patches: [{ kind: "temporary_reroute", fromNodeId: "broken", toNodeId: "end", reason: "The confirmation node implementation is missing." }]
-            },
-            usage: { inputTokens: 20, outputTokens: 10, totalTokens: 30, estimatedCostUsd: 0.004 }
-          }
-          : {
-            response: { kind: "diagnosis", summary: "The confirmation node has no runtime implementation." },
-            usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12, estimatedCostUsd: 0.001 }
-          }
-      })
+      revokeLlmExecutionGrant: (grantId) => revoked.push(grantId),
+      llmProviderResolver: (input) => {
+        resolved.push(input);
+        return {
+          provider: {
+            metadata: { provider: "mock", model: "patch-model" },
+            runTask: async (request) => {
+              taskKinds.push(request.taskKind);
+              return request.taskKind === "runtime_patch"
+                ? {
+                  response: {
+                    kind: "runtime_patch",
+                    summary: "Route around the broken confirmation node.",
+                    riskLevel: "medium",
+                    patches: [{ kind: "temporary_reroute", fromNodeId: "broken", toNodeId: "end", reason: "The confirmation node implementation is missing." }]
+                  },
+                  usage: { inputTokens: 20, outputTokens: 10, totalTokens: 30, estimatedCostUsd: 0.004 }
+                }
+                : {
+                  response: { kind: "diagnosis", summary: "The confirmation node has no runtime implementation." },
+                  usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12, estimatedCostUsd: 0.001 }
+                };
+            }
+          },
+          maxCallsPerRun: 2
+        };
+      }
     });
     const project = await service.createProject({ name: "Runtime patch" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.runtime-patch", name: "Runtime patch Flow" });
@@ -1069,31 +1260,182 @@ describe("AutomationStudioService recording persistence", () => {
         ]
     });
 
-    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
+    const grant = { grantId: "llm-grant:diagnose-adapt", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnose_and_adapt" as const };
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, llmExecution: grant });
     const detail = await service.getFlowRunDetail(project.id, run.runId);
 
+    expect(taskKinds).toEqual(["runtime_diagnosis", "runtime_patch"]);
+    expect(resolved).toEqual([expect.objectContaining({ executionGrant: grant })]);
+    expect(revoked).toEqual([grant.grantId]);
     expect(detail?.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({
       kind: "temporary_reroute",
-      preflightOk: true,
-      restoredExpectedState: true,
-      adaptationId: expect.stringContaining("adaptation."),
-      changeProposalId: expect.stringContaining("proposal.")
+      proposalOnly: true,
+      executed: false,
+      preflightOk: false,
+      restoredExpectedState: false,
+      retryOriginalAction: false,
+      traceStatus: "not-run",
+      issues: ["diagnose_and_adapt supports temporary_target_override proposals only."]
     })]);
-    expect(detail?.adaptationIds).toHaveLength(1);
-    expect(detail?.changeProposalIds).toHaveLength(1);
-    await expect(service.getFlowAdaptation(project.id, flow.flowId, detail!.adaptationIds[0]!)).resolves.toMatchObject({
-      status: "validated",
-      proposalId: detail?.changeProposalIds[0],
-      patch: [{ kind: "edit_router", targetId: "broken" }],
+    expect(detail?.adaptationIds).toEqual([]);
+    expect(detail?.changeProposalIds).toEqual([]);
+  });
+
+  it("persists a canonical target override for manual review without executing it", async () => {
+    const target = { selector: "#submit-order" };
+    const taskKinds: string[] = [];
+    const service = createService({
+      dataDir: tempRoot,
+      seedFixture: false,
+      llmProviderResolver: () => ({
+        provider: {
+          metadata: { provider: "mock", model: "target-proposal-model" },
+          runTask: async (request) => {
+            taskKinds.push(request.taskKind);
+            expect(request.context.policyGates).toMatchObject({ allowExternalSideEffects: false });
+            return request.taskKind === "runtime_patch"
+              ? {
+                response: {
+                  kind: "runtime_patch",
+                  summary: "Propose the current action target.",
+                  riskLevel: "high",
+                  patches: [{ kind: "temporary_target_override", targetNodeId: "divide", target, reason: "The recorded target changed." }]
+                },
+                usage: { inputTokens: 20, outputTokens: 10, totalTokens: 30, estimatedCostUsd: 0.004 }
+              }
+              : {
+                response: { kind: "diagnosis", summary: "The action target no longer resolves." },
+                usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12, estimatedCostUsd: 0.001 }
+              };
+          }
+        },
+        tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 },
+        maxCallsPerRun: 2,
+        maxEstimatedCostUsd: 0.1,
+        maxTotalEstimatedCostUsd: 0.15
+      })
+    });
+    const project = await service.createProject({ name: "Target override proposal" });
+    const adaptive = adaptiveTrainingMetadata();
+    const policy = adaptive.adaptationPolicySettings as JsonObject;
+    const training = adaptive.trainingModeSettings as JsonObject;
+    const flow = await createFailingCanonicalFlow(service, project.id, {
+      flowId: "flow.target-proposal",
       metadata: {
-        approvalDecision: {
-          mode: "auto",
-          autoApply: false,
-          requiresManualApproval: true,
-          reason: "Structural adaptations require manual review before durable promotion."
+        ...adaptive,
+        adaptationPolicySettings: { ...policy, allowModifyActionTargets: false, maxInterventionsPerRun: 1, maxEstimatedCostUsdPerRun: 0.001 },
+        trainingModeSettings: {
+          ...training,
+          budgets: { ...(training.budgets as JsonObject), maxInterventionsPerRun: 1, maxTokensPerRun: 3000 }
         }
       }
     });
+    const subflowSummary = (await service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId })).subflows[0]!;
+    const subflow = (await service.getFlowSubflow(project.id, flow.flowId, subflowSummary.subflowId))!;
+    const graphBefore = await service.getFlow(project.id, subflow.graphFlowId!);
+    const grant = { grantId: "llm-grant:target-proposal", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnose_and_adapt" as const };
+
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 }, llmExecution: grant });
+    const detail = await service.getFlowRunDetail(project.id, run.runId);
+
+    expect(taskKinds).toEqual(["runtime_diagnosis", "runtime_patch"]);
+    expect(detail?.metadata?.llmGate).toMatchObject({
+      ok: true,
+      costAccounting: { calls: 2, inputTokens: 28, outputTokens: 14, totalTokens: 42, estimatedCostUsd: 0.005, budgetBreaches: 0, pendingCalls: 0 }
+    });
+    expect(detail?.actionAttempts?.map((attempt) => attempt.nodeId)).toEqual(["start", "divide"]);
+    expect(detail?.metadata).not.toHaveProperty("adaptiveRetry");
+    expect(detail?.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({
+      kind: "temporary_target_override",
+      preflightOk: true,
+      proposalOnly: true,
+      executed: false,
+      restoredExpectedState: false,
+      retryOriginalAction: false,
+      traceStatus: "not-run",
+      adaptationId: expect.stringContaining("adaptation."),
+      changeProposalId: expect.stringContaining("proposal.")
+    })]);
+    expect(await service.getFlow(project.id, subflow.graphFlowId!)).toEqual(graphBefore);
+
+    const adaptationId = detail!.adaptationIds[0]!;
+    const proposalId = detail!.changeProposalIds[0]!;
+    await expect(service.getFlowChangeProposal(project.id, flow.flowId, proposalId)).resolves.toMatchObject({
+      status: "pending",
+      mode: "manual",
+      riskLevel: "high",
+      patches: [{ kind: "edit_action_target", targetId: "divide", after: target, metadata: { externalSideEffect: true } }]
+    });
+    await expect(service.getFlowAdaptation(project.id, flow.flowId, adaptationId)).resolves.toMatchObject({
+      status: "proposed",
+      riskLevel: "high",
+      proposalId,
+      metadata: {
+        proposalOnly: true,
+        executed: false,
+        approvalDecision: { mode: "manual", autoApply: false, requiresManualApproval: true, externalSideEffects: true }
+      }
+    });
+
+    await service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId, action: "approve", actorId: "reviewer" });
+    await service.reviewFlowAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId, action: "apply", actorId: "reviewer" });
+    const appliedGraph = await service.getFlow(project.id, subflow.graphFlowId!);
+    expect(appliedGraph.nodes.find((node) => node.id === "divide")?.parameterValues?.target).toEqual(target);
+  });
+
+  it("rejects multiple patches from an explicit diagnose_and_adapt grant without persisting proposals", async () => {
+    const service = createService({
+      dataDir: tempRoot,
+      seedFixture: false,
+      llmProviderResolver: () => ({
+        provider: {
+          metadata: { provider: "mock", model: "multi-patch-model" },
+          runTask: async (request) => request.taskKind === "runtime_patch"
+            ? {
+              response: {
+                kind: "runtime_patch",
+                summary: "Two competing target proposals.",
+                riskLevel: "high",
+                patches: [
+                  { kind: "temporary_target_override", targetNodeId: "divide", target: { selector: "#first" }, reason: "First candidate." },
+                  { kind: "temporary_target_override", targetNodeId: "divide", target: { selector: "#second" }, reason: "Second candidate." }
+                ]
+              },
+              usage: { inputTokens: 20, outputTokens: 10, totalTokens: 30, estimatedCostUsd: 0.004 }
+            }
+            : {
+              response: { kind: "diagnosis", summary: "The action target no longer resolves." },
+              usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12, estimatedCostUsd: 0.001 }
+            }
+        },
+        maxCallsPerRun: 2
+      })
+    });
+    const project = await service.createProject({ name: "Multiple target proposals" });
+    const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.multiple-target-proposals", metadata: adaptiveTrainingMetadata() });
+    const subflowSummary = (await service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId })).subflows[0]!;
+    const subflow = (await service.getFlowSubflow(project.id, flow.flowId, subflowSummary.subflowId))!;
+    const graphBefore = await service.getFlow(project.id, subflow.graphFlowId!);
+
+    const run = await service.runRuntimeSession({
+      projectId: project.id,
+      flowId: flow.flowId,
+      inputs: { numerator: 1, denominator: 0 },
+      llmExecution: { grantId: "llm-grant:multiple-targets", actorUserId: "user.test", actorSessionId: "session.test", purpose: "diagnose_and_adapt" }
+    });
+    const detail = await service.getFlowRunDetail(project.id, run.runId);
+
+    expect(detail?.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({
+      kind: "runtime_patch_response",
+      proposalOnly: true,
+      executed: false,
+      preflightOk: false,
+      traceStatus: "not-run",
+      issues: ["diagnose_and_adapt requires exactly one runtime patch."]
+    })]);
+    expect(detail?.adaptationIds).toEqual([]);
+    expect(detail?.changeProposalIds).toEqual([]);
+    expect(await service.getFlow(project.id, subflow.graphFlowId!)).toEqual(graphBefore);
   });
 
   it("auto-applies validated low-risk runtime adaptations and records approval decisions", async () => {
@@ -3914,11 +4256,46 @@ describe("AutomationStudioService canonical Flow persistence", () => {
       const afterGraph = await service.getLlmExecutionDependencyDigest(project.id, parent.flowId);
       expect(afterGraph).not.toBe(afterParent);
 
+      const graphPool = new AutomationStudioProjectDatabasePool({ rootDir: path.join(tempRoot, "programs", "automation-studio") });
+      const canonicalGraph = await AutomationStudioProjectGraphRepository.open({ pool: graphPool, projectId: project.id });
+      const graphRevision = await canonicalGraph.getFlowRevision(installed.graph.flowId);
+      await canonicalGraph.applyPatch({
+        pool: graphPool,
+        projectId: project.id,
+        flowId: installed.graph.flowId,
+        baseRevision: graphRevision,
+        mutationId: "execution-digest.direct-subflow-graph-patch",
+        operations: [{
+          op: "add_node",
+          node: {
+            nodeId: "sql-only-node",
+            flowId: installed.graph.flowId,
+            definitionId: "builtin.data.constant",
+            definitionVersion: "legacy",
+            label: "SQL-only dependency",
+            description: "",
+            x: 200,
+            y: 0,
+            width: 240,
+            height: 96,
+            zIndex: 0,
+            disabled: false,
+            parameterValues: { value: "changed" },
+            metadata: {}
+          }
+        }],
+        changedAt: 10_000
+      });
+      await canonicalGraph.close();
+      await graphPool.closeAll();
+      const afterCanonicalGraphPatch = await service.getLlmExecutionDependencyDigest(project.id, parent.flowId);
+      expect(afterCanonicalGraphPatch).not.toBe(afterGraph);
+
       const router = await service.getFlowRouter(project.id, parent.flowId);
       if (!router) throw new Error("Expected Flow Map router");
       await service.saveFlowRouter({ ...router, description: "same millisecond router mutation" });
       const afterRouter = await service.getLlmExecutionDependencyDigest(project.id, parent.flowId);
-      expect(afterRouter).not.toBe(afterGraph);
+      expect(afterRouter).not.toBe(afterCanonicalGraphPatch);
 
       await service.updateFlowSubflow({
         projectId: project.id,
@@ -4044,18 +4421,17 @@ describe("AutomationStudioService canonical Flow persistence", () => {
         now: () => 30_000,
         resolveExecutionDigest: (projectId, flowId) => service.getLlmExecutionDependencyDigest(projectId, flowId),
         identityAccess: {
-          authorizeSessionPasswordPin: async () => ({ id: "user.one", passwordConfigured: true, pinConfigured: true }),
           validateSession: async () => ({ user: { id: "user.one", passwordConfigured: true, pinConfigured: true }, session: {}, role: {} })
         } as any,
         secretKeys: {
           getKeySummary: async () => ({ ...key }),
-          createRevealAuthorization: async () => ({ authorizationId: "secret-reveal:external", keyId: key.id, keyUpdatedAtMs: key.updatedAtMs, expiresAtMs: 90_000, remainingUses: 1 }),
+          createSessionRevealAuthorization: async () => ({ authorizationId: "secret-reveal:external", keyId: key.id, keyUpdatedAtMs: key.updatedAtMs, expiresAtMs: 90_000, remainingUses: 1 }),
           revealKeyWithAuthorization: async () => { revealCount += 1; return { key: { ...key }, value: "test-provider-secret" }; },
           revokeRevealAuthorization: () => {}
         } as any,
         fetchImpl: (async () => { fetchCount += 1; throw new Error("transport must not run"); }) as typeof fetch
       });
-      const grant = await grants.issue({ actorUserId: "user.one", actorSessionId: "session.one", authorizationPassword: "password", authorizationPin: "123456", keyId: key.id, projectId: domainProject.id, flowId: caller.flowId });
+      const grant = await grants.issue({ actorUserId: "user.one", actorSessionId: "session.one", keyId: key.id, projectId: domainProject.id, flowId: caller.flowId });
       const resolved = await grants.resolve({ grantId: grant.grantId, actorUserId: "user.one", actorSessionId: "session.one", projectId: domainProject.id, flowId: caller.flowId, purpose: "diagnosis_only" });
 
       const externalRecord = (await service.listFlowPublications(globalProject.id, external.flowId))[0];

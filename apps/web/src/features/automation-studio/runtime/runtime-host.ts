@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { useProgramTransport } from "../data/use-program-transport";
 import { cancelRuntimeSession, executeRuntimeSession, exportRuntimeRunAudit, issueLlmExecutionGrant, preflightLlmExecution, startRuntimeSession } from "./run-commands";
 import { getRuntimeFlowReadiness, getRuntimeRunActionDetail, getRuntimeRunDetail, getRuntimeRunEventDetail, listRuntimeRunActions, listRuntimeRunEvents, listRuntimeRuns } from "./run-queries";
-import { generateFlowBootstrapAdaptation } from "../authoring/authoring-commands";
+import { generateFlowBootstrapAdaptation, generateFlowFromWebsiteExplorationAdaptation, saveFlowGenerationInstruction } from "../authoring/authoring-commands";
 export type RuntimeViewHostModel = {
   projectId: string | null;
   flow?: any;
@@ -47,6 +47,8 @@ export type RuntimeExecutionCommands = {
   preflightLlm(payload: Record<string, any>): ReturnType<typeof preflightLlmExecution>;
   issueLlmGrant(payload: Record<string, any>): ReturnType<typeof issueLlmExecutionGrant>;
   generateBootstrap(payload: { projectId: string; flowId: string; llmExecutionGrantId: string }): ReturnType<typeof generateFlowBootstrapAdaptation>;
+  saveGenerationInstruction(payload: { projectId: string; flowId: string; instruction: string }): ReturnType<typeof saveFlowGenerationInstruction>;
+  generateFromWebsite(payload: { projectId: string; flowId: string; llmExecutionGrantId: string }): ReturnType<typeof generateFlowFromWebsiteExplorationAdaptation>;
   cancel(payload: { projectId: string; runId: string }): ReturnType<typeof cancelRuntimeSession>;
 };
 
@@ -76,6 +78,8 @@ export function useRuntimeExecutionCommands(): RuntimeExecutionCommands {
     preflightLlm: (payload) => preflightLlmExecution(transport, payload),
     issueLlmGrant: (payload) => issueLlmExecutionGrant(transport, payload),
     generateBootstrap: (payload) => generateFlowBootstrapAdaptation(transport, payload),
+    saveGenerationInstruction: (payload) => saveFlowGenerationInstruction(transport, payload),
+    generateFromWebsite: (payload) => generateFlowFromWebsiteExplorationAdaptation(transport, payload),
     cancel: (payload) => cancelRuntimeSession(transport, payload)
   }), [transport]);
 }

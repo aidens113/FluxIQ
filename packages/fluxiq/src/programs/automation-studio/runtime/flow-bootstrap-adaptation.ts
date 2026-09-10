@@ -11,6 +11,7 @@ import type {
   AutomationStudioFlowBuildPlan,
   AutomationStudioFlowBootstrapRisk
 } from "./flow-bootstrap.ts";
+import type { AutomationStudioLlmEvidenceLoopTrace } from "./llm-evidence-loop.ts";
 
 export type AutomationStudioBootstrapAdaptationStatus =
   | "proposed"
@@ -76,6 +77,8 @@ export type AutomationStudioBootstrapAdaptation = {
   summary: string;
   riskLevel: AutomationStudioFlowBootstrapRisk;
   accounting?: AutomationStudioBootstrapAccounting;
+  evidenceTrace?: AutomationStudioLlmEvidenceLoopTrace[];
+  reusableContext?: JsonObject;
   buildPlan: AutomationStudioFlowBuildPlan;
   topology: AutomationStudioBootstrapTopology;
   status: AutomationStudioBootstrapAdaptationStatus;

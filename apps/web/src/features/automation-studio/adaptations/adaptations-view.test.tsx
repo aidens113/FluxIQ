@@ -1,5 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({
@@ -7,6 +8,14 @@ vi.mock("next/navigation", () => ({
 }));
 import { AdaptationsView, AdaptationsViewContent, adaptationChangedFields, adaptationObjectTarget, adaptationReviewActions, adaptationReviewCopy } from "./index";
 import { RuntimePostRunSummary } from "../runtime";
+
+(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => { resolve = next; });
+  return { promise, resolve };
+}
 
 describe("Automation Adaptations workspace", () => {
   it("keeps runtime adaptation navigation inside typed workspace commands", () => {
@@ -96,5 +105,29 @@ describe("Automation Adaptations workspace", () => {
     expect(source).toContain("Replacement adaptation ID");
     expect(source).toContain("Enter a reason for this decision.");
     expect(source).not.toContain("window.prompt");
+  });
+
+  it("keeps a requested adaptation detail load alive while inbox filters refresh", async () => {
+    const detail = deferred<any>();
+    const commands = {
+      listAdaptations: vi.fn(async () => ({ ok: true, payload: { adaptations: [], page: { adaptations: [], limit: 25, offset: 0, total: 0 } } })),
+      loadAdaptation: vi.fn(() => detail.promise),
+      reviewAdaptation: vi.fn()
+    } as any;
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<AdaptationsViewContent commands={commands} flow={{ flowId: "flow.one" }} projectId="project.one" requestedAdaptationId="adaptation.one" />);
+    });
+    expect(commands.loadAdaptation).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      renderer.root.findByProps({ "aria-label": "Filter by status" }).props.onChange({ target: { value: "proposed" } });
+    });
+    detail.resolve({ ok: true, payload: { adaptation: { adaptationId: "adaptation.one", status: "proposed", patch: [], validationResults: [] } } });
+    await act(async () => { await detail.promise; });
+
+    expect(renderer.root.findAll((node) => node.type === "span" && node.children.includes("adaptation.one"))).not.toHaveLength(0);
+    expect(renderer.root.findAll((node) => node.type === "span" && node.children.includes("Loading..."))).toHaveLength(0);
+    await act(async () => renderer.unmount());
   });
 });

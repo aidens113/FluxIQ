@@ -37,6 +37,12 @@ describe("global runtime LLM execution-grant composition", () => {
         scopeRef: flow.flowId,
         metadata: { model: "deepseek-chat" }
       });
+      await runtime.secretKeys.unlockSession({
+        sessionId: login.session.id,
+        userId: login.user.id,
+        authorizationPassword: "admin",
+        expiresAtMs: login.session.expiresAtMs
+      });
       const binding = await runtime.automationStudio.getLlmExecutionBinding(project.id, flow.flowId);
       const issued = await runtime.api.call({
         programId: "automation-studio",

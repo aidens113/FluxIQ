@@ -153,12 +153,31 @@ structure so token usage scales with novelty rather than execution count.
 
 New Flows are fail-closed: normal execution, no LLM intervention, manual
 proposal review, and no automatic adaptation promotion. Fully adaptive
-behavior remains an explicit opt-in. The manual-approval runtime override is
-currently diagnosis-only: it may make one diagnosis request but cannot request,
-apply, or promote a runtime patch.
+behavior remains an explicit opt-in. Explicit runtime assistance has two closed
+lanes: `diagnosis_only` makes one diagnosis request and cannot patch or create
+an adaptation, while `diagnose_and_adapt` makes exactly one diagnosis and one
+runtime-patch request against an exact Flow revision. The latter may persist a
+proposal for manual review but cannot auto-apply it or authorize external side
+effects. A proposed target override is structurally validated as an opaque
+target object; an optional domain validator receives bounded failed-node
+identity (node ID and definition ID) so it can enforce action compatibility.
+It may accept the proposed target or resolve one exact canonical replacement;
+all other results fail closed. Core also binds the proposal to the failed node,
+rewriting a different model-selected node ID only when the failed node exists in
+the current Flow. The proposal records only categorical selector/node resolution
+provenance, is marked high-risk/external-side-effecting, and is never run as a
+live patch. The canonical graph changes only through the existing
+PIN-authorized adaptation review/apply endpoint.
+Because the explicit grant is schema-bound to this one proposal kind, Core
+enables action-target proposal creation for that run even when the Flow's normal
+policy is locked. It does not enable live patch execution, auto-application,
+external side effects, or any other mutation class.
 
 Every provider request carries server-enforced input, output, and total token
 limits. Core defaults are 8,000 input, 2,000 output, and 10,000 total tokens.
+Persisted Flow settings allow one through eight LLM calls, matching the global
+execution-grant ceiling; individual runtime intents can impose narrower exact
+limits. Evidence-guided generation uses the upper bound for its bounded loop.
 No request setting may raise the absolute total-token ceiling above 50,000,
 and Core rejects a request before provider invocation when its estimated input
 plus output allowance exceeds the effective total. Provider transport output
@@ -176,11 +195,12 @@ and an opaque scoped secret resolver. A per-run reservation ledger is shared
 across diagnosis and patch calls so the call, total-token, and output-token
 budgets are reserved before transport dispatch. Failed or usage-less calls are
 charged conservatively. The default runtime composes this adapter only through
-an opaque, one-use `diagnosis_only` execution grant. Grant issue requires the
-request actor's current session, password, and configured PIN; binds the
-enabled LLM key and revision, `deepseek-chat`, a canonical execution digest,
-effective token/call/cost/timeout limits, purpose, and expiry; and returns no
-secret. The execution digest covers the parent Flow, Flow Map Router, Subflow
+an opaque, session-bound execution grant. Grant issue requires an authenticated
+actor session and a session-scoped Secret Keys unlock established at login; it
+does not accept or retain a password or PIN. The grant binds the enabled LLM key
+and revision, `deepseek-chat`, a canonical execution digest, effective token/
+call/cost/timeout limits, purpose, and expiry, and returns no secret. The
+execution digest covers the parent Flow, Flow Map Router, Subflow
 records, routed Subflow graphs, effective settings, applicable project/Flow/
 Subflow instructions, and every transitively reachable version-pinned
 published snapshot. Reachable publication lifecycle status, missing targets,
@@ -205,14 +225,16 @@ Flow scope, and persists per-request input/output/total token limits, one-call
 limit, timeout, estimated-cost cap, and zero-retry policy. The settings API
 rejects totals above 50,000, input-plus-output reservations above the total,
 calls other than one, retries other than zero, timeouts above 25 seconds, and
-cost caps above USD 0.25. Runtime Debug performs preflight and then opens a
-password-plus-PIN authorization dialog for diagnosis_only; browser fields
-are cleared before the grant request and after every completion path, and
-server failures are presented as fixed, sanitized messages. The one-use grant
-is attached only to run-runtime-session; the ordinary deterministic modes do
-not receive it. Diagnosis-only must create a fresh runtime session: both the API
-and service reject a supplied `runId`, revoke the invalid grant, and Runtime Debug
-skips the queue endpoint for that lane. As defense in depth, diagnosis execution
+cost caps above USD 0.25. Runtime Debug exposes separate **LLM diagnosis** and
+**Diagnose and propose adaptation** modes, performs purpose-specific preflight,
+and issues the scoped one- or two-call grant from the authenticated session. A
+future profile above 100,000 total tokens additionally requires an explicit
+high-token confirmation. Server
+failures are presented as fixed, sanitized messages. Explicit grants are
+attached only to run-runtime-session; ordinary deterministic modes do not
+receive them. Both explicit runtime lanes must create a fresh runtime session:
+the API and service reject a supplied `runId` and revoke the invalid grant. As
+defense in depth, diagnosis execution
 sets graph cross-domain authorization to an empty set instead of reconstructing
 it from session metadata. A diagnosis-only run executes the already-authored deterministic
 Flow through the same bound IO, importer-native, and host-runtime capabilities
@@ -377,6 +399,18 @@ not embed provider credentials or domain prompts. Prompt versions are stable
 IDs per task family, including runtime diagnosis, runtime patch, router patch,
 subflow patch, expectation/action-target patch, instruction suggestion, change
 proposal generation, and diagnosis-only reporting.
+
+For instruction-first jobs that require evidence gathering before generation,
+Core also exposes a provider-neutral bounded evidence-loop coordinator. A domain
+registers a small allowlist of tool descriptors and supplies the tool executor;
+Core validates each model decision, rejects unknown or repeated calls, caps
+iterations, tool calls, and accumulated evidence bytes, propagates cancellation,
+and returns content-free trace/accounting metadata with the final candidate.
+Domain adapters own their tools and evidence projection (for example, browser
+navigation and DOM inspection remain outside Core). Provider execution still
+runs through the existing grant and per-run budget boundaries, and the final
+candidate must pass its existing typed validator and review lifecycle before it
+can become durable behavior.
 
 Harness outputs are strict structured records. Diagnosis, runtime patch,
 change proposal, and instruction suggestion responses are validated before they

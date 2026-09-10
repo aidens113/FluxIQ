@@ -124,6 +124,39 @@ describe("FluxIQ web runtime lifecycle", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("lets the real web host module bind explicit reusable-context protection", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "fluxiq-reusable-host-"));
+    const modulePath = path.join(root, "host-reusable.cjs");
+    writeFileSync(modulePath, `
+module.exports.registerFluxIQHost = (fluxiq) => fluxiq.bindAutomationStudioReusableLlmContext({
+  enabled: true,
+  contentProtection: {
+    providerId: 'host.test-protection.v1',
+    seal: async ({ content }) => ({ content, encryption: '{"provider":"test"}' }),
+    open: async ({ content }) => content
+  },
+  selectForFreshEvidence: async () => undefined
+});
+`);
+    process.env.FLUXIQ_IMPORTER_ROOT = root;
+    process.env.FLUXIQ_HOST_MODULE = modulePath;
+    process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED = "false";
+    const fluxiq = createFluxIQWebInstance();
+    expect(fluxiq.programs.automationStudio.reusableLlmContextStatus()).toMatchObject({ enabled: true, writeEnabled: true, contentProtection: "host.test-protection.v1" });
+    await fluxiq.close();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("fails web runtime construction when host reusable-context configuration is malformed", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "fluxiq-reusable-host-invalid-"));
+    const modulePath = path.join(root, "host-reusable-invalid.cjs");
+    writeFileSync(modulePath, `module.exports.registerFluxIQHost = (fluxiq) => fluxiq.bindAutomationStudioReusableLlmContext({ enabled: true, contentProtection: { providerId: '' } });\n`);
+    process.env.FLUXIQ_IMPORTER_ROOT = root;
+    process.env.FLUXIQ_HOST_MODULE = modulePath;
+    expect(() => createFluxIQWebInstance()).toThrow("host configuration is invalid");
+    rmSync(root, { recursive: true, force: true });
+  });
 });
 describe("FluxIQ web host root resolution", () => {
   it("prefers the explicit importer root", () => {

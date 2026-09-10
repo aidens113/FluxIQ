@@ -267,7 +267,7 @@ export async function runAutomationStudioGraph(
       continue;
     }
 
-    const nextEdge = chooseAutomationStudioEdge(flow, currentNode.id, attempt.route ?? "success");
+    const nextEdge = chooseAutomationStudioEdge(flow, currentNode.id, attempt.route ?? "success", currentNode.definitionId);
     if (!nextEdge) {
       const outgoingRoutes = flow.edges
         .filter((edge) => edge.sourceNodeId === currentNode!.id)
@@ -549,9 +549,12 @@ function collectNodeInputs(flow: AutomationStudioFlowDocument, node: AutomationS
   return { ...values, ...inputs };
 }
 
-function chooseAutomationStudioEdge(flow: AutomationStudioFlowDocument, sourceNodeId: string, route: string): AutomationStudioFlowEdge | null {
+function chooseAutomationStudioEdge(flow: AutomationStudioFlowDocument, sourceNodeId: string, route: string, definitionId?: string): AutomationStudioFlowEdge | null {
   const edges = flow.edges.filter((edge) => edge.sourceNodeId === sourceNodeId);
-  return edges.find((edge) => edge.sourcePortId === route) ?? edges.find((edge) => !edge.sourcePortId && route === "success") ?? null;
+  return edges.find((edge) => edge.sourcePortId === route)
+    ?? (definitionId === "builtin.control.start" && route === "success" ? edges.find((edge) => edge.sourcePortId === "next") : undefined)
+    ?? edges.find((edge) => !edge.sourcePortId && route === "success")
+    ?? null;
 }
 
 function findStartNode(flow: AutomationStudioFlowDocument): AutomationStudioFlowNode | undefined {

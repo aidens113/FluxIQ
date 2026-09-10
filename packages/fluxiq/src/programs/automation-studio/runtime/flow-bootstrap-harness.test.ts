@@ -77,7 +77,7 @@ describe("Automation Studio flow_bootstrap LLM harness", () => {
       tokenBudget: 128,
       flowBootstrap: { registry: new AutomationStudioNodeRegistry([nodeDefinition()]), resolution },
       provider,
-      tokenLimits: { maxInputTokens: 2_000, maxOutputTokens: 512, maxTotalTokens: 3_000 },
+      tokenLimits: { maxInputTokens: 4_000, maxOutputTokens: 1_000, maxTotalTokens: 5_000 },
       maxEstimatedCostUsd: 0.25,
       timeoutMs: 20_000
     });

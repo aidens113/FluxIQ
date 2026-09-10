@@ -134,6 +134,90 @@ but arbitrary hydrated detail is not promised across reloads. Cache misses and
 stale entries must fall back to bounded asynchronous reads behind a stable
 loading surface; they must never block selection or authorize a mutation.
 
+## Reusable sanitized LLM context
+
+Automation Studio exposes a domain-neutral, project-local persistence seam for
+reusing sanitized LLM context. The seam is disabled unless its store is opened
+with `enabled: true`; existing projects migrate additively to an empty index and
+LLM creation or adaptation behavior is unchanged until a caller explicitly
+opts in.
+
+`AutomationStudioProjectReusableLlmContextStore` records exact project, Flow,
+optional Subflow, and domain scope together with evidence-schema and sanitizer
+versions, opaque compatibility tags, outcome/reviewer and applied-validation state, source run and
+adaptation IDs, content digest and byte count, and fixed creation, last-use, and
+expiry timestamps. The prompt projection is canonical JSON in the project's
+content-addressed object store. SQL filtering uses metadata only, then hydrates
+only the bounded unexpired result page. A last-use touch does not extend
+absolute expiry.
+
+The v1 boundary limits a projection to 12,288 UTF-8 bytes, 256 JSON items,
+eight levels, and 2,048 bytes per string; compatibility tags and source IDs are
+also bounded. Persistence rejects common credential, header, and token field
+names. Domains remain responsible for producing and versioning their sanitized
+schema and for ensuring values are safe—the generic store does not interpret
+domain tags or accept raw recordings, provider messages, or domain-specific
+evidence.
+
+Reads are isolated by the project database and support exact Flow/Subflow,
+domain, evidence-kind, schema, sanitizer, and compatibility-tag filters.
+Expired records never appear in `get` or `list`; bounded purge, exact-scope
+clear, and individual delete remove the record and its object reference, after
+which normal unreferenced-object collection removes content. Rejection or
+reversion can be retained explicitly in reviewer/outcome state for later
+ranking policy, but this first storage slice performs no retrieval ranking,
+prompt packing, provider calls, authorization expansion, or automatic action.
+
+The next service slice places status, list, get, delete, scope-clear, expiry
+purge, and deterministic packing operations behind Automation Studio's
+authenticated program API. Read operations require `programs.read`; lifecycle
+mutations require `flows.write`; every project operation additionally verifies
+that the project belongs to the request's domain scope. List responses omit the
+prompt projection, while get and packed responses can hydrate only bounded,
+sanitizer-versioned records. Lifecycle and packing audits retain IDs, scope,
+counts, byte/token accounting, and disposition only—not prompt content.
+
+Project content storage exposes a generic `AutomationStudioProjectContentProtection`
+boundary. Its built-in AES-256-GCM adapter accepts a host-owned key resolver;
+Core does not create, persist, derive, or log those keys. The resolver selects a
+current key for writes and resolves the exact recorded key ID for reads, so a
+host can rotate keys while retaining old keys and can retire a key explicitly.
+Authenticated additional data binds every object to the provider, project ID,
+media type, and key ID. Ciphertext integrity, object digest, and byte count are
+verified before decryption. Missing providers, unavailable or malformed keys,
+unknown/malformed envelopes, altered ciphertext, and changed bound metadata all
+fail closed.
+
+Secret Keys and Identity Access encryption remain purpose-specific and are not
+reused as project-content crypto. Existing unencrypted project objects remain
+readable without migration; protected writes are opt-in per object. Reusable
+LLM context remains feature-off by default, and its write endpoint is enabled
+only when the feature and a host-supplied content-protection provider are both
+configured. Otherwise status reports
+`reusable_context.content_protection_unavailable` and writes fail closed. Core
+does not automatically re-encrypt old objects or provide host key custody.
+
+Reusable-context selection exact-filters scope, evidence/sanitizer versions,
+and opaque compatibility tags in storage before pagination. Ranking is stable:
+applied successes precede validated successes, reviewed successes, unreviewed
+successes, other reviewed records, unknown outcomes, and failures; rejected or
+reverted outcomes/reviews are not packed as positive context. Equal ranks use
+creation time then record ID.
+Duplicate content digests contribute zero additional prompt bytes. The packet
+contains no more than five records and its complete serialized size is capped
+at the smaller of 8,192 bytes or the conservative byte equivalent of ten
+percent of `maxInputTokens`.
+
+Creation and runtime-adaptation entrypoints can request this packet explicitly,
+but retrieval remains a service responsibility: the provider-neutral harness
+does not open storage. A host projector converts current sanitized evidence
+into the domain-neutral exact-match descriptor. Retrieval is attempted only
+after a fresh current inspection (evidence-loop output for creation or captured
+failure evidence for runtime adaptation). The packed projection cannot contain
+selector/target fields and cannot authorize actions. Safe packing audits and
+proposal/run metadata record hit/miss, fresh/reused counts, and selected
+record/run/adaptation IDs without storing prompt content.
+
 Stable file document IDs are:
 
 | Artifact | Full document | Summary index |
@@ -642,7 +726,10 @@ intervention summaries, and summary metadata. Legacy rows receive `{}` and
 continue to hydrate from their scalar columns. Run-detail event reconstruction
 uses the newest summary envelope, deduplicates domain events by stable event
 identity, and falls back to the compatibility file when a typed write stopped
-before producing a summary event.
+before producing a summary event. Whenever a detail is normalized for
+persistence, its summary collection counts are refreshed from the detail's
+authoritative collections; `adaptationCount` is the number of unique
+`adaptationIds`, including adaptations created as manual-review proposals.
 
 Domain scope is part of the document identity. Raw recordings read it from the
 recording environment; derived artifacts carry it in metadata until richer

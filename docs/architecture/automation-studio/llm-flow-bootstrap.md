@@ -28,18 +28,21 @@ node whose permission is not granted is excluded rather than made available by
 a bootstrap-specific exception. When no native runtime is bound, Core retains
 the fail-closed empty capability and permission fallback.
 
-For the first live authoring lane, Core fixes the input ceiling at 2,000 estimated
+For the first live authoring lane, Core fixes the input ceiling at 4,000 estimated
 tokens and the resolved instruction allowance at 384 tokens. Core budgets the
 exact schema, instruction packet, and provider-envelope reserve before selecting
-catalog entries. It ranks only definitions that already passed scope,
+catalog entries. Catalog allocation and provider enforcement share the same
+conservative three UTF-8 bytes per estimated token, so increasing the numeric
+ceiling does not silently expand the selected catalog. It ranks only definitions that already passed scope,
 capability, and permission resolution, recognizes small domain-neutral intent
 groups such as fill/type, select, click, assert/verify/wait, and includes stable
 start/end foundations when available. Required intent groups are selected
 first. If a viable required group is unavailable or cannot fit, the context
 records it as missing and generation fails before provider or secret resolution.
-The provider independently estimates its exact serialized outbound body as
-`ceil(UTF-8 bytes / 4)` and rejects a request above the configured input ceiling.
-The context also contains an explicit compact output schema. Recording IDs,
+The provider independently estimates model-visible system and user message
+content as `ceil(UTF-8 bytes / 3)` plus a fixed chat-framing reserve, and rejects
+a request above either the configured input ceiling or combined input/output
+ceiling. The context also contains an explicit compact output schema. Recording IDs,
 recording events, timelines, screenshots, and recording-derived candidates are
 not part of the schema or context. A `flow_bootstrap` request fails before
 provider invocation when it has no effective active instruction or no
@@ -55,6 +58,18 @@ The strict plan has one Router, bounded owned Subflows, bounded nodes and edges,
 and an explicit fallback. Each node pins an exact catalog definition version,
 declares only registered parameters, and selects an output action when its
 definition requires one. Each edge names registered output/input ports.
+
+The prompt-facing output contract is a compact JSON Schema Draft 2020-12
+document, not a prose example. It declares every required field and optional
+node field, exact `additionalProperties: false` boundaries, the lower-case
+plan-local symbol pattern, per-array minima and maxima, exactly one primary
+Subflow, and mutually exclusive `fail` versus `subflow` fallback shapes. The
+`parameters` object is the deliberate dynamic-key exception: its description
+restricts keys and JSON values to the selected catalog entry's parameter
+contracts, which Core enforces against the registry after parsing. The optional
+`outputActionId` description requires it if and only if that catalog entry has
+an output-action contract. Core remains authoritative for these catalog-relative
+rules; the schema does not weaken or replace parser and registry validation.
 
 Core rejects unknown fields and validates all untrusted output against the same
 scope-aware registry used to form the catalog. Validation covers:
@@ -93,6 +108,17 @@ schema as an explicit field as well as the bounded bootstrap context. Before
 secret resolution, the adapter rejects a missing or altered schema, excess
 catalog size, non-bootstrap expected output, and context outside the
 instruction/catalog allowlist.
+
+The trusted system message requires exactly one JSON object, treats every user
+string as data rather than instruction, requires object delimiters, and forbids
+padding, Markdown, commentary, and code fences. For bootstrap it additionally
+binds the result to the `outputSchema` field and requires minified JSON, concise
+summaries, identifiers, and names, and only the nodes, edges, Subflows, and
+routes required by active instructions. Optional recovery, integration, and
+extra branches are excluded unless an active instruction explicitly requests
+them. The bootstrap directives are absent from the untrusted user context and
+other task messages. Requests disable thinking and set temperature to zero;
+the strict Bootstrap response schema remains authoritative.
 
 Provider response content is still untrusted. For bootstrap tasks the adapter
 requires exactly `kind`, `summary`, and `plan`, then parses the plan through
@@ -174,6 +200,17 @@ The execution grant is closed after the command so unused reveal capacity does
 not outlive the operation; provider-wrapper accounting is committed or revoked
 according to the grant lifecycle.
 
+Grant issuance relies on the authenticated actor session rather than accepting
+the account password or PIN again. A successful web login asks Secret Keys to
+derive per-key decryption buffers for that session and retain them only in
+memory, bounded by the session expiry. One-use reveal authorizations copy only
+the selected derived buffer; logout, session expiry, key mutation, and runtime
+close revoke and zero the applicable buffers. Neither the login password nor
+the unlock state is persisted. Grant issue revalidates the actor/session/key
+binding, and requests above 100,000 total tokens additionally require an
+explicit high-token confirmation flag (while the current absolute token ceiling
+remains lower).
+
 The API failure boundary is cross-bundle-safe without trusting JavaScript class
 identity. It recognizes only the canonical error name and message paired with a
 diagnostic accepted by the strict public diagnostic parser, reconstructs the
@@ -193,6 +230,43 @@ and malformed resolution. The parser rejects known reason codes paired with a
 contradictory stage, retryability, call state, response state, or pre-provider
 accounting.
 
+Provider-output validation distinguishes a valid envelope whose completion was
+cut off by the configured output-token limit
+(`flow_bootstrap.provider_output_truncated`) from malformed media, JSON, or
+envelope structure. A length stop containing only empty or whitespace padding
+uses the narrower `flow_bootstrap.provider_output_padding_truncated` code;
+substantive partial content retains `flow_bootstrap.provider_output_truncated`.
+Both are received, non-retryable results under the current grant. Diagnostics
+expose only the closed reason code and bounded accounting, never provider
+content.
+
+Evidence-guided Bootstrap completion uses a separate self-contained,
+reference-free schema while retaining the canonical public Bootstrap plan
+shape. This avoids dangling local references when the plan schema is nested
+inside an evidence decision. The evidence completion is capped at 12,000 UTF-8
+bytes, a 240-character summary, four Subflows, eight Router rules, sixteen
+nodes and twenty-four edges per Subflow, and sixteen parameters per node. Its
+instruction asks for one primary Subflow with Router fallback by default and
+permits extra topology only when the active instruction requires it. Core
+rechecks these bounds after parsing and before registry validation. The ranked
+evidence path also sends at most twelve catalog entries, selecting required
+instruction capabilities first; ordinary one-call Bootstrap retains the
+existing catalog ceiling. A representative routed three-action web plan is
+1,110 bytes (370 tokens under Core's conservative estimator), so the 4,000
+output-token limit remains unchanged.
+
+After an evidence loop returns `complete`, Core classifies the remaining local
+validation boundary without retaining or returning provider content. An invalid
+`{summary, plan}` envelope reports
+`flow_bootstrap.evidence_completion_wrapper_invalid`; a structurally invalid or
+registry-incompatible plan reports
+`flow_bootstrap.evidence_completion_plan_invalid`; and a candidate exceeding
+the tighter evidence completion profile reports
+`flow_bootstrap.evidence_completion_profile_limit_exceeded`. These diagnostics
+retain only bounded provider accounting plus the content-free evidence trace
+(tool IDs, byte counts, effect state, and categorical result codes). They never
+include the completion, validation paths, tool inputs, or page evidence.
+
 Success persists exactly one proposed, reviewable Bootstrap Adaptation bound to
 the base dependency digest and settings revision. It does not create or mutate a
 Router, Subflow, graph Flow, node, or edge. The return value contains only
@@ -201,6 +275,14 @@ instruction IDs, base binding, and sanitized request/token/cost accounting. It
 does not return the plan, prompt, instruction bodies, provider credential/key
 identity, execution grant ID, or secret material. Explicit review and apply are
 still required to materialize topology.
+
+Successful DeepSeek usage accounting includes a conservative finite
+`estimatedCostUsd`. As reviewed on 2026-09-08, `deepseek-chat` compatibility
+maps to the non-thinking `deepseek-v4-flash` model. Core uses the official peak
+cache-miss rate of USD 0.44 per million input tokens and the peak rate of USD
+1.32 per million output tokens; it intentionally does not assume cache-hit or
+off-peak discounts. These provider-owned prices are a dated maintenance input
+and must be reviewed when DeepSeek changes model compatibility or pricing.
 
 ## Generation readiness capability
 
@@ -228,9 +310,160 @@ checks.
 
 ## Blank-Flow authoring UI
 
-Runtime Debug exposes `Build Flow from instructions` only for a blank top-level orchestration Flow with no Router or Subflows, at least one active applicable instruction, an enabled key that passes purpose-aware preflight, and the exact saved build limits: 2,000 input tokens, 512 output tokens, 3,000 total tokens, one call, 20 seconds, USD 0.25, and zero provider retries. Ordinary Run remains unavailable while the Flow has no executable topology.
+### Evidence-guided generation
 
-The authorization modal states those limits and requires the current account password plus security PIN. Credentials remain controlled transient fields and are cleared on close, validation failure, authorization failure, generation failure, and success. Preflight and grant issuance use `build_and_adapt`; the browser route adds the authenticated session ID, so browser code never derives or exposes it. Failures render fixed sanitized copy instead of service or provider text.
+Domains may bind a provider-neutral evidence runtime with
+`bindLlmEvidenceRuntime({ tools, executeTool })`. Core exposes only bounded tool
+IDs, descriptions, and JSON input schemas to the model. The domain owns tool
+execution and sanitization; Core contains no browser, DOM, URL, selector, or
+other domain-specific execution behavior.
+
+The authenticated authoring sequence first saves the user's bounded text with
+`save-flow-generation-instruction`. Core upserts one active, required,
+Flow-scoped generation instruction before LLM preflight so the subsequently
+issued grant binds its exact revision. The normal
+`generate-flow-bootstrap-adaptation` request then opts in with
+`evidenceGuided: true`; it does not carry another instruction body.
+
+Evidence-guided generation uses the grant-resolved provider for a bounded series
+of `evidence_tool_decision` tasks. Every task carries the current filtered node
+catalog, strict dynamic decision schema, allowlisted tools, and prior sanitized
+evidence. A decision either requests one registered tool or completes with a
+`{ summary, plan }` candidate whose plan schema is the existing strict Flow
+Bootstrap schema. Unknown tools, duplicate calls, malformed output, cancellation,
+iteration exhaustion, and evidence-byte overflow fail closed. The final plan is
+parsed and registry-validated again before the ordinary proposed Bootstrap
+Adaptation is written.
+
+The evidence loop is an authoring-time information-gathering boundary, not a
+runtime executor for the workflow being authored. Provider-neutral instructions
+require completion as soon as the collected evidence is sufficient to construct
+the strict candidate. Once completion is permitted, the dynamic decision schema
+places the strict completion variant before all remaining tool-call variants;
+provider projection preserves that order and explicitly directs the model to
+evaluate completion first. Tools are used only to resolve information missing from
+that candidate, with observation preferred over mutation. A mutation is valid
+only when its state change reveals otherwise unavailable evidence, such as
+navigating to a required page or exposing hidden content; filling, selecting,
+submitting, or otherwise performing eventual workflow steps is not evidence
+collection merely because an action tool is available.
+
+The coordinator distinguishes cumulative audit evidence from model-visible
+context. It preserves cumulative byte/call totals while selecting only the
+newest complete evidence records that fit a configured context-byte window.
+Each tool invocation receives the maximum serialized evidence bytes it may
+return. The production Bootstrap lane uses an 8,000-byte context window and a
+64,000-byte cumulative ceiling; domain adapters may impose a smaller result
+cap. Evidence is never split into malformed partial JSON to fit the window.
+The coordinator canonicalizes each tool ID and JSON input and terminates with
+a closed `evidence_duplicate_tool_request` diagnostic before executing the
+same effective request twice, even when a provider changes only the call ID.
+Tools may additionally declare domain-neutral `effect: observe|mutate` and
+`repeatPolicy: after_mutation` semantics. A protected observation cannot run
+again, even with varied arguments, until a successful mutating tool advances
+the coordinator epoch. While blocked, it is omitted from the decision tool
+list and JSON schema, making the no-progress choice structurally unavailable;
+a nonconforming provider result still fails closed as
+`evidence_repeat_without_progress` before another tool execution. Declaring
+this policy requires at least one mutating tool to remain eligible.
+One observation tool may also declare
+`initialObservation: { input }`. Core executes that domain-declared, bounded
+observation deterministically before the first provider decision, accounts for
+it as an ordinary tool call and evidence result, and exposes its evidence to
+the first decision. This lets a provider complete a simple evidence-guided
+generation in one request instead of spending an initial request asking for
+the obvious observation. An initial observation is implicitly protected from
+repetition for the current mutation epoch even when the descriptor omits
+`repeatPolicy`; Core removes that tool from both the first provider catalog and
+decision schema until a successful mutation occurs. If no other tool is
+eligible, the provider still receives the completion-only schema once the
+minimum evidence requirement is satisfied. Configuration fails closed if more than one tool is
+designated or if the designated tool is mutating. The initial marker and input
+are coordinator-only metadata and are omitted from the provider-facing tool
+catalog; the model receives the resulting evidence, not a duplicate execution
+hint.
+
+Reusable context is an explicit per-request option layered on this fresh
+inspection path. The service invokes a host-supplied, domain-neutral
+`selectForFreshEvidence` projection only after at least one current evidence
+result exists, then exact-filters and deterministically packs protected
+project-local records. The provider-neutral harness receives at most five
+items under its independent 10%-of-input/fixed-byte ceiling. Every item is
+marked advisory; current evidence remains authoritative, and the harness
+rejects cached projections containing selector or target fields. Feature-off,
+unconfigured, and non-opted-in requests do not add a reusable-context packet.
+Ordinary non-evidence-guided Bootstrap generation cannot opt in because it has
+no fresh inspection.
+
+Bootstrap proposals and their creation audit retain only safe cache status,
+fresh/reused contribution counts, packed byte/token counts, and selected
+record/run/adaptation IDs. They do not retain the packed projection or fresh
+evidence. A miss continues generation without changing the evidence or review
+requirements.
+
+Marked mutation tools report
+`{kind: llm_evidence_tool_execution, evidence, effectApplied, resultCode?}`. The
+optional result code is a bounded safe identifier for categorical outcomes, not
+provider text or evidence. Their bounded
+evidence is retained even when an action is recoverably rejected, but the
+mutation epoch advances only when `effectApplied` is explicitly true. Legacy
+raw results remain valid for observations and unmarked tools; raw marked
+mutation results fail closed as no applied effect.
+Evidence-decision context sizes its node catalog against 5,000 rather than the
+full 8,000 input tokens, reserving 3,000 tokens for the five bounded tool
+schemas, decision schema, and collected evidence. DeepSeek still estimates the final provider projection and rejects it
+if the authoritative per-call input or total-token limits would be exceeded.
+
+The persisted adaptation records only bounded iteration, decision, call/tool ID,
+categorical result code, effect-applied state, evidence-byte, and usage
+accounting. Public failure diagnostics may project at most 16 content-free
+`{toolId, effectApplied?, resultCode?}` steps. Raw tool inputs, call IDs, and
+collected evidence are not copied into that diagnostic. Aggregate grant exposure is
+`maxTotalTokens * maxCalls`; explicit high-token confirmation is required only
+when that amount is greater than 100,000 tokens.
+
+The success audit exposes `providerCallCount` and `decisionCount` from trace
+entries whose iteration is greater than zero, excluding the deterministic
+iteration-zero initial observation. `traceStepCount` reports all trace entries.
+The older bounded `iterationCount` remains the total trace length for compatible
+readers and must not be used as provider-call accounting. `toolCallCount`
+continues to count actual tool executions, including an initial observation.
+
+Runtime diagnosis and patching may use an optional domain-owned failure-evidence
+capture callback. Core invokes it at most once after an action fails, passing
+only project/Flow/run identifiers and a compact action descriptor; action
+inputs, outputs, messages, metadata, page snapshots, and state references are
+excluded. The returned JSON is revalidated against Core's failure-evidence
+allowlist and must fit both the 3,000-byte hard ceiling and a dynamic allowance
+of at most 20 percent of the request input budget. A malformed, oversized, or
+failed applicable capture stops before any provider request. An absent callback
+or an `undefined` result preserves diagnosis behavior without evidence.
+
+The same in-memory sanitized packet is supplied to diagnosis and patch context.
+Only its schema version, serialized byte count, truncation flag, and Core SHA-256
+digest may be persisted; its contents never enter run detail. Proposal-only
+target overrides can additionally use a domain validator closed over that
+packet. Core supplies that validator only the failed node ID and definition ID,
+allowing the domain to reject a structurally present target that is
+semantically incompatible with the failed action without receiving action
+values or trace content. The validator may accept the proposed target or return
+one exact canonical replacement when sanitized evidence has exactly one
+compatible candidate. Core validates a replacement before using it; malformed,
+absent, ambiguous, or unresolved targets fail preflight and create neither an
+Adaptation nor a Change Proposal. Persisted resolution provenance is categorical
+(`matched` or `resolved`); selectors appear only in the proposal patch itself.
+Proposal-only overrides are also bound to the failed trace node: Core requires
+that node to exist in the current Flow and deterministically replaces any other
+model-selected node ID before evidence resolution. Only categorical
+`targetNodeResolution` provenance is retained outside the patch.
+
+Runtime Debug exposes `Build Flow from instructions` only for a blank top-level orchestration Flow with no Router or Subflows, at least one active applicable instruction, an enabled key that passes purpose-aware preflight, and the exact saved build limits: 4,000 input tokens, 1,000 output tokens, 5,000 total tokens, one call, 20 seconds, USD 0.25, and zero provider retries. Ordinary Run remains unavailable while the Flow has no executable topology.
+
+The `Website task` exploration action is available on the same blank Flow as soon as the DeepSeek provider, model, and key reference are configured; it does not require the user to first persist an exact exploration profile. The client derives the bounded 8,000 input, 4,000 output, 12,000 total, four-call, 45-second-per-call, USD 1 aggregate request at action time, while server preflight and grant issuance remain authoritative. Its 48,000-token aggregate exposure remains below the threshold that requires high-token confirmation. This does not relax the exact persisted-limit requirement for the ordinary one-call instruction build.
+
+The authoring action uses the current authenticated session to issue its bounded grant and does not ask for the account password or PIN again. Only a preflight whose total-token limit exceeds 100,000 opens an additional confirmation dialog; confirmation is carried as a boolean grant-request field and enforced again by Core. Preflight and grant issuance use `build_and_adapt`; the browser route adds the authenticated session ID, so browser code never derives or exposes it. The surface keeps availability checks visible instead of disappearing while preflight is pending or rejected, and a rejected check offers an explicit retry.
+
+Website exploration distinguishes its two safety boundaries in the interface: bounded browser actions happen immediately against the connected tab, while the generated Router, Subflows, and actions remain an unapplied proposal. Preparing and exploring states expose an accessible indeterminate progress indicator, elapsed time, and a reminder to keep the target tab connected. Shared LLM progress vocabulary uses `Checking prior evidence`, `Inspecting live target`, `Generating proposal`, and `Ready for review`; the current authoring surface renders only phases supported by observable state. In particular, prior-evidence wording and controls remain hidden until reusable-context candidate data exists. Successful generation states explicitly confirm that no generated change has been applied. Failures map only allowlisted diagnostic codes to fixed, actionable recovery guidance; raw service errors, provider output, prompts, and page evidence are never rendered.
 
 Successful generation opens the returned proposed Bootstrap Adaptation in the existing Adaptations view. A typed compatibility bridge projects the dedicated Bootstrap document through the standard `get-flow-adaptation` DTO without copying it into standard Adaptation persistence. The projection exposes only the source instruction IDs, Core-derived risk, summarized Router/Subflow changes, bounded request/token/cost accounting, and the base/current Core execution digests and settings revisions. It never exposes a key identity, grant, session, prompt, instruction body, or raw provider response.
 

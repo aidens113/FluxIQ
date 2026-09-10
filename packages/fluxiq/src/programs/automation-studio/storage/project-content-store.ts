@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AutomationStudioProjectDatabasePool } from "./project-database.ts";
+import type { AutomationStudioProjectContentProtection } from "./project-content-protection.ts";
 import { AutomationStudioProjectObjectRepository, type AutomationStudioProjectObjectRecord, type AutomationStudioProjectObjectReferenceRecord } from "./project-object-repository.ts";
 
 export type AutomationStudioProjectContentWrite = {
@@ -17,14 +18,17 @@ export class AutomationStudioProjectContentStore {
   private readonly rootDir: string;
   private readonly projectId: string;
 
-  private constructor(private readonly objects: AutomationStudioProjectObjectRepository, input: { rootDir: string; projectId: string }) {
+  private constructor(private readonly objects: AutomationStudioProjectObjectRepository, input: { rootDir: string; projectId: string; protection?: AutomationStudioProjectContentProtection }) {
     this.rootDir = path.resolve(input.rootDir);
     this.projectId = input.projectId;
+    this.protection = input.protection;
   }
 
-  static async open(input: { pool: AutomationStudioProjectDatabasePool; projectId: string }): Promise<AutomationStudioProjectContentStore> {
+  private readonly protection: AutomationStudioProjectContentProtection | undefined;
+
+  static async open(input: { pool: AutomationStudioProjectDatabasePool; projectId: string; protection?: AutomationStudioProjectContentProtection }): Promise<AutomationStudioProjectContentStore> {
     const objects = await AutomationStudioProjectObjectRepository.open({ pool: input.pool, projectId: input.projectId });
-    return new AutomationStudioProjectContentStore(objects, { rootDir: input.pool.rootDir, projectId: input.projectId });
+    return new AutomationStudioProjectContentStore(objects, { rootDir: input.pool.rootDir, projectId: input.projectId, ...(input.protection ? { protection: input.protection } : {}) });
   }
 
   close(): Promise<void> {
@@ -38,8 +42,14 @@ export class AutomationStudioProjectContentStore {
     owner?: { ownerKind: string; ownerId: string; purpose: string; referenceId?: string };
     transactionId?: string;
     createdAt?: number;
+    protect?: boolean;
   }): Promise<AutomationStudioProjectContentWrite> {
-    const content = Buffer.from(input.content);
+    const plaintext = Buffer.from(input.content);
+    if (input.protect === true && !this.protection) throw new Error("Protected project content requires a configured protection provider.");
+    const protectedContent = input.protect === true
+      ? await this.protection!.seal({ projectId: this.projectId, mediaType: input.mediaType, content: plaintext })
+      : { content: plaintext, encryption: null };
+    const content = protectedContent.content;
     const sha256 = createHash("sha256").update(content).digest("hex");
     const extension = safeExtension(input.extension ?? extensionForMediaType(input.mediaType));
     const relativePath = objectRelativePath(this.projectId, sha256, extension);
@@ -59,12 +69,12 @@ export class AutomationStudioProjectContentStore {
       byteCount: content.length,
       relativePath,
       compression: null,
-      encryption: null,
+      encryption: protectedContent.encryption,
       verifiedAt: input.createdAt ?? Date.now(),
       ...(input.createdAt !== undefined ? { createdAt: input.createdAt } : {})
     });
     const reference = input.owner ? await this.objects.addReference({
-      referenceId: input.owner.referenceId ?? `reference:${input.owner.ownerKind}:${input.owner.ownerId}:${input.owner.purpose}:${sha256}`,
+      referenceId: input.owner.referenceId ?? defaultObjectReferenceId(input.owner, sha256),
       objectId: object.objectId,
       ownerKind: input.owner.ownerKind,
       ownerId: input.owner.ownerId,
@@ -81,9 +91,23 @@ export class AutomationStudioProjectContentStore {
   async readBytesBySha256(sha256: string): Promise<AutomationStudioProjectContentAsset> {
     const object = await this.objects.getBySha256(sha256);
     if (!object) throw new Error("Automation Studio object was not found for this project.");
-    const content = await readFile(this.resolveProjectPath(object.relativePath));
-    const digest = createHash("sha256").update(content).digest("hex");
+    return this.readObject(object);
+  }
+
+  async readBytesByObjectId(objectId: string): Promise<AutomationStudioProjectContentAsset> {
+    const object = await this.objects.getById(objectId);
+    if (!object) throw new Error("Automation Studio object was not found for this project.");
+    return this.readObject(object);
+  }
+
+  private async readObject(object: AutomationStudioProjectObjectRecord): Promise<AutomationStudioProjectContentAsset> {
+    const stored = await readFile(this.resolveProjectPath(object.relativePath));
+    const digest = createHash("sha256").update(stored).digest("hex");
     if (digest !== object.sha256) throw new Error(`Automation Studio object digest mismatch: ${object.relativePath}`);
+    if (stored.byteLength !== object.byteCount) throw new Error(`Automation Studio object byte count mismatch: ${object.relativePath}`);
+    if (!object.encryption) return { ...object, content: stored };
+    if (!this.protection) throw new Error("Protected project content cannot be opened without its protection provider.");
+    const content = await this.protection.open({ projectId: this.projectId, mediaType: object.mediaType, content: stored, encryption: object.encryption });
     return { ...object, content };
   }
 
@@ -143,6 +167,12 @@ export class AutomationStudioProjectContentStore {
     if (!target.startsWith(root)) throw new Error("Automation Studio project content path escapes its storage root.");
     return target;
   }
+}
+
+function defaultObjectReferenceId(owner: { ownerKind: string; ownerId: string; purpose: string }, sha256: string): string {
+  const readable = `reference:${owner.ownerKind}:${owner.ownerId}:${owner.purpose}:${sha256}`;
+  if (readable.length <= 200) return readable;
+  return `reference:sha256:${createHash("sha256").update(readable).digest("hex")}`;
 }
 
 function objectRelativePath(projectId: string, sha256: string, extension: string): string {

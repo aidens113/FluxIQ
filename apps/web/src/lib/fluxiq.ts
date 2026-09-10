@@ -31,6 +31,7 @@ export function getFluxIQWebRuntimeStatus(operatorUserId?: string) {
   const state = getWebRuntimeState();
   const context = operatorUserId ? resolveAutomationStudioContext(state.automationStudioContexts, operatorUserId) : undefined;
   const nativeRuntime = state.instance.programs.automationStudio.nativeRuntimeSummary(state.instance.activeDomainId);
+  const reusableLlmContext = state.instance.programs.automationStudio.reusableLlmContextStatus();
   return {
     runtimeId: state.runtimeId,
     hostRoot: state.instance.paths.root,
@@ -48,7 +49,8 @@ export function getFluxIQWebRuntimeStatus(operatorUserId?: string) {
       contextCount: Object.keys(state.automationStudioContexts).length,
       nativeImporterRuntimeBound: nativeRuntime.bound,
       nativeNodeDefinitionCount: nativeRuntime.definitionCount,
-      recordingMapperCount: nativeRuntime.recordingMapperCount
+      recordingMapperCount: nativeRuntime.recordingMapperCount,
+      reusableLlmContext
     }
   };
 }

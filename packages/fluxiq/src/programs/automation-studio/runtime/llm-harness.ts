@@ -1,12 +1,15 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import {
+  automationStudioLlmSignalTimedOut,
   AUTOMATION_STUDIO_LLM_DEFAULT_TIMEOUT_MS,
   AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS,
   AutomationStudioLlmProviderError,
   normalizedAutomationStudioLlmProviderFailure
 } from "./llm-provider-contract.ts";
 import type { AutomationStudioLlmRunBudgetLedger } from "./llm-run-budget.ts";
+import type { AutomationStudioLlmEvidenceTool } from "./llm-evidence-loop.ts";
+import type { AutomationStudioReusableLlmContextPacket } from "./reusable-llm-context.ts";
 import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS,
   automationStudioFlowBootstrapCatalogByteBudget,
@@ -28,6 +31,7 @@ import type {
 
 export type AutomationStudioLlmTaskKind =
   | "flow_bootstrap"
+  | "evidence_tool_decision"
   | "runtime_diagnosis"
   | "runtime_patch"
   | "router_patch"
@@ -39,6 +43,7 @@ export type AutomationStudioLlmTaskKind =
 
 export const AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS: Record<AutomationStudioLlmTaskKind, string> = {
   flow_bootstrap: "automation-studio.flow-bootstrap.v1",
+  evidence_tool_decision: "automation-studio.evidence-tool-decision.v1",
   runtime_diagnosis: "automation-studio.runtime-diagnosis.v1",
   runtime_patch: "automation-studio.runtime-patch.v1",
   router_patch: "automation-studio.router-patch.v1",
@@ -119,14 +124,44 @@ export type AutomationStudioLlmContextPacket = {
   instructions: AutomationStudioInstructionResolution;
   stateDiffs?: JsonValue[];
   routeHistory?: JsonValue[];
-  recentActions?: AutomationStudioFlowRunActionAttemptRecord[];
+  recentActions?: AutomationStudioLlmRecentActionContext[];
+  failureEvidence?: JsonObject;
   relevantRuns?: JsonObject[];
   relevantAdaptations?: JsonObject[];
+  reusableContext?: AutomationStudioReusableLlmContextPacket;
   subflows?: Array<Pick<AutomationStudioFlowSubflow, "subflowId" | "name" | "role" | "status" | "routeTags" | "stability">>;
   availableActions?: JsonObject[];
   flowBootstrap?: ReturnType<typeof buildAutomationStudioFlowBootstrapContext>;
+  evidenceLoop?: {
+    iteration: number;
+    tools: AutomationStudioLlmEvidenceTool[];
+    evidence: Array<{ callId: string; toolId: string; value: JsonValue }>;
+    decisionSchema: JsonObject;
+    completionSchema: JsonObject;
+    canComplete: boolean;
+  };
   policyGates?: JsonObject;
   metadata?: JsonObject;
+};
+
+export const AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS = 12;
+export const AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES = 3_000;
+
+export type AutomationStudioLlmRecentActionContext = Pick<AutomationStudioFlowRunActionAttemptRecord,
+  "attemptId" | "nodeId" | "definitionId" | "order" | "status"
+> & {
+  route?: string;
+  durationMs?: number;
+  comparisonStatus?: string;
+};
+
+export type AutomationStudioLlmFailureEvidenceCaptureInput = {
+  projectId: string;
+  flowId: string;
+  runId: string;
+  failedAction: Pick<AutomationStudioLlmRecentActionContext, "attemptId" | "nodeId" | "definitionId" | "status" | "route">;
+  maxEvidenceBytes: number;
+  signal?: AbortSignal;
 };
 
 export type AutomationStudioLlmTaskRequest = {
@@ -137,7 +172,7 @@ export type AutomationStudioLlmTaskRequest = {
   taskKind: AutomationStudioLlmTaskKind;
   promptVersion: string;
   context: AutomationStudioLlmContextPacket;
-  expectedOutput: "diagnosis" | "runtime_patch" | "change_proposal" | "instruction_suggestion" | "flow_bootstrap";
+  expectedOutput: "diagnosis" | "runtime_patch" | "change_proposal" | "instruction_suggestion" | "flow_bootstrap" | "evidence_tool_decision";
   tokenLimits: AutomationStudioLlmTokenLimits;
   maxEstimatedCostUsd: number;
   dryRun?: boolean;
@@ -146,15 +181,20 @@ export type AutomationStudioLlmTaskRequest = {
 
 export type AutomationStudioLlmStructuredResponse =
   | { kind: "flow_bootstrap"; summary: string; plan: AutomationStudioFlowBootstrapPlan; metadata?: JsonObject }
+  | { kind: "evidence_tool_decision"; summary: string; decision: { kind: "tool_call"; callId: string; toolId: string; input: JsonObject } | { kind: "complete"; result: JsonObject }; metadata?: JsonObject }
   | { kind: "diagnosis"; summary: string; confidence?: number; metadata?: JsonObject }
   | { kind: "runtime_patch"; summary: string; patches: AutomationStudioRuntimePatch[]; riskLevel: "low" | "medium" | "high" | "destructive"; metadata?: JsonObject }
   | { kind: "change_proposal"; summary: string; patches: AutomationStudioChangeProposalPatch[]; riskLevel: "low" | "medium" | "high" | "destructive"; metadata?: JsonObject }
   | { kind: "instruction_suggestion"; summary: string; instructions: Array<{ title: string; body: string; scope?: JsonObject; tags?: string[] }>; metadata?: JsonObject };
 
+export type AutomationStudioRuntimeTargetOverrideTarget = {
+  selector: string;
+};
+
 export type AutomationStudioRuntimePatch =
   | { kind: "temporary_action_sequence"; targetNodeId: string; actionDefinitionIds: string[]; reason: string; metadata?: JsonObject }
   | { kind: "temporary_wait_retry"; targetNodeId: string; timeoutMs?: number; retryCount?: number; reason: string; metadata?: JsonObject }
-  | { kind: "temporary_target_override"; targetNodeId: string; target: JsonObject; reason: string; metadata?: JsonObject }
+  | { kind: "temporary_target_override"; targetNodeId: string; target: AutomationStudioRuntimeTargetOverrideTarget; reason: string; metadata?: JsonObject }
   | { kind: "temporary_recovery_subflow_call"; subflowId: string; reason: string; metadata?: JsonObject }
   | { kind: "temporary_reroute"; fromNodeId: string; toNodeId: string; reason: string; metadata?: JsonObject };
 
@@ -189,13 +229,16 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
   taskKind: AutomationStudioLlmTaskKind;
   runId?: string;
   runDetail?: AutomationStudioFlowRunDetail;
+  failureEvidence?: JsonObject;
   stateDiffs?: JsonValue[];
   routeHistory?: JsonValue[];
   relevantRuns?: JsonObject[];
   relevantAdaptations?: JsonObject[];
+  reusableContext?: AutomationStudioReusableLlmContextPacket;
   subflows?: AutomationStudioFlowSubflow[];
   availableActions?: JsonObject[];
   flowBootstrap?: { registry?: AutomationStudioNodeRegistry; resolution: AutomationStudioNodeRegistryResolution; maxInputTokens?: number };
+  evidenceLoop?: AutomationStudioLlmContextPacket["evidenceLoop"];
   policy?: AutomationStudioAdaptationPolicy;
   provider?: AutomationStudioLlmProvider;
   dryRun?: boolean;
@@ -261,7 +304,7 @@ export function resolveAutomationStudioLlmInstructions(input: AutomationStudioIn
 export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarnessInput): AutomationStudioLlmContextPacket {
   const promptVersion = AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS[input.taskKind];
   const instructions = resolveAutomationStudioLlmInstructions(input);
-  const flowBootstrap = input.taskKind === "flow_bootstrap" && input.flowBootstrap
+  const flowBootstrap = (input.taskKind === "flow_bootstrap" || input.taskKind === "evidence_tool_decision") && input.flowBootstrap
     ? buildAutomationStudioFlowBootstrapContext({
       ...(input.flowBootstrap.registry ? { registry: input.flowBootstrap.registry } : {}),
       resolution: input.flowBootstrap.resolution,
@@ -284,15 +327,96 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     instructions,
     ...(input.stateDiffs?.length ? { stateDiffs: input.stateDiffs.slice(0, 50) } : {}),
     ...(input.routeHistory?.length ? { routeHistory: input.routeHistory.slice(-25) } : {}),
-    ...(input.runDetail?.actionAttempts?.length ? { recentActions: input.runDetail.actionAttempts.slice(-50) } : {}),
+    ...(input.runDetail?.actionAttempts?.length ? { recentActions: input.runDetail.actionAttempts.slice(-AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS).map(compactRecentActionForLlm) } : {}),
+    ...(input.failureEvidence ? { failureEvidence: sanitizeAutomationStudioLlmFailureEvidence(input.taskKind, input.failureEvidence) } : {}),
     ...(input.relevantRuns?.length ? { relevantRuns: input.relevantRuns.slice(0, 25) } : {}),
     ...(input.relevantAdaptations?.length ? { relevantAdaptations: input.relevantAdaptations.slice(0, 25) } : {}),
+    ...(input.reusableContext ? { reusableContext: sanitizeReusableLlmContextPacket(input.reusableContext) } : {}),
     ...(input.subflows?.length ? { subflows: input.subflows.slice(0, 100).map(compactSubflowForLlm) } : {}),
     ...(input.availableActions?.length ? { availableActions: input.availableActions.slice(0, 100) } : {}),
     ...(flowBootstrap ? { flowBootstrap } : {}),
+    ...(input.taskKind === "evidence_tool_decision" && input.evidenceLoop ? { evidenceLoop: structuredClone(input.evidenceLoop) } : {}),
     ...(input.policy ? { policyGates: adaptationPolicyGates(input.policy) } : {}),
     ...(input.metadata ? { metadata: input.metadata } : {})
   };
+}
+
+function sanitizeReusableLlmContextPacket(packet: AutomationStudioReusableLlmContextPacket): AutomationStudioReusableLlmContextPacket {
+  if (packet.schemaVersion !== "automation-studio.reusable-llm-context-packet.v1" || !Array.isArray(packet.items) || packet.items.length > 5) throw new Error("Reusable LLM context packet is invalid.");
+  const ids = new Set<string>();
+  const items = packet.items.map((item) => {
+    const allowed = ["advisory", "recordId", "contentDigest", "outcome", "reviewerState", "validationState", "sourceRunIds", "sourceAdaptationIds", "promptProjection"];
+    if (!item || typeof item !== "object" || Object.keys(item).some((key) => !allowed.includes(key)) || item.advisory !== true
+      || !/^[A-Za-z0-9._:-]{1,200}$/u.test(item.recordId) || ids.has(item.recordId) || !/^[a-f0-9]{64}$/u.test(item.contentDigest)
+      || !["succeeded", "failed", "unknown"].includes(item.outcome) || !["unreviewed", "approved"].includes(item.reviewerState)
+      || !["unknown", "validated", "applied"].includes(item.validationState)
+      || !safeReusableSourceIds(item.sourceRunIds) || !safeReusableSourceIds(item.sourceAdaptationIds)
+      || containsReusableExecutableTarget(item.promptProjection)) throw new Error("Reusable LLM context packet is invalid.");
+    ids.add(item.recordId);
+    return structuredClone(item);
+  });
+  const clean: AutomationStudioReusableLlmContextPacket = { schemaVersion: packet.schemaVersion, items };
+  if (Buffer.byteLength(JSON.stringify(clean), "utf8") > 8_192) throw new Error("Reusable LLM context packet exceeds its byte limit.");
+  return clean;
+}
+
+function safeReusableSourceIds(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length <= 25 && value.every((item) => typeof item === "string" && /^[A-Za-z0-9._:-]{1,200}$/u.test(item));
+}
+
+function containsReusableExecutableTarget(value: JsonValue, seen = new Set<object>()): boolean {
+  if (!value || typeof value !== "object") return false;
+  if (seen.has(value)) return true;
+  seen.add(value);
+  if (Array.isArray(value)) return value.some((item) => containsReusableExecutableTarget(item, seen));
+  return Object.entries(value).some(([key, item]) => {
+    const normalized = key.toLowerCase().replace(/[^a-z0-9]/gu, "");
+    return /^(?:selector|selectors|target|targets|targetid|targetids|targetnodeid|targetnodeids|actiontarget|actiontargets)$/u.test(normalized)
+      || containsReusableExecutableTarget(item as JsonValue, seen);
+  });
+}
+
+function compactRecentActionForLlm(action: AutomationStudioFlowRunActionAttemptRecord): AutomationStudioLlmRecentActionContext {
+  return {
+    attemptId: action.attemptId,
+    nodeId: action.nodeId,
+    definitionId: action.definitionId,
+    order: action.order,
+    status: action.status,
+    ...(action.route ? { route: action.route } : {}),
+    ...(Number.isSafeInteger(action.durationMs) && action.durationMs! >= 0 && action.durationMs! <= 86_400_000 ? { durationMs: action.durationMs } : {}),
+    ...(action.comparisonStatus ? { comparisonStatus: action.comparisonStatus } : {})
+  };
+}
+
+export function sanitizeAutomationStudioLlmFailureEvidence(taskKind: AutomationStudioLlmTaskKind, evidence: JsonObject): JsonObject {
+  if (taskKind !== "runtime_diagnosis" && taskKind !== "runtime_patch") throw new Error("Failure evidence is available only to runtime diagnosis and patch tasks.");
+  if (typeof evidence.schemaVersion !== "string" || !/^[a-z0-9_.:-]{1,100}$/i.test(evidence.schemaVersion)) throw new Error("Failure evidence requires a bounded schema version.");
+  if (!boundedFailureEvidenceValue(evidence)) throw new Error("Failure evidence contains an unsafe or unbounded value.");
+  let serialized: string;
+  try { serialized = JSON.stringify(evidence); } catch { throw new Error("Failure evidence must be serializable JSON."); }
+  if (Buffer.byteLength(serialized, "utf8") > AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES) throw new Error("Failure evidence exceeds the byte limit.");
+  return JSON.parse(serialized) as JsonObject;
+}
+
+function boundedFailureEvidenceValue(root: unknown): boolean {
+  const forbiddenKeys = new Set(["html", "innerhtml", "outerhtml", "pagesource", "snapshot", "cookies", "headers"]);
+  const stack: Array<{ value: unknown; depth: number }> = [{ value: root, depth: 0 }];
+  let entries = 0;
+  while (stack.length) {
+    const { value, depth } = stack.pop()!;
+    if (value === null || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) continue;
+    if (typeof value === "string") { if (value.length > 2_000) return false; continue; }
+    if (!value || typeof value !== "object" || depth > 12) return false;
+    const children = Array.isArray(value) ? value.map((item) => ["", item] as const) : Object.entries(value);
+    entries += children.length;
+    if (children.length > 128 || entries > 512) return false;
+    for (const [key, child] of children) {
+      if (key.length > 100 || forbiddenKeys.has(key.replace(/[_-]/g, "").toLowerCase())) return false;
+      stack.push({ value: child, depth: depth + 1 });
+    }
+  }
+  return true;
 }
 export function validateAutomationStudioLlmOutput(
   response: AutomationStudioLlmStructuredResponse,
@@ -312,6 +436,9 @@ export function validateAutomationStudioLlmOutput(
       ...(flowBootstrap.registry ? { registry: flowBootstrap.registry } : {}),
       resolution: flowBootstrap.resolution
     }).issues);
+  }
+  if (response.kind === "evidence_tool_decision" && response.decision.kind === "tool_call" && !response.decision.toolId.trim()) {
+    diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_tool", message: "Evidence tool decision requires a tool identifier.", path: "decision.toolId" });
   }
   if (response.kind === "runtime_patch") validateRuntimePatches(response.patches, diagnostics);
   if (response.kind === "change_proposal") validateChangeProposalPatches(response.patches, diagnostics);
@@ -370,8 +497,11 @@ export async function runAutomationStudioLlmHarness(input: AutomationStudioLlmHa
         AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.bootstrapInstructionTokens
       )
       : Math.min(input.tokenBudget ?? tokenLimitResolution.limits.maxInputTokens, tokenLimitResolution.limits.maxInputTokens),
-    ...(input.taskKind === "flow_bootstrap" && input.flowBootstrap
-      ? { flowBootstrap: { ...input.flowBootstrap, maxInputTokens: tokenLimitResolution.limits.maxInputTokens } }
+    ...((input.taskKind === "flow_bootstrap" || input.taskKind === "evidence_tool_decision") && input.flowBootstrap
+      ? { flowBootstrap: {
+        ...input.flowBootstrap,
+        maxInputTokens: Math.min(input.flowBootstrap.maxInputTokens ?? tokenLimitResolution.limits.maxInputTokens, tokenLimitResolution.limits.maxInputTokens)
+      } }
       : {})
   });
   const expectedOutput = input.expectedOutput ?? expectedOutputForTask(input.taskKind);
@@ -400,6 +530,7 @@ export async function runAutomationStudioLlmHarness(input: AutomationStudioLlmHa
   request = { ...request, estimatedInputTokens };
   const budgetDiagnostics = [...tokenLimitResolution.diagnostics, ...timeoutDiagnostics];
   if (input.taskKind === "flow_bootstrap" && !input.flowBootstrap) budgetDiagnostics.push({ severity: "error", code: "bootstrap.registry_context_missing", message: "Flow bootstrap requires a scope-aware node registry context.", path: "flowBootstrap" });
+  if (input.taskKind === "evidence_tool_decision" && !input.evidenceLoop) budgetDiagnostics.push({ severity: "error", code: "evidence_loop.context_missing", message: "Evidence tool decisions require bounded tool and evidence context.", path: "evidenceLoop" });
 if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.length === 0) budgetDiagnostics.push({ severity: "error", code: "bootstrap.instructions_missing", message: "Flow bootstrap requires at least one effective active instruction.", path: "instructions" });
   if (input.taskKind === "flow_bootstrap" && context.flowBootstrap?.nodeCatalog.length === 0) budgetDiagnostics.push({ severity: "error", code: "bootstrap.catalog_empty", message: "Flow bootstrap requires a viable node catalog.", path: "flowBootstrap.nodeCatalog" });
   if (input.taskKind === "flow_bootstrap" && context.flowBootstrap?.catalogSelection.missingRequiredTerms.length) budgetDiagnostics.push({
@@ -543,13 +674,15 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
     return undefined;
   }
   const kind = value.kind;
-  if (kind !== "flow_bootstrap" && kind !== "diagnosis" && kind !== "runtime_patch" && kind !== "change_proposal" && kind !== "instruction_suggestion") {
+  if (kind !== "flow_bootstrap" && kind !== "evidence_tool_decision" && kind !== "diagnosis" && kind !== "runtime_patch" && kind !== "change_proposal" && kind !== "instruction_suggestion") {
     diagnostics.push({ severity: "error", code: "llm_output.invalid_kind", message: "LLM response kind is missing or unsupported.", path: "response.kind" });
     return undefined;
   }
   const commonFields = ["kind", "summary", "metadata"];
   rejectUnexpectedFields(value, kind === "flow_bootstrap"
     ? [...commonFields, "plan"]
+    : kind === "evidence_tool_decision"
+      ? [...commonFields, "decision"]
     : kind === "diagnosis"
       ? [...commonFields, "confidence"]
     : kind === "instruction_suggestion"
@@ -560,6 +693,8 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
   if (kind === "flow_bootstrap") {
     const parsed = parseAutomationStudioFlowBootstrapPlan(value.plan);
     diagnostics.push(...parsed.issues.map((issue) => ({ ...issue, severity: issue.severity, path: issue.path ? `response.${issue.path}` : "response.plan" })));
+  } else if (kind === "evidence_tool_decision") {
+    validateUnknownEvidenceToolDecision(value.decision, diagnostics);
   } else if (kind === "diagnosis") {
     if (value.confidence !== undefined && (!isFiniteNumber(value.confidence) || value.confidence < 0 || value.confidence > 1)) diagnostics.push({ severity: "error", code: "llm_output.invalid_confidence", message: "Diagnosis confidence must be between 0 and 1.", path: "response.confidence" });
   } else if (kind === "runtime_patch") {
@@ -586,6 +721,27 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
   return diagnostics.some((diagnostic) => diagnostic.severity === "error") ? undefined : value as unknown as AutomationStudioLlmStructuredResponse;
 }
 
+function validateUnknownEvidenceToolDecision(value: unknown, diagnostics: AutomationStudioLlmDiagnostic[]): void {
+  const path = "response.decision";
+  if (!isRecord(value)) {
+    diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_decision", message: "Evidence decision must be an object.", path });
+    return;
+  }
+  if (value.kind === "tool_call") {
+    rejectUnexpectedFields(value, ["kind", "callId", "toolId", "input"], path, diagnostics);
+    if (!validRequestIdentity(value.callId as string) || !validRequestIdentity(value.toolId as string) || !isJsonObject(value.input)) {
+      diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_tool_call", message: "Evidence tool call fields are invalid.", path });
+    }
+    return;
+  }
+  if (value.kind === "complete") {
+    rejectUnexpectedFields(value, ["kind", "result"], path, diagnostics);
+    if (!isJsonObject(value.result)) diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_completion", message: "Evidence completion requires a JSON object result.", path });
+    return;
+  }
+  diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_decision", message: "Evidence decision kind is unsupported.", path: `${path}.kind` });
+}
+
 function validateUnknownRuntimePatch(value: unknown, index: number, diagnostics: AutomationStudioLlmDiagnostic[]): void {
   const path = `response.patches.${index}`;
   if (!isRecord(value)) {
@@ -609,9 +765,14 @@ function validateUnknownRuntimePatch(value: unknown, index: number, diagnostics:
   } else if (kind === "temporary_wait_retry") {
     if (!isBoundedString(value.targetNodeId) || !isOptionalNonNegativeInteger(value.timeoutMs) || !isOptionalNonNegativeInteger(value.retryCount)) diagnostics.push({ severity: "error", code: "llm_output.invalid_wait_retry", message: "Temporary wait/retry fields are invalid.", path });
   } else if (kind === "temporary_target_override") {
-    if (!isBoundedString(value.targetNodeId) || !isJsonObject(value.target)) diagnostics.push({ severity: "error", code: "llm_output.invalid_target_override", message: "Temporary target override requires a target node and JSON target.", path });
+    if (!isBoundedString(value.targetNodeId) || !isAutomationStudioRuntimeTargetOverrideTarget(value.target)) diagnostics.push({ severity: "error", code: "llm_output.invalid_target_override", message: "Temporary target override requires a target node and canonical target.", path });
   } else if (kind === "temporary_recovery_subflow_call" && !isBoundedString(value.subflowId)) diagnostics.push({ severity: "error", code: "llm_output.invalid_recovery_subflow", message: "Recovery Subflow call requires a bounded subflowId.", path });
   else if (kind === "temporary_reroute" && (!isBoundedString(value.fromNodeId) || !isBoundedString(value.toNodeId))) diagnostics.push({ severity: "error", code: "llm_output.invalid_reroute", message: "Temporary reroute requires bounded from/to node IDs.", path });
+}
+
+export function isAutomationStudioRuntimeTargetOverrideTarget(value: unknown): value is AutomationStudioRuntimeTargetOverrideTarget {
+  if (!isRecord(value) || Object.keys(value).length !== 1) return false;
+  return typeof value.selector === "string" && value.selector.trim().length > 0 && value.selector.length <= 1_000;
 }
 
 function validateUnknownChangePatch(value: unknown, index: number, diagnostics: AutomationStudioLlmDiagnostic[]): void {
@@ -757,6 +918,7 @@ function isJsonValue(value: unknown, seen = new Set<unknown>(), depth = 0): valu
 
 function stripAutomationStudioLlmResponseMetadata(response: AutomationStudioLlmStructuredResponse): AutomationStudioLlmStructuredResponse {
   if (response.kind === "flow_bootstrap") return { kind: response.kind, summary: response.summary, plan: response.plan };
+  if (response.kind === "evidence_tool_decision") return { kind: response.kind, summary: response.summary, decision: response.decision };
   if (response.kind === "diagnosis") return { kind: response.kind, summary: response.summary, ...(response.confidence !== undefined ? { confidence: response.confidence } : {}) };
   if (response.kind === "runtime_patch") {
     return {
@@ -794,6 +956,7 @@ function stripAutomationStudioLlmResponseMetadata(response: AutomationStudioLlmS
 
 function summarizeAutomationStudioLlmResponse(response: AutomationStudioLlmStructuredResponse): JsonObject {
   if (response.kind === "flow_bootstrap") return { kind: response.kind, subflowCount: response.plan.subflows.length, nodeCount: response.plan.subflows.reduce((count, subflow) => count + subflow.nodes.length, 0), edgeCount: response.plan.subflows.reduce((count, subflow) => count + subflow.edges.length, 0) };
+  if (response.kind === "evidence_tool_decision") return { kind: response.kind, decisionKind: response.decision.kind, ...(response.decision.kind === "tool_call" ? { toolId: response.decision.toolId } : {}) };
   if (response.kind === "diagnosis") return { kind: response.kind, ...(response.confidence !== undefined ? { confidence: response.confidence } : {}) };
   if (response.kind === "runtime_patch") return { kind: response.kind, riskLevel: response.riskLevel, patchCount: response.patches.length, patchKinds: response.patches.map((patch) => patch.kind) };
   if (response.kind === "change_proposal") return { kind: response.kind, riskLevel: response.riskLevel, patchCount: response.patches.length, patchKinds: response.patches.map((patch) => patch.kind) };
@@ -827,7 +990,8 @@ function interventionFromLlmResult(
       instructionCount: request.context.instructions.instructionIds.length,
       recentActionCount: request.context.recentActions?.length ?? 0,
       subflowCount: request.context.subflows?.length ?? 0,
-      dryRun: request.dryRun === true
+      dryRun: request.dryRun === true,
+      ...(request.context.failureEvidence ? { failureEvidence: failureEvidenceProvenance(request.context.failureEvidence) } : {})
     },
     ...(response ? { structuredResult: summarizeAutomationStudioLlmResponse(response) } : {}),
     validation: {
@@ -846,6 +1010,16 @@ function interventionFromLlmResult(
       expectedOutput: request.expectedOutput,
       diagnosticCount: diagnostics.length
     }
+  };
+}
+
+function failureEvidenceProvenance(evidence: JsonObject): JsonObject {
+  const serialized = JSON.stringify(evidence);
+  return {
+    schemaVersion: evidence.schemaVersion as string,
+    byteCount: Buffer.byteLength(serialized, "utf8"),
+    truncated: evidence.truncated === true,
+    digest: createHash("sha256").update(serialized).digest("hex")
   };
 }
 
@@ -884,15 +1058,20 @@ async function runProviderWithEnforcedDeadline(provider: AutomationStudioLlmProv
   else parentSignal?.addEventListener("abort", parentAbort, { once: true });
   const timer = setTimeout(() => controller.abort(), request.timeoutMs);
   try {
-    if (controller.signal.aborted) throw new AutomationStudioLlmProviderError("llm.provider_aborted", "Provider request aborted.");
+    if (controller.signal.aborted) throw providerAbortFailure(parentSignal);
     return await Promise.race([
       provider.runTask(request, { signal: controller.signal }),
-      new Promise<never>((_resolve, reject) => controller.signal.addEventListener("abort", () => reject(new AutomationStudioLlmProviderError(parentSignal?.aborted ? "llm.provider_aborted" : "llm.provider_timeout", "Provider request ended.", !parentSignal?.aborted)), { once: true }))
+      new Promise<never>((_resolve, reject) => controller.signal.addEventListener("abort", () => reject(providerAbortFailure(parentSignal)), { once: true }))
     ]);
   } finally {
     clearTimeout(timer);
     parentSignal?.removeEventListener("abort", parentAbort);
   }
+}
+
+function providerAbortFailure(parentSignal?: AbortSignal): AutomationStudioLlmProviderError {
+  const timedOut = !parentSignal?.aborted || automationStudioLlmSignalTimedOut(parentSignal);
+  return new AutomationStudioLlmProviderError(timedOut ? "llm.provider_timeout" : "llm.provider_aborted", "Provider request ended.", timedOut);
 }
 
 function truncateToEstimatedTokens(value: string, tokens: number): string {
@@ -931,6 +1110,7 @@ function adaptationPolicyGates(policy: AutomationStudioAdaptationPolicy): JsonOb
 
 function expectedOutputForTask(taskKind: AutomationStudioLlmTaskKind): AutomationStudioLlmTaskRequest["expectedOutput"] {
   if (taskKind === "flow_bootstrap") return "flow_bootstrap";
+  if (taskKind === "evidence_tool_decision") return "evidence_tool_decision";
   if (taskKind === "runtime_patch") return "runtime_patch";
   if (taskKind === "instruction_suggestion") return "instruction_suggestion";
   if (taskKind === "change_proposal_generation" || taskKind === "router_patch" || taskKind === "subflow_patch" || taskKind === "expectation_action_target_patch") return "change_proposal";

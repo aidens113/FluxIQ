@@ -124,12 +124,13 @@ describe("Automation Runtime workspace", () => {
 
   it("orders LLM, patch, adaptation, and retry stages", () => {
     const events = runtimeLlmAdaptationEvents({
-      interventions: [{ interventionId: "llm.1", kind: "diagnosis", provider: "deepseek", model: "deepseek-chat", reason: "Diagnose mismatch.", tokenUsage: { totalTokens: 30 } }],
+      interventions: [{ interventionId: "llm.1", kind: "diagnosis", provider: "deepseek", model: "deepseek-chat", reason: "Diagnose mismatch.", tokenUsage: { totalTokens: 30 }, contextSummary: { failureEvidence: { schemaVersion: "web-llm-evidence.v1", byteCount: 1842, truncated: false, digest: "private-digest", selector: "#private-target" } } }],
       adaptationIds: ["adaptation.1"],
       metadata: { runtimePatchAttempts: [{ patchAttemptId: "patch.1", patchedTraceStatus: "succeeded" }], adaptiveRetry: { status: "succeeded", attemptCount: 2 } }
     });
     expect(events.map((event) => event.stage)).toEqual(["LLM", "Patch Test", "Adaptation", "Retry"]);
-    expect(events[0]).toMatchObject({ provider: "deepseek", model: "deepseek-chat", usage: "30 tokens | $0" });
+    expect(events[0]).toMatchObject({ provider: "deepseek", model: "deepseek-chat", usage: "30 tokens | $0", evidenceProvenance: "Sanitized live evidence attached · web-llm-evidence.v1 · 1842 bytes · full" });
+    expect(JSON.stringify(events[0]?.detail)).not.toMatch(/private-digest|private-target/);
     expect(events[2]).toMatchObject({ adaptationId: "adaptation.1", status: "created" });
   });
 
@@ -185,7 +186,7 @@ describe("Automation Runtime workspace", () => {
         summary: { runId: "run.debug.1", flowId: "flow.checkout", status: "failed", startedAt: 10, finishedAt: 20, actionAttemptCount: 1 },
         actionAttempts: [{ attemptId: "attempt.1", nodeId: "submit", status: "failed", inputs: { hidden: "until-expanded" } }],
         recoveryAttempts: [{ recoveryId: "recovery.1", attemptId: "attempt.1", selectedKind: "llm_patch", status: "failed", reason: "No confirmation." }],
-        interventions: [{ interventionId: "llm.1", kind: "diagnosis", provider: "test", model: "small", reason: "Diagnose failure.", tokenUsage: { totalTokens: 12 } }],
+        interventions: [{ interventionId: "llm.1", kind: "diagnosis", provider: "test", model: "small", reason: "Diagnose failure.", tokenUsage: { totalTokens: 12 }, contextSummary: { failureEvidence: { schemaVersion: "web-llm-evidence.v1", byteCount: 512, truncated: true, digest: "hidden-digest" } } }],
         adaptationIds: ["adaptation.1"],
         metadata: { adaptiveMetrics: { llmCallCount: 1, tokenCount: 12, recoveryAttemptCount: 1, durableBehaviorChanged: false } },
         trace: { effects: [], values: { hidden: "until-expanded" } }
@@ -195,6 +196,9 @@ describe("Automation Runtime workspace", () => {
     expect(html).toContain("Export Audit");
     expect(html).toContain("Recovery and Routing");
     expect(html).toContain("LLM and Adaptation");
+    expect(html).toContain("Sanitized live evidence attached · web-llm-evidence.v1 · 512 bytes · truncated");
+    expect(html).toContain('aria-label="LLM failure evidence provenance"');
+    expect(html).not.toContain("hidden-digest");
     expect(html).toContain("State and Effects");
     expect(html).toContain("automation-runtime-attempt-row");
     expect(html).not.toContain("until-expanded");
@@ -321,7 +325,7 @@ describe("Automation Runtime workspace", () => {
     expect(source).not.toContain("setInterval");
   });
 
-  it("maps saved diagnosis limits and keeps password-plus-PIN authorization in Runtime Debug", () => {
+  it("maps saved diagnosis limits and uses authenticated-session authorization in Runtime Debug", () => {
     expect(runtimeLlmExecutionRequestFromFlow("project.one", {
       flowId: "flow.one",
       metadata: {
@@ -334,14 +338,19 @@ describe("Automation Runtime workspace", () => {
           retryCount: 0
         }
       }
-    })).toEqual({ ok: true, payload: { projectId: "project.one", flowId: "flow.one", keyId: "key.deepseek", provider: "deepseek", model: "deepseek-chat", tokenLimits: { maxInputTokens: 2000, maxOutputTokens: 512, maxTotalTokens: 3000 }, maxCalls: 1, timeoutMs: 15000, maxEstimatedCostUsd: 0.1 } });
+    })).toEqual({ ok: true, payload: { projectId: "project.one", flowId: "flow.one", keyId: "key.deepseek", provider: "deepseek", model: "deepseek-chat", purpose: "diagnosis_only", tokenLimits: { maxInputTokens: 2000, maxOutputTokens: 512, maxTotalTokens: 3000 }, maxCalls: 1, timeoutMs: 15000, maxEstimatedCostUsd: 0.1 } });
+    expect(runtimeLlmExecutionRequestFromFlow("project.one", {
+      flowId: "flow.one",
+      metadata: { llmSecretKeyId: "key.deepseek", llmExecutionSettings: { maxCalls: 1 } }
+    }, "diagnose_and_adapt")).toMatchObject({ ok: true, payload: { purpose: "diagnose_and_adapt", maxCalls: 2 } });
     const source = FlowRunViewContent.toString();
     expect(source).toContain("commands.preflightLlm");
     expect(source).toContain("commands.issueLlmGrant");
-    expect(source).toContain("authorizationPassword");
-    expect(source).toContain("authorizationPin");
-    expect(source).toContain('runIntent: "diagnosis_only"');
-    expect(source).toContain("setDiagnosisPassword");
+    expect(source).not.toContain("authorizationPassword");
+    expect(source).not.toContain("authorizationPin");
+    expect(source).toContain("runIntent: mode");
+    expect(source).toContain("diagnose_and_adapt");
+    expect(source).toContain("llmRequestRequiresHighTokenWarning");
     expect(source).not.toContain("authorizedExternalSideEffects");
   });
   it("queues runs before execution so active runs can be stopped", () => {

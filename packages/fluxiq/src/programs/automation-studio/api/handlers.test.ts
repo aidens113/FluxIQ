@@ -32,14 +32,17 @@ describe("Flow LLM execution settings API validation", () => {
     }
   };
 
-  it("accepts bounded diagnosis-only settings", () => {
+  it("accepts bounded one-call diagnosis and two-call diagnose-and-adapt settings", () => {
     expect(() => assertFlowLlmExecutionSettings(valid)).not.toThrow();
+    expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, maxCalls: 8 } })).not.toThrow();
+    expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, timeoutMs: 25_000 } })).not.toThrow();
   });
 
   it("rejects unsupported providers, oversized totals, calls, retries, timeout, and cost", () => {
     expect(() => assertFlowLlmExecutionSettings({ ...valid, llmProvider: "openai" })).toThrow(/DeepSeek/);
     expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, tokenLimits: { ...valid.llmExecutionSettings.tokenLimits, maxTotalTokens: 50001 } } })).toThrow(/limit/);
-    expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, maxCalls: 2 } })).toThrow(/exactly one/);
+    expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, maxCalls: 0 } })).toThrow(/limit/);
+    expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, maxCalls: 9 } })).toThrow(/limit/);
     expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, retryCount: 1 } })).toThrow(/retries/);
     expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, timeoutMs: 25001 } })).toThrow(/limit/);
     expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, maxEstimatedCostUsd: 0.26 } })).toThrow(/cost/);
@@ -136,7 +139,7 @@ describe("Automation Studio LLM execution API", () => {
     const preflight = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.preflightLlmExecution, scope: {}, actor, payload: { keyId: "secret:key", projectId: "project.one", flowId: "flow.one", tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 }, maxCalls: 1, maxEstimatedCostUsd: 0.1, timeoutMs: 10000 } });
     expect(preflight.ok).toBe(true);
     expect(grants.preflight).toHaveBeenCalledWith(expect.objectContaining({ tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 }, maxCalls: 1, maxEstimatedCostUsd: 0.1, timeoutMs: 10000 }));
-    const issued = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.issueLlmExecutionGrant, scope: {}, actor, payload: { authSessionId: "session.one", authorizationPassword: "password", authorizationPin: "123456", keyId: "secret:key", projectId: "project.one", flowId: "flow.one", tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 }, maxCalls: 1, maxEstimatedCostUsd: 0.1, timeoutMs: 10000 } });
+    const issued = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.issueLlmExecutionGrant, scope: {}, actor, payload: { authSessionId: "session.one", keyId: "secret:key", projectId: "project.one", flowId: "flow.one", tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 }, maxCalls: 1, maxEstimatedCostUsd: 0.1, timeoutMs: 10000 } });
     expect(issued).toMatchObject({ ok: true, payload: { grant: { grantId: "llm-grant:one" } } });
     expect(grants.issue).toHaveBeenCalledWith(expect.objectContaining({ actorUserId: "user.one", actorSessionId: "session.one", tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 }, maxCalls: 1, maxEstimatedCostUsd: 0.1, timeoutMs: 10000 }));
     const run = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, scope: {}, actor, payload: { projectId: "project.one", flowId: "flow.one", runIntent: "diagnosis_only", llmExecutionGrantId: "llm-grant:one" } });
@@ -153,24 +156,68 @@ describe("Automation Studio LLM execution API", () => {
     expect(JSON.stringify(issued)).not.toContain("password");
   });
 
-  it("threads bounded build_and_adapt authorization fields without exposing credentials", async () => {
+  it("forwards diagnose_and_adapt as a fresh exact-purpose runtime execution", async () => {
+    const runRuntimeSession = vi.fn().mockResolvedValue({ runId: "run.adapt", status: "failed" });
+    const getFlowRunDetail = vi.fn().mockResolvedValue({
+      adaptationIds: ["adaptation.manual"],
+      summary: { interventionCount: 1 },
+      metadata: { runtimePatchAttempts: [{ adaptationId: "adaptation.manual", approvalDecision: { autoApply: false } }] }
+    });
+    const registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail } as any, undefined, undefined, undefined, { revoke: vi.fn() } as any);
+    const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["runtime.control"] };
+
+    const response = await registry.call({
+      programId: "automation-studio",
+      endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession,
+      scope: {},
+      actor,
+      payload: {
+        projectId: "project.one",
+        flowId: "flow.one",
+        runIntent: "diagnose_and_adapt",
+        llmExecutionGrantId: "llm-grant:adapt"
+      }
+    });
+
+    expect(response).toMatchObject({
+      ok: true,
+      payload: {
+        createdAdaptationIds: ["adaptation.manual"],
+        interventionCount: 1,
+        durableBehaviorChanged: false
+      }
+    });
+    expect(runRuntimeSession).toHaveBeenCalledWith(expect.objectContaining({
+      projectId: "project.one",
+      flowId: "flow.one",
+      llmExecution: {
+        grantId: "llm-grant:adapt",
+        actorUserId: "user.one",
+        actorSessionId: "session.one",
+        purpose: "diagnose_and_adapt"
+      }
+    }));
+  });
+
+  it("threads the explicit bounded four-call exploration profile without credential fields", async () => {
     const grants = {
-      preflight: vi.fn().mockResolvedValue({ purpose: "build_and_adapt", executionDigest: "digest.one", settingsRevision: 3, keyUpdatedAtMs: 4, maxCalls: 2, maxTotalEstimatedCostUsd: 0.2 }),
-      issue: vi.fn().mockResolvedValue({ grantId: "llm-grant:build", purpose: "build_and_adapt", executionDigest: "digest.one", settingsRevision: 3, keyUpdatedAtMs: 4, remainingUses: 2 }),
+      preflight: vi.fn().mockResolvedValue({ purpose: "build_and_adapt", executionDigest: "digest.one", settingsRevision: 3, keyUpdatedAtMs: 4, maxCalls: 4, maxTotalEstimatedCostUsd: 1 }),
+      issue: vi.fn().mockResolvedValue({ grantId: "llm-grant:build", purpose: "build_and_adapt", executionDigest: "digest.one", settingsRevision: 3, keyUpdatedAtMs: 4, remainingUses: 8 }),
       revoke: vi.fn()
     };
     const registry = new GlobalProgramApiRegistry();
     registerAutomationStudioApi(registry, readyLlmApiService({}) as any, undefined, undefined, undefined, grants as any);
     const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["runtime.control"] };
-    const limits = { purpose: "build_and_adapt", keyId: "secret:key", projectId: "project.one", flowId: "flow.one", maxCalls: 2, maxEstimatedCostUsd: 0.1, maxTotalEstimatedCostUsd: 0.2, providerRetryCount: 0 };
+    const limits = { purpose: "build_and_adapt", keyId: "secret:key", projectId: "project.one", flowId: "flow.one", tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 4_000, maxTotalTokens: 12_000 }, maxCalls: 4, timeoutMs: 45_000, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 1, providerRetryCount: 0 };
     const preflight = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.preflightLlmExecution, scope: {}, actor, payload: limits });
-    expect(preflight).toMatchObject({ ok: true, payload: { preflight: { purpose: "build_and_adapt", settingsRevision: 3, maxTotalEstimatedCostUsd: 0.2 } } });
+    expect(preflight).toMatchObject({ ok: true, payload: { preflight: { purpose: "build_and_adapt", settingsRevision: 3, maxCalls: 4, maxTotalEstimatedCostUsd: 1 } } });
     expect(grants.preflight).toHaveBeenCalledWith(expect.objectContaining(limits));
-    const issued = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.issueLlmExecutionGrant, scope: {}, actor, payload: { ...limits, authSessionId: "session.one", authorizationPassword: "private-password", authorizationPin: "654321", maxUses: 2 } });
+    const issued = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.issueLlmExecutionGrant, scope: {}, actor, payload: { ...limits, authSessionId: "session.one", maxUses: 4 } });
     expect(issued).toMatchObject({ ok: true, payload: { grant: { grantId: "llm-grant:build", purpose: "build_and_adapt", settingsRevision: 3 } } });
-    expect(grants.issue).toHaveBeenCalledWith(expect.objectContaining({ purpose: "build_and_adapt", actorUserId: "user.one", actorSessionId: "session.one", maxCalls: 2, maxTotalEstimatedCostUsd: 0.2, providerRetryCount: 0, maxUses: 2 }));
-    expect(JSON.stringify({ preflight, issued })).not.toContain("private-password");
-    expect(JSON.stringify({ preflight, issued })).not.toContain("654321");
+    expect(grants.issue).toHaveBeenCalledWith(expect.objectContaining({ purpose: "build_and_adapt", actorUserId: "user.one", actorSessionId: "session.one", tokenLimits: limits.tokenLimits, maxCalls: 4, timeoutMs: 45_000, maxTotalEstimatedCostUsd: 1, providerRetryCount: 0, maxUses: 4 }));
+    expect(grants.issue.mock.calls[0]?.[0]).not.toHaveProperty("authorizationPassword");
+    expect(grants.issue.mock.calls[0]?.[0]).not.toHaveProperty("authorizationPin");
   });
 
   it("rejects build grants carrying existing-runtime flags before grant issue", async () => {
@@ -314,7 +361,7 @@ describe("Automation Studio LLM execution API", () => {
       endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation,
       scope: {},
       actor,
-      payload: { projectId: "project.one", flowId: "flow.blank", authSessionId: "session.one", llmExecutionGrantId: "llm-grant:build" }
+      payload: { projectId: "project.one", flowId: "flow.blank", authSessionId: "session.one", llmExecutionGrantId: "llm-grant:build", evidenceGuided: true, useReusableContext: true }
     });
 
     expect(grants.inspectAvailable).toHaveBeenCalledWith({
@@ -328,6 +375,8 @@ describe("Automation Studio LLM execution API", () => {
     expect(generateFlowBootstrapAdaptation).toHaveBeenCalledWith({
       projectId: "project.one",
       flowId: "flow.blank",
+      evidenceGuided: true,
+      useReusableContext: true,
       executionGrant: {
         grantId: "llm-grant:build",
         actorUserId: "user.one",
@@ -359,6 +408,20 @@ describe("Automation Studio LLM execution API", () => {
     expect(serialized).not.toContain("secret:key");
     expect(serialized).not.toContain("llm-grant:build");
     expect(serialized).not.toContain("session.one");
+  });
+
+  it("saves a bounded generation instruction with the authenticated session before grant issue", async () => {
+    const saveFlowGenerationInstruction = vi.fn().mockResolvedValue({ instructionId: "instruction.exploration.one", status: "active", updatedAt: 7 });
+    const registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, readyLlmApiService({ saveFlowGenerationInstruction }) as any);
+    const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["flows.write"] };
+    const response = await registry.call({
+      programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowGenerationInstruction, scope: {}, actor,
+      payload: { projectId: "project.one", flowId: "flow.blank", authSessionId: "session.one", instruction: "Inspect evidence and build the Flow." }
+    });
+    expect(saveFlowGenerationInstruction).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.blank", instruction: "Inspect evidence and build the Flow." });
+    expect(response).toEqual({ ok: true, payload: { instruction: { instructionId: "instruction.exploration.one", status: "active", updatedAt: 7 } } });
+    await expect(registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowGenerationInstruction, scope: {}, actor, payload: { projectId: "project.one", flowId: "flow.blank", authSessionId: "session.other", instruction: "x" } })).resolves.toMatchObject({ ok: false, error: "Authorization session mismatch." });
   });
 
   it("rejects unsupported Flow Bootstrap request fields before inspecting or consuming a grant", async () => {
@@ -455,13 +518,13 @@ describe("Automation Studio LLM execution API", () => {
   });
   it("returns only allowlisted Flow Bootstrap provider failure diagnostics and accounting across bundle boundaries", async () => {
     const generateFlowBootstrapAdaptation = vi.fn().mockRejectedValue(Object.assign(
-      new Error("Flow Bootstrap generation failed (llm.provider_http_error)."),
+      new Error("Flow Bootstrap generation failed (flow_bootstrap.provider_output_padding_truncated)."),
       {
         name: "AutomationStudioFlowBootstrapGenerationError",
-        rawResponse: "sensitive response body",
+        rawResponse: "sensitive provider padding",
         diagnostic: {
-          code: "llm.provider_http_error",
-          stage: "provider_request",
+          code: "flow_bootstrap.provider_output_padding_truncated",
+          stage: "provider_output_validation",
           retryable: false,
           providerInvocation: "attempted",
           providerResponse: "received",
@@ -470,7 +533,9 @@ describe("Automation Studio LLM execution API", () => {
             estimatedInputTokens: 1996,
             provider: "deepseek",
             model: "deepseek-chat",
-            providerStatus: 400
+            inputTokens: 1996,
+            outputTokens: 512,
+            totalTokens: 2508
           }
         }
       }
@@ -490,10 +555,10 @@ describe("Automation Studio LLM execution API", () => {
 
     expect(response).toEqual({
       ok: false,
-      error: "Flow Bootstrap generation failed (llm.provider_http_error).",
+      error: "Flow Bootstrap generation failed (flow_bootstrap.provider_output_padding_truncated).",
       payload: { diagnostic: {
-        code: "llm.provider_http_error",
-        stage: "provider_request",
+        code: "flow_bootstrap.provider_output_padding_truncated",
+        stage: "provider_output_validation",
         retryable: false,
         providerInvocation: "attempted",
         providerResponse: "received",
@@ -502,11 +567,13 @@ describe("Automation Studio LLM execution API", () => {
           estimatedInputTokens: 1996,
           provider: "deepseek",
           model: "deepseek-chat",
-          providerStatus: 400
+          inputTokens: 1996,
+          outputTokens: 512,
+          totalTokens: 2508
         }
       } }
     });
-    expect(JSON.stringify(response)).not.toMatch(/secret|prompt|response body|raw upstream|sensitive|grant:build|session\.one/i);
+    expect(JSON.stringify(response)).not.toMatch(/secret|prompt|provider padding|raw upstream|sensitive|grant:build|session\.one/i);
   });
   it("fails closed without raw text when a structural Flow Bootstrap diagnostic is extra, raw, or malformed", async () => {
     const valid = {

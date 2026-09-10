@@ -43,6 +43,13 @@ import {
   type AutomationStudioSaveProjectUiCacheRequest,
   type AutomationStudioDeleteProjectUiCacheRequest,
   type AutomationStudioListProjectUiCacheStatsRequest,
+  type AutomationStudioListReusableLlmContextsRequest,
+  type AutomationStudioGetReusableLlmContextRequest,
+  type AutomationStudioPutReusableLlmContextRequest,
+  type AutomationStudioDeleteReusableLlmContextRequest,
+  type AutomationStudioClearReusableLlmContextScopeRequest,
+  type AutomationStudioPurgeExpiredReusableLlmContextsRequest,
+  type AutomationStudioPackReusableLlmContextsRequest,
   type GetRecordingEntryStateRequest,
   type GenerateFlowBootstrapAdaptationRequest,
   type GenerateFlowBootstrapAdaptationResponse,
@@ -80,7 +87,7 @@ import {
 import type { AutomationStudioFlowDocument, AutomationStudioFlowInstruction, AutomationStudioInstructionScope, AutomationStudioInstructionTag, AutomationStudioProjectArtifactKind } from "../model/index.ts";
 import type { AutomationStudioService } from "../runtime/service.ts";
 import { parseAutomationStudioFlowBootstrapGenerationError } from "../runtime/flow-bootstrap-generation-failure.ts";
-import type { AutomationStudioLlmExecutionGrantService } from "../runtime/llm-execution-grants.ts";
+import { AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS, type AutomationStudioLlmExecutionGrantService } from "../runtime/llm-execution-grants.ts";
 import { evaluateAutomationStudioRouteCondition } from "../runtime/router-runtime.ts";
 import type { IdentityAccessService } from "../../identity-access/index.ts";
 import type { AutomationStudioClientGatewayBridge } from "../client-gateway/index.ts";
@@ -333,6 +340,73 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<AutomationStudioListProjectUiCacheStatsRequest> : {};
       return { ok: true, payload: await service.listProjectUiCacheStats({ projectId: payload.projectId, userId: request.actor?.userId ?? "" }) };
+    }
+  });
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.getReusableLlmContextStatus, permission: "programs.read", handler: async () => ({ ok: true, payload: service.reusableLlmContextStatus() }) });
+  registry.register({
+    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.listReusableLlmContexts, permission: "programs.read",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<AutomationStudioListReusableLlmContextsRequest>;
+      const projectId = String(payload.projectId ?? "");
+      await service.assertProjectDomainAccess(projectId, request.scope.domainId);
+      const domainId = reusableContextDomainForScope(request.scope.domainId, payload.domainId);
+      return { ok: true, payload: { contexts: await service.listReusableLlmContexts({ projectId, ...(typeof payload.flowId === "string" ? { flowId: payload.flowId } : {}), ...(payload.subflowId === null || typeof payload.subflowId === "string" ? { subflowId: payload.subflowId } : {}), ...(domainId ? { domainId } : {}), ...(typeof payload.evidenceKind === "string" ? { evidenceKind: payload.evidenceKind } : {}), ...(typeof payload.evidenceSchemaVersion === "string" ? { evidenceSchemaVersion: payload.evidenceSchemaVersion } : {}), ...(typeof payload.sanitizerVersion === "string" ? { sanitizerVersion: payload.sanitizerVersion } : {}), ...(Array.isArray(payload.compatibilityTags) ? { compatibilityTags: payload.compatibilityTags } : {}), ...(typeof payload.now === "number" ? { now: payload.now } : {}), ...(typeof payload.limit === "number" ? { limit: payload.limit } : {}) }) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.getReusableLlmContext, permission: "programs.read",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<AutomationStudioGetReusableLlmContextRequest>;
+      const projectId = String(payload.projectId ?? ""); await service.assertProjectDomainAccess(projectId, request.scope.domainId);
+      const context = await service.getReusableLlmContext({ projectId, recordId: String(payload.recordId ?? ""), ...(typeof payload.now === "number" ? { now: payload.now } : {}), ...(typeof payload.touch === "boolean" ? { touch: payload.touch } : {}) });
+      if (request.scope.domainId !== undefined && context && context.domainId !== request.scope.domainId) throw new Error("Reusable LLM context domain does not match the authorized scope.");
+      return { ok: true, payload: { context } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.putReusableLlmContext, permission: "flows.write",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<AutomationStudioPutReusableLlmContextRequest>;
+      const projectId = String(payload.projectId ?? ""); await service.assertProjectDomainAccess(projectId, request.scope.domainId);
+      reusableContextDomainForScope(request.scope.domainId, payload.record?.domainId);
+      return { ok: true, payload: { context: await service.putReusableLlmContext({ projectId, record: payload.record as AutomationStudioPutReusableLlmContextRequest["record"], actorId: request.actor!.userId }) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteReusableLlmContext, permission: "flows.write",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<AutomationStudioDeleteReusableLlmContextRequest>;
+      const projectId = String(payload.projectId ?? ""); await service.assertProjectDomainAccess(projectId, request.scope.domainId);
+      const existing = await service.getReusableLlmContext({ projectId, recordId: String(payload.recordId ?? ""), now: 0 });
+      if (request.scope.domainId !== undefined && existing && existing.domainId !== request.scope.domainId) throw new Error("Reusable LLM context domain does not match the authorized scope.");
+      return { ok: true, payload: { deleted: await service.deleteReusableLlmContext({ projectId, recordId: String(payload.recordId ?? ""), actorId: request.actor!.userId, ...(typeof payload.changedAt === "number" ? { changedAt: payload.changedAt } : {}) }) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.clearReusableLlmContextScope, permission: "flows.write",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<AutomationStudioClearReusableLlmContextScopeRequest>;
+      const projectId = String(payload.projectId ?? ""); await service.assertProjectDomainAccess(projectId, request.scope.domainId);
+      const domainId = reusableContextDomainForScope(request.scope.domainId, payload.domainId);
+      return { ok: true, payload: await service.clearReusableLlmContextScope({ projectId, flowId: String(payload.flowId ?? ""), ...(payload.subflowId === null || typeof payload.subflowId === "string" ? { subflowId: payload.subflowId } : {}), ...(domainId ? { domainId } : {}), actorId: request.actor!.userId, ...(typeof payload.changedAt === "number" ? { changedAt: payload.changedAt } : {}) }) };
+    }
+  });
+  registry.register({
+    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.purgeExpiredReusableLlmContexts, permission: "flows.write",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<AutomationStudioPurgeExpiredReusableLlmContextsRequest>;
+      const projectId = String(payload.projectId ?? ""); await service.assertProjectDomainAccess(projectId, request.scope.domainId);
+      const domainId = reusableContextDomainForScope(request.scope.domainId, payload.domainId);
+      return { ok: true, payload: await service.purgeExpiredReusableLlmContexts({ projectId, ...(domainId ? { domainId } : {}), actorId: request.actor!.userId, ...(typeof payload.now === "number" ? { now: payload.now } : {}), ...(typeof payload.limit === "number" ? { limit: payload.limit } : {}) }) };
+    }
+  });
+  registry.register({
+    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.packReusableLlmContexts, permission: "programs.read",
+    handler: async (request) => {
+      const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<AutomationStudioPackReusableLlmContextsRequest>;
+      const projectId = String(payload.projectId ?? ""); await service.assertProjectDomainAccess(projectId, request.scope.domainId);
+      if (request.scope.domainId !== undefined && payload.domainId !== request.scope.domainId) throw new Error("Reusable LLM context domain does not match the authorized scope.");
+      return { ok: true, payload: await service.packReusableLlmContexts({ projectId, flowId: String(payload.flowId ?? ""), ...(payload.subflowId === null || typeof payload.subflowId === "string" ? { subflowId: payload.subflowId } : {}), domainId: String(payload.domainId ?? ""), evidenceKind: String(payload.evidenceKind ?? ""), evidenceSchemaVersion: String(payload.evidenceSchemaVersion ?? ""), sanitizerVersion: String(payload.sanitizerVersion ?? ""), ...(Array.isArray(payload.compatibilityTags) ? { compatibilityTags: payload.compatibilityTags } : {}), maxInputTokens: Number(payload.maxInputTokens), actorId: request.actor!.userId, ...(typeof payload.now === "number" ? { now: payload.now } : {}) }) };
     }
   });
   registry.register({
@@ -1604,7 +1678,23 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
       if (!llmExecutionGrants) return { ok: false, error: "LLM execution is unavailable." };
       if (payload.authSessionId !== request.actor.sessionId) return { ok: false, error: "Authorization session mismatch." };
       if (payload.purpose === "build_and_adapt" && hasIncompatibleBuildGrantFlags(payload)) return { ok: false, error: "build_and_adapt grants require a fresh execution session and cannot authorize runtime flags." };
-      return { ok: true, payload: { grant: await llmExecutionGrants.issue({ actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId, authorizationPassword: payload.authorizationPassword, authorizationPin: payload.authorizationPin, keyId: String(payload.keyId ?? ""), projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), purpose: payload.purpose, provider: payload.provider, model: payload.model, tokenLimits: payload.tokenLimits, maxCalls: payload.maxCalls, maxEstimatedCostUsd: payload.maxEstimatedCostUsd, maxTotalEstimatedCostUsd: payload.maxTotalEstimatedCostUsd, timeoutMs: payload.timeoutMs, providerRetryCount: payload.providerRetryCount, ttlMs: payload.ttlMs, maxUses: payload.maxUses } as Parameters<AutomationStudioLlmExecutionGrantService["issue"]>[0]) } };
+      return { ok: true, payload: { grant: await llmExecutionGrants.issue({ actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId, highTokenConfirmation: payload.highTokenConfirmation, keyId: String(payload.keyId ?? ""), projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), purpose: payload.purpose, provider: payload.provider, model: payload.model, tokenLimits: payload.tokenLimits, maxCalls: payload.maxCalls, maxEstimatedCostUsd: payload.maxEstimatedCostUsd, maxTotalEstimatedCostUsd: payload.maxTotalEstimatedCostUsd, timeoutMs: payload.timeoutMs, providerRetryCount: payload.providerRetryCount, ttlMs: payload.ttlMs, maxUses: payload.maxUses } as Parameters<AutomationStudioLlmExecutionGrantService["issue"]>[0]) } };
+    }
+  });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowGenerationInstruction,
+    permission: "flows.write",
+    handler: async (request) => {
+      if (!request.actor) return { ok: false, error: "Flow generation instruction is unavailable." };
+      const payload = request.payload && typeof request.payload === "object" && !Array.isArray(request.payload)
+        ? request.payload as Record<string, unknown> : {};
+      if (Object.keys(payload).some((key) => !["projectId", "flowId", "authSessionId", "instruction"].includes(key))) return { ok: false, error: "Flow generation instruction request contains unsupported fields." };
+      if (payload.authSessionId !== request.actor.sessionId) return { ok: false, error: "Authorization session mismatch." };
+      const instruction = typeof payload.instruction === "string" ? payload.instruction.trim() : "";
+      if (!instruction || instruction.length > 4_000) return { ok: false, error: "Flow generation instruction must contain 1 to 4,000 characters." };
+      const saved = await service.saveFlowGenerationInstruction({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), instruction });
+      return { ok: true, payload: { instruction: { instructionId: saved.instructionId, status: saved.status, updatedAt: saved.updatedAt } } };
     }
   });
   registry.register({
@@ -1618,6 +1708,8 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
         : {};
       const unknownField = Object.keys(payload).find((key) => !FLOW_BOOTSTRAP_GENERATION_REQUEST_FIELDS.has(key));
       if (unknownField) return { ok: false, error: "Flow bootstrap generation request contains unsupported fields." };
+      if (payload.evidenceGuided !== undefined && payload.evidenceGuided !== true) return { ok: false, error: "Flow bootstrap generation request contains an invalid evidence-guided flag." };
+      if (payload.useReusableContext !== undefined && payload.useReusableContext !== true) return { ok: false, error: "Flow bootstrap generation request contains an invalid reusable-context flag." };
       const readiness = flowBootstrapGenerationReadiness(service, llmExecutionGrants);
       if (!readiness.supported) return flowBootstrapRuntimeUnavailable(readiness);
       if (!llmExecutionGrants) return { ok: false, error: "Flow bootstrap generation is unavailable." };
@@ -1647,7 +1739,9 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
             purpose: "build_and_adapt",
             executionDigest: grant.executionDigest,
             settingsRevision: grant.settingsRevision
-          }
+          },
+          ...(payload.evidenceGuided === true ? { evidenceGuided: true as const } : {}),
+          ...(payload.useReusableContext === true ? { useReusableContext: true as const } : {})
         });
       } catch (error) {
         const diagnostic = parseAutomationStudioFlowBootstrapGenerationError(error);
@@ -1677,12 +1771,16 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession,
     permission: "runtime.control",
     handler: async (request) => {
-      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[]; adaptiveMode?: "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic"; dryRunLlm?: boolean; authorizedExternalSideEffects?: boolean; subflowId?: string; idempotencyKey?: string; llmExecutionGrantId?: string; runIntent?: string } : {};
-      const llmExecution = payload.runIntent === "diagnosis_only" && payload.llmExecutionGrantId && request.actor ? { grantId: payload.llmExecutionGrantId, actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId, purpose: "diagnosis_only" as const } : undefined;
-      if ((payload.runIntent || payload.llmExecutionGrantId) && !llmExecution) return { ok: false, error: "A diagnosis_only intent and grant are required together." };
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[]; adaptiveMode?: "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic"; dryRunLlm?: boolean; authorizedExternalSideEffects?: boolean; subflowId?: string; idempotencyKey?: string; llmExecutionGrantId?: string; runIntent?: string; useReusableContext?: true } : {};
+      if ((payload as Record<string, unknown>).useReusableContext !== undefined && payload.useReusableContext !== true) return { ok: false, error: "Runtime reusable-context flag is invalid." };
+      const runIntent: "diagnosis_only" | "diagnose_and_adapt" | undefined = payload.runIntent === "diagnosis_only"
+        ? "diagnosis_only"
+        : payload.runIntent === "diagnose_and_adapt" ? "diagnose_and_adapt" : undefined;
+      const llmExecution = runIntent && payload.llmExecutionGrantId && request.actor ? { grantId: payload.llmExecutionGrantId, actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId, purpose: runIntent } : undefined;
+      if ((payload.runIntent || payload.llmExecutionGrantId) && !llmExecution) return { ok: false, error: "A supported explicit LLM intent and grant are required together." };
       if (llmExecution && payload.runId !== undefined) {
         llmExecutionGrants?.revoke(llmExecution.grantId);
-        return { ok: false, error: "A diagnosis_only run must create a fresh runtime session." };
+        return { ok: false, error: "An explicit LLM run must create a fresh runtime session." };
       }
       const runtimeSession = await service.runRuntimeSession({ ...payload, ...(llmExecution ? { llmExecution } : {}) });
       const projectId = typeof payload.projectId === "string" ? payload.projectId : null;
@@ -1876,17 +1974,19 @@ export function assertFlowLlmExecutionSettings(metadata: Record<string, unknown>
   const maxOutputTokens = boundedWholeNumber(tokenLimits.maxOutputTokens, 1, 50_000);
   const maxTotalTokens = boundedWholeNumber(tokenLimits.maxTotalTokens, 1, 50_000);
   if (maxInputTokens + maxOutputTokens > maxTotalTokens) throw new Error("LLM input and output limits exceed the total-token limit.");
-  if (value.maxCalls !== 1) throw new Error("diagnosis_only permits exactly one LLM call.");
+  boundedWholeNumber(value.maxCalls, 1, AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS);
   boundedWholeNumber(value.timeoutMs, 1, 25_000);
   if (typeof value.maxEstimatedCostUsd !== "number" || !Number.isFinite(value.maxEstimatedCostUsd) || value.maxEstimatedCostUsd <= 0 || value.maxEstimatedCostUsd > 0.25) throw new Error("LLM estimated-cost limit is invalid.");
-  if (value.retryCount !== 0) throw new Error("diagnosis_only does not permit provider retries.");
+  if (value.retryCount !== 0) throw new Error("Flow LLM execution does not permit provider retries.");
 }
 
 const FLOW_BOOTSTRAP_GENERATION_REQUEST_FIELDS = new Set([
   "projectId",
   "flowId",
   "llmExecutionGrantId",
-  "authSessionId"
+  "authSessionId",
+  "evidenceGuided",
+  "useReusableContext"
 ]);
 
 function flowBootstrapGenerationReadiness(
@@ -1982,4 +2082,13 @@ function hasIncompatibleBuildGrantFlags(payload: Record<string, unknown>): boole
 function boundedWholeNumber(value: unknown, minimum: number, maximum: number): number {
   if (!Number.isInteger(value) || (value as number) < minimum || (value as number) > maximum) throw new Error("LLM execution limit is invalid.");
   return value as number;
+}
+
+function reusableContextDomainForScope(scopeDomainId: string | null | undefined, requestedDomainId: unknown): string | undefined {
+  const requested = typeof requestedDomainId === "string" && requestedDomainId.trim() ? requestedDomainId.trim() : undefined;
+  if (scopeDomainId !== undefined && scopeDomainId !== null) {
+    if (requested !== undefined && requested !== scopeDomainId) throw new Error("Reusable LLM context domain does not match the authorized scope.");
+    return scopeDomainId;
+  }
+  return requested;
 }

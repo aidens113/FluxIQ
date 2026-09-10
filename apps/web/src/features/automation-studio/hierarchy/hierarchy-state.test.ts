@@ -469,6 +469,30 @@ describe("automation hierarchy controller", () => {
     expect(setSelection).not.toHaveBeenCalled();
     expect(openView).not.toHaveBeenCalled();
   });
+  it("opens a Flow folder's declared workspace while preserving Flow selection", () => {
+    const folder: AutomationHierarchyNode = {
+      id: "flow-checkout-adaptations",
+      label: "Adaptations",
+      kind: "folder",
+      category: "flow",
+      parentId: flow.id,
+      viewId: "adaptations",
+      sourceId: "flow.checkout",
+      flowId: "flow.checkout"
+    };
+    const store = createAutomationHierarchyStore();
+    const setSelection = vi.fn();
+    const openView = vi.fn();
+    const controller = createAutomationHierarchyController(store, {
+      nodes: [flow, folder], activeViewId: "flow-router", selection: { kind: "flow", id: "flow.checkout" },
+      recordingPrimaryKind: null, setRecordingPrimaryKind: vi.fn(), setSelection, openView
+    });
+
+    controller.openNode(folder, "preview");
+
+    expect(openView).toHaveBeenCalledWith("adaptations::object::flow.checkout", "preview");
+    expect(setSelection).toHaveBeenCalledWith({ kind: "flow", id: "flow.checkout" });
+  });
   it("delegates subflow selection to its single asynchronous graph-shell path", () => {
     const subflow: AutomationHierarchyNode = {
       id: "subflow-a",
