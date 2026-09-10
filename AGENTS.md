@@ -1,39 +1,54 @@
 # Agent Instructions
 
+## Agent Roles
+
+**Senior supervisor agent** — the agent the user prompts directly. It owns
+coordination, delegation, integration, verification, and the final result. It
+declares the workflow mode, maintains working documents, and is the only role
+that commits and pushes.
+
+**Worker** — any agent invoked by another agent rather than by the user. A
+worker executes one bounded brief, writes back to its own report file, and
+reports honestly on what it did and did not verify. Workers never declare a
+mode, never edit a shared document, and never commit or push.
+
+A worker's completion report is a claim, not verification. The supervisor
+confirms the result itself before treating it as done.
+
 ## Start Here
 
-What you need to read depends on who asked you. Context is a budget; do not
+What you need to read depends on your role. Context is a budget; do not
 spend it on documents your task will not use.
 
-**Primary agent, responding to a human prompt.** Read this file, then the
+**Senior supervisor agent.** Read this file, then the
 [working document index](docs/working/README.md) and the `Current State`
 section of the relevant document before touching work already in progress.
 
-**Subagent, working from a brief.** Read your brief, the files it names, and
-the `Current State` of the working document it points to. Do not read the
-rest of a working document or the rest of this file unless your brief says
-to. If your brief is not enough to do the work correctly, say so instead of
-reading broadly. A subagent sent here from the downstream FluxIQ Web
-Extension repository should also read the [Repository
-Boundary](#repository-boundary) section, since keeping this framework
-domain-neutral is the constraint most easily broken from outside.
+**Worker.** Read your brief, the files it names, and the `Current State` of
+the working document it points to. Do not read the rest of a working document
+or the rest of this file unless your brief says to. If your brief is not
+enough to do the work correctly, say so instead of reading broadly. A worker
+sent here from the downstream FluxIQ Web Extension repository should also
+read the [Repository Boundary](#repository-boundary) section, since keeping
+this framework domain-neutral is the constraint most easily broken from
+outside.
 
-**Everyone.** The repository boundary, documentation, and validation rules in
-this file are binding whether or not you read the background documents.
+**Both roles.** The repository boundary, documentation, and validation rules
+in this file are binding whether or not you read the background documents.
 
 Re-read background documents only when the task changes scope or the user
 asks for their current guidance.
 
 ## Working Documents Are Agent Memory
 
-Agent context does not survive a session, and subagents share no context with
-each other or with the primary agent. Documents under `docs/working/` are the
+Agent context does not survive a session, and workers share no context with
+each other or with the supervisor. Documents under `docs/working/` are the
 only channel through which one agent's knowledge reaches the next.
 
 - Record findings, decisions, and validation results as the work happens, not
   as an end-of-task summary.
-- Give subagents a written brief before dispatch; each writes back to its own
-  report file. Subagents never edit a shared document.
+- Brief every worker in writing before dispatch; each writes back to its own
+  report file. Partition briefs by file, never by topic.
 - Commit working document updates with the work that changed them.
 
 The [agent working document protocol](docs/working/agent-working-doc-protocol.md)
@@ -45,13 +60,13 @@ the same work unit.
 
 ## Workflow Modes
 
-Classify each user prompt into one of the modes below and state it in your
-first user-facing response as `Mode: <mode name>`, listing several in
-execution order if more than one applies. Do not repeat the label in later
-follow-ups or progress updates for the same prompt, but announce a transition
-once when it happens. This applies to the primary agent only; subagents work
-from their brief and do not declare modes. Classification follows the user's
-intent, and the newest instruction takes precedence.
+The senior supervisor agent classifies each user prompt into one of the modes
+below and states it in the first user-facing response as `Mode: <mode name>`,
+listing several in execution order if more than one applies. Do not repeat
+the label in later follow-ups or progress updates for the same prompt, but
+announce a transition once when it happens. Workers do not declare modes.
+Classification follows the user's intent, and the newest instruction takes
+precedence.
 
 If you are genuinely unsure which mode the user intends, ask them to choose
 or clarify before beginning substantive work. Minimal inspection needed to
@@ -75,17 +90,17 @@ work before implementation.
   plan. Small investigative changes or probes are allowed when needed to make
   the plan accurate.
 
-### 2. Execute Plan With Subagents
+### 2. Execute Plan With Workers
 
 Use this mode when the user asks to implement an existing plan, complete its
 phases, or explicitly requests subagents.
 
 - Read the current working document before assigning work.
-- Divide independent phases or steps among subagents when subagents are
-  available and parallel work is safe.
-- The primary agent owns coordination, integration, conflict resolution,
-  review, validation, and the final result; subagent completion reports are not
-  sufficient verification by themselves.
+- Divide independent phases or steps among workers when parallel work is
+  safe, partitioning by file. If two briefs need the same file, the work is
+  serial.
+- The supervisor owns coordination, integration, conflict resolution, review,
+  validation, and the final result.
 - Update and reference the working document as each step or phase is assigned,
   completed, validated, blocked, or revised.
 - Continue through every requested phase unless the user pauses the work or a
@@ -119,7 +134,7 @@ make the application available for the user to test interactively.
 - Establish the expected behavior and select the narrowest useful combination
   of automated, integration, browser, performance, and manual tests.
 - Run relevant checks and inspect their actual results; do not report success
-  based only on compilation or a subagent's completion report.
+  based only on compilation or a worker's completion report.
 - When browser behavior is involved, perform live browser testing when the
   required browser tooling and environment are available.
 - The agent may start, stop, or restart the panel only when the user has
@@ -218,3 +233,34 @@ Otherwise, tell them to run it manually with:
 ```bash
 pnpm --filter @fluxiq/web dev
 ```
+
+## Committing And Pushing
+
+Only the senior supervisor agent commits or pushes. Workers never do.
+
+Push `dev` without being asked once all of the following hold:
+
+1. The work is a complete, coherent unit — not a partial refactor or an
+   experiment left mid-flight.
+2. The relevant checks were actually run and observed to pass. Compilation
+   alone, or a worker reporting success, does not qualify.
+3. Nothing known to be broken is included.
+
+When a change spans this repository and the downstream FluxIQ Web Extension
+repository, push both `dev` branches in the same work unit so the two sides
+do not drift, and say so. A framework change that downstream code depends on
+must not sit unpushed while the downstream change ships.
+
+Otherwise: commit locally and explain what is holding the push. Always state
+what was pushed and what was not.
+
+These actions still require explicit user approval every time:
+
+- pushing to `main`, or opening a pull request into it;
+- force-pushing anything;
+- rewriting history, including `filter-repo`, `rebase -i`, and amends to
+  already-pushed commits;
+- deleting branches or tags on the remote.
+
+Never commit secrets, private project data, recordings, or generated runtime
+state. Never use `--no-verify`.
