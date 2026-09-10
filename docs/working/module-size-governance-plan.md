@@ -306,3 +306,9 @@ already links this repository's methodology rather than restating it.
 - **Should the audit enforce the working-document 800-line compaction
   threshold too?** Same mechanism, different file set. Owner: senior
   supervisor agent.
+- **Should directories have a subdirectory cap?** The 25-file cap does not
+  count directories. `apps/web/src/features/automation-studio/` has roughly
+  thirty immediate subdirectories, which is navigable today but unbounded.
+  Options: a cap of about 15 subdirectories, or a grouping pass into
+  `editor/`, `runtime/`, `project/`. A product-sized feature may legitimately
+  have many areas, so this is a decision, not a defect. Owner: user.

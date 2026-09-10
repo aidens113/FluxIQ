@@ -1,8 +1,15 @@
 # Codebase Audit Remediation Plan
 
-Status: working document  
-Created: 2026-08-04  
+Status: Complete
+Status detail: Previously "working document". All seven audit points implemented by 2026-08-06; remaining items are owner legal and commercial work, not engineering.
+Created: 2026-08-04
+Last updated: 2026-09-10
+Owner: FluxIQ framework
 Scope: FluxIQ public framework repository
+Paired document: none
+Related: none
+
+---
 
 This document preserves the findings from the August 2026 codebase audit and
 tracks remediation work. It is intentionally a working document. Decisions,

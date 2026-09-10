@@ -1,5 +1,55 @@
 # Web Panel UI/UX And Functionality Remediation Plan
 
+Status: Complete
+Status detail: The original status line read "audit complete; disclosure-control repairs implemented; remediation backlog ready"; the plan has since executed Phases 0 through 8, the Phase 8 release gate closed on 2026-09-01 with no open blockers, the Next Action section declares the audit and remediation plan complete, and a 2026-09-02 Settings navigation maintenance record was appended afterwards.
+Created: 2026-08-31
+Last updated: 2026-09-10
+Owner: FluxIQ Web and Automation Studio
+Scope: Audit and remediation of UI, UX, accessibility, performance, and functional defects across the whole FluxIQ web panel (Automation Studio views, shared workspace/render architecture, shared primitives, authentication, and all nine global programs), tracked as findings F-001 through F-055 and executed through Phases 0 through 8 with browser and scale certification.
+Paired document: none
+Related: docs/operations/web-panel-phase8-browser-scale-certification.md, docs/operations/web-panel-responsive-visual-certification.md, docs/architecture/automation-studio/workspace.md, docs/architecture/automation-studio/persistence.md
+
+---
+
+## Current State
+
+As of 2026-09-10 this document is a completed and closed remediation plan. Every statement below is taken from the document's own Implementation Tracking table, its Phase 0 through Phase 8 completion records, its Next Action section, and its 2026-09-02 maintenance record.
+
+**What is true now**
+
+- The Implementation Tracking table marks all nine phases (Phase 0 Correctness Gate through Phase 8 Browser And Scale Certification) as completed. Phases 0 through 7 were completed and verified on 2026-08-31; Phase 8 was completed and verified on 2026-09-01.
+- The Phase 8 completion record ends with "Open release-gate blockers: None" and records that "Phase 8 and the complete audit plan satisfy the Definition of Done."
+- The Next Action section states that the audit and remediation plan is complete and that any new scope should begin in a separate working document.
+- The accepted production performance envelope and the browser certification protocol are recorded in the authored documents `docs/operations/web-panel-phase8-browser-scale-certification.md` and `docs/architecture/automation-studio/workspace.md`; the document states those authored documents no longer claim browser certification is pending.
+- A post-completion maintenance record dated 2026-09-02 (Settings Navigation Redesign) moved Flow and Subflow Settings to a shared two-pane layout, made Flow Settings read persisted values from the bounded SQL metadata-detail endpoint, and made settings save through a dedicated server-side merge mutation; focused Settings tests and the web TypeScript check passed.
+- The loose "Status:", "Owner:", and "Last updated: 2026-08-31" lines immediately below this section are the document's original header lines. They predate the completion records and are stale; this block is authoritative.
+
+**Done**
+
+- Findings F-001 through F-055 (P0 correctness and work preservation; P1 interaction, focus, and accessibility; responsiveness and scalable data UX; workspace render and state architecture; view and global program functionality; P2 product clarity; P0 session and authentication resilience; P1 shared request and route recovery) were remediated through the Phase 0 through Phase 8 step lists. Each phase's completion record enumerates its steps, implementation locations, and verification evidence.
+- Final repository gates on the repaired final tree all pass: root `pnpm test` (web 1,045 tests across 211 files; FluxIQ 526 tests across 85 files; client-gateway websocket 3 tests), root `pnpm build` (16 Next.js static-generation steps plus every dynamic route), root `pnpm check`, `pnpm docs:check` (52 authored/reference Markdown files and 1,395 generated declarations), and `git diff --check` (line-ending notices only).
+- Browser certification: exactly 144 production-routed Phase 8 Playwright tests across 6 files and 12 browser/viewport projects; every required Chromium, Edge, and Firefox functional profile (desktop, 768x500 short/tablet, 320x568 mobile, and 200-percent-equivalent) passes; 32 of 32 deterministic Chromium visual baselines pass.
+- Fixtures: the Empty, Ordinary, and Scale fixtures are materialized and independently verified at exact counts (Scale: 250 Flows, 5,000 subflows, 50,000 hierarchy objects, 5,000 active graph nodes, 10,000 routes, 250,000 run events, 100,000 Problems, 100,000 Docs, 250 runs, 5,000 adaptations, one recording).
+- Normalized production performance gate: the corrected 7.4-minute serial certification report covers Empty, Ordinary, and Scale with zero violations and no budget relaxation (input feedback p95 11.9 to 13.7 ms; retained-warm switching p95 12.4 to 12.9 ms; project entry p95 75.6 to 89.1 ms; durable listeners return 170 to 170; retained heap growth 2.01 to 2.65 MiB; zero core-interaction long tasks; zero critical accessibility violations).
+- Product defects exposed by live certification were fixed before acceptance, including DOM-only tab acknowledgement with deferred durable selection, post-paint cancellable cold-view activation, hierarchy ARIA ownership, Database Manager remount recovery, legacy Subflow and Router SQL projection, a Flow-instruction SQL projection repair, constrained-viewport Timeline scrolling, and mobile Firefox pane geometry.
+
+**Not done**
+
+- No finding, phase step, or acceptance criterion is recorded as open, rejected, or blocked.
+- The only explicitly named follow-up is Scale fixture bulk-seed throughput: Scale seeding took approximately 43 minutes and the Phase 8 record calls this "a follow-up optimization, not a correctness exception". No owner, plan, or document for that follow-up is named here.
+- Several completion records note a recurring Windows Vitest worker exit (status 3221225477) during full-suite or combined docs:check runs in Phases 0, 1, 5, and 8. In each case no assertion failed, and the final root `pnpm test`, `pnpm build`, `pnpm check`, and `pnpm docs:check` gates are recorded as exiting successfully on the final tree.
+
+**Next steps**
+
+- Per the Next Action section: preserve the accepted browser artifacts and performance envelope as regression gates for future Automation Studio and global-program changes.
+- Any new web panel scope must begin in a separate working document. This document should only receive maintenance records (as the 2026-09-02 Settings record did), not new phases or findings.
+
+**Blockers**
+
+- None. The Phase 8 completion record states "Open release-gate blockers: None."
+
+---
+
 Status: audit complete; disclosure-control repairs implemented; remediation backlog ready
 
 Owner: FluxIQ Web and Automation Studio

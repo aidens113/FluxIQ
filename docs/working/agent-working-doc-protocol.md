@@ -1,8 +1,8 @@
 # Agent Working Document Protocol
 
 Status: Active
-Status detail: Protocol defined and adopted in both repositories; backlog
-triage and compaction of oversized documents remain.
+Status detail: Protocol adopted; triage, retirement, and Current State retrofits
+are complete here; compaction of oversized documents remains, on touch.
 Created: 2026-09-10
 Last updated: 2026-09-10
 Owner: Senior supervisor agent
@@ -30,33 +30,34 @@ header block, ledger format, and lifecycle defined in
 
 **Done**
 
-- Protocol authored in the downstream web-extension repository and mirrored
-  here.
-- [Working document index](./README.md) created in both repositories and
-  populated from the existing documents.
+- Protocol authored downstream and mirrored here.
+- [Working document index](./README.md) exists in both repositories and is
+  derived from each document's header block.
 - `AGENTS.md` in both repositories links to the protocol and the index.
+- Phase 2 triage: all 24 documents here carry a conforming header with a
+  real status. Nothing is `Unclassified`.
+- Phase 5 retirement: the six Automation Studio plans superseded on
+  2026-08-29 carry `Status: Superseded` naming their successor.
+- Phase 3 retrofit: every `Active` document carries a `Current State`
+  section, written by workers under the briefs below and verified by the
+  supervisor. One reclassified itself to Complete on its own evidence
+  (`web-panel-ui-ux-functionality-audit-plan.md`). Worker reports, including
+  each document's stale or contradictory statements, are under
+  `agent-working-doc-protocol/reports/`.
 
 **Not done**
 
-- Ten documents here and three downstream carry `Unclassified` status because
-  their headers predate the controlled vocabulary. Each needs a one-time
-  triage pass to set a real status, owner, and pairing.
-- Oversized documents have not been compacted. The index flags every document
-  over 800 lines; sixteen of this repository's twenty-four qualify. The
-  largest, `ui-ux-upgrade-audit-plan.md` at 5,944 lines, cannot be read by any
-  agent within a normal context budget.
-- No existing document has a `Current State` section yet. Retrofit happens
-  opportunistically: the next agent to touch a document adds one.
+- Oversized documents have not been compacted. Sixteen here exceed 800
+  lines; compaction happens on touch, per [Compaction](#compaction).
 
 **Next steps**
 
-1. Triage `Unclassified` documents, starting with
-   `action-visual-entity-target-plan.md`, which exists under the same name in
-   both repositories with no declared owner.
-2. Retrofit `Current State` into `adaptive-flow-training-roadmap.md`, which
-   drives the adaptation work the downstream MVP depends on.
-3. Compact documents over 800 lines as they are next touched, per
-   [Compaction](#compaction).
+1. Compact documents over 800 lines as they are next touched.
+2. When a retrofitted document is next edited, resolve the stale statements
+   its worker report lists.
+3. Amend the brief format in both repositories to require a unique scratch
+   filename per worker: two workers sharing one scratchpad overwrote each
+   other's scratch file once (targets verified unaffected).
 
 **Blockers:** none.
 
@@ -316,6 +317,84 @@ the index with their successor named, so no agent reads them as current.
 
 ---
 
+## Worker Briefs
+
+Dispatched 2026-09-10 for Rollout Phase 3 (retrofit `Current State`). Shared
+task definition, then one brief per document.
+
+**Shared task.** Bring the target document into conformance with
+[Header block](#header-block) and [Section order](#section-order) by adding,
+not rewriting: insert a conforming header block directly after the H1
+(mapping any existing status prose onto the controlled vocabulary and
+keeping the original wording in `Status detail`), then a `## Current State`
+section under 150 lines directly after the header, sourced from the
+document's existing status prose and its most recent dated checkpoint. Do
+not reorder, delete, compact, or reword any existing content; do not touch
+the ledger or open questions; do not commit or push. Set `Last updated` to
+2026-09-10. Verify done by confirming the line count grew by exactly the
+inserted lines.
+
+**Shared report.** In the report file: the status chosen and why; owner;
+best-guess paired downstream document or `none`; the five facts an agent
+resuming this work most needs; any internal contradictions found; the exact
+`wc -l` before and after.
+
+### Brief: cs-adaptive-flow
+- Repository: this repository
+- Task: shared task on `docs/working/adaptive-flow-training-roadmap.md`
+- Required reads: this document's Header block and Section order; the whole target
+- Owns (may edit): `docs/working/adaptive-flow-training-roadmap.md`
+- Must not touch: any other file
+- Definition of done: shared task complete; report written
+- Report to: docs/working/agent-working-doc-protocol/reports/cs-adaptive-flow.md
+
+### Brief: cs-render-data
+- Repository: this repository
+- Task: shared task on `docs/working/automation-studio-render-data-separation-plan.md`
+- Required reads: as above; the whole target
+- Owns (may edit): that file only
+- Must not touch: any other file
+- Definition of done: shared task complete; report written
+- Report to: docs/working/agent-working-doc-protocol/reports/cs-render-data.md
+
+### Brief: cs-scalable-data
+- Repository: this repository
+- Task: shared task on `docs/working/automation-studio-scalable-data-architecture-plan.md`
+- Required reads: as above; the whole target
+- Owns (may edit): that file only
+- Must not touch: any other file
+- Definition of done: shared task complete; report written
+- Report to: docs/working/agent-working-doc-protocol/reports/cs-scalable-data.md
+
+### Brief: cs-runtime-debug-ui
+- Repository: this repository
+- Task: shared task on `docs/working/automation-studio-runtime-debug-ui-cleanup.md`
+- Required reads: as above; the whole target
+- Owns (may edit): that file only
+- Must not touch: any other file
+- Definition of done: shared task complete; report written
+- Report to: docs/working/agent-working-doc-protocol/reports/cs-runtime-debug-ui.md
+
+### Brief: cs-ui-ux-upgrade
+- Repository: this repository
+- Task: shared task on `docs/working/ui-ux-upgrade-audit-plan.md` (5,944 lines; read it in sections)
+- Required reads: as above; the whole target
+- Owns (may edit): that file only
+- Must not touch: any other file
+- Definition of done: shared task complete; report written
+- Report to: docs/working/agent-working-doc-protocol/reports/cs-ui-ux-upgrade.md
+
+### Brief: cs-web-panel-ui-ux
+- Repository: this repository
+- Task: shared task on `docs/working/web-panel-ui-ux-functionality-audit-plan.md`
+- Required reads: as above; the whole target
+- Owns (may edit): that file only
+- Must not touch: any other file
+- Definition of done: shared task complete; report written
+- Report to: docs/working/agent-working-doc-protocol/reports/cs-web-panel-ui-ux.md
+
+---
+
 ## Work Ledger
 
 ### 2026-09-10 — Protocol authored and adopted in both repositories
@@ -345,6 +424,47 @@ the index with their successor named, so no agent reads them as current.
   downstream. Documentation only, so no build or test check applies.
 - Outcome: Accepted
 - Follow-up: Phase 2 triage of `Unclassified` documents.
+
+### 2026-09-10 — Rollout Phases 2 and 5: triage and retirement
+
+- Agent: supervisor
+- Changed: conforming header blocks inserted on 17 documents — the 10
+  previously `Unclassified` (now 5 Complete, 5 Paused), the 6 Superseded
+  Automation Studio plans, and `automation-studio-element-target-fingerprints-plan.md`
+  (Complete). Each document's original status wording is preserved in
+  `Status detail`; loose metadata lines directly under the H1 were replaced
+  by the block, and the 2026-08-29 historical notices were kept.
+- Why: Every document needs a machine-readable status before the index can
+  be derived from headers rather than maintained by hand. Statuses were set
+  from each document's own ledger: Complete where its phases or steps are
+  all marked done, Paused where unfinished items remain with no activity
+  since before 2026-09-01.
+- Validation: the insertion script printed before/after line counts for all
+  17; three headers were read back — superseded notice preserved, a wrapped
+  `Scope` folded correctly, loose metadata replaced. Documentation only.
+- Outcome: Accepted
+- Follow-up: Phase 3 retrofits by workers; regenerate the index from headers.
+
+### 2026-09-10 — Rollout Phase 3: Current State retrofits
+
+- Agent: supervisor, with workers cs-adaptive-flow, cs-render-data,
+  cs-scalable-data, cs-runtime-debug-ui, cs-ui-ux-upgrade, cs-web-panel-ui-ux
+- Changed: six `Active` documents gained a header block and `Current State`
+  (+151, +116, +151, +35, +63, +50 lines); six reports under
+  `agent-working-doc-protocol/reports/`; index regenerated from headers.
+- Why: Every `Active` document needs an authoritative `Current State` an
+  agent can read without reconstructing it from history.
+- Validation: each retrofit checked by script — eight header fields in
+  order, `Current State` directly after the header and under 150 lines,
+  `git diff` additions-only in one hunk at the top. Three needed a
+  supervisor fix before passing: two omitted the blank line after the H1,
+  one wrapped `Scope` onto a second line. `ui-ux-upgrade-audit-plan.md`
+  showed CRLF in the working copy; the committed file has none and
+  `git diff` reports 63/0, so repository content is unaffected. A
+  cross-contamination grep between the two workers that shared a scratch
+  file returned 0 hits each way.
+- Outcome: Accepted
+- Follow-up: compaction on touch; unique scratch filenames in briefs.
 
 ---
 

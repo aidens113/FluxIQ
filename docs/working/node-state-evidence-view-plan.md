@@ -1,10 +1,15 @@
 # Node State Evidence View Plan
 
-Status: working document  
-Created: 2026-08-12  
-Scope: FluxIQ Automation Studio state/evidence contracts, importer SDK
-presentation hints, node state inspection, and the existing addable workspace
-window system.
+Status: Complete
+Status detail: Previously "working document". Implemented and validated with pnpm check, test, build, and docs:check per the ledger.
+Created: 2026-08-12
+Last updated: 2026-09-10
+Owner: Automation Studio
+Scope: FluxIQ Automation Studio state/evidence contracts, importer SDK presentation hints, node state inspection, and the existing addable workspace window system.
+Paired document: none
+Related: none
+
+---
 
 This document plans the node state/evidence system after the Flow refactor.
 It is intentionally a working document. The target is to make FluxIQ explain

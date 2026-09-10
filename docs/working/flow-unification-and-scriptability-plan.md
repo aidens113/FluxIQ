@@ -1,8 +1,15 @@
 # Flow Unification and Scriptability Plan
 
-Status: working document  
-Created: 2026-08-07  
+Status: Paused
+Status detail: Previously "working document". Parts 1-4 implemented additively 2026-08-07; Task/Routine compatibility and migration slices not started; no activity since 2026-08-09.
+Created: 2026-08-07
+Last updated: 2026-09-10
+Owner: Automation Studio
 Scope: FluxIQ Automation Studio, public domain-neutral contracts, and the web editor. This plan is not authorization for an unreviewed destructive data migration.
+Paired document: none
+Related: none
+
+---
 
 Implementation progress: Parts 1--11 implemented and validated 2026-08-07.
 

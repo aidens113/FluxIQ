@@ -1,5 +1,16 @@
 # Automation Studio Fast UI Cache Plan
 
+Status: Superseded
+Status detail: Superseded 2026-08-29 by automation-studio-render-data-separation-plan.md and docs/architecture/automation-studio/workspace.md, which own current Studio render/runtime topology. Retained for audit and implementation evidence.
+Created: 2026-08-28
+Last updated: 2026-09-10
+Owner: Automation Studio
+Scope: Fast UI cache for Automation Studio project views so refreshes read summaries instead of full documents.
+Paired document: none
+Related: [automation-studio-render-data-separation-plan.md](./automation-studio-render-data-separation-plan.md)
+
+---
+
 > Historical tracking notice (2026-08-29): this document preserves its audit and implementation evidence, but it no longer owns current Automation Studio render/runtime status. Current topology and remaining certification work are tracked in [Automation Studio render/data separation plan](./automation-studio-render-data-separation-plan.md) and [Automation Studio workspace architecture](../architecture/automation-studio/workspace.md).
 
 Status: in progress

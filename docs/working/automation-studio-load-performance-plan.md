@@ -1,5 +1,16 @@
 # Automation Studio Load Performance Plan
 
+Status: Superseded
+Status detail: Superseded 2026-08-29 by automation-studio-render-data-separation-plan.md and docs/architecture/automation-studio/workspace.md, which own current Studio render/runtime topology. Retained for audit and implementation evidence.
+Created: 2026-08-22
+Last updated: 2026-09-10
+Owner: Automation Studio
+Scope: Summary-first load performance for project open, pane switching, runtime debug, and Flow browsing.
+Paired document: none
+Related: [automation-studio-render-data-separation-plan.md](./automation-studio-render-data-separation-plan.md)
+
+---
+
 > Historical tracking notice (2026-08-29): this document preserves its audit and implementation evidence, but it no longer owns current Automation Studio render/runtime status. Current topology and remaining certification work are tracked in [Automation Studio render/data separation plan](./automation-studio-render-data-separation-plan.md) and [Automation Studio workspace architecture](../architecture/automation-studio/workspace.md).
 
 Automation Studio must treat project open, pane switching, runtime debug, and

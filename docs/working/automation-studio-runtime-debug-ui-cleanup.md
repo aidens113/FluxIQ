@@ -1,5 +1,40 @@
 # Automation Studio Runtime Debug UI Cleanup
 
+Status: Active
+Status detail: Implemented; live browser review pending (the restructure is in place and focused tests pass, but live browser validation and a clean web typecheck are still outstanding).
+Created: 2026-09-05
+Last updated: 2026-09-10
+Owner: Automation Studio web UI
+Scope: Restructure the Flow-owned Runtime Debug inner view in Automation Studio (run launcher, Runs/Replays history, responsive styling) into one configure-run-inspect workflow while preserving runtime commands, bounded data loading, query pagination, subscriptions, and detail navigation.
+Paired document: none
+Related: none
+
+---
+
+## Current State
+
+**Summary:** The document's own status line reads "Implemented; live browser review pending". The three implementation phases (view hierarchy, history hierarchy, responsive styling and test coverage) are recorded as delivered, but final validation is incomplete because live browser review and the web typecheck have not been completed.
+
+**Done**
+- Focused Runtime Debug and style validation passed: 6 files, 39 tests.
+- Runtime input interaction coverage includes the pre-existing `no_llm_intervention` readiness change and passes.
+- Large-project run history still renders only the 25-row SQL page and retains explicit loading, error, and empty states.
+- Full web test run: 213 files passed, 7 failed. The failures belong to separate view-identity/hierarchy/cache architecture work, not this effort; one Runtime Debug copy assertion was corrected and revalidated in the focused suite.
+
+**Not done**
+- Live browser review of the revised Runtime Debug view has not been run.
+- Web typecheck has not passed.
+
+**Next steps**
+- Run the live browser review once panel management is authorized for a session.
+- Re-run the web typecheck once the pre-existing errors noted below are cleared.
+
+**Blockers**
+- Live browser review: panel management was not authorized for the implementing session.
+- Web typecheck: pre-existing errors in `live/AutomationStudioSession.tsx` (unsupported `transport` option) and `live/useAutomationHierarchyUiRuntime.ts` (duplicate object properties), which this effort did not introduce.
+
+---
+
 Date: 2026-09-05
 Status: Implemented; live browser review pending
 Owner: Automation Studio web UI

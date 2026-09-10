@@ -1,9 +1,15 @@
 # LLM-Assisted Deterministic Automation Expansion Plan
 
-Status: working document  
-Scope: FluxIQ core product direction, Automation Studio, Flow runtime,
-LLM-assisted adaptation, training history, and persistence contracts.  
-Related plans:
+Status: Paused
+Status detail: Previously "working document". Last activity 2026-08-25. Live LLM work is carried by adaptive-flow-training-roadmap.md and the downstream llm-production-automation-plan.md; this document retains the 41-phase expansion backlog.
+Created: 2026-08-23
+Last updated: 2026-09-10
+Owner: FluxIQ framework
+Scope: FluxIQ core product direction, Automation Studio, Flow runtime, LLM-assisted adaptation, training history, and persistence contracts. Related plans:
+Paired document: `F:\!FluxIQWebExtension\docs\working\llm-production-automation-plan.md`
+Related: [adaptive-flow-training-roadmap.md](./adaptive-flow-training-roadmap.md)
+
+---
 
 - `docs/working/flow-unification-and-scriptability-plan.md`
 - `docs/working/runtime-kernel-plan.md`

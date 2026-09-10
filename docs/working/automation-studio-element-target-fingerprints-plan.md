@@ -1,10 +1,15 @@
 # Automation Studio Element Target Fingerprints Plan
 
-Status: implemented  
-Created: 2026-08-22  
-Scope: Automation Studio recording capture, recording mappers, native/custom
-extension output nodes, runtime element matching, and domain-neutral persisted
-target contracts.
+Status: Complete
+Status detail: Previously "implemented". Implemented.
+Created: 2026-08-22
+Last updated: 2026-09-10
+Owner: Automation Studio
+Scope: Automation Studio recording capture, recording mappers, native/custom extension output nodes, runtime element matching, and domain-neutral persisted target contracts.
+Paired document: none
+Related: none
+
+---
 
 Implementation progress:
 

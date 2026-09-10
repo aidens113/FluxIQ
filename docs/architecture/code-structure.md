@@ -34,7 +34,7 @@ Every source file answers four questions, in order. The answers are its path.
 | Program-flavoured code used by two or more global programs: program API helpers, authorization, catalog, shared storage helpers | `packages/fluxiq/src/programs/_shared/` |
 | Code for exactly one global program | `packages/fluxiq/src/programs/<program-id>/` |
 | Web UI for one feature of the panel | `apps/web/src/features/<feature>/` |
-| Next.js routes and API route handlers | `apps/web/src/app/` — routing only; feature logic lives under `features/` |
+| Next.js routes, API route handlers, the global shell that composes routes (`AuthShell`, `ProgramLauncher`, `ProgramWorkspace`, `GlobalClientGatewayPairing`, `RouteErrorSurface`), and global stylesheets | `apps/web/src/app/` — nothing feature-specific; feature logic lives under `features/`. A `tests/` folder here is safe: Next.js routes only folders containing a `page` or `route` file. |
 | Domain-specific behaviour | Not in this repository. See Repository Boundary in `AGENTS.md`. |
 
 The test for ownership: *if this program were deleted, would the file still

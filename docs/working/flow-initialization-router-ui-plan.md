@@ -1,8 +1,15 @@
 # Flow Initialization And Router UI Plan
 
-Status: working plan
+Status: Paused
+Status detail: Previously "working plan". Checkpoints through 2026-08-26 validated; remaining items still marked planned; no activity since.
+Created: 2026-08-25
+Last updated: 2026-09-10
 Owner: Automation Studio
-Last updated: 2026-08-26
+Scope: First-run Flow setup, required instructions, manual router/subflow creation, router visual editing, route testing, and readiness checks.
+Paired document: none
+Related: none
+
+---
 
 ## Purpose
 

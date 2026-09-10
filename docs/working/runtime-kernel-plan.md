@@ -1,10 +1,15 @@
 # Runtime Kernel Plan
 
-Status: working document  
-Created: 2026-08-20  
-Scope: FluxIQ core runtime architecture, direct-import host runtimes, websocket
-runtime transport, Automation Studio execution integration, and the
-`F:\!FluxIQWebExtension` repository as the first validation target.
+Status: Complete
+Status detail: Previously "working document". Phases 1-8 delivered 2026-08-20; authored architecture lives at docs/architecture/runtime-kernel.md.
+Created: 2026-08-20
+Last updated: 2026-09-10
+Owner: FluxIQ framework
+Scope: FluxIQ core runtime architecture, direct-import host runtimes, websocket runtime transport, Automation Studio execution integration, and the `F:\!FluxIQWebExtension` repository as the first validation target.
+Paired document: `F:\!FluxIQWebExtension\docs\working\extension-runtime-capabilities-plan.md`
+Related: [runtime-kernel.md](../architecture/runtime-kernel.md)
+
+---
 
 This plan is framework-level. FluxIQ core remains public, domain-neutral, and
 modular. Importing repositories own domain-specific runtime behavior,

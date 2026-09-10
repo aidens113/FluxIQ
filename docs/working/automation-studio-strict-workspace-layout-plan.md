@@ -1,5 +1,16 @@
 # Automation Studio Strict Workspace Layout Plan
 
+Status: Complete
+Status detail: Steps 1-9 complete 2026-08-17.
+Created: 2026-08-17
+Last updated: 2026-09-10
+Owner: Automation Studio
+Scope: Replacing the dynamic inner-window canvas with a strict workspace layout of fixed panes, docks, and sidebars.
+Paired document: none
+Related: [workspace.md](../architecture/automation-studio/workspace.md)
+
+---
+
 ## Purpose
 
 Automation Studio currently uses a highly dynamic inner window canvas. Users can

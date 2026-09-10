@@ -1,5 +1,16 @@
 # Recording Proposal Generator Plan
 
+Status: Paused
+Status detail: Steps 5-8 each carry remaining follow-up; no activity since 2026-08-16. LLM-assisted generation items are now owned by adaptive-flow-training-roadmap.md.
+Created: 2026-08-16
+Last updated: 2026-09-10
+Owner: Automation Studio
+Scope: Keeping recordings as raw reviewable source material rather than automatic proposals; multiple proposals per recording, grouping, deletion, regeneration.
+Paired document: none
+Related: [adaptive-flow-training-roadmap.md](./adaptive-flow-training-roadmap.md)
+
+---
+
 ## Purpose
 
 Automation Studio recordings should be raw, reviewable source material. They

@@ -1,5 +1,16 @@
 # Automation Studio State Object Index Plan
 
+Status: Paused
+Status detail: Per-phase status fields were never filled in; last activity 2026-08-17. Later Studio data work lives in automation-studio-scalable-data-architecture-plan.md and automation-studio-render-data-separation-plan.md; confirm overlap before resuming.
+Created: 2026-08-17
+Last updated: 2026-09-10
+Owner: Automation Studio
+Scope: Deterministic object/index system for recordings, state snapshots, screenshots, proposals, and Flow provenance.
+Paired document: none
+Related: [automation-studio-scalable-data-architecture-plan.md](./automation-studio-scalable-data-architecture-plan.md)
+
+---
+
 ## Purpose
 
 Automation Studio needs a deterministic object/index system for recordings,
