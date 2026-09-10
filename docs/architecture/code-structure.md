@@ -104,38 +104,47 @@ sits in needs splitting, not the kind folder.
 Ownership, program, layer, feature, kind, file:
 `packages/fluxiq/src/programs/automation-studio/storage/project/hierarchy/repository.ts`
 is seven path segments. Cap source files at eight segments from the
-repository root. A ninth means a layer or feature was assigned wrongly.
+repository root. A ninth means a layer or feature was assigned wrongly. A
+test sits one segment deeper than its subject and is not counted.
 
 ## Tests
 
-Tests live under `tests/`, mirroring `src/`, never beside the source.
+Every directory that contains source files owns a `tests/` subdirectory, and
+the tests for those files live there. Tests are never loose beside the
+source, and there is no separate mirrored tree.
 
 ```text
-packages/fluxiq/
-  src/programs/automation-studio/storage/project/hierarchy/repository.ts
-  tests/programs/automation-studio/storage/project/hierarchy/repository.test.ts
+storage/project/hierarchy/
+  index.ts  feed.ts  mutations.ts  repository.ts
+  tests/
+    feed.test.ts  mutations.test.ts  repository.test.ts
 ```
 
-- The test for `src/<path>/<name>.ts` is `tests/<path>/<name>.test.ts`. The
-  mirrored path is what keeps a test findable from its subject.
-- A test with no single subject is an integration test and lives under
-  `tests/integration/<boundary>/`, named for the boundary it exercises.
-- Test-only helpers — fixtures, builders, fakes — live in `tests/support/`,
-  mirrored by area where they serve one.
+- The test for `<dir>/<name>.ts` is `<dir>/tests/<name>.test.ts`. Same
+  name, one directory down. A test is always one step from its subject.
+- A test with more than one subject lives in the `tests/` folder of the
+  nearest directory that contains all of them. A test spanning `storage/`
+  and `runtime/` lives in `automation-studio/tests/`.
+- Test-only helpers — fixtures, builders, fakes — live in the `tests/`
+  folder of the nearest directory that contains everything they serve, as
+  non-`.test` files. The `.test.ts` suffix is what marks a test; the folder
+  may hold support alongside.
 - **Test support that ships is source, not a test.** Anything exported from a
   public subpath or imported by non-test code stays in `src/<area>/testing/`.
   `programs/automation-studio/testing/` and `client-gateway/testing/` are
   this kind: both are re-exported from public barrels.
-- `tests/` directories carry the same 25-file cap. Because they mirror
-  `src/`, they split when `src/` splits.
+- A `tests/` folder is a directory, so it does not count toward its parent's
+  25-file cap. It carries the cap itself, and that holds automatically: a
+  directory with at most 25 source files has at most 25 one-to-one tests.
+- A `tests/` folder has no barrel and is never imported by source.
 
-Per-package configuration this requires:
+Configuration this requires:
 
 | Package | Change |
 | --- | --- |
-| `packages/fluxiq`, `packages/client-gateway-websocket` | `tsconfig.json` `include` gains `tests/**/*.ts` so `pnpm check` type-checks tests. `tsconfig.build.json` sets `include: ["src/**/*.ts"]` explicitly, because it extends `tsconfig.json` and its `rootDir: src` rejects files outside `src`. |
-| `apps/web` | None for `tsc` — `tsconfig.json` already includes `**/*.ts`. |
-| All | Vitest's default include already matches `tests/**/*.test.ts`. `vitest.quality.config.ts` files list explicit test paths and must be updated when those files move. |
+| `packages/fluxiq`, `packages/client-gateway-websocket` | `tsconfig.build.json` `exclude` becomes `["src/**/tests/**"]` in place of `["src/**/*.test.ts"]`, so support files inside `tests/` folders are not compiled into `dist`. No `tsconfig.json` change: tests remain under `src/**`, which `pnpm check` already includes. |
+| `apps/web` | None. It is not a published package. |
+| All | Vitest's default include already matches `**/*.test.ts` at any depth. `vitest.quality.config.ts` files list explicit test paths and must be updated when those files move. |
 
 ## Files
 
@@ -187,8 +196,9 @@ The detailed procedure for each, with the current offenders, is in the
   consumer, on the theory that a second will appear.
 - **Barrel-skipping imports.** `from "../storage/project-hierarchy-feed.ts"`
   couples the importer to a file location. Import from `../storage`.
-- **Co-located tests.** They double a directory's file count and mix two
-  kinds of file. `storage/` was 37 source files and 35 tests.
+- **Test files loose in a source directory.** They double its file count and
+  mix two kinds of file; `storage/` was 37 source files and 35 tests in one
+  folder. Tests go in the directory's `tests/` subfolder.
 - **Raising a baseline entry.** The baseline is a ratchet. If a baselined
   file must grow, split it instead.
 
@@ -209,7 +219,8 @@ storage/                      13 source files + project/
     adaptation-store.ts  compiled-plan-store.ts  graph-store.ts ...
     hierarchy/
       index.ts  feed.ts  mutations.ts  repository.ts
-tests/programs/automation-studio/storage/   mirrors the above
+      tests/
+  (storage/ and project/ each own a tests/ folder for their own files)
 ```
 
 `storage/index.ts` exports exactly what it exported before. No importer
@@ -230,5 +241,5 @@ live/                         6 source files + four directories
   hooks/                      20   (including use-gateway-recording-bridge, renamed useGatewayRecordingBridge)
   commands/                   4    domain-commands, recording-domain-commands, ...
   view-host/                  existing
-tests/features/automation-studio/live/      mirrors the above
+  tests/                      tests for the six loose files; each subfolder owns its own tests/
 ```

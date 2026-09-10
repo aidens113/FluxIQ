@@ -28,7 +28,7 @@ new 801-line file exits 1.
 
 **Methodology is published** at `docs/architecture/code-structure.md`:
 placement as ownership / layer / feature / kind, the prefix-becomes-directory
-rule, tests under `tests/` mirroring `src/`, and the six division pathologies.
+rule, per-directory `tests/` subfolders, and the six division pathologies.
 `AGENTS.md` carries the binding summary and links it.
 
 **Audit, 1,367 tracked files:** 16 source files over 800 lines (largest
@@ -38,8 +38,9 @@ rule, tests under `tests/` mirroring `src/`, and the six division pathologies.
 
 **Decisions taken**
 
-- Tests move to `tests/`. Co-location roughly doubled the file count in
-  every dense directory (`storage/` was 37 source + 35 tests).
+- Tests move into a `tests/` subfolder of the directory that owns their
+  subject — no separate mirrored tree. Loose co-location roughly doubled the
+  file count in every dense directory (`storage/` was 37 source + 35 tests).
 - `programs/automation-studio/testing/` and `client-gateway/testing/` stay
   in `src`: both are re-exported from public barrels.
 - The prefix rule alone brings `storage/`, `runtime/`, and `model/` under
@@ -77,32 +78,32 @@ control is a failing check.
 Each phase is independently shippable. After each: `pnpm check && pnpm test`
 must pass, `pnpm structure:baseline` records the shrinkage, commit, push.
 
-### Phase 1 — Relocate tests to `tests/`
+### Phase 1 — Move tests into `tests/` subfolders
 
 Mechanical. Zero behaviour change. Halves the file count in every dense
 directory before any code is touched.
 
-1. For each package, `git mv` every `*.test.ts(x)` and `*.spec.ts(x)` from
-   `src/<path>/` to `tests/<path>/`, preserving the path exactly.
-2. `packages/fluxiq/tsconfig.json` and `packages/client-gateway-websocket/tsconfig.json`:
-   add `"tests/**/*.ts"` to `include`.
-3. The same packages' `tsconfig.build.json`: add
-   `"include": ["src/**/*.ts", "src/**/*.tsx"]`. It extends `tsconfig.json`
-   and has `rootDir: src`, so without this the build would see `tests/` and
-   fail.
+1. In every directory holding `*.test.ts(x)` or `*.spec.ts(x)` files, create
+   `tests/` and `git mv` the test files into it. Filenames unchanged.
+2. Fix relative imports inside moved tests: one extra `../` to reach the
+   subject, or import from the directory barrel.
+3. `packages/fluxiq/tsconfig.build.json` and
+   `packages/client-gateway-websocket/tsconfig.build.json`: change `exclude`
+   from `["src/**/*.test.ts"]` to `["src/**/tests/**"]`, so the build skips
+   the folders rather than a filename pattern and support files in `tests/`
+   are never compiled into `dist`.
 4. `vitest.quality.config.ts` in `packages/fluxiq` and `apps/web`: update the
    three and two explicit test paths.
-5. Fix relative imports inside moved tests (`../` depth changes; imports of
-   the subject become `../../src/...` or, better, the package's public
-   barrel).
-6. `apps/web/src/features/automation-studio/testing/`: it mixes fixtures and
-   tests. Tests move; fixtures that only tests import move to
-   `tests/support/`; nothing there is public.
-7. Regenerate the baseline. Expected: `storage` 72 → 37, `runtime` 66 → 34,
+5. `apps/web/src/features/automation-studio/testing/` mixes fixtures and
+   tests. Its `*.test.ts` files move to `testing/tests/`; the fixtures stay,
+   since they are that folder's own support.
+6. Regenerate the baseline. Expected: `storage` 72 → 37, `runtime` 66 → 34,
    `hierarchy` 56 → 41, `live` 49 → 43; several directories drop below 25
    outright.
 
-Vitest needs no change: its default include already matches `tests/**`.
+No `tsconfig.json` change: tests remain under `src/**`, which `pnpm check`
+already includes. Vitest's default include already matches `**/*.test.ts`
+at any depth.
 
 ### Phase 2 — `automation-studio/storage/` (37 source files)
 
@@ -276,6 +277,21 @@ already links this repository's methodology rather than restating it.
   only, so no code check applies.
 - Outcome: Accepted
 - Follow-up: Phase 1.
+
+### 2026-09-10 — Tests layout changed to per-directory subfolders
+
+- Agent: supervisor
+- Changed: `docs/architecture/code-structure.md`, `AGENTS.md`,
+  `program-layout.md`, this document, and the downstream `AGENTS.md` and
+  paired plan.
+- Why: The user replaced the package-root mirrored `tests/` tree with a
+  `tests/` subfolder inside each directory that owns the source files.
+- Validation: consequence checked against the existing configs —
+  `tsconfig.json` includes `src/**` so no include change is needed;
+  `tsconfig.build.json` needs its exclude changed to the folder pattern;
+  Vitest's default include matches at any depth. Documentation only.
+- Outcome: Accepted
+- Follow-up: Phase 1 under the new layout.
 
 ---
 

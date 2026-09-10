@@ -160,9 +160,11 @@ The binding rules:
 - **Every directory has an `index.ts` barrel**; imports target the directory.
   Reorganizing inside a layer must leave the layer's `index.ts` exports
   unchanged.
-- **Tests live under `tests/`, mirroring `src/`.** `src/a/b.ts` is covered
-  by `tests/a/b.test.ts`. Test support that ships — exported publicly or
-  imported by non-test code — is source and stays in `src/<area>/testing/`.
+- **Tests live in a `tests/` subfolder of the directory that owns their
+  subject.** `a/b.ts` is covered by `a/tests/b.test.ts`. Never loose beside
+  source; never in a separate mirrored tree. Test support that ships —
+  exported publicly or imported by non-test code — is source and stays in
+  `src/<area>/testing/`.
 - **Never extract-and-drop.** Code pulled out of a large file goes where the
   placement procedure puts it, not beside the file it came from.
 

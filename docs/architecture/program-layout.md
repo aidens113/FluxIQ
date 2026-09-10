@@ -30,8 +30,8 @@ Folders should be added when they have real ownership. `metadata.ts` and
 `index.ts` are the minimum for every global program.
 
 This shape defines the layers only. Inside a layer, files are grouped by
-feature and then by kind, and tests live under the package's `tests/`
-directory mirroring `src/` rather than beside the source. The placement
+feature and then by kind, and each directory keeps its tests in a `tests/`
+subfolder rather than loose beside the source. The placement
 procedure, the prefix-becomes-directory rule, and the size budgets are
 defined in [`code-structure.md`](./code-structure.md); a layer that outgrows
 a handful of files follows that document, not this one.
