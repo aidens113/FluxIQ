@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "pnpm --filter @fluxiq/web dev",
     "build": "pnpm --filter @fluxiq/contracts build && pnpm --filter fluxiq build && pnpm --filter @fluxiq/client-gateway-websocket build && pnpm --filter @fluxiq/web build",
-    "check": "pnpm -r check",
+    "check": "node scripts/structure-audit.mjs && pnpm -r check",
     "test": "pnpm -r test",
     "docs:reference": "node scripts/docs-reference.mjs",
     "docs:check": "node scripts/validate-docs.mjs && node scripts/docs-reference.mjs --check",
@@ -20,6 +20,8 @@
     "quality:check": "biome check .",
     "quality:fix": "biome check --write .",
     "quality:coverage": "pnpm --filter fluxiq exec vitest run --config vitest.quality.config.ts --coverage && pnpm --filter @fluxiq/web exec vitest run --config vitest.quality.config.ts --coverage",
+    "structure:check": "node scripts/structure-audit.mjs",
+    "structure:baseline": "node scripts/structure-audit.mjs --update",
     "package:lint": "publint packages/contracts --strict && publint packages/fluxiq --strict && publint packages/client-gateway-websocket --strict && attw --pack --profile esm-only packages/contracts && attw --pack --profile esm-only packages/fluxiq && attw --pack --profile esm-only packages/client-gateway-websocket",
     "package:smoke": "node scripts/validate-packages.mjs",
     "package:validate": "pnpm build && pnpm package:lint && pnpm package:smoke"

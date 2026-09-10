@@ -1,0 +1,42 @@
+{
+  "comment": "Ratcheted structure budgets. Entries may only be lowered, never raised. Regenerate with: pnpm structure:baseline",
+  "limits": {
+    "fileLines": 800,
+    "fileLinesWarn": 400,
+    "directoryFiles": 25,
+    "directoryFilesWarn": 15,
+    "classMethods": 40,
+    "classMethodsWarn": 25
+  },
+  "files": {
+    "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 12482,
+    "packages/fluxiq/src/programs/automation-studio/runtime/service.test.ts": 4790,
+    "apps/web/src/app/styles/global-foundation.css": 3396,
+    "packages/fluxiq/src/programs/automation-studio/api/handlers.ts": 2094,
+    "packages/fluxiq/src/programs/automation-studio/runtime/llm-harness.ts": 1161,
+    "packages/fluxiq/src/programs/automation-studio/api/handlers.test.ts": 1135,
+    "apps/web/src/features/programs/shared-ui.tsx": 1087,
+    "packages/fluxiq/src/programs/automation-studio/runtime/service-flow-bootstrap-generation.test.ts": 1004,
+    "packages/fluxiq/src/programs/automation-studio/api/contracts.ts": 977,
+    "apps/web/e2e/automation-studio-render-loop.spec.ts": 962,
+    "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap.ts": 958,
+    "packages/fluxiq/src/programs/global-services.test.ts": 945,
+    "packages/fluxiq/src/programs/automation-studio/model/validation.ts": 934,
+    "packages/fluxiq/src/programs/automation-studio/storage/project-schema.ts": 931,
+    "packages/fluxiq/src/programs/automation-studio/runtime/executor.ts": 876,
+    "packages/fluxiq/src/programs/automation-studio/model/fixtures.ts": 823
+  },
+  "directories": {
+    "packages/fluxiq/src/programs/automation-studio/storage": 72,
+    "packages/fluxiq/src/programs/automation-studio/runtime": 66,
+    "apps/web/src/features/automation-studio/hierarchy": 56,
+    "apps/web/src/features/automation-studio/live": 49,
+    "apps/web/src/features/automation-studio/flow-editor": 43,
+    "packages/fluxiq/src/programs/automation-studio/model": 37,
+    "apps/web/src/features/automation-studio/views": 30,
+    "apps/web/src/features/automation-studio/model": 29,
+    "apps/web/src/features/automation-studio/recordings": 28,
+    "apps/web/src/features/programs": 27,
+    "apps/web/src/features/automation-studio/testing": 26
+  }
+}

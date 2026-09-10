@@ -215,6 +215,34 @@ work, not a follow-up suggestion.
 Generated docs under `docs/generated/` are useful inventory, but authored docs
 must explain intent, ownership, behavior, and planned work.
 
+## File And Directory Structure
+
+These budgets are enforced by `scripts/structure-audit.mjs`, which runs as
+the first step of `pnpm check` and fails the build. Existing violations are
+recorded in `.structure-baseline.json`; a baselined entry may shrink but
+never grow, and new files and directories must satisfy the limit outright.
+
+- **800 lines per file** (advisory warning at 400).
+- **25 source files per directory** (advisory warning at 15).
+- **40 methods per class** (advisory only — the check is a heuristic).
+- **One exported thing per file**: one class, one component, or one cohesive
+  function group.
+- **A shared filename prefix becomes a directory.** When three or more files
+  in a directory share a `noun-` prefix, make it a subdirectory and strip the
+  prefix from the filenames.
+- **Every directory has an `index.ts` barrel**, and imports target the
+  directory rather than individual files. This is what makes moving a file
+  invisible to its consumers.
+
+When a file approaches a limit, split it by diagnosing why it grew — a god
+class, oversized function bodies, a declaration dump, and a multi-component
+module each need a different cut. The
+[module size governance plan](docs/working/module-size-governance-plan.md)
+describes each pathology, the corresponding fix, and the target layout.
+
+Run `pnpm structure:baseline` after shrinking a baselined file, to record the
+improvement.
+
 ## Validation
 
 For code changes, run the relevant checks before final response whenever
