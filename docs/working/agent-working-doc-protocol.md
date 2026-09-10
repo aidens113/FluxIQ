@@ -1,13 +1,11 @@
 # Agent Working Document Protocol
 
 Status: Active
-Status detail: Protocol adopted; triage, retirement, and Current State retrofits
-are complete here; compaction of oversized documents remains, on touch.
+Status detail: Protocol adopted; triage, retirement, and Current State retrofits are complete here; compaction of oversized documents remains, on touch.
 Created: 2026-09-10
 Last updated: 2026-09-10
 Owner: Senior supervisor agent
-Scope: How the supervisor and workers use `docs/working/` as durable memory
-and as the coordination substrate for multi-agent work.
+Scope: How the supervisor and workers use `docs/working/` as durable memory and as the coordination substrate for multi-agent work.
 Paired document: `F:\!FluxIQWebExtension\docs\working\agent-working-doc-protocol.md`
 Related: [AGENTS.md](../../AGENTS.md), [working document index](./README.md)
 
@@ -55,9 +53,6 @@ header block, ledger format, and lifecycle defined in
 1. Compact documents over 800 lines as they are next touched.
 2. When a retrofitted document is next edited, resolve the stale statements
    its worker report lists.
-3. Amend the brief format in both repositories to require a unique scratch
-   filename per worker: two workers sharing one scratchpad overwrote each
-   other's scratch file once (targets verified unaffected).
 
 **Blockers:** none.
 
@@ -206,6 +201,12 @@ markdown document will silently lose each other's writes. So:
 - Each worker writes its findings to its own file at
   `docs/working/<effort-slug>/reports/<agent-label>.md`.
 - Workers never edit `Current State` or the `Work Ledger`.
+- A worker writes only its owned files and its report, using filenames unique
+  to it. Workers never share a scratch file: two did once, and one overwrote
+  the other's staged block after the splice.
+- A worker writes only its owned files and its report, using filenames unique
+  to it. Workers never share a scratch file: two did once, and one overwrote
+  the other's staged block after the splice.
 - The supervisor reads the report files, independently verifies the claims,
   merges the outcome into `Current State`, and appends the ledger entry.
 
@@ -465,6 +466,21 @@ resuming this work most needs; any internal contradictions found; the exact
   file returned 0 hits each way.
 - Outcome: Accepted
 - Follow-up: compaction on touch; unique scratch filenames in briefs.
+
+### 2026-09-10 — Worker scratch-file rule added
+
+- Agent: supervisor
+- Changed: "Worker briefs and reports" gained a bullet requiring unique,
+  worker-owned filenames and forbidding shared scratch files; mirrored in
+  both repositories. Header fields in this document are unwrapped to one
+  line each, as the header rule requires and the audit now enforces.
+- Why: Two workers sharing one scratch file overwrote each other's staged
+  block during the Current State retrofits; targets were verified
+  unaffected.
+- Validation: the bullet is present in both copies; `pnpm structure:check
+  --rule working-docs` reports zero header findings. Documentation only.
+- Outcome: Accepted
+- Follow-up: none.
 
 ---
 

@@ -168,13 +168,22 @@ The binding rules:
 - **Never extract-and-drop.** Code pulled out of a large file goes where the
   placement procedure puts it, not beside the file it came from.
 
-Budgets, enforced by `scripts/structure-audit.mjs` as the first step of
-`pnpm check`: **800 lines per file**, **25 source files per directory**, and
-an advisory **40 methods per class**. Existing violations are frozen in
-`.structure-baseline.json`; an entry may shrink but never grow. Run
-`pnpm structure:baseline` after shrinking one. When a file nears a limit,
-diagnose why it grew before cutting — the methodology lists the cut for each
-cause.
+**Enforcement.** `scripts/structure-audit.mjs` runs first in `pnpm check`
+and fails the build. It checks every rule above that a machine can check:
+file length (800 lines), directory size (25 source files), class size (40
+methods), exported values per file (one class, one component, at most 15
+values), test placement (a test file must sit directly in a `tests/` or
+`e2e/` directory), path depth (8 segments), banned names, shared-prefix
+groups of three or more files, imports that reach past a directory's barrel,
+imports that cross a declared boundary, and the working-document header,
+`Current State`, size, and index rules. Existing violations are frozen per
+rule in `.structure-baseline.json`; an entry may shrink but never grow, and
+a new violation fails outright. Run `pnpm structure:baseline` after removing
+one, and `pnpm structure:check --rule <id>` to run a single rule (`--list`
+names them). What the audit cannot check — placement judgement,
+extract-and-drop, whether a split was the right cut — remains a review
+obligation. When a file nears a limit, diagnose why it grew before cutting;
+the methodology lists the cut for each cause.
 
 ## Documentation Maintenance
 

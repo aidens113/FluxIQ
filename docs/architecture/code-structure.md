@@ -105,7 +105,9 @@ Ownership, program, layer, feature, kind, file:
 `packages/fluxiq/src/programs/automation-studio/storage/project/hierarchy/repository.ts`
 is seven path segments. Cap source files at eight segments from the
 repository root. A ninth means a layer or feature was assigned wrongly. A
-test sits one segment deeper than its subject and is not counted.
+test sits one segment deeper than its subject and is not counted. The one
+exemption is `apps/web/src/app/`, where the Next.js file-system router
+dictates depth; it is listed in the audit's `depthExemptPrefixes`.
 
 ## Tests
 

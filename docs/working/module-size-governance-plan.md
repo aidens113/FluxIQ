@@ -1,17 +1,13 @@
 # Module Size And Structure Governance Plan
 
 Status: Active
-Status detail: Enforcement live; methodology published; the migration
-phases below are sequenced but not started.
+Status detail: Every checkable rule is enforced in both repositories; the migration phases are sequenced but not started.
 Created: 2026-09-10
 Last updated: 2026-09-10
 Owner: Senior supervisor agent
-Scope: Preventing unbounded file, class, and directory growth in FluxIQ Core
-and the downstream web-extension repository, relocating tests to `tests/`,
-and reorganizing what has already grown past maintainability.
+Scope: Preventing unbounded file, class, and directory growth in FluxIQ Core and the downstream web-extension repository, relocating tests to `tests/`, and reorganizing what has already grown past maintainability.
 Paired document: `F:\!FluxIQWebExtension\docs\working\module-size-governance-plan.md`
-Related: [code structure](../architecture/code-structure.md),
-[AGENTS.md](../../AGENTS.md)
+Related: [code structure](../architecture/code-structure.md), [AGENTS.md](../../AGENTS.md)
 
 This document owns the shared policy and the Core migration. The
 methodology itself is authored in `docs/architecture/code-structure.md`;
@@ -21,37 +17,53 @@ this document tracks applying it.
 
 ## Current State
 
-**Enforcement is live.** `scripts/structure-audit.mjs` runs first in
-`pnpm check`. `.structure-baseline.json` freezes 16 files and 11 directories.
-Verified: clean tree exits 0; two lines added to a baselined file exits 1; a
-new 801-line file exits 1.
+**Enforcement is complete for every rule a machine can check.**
+`scripts/structure-audit.mjs` runs first in `pnpm check` and loads one
+module per rule from `scripts/structure-audit/rules/`; a generic ratchet in
+`baseline.mjs` freezes existing violations per rule and per key. Rules:
+`file-lines`, `directory-files`, `class-methods` (TypeScript AST, blocking),
+`exported-values` (one class, one component, at most 15 values per file),
+`test-placement` (tests sit in `tests/` or `e2e/`), `naming` (depth, banned
+names, shared-prefix groups), `imports` (forbidden specifiers, declared
+boundaries, barrel skipping), and `working-docs` (header block, `Current
+State` for Active documents, size, and the generated index). Verified: a
+clean tree exits 0; growth in a baselined entry exits 1; a new violation
+exits 1; `pnpm -r check` passes alongside.
 
-**Methodology is published** at `docs/architecture/code-structure.md`:
-placement as ownership / layer / feature / kind, the prefix-becomes-directory
-rule, per-directory `tests/` subfolders, and the six division pathologies.
-`AGENTS.md` carries the binding summary and links it.
+**The downstream repository runs the same audit.** Entry, context, baseline,
+and rules are mirrored there byte for byte; only `config.mjs` differs, and it
+additionally forbids `domain/src` importing `apps/extension/src` (zero
+violations today). Its `pnpm check` runs the audit first.
 
 **Audit, 1,367 tracked files:** 16 source files over 800 lines (largest
-`service.ts`, 12,482); 11 directories over 25 files (largest `storage/`, 72);
-2 classes over 40 methods (`AutomationStudioService` ~365–419,
-`ClientGatewayService` 42). 347 test files, 333 of them co-located.
+`service.ts`, 12,482); 11 directories over 25 files; 2 classes over 40
+methods (`AutomationStudioService` 422, `ClientGatewayService` 43); 61
+files with an oversized export surface (11 with several classes, 31 with
+several components, 19 over 15 values; `shared-ui.tsx` exports 36
+components); 333 co-located test files in 70 directories; 26 shared-prefix
+groups of three or more (largest `project-` 23 in `storage/`); 326
+barrel-skipping imports across 198 files; 16 working documents over 800
+lines. Downstream adds `FluxIQConnection` at 81 methods in `connection.ts`
+and 74 co-located tests. All of it is frozen in each repository's baseline.
 
 **Decisions taken**
 
 - Tests move into a `tests/` subfolder of the directory that owns their
-  subject — no separate mirrored tree. Loose co-location roughly doubled the
-  file count in every dense directory (`storage/` was 37 source + 35 tests).
+  subject — no separate mirrored tree.
 - `programs/automation-studio/testing/` and `client-gateway/testing/` stay
   in `src`: both are re-exported from public barrels.
 - The prefix rule alone brings `storage/`, `runtime/`, and `model/` under
   the cap. No kind split is needed on the framework side.
 - `service.ts` is decomposed last, behind a facade that keeps its public
   surface, because every program imports it.
+- Depth is exempt under `apps/web/src/app/`, where the Next.js router
+  dictates it.
+- Warnings never ratchet; only fail findings enter the baseline.
 
-**Next steps:** Phase 1 (tests relocation), then Phase 2 (`storage/`).
+**Next steps:** Phase 1 (tests relocation), then Phase 2 (`storage/`). Each
+lowers baseline entries; run `pnpm structure:baseline` after each.
 
 **Blockers:** none.
-
 ---
 
 ## Enforcement
@@ -235,6 +247,110 @@ already links this repository's methodology rather than restating it.
 
 ---
 
+## Worker Briefs
+
+Dispatched 2026-09-10 to make every mechanically checkable `AGENTS.md` rule
+a failing check in `pnpm check`. Workspace tooling only: no product code is
+moved or split.
+
+**Shared context.** `scripts/structure-audit.mjs` discovers rule modules in
+`scripts/structure-audit/rules/*.mjs` and applies a generic ratchet from
+`scripts/structure-audit/baseline.mjs`. The rule contract, finding shape,
+shared context (tracked files, cached reads, cached TypeScript parses via
+`ctx.parse(file)`), `LIMITS`, and repository `CONFIG` are documented at the
+top of `scripts/structure-audit/context.mjs`. `rules/file-lines.mjs` and
+`rules/directory-files.mjs` are reference implementations. A rule is read
+only; messages must be self-explanatory without opening documentation;
+findings that will have many existing violations must be `ratchet: true`
+so the baseline can absorb them, with a stable `key`. Use the file-write
+tool for your own files only — never a shared scratchpad. Do not commit or
+push. Verify with `node scripts/structure-audit.mjs --rule <id>` and
+`--rule <id> --json`, and report the finding counts plus three sample
+messages.
+
+### Brief: rule-classes-exports
+- Repository: this repository
+- Task: `rules/class-methods.mjs` — count methods per class with the
+  TypeScript AST (methods, accessors, and properties initialised to
+  functions), fail above `LIMITS.classMethods` ratcheted per
+  `path::ClassName`, warn above `classMethodsWarn`. `rules/exported-values.mjs`
+  — per script file, count exported value declarations (functions, classes,
+  consts, enums, default exports; types and interfaces excluded); fail when
+  exported classes exceed `exportedClasses` or, in `.tsx`, exported
+  PascalCase components exceed `exportedComponents`; fail above
+  `exportedValues` and warn above `exportedValuesWarn`; all ratcheted per
+  path. Barrel files named `index.*` are exempt from the value count.
+- Required reads: `scripts/structure-audit/context.mjs`, the two reference rules
+- Owns (may edit): `scripts/structure-audit/rules/class-methods.mjs`, `scripts/structure-audit/rules/exported-values.mjs`
+- Must not touch: any other file
+- Definition of done: both rules run clean under `--rule`, `AutomationStudioService` reports a method count within 5 of 419, `shared-ui.tsx` reports 37 components; report written
+- Report to: docs/working/module-size-governance-plan/reports/rule-classes-exports.md
+
+### Brief: rule-tests-naming
+- Repository: this repository
+- Task: `rules/test-placement.mjs` — every test file (`ctx.isTestFile`) must
+  sit directly inside a directory whose basename is in
+  `CONFIG.testRootDirNames`; fail ratcheted per containing directory with
+  the count of misplaced tests as the value. `rules/naming.mjs` — fail when a
+  source path exceeds `LIMITS.maxPathSegments` (not ratcheted); fail when a
+  basename without extension is in `CONFIG.bannedBasenames` or a directory
+  segment is in `CONFIG.bannedDirectoryNames` (ratcheted per path); fail when
+  three or more non-test, non-`index`, non-`types` kebab-case files in one
+  directory share a leading `noun-` prefix (ratcheted per `dir::prefix`,
+  value = group size, message naming the directory to create).
+- Required reads: `scripts/structure-audit/context.mjs`, the two reference rules
+- Owns (may edit): `scripts/structure-audit/rules/test-placement.mjs`, `scripts/structure-audit/rules/naming.mjs`
+- Must not touch: any other file
+- Definition of done: both rules run clean under `--rule`; `storage/` reports a `project-` group of about 26; report written
+- Report to: docs/working/module-size-governance-plan/reports/rule-tests-naming.md
+
+### Brief: rule-imports
+- Repository: this repository
+- Task: `rules/imports.mjs` — parse import and re-export declarations with
+  the TypeScript AST. (1) Forbidden imports: any specifier matching a
+  `CONFIG.forbiddenImports` pattern fails, not ratcheted. (2) Import
+  boundaries: for each `CONFIG.importBoundaries` entry, a file under `from`
+  importing a relative path that resolves under `to` fails, not ratcheted.
+  (3) Barrel skipping: a relative specifier that resolves into a *different*
+  directory than the importer, names a file other than `index`, and that
+  directory contains an `index.ts`/`index.tsx`/`index.mjs`, fails ratcheted
+  per importing path with the count of such imports as the value. Same-
+  directory sibling imports are fine. Resolve `.ts`/`.js` extension rewrites
+  sensibly.
+- Required reads: `scripts/structure-audit/context.mjs`, the two reference rules
+- Owns (may edit): `scripts/structure-audit/rules/imports.mjs`
+- Must not touch: any other file
+- Definition of done: rule runs clean under `--rule`; zero forbidden-import findings in this repository; report includes the total barrel-skip count and three examples; report written
+- Report to: docs/working/module-size-governance-plan/reports/rule-imports.md
+
+### Brief: rule-working-docs
+- Repository: this repository
+- Task: `rules/working-docs.mjs` for `CONFIG.workingDocsDir/*.md` except
+  `README.md`. (1) Header conformance: an H1, a blank line, then exactly the
+  eight fields `Status`, `Status detail`, `Created`, `Last updated`, `Owner`,
+  `Scope`, `Paired document`, `Related` in that order with no blank lines
+  between them; `Status` in the controlled vocabulary; fails, not ratcheted.
+  (2) A document whose `Status` is `Active` must contain a `## Current State`
+  heading within 20 lines of the header; fails, not ratcheted. (3) Document
+  line count above `LIMITS.workingDocLines` fails ratcheted per path. (4)
+  `README.md` freshness: generate the index from the header blocks — grouped
+  by status in the order Active, Blocked, Paused, Complete, Superseded,
+  Archived, Unclassified, one table per group with Document, Owner, Lines,
+  Scope, and Paired columns, the paired cell showing the basename of the
+  `Paired document` path or `none`, an ⚠ after any line count over 800, and
+  a closing note with the count — and fail (not ratcheted) if the tracked
+  `README.md` differs from the generated text; the existing `README.md`
+  shows the exact intro paragraphs and wording to reproduce for
+  `CONFIG.workingDocsIndexKind`. Export `update(ctx)` that writes the
+  generated `README.md`.
+- Required reads: `scripts/structure-audit/context.mjs`, the two reference rules, `docs/working/README.md`, `docs/working/agent-working-doc-protocol.md` sections "Header block" and "Section order"
+- Owns (may edit): `scripts/structure-audit/rules/working-docs.mjs`
+- Must not touch: any other file, including `README.md` itself
+- Definition of done: rule runs under `--rule` with zero header or Current State failures against the current documents, the README freshness check passes against the current `README.md` byte for byte, and `--rule working-docs --update` would rewrite an identical file; report written
+- Report to: docs/working/module-size-governance-plan/reports/rule-working-docs.md
+
+---
+
 ## Work Ledger
 
 ### 2026-09-10 — Plan authored
@@ -292,6 +408,31 @@ already links this repository's methodology rather than restating it.
   Vitest's default include matches at any depth. Documentation only.
 - Outcome: Accepted
 - Follow-up: Phase 1 under the new layout.
+
+### 2026-09-10 — Every checkable AGENTS.md rule enforced
+
+- Agent: supervisor, with workers rule-classes-exports, rule-tests-naming,
+  rule-imports, and rule-working-docs on Opus 5
+- Changed: `scripts/structure-audit.mjs` rewritten as an entry over
+  `scripts/structure-audit/{context,baseline,config}.mjs` and eight rule
+  modules; `.structure-baseline.json` regenerated in the per-rule shape;
+  `docs/working/README.md` now generated by the audit; `AGENTS.md`
+  Enforcement paragraph; `code-structure.md` depth exemption; four worker
+  reports under `module-size-governance-plan/reports/`; the protocol's
+  scratch-file rule. The tree is mirrored downstream with its own config,
+  baseline, and `pnpm check` wiring.
+- Why: The user required AGENTS.md to be strictly enforced without moving
+  or splitting product code.
+- Validation: each rule reviewed by reading its source and run under
+  `--rule <id> --json` with counts checked against independent measurements
+  (422 methods against a grep of 419; 36 components against 37 — the AST
+  count is the correct one); the boundary check proven on a synthetic
+  domain→extension import; the depth exemption leaves zero non-ratcheted
+  failures; `pnpm -r check` exit 0 in Core; `pnpm structure:check` exit 0 in
+  both repositories after `--update`. The docs rule caught wrapped header
+  fields in this document and the protocol, fixed before baselining.
+- Outcome: Accepted
+- Follow-up: Phase 1 tests relocation.
 
 ---
 
