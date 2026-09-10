@@ -29,6 +29,13 @@ programs/<program-id>/
 Folders should be added when they have real ownership. `metadata.ts` and
 `index.ts` are the minimum for every global program.
 
+This shape defines the layers only. Inside a layer, files are grouped by
+feature and then by kind, and tests live under the package's `tests/`
+directory mirroring `src/` rather than beside the source. The placement
+procedure, the prefix-becomes-directory rule, and the size budgets are
+defined in [`code-structure.md`](./code-structure.md); a layer that outgrows
+a handful of files follows that document, not this one.
+
 All global program UI must use the shared theme described in
 [`ui-theme.md`](./ui-theme.md). Program folders can own view state and local
 panel composition, but not private color systems.

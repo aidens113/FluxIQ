@@ -5,7 +5,7 @@ entry point for any agent starting a task: read it, pick the relevant
 document, then read that document's `Current State` section before anything
 else.
 
-Format, status vocabulary, ledger rules, subagent briefs, and cross-repository
+Format, status vocabulary, ledger rules, worker briefs, and cross-repository
 pairing are defined in
 [Agent Working Document Protocol](./agent-working-doc-protocol.md).
 
@@ -16,8 +16,8 @@ The downstream web-extension index is at
 
 | Document | Owner | Lines | Scope | Paired downstream |
 | --- | --- | --- | --- | --- |
-| [agent-working-doc-protocol.md](./agent-working-doc-protocol.md) | Root coordination agent | 320 | How agents use `docs/working/` as durable memory and multi-agent coordination substrate. | `agent-working-doc-protocol.md` |
-| [module-size-governance-plan.md](./module-size-governance-plan.md) | Senior supervisor agent | 225 | Owns the shared file/class size ratchet policy for both repositories, the `service.ts` decomposition target, and the CodeGraph assessment. | `module-size-governance-plan.md` |
+| [agent-working-doc-protocol.md](./agent-working-doc-protocol.md) | Senior supervisor agent | 359 | How agents use `docs/working/` as durable memory and multi-agent coordination substrate. | `agent-working-doc-protocol.md` |
+| [module-size-governance-plan.md](./module-size-governance-plan.md) | Senior supervisor agent | 292 | Owns the shared size and structure policy for both repositories: the ratchet, the `tests/` relocation, the eight-phase migration of Automation Studio's oversized files and directories, and the CodeGraph assessment. | `module-size-governance-plan.md` |
 | [adaptive-flow-training-roadmap.md](./adaptive-flow-training-roadmap.md) | FluxIQ framework | 818 ⚠ | Product direction for adaptive automation that stabilises into deterministic Flows; adaptation layers, training mode, patch contract. | `llm-production-automation-plan.md` (unconfirmed) |
 | [automation-studio-render-data-separation-plan.md](./automation-studio-render-data-separation-plan.md) | Automation Studio | 2624 ⚠ | Current owner of Studio render/runtime topology. Implementation and current-panel regression complete; seeded browser matrix certification outstanding. | none |
 | [automation-studio-scalable-data-architecture-plan.md](./automation-studio-scalable-data-architecture-plan.md) | Automation Studio | 1232 ⚠ | Scalable data architecture through Phase 12 certification harness; external certification evidence required before release flag removal. | none |

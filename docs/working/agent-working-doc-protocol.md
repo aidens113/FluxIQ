@@ -6,8 +6,8 @@ triage and compaction of oversized documents remain.
 Created: 2026-09-10
 Last updated: 2026-09-10
 Owner: Senior supervisor agent
-Scope: How the senior supervisor agent and workers in this repository use `docs/working/` as
-durable memory and as the coordination substrate for multi-agent work.
+Scope: How the supervisor and workers use `docs/working/` as durable memory
+and as the coordination substrate for multi-agent work.
 Paired document: `F:\!FluxIQWebExtension\docs\working\agent-working-doc-protocol.md`
 Related: [AGENTS.md](../../AGENTS.md), [working document index](./README.md)
 
@@ -320,7 +320,7 @@ the index with their successor named, so no agent reads them as current.
 
 ### 2026-09-10 — Protocol authored and adopted in both repositories
 
-- Agent: primary
+- Agent: supervisor
 - Changed: `docs/working/agent-working-doc-protocol.md`,
   `docs/working/README.md`, `AGENTS.md`, and the mirrored trio in
   `F:\!FluxIQWebExtension`.

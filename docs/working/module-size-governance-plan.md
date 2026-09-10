@@ -1,62 +1,53 @@
-# Module Size Governance Plan
+# Module Size And Structure Governance Plan
 
 Status: Active
-Status detail: Enforcement implemented and wired into `pnpm check`; the
-decomposition and directory reorganization backlog is recorded but not
-started.
+Status detail: Enforcement live; methodology published; the migration
+phases below are sequenced but not started.
 Created: 2026-09-10
 Last updated: 2026-09-10
 Owner: Senior supervisor agent
-Scope: Preventing unbounded file, class, and directory growth across FluxIQ
-Core and the downstream web-extension repository, and reorganizing what has
-already grown past maintainability.
+Scope: Preventing unbounded file, class, and directory growth in FluxIQ Core
+and the downstream web-extension repository, relocating tests to `tests/`,
+and reorganizing what has already grown past maintainability.
 Paired document: `F:\!FluxIQWebExtension\docs\working\module-size-governance-plan.md`
-Related: [AGENTS.md](../../AGENTS.md),
-[agent working document protocol](./agent-working-doc-protocol.md)
+Related: [code structure](../architecture/code-structure.md),
+[AGENTS.md](../../AGENTS.md)
 
-This document owns the shared policy. The downstream paired document
-references it rather than restating it.
+This document owns the shared policy and the Core migration. The
+methodology itself is authored in `docs/architecture/code-structure.md`;
+this document tracks applying it.
 
 ---
 
 ## Current State
 
-**Enforcement is live.** `scripts/structure-audit.mjs` runs as the first step
-of `pnpm check`, so it blocks rather than advising. `.structure-baseline.json`
-records every existing violation. Verified behaviour: a clean tree passes with
-exit 0; adding two lines to a baselined file fails with exit 1; a new 801-line
-file fails with exit 1.
+**Enforcement is live.** `scripts/structure-audit.mjs` runs first in
+`pnpm check`. `.structure-baseline.json` freezes 16 files and 11 directories.
+Verified: clean tree exits 0; two lines added to a baselined file exits 1; a
+new 801-line file exits 1.
 
-**Audit complete.** Across 1,367 tracked files:
+**Methodology is published** at `docs/architecture/code-structure.md`:
+placement as ownership / layer / feature / kind, the prefix-becomes-directory
+rule, tests under `tests/` mirroring `src/`, and the six division pathologies.
+`AGENTS.md` carries the binding summary and links it.
 
-- **16 source files exceed 800 lines**, the largest being `service.ts` at
-  12,482.
-- **11 directories exceed 25 source files**, the worst being
-  `automation-studio/storage` at 72 and `automation-studio/runtime` at 66.
-- **2 classes exceed 40 methods**: `AutomationStudioService` (~365 by the
-  audit's heuristic, 419 by direct count) and `ClientGatewayService` (42).
-  Four more sit between 27 and 30.
+**Audit, 1,367 tracked files:** 16 source files over 800 lines (largest
+`service.ts`, 12,482); 11 directories over 25 files (largest `storage/`, 72);
+2 classes over 40 methods (`AutomationStudioService` ~365–419,
+`ClientGatewayService` 42). 347 test files, 333 of them co-located.
 
-`ClientGatewayService` is the useful catch: at 746 lines it passes every
-line-based rule while carrying 42 methods. Line count alone would never have
-found it, which is why the method rule exists.
+**Decisions taken**
 
-**Not done**
+- Tests move to `tests/`. Co-location roughly doubled the file count in
+  every dense directory (`storage/` was 37 source + 35 tests).
+- `programs/automation-studio/testing/` and `client-gateway/testing/` stay
+  in `src`: both are re-exported from public barrels.
+- The prefix rule alone brings `storage/`, `runtime/`, and `model/` under
+  the cap. No kind split is needed on the framework side.
+- `service.ts` is decomposed last, behind a facade that keeps its public
+  surface, because every program imports it.
 
-- No file has been split. No directory has been reorganized.
-- The downstream repository has not adopted the audit script yet.
-- The method-count rule is advisory. It uses a regex heuristic, not a
-  TypeScript parse, so it warns rather than failing.
-
-**Next steps**
-
-1. Adopt the audit in the downstream repository, reusing this script rather
-   than writing a second one.
-2. Reorganize `automation-studio/storage` — the highest-value, lowest-risk
-   target, since the filenames already encode the intended folders and
-   barrels keep imports stable.
-3. Decompose `service.ts` per [Pathology 1](#pathology-1--god-class), timed
-   per [Timing](#timing).
+**Next steps:** Phase 1 (tests relocation), then Phase 2 (`storage/`).
 
 **Blockers:** none.
 
@@ -64,12 +55,7 @@ found it, which is why the method rule exists.
 
 ## Enforcement
 
-### The ratchet
-
-Budgets are ratcheted, not absolute. Existing violations are permitted but
-frozen; new ones are refused. This stops degradation immediately without
-requiring a large refactor first, and makes the problem strictly monotonic —
-it can only improve.
+Ratcheted budgets: existing violations are frozen, new ones refused.
 
 | Rule | Warn | Fail |
 | --- | --- | --- |
@@ -77,276 +63,174 @@ it can only improve.
 | Directory source files | 15 | 25 |
 | Class methods | 25 | advisory only at 40 |
 
-- A file or directory absent from the baseline must satisfy the limit.
-- A baselined entry may never exceed its recorded value, but may shrink.
-- When something shrinks, `pnpm structure:baseline` rewrites the entry
-  downward. The writer takes `min(previous, current)`, so an entry can never
-  be raised, even by accident.
-- Scope: tracked `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs`, `.css`,
-  excluding `node_modules`, build outputs, generated docs, snapshots, and
-  `.d.ts`.
+`pnpm structure:check` audits; `pnpm structure:baseline` rewrites the
+baseline downward using `min(previous, current)` so an entry can never rise.
 
-### Why enforcement rather than guidance
-
-A rule against this already existed. `AGENTS.md` states: "Split modules when
-a file owns unrelated behavior, crosses multiple architectural
-responsibilities, or becomes difficult to understand, test, replace, or debug
-independently. Do not accumulate unrelated functionality in broad catch-all
-files."
-
-That instruction was in force for all 43 commits during which `service.ts`
-grew to 419 methods. Written guidance has been empirically falsified as a
-control here, so the response is a check that fails a build, not a
-better-worded rule.
-
-### Commands
-
-```bash
-pnpm structure:check      # audit only
-pnpm structure:baseline   # ratchet the baseline downward after improvements
-pnpm check                # audit, then per-package checks
-```
+A rule against catch-all files existed in `AGENTS.md` for all 43 commits in
+which `service.ts` grew. Guidance was demonstrably not a control, so the
+control is a failing check.
 
 ---
 
-## Audit Results
+## Migration Plan
 
-### Files over 800 lines
+Each phase is independently shippable. After each: `pnpm check && pnpm test`
+must pass, `pnpm structure:baseline` records the shrinkage, commit, push.
 
-| Lines | File | Pathology |
-| --- | --- | --- |
-| 12,482 | `automation-studio/runtime/service.ts` | 1 — god class |
-| 4,790 | `automation-studio/runtime/service.test.ts` | 6 — test mirror |
-| 3,396 | `apps/web/src/app/styles/global-foundation.css` | 5 — stylesheet |
-| 2,094 | `automation-studio/api/handlers.ts` | 2 — giant functions |
-| 1,161 | `automation-studio/runtime/llm-harness.ts` | 2 / 3 — mixed |
-| 1,135 | `automation-studio/api/handlers.test.ts` | 6 |
-| 1,087 | `apps/web/src/features/programs/shared-ui.tsx` | 4 — 37 components |
-| 1,004 | `runtime/service-flow-bootstrap-generation.test.ts` | 6 |
-| 977 | `automation-studio/api/contracts.ts` | 3 — 112 types |
-| 962 | `apps/web/e2e/automation-studio-render-loop.spec.ts` | 6 |
-| 958 | `automation-studio/runtime/flow-bootstrap.ts` | 2 / 3 — mixed |
-| 945 | `programs/global-services.test.ts` | 6 |
-| 934 | `automation-studio/model/validation.ts` | 2 — 28 functions |
-| 931 | `automation-studio/storage/project-schema.ts` | 3 — 21 consts |
-| 876 | `automation-studio/runtime/executor.ts` | 2 — 3 functions |
-| 823 | `automation-studio/model/fixtures.ts` | 3 |
+### Phase 1 — Relocate tests to `tests/`
 
-### Directories over 25 source files
+Mechanical. Zero behaviour change. Halves the file count in every dense
+directory before any code is touched.
 
-| Files | Directory |
-| --- | --- |
-| 72 | `packages/fluxiq/src/programs/automation-studio/storage` |
-| 66 | `packages/fluxiq/src/programs/automation-studio/runtime` |
-| 56 | `apps/web/src/features/automation-studio/hierarchy` |
-| 49 | `apps/web/src/features/automation-studio/live` |
-| 43 | `apps/web/src/features/automation-studio/flow-editor` |
-| 37 | `packages/fluxiq/src/programs/automation-studio/model` |
-| 30 | `apps/web/src/features/automation-studio/views` |
-| 29 | `apps/web/src/features/automation-studio/model` |
-| 28 | `apps/web/src/features/automation-studio/recordings` |
-| 27 | `apps/web/src/features/programs` |
-| 26 | `apps/web/src/features/automation-studio/testing` |
+1. For each package, `git mv` every `*.test.ts(x)` and `*.spec.ts(x)` from
+   `src/<path>/` to `tests/<path>/`, preserving the path exactly.
+2. `packages/fluxiq/tsconfig.json` and `packages/client-gateway-websocket/tsconfig.json`:
+   add `"tests/**/*.ts"` to `include`.
+3. The same packages' `tsconfig.build.json`: add
+   `"include": ["src/**/*.ts", "src/**/*.tsx"]`. It extends `tsconfig.json`
+   and has `rootDir: src`, so without this the build would see `tests/` and
+   fail.
+4. `vitest.quality.config.ts` in `packages/fluxiq` and `apps/web`: update the
+   three and two explicit test paths.
+5. Fix relative imports inside moved tests (`../` depth changes; imports of
+   the subject become `../../src/...` or, better, the package's public
+   barrel).
+6. `apps/web/src/features/automation-studio/testing/`: it mixes fixtures and
+   tests. Tests move; fixtures that only tests import move to
+   `tests/support/`; nothing there is public.
+7. Regenerate the baseline. Expected: `storage` 72 → 37, `runtime` 66 → 34,
+   `hierarchy` 56 → 41, `live` 49 → 43; several directories drop below 25
+   outright.
 
-Note that `runtime/` holds both the 12,482-line file and 66 flat siblings.
-That combination is diagnostic: things were extracted from the god file
-over time and dropped next to it, because no folder existed to put them in.
-Fixing file size without fixing directory structure would reproduce exactly
-this outcome at a larger scale.
+Vitest needs no change: its default include already matches `tests/**`.
 
----
+### Phase 2 — `automation-studio/storage/` (37 source files)
 
-## How To Divide: Six Pathologies
-
-Large files are not all large for the same reason, and the right split
-differs. Diagnose before cutting.
-
-### Pathology 1 — God class
-
-*Symptom:* one class, very many methods. `AutomationStudioService`
-(419 methods), `ClientGatewayService` (42).
-
-*Fix:* a thin facade over focused collaborators. The class keeps its public
-surface exactly; each concern group becomes a collaborator the facade
-delegates to. Method-name prefixes reveal the groups:
-
-| Concern | Methods | Prefixes |
-| --- | --- | --- |
-| Persistence | 108 | `write` 39, `read` 25, `delete` 25, `save` 14, `append` 9 |
-| Retrieval | 84 | `list` 51, `get` 33 |
-| Flow domain | 32 | `flow` |
-| Validation | 22 | `ensure` 14, `assert` 7 |
-| Lifecycle | 15 | `apply` 8, `review` 4, `migrate` 4 |
-| Recording | 7 | `recording` |
-| Binding | 7 | `bind` |
-| Project | 6 | `project` |
-
-Preserving the public surface matters: `service.ts` is imported by at least
-`automation-studio/api`, `client-gateway`, `background-tasks`,
-`compute-control`, `database-manager`, and `deployment-sync`. A facade split
-touches none of them. Changing the surface would turn a background task into
-a migration.
-
-Extract persistence first — largest, most mechanical, least entangled with
-flow semantics. Then retrieval. Domain groups last.
-
-### Pathology 2 — Giant function bodies
-
-*Symptom:* few exports, many lines. `handlers.ts` is 2,094 lines with 3
-exported functions; `executor.ts` is 876 with 3; `validation.ts` is 934
-with 28.
-
-*Fix:* extract named steps into sibling modules. The exported function
-becomes a readable sequence of named calls. This is the lowest-risk split of
-all, since the extracted helpers are private and no consumer sees a change.
-
-### Pathology 3 — Declaration dumps
-
-*Symptom:* very many type or const exports. `contracts.ts` has 112 exported
-types; `project-schema.ts` has 21 exported consts; `fixtures.ts` similar.
-
-*Fix:* split by domain noun into a directory, with `index.ts` re-exporting
-everything. Import paths stay identical because consumers already import
-from the module path. This is the cheapest split in the list and should be
-done first wherever it applies.
-
-A caveat: a large type module is genuinely less harmful than a large
-behaviour module. Prioritize accordingly.
-
-### Pathology 4 — Multi-component modules
-
-*Symptom:* many React components in one file. `shared-ui.tsx` has 37
-components in 1,087 lines.
-
-*Fix:* one component per file in a directory named for the group, plus a
-barrel. This is the clearest instance of the one-thing-per-file rule and
-needs no judgement.
-
-### Pathology 5 — Monolithic stylesheets
-
-*Symptom:* `global-foundation.css` at 3,396 lines, `global-programs.css` at
-764.
-
-*Fix:* split by section into a directory and compose with `@import`, or
-concatenate at build time. Note the codebase already does this well
-elsewhere — `features/automation-studio/styles/flow-editor/02-palette-actions.css`
-shows an established numbered-section convention. Apply the existing pattern
-rather than inventing one.
-
-### Pathology 6 — Test files mirroring an oversized subject
-
-*Symptom:* `service.test.ts` at 4,790 lines, and four more test files over
-900.
-
-*Fix:* these shrink as a consequence of splitting their subject. Do not
-split them independently — a test file reorganized apart from the code it
-covers loses the correspondence that makes it navigable. They are baselined
-and frozen; they will fall out of the ratchet as their subjects are divided.
-
----
-
-## Deterministic File Structure
-
-The size limit stops files growing. It does not say where new files go, and
-without that, splitting a god file just produces the flat 66-file directory
-next to it. These five rules make placement deterministic.
-
-### Rule 1 — One exported thing per file
-
-A file exports one class, one component, or one cohesive function group.
-Types used only by that thing live beside it; types shared across the
-directory live in a sibling `types.ts`. The filename is the thing's name in
-kebab-case.
-
-### Rule 2 — A shared filename prefix becomes a directory
-
-When three or more files in a directory share a `noun-` prefix, that prefix
-becomes a subdirectory and is stripped from the filenames.
+Apply the prefix rule. Layer barrel keeps its exports.
 
 ```text
-storage/project-hierarchy-feed.ts          storage/project/hierarchy/feed.ts
-storage/project-hierarchy-mutations.ts  →  storage/project/hierarchy/mutations.ts
-storage/project-hierarchy-repository.ts    storage/project/hierarchy/repository.ts
+storage/                              13 + project/
+  project/                            23 + hierarchy/
+    hierarchy/{feed,mutations,repository}.ts
 ```
 
-This is the important rule, and it is not an imposed taxonomy. The prefixes
-are groupings the team already chose and encoded in filenames because no
-folder existed to hold them. `storage/` alone contains `project-hierarchy-*`
-(7), `project-*` (7), `project-content-*` (4), `project-flow-resource-*` (3),
-and a dozen two-file pairs. Applying the rule mechanically derives the
-directory structure from intent already expressed, which is why it is safe
-to apply without redesigning anything.
+`project-*` (26 files) → `project/` with the prefix stripped; inside it,
+`hierarchy-*` (3) → `project/hierarchy/`. Every other prefix group in
+`storage/` has two members and stays flat. Update `storage/index.ts` to
+re-export from `./project/index.ts`; `project/index.ts` re-exports its
+children. Verify `storage/index.ts`'s export list is identical before and
+after with a diff of `export` lines.
 
-### Rule 3 — Directories cap at 25 source files
+### Phase 3 — `automation-studio/runtime/` (34) and `model/` (28)
 
-Enforced. Warn at 15. A directory approaching the cap is a signal to apply
-Rule 2, not to raise the cap.
+`runtime/`: `llm-*` (8) → `llm/`; `flow-bootstrap*` (3) → `flow-bootstrap/`.
+Result: 23 loose + two directories. Optional naming normalization for two
+strays that belong with `llm/` but do not match the prefix:
+`reusable-llm-context.ts` → `llm/reusable-context.ts`,
+`completed-llm-evidence.ts` → `llm/completed-evidence.ts`.
 
-### Rule 4 — Every directory has a barrel
+`model/`: `state-*` plus bare `state.ts` (3) → `state/`. Result: exactly 25
+loose. The next file added to `model/` forces another grouping — that is the
+ratchet working as designed, not a problem to pre-empt.
 
-`index.ts` re-exports the directory's public surface, and imports target the
-directory rather than individual files. 71 barrels already exist, 23 within
-`automation-studio`, so this is established practice rather than a new
-convention.
+### Phase 4 — Web features: kind folders
 
-Barrels are what make Rule 2 cheap: moving `project-hierarchy-feed.ts` to
-`project/hierarchy/feed.ts` changes no consumer, because consumers import
-from `storage`. Reorganization becomes a local operation.
+Apply the kind rule where the web naming already declares kind. Each feature
+keeps its `index.ts` exports.
 
-### Rule 5 — Layer, then feature, then file
+| Feature | Before | After |
+| --- | --- | --- |
+| `live/` | 43 loose | 6 loose + `hooks/` 20 + `components/` 7 + `commands/` 4 + `view-host/` |
+| `hierarchy/` | 41 loose | 24 loose + `components/` 6 + `hooks/` 5 + `commands/` 6 |
+| `flow-editor/` | 36 loose + `commands/` + `model/` | 14 loose + `components/` 13 + `hooks/` 9 + existing two |
 
-The existing layer taxonomy — `programs/<program>/{api,model,runtime,storage,
-client-gateway}` — is sound and stays. The failure is that within a layer
-everything is flat. The feature level from Rule 2 goes between them:
+Two naming fixes fall out: `live/use-gateway-recording-bridge.ts` →
+`hooks/useGatewayRecordingBridge.ts` and `hierarchy/tree-rows.tsx` →
+`components/TreeRows.tsx`, so the kind rule sees them.
 
-```text
-programs/automation-studio/
-  storage/
-    project/
-      hierarchy/{feed,mutations,repository}.ts
-      content/{store,protection}.ts
-      event/{chunk-store,stream-writer}.ts
-      object/{index-migration,repository}.ts
-      flow-resource/{mutations,repository}.ts
-      index.ts
-    catalog/
-    index.ts
-  runtime/
-    llm/{provider,run,evidence,execution,deepseek,harness}/
-    flow/{bootstrap,...}/
-    service/            <- the decomposed facade and collaborators
-    {router,policy,pipeline,region,state,io,training}/
-    index.ts
-```
+### Phase 5 — Declaration dumps and the component pile
 
-Current nesting reaches 7 levels. This adds one where it applies. Cap depth
-at 8; past that, the layer split is probably wrong.
+Cheapest code splits; barrel-protected; zero consumer change.
+
+- `api/contracts.ts` (112 types) → `api/contracts/` split by domain noun.
+- `storage/project-schema.ts` (21 consts) → after Phase 2 it is
+  `project/schema.ts`; split into `project/schema/` by table or document.
+- `model/fixtures.ts` (823) → `model/fixtures/` by document type.
+- `apps/web/src/features/programs/shared-ui.tsx` (37 components) →
+  `programs/components/`, one file each.
+
+### Phase 6 — Giant function bodies
+
+Extract named steps into sibling modules. Private helpers; no consumer sees
+a change.
+
+- `api/handlers.ts` — 2,094 lines, 3 exported functions.
+- `runtime/executor.ts` — 876 lines, 3 exported functions.
+- `model/validation.ts` — 934 lines, 28 functions; group by document.
+- `runtime/llm-harness.ts` (→ `llm/harness.ts` after Phase 3) and
+  `runtime/flow-bootstrap.ts` — mixed; split types out first, then bodies.
+
+### Phase 7 — `AutomationStudioService` facade
+
+Last, because every program imports it. The class keeps its public surface
+exactly and delegates to collaborators under `runtime/service/`:
+
+| Collaborator | Methods | From prefixes |
+| --- | --- | --- |
+| persistence | 108 | `write` 39, `read` 25, `delete` 25, `save` 14, `append` 9 |
+| retrieval | 84 | `list` 51, `get` 33 |
+| flow | 32 | `flow` |
+| validation | 22 | `ensure` 14, `assert` 7 |
+| lifecycle | 15 | `apply` 8, `review` 4, `migrate` 4 |
+| recording, binding, project | 20 | `recording` 7, `bind` 7, `project` 6 |
+
+Extract persistence first (largest, most mechanical), then retrieval, then
+the domain groups. Each extraction lands independently with tests green.
+`service.test.ts` (4,790 lines) is split to mirror the collaborators as they
+appear, never ahead of them. `ClientGatewayService` (42 methods) gets the
+same treatment at a fraction of the size.
+
+Risk note: this is the one phase that touches behaviour every program depends
+on. It should not run during the last week of the MVP cycle, and each
+collaborator extraction is its own commit so any regression bisects to one
+step.
+
+### Phase 8 — Stylesheets
+
+`global-foundation.css` (3,396) and `global-programs.css` (764) → numbered
+section directories, following the convention `features/automation-studio/styles/`
+already uses.
 
 ---
 
-## Timing
+## CodeGraph Assessment
 
-The ratchet is already in place and carries no product risk — install-and-
-forget. The reorganization is a different question during an MVP cycle.
+`github.com/colbymchenry/codegraph` — verified 2026-09-10: 70,403 stars,
+MIT, last push 2026-09-09, `@colbymchenry/codegraph@1.6.0` on npm. It
+builds a local tree-sitter/SQLite graph of a codebase and serves symbol,
+caller, and call-path queries to agents over MCP.
 
-Core's own refactor rule permits refactoring when architecture prevents a
-requirement, causes serious reliability problems, produces active bugs, or
-makes required functionality unreasonably hard to add. Directory
-reorganization under Rules 2 and 4 is close to zero-risk because barrels
-absorb the moves, and can proceed whenever convenient. Decomposing
-`service.ts` is a different matter: it is the class every program imports,
-and doing it mid-MVP trades delivery risk for maintainability that is not
-currently blocking anything.
+**Decision: time-boxed trial on Core only, independent of this plan.** It
+would help trace paths into the god class and supports the existing
+trace-before-modify rule. Four reservations, in order:
 
-Recommended order:
+1. It makes a large codebase cheaper to navigate; it does nothing to stop
+   one forming, and removes the friction that would otherwise force a
+   split. Complementary to the ratchet, never a substitute.
+2. It indexes per project. Cross-repository tracing across the `link:`
+   seam lands in two disconnected graphs.
+3. Windows CI is weak upstream — 79 open Windows issues, a cluster on its
+   own test suite (temp-directory leaks, POSIX PID assumptions, V8 OOM in
+   the Windows pool, one "hard blocker" for promoting Windows builds).
+   Verify it indexes a path containing `!` on `F:` before relying on it.
+4. Its own docs report ~80% more retrieval context resident at session end,
+   in tension with role-scoped reading.
 
-1. **Now:** the ratchet. Done.
-2. **Now, safe:** Pathology 3 splits (declaration dumps) and Rule 2
-   reorganization of `storage/`. Both are mechanical and barrel-protected.
-3. **Opportunistic:** Pathology 2 and 4 splits when a task already requires
-   substantial edits in the file.
-4. **Post-MVP, or when a task forces it:** Pathology 1, starting with
-   persistence.
+## Downstream Adoption
+
+The downstream repository adopts the same script and the same rules. Its
+paired document tracks its own four oversized files. Its `AGENTS.md`
+already links this repository's methodology rather than restating it.
 
 ---
 
@@ -357,39 +241,52 @@ Recommended order:
 - Agent: supervisor
 - Changed: this document and its downstream pair.
 - Why: A 12,482-line, 419-method class reached production while an
-  instruction forbidding exactly that was in force.
+  instruction forbidding it was in force.
 - Validation: measurements taken directly across both repositories. Plan
-  only, so no code check applied.
+  only.
 - Outcome: Accepted
 - Follow-up: Implement the ratchet.
 
 ### 2026-09-10 — Full audit and enforcement implemented
 
 - Agent: supervisor
-- Changed: `scripts/structure-audit.mjs` (new),
-  `.structure-baseline.json` (new), `package.json`, this document.
-- Why: The user required a full Core audit and a hard 800-line limit rather
-  than deferring the problem.
-- Validation: `node scripts/structure-audit.mjs` on a clean tree -> exit 0,
-  71 warnings. Appending two lines to `model/fixtures.ts` -> `FAIL ... 825
-  lines exceeds its baseline of 823`, exit 1. A new 801-line file ->
-  `FAIL ... exceeds the 800-line limit for new files`, exit 1. Both probes
-  reverted; tree clean afterwards. `pnpm structure:check` -> exit 0.
+- Changed: `scripts/structure-audit.mjs`, `.structure-baseline.json`,
+  `package.json`, this document.
+- Why: A hard 800-line limit and full Core audit were required.
+- Validation: clean tree → exit 0, 71 warnings; +2 lines on
+  `model/fixtures.ts` → `FAIL … 825 exceeds baseline 823`, exit 1; new
+  801-line file → `FAIL`, exit 1; probes reverted; `pnpm structure:check`
+  → exit 0.
 - Outcome: Accepted
-- Follow-up: Adopt the script downstream; reorganize `storage/` under
-  Rule 2.
+- Follow-up: Publish the methodology; plan the migration.
+
+### 2026-09-10 — Methodology published, tests decision, migration sequenced
+
+- Agent: supervisor
+- Changed: `docs/architecture/code-structure.md` (new),
+  `docs/architecture/program-layout.md`, `AGENTS.md` (rewritten for
+  clarity and deduplicated), this document, working index and protocol
+  (stale role terms), and the downstream `AGENTS.md` tests rule.
+- Why: The user required a deterministic structure methodology covering
+  global cases, tests in a dedicated folder, and an unambiguous `AGENTS.md`.
+- Validation: public-surface invariant confirmed by reading
+  `automation-studio/index.ts` (wholesale layer barrels; layers are not
+  public subpaths); `testing/` confirmed public via the same barrel;
+  `tsconfig.build.json` confirmed to need an explicit `include`. Documentation
+  only, so no code check applies.
+- Outcome: Accepted
+- Follow-up: Phase 1.
 
 ---
 
 ## Open Questions
 
 - **Should the method-count rule become blocking?** It is a regex heuristic
-  — it counted 365 methods where a direct count found 419 — so it currently
-  warns. Making it blocking needs a real TypeScript parse. Owner: senior
-  supervisor agent.
-- **Should test files have a higher ceiling?** They are baselined and will
-  shrink with their subjects, so no separate ceiling is proposed yet.
+  (365 counted against 419 actual). Blocking needs a TypeScript parse.
   Owner: senior supervisor agent.
-- **Should the audit also enforce the working-document 800-line compaction
-  threshold?** Both are size ratchets over tracked files, currently
-  unrelated mechanisms. Owner: senior supervisor agent.
+- **Should the audit verify the `tests/` mirror?** A test whose path has no
+  `src/` counterpart is either misplaced or an integration test in the wrong
+  folder. Cheap to add once Phase 1 lands. Owner: senior supervisor agent.
+- **Should the audit enforce the working-document 800-line compaction
+  threshold too?** Same mechanism, different file set. Owner: senior
+  supervisor agent.

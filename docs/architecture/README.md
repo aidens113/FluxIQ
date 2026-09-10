@@ -79,6 +79,8 @@ Global program internals use the layout described in
 - [Runtime Kernel](runtime-kernel.md)
 - [Documentation System](docs-system.md)
 - [Program Layout](program-layout.md)
+- [Code Structure](code-structure.md) — placement procedure, feature and kind
+  directories, `tests/` mirroring, size budgets, and how to divide a file
 - [Package Boundaries And Distribution](package-boundaries.md)
 - [UI Theme](ui-theme.md)
 - [Migration Plan](migration-plan.md)
