@@ -216,6 +216,9 @@ import {
   AutomationStudioProposalGeneration,
   AutomationStudioFlowSubflowMigration,
   AutomationStudioProposalApproval,
+  clampInteger,
+  subflowSummaryFromSql,
+  type AutomationStudioInstructionSummaryPage,
   canonicalFlowDocument,
   type AutomationStudioSubflowSummaryPage,
   type CreateRecordingFlowProposalsResult,
@@ -258,7 +261,7 @@ import {
   type RecordingIndex,
   type RuntimeIndex,
 } from "./service/index.ts";
-export type { AutomationStudioSubflowSummaryPage } from "./service/index.ts";
+export type { AutomationStudioInstructionSummaryPage, AutomationStudioSubflowSummaryPage } from "./service/index.ts";
 export type { CreateRecordingFlowProposalsResult, GenerateRecordingProposalInput, GenerateRecordingProposalResult, NormalizationReviewArtifact, ProcessFinalizedRecordingResult } from "./service/index.ts";
 export type { AutomationStudioAdaptationPolicySummary, AutomationStudioAdaptationSummary, AutomationStudioAdaptationSummaryPage, AutomationStudioChangeProposalSummary, AutomationStudioFlowRunSummaryPage, AutomationStudioInstructionSummary, AutomationStudioRouterSummary, AutomationStudioSubflowSummary, AutomationStudioWriteProjectObjectAssetInput, AutomationStudioWriteProjectObjectAssetResult, CreateFlowSubflowInput } from "./service/index.ts";
 import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage.ts";
@@ -516,13 +519,6 @@ export type AutomationStudioRouterTargetReferenceBatch = {
   perTargetLimit: number;
 };
 
-export type AutomationStudioInstructionSummaryPage = {
-  instructions: AutomationStudioInstructionSummary[];
-  total: number;
-  limit: number;
-  offset: number;
-};
-
 export type AutomationStudioChangeProposalSummaryPage = {
   changeProposals: AutomationStudioChangeProposalSummary[];
   total: number;
@@ -755,7 +751,7 @@ export class AutomationStudioService {
     this.adaptationPatches = new AutomationStudioAdaptationPatches(this.flows, this.flowWriter, this.flowMutations, automationStudioFacadePorts(this));
     this.durableAdaptations = new AutomationStudioDurableAdaptations(this.flows, this.flowWriter, this.flowMutations, this.adaptationPatches, automationStudioFacadePorts(this));
     this.catalogue = new AutomationStudioCatalogue(this.projectPaths, this.projects, this.indexes, this.flows, this.repositories);
-    this.summaries = new AutomationStudioSummaryStore(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.flows, this.flowMutations, automationStudioFacadePorts(this), this.runtimeProjectDatabasePool);
+    this.summaries = new AutomationStudioSummaryStore(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.flows, this.flowMutations, this.bootstrapAdaptations, automationStudioFacadePorts(this), this.runtimeProjectDatabasePool);
     this.evidenceMining = new AutomationStudioEvidenceMining(this.recordingDomains, this.recordings, this.repositories, automationStudioFacadePorts(this));
     this.flowSubflowMigration = new AutomationStudioFlowSubflowMigration(this.flowWriter, automationStudioFacadePorts(this));
     this.proposalApproval = new AutomationStudioProposalApproval(this.projectPaths, this.projects, this.recordings, this.repositories, this.flowSubflowMigration, automationStudioFacadePorts(this));
@@ -3902,146 +3898,14 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async listRuntimeSessionSummaries(projectId: string, options: { limit?: unknown; offset?: unknown } = {}): Promise<AutomationStudioRuntimeRunSummaryPage> {
-    await this.summaries.ensureRuntimeSummaryIndex(projectId);
-    const limit = clampInteger(options.limit, 1, 100, 25);
-    const offset = clampInteger(options.offset, 0, 1_000_000, 0);
-    if (!this.projectPaths.root) {
-      const sessions = await this.listRuntimeSessions(projectId);
-      const runs = sessions.map((session) => runtimeSummaryFromSession(session)).slice(offset, offset + limit);
-      return { runs, total: sessions.length, limit, offset };
-    }
-    const page = await this.summaries.runtimeSummaryRepository(projectId).listPage({}, { limit, offset, orderBy: "updated_at_ms", direction: "desc" });
-    return {
-      runs: page.records.map((record) => record.data as unknown as AutomationStudioRuntimeRunSummary),
-      total: page.total,
-      limit: page.limit,
-      offset: page.offset
-    };
+    return await this.summaries.listRuntimeSessionSummaries(projectId, options);
   }
 
   async listFlowSubflowSummaries(input: { projectId: string; flowId?: string; status?: string; role?: string; search?: string; sort?: "updated" | "name" | "status" | "role"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioSubflowSummaryPage> {
-    const limit = clampInteger(input.limit, 1, 100, 25);
-    const offset = clampInteger(input.offset, 0, 1_000_000, 0);
-    const search = input.search?.trim().toLowerCase();
-    if (!this.projectPaths.root) {
-      const index = await this.indexes.readFlowSubflowIndex(input.projectId);
-      const scoped = (index.subflows ?? []).filter((item) =>
-        (!input.flowId || item.flowId === input.flowId)
-        && (!input.status || item.status === input.status)
-        && (!input.role || item.role === input.role)
-        && (!search || item.name.toLowerCase().includes(search) || item.subflowId.toLowerCase().includes(search))
-      );
-      return { subflows: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
-    }
-    const typedPage = await this.flows.tryWithFlowResourceRepository(input.projectId, async (repository) => await repository.listSubflowSummariesPage({
-      ...(input.flowId ? { flowId: input.flowId } : {}),
-      ...(input.status ? { status: input.status } : {}),
-      ...(input.role ? { role: input.role } : {}),
-      ...(search ? { search } : {}),
-      ...(input.sort ? { sort: input.sort } : {}),
-      ...(input.direction ? { direction: input.direction } : {}),
-      limit,
-      offset
-    }));
-    if (typedPage) {
-      const hasFilter = Boolean(input.flowId || input.status || input.role || search);
-      const typedInventory = hasFilter
-        ? await this.flows.tryWithFlowResourceRepository(input.projectId, async (repository) => await repository.listSubflowSummariesPage({ limit: 1, offset: 0 }))
-        : typedPage;
-      const summaryInventory = await this.flowMutations.flowSubflowSummaryRepository(input.projectId).listPage({}, { limit: 1, offset: 0 }).catch(() => null);
-      const typedProjectionIsComplete = Boolean(
-        typedInventory
-        && summaryInventory
-        && summaryInventory.total > 0
-        && typedInventory.total >= summaryInventory.total
-      );
-      if (typedProjectionIsComplete) {
-        return {
-          subflows: typedPage.items.map((item) => subflowSummaryFromSql(item, input.projectId)),
-          total: typedPage.total,
-          limit: typedPage.limit,
-          offset: typedPage.offset
-        };
-      }
-    }
-    await this.summaries.ensureFlowSubflowSummaryIndex(input.projectId);
-    const repository = this.flowMutations.flowSubflowSummaryRepository(input.projectId);
-    const clauses: string[] = [];
-    const params: unknown[] = [];
-    if (input.flowId) { clauses.push("json_extract(data, '$.flowId') = ?"); params.push(input.flowId); }
-    if (input.status) { clauses.push("json_extract(data, '$.status') = ?"); params.push(input.status); }
-    if (input.role) { clauses.push("json_extract(data, '$.role') = ?"); params.push(input.role); }
-    if (search) {
-      clauses.push("(lower(json_extract(data, '$.name')) like ? or lower(json_extract(data, '$.subflowId')) like ?)");
-      params.push("%" + search + "%", "%" + search + "%");
-    }
-    const where = clauses.length ? "where " + clauses.join(" and ") : "";
-    const sortColumn = input.sort === "name" ? "lower(json_extract(data, '$.name'))" : input.sort === "status" ? "json_extract(data, '$.status')" : input.sort === "role" ? "json_extract(data, '$.role')" : "updated_at_ms";
-    const direction = input.direction === "asc" ? "asc" : "desc";
-    const result = await repository.transaction({}, async (transaction) => {
-      const totalRow = await transaction.get<{ total: number }>("select count(*) as total from " + repository.tableName + " " + where, params);
-      const rows = await transaction.all<{ data: string }>("select data from " + repository.tableName + " " + where + " order by " + sortColumn + " " + direction + ", id asc limit ? offset ?", [...params, limit, offset]);
-      return { total: totalRow?.total ?? 0, items: rows.map((row) => JSON.parse(row.data) as unknown as AutomationStudioSubflowSummary) };
-    });
-    return { subflows: result.items, total: result.total, limit, offset };
+    return await this.summaries.listFlowSubflowSummaries(input);
   }
   async listFlowInstructionSummaries(input: { projectId: string; flowId?: string; subflowId?: string; status?: string; scopeKind?: string; requirement?: string; search?: string; sort?: "updated" | "title" | "status" | "scope" | "priority"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioInstructionSummaryPage> {
-    const limit = clampInteger(input.limit, 1, 100, 25);
-    const offset = clampInteger(input.offset, 0, 1_000_000, 0);
-    const search = input.search?.trim().toLowerCase();
-    const matchesScope = (item: AutomationStudioInstructionSummary) =>
-      (!input.flowId || item.flowId === input.flowId || item.scopeKind === "global" || item.scopeKind === "project")
-      && (!input.subflowId || item.subflowId === input.subflowId || item.scopeKind === "flow" || item.scopeKind === "project" || item.scopeKind === "global");
-    if (!this.projectPaths.root) {
-      const index = await this.indexes.readFlowInstructionIndex(input.projectId);
-      const scoped = (index.instructions ?? []).filter((item) => matchesScope(item)
-        && (!input.status || item.status === input.status)
-        && (!input.scopeKind || item.scopeKind === input.scopeKind)
-        && (!input.requirement || item.requirement === input.requirement)
-        && (!search || item.title.toLowerCase().includes(search) || item.instructionId.toLowerCase().includes(search)));
-      const direction = input.direction === "asc" ? 1 : -1;
-      scoped.sort((left, right) => {
-        const comparison = input.sort === "title" ? left.title.localeCompare(right.title)
-          : input.sort === "status" ? left.status.localeCompare(right.status)
-          : input.sort === "scope" ? left.scopeKind.localeCompare(right.scopeKind)
-          : input.sort === "priority" ? left.priority - right.priority
-          : left.updatedAt - right.updatedAt;
-        return comparison * direction || left.instructionId.localeCompare(right.instructionId);
-      });
-      return { instructions: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
-    }
-    const typedPage = await this.flows.tryWithFlowResourceRepository(input.projectId, async (repository) => await repository.listInstructionSummariesPage({
-      ...(input.flowId ? { flowId: input.flowId } : {}),
-      ...(input.subflowId ? { subflowId: input.subflowId } : {}),
-      ...(input.scopeKind ? { scopeKind: sqlInstructionScopeKind(input.scopeKind) } : {}),
-      ...(input.status ? { status: sqlInstructionStatus(input.status) } : {}),
-      ...(input.requirement ? { requirement: sqlInstructionRequirement(input.requirement) } : {}),
-      ...(search ? { search } : {}),
-      ...(input.sort ? { sort: input.sort } : {}),
-      ...(input.direction ? { direction: input.direction } : {}),
-      limit,
-      offset
-    }));
-    if (typedPage && typedPage.total > 0) return { instructions: typedPage.items.map((item) => instructionSummaryFromSql(item, input.projectId)), total: typedPage.total, limit: typedPage.limit, offset: typedPage.offset };
-    await this.summaries.ensureFlowInstructionSummaryIndex(input.projectId);
-    const repository = this.summaries.flowInstructionSummaryRepository(input.projectId);
-    const clauses: string[] = [];
-    const params: unknown[] = [];
-    if (input.flowId) { clauses.push("(json_extract(data, '$.flowId') = ? or json_extract(data, '$.scopeKind') in ('global', 'project'))"); params.push(input.flowId); }
-    if (input.subflowId) { clauses.push("(json_extract(data, '$.subflowId') = ? or json_extract(data, '$.scopeKind') in ('global', 'project', 'flow'))"); params.push(input.subflowId); }
-    if (input.status) { clauses.push("json_extract(data, '$.status') = ?"); params.push(input.status); }
-    if (input.scopeKind) { clauses.push("json_extract(data, '$.scopeKind') = ?"); params.push(input.scopeKind); }
-    if (input.requirement) { clauses.push("json_extract(data, '$.requirement') = ?"); params.push(input.requirement); }
-    if (search) { clauses.push("(lower(json_extract(data, '$.title')) like ? or lower(json_extract(data, '$.instructionId')) like ?)"); params.push("%" + search + "%", "%" + search + "%"); }
-    const where = clauses.length ? "where " + clauses.join(" and ") : "";
-    const sortColumn = input.sort === "title" ? "lower(json_extract(data, '$.title'))" : input.sort === "status" ? "json_extract(data, '$.status')" : input.sort === "scope" ? "json_extract(data, '$.scopeKind')" : input.sort === "priority" ? "cast(json_extract(data, '$.priority') as integer)" : "updated_at_ms";
-    const direction = input.direction === "asc" ? "asc" : "desc";
-    const result = await repository.transaction({}, async (transaction) => {
-      const totalRow = await transaction.get<{ total: number }>("select count(*) as total from " + repository.tableName + " " + where, params);
-      const rows = await transaction.all<{ data: string }>("select data from " + repository.tableName + " " + where + " order by " + sortColumn + " " + direction + ", id asc limit ? offset ?", [...params, limit, offset]);
-      return { total: totalRow?.total ?? 0, items: rows.map((row) => JSON.parse(row.data) as unknown as AutomationStudioInstructionSummary) };
-    });
-    return { instructions: result.items, total: result.total, limit, offset };
+    return await this.summaries.listFlowInstructionSummaries(input);
   }
   async listFlowChangeProposalSummaries(input: { projectId: string; flowId?: string; subflowId?: string; limit?: unknown; offset?: unknown }): Promise<AutomationStudioChangeProposalSummaryPage> {
     const limit = clampInteger(input.limit, 1, 100, 25);
@@ -4052,135 +3916,11 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async listFlowRunSummaries(input: { projectId: string; flowId?: string; status?: string; search?: string; sort?: "updated" | "started" | "duration" | "actions" | "status"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioFlowRunSummaryPage> {
-    const limit = clampInteger(input.limit, 1, 100, 25);
-    const offset = clampInteger(input.offset, 0, 1_000_000, 0);
-    const search = input.search?.trim().toLowerCase();
-    const direction = input.direction === "asc" ? "asc" : "desc";
-    const sort = input.sort ?? "updated";
-    if (!this.projectPaths.root) {
-      const index = await this.indexes.readFlowRunIndex(input.projectId);
-      const scoped = (index.runs ?? []).filter((item) =>
-        (!input.flowId || item.flowId === input.flowId)
-        && (!input.status || item.status === input.status)
-        && (!search || item.runId.toLowerCase().includes(search) || item.flowId.toLowerCase().includes(search))
-      ).sort((left, right) => compareFlowRunSummaries(left, right, sort, direction));
-      return { runs: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
-    }
-    const typedPage = await this.summaries.tryWithRuntimeStreamStore(input.projectId, async (store) => await store.listRunSummaries({
-      ...(input.flowId ? { flowId: input.flowId } : {}),
-      ...(input.status ? { status: input.status } : {}),
-      ...(search ? { search } : {}),
-      sort,
-      direction,
-      limit,
-      offset
-    }));
-    if (typedPage && typedPage.total > 0) return typedPage;
-    await this.summaries.ensureFlowRunSummaryIndex(input.projectId);
-    return await this.summaries.listSqlFlowRunSummaryPage(this.summaries.flowRunSummaryRepository(input.projectId), {
-      ...(input.flowId ? { flowId: input.flowId } : {}),
-      ...(input.status ? { status: input.status } : {}),
-      ...(search ? { search } : {}),
-      sort,
-      direction,
-      limit,
-      offset
-    });
+    return await this.summaries.listFlowRunSummaries(input);
   }
 
   async listFlowAdaptationSummaries(input: { projectId: string; flowId?: string; subflowId?: string; status?: string; risk?: string; search?: string; sort?: "updated" | "status" | "risk" | "trigger"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioAdaptationSummaryPage> {
-    const limit = clampInteger(input.limit, 1, 100, 25);
-    const offset = clampInteger(input.offset, 0, 1_000_000, 0);
-    const search = input.search?.trim().toLowerCase();
-    const sort = input.sort ?? "updated";
-    const direction = input.direction === "asc" ? "asc" : "desc";
-    const bootstrap = (await this.bootstrapAdaptations.listProjectFlowBootstrapAdaptations(input.projectId, input.flowId))
-      .map(bootstrapAdaptationSummary)
-      .filter((item) =>
-        (!input.subflowId || item.subflowId === input.subflowId)
-        && (!input.status || item.status === input.status)
-        && (!input.risk || item.riskLevel === input.risk)
-        && (!search || item.adaptationId.toLowerCase().includes(search) || item.trigger.toLowerCase().includes(search))
-      );
-    if (!bootstrap.length) return await this.listOrdinaryFlowAdaptationSummaries(input, { limit, offset, ...(search ? { search } : {}), sort, direction });
-
-    const ordinary = await this.listAllOrdinaryFlowAdaptationSummaries(input, { ...(search ? { search } : {}), sort, direction });
-    const merged = new Map<string, AutomationStudioAdaptationSummary>();
-    for (const item of ordinary) merged.set(item.adaptationId, item);
-    for (const item of bootstrap) merged.set(item.adaptationId, item);
-    const adaptations = [...merged.values()].sort((left, right) => compareFlowAdaptationSummaries(left, right, sort, direction));
-    return { adaptations: adaptations.slice(offset, offset + limit), total: adaptations.length, limit, offset };
-  }
-
-  private async listOrdinaryFlowAdaptationSummaries(
-    input: { projectId: string; flowId?: string; subflowId?: string; status?: string; risk?: string },
-    page: { limit: number; offset: number; search?: string; sort: "updated" | "status" | "risk" | "trigger"; direction: "asc" | "desc" }
-  ): Promise<AutomationStudioAdaptationSummaryPage> {
-    let typedPage: Awaited<ReturnType<AutomationStudioProjectAdaptationStore["listAdaptationsPage"]>> | null = null;
-    if (this.runtimeProjectDatabasePool && this.projectPaths.root) {
-      const store = await AutomationStudioProjectAdaptationStore.open({ pool: this.runtimeProjectDatabasePool, projectId: input.projectId });
-      try {
-        typedPage = await store.listAdaptationsPage({
-          ...(input.flowId ? { flowId: input.flowId } : {}),
-          ...(input.subflowId ? { subflowId: input.subflowId } : {}),
-          ...(input.status ? { status: input.status } : {}),
-          ...(input.risk ? { risk: input.risk } : {}),
-          ...(page.search ? { search: page.search } : {}),
-          sort: page.sort,
-          direction: page.direction,
-          limit: page.limit,
-          offset: page.offset
-        });
-        if (typedPage.total === 0 && (input.status || input.risk || page.search)) {
-          const canonicalScope = await store.listAdaptationsPage({
-            ...(input.flowId ? { flowId: input.flowId } : {}),
-            ...(input.subflowId ? { subflowId: input.subflowId } : {}),
-            limit: 1,
-            offset: 0
-          });
-          if (canonicalScope.total > 0) return { adaptations: [], total: 0, limit: typedPage.limit, offset: typedPage.offset };
-        }
-      } finally {
-        await store.close();
-      }
-    }
-    if (typedPage && typedPage.total > 0) return { adaptations: typedPage.adaptations.map(adaptationSummaryFromTypedStore), total: typedPage.total, limit: typedPage.limit, offset: typedPage.offset };
-    if (!this.projectPaths.root) {
-      const index = await this.indexes.readFlowAdaptationIndex(input.projectId);
-      const scoped = (index.adaptations ?? []).filter((item) =>
-        (!input.flowId || item.flowId === input.flowId)
-        && (!input.subflowId || item.subflowId === input.subflowId)
-        && (!input.status || item.status === input.status)
-        && (!input.risk || item.riskLevel === input.risk)
-        && (!page.search || item.adaptationId.toLowerCase().includes(page.search) || item.trigger.toLowerCase().includes(page.search))
-      ).sort((left, right) => compareFlowAdaptationSummaries(left, right, page.sort, page.direction));
-      return { adaptations: scoped.slice(page.offset, page.offset + page.limit), total: scoped.length, limit: page.limit, offset: page.offset };
-    }
-    await this.summaries.ensureFlowAdaptationSummaryIndex(input.projectId);
-    return await this.summaries.listSqlFlowAdaptationSummaryPage(this.summaries.flowAdaptationSummaryRepository(input.projectId), {
-      ...(input.flowId ? { flowId: input.flowId } : {}),
-      ...(input.subflowId ? { subflowId: input.subflowId } : {}),
-      ...(input.status ? { status: input.status } : {}),
-      ...(input.risk ? { risk: input.risk } : {}),
-      ...(page.search ? { search: page.search } : {}),
-      sort: page.sort,
-      direction: page.direction,
-      limit: page.limit,
-      offset: page.offset
-    });
-  }
-
-  private async listAllOrdinaryFlowAdaptationSummaries(
-    input: { projectId: string; flowId?: string; subflowId?: string; status?: string; risk?: string },
-    options: { search?: string; sort: "updated" | "status" | "risk" | "trigger"; direction: "asc" | "desc" }
-  ): Promise<AutomationStudioAdaptationSummary[]> {
-    const result: AutomationStudioAdaptationSummary[] = [];
-    for (let offset = 0; ; offset += 100) {
-      const page = await this.listOrdinaryFlowAdaptationSummaries(input, { ...options, limit: 100, offset });
-      result.push(...page.adaptations);
-      if (offset + page.adaptations.length >= page.total || page.adaptations.length === 0) break;
-    }
-    return result;
+    return await this.summaries.listFlowAdaptationSummaries(input);
   }
   async getFlowRouter(projectId: string, flowId: string): Promise<AutomationStudioFlowRouter | null> {
     return await this.flows.getFlowRouter(projectId, flowId);
@@ -6154,67 +5894,11 @@ function nextCategoryOrder(categories: AutomationStudioProjectCategory[]): numbe
   return Math.max(...normalizeProjectCategories(categories).map((category) => category.order)) + 1;
 }
 
-function subflowSummaryFromSql(subflow: AutomationStudioSqlSubflow, projectId: string): AutomationStudioSubflowSummary {
-  return {
-    subflowId: subflow.subflowId,
-    summaryVersion: 2,
-    graphFlowId: subflow.graphFlowId,
-    flowId: subflow.parentFlowId,
-    projectId,
-    name: subflow.name,
-    role: subflow.role as AutomationStudioFlowSubflow["role"],
-    status: flowExpansionStatusFromSql(subflow.status),
-    ...(subflow.parentCategoryId ? { parentCategoryId: subflow.parentCategoryId } : {}),
-    updatedAt: subflow.updatedAt
-  };
-}
-
-function instructionSummaryFromSql(instruction: AutomationStudioSqlInstructionSummary, fallbackProjectId: string): AutomationStudioInstructionSummary {
-  const scope = instruction.scope;
-  return {
-    instructionId: instruction.instructionId,
-    summaryVersion: 2,
-    projectId: scope?.projectId ?? fallbackProjectId,
-    ...(scope?.flowId ? { flowId: scope.flowId } : {}),
-    ...(scope?.subflowId ? { subflowId: scope.subflowId } : {}),
-    title: instruction.title,
-    scopeKind: instructionScopeKindFromSql(scope?.scopeKind),
-    status: instructionStatusFromSql(instruction.status),
-    requirement: instructionRequirementFromSql(instruction.requirement),
-    priority: instruction.priority,
-    updatedAt: instruction.updatedAt
-  };
-}
-
-function sqlInstructionScopeKind(scopeKind: string): AutomationStudioSqlInstructionScope["scopeKind"] {
-  if (scopeKind === "on_error") return "error";
-  if (scopeKind === "adaptation_review") return "flow";
-  return scopeKind === "global" || scopeKind === "project" || scopeKind === "flow" || scopeKind === "router" || scopeKind === "subflow" || scopeKind === "node" || scopeKind === "error" ? scopeKind : "flow";
-}
-
-function instructionScopeKindFromSql(scopeKind: AutomationStudioSqlInstructionScope["scopeKind"] | undefined): AutomationStudioInstructionSummary["scopeKind"] {
-  if (scopeKind === "error") return "on_error";
-  return (scopeKind ?? "flow") as AutomationStudioInstructionSummary["scopeKind"];
-}
-
-function instructionRequirementFromSql(requirement: "guidance" | "required" | "forbidden"): AutomationStudioInstructionSummary["requirement"] {
-  return requirement === "required" ? "required" : "advisory";
-}
-
-function instructionStatusFromSql(status: "draft" | "active" | "archived" | "deleted"): AutomationStudioInstructionSummary["status"] {
-  if (status === "draft" || status === "deleted") return "disabled";
-  return status;
-}
-
 function sqlResourceStatus(status: string): "draft" | "active" | "archived" | "deleted" {
   if (status === "archived") return "archived";
   if (status === "deleted") return "deleted";
   if (status === "draft") return "draft";
   return "active";
-}
-
-function flowExpansionStatusFromSql(status: string): AutomationStudioFlowSubflow["status"] {
-  return status === "archived" ? "archived" : "active";
 }
 
 function sqlRouterGroupToFlowGroup(group: AutomationStudioSqlRouter["groups"][number], _index = 0): AutomationStudioFlowRouteGroup {
@@ -6317,18 +6001,6 @@ function changeProposalSummaryFromProposal(proposal: AutomationStudioFlowChangeP
     updatedAt: proposal.updatedAt
   };
 }
-
-function bootstrapAdaptationSummary(adaptation: AutomationStudioBootstrapAdaptation): AutomationStudioAdaptationSummary {
-  return {
-    adaptationId: adaptation.adaptationId,
-    flowId: adaptation.flowId,
-    projectId: adaptation.projectId,
-    status: adaptation.status,
-    riskLevel: adaptation.riskLevel,
-    trigger: "Instruction-built Flow Bootstrap",
-    updatedAt: adaptation.updatedAt
-  };
-}
 function adaptationSummaryFromAdaptation(adaptation: AutomationStudioFlowAdaptation): AutomationStudioAdaptationSummary {
   return {
     adaptationId: adaptation.adaptationId,
@@ -6340,24 +6012,6 @@ function adaptationSummaryFromAdaptation(adaptation: AutomationStudioFlowAdaptat
     trigger: adaptation.trigger,
     updatedAt: adaptation.updatedAt
   };
-}
-
-function adaptationSummaryFromTypedStore(adaptation: { adaptationId: string; flowId: string; projectId: string; subflowId: string | null; status: AutomationStudioFlowAdaptation["status"]; riskLevel: AutomationStudioFlowAdaptation["riskLevel"]; trigger: string; updatedAt: number; patchCount?: number; evidenceCount?: number; approvalMode?: string; baseRevision?: number; appliedRevision?: number | null }): AutomationStudioAdaptationSummary {
-  return compactJsonObject({
-    adaptationId: adaptation.adaptationId,
-    flowId: adaptation.flowId,
-    projectId: adaptation.projectId,
-    ...(adaptation.subflowId ? { subflowId: adaptation.subflowId } : {}),
-    status: adaptation.status,
-    riskLevel: adaptation.riskLevel,
-    trigger: adaptation.trigger,
-    updatedAt: adaptation.updatedAt,
-    patchCount: adaptation.patchCount,
-    evidenceCount: adaptation.evidenceCount,
-    approvalMode: adaptation.approvalMode,
-    baseRevision: adaptation.baseRevision,
-    appliedRevision: adaptation.appliedRevision ?? undefined
-  }) as unknown as AutomationStudioAdaptationSummary;
 }
 
 function adaptationFromTypedStoreDetail(detail: { adaptation: AutomationStudioFlowAdaptation; revisions?: unknown; artifacts?: unknown[]; auditEvents?: unknown[]; auditTotal?: number; approvalMode?: string; baseRevision?: number; appliedRevision?: number | null; statusReason?: string; supersededByAdaptationId?: string | null }): AutomationStudioFlowAdaptation {
@@ -7697,55 +7351,6 @@ function normalizeCustomHierarchyNode(value: unknown): AutomationStudioHierarchy
     ...(sourceId ? { sourceId } : {}),
     ...(recordingId ? { recordingId } : {})
   };
-}
-
-function compareFlowAdaptationSummaries(
-  left: AutomationStudioAdaptationSummary,
-  right: AutomationStudioAdaptationSummary,
-  sort: "updated" | "status" | "risk" | "trigger",
-  direction: "asc" | "desc"
-): number {
-  const riskRank = (value: string): number => value === "destructive" ? 4 : value === "high" ? 3 : value === "medium" ? 2 : 1;
-  const value = (adaptation: AutomationStudioAdaptationSummary): number | string => {
-    if (sort === "status") return adaptation.status;
-    if (sort === "risk") return riskRank(adaptation.riskLevel);
-    if (sort === "trigger") return adaptation.trigger;
-    return adaptation.updatedAt;
-  };
-  const leftValue = value(left);
-  const rightValue = value(right);
-  const compared = typeof leftValue === "number" && typeof rightValue === "number"
-    ? leftValue - rightValue
-    : String(leftValue).localeCompare(String(rightValue));
-  const directed = direction === "asc" ? compared : -compared;
-  if (directed !== 0) return directed;
-  return direction === "asc" ? left.adaptationId.localeCompare(right.adaptationId) : right.adaptationId.localeCompare(left.adaptationId);
-}function compareFlowRunSummaries(
-  left: AutomationStudioFlowRunSummary,
-  right: AutomationStudioFlowRunSummary,
-  sort: "updated" | "started" | "duration" | "actions" | "status",
-  direction: "asc" | "desc"
-): number {
-  const value = (run: AutomationStudioFlowRunSummary): number | string => {
-    if (sort === "started") return run.startedAt ?? 0;
-    if (sort === "duration") return (run.finishedAt ?? run.updatedAt) - (run.startedAt ?? run.updatedAt);
-    if (sort === "actions") return run.actionAttemptCount ?? 0;
-    if (sort === "status") return run.status;
-    return run.updatedAt;
-  };
-  const leftValue = value(left);
-  const rightValue = value(right);
-  const compared = typeof leftValue === "number" && typeof rightValue === "number"
-    ? leftValue - rightValue
-    : String(leftValue).localeCompare(String(rightValue));
-  const directed = direction === "asc" ? compared : -compared;
-  if (directed !== 0) return directed;
-  return direction === "asc" ? left.runId.localeCompare(right.runId) : right.runId.localeCompare(left.runId);
-}
-function clampInteger(value: unknown, min: number, max: number, fallback: number): number {
-  const numeric = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(numeric)) return fallback;
-  return Math.min(max, Math.max(min, Math.trunc(numeric)));
 }
 
 function latestByGeneratedAt<T extends { generatedAt?: number }>(items: T[]): T | undefined {

@@ -2,15 +2,21 @@
 
 ## Outcome
 
-Done — **nineteen collaborators** extracted across seven dispatches.
+Done — **nineteen collaborators** extracted across eight dispatches.
 
 `packages/fluxiq/src/programs/automation-studio/runtime/service.ts` went from
-**12,482 lines to 7,758** and `AutomationStudioService` from **422 methods to
-230**. The public surface is **178 methods, unchanged at every step**, so the
-private count is the progress measure: **244 private methods at the start, 52
+**12,482 lines to 7,363** and `AutomationStudioService` from **422 methods to
+228**. The public surface is **178 methods, unchanged at every step**, so the
+private count is the progress measure: **244 private methods at the start, 50
 now**. The resolved export set of `runtime/index.ts` is the same 276 names.
-Twenty differential probes drove the pre-extraction implementation and the
-facade side by side over **1,058 observations** and found no difference.
+Twenty-two differential probes drove the pre-extraction implementation and the
+facade side by side over **1,130 observations** and found no difference.
+
+Round 8 continued the body strategy and moved **five more public bodies** into
+the collaborator that already owned their state, adding no new collaborator at
+all. It also found and closed a soundness hole in the probe method itself — see
+**the frozen baseline tree** below, which is the part of this round worth
+reading.
 
 Round 7 changed the operation. Rounds 1-6 moved *methods*; round 7 moved three
 **public method bodies** into collaborators and left pure forwards
@@ -40,6 +46,8 @@ round of the phase.
 | **7** | **`service/proposals/generation.ts`** | **1 public body + 4 types** | **8,135 → 8,009** | **232** |
 | **7** | **`service/flows/subflow-migration.ts`** | **2 private + 1 helper** | **8,009 → 7,865** | **232 → 230** |
 | **7** | **`service/proposals/approval.ts`** | **1 public body + 1 helper** | **7,865 → 7,758** | **230 (178 / 52)** |
+| **8** | **`summaries/store.ts`** (Subflow, Instruction listings) | **2 public bodies + 7 helpers** | **7,758 → 7,575** | **230** |
+| **8** | **`summaries/store.ts`** (adaptation, run, session listings) | **3 public bodies + 2 private + 4 helpers** | **7,575 → 7,363** | **230 → 228 (178 / 50)** |
 
 The round-6 rows above say 8,665, which is what I wrote last round; `wc -l` and
 the structure audit both read that file as **8,663**, and the recorded ratchet
@@ -415,6 +423,116 @@ both sides**, for `getFlowSubflow` through the migration collaborator and for
 `saveFlow` through the approval collaborator. That is the exact check that
 would have caught round 6's regression on the day.
 
+### Round 8 — five more bodies, into a collaborator that already existed
+
+The dispatch's instruction was to prefer an existing collaborator where the
+state fits. For the summary listings it fits exactly: each body reads the very
+JSON or SQL index that `AutomationStudioSummaryStore` maintains, and each one
+calls `this.summaries.ensure*SummaryIndex(...)` on the way. Inside the store
+that call becomes a plain intra-class call, so the move removes a hop rather
+than adding one. **No new collaborator class was created this round.**
+
+Closure analysis over all twelve candidates on the dispatch's list, run before
+cutting anything:
+
+| Candidate | Lines | Closure | Verdict |
+| --- | --- | --- | --- |
+| `revertFlowBootstrapAdaptation` | 99 | 3 (151L) | movable, needs a helper step first |
+| `reviewRecordingFlowProposal` | 88 | 2 (116L) | **runtime/LLM** (`ioRuntime`, `nativeNodeRuntime`) |
+| `deleteRecordings` | 78 | 4 (117L) | movable |
+| `applyFlowGraphPatch` | 74 | 2 (80L) | movable |
+| `reviewFlowAdaptation` | 72 | 3 (127L) | movable, needs a helper step first |
+| **`listFlowSubflowSummaries`** | **66** | **1** | **moved, step 1** |
+| **`listFlowInstructionSummaries`** | **58** | **1** | **moved, step 1** |
+| **`listOrdinaryFlowAdaptationSummaries`** | **57** | — | **moved, step 2** (it is private, not public) |
+| `createNormalizationReview` | 56 | 1 | movable |
+| `saveProjectHierarchy` | 52 | 1 | movable |
+| `exportFlowRunAudit` | 48 | 1 | movable |
+| `deleteProjectArtifact` | 46 | 1 | movable |
+
+Eleven of the twelve are movable by closure; only `reviewRecordingFlowProposal`
+reaches the knot, which is the same answer round 7 got for it. Two neighbours of
+the list were taken as well because they are the same shape and the same
+collaborator: `listFlowAdaptationSummaries` (23L, pulling the two private
+readers) and `listFlowRunSummaries` (36L), plus `listRuntimeSessionSummaries`
+(17L).
+
+### Round 8, step 1 — Subflow and Instruction listings (7,758 → 7,575, −183)
+
+Two public bodies and the seven module helpers that read a SQL row back as the
+summary shape the JSON index would have produced
+(`subflowSummaryFromSql`, `instructionSummaryFromSql` and five others) moved
+into `summaries/sql-conversions.ts`. `clampInteger`, shared with six facade
+methods that stay, went to a neutral `service/numbers.ts`.
+`AutomationStudioInstructionSummaryPage` moved to `summaries/types.ts` and is
+re-exported from `service.ts` under its original name.
+
+### Round 8, step 2 — adaptation, run and session listings (7,575 → 7,363, −212)
+
+Three public bodies, the two private readers only they call, and four helpers:
+`bootstrapAdaptationSummary` to `summaries/conversions.ts`,
+`adaptationSummaryFromTypedStore` to `summaries/sql-conversions.ts`, and the
+two sort comparators to a new `summaries/ordering.ts`. The summary store gained
+`bootstrapAdaptations` as a constructor dependency, because the merged
+adaptation listing reads bootstrap adaptations and ordinary ones together.
+
+**One call in this step had to go through the port, and it is the sharpest
+example of the policy so far.** `listRuntimeSessionSummaries` calls
+`listRuntimeSessions`, which is public on the facade — *and*
+`AutomationStudioSummaryStore` happens to own a private method of the same
+name. Moved naively, `this.listRuntimeSessions(...)` would have silently
+rebound from the facade's method to the store's, with no type error and no value
+difference in the common case. It is written as
+`this.facade.listRuntimeSessions(...)` (`summaries/store.ts:525`).
+
+### The frozen baseline tree — a soundness hole in my own probe method
+
+Every differential probe in rounds 1-7 imported a copy of the pre-extraction
+`service.ts` as `service-baseline-probe.ts`. That copy imported the **live**
+collaborator tree — the same `service/` directory the round was editing. That
+is sound only while collaborator edits are append-only, which is what rounds 1-7
+happened to be.
+
+Step 2 added a constructor parameter to `AutomationStudioSummaryStore`. The
+baseline copy still passed the old argument list, so
+`automationStudioFacadePorts(this)` landed in the `bootstrapAdaptations` slot
+and `runtimeProjectDatabasePool` landed in the port slot. **The probe reported
+a difference, and the difference was the harness.** It showed up as
+`saveFlowAdaptation` returning a richer document on the facade side than on the
+baseline side — a method this round never touched, which is what made it obvious
+something structural was wrong rather than something behavioural.
+
+The fix is `<scratchpad>/asfacade-baseline-tree.mjs`: it copies every tracked
+file under `runtime/service/` **at a given git revision** into
+`runtime/service-baseline/`, and rewrites the baseline copy of `service.ts` to
+import `./service-baseline/index.ts`. The copy sits at the same directory depth,
+so every relative specifier inside it still resolves and only the facade's own
+specifier changes. The baseline side is now the whole pre-extraction
+implementation and nothing it imports can move underneath it.
+
+Two consequences worth recording:
+
+- **Rounds 1-7's probes were sound in fact but not by construction.** I checked:
+  no collaborator constructor changed in those rounds, only additions. The
+  guarantee was luck, not design.
+- Any future round that changes a collaborator's shape **must** freeze the tree
+  first, or its probe is comparing the new code against itself.
+
+### What the memory-mode probe section actually proves, and what it does not
+
+The durable section (60 observations) drives every listing across filters,
+sorts, paging and clamping, plus each collaborator method directly. The
+memory-mode section (12 observations) is weaker than it looks: with no
+`dataDir`, `createProject` succeeds but `findProject` cannot see the project
+it just created, so **all twelve steps throw `Unknown Automation Studio
+project` identically on both sides**. That is a real differential — the two
+implementations fail the same way — but it does not exercise the `!paths.root`
+branch of any listing, and therefore does not exercise the
+`listRuntimeSessions` port at runtime. That branch is covered by the
+`facade-dispatch` rule statically and by reading `summaries/store.ts:525`, not
+by the probe. The pre-existing `createProject`/`findProject` disagreement in a
+rootless configuration is unchanged by this round and out of its scope.
+
 ### What was deliberately not done
 
 - **The runtime/LLM side.** Measured twice now — once as a field graph in round
@@ -606,6 +724,67 @@ the probes are kept at `<scratchpad>/asfacade-r7-*-probe.test.ts.kept` and are
 230, reported by the audit as "2 baseline entries can be lowered".
 **`pnpm structure:baseline` was not run**, per the brief.
 
+### Round 8 commands and results
+
+**Scoped tests** — `npx vitest run src/programs/automation-studio/runtime`:
+
+| | Files | Cases | Failures |
+| --- | --- | --- | --- |
+| Round 8 baseline (round 7's end state, at e5feeef) | 32 (2 failed) | 400 (3 failed) | `service.test.ts` x2 (deterministic), `service-subflow-pagination.test.ts` x1 (load-dependent) |
+| **After both steps** | **32 (2 failed)** | **400 (4 failed)** | **identical to a re-measured baseline, see below** |
+
+**A fourth failure appeared, and I ran the experiment round 6 taught me to
+run.** The round-7 record for this scope was three failures; round 8 shows
+four, the extra one being `service-subflow-pagination.test.ts > bounds
+concurrent detail hydration when a legacy subflow index must be migrated`.
+That test exercises `listFlowSubflowSummaries`, which this round moved, so
+"it is the flake" was not good enough.
+
+- The file **alone**, with round 8 in the tree: **5 passed (5), three runs out
+  of three.**
+- The **untouched HEAD tree**, restored from git and run at the **same scope**:
+  **32 files (2 failed), 400 cases (4 failed) — the same four test names.**
+
+So the fourth failure is present without any of this round's work. Both
+pagination cases are timing-bounded (18.5s and 10.1s when run alone) and both
+fail or pass with the machine's load; the two `service.test.ts` failures remain
+the deterministic pre-existing pair established in round 7. Round 8 changes
+none of them.
+
+**Type check** — `npx tsc -p tsconfig.json --noEmit` in `packages/fluxiq`:
+**exit 0, no output**, after each step. Intermediate failures this round were all
+missing imports in the newly written files, caught and fixed before proceeding;
+each script was re-run from its snapshot rather than patched in place, so both
+steps remain replayable from `asfacade-service-r8-step0.ts`.
+
+**Structure audit** — `node scripts/structure-audit.mjs` after `git add -N`:
+**passed, 0 failures**, after each step. `facade-dispatch`: **0 findings**.
+
+Two new advisory warnings, both on `summaries/store.ts` and both expected:
+**670 lines** (past the 400-line advisory) and **30 methods** (past the
+25-method advisory). Neither is a failure and neither is ratcheted, and they are
+the direct cost of the dispatch's "prefer an existing collaborator" instruction,
+which I followed. See **Open questions** for the split I would make next.
+
+**Public method surface** — `diff` against the pre-round-8 list is empty.
+**178 names, same order.**
+
+**Round 8 differential probes**:
+
+| Section | Observations |
+| --- | --- |
+| summary listings, durable (temp `dataDir`) | 60 |
+| summary listings, in-memory read path | 12 |
+| **round 8 total** | **72**, every one equal |
+| **phase total** | **1,130** |
+
+**Leak check** — `git status --untracked-files=all` after every probe run. The
+durable section writes only under `os.tmpdir()`. The first version of the
+memory section called `saveFlowInstruction` and `saveFlowAdaptation` with no
+`dataDir` and leaked `packages/fluxiq/flows/flow.alpha/...` into the
+repository; those files were removed and the section was rewritten to readers
+only. The tree is clean apart from this round's source changes.
+
 ## Not verified
 
 - **`pnpm check`, `pnpm test`, `pnpm build` at repository scope.** Not run.
@@ -628,6 +807,24 @@ the probes are kept at `<scratchpad>/asfacade-r7-*-probe.test.ts.kept` and are
   established only that they are deterministic at HEAD and unchanged by round 7.
 
 ## Open questions or contradictions found
+
+### -1. Two more leaked paths from `ce7e38b` are still tracked
+
+The close-out that removed the six probe artifacts caught
+`packages/fluxiq/{indexes,recordings}` and extended `.gitignore` to
+`packages/*/{recordings,indexes,storage}/`. Two more paths from the same
+commit are still tracked and not covered by that pattern:
+
+```
+packages/fluxiq/flows/flow.probe-unavailable/flow.json
+packages/fluxiq/pipeline/shared/replays/evidencefacts.json
+```
+
+Both were added by `ce7e38b`, both are synthetic probe output, and
+`packages/*/flows/` and `packages/*/pipeline/` are the two directories a
+rootless service writes to that the ignore pattern does not name. I restored the
+files after confirming what they were rather than deleting tracked content
+myself.
 
 ### 0. Probe leakage was committed in round 5 — `ce7e38b` — and should be removed
 
@@ -697,41 +894,48 @@ piece on that side is the **reusable LLM context** trio (6 methods, 74 lines, on
 outward call to `packReusableLlmContexts`), which is small and self-contained and
 would make a fine opener if the plan ever returns to it.
 
+### 1b. `summaries/store.ts` is now the collaborator to split
+
+At 670 lines and 30 methods it carries two responsibilities that were one class
+before this round: **maintaining** the summary indexes (`ensure*SummaryIndex`,
+`write*Summary`, `tryWith*Store`) and **serving pages from them** (the five
+listings). The seam is clean — the listings call the maintenance methods, never
+the reverse — so `summaries/listings.ts` over the store would split it without
+inventing a boundary. I did not do it this round because the dispatch asked for
+an existing collaborator and because a split is a different operation from a body
+move; it should be its own step, with its own probe.
+
 ### 2. What is left, measured as composition rather than as clusters
 
-`service.ts` is **7,758 lines**. Measured from the AST:
+`service.ts` is **7,363 lines**. Measured from the AST after round 8:
 
 | Part | Count | Lines |
 | --- | --- | --- |
-| Public methods, thin (≤ 4 lines) | 56 | 169 |
-| Public methods still carrying a body | 122 | 3,496 |
-| Private methods | 52 | 1,490 |
-| Class fields, constructor, wiring | — | 326 |
-| Top-level helper functions still in the file | 119 | 1,493 |
-| Top-level type declarations | — | 307 |
-| Imports, re-exports, blank lines | — | 477 |
+| Public methods, thin (≤ 4 lines) | 61 | 184 |
+| Public methods still carrying a body | 117 | 3,296 |
+| Private methods | 50 | 1,421 |
+| Top-level helper functions still in the file | 107 | 1,367 |
+| Top-level type declarations | — | 301 |
+| Class fields, constructor, wiring, imports | — | 794 |
 
-The class itself spans lines 670-6,150. The **119 remaining top-level helper
-functions** are the part this phase has not touched at all: they are 1,493 lines,
-nearly a fifth of the file, and each one belongs to whichever body reaches it.
-Round 7's first step moved 24 of them in a single cut because one body owned them
-all; that is the shape to look for next.
+The remaining candidates, all measured against the round-8 file, with the
+prerequisite each one needs:
 
-The next movable public bodies, after the five runtime/LLM ones named above:
+| Body | Lines | Closure | Prerequisite before it can move |
+| --- | --- | --- | --- |
+| `revertFlowBootstrapAdaptation` | 99 | 3 (151L) | 7 ports; `bootstrapAdaptations` gains 4 constructor dependencies |
+| `deleteRecordings` | 78 | 4 (117L) | `recordings` gains `recordingStateIndexes`; 2 ports |
+| `applyFlowGraphPatch` | 74 | 2 (80L) | 1 port; cleanest of the remainder |
+| `reviewFlowAdaptation` | 72 | 3 (127L) | **4 shared helpers** (`adaptationFromTypedStoreDetail`, `adaptationValidationCounts`, `bootstrapAdaptationAsFlowAdaptation` (83L), `sanitizedBootstrapAccounting`) must move to neutral modules first, and `service-adaptation-subflow.test.ts:166` spies on `synchronizeCanonicalFlowGraphProjection` through `service as any`, so that spy needs repointing |
+| `createNormalizationReview` | 56 | 1 | 3 ports |
+| `saveProjectHierarchy` | 52 | 1 | none beyond `projects` gaining `objectStore`/`flowWriter` |
+| `exportFlowRunAudit` | 48 | 1 | 2 ports; **no collaborator fields at all** |
+| `deleteProjectArtifact` | 46 | 1 | 2 ports |
 
-| Body | Lines |
-| --- | --- |
-| `deleteRecordings` | 78 |
-| `applyFlowGraphPatch` | 74 |
-| `reviewFlowAdaptation` | 72 |
-| `listFlowSubflowSummaries` | 66 |
-| `listFlowInstructionSummaries` | 58 |
-
-Round 6's cluster table (recording state indexes, recording domains, the
-`projectDatabasePool` remainder, legacy retirement, the `objectStore`
-remainder) was **not re-measured this round** — round 7 worked on bodies, not
-clusters — so those outward counts are as of `baeb000` and three of the five
-groups have had methods change around them since.
+The five runtime/LLM bodies from round 7 plus `reviewRecordingFlowProposal` are
+still the only ones blocked by the knot. **I stopped this round on budget, not
+on measurement** — the remaining candidates do not all reach the knot, and the
+list above is what the next round should start from rather than re-deriving.
 
 ### 3. The floor — I had this wrong in round 6, and the arithmetic is now measured
 

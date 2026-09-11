@@ -1,7 +1,7 @@
 # Module Size And Structure Governance Plan
 
 Status: Active
-Status detail: Phases 1-8 complete. service.ts 12,482 -> 7,758 lines and 422 -> 230 methods; the measured floor is ~1,100-1,400 lines, blocked by the runtime/LLM core.
+Status detail: Phases 1-8 complete. service.ts 12,482 -> 7,363 lines and 422 -> 228 methods; eight candidate bodies remain movable, measured floor ~1,100-1,400 lines.
 Created: 2026-09-10
 Last updated: 2026-09-10
 Owner: Senior supervisor agent
@@ -705,6 +705,47 @@ any future dispatch:
   `packages/*/{recordings,indexes,storage}/`. The process failure was mine:
   an artifact scan ran before the first two commits of this effort and was
   then dropped from later ones. It is now part of the close-out sequence.
+
+### 2026-09-11 — summary listings moved; probe soundness hole closed; artifacts swept
+
+- Agent: supervisor, with worker `core-automation-studio-facade` resumed
+- Changed: `runtime/service.ts` 7,758 -> 7,363 lines, class 230 -> 228
+  methods; five public bodies and their helpers moved into the existing
+  `service/summaries/` collaborator; four further leaked artifacts removed
+  from version control and `.gitignore` extended again.
+- Validation: `pnpm check` -> passed, `facade-dispatch` 0 findings.
+  `vitest run .../runtime` -> 32 files / 400 cases, matching an untouched
+  HEAD tree run at the same scope. Public surface -> 178 identical; barrel ->
+  276 identical. Probes -> 72 observations, all equal. Baseline -> 0 added,
+  0 raised, 2 lowered.
+- Outcome: Accepted
+- Follow-up: three findings.
+  1. **The probe method had a soundness hole, now closed.** Every probe in
+     rounds 1-7 imported the *live* collaborator tree alongside a frozen copy
+     of `service.ts`, which is sound only while collaborator edits are
+     append-only. Round 8 added a constructor parameter, the frozen copy
+     miswired, and the probe reported a difference that was the harness rather
+     than the code. The baseline tree is now copied from a **git revision**
+     into `runtime/service-baseline/`. Rounds 1-7 were sound in fact — no
+     constructor changed in any of them — but by luck rather than by
+     construction, and that distinction is worth recording.
+  2. **Preferring an existing collaborator has a cost.** All five bodies went
+     into `AutomationStudioSummaryStore` because it already maintained the
+     indexes they read, which removed a hop rather than adding one. It is now
+     670 lines and 30 methods: two advisory warnings, no failures. The clean
+     split — index maintenance versus serving pages — is written up as its own
+     future step rather than forced now.
+  3. **Four more leaked artifacts were found and removed.**
+     `packages/fluxiq/flows/flow.probe-unavailable/` and
+     `packages/fluxiq/pipeline/shared/replays/` came from the same `ce7e38b`
+     probe leak and were not covered by the first ignore pattern; `flows/` and
+     `pipeline/` are the other two directories a rootless service writes to.
+     Separately, `apps/web/.phase8-dev.{stdout,stderr}.log` have been tracked
+     since `dc0d479`, predating this work — dev-server run artifacts, removed
+     on the same principle. `.gitignore` now covers all of them, anchored so
+     `packages/*/flows/` does not catch `src/**/service/flows/`.
+  Eight candidate bodies remain movable, measured with their prerequisites in
+  the report. The worker stopped on budget, not on measurement.
 
 ## Open Questions
 

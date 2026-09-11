@@ -2,7 +2,8 @@ import type {
   AutomationStudioFlowArtifact,
   AutomationStudioProjectArtifactKind,
   AutomationStudioFlowRouter,
-  AutomationStudioFlowSubflow
+  AutomationStudioFlowSubflow,
+  AutomationStudioRuntimeSession
 } from "../../model/index.ts";
 import type { NormalizedTimeline } from "../../normalization/index.ts";
 import type { CreateFlowSubflowInput } from "./flows/index.ts";
@@ -35,6 +36,7 @@ export type AutomationStudioFacadePorts = {
   saveFlow(input: { projectId: string; flow: AutomationStudioFlowArtifact; expectedUpdatedAt?: number }): Promise<AutomationStudioFlowArtifact>;
   setFlowMapFallback(input: { projectId: string; flowId: string; kind: "subflow" | "fail"; targetSubflowId?: string; message?: string }): Promise<AutomationStudioFlowRouter>;
   getProjectArtifact(projectId: string, kind: AutomationStudioProjectArtifactKind, artifactId: string): Promise<unknown>;
+  listRuntimeSessions(projectId: string): Promise<AutomationStudioRuntimeSession[]>;
   listFlowSubflowSummaries(input: { projectId: string; flowId?: string; status?: string; role?: string; search?: string; sort?: "updated" | "name" | "status" | "role"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioSubflowSummaryPage>;
 };
 
@@ -56,6 +58,7 @@ export function automationStudioFacadePorts(service: AutomationStudioFacadePorts
     saveFlow: (input) => service.saveFlow(input),
     setFlowMapFallback: (input) => service.setFlowMapFallback(input),
     getProjectArtifact: (projectId, kind, artifactId) => service.getProjectArtifact(projectId, kind, artifactId),
+    listRuntimeSessions: (projectId) => service.listRuntimeSessions(projectId),
     listFlowSubflowSummaries: (input) => service.listFlowSubflowSummaries(input)
   };
 }

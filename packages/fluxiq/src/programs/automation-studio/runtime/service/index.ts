@@ -11,6 +11,7 @@ export * from "./indexes/index.ts";
 export * from "./json-values.ts";
 export * from "./legacy/index.ts";
 export * from "./locks.ts";
+export * from "./numbers.ts";
 export * from "./object-documents.ts";
 export * from "./paths/index.ts";
 export * from "./proposals/index.ts";

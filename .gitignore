@@ -24,3 +24,9 @@ tmp
 packages/*/recordings/
 packages/*/indexes/
 packages/*/storage/
+packages/*/flows/
+packages/*/pipeline/
+
+# Dev-server logs written beside the app rather than into a run directory.
+*-dev.stdout.log
+*-dev.stderr.log

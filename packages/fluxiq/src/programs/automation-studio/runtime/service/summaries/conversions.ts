@@ -1,3 +1,5 @@
+import type { AutomationStudioBootstrapAdaptation } from "../../flow-bootstrap/index.ts";
+import type { AutomationStudioAdaptationSummary } from "../indexes/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type {
   AutomationStudioFlowInstruction,
@@ -248,4 +250,16 @@ function runtimeTerminalFailureReason(session: AutomationStudioRuntimeSession, r
   if (latest.status === "diagnosis_only") return "Recovery ladder stopped at LLM diagnosis fallback because no deterministic recovery resolved the failure.";
   if (latest.status === "exhausted") return "Recovery ladder exhausted all known recovery candidates.";
   return session.trace?.message ?? "Run failed after recovery was selected.";
+}
+
+export function bootstrapAdaptationSummary(adaptation: AutomationStudioBootstrapAdaptation): AutomationStudioAdaptationSummary {
+  return {
+    adaptationId: adaptation.adaptationId,
+    flowId: adaptation.flowId,
+    projectId: adaptation.projectId,
+    status: adaptation.status,
+    riskLevel: adaptation.riskLevel,
+    trigger: "Instruction-built Flow Bootstrap",
+    updatedAt: adaptation.updatedAt
+  };
 }
