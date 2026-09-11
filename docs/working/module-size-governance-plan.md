@@ -539,6 +539,41 @@ any future dispatch:
      directly, one stubbing an instance method. At `repositories` scale (48
      methods) that grep must run *before* the cut, not after.
 
+### 2026-09-11 — service.ts, collaborators 9 and 10
+
+- Agent: supervisor, with worker `core-automation-studio-facade` resumed
+- Changed: `runtime/service.ts` 11,373 -> 10,269 lines, class 322 -> 287
+  methods; new `runtime/service/flows/{store,mapping}.ts`,
+  `service/recordings/store.ts`, `service/{json-values,collections}.ts`;
+  three stub sites repointed in `runtime/tests/service-subflow-pagination.test.ts`.
+- Why: continuing Phase 7. The combined Flow/SQL cut was directed by the cycle
+  finding from the previous round.
+- Validation: `pnpm check` -> passed. `vitest run .../runtime` -> 32 files /
+  400 cases, same 3 pre-existing failures. Public surface -> 178 identical;
+  runtime barrel -> 276 identical. Probes -> 118 observations this round, 716
+  cumulative, all equal. Baseline -> 0 added, 0 raised, 2 lowered.
+- Outcome: Accepted
+- Follow-up: three things worth carrying.
+  1. **The combined cut was sized by measurement, not by the instruction.**
+     The full transitive closure of `projectDatabasePool` plus every Flow
+     accessor snowballs to 54 methods and 1,077 lines through the flow-save
+     pipeline — past the 40-method limit, and needing exactly the two-class
+     split with mutual references the combined cut existed to avoid. The cycle
+     core closes at 21 methods and 401 lines with zero outward calls, so that
+     is what moved; orchestration stays on the facade and calls in.
+  2. **The pre-cut grep works but is not a substitute for per-site edits.** It
+     found three stubs of a private method in the flow cut and none in the
+     recording cut. A blanket replace then also caught a neighbouring block
+     stubbing a repository that had *not* moved, and was reverted. The grep
+     says which names moved; each site still needs its own judgement.
+  3. **The first two advisory warnings of this work appeared here**, both
+     deliberate: `flows/store.ts` at 590 lines and `recordings/store.ts` at
+     506, past the 400-line advisory and far under the 800-line limit.
+     Splitting either is precisely what the cycle forbids.
+  `repositories` is next at 48 methods and 1,175 lines. It cannot be one file,
+  but several files inside `service/repositories/` sit at 9 segments and are
+  fine; only a further subdirectory would breach the depth limit.
+
 ## Open Questions
 
 - **Should the method-count rule become blocking?** It is a regex heuristic

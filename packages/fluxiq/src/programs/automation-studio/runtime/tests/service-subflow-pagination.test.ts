@@ -117,7 +117,7 @@ describe("AutomationStudioService subflow pagination fallbacks", () => {
 
   it("falls back when the typed SQL projection covers only part of the summary inventory", async () => {
     const { project, flow } = await createSubflows(3);
-    const internalService = service as unknown as {
+    const internalService = (service as any).flows as unknown as {
       tryWithFlowResourceRepository: () => Promise<{
         items: never[];
         total: number;
@@ -137,7 +137,7 @@ describe("AutomationStudioService subflow pagination fallbacks", () => {
     const { project, flow } = await createSubflows(64);
     await downgradeLegacyIndex(project.id);
     await clearSummaryRows(project.id);
-    const internalService = service as unknown as {
+    const internalService = (service as any).flows as unknown as {
       tryWithFlowResourceRepository: () => Promise<null>;
     };
     internalService.tryWithFlowResourceRepository = async () => null;
@@ -177,7 +177,7 @@ describe("AutomationStudioService subflow pagination fallbacks", () => {
     service.getFlowSubflow = async (projectId, flowId, subflowId) => subflowId === unavailableSubflowId
       ? null
       : await readDetail(projectId, flowId, subflowId);
-    const internalService = service as unknown as { tryWithFlowResourceRepository: () => Promise<null> };
+    const internalService = (service as any).flows as unknown as { tryWithFlowResourceRepository: () => Promise<null> };
     internalService.tryWithFlowResourceRepository = async () => null;
 
     const page = await service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId, limit: 25, offset: 0 });

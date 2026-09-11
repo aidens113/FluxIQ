@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "data": {
+    "schemaVersion": "0.1",
+    "pipelineId": "pipeline.recording.probe",
+    "recordingId": "recording.probe",
+    "taskId": "task.probe",
+    "status": "ready",
+    "createdAt": 1789111710325,
+    "updatedAt": 1789111710338,
+    "artifacts": {
+      "normalizedTimelineIds": [],
+      "normalizationReviewIds": [],
+      "miningRunIds": [],
+      "evidenceFactIds": [],
+      "evidenceObservationIds": [],
+      "stateActionCorrelationIds": [],
+      "evidenceClaimIds": [],
+      "learnedTaskModelIds": [],
+      "policyProposalIds": [],
+      "recordingFlowProposalIds": [],
+      "replayResultIds": []
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "data": {
+    "recording": {
+      "schemaVersion": "0.1",
+      "recordingId": "recording.probe",
+      "taskId": "task.probe",
+      "startedAt": 1789111710336,
+      "environment": {
+        "id": "environment.unspecified",
+        "label": "Unspecified environment",
+        "kind": "unspecified",
+        "domainId": null
+      },
+      "sources": [
+        {
+          "id": "source.host",
+          "kind": "event",
+          "label": "Host"
+        }
+      ],
+      "actionChannels": [],
+      "timeline": [],
+      "notes": [],
+      "metadata": {
+        "projectId": "900588d6-055a-45e2-9271-8450973df79b"
+      }
+    }
+  }
+}
