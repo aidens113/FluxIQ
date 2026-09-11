@@ -204,9 +204,6 @@ markdown document will silently lose each other's writes. So:
 - A worker writes only its owned files and its report, using filenames unique
   to it. Workers never share a scratch file: two did once, and one overwrote
   the other's staged block after the splice.
-- A worker writes only its owned files and its report, using filenames unique
-  to it. Workers never share a scratch file: two did once, and one overwrote
-  the other's staged block after the splice.
 - The supervisor reads the report files, independently verifies the claims,
   merges the outcome into `Current State`, and appends the ledger entry.
 
