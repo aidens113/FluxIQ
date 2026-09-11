@@ -66,7 +66,7 @@ describe("AutomationStudioService subflow pagination fallbacks", () => {
   }
 
   async function clearSummaryRows(projectId: string) {
-    const internalService = service as unknown as {
+    const internalService = (service as any).flowMutations as unknown as {
       flowSubflowSummaryRepository: (id: string) => {
         tableName: string;
         transaction: <T>(scope: object, operation: (transaction: { run: (sql: string) => Promise<unknown> }) => Promise<T>) => Promise<T>;

@@ -1,3 +1,4 @@
+export * from "./adaptations/index.ts";
 export * from "./bootstrap-adaptations.ts";
 export * from "./collections.ts";
 export * from "./compact-json.ts";

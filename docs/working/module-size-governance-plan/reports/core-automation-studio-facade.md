@@ -2,15 +2,15 @@
 
 ## Outcome
 
-Done — **ten collaborators** extracted across four dispatches, stopping at the
-instructed count each time (two, two, four, two).
+Done — **thirteen collaborators** extracted across five dispatches, stopping at
+the instructed count each time (two, two, four, two, three).
 
 `packages/fluxiq/src/programs/automation-studio/runtime/service.ts` went from
-**12,482 lines to 10,269** and `AutomationStudioService` from **422 methods to
-287**. The 178 public method names are identical, in the same order, after every
+**12,482 lines to 9,342** and `AutomationStudioService` from **422 methods to
+261**. The 178 public method names are identical, in the same order, after every
 step, and the resolved export set of `runtime/index.ts` is the same 276 names.
-Eleven differential probes drove the pre-extraction implementation and the
-facade side by side over **716 observations** and found no difference.
+Fourteen differential probes drove the pre-extraction implementation and the
+facade side by side over **830 observations** and found no difference.
 
 | Round | Collaborator | Methods relocated | `service.ts` | Class |
 | --- | --- | --- | --- | --- |
@@ -22,99 +22,110 @@ facade side by side over **716 observations** and found no difference.
 | 3 | `service/bootstrap-adaptations.ts` | 1 public + 3 private | 11,736 → 11,656 | 339 → 336 |
 | 3 | `service/locks.ts` | 3 private | 11,656 → 11,605 | 336 → 333 |
 | 3 | `service/object-documents.ts` | 2 public + 11 private | 11,605 → 11,373 | 333 → 322 |
-| **4** | **`service/flows/`** | **7 public + 14 private** | **11,373 → 10,734** | **322 → 308** |
-| **4** | **`service/recordings/`** | **1 public + 23 private** | **10,734 → 10,269** | **308 → 287** |
+| 4 | `service/flows/` (store, mapping) | 7 public + 14 private | 11,373 → 10,734 | 322 → 308 |
+| 4 | `service/recordings/` | 1 public + 23 private | 10,734 → 10,269 | 308 → 287 |
+| **5** | **`service/flows/writer.ts`** | **2 public + 11 private** | **10,269 → 9,955** | **287 → 276** |
+| **5** | **`service/flows/mutations.ts`** | **3 public + 5 private** | **9,955 → 9,765** | **276 → 271** |
+| **5** | **`service/adaptations/`** (patches, durable) | **10 private** | **9,765 → 9,342** | **271 → 261** |
 
-Round 4 took the two the coordinator ordered: the combined Flow-documents and
-SQL-projections collaborator, then the recording pipeline. Both landed with the
-white-box coupling grep run **before** the cut, as instructed — it found one
-coupled site in the first and none in the second.
+**`repositories` is not extractable, and not for the reason the plan assumed.**
+It is not a cluster: the field is touched by 41 methods, **29 of them public** —
+it is the canonical repository handle the service's own API surface uses, like
+`projectPaths` before it. There is no ownership boundary to cut, so this round
+took the three closed clusters that the last one made reachable instead. Details
+in **Open questions**.
 
 ## What changed and why
 
-### Round 4, collaborator 1 — `service/flows/`
+### Round 5, collaborator 1 — `service/flows/writer.ts`
 
-The cycle is real and the combined cut resolves it. Eight of
-`projectDatabasePool`'s methods call the Flow document accessors and four of
-those accessors call straight back; owning both sides in one class removes the
-question of which goes first.
+The Flow *write* pipeline, the natural counterpart to the Flow *read* store
+extracted in round 4: `saveFlowInternal` (the largest private method left in the
+file), `deleteFlowArtifact`, the representation checks, the generated source file
+and config artifact, and the project change feed each write appends to. It reads
+Flows back through `flows/store.ts` rather than reaching for documents itself,
+so the dependency is one-way.
 
-The honest boundary is **tighter than the ~26 estimate**. Growing the seed to
-its transitive closure — every method that touches `projectDatabasePool` plus
-every Flow accessor — snowballs through the flow-save pipeline and the summary
-repositories to **54 methods and 1,077 lines**, which is past the 40-method
-limit and would need a two-class split with mutual references. The **cycle core**
-closes at **21 methods and 401 lines**, measured, with zero outward calls:
-twelve SQL projection methods, five Flow document accessors, and four
-database-only query methods (`listFlowMetadataPage`, `getFlowMetadataDetail`,
-`listProjectHierarchyChildren`, `listProjectChangeFeed`) that add no new
-dependency. Seven of the 21 are public and stay on the facade as delegations.
-`applyFlowGraphPatch`, `saveFlowInternal`, `getLlmExecutionBinding` and the rest
-of the orchestration layer stay where they are and call in.
+**13 methods, 229 lines of bodies, 0 outward calls** — measured, not assumed.
+Two are public (`getProjectArtifact`, `saveProjectArtifact`) and came along
+because the generated-config write goes through them; they stay on the facade as
+delegations. Ten transitive helpers moved with it, three of them shared and so
+exported back.
 
-Twenty transitive helpers came with it, placed by who needs them rather than by
-where they sat: eight exclusive ones are private in `store.ts`, eight shared
-flow-mapping helpers are exported from a sibling `flows/mapping.ts`, and five
-generic ones moved to two new neutral modules, `service/json-values.ts`
-(`isJsonRecord`, `jsonObjectFromUnknown`, `stringOrNull`) and
-`service/collections.ts` (`uniqueStrings`, `upsertBy`, later
-`mapWithConcurrency`). No module exports more than eight values.
+### Round 5, collaborator 2 — `service/flows/mutations.ts`
 
-### Round 4, collaborator 2 — `service/recordings/`
+The durable Subflow and Router mutations: `saveFlowSubflow`, `saveFlowRouter`,
+`createFlowSubflow`, the undo for a created Subflow, and the summary rows and
+change-feed entries each write leaves behind. **8 methods, 159 lines, 0 outward.**
+Three are public and stay as delegations. `CreateFlowSubflowInput` moved with
+them and is re-exported by name, so the barrel is unchanged.
 
-The recording pipeline: the pipeline index, its artifact documents, the physical
-cleanup after a deleted recording, and the recording documents those read.
-**24 methods, 402 lines, closed at wave 4** of the closure walk. Only
-`getRecordingSession` is public.
+### Round 5, collaborator 3 — `service/adaptations/`
 
-One wiring problem had to be solved rather than worked around.
-`getRecordingSession` awaits `this.ready`, the seed-fixture gate, which the
-facade cannot build until *after* its collaborators exist — `seedFixture()` uses
-them. Passing `() => this.ready` would have reintroduced exactly the callback
-residue round 2 removed. Instead the collaborator holds a promise and the facade
-hands it over with `bindReady(this.ready)` immediately after creating it, in the
-same constructor, before any method can run. The collaborator holds a promise,
-never a reference to the facade, and the class already uses this idiom
-(`bindLlmExecutionProvider`, `bindHostRuntime`, `bindNativeNodeRuntime`).
+Applying and reverting an adaptation durably. This is the clearest instance yet
+of the "extract the layer beneath first" pattern: measured **before**
+`flows/mutations.ts` it was 18 methods with 3 outward calls; measured **after**,
+it is **10 methods, 362 lines, 0 outward, touching exactly two fields**
+(`flowWriter`, `flowMutations`). The mutation layer was the whole of what stood
+in the way.
 
-### The white-box coupling grep, run before each cut
+Split into two files because the split is free: `patches.ts` (the five per-kind
+patch appliers, 212 lines) and `durable.ts` (the five orchestration methods that
+dispatch to them, record what was mutated and roll back on failure, 150 lines).
+The direction is **one-way — durable → patches, with zero back-references**,
+verified by counting both directions before writing anything. Keeping them in one
+file would have crossed the 400-line advisory threshold for no reason.
 
-**`service/flows/` — one site found, in `service-subflow-pagination.test.ts`:**
-three stubs of the private `tryWithFlowResourceRepository` on the instance. They
-were repointed to `(service as any).flows.tryWithFlowResourceRepository` with no
-assertion changed. A fourth block in the same file stubs
-`flowSubflowSummaryRepository`, which did **not** move — my first blanket replace
-caught it too and was reverted. Worth recording: the grep tells you which names
-moved, but the edit still has to be per-site.
+### The pre-cut white-box grep
 
-**`service/recordings/` — no coupled sites.** The only hit across both
-repositories was `getRecordingSession`, and every one is a public API call
-(`automationStudio.getRecordingSession(...)` in `framework/tests/index.test.ts`
-and `client-gateway/tests/bridge.test.ts`), unaffected because the facade keeps
-the public method.
+Run before every cut this round, over both repositories.
 
-The grep cost about a minute per cut and turned what would have been a
-post-suite investigation into a planned edit. It is worth keeping as a standing
-step.
+**`flows/writer.ts`** — two hits, both **public API calls**
+(`service.getProjectArtifact(...)`, `service.saveProjectArtifact(...)`), both
+unaffected because the facade keeps the public method. No private reaches, no
+instance stubs.
 
-### A rewrite gap this round exposed
+**`flows/mutations.ts` + `adaptations/`** — three kinds of hit, and the
+distinction is the point:
 
-The call-site rewrite matched `this.name(` only. `readPipelineArtifact` is called
-as `this.readPipelineArtifact<PolicyProposalArtifact>(...)` — with explicit type
-arguments — and five such sites were missed. `tsc` caught every one immediately,
-so nothing shipped, and the rewriter now matches `this.name(` **and**
-`this.name<`. Earlier rounds were clean on this (their type checks passed), but
-anyone reusing the scripts should know the two shapes exist.
+1. Public API calls to `saveFlowRouter`, `saveFlowSubflow`, `createFlowSubflow` —
+   unaffected.
+2. `vi.spyOn(instance, "saveFlowRouter").mockRejectedValueOnce(...)` in
+   `service-flow-bootstrap-adaptation.test.ts`, which injects a router failure to
+   test rollback. **Unaffected, and it is worth saying why**: its caller,
+   `applyFlowBootstrapAdaptation`, stays on the facade, and the facade's internal
+   calls to public methods are deliberately *not* rewritten, so `this.saveFlowRouter(...)`
+   still dispatches through the facade where the spy sits. A spy only breaks when
+   its *caller* moves into a collaborator.
+3. `flowSubflowSummaryRepository` in `service-subflow-pagination.test.ts` — a
+   **private** method reached through a cast. Repointed to
+   `(service as any).flowMutations.flowSubflowSummaryRepository`. This is the
+   same block my round-4 blanket replace wrongly caught and I reverted; this time
+   it was the intended target and the neighbouring `tryWithFlowResourceRepository`
+   blocks, which point at `.flows`, were left alone. Per-site judgement, as my own
+   caveat said.
+
+### One more rewrite shape, found by the type checker
+
+Round 4 added `this.name<T>(` to the call-site rewriter. Round 5 found a third
+shape: a facade method that delegates **under a different name and with an extra
+argument**. `saveFlow(input)` is exactly `this.flowWriter.saveFlowInternal(input, false)`
+and `deleteFlow(input)` is `this.flowWriter.deleteFlowArtifact(input, false)`. A
+moved body calling `this.saveFlow({...})` must therefore become
+`this.flowWriter.saveFlowInternal({...}, false)` — a rename *and* an appended
+literal, which needs balanced-paren scanning rather than string replacement. The
+first attempt produced `this.flowWriter.saveFlow(...)`, which does not exist;
+`tsc` caught all five sites immediately. The rewriter now carries a small table
+for these and scans for the matching parenthesis.
 
 ### What was deliberately not done
 
-- **`objectStore`'s remaining 15 methods** are not closed: 17 outward calls, and
-  they are the recording and project *deletion* flows. This round's recording
-  store removed part of the layer beneath them; the rest is the project-artifact
-  path.
-- **`repositories` (45 methods, 1,175 lines, 41 outward)** — still the largest
-  and still not extractable without more layers beneath it.
-- **`tests/service.test.ts` was not split.** It names none of the 145 relocated
+- **`repositories` was not extracted.** See Open questions.
+- **The recording-pipeline completion** (`writeRecordingPipelineArtifact`,
+  `collectLiveProjectObjectReferences`, `loadProjectRecordings`) closes only by
+  pulling in `validateRecordingFlowProposal`, which reaches `ioRuntime` and
+  `nativeNodeRuntime` — the runtime side. Left alone.
+- **`tests/service.test.ts` was not split.** It names none of the 176 relocated
   methods.
 - **No baseline regeneration**, per the brief.
 
@@ -126,24 +137,18 @@ All from `F:\!FluxIQ` or `packages/fluxiq`.
 
 | | Files | Cases | Failures |
 | --- | --- | --- | --- |
-| Round 4 baseline (at b797488) | 32 (2 failed) | 400 (3 failed) | `service.test.ts` x2, `service-subflow-pagination.test.ts` x1 |
-| After `service/flows/` | 32 (2 failed) | 400 (3 failed) | the same three |
-| After `service/recordings/` | 32 (2 failed) | 400 (**4** failed) | the same three plus the second pagination case |
-| **b797488 re-measured now** | 32 (2 failed) | 400 (**4** failed) | **the identical four** |
+| Round 5 baseline (at ce7e38b) | 32 (2 failed) | 400 (3 failed) | `service.test.ts` x2, `service-subflow-pagination.test.ts` x1 |
+| After all three collaborators | 32 (2 failed) | 400 (3 failed) | **the same three** |
 
-The fourth failure was chased, not assumed. That file passes **5/5 twice in
-isolation** with the repointed stubs in place, and reverting *both* `service.ts`
-and the pagination test to b797488 — leaving the rest of the tree alone —
-reproduces the identical four. It is the load-dependent flake this report
-recorded in round 2, and today's machine state shows it where this morning's
-baseline run did not. The failure set matches the committed baseline measured
-under the same conditions.
+`service-subflow-pagination.test.ts` alone, with both repointed stub blocks:
+**5 passed (5)**.
 
 **Type check** — `npx tsc --noEmit` in `packages/fluxiq`: exit 0, no output,
-after each collaborator. Three intermediate failures were mine and fixed before
-proceeding: duplicate identifiers when the import generator re-emitted the
-facade's own barrel, a missing `stableJson` sibling import, and the generic
-call-site gap above.
+after each of the three collaborators. Four intermediate failures were mine and
+fixed before proceeding: a missing helper closure on the first writer attempt,
+two moved types (`CreateFlowSubflowInput`, the summary types) needing sibling
+imports, a helper placed in the file that imports rather than the file that owns
+it, and the renamed-delegation shape above.
 
 **Consumers** —
 `npx vitest run src/programs/automation-studio/api src/programs/automation-studio/client-gateway`:
@@ -155,37 +160,32 @@ step: `diff` against the pre-work list is empty. **178 names, same order.**
 **Resolved barrel export set** — `checker.getExportsOfModule` for
 `runtime/index.ts`: **276 exports, identical** to the pre-work original.
 
-**Differential probes**, both modes, pre-extraction implementation vs facade:
+**Differential probes**, both durable and memory mode, pre-extraction
+implementation vs facade:
 
 | Round | Probe | Observations |
 | --- | --- | --- |
-| 1 | paths | 284 |
-| 1 | index stores | 59 |
-| 2 | project store | 68 |
-| 2 | legacy store | 54 |
-| 3 | ui cache | 38 |
-| 3 | bootstrap adaptations | 24 |
-| 3 | locks | 8 |
-| 3 | object documents | 63 |
-| **4** | **flow store** | **66** |
-| **4** | **recording store** | **52** |
-| | **total** | **716**, every one equal |
+| 1 | paths, index stores | 284, 59 |
+| 2 | project store, legacy store | 68, 54 |
+| 3 | ui cache, bootstrap adaptations, locks, object documents | 38, 24, 8, 63 |
+| 4 | flow store, recording store | 66, 52 |
+| **5** | **flow writer** | **58** |
+| **5** | **flow mutations** | **30** |
+| **5** | **durable adaptations** | **26** |
+| | **total** | **830**, every one equal |
 
-The flow probe drives `createFlow`, `createFlowSubflow`, `saveFlow` and the
-seven delegated public methods, then all fourteen private store methods directly,
-including `markSqlFlowDeleted` and the reads that follow it; 28 of its 33 durable
-observations are successful calls rather than error paths. The recording probe
-drives `createRecording`, `appendRecordingEvents`, `finalizeRecording`,
-`listPipelineArtifacts` and `deleteRecording`, then the pipeline writes, reads,
-removals and physical prunes directly.
+The writer probe drives `createFlow`, `saveFlow` with a stale `expectedUpdatedAt`,
+`compileAndSaveFlowSource` with invalid source, `convertFlowToVisual`,
+`publishFlow`, the generated config artifact, and then all eleven private methods
+directly, ending with a direct `deleteFlowArtifact` and the reads that follow.
+The mutations probe drives Subflow creation, rename, Router save and the change
+feed, then the private summary-row and undo methods. The adaptations probe drives
+`saveFlowAdaptation` and `reviewFlowAdaptation`, then `applyFlowAdaptationDurably`,
+`applyFlowAdaptationPatchDurably` with an unknown patch kind,
+`recordAppliedAdaptationOnFlow`, both rollback paths and `revertFlowAdaptationDurably`.
 
-Two scrubbing lessons: an in-memory service has no project catalogue, so the
-flow fixture itself had to become an observation (both sides fail identically at
-`createFlow`); and recording payloads carry `monotonicOffsetMs` and ISO-8601
-timestamps, which are wall-clock derived and must be scrubbed like ids.
-
-Transcripts at `<scratchpad>/asfacade-flows-transcript.txt` and
-`asfacade-recordings-transcript.txt`. The probes are kept at
+Transcripts at `<scratchpad>/asfacade-flowwriter-transcript.txt` and
+`asfacade-round5-transcript.txt`. The probes are kept at
 `<scratchpad>/asfacade-*-probe.test.ts.kept` and are **not** in the tree; neither
 is the baseline copy of `service.ts` they import.
 
@@ -193,21 +193,18 @@ is the baseline copy of `service.ts` they import.
 
 | Rule | New findings under `runtime/service` |
 | --- | --- |
-| `imports`, `class-methods`, `directory-files`, `naming`, `exported-values`, `test-placement` | **0 each** |
-| `file-lines` | 0 failures, **2 new warnings** |
+| `imports`, `class-methods`, `file-lines`, `directory-files`, `naming`, `exported-values`, `test-placement` | **0 each** |
 
-The two warnings are `service/flows/store.ts` at 590 lines and
-`service/recordings/store.ts` at 506, both past the 400-line advisory threshold
-and both well under the 800-line limit. They are the first warnings this work has
-produced, and they are deliberate: splitting `flows/store.ts` is what the cycle
-forbids, and splitting `recordings/store.ts` would separate the pipeline writes
-from the pipeline deletes that read them.
+The only warnings under `runtime/service` are the two accepted ones from round 4
+(`flows/store.ts` 590, `recordings/store.ts` 506). Round 5 added none: the
+writer is 380 lines, mutations 243, patches 297, durable 186 — every new file
+under the 400-line advisory threshold, and no class over 13 methods.
 
 Two baseline entries fell and neither rose:
 
 ```
-class-methods  runtime/service.ts::AutomationStudioService   287  (recorded 322)
-file-lines     runtime/service.ts                          10269  (recorded 11373)
+class-methods  runtime/service.ts::AutomationStudioService   261  (recorded 287)
+file-lines     runtime/service.ts                           9342  (recorded 10269)
 ```
 
 ## Not verified
@@ -218,65 +215,73 @@ file-lines     runtime/service.ts                          10269  (recorded 1137
   identical and every collaborator field on the facade is `private`.
 - **`apps/web` and the downstream extension repository.** Out of scope.
 - **Live browser behaviour.** Nothing here is browser-side.
-- **`prepareArtifactDocument`'s object-reference branch** (noted in round 3;
-  unchanged).
+- **`prepareArtifactDocument`'s object-reference branch** (round 3; unchanged).
 - **`pnpm structure:baseline`.** Not run, per the brief.
 - **Separate commits.** Each step's input file is preserved:
-  `<scratchpad>/asfacade-service-r4-base.ts` (at b797488), `-step1`, `-step2`.
-  The extraction scripts (`asfacade-extract-{flows,recordings}.mjs`) are
-  deterministic and each takes the previous step's file as input. One caveat for
-  replay: the recordings script appends `mapWithConcurrency` to
-  `service/collections.ts` and now throws rather than appending twice, so restore
-  that file before re-running it.
+  `<scratchpad>/asfacade-service-r5-base.ts` (at ce7e38b), `-step1`, `-step2`,
+  `-step3`. The three extraction scripts are deterministic and each takes the
+  previous step's file as input.
 
 ## Open questions or contradictions found
 
-### 1. Line count and method count have fully diverged, as predicted
+### 1. `repositories` is a shared handle, not a cluster — the plan's largest remaining target does not exist
 
-Round 4 removed **1,104 lines** and only **35 methods** from the class. Of the 45
-methods relocated, eight were public and kept their names on the facade. The
-class is at 287 against a floor of 178, and the file is at 10,269 against a
-limit of 800. **Bodies leaving the file is the whole of the remaining value**;
-the ratchet will keep falling slowly and will stop at 178 while the file is still
-several thousand lines over. Both numbers are in the table above for every step,
-per instruction.
+Measured: 41 methods touch `repositories`, **29 of them public**, 1,132 lines.
+The list is the service's API surface — `createRecording`, `appendRecordingEvents`,
+`finalizeRecording`, `mineRecordingEvidence`, `proposePolicyFromModel`,
+`approvePolicyProposal`, `publishFlow`, `migrateFlows`, `deleteProjectArtifact`
+and twenty more. There is no state to own and no boundary to draw: the canonical
+repositories are a *dependency* every public operation needs, exactly as
+`projectPaths` was before round 1, and extracting "the methods that touch it"
+would mean extracting the public API.
 
-### 2. What is left, measured after round 4
+Only **12 of the 41 are private**, and they do not form a group: they are the
+write pipeline (now in `flows/writer.ts`), the pipeline writers, the flow
+catalogue readers, and `seedFixture`. Three of them left this round as part of
+other collaborators.
 
-| Field(s) | Methods | Public | Lines | Outward | Note |
-| --- | --- | --- | --- | --- | --- |
-| `objectStore` (remainder) | 15 | 11 | 495 | 17 | recording + project deletion flows; needs the project-artifact layer beneath |
-| `repositories` | 45 | — | 1,175 | 41 | the largest; still needs layers beneath it |
-| `projectDatabasePool` (remainder) | 4 | 3 | — | 6 | `applyFlowGraphPatch`, `getLlmExecutionBinding`, `deleteFlowBootstrapRouter`, `getFlowGraphViewport` — orchestration over the flow store |
-| `recordingStateIndexes` | 5 | 1 | 61 | 3 | |
-| `recordingDomains` | 6 | 6 | 120 | 4 | |
-| `ioRuntime`, `nativeNodeRuntime`, `llmProviderResolver`, `hostRuntime`, `runtimeService`, `runtimeAbortControllers`, `adaptiveRuntimeAdmissions`, `reusableLlmContext*` | 1-13 each | mixed | — | 10-28 | the runtime/LLM side |
+**Recommendation:** strike `repositories` from the plan as an extraction target
+and replace it with what the measurement actually shows — the remaining work is
+orchestration over collaborators, and the way to shrink it further is to keep
+taking closed groups of *private* methods, not to chase the biggest field.
 
-No closed cluster remains. Every further extraction needs either a paired cut
-(as `flows/` was) or a layer extracted beneath it first (as `recordings/` needed
-`object-documents`). The storage layer is now largely out; what is left is
-orchestration over it and the runtime/LLM side, where the outward counts are 10
-to 28 and the state is genuinely shared.
+### 2. Treating a delegation as reachable changes what counts as closed
 
-### 3. The depth ceiling is still not binding, but `repositories` will test it
+The closure walk used through round 4 counted a call to an already-delegating
+facade method as an outward dependency. It is not: a moved method calling
+`this.getFlow(...)` can reach the same code through `this.flows.getFlow(...)`,
+because the facade method is nothing but that forward. Teaching the tool to
+recognise a three-line `return await this.<field>.<name>(...)` body and treat it
+as satisfied is what made this round's three collaborators visible — the flow
+writer measured 7 outward under the old rule and 0 under the new one.
 
-`service/flows/store.ts` and `service/recordings/store.ts` are 9 path segments,
-exactly `LIMITS.maxPathSegments`, and that rule does not ratchet. Both fit as one
-file each. `repositories` at 1,175 lines is the first that cannot: it exceeds the
-800-line file limit on its own and would need either
-`service/<group>/<sub>/<file>.ts` — which the depth rule rejects — or several
-sibling files in one directory. The second is possible (`service/repositories/`
-holding `flows.ts`, `recordings.ts`, `runs.ts`, …) provided the split does not
-cut a cycle. **That is the decision to make before that dispatch**, and it is a
-question for the coordinator rather than something to work around.
+Anyone continuing should use `asfacade-closure2.mjs`, not the earlier
+`asfacade-closure.mjs`. The caveat is the one in the rewrite section: a
+delegation that renames or adds an argument needs a template, not a rename.
 
-### 4. Costs confirmed again
+### 3. What is left, measured after round 5
 
-- **White-box tests follow private methods.** One coupled site this round, found
-  before the cut and fixed as a planned edit rather than a failure to diagnose.
-  The grep is cheap; keep it.
-- **The import generator earns its keep.** Round 4 moved 45 methods and 28
-  helpers across five new files; the import blocks were derived from
-  `service.ts`'s own imports and re-relativised, not written by hand. Its two
-  rules worth knowing: never re-emit the facade's own barrel, and sibling
-  collaborator imports are written explicitly.
+98 private methods and 2,410 lines of private bodies remain, against 178 public
+methods and 4,081 lines of public bodies. The largest private methods left are
+almost entirely **runtime and LLM**: `maybeAnnotateRunDetailWithRuntimeLlm` (305
+lines), `applyFlowBootstrapAdaptation` (117), `revertFlowBootstrapAdaptation`
+(99), `migrateLegacyParentIntoOwnedSubflow` (85),
+`retryRuntimeSessionAfterAutoAppliedPatch` (84), `maybePromoteRuntimeAdaptation`
+(75). The plausible next groups, in order of how clean they measured:
+
+| Candidate | Methods | Lines | Outward | Note |
+| --- | --- | --- | --- | --- |
+| flow-bootstrap application | ~6 | ~380 | not yet measured | `applyFlowBootstrapAdaptation`, `revertFlowBootstrapAdaptation`, `transitionFlowBootstrapAdaptation`; sits directly on `flowMutations` and `adaptations/`, so it may now be closed |
+| flow catalogue readers | 8 | ~80 | 0 at wave 3 | `listCanonicalFlowArtifacts`, `listPublishedFlowSnapshots`, `listFlowPublicationRecords`, `loadProjectFlows`, `scopedProjectIdsForProject`, `inferLegacyProjectScopes` |
+| recording state indexes | 4 | 20 | 0 | blocked only by `repairRecordingStateIndex` and `collectLiveProjectObjectReferences` also touching the field |
+| recording-pipeline completion | 10 | 134 | 1 | closes only by pulling in `validateRecordingFlowProposal` → `ioRuntime` |
+| runtime/LLM (`ioRuntime`, `nativeNodeRuntime`, `llmProviderResolver`, `hostRuntime`, …) | 1-13 each | — | 10-28 | genuinely shared state; the hard part |
+
+### 4. The depth ceiling, now settled in practice
+
+Confirmed by this round: `service/flows/` holds five files at 9 segments and
+`service/adaptations/` two, and the audit is clean. Sibling files inside a
+collaborator directory are the answer whenever one file would cross the 400-line
+advisory threshold, and the split is free whenever the direction is one-way —
+which is worth checking with a two-direction count before writing, as
+`durable → patches` was.

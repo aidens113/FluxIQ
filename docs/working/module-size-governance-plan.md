@@ -574,6 +574,42 @@ any future dispatch:
   but several files inside `service/repositories/` sit at 9 segments and are
   fine; only a further subdirectory would breach the depth limit.
 
+### 2026-09-11 — service.ts, collaborators 11 to 13, and `repositories` struck
+
+- Agent: supervisor, with worker `core-automation-studio-facade` resumed
+- Changed: `runtime/service.ts` 10,269 -> 9,342 lines, class 287 -> 261
+  methods; new `runtime/service/flows/{writer,mutations}.ts` and
+  `runtime/service/adaptations/{patches,durable}.ts`; one private stub
+  repointed in `runtime/tests/service-subflow-pagination.test.ts`.
+- Why: continuing Phase 7, targeting `repositories` as the largest remaining
+  cluster.
+- Validation: `pnpm check` -> passed. `vitest run .../runtime` -> 32 files /
+  400 cases, same 3 pre-existing failures. Public surface -> 178 identical;
+  runtime barrel -> 276 identical. Probes -> 114 observations this round, 830
+  cumulative, all equal. Baseline -> 0 added, 0 raised, 2 lowered.
+- Outcome: Accepted, and the stated target struck
+- Follow-up: two findings, the first of which changes the plan.
+  1. **`repositories` is not a cluster and must be struck as a target.** It is
+     touched by 41 methods, 29 of them public — `createRecording`,
+     `publishFlow`, `migrateFlows`, `approvePolicyProposal` and twenty more.
+     It is the canonical repository *handle* the API surface uses, in the same
+     way `projectPaths` was before the first extraction. There is no state to
+     own and no boundary to draw: extracting "the methods that touch it" means
+     extracting the public API. Only 12 of the 41 are private, and those
+     belong to four unrelated groups, three of which left this round inside
+     other collaborators.
+  2. **The closure walk was over-counting, and fixing it unlocked this round.**
+     It had treated a call to an already-delegating facade method as an
+     outward dependency. It is not: `this.getFlow(...)` reaches the same code
+     as `this.flows.getFlow(...)`. Under the old rule the Flow writer measured
+     7 outward dependencies; under the corrected rule it measures 0. All three
+     of this round's collaborators were invisible before that fix, which means
+     earlier "not closed" measurements in this document may understate what is
+     reachable and are worth re-running.
+  The adaptation cut is the clearest "extract the layer beneath first" case so
+  far: 18 methods with 3 outward before the Subflow/Router mutation cut, 10
+  with 0 after it.
+
 ## Open Questions
 
 - **Should the method-count rule become blocking?** It is a regex heuristic
