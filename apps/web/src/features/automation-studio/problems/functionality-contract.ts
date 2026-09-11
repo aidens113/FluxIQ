@@ -104,9 +104,9 @@ export const problemsFunctionalityContract = {
     }
   ],
   "automatedEvidence": [
-    "problem-host.test.ts",
-    "problems-view.test.tsx",
-    "problems-large.test.ts"
+    "tests/problem-host.test.ts",
+    "tests/problems-view.test.tsx",
+    "tests/problems-large.test.ts"
   ],
   "browserOnlyCertification": [
     "Screen-reader live-region behavior for loading, stale, denied, and error validation states.",

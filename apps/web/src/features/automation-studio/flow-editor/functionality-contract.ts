@@ -111,9 +111,9 @@ export const flowEditorFunctionalityContract = {
     }
   ],
   "automatedEvidence": [
-    "large-project-behavior.test.ts",
-    "commands/commands.test.ts",
-    "model/policy-graph.test.ts"
+    "tests/large-project-behavior.test.ts",
+    "commands/tests/commands.test.ts",
+    "model/tests/policy-graph.test.ts"
   ],
   "browserOnlyCertification": [
     "Pointer-model certification for select, move, right-drag box, context click, connect, and multi-select.",

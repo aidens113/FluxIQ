@@ -102,8 +102,8 @@ export const clientsFunctionalityContract = {
     }
   ],
   "automatedEvidence": [
-    "active-poller.test.ts",
-    "large-project-behavior.test.ts"
+    "tests/active-poller.test.ts",
+    "tests/large-project-behavior.test.ts"
   ],
   "browserOnlyCertification": [
     "Active/inactive polling certification with real visibility and tab changes.",

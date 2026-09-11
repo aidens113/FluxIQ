@@ -105,9 +105,9 @@ export const stateFunctionalityContract = {
     }
   ],
   "automatedEvidence": [
-    "StateVisualCanvas.test.tsx",
-    "state-isolation-contract.test.tsx",
-    "commands/commands.test.ts"
+    "tests/StateVisualCanvas.test.tsx",
+    "tests/state-isolation-contract.test.tsx",
+    "commands/tests/commands.test.ts"
   ],
   "browserOnlyCertification": [
     "Keyboard and screen-reader semantics for visual bounding-box controls.",

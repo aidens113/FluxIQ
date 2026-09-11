@@ -106,9 +106,9 @@ export const routerFunctionalityContract = {
     }
   ],
   "automatedEvidence": [
-    "router-view.test.tsx",
-    "router.test.ts",
-    "large-project-behavior.test.ts"
+    "tests/router-view.test.tsx",
+    "tests/router.test.ts",
+    "tests/large-project-behavior.test.ts"
   ],
   "browserOnlyCertification": [
     "Keyboard reorder and focus retention across a saved route mutation.",

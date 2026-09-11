@@ -13,5 +13,5 @@
     "rewriteRelativeImportExtensions": true,
     "tsBuildInfoFile": "tsconfig.build.tsbuildinfo"
   },
-  "exclude": ["src/**/*.test.ts"]
+  "exclude": ["src/**/tests/**"]
 }

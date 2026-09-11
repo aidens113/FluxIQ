@@ -110,9 +110,9 @@ export const runtimeFunctionalityContract = {
     }
   ],
   "automatedEvidence": [
-    "runtime.test.tsx",
-    "runtime-views.test.tsx",
-    "large-project-behavior.test.tsx"
+    "tests/runtime.test.tsx",
+    "tests/runtime-views.test.tsx",
+    "tests/large-project-behavior.test.tsx"
   ],
   "browserOnlyCertification": [
     "Long-task and retained-heap budget while opening a 100,000-event Run.",

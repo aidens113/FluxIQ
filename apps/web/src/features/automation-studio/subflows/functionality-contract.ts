@@ -109,9 +109,9 @@ export const subflowsFunctionalityContract = {
     }
   ],
   "automatedEvidence": [
-    "subflows-view.test.tsx",
-    "subflows.test.ts",
-    "large-project-behavior.test.ts"
+    "tests/subflows-view.test.tsx",
+    "tests/subflows.test.ts",
+    "tests/large-project-behavior.test.ts"
   ],
   "browserOnlyCertification": [
     "Roving tree focus and expansion announcements with a screen reader.",

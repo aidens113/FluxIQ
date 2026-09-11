@@ -2,7 +2,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    include: ["src/programs/index.test.ts", "src/programs/permission-matrix.test.ts", "src/programs/_shared/storage.test.ts"],
+    include: ["src/programs/tests/index.test.ts", "src/programs/tests/permission-matrix.test.ts", "src/programs/_shared/tests/storage.test.ts"],
     coverage: {
       provider: "v8",
       include: ["src/programs/_shared/api.ts", "src/programs/_shared/storage.ts"],

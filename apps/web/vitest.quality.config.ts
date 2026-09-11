@@ -4,10 +4,10 @@ export default defineConfig({
   esbuild: { jsx: "automatic" },
   test: {
     include: [
-      "src/lib/login-attempts.test.ts",
-      "src/lib/program-route.test.ts",
-      "src/features/programs/shared-ui.test.tsx",
-      "src/features/automation-studio/model/project-artifacts.test.ts"
+      "src/lib/tests/login-attempts.test.ts",
+      "src/lib/tests/program-route.test.ts",
+      "src/features/programs/tests/shared-ui.test.tsx",
+      "src/features/automation-studio/model/tests/project-artifacts.test.ts"
     ],
     coverage: {
       provider: "v8",

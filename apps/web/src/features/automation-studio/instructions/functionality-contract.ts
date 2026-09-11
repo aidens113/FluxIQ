@@ -111,9 +111,9 @@ export const instructionsFunctionalityContract = {
     }
   ],
   "automatedEvidence": [
-    "instructions-view.test.tsx",
-    "instructions.test.ts",
-    "large-project-behavior.test.ts"
+    "tests/instructions-view.test.tsx",
+    "tests/instructions.test.ts",
+    "tests/large-project-behavior.test.ts"
   ],
   "browserOnlyCertification": [
     "Dirty-navigation focus and announcement through the confirmation overlay.",

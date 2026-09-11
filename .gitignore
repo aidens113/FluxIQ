@@ -16,3 +16,4 @@ storage/*
 *.tsbuildinfo
 logs
 tmp
+.tmp/

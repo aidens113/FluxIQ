@@ -110,9 +110,9 @@ export const recordingsFunctionalityContract = {
     }
   ],
   "automatedEvidence": [
-    "recording-ownership.test.ts",
-    "large-project-behavior.test.tsx",
-    "commands/commands.test.ts"
+    "tests/recording-ownership.test.ts",
+    "tests/large-project-behavior.test.tsx",
+    "commands/tests/commands.test.ts"
   ],
   "browserOnlyCertification": [
     "Virtualized timeline keyboard navigation with 100,000 events.",

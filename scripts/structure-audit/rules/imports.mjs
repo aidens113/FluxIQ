@@ -77,6 +77,7 @@ export function run(ctx) {
   const { CONFIG } = ctx;
   const forbidden = CONFIG.forbiddenImports ?? [];
   const boundaries = CONFIG.importBoundaries ?? [];
+  const testRoots = new Set(CONFIG.testRootDirNames ?? []);
   const barrels = barrelDirectories(ctx);
   const directories = trackedDirectories(ctx);
   const findings = [];
@@ -115,6 +116,12 @@ export function run(ctx) {
 
       const targetDir = path.posix.dirname(target);
       if (targetDir === importerDir) continue;
+      // A test under <dir>/tests/ verifies <dir>'s own modules; it is not a
+      // consumer reaching across a boundary. Relocating tests one level down
+      // turns the same-directory import exempted above into "../x", and
+      // without this the barrel would have to widen its public surface purely
+      // so tests can reach their subject.
+      if (testRoots.has(path.posix.basename(importerDir)) && targetDir === path.posix.dirname(importerDir)) continue;
       if (path.posix.basename(target) === "index") continue;
       if (!barrels.has(targetDir)) continue;
 

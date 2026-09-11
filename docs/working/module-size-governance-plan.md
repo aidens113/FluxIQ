@@ -1,7 +1,7 @@
 # Module Size And Structure Governance Plan
 
 Status: Active
-Status detail: Every checkable rule is enforced in both repositories; the migration phases are sequenced but not started.
+Status detail: Every checkable rule is enforced in both repositories; Phase 1 (tests relocation) is complete in both; Phases 2-8 are sequenced but not started.
 Created: 2026-09-10
 Last updated: 2026-09-10
 Owner: Senior supervisor agent
@@ -17,51 +17,83 @@ this document tracks applying it.
 
 ## Current State
 
-**Enforcement is complete for every rule a machine can check.**
-`scripts/structure-audit.mjs` runs first in `pnpm check` and loads one
-module per rule from `scripts/structure-audit/rules/`; a generic ratchet in
-`baseline.mjs` freezes existing violations per rule and per key. Rules:
-`file-lines`, `directory-files`, `class-methods` (TypeScript AST, blocking),
-`exported-values` (one class, one component, at most 15 values per file),
-`test-placement` (tests sit in `tests/` or `e2e/`), `naming` (depth, banned
-names, shared-prefix groups), `imports` (forbidden specifiers, declared
-boundaries, barrel skipping), and `working-docs` (header block, `Current
-State` for Active documents, size, and the generated index). Verified: a
-clean tree exits 0; growth in a baselined entry exits 1; a new violation
-exits 1; `pnpm -r check` passes alongside.
+**Phase 1 is complete in both repositories.** Every co-located test now sits
+in a `tests/` subfolder of the directory that owns its subject: 333 files
+here, 74 downstream, moved by seven workers partitioned by file so none could
+collide. The `test-placement` rule reports zero findings in both, down from
+70 directories here and 13 downstream. Core's baseline fell from 402 keys to
+328, downstream's from 53 to 40, and no entry rose in either.
 
-**The downstream repository runs the same audit.** Entry, context, baseline,
-and rules are mirrored there byte for byte; only `config.mjs` differs, and it
-additionally forbids `domain/src` importing `apps/extension/src` (zero
-violations today). Its `pnpm check` runs the audit first.
+**Enforcement is complete for every rule a machine can check.**
+`scripts/structure-audit.mjs` loads one module per rule from
+`scripts/structure-audit/rules/` and applies a generic ratchet from
+`baseline.mjs`. Rules: `file-lines`, `directory-files`, `class-methods`,
+`exported-values`, `test-placement`, `naming`, `imports`, and `working-docs`.
+`pnpm check` now runs `pnpm structure:test` first, then the audit, then
+`pnpm -r check` — previously the rule tests existed but gated nothing, so the
+auditor itself was unguarded.
+
+**The `imports` rule was changed, and the reasoning should survive this
+document.** The rule exempts same-directory imports. Moving a test into
+`tests/` converts every `./x` into `../x`, which the rule counted as reaching
+past the directory's barrel — so Phase 1 *manufactured* violations of a rule
+this plan freezes. Four workers hit it independently and reached for two bad
+workarounds: routing tests through barrels (which widens a directory's public
+surface so its own tests can reach it) or accepting a raised baseline (which
+defeats the ratchet). Measured, it would have inflated Core by over 130 and
+downstream from 29 to roughly 80. The rule now additionally exempts a test
+under `<dir>/tests/` importing `<dir>`'s own modules: that test is not a
+consumer crossing a boundary, it is the same-directory import relocated one
+level. `scripts/structure-audit/rules/tests/imports.test.mjs` — the rule's
+first test — pins three widening cases and four skips it must still catch.
 
 **Audit, 1,367 tracked files:** 16 source files over 800 lines (largest
-`service.ts`, 12,482); 11 directories over 25 files; 2 classes over 40
-methods (`AutomationStudioService` 422, `ClientGatewayService` 43); 61
-files with an oversized export surface (11 with several classes, 31 with
-several components, 19 over 15 values; `shared-ui.tsx` exports 36
-components); 333 co-located test files in 70 directories; 26 shared-prefix
-groups of three or more (largest `project-` 23 in `storage/`); 326
-barrel-skipping imports across 198 files; 16 working documents over 800
-lines. Downstream adds `FluxIQConnection` at 81 methods in `connection.ts`
-and 74 co-located tests. All of it is frozen in each repository's baseline.
+`service.ts`, 12,482); 8 directories over 25 files, down from 11, with the
+per-directory total falling 463 → 279; 2 classes over 40 methods
+(`AutomationStudioService` 422, `ClientGatewayService` 43); 61 files with an
+oversized export surface; **0 co-located tests**, down from 333; 26
+shared-prefix groups; 325 barrel-skipping imports, essentially unchanged from
+326; 16 working documents over 800 lines.
 
 **Decisions taken**
 
 - Tests move into a `tests/` subfolder of the directory that owns their
   subject — no separate mirrored tree.
-- `programs/automation-studio/testing/` and `client-gateway/testing/` stay
-  in `src`: both are re-exported from public barrels.
-- The prefix rule alone brings `storage/`, `runtime/`, and `model/` under
-  the cap. No kind split is needed on the framework side.
-- `service.ts` is decomposed last, behind a facade that keeps its public
-  surface, because every program imports it.
+- `programs/automation-studio/testing/` and `client-gateway/testing/` stay in
+  `src`: both are re-exported from public barrels. Only their `*.test.ts`
+  moved; fixtures stayed.
+- The prefix rule alone brings `storage/`, `runtime/`, and `model/` under the
+  cap. No kind split is needed on the framework side.
+- `service.ts` is decomposed last, behind a facade, because every program
+  imports it.
 - Depth is exempt under `apps/web/src/app/`, where the Next.js router
-  dictates it.
+  dictates it. Route directories were never renamed.
 - Warnings never ratchet; only fail findings enter the baseline.
 
-**Next steps:** Phase 1 (tests relocation), then Phase 2 (`storage/`). Each
-lowers baseline entries; run `pnpm structure:baseline` after each.
+**Three baseline entries are genuinely new, and all three are the same
+thing:** `storage/tests` (35), `runtime/tests` (32), and downstream's
+`test-runner/src/tests` (51) exceed the 25-file directory limit because each
+inherited the tests of an oversized parent. They are frozen and may only
+shrink. Phases 2 and 3 split those parents; the matching tests must move with
+them rather than being treated as separate problems.
+
+**Next steps:** Phase 2 (`automation-studio/storage/`), then Phase 3
+(`runtime/` and `model/`). Each lowers baseline entries; run
+`pnpm structure:baseline` after each.
+
+**Known pre-existing defects, surfaced by Phase 1 but not caused by it.**
+Nine genuine test failures: four in `packages/fluxiq` (`service.test.ts`,
+`service-subflow-pagination.test.ts`, `runtime-llm-grants.test.ts`) and five
+in `apps/web` (`derivation-job`, `GraphEditorViews`, `workspace/cache`,
+`phase7-contracts`, `synchronous-interaction-trace`). Each reads its target
+successfully and disagrees on content or behaviour, so none is a
+path-resolution artifact; two workers independently confirmed them on the
+untouched tree. Separately, `router/functionality-contract.ts` claims
+automated evidence in `large-project-behavior.test.ts`, a file that has never
+existed in any commit — nine other views have one. Nothing resolves those
+`automatedEvidence` strings, which is why it drifted unnoticed; making
+`canonical-view-functionality.test.ts` resolve them would turn the contract
+into a real check, at the cost of failing immediately on router.
 
 **Blockers:** none.
 ---
@@ -351,6 +383,74 @@ messages.
 
 ---
 
+### Phase 1 dispatch — 2026-09-10
+
+Migration Plan Phase 1, tests relocation. Mechanical; no behaviour change.
+
+**Shared context.** In every directory you own that holds test files
+(`*.test.ts`, `*.test.tsx`, `*.spec.ts`, `*.spec.tsx`), create a `tests/`
+subdirectory and `git mv` the test files into it with filenames unchanged.
+Then repair relative imports inside the moved tests — one extra `../` to
+reach the subject, or import from the directory barrel. Move only test
+files: fixtures, factories, mocks, and other support stay where they are.
+Change nothing inside a test but its import specifiers. Never edit a
+subject module to accommodate a test.
+
+Record how many test files and test cases ran **before** your move and
+again after; the counts must match. A vitest `include` or a `node --test`
+glob can silently stop matching when a file's depth changes, and a suite
+that vanishes looks identical to a suite that passes.
+
+Verify with `node scripts/structure-audit.mjs --rule test-placement --json`:
+every directory you own must appear in `lowerable` or disappear entirely,
+and `failures` must stay empty. Do **not** run `pnpm structure:baseline` —
+the supervisor regenerates both baselines once, after every worker lands.
+
+### Brief: core-fluxiq-studio
+- Repository: FluxIQ Core (`F:\!FluxIQ`)
+- Task: Phase 1 relocation for the framework's Automation Studio program — ~87 test files, densest in `storage` (35), `runtime` (32), `model` (9), `testing` (4), `nodes` (3), and one each in `api`, `client-gateway`, `dsl`, `fingerprinting`. `testing/` is re-exported from a public barrel: move its `*.test.ts` only and leave every fixture in place.
+- Required reads: `Current State` of `docs/working/module-size-governance-plan.md`; the shared context above
+- Owns (may edit): `packages/fluxiq/src/programs/automation-studio/**`
+- Must not touch: `packages/fluxiq/tsconfig.build.json`, `packages/fluxiq/vitest.quality.config.ts`, `.structure-baseline.json`, anything outside your subtree
+- Definition of done: files moved, imports repaired; `pnpm --filter fluxiq test` observed passing with the same test-file and test-case counts as before the move (quote both summary lines); audit shows your directories in `lowerable` with `failures` empty; report written
+- Report to: docs/working/module-size-governance-plan/reports/core-fluxiq-studio.md
+
+### Brief: core-fluxiq-core
+- Repository: FluxIQ Core (`F:\!FluxIQ`)
+- Task: Phase 1 relocation for the rest of the framework package — ~18 test files in `programs/_shared` (4), `programs` (3), `framework` (2), `runtime` (2), and one each in `client-gateway`, `engine`, `io`, `ui`, `programs/background-tasks`, `programs/database-manager`, `programs/secret-keys/runtime`. Then change `packages/fluxiq/tsconfig.build.json` `exclude` from `["src/**/*.test.ts"]` to `["src/**/tests/**"]` so the build skips the folders rather than a filename pattern, and update the three explicit paths in `packages/fluxiq/vitest.quality.config.ts` to their new `tests/` locations.
+- Required reads: `Current State` of `docs/working/module-size-governance-plan.md`; the shared context above
+- Owns (may edit): `packages/fluxiq/src/**` except `src/programs/automation-studio/**`; `packages/fluxiq/tsconfig.build.json`; `packages/fluxiq/vitest.quality.config.ts`
+- Must not touch: `packages/fluxiq/src/programs/automation-studio/**`, `.structure-baseline.json`, anything outside `packages/fluxiq`
+- Definition of done: files moved, imports repaired, both configs updated; `pnpm --filter fluxiq build` produces a `dist` with no `tests/` folder and no `.test.js`; the quality config's suites still run and pass; audit shows your directories in `lowerable` with `failures` empty; report written
+- Report to: docs/working/module-size-governance-plan/reports/core-fluxiq-core.md
+
+### Brief: core-web-studio-a
+- Repository: FluxIQ Core (`F:\!FluxIQ`)
+- Task: Phase 1 relocation for the denser half of the web Automation Studio feature — ~69 test files: the feature root's own 7, plus `testing` (16), `hierarchy` (15), `model` (14), `live` (13), `live/view-host` (4). Per the plan, `testing/` mixes fixtures and tests: its `*.test.ts` move to `testing/tests/` and the fixtures stay.
+- Required reads: `Current State` of `docs/working/module-size-governance-plan.md`; the shared context above
+- Owns (may edit): test files directly in `apps/web/src/features/automation-studio/`, and the subtrees `testing/`, `hierarchy/`, `model/`, `live/`
+- Must not touch: every other `automation-studio/` subdirectory, `apps/web/vitest.quality.config.ts` (the supervisor owns it), `.structure-baseline.json`
+- Definition of done: files moved, imports repaired; `pnpm --filter @fluxiq/web test` observed with the same test-file and test-case counts as before (quote both); audit shows your directories in `lowerable` with `failures` empty; report written
+- Report to: docs/working/module-size-governance-plan/reports/core-web-studio-a.md
+
+### Brief: core-web-studio-b
+- Repository: FluxIQ Core (`F:\!FluxIQ`)
+- Task: Phase 1 relocation for the remaining web Automation Studio subdirectories — ~62 test files across `views` (12), `graph` (9), `workspace` (9) and its `overlays`/`cache`/`commands`/`shell`, `flow-editor` (7) and its `model`/`commands`, `runtime` (7), `problems` (6), `stores` (6), `sync` (6), `inspector` (5), `recordings` (5) and its `commands`, `state` (4) and its `model`/`commands`, `adaptations`, `instructions`, `project`, `settings`, `subflows` (3 each), `bootstrap`, `cache`, `clients`, `development`, `router`, `styles` (2 each), and `authoring`, `parameters`, `shared` (1 each).
+- Required reads: `Current State` of `docs/working/module-size-governance-plan.md`; the shared context above
+- Owns (may edit): every `apps/web/src/features/automation-studio/` subtree **except** `testing/`, `hierarchy/`, `model/`, `live/`, and except test files sitting directly in the feature root
+- Must not touch: `testing/`, `hierarchy/`, `model/`, `live/`, the feature root's own files, `apps/web/vitest.quality.config.ts`, `.structure-baseline.json`
+- Definition of done: files moved, imports repaired; `pnpm --filter @fluxiq/web test` observed with the same test-file and test-case counts as before (quote both); audit shows your directories in `lowerable` with `failures` empty; report written
+- Report to: docs/working/module-size-governance-plan/reports/core-web-studio-b.md
+
+### Brief: core-web-rest
+- Repository: FluxIQ Core (`F:\!FluxIQ`)
+- Task: Phase 1 relocation outside the Automation Studio feature — ~40 test files in `apps/web/src/features/programs` (14), `features/programs/live-views` (8), `src/lib` (6), `src/app` (4) and its four route subdirectories, `src/server` (1), and `packages/client-gateway-websocket/src` (1). Then change that package's `tsconfig.build.json` `exclude` from `["src/**/*.test.ts"]` to `["src/**/tests/**"]`. `src/app/` is the Next.js router: directories with bracketed segments are route names — move the tests, never rename a route directory.
+- Required reads: `Current State` of `docs/working/module-size-governance-plan.md`; the shared context above
+- Owns (may edit): `apps/web/src/features/programs/**`, `apps/web/src/lib/**`, `apps/web/src/app/**`, `apps/web/src/server/**`, `packages/client-gateway-websocket/**`
+- Must not touch: `apps/web/src/features/automation-studio/**`, `apps/web/vitest.quality.config.ts` (the supervisor owns it), `.structure-baseline.json`
+- Definition of done: files moved, imports repaired, the `tsconfig.build.json` exclude changed; `pnpm --filter @fluxiq/web test` and `pnpm --filter @fluxiq/client-gateway-websocket test` observed with unchanged counts (quote them); audit shows your directories in `lowerable` with `failures` empty; report written
+- Report to: docs/working/module-size-governance-plan/reports/core-web-rest.md
+
 ## Work Ledger
 
 ### 2026-09-10 — Plan authored
@@ -435,6 +535,44 @@ messages.
 - Follow-up: Phase 1 tests relocation.
 
 ---
+
+### 2026-09-10 — Phase 1 tests relocation, both repositories
+
+- Agent: supervisor, with workers `core-fluxiq-studio`, `core-fluxiq-core`,
+  `core-web-studio-a`, `core-web-studio-b`, `core-web-rest` here and
+  `ext-test-runner`, `ext-rest` downstream
+- Changed: 333 test files moved into `tests/` subfolders here (87 framework
+  Automation Studio, 18 rest of `packages/fluxiq`, 69 + 121 web Automation
+  Studio, 38 outside it) and 74 downstream. `packages/fluxiq/` and
+  `packages/client-gateway-websocket/tsconfig.build.json` `exclude` changed
+  from `["src/**/*.test.ts"]` to `["src/**/tests/**"]`; both
+  `vitest.quality.config.ts` include lists repointed;
+  `scripts/structure-audit/rules/imports.mjs` given the test exemption and a
+  new test at `rules/tests/imports.test.mjs`; root `package.json` `check` now
+  runs `structure:test` first; `.gitignore` given `.tmp/`;
+  `.structure-baseline.json`. Twelve `functionality-contract.ts` evidence
+  lists and two architecture-gate tests were repointed at the new paths.
+- Why: Migration Plan Phase 1 — mechanical, zero behaviour change, and the
+  prerequisite for Phases 2 and 3, which split directories whose file counts
+  this halves.
+- Validation: `pnpm check` -> `structure-audit: passed (106 warnings, 328
+  baselined)`, all four projects typecheck, exit 0. `pnpm build` -> exit 0
+  with zero test artifacts in any `dist`. `pnpm test` -> 9 failures, all
+  pre-existing: 4 in `packages/fluxiq` (795 pass / 799) and 5 in `apps/web`
+  (1,111 pass / 1,116). Each reads its target successfully and disagrees on
+  content or behaviour, so none is a path-resolution artifact, and two
+  workers independently reproduced them on the untouched tree.
+  `--rule test-placement --json` -> zero findings in both repositories, down
+  from 333 and 74. Baseline diff audited key by key: here 115 removed, 41
+  added of which 39 are byte-identical path re-keys and 2 genuinely new, 0
+  raised, 6 lowered; downstream 14 removed, 1 added, 0 raised. All three new
+  entries are `directory-files` on a `tests/` folder that inherited an
+  oversized parent's tests.
+- Outcome: Accepted
+- Follow-up: Phase 2 (`automation-studio/storage/`). Carry each directory's
+  `tests/` folder with it when its parent is split. Decide whether
+  `canonical-view-functionality.test.ts` should resolve `automatedEvidence`
+  paths, which would fail immediately on `router/`.
 
 ## Open Questions
 

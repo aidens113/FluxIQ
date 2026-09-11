@@ -100,9 +100,9 @@ export const inspectorFunctionalityContract = {
     }
   ],
   "automatedEvidence": [
-    "large-project-behavior.test.tsx",
-    "scoped-selection.test.ts",
-    "product-vocabulary.test.ts"
+    "tests/large-project-behavior.test.tsx",
+    "tests/scoped-selection.test.ts",
+    "tests/product-vocabulary.test.ts"
   ],
   "browserOnlyCertification": [
     "Focus transfer when semantic selection changes between object kinds.",

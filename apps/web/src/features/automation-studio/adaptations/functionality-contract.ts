@@ -105,9 +105,9 @@ export const adaptationsFunctionalityContract = {
     }
   ],
   "automatedEvidence": [
-    "adaptations-view.test.tsx",
-    "adaptations.test.ts",
-    "large-project-behavior.test.tsx"
+    "tests/adaptations-view.test.tsx",
+    "tests/adaptations.test.ts",
+    "tests/large-project-behavior.test.tsx"
   ],
   "browserOnlyCertification": [
     "Focus restoration after review confirmation and async completion.",

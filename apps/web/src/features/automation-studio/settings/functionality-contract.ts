@@ -108,9 +108,9 @@ export const settingsFunctionalityContract = {
     }
   ],
   "automatedEvidence": [
-    "settings-view.test.tsx",
-    "settings.test.ts",
-    "large-project-behavior.test.tsx"
+    "tests/settings-view.test.tsx",
+    "tests/settings.test.ts",
+    "tests/large-project-behavior.test.tsx"
   ],
   "browserOnlyCertification": [
     "Focus moves from validation summary to the first invalid typed control.",

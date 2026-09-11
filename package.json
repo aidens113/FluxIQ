@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "pnpm --filter @fluxiq/web dev",
     "build": "pnpm --filter @fluxiq/contracts build && pnpm --filter fluxiq build && pnpm --filter @fluxiq/client-gateway-websocket build && pnpm --filter @fluxiq/web build",
-    "check": "node scripts/structure-audit.mjs && pnpm -r check",
+    "check": "pnpm structure:test && node scripts/structure-audit.mjs && pnpm -r check",
     "test": "pnpm -r test",
     "docs:reference": "node scripts/docs-reference.mjs",
     "docs:check": "node scripts/validate-docs.mjs && node scripts/docs-reference.mjs --check",
