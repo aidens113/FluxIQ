@@ -8,6 +8,8 @@ import type { ClientGatewayTransport } from "./transport.ts";
 import type { ClientGatewayTrustedClientRegistry } from "./trusted-clients.ts";
 import type { InternalSession } from "./types.ts";
 
+import type { ClientGatewayFacadePorts } from "./facade-ports.ts";
+
 type LifecycleCollaborators = {
   config: ClientGatewayConfig;
   sessions: ClientGatewaySessionRegistry;
@@ -16,6 +18,9 @@ type LifecycleCollaborators = {
   audit: ClientGatewayAuditLog;
   events: ClientGatewayEventBus;
   pairingFlow: ClientGatewayPairingFlow;
+  // Calls into the service's public surface go through this port, never
+  // through the collaborator that owns the method. See ./facade-ports.ts.
+  facade: ClientGatewayFacadePorts;
 };
 
 /**
@@ -31,6 +36,7 @@ export class ClientGatewayLifecycle {
   private readonly audit: ClientGatewayAuditLog;
   private readonly events: ClientGatewayEventBus;
   private readonly pairingFlow: ClientGatewayPairingFlow;
+  private readonly facade: ClientGatewayFacadePorts;
 
   constructor(collaborators: LifecycleCollaborators) {
     this.config = collaborators.config;
@@ -40,6 +46,7 @@ export class ClientGatewayLifecycle {
     this.audit = collaborators.audit;
     this.events = collaborators.events;
     this.pairingFlow = collaborators.pairingFlow;
+    this.facade = collaborators.facade;
   }
 
   connect(input: { socket?: ClientGatewaySocket; hello?: ClientGatewayClientHello } = {}): ClientGatewaySession {
@@ -61,7 +68,7 @@ export class ClientGatewayLifecycle {
   }
 
   async handleHello(sessionId: string, hello: ClientGatewayClientHello): Promise<void> {
-    await this.trustedClients.ready();
+    await this.facade.ready();
     const session = this.sessions.require(sessionId);
     this.applyHello(session, hello);
     if (hello.token && await this.resumeTrustedSession(session, hello.token)) return;

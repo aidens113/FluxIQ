@@ -35,7 +35,7 @@ export type {
   ClientGatewayTrustedClientStore
 } from "./service/index.ts";
 
-import type { ClientGatewayItemKind, ClientGatewayServiceOptions, ClientGatewaySummaryPage } from "./service/index.ts";
+import type { ClientGatewayFacadePorts, ClientGatewayItemKind, ClientGatewayServiceOptions, ClientGatewaySummaryPage } from "./service/index.ts";
 
 /**
  * The client gateway: pairing, durable client trust, session lifecycle, and the
@@ -66,8 +66,15 @@ export class ClientGatewayService {
     const pairings = new ClientGatewayPairingRegistry(config);
     const trustedClients = new ClientGatewayTrustedClientRegistry(config);
     const transport = new ClientGatewayTransport(sessions, config.now);
-    const pairingFlow = new ClientGatewayPairingFlow({ config, pairings, sessions, trustedClients, transport, audit, events });
-    const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow });
+    // Collaborators call back into this service's public surface through this
+    // object, never through the collaborator that owns the method, so an
+    // override or a stub on a public method is still honoured.
+    const facade: ClientGatewayFacadePorts = {
+      ready: () => this.ready(),
+      disconnect: (sessionId, reason) => this.disconnect(sessionId, reason)
+    };
+    const pairingFlow = new ClientGatewayPairingFlow({ config, pairings, sessions, trustedClients, transport, audit, events, facade });
+    const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow, facade });
     const commands = new ClientGatewayCommands({ config, sessions, transport, audit });
 
     this.trustedClients = trustedClients;
@@ -76,7 +83,7 @@ export class ClientGatewayService {
     this.pairingFlow = pairingFlow;
     this.lifecycle = lifecycle;
     this.commands = commands;
-    this.access = new ClientGatewayAccess({ sessions, trustedClients, transport, audit, lifecycle });
+    this.access = new ClientGatewayAccess({ sessions, trustedClients, transport, audit, lifecycle, facade });
     this.inbound = new ClientGatewayInbound({ sessions, transport, events, lifecycle, pairingFlow, commands });
     this.views = new ClientGatewayViews({ config, sessions, pairings, trustedClients, audit });
   }

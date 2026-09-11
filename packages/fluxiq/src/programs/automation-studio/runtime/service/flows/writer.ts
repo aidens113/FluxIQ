@@ -31,6 +31,7 @@ import type { AutomationStudioFlowStore } from "./store.ts";
 import { isJsonRecord, jsonObjectFromUnknown, stringOrNull } from "../json-values.ts";
 import { stableJson } from "../stable-json.ts";
 import { projectArtifactDocumentFileName } from "../paths/index.ts";
+import type { AutomationStudioFacadePorts } from "../facade-ports.ts";
 
 // Writing a Flow document and everything derived from it: its representation
 // checks, the generated source file and config artifact, the summary index
@@ -46,6 +47,10 @@ export class AutomationStudioFlowWriter {
     private readonly legacy: AutomationStudioLegacyRetirementStore,
     private readonly objectDocuments: AutomationStudioObjectDocuments,
     private readonly repositories: CanonicalAutomationStudioRepositories,
+    // Calls into the service's public surface go through this port, never
+    // through the collaborator that owns the method, so an override or a stub
+    // on the public method is still honoured. See service/facade-ports.ts.
+    private readonly facade: AutomationStudioFacadePorts,
     private readonly runtimeProjectDatabasePool?: AutomationStudioProjectDatabasePool
   ) {}
 
@@ -127,7 +132,7 @@ export class AutomationStudioFlowWriter {
     input: { projectId: string; flowId: string },
     allowOwnedSubflowGraph: boolean
   ): Promise<{ deletedFlowId: string }> {
-    const flow = await this.flows.getFlow(input.projectId, input.flowId);
+    const flow = await this.facade.getFlow(input.projectId, input.flowId);
     if (!allowOwnedSubflowGraph && this.persistedFlowRepresentation(flow) === "subflow_graph") {
       throw new Error("Owned Subflow graph Flows must be deleted through their owning Subflow.");
     }
@@ -230,7 +235,7 @@ export class AutomationStudioFlowWriter {
     const parentFlowId = typeof flow.metadata?.parentFlowId === "string" ? flow.metadata.parentFlowId.trim() : "";
     const parentSubflowId = typeof flow.metadata?.parentSubflowId === "string" ? flow.metadata.parentSubflowId.trim() : "";
     if (!parentFlowId || !parentSubflowId || flow.metadata?.subflowGraph !== true) throw new Error("Subflow graph metadata is incomplete; graph mutation refused.");
-    const subflow = await this.flows.getFlowSubflow(projectId, parentFlowId, parentSubflowId);
+    const subflow = await this.facade.getFlowSubflow(projectId, parentFlowId, parentSubflowId);
     if (!subflow || subflow.graphFlowId !== flow.flowId) throw new Error("Flow is not the graph owned by its declared Subflow; graph mutation refused.");
   }
 

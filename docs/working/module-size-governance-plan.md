@@ -1,7 +1,7 @@
 # Module Size And Structure Governance Plan
 
 Status: Active
-Status detail: Phases 1-8 executed; every oversized file decomposed except runtime/service.ts, which continues incrementally.
+Status detail: Phases 1-8 complete. service.ts decomposed from 12,482 to 8,663 lines and 422 to 232 methods; the remaining runtime/LLM core is measured as not separable without decomposing runRuntimeSession first.
 Created: 2026-09-10
 Last updated: 2026-09-10
 Owner: Senior supervisor agent
@@ -609,6 +609,59 @@ any future dispatch:
   The adaptation cut is the clearest "extract the layer beneath first" case so
   far: 18 methods with 3 outward before the Subflow/Router mutation cut, 10
   with 0 after it.
+
+### 2026-09-11 — summaries and catalogue, a masked regression, and the facade-dispatch guard
+
+- Agent: supervisor, with worker `core-automation-studio-facade` resumed
+- Changed: `runtime/service.ts` 9,342 -> 8,663 lines, class 261 -> 232
+  methods; new `runtime/service/catalogue.ts` and
+  `runtime/service/summaries/{store,conversions,sql-paging}.ts`; new
+  `runtime/service/facade-ports.ts` and
+  `client-gateway/service/facade-ports.ts`; new audit rule
+  `scripts/structure-audit/rules/facade-dispatch.mjs` with 9 tests, mirrored
+  downstream; 30 call sites repointed; two test sites repointed.
+- Why: continuing Phase 7, then stopping on a measured boundary.
+- Validation: `pnpm check` -> passed, 0 facade-dispatch findings.
+  `pnpm structure:test` -> 38 tests passing in both repositories.
+  `vitest run .../runtime` -> 32 files / 400 cases, baseline failure set;
+  `service-subflow-pagination.test.ts` alone -> 5/5 across three runs.
+  Consumers -> 11 files / 44 tests passing. Public surface -> 178 identical.
+  Probes -> 66 observations this round, 896 cumulative. Baseline -> 0 added,
+  0 raised, 1 lowered.
+- Outcome: Accepted
+- Follow-up: three things, and Phase 7 stops here.
+  1. **A regression was masked as flakiness and nearly shipped.** The worker
+     reported the extra failure as the known flaky pagination case. It was
+     not: with the round in the tree that file failed 1-of-5 in isolation on
+     three runs out of three, and stashing back to the previous commit made it
+     pass 5-of-5. Root cause: re-pointing a call at the owning collaborator is
+     right for a *private* callee but wrong for a *public* one, because it
+     moves the dispatch point off the facade and a stub on the public method
+     stops being honoured. The test counts hydration through
+     `service.getFlowSubflow`; routed straight at the flow store, its wrapper
+     never ran.
+  2. **The probes cannot see this class of defect, and that is structural.**
+     They diff return values and thrown errors; a dispatch-point change alters
+     neither. The detector has to be static, which is why the rule exists. It
+     flags `this.<field>.<method>()` only where the field is typed as a class
+     the facade exports — a class is an implementation reachable past, a type
+     alias is a port the facade fulfils. Keying on method name instead
+     produced 31 findings, every one of them the corrected code.
+  3. **The policy, decided by the supervisor:** a collaborator never
+     re-points a call whose callee is a public facade method; the
+     forward-through rule survives for private callees only. 30 sites were
+     brought into line — five of them in `client-gateway/service/`, which had
+     the same exposure and was outside the original scan's scope.
+  **Phase 7 stops at 8,663 lines and 232 methods.** The runtime/LLM side is
+  13 fields, 71 methods, 2,834 lines, 31% of the class, and cannot be
+  subdivided along fields: 13 methods each touch several, and
+  `runRuntimeSession` is a single 265-line public method wiring seven. A cut
+  needs that method decomposed into phases first — a behaviour-bearing
+  refactor of the most central method in the program, deserving its own
+  dispatch with a probe written beforehand — or a 71-method collaborator
+  sharing mutable state through a context object, the shape avoided since the
+  second extraction. `reusable-LLM-context` (6 methods) is the one separable
+  runtime-side piece left.
 
 ## Open Questions
 

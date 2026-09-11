@@ -2,6 +2,7 @@ export * from "./access.ts";
 export * from "./audit-log.ts";
 export * from "./commands.ts";
 export * from "./config.ts";
+export * from "./facade-ports.ts";
 export * from "./event-bus.ts";
 export * from "./inbound.ts";
 export * from "./lifecycle.ts";

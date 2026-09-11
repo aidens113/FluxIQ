@@ -8,6 +8,8 @@ import type { ClientGatewayTransport } from "./transport.ts";
 import type { ClientGatewayTrustedClientRegistry } from "./trusted-clients.ts";
 import type { InternalSession } from "./types.ts";
 
+import type { ClientGatewayFacadePorts } from "./facade-ports.ts";
+
 type PairingFlowCollaborators = {
   config: ClientGatewayConfig;
   pairings: ClientGatewayPairingRegistry;
@@ -16,6 +18,9 @@ type PairingFlowCollaborators = {
   transport: ClientGatewayTransport;
   audit: ClientGatewayAuditLog;
   events: ClientGatewayEventBus;
+  // Calls into the service's public surface go through this port, never
+  // through the collaborator that owns the method. See ./facade-ports.ts.
+  facade: ClientGatewayFacadePorts;
 };
 
 /**
@@ -32,6 +37,7 @@ export class ClientGatewayPairingFlow {
   private readonly transport: ClientGatewayTransport;
   private readonly audit: ClientGatewayAuditLog;
   private readonly events: ClientGatewayEventBus;
+  private readonly facade: ClientGatewayFacadePorts;
 
   constructor(collaborators: PairingFlowCollaborators) {
     this.config = collaborators.config;
@@ -41,6 +47,7 @@ export class ClientGatewayPairingFlow {
     this.transport = collaborators.transport;
     this.audit = collaborators.audit;
     this.events = collaborators.events;
+    this.facade = collaborators.facade;
   }
 
   create(input: {
@@ -60,7 +67,7 @@ export class ClientGatewayPairingFlow {
   }
 
   async approve(pairingCode: string, input: { approvedByUserId: string }): Promise<ClientGatewaySession | null> {
-    await this.trustedClients.ready();
+    await this.facade.ready();
     this.pairings.pruneExpired();
     const pairing = this.pairings.get(pairingCode);
     if (!pairing || pairing.consumedAt || !pairing.requestedBySessionId) return null;

@@ -14,6 +14,7 @@ import type { AutomationStudioFlowMutations, AutomationStudioFlowStore, Automati
 import { isJsonRecord, jsonObjectFromUnknown, stringOrNull } from "../json-values.ts";
 import { compactJsonObject } from "../compact-json.ts";
 import { flowSummaryFromFlow, removeUndefinedSubflowFields, subflowParentCategoryId } from "../flows/index.ts";
+import type { AutomationStudioFacadePorts } from "../facade-ports.ts";
 
 // Applying one adaptation patch to its target: a Flow node, a Router, an
 // existing Subflow, or a Subflow the patch creates. Each applier validates the
@@ -22,7 +23,11 @@ export class AutomationStudioAdaptationPatches {
   constructor(
     private readonly flows: AutomationStudioFlowStore,
     private readonly flowWriter: AutomationStudioFlowWriter,
-    private readonly flowMutations: AutomationStudioFlowMutations
+    private readonly flowMutations: AutomationStudioFlowMutations,
+    // Calls into the service's public surface go through this port, never
+    // through the collaborator that owns the method, so an override or a stub
+    // on the public method is still honoured. See service/facade-ports.ts.
+    private readonly facade: AutomationStudioFacadePorts
   ) {}
 
   async applyFlowNodeAdaptationPatch(
@@ -78,7 +83,7 @@ export class AutomationStudioAdaptationPatches {
   async resolveFlowNodeAdaptationTarget(
     adaptation: AutomationStudioFlowAdaptation
   ): Promise<{ graphFlow: AutomationStudioFlowArtifact; subflowId?: string }> {
-    const parent = await this.flows.getFlow(adaptation.projectId, adaptation.flowId);
+    const parent = await this.facade.getFlow(adaptation.projectId, adaptation.flowId);
     const representation = this.flowWriter.persistedFlowRepresentation(parent);
     if (representation === "legacy_single_graph") {
       if (adaptation.subflowId) throw new Error("Legacy single-graph adaptations cannot declare a Subflow target.");
@@ -87,11 +92,11 @@ export class AutomationStudioAdaptationPatches {
     if (representation !== "orchestration") throw new Error("Flow adaptations must remain scoped to a top-level orchestration Flow.");
     const subflowId = adaptation.subflowId?.trim();
     if (!subflowId) throw new Error("Node adaptation on an orchestration Flow requires an explicit Subflow target.");
-    const subflow = await this.flows.getFlowSubflow(adaptation.projectId, parent.flowId, subflowId);
+    const subflow = await this.facade.getFlowSubflow(adaptation.projectId, parent.flowId, subflowId);
     if (!subflow) throw new Error(`Subflow ${subflowId} is not owned by orchestration Flow ${parent.flowId}; node adaptation refused.`);
     const graphFlowId = subflow.graphFlowId?.trim();
     if (!graphFlowId) throw new Error(`Subflow ${subflowId} does not own a graph Flow; node adaptation refused.`);
-    const graphFlow = await this.flows.getFlow(adaptation.projectId, graphFlowId).catch(() => null);
+    const graphFlow = await this.facade.getFlow(adaptation.projectId, graphFlowId).catch(() => null);
     if (!graphFlow) throw new Error(`Subflow ${subflowId} graph Flow ${graphFlowId} could not be loaded; node adaptation refused.`);
     await this.flowWriter.assertOwnedSubflowGraph(adaptation.projectId, graphFlow);
     if (graphFlow.metadata?.parentFlowId !== parent.flowId || graphFlow.metadata?.parentSubflowId !== subflowId) {
@@ -139,7 +144,7 @@ export class AutomationStudioAdaptationPatches {
         } : {})
       });
     }
-    const router = await this.flows.getFlowRouter(adaptation.projectId, adaptation.flowId);
+    const router = await this.facade.getFlowRouter(adaptation.projectId, adaptation.flowId);
     if (!router) throw new Error(`Unknown Flow router for adaptation: ${adaptation.flowId}`);
     const after = compactJsonObject({
       ...router,
@@ -153,7 +158,7 @@ export class AutomationStudioAdaptationPatches {
     }) as unknown as AutomationStudioFlowRouter;
     const subflows = await this.flowMutations.getFlowSubflowsForValidation(adaptation.projectId, adaptation.flowId);
     assertRouterValidationOk(after, subflows, "Router adaptation patch");
-    const saved = await this.flowMutations.saveFlowRouter(after);
+    const saved = await this.facade.saveFlowRouter(after);
     return durableAdaptationMutationRecord({
       patchKind: patch.kind,
       artifactKind: "router",
@@ -173,7 +178,7 @@ export class AutomationStudioAdaptationPatches {
   ): Promise<JsonObject> {
     if (!patch.targetId) throw new Error("Subflow adaptation patches must include targetId.");
     if (!isJsonRecord(patch.after)) throw new Error("Subflow adaptation patches must provide an object after value.");
-    const before = await this.flows.getFlowSubflow(adaptation.projectId, adaptation.flowId, patch.targetId);
+    const before = await this.facade.getFlowSubflow(adaptation.projectId, adaptation.flowId, patch.targetId);
     if (!before) throw new Error(`Unknown subflow for adaptation patch: ${patch.targetId}`);
     const after = removeUndefinedSubflowFields({
       ...before,
@@ -186,7 +191,7 @@ export class AutomationStudioAdaptationPatches {
       updatedAt: now
     } as AutomationStudioFlowSubflow);
     assertSubflowValidationOk(after, "Subflow adaptation patch");
-    const saved = await this.flowMutations.saveFlowSubflow(after);
+    const saved = await this.facade.saveFlowSubflow(after);
     return durableAdaptationMutationRecord({
       patchKind: patch.kind,
       artifactKind: "subflow",
@@ -206,7 +211,7 @@ export class AutomationStudioAdaptationPatches {
   ): Promise<JsonObject> {
     const after = isJsonRecord(patch.after) ? patch.after : {};
     const name = typeof after.name === "string" && after.name.trim() ? after.name.trim() : patch.summary.trim() || "Adapted subflow";
-    const created = await this.flowMutations.createFlowSubflow({
+    const created = await this.facade.createFlowSubflow({
       projectId: adaptation.projectId,
       flowId: adaptation.flowId,
       name,
@@ -214,7 +219,7 @@ export class AutomationStudioAdaptationPatches {
       ...(typeof after.role === "string" ? { role: after.role as AutomationStudioFlowSubflow["role"] } : {}),
       ...(Array.isArray(after.routeTags) ? { routeTags: after.routeTags.filter((tag): tag is string => typeof tag === "string") } : {})
     });
-    const saved = await this.flowMutations.saveFlowSubflow({
+    const saved = await this.facade.saveFlowSubflow({
       ...created,
       metadata: {
         ...(created.metadata ?? {}),

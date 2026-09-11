@@ -4534,7 +4534,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
     await service.createFlow({ projectId: project.id, flowId: "flow.persisted", name: "Persisted" });
 
     const reloaded = createService({ dataDir: tempRoot, seedFixture: false });
-    (reloaded as unknown as { loadProjectFlows: () => Promise<void> }).loadProjectFlows = async () => {
+    ((reloaded as any).catalogue as { loadProjectFlows: () => Promise<void> }).loadProjectFlows = async () => {
       throw new Error("full project Flow hydration should not be used for createFlow");
     };
 

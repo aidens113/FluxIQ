@@ -11,6 +11,7 @@ import { assertFlowValidationOk, durableAdaptationMutationRecord, type Automatio
 import { isJsonRecord, jsonObjectFromUnknown, stringOrNull } from "../json-values.ts";
 import { mapWithConcurrency, uniqueStrings, upsertBy } from "../collections.ts";
 import { compactJsonObject } from "../compact-json.ts";
+import type { AutomationStudioFacadePorts } from "../facade-ports.ts";
 
 // Applying and reverting an adaptation durably: dispatching each patch to its
 // applier, recording what was mutated so a failure can be rolled back, and
@@ -20,7 +21,11 @@ export class AutomationStudioDurableAdaptations {
     private readonly flows: AutomationStudioFlowStore,
     private readonly flowWriter: AutomationStudioFlowWriter,
     private readonly flowMutations: AutomationStudioFlowMutations,
-    private readonly patches: AutomationStudioAdaptationPatches
+    private readonly patches: AutomationStudioAdaptationPatches,
+    // Calls into the service's public surface go through this port, never
+    // through the collaborator that owns the method, so an override or a stub
+    // on the public method is still honoured. See service/facade-ports.ts.
+    private readonly facade: AutomationStudioFacadePorts
   ) {}
 
   async applyFlowAdaptationDurably(
@@ -100,7 +105,7 @@ export class AutomationStudioDurableAdaptations {
   }
 
   async recordAppliedAdaptationOnFlow(adaptation: AutomationStudioFlowAdaptation, now: number, mutations: JsonObject[]): Promise<JsonObject> {
-    const before = await this.flows.getFlow(adaptation.projectId, adaptation.flowId);
+    const before = await this.facade.getFlow(adaptation.projectId, adaptation.flowId);
     const metadata = before.metadata ?? {};
     const appliedAdaptationIds = uniqueStrings([
       ...(Array.isArray(metadata.appliedAdaptationIds) ? metadata.appliedAdaptationIds.filter((id): id is string => typeof id === "string") : []),
@@ -155,16 +160,16 @@ export class AutomationStudioDurableAdaptations {
             if (!parentFlowId || !subflowId || !graphFlowId || graphFlowId !== artifactId || before.flowId !== graphFlowId) {
               throw new Error(`Owned Subflow graph rollback metadata for ${artifactId} is invalid; rollback refused.`);
             }
-            const subflow = await this.flows.getFlowSubflow(projectId, parentFlowId, subflowId);
+            const subflow = await this.facade.getFlowSubflow(projectId, parentFlowId, subflowId);
             if (!subflow || subflow.graphFlowId !== graphFlowId) throw new Error(`Subflow graph ownership changed for ${graphFlowId}; rollback refused.`);
-            const current = await this.flows.getFlow(projectId, graphFlowId);
+            const current = await this.facade.getFlow(projectId, graphFlowId);
             await this.flowWriter.assertOwnedSubflowGraph(projectId, current);
           }
           await this.flowWriter.saveFlowInternal({ projectId, flow: before as unknown as AutomationStudioFlowArtifact }, false);
         }
       } else if (artifactKind === "router") {
         if (!isJsonRecord(before)) throw new Error(`Router rollback for ${artifactId} is missing a before snapshot.`);
-        await this.flowMutations.saveFlowRouter(before as unknown as AutomationStudioFlowRouter);
+        await this.facade.saveFlowRouter(before as unknown as AutomationStudioFlowRouter);
       } else if (artifactKind === "subflow") {
         if (!isJsonRecord(before)) {
           const flowId = typeof mutation.flowId === "string" ? mutation.flowId : "";
@@ -172,7 +177,7 @@ export class AutomationStudioDurableAdaptations {
           const graphFlowId = typeof after?.graphFlowId === "string" ? after.graphFlowId : undefined;
           await this.flowMutations.deleteCreatedFlowSubflow(projectId, flowId, artifactId, graphFlowId, isJsonRecord(mutation.rollback) && mutation.rollback.createdGraphFlow === true);
         } else {
-          await this.flowMutations.saveFlowSubflow(before as unknown as AutomationStudioFlowSubflow);
+          await this.facade.saveFlowSubflow(before as unknown as AutomationStudioFlowSubflow);
         }
       }
     }

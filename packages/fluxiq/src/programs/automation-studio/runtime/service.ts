@@ -175,6 +175,18 @@ import {
   AutomationStudioFlowStore,
   AutomationStudioAdaptationPatches,
   AutomationStudioDurableAdaptations,
+  automationStudioFacadePorts,
+  AutomationStudioCatalogue,
+  AutomationStudioSummaryStore,
+  SUBFLOW_SUMMARY_MIGRATION_IO_CONCURRENCY,
+  adaptiveRuntimeMetricsFromRunDetail,
+  flowRunSummaryWithInterventionSummaries,
+  instructionSummaryFromInstruction,
+  runtimeSessionToFlowRunDetail,
+  runtimeSummaryFromSession,
+  type AutomationStudioAdaptationSummaryPage,
+  type AutomationStudioFlowRunSummaryPage,
+  flowPublicationId,
   AutomationStudioFlowMutations,
   adaptationRequiresChangeProposal,
   AutomationStudioFlowWriter,
@@ -238,9 +250,7 @@ import {
   type RecordingIndex,
   type RuntimeIndex,
 } from "./service/index.ts";
-export type { AutomationStudioAdaptationPolicySummary, AutomationStudioAdaptationSummary, AutomationStudioChangeProposalSummary, AutomationStudioInstructionSummary, AutomationStudioRouterSummary, AutomationStudioSubflowSummary } from "./service/index.ts";
-export type { AutomationStudioWriteProjectObjectAssetInput, AutomationStudioWriteProjectObjectAssetResult } from "./service/index.ts";
-export type { CreateFlowSubflowInput } from "./service/index.ts";
+export type { AutomationStudioAdaptationPolicySummary, AutomationStudioAdaptationSummary, AutomationStudioAdaptationSummaryPage, AutomationStudioChangeProposalSummary, AutomationStudioFlowRunSummaryPage, AutomationStudioInstructionSummary, AutomationStudioRouterSummary, AutomationStudioSubflowSummary, AutomationStudioWriteProjectObjectAssetInput, AutomationStudioWriteProjectObjectAssetResult, CreateFlowSubflowInput } from "./service/index.ts";
 import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage.ts";
 import { createRecord, SQLiteRepository } from "../../database-manager/storage/sqlite-repository.ts";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
@@ -461,7 +471,6 @@ export type AutomationStudioFlowMigrationInspection = {
   migrationNeeded: boolean;
 };
 
-const SUBFLOW_SUMMARY_MIGRATION_IO_CONCURRENCY = 16;
 const MAX_PRE_ACTION_STATE_CORRELATIONS = 12;
 const MAX_POST_ACTION_STATE_DELTAS = 12;
 
@@ -528,20 +537,6 @@ export type AutomationStudioFlowRunActionPage = {
   offset: number;
   nextCursor?: string | null;
   hasMore?: boolean;
-};
-
-export type AutomationStudioFlowRunSummaryPage = {
-  runs: AutomationStudioFlowRunSummary[];
-  total: number;
-  limit: number;
-  offset: number;
-};
-
-export type AutomationStudioAdaptationSummaryPage = {
-  adaptations: AutomationStudioAdaptationSummary[];
-  total: number;
-  limit: number;
-  offset: number;
 };
 
 export type AutomationStudioRuntimeAdaptationContext = {
@@ -747,6 +742,8 @@ export class AutomationStudioService {
   private readonly flowMutations: AutomationStudioFlowMutations;
   private readonly adaptationPatches: AutomationStudioAdaptationPatches;
   private readonly durableAdaptations: AutomationStudioDurableAdaptations;
+  private readonly catalogue: AutomationStudioCatalogue;
+  private readonly summaries: AutomationStudioSummaryStore;
   private readonly locks = new AutomationStudioServiceLocks();
   private readonly repairedRecordingStateIndexReads = new Set<string>();
   private readonly ready: Promise<void>;
@@ -799,10 +796,12 @@ export class AutomationStudioService {
     this.objectDocuments = new AutomationStudioObjectDocuments(this.projectPaths, this.recordingPaths, this.projects, this.objectStore);
     this.flows = new AutomationStudioFlowStore(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.repositories, this.projectDatabasePool);
     this.recordings = new AutomationStudioRecordingStore(this.projectPaths, this.recordingPaths, this.projects, this.indexes, this.objectDocuments, this.repositories, this.objectStore);
-    this.flowWriter = new AutomationStudioFlowWriter(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.flows, this.legacy, this.objectDocuments, this.repositories, this.runtimeProjectDatabasePool);
-    this.flowMutations = new AutomationStudioFlowMutations(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.flows, this.flowWriter);
-    this.adaptationPatches = new AutomationStudioAdaptationPatches(this.flows, this.flowWriter, this.flowMutations);
-    this.durableAdaptations = new AutomationStudioDurableAdaptations(this.flows, this.flowWriter, this.flowMutations, this.adaptationPatches);
+    this.flowWriter = new AutomationStudioFlowWriter(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.flows, this.legacy, this.objectDocuments, this.repositories, automationStudioFacadePorts(this), this.runtimeProjectDatabasePool);
+    this.flowMutations = new AutomationStudioFlowMutations(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.flows, this.flowWriter, automationStudioFacadePorts(this));
+    this.adaptationPatches = new AutomationStudioAdaptationPatches(this.flows, this.flowWriter, this.flowMutations, automationStudioFacadePorts(this));
+    this.durableAdaptations = new AutomationStudioDurableAdaptations(this.flows, this.flowWriter, this.flowMutations, this.adaptationPatches, automationStudioFacadePorts(this));
+    this.catalogue = new AutomationStudioCatalogue(this.projectPaths, this.projects, this.indexes, this.flows, this.repositories);
+    this.summaries = new AutomationStudioSummaryStore(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.flows, this.flowMutations, automationStudioFacadePorts(this), this.runtimeProjectDatabasePool);
     this.uiCache = new AutomationStudioServiceUiCache(uiCacheStore ?? new AutomationStudioMemoryUiCacheStore(), this.projects);
     this.ready = options.seedFixture === true ? this.seedFixture() : Promise.resolve();
     this.recordings.bindReady(this.ready);
@@ -936,7 +935,7 @@ export class AutomationStudioService {
       const summaries = (await this.listRecordingSessions(projectId)).map(summaryRecordingSession).sort((left, right) => right.startedAt - left.startedAt || left.recordingId.localeCompare(right.recordingId));
       return { recordings: summaries.slice(offset, offset + limit), page: { limit, offset, total: summaries.length } };
     }
-    const typedPage = await this.tryWithRuntimeStreamStore(projectId, async (store) => await store.listRecordingSummaries({ limit, offset }));
+    const typedPage = await this.summaries.tryWithRuntimeStreamStore(projectId, async (store) => await store.listRecordingSummaries({ limit, offset }));
     if (typedPage && typedPage.total > 0) return { recordings: typedPage.recordings, page: { limit: typedPage.limit, offset: typedPage.offset, total: typedPage.total } };
     const index = await this.indexes.readRecordingIndex(projectId);
     const ordered = [...(index.recordings ?? [])].sort((left, right) => right.startedAt - left.startedAt || left.recordingId.localeCompare(right.recordingId));
@@ -2054,7 +2053,7 @@ export class AutomationStudioService {
   async listFlows(projectId: string): Promise<AutomationStudioFlowCatalogEntry[]> {
     const project = await this.projects.findProject(projectId);
     const [canonicalFlows, legacyArtifacts] = await Promise.all([
-      this.listCanonicalFlowArtifacts(projectId),
+      this.catalogue.listCanonicalFlowArtifacts(projectId),
       this.legacy.readLegacyProjectArtifacts(projectId)
     ]);
     const catalog = resolveAutomationStudioFlowCatalog({
@@ -2122,7 +2121,7 @@ export class AutomationStudioService {
     );
     const publicationDependencies = executionPublicationDependencyState(
       [flow, ...sortedGraphFlows],
-      await this.listFlowPublicationRecords()
+      await this.catalogue.listFlowPublicationRecords()
     );
     return createHash("sha256").update(stableJson({
       flow,
@@ -2785,7 +2784,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   async publishFlow(input: { projectId: string; flowId: string; version: string; flowDigest?: string; publishedBy?: string; changelog?: string }): Promise<AutomationStudioFlowArtifact> {
     const flow = await this.getFlow(input.projectId, input.flowId);
     const now = Date.now();
-    const availablePublications = await this.listFlowPublicationRecords(input.projectId);
+    const availablePublications = await this.catalogue.listFlowPublicationRecords(input.projectId);
     const dependencyDigests = new Map(availablePublications.map((record) => [`${record.flowId}@${record.version}`, record.snapshot.flowDigest]));
     const registry = this.nativeNodeRuntime?.sdk.nodes ?? new AutomationStudioNodeRegistry();
     const recordingDefinitions = new Map((await this.listRecordingDerivedNodeDefinitions(input.projectId)).map((definition) => [definition.id, definition]));
@@ -2839,13 +2838,13 @@ const bootstrapInstructionText = resolvedInstructions.instructions
 
   async listFlowPublications(projectId: string, flowId?: string): Promise<AutomationStudioFlowPublicationRecord[]> {
     await this.projects.findProject(projectId);
-    return (await this.listFlowPublicationRecords(projectId)).filter((record) => record.projectId === projectId && (!flowId || record.flowId === flowId)).sort((left, right) => right.createdAt - left.createdAt);
+    return (await this.catalogue.listFlowPublicationRecords(projectId)).filter((record) => record.projectId === projectId && (!flowId || record.flowId === flowId)).sort((left, right) => right.createdAt - left.createdAt);
   }
 
   async deprecateFlowPublication(input: { projectId: string; flowId: string; version: string; reason?: string }): Promise<AutomationStudioFlowPublicationRecord> {
     const flow = await this.getFlow(input.projectId, input.flowId);
     const publicationId = flowPublicationId(input.flowId, input.version);
-    const records = await this.listFlowPublicationRecords(input.projectId);
+    const records = await this.catalogue.listFlowPublicationRecords(input.projectId);
     const current = records.find((record) => record.publicationId === publicationId);
     if (!current) throw new Error(`Unknown published Flow version: ${input.flowId}@${input.version}`);
     if (current.projectId !== input.projectId) throw new Error("Published Flow version belongs to another project.");
@@ -2861,10 +2860,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
 
   async inspectFlowDependencies(projectId: string, flowId: string): Promise<{ dependencies: AutomationStudioFlowPublicationRecord[]; usedBy: Array<{ projectId: string; flowId: string; flowName: string; version: string; nodeId: string }>; availableUpgrades: Array<{ nodeId: string; flowId: string; currentVersion: string; versions: string[] }> }> {
     const flow = await this.getFlow(projectId, flowId);
-    const records = await this.listFlowPublicationRecords(projectId);
+    const records = await this.catalogue.listFlowPublicationRecords(projectId);
     const calls = flow.nodes.flatMap((node) => { const call = getCallFlowConfiguration(node); return call ? [{ node, call }] : []; });
     const dependencies = calls.flatMap(({ call }) => records.filter((record) => record.flowId === call.target.flowId && record.version === call.target.version));
-    const scopedFlows = (await Promise.all((await this.scopedProjectIdsForProject(projectId)).map((scopedProjectId) => this.listCanonicalFlowArtifacts(scopedProjectId)))).flat();
+    const scopedFlows = (await Promise.all((await this.catalogue.scopedProjectIdsForProject(projectId)).map((scopedProjectId) => this.catalogue.listCanonicalFlowArtifacts(scopedProjectId)))).flat();
     const usedBy = scopedFlows.filter((candidate) => sameFlowScope(candidate.scope, flow.scope)).flatMap((candidate) => candidate.nodes.flatMap((node) => { const call = getCallFlowConfiguration(node); return call?.target.flowId === flowId ? [{ projectId: candidate.projectId, flowId: candidate.flowId, flowName: candidate.name, version: call.target.version, nodeId: node.id }] : []; }));
     const availableUpgrades = calls.map(({ node, call }) => ({ nodeId: node.id, flowId: call.target.flowId, currentVersion: call.target.version, versions: records.filter((record) => record.flowId === call.target.flowId && record.status === "published" && record.version !== call.target.version).map((record) => record.version).sort(compareSemanticVersions).reverse() })).filter((item) => item.versions.length);
     return { dependencies, usedBy, availableUpgrades };
@@ -2874,7 +2873,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   async listPublishedFlowNodes(projectId: string) {
     const project = await this.projects.findProject(projectId);
     const scope = flowScopeForProject(project);
-    return (await this.listFlowPublicationRecords(projectId))
+    return (await this.catalogue.listFlowPublicationRecords(projectId))
       .filter((record) => record.status === "published")
       .map((record) => record.snapshot)
       .filter((snapshot) => sameFlowScope(snapshot.scope, scope) || (scope.kind === "domain" && snapshot.scope.kind === "global" && (snapshot.requiredRuntimeCapabilities ?? []).length === 0))
@@ -3087,7 +3086,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   async inspectFlowMigration(projectId: string): Promise<AutomationStudioFlowMigrationInspection> {
     const project = await this.projects.findProject(projectId);
     const [canonicalFlows, legacyArtifacts] = await Promise.all([
-      this.listCanonicalFlowArtifacts(projectId),
+      this.catalogue.listCanonicalFlowArtifacts(projectId),
       this.legacy.readLegacyProjectArtifacts(projectId)
     ]);
     const catalog = resolveAutomationStudioFlowCatalog({
@@ -3128,7 +3127,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const [state, artifacts, canonicalFlows, migration] = await Promise.all([
       this.legacy.readLegacyRetirementState(projectId),
       this.legacy.readLegacyProjectArtifacts(projectId),
-      this.listCanonicalFlowArtifacts(projectId),
+      this.catalogue.listCanonicalFlowArtifacts(projectId),
       this.inspectFlowMigration(projectId)
     ]);
     const deferredKeys = new Set(state.intentionallyDeferred.map((item) => `${item.kind}:${item.artifactId}`));
@@ -3857,7 +3856,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     }
     if (!updatedFlow) return null;
     if (input.subflowId) await this.flowWriter.assertOwnedSubflowGraph(input.projectId, updatedFlow);
-    const retryTrace = await runCanonicalAutomationStudioFlow(updatedFlow, await this.listPublishedFlowSnapshots(), input.graphOptions, (await this.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`));
+    const retryTrace = await runCanonicalAutomationStudioFlow(updatedFlow, await this.catalogue.listPublishedFlowSnapshots(), input.graphOptions, (await this.catalogue.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`));
     const retrySession: AutomationStudioRuntimeSession = {
       ...input.session,
       status: retryTrace.status,
@@ -4059,7 +4058,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           && selectedFlow.metadata?.parentFlowId === runtimeCanonical.flowId
           && selectedFlow.metadata?.parentSubflowId === route.selectedSubflow.subflowId);
         const trace = route.selectedSubflow && selectedFlow && selectedFlowIsOwned
-          ? await runCanonicalAutomationStudioFlow(selectedFlow, await this.listPublishedFlowSnapshots(), graphOptions, (await this.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`))
+          ? await runCanonicalAutomationStudioFlow(selectedFlow, await this.catalogue.listPublishedFlowSnapshots(), graphOptions, (await this.catalogue.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`))
           : {
             status: "failed" as const,
             startedAt,
@@ -4140,7 +4139,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           : "Top-level orchestration Flow has no Router-selected Subflow execution path."
       }
       : runtimeCanonical
-      ? await runCanonicalAutomationStudioFlow(runtimeCanonical, await this.listPublishedFlowSnapshots(), graphOptions, (await this.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`))
+      ? await runCanonicalAutomationStudioFlow(runtimeCanonical, await this.catalogue.listPublishedFlowSnapshots(), graphOptions, (await this.catalogue.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`))
       : await runAutomationStudioGraph(runtimeFlow, graphOptions);
     const next: AutomationStudioRuntimeSession = {
       ...session,
@@ -4211,23 +4210,15 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async getRuntimeSession(projectId: string, runId: string): Promise<AutomationStudioRuntimeSession | null> {
-    await this.projects.findProject(projectId);
-    const stored = await new ProgramJsonStore<JsonObject>(this.projectPaths.projectFile(projectId, "runtime", "sessions", `${safeSegment(runId)}.json`), () => ({})).read();
-    return stored.session as unknown as AutomationStudioRuntimeSession | undefined ?? null;
+    return await this.summaries.getRuntimeSession(projectId, runId);
   }
 
   async listRuntimeSessions(projectId: string): Promise<AutomationStudioRuntimeSession[]> {
-    const index = await this.indexes.readRuntimeIndex(projectId);
-    const sessions: AutomationStudioRuntimeSession[] = [];
-    for (const item of index.sessions ?? []) {
-      const session = await this.getRuntimeSession(projectId, item.runId);
-      if (session) sessions.push(session);
-    }
-    return sessions.sort((left, right) => (right.startedAt ?? right.queuedAt) - (left.startedAt ?? left.queuedAt));
+    return await this.summaries.listRuntimeSessions(projectId);
   }
 
   async listRuntimeSessionSummaries(projectId: string, options: { limit?: unknown; offset?: unknown } = {}): Promise<AutomationStudioRuntimeRunSummaryPage> {
-    await this.ensureRuntimeSummaryIndex(projectId);
+    await this.summaries.ensureRuntimeSummaryIndex(projectId);
     const limit = clampInteger(options.limit, 1, 100, 25);
     const offset = clampInteger(options.offset, 0, 1_000_000, 0);
     if (!this.projectPaths.root) {
@@ -4235,7 +4226,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       const runs = sessions.map((session) => runtimeSummaryFromSession(session)).slice(offset, offset + limit);
       return { runs, total: sessions.length, limit, offset };
     }
-    const page = await this.runtimeSummaryRepository(projectId).listPage({}, { limit, offset, orderBy: "updated_at_ms", direction: "desc" });
+    const page = await this.summaries.runtimeSummaryRepository(projectId).listPage({}, { limit, offset, orderBy: "updated_at_ms", direction: "desc" });
     return {
       runs: page.records.map((record) => record.data as unknown as AutomationStudioRuntimeRunSummary),
       total: page.total,
@@ -4289,7 +4280,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         };
       }
     }
-    await this.ensureFlowSubflowSummaryIndex(input.projectId);
+    await this.summaries.ensureFlowSubflowSummaryIndex(input.projectId);
     const repository = this.flowMutations.flowSubflowSummaryRepository(input.projectId);
     const clauses: string[] = [];
     const params: unknown[] = [];
@@ -4348,8 +4339,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       offset
     }));
     if (typedPage && typedPage.total > 0) return { instructions: typedPage.items.map((item) => instructionSummaryFromSql(item, input.projectId)), total: typedPage.total, limit: typedPage.limit, offset: typedPage.offset };
-    await this.ensureFlowInstructionSummaryIndex(input.projectId);
-    const repository = this.flowInstructionSummaryRepository(input.projectId);
+    await this.summaries.ensureFlowInstructionSummaryIndex(input.projectId);
+    const repository = this.summaries.flowInstructionSummaryRepository(input.projectId);
     const clauses: string[] = [];
     const params: unknown[] = [];
     if (input.flowId) { clauses.push("(json_extract(data, '$.flowId') = ? or json_extract(data, '$.scopeKind') in ('global', 'project'))"); params.push(input.flowId); }
@@ -4391,7 +4382,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       ).sort((left, right) => compareFlowRunSummaries(left, right, sort, direction));
       return { runs: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
     }
-    const typedPage = await this.tryWithRuntimeStreamStore(input.projectId, async (store) => await store.listRunSummaries({
+    const typedPage = await this.summaries.tryWithRuntimeStreamStore(input.projectId, async (store) => await store.listRunSummaries({
       ...(input.flowId ? { flowId: input.flowId } : {}),
       ...(input.status ? { status: input.status } : {}),
       ...(search ? { search } : {}),
@@ -4401,8 +4392,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       offset
     }));
     if (typedPage && typedPage.total > 0) return typedPage;
-    await this.ensureFlowRunSummaryIndex(input.projectId);
-    return await this.listSqlFlowRunSummaryPage(this.flowRunSummaryRepository(input.projectId), {
+    await this.summaries.ensureFlowRunSummaryIndex(input.projectId);
+    return await this.summaries.listSqlFlowRunSummaryPage(this.summaries.flowRunSummaryRepository(input.projectId), {
       ...(input.flowId ? { flowId: input.flowId } : {}),
       ...(input.status ? { status: input.status } : {}),
       ...(search ? { search } : {}),
@@ -4481,8 +4472,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       ).sort((left, right) => compareFlowAdaptationSummaries(left, right, page.sort, page.direction));
       return { adaptations: scoped.slice(page.offset, page.offset + page.limit), total: scoped.length, limit: page.limit, offset: page.offset };
     }
-    await this.ensureFlowAdaptationSummaryIndex(input.projectId);
-    return await this.listSqlFlowAdaptationSummaryPage(this.flowAdaptationSummaryRepository(input.projectId), {
+    await this.summaries.ensureFlowAdaptationSummaryIndex(input.projectId);
+    return await this.summaries.listSqlFlowAdaptationSummaryPage(this.summaries.flowAdaptationSummaryRepository(input.projectId), {
       ...(input.flowId ? { flowId: input.flowId } : {}),
       ...(input.subflowId ? { subflowId: input.subflowId } : {}),
       ...(input.status ? { status: input.status } : {}),
@@ -4659,11 +4650,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async getFlowInstruction(projectId: string, instructionId: string): Promise<AutomationStudioFlowInstruction | null> {
-    const index = await this.indexes.readFlowInstructionIndex(projectId);
-    const summary = (index.instructions ?? []).find((item) => item.instructionId === instructionId);
-    if (!summary) return null;
-    const stored = await new ProgramJsonStore<JsonObject>(summary.flowId ? this.flowPaths.flowInstructionFile(projectId, summary.flowId, instructionId) : this.projectPaths.projectInstructionFile(projectId, instructionId), () => ({})).read();
-    return typeof stored.instructionId === "string" ? stored as unknown as AutomationStudioFlowInstruction : null;
+    return await this.summaries.getFlowInstruction(projectId, instructionId);
   }
 
   async getFlowInstructionSet(input: { projectId: string; flowId?: string; subflowId?: string }): Promise<AutomationStudioFlowInstruction[]> {
@@ -4680,7 +4667,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
 
   async getFlowRunDetail(projectId: string, runId: string, options: { includeCollections?: boolean } = {}): Promise<AutomationStudioFlowRunDetail | null> {
     await this.projects.findProject(projectId);
-    const typed = await this.tryWithRuntimeStreamStore(projectId, async (store) => await store.getRunDetail(runId, options));
+    const typed = await this.summaries.tryWithRuntimeStreamStore(projectId, async (store) => await store.getRunDetail(runId, options));
     if (typed) return typed;
     const stored = await new ProgramJsonStore<JsonObject>(this.flowPaths.flowRunDetailFile(projectId, runId), () => ({})).read();
     if (typeof (stored.summary as { runId?: unknown } | undefined)?.runId === "string") return stored as unknown as AutomationStudioFlowRunDetail;
@@ -4699,15 +4686,15 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const limit = clampInteger(input.limit, 1, 100, 50);
     const offset = clampInteger(input.offset, 0, 10_000_000, 0);
     await this.projects.findProject(input.projectId);
-    const typed = await this.tryWithRuntimeStreamStore(input.projectId, async (store) => await store.listRunActions({ runId: input.runId, limit, offset, cursor: input.cursor }));
+    const typed = await this.summaries.tryWithRuntimeStreamStore(input.projectId, async (store) => await store.listRunActions({ runId: input.runId, limit, offset, cursor: input.cursor }));
     if (typed && (typed.total > 0 || offset === 0)) return typed;
     if (!this.projectPaths.root) {
       const detail = await this.getFlowRunDetail(input.projectId, input.runId);
       const actions = detail?.actionAttempts ?? [];
       return { actions: actions.slice(offset, offset + limit), total: actions.length, limit, offset };
     }
-    await this.ensureFlowRunSummaryIndex(input.projectId);
-    const record = await this.flowRunSummaryRepository(input.projectId).get(input.runId);
+    await this.summaries.ensureFlowRunSummaryIndex(input.projectId);
+    const record = await this.summaries.flowRunSummaryRepository(input.projectId).get(input.runId);
     if (!record) return { actions: [], total: 0, limit, offset };
     const summary = record.data as unknown as AutomationStudioFlowRunSummary;
     let actions: AutomationStudioFlowRunActionAttemptRecord[];
@@ -4717,7 +4704,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       const detail = await this.getFlowRunDetail(input.projectId, input.runId);
       const recoveredActions = detail?.actionAttempts ?? [];
-      await this.writeJsonLines(this.flowPaths.flowRunActionsFile(input.projectId, input.runId), recoveredActions);
+      await this.summaries.writeJsonLines(this.flowPaths.flowRunActionsFile(input.projectId, input.runId), recoveredActions);
       actions = recoveredActions.slice(offset, offset + limit);
     }
     return { actions, total: summary.actionAttemptCount ?? 0, limit, offset };
@@ -4725,7 +4712,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
 
   async getFlowRunActionDetail(input: { projectId: string; runId: string; attemptId: string }): Promise<AutomationStudioFlowRunActionAttemptRecord | null> {
     await this.projects.findProject(input.projectId);
-    const typed = await this.tryWithRuntimeStreamStore(input.projectId, (store) => store.getRunActionDetail({ runId: input.runId, attemptId: input.attemptId }));
+    const typed = await this.summaries.tryWithRuntimeStreamStore(input.projectId, (store) => store.getRunActionDetail({ runId: input.runId, attemptId: input.attemptId }));
     if (typed) return typed;
     const detail = await this.getFlowRunDetail(input.projectId, input.runId);
     return detail?.actionAttempts?.find((action) => action.attemptId === input.attemptId) ?? null;
@@ -5243,7 +5230,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     await this.projects.ensureProjectStructure(projectId);
     await new ProgramJsonStore<JsonObject>(filePath, () => ({})).write(instruction as unknown as JsonObject);
     await this.indexes.writeFlowInstructionIndex(projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, instructions: upsertBy(index.instructions ?? [], "instructionId", { ...summary, projectId }) }));
-    await this.writeFlowInstructionSummary(projectId, { ...summary, projectId });
+    await this.summaries.writeFlowInstructionSummary(projectId, { ...summary, projectId });
     await this.flows.writeSqlFlowInstruction(projectId, instruction).catch(() => undefined);
     return instruction;
   }
@@ -5281,38 +5268,18 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async saveFlowRunDetail(detail: AutomationStudioFlowRunDetail): Promise<AutomationStudioFlowRunDetail> {
-    const detailWithMetrics: AutomationStudioFlowRunDetail = {
-      ...detail,
-      metadata: {
-        ...(detail.metadata ?? {}),
-        adaptiveMetrics: adaptiveRuntimeMetricsFromRunDetail(detail)
-      }
-    };
-    const normalizedDetail = { ...detailWithMetrics, summary: flowRunSummaryWithInterventionSummaries(detailWithMetrics) };
-    const { projectId, runId } = normalizedDetail.summary;
-    await this.projects.ensureProjectStructure(projectId);
-    if (await this.tryPersistRuntimeRunDetail(normalizedDetail)) return normalizedDetail;
-    await new ProgramJsonStore<JsonObject>(this.flowPaths.flowRunDetailFile(projectId, runId), () => ({})).write(normalizedDetail as unknown as JsonObject);
-    await Promise.all([
-      this.writeJsonLines(this.flowPaths.flowRunActionsFile(projectId, runId), normalizedDetail.actionAttempts ?? []),
-      this.writeJsonLines(this.flowPaths.flowRunRouteDecisionsFile(projectId, runId), normalizedDetail.routeDecisions),
-      this.writeJsonLines(this.flowPaths.flowRunSubflowsFile(projectId, runId), normalizedDetail.subflows),
-      this.writeJsonLines(this.flowPaths.flowRunInterventionsFile(projectId, runId), normalizedDetail.interventions)
-    ]);
-    await this.indexes.writeFlowRunIndex(projectId, (index) => ({ schemaVersion: "0.1", runs: upsertBy(index.runs ?? [], "runId", normalizedDetail.summary) }));
-    if (this.projectPaths.root) await this.writeFlowRunSummary(projectId, normalizedDetail.summary);
-    return normalizedDetail;
+    return await this.summaries.saveFlowRunDetail(detail);
   }
 
   async saveFlowAdaptation(adaptation: AutomationStudioFlowAdaptation): Promise<AutomationStudioFlowAdaptation> {
     const validation = validateAutomationStudioFlowAdaptation(adaptation);
     if (!validation.ok) throw new Error(`Invalid Automation Studio adaptation: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
-    const typed = await this.tryWithAdaptationStore(adaptation.projectId, async (store) => await store.putAdaptation({ adaptation, approvalMode: adaptationApprovalModeForStore(adaptation), evidence: adaptationEvidenceForStore(adaptation), changedAt: adaptation.updatedAt }));
+    const typed = await this.summaries.tryWithAdaptationStore(adaptation.projectId, async (store) => await store.putAdaptation({ adaptation, approvalMode: adaptationApprovalModeForStore(adaptation), evidence: adaptationEvidenceForStore(adaptation), changedAt: adaptation.updatedAt }));
     if (typed) return adaptationFromTypedStoreDetail(typed);
     await this.projects.ensureProjectStructure(adaptation.projectId);
     await new ProgramJsonStore<JsonObject>(this.flowPaths.flowAdaptationFile(adaptation.projectId, adaptation.flowId, adaptation.adaptationId), () => ({})).write(adaptation as unknown as JsonObject);
     await this.indexes.writeFlowAdaptationIndex(adaptation.projectId, (index) => ({ schemaVersion: "0.1", adaptations: upsertBy(index.adaptations ?? [], "adaptationId", adaptationSummaryFromAdaptation(adaptation)) }));
-    if (this.projectPaths.root) await this.writeFlowAdaptationSummary(adaptation.projectId, adaptationSummaryFromAdaptation(adaptation));
+    if (this.projectPaths.root) await this.summaries.writeFlowAdaptationSummary(adaptation.projectId, adaptationSummaryFromAdaptation(adaptation));
     return adaptation;
   }
 
@@ -5792,7 +5759,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       }
     }
     if (!reasons.length || proposal.status === "rejected") return proposal;
-    const flows = await this.listCanonicalFlowArtifacts(projectId);
+    const flows = await this.catalogue.listCanonicalFlowArtifacts(projectId);
     const affectedFlowIds = uniqueStrings(flows
       .filter((flow) => flow.nodes.some((node) => node.metadata?.recordingProposalId === proposal.proposalId || (proposal.approvedDefinitions ?? []).some((definition) => definition.id === node.definitionId)))
       .map((flow) => typeof flow.metadata?.parentFlowId === "string" ? flow.metadata.parentFlowId : flow.flowId));
@@ -5831,35 +5798,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async listProjects(domainId?: string | null): Promise<{ categories: AutomationStudioProjectCategory[]; projects: AutomationStudioProject[] }> {
-    const state = await this.projects.readProjectIndex();
-    const inferredScopes = await this.inferLegacyProjectScopes(state.projects);
-    const projects = state.projects.map((project) => project.domainId === undefined && inferredScopes.has(project.id)
-      ? { ...project, domainId: inferredScopes.get(project.id)! }
-      : project);
-    return {
-      categories: this.projects.sortCategories((state.categories ?? []).filter((category) => (category.domainId ?? null) === (domainId ?? null))),
-      projects: projects
-        .filter((project) => (project.domainId ?? null) === (domainId ?? null))
-        .sort((left, right) => right.updatedAt - left.updatedAt)
-    };
+    return await this.catalogue.listProjects(domainId);
   }
 
   /** Infers a legacy project's domain only when its recordings agree on one domain. */
-  private async inferLegacyProjectScopes(projects: AutomationStudioProject[]): Promise<Map<string, string>> {
-    const legacyIds = new Set(projects.filter((project) => project.domainId === undefined).map((project) => project.id));
-    if (!legacyIds.size) return new Map();
-    const domainsByProject = new Map<string, Set<string>>();
-    for (const recording of await this.repositories.recordingSessions.list()) {
-      const projectId = typeof recording.metadata?.projectId === "string" ? recording.metadata.projectId : null;
-      const domainId = recording.environment.domainId;
-      if (!projectId || !domainId || !legacyIds.has(projectId)) continue;
-      const domains = domainsByProject.get(projectId) ?? new Set<string>();
-      domains.add(domainId);
-      domainsByProject.set(projectId, domains);
-    }
-    return new Map([...domainsByProject].flatMap(([projectId, domains]) => domains.size === 1 ? [[projectId, [...domains][0]!]] : []));
-  }
-
   async createProject(input: { name?: unknown; description?: unknown; categoryId?: unknown; domainId?: unknown }): Promise<AutomationStudioProject> {
     const name = typeof input.name === "string" ? input.name.trim() : "";
     if (!name) throw new Error("Project name is required.");
@@ -6251,117 +6193,6 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     });
   }
 
-  private runtimeSummaryRepository(projectId: string): SQLiteRepository<JsonObject> {
-    return new SQLiteRepository<JsonObject>({ rootDir: this.projectPaths.projectFile(projectId, "runtime", "sqlite"), kind: "runtime.sessions", layoutVersion: 1 });
-  }
-
-  private flowInstructionSummaryRepository(projectId: string): SQLiteRepository<JsonObject> {
-    return new SQLiteRepository<JsonObject>({ rootDir: this.projectPaths.projectFile(projectId, "runtime", "sqlite"), kind: "flow.instructions", layoutVersion: 1 });
-  }
-
-  private flowRunSummaryRepository(projectId: string): SQLiteRepository<JsonObject> {
-    return new SQLiteRepository<JsonObject>({ rootDir: this.projectPaths.projectFile(projectId, "runtime", "sqlite"), kind: "flow.runs", layoutVersion: 1 });
-  }
-
-  private flowAdaptationSummaryRepository(projectId: string): SQLiteRepository<JsonObject> {
-    return new SQLiteRepository<JsonObject>({ rootDir: this.projectPaths.projectFile(projectId, "runtime", "sqlite"), kind: "flow.adaptations", layoutVersion: 1 });
-  }
-
-  private async ensureRuntimeSummaryIndex(projectId: string): Promise<void> {
-    await this.projects.findProject(projectId);
-    if (!this.projectPaths.root) return;
-    const index = await this.indexes.readRuntimeIndex(projectId).catch(() => ({ sessions: [] }));
-    if (!(index.sessions ?? []).length) {
-      await this.runtimeSummaryRepository(projectId).listPage({}, { limit: 1, offset: 0 }).catch(() => undefined);
-      return;
-    }
-    const repository = this.runtimeSummaryRepository(projectId);
-    const page = await repository.listPage({}, { limit: 1, offset: 0 });
-    if (page.total >= (index.sessions ?? []).length) return;
-    for (const item of index.sessions ?? []) {
-      const session = await this.getRuntimeSession(projectId, item.runId);
-      if (session) await this.writeRuntimeSummary(projectId, session);
-    }
-  }
-
-  private async ensureFlowSubflowSummaryIndex(projectId: string): Promise<void> {
-    await this.projects.findProject(projectId);
-    if (!this.projectPaths.root) return;
-    let index: FlowSubflowIndex = await this.indexes.readFlowSubflowIndex(projectId).catch(() => ({ schemaVersion: "0.1", subflows: [] }));
-    const repository = this.flowMutations.flowSubflowSummaryRepository(projectId);
-    const page = await repository.listPage({}, { limit: 1, offset: 0 });
-    const legacyRow = await repository.transaction({}, (transaction) => transaction.get<{ total: number }>(
-      "select count(*) as total from " + repository.tableName + " where json_extract(data, '$.summaryVersion') is null"
-    ));
-    if (page.total >= (index.subflows ?? []).length && (legacyRow?.total ?? 0) === 0) return;
-    if (index.summaryVersion !== 2 || (index.subflows ?? []).some((summary) => summary.summaryVersion !== 2)) {
-      const summaries = await mapWithConcurrency(index.subflows ?? [], SUBFLOW_SUMMARY_MIGRATION_IO_CONCURRENCY, async (summary) => {
-        const detail = await this.getFlowSubflow(projectId, summary.flowId, summary.subflowId);
-        return detail ? subflowSummaryFromSubflow(detail) : summary;
-      });
-      const fullyMigrated = summaries.every((summary) => summary.summaryVersion === 2);
-      index = await this.indexes.writeFlowSubflowIndex(projectId, () => ({
-        schemaVersion: "0.1",
-        ...(fullyMigrated ? { summaryVersion: 2 as const } : {}),
-        subflows: summaries
-      }));
-    }
-    for (const summary of index.subflows ?? []) await this.flowMutations.writeFlowSubflowSummary(projectId, summary);
-  }
-
-  private async ensureFlowInstructionSummaryIndex(projectId: string): Promise<void> {
-    await this.projects.findProject(projectId);
-    if (!this.projectPaths.root) return;
-    let index: FlowInstructionIndex = await this.indexes.readFlowInstructionIndex(projectId).catch(() => ({ schemaVersion: "0.1", instructions: [] }));
-    if (index.summaryVersion !== 2 || (index.instructions ?? []).some((summary) => summary.summaryVersion !== 2)) {
-      const details = (await Promise.all((index.instructions ?? []).map((summary) => this.getFlowInstruction(projectId, summary.instructionId))))
-        .filter((instruction): instruction is AutomationStudioFlowInstruction => Boolean(instruction));
-      index = await this.indexes.writeFlowInstructionIndex(projectId, () => ({ schemaVersion: "0.1", summaryVersion: 2, instructions: details.map(instructionSummaryFromInstruction) }));
-    }
-    const repository = this.flowInstructionSummaryRepository(projectId);
-    const page = await repository.listPage({}, { limit: 1, offset: 0 });
-    const legacyRow = await repository.transaction({}, (transaction) => transaction.get<{ total: number }>(
-      "select count(*) as total from " + repository.tableName + " where json_extract(data, '$.summaryVersion') is null"
-    ));
-    if (page.total >= (index.instructions ?? []).length && (legacyRow?.total ?? 0) === 0) return;
-    for (const summary of index.instructions ?? []) await this.writeFlowInstructionSummary(projectId, summary);
-  }
-
-  private async writeFlowInstructionSummary(projectId: string, summary: AutomationStudioInstructionSummary): Promise<void> {
-    if (!this.projectPaths.root) return;
-    await this.flowInstructionSummaryRepository(projectId).put(createRecord({ id: summary.instructionId, kind: "flow.instructions", data: summary as unknown as JsonObject, nowMs: summary.updatedAt }));
-  }
-
-  private async tryWithRuntimeStreamStore<T>(projectId: string, operation: (store: AutomationStudioProjectRuntimeStreamStore) => Promise<T>): Promise<T | null> {
-    if (!this.runtimeProjectDatabasePool || !this.projectPaths.root) return null;
-    try {
-      await this.projects.findProject(projectId);
-      const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
-      try {
-        return await operation(store);
-      } finally {
-        await store.close();
-      }
-    } catch {
-      return null;
-    }
-  }
-
-  private async tryWithAdaptationStore<T>(projectId: string, operation: (store: AutomationStudioProjectAdaptationStore) => Promise<T>): Promise<T | null> {
-    if (!this.runtimeProjectDatabasePool || !this.projectPaths.root) return null;
-    try {
-      await this.projects.findProject(projectId);
-      const store = await AutomationStudioProjectAdaptationStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
-      try {
-        return await operation(store);
-      } finally {
-        await store.close();
-      }
-    } catch {
-      return null;
-    }
-  }
-
   private async reviewTypedFlowAdaptation(input: ReviewFlowAdaptationInput): Promise<AutomationStudioFlowAdaptation | null> {
     if (!this.runtimeProjectDatabasePool || !this.projectPaths.root) return null;
     await this.projects.findProject(input.projectId);
@@ -6396,18 +6227,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     }
   }
 
-  private async tryPersistRuntimeRunDetail(detail: AutomationStudioFlowRunDetail): Promise<boolean> {
-    const { projectId, flowId } = detail.summary;
-    const written = await this.tryWithRuntimeStreamStore(projectId, async (store) => {
-      await store.ensureRuntimeFlowProjection({ flowId, name: flowId, now: detail.summary.startedAt ?? detail.summary.updatedAt });
-      await store.putRunDetail(detail);
-      return true;
-    });
-    return written === true;
-  }
-
   private async tryPersistRecordingSession(projectId: string, recording: RecordingSession): Promise<boolean> {
-    const written = await this.tryWithRuntimeStreamStore(projectId, async (store) => {
+    const written = await this.summaries.tryWithRuntimeStreamStore(projectId, async (store) => {
       await store.putRecording(recording);
       return true;
     });
@@ -6416,10 +6237,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
 
   private async tryAppendRecordingEntries(projectId: string, recording: RecordingSession, entries: RecordingSession["timeline"]): Promise<boolean> {
     if (!entries.length) {
-      await this.tryWithRuntimeStreamStore(projectId, async (store) => await store.upsertRecordingSummary(recording));
+      await this.summaries.tryWithRuntimeStreamStore(projectId, async (store) => await store.upsertRecordingSummary(recording));
       return true;
     }
-    const written = await this.tryWithRuntimeStreamStore(projectId, async (store) => {
+    const written = await this.summaries.tryWithRuntimeStreamStore(projectId, async (store) => {
       await store.upsertRecordingSummary(recording);
       await store.appendRecordingEvents({ recordingId: recording.recordingId, events: entries as any[] });
       await store.upsertRecordingSummary(recording);
@@ -6435,7 +6256,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const cursor = decodeAutomationStudioPageCursor<{ sequence: number }>(input.cursor, { owner, filterHash, validate: (values) => Number.isSafeInteger(values.sequence) && Number(values.sequence) >= 0 });
     const afterSequence = cursor?.sequence ?? clampInteger(input.afterSequence, 0, 10_000_000_000, 0);
     const limit = automationStudioPageLimit(input.limit, 100);
-    const typed = await this.tryWithRuntimeStreamStore(input.projectId, async (store) => await store.listRuntimeEvents({ runId: input.runId, afterSequence, limit, includePayload: false }));
+    const typed = await this.summaries.tryWithRuntimeStreamStore(input.projectId, async (store) => await store.listRuntimeEvents({ runId: input.runId, afterSequence, limit, includePayload: false }));
     if (typed) return {
       ...typed,
       nextCursor: typed.hasMore ? encodeAutomationStudioPageCursor({ owner, filterHash, values: { sequence: typed.lastSequence } }) : null
@@ -6450,7 +6271,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
 
   async getFlowRunEventDetail(input: { projectId: string; runId: string; sequence: unknown }): Promise<import("../storage/index.ts").AutomationStudioRuntimeStreamEvent | null> {
     await this.projects.findProject(input.projectId);
-    const typed = await this.tryWithRuntimeStreamStore(input.projectId, (store) => store.getRuntimeEventDetail({ runId: input.runId, sequence: input.sequence }));
+    const typed = await this.summaries.tryWithRuntimeStreamStore(input.projectId, (store) => store.getRuntimeEventDetail({ runId: input.runId, sequence: input.sequence }));
     if (typed) return typed;
     const page = await this.listFlowRunEvents({ projectId: input.projectId, runId: input.runId, afterSequence: Math.max(0, Number(input.sequence) - 1), limit: 1 });
     return page.events[0] ?? null;
@@ -6468,213 +6289,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         updatedAt: Date.now()
       })
     }));
-    await this.writeRuntimeSummary(projectId, session);
+    await this.summaries.writeRuntimeSummary(projectId, session);
     await this.saveFlowRunDetail(runtimeSessionToFlowRunDetail(session, projectId));
-  }
-
-  private async writeRuntimeSummary(projectId: string, session: AutomationStudioRuntimeSession): Promise<void> {
-    if (!this.projectPaths.root) return;
-    const summary = runtimeSummaryFromSession(session);
-    await this.runtimeSummaryRepository(projectId).put(createRecord({
-      id: session.runId,
-      kind: "runtime.sessions",
-      data: summary as unknown as JsonObject,
-      nowMs: summary.updatedAt
-    }));
-  }
-
-  private async ensureFlowRunSummaryIndex(projectId: string): Promise<void> {
-    await this.projects.findProject(projectId);
-    if (!this.projectPaths.root) return;
-    const index = await this.indexes.readFlowRunIndex(projectId).catch(emptyFlowRunIndex);
-    if (!(index.runs ?? []).length) {
-      const sessions = await this.listRuntimeSessions(projectId).catch(() => []);
-      for (const session of sessions) await this.saveFlowRunDetail(runtimeSessionToFlowRunDetail(session, projectId));
-      await this.flowRunSummaryRepository(projectId).listPage({}, { limit: 1, offset: 0 }).catch(() => undefined);
-      return;
-    }
-    const repository = this.flowRunSummaryRepository(projectId);
-    const page = await repository.listPage({}, { limit: 1, offset: 0 });
-    if (page.total >= (index.runs ?? []).length) return;
-    for (const summary of index.runs ?? []) await this.writeFlowRunSummary(projectId, summary);
-  }
-
-  private async writeFlowRunSummary(projectId: string, summary: AutomationStudioFlowRunSummary): Promise<void> {
-    if (!this.projectPaths.root) return;
-    await this.flowRunSummaryRepository(projectId).put(createRecord({
-      id: summary.runId,
-      kind: "flow.runs",
-      data: summary as unknown as JsonObject,
-      nowMs: summary.updatedAt
-    }));
-  }
-
-  private async ensureFlowAdaptationSummaryIndex(projectId: string): Promise<void> {
-    await this.projects.findProject(projectId);
-    if (!this.projectPaths.root) return;
-    const index = await this.indexes.readFlowAdaptationIndex(projectId).catch(emptyFlowAdaptationIndex);
-    if (!(index.adaptations ?? []).length) {
-      await this.flowAdaptationSummaryRepository(projectId).listPage({}, { limit: 1, offset: 0 }).catch(() => undefined);
-      return;
-    }
-    const repository = this.flowAdaptationSummaryRepository(projectId);
-    const page = await repository.listPage({}, { limit: 1, offset: 0 });
-    if (page.total >= (index.adaptations ?? []).length) return;
-    for (const summary of index.adaptations ?? []) await this.writeFlowAdaptationSummary(projectId, summary);
-  }
-
-  private async writeFlowAdaptationSummary(projectId: string, summary: AutomationStudioAdaptationSummary): Promise<void> {
-    if (!this.projectPaths.root) return;
-    await this.flowAdaptationSummaryRepository(projectId).put(createRecord({
-      id: summary.adaptationId,
-      kind: "flow.adaptations",
-      data: summary as unknown as JsonObject,
-      nowMs: summary.updatedAt
-    }));
-  }
-
-  private async listSqlFlowRunSummaryPage(
-    repository: SQLiteRepository<JsonObject>,
-    input: { flowId?: string; status?: string; search?: string; sort: "updated" | "started" | "duration" | "actions" | "status"; direction: "asc" | "desc"; limit: number; offset: number }
-  ): Promise<AutomationStudioFlowRunSummaryPage> {
-    const clauses: string[] = [];
-    const params: unknown[] = [];
-    if (input.flowId) {
-      clauses.push("json_extract(data, '$.flowId') = ?");
-      params.push(input.flowId);
-    }
-    if (input.status) {
-      clauses.push("json_extract(data, '$.status') = ?");
-      params.push(input.status);
-    }
-    if (input.search) {
-      clauses.push("(lower(id) like ? or lower(json_extract(data, '$.flowId')) like ?)");
-      params.push(`%${input.search}%`, `%${input.search}%`);
-    }
-    const sortExpressions = {
-      updated: "updated_at_ms",
-      started: "coalesce(cast(json_extract(data, '$.startedAt') as integer), 0)",
-      duration: "coalesce(cast(json_extract(data, '$.finishedAt') as integer), updated_at_ms) - coalesce(cast(json_extract(data, '$.startedAt') as integer), updated_at_ms)",
-      actions: "coalesce(cast(json_extract(data, '$.actionAttemptCount') as integer), 0)",
-      status: "lower(coalesce(json_extract(data, '$.status'), ''))"
-    } as const;
-    const where = clauses.length ? `where ${clauses.join(" and ")}` : "";
-    const orderBy = sortExpressions[input.sort];
-    const result = await repository.transaction({}, async (transaction) => {
-      const totalRow = await transaction.get<{ total: number }>(`select count(*) as total from ${repository.tableName} ${where}`, params);
-      const rows = await transaction.all<{ data: string }>(
-        `select data from ${repository.tableName} ${where} order by ${orderBy} ${input.direction}, id ${input.direction} limit ? offset ?`,
-        [...params, input.limit, input.offset]
-      );
-      return { total: totalRow?.total ?? 0, runs: rows.map((row) => JSON.parse(row.data) as unknown as AutomationStudioFlowRunSummary) };
-    });
-    return { runs: result.runs, total: result.total, limit: input.limit, offset: input.offset };
-  }
-  private async listSqlFlowAdaptationSummaryPage(
-    repository: SQLiteRepository<JsonObject>,
-    input: { flowId?: string; subflowId?: string; status?: string; risk?: string; search?: string; sort: "updated" | "status" | "risk" | "trigger"; direction: "asc" | "desc"; limit: number; offset: number }
-  ): Promise<AutomationStudioAdaptationSummaryPage> {
-    const clauses: string[] = [];
-    const params: unknown[] = [];
-    if (input.flowId) {
-      clauses.push("json_extract(data, '$.flowId') = ?");
-      params.push(input.flowId);
-    }
-    if (input.subflowId) {
-      clauses.push("json_extract(data, '$.subflowId') = ?");
-      params.push(input.subflowId);
-    }
-    if (input.status) {
-      clauses.push("json_extract(data, '$.status') = ?");
-      params.push(input.status);
-    }
-    if (input.risk) {
-      clauses.push("json_extract(data, '$.riskLevel') = ?");
-      params.push(input.risk);
-    }
-    if (input.search) {
-      clauses.push("(lower(id) like ? or lower(coalesce(json_extract(data, '$.trigger'), '')) like ?)");
-      params.push('%' + input.search + '%', '%' + input.search + '%');
-    }
-    const sortExpressions = {
-      updated: "updated_at_ms",
-      status: "lower(coalesce(json_extract(data, '$.status'), ''))",
-      risk: "case lower(coalesce(json_extract(data, '$.riskLevel'), '')) when 'destructive' then 4 when 'high' then 3 when 'medium' then 2 else 1 end",
-      trigger: "lower(coalesce(json_extract(data, '$.trigger'), ''))"
-    } as const;
-    const where = clauses.length ? 'where ' + clauses.join(' and ') : '';
-    const result = await repository.transaction({}, async (transaction) => {
-      const totalRow = await transaction.get<{ total: number }>('select count(*) as total from ' + repository.tableName + ' ' + where, params);
-      const rows = await transaction.all<{ data: string }>(
-        'select data from ' + repository.tableName + ' ' + where + ' order by ' + sortExpressions[input.sort] + ' ' + input.direction + ', id ' + input.direction + ' limit ? offset ?',
-        [...params, input.limit, input.offset]
-      );
-      return { total: totalRow?.total ?? 0, adaptations: rows.map((row) => JSON.parse(row.data) as unknown as AutomationStudioAdaptationSummary) };
-    });
-    return { adaptations: result.adaptations, total: result.total, limit: input.limit, offset: input.offset };
-  }
-  private async listSqlJsonSummaryPage(
-    repository: SQLiteRepository<JsonObject>,
-    field: "runs",
-    flowId: string | undefined,
-    limit: number,
-    offset: number
-  ): Promise<AutomationStudioFlowRunSummaryPage>;
-
-  private async listSqlJsonSummaryPage(
-    repository: SQLiteRepository<JsonObject>,
-    field: "adaptations",
-    flowId: string | undefined,
-    limit: number,
-    offset: number,
-    subflowId?: string,
-    status?: string
-  ): Promise<AutomationStudioAdaptationSummaryPage>;
-
-  private async listSqlJsonSummaryPage(
-    repository: SQLiteRepository<JsonObject>,
-    field: "runs" | "adaptations",
-    flowId: string | undefined,
-    limit: number,
-    offset: number,
-    subflowId?: string,
-    status?: string
-  ): Promise<AutomationStudioFlowRunSummaryPage | AutomationStudioAdaptationSummaryPage> {
-    const clauses: string[] = [];
-    const params: unknown[] = [];
-    if (flowId) {
-      clauses.push("json_extract(data, '$.flowId') = ?");
-      params.push(flowId);
-    }
-    if (subflowId) {
-      clauses.push("json_extract(data, '$.subflowId') = ?");
-      params.push(subflowId);
-    }
-    if (status) {
-      clauses.push("json_extract(data, '$.status') = ?");
-      params.push(status);
-    }
-    const where = clauses.length ? `where ${clauses.join(" and ")}` : "";
-    const result = await repository.transaction({}, async (transaction) => {
-      const totalRow = await transaction.get<{ total: number }>(`select count(*) as total from ${repository.tableName} ${where}`, params);
-      const rows = await transaction.all<{ data: string }>(
-        `select data from ${repository.tableName} ${where} order by updated_at_ms desc, id asc limit ? offset ?`,
-        [...params, limit, offset]
-      );
-      return {
-        total: totalRow?.total ?? 0,
-        items: rows.map((row) => JSON.parse(row.data) as unknown)
-      };
-    });
-    return field === "runs"
-      ? { runs: result.items as unknown as AutomationStudioFlowRunSummary[], total: result.total, limit, offset }
-      : { adaptations: result.items as unknown as AutomationStudioAdaptationSummary[], total: result.total, limit, offset };
-  }
-
-  private async writeJsonLines(filePath: string, rows: unknown[]): Promise<void> {
-    if (!this.projectPaths.root) return;
-    await mkdir(path.dirname(filePath), { recursive: true });
-    await writeFile(filePath, rows.map((row) => JSON.stringify(row)).join("\n"), "utf8");
   }
 
   private async withReusableLlmContextStore<T>(projectId: string, operation: (store: AutomationStudioProjectReusableLlmContextStore) => Promise<T>): Promise<T> {
@@ -6845,66 +6461,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     });
   }
 
-  private async loadProjectFlows(projectId: string): Promise<void> {
-    if (!this.projectPaths.root) return;
-    const index = await this.indexes.readFlowIndex(projectId).catch(() => emptyFlowSummaryIndex());
-    for (const item of index.flows ?? []) await this.flows.loadProjectFlow(projectId, item.flowId);
-  }
-
-  private async loadAllProjectFlows(): Promise<void> {
-    if (!this.projectPaths.root) return;
-    const { projects } = await this.listProjects();
-    for (const project of projects) await this.loadProjectFlows(project.id);
-  }
-
   /** Reads legacy project documents without the historical task-graph embedding side effect. */
-  private async listCanonicalFlowArtifacts(projectId: string): Promise<AutomationStudioFlowArtifact[]> {
-    if (!this.projectPaths.root) return (await this.repositories.flows.list()).filter((flow) => flow.projectId === projectId);
-    const index = await this.indexes.readFlowIndex(projectId).catch(() => emptyFlowSummaryIndex());
-    const flows: AutomationStudioFlowArtifact[] = [];
-    for (const item of index.flows ?? []) {
-      await this.flows.loadProjectFlow(projectId, item.flowId);
-      const flow = await this.repositories.flows.get(item.flowId);
-      if (flow?.projectId === projectId) flows.push(flow);
-    }
-    return flows;
-  }
-
-  private async listPublishedFlowSnapshots(projectId?: string) {
-    return (await this.listFlowPublicationRecords(projectId)).map((record) => record.snapshot);
-  }
-
-  private async listFlowPublicationRecords(projectId?: string): Promise<AutomationStudioFlowPublicationRecord[]> {
-    if (projectId) {
-      for (const scopedProjectId of await this.scopedProjectIdsForProject(projectId)) await this.loadProjectFlows(scopedProjectId);
-    } else {
-      await this.loadAllProjectFlows();
-    }
-    const scopedProjectIds = projectId ? new Set(await this.scopedProjectIdsForProject(projectId)) : null;
-    const persisted = await this.repositories.flowPublications.list();
-    const byId = new Map(persisted
-      .filter((record) => !scopedProjectIds || scopedProjectIds.has(record.projectId))
-      .map((record) => [record.publicationId, record]));
-    const candidateFlows = scopedProjectIds
-      ? (await Promise.all([...scopedProjectIds].flatMap(async (scopedProjectId) => this.listCanonicalFlowArtifacts(scopedProjectId)))).flat()
-      : await this.repositories.flows.list();
-    for (const flow of candidateFlows) {
-      const history = flow.publicationHistory ?? ((flow.publication.status === "published" || flow.publication.status === "deprecated") && flow.publication.snapshot ? [flow.publication.snapshot] : []);
-      for (const snapshot of history) {
-        const publicationId = flowPublicationId(flow.flowId, snapshot.version);
-        if (!byId.has(publicationId)) byId.set(publicationId, { schemaVersion: "0.1", publicationId, projectId: flow.projectId, flowId: flow.flowId, version: snapshot.version, status: (flow.publication.status === "deprecated" && flow.publication.version === snapshot.version) ? "deprecated" : "published", snapshot, createdAt: snapshot.publishedAt });
-      }
-    }
-    return [...byId.values()];
-  }
-
-  private async scopedProjectIdsForProject(projectId: string): Promise<string[]> {
-    const state = await this.projects.readProjectIndex();
-    const project = state.projects.find((candidate) => candidate.id === projectId);
-    const domainId = project?.domainId ?? null;
-    return state.projects.filter((candidate) => (candidate.domainId ?? null) === domainId).map((candidate) => candidate.id);
-  }
-
   private async embedTaskGraphs(projectId: string, tasks: AutomationStudioTaskArtifact[], flows: AutomationStudioFlowDocument[]): Promise<AutomationStudioTaskArtifact[]> {
     const flowsById = new Map(flows.map((flow) => [flow.flowId, flow]));
     const nextTasks: AutomationStudioTaskArtifact[] = [];
@@ -7200,23 +6757,6 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 function removeUndefinedRouteRuleFields(rule: Record<string, unknown>): AutomationStudioFlowRouteRule {
   return Object.fromEntries(Object.entries(rule).filter(([, value]) => value !== undefined)) as unknown as AutomationStudioFlowRouteRule;
 }
-function instructionSummaryFromInstruction(instruction: AutomationStudioFlowInstruction): AutomationStudioInstructionSummary {
-  const scope = instruction.scope;
-  return {
-    instructionId: instruction.instructionId,
-    summaryVersion: 2,
-    ...(scope.kind !== "global" && "projectId" in scope ? { projectId: scope.projectId } : { projectId: "global" }),
-    ...(scope.kind !== "global" && "flowId" in scope ? { flowId: scope.flowId } : {}),
-    ...(scope.kind !== "global" && "subflowId" in scope && scope.subflowId ? { subflowId: scope.subflowId } : {}),
-    title: instruction.title,
-    scopeKind: scope.kind,
-    status: instruction.status,
-    requirement: instruction.requirement,
-    priority: instruction.priority,
-    updatedAt: instruction.updatedAt
-  };
-}
-
 function changeProposalSummaryFromProposal(proposal: AutomationStudioFlowChangeProposal): AutomationStudioChangeProposalSummary {
   return {
     proposalId: proposal.proposalId,
@@ -7479,10 +7019,6 @@ function uniqueBy<T>(values: T[], keyFor: (value: T) => string): T[] {
     output.push(value);
   }
   return output;
-}
-
-function flowPublicationId(flowId: string, version: string): string {
-  return `${flowId}@${version}`;
 }
 
 function compareSemanticVersions(left: string, right: string): number {
@@ -8948,21 +8484,6 @@ function runtimeRunDetailWithAdaptationContext(detail: AutomationStudioFlowRunDe
   };
 }
 
-function adaptiveRuntimeMetricsFromRunDetail(detail: AutomationStudioFlowRunDetail): JsonObject {
-  const runtimePatchAttempts = Array.isArray(detail.metadata?.runtimePatchAttempts) ? detail.metadata.runtimePatchAttempts.filter(isJsonRecord) : [];
-  const durableBehaviorChanged = runtimePatchAttempts.some((attempt) => isJsonRecord(attempt.approvalDecision) && attempt.approvalDecision.autoApply === true);
-  const tokenUsage = detail.summary.tokenUsage ?? flowRunSummaryWithInterventionSummaries(detail).tokenUsage;
-  return compactJsonObject({
-    llmCallCount: detail.interventions.filter((intervention) => intervention.provider || intervention.promptVersion || intervention.kind === "diagnosis" || intervention.kind === "runtime_patch").length,
-    tokenCount: tokenUsage?.totalTokens ?? 0,
-    estimatedCostUsd: tokenUsage?.estimatedCostUsd ?? 0,
-    recoveryAttemptCount: detail.recoveryAttempts?.length ?? 0,
-    adaptationApplyCount: durableBehaviorChanged ? 1 : 0,
-    durableBehaviorChanged,
-    deterministicSuccessAfterAdaptation: detail.metadata?.adaptiveRetry && isJsonRecord(detail.metadata.adaptiveRetry) ? detail.metadata.adaptiveRetry.status === "succeeded" : false
-  });
-}
-
 function adaptationMutationEvidence(adaptation: AutomationStudioFlowAdaptation): JsonObject[] {
   const record = isJsonRecord(adaptation.metadata?.applicationRecord) ? adaptation.metadata.applicationRecord : undefined;
   const mutations = Array.isArray(record?.mutations) ? record.mutations.filter(isJsonRecord) : [];
@@ -9015,208 +8536,8 @@ function runtimeAdaptationContextSummary(context: AutomationStudioRuntimeAdaptat
   };
 }
 
-function runtimeSummaryFromSession(session: AutomationStudioRuntimeSession): AutomationStudioRuntimeRunSummary {
-  const updatedAt = session.finishedAt ?? session.startedAt ?? session.queuedAt ?? Date.now();
-  return {
-    runId: session.runId,
-    targetKind: session.targetKind,
-    targetId: session.targetId,
-    status: session.status,
-    queuedAt: session.queuedAt,
-    ...(session.startedAt !== undefined ? { startedAt: session.startedAt } : {}),
-    ...(session.finishedAt !== undefined ? { finishedAt: session.finishedAt } : {}),
-    ...(session.flowId ? { flowId: session.flowId } : {}),
-    attemptCount: session.trace?.attempts?.length ?? 0,
-    effectCount: session.trace?.effects?.length ?? 0,
-    updatedAt
-  };
-}
-
-function flowRunSummaryWithInterventionSummaries(detail: AutomationStudioFlowRunDetail): AutomationStudioFlowRunSummary {
-  type TokenUsageSummary = NonNullable<AutomationStudioFlowRunSummary["tokenUsage"]>;
-  const interventionSummaries = (detail.interventions ?? []).map((intervention) => ({
-    interventionId: intervention.interventionId,
-    kind: intervention.kind,
-    reason: intervention.reason,
-    ...(intervention.promptVersion ? { promptVersion: intervention.promptVersion } : {}),
-    ...(intervention.provider ? { provider: intervention.provider } : {}),
-    ...(intervention.model ? { model: intervention.model } : {}),
-    ...(intervention.tokenUsage ? { tokenUsage: intervention.tokenUsage } : {})
-  }));
-  const tokenUsage: TokenUsageSummary = interventionSummaries.length ? interventionSummaries.reduce<TokenUsageSummary>((sum, intervention) => ({
-    inputTokens: (sum.inputTokens ?? 0) + (intervention.tokenUsage?.inputTokens ?? 0),
-    outputTokens: (sum.outputTokens ?? 0) + (intervention.tokenUsage?.outputTokens ?? 0),
-    totalTokens: (sum.totalTokens ?? 0) + (intervention.tokenUsage?.totalTokens ?? 0),
-    estimatedCostUsd: (sum.estimatedCostUsd ?? 0) + (intervention.tokenUsage?.estimatedCostUsd ?? 0)
-  }), {}) : detail.summary.tokenUsage ?? {};
-  const hasTokenUsage = Object.values(tokenUsage).some((value) => typeof value === "number" && value > 0);
-  return {
-    ...detail.summary,
-    routeDecisionCount: detail.routeDecisions.length,
-    subflowEntryCount: detail.subflows.length,
-    actionAttemptCount: detail.actionAttempts?.length ?? detail.summary.actionAttemptCount,
-    interventionCount: interventionSummaries.length,
-    adaptationCount: new Set(detail.adaptationIds ?? []).size,
-    ...(hasTokenUsage ? { tokenUsage } : {}),
-    ...(interventionSummaries.length ? { interventionSummaries } : {})
-  };
-}
-
 function isTerminalRuntimeSessionStatus(status: AutomationStudioRuntimeSession["status"]): boolean {
   return status === "succeeded" || status === "failed" || status === "cancelled";
-}
-
-function runtimeSessionToFlowRunDetail(session: AutomationStudioRuntimeSession, projectId: string): AutomationStudioFlowRunDetail {
-  const actionAttempts = runtimeActionAttemptsFromSession(session);
-  const recoveryAttempts = runtimeRecoveryAttemptsFromSession(session);
-  const interventions = runtimeInterventionsFromRecoveryAttempts(session, recoveryAttempts);
-  const terminalFailureReason = runtimeTerminalFailureReason(session, recoveryAttempts);
-  return {
-    schemaVersion: "0.1",
-    summary: runtimeFlowRunSummaryFromSession(session, projectId),
-    inputs: jsonObjectFromUnknown(session.metadata?.inputs) ?? {},
-    routeDecisions: [],
-    subflows: [],
-    actionAttempts,
-    recoveryAttempts,
-    interventions,
-    adaptationIds: [],
-    changeProposalIds: [],
-    metadata: {
-      compatibilitySource: "runtime-session",
-      targetKind: session.targetKind,
-      targetId: session.targetId,
-      recoveryAttemptCount: recoveryAttempts.length,
-      comparisonCount: actionAttempts.filter((attempt) => attempt.comparisonStatus).length,
-      ...(terminalFailureReason ? { terminalFailureReason } : {}),
-      ...(session.trace?.message ? { message: session.trace.message } : {}),
-      ...(session.trace?.currentNodeId ? { currentNodeId: session.trace.currentNodeId } : {})
-    }
-  };
-}
-
-function runtimeFlowRunSummaryFromSession(session: AutomationStudioRuntimeSession, projectId: string): AutomationStudioFlowRunSummary {
-  const recoveryAttemptCount = session.trace?.attempts?.filter((attempt) => attempt.recoveryDecision).length ?? 0;
-  const interventionCount = session.trace?.attempts?.filter((attempt) => attempt.recoveryDecision?.selected?.kind === "llm_diagnosis").length ?? 0;
-  return {
-    schemaVersion: "0.1",
-    runId: session.runId,
-    flowId: session.flowId,
-    projectId,
-    status: session.status,
-    startedAt: session.startedAt ?? session.queuedAt,
-    ...(session.finishedAt !== undefined ? { finishedAt: session.finishedAt } : {}),
-    updatedAt: Math.max(session.finishedAt ?? 0, session.startedAt ?? 0, session.queuedAt),
-    routeDecisionCount: 0,
-    subflowEntryCount: 0,
-    actionAttemptCount: session.trace?.attempts?.length ?? 0,
-    interventionCount,
-    adaptationCount: 0,
-    metadata: {
-      compatibilitySource: "runtime-session",
-      targetKind: session.targetKind,
-      targetId: session.targetId,
-      effectCount: session.trace?.effects?.length ?? 0,
-      recoveryAttemptCount
-    }
-  };
-}
-
-function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSession): AutomationStudioFlowRunActionAttemptRecord[] {
-  return (session.trace?.attempts ?? []).map((attempt, index) => {
-    const durationMs = attempt.finishedAt === undefined ? undefined : Math.max(0, attempt.finishedAt - attempt.startedAt);
-    const adaptiveFailure = attempt.status === "failed"
-      ? compactAutomationStudioAdaptiveFailure(classifyAutomationStudioAdaptiveFailure({
-        projectId: session.projectId ?? "",
-        flowId: session.flowId,
-        runId: session.runId,
-        attempt
-      }))
-      : undefined;
-    return {
-      attemptId: attempt.attemptId,
-      nodeId: attempt.nodeId,
-      definitionId: attempt.definitionId,
-      order: index + 1,
-      status: graphStatusToFlowRunStatus(attempt.status),
-      ...(attempt.route ? { route: attempt.route } : {}),
-      startedAt: attempt.startedAt,
-      ...(attempt.finishedAt !== undefined ? { finishedAt: attempt.finishedAt } : {}),
-      ...(durationMs !== undefined ? { durationMs } : {}),
-      ...(attempt.transitionComparison?.status ? { comparisonStatus: attempt.transitionComparison.status } : {}),
-      ...(attempt.message ? { message: attempt.message } : {}),
-      metadata: {
-        ...(attempt.regionId ? { regionId: attempt.regionId } : {}),
-        ...(attempt.transitionComparison?.diffSummary ? { diffSummary: attempt.transitionComparison.diffSummary } : {}),
-        ...(attempt.recoveryDecision?.selected ? { recoverySelected: attempt.recoveryDecision.selected } : {}),
-        ...(attempt.hostCapabilities?.length ? { hostCapabilities: attempt.hostCapabilities } : {}),
-        ...(attempt.stateRefs ? { stateRefs: attempt.stateRefs } : {}),
-        ...(adaptiveFailure ? { adaptiveFailure } : {})
-      }
-    };
-  });
-}
-
-function runtimeRecoveryAttemptsFromSession(session: AutomationStudioRuntimeSession): AutomationStudioFlowRunRecoveryRecord[] {
-  const createdAt = session.finishedAt ?? session.startedAt ?? session.queuedAt;
-  return (session.trace?.attempts ?? [])
-    .filter((attempt) => attempt.recoveryDecision)
-    .map((attempt) => {
-      const decision = attempt.recoveryDecision!;
-      const selected = decision.selected;
-      return {
-        recoveryId: `${attempt.attemptId}.recovery`,
-        attemptId: attempt.attemptId,
-        nodeId: attempt.nodeId,
-        ...(selected?.kind ? { selectedKind: selected.kind } : {}),
-        ...(selected?.targetNodeId ? { selectedTargetNodeId: selected.targetNodeId } : {}),
-        ...(selected?.edgeId ? { selectedEdgeId: selected.edgeId } : {}),
-        candidateCount: decision.candidates.length,
-        ...(selected?.reason ? { reason: selected.reason } : {}),
-        status: selected?.kind === "llm_diagnosis" ? "diagnosis_only" : selected ? "selected" : "exhausted",
-        createdAt,
-        metadata: {
-          lookup: decision.lookup,
-          candidates: decision.candidates
-        }
-      };
-    });
-}
-
-function runtimeInterventionsFromRecoveryAttempts(session: AutomationStudioRuntimeSession, recoveryAttempts: AutomationStudioFlowRunRecoveryRecord[]): AutomationStudioFlowIntervention[] {
-  return recoveryAttempts
-    .filter((attempt) => attempt.status === "diagnosis_only")
-    .map((attempt) => ({
-      schemaVersion: "0.1",
-      interventionId: `${attempt.recoveryId}.diagnosis`,
-      runId: session.runId,
-      flowId: session.flowId,
-      projectId: session.projectId ?? "",
-      kind: "diagnosis",
-      reason: attempt.reason ?? "Recovery ladder reached LLM diagnosis fallback.",
-      contextSummary: {
-        attemptId: attempt.attemptId,
-        nodeId: attempt.nodeId,
-        candidateCount: attempt.candidateCount
-      },
-      validation: { ok: false, issues: ["LLM diagnosis provider is not configured in this runtime slice."] },
-      createdAt: attempt.createdAt,
-      metadata: { recoveryId: attempt.recoveryId }
-    }));
-}
-
-function runtimeTerminalFailureReason(session: AutomationStudioRuntimeSession, recoveryAttempts: AutomationStudioFlowRunRecoveryRecord[]): string | undefined {
-  if (session.status !== "failed") return undefined;
-  const latest = recoveryAttempts[recoveryAttempts.length - 1];
-  if (!latest) return session.trace?.message ?? "Run failed before recovery lookup produced a candidate.";
-  if (latest.status === "diagnosis_only") return "Recovery ladder stopped at LLM diagnosis fallback because no deterministic recovery resolved the failure.";
-  if (latest.status === "exhausted") return "Recovery ladder exhausted all known recovery candidates.";
-  return session.trace?.message ?? "Run failed after recovery was selected.";
-}
-
-function graphStatusToFlowRunStatus(status: string): AutomationStudioFlowRunActionAttemptRecord["status"] {
-  if (status === "running" || status === "succeeded" || status === "failed" || status === "waiting" || status === "cancelled") return status;
-  return "unknown";
 }
 
 async function readJsonLinePage<T>(filePath: string, offset: number, limit: number): Promise<T[]> {

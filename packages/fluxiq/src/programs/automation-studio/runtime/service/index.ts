@@ -1,8 +1,10 @@
 export * from "./adaptations/index.ts";
 export * from "./bootstrap-adaptations.ts";
+export * from "./catalogue.ts";
 export * from "./collections.ts";
 export * from "./compact-json.ts";
 export * from "./error-message.ts";
+export * from "./facade-ports.ts";
 export * from "./flows/index.ts";
 export * from "./indexes/index.ts";
 export * from "./json-values.ts";
@@ -13,4 +15,5 @@ export * from "./paths/index.ts";
 export * from "./projects/index.ts";
 export * from "./recordings/index.ts";
 export * from "./stable-json.ts";
+export * from "./summaries/index.ts";
 export * from "./ui-cache.ts";
