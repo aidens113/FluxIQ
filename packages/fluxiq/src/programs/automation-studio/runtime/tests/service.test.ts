@@ -143,7 +143,7 @@ describe("AutomationStudioService recording persistence", () => {
   afterEach(async () => {
     await Promise.all([...services].map((service) => service.close()));
     services.clear();
-    await rm(tempRoot, { recursive: true, force: true });
+    await rm(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
   });
 
   it("does not seed demo fixture recordings by default", async () => {
@@ -4206,7 +4206,7 @@ describe("AutomationStudioService canonical Flow persistence", () => {
   afterEach(async () => {
     await Promise.all([...services].map((service) => service.close()));
     services.clear();
-    await rm(tempRoot, { recursive: true, force: true });
+    await rm(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
   });
 
   it("persists new canonical Flows in project files with project scope enforcement", async () => {

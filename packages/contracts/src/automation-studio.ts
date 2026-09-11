@@ -1,5 +1,11 @@
 import type { JsonObject, JsonValue } from "./core.js";
 
+// Core's failure taxonomy and structured failure record, shared by browser
+// clients and the runtime through this subpath. Relative value imports use a
+// `.ts` specifier so bundlers compiling this source through tsconfig paths can
+// resolve them; the package build rewrites them to `.js`.
+export * from "./failure/index.ts";
+
 export type AutomationStudioSchemaVersion = "0.1";
 export type StateValueType = "string" | "number" | "integer" | "boolean" | "point" | "rectangle" | "entity_ref" | "entity_ref_list" | "hash" | "json" | "unknown";
 export type StateVolatility = "static" | "slow" | "normal" | "rapid";

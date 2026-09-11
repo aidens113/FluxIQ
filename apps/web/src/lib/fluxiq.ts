@@ -1,13 +1,16 @@
 import { FluxIQ } from "fluxiq";
 import { existsSync } from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { parseAllowedOrigins, startClientGatewayWebSocketServer, type ClientGatewayWebSocketServerHandle } from "../server/client-gateway-websocket";
 import { resolveAutomationStudioContext, resolveClientRecordingProject, setAutomationStudioContext, type AutomationStudioWebContext } from "./automation-studio-context";
 
 type FluxIQHostModuleRegistration = (fluxiq: FluxIQ) => FluxIQ | void;
 
 type FluxIQWebGlobal = typeof globalThis & {
+  // Held on globalThis because Next.js bundles src/instrumentation.ts, which
+  // loads the host, separately from the routes that apply it.
+  __fluxiqWebHostModule?: { path: string; register: FluxIQHostModuleRegistration };
   __fluxiqWebRuntime?: {
     instance: FluxIQ;
     hostModulePath: string | null;
@@ -18,8 +21,6 @@ type FluxIQWebGlobal = typeof globalThis & {
     shutdownHandlers?: { sigint: () => void; sigterm: () => void } | null;
   };
 };
-
-const hostModuleRequire = createRequire(path.join(process.cwd(), "package.json"));
 
 export function getFluxIQ(): FluxIQ {
   const state = getWebRuntimeState();
@@ -61,6 +62,8 @@ export function setAutomationStudioWebContext(input: { operatorUserId: string; c
 }
 
 export async function reloadFluxIQWebInstance(): Promise<FluxIQ> {
+  // Before anything closes, so a host that fails to load leaves the old runtime serving.
+  await loadFluxIQHostModule();
   const state = getWebRuntimeState();
   const gateway = state.clientGatewayServer;
   state.clientGatewayServer = null;
@@ -141,19 +144,35 @@ export function createFluxIQWebInstance(): FluxIQ {
   return applyFluxIQHostModule(FluxIQ.create({ rootDir, domainId: domains[0]!.id }));
 }
 
-export function applyFluxIQHostModule(fluxiq: FluxIQ): FluxIQ {
+/**
+ * Loads FLUXIQ_HOST_MODULE with a native dynamic import(). FluxIQ packages are
+ * ESM-only and export only the `import` condition, so a host reaches public
+ * subpaths such as `fluxiq/automation-studio` only as an ES module; require()
+ * cannot resolve them. import() also still loads a CommonJS host that needs no
+ * FluxIQ runtime import. Registration stays synchronous, so the web server
+ * awaits this once at startup (src/instrumentation.ts) before creating the runtime.
+ */
+export async function loadFluxIQHostModule(): Promise<string | null> {
   const resolved = resolveFluxIQHostModulePath();
-  if (!resolved) return fluxiq;
-  const loaded = hostModuleRequire(resolved) as { default?: unknown; registerFluxIQHost?: unknown };
-  const register = typeof loaded.registerFluxIQHost === "function"
-    ? loaded.registerFluxIQHost as FluxIQHostModuleRegistration
-    : typeof loaded.default === "function"
-      ? loaded.default as FluxIQHostModuleRegistration
-      : null;
+  if (!resolved) return null;
+  const globalState = globalThis as FluxIQWebGlobal;
+  if (globalState.__fluxiqWebHostModule?.path === resolved) return resolved;
+  const register = fluxIQHostModuleRegistration(await importFluxIQHostModule(resolved));
   if (!register) {
     throw new Error(`FLUXIQ_HOST_MODULE must export registerFluxIQHost() or a default registration function: ${resolved}`);
   }
-  const registered = register(fluxiq);
+  globalState.__fluxiqWebHostModule = { path: resolved, register };
+  return resolved;
+}
+
+export function applyFluxIQHostModule(fluxiq: FluxIQ): FluxIQ {
+  const resolved = resolveFluxIQHostModulePath();
+  if (!resolved) return fluxiq;
+  const loaded = (globalThis as FluxIQWebGlobal).__fluxiqWebHostModule;
+  if (!loaded || loaded.path !== resolved) {
+    throw new Error(`FLUXIQ_HOST_MODULE has not been loaded; await loadFluxIQHostModule() before creating the web runtime: ${resolved}`);
+  }
+  const registered = loaded.register(fluxiq);
   const maybePromise = registered as unknown as { then?: unknown };
   if (registered && typeof maybePromise.then === "function") {
     throw new Error(`FLUXIQ_HOST_MODULE registration must be synchronous for the web runtime: ${resolved}`);
@@ -169,6 +188,29 @@ export function resolveFluxIQHostModulePath(): string | null {
     throw new Error(`FLUXIQ_HOST_MODULE points to a missing file: ${resolved}`);
   }
   return resolved;
+}
+
+async function importFluxIQHostModule(modulePath: string): Promise<Record<string, unknown>> {
+  try {
+    // The host path is known only at runtime, so Next.js must leave this a
+    // native import() rather than bundle it; @vite-ignore quiets Vite in tests.
+    return await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ /* @vite-ignore */ pathToFileURL(modulePath).href) as Record<string, unknown>;
+  } catch (error) {
+    if ((error as { code?: unknown } | null)?.code === "ERR_PACKAGE_PATH_NOT_EXPORTED") {
+      throw new Error(`FLUXIQ_HOST_MODULE could not resolve a package export. FluxIQ packages are ESM-only, so a host that imports them must be an ES module (.mjs, or .js under "type": "module"): ${modulePath}`, { cause: error });
+    }
+    throw error;
+  }
+}
+
+function fluxIQHostModuleRegistration(namespace: Record<string, unknown>): FluxIQHostModuleRegistration | null {
+  // import() of a CommonJS host exposes module.exports as the default export.
+  const commonJsExports = typeof namespace.default === "object" && namespace.default !== null
+    ? namespace.default as Record<string, unknown>
+    : {};
+  const register = [namespace.registerFluxIQHost, commonJsExports.registerFluxIQHost, namespace.default, commonJsExports.default]
+    .find((candidate) => typeof candidate === "function");
+  return (register as FluxIQHostModuleRegistration | undefined) ?? null;
 }
 
 function explicitFluxIQDomainId(): string | null {

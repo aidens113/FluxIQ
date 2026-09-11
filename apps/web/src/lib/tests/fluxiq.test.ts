@@ -1,9 +1,10 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { FluxIQ } from "fluxiq";
 import { afterEach, describe, expect, it } from "vitest";
-import { applyFluxIQHostModule, closeFluxIQWebRuntime, createFluxIQWebInstance, getFluxIQ, reloadFluxIQWebInstance, resolveFluxIQHostModulePath, resolveFluxIQWebHostRoot } from "../fluxiq";
+import { applyFluxIQHostModule, closeFluxIQWebRuntime, createFluxIQWebInstance, getFluxIQ, loadFluxIQHostModule, reloadFluxIQWebInstance, resolveFluxIQHostModulePath, resolveFluxIQWebHostRoot } from "../fluxiq";
 
 const originalEnv = {
   FLUXIQ_ALLOW_FRAMEWORK_REPO_ROOT: process.env.FLUXIQ_ALLOW_FRAMEWORK_REPO_ROOT,
@@ -21,7 +22,18 @@ afterEach(() => {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
   }
+  delete (globalThis as typeof globalThis & { __fluxiqWebHostModule?: unknown }).__fluxiqWebHostModule;
 });
+
+/**
+ * A directory that resolves `fluxiq` from node_modules as an importing
+ * repository does, so a host written there goes through the package exports map.
+ */
+function importingRepositoryDir(): string {
+  const dir = fileURLToPath(new URL("../../../node_modules/.cache/", import.meta.url));
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
 
 describe("FluxIQ web host module loading", () => {
   it("returns null when no host module is configured", () => {
@@ -36,11 +48,12 @@ describe("FluxIQ web host module loading", () => {
     expect(() => resolveFluxIQHostModulePath()).toThrow("FLUXIQ_HOST_MODULE points to a missing file");
   });
 
-  it("applies registerFluxIQHost from the configured host module", () => {
+  it("applies registerFluxIQHost from the configured host module", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "fluxiq-host-module-"));
     const modulePath = path.join(root, "host.cjs");
     writeFileSync(modulePath, "module.exports.registerFluxIQHost = (fluxiq) => { fluxiq.__hostRegistered = 'named'; return fluxiq; };\n");
     process.env.FLUXIQ_HOST_MODULE = modulePath;
+    await loadFluxIQHostModule();
     const fluxiq = FluxIQ.create({ rootDir: root });
 
     expect(applyFluxIQHostModule(fluxiq)).toBe(fluxiq);
@@ -49,11 +62,12 @@ describe("FluxIQ web host module loading", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("applies a default export from the configured host module", () => {
+  it("applies a default export from the configured host module", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "fluxiq-host-module-"));
     const modulePath = path.join(root, "host-default.cjs");
     writeFileSync(modulePath, "module.exports.default = (fluxiq) => { fluxiq.__hostRegistered = 'default'; };\n");
     process.env.FLUXIQ_HOST_MODULE = modulePath;
+    await loadFluxIQHostModule();
     const fluxiq = FluxIQ.create({ rootDir: root });
 
     expect(applyFluxIQHostModule(fluxiq)).toBe(fluxiq);
@@ -62,7 +76,53 @@ describe("FluxIQ web host module loading", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("uses the sole host-registered domain without relocating global web state", () => {
+  it("refuses to apply a configured host module that has not been loaded", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "fluxiq-host-module-"));
+    const modulePath = path.join(root, "host-unloaded.cjs");
+    writeFileSync(modulePath, "module.exports.registerFluxIQHost = (fluxiq) => fluxiq;\n");
+    process.env.FLUXIQ_HOST_MODULE = modulePath;
+
+    expect(() => applyFluxIQHostModule(FluxIQ.create({ rootDir: root }))).toThrow("FLUXIQ_HOST_MODULE has not been loaded");
+
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("loads an ES module host that imports FluxIQ's public package exports", async () => {
+    const root = mkdtempSync(path.join(importingRepositoryDir(), "fluxiq-esm-host-"));
+    const modulePath = path.join(root, "host.mjs");
+    writeFileSync(modulePath, [
+      "import { AutomationStudioNativeNodeRuntime } from \"fluxiq/automation-studio\";",
+      "export function registerFluxIQHost(fluxiq) {",
+      "  fluxiq.programs.automationStudio.bindNativeNodeRuntime(new AutomationStudioNativeNodeRuntime());",
+      "  return fluxiq;",
+      "}",
+      ""
+    ].join("\n"));
+    process.env.FLUXIQ_HOST_MODULE = modulePath;
+    try {
+      await loadFluxIQHostModule();
+      const fluxiq = applyFluxIQHostModule(FluxIQ.create({ rootDir: root }));
+
+      expect(fluxiq.programs.automationStudio.nativeRuntimeSummary().bound).toBe(true);
+      await fluxiq.close();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("explains that a CommonJS host cannot require FluxIQ's ESM-only package exports", async () => {
+    const root = mkdtempSync(path.join(importingRepositoryDir(), "fluxiq-cjs-host-"));
+    const modulePath = path.join(root, "host.cjs");
+    writeFileSync(modulePath, "require(\"fluxiq/automation-studio\");\nmodule.exports.registerFluxIQHost = (fluxiq) => fluxiq;\n");
+    process.env.FLUXIQ_HOST_MODULE = modulePath;
+    try {
+      await expect(loadFluxIQHostModule()).rejects.toThrow("FluxIQ packages are ESM-only");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the sole host-registered domain without relocating global web state", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "fluxiq-domain-host-"));
     const modulePath = path.join(root, "host-domain.cjs");
     writeFileSync(modulePath, `
@@ -83,6 +143,7 @@ module.exports.registerFluxIQHost = (fluxiq) => {
     delete process.env.FLUXIQ_DOMAIN_ID;
     delete process.env.FLUXIQ_HOST_DOMAIN;
 
+    await loadFluxIQHostModule();
     const fluxiq = createFluxIQWebInstance();
 
     expect(fluxiq.activeDomainId).toBe("example.domain");
@@ -142,18 +203,20 @@ module.exports.registerFluxIQHost = (fluxiq) => fluxiq.bindAutomationStudioReusa
     process.env.FLUXIQ_IMPORTER_ROOT = root;
     process.env.FLUXIQ_HOST_MODULE = modulePath;
     process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED = "false";
+    await loadFluxIQHostModule();
     const fluxiq = createFluxIQWebInstance();
     expect(fluxiq.programs.automationStudio.reusableLlmContextStatus()).toMatchObject({ enabled: true, writeEnabled: true, contentProtection: "host.test-protection.v1" });
     await fluxiq.close();
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("fails web runtime construction when host reusable-context configuration is malformed", () => {
+  it("fails web runtime construction when host reusable-context configuration is malformed", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "fluxiq-reusable-host-invalid-"));
     const modulePath = path.join(root, "host-reusable-invalid.cjs");
     writeFileSync(modulePath, `module.exports.registerFluxIQHost = (fluxiq) => fluxiq.bindAutomationStudioReusableLlmContext({ enabled: true, contentProtection: { providerId: '' } });\n`);
     process.env.FLUXIQ_IMPORTER_ROOT = root;
     process.env.FLUXIQ_HOST_MODULE = modulePath;
+    await loadFluxIQHostModule();
     expect(() => createFluxIQWebInstance()).toThrow("host configuration is invalid");
     rmSync(root, { recursive: true, force: true });
   });

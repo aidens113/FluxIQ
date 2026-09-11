@@ -1,7 +1,7 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { AutomationStudioFlowSubflow } from "../../model/index.ts";
 import { AutomationStudioService } from "../service.ts";
 
@@ -14,39 +14,99 @@ type LegacySubflowIndexEnvelope = {
   };
 };
 
+type SeededSubflowInventory = {
+  dir: string;
+  project: Awaited<ReturnType<AutomationStudioService["createProject"]>>;
+  flow: Awaited<ReturnType<AutomationStudioService["createFlow"]>>;
+  subflows: AutomationStudioFlowSubflow[];
+};
+
+// Every case needs a project that already holds N subflows. Writing one through
+// the service costs about a third of a second on an idle machine and several
+// times that under full-suite load, which used to push the 32- and 64-subflow
+// cases past their budgets and then into an EBUSY cascade while cleanup deleted
+// a directory the timed-out body was still writing. So the inventories are
+// written once, snapshotted after each count a case needs, and each case runs
+// on its own copy: a private database per test, and a test body that only
+// spends time on the listing it asserts on.
+const SEEDED_SUBFLOW_COUNTS = [2, 3, 32, 64] as const;
+const SEEDING_TIMEOUT_MS = 180_000;
+
 describe("AutomationStudioService subflow pagination fallbacks", () => {
+  const seeded = new Map<number, SeededSubflowInventory>();
+  let seedRoot: string | undefined;
+  let testRoot: string;
   let dataDir: string;
   let service: AutomationStudioService;
+  let opened: AutomationStudioService | undefined;
+
+  beforeAll(async () => {
+    seedRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-subflow-pagination-seed-"));
+    const liveDir = path.join(seedRoot, "live");
+    let seeding = new AutomationStudioService({ dataDir: liveDir, seedFixture: false });
+    let seedingOpen = true;
+    try {
+      const project = await seeding.createProject({ name: "Subflow pagination" });
+      const flow = await seeding.createFlow({
+        projectId: project.id,
+        flowId: "flow.subflow-pagination",
+        name: "Subflow pagination"
+      });
+      const subflows: AutomationStudioFlowSubflow[] = [];
+      for (const [position, count] of SEEDED_SUBFLOW_COUNTS.entries()) {
+        while (subflows.length < count) {
+          const index = subflows.length;
+          const created = await seeding.createFlowSubflow({
+            projectId: project.id,
+            flowId: flow.flowId,
+            name: `Subflow ${index}`,
+            role: "utility"
+          });
+          subflows.push(await seeding.saveFlowSubflow({ ...created, createdAt: 10_000 + index, updatedAt: 10_000 + index }));
+        }
+        // Closing first releases every SQLite handle, so the snapshot is a
+        // complete database rather than a copy of a live one.
+        await seeding.close();
+        seedingOpen = false;
+        const dir = path.join(seedRoot, `subflows-${count}`);
+        await cp(liveDir, dir, { recursive: true });
+        seeded.set(count, { dir, project, flow, subflows: [...subflows] });
+        if (position < SEEDED_SUBFLOW_COUNTS.length - 1) {
+          seeding = new AutomationStudioService({ dataDir: liveDir, seedFixture: false });
+          seedingOpen = true;
+        }
+      }
+    } finally {
+      if (seedingOpen) await seeding.close();
+    }
+  }, SEEDING_TIMEOUT_MS);
+
+  afterAll(async () => {
+    if (seedRoot) await rm(seedRoot, { recursive: true, force: true });
+  });
 
   beforeEach(async () => {
-    dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-subflow-pagination-"));
-    service = new AutomationStudioService({ dataDir, seedFixture: false });
+    testRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-subflow-pagination-"));
+    dataDir = path.join(testRoot, "data");
+    opened = undefined;
   });
 
   afterEach(async () => {
-    await service.close();
-    await rm(dataDir, { recursive: true, force: true });
+    await opened?.close();
+    await rm(testRoot, { recursive: true, force: true });
   });
 
   async function createSubflows(count: number) {
-    const project = await service.createProject({ name: "Subflow pagination" });
-    const flow = await service.createFlow({
-      projectId: project.id,
-      flowId: "flow.subflow-pagination",
-      name: "Subflow pagination"
-    });
-    const subflows: AutomationStudioFlowSubflow[] = [];
-    for (let index = 0; index < count; index += 1) {
-      const created = await service.createFlowSubflow({
-        projectId: project.id,
-        flowId: flow.flowId,
-        name: `Subflow ${index}`,
-        role: "utility"
-      });
-      const subflow = await service.saveFlowSubflow({ ...created, createdAt: 10_000 + index, updatedAt: 10_000 + index });
-      subflows.push(subflow);
-    }
-    return { project, flow, subflows };
+    const inventory = seeded.get(count);
+    if (!inventory) throw new Error(`No seeded inventory holds ${count} subflows; add ${count} to SEEDED_SUBFLOW_COUNTS.`);
+    await cp(inventory.dir, dataDir, { recursive: true });
+    service = new AutomationStudioService({ dataDir, seedFixture: false });
+    opened = service;
+    return {
+      project: inventory.project,
+      flow: inventory.flow,
+      subflows: inventory.subflows.map((subflow) => structuredClone(subflow))
+    };
   }
 
   async function downgradeLegacyIndex(projectId: string) {
@@ -166,7 +226,7 @@ describe("AutomationStudioService subflow pagination fallbacks", () => {
     expect(page).toMatchObject({ total: 64, limit: 25, offset: 0 });
     expect(peakReads).toBeGreaterThan(0);
     expect(peakReads).toBeLessThanOrEqual(16);
-  }, 30_000);
+  });
 
   it("preserves a legacy summary when its detail document cannot be hydrated", async () => {
     const { project, flow, subflows } = await createSubflows(2);

@@ -1,4 +1,5 @@
 import { mkdir, readFile, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { StateSnapshot } from "../../../model/index.ts";
@@ -6,7 +7,12 @@ import { AutomationStudioProjectAdministration } from "../administration.ts";
 import { AutomationStudioProjectDatabasePool } from "../database.ts";
 import { AutomationStudioProjectRuntimeStreamStore, type AutomationStudioRuntimeStreamEvent } from "../runtime-stream-store.ts";
 
-const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-project-runtime-stream-store-test");
+// Sibling storage tests keep their scratch root under the working directory.
+// This one writes about 158 MB, for the million-event stream case, so it goes
+// to the OS temp directory instead: on a slow working-disk the case took 50 to
+// 62 s against its 60 s budget, and on the OS disk it takes about a third of
+// that. Everything the case proves is about sequence order, not disk location.
+const rootDir = path.join(os.tmpdir(), "fluxiq-automation-studio-project-runtime-stream-store-test");
 
 describe("AutomationStudioProjectRuntimeStreamStore", () => {
   beforeEach(async () => {

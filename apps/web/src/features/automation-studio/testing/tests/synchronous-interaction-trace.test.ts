@@ -35,7 +35,7 @@ describe("Automation Studio synchronous interaction tracing", () => {
     const trace = createAutomationStudioSynchronousTrace();
     const initial = {
       ...defaultAutomationWorkspacePrefs(),
-      panes: [{ id: "pane-1", activeViewId: "runtime-debug", tabs: ["runtime-debug", "flow-router"] }],
+      panes: [{ id: "pane-1", activeViewId: "runtime-debug", tabs: ["runtime-debug", "flow-router::object::flow.empty"] }],
       activePaneId: "pane-1",
       activeViewId: "runtime-debug",
     };
@@ -108,7 +108,8 @@ describe("Automation Studio synchronous interaction tracing", () => {
       "workspace",
       "selection",
     ]);
-    expect(workspace.getPrefs()).toMatchObject({ activePaneId: "pane-1", activeViewId: "flow-router" });
+    expect(workspace.getPrefs()).toMatchObject({ activePaneId: "pane-1", activeViewId: "flow-router::object::flow.empty" });
+    expect(workspace.getPrefs().panes[0]?.tabs).toEqual(["runtime-debug", "flow-router::object::flow.empty"]);
     expect(selection.getState().selection).toEqual({ kind: "flow", id: "flow.empty" });
 
     unsubscribeWorkspace();

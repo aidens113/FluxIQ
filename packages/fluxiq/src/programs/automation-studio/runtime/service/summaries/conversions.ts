@@ -1,3 +1,4 @@
+import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioBootstrapAdaptation } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioAdaptationSummary } from "../indexes/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -136,6 +137,8 @@ function graphStatusToFlowRunStatus(status: string): AutomationStudioFlowRunActi
 function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSession): AutomationStudioFlowRunActionAttemptRecord[] {
   return (session.trace?.attempts ?? []).map((attempt, index) => {
     const durationMs = attempt.finishedAt === undefined ? undefined : Math.max(0, attempt.finishedAt - attempt.startedAt);
+    // Session traces are read back from storage, so the record is parsed again.
+    const failure = parseAutomationStudioFailureRecord(attempt.failure);
     const adaptiveFailure = attempt.status === "failed"
       ? compactAutomationStudioAdaptiveFailure(classifyAutomationStudioAdaptiveFailure({
         projectId: session.projectId ?? "",
@@ -156,12 +159,14 @@ function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSessio
       ...(durationMs !== undefined ? { durationMs } : {}),
       ...(attempt.transitionComparison?.status ? { comparisonStatus: attempt.transitionComparison.status } : {}),
       ...(attempt.message ? { message: attempt.message } : {}),
+      ...(failure ? { failure } : {}),
       metadata: {
         ...(attempt.regionId ? { regionId: attempt.regionId } : {}),
         ...(attempt.transitionComparison?.diffSummary ? { diffSummary: attempt.transitionComparison.diffSummary } : {}),
         ...(attempt.recoveryDecision?.selected ? { recoverySelected: attempt.recoveryDecision.selected } : {}),
         ...(attempt.hostCapabilities?.length ? { hostCapabilities: attempt.hostCapabilities } : {}),
         ...(attempt.stateRefs ? { stateRefs: attempt.stateRefs } : {}),
+        ...(attempt.targetResolution ? { targetResolution: attempt.targetResolution } : {}),
         ...(adaptiveFailure ? { adaptiveFailure } : {})
       }
     };

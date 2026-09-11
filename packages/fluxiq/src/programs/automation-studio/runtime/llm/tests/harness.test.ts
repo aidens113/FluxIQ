@@ -121,6 +121,52 @@ describe("Automation Studio LLM harness", () => {
     expect(context.policyGates).toMatchObject({ allowRuntimeRecovery: true, allowExternalSideEffects: false });
   });
 
+  it("adds only the category of a valid failure record to recent actions", () => {
+    const context = packAutomationStudioLlmContext({
+      taskKind: "runtime_diagnosis",
+      projectId: "project.llm",
+      flowId: "flow.checkout",
+      runId: "run.failed",
+      instructions: [],
+      runDetail: {
+        schemaVersion: "0.1",
+        summary: {
+          schemaVersion: "0.1",
+          runId: "run.failed",
+          flowId: "flow.checkout",
+          projectId: "project.llm",
+          status: "failed",
+          updatedAt: 1,
+          routeDecisionCount: 0,
+          subflowEntryCount: 0,
+          actionAttemptCount: 2,
+          interventionCount: 0,
+          adaptationCount: 0
+        },
+        actionAttempts: [
+          {
+            attemptId: "submit.1", nodeId: "submit", definitionId: "builtin.policy.action", order: 1, status: "failed", startedAt: 1,
+            failure: { category: "target_not_found", code: "web.target.selector_miss", retryable: true, expected: "PRIVATE_EXPECTED", actual: "PRIVATE_ACTUAL" }
+          },
+          {
+            attemptId: "submit.2", nodeId: "submit", definitionId: "builtin.policy.action", order: 2, status: "failed", startedAt: 2,
+            failure: { category: "timeout", code: "x", retryable: "yes" } as never
+          }
+        ],
+        routeDecisions: [],
+        subflows: [],
+        recoveryAttempts: [],
+        interventions: [],
+        adaptationIds: [],
+        changeProposalIds: []
+      }
+    });
+
+    expect(context.recentActions?.[0]).toEqual({ attemptId: "submit.1", nodeId: "submit", definitionId: "builtin.policy.action", order: 1, status: "failed", failureCategory: "target_not_found" });
+    expect(context.recentActions?.[1]).not.toHaveProperty("failureCategory");
+    expect(JSON.stringify(context)).not.toMatch(/PRIVATE_EXPECTED|PRIVATE_ACTUAL|selector_miss/);
+  });
+
   it("bounds ephemeral failure evidence and exposes it only to runtime diagnosis or patch tasks", () => {
     const base = { projectId: "project.llm", flowId: "flow.checkout", instructions: [] as AutomationStudioFlowInstruction[] };
     expect(() => packAutomationStudioLlmContext({

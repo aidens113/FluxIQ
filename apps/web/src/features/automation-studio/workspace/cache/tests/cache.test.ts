@@ -72,12 +72,13 @@ describe("AutomationStudioUiCacheCoordinator", () => {
     const backend = new MemoryUiCacheBackend();
     const coordinator = new AutomationStudioUiCacheCoordinator(backend);
     const first = { ...defaultAutomationWorkspacePrefs(), activeViewId: "flow-nodes", sidebarWidth: 280 };
+    const runtimeInstanceId = "runtime-debug::object::flow.one";
     const latest = {
       ...defaultAutomationWorkspacePrefs(),
-      activeViewId: "runtime-debug",
+      activeViewId: runtimeInstanceId,
       sidebarWidth: 360,
-      panes: [{ id: "pane-main-1", activeViewId: "runtime-debug", tabs: ["runtime-debug"] }],
-      viewStates: { "runtime-debug": { flowId: "flow.one", page: 2 } }
+      panes: [{ id: "pane-main-1", activeViewId: runtimeInstanceId, tabs: [runtimeInstanceId] }],
+      viewStates: { [runtimeInstanceId]: { flowId: "flow.one", page: 2 } }
     };
 
     coordinator.scheduleWorkspacePrefsWrite({ projectId: "project-a", userId: "user-a", prefs: first, delayMs: 50 });
@@ -92,7 +93,7 @@ describe("AutomationStudioUiCacheCoordinator", () => {
 
     expect(backend.writes).toHaveLength(1);
     expect((backend.writes[0]?.value as any).value.sidebarWidth).toBe(360);
-    expect((backend.writes[0]?.value as any).value.activeViewId).toBe("runtime-debug");
+    expect((backend.writes[0]?.value as any).value.activeViewId).toBe(runtimeInstanceId);
     expect((backend.writes[0]?.value as any).value.panes).toEqual(latest.panes);
     expect((backend.writes[0]?.value as any).value.viewStates).toEqual(latest.viewStates);
   });

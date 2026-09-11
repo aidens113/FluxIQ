@@ -1,4 +1,5 @@
 import type { JsonObject, JsonValue } from "./core.js";
+import type { AutomationStudioFailureRecord } from "./failure/index.js";
 
 export const CLIENT_GATEWAY_PROTOCOL_VERSION = "0.1";
 
@@ -104,6 +105,8 @@ export type ClientGatewayActionResult = {
   target?: JsonObject;
   payload?: JsonObject;
   error?: string;
+  /** Structured failure the client reports; the runtime keeps it only when `parseAutomationStudioFailureRecord` accepts it. */
+  failure?: AutomationStudioFailureRecord;
   metadata?: JsonObject;
 };
 

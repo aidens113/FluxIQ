@@ -362,6 +362,28 @@ retries per action, recovery attempts per subflow, reroutes per run, and
 adaptation/LLM attempts per run; exhausted budgets produce terminal failure
 metadata instead of looping.
 
+Failed attempts carry a structured failure when one is known. Core owns the one
+category list, `AutomationStudioAdaptiveFailureClass`, exported from
+`@fluxiq/contracts` with `AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES` and
+re-exported by `fluxiq/automation-studio`. A domain decides which member
+applies and reports an `AutomationStudioFailureRecord` (`category`, a
+producer-owned `code`, `retryable`, and optional `stage`, `expected`, `actual`,
+and `evidenceDigest`) on the gateway action result, the runtime command result,
+or the output dispatch result. `parseAutomationStudioFailureRecord` accepts
+only exact, bounded, self-consistent records and drops anything else whole.
+The record travels from the dispatch result through the node result to the
+attempt trace and the persisted action record, and the LLM recent-action
+context carries its category but not its code or texts. Transition comparison
+and adaptive failure classification read the record first; matching the
+attempt's message remains only for attempts recorded without one. Core also
+names the failures its own structured signals prove: a `timed_out` command is
+`timeout`, a `rejected` command is `blocked_by_capability_or_policy`, a
+dispatched output whose bound confirmation input never arrived is
+`output_not_observed`, and an element target with no confident candidate is
+`target_not_found`. Output-dispatching attempts also record `targetResolution`
+beside `stateRefs`: the resolution status, the candidate count, the confidence
+threshold, and the best candidate's score and signals.
+
 Subflows are persisted as Flow-owned behavior units with route tags,
 input/output mapping, graph reference, local instruction IDs, proposal-mode
 override, and stability metrics. New subflows receive an isolated graph Flow by

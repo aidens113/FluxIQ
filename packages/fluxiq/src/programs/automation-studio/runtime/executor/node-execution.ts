@@ -116,8 +116,22 @@ async function dispatchAutomationStudioEffects(initial: AutomationNodeExecutionR
   for (const effect of result.effects ?? []) {
     const dispatched = await options.effectDispatcher(effect, options.signal ? { signal: options.signal } : undefined); if (!dispatched) continue;
     const outputs = { ...(result.outputs ?? {}), ...(dispatched.outputs ?? {}) };
-    if (dispatched.status === "failed") { result = { ...result, outputs, status: "failed", route: dispatched.route ?? "failed" }; break; }
-    result = { ...result, outputs };
+    // The attempt trace classifies from the dispatcher's target resolution,
+    // failure record, and message, so they survive the merge.
+    const targetResolution = dispatched.targetResolution ? { targetResolution: dispatched.targetResolution } : {};
+    if (dispatched.status === "failed") {
+      result = {
+        ...result,
+        outputs,
+        status: "failed",
+        route: dispatched.route ?? "failed",
+        ...targetResolution,
+        ...(dispatched.message ? { message: dispatched.message } : {}),
+        ...(dispatched.failure ? { failure: dispatched.failure } : {})
+      };
+      break;
+    }
+    result = { ...result, outputs, ...targetResolution };
   }
   return result;
 }

@@ -4,8 +4,11 @@
 //
 // Usage:
 //   node scripts/structure-audit.mjs                 check; exit 1 on failure
-//   node scripts/structure-audit.mjs --update        lower the baseline to current values
-//   node scripts/structure-audit.mjs --rule <id>     run one rule (repeatable)
+//   node scripts/structure-audit.mjs --update        lower or remove baseline entries to match
+//                                                    current values; exit 1 and write nothing
+//                                                    when a violation has no entry or grew
+//   node scripts/structure-audit.mjs --rule <id>     run one rule (repeatable); with --update,
+//                                                    only the selected rules' entries change
 //   node scripts/structure-audit.mjs --json          machine-readable output
 //   node scripts/structure-audit.mjs --list          list rule ids and titles
 //
@@ -16,7 +19,7 @@ import { readdirSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createContext, LIMITS, repoRoot } from "./structure-audit/context.mjs";
-import { applyRatchet, buildBaseline, loadBaseline, saveBaseline } from "./structure-audit/baseline.mjs";
+import { applyRatchet, BASELINE_FILE, loadBaseline, planBaselineUpdate, saveBaseline } from "./structure-audit/baseline.mjs";
 
 const args = process.argv.slice(2);
 const flags = new Set(args.filter((arg) => arg.startsWith("--") && arg !== "--rule"));
@@ -51,13 +54,26 @@ for (const rule of selected) {
 }
 
 const previous = loadBaseline(repoRoot);
+const byRule = (list) => list.sort((a, b) => a.rule.localeCompare(b.rule) || a.path.localeCompare(b.path));
 
 if (flags.has("--update")) {
-  const baseline = buildBaseline(findings, previous, LIMITS);
-  saveBaseline(repoRoot, baseline);
+  // With --rule, only the selected rules' findings are complete, so only
+  // their entries may change; every other rule's entries are kept as recorded.
+  const scope = only.size > 0 ? selected.map((rule) => rule.id) : null;
+  const plan = planBaselineUpdate(findings, previous, LIMITS, scope);
+  if (plan.blocked.length > 0) {
+    for (const finding of byRule(plan.blocked)) console.error(`  FAIL  [${finding.rule}] ${finding.message}`);
+    console.error(`\nstructure-audit: --update refused: ${plan.blocked.length} violation(s) cannot be recorded by lowering the baseline. Fix them, then run it again. ${BASELINE_FILE} was not written.`);
+    process.exit(1);
+  }
+  const written = saveBaseline(repoRoot, plan.baseline);
   for (const rule of selected) if (typeof rule.update === "function") rule.update(ctx);
-  const entries = Object.values(baseline.rules).reduce((n, keys) => n + Object.keys(keys).length, 0);
-  console.log(`structure-audit: baseline written with ${entries} entries across ${Object.keys(baseline.rules).length} rules.`);
+  for (const entry of plan.lowered) console.log(`  lowered [${entry.rule}] ${entry.key}: ${entry.recorded} -> ${entry.value}`);
+  for (const entry of plan.removed) console.log(`  removed [${entry.rule}] ${entry.key} (was ${entry.recorded})`);
+  const entries = Object.values(plan.baseline.rules).reduce((n, keys) => n + Object.keys(keys).length, 0);
+  const outcome = written ? "baseline written" : "baseline already current, not rewritten";
+  const kept = scope === null ? "" : ` Re-evaluated ${scope.join(", ")} only; other rules' entries kept.`;
+  console.log(`structure-audit: ${outcome}: ${entries} entries across ${Object.keys(plan.baseline.rules).length} rules (${plan.lowered.length} lowered, ${plan.removed.length} removed).${kept}`);
   process.exit(0);
 }
 
@@ -68,7 +84,6 @@ if (flags.has("--json")) {
   process.exit(result.failures.length > 0 ? 1 : 0);
 }
 
-const byRule = (list) => list.sort((a, b) => a.rule.localeCompare(b.rule) || a.path.localeCompare(b.path));
 for (const warning of byRule(result.warnings)) console.warn(`  warn  [${warning.rule}] ${warning.message}`);
 for (const failure of byRule(result.failures)) console.error(`  FAIL  [${failure.rule}] ${failure.message}`);
 

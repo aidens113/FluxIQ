@@ -1,5 +1,7 @@
+import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../core/index.ts";
 import type { DomainInputDefinition, DomainManifest, DomainOutputDefinition } from "../domains/index.ts";
+import type { FluxIQRuntimeCommandStatus } from "../runtime/index.ts";
 
 export type IoMode = "stream" | "request" | "stream_and_request";
 
@@ -32,6 +34,10 @@ export type OutputDispatchResult<TPayload = unknown> = {
   domainId?: string | null;
   payload?: TPayload;
   error?: string;
+  /** The command status when the adapter knows it, for example `timed_out`; `ok` stays the success flag. */
+  status?: FluxIQRuntimeCommandStatus;
+  /** Structured failure the adapter reports; Automation Studio keeps it only when it parses. */
+  failure?: AutomationStudioFailureRecord;
   metadata?: JsonObject;
 };
 

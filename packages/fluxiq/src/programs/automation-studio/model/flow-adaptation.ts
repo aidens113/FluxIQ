@@ -1,3 +1,4 @@
+import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationConditionExpression } from "./conditions.ts";
 import type { EvidenceReference, StateFactReference } from "./evidence.ts";
@@ -285,6 +286,8 @@ export type AutomationStudioFlowRunActionAttemptRecord = {
   durationMs?: number;
   comparisonStatus?: string;
   message?: string;
+  /** Structured failure recorded on the attempt. Stored records are parsed again before use. */
+  failure?: AutomationStudioFailureRecord;
   metadata?: JsonObject;
 };
 

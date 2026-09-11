@@ -43,9 +43,14 @@ development.
 
 Importing repositories can also attach domain-specific framework registration
 to the web panel with `FLUXIQ_HOST_MODULE`. The value must be a path to a
-CommonJS module that exports either `registerFluxIQHost(fluxiq)` or a default
-synchronous registration function. The web runtime creates the plain `FluxIQ`
-instance, loads this module, and lets the importer register recording domains,
+module that exports either `registerFluxIQHost(fluxiq)` or a default
+synchronous registration function. The web server loads it once at startup
+with a native `import()` (`apps/web/src/instrumentation.ts`). Build it as an ES
+module (`.mjs`, or `.js` under `"type": "module"`): FluxIQ packages are
+ESM-only, and only an ES module host can import public subpaths such as
+`fluxiq/automation-studio`. A CommonJS host still loads if it imports nothing
+from FluxIQ at runtime. The web runtime creates the plain `FluxIQ`
+instance, applies this module, and lets the importer register recording domains,
 nodes, adapters, or other host-owned extensions before API routes and the
 client gateway start using the shared runtime.
 

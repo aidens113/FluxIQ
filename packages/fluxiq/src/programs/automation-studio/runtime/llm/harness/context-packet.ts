@@ -1,3 +1,4 @@
+import { parseAutomationStudioFailureRecord, type AutomationStudioAdaptiveFailureClass } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type {
   AutomationStudioAdaptationPolicy,
@@ -56,6 +57,8 @@ export type AutomationStudioLlmRecentActionContext = Pick<AutomationStudioFlowRu
   route?: string;
   durationMs?: number;
   comparisonStatus?: string;
+  /** Core's category from the attempt's failure record, when the record parses. Its code and texts are not sent. */
+  failureCategory?: AutomationStudioAdaptiveFailureClass;
 };
 
 export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarnessInput): AutomationStudioLlmContextPacket {
@@ -134,6 +137,8 @@ function containsReusableExecutableTarget(value: JsonValue, seen = new Set<objec
 }
 
 function compactRecentActionForLlm(action: AutomationStudioFlowRunActionAttemptRecord): AutomationStudioLlmRecentActionContext {
+  // Stored records are parsed again; only Core's category name reaches the model.
+  const failureCategory = parseAutomationStudioFailureRecord(action.failure)?.category;
   return {
     attemptId: action.attemptId,
     nodeId: action.nodeId,
@@ -142,7 +147,8 @@ function compactRecentActionForLlm(action: AutomationStudioFlowRunActionAttemptR
     status: action.status,
     ...(action.route ? { route: action.route } : {}),
     ...(Number.isSafeInteger(action.durationMs) && action.durationMs! >= 0 && action.durationMs! <= 86_400_000 ? { durationMs: action.durationMs } : {}),
-    ...(action.comparisonStatus ? { comparisonStatus: action.comparisonStatus } : {})
+    ...(action.comparisonStatus ? { comparisonStatus: action.comparisonStatus } : {}),
+    ...(failureCategory ? { failureCategory } : {})
   };
 }
 

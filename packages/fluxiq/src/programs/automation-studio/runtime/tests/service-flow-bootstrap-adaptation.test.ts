@@ -1,7 +1,7 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../_shared/api.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../../api/contracts.ts";
 import { registerAutomationStudioApi } from "../../api/handlers.ts";
@@ -14,7 +14,35 @@ import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBui
 import { AutomationStudioNativeNodeRuntime } from "../native-node-runtime.ts";
 import { AutomationStudioService } from "../service.ts";
 
+// Every case needs a project that already holds a blank instruction Flow, and
+// most need a proposed bootstrap adaptation on top of it. Writing that through
+// the service costs about a second on an idle machine and roughly three times
+// that under full-suite load, which left the API bridge case — the one that
+// also has to pay for generate, approve, apply, run, revert and reject — only
+// a few hundred milliseconds of headroom inside the 15s budget. So both
+// inventories are written once, snapshotted from a closed service, and each
+// case runs on its own copy: a private database per test, and a test body that
+// only spends time on the lifecycle it asserts on.
+const SEEDING_TIMEOUT_MS = 180_000;
+
+type SeededProposal = {
+  dir: string;
+  project: Awaited<ReturnType<AutomationStudioService["createProject"]>>;
+  flow: Awaited<ReturnType<AutomationStudioService["createFlow"]>>;
+  adaptation: Awaited<ReturnType<AutomationStudioService["createFlowBootstrapAdaptation"]>>;
+};
+
+type SeededBridge = {
+  dir: string;
+  project: Awaited<ReturnType<AutomationStudioService["createProject"]>>;
+  flow: Awaited<ReturnType<AutomationStudioService["createFlow"]>>;
+  rejectedFlow: Awaited<ReturnType<AutomationStudioService["createFlow"]>>;
+  rejectedCandidate: Awaited<ReturnType<AutomationStudioService["createFlowBootstrapAdaptation"]>>;
+  binding: Awaited<ReturnType<AutomationStudioService["getLlmExecutionBinding"]>>;
+};
+
 let tempRoot: string;
+let dataDir: string;
 const services = new Set<AutomationStudioService>();
 
 function readyNativeRuntime() {
@@ -53,7 +81,7 @@ function readyNativeRuntime() {
   });
 }
 function service(): AutomationStudioService {
-  const value = new AutomationStudioService({ dataDir: tempRoot });
+  const value = new AutomationStudioService({ dataDir });
   services.add(value);
   return value;
 }
@@ -83,59 +111,144 @@ function validPlan(): AutomationStudioFlowBootstrapPlan {
   };
 }
 
-function validatedPlan(): AutomationStudioFlowBuildPlan {
-  const result = validateAutomationStudioFlowBootstrapPlan({
-    plan: validPlan(),
-    registry: new AutomationStudioNodeRegistry(),
-    resolution: { scope: { kind: "global" }, runtimeCapabilities: [], permissions: [] }
-  });
-  if (!result.validated) throw new Error(JSON.stringify(result.issues));
-  return result.validated;
-}
+// Validation walks the whole builtin node registry, so it is resolved once and
+// handed out as a copy: callers mutate the plan they receive.
+let validatedPlanTemplate: AutomationStudioFlowBuildPlan | undefined;
 
-async function proposal(instance: AutomationStudioService) {
-  const project = await instance.createProject({ name: "Bootstrap lifecycle" });
-  const flow = await instance.createFlow({ projectId: project.id, flowId: "flow.bootstrap", name: "Blank instruction Flow" });
-  const now = Date.now();
-  await instance.saveFlowInstruction(project.id, {
-    schemaVersion: "0.1",
-    instructionId: "instruction.active",
-    title: "Build a deterministic Flow",
-    body: "Create a primary path from Start to End.",
-    scope: { kind: "flow", projectId: project.id, flowId: flow.flowId },
-    priority: 100,
-    status: "active",
-    requirement: "required",
-    tags: ["generation"],
-    createdAt: now,
-    updatedAt: now
-  });
-  const baseDependencyDigest = await instance.getLlmExecutionDependencyDigest(project.id, flow.flowId);
-  const adaptation = await instance.createFlowBootstrapAdaptation({
-    projectId: project.id,
-    flowId: flow.flowId,
-    baseDependencyDigest,
-    sourceInstructionIds: ["instruction.active"],
-    summary: "Build the requested deterministic Flow.",
-    buildPlan: validatedPlan()
-  });
-  return { project, flow, adaptation };
+function validatedPlan(): AutomationStudioFlowBuildPlan {
+  if (!validatedPlanTemplate) {
+    const result = validateAutomationStudioFlowBootstrapPlan({
+      plan: validPlan(),
+      registry: new AutomationStudioNodeRegistry(),
+      resolution: { scope: { kind: "global" }, runtimeCapabilities: [], permissions: [] }
+    });
+    if (!result.validated) throw new Error(JSON.stringify(result.issues));
+    validatedPlanTemplate = result.validated;
+  }
+  return structuredClone(validatedPlanTemplate);
 }
 
 describe("AutomationStudioService Flow Bootstrap adaptations", () => {
+  let seedRoot: string;
+  let proposalSeed: SeededProposal;
+  let bridgeSeed: SeededBridge;
+
+  beforeAll(async () => {
+    seedRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-flow-bootstrap-seed-"));
+
+    const proposalDir = path.join(seedRoot, "proposal");
+    const proposalSeeding = new AutomationStudioService({ dataDir: proposalDir });
+    try {
+      const project = await proposalSeeding.createProject({ name: "Bootstrap lifecycle" });
+      const flow = await proposalSeeding.createFlow({ projectId: project.id, flowId: "flow.bootstrap", name: "Blank instruction Flow" });
+      const now = Date.now();
+      await proposalSeeding.saveFlowInstruction(project.id, {
+        schemaVersion: "0.1",
+        instructionId: "instruction.active",
+        title: "Build a deterministic Flow",
+        body: "Create a primary path from Start to End.",
+        scope: { kind: "flow", projectId: project.id, flowId: flow.flowId },
+        priority: 100,
+        status: "active",
+        requirement: "required",
+        tags: ["generation"],
+        createdAt: now,
+        updatedAt: now
+      });
+      const baseDependencyDigest = await proposalSeeding.getLlmExecutionDependencyDigest(project.id, flow.flowId);
+      const adaptation = await proposalSeeding.createFlowBootstrapAdaptation({
+        projectId: project.id,
+        flowId: flow.flowId,
+        baseDependencyDigest,
+        sourceInstructionIds: ["instruction.active"],
+        summary: "Build the requested deterministic Flow.",
+        buildPlan: validatedPlan()
+      });
+      proposalSeed = { dir: proposalDir, project, flow, adaptation };
+    } finally {
+      // Closing first releases every SQLite handle, so each copy is a complete
+      // database rather than a copy of a live one.
+      await proposalSeeding.close();
+    }
+
+    const bridgeDir = path.join(seedRoot, "bridge");
+    const bridgeSeeding = new AutomationStudioService({ dataDir: bridgeDir });
+    try {
+      const project = await bridgeSeeding.createProject({ name: "Bootstrap API bridge", domainId: "example" });
+      const flow = await bridgeSeeding.createFlow({ projectId: project.id, flowId: "flow.bootstrap-api", name: "Blank API Flow" });
+      const now = Date.now();
+      await bridgeSeeding.saveFlowInstruction(project.id, {
+        schemaVersion: "0.1",
+        instructionId: "instruction.api",
+        title: "Build a primary path",
+        body: "Create a deterministic Start to End Flow.",
+        scope: { kind: "flow", projectId: project.id, flowId: flow.flowId },
+        priority: 100,
+        status: "active",
+        requirement: "required",
+        createdAt: now,
+        updatedAt: now
+      });
+      const rejectedFlow = await bridgeSeeding.createFlow({ projectId: project.id, flowId: "flow.bootstrap-reject", name: "Reject Bootstrap" });
+      await bridgeSeeding.saveFlowInstruction(project.id, {
+        schemaVersion: "0.1",
+        instructionId: "instruction.reject",
+        title: "Rejectable build",
+        body: "Create a deterministic Start to End Flow.",
+        scope: { kind: "flow", projectId: project.id, flowId: rejectedFlow.flowId },
+        priority: 100,
+        status: "active",
+        requirement: "required",
+        createdAt: now,
+        updatedAt: now
+      });
+      const rejectedCandidate = await bridgeSeeding.createFlowBootstrapAdaptation({
+        projectId: project.id,
+        flowId: rejectedFlow.flowId,
+        baseDependencyDigest: await bridgeSeeding.getLlmExecutionDependencyDigest(project.id, rejectedFlow.flowId),
+        sourceInstructionIds: ["instruction.reject"],
+        summary: "Reject this candidate.",
+        buildPlan: validatedPlan()
+      });
+      // Read last, so the recorded binding describes the snapshot exactly as
+      // each case receives it.
+      const binding = await bridgeSeeding.getLlmExecutionBinding(project.id, flow.flowId);
+      bridgeSeed = { dir: bridgeDir, project, flow, rejectedFlow, rejectedCandidate, binding };
+    } finally {
+      await bridgeSeeding.close();
+    }
+  }, SEEDING_TIMEOUT_MS);
+
+  afterAll(async () => {
+    if (seedRoot) await rm(seedRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+  });
+
   beforeEach(async () => {
     tempRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-flow-bootstrap-"));
+    dataDir = path.join(tempRoot, "data");
   });
 
   afterEach(async () => {
     await Promise.all([...services].map((value) => value.close()));
     services.clear();
-    await rm(tempRoot, { recursive: true, force: true });
+    // A case that exceeds its budget keeps running after Vitest abandons it and
+    // can reopen the SQLite handles closed above, so the removal is retried:
+    // an EBUSY on project.sqlite-shm here would replace the real failure.
+    await rm(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
   });
 
+  async function proposal() {
+    await cp(proposalSeed.dir, dataDir, { recursive: true });
+    return {
+      instance: service(),
+      project: proposalSeed.project,
+      flow: proposalSeed.flow,
+      adaptation: structuredClone(proposalSeed.adaptation)
+    };
+  }
+
   it("persists a Core-owned topology and deterministic layout through approval and apply", async () => {
-    const instance = service();
-    const { project, flow, adaptation } = await proposal(instance);
+    const { instance, project, flow, adaptation } = await proposal();
     expect(adaptation.status).toBe("proposed");
     await instance.reviewFlowBootstrapAdaptation({
       projectId: project.id,
@@ -188,8 +301,9 @@ describe("AutomationStudioService Flow Bootstrap adaptations", () => {
         usage: { inputTokens: 900, outputTokens: 100, totalTokens: 1000, estimatedCostUsd: 0.001 }
       }))
     };
+    await cp(bridgeSeed.dir, dataDir, { recursive: true });
     const instance = new AutomationStudioService({
-      dataDir: tempRoot,
+      dataDir,
       llmProviderResolver: async () => ({
         provider,
         tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 512, maxTotalTokens: 9_000 },
@@ -199,22 +313,7 @@ describe("AutomationStudioService Flow Bootstrap adaptations", () => {
       })
     }).bindNativeNodeRuntime(readyNativeRuntime());
     services.add(instance);
-    const project = await instance.createProject({ name: "Bootstrap API bridge", domainId: "example" });
-    const flow = await instance.createFlow({ projectId: project.id, flowId: "flow.bootstrap-api", name: "Blank API Flow" });
-    const now = Date.now();
-    await instance.saveFlowInstruction(project.id, {
-      schemaVersion: "0.1",
-      instructionId: "instruction.api",
-      title: "Build a primary path",
-      body: "Create a deterministic Start to End Flow.",
-      scope: { kind: "flow", projectId: project.id, flowId: flow.flowId },
-      priority: 100,
-      status: "active",
-      requirement: "required",
-      createdAt: now,
-      updatedAt: now
-    });
-    const binding = await instance.getLlmExecutionBinding(project.id, flow.flowId);
+    const { project, flow, rejectedFlow, rejectedCandidate, binding } = bridgeSeed;
     const grants = { inspectAvailable: vi.fn(async () => ({ purpose: "build_and_adapt", ...binding })) };
     const identityAccess = { authorizeSessionPin: vi.fn(async () => ({ id: "user.reviewer" })) };
     const registry = new GlobalProgramApiRegistry();
@@ -299,27 +398,6 @@ describe("AutomationStudioService Flow Bootstrap adaptations", () => {
     expect(reverted.payload.adaptation.metadata.phase9.auditEvents.map((event: any) => event.eventType)).toEqual(["created", "approved", "applied", "rollback"]);
     await expect(instance.getFlowRouter(project.id, flow.flowId)).resolves.toBeNull();
 
-    const rejectedFlow = await instance.createFlow({ projectId: project.id, flowId: "flow.bootstrap-reject", name: "Reject Bootstrap" });
-    await instance.saveFlowInstruction(project.id, {
-      schemaVersion: "0.1",
-      instructionId: "instruction.reject",
-      title: "Rejectable build",
-      body: "Create a deterministic Start to End Flow.",
-      scope: { kind: "flow", projectId: project.id, flowId: rejectedFlow.flowId },
-      priority: 100,
-      status: "active",
-      requirement: "required",
-      createdAt: now,
-      updatedAt: now
-    });
-    const rejectedCandidate = await instance.createFlowBootstrapAdaptation({
-      projectId: project.id,
-      flowId: rejectedFlow.flowId,
-      baseDependencyDigest: await instance.getLlmExecutionDependencyDigest(project.id, rejectedFlow.flowId),
-      sourceInstructionIds: ["instruction.reject"],
-      summary: "Reject this candidate.",
-      buildPlan: validatedPlan()
-    });
     const rejected = await call(AUTOMATION_STUDIO_ENDPOINTS.reviewFlowAdaptation, {
       projectId: project.id,
       flowId: rejectedFlow.flowId,
@@ -336,8 +414,7 @@ describe("AutomationStudioService Flow Bootstrap adaptations", () => {
     expect(identityAccess.authorizeSessionPin).toHaveBeenCalledTimes(4);
   });
   it("merges bootstrap and ordinary adaptations without duplicate Inbox persistence", async () => {
-    const instance = service();
-    const { project, flow, adaptation } = await proposal(instance);
+    const { instance, project, flow, adaptation } = await proposal();
     const now = Date.now();
     await instance.saveFlowAdaptation({
       schemaVersion: "0.1",
@@ -365,8 +442,7 @@ describe("AutomationStudioService Flow Bootstrap adaptations", () => {
       .resolves.toMatchObject({ adaptationId: "adaptation.ordinary", status: "validated", author: "runtime" });
   });
   it("rejects stale application without mutating topology", async () => {
-    const instance = service();
-    const { project, flow, adaptation } = await proposal(instance);
+    const { instance, project, flow, adaptation } = await proposal();
     await instance.reviewFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: adaptation.adaptationId, action: "approve" });
     const current = await instance.getFlow(project.id, flow.flowId);
     await instance.saveFlow({ projectId: project.id, flow: { ...current, description: "Concurrent edit" } });
@@ -399,8 +475,7 @@ describe("AutomationStudioService Flow Bootstrap adaptations", () => {
   });
 
   it("rolls back owned graph and Subflow creation when Router persistence fails", async () => {
-    const instance = service();
-    const { project, flow, adaptation } = await proposal(instance);
+    const { instance, project, flow, adaptation } = await proposal();
     await instance.reviewFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: adaptation.adaptationId, action: "approve" });
     const saveRouter = instance.saveFlowRouter.bind(instance);
     const spy = vi.spyOn(instance, "saveFlowRouter").mockRejectedValueOnce(new Error("injected router failure"));
@@ -420,8 +495,7 @@ describe("AutomationStudioService Flow Bootstrap adaptations", () => {
   });
 
   it("reverts only the exact applied topology and restores a blank parent", async () => {
-    const instance = service();
-    const { project, flow, adaptation } = await proposal(instance);
+    const { instance, project, flow, adaptation } = await proposal();
     await instance.reviewFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: adaptation.adaptationId, action: "approve" });
     await instance.reviewFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: adaptation.adaptationId, action: "apply" });
     const reverted = await instance.reviewFlowBootstrapAdaptation({
@@ -443,8 +517,7 @@ describe("AutomationStudioService Flow Bootstrap adaptations", () => {
   });
 
   it("compensates back to the applied topology when revert persistence fails", async () => {
-    const instance = service();
-    const { project, flow, adaptation } = await proposal(instance);
+    const { instance, project, flow, adaptation } = await proposal();
     await instance.reviewFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: adaptation.adaptationId, action: "approve" });
     await instance.reviewFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, adaptationId: adaptation.adaptationId, action: "apply" });
     const spy = vi.spyOn(instance, "saveFlow").mockRejectedValueOnce(new Error("injected parent restore failure"));

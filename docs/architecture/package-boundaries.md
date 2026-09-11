@@ -56,13 +56,49 @@ exercises a layout-v1 to layout-v2 migration, type-checks without workspace
 paths, and browser-bundles the WebSocket client while checking its dependency
 graph. CI repeats the checks on Node 22 for Windows and Linux.
 
-All public packages currently share version `0.1.0`. Before 1.0, compatible
+`@fluxiq/contracts` and `fluxiq` are at version `0.2.0`;
+`@fluxiq/client-gateway-websocket` is at `0.1.0`. Before 1.0, compatible
 changes increment the patch version and intentional API breaks increment the
-minor version with migration notes. Registry publication, tags, signing, and
-provenance are separate release actions and are not performed by validation.
+minor version with a note under [Migration Notes](#migration-notes). Registry
+publication, tags, signing, and provenance are separate release actions and
+are not performed by validation.
 
 All public packages carry the repository's source-available FluxIQ license and
 include an exact copy in their tarball. Commercial use outside the community
 terms is available only through a separate written agreement. Registry
 publication, tags, signing, provenance, the final legal licensor identity, and
 commercial contract templates remain separate owner-controlled release work.
+
+## Migration Notes
+
+### 0.2.0: one failure taxonomy (`@fluxiq/contracts`, `fluxiq`)
+
+`AutomationStudioAdaptiveFailureClass` now lives in `@fluxiq/contracts`
+(`@fluxiq/contracts/automation-studio`, with the frozen list
+`AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES`) and `fluxiq/automation-studio`
+re-exports it under the same name. It gains seven members: `target_not_found`,
+`target_ambiguous`, `navigation_unexpected`, `output_not_observed`,
+`page_changed`, `auth_required`, and `user_intervention_required`.
+`AutomationStudioTransitionComparisonStatus` gains `target_not_found` and
+`target_ambiguous`. An exhaustive `switch` or `Record` over either type must
+handle the new members; code that only reads the values needs no change.
+Domains take category names from this export and never keep their own list.
+
+Everything else is additive and optional: `failure`
+(`AutomationStudioFailureRecord`) on `ClientGatewayActionResult`,
+`FluxIQRuntimeCommandResult`, `OutputDispatchResult`,
+`AutomationNodeExecutionResult`, `AutomationStudioNodeAttemptTrace`, and
+`AutomationStudioFlowRunActionAttemptRecord`; `status` on
+`OutputDispatchResult`; `message` and `targetResolution` on
+`AutomationNodeExecutionResult`; `targetResolution` on the attempt trace; and
+`failureCategory` on the LLM recent-action context. Validate a record that
+crossed a process or storage boundary with `parseAutomationStudioFailureRecord`,
+which returns `null` for anything inexact, unbounded, or self-contradictory.
+
+One behaviour changes without any host opt-in: Core now names the failures its
+own structured signals prove instead of leaving them to message matching. A
+`timed_out` runtime command classifies as `timeout`, a `rejected` one as
+`blocked_by_capability_or_policy`, a dispatched output whose bound confirmation
+input never arrives as `output_not_observed`, and an element target without a
+confident candidate as `target_not_found`. Failed dispatch attempts also carry
+the dispatch error as their `message`.

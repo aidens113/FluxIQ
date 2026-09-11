@@ -93,8 +93,8 @@ describe("Phase 7 hierarchy routing contracts", () => {
 
     expect(store.getSnapshot().primaryTreeNodeId).toBe(router.id);
     expect(setSelection).toHaveBeenCalledWith({ kind: "flow", id: "flow.checkout" });
-    expect(openView).toHaveBeenCalledWith("flow-router", "preview");
-    expect(order).toEqual(["view:flow-router", "selection"]);
+    expect(openView).toHaveBeenCalledWith("flow-router::object::flow.checkout", "preview");
+    expect(order).toEqual(["view:flow-router::object::flow.checkout", "selection"]);
   });
 
   it("opens the subflow graph before reconciling its selection", () => {

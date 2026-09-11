@@ -2494,6 +2494,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         : await this.createFlow({ projectId: input.projectId, name: input.destination.name?.trim() || `Recorded flow ${new Date(original.generatedAt).toLocaleString()}` });
       const proposalTarget = await this.flowSubflowMigration.ensureProposalPrimarySubflow(flow);
       flow = proposalTarget.parentFlow;
+      let savedGraphFlow: AutomationStudioFlowArtifact;
       if (input.policyOverride) {
         const projected = policyGraphToAutomationStudioFlow(withPolicyOutgoingEdges(input.policyOverride), {
           flowId: proposalTarget.graphFlow.flowId,
@@ -2501,7 +2502,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           proposalId: checked.proposalId,
           recordingId: checked.recordingId
         });
-        await this.saveFlow({ projectId: input.projectId, flow: {
+        savedGraphFlow = await this.saveFlow({ projectId: input.projectId, flow: {
           ...proposalTarget.graphFlow,
           nodes: projected.nodes,
           edges: projected.edges,
@@ -2520,9 +2521,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         const proposalBase = input.destination.writeMode === "replace_recording_derived"
           ? recordingProposalReplacementBase(proposalTarget.graphFlow)
           : proposalTarget.graphFlow;
-        await this.saveFlow({ projectId: input.projectId, flow: appendRecordingProposalToFlow(proposalBase, checked) });
+        savedGraphFlow = await this.saveFlow({ projectId: input.projectId, flow: appendRecordingProposalToFlow(proposalBase, checked) });
       }
-      const savedGraphFlow = await this.getFlow(input.projectId, proposalTarget.graphFlow.flowId);
       await this.flows.replaceFlowGraphIndex(input.projectId, savedGraphFlow);
       flow = await this.saveFlow({ projectId: input.projectId, flow: {
         ...flow,

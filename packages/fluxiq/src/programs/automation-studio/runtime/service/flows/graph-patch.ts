@@ -7,6 +7,7 @@ import {
 } from "../../../storage/index.ts";
 import type { AutomationStudioFacadePorts } from "../facade-ports.ts";
 import type { AutomationStudioProjectStore } from "../projects/index.ts";
+import { flowNodeFromGraphRecord } from "./mapping.ts";
 import type { AutomationStudioFlowWriter } from "./writer.ts";
 
 // Incremental graph edits against the per-project SQL graph, and the canonical
@@ -61,16 +62,7 @@ export class AutomationStudioFlowGraphPatch {
       const snapshot = await graph.exportSnapshotData(input.flowId);
       const nextFlow: AutomationStudioFlowArtifact = {
         ...canonical,
-        nodes: snapshot.nodes.map((node) => ({
-          id: node.nodeId,
-          definitionId: node.definitionId,
-          definitionVersion: node.definitionVersion,
-          label: node.label,
-          ...(node.description ? { description: node.description } : {}),
-          parameterValues: node.parameterValues,
-          position: { x: node.x, y: node.y },
-          metadata: node.metadata
-        })),
+        nodes: snapshot.nodes.map(flowNodeFromGraphRecord),
         edges: snapshot.edges.map((edge) => ({
           id: edge.edgeId,
           sourceNodeId: edge.sourceNodeId,

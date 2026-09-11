@@ -98,6 +98,11 @@ When a `policy.output.dispatch` effect runs:
    reclassified as policy state.
 5. Node outputs include the runtime command ID and runtime status when runtime
    dispatch handled the command.
+6. The command's `status` and any `failure` record reach the node result and
+   the attempt trace: a valid host-reported record is kept, a `timed_out`
+   command becomes a `timeout` failure, and a `rejected` command becomes
+   `blocked_by_capability_or_policy`. IO output adapters report the same through
+   the optional `status` and `failure` fields of `OutputDispatchResult`.
 
 This keeps the framework's output-native policy model intact while allowing
 websocket clients and direct adapters to participate in one dispatch path.

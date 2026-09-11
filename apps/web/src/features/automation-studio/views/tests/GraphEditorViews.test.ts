@@ -312,7 +312,8 @@ describe("Flow editor decomposition contracts", () => {
     expect(definitions).not.toContain("({ active: activity.active, activeRef: activity.activeRef })");
     expect(surface).toContain("useState(false)");
     expect(canvas).toContain("{showMiniMap ? <MiniMap");
-    expect(preloader).toContain('"flow-nodes": () => import("../flow-editor/components/FlowGraphCanvas")');
+    expect(preloader).toContain('[automationStudioViewId.flowEditor]: () => import("../flow-editor/components/FlowGraphCanvas")');
+    expect(preloader).toContain("viewSurfaceLoaders[automationStudioViewBaseId(viewId)]");
     expect(preloader).toContain("scheduleAutomationStudioAfterPaintIdleWork");
   });
 

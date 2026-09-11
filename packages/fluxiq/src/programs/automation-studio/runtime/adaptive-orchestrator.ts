@@ -1,18 +1,20 @@
 import { createHash } from "node:crypto";
+import { parseAutomationStudioFailureRecord, type AutomationStudioAdaptiveFailureClass } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioFlowAdaptation, AutomationStudioFlowRunRecoveryRecord, AutomationStudioRouteDecisionRecord } from "../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace, AutomationStudioRecoveryCandidate, AutomationStudioTransitionComparisonStatus } from "./executor.ts";
 
-export type AutomationStudioAdaptiveFailureClass =
-  | "action_failed"
-  | "expected_state_missing"
-  | "unexpected_state"
-  | "timeout"
-  | "blocked_by_capability_or_policy"
-  | "missing_router_or_subflow_target"
-  | "graph_validation_or_unknown_node"
-  | "external_side_effect_denied"
-  | "ambiguous_or_unknown";
+// Core's failure names and structured failure record live in @fluxiq/contracts
+// so browser clients use the same list. They are re-exported beside the
+// classifier that consumes them so runtime importers keep one import path.
+export {
+  AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES,
+  AUTOMATION_STUDIO_FAILURE_RECORD_LIMITS,
+  AUTOMATION_STUDIO_FAILURE_STAGES,
+  isAutomationStudioAdaptiveFailureClass,
+  parseAutomationStudioFailureRecord
+} from "@fluxiq/contracts/automation-studio";
+export type { AutomationStudioAdaptiveFailureClass, AutomationStudioFailureRecord, AutomationStudioFailureStage } from "@fluxiq/contracts/automation-studio";
 
 export type AutomationStudioAdaptiveCandidateKind =
   | "expectation_wait_retry"
@@ -117,6 +119,12 @@ export function compactAutomationStudioAdaptiveFailure(failure: AutomationStudio
 }
 
 function adaptiveFailureClassForAttempt(attempt: AutomationStudioNodeAttemptTrace, comparisonStatus: AutomationStudioTransitionComparisonStatus | undefined): AutomationStudioAdaptiveFailureClass {
+  // Structured first: a valid failure record names its category outright, and
+  // the target comparison statuses exist only where a record produced them.
+  const structured = parseAutomationStudioFailureRecord(attempt.failure);
+  if (structured) return structured.category;
+  if (comparisonStatus === "target_not_found" || comparisonStatus === "target_ambiguous") return comparisonStatus;
+  // Legacy fallback for attempts recorded before the failure record existed.
   const message = attempt.message ?? "";
   if (/external side|side-effect|side effect/i.test(message)) return "external_side_effect_denied";
   if (/requires runtime capability|capability|policy|authorization|denied/i.test(message)) return "blocked_by_capability_or_policy";
@@ -131,11 +139,38 @@ function adaptiveFailureClassForAttempt(attempt: AutomationStudioNodeAttemptTrac
 }
 
 function adaptiveCandidateKindForFailure(failureClass: AutomationStudioAdaptiveFailureClass, input: AutomationStudioAdaptiveFailureInput): AutomationStudioAdaptiveCandidateKind {
-  if (failureClass === "expected_state_missing" || failureClass === "timeout") return "expectation_wait_retry";
-  if (failureClass === "unexpected_state" || failureClass === "action_failed") return input.subflowId ? "action_target_override" : "recovery_path_or_reroute";
-  if (failureClass === "missing_router_or_subflow_target") return "router_rule_edit";
-  if (failureClass === "blocked_by_capability_or_policy" || failureClass === "external_side_effect_denied") return "diagnosis_only";
-  if (failureClass === "graph_validation_or_unknown_node") return "subflow_edit_or_create";
+  switch (failureClass) {
+    case "expected_state_missing":
+    case "timeout":
+    case "output_not_observed":
+      return "expectation_wait_retry";
+    case "target_not_found":
+    case "target_ambiguous":
+      return "action_target_override";
+    case "navigation_unexpected":
+    case "page_changed":
+      return "recovery_path_or_reroute";
+    case "unexpected_state":
+    case "action_failed":
+      return input.subflowId ? "action_target_override" : "recovery_path_or_reroute";
+    case "missing_router_or_subflow_target":
+      return "router_rule_edit";
+    case "graph_validation_or_unknown_node":
+      return "subflow_edit_or_create";
+    case "blocked_by_capability_or_policy":
+    case "external_side_effect_denied":
+    case "auth_required":
+    case "user_intervention_required":
+    case "ambiguous_or_unknown":
+      return "diagnosis_only";
+    default:
+      return candidateKindForUnhandledClass(failureClass);
+  }
+}
+
+// Compile-time exhaustiveness: a new failure class fails the type check here
+// until it is given a candidate kind.
+function candidateKindForUnhandledClass(_failureClass: never): AutomationStudioAdaptiveCandidateKind {
   return "diagnosis_only";
 }
 
@@ -171,6 +206,7 @@ function llmEligibilityForFailure(
   if (knownRecoveryAvailable) return { eligible: false, reason: "A deterministic recovery candidate is available and should run before LLM intervention.", knownRecoveryAvailable, knownAdaptationAvailable };
   if (knownAdaptationAvailable) return { eligible: false, reason: "A known validated/applied adaptation matches this failure.", knownRecoveryAvailable, knownAdaptationAvailable };
   if (failureClass === "blocked_by_capability_or_policy" || failureClass === "external_side_effect_denied") return { eligible: false, reason: "Policy, authorization, or side-effect gates blocked execution.", knownRecoveryAvailable, knownAdaptationAvailable };
+  if (failureClass === "auth_required" || failureClass === "user_intervention_required") return { eligible: false, reason: "A person must authenticate or intervene before the run can continue.", knownRecoveryAvailable, knownAdaptationAvailable };
   if (failureClass === "graph_validation_or_unknown_node") return { eligible: false, reason: "Graph validation or missing implementation must be fixed structurally before LLM runtime repair.", knownRecoveryAvailable, knownAdaptationAvailable };
   return { eligible: true, reason: "Failure is unresolved after deterministic recovery lookup.", knownRecoveryAvailable, knownAdaptationAvailable };
 }

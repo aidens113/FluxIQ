@@ -1,6 +1,7 @@
+import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../model/index.ts";
-import type { AutomationNodeExecutionResult, AutomationStudioNativeLogEntry } from "../../nodes/index.ts";
+import type { AutomationNodeExecutionResult, AutomationNodeTargetResolution, AutomationStudioNativeLogEntry } from "../../nodes/index.ts";
 import type { AutomationStudioHostRuntimeBoundary, AutomationStudioHostStateSnapshotRef } from "../host-runtime.ts";
 
 export type AutomationStudioGraphRunStatus = "running" | "succeeded" | "failed" | "waiting" | "cancelled";
@@ -14,7 +15,11 @@ export type AutomationStudioTransitionComparisonStatus =
   | "timeout"
   | "blocked"
   | "ambiguous"
-  | "unknown";
+  | "unknown"
+  /** No candidate for the action's target matched; set only from a structured failure record. */
+  | "target_not_found"
+  /** Several candidates matched the action's target; set only from a structured failure record. */
+  | "target_ambiguous";
 
 export type AutomationStudioExpectedTransition = {
   transitionId: string;
@@ -113,6 +118,8 @@ export type AutomationStudioNodeAttemptTrace = {
   outputs: Record<string, JsonValue>;
   effects: Array<{ type: string; payload?: JsonValue }>;
   message?: string;
+  /** Structured failure from the node result; comparison and classification read it before `message`. */
+  failure?: AutomationStudioFailureRecord;
   childTrace?: AutomationStudioGraphExecutionTrace;
   compositeTarget?: { flowId: string; version: string; flowDigest: string };
   regionId?: string;
@@ -125,6 +132,8 @@ export type AutomationStudioNodeAttemptTrace = {
     afterAction?: AutomationStudioHostStateSnapshotRef;
     stateDiff?: JsonObject;
   };
+  /** How the action's element target was resolved before dispatch, when the node dispatched one. */
+  targetResolution?: AutomationNodeTargetResolution;
   hostCapabilities?: string[];
 };
 

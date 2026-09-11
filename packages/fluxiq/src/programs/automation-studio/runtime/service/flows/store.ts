@@ -31,7 +31,7 @@ import type { AutomationStudioServiceIndexes } from "../indexes/index.ts";
 import { isJsonRecord, jsonObjectFromUnknown, stringOrNull } from "../json-values.ts";
 import { uniqueStrings, upsertBy } from "../collections.ts";
 import { stableJson } from "../stable-json.ts";
-import { flowMapRouteGroups, flowMapSortedRules, flowSubflowCategoriesFromFlow, flowSummaryFromFlow, removeUndefinedSubflowFields, sqlInstructionRequirement, sqlInstructionStatus, subflowParentCategoryId } from "./mapping.ts";
+import { flowMapRouteGroups, flowMapSortedRules, flowNodeFromGraphRecord, flowSubflowCategoriesFromFlow, flowSummaryFromFlow, removeUndefinedSubflowFields, sqlInstructionRequirement, sqlInstructionStatus, subflowParentCategoryId } from "./mapping.ts";
 
 // The Flow documents and the per-project SQL projection of them, in one place
 // because they are mutually dependent: saving a Flow writes its projection and
@@ -171,6 +171,25 @@ export class AutomationStudioFlowStore {
     }
   }
 
+  // A monolithic save still carries graph content, but once a Flow has canonical
+  // graph revisions its nodes and edges are read back from that graph by
+  // materializeCanonicalGraphFlow. A save whose graph differs must be written
+  // through to it, or the write is silently lost on the next read. A save that
+  // leaves the graph alone must not touch it: every replacement is a new
+  // revision, and an editor holds a revision as the base of its next patch.
+  async reconcileCanonicalGraphFromDocument(projectId: string, flow: AutomationStudioFlowArtifact): Promise<void> {
+    if (!this.projectDatabasePool) return;
+    const canonical = await this.materializeCanonicalGraphFlow(projectId, flow);
+    // Same reference: the Flow has no graph revisions, so the document is still
+    // the only store of its graph.
+    if (canonical === flow) return;
+    if (stableJson(canonical.nodes) === stableJson(flow.nodes) && stableJson(canonical.edges) === stableJson(flow.edges)) return;
+    await this.replaceFlowGraphIndex(projectId, flow);
+  }
+
+  // Callers pass the document they just saved, never one read back through
+  // getFlow: that read returns this canonical graph, which still holds the
+  // nodes the save replaced.
   async replaceFlowGraphIndex(projectId: string, flow: AutomationStudioFlowArtifact): Promise<void> {
     if (!this.projectDatabasePool) return;
     const graph = await AutomationStudioProjectGraphRepository.open({ pool: this.projectDatabasePool, projectId });
@@ -236,16 +255,7 @@ export class AutomationStudioFlowStore {
       const snapshot = await graph.exportSnapshotData(flow.flowId);
       return {
         ...flow,
-        nodes: snapshot.nodes.map((node) => ({
-          id: node.nodeId,
-          definitionId: node.definitionId,
-          definitionVersion: node.definitionVersion,
-          label: node.label,
-          ...(node.description ? { description: node.description } : {}),
-          parameterValues: node.parameterValues,
-          position: { x: node.x, y: node.y },
-          metadata: node.metadata
-        })),
+        nodes: snapshot.nodes.map(flowNodeFromGraphRecord),
         edges: snapshot.edges.map((edge) => ({
           id: edge.edgeId,
           sourceNodeId: edge.sourceNodeId,

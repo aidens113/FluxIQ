@@ -112,6 +112,7 @@ export class AutomationStudioFlowWriter {
     if (!validationWithSourceMetadata.ok) throw new Error(`Invalid Automation Studio Flow: ${validationWithSourceMetadata.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
     const saved = await this.repositories.flows.put(flow);
     await this.flows.writeProjectFlow(project.id, saved);
+    await this.flows.reconcileCanonicalGraphFromDocument(project.id, saved);
     await this.writeFlowSourceFile(project.id, saved);
     await this.writeGeneratedFlowConfig(project.id, saved);
     const sqlFlow = await this.flows.writeSqlFlowMetadata(project.id, saved);

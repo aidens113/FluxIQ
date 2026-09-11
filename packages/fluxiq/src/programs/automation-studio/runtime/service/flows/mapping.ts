@@ -1,5 +1,6 @@
 import {
   type AutomationStudioFlowArtifact,
+  type AutomationStudioFlowNode,
   automationStudioFlowRepresentationKind,
   type AutomationStudioFlowRouteGroup,
   type AutomationStudioFlowRouter,
@@ -7,12 +8,31 @@ import {
   type AutomationStudioFlowSubflow,
   isAutomationStudioSubflowGraphMetadata
 } from "../../../model/index.ts";
-import type { AutomationStudioFlowSummary } from "../../../storage/index.ts";
+import type { AutomationStudioFlowSummary, AutomationStudioGraphNodeRecord } from "../../../storage/index.ts";
 import { isJsonRecord } from "../json-values.ts";
 
 // Shape conversions between Flow documents and their SQL projections. Shared:
 // the flow store writes projections with them and the facade still reads
 // summaries and route groups with them.
+
+// The graph store records a node that pins no definition version under this
+// sentinel (see graph-store.ts). A Flow node leaves the field out instead, and
+// Flow validation rejects any version that is not major.minor.patch.
+const UNPINNED_GRAPH_DEFINITION_VERSION = "legacy";
+
+export function flowNodeFromGraphRecord(node: AutomationStudioGraphNodeRecord): AutomationStudioFlowNode {
+  return {
+    id: node.nodeId,
+    definitionId: node.definitionId,
+    ...(node.definitionVersion === UNPINNED_GRAPH_DEFINITION_VERSION ? {} : { definitionVersion: node.definitionVersion }),
+    label: node.label,
+    ...(node.description ? { description: node.description } : {}),
+    parameterValues: node.parameterValues,
+    position: { x: node.x, y: node.y },
+    metadata: node.metadata
+  };
+}
+
 export function flowMapRouteGroups(router: AutomationStudioFlowRouter): AutomationStudioFlowRouteGroup[] {
   const rawGroups = router.metadata?.routeGroups;
   if (!Array.isArray(rawGroups)) return [];

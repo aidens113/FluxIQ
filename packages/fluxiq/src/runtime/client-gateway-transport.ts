@@ -1,5 +1,7 @@
+import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type {
   ClientGatewayActionCommand,
+  ClientGatewayActionResult,
   ClientGatewayCapability,
   ClientGatewayEvent,
   ClientGatewayService,
@@ -50,7 +52,10 @@ export class ClientGatewayRuntimeTransport implements FluxIQRuntimeTransport {
     }
     if (command.kind === "execute_action") {
       const response = this.gateway.executeAction(session.sessionId, actionCommandFromRuntime(command));
-      return await response.result;
+      // The client is untrusted: its failure record survives only when it parses.
+      const { failure: reported, ...result }: ClientGatewayActionResult = await response.result;
+      const failure = parseAutomationStudioFailureRecord(reported);
+      return failure ? { ...result, failure } : result;
     }
     if (command.kind === "capture_snapshot") {
       await this.gateway.captureSnapshot(session.sessionId, {
@@ -90,6 +95,7 @@ export class ClientGatewayRuntimeTransport implements FluxIQRuntimeTransport {
     else if (event.type === "client.snapshot") await this.emit({ type: "snapshot", client, payload: event.message.payload as unknown as JsonObject });
     else if (event.type === "client.recording_event") await this.emit({ type: "recording.event", client, payload: event.message.payload as unknown as JsonObject });
     else if (event.type === "client.action_result") {
+      const failure = parseAutomationStudioFailureRecord(event.message.payload.failure);
       await this.emit({
         type: "command.result",
         result: {
@@ -97,7 +103,8 @@ export class ClientGatewayRuntimeTransport implements FluxIQRuntimeTransport {
           status: event.message.payload.status,
           ...(event.message.payload.message ? { message: event.message.payload.message } : {}),
           ...(event.message.payload.payload ? { payload: event.message.payload.payload } : {}),
-          ...(event.message.payload.error ? { error: event.message.payload.error } : {})
+          ...(event.message.payload.error ? { error: event.message.payload.error } : {}),
+          ...(failure ? { failure } : {})
         }
       });
     } else if (event.type === "client.error") {

@@ -1,3 +1,4 @@
+import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { JsonValue } from "../../../core/index.ts";
 
 export type AutomationNodeScope = "policy" | "routine" | "both";
@@ -79,11 +80,28 @@ export type AutomationNodeExecutionContext = {
   signal?: AbortSignal;
 };
 
+/** How an output-dispatching node resolved its element target before dispatch. */
+export type AutomationNodeTargetResolution = {
+  status: "matched" | "unresolved_no_candidates" | "no_match" | "below_confidence";
+  candidateCount: number;
+  minimumConfidence: number;
+  candidateId?: string;
+  confidence?: number;
+  normalizedScore?: number;
+  matchedSignals?: string[];
+  failedSignals?: string[];
+};
+
 export type AutomationNodeExecutionResult = {
   outputs?: Record<string, JsonValue>;
   route?: string;
   status?: "success" | "failed" | "waiting" | "skipped";
   effects?: Array<{ type: string; payload?: JsonValue }>;
+  /** Human-readable reason the node failed or is waiting. */
+  message?: string;
+  /** Structured failure; Core classifies from it before matching `message`. Parsed where the result becomes an attempt. */
+  failure?: AutomationStudioFailureRecord;
+  targetResolution?: AutomationNodeTargetResolution;
 };
 
 export type AutomationNodeExecutor = (context: AutomationNodeExecutionContext) => AutomationNodeExecutionResult | Promise<AutomationNodeExecutionResult>;

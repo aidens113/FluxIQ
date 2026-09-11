@@ -48,7 +48,9 @@ The bridge converts client messages into canonical Studio artifacts:
   modal instead of silently dropping the client request.
 - `server.execute_action` waits for `client.action_result`; resolved action
   results are appended as `action` timeline entries when a client recording is
-  active.
+  active. A result may carry a structured `failure` record. The runtime
+  transport keeps it on the command result and on the `command.result` runtime
+  event only when `parseAutomationStudioFailureRecord` accepts it.
 - `server.start_recording` and `server.stop_recording` are mirrored to the
   client while the canonical `RecordingSession` remains owned by FluxIQ.
 

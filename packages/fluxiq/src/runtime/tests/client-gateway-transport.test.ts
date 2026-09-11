@@ -77,7 +77,58 @@ describe("ClientGatewayRuntimeTransport", () => {
 
     expect(events).toEqual(["state.update", "command.result"]);
   });
+
+  it("keeps a client-reported failure through dispatch and drops a malformed one", async () => {
+    const gateway = new ClientGatewayService({ commandTimeoutMs: 1000 });
+    const paired = await pairGatewayClient(gateway, "extension.failure", "user.web");
+    const transport = new ClientGatewayRuntimeTransport({ gateway });
+    const failure = { category: "target_not_found", code: "web.target.selector_miss", retryable: true, stage: "target_resolution" } as const;
+
+    const reported = transport.dispatch({ kind: "execute_action", domainId: "web-automation", actionType: "web.dom.click" });
+    await gateway.receive(paired.sessionId, clientMessage("client.action_result", {
+      commandId: lastExecuteCommandId(gateway, paired.sessionId),
+      status: "failed",
+      message: "No element matched.",
+      failure
+    }));
+    await expect(reported).resolves.toMatchObject({ status: "failed", message: "No element matched.", failure });
+
+    const malformed = transport.dispatch({ kind: "execute_action", domainId: "web-automation", actionType: "web.dom.click" });
+    await gateway.receive(paired.sessionId, clientMessage("client.action_result", {
+      commandId: lastExecuteCommandId(gateway, paired.sessionId),
+      status: "failed",
+      failure: { ...failure, stage: "execution" }
+    }));
+    const dropped = await malformed;
+    expect(dropped.status).toBe("failed");
+    expect(dropped).not.toHaveProperty("failure");
+  });
+
+  it("carries a client-reported failure onto the command.result runtime event", async () => {
+    const gateway = new ClientGatewayService();
+    const paired = await pairGatewayClient(gateway, "extension.failure-event", "user.web");
+    const transport = new ClientGatewayRuntimeTransport({ gateway });
+    const results: unknown[] = [];
+    transport.onEvent((event) => {
+      if (event.type === "command.result") results.push(event.result);
+    });
+    const failure = { category: "auth_required", code: "web.auth.login_page", retryable: false } as const;
+
+    await gateway.receive(paired.sessionId, clientMessage("client.action_result", { commandId: "command.external", status: "failed", error: "Login required", failure }));
+    await gateway.receive(paired.sessionId, clientMessage("client.action_result", { commandId: "command.malformed", status: "failed", failure: { ...failure, retryable: true } }));
+
+    expect(results).toEqual([
+      { commandId: "command.external", status: "failed", error: "Login required", failure },
+      { commandId: "command.malformed", status: "failed" }
+    ]);
+  });
 });
+
+function lastExecuteCommandId(gateway: ClientGatewayService, sessionId: string): string {
+  const executes = gateway.outbound(sessionId).filter((message) => message.type === "server.execute_action");
+  const last = executes[executes.length - 1];
+  return last?.type === "server.execute_action" ? last.payload.commandId : "";
+}
 
 async function pairGatewayClient(gateway: ClientGatewayService, clientId: string, approvedByUserId: string) {
   const session = gateway.connect();
