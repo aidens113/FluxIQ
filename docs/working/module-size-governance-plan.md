@@ -506,6 +506,39 @@ any future dispatch:
 - Follow-up: ten directories now sit at exactly the 9-segment depth limit. The
   next phase that needs a level deeper will force the question again.
 
+### 2026-09-11 — service.ts, collaborators 5 through 8
+
+- Agent: supervisor, with worker `core-automation-studio-facade` resumed
+- Changed: `runtime/service.ts` 11,839 -> 11,373 lines, class 339 -> 322
+  methods; new `runtime/service/{ui-cache,bootstrap-adaptations,locks,object-documents,compact-json,error-message}.ts`;
+  two white-box call sites repointed in
+  `runtime/tests/service-flow-bootstrap-generation.test.ts`.
+- Why: continuing Phase 7 from the worker's own state-ownership cluster map,
+  taking the three clusters it measured as closed before the larger ones.
+- Validation: `pnpm check` -> passed. `vitest run .../runtime` -> 32 files /
+  400 cases, same 3 pre-existing failures. Public method diff -> 178
+  identical; runtime barrel -> 276 exports identical. Differential probes ->
+  133 observations this round, 598 cumulative, all equal. Baseline
+  regeneration -> 0 added, 0 raised, 2 lowered.
+- Outcome: Accepted
+- Follow-up: three findings, each of which changes how this phase ends.
+  1. **The 40-method target is unreachable while the public surface is
+     preserved.** 178 of the 322 methods are public names the facade must
+     keep; seven moved their bodies out this round without moving the count.
+     The achievable end state is ~178 with every private helper extracted, and
+     the class-methods baseline frozen there. Going lower means splitting the
+     public API into several services, which is a decision about Core's
+     contract, not a refactoring step.
+  2. **`projectDatabasePool` is blocked by a cycle, not a missing layer.**
+     Eight of its twenty methods call the Flow document accessors and four of
+     those call straight back. The worker's recommendation, accepted: take
+     Flow documents and SQL projections as *one* collaborator, roughly 26
+     methods and 620 lines, which fits the limits as a single directory.
+  3. **White-box test coupling is invisible to the probes.** Four tests broke
+     on coupling rather than behaviour — three calling a private method
+     directly, one stubbing an instance method. At `repositories` scale (48
+     methods) that grep must run *before* the cut, not after.
+
 ## Open Questions
 
 - **Should the method-count rule become blocking?** It is a regex heuristic

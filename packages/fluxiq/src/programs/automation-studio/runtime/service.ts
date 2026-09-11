@@ -170,7 +170,16 @@ import {
   AutomationStudioFlowPaths,
   AutomationStudioProjectPaths,
   AutomationStudioLegacyRetirementStore,
+  AutomationStudioBootstrapAdaptationStore,
+  AutomationStudioObjectDocuments,
   AutomationStudioProjectStore,
+  compactJsonObject,
+  errorMessage,
+  isStateSnapshotObject,
+  type AutomationStudioWriteProjectObjectAssetInput,
+  type AutomationStudioWriteProjectObjectAssetResult,
+  AutomationStudioServiceLocks,
+  AutomationStudioServiceUiCache,
   legacyArtifactsDigest,
   legacyDiagnostic,
   stableJson,
@@ -200,6 +209,7 @@ import {
   type RuntimeIndex,
 } from "./service/index.ts";
 export type { AutomationStudioAdaptationPolicySummary, AutomationStudioAdaptationSummary, AutomationStudioChangeProposalSummary, AutomationStudioInstructionSummary, AutomationStudioRouterSummary, AutomationStudioSubflowSummary } from "./service/index.ts";
+export type { AutomationStudioWriteProjectObjectAssetInput, AutomationStudioWriteProjectObjectAssetResult } from "./service/index.ts";
 import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage.ts";
 import { createRecord, SQLiteRepository } from "../../database-manager/storage/sqlite-repository.ts";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
@@ -224,13 +234,9 @@ import {
   type AutomationStudioRuntimeRunSummary,
   type AutomationStudioRuntimeRunSummaryPage,
   type AutomationStudioWorkspaceSummary,
-  AUTOMATION_STUDIO_UI_CACHE_MAX_BATCH_ENTRIES,
-  AUTOMATION_STUDIO_UI_CACHE_MAX_ENTRY_BYTES,
-  AUTOMATION_STUDIO_UI_CACHE_MAX_KEY_BYTES,
   AutomationStudioLazySqliteUiCacheStore,
   AutomationStudioMemoryUiCacheStore,
   type AutomationStudioUiCacheEntry,
-  type AutomationStudioUiCachePutEntry,
   type AutomationStudioUiCacheStats,
   type AutomationStudioUiCacheStore,
   RecordingStateIndexStore,
@@ -384,22 +390,6 @@ export type AutomationStudioGenerateFlowBootstrapAdaptationResult = {
     estimatedCostUsd?: number;
   };
 };
-export type AutomationStudioWriteProjectObjectAssetInput = {
-  projectId: string;
-  recordingId?: string;
-  content: Buffer | Uint8Array;
-  mediaType: string;
-  expectedSha256?: string;
-};
-
-export type AutomationStudioWriteProjectObjectAssetResult = {
-  sha256: string;
-  size: number;
-  mediaType: string;
-  contentRef: string;
-  apiPath: string;
-};
-
 export type RecordingEntryStateLookupInput = {
   projectId: string;
   recordingId: string;
@@ -720,7 +710,6 @@ export class AutomationStudioService {
   private readonly recordingStateIndexes?: RecordingStateIndexStore;
   private readonly projectDatabasePool?: AutomationStudioProjectDatabasePool;
   private readonly runtimeProjectDatabasePool?: AutomationStudioProjectDatabasePool;
-  private readonly uiCacheStore: AutomationStudioUiCacheStore;
   // Collaborators extracted from this class. The facade owns their wiring and
   // keeps every public method; each owns one slice of the project storage layer.
   private readonly projectPaths: AutomationStudioProjectPaths;
@@ -729,10 +718,10 @@ export class AutomationStudioService {
   private readonly projects: AutomationStudioProjectStore;
   private readonly indexes: AutomationStudioServiceIndexes;
   private readonly legacy: AutomationStudioLegacyRetirementStore;
-  private readonly recordingMutationLocks = new Map<string, Promise<void>>();
-  private readonly bootstrapAdaptationLocks = new Map<string, Promise<void>>();
-  private readonly bootstrapGenerationLocks = new Map<string, Promise<void>>();
-  private readonly memoryBootstrapAdaptations = new Map<string, AutomationStudioBootstrapAdaptation>();
+  private readonly uiCache: AutomationStudioServiceUiCache;
+  private readonly bootstrapAdaptations: AutomationStudioBootstrapAdaptationStore;
+  private readonly objectDocuments: AutomationStudioObjectDocuments;
+  private readonly locks = new AutomationStudioServiceLocks();
   private readonly repairedRecordingStateIndexReads = new Set<string>();
   private readonly ready: Promise<void>;
   private ioRuntime?: { io: IoRegistry; domainId: string | null };
@@ -780,7 +769,9 @@ export class AutomationStudioService {
     this.recordingPaths = new AutomationStudioRecordingPaths(this.projectPaths);
     this.indexes = new AutomationStudioServiceIndexes(this.projectPaths, this.projects);
     this.legacy = new AutomationStudioLegacyRetirementStore(this.projectPaths, this.projects, this.objectStore);
-    this.uiCacheStore = uiCacheStore ?? new AutomationStudioMemoryUiCacheStore();
+    this.bootstrapAdaptations = new AutomationStudioBootstrapAdaptationStore(this.projectPaths, this.flowPaths, this.projects);
+    this.objectDocuments = new AutomationStudioObjectDocuments(this.projectPaths, this.recordingPaths, this.projects, this.objectStore);
+    this.uiCache = new AutomationStudioServiceUiCache(uiCacheStore ?? new AutomationStudioMemoryUiCacheStore(), this.projects);
     this.ready = options.seedFixture === true ? this.seedFixture() : Promise.resolve();
   }
 
@@ -818,7 +809,7 @@ export class AutomationStudioService {
 
   async close(): Promise<void> {
     this.closeLlmExecutionGrants?.();
-    await this.uiCacheStore.close();
+    await this.uiCache.close();
     await this.runtimeProjectDatabasePool?.closeAll();
   }
 
@@ -845,33 +836,11 @@ export class AutomationStudioService {
   }
 
   async readProjectObjectAsset(projectId: string, sha256: string): Promise<AutomationStudioObjectAsset> {
-    await this.projects.findProject(projectId);
-    if (!this.objectStore) throw new Error("Automation Studio object storage is not enabled.");
-    const asset = await this.objectStore.readProjectObject(projectId, sha256);
-    if (!asset.mediaType.startsWith("image/") && asset.mediaType !== "application/octet-stream") {
-      throw new Error("Automation Studio object is not a renderable state asset.");
-    }
-    return asset;
+    return await this.objectDocuments.readProjectObjectAsset(projectId, sha256);
   }
 
   async writeProjectObjectAsset(input: AutomationStudioWriteProjectObjectAssetInput): Promise<AutomationStudioWriteProjectObjectAssetResult> {
-    await this.projects.findProject(input.projectId);
-    if (!this.objectStore) throw new Error("Automation Studio object storage is not enabled.");
-    if (!isAutomationStudioRenderableAssetMediaType(input.mediaType)) {
-      throw new Error("Automation Studio state assets must be PNG, JPEG, WebP, or GIF images.");
-    }
-    const reference = await this.objectStore.putBytes(input.projectId, input.content, input.mediaType, input.recordingId ? { recordingId: input.recordingId } : {});
-    const sha256 = reference.$fluxiqObject.sha256;
-    if (input.expectedSha256 && sha256 !== input.expectedSha256.toLowerCase()) {
-      throw new Error("Automation Studio state asset digest does not match the requested object digest.");
-    }
-    return {
-      sha256,
-      size: reference.$fluxiqObject.size,
-      mediaType: reference.$fluxiqObject.mediaType,
-      contentRef: this.objectStore.contentRef(input.projectId, reference),
-      apiPath: automationStudioObjectApiPath(input.projectId, sha256)
-    };
+    return await this.objectDocuments.writeProjectObjectAsset(input);
   }
 
   async snapshot(domainId?: string | null, options: { includeCanonical?: boolean } = { includeCanonical: true }): Promise<AutomationStudioSnapshot> {
@@ -958,7 +927,7 @@ export class AutomationStudioService {
   async getRecordingSession(recordingId: string, projectId?: string | null): Promise<RecordingSession> {
     await this.ready;
     const recording = await this.getRawRecordingSession(recordingId, projectId);
-    return await this.hydrateRecordingStateSnapshotRefs(recording, projectId);
+    return await this.objectDocuments.hydrateRecordingStateSnapshotRefs(recording, projectId);
   }
 
   async getRecordingEntryState(input: RecordingEntryStateLookupInput): Promise<RecordingEntryStateLookupResult> {
@@ -981,7 +950,7 @@ export class AutomationStudioService {
       }
     };
     if (input.includeState) {
-      result.state = await this.readIndexedStateSnapshot(input.projectId, resolved.state.stateRef);
+      result.state = await this.objectDocuments.readIndexedStateSnapshot(input.projectId, resolved.state.stateRef);
     }
     return result;
   }
@@ -994,7 +963,7 @@ export class AutomationStudioService {
     await this.ready;
     await this.loadProjectRecording(input.projectId, input.recordingId);
     const rawRecording = await this.getRawRecordingSession(input.recordingId, input.projectId);
-    const recording = await this.hydrateRecordingStateSnapshotRefs(rawRecording, input.projectId);
+    const recording = await this.objectDocuments.hydrateRecordingStateSnapshotRefs(rawRecording, input.projectId);
     const index = buildRecordingStateIndex(input.projectId, recording);
     if (input.mode === "write" && this.recordingStateIndexes) await this.recordingStateIndexes.write(index);
     const relinked = finalizeRecordingStateLinks(index);
@@ -1074,12 +1043,12 @@ export class AutomationStudioService {
   }
 
   async appendRecordingEvents(input: { projectId?: string | null; recordingId: string; entries: AppendRecordingEntryInput[] }): Promise<RecordingSession> {
-    return await this.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
+    return await this.locks.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
       const recording = await this.getRawRecordingSession(input.recordingId, input.projectId);
       if (recording.endedAt !== undefined) throw new Error("Finalized recordings are immutable.");
-      const preparedEntries = await this.prepareRecordingEntriesForStorage(input.projectId, input.recordingId, input.entries);
+      const preparedEntries = await this.objectDocuments.prepareRecordingEntriesForStorage(input.projectId, input.recordingId, input.entries);
       const next = preparedEntries.reduce((current, entry) => appendRecordingEntry(current, entry), recording);
-      const stored = await this.dehydrateRecordingStateSnapshotRefs(next, input.projectId);
+      const stored = await this.objectDocuments.dehydrateRecordingStateSnapshotRefs(next, input.projectId);
       await this.repositories.recordingSessions.put(stored);
       if (input.projectId && next.endedAt !== undefined) {
         await this.writeProjectRecordingSession(input.projectId, stored);
@@ -1098,11 +1067,11 @@ export class AutomationStudioService {
   }
 
   async finalizeRecording(input: { projectId?: string | null; recordingId: string; endedAt?: number }): Promise<RecordingSession> {
-    return await this.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
+    return await this.locks.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
       const recording = await this.getRawRecordingSession(input.recordingId, input.projectId);
       if (recording.endedAt !== undefined) return recording;
       const finalized = finalizeRecordingSession(recording, input.endedAt);
-      const stored = await this.dehydrateRecordingStateSnapshotRefs(finalized, input.projectId);
+      const stored = await this.objectDocuments.dehydrateRecordingStateSnapshotRefs(finalized, input.projectId);
       await this.repositories.recordingSessions.put(stored);
       if (input.projectId) await this.writeProjectRecordingSession(input.projectId, stored);
       return finalized;
@@ -1324,7 +1293,7 @@ export class AutomationStudioService {
   }
 
   async updateRecording(input: { projectId?: string | null; recordingId: string; name?: unknown; archived?: unknown }): Promise<RecordingSession> {
-    return await this.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
+    return await this.locks.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
       const recording = await this.getRecordingSession(input.recordingId, input.projectId);
       const metadata = {
         ...(recording.metadata ?? {}),
@@ -1339,7 +1308,7 @@ export class AutomationStudioService {
   }
 
   async deleteRecording(input: { projectId?: string | null; recordingId: string }): Promise<{ deletedRecordingId: string; deletedProposalIds: string[] }> {
-    return await this.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
+    return await this.locks.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
       await this.repositories.recordingSessions.delete(input.recordingId);
       let deletedProposalIds: string[] = [];
       if (input.projectId && this.projectPaths.root) {
@@ -1417,7 +1386,7 @@ export class AutomationStudioService {
       }
     }
     await mapWithConcurrency(artifactDeletes, PIPELINE_ARTIFACT_IO_CONCURRENCY, async ({ recordingId, kind, id }) => {
-      await this.deletePipelineArtifactDocuments(input.projectId!, recordingId, kind, id);
+      await this.objectDocuments.deletePipelineArtifactDocuments(input.projectId!, recordingId, kind, id);
     });
     await this.deletePhysicalSharedPipelineArtifactsForRecordings(input.projectId, recordingIdSet);
     await Promise.all(recordingIds.map(async (recordingId) => {
@@ -1460,7 +1429,7 @@ export class AutomationStudioService {
       if (!artifact) continue;
       const recordingId = await this.pipelineArtifactRecordingId(input.projectId, kind, artifact);
       if (!recordingId) throw new Error("Proposal is not associated with a recording.");
-      await this.deletePipelineArtifactDocuments(input.projectId, recordingId, kind, input.proposalId);
+      await this.objectDocuments.deletePipelineArtifactDocuments(input.projectId, recordingId, kind, input.proposalId);
       await this.removeRecordingPipelineArtifactId(input.projectId, recordingId, kind, input.proposalId);
       await new ProgramJsonStore<PipelineIndex>(this.projectPaths.projectFile(input.projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => ({
         ...index,
@@ -1484,7 +1453,7 @@ export class AutomationStudioService {
   }
 
   async appendRecordingNoteEntry(input: { projectId?: string | null; recordingId: string; text?: unknown; linkedEntryIds?: unknown; startOffsetMs?: unknown; endOffsetMs?: unknown }): Promise<RecordingSession> {
-    return await this.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
+    return await this.locks.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
       const recording = await this.getRecordingSession(input.recordingId, input.projectId);
       if (recording.endedAt !== undefined) throw new Error("Finalized recordings are immutable.");
       const text = typeof input.text === "string" ? input.text.trim() : "";
@@ -1939,7 +1908,7 @@ export class AutomationStudioService {
   }
 
   async appendRecordingDomainEvent(input: RecordingDomainEventInput): Promise<RecordingDomainEventProcessingResult> {
-    return await this.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
+    return await this.locks.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
       const recording = await this.getRecordingSession(input.recordingId, input.projectId);
       const result = await processRecordingDomainEvent(this.recordingDomains, recording, input);
       if (result.accepted) {
@@ -2338,7 +2307,7 @@ export class AutomationStudioService {
         settingsRevision: requiredBootstrapSettingsRevision(unsafeGrant.settingsRevision)
       };
       failureCode = "flow_bootstrap.pre_provider_validation_failed";
-      return await this.withBootstrapGenerationLock(projectId, flowId, async () => {
+      return await this.locks.withBootstrapGenerationLock(projectId, flowId, async () => {
         failureCode = "flow_bootstrap.blank_target_required";
         const parent = await this.assertBlankBootstrapTarget(projectId, flowId);
         failureCode = "flow_bootstrap.canonical_settings_binding_unavailable";
@@ -2348,7 +2317,7 @@ export class AutomationStudioService {
           throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.stale_grant_binding");
         }
         failureCode = "flow_bootstrap.pre_provider_validation_failed";
-        const pending = (await this.listFlowBootstrapAdaptations(projectId, flowId))
+        const pending = (await this.bootstrapAdaptations.listFlowBootstrapAdaptations(projectId, flowId))
           .find((adaptation) => adaptation.status === "proposed" || adaptation.status === "validated");
         if (pending) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.pending_adaptation_exists");
         failureCode = "flow_bootstrap.pre_provider_validation_failed";
@@ -2556,7 +2525,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     reusableContext?: JsonObject;
     actorId?: string;
   }): Promise<AutomationStudioBootstrapAdaptation> {
-    return await this.withBootstrapAdaptationLock(input.projectId, input.flowId, async () => {
+    return await this.locks.withBootstrapAdaptationLock(input.projectId, input.flowId, async () => {
       const parent = await this.assertBlankBootstrapTarget(input.projectId, input.flowId);
       const binding = await this.getLlmExecutionBinding(input.projectId, input.flowId);
       if (!input.baseDependencyDigest.trim() || input.baseDependencyDigest !== binding.executionDigest) {
@@ -2619,24 +2588,14 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         updatedAt: now,
         auditEvents: [bootstrapAdaptationAuditEvent({ adaptationId, eventType: "created", actorId: input.actorId ?? null, fromStatus: null, toStatus: "proposed", createdAt: now, ...((input.evidenceTrace || input.reusableContext) ? { detail: { ...(input.evidenceTrace ? evidenceTraceAuditDetail(input.evidenceTrace) : {}), ...(input.reusableContext ? { reusableContext: structuredClone(input.reusableContext) } : {}) } } : {}) })]
       };
-      await this.saveFlowBootstrapAdaptation(adaptation);
+      await this.bootstrapAdaptations.saveFlowBootstrapAdaptation(adaptation);
       await this.appendBootstrapAdaptationChangeFeed(adaptation, "create");
       return structuredClone(adaptation);
     });
   }
 
   async getFlowBootstrapAdaptation(projectId: string, flowId: string, adaptationId: string): Promise<AutomationStudioBootstrapAdaptation | null> {
-    await this.projects.findProject(projectId);
-    const key = bootstrapAdaptationMemoryKey(projectId, flowId, adaptationId);
-    const memory = this.memoryBootstrapAdaptations.get(key);
-    if (memory) return structuredClone(memory);
-    if (!this.projectPaths.root) return null;
-    const stored = await new ProgramJsonStore<JsonObject>(this.flowPaths.flowBootstrapAdaptationFile(projectId, flowId, adaptationId), () => ({})).read();
-    if (stored.kind !== "flow_bootstrap" || stored.adaptationId !== adaptationId || stored.projectId !== projectId || stored.flowId !== flowId) return null;
-    assertAutomationStudioBootstrapHasNoRecordingProvenance(stored);
-    const adaptation = stored as unknown as AutomationStudioBootstrapAdaptation;
-    this.memoryBootstrapAdaptations.set(key, structuredClone(adaptation));
-    return adaptation;
+    return await this.bootstrapAdaptations.getFlowBootstrapAdaptation(projectId, flowId, adaptationId);
   }
 
   async reviewFlowBootstrapAdaptation(input: {
@@ -2647,7 +2606,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     actorId?: string;
     reason?: string;
   }): Promise<AutomationStudioBootstrapAdaptation> {
-    return await this.withBootstrapAdaptationLock(input.projectId, input.flowId, async () => {
+    return await this.locks.withBootstrapAdaptationLock(input.projectId, input.flowId, async () => {
       const adaptation = await this.getFlowBootstrapAdaptation(input.projectId, input.flowId, input.adaptationId);
       if (!adaptation) throw new Error(`Unknown Flow Bootstrap adaptation: ${input.adaptationId}`);
       if (input.action === "approve") {
@@ -2992,7 +2951,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const deletedAt = Date.now();
     const sqlFlow = await this.markSqlFlowDeleted(input.projectId, input.flowId, deletedAt);
     await this.repositories.flows.delete(input.flowId);
-    await this.deleteProjectArtifactFile(input.projectId, "config", flowConfigArtifactId(input.flowId));
+    await this.objectDocuments.deleteProjectArtifactFile(input.projectId, "config", flowConfigArtifactId(input.flowId));
     await this.deleteFlowSourceFile(input.projectId, flow);
     await this.indexes.writeFlowIndex(input.projectId, (index) => ({
       schemaVersion: "0.1",
@@ -3547,7 +3506,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           ...projectArtifacts.flows.filter((flow) => flow.ownerKind === "task" && flow.ownerId === artifactId).map((flow) => flow.flowId)
         ]);
         for (const flowId of flowIds) {
-          await this.deleteProjectArtifactFile(input.projectId, "flow", flowId);
+          await this.objectDocuments.deleteProjectArtifactFile(input.projectId, "flow", flowId);
           deletedArtifactIds.add(`flow:${flowId}`);
         }
         const policyId = typeof task.metadata?.policyId === "string" ? task.metadata.policyId : null;
@@ -3568,12 +3527,12 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           ...projectArtifacts.flows.filter((flow) => flow.ownerKind === "routine" && flow.ownerId === artifactId).map((flow) => flow.flowId)
         ]);
         for (const flowId of flowIds) {
-          await this.deleteProjectArtifactFile(input.projectId, "flow", flowId);
+          await this.objectDocuments.deleteProjectArtifactFile(input.projectId, "flow", flowId);
           deletedArtifactIds.add(`flow:${flowId}`);
         }
       }
     }
-    await this.deleteProjectArtifactFile(input.projectId, input.kind, artifactId);
+    await this.objectDocuments.deleteProjectArtifactFile(input.projectId, input.kind, artifactId);
     return { deleted: true, projectId: input.projectId, kind: input.kind, artifactId, deletedArtifactIds: [...deletedArtifactIds] };
   }
 
@@ -4669,7 +4628,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const search = input.search?.trim().toLowerCase();
     const sort = input.sort ?? "updated";
     const direction = input.direction === "asc" ? "asc" : "desc";
-    const bootstrap = (await this.listProjectFlowBootstrapAdaptations(input.projectId, input.flowId))
+    const bootstrap = (await this.bootstrapAdaptations.listProjectFlowBootstrapAdaptations(input.projectId, input.flowId))
       .map(bootstrapAdaptationSummary)
       .filter((item) =>
         (!input.subflowId || item.subflowId === input.subflowId)
@@ -6140,22 +6099,6 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     });
   }
 
-  private async withBootstrapGenerationLock<T>(projectId: string, flowId: string, operation: () => Promise<T>): Promise<T> {
-    const key = `${projectId}:${flowId}`;
-    const previous = this.bootstrapGenerationLocks.get(key) ?? Promise.resolve();
-    let release!: () => void;
-    const current = new Promise<void>((resolve) => { release = resolve; });
-    const tail = previous.then(() => current);
-    this.bootstrapGenerationLocks.set(key, tail);
-    await previous;
-    try {
-      return await operation();
-    } finally {
-      release();
-      if (this.bootstrapGenerationLocks.get(key) === tail) this.bootstrapGenerationLocks.delete(key);
-    }
-  }
-
   private async getAllFlowInstructionsForBootstrap(projectId: string, flowId: string): Promise<AutomationStudioFlowInstruction[]> {
     const instructionIds = new Set<string>();
     for (let offset = 0; ; offset += 100) {
@@ -6173,76 +6116,6 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       .filter((instruction): instruction is AutomationStudioFlowInstruction => instruction?.status === "active");
   }
 
-  private async listProjectFlowBootstrapAdaptations(projectId: string, flowId?: string): Promise<AutomationStudioBootstrapAdaptation[]> {
-    if (flowId) return await this.listFlowBootstrapAdaptations(projectId, flowId);
-    await this.projects.findProject(projectId);
-    const byId = new Map<string, AutomationStudioBootstrapAdaptation>();
-    for (const adaptation of this.memoryBootstrapAdaptations.values()) {
-      if (adaptation.projectId === projectId) byId.set(adaptation.adaptationId, structuredClone(adaptation));
-    }
-    if (!this.projectPaths.root) return [...byId.values()];
-    const flowEntries = await readdir(this.projectPaths.projectFile(projectId, "flows"), { withFileTypes: true }).catch(() => []);
-    for (const flowEntry of flowEntries) {
-      if (!flowEntry.isDirectory()) continue;
-      const root = path.join(this.projectPaths.projectFile(projectId, "flows"), flowEntry.name, "adaptations");
-      const projected = await ProgramJsonStore.listDirectoryDocuments<JsonObject>(root, "bootstrap.json");
-      const storedAdaptations = projected ?? await Promise.all((await readdir(root, { withFileTypes: true }).catch(() => []))
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => new ProgramJsonStore<JsonObject>(path.join(root, entry.name, "bootstrap.json"), () => ({})).read()));
-      for (const stored of storedAdaptations) {
-        if (stored.kind !== "flow_bootstrap" || stored.projectId !== projectId || typeof stored.flowId !== "string" || typeof stored.adaptationId !== "string") continue;
-        assertAutomationStudioBootstrapHasNoRecordingProvenance(stored);
-        byId.set(stored.adaptationId, stored as unknown as AutomationStudioBootstrapAdaptation);
-      }
-    }
-    return [...byId.values()].sort((left, right) => left.createdAt - right.createdAt || left.adaptationId.localeCompare(right.adaptationId));
-  }
-  private async listFlowBootstrapAdaptations(projectId: string, flowId: string): Promise<AutomationStudioBootstrapAdaptation[]> {
-    const byId = new Map<string, AutomationStudioBootstrapAdaptation>();
-    for (const adaptation of this.memoryBootstrapAdaptations.values()) {
-      if (adaptation.projectId === projectId && adaptation.flowId === flowId) {
-        byId.set(adaptation.adaptationId, structuredClone(adaptation));
-      }
-    }
-    if (!this.projectPaths.root) return [...byId.values()];
-    const root = this.flowPaths.flowAdaptationsDirectory(projectId, flowId);
-    const projected = await ProgramJsonStore.listDirectoryDocuments<JsonObject>(root, "bootstrap.json");
-    if (projected) {
-      for (const stored of projected) {
-        if (stored.kind === "flow_bootstrap" && stored.projectId === projectId && stored.flowId === flowId && typeof stored.adaptationId === "string") {
-          assertAutomationStudioBootstrapHasNoRecordingProvenance(stored);
-          byId.set(stored.adaptationId, stored as unknown as AutomationStudioBootstrapAdaptation);
-        }
-      }
-    } else {
-      const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        const stored = await new ProgramJsonStore<JsonObject>(path.join(root, entry.name, "bootstrap.json"), () => ({})).read();
-        if (stored.kind === "flow_bootstrap" && stored.projectId === projectId && stored.flowId === flowId && typeof stored.adaptationId === "string") {
-          assertAutomationStudioBootstrapHasNoRecordingProvenance(stored);
-          byId.set(stored.adaptationId, stored as unknown as AutomationStudioBootstrapAdaptation);
-        }
-      }
-    }
-    return [...byId.values()].sort((left, right) => left.createdAt - right.createdAt || left.adaptationId.localeCompare(right.adaptationId));
-  }
-  private async withBootstrapAdaptationLock<T>(projectId: string, flowId: string, operation: () => Promise<T>): Promise<T> {
-    const key = `${projectId}:${flowId}`;
-    const previous = this.bootstrapAdaptationLocks.get(key) ?? Promise.resolve();
-    let release!: () => void;
-    const current = new Promise<void>((resolve) => { release = resolve; });
-    const tail = previous.then(() => current);
-    this.bootstrapAdaptationLocks.set(key, tail);
-    await previous;
-    try {
-      return await operation();
-    } finally {
-      release();
-      if (this.bootstrapAdaptationLocks.get(key) === tail) this.bootstrapAdaptationLocks.delete(key);
-    }
-  }
-
   private async assertBlankBootstrapTarget(projectId: string, flowId: string): Promise<AutomationStudioFlowArtifact> {
     const parent = await this.getFlow(projectId, flowId);
     if (this.persistedFlowRepresentation(parent) !== "orchestration" || parent.nodes.length || parent.edges.length) {
@@ -6252,20 +6125,6 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const page = await this.listFlowSubflowSummaries({ projectId, flowId, limit: 1, offset: 0 });
     if (page.total > 0) throw new Error("Flow Bootstrap requires a Flow without Subflows.");
     return parent;
-  }
-
-  private async saveFlowBootstrapAdaptation(adaptation: AutomationStudioBootstrapAdaptation): Promise<AutomationStudioBootstrapAdaptation> {
-    assertAutomationStudioBootstrapHasNoRecordingProvenance(adaptation);
-    const key = bootstrapAdaptationMemoryKey(adaptation.projectId, adaptation.flowId, adaptation.adaptationId);
-    this.memoryBootstrapAdaptations.set(key, structuredClone(adaptation));
-    if (this.projectPaths.root) {
-      await this.projects.ensureProjectStructure(adaptation.projectId);
-      await new ProgramJsonStore<JsonObject>(
-        this.flowPaths.flowBootstrapAdaptationFile(adaptation.projectId, adaptation.flowId, adaptation.adaptationId),
-        () => ({})
-      ).write(adaptation as unknown as JsonObject);
-    }
-    return adaptation;
   }
 
   private async transitionFlowBootstrapAdaptation(
@@ -6288,7 +6147,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         createdAt: now
       })]
     };
-    await this.saveFlowBootstrapAdaptation(next);
+    await this.bootstrapAdaptations.saveFlowBootstrapAdaptation(next);
     await this.appendBootstrapAdaptationChangeFeed(next, "update");
     return structuredClone(next);
   }
@@ -6377,7 +6236,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           createdAt: now
         })]
       };
-      await this.saveFlowBootstrapAdaptation(next);
+      await this.bootstrapAdaptations.saveFlowBootstrapAdaptation(next);
       await this.appendBootstrapAdaptationChangeFeed(next, "update");
       void nextParent;
       return structuredClone(next);
@@ -6474,7 +6333,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           createdAt: now
         })]
       };
-      await this.saveFlowBootstrapAdaptation(next);
+      await this.bootstrapAdaptations.saveFlowBootstrapAdaptation(next);
       await this.appendBootstrapAdaptationChangeFeed(next, "update");
       return structuredClone(next);
     } catch (error) {
@@ -6802,7 +6661,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         await transaction.write(this.projects.indexStore!.filePath, { ...state, projects: state.projects.filter((project) => project.id !== projectId) });
         await transaction.deletePath(this.projectPaths.projectDirectory(projectId));
       });
-      await this.uiCacheStore.delete({ projectId }).catch(() => undefined);
+      await this.uiCache.purgeProject(projectId).catch(() => undefined);
       return { deletedProjectId: projectId };
     }
     await this.projects.findProject(projectId);
@@ -6814,7 +6673,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       if (this.objectStore) await ProgramJsonStore.deletePath(this.projectPaths.projectDirectory(projectId));
       else await rm(this.projectPaths.projectDirectory(projectId), { recursive: true, force: true });
     }
-    await this.uiCacheStore.delete({ projectId }).catch(() => undefined);
+    await this.uiCache.purgeProject(projectId).catch(() => undefined);
     return { deletedProjectId: projectId };
   }
 
@@ -7029,45 +6888,19 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async getProjectUiCache(input: { projectId: string; userId: string; cacheKeys: unknown }): Promise<{ entries: Array<Omit<AutomationStudioUiCacheEntry, "projectId" | "userId">>; missingKeys: string[] }> {
-    await this.projects.findProject(input.projectId);
-    const userId = normalizeUiCacheUserId(input.userId);
-    const cacheKeys = normalizeUiCacheKeyBatch(input.cacheKeys, "cacheKeys");
-    const entries = await this.uiCacheStore.get({ projectId: input.projectId, userId, cacheKeys });
-    const foundKeys = new Set(entries.map((entry) => entry.cacheKey));
-    return {
-      entries: entries.map(projectUiCacheEntryForApi),
-      missingKeys: cacheKeys.filter((cacheKey) => !foundKeys.has(cacheKey))
-    };
+    return await this.uiCache.getProjectUiCache(input);
   }
 
   async saveProjectUiCache(input: { projectId: string; userId: string; entries: unknown }): Promise<{ entries: Array<Omit<AutomationStudioUiCacheEntry, "projectId" | "userId">> }> {
-    await this.projects.findProject(input.projectId);
-    const userId = normalizeUiCacheUserId(input.userId);
-    const entries = normalizeUiCachePutEntryBatch(input.entries);
-    const saved = await this.uiCacheStore.putBatch({ projectId: input.projectId, userId, entries });
-    return { entries: saved.map(projectUiCacheEntryForApi) };
+    return await this.uiCache.saveProjectUiCache(input);
   }
 
   async deleteProjectUiCache(input: { projectId: string; userId: string; cacheKeys?: unknown }): Promise<{ deleted: number }> {
-    await this.projects.findProject(input.projectId);
-    const userId = normalizeUiCacheUserId(input.userId);
-    const cacheKeys = input.cacheKeys === undefined || input.cacheKeys === null ? undefined : normalizeUiCacheKeyBatch(input.cacheKeys, "cacheKeys");
-    return await this.uiCacheStore.delete({ projectId: input.projectId, userId, ...(cacheKeys ? { cacheKeys } : {}) });
+    return await this.uiCache.deleteProjectUiCache(input);
   }
 
   async listProjectUiCacheStats(input: { projectId?: unknown; userId: string }): Promise<{ stats: Array<Omit<AutomationStudioUiCacheStats, "userId"> & { entryCount: number; totalBytes: number; updatedAt: number | null }> }> {
-    const userId = normalizeUiCacheUserId(input.userId);
-    const projectId = typeof input.projectId === "string" && input.projectId.trim() ? input.projectId.trim() : undefined;
-    if (projectId) await this.projects.findProject(projectId);
-    const stats = await this.uiCacheStore.stats({ userId, ...(projectId ? { projectId } : {}) });
-    return {
-      stats: stats.map(({ userId: _userId, ...entry }) => ({
-        ...entry,
-        entryCount: entry.entries,
-        totalBytes: entry.byteCount,
-        updatedAt: entry.newestUpdatedAt
-      }))
-    };
+    return await this.uiCache.listProjectUiCacheStats(input);
   }
   async saveProjectHierarchy(projectId: string, hierarchy: AutomationStudioProjectHierarchy): Promise<AutomationStudioProjectHierarchy> {
     const nextHierarchy: AutomationStudioProjectHierarchy = {
@@ -7746,7 +7579,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     }
     if (this.objectStore) {
       const prepared = new Map<string, JsonObject>();
-      for (const item of indexed) prepared.set(`${item.kind}:${item.id}`, await this.prepareArtifactDocument(projectId, item.artifact));
+      for (const item of indexed) prepared.set(`${item.kind}:${item.id}`, await this.objectDocuments.prepareArtifactDocument(projectId, item.artifact));
       const recordings = new Map<string, RecordingSession>();
       for (const recordingId of byRecording.keys()) recordings.set(recordingId, await this.getRecordingSession(recordingId, projectId));
       const indexPath = this.projectPaths.projectFile(projectId, "indexes", "pipeline.json");
@@ -7780,7 +7613,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       });
       return;
     }
-    await mapWithConcurrency(aggregateArtifacts, PIPELINE_ARTIFACT_IO_CONCURRENCY, async (item) => this.writeArtifactDocument(
+    await mapWithConcurrency(aggregateArtifacts, PIPELINE_ARTIFACT_IO_CONCURRENCY, async (item) => this.objectDocuments.writeArtifactDocument(
       projectId,
       this.projectPaths.projectFile(projectId, "pipeline", "shared", this.recordingPaths.pipelineFolder(item.kind), `${safeSegment(item.id)}.json`),
       item.artifact
@@ -7831,7 +7664,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const recording = await this.repositories.recordingSessions.get(recordingId) ?? await this.getRecordingSession(recordingId, projectId).catch(() => null);
     if (!recording) return;
     await this.ensureProjectRecordingPipeline(projectId, recording);
-    await this.writeArtifactDocument(projectId, this.recordingPaths.recordingPipelineArtifactFile(projectId, recordingId, kind, id), artifact);
+    await this.objectDocuments.writeArtifactDocument(projectId, this.recordingPaths.recordingPipelineArtifactFile(projectId, recordingId, kind, id), artifact);
     await this.updateRecordingPipeline(projectId, recordingId, (pipeline) => addRecordingPipelineArtifactId(pipeline, kind, id));
   }
 
@@ -7839,7 +7672,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const recording = await this.repositories.recordingSessions.get(recordingId) ?? await this.getRecordingSession(recordingId, projectId).catch(() => null);
     if (!recording || !artifacts.length) return;
     await this.ensureProjectRecordingPipeline(projectId, recording);
-    await mapWithConcurrency(artifacts, PIPELINE_ARTIFACT_IO_CONCURRENCY, async (item) => this.writeArtifactDocument(projectId, this.recordingPaths.recordingPipelineArtifactFile(projectId, recordingId, item.kind, item.id), item.artifact));
+    await mapWithConcurrency(artifacts, PIPELINE_ARTIFACT_IO_CONCURRENCY, async (item) => this.objectDocuments.writeArtifactDocument(projectId, this.recordingPaths.recordingPipelineArtifactFile(projectId, recordingId, item.kind, item.id), item.artifact));
     await this.updateRecordingPipeline(projectId, recordingId, (pipeline) => artifacts.reduce((next, item) => addRecordingPipelineArtifactId(next, item.kind, item.id), pipeline));
   }
 
@@ -7904,7 +7737,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     ).read();
     const artifactIds = await this.collectRecordingPipelineArtifactIds(projectId, recordingId, pipeline);
     for (const kind of pipelineArtifactKinds()) {
-      for (const id of artifactIds[kind]) await this.deletePipelineArtifactDocuments(projectId, recordingId, kind, id);
+      for (const id of artifactIds[kind]) await this.objectDocuments.deletePipelineArtifactDocuments(projectId, recordingId, kind, id);
     }
     await this.deletePhysicalSharedPipelineArtifactsForRecording(projectId, recordingId);
     const recordingProposalRoot = this.projectPaths.projectFile(projectId, "proposals", safeSegment(recordingId));
@@ -7980,24 +7813,6 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     });
     await new ProgramJsonStore<PipelineIndex>(this.projectPaths.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => nextIndex({ ...emptyPipelineIndex(), ...index }));
     await this.prunePhysicalPipelineIndexForRecordings(projectId, recordingIds, artifactIds);
-  }
-
-  private async deletePipelineArtifactDocuments(projectId: string, recordingId: string, kind: PipelineArtifactKind, id: string): Promise<void> {
-    const paths = [
-      this.recordingPaths.recordingPipelineArtifactFile(projectId, recordingId, kind, id),
-      this.projectPaths.projectFile(projectId, "pipeline", "shared", this.recordingPaths.pipelineFolder(kind), `${safeSegment(id)}.json`)
-    ];
-    const legacyPath = this.recordingPaths.legacyRecordingPipelineArtifactFile(projectId, recordingId, kind, id);
-    if (legacyPath) paths.push(legacyPath);
-    for (const filePath of paths) {
-      if (this.objectStore) await ProgramJsonStore.deletePath(filePath);
-      await rm(filePath, { recursive: true, force: true });
-    }
-    if (kind === "policyProposals" || kind === "recordingFlowProposals") {
-      const proposalDirectory = path.dirname(this.recordingPaths.recordingPipelineArtifactFile(projectId, recordingId, kind, id));
-      if (this.objectStore) await ProgramJsonStore.deletePath(proposalDirectory);
-      await rm(proposalDirectory, { recursive: true, force: true });
-    }
   }
 
   private async removeRecordingPipelineArtifactId(projectId: string, recordingId: string, kind: "policyProposals" | "recordingFlowProposals", id: string): Promise<void> {
@@ -8164,120 +7979,12 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const filePath = recordingId
       ? this.recordingPaths.recordingPipelineArtifactFile(projectId, recordingId, kind, id)
       : this.projectPaths.projectFile(projectId, "pipeline", "shared", this.recordingPaths.pipelineFolder(kind), `${safeSegment(id)}.json`);
-    let artifact = await this.readArtifactDocument(filePath);
+    let artifact = await this.objectDocuments.readArtifactDocument(filePath);
     if (!Object.keys(artifact).length && recordingId) {
       const legacyFilePath = this.recordingPaths.legacyRecordingPipelineArtifactFile(projectId, recordingId, kind, id);
-      if (legacyFilePath && legacyFilePath !== filePath) artifact = await this.readArtifactDocument(legacyFilePath);
+      if (legacyFilePath && legacyFilePath !== filePath) artifact = await this.objectDocuments.readArtifactDocument(legacyFilePath);
     }
     return Object.keys(artifact).length ? artifact as unknown as TArtifact : null;
-  }
-
-  private async writeArtifactDocument(projectId: string, filePath: string, artifact: JsonObject): Promise<void> {
-    const stored = await this.prepareArtifactDocument(projectId, artifact);
-    await new ProgramJsonStore<JsonObject>(filePath, () => ({})).write(stored);
-  }
-
-  private async prepareRecordingEntriesForStorage(projectId: string | null | undefined, recordingId: string, entries: AppendRecordingEntryInput[]): Promise<AppendRecordingEntryInput[]> {
-    const normalized = entries.map((entry) => prepareRecordingEntryElementTarget(entry));
-    if (!projectId || !this.objectStore) return normalized;
-    return await Promise.all(normalized.map((entry) => this.dehydrateRecordingEntryStateSnapshot(entry, projectId, recordingId)));
-  }
-
-  private async dehydrateRecordingStateSnapshotRefs(recording: RecordingSession, projectId: string | null | undefined): Promise<RecordingSession> {
-    if (!projectId || !this.objectStore) return recording;
-    const timeline = await Promise.all(recording.timeline.map((entry) => this.dehydrateRecordingEntryStateSnapshot(entry, projectId, recording.recordingId)));
-    return { ...recording, timeline: timeline as RecordingSession["timeline"] };
-  }
-
-  private async dehydrateRecordingEntryStateSnapshot<TEntry extends AppendRecordingEntryInput | RecordingSession["timeline"][number]>(entry: TEntry, projectId: string, recordingId: string): Promise<TEntry> {
-    if (!this.objectStore || entry.type !== "observation" || entry.observationType !== "client.state_snapshot") return entry;
-    const payload = entry.payload;
-    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return entry;
-    const state = payload.state;
-    if (!isStateSnapshotObject(state) || typeof payload.stateRef === "string") return entry;
-    const content = Buffer.from(JSON.stringify(state), "utf8");
-    const reference = await this.objectStore.putBytes(projectId, content, "application/vnd.fluxiq.state-snapshot+json", { recordingId, extension: "json" });
-    const stateRef = this.objectStore.contentRef(projectId, reference);
-    const snapshotId = typeof state.id === "string" && state.id.trim() ? state.id.trim() : undefined;
-    const visualSummary = stateSnapshotVisualSummary(state);
-    const nextPayload = compactJsonObject({
-      stateRef,
-      ...(snapshotId ? { snapshotId } : {}),
-      metadata: compactJsonObject({
-        ...(typeof payload.metadata === "object" && payload.metadata && !Array.isArray(payload.metadata) ? payload.metadata as JsonObject : {}),
-        stateSnapshotTimestamp: state.timestamp,
-        stateSnapshotSha256: reference.$fluxiqObject.sha256,
-        stateSnapshotSize: reference.$fluxiqObject.size,
-        ...visualSummary
-      })
-    });
-    return { ...entry, correlationId: entry.correlationId ?? snapshotId ?? reference.$fluxiqObject.sha256, payload: nextPayload } as TEntry;
-  }
-
-  private async hydrateRecordingStateSnapshotRefs(recording: RecordingSession, projectId: string | null | undefined): Promise<RecordingSession> {
-    if (!projectId || !this.objectStore) return recording;
-    const timeline = await Promise.all(recording.timeline.map((entry) => this.hydrateRecordingEntryStateSnapshot(entry, projectId)));
-    return { ...recording, timeline };
-  }
-
-  private async hydrateRecordingEntryStateSnapshot(entry: RecordingSession["timeline"][number], projectId: string): Promise<RecordingSession["timeline"][number]> {
-    if (!this.objectStore || entry.type !== "observation" || entry.observationType !== "client.state_snapshot") return entry;
-    const payload = entry.payload;
-    if (!payload || typeof payload !== "object" || Array.isArray(payload) || isStateSnapshotObject(payload.state)) return entry;
-    const stateRef = typeof payload.stateRef === "string" ? payload.stateRef : undefined;
-    if (!stateRef) return entry;
-    const parsed = parseAutomationStudioObjectContentRef(stateRef);
-    if (!parsed) return entry;
-    if (parsed.projectId !== projectId) {
-      return {
-        ...entry,
-        payload: {
-          ...payload,
-          metadata: compactJsonObject({
-            ...(typeof payload.metadata === "object" && payload.metadata && !Array.isArray(payload.metadata) ? payload.metadata as JsonObject : {}),
-            stateRefProjectMismatch: { expectedProjectId: projectId, actualProjectId: parsed.projectId },
-            missingStateRef: stateRef
-          })
-        }
-      };
-    }
-    let asset;
-    try {
-      asset = await this.objectStore.readProjectObject(projectId, parsed.sha256);
-    } catch (error) {
-      return {
-        ...entry,
-        payload: {
-          ...payload,
-          metadata: compactJsonObject({
-            ...(typeof payload.metadata === "object" && payload.metadata && !Array.isArray(payload.metadata) ? payload.metadata as JsonObject : {}),
-            stateRefHydrationError: errorMessage(error, "State snapshot object could not be read."),
-            missingStateRef: stateRef
-          })
-        }
-      };
-    }
-    const state = JSON.parse(asset.content.toString("utf8")) as unknown;
-    if (!isStateSnapshotObject(state)) return entry;
-    return { ...entry, payload: { ...payload, state: state as unknown as JsonObject } };
-  }
-
-  private async prepareArtifactDocument(projectId: string, artifact: JsonObject): Promise<JsonObject> {
-    const size = Buffer.byteLength(JSON.stringify(artifact), "utf8");
-    return this.objectStore && size >= AUTOMATION_STUDIO_OBJECT_THRESHOLD_BYTES
-      ? await this.objectStore.putJson(projectId, artifact) as unknown as JsonObject
-      : artifact;
-  }
-
-  private async readArtifactDocument(filePath: string): Promise<JsonObject> {
-    const stored = await new ProgramJsonStore<JsonObject>(filePath, () => ({})).read();
-    if (!this.objectStore || !isAutomationStudioObjectReference(stored)) return stored;
-    try {
-      return await this.objectStore.readJson(stored);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
-      throw error;
-    }
   }
 
   private async pruneUnreferencedProjectObjects(projectId: string): Promise<void> {
@@ -8708,35 +8415,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     return await this.saveProjectArtifact({ projectId, kind: "config", artifact: config }) as AutomationStudioConfigArtifact;
   }
 
-  private async deleteProjectArtifactFile(projectId: string, kind: AutomationStudioProjectArtifactKind, artifactId: string): Promise<void> {
-    if (!this.projectPaths.root) return;
-    const artifactRoot = path.dirname(this.projectPaths.projectArtifactFile(projectId, kind, artifactId));
-    if (this.objectStore) await ProgramJsonStore.deletePath(artifactRoot);
-    else await rm(artifactRoot, { recursive: true, force: true });
-  }
-
   private projectArtifactId(kind: AutomationStudioProjectArtifactKind, artifact: Record<string, unknown>): string {
     const id = kind === "task" ? artifact.taskId : kind === "routine" ? artifact.routineId : kind === "config" ? artifact.configId : artifact.flowId;
     if (typeof id !== "string" || !id.trim()) throw new Error(`${kind} ID is required.`);
     return id;
-  }
-
-  private async withRecordingMutationLock<TResult>(projectId: string | null | undefined, recordingId: string, operation: () => Promise<TResult>): Promise<TResult> {
-    const key = `${safeSegment(projectId ?? "global")}:${safeSegment(recordingId)}`;
-    const previous = this.recordingMutationLocks.get(key) ?? Promise.resolve();
-    let release: () => void = () => undefined;
-    const current = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const chained = previous.then(() => current, () => current);
-    this.recordingMutationLocks.set(key, chained);
-    await previous.catch(() => undefined);
-    try {
-      return await operation();
-    } finally {
-      release();
-      if (this.recordingMutationLocks.get(key) === chained) this.recordingMutationLocks.delete(key);
-    }
   }
 
   private async writeProjectRecordingSession(projectId: string, recording: RecordingSession): Promise<void> {
@@ -8838,7 +8520,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     await this.loadProjectRecording(projectId, recordingId);
     const rawRecording = await this.getRawRecordingSession(recordingId, projectId).catch(() => null);
     if (!rawRecording) return;
-    const recording = await this.hydrateRecordingStateSnapshotRefs(rawRecording, projectId);
+    const recording = await this.objectDocuments.hydrateRecordingStateSnapshotRefs(rawRecording, projectId);
     await this.recordingStateIndexes.write(buildRecordingStateIndex(projectId, recording));
   }
 
@@ -8846,16 +8528,6 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     if (!this.recordingStateIndexes) return null;
     if (!await this.recordingStateIndexes.exists(projectId, recordingId)) return null;
     return await this.recordingStateIndexes.read(projectId, recordingId);
-  }
-
-  private async readIndexedStateSnapshot(projectId: string, stateRef: string): Promise<StateSnapshot> {
-    if (!this.objectStore) throw new Error("Automation Studio object storage is not enabled.");
-    const parsed = parseAutomationStudioObjectContentRef(stateRef);
-    if (!parsed || parsed.projectId !== projectId) throw new Error("State snapshot ref does not belong to this project.");
-    const asset = await this.objectStore.readProjectObject(projectId, parsed.sha256);
-    const state = JSON.parse(asset.content.toString("utf8")) as unknown;
-    if (!isStateSnapshotObject(state)) throw new Error("Indexed state snapshot object is invalid.");
-    return state;
   }
 
   private async readRecordingTimeline(projectId: string, recordingId: string): Promise<RecordingSession["timeline"]> {
@@ -9451,32 +9123,6 @@ function recordingTimelineForProposalMapping(timeline: RecordingSession["timelin
   });
 }
 
-function prepareRecordingEntryElementTarget(entry: AppendRecordingEntryInput): AppendRecordingEntryInput {
-  if (entry.type !== "action") return entry;
-  const parameters = entry.parameters && typeof entry.parameters === "object" && !Array.isArray(entry.parameters) ? entry.parameters as Record<string, unknown> : {};
-  const target = entry.target && typeof entry.target === "object" && !Array.isArray(entry.target) ? entry.target as Record<string, unknown> : undefined;
-  const targetForNormalization = target || entry.visualTarget ? { ...(target ?? {}), ...(entry.visualTarget ? { visualTarget: entry.visualTarget } : {}) } : undefined;
-  const elementTarget = normalizeAutomationStudioElementTarget(target && "elementTarget" in target ? target.elementTarget : undefined, { source: "recording" })
-    ?? normalizeAutomationStudioElementTarget(parameters.target, { source: "recording" })
-    ?? normalizeAutomationStudioElementTarget(targetForNormalization, { source: "recording" });
-  if (!elementTarget) return entry;
-  return {
-    ...entry,
-    parameters: compactJsonObject({ ...parameters, target: elementTarget }),
-    target: compactJsonObject({
-      type: typeof entry.target?.type === "string" && entry.target.type.trim() ? entry.target.type : "ui_element",
-      ...(entry.target?.id ? { id: entry.target.id } : {}),
-      ...(entry.target?.label ? { label: entry.target.label } : {}),
-      ...(entry.target?.selector ? { selector: entry.target.selector } : {}),
-      ...(entry.target?.bounds ? { bounds: entry.target.bounds } : {}),
-      ...(entry.target?.relativePosition ? { relativePosition: entry.target.relativePosition } : {}),
-      ...(entry.target?.visualTarget ? { visualTarget: entry.target.visualTarget } : {}),
-      elementTarget,
-      ...(entry.target?.metadata ? { metadata: entry.target.metadata } : {})
-    }) as NonNullable<Extract<AppendRecordingEntryInput, { type: "action" }>["target"]>
-  };
-}
-
 function normalizeRecordingCandidateElementTargetParameters(parameters: JsonObject): JsonObject {
   const explicitTarget = normalizeAutomationStudioElementTarget(parameters.target, { source: "mapper" });
   const topLevelTarget = explicitTarget ?? normalizeAutomationStudioElementTarget(parameters, { source: "mapper" });
@@ -9507,10 +9153,6 @@ function recordingActionEntryCandidate(entry: RecordingSession["timeline"][numbe
     confidence: 0.95,
     label: readableTokenValue(outputId)
   };
-}
-
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 function stringMetadataValue(metadata: JsonObject, key: string): string | null {
@@ -10209,10 +9851,6 @@ function baselineAutomationStudioProblems(): import("../api/contracts.ts").Autom
   }];
 }
 
-function compactJsonObject(value: Record<string, unknown>): JsonObject {
-  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as JsonObject;
-}
-
 function canonicalFlowDocument(flow: AutomationStudioFlowArtifact): AutomationStudioFlowDocument {
   return {
     schemaVersion: "0.1",
@@ -10450,10 +10088,6 @@ function requiredBootstrapSettingsRevision(value: unknown): number {
   if (!Number.isSafeInteger(value) || (value as number) <= 0) throw new Error("Flow Bootstrap settings revision is invalid.");
   return value as number;
 }
-function bootstrapAdaptationMemoryKey(projectId: string, flowId: string, adaptationId: string): string {
-  return `${projectId}:${flowId}:${adaptationId}`;
-}
-
 function automationStudioFlowSettingsFingerprint(flow: AutomationStudioFlowArtifact): number {
   const metadata = jsonObjectFromUnknown(flow.metadata) ?? {};
   const digest = createHash("sha256").update(stableJson({
@@ -10494,20 +10128,6 @@ function safeRelativePathParts(moduleId: string): string[] {
     .map((part) => safeSegment(part))
     .filter((part) => part && part !== "." && part !== "..");
   return parts.length ? parts : ["flows", "flow.flow.ts"];
-}
-
-function isAutomationStudioRenderableAssetMediaType(mediaType: string): boolean {
-  const normalized = mediaType.trim().toLowerCase();
-  return normalized === "image/png" || normalized === "image/jpeg" || normalized === "image/webp" || normalized === "image/gif";
-}
-
-function isStateSnapshotObject(value: unknown): value is StateSnapshot {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const record = value as Record<string, unknown>;
-  return typeof record.timestamp === "number"
-    && Boolean(record.namespaces)
-    && typeof record.namespaces === "object"
-    && !Array.isArray(record.namespaces);
 }
 
 function buildRecordingStateIndex(projectId: string, recording: RecordingSession): RecordingStateIndex {
@@ -10787,17 +10407,6 @@ function addRefsFromValue(refs: Set<string>, value: unknown, projectId: string, 
     return;
   }
   for (const item of Object.values(value)) addRefsFromValue(refs, item, projectId, seen);
-}
-
-function stateSnapshotVisualSummary(state: StateSnapshot): JsonObject {
-  const frames = state.presentation?.visualFrames ?? [];
-  const defaultFrame = frames.find((frame) => frame.id === state.presentation?.defaultFrameId) ?? frames[0];
-  const imageLayer = defaultFrame?.layers.find((layer) => layer.kind === "image");
-  return compactJsonObject({
-    ...(defaultFrame?.id ? { visualFrameId: defaultFrame.id } : {}),
-    ...(defaultFrame?.coordinateSpace ? { coordinateSpace: defaultFrame.coordinateSpace as unknown as JsonObject } : {}),
-    ...(imageLayer?.kind === "image" ? { screenshotRef: imageLayer.contentRef } : {})
-  });
 }
 
 function coordinateSpaceFromValue(value: unknown): RecordingStateIndexItem["coordinateSpace"] | undefined {
@@ -11642,12 +11251,6 @@ async function readJsonLinePage<T>(filePath: string, offset: number, limit: numb
   return items;
 }
 
-function normalizeUiCacheUserId(userId: string): string {
-  const normalized = userId.trim();
-  if (!normalized) throw new Error("Automation Studio UI cache requires an authenticated user.");
-  return normalized;
-}
-
 const AUTOMATION_STUDIO_HIERARCHY_NODE_KINDS = new Set<AutomationStudioHierarchyNode["kind"]>([
   "folder", "client", "proposal", "flow", "config", "recording", "run", "task", "routine"
 ]);
@@ -11693,75 +11296,6 @@ function normalizeCustomHierarchyNode(value: unknown): AutomationStudioHierarchy
   };
 }
 
-function normalizeUiCacheKeyBatch(value: unknown, fieldName: string): string[] {
-  if (!Array.isArray(value)) throw new Error(`Automation Studio UI cache ${fieldName} must be an array.`);
-  if (value.length > AUTOMATION_STUDIO_UI_CACHE_MAX_BATCH_ENTRIES) {
-    throw new Error(`Automation Studio UI cache accepts at most ${AUTOMATION_STUDIO_UI_CACHE_MAX_BATCH_ENTRIES} keys per request.`);
-  }
-  return value.map((item, index) => normalizeUiCacheKey(item, `${fieldName}[${index}]`));
-}
-
-function normalizeUiCachePutEntryBatch(value: unknown): AutomationStudioUiCachePutEntry[] {
-  if (!Array.isArray(value)) throw new Error("Automation Studio UI cache entries must be an array.");
-  if (value.length > AUTOMATION_STUDIO_UI_CACHE_MAX_BATCH_ENTRIES) {
-    throw new Error(`Automation Studio UI cache accepts at most ${AUTOMATION_STUDIO_UI_CACHE_MAX_BATCH_ENTRIES} entries per request.`);
-  }
-  return value.map((item, index) => {
-    if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error(`Automation Studio UI cache entries[${index}] must be an object.`);
-    const entry = item as { cacheKey?: unknown; value?: unknown; contentRevision?: unknown; expiresAt?: unknown };
-    const value = normalizeUiCacheJsonValue(entry.value, `entries[${index}].value`);
-    const sizeBytes = jsonValueSizeBytes(value);
-    if (sizeBytes > AUTOMATION_STUDIO_UI_CACHE_MAX_ENTRY_BYTES) {
-      throw new Error(`Automation Studio UI cache entries[${index}] exceeds ${AUTOMATION_STUDIO_UI_CACHE_MAX_ENTRY_BYTES} bytes.`);
-    }
-    const contentRevision = entry.contentRevision === undefined ? undefined : clampOptionalUiCacheNumber(entry.contentRevision, `entries[${index}].contentRevision`);
-    const expiresAt = entry.expiresAt === undefined || entry.expiresAt === null ? entry.expiresAt as null | undefined : clampOptionalUiCacheNumber(entry.expiresAt, `entries[${index}].expiresAt`);
-    return {
-      cacheKey: normalizeUiCacheKey(entry.cacheKey, `entries[${index}].cacheKey`),
-      value,
-      sizeBytes,
-      ...(contentRevision !== undefined ? { contentRevision } : {}),
-      ...(expiresAt !== undefined ? { expiresAt } : {})
-    };
-  });
-}
-
-function normalizeUiCacheKey(value: unknown, fieldName: string): string {
-  const cacheKey = typeof value === "string" ? value.trim() : "";
-  if (!cacheKey) throw new Error(`Automation Studio UI cache ${fieldName} is required.`);
-  if (Buffer.byteLength(cacheKey, "utf8") > AUTOMATION_STUDIO_UI_CACHE_MAX_KEY_BYTES) {
-    throw new Error(`Automation Studio UI cache ${fieldName} exceeds ${AUTOMATION_STUDIO_UI_CACHE_MAX_KEY_BYTES} bytes.`);
-  }
-  return cacheKey;
-}
-
-function normalizeUiCacheJsonValue(value: unknown, fieldName: string): JsonValue {
-  if (value === undefined) throw new Error(`Automation Studio UI cache ${fieldName} is required.`);
-  const serialized = JSON.stringify(value);
-  if (serialized === undefined) throw new Error(`Automation Studio UI cache ${fieldName} must be JSON serializable.`);
-  return JSON.parse(serialized) as JsonValue;
-}
-
-function jsonValueSizeBytes(value: JsonValue): number {
-  return Buffer.byteLength(JSON.stringify(value), "utf8");
-}
-
-function clampOptionalUiCacheNumber(value: unknown, fieldName: string): number {
-  const numeric = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(numeric) || numeric < 0) throw new Error(`Automation Studio UI cache ${fieldName} must be a non-negative number.`);
-  return Math.trunc(numeric);
-}
-
-function projectUiCacheEntryForApi(entry: AutomationStudioUiCacheEntry): Omit<AutomationStudioUiCacheEntry, "projectId" | "userId"> {
-  return {
-    cacheKey: entry.cacheKey,
-    value: structuredClone(entry.value),
-    sizeBytes: entry.sizeBytes,
-    updatedAt: entry.updatedAt,
-    ...(entry.contentRevision !== undefined ? { contentRevision: entry.contentRevision } : {}),
-    ...(entry.expiresAt !== undefined ? { expiresAt: entry.expiresAt } : {})
-  };
-}
 function compareFlowAdaptationSummaries(
   left: AutomationStudioAdaptationSummary,
   right: AutomationStudioAdaptationSummary,

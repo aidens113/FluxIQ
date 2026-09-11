@@ -771,7 +771,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       }
     });
     expect(revoke).toHaveBeenCalledTimes(1);
-    await expect((instance as any).listFlowBootstrapAdaptations(project.id, flow.flowId)).resolves.toEqual([]);
+    await expect((instance as any).bootstrapAdaptations.listFlowBootstrapAdaptations(project.id, flow.flowId)).resolves.toEqual([]);
     await expectNoTopology(instance, project.id, flow.flowId);
   });
 
@@ -803,7 +803,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       accounting: { requestId: "request.phase", estimatedInputTokens: 321, totalTokens: 200 }
     });
     expect(revoke).toHaveBeenCalledTimes(1);
-    await expect((instance as any).listFlowBootstrapAdaptations(project.id, flow.flowId)).resolves.toEqual([]);
+    await expect((instance as any).bootstrapAdaptations.listFlowBootstrapAdaptations(project.id, flow.flowId)).resolves.toEqual([]);
   });
 
   it("attributes proposal persistence failure with received-provider accounting", async () => {
@@ -830,7 +830,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     });
     expect(JSON.stringify(diagnostic)).not.toContain("raw persistence");
     expect(revoke).toHaveBeenCalledTimes(1);
-    await expect((instance as any).listFlowBootstrapAdaptations(project.id, flow.flowId)).resolves.toEqual([]);
+    await expect((instance as any).bootstrapAdaptations.listFlowBootstrapAdaptations(project.id, flow.flowId)).resolves.toEqual([]);
   });
 
   it("distinguishes unavailable, failed, and malformed provider resolution", async () => {
@@ -982,7 +982,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const instance = createService({ resolver, revoke });
     const { project, flow } = await blankFixture(instance);
     const executionGrant = await grant(instance, project.id, flow.flowId);
-    (instance as any).withBootstrapGenerationLock = vi.fn().mockRejectedValue(new Error("raw lock failure"));
+    (instance as any).locks.withBootstrapGenerationLock = vi.fn().mockRejectedValue(new Error("raw lock failure"));
 
     const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({
       projectId: project.id,
