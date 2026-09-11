@@ -19,3 +19,9 @@ export {
   type AutomationDirectViewConnectorProps,
   type AutomationDirectViewConnectorStores
 } from "./direct-view-connector";
+export { type AutomationCanonicalConnectorScope } from "./canonical-connected-views";
+export {
+  useAutomationConnectedViewEntries,
+  useAutomationConnectedViewSource
+} from "./connected-view-entries";
+export { useAutomationConnectorCommands } from "./useAutomationConnectorCommands";

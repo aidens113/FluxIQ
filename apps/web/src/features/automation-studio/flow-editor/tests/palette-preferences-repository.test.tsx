@@ -1,7 +1,7 @@
 import React from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FlowNodePalette } from "../FlowNodePalette";
+import { FlowNodePalette } from "../components";
 import { NODE_PALETTE_FAVORITES_STORAGE_KEY, readNodePaletteFavoritesFromLocalStorage, saveNodePaletteFavoritesToLocalStorage } from "../palette-preferences-repository";
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;

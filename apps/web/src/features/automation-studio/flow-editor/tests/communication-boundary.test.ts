@@ -2,14 +2,14 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const controllerSource = [
-  "../useFlowEditorController.ts",
-  "../useFlowEditorGraphDocument.ts",
-  "../useFlowEditorSelection.ts",
-  "../useFlowEditorCanvasInteractions.ts"
+  "../hooks/useFlowEditorController.ts",
+  "../hooks/useFlowEditorGraphDocument.ts",
+  "../hooks/useFlowEditorSelection.ts",
+  "../hooks/useFlowEditorCanvasInteractions.ts"
 ].map((path) => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n");
-const toolbarSource = readFileSync(new URL("../FlowGraphToolbar.tsx", import.meta.url), "utf8");
+const toolbarSource = readFileSync(new URL("../components/FlowGraphToolbar.tsx", import.meta.url), "utf8");
 const globalToolbarSource = readFileSync(new URL("../../workspace/shell/WorkspaceHeader.tsx", import.meta.url), "utf8");
-const graphRuntimeSource = readFileSync(new URL("../../live/useAutomationGraphRuntime.ts", import.meta.url), "utf8");
+const graphRuntimeSource = readFileSync(new URL("../../live/hooks/useAutomationGraphRuntime.ts", import.meta.url), "utf8");
 const dirtyGuardSource = readFileSync(new URL("../../workspace/DirtyViewGuard.tsx", import.meta.url), "utf8");
 const typeSource = readFileSync(new URL("../flow-editor-types.ts", import.meta.url), "utf8");
 

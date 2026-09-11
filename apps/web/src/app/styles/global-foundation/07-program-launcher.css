@@ -1,0 +1,147 @@
+.program-launcher {
+  display: grid;
+  gap: var(--space-lg);
+  padding: 0 var(--space-xl) var(--space-xl);
+}
+
+.launcher-search {
+  position: sticky;
+  top: 60px;
+  z-index: var(--layer-sticky);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-sm);
+  width: min(560px, 100%);
+  min-height: var(--control-height-comfortable);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-pane);
+  box-shadow: var(--shadow-panel);
+  color: var(--color-text-muted);
+  padding: 0 var(--space-md);
+}
+
+.launcher-search:focus-within {
+  border-color: var(--color-focus);
+  box-shadow: var(--focus-ring);
+}
+
+.launcher-search input {
+  min-width: 0;
+  height: 36px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+}
+
+.launcher-results {
+  display: grid;
+  gap: var(--space-xl);
+  min-width: 0;
+}
+
+.launcher-group {
+  display: grid;
+  min-width: 0;
+}
+
+.launcher-group > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  border-bottom: var(--border-width) solid var(--color-border-strong);
+}
+
+.launcher-group h2 {
+  margin: 0;
+  font-size: var(--font-size-title-small);
+}
+
+.launcher-group > header > span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.launcher-list {
+  display: grid;
+  min-width: 0;
+}
+
+.launcher-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) minmax(80px, auto) 20px;
+  align-items: center;
+  gap: var(--space-md);
+  min-width: 0;
+  min-height: 54px;
+  border-bottom: var(--border-width) solid var(--color-border);
+  color: var(--color-text);
+  padding: var(--space-sm);
+  text-decoration: none;
+}
+
+.launcher-row:hover,
+.launcher-row:focus-visible {
+  background: var(--surface-selected);
+  color: var(--color-primary);
+}
+
+.launcher-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-tool);
+  color: var(--color-primary);
+}
+
+.launcher-copy {
+  display: grid;
+  gap: var(--space-xxs);
+  min-width: 0;
+}
+
+.launcher-copy strong,
+.launcher-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launcher-copy small,
+.launcher-meta {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+}
+
+.launcher-meta {
+  text-align: right;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .directory-heading,
+  .program-launcher {
+    padding-inline: var(--space-md);
+  }
+
+  .launcher-search {
+    top: 52px;
+    width: 100%;
+  }
+
+  .launcher-row {
+    grid-template-columns: 32px minmax(0, 1fr) 18px;
+  }
+
+  .launcher-meta {
+    display: none;
+  }
+}

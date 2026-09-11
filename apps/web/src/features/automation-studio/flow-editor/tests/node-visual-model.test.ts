@@ -72,8 +72,8 @@ describe("flow node visual geometry", () => {
   });
 
   it("uses one card structure with compact status chips and unclipped ports", () => {
-    const nodeSource = readFileSync(new URL("../FlowNode.tsx", import.meta.url), "utf8");
-    const commandSource = readFileSync(new URL("../useFlowEditorCommands.ts", import.meta.url), "utf8");
+    const nodeSource = readFileSync(new URL("../components/FlowNode.tsx", import.meta.url), "utf8");
+    const commandSource = readFileSync(new URL("../hooks/useFlowEditorCommands.ts", import.meta.url), "utf8");
     const styles = readFileSync(new URL("../../styles/flow-editor/03-nodes-ports.css", import.meta.url), "utf8");
 
     expect(nodeSource).not.toContain("automation-terminal-node");

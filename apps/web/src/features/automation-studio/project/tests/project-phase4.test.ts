@@ -127,8 +127,8 @@ describe("Automation Studio Phase 4 project ownership", () => {
 
   it("keeps modal typing and project API requests outside AutomationStudioLive", () => {
     const root = readFileSync(new URL("../../AutomationStudioLive.tsx", import.meta.url), "utf8");
-    const gate = readFileSync(new URL("../../live/AutomationStudioProjectGate.tsx", import.meta.url), "utf8");
-    const runtime = readFileSync(new URL("../../live/useAutomationProjectRuntime.ts", import.meta.url), "utf8");
+    const gate = readFileSync(new URL("../../live/components/AutomationStudioProjectGate.tsx", import.meta.url), "utf8");
+    const runtime = readFileSync(new URL("../../live/hooks/useAutomationProjectRuntime.ts", import.meta.url), "utf8");
     const surface = readFileSync(new URL("../ProjectCatalogSurface.tsx", import.meta.url), "utf8");
 
     expect(gate).toContain("AutomationProjectCatalogSurface");

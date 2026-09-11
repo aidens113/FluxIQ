@@ -116,18 +116,18 @@ import {
   type AutomationStudioLlmFailureEvidenceCaptureInput,
   type AutomationStudioLlmProvider,
   type AutomationStudioLlmTokenLimits
-} from "./llm-harness.ts";
-import { AutomationStudioLlmRunBudgetLedger } from "./llm-run-budget.ts";
-import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm-evidence-loop.ts";
-import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapEvidenceCompletionFailure, flowBootstrapEvidenceLoopFailure, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap-generation-failure.ts";
-import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapCatalogByteBudget, buildAutomationStudioFlowBootstrapContext, isAutomationStudioEvidenceFlowBootstrapResultWithinLimits, parseAutomationStudioFlowBootstrapPlan, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap.ts";
+} from "./llm/index.ts";
+import { AutomationStudioLlmRunBudgetLedger } from "./llm/index.ts";
+import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
+import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapEvidenceCompletionFailure, flowBootstrapEvidenceLoopFailure, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap/index.ts";
+import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapCatalogByteBudget, buildAutomationStudioFlowBootstrapContext, isAutomationStudioEvidenceFlowBootstrapResultWithinLimits, parseAutomationStudioFlowBootstrapPlan, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap/index.ts";
 import {
   assertAutomationStudioBootstrapHasNoRecordingProvenance,
   normalizeAutomationStudioFlowBuildPlan,
   type AutomationStudioBootstrapAccounting,
   type AutomationStudioBootstrapAdaptation,
   type AutomationStudioBootstrapAuditEvent
-} from "./flow-bootstrap-adaptation.ts";
+} from "./flow-bootstrap/index.ts";
 import { executeAutomationStudioRuntimePatch, proposeAutomationStudioRuntimeTargetOverride, type AutomationStudioRuntimeTargetOverrideEvidenceValidation, type AutomationStudioRuntimeTargetOverrideFailedAction } from "./live-patch.ts";
 import { packAutomationStudioReusableLlmContext, type AutomationStudioReusableLlmContextPacket, type AutomationStudioReusableLlmContextPackingResult } from "./reusable-llm-context.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "./host-runtime.ts";
@@ -166,6 +166,40 @@ import {
 } from "./policy-model.ts";
 export type { PolicyGraphPatch, PolicyProposalArtifact } from "./policy-model.ts";
 export type { RecordingFlowActionCandidate, RecordingFlowProposalArtifact, RecordingFlowProposalDestination } from "./recording-flow-proposal.ts";
+import {
+  AutomationStudioFlowPaths,
+  AutomationStudioProjectPaths,
+  AutomationStudioLegacyRetirementStore,
+  AutomationStudioProjectStore,
+  legacyArtifactsDigest,
+  legacyDiagnostic,
+  stableJson,
+  normalizeProjectCategories,
+  AutomationStudioRecordingPaths,
+  AutomationStudioServiceIndexes,
+  emptyFlowAdaptationIndex,
+  emptyFlowRunIndex,
+  emptyFlowSubflowIndex,
+  projectArtifactDocumentFileName,
+  type AutomationStudioAdaptationPolicySummary,
+  type AutomationStudioAdaptationSummary,
+  type AutomationStudioChangeProposalSummary,
+  type AutomationStudioInstructionSummary,
+  type AutomationStudioRouterSummary,
+  type AutomationStudioProjectIndex,
+  type AutomationStudioProjectRecord,
+  type AutomationStudioSubflowSummary,
+  type FlowAdaptationIndex,
+  type FlowAdaptationPolicyIndex,
+  type FlowChangeProposalIndex,
+  type FlowInstructionIndex,
+  type FlowRouterIndex,
+  type FlowRunIndex,
+  type FlowSubflowIndex,
+  type RecordingIndex,
+  type RuntimeIndex,
+} from "./service/index.ts";
+export type { AutomationStudioAdaptationPolicySummary, AutomationStudioAdaptationSummary, AutomationStudioChangeProposalSummary, AutomationStudioInstructionSummary, AutomationStudioRouterSummary, AutomationStudioSubflowSummary } from "./service/index.ts";
 import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage.ts";
 import { createRecord, SQLiteRepository } from "../../database-manager/storage/sqlite-repository.ts";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
@@ -406,92 +440,10 @@ export type AutomationStudioFlowMigrationInspection = {
   migrationNeeded: boolean;
 };
 
-type AutomationStudioProjectRecord = AutomationStudioProject & AutomationStudioProjectHierarchy;
-
 const PIPELINE_ARTIFACT_IO_CONCURRENCY = 16;
 const SUBFLOW_SUMMARY_MIGRATION_IO_CONCURRENCY = 16;
 const MAX_PRE_ACTION_STATE_CORRELATIONS = 12;
 const MAX_POST_ACTION_STATE_DELTAS = 12;
-
-type AutomationStudioProjectIndex = {
-  categories: AutomationStudioProjectCategory[];
-  projects: AutomationStudioProject[];
-};
-
-type RecordingIndex = {
-  recordings: { recordingId: string; taskId?: string; startedAt: number; endedAt?: number; updatedAt: number; eventCount?: number; noteCount?: number }[];
-  normalizedTimelines: { normalizedTimelineId: string; recordingId: string; generatedAt: number }[];
-};
-
-export type AutomationStudioSubflowSummary = {
-  subflowId: string;
-  summaryVersion?: 2;
-  graphFlowId?: string;
-  flowId: string;
-  projectId: string;
-  name: string;
-  role: AutomationStudioFlowSubflow["role"];
-  status: AutomationStudioFlowSubflow["status"];
-  parentCategoryId?: string;
-  updatedAt: number;
-};
-
-export type AutomationStudioInstructionSummary = {
-  instructionId: string;
-  summaryVersion?: 2;
-  flowId?: string;
-  projectId: string;
-  subflowId?: string;
-  title: string;
-  scopeKind: AutomationStudioFlowInstruction["scope"]["kind"];
-  status: AutomationStudioFlowInstruction["status"];
-  requirement: AutomationStudioFlowInstruction["requirement"];
-  priority: number;
-  updatedAt: number;
-};
-
-export type AutomationStudioChangeProposalSummary = {
-  proposalId: string;
-  flowId: string;
-  projectId: string;
-  subflowId?: string;
-  mode: AutomationStudioFlowChangeProposal["mode"];
-  status: AutomationStudioFlowChangeProposal["status"];
-  riskLevel: AutomationStudioFlowChangeProposal["riskLevel"];
-  patchCount: number;
-  updatedAt: number;
-};
-
-export type AutomationStudioAdaptationSummary = {
-  adaptationId: string;
-  flowId: string;
-  projectId: string;
-  subflowId?: string;
-  status: AutomationStudioFlowAdaptation["status"];
-  riskLevel: AutomationStudioFlowAdaptation["riskLevel"];
-  trigger: string;
-  updatedAt: number;
-};
-
-export type AutomationStudioRouterSummary = {
-  routerId: string;
-  flowId: string;
-  projectId: string;
-  name: string;
-  status: AutomationStudioFlowRouter["status"];
-  ruleCount: number;
-  updatedAt: number;
-};
-
-export type AutomationStudioAdaptationPolicySummary = {
-  policyId: string;
-  flowId: string;
-  projectId: string;
-  subflowId?: string;
-  preset: AutomationStudioAdaptationPolicy["preset"];
-  proposalMode: AutomationStudioAdaptationPolicy["proposalMode"];
-  updatedAt: number;
-};
 
 export type AutomationStudioSubflowSummaryPage = {
   subflows: AutomationStudioSubflowSummary[];
@@ -664,43 +616,6 @@ export type ReviewFlowAdaptationInput = {
   supersededByAdaptationId?: string;
 };
 
-type FlowRouterIndex = {
-  schemaVersion: "0.1";
-  routers: AutomationStudioRouterSummary[];
-};
-
-type FlowSubflowIndex = {
-  schemaVersion: "0.1";
-  summaryVersion?: 2;
-  subflows: AutomationStudioSubflowSummary[];
-};
-
-type FlowInstructionIndex = {
-  schemaVersion: "0.1";
-  summaryVersion?: 2;
-  instructions: AutomationStudioInstructionSummary[];
-};
-
-type FlowChangeProposalIndex = {
-  schemaVersion: "0.1";
-  changeProposals: AutomationStudioChangeProposalSummary[];
-};
-
-type FlowRunIndex = {
-  schemaVersion: "0.1";
-  runs: AutomationStudioFlowRunSummary[];
-};
-
-type FlowAdaptationIndex = {
-  schemaVersion: "0.1";
-  adaptations: AutomationStudioAdaptationSummary[];
-};
-
-type FlowAdaptationPolicyIndex = {
-  schemaVersion: "0.1";
-  policies: AutomationStudioAdaptationPolicySummary[];
-};
-
 export type RecordingSummaryItem = {
   id: string;
   title: string;
@@ -797,15 +712,8 @@ export type AutomationPipelineArtifacts = {
   replayResults: ReplayResultArtifact[];
 };
 
-type RuntimeIndex = {
-  sessions: { runId: string; targetKind: AutomationStudioRuntimeSession["targetKind"]; targetId: string; status: AutomationStudioRuntimeSession["status"]; updatedAt: number }[];
-};
-
 export class AutomationStudioService {
   private readonly repositories: CanonicalAutomationStudioRepositories;
-  private readonly projectIndexStore?: ProgramJsonStore<AutomationStudioProjectIndex>;
-  private readonly legacyProjectStore?: ProgramJsonStore<{ categories: AutomationStudioProjectCategory[]; projects: AutomationStudioProjectRecord[] }>;
-  private readonly projectRootDir?: string;
   private readonly nodeRootDir?: string;
   private readonly recordingDomains = new RecordingDomainRegistry();
   private readonly objectStore?: AutomationStudioObjectStore;
@@ -813,13 +721,20 @@ export class AutomationStudioService {
   private readonly projectDatabasePool?: AutomationStudioProjectDatabasePool;
   private readonly runtimeProjectDatabasePool?: AutomationStudioProjectDatabasePool;
   private readonly uiCacheStore: AutomationStudioUiCacheStore;
+  // Collaborators extracted from this class. The facade owns their wiring and
+  // keeps every public method; each owns one slice of the project storage layer.
+  private readonly projectPaths: AutomationStudioProjectPaths;
+  private readonly flowPaths: AutomationStudioFlowPaths;
+  private readonly recordingPaths: AutomationStudioRecordingPaths;
+  private readonly projects: AutomationStudioProjectStore;
+  private readonly indexes: AutomationStudioServiceIndexes;
+  private readonly legacy: AutomationStudioLegacyRetirementStore;
   private readonly recordingMutationLocks = new Map<string, Promise<void>>();
   private readonly bootstrapAdaptationLocks = new Map<string, Promise<void>>();
   private readonly bootstrapGenerationLocks = new Map<string, Promise<void>>();
   private readonly memoryBootstrapAdaptations = new Map<string, AutomationStudioBootstrapAdaptation>();
   private readonly repairedRecordingStateIndexReads = new Set<string>();
   private readonly ready: Promise<void>;
-  private storageReady?: Promise<void>;
   private ioRuntime?: { io: IoRegistry; domainId: string | null };
   private nativeNodeRuntime?: AutomationStudioNativeNodeRuntime;
   private hostRuntime: AutomationStudioHostRuntimeBoundary | undefined;
@@ -828,10 +743,6 @@ export class AutomationStudioService {
   private llmEvidenceRuntime?: AutomationStudioServiceOptions["llmEvidenceRuntime"];
   private revokeLlmExecutionGrant?: AutomationStudioServiceOptions["revokeLlmExecutionGrant"];
   private closeLlmExecutionGrants?: AutomationStudioServiceOptions["closeLlmExecutionGrants"];
-  private readonly memoryLegacyRetirementStates = new Map<string, AutomationStudioLegacyRetirementState>();
-  private readonly memoryLegacyBackups = new Map<string, AutomationStudioLegacyBackup>();
-  private readonly memoryLegacyAudit = new Map<string, AutomationStudioLegacyRetirementAuditEvent[]>();
-  private readonly legacyProjectArtifactReads = new Map<string, Promise<AutomationStudioProjectArtifacts>>();
   private readonly runtimeAbortControllers = new Map<string, AbortController>();
   private readonly adaptiveRuntimeAdmissions = new Set<string>();
   private reusableLlmContextEnabled: boolean;
@@ -849,6 +760,7 @@ export class AutomationStudioService {
     this.reusableLlmContextContentProtection = options.reusableLlmContext?.contentProtection;
     this.reusableLlmContextFreshEvidenceSelector = options.reusableLlmContext?.selectForFreshEvidence;
     let uiCacheStore = options.uiCacheStore;
+    let projectRootDir: string | undefined;
     if (options.dataDir || options.storageRootDir) {
       const automationDataDir = options.storageRootDir ?? path.join(options.dataDir!, "programs", "automation-studio");
       uiCacheStore ??= new AutomationStudioLazySqliteUiCacheStore({ rootDir: automationDataDir });
@@ -858,12 +770,16 @@ export class AutomationStudioService {
       }
       this.runtimeProjectDatabasePool = new AutomationStudioProjectDatabasePool({ rootDir: automationDataDir });
       this.projectDatabasePool = this.runtimeProjectDatabasePool;
-      this.projectRootDir = path.join(automationDataDir, "projects");
+      projectRootDir = path.join(automationDataDir, "projects");
       const nodeRootDir = options.customNodeRootDir ?? (options.storageRootDir ? undefined : path.join(automationDataDir, "nodes"));
       if (nodeRootDir) this.nodeRootDir = nodeRootDir;
-      this.projectIndexStore = new ProgramJsonStore(path.join(this.projectRootDir, "index.json"), () => ({ categories: [], projects: [] }));
-      if (options.dataDir) this.legacyProjectStore = new ProgramJsonStore(programDataFile(options.dataDir, "automation-studio", "projects.json"), () => ({ categories: [], projects: [] }));
     }
+    this.projectPaths = new AutomationStudioProjectPaths(projectRootDir);
+    this.projects = new AutomationStudioProjectStore(this.projectPaths, options.dataDir);
+    this.flowPaths = new AutomationStudioFlowPaths(this.projectPaths);
+    this.recordingPaths = new AutomationStudioRecordingPaths(this.projectPaths);
+    this.indexes = new AutomationStudioServiceIndexes(this.projectPaths, this.projects);
+    this.legacy = new AutomationStudioLegacyRetirementStore(this.projectPaths, this.projects, this.objectStore);
     this.uiCacheStore = uiCacheStore ?? new AutomationStudioMemoryUiCacheStore();
     this.ready = options.seedFixture === true ? this.seedFixture() : Promise.resolve();
   }
@@ -929,7 +845,7 @@ export class AutomationStudioService {
   }
 
   async readProjectObjectAsset(projectId: string, sha256: string): Promise<AutomationStudioObjectAsset> {
-    await this.findProject(projectId);
+    await this.projects.findProject(projectId);
     if (!this.objectStore) throw new Error("Automation Studio object storage is not enabled.");
     const asset = await this.objectStore.readProjectObject(projectId, sha256);
     if (!asset.mediaType.startsWith("image/") && asset.mediaType !== "application/octet-stream") {
@@ -939,7 +855,7 @@ export class AutomationStudioService {
   }
 
   async writeProjectObjectAsset(input: AutomationStudioWriteProjectObjectAssetInput): Promise<AutomationStudioWriteProjectObjectAssetResult> {
-    await this.findProject(input.projectId);
+    await this.projects.findProject(input.projectId);
     if (!this.objectStore) throw new Error("Automation Studio object storage is not enabled.");
     if (!isAutomationStudioRenderableAssetMediaType(input.mediaType)) {
       throw new Error("Automation Studio state assets must be PNG, JPEG, WebP, or GIF images.");
@@ -990,10 +906,10 @@ export class AutomationStudioService {
 
   async listRecordingSessionSummaries(projectId?: string | null): Promise<RecordingSession[]> {
     await this.ready;
-    if (!projectId || !this.projectRootDir) {
+    if (!projectId || !this.projectPaths.root) {
       return (await this.listRecordingSessions(projectId)).map(summaryRecordingSession);
     }
-    const index = await this.readRecordingIndex(projectId);
+    const index = await this.indexes.readRecordingIndex(projectId);
     return (index.recordings ?? []).map((item) => summaryRecordingSession({
       schemaVersion: "0.1",
       recordingId: item.recordingId,
@@ -1014,13 +930,13 @@ export class AutomationStudioService {
     await this.ready;
     const limit = Math.min(100, Math.max(1, Math.trunc(input.limit ?? 25)));
     const offset = Math.max(0, Math.trunc(input.offset ?? 0));
-    if (!projectId || !this.projectRootDir) {
+    if (!projectId || !this.projectPaths.root) {
       const summaries = (await this.listRecordingSessions(projectId)).map(summaryRecordingSession).sort((left, right) => right.startedAt - left.startedAt || left.recordingId.localeCompare(right.recordingId));
       return { recordings: summaries.slice(offset, offset + limit), page: { limit, offset, total: summaries.length } };
     }
     const typedPage = await this.tryWithRuntimeStreamStore(projectId, async (store) => await store.listRecordingSummaries({ limit, offset }));
     if (typedPage && typedPage.total > 0) return { recordings: typedPage.recordings, page: { limit: typedPage.limit, offset: typedPage.offset, total: typedPage.total } };
-    const index = await this.readRecordingIndex(projectId);
+    const index = await this.indexes.readRecordingIndex(projectId);
     const ordered = [...(index.recordings ?? [])].sort((left, right) => right.startedAt - left.startedAt || left.recordingId.localeCompare(right.recordingId));
     const recordings = ordered.slice(offset, offset + limit).map((item) => summaryRecordingSession({
       schemaVersion: "0.1",
@@ -1106,9 +1022,9 @@ export class AutomationStudioService {
     const seen = new Set<string>();
 
     for (const project of projects) {
-      if (this.projectRootDir) await this.loadProjectRecordings(project.id);
-      const recordingIds = this.projectRootDir
-        ? (await this.readRecordingIndex(project.id)).recordings.map((item) => item.recordingId)
+      if (this.projectPaths.root) await this.loadProjectRecordings(project.id);
+      const recordingIds = this.projectPaths.root
+        ? (await this.indexes.readRecordingIndex(project.id)).recordings.map((item) => item.recordingId)
         : (await this.repositories.recordingSessions.list()).map((recording) => recording.recordingId);
 
       for (const recordingId of recordingIds) {
@@ -1426,8 +1342,8 @@ export class AutomationStudioService {
     return await this.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
       await this.repositories.recordingSessions.delete(input.recordingId);
       let deletedProposalIds: string[] = [];
-      if (input.projectId && this.projectRootDir) {
-        const pipelineIndex = await this.readPipelineIndex(input.projectId).catch(() => emptyPipelineIndex());
+      if (input.projectId && this.projectPaths.root) {
+        const pipelineIndex = await this.indexes.readPipelineIndex(input.projectId).catch(() => emptyPipelineIndex());
         deletedProposalIds = uniqueStrings([
           ...(pipelineIndex.policyProposals ?? []).filter((item) => item.recordingId === input.recordingId).map((item) => item.proposalId),
           ...(pipelineIndex.recordingFlowProposals ?? []).filter((item) => item.recordingId === input.recordingId).map((item) => item.proposalId)
@@ -1438,18 +1354,18 @@ export class AutomationStudioService {
           }
         }
         await this.deleteProjectRecordingPipeline(input.projectId, input.recordingId);
-        await this.writeRecordingIndex(input.projectId, (index) => ({
+        await this.indexes.writeRecordingIndex(input.projectId, (index) => ({
           recordings: (index.recordings ?? []).filter((item) => item.recordingId !== input.recordingId),
           normalizedTimelines: (index.normalizedTimelines ?? []).filter((item) => item.recordingId !== input.recordingId)
         }));
         if (this.objectStore) {
           const live = await this.collectLiveProjectObjectReferences(input.projectId);
           await this.objectStore.deleteRecordingObjects(input.projectId, input.recordingId, live);
-          await ProgramJsonStore.deletePath(this.recordingSessionDirectory(input.projectId, input.recordingId));
-          await rm(this.recordingSessionDirectory(input.projectId, input.recordingId), { recursive: true, force: true });
+          await ProgramJsonStore.deletePath(this.recordingPaths.recordingSessionDirectory(input.projectId, input.recordingId));
+          await rm(this.recordingPaths.recordingSessionDirectory(input.projectId, input.recordingId), { recursive: true, force: true });
           await this.pruneUnreferencedProjectObjects(input.projectId);
         } else {
-          await rm(this.recordingSessionDirectory(input.projectId, input.recordingId), { recursive: true, force: true });
+          await rm(this.recordingPaths.recordingSessionDirectory(input.projectId, input.recordingId), { recursive: true, force: true });
         }
         await this.deleteOrphanedPhysicalRecordingSessionDirectories(input.projectId);
       }
@@ -1460,7 +1376,7 @@ export class AutomationStudioService {
   async deleteRecordings(input: { projectId?: string | null; recordingIds?: string[] }): Promise<{ deletedRecordingIds: string[]; deletedProposalIds: string[] }> {
     const recordingIds = uniqueStrings((input.recordingIds ?? []).map((recordingId) => String(recordingId)).filter(Boolean));
     if (!recordingIds.length) return { deletedRecordingIds: [], deletedProposalIds: [] };
-    if (!input.projectId || !this.projectRootDir) {
+    if (!input.projectId || !this.projectPaths.root) {
       const results = await Promise.all(recordingIds.map((recordingId) => this.deleteRecording({
         ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
         recordingId
@@ -1472,11 +1388,11 @@ export class AutomationStudioService {
     }
 
     const recordingIdSet = new Set(recordingIds);
-    const pipelineIndex = await this.readPipelineIndex(input.projectId).catch(() => emptyPipelineIndex());
+    const pipelineIndex = await this.indexes.readPipelineIndex(input.projectId).catch(() => emptyPipelineIndex());
     const artifactIds = emptyPipelineArtifactIdSets();
     await Promise.all(recordingIds.map(async (recordingId) => {
       const pipeline = await new ProgramJsonStore<RecordingPipelineDocument>(
-        this.recordingPipelineFile(input.projectId!, recordingId),
+        this.recordingPaths.recordingPipelineFile(input.projectId!, recordingId),
         () => createRecordingPipelineDocument({ recordingId, startedAt: Date.now() })
       ).read();
       mergePipelineArtifactIdSets(artifactIds, await this.collectRecordingPipelineArtifactIds(input.projectId!, recordingId, pipeline, pipelineIndex));
@@ -1505,9 +1421,9 @@ export class AutomationStudioService {
     });
     await this.deletePhysicalSharedPipelineArtifactsForRecordings(input.projectId, recordingIdSet);
     await Promise.all(recordingIds.map(async (recordingId) => {
-      const proposalRoot = this.projectFile(input.projectId!, "proposals", safeSegment(recordingId));
-      const derivedDir = this.recordingDerivedDirectory(input.projectId!, recordingId);
-      const sessionDir = this.recordingSessionDirectory(input.projectId!, recordingId);
+      const proposalRoot = this.projectPaths.projectFile(input.projectId!, "proposals", safeSegment(recordingId));
+      const derivedDir = this.recordingPaths.recordingDerivedDirectory(input.projectId!, recordingId);
+      const sessionDir = this.recordingPaths.recordingSessionDirectory(input.projectId!, recordingId);
       if (this.objectStore) {
         await Promise.all([
           ProgramJsonStore.deletePath(proposalRoot),
@@ -1522,7 +1438,7 @@ export class AutomationStudioService {
       ]);
     }));
 
-    await this.writeRecordingIndex(input.projectId, (index) => ({
+    await this.indexes.writeRecordingIndex(input.projectId, (index) => ({
       recordings: (index.recordings ?? []).filter((item) => !recordingIdSet.has(item.recordingId)),
       normalizedTimelines: (index.normalizedTimelines ?? []).filter((item) => !recordingIdSet.has(item.recordingId))
     }));
@@ -1546,7 +1462,7 @@ export class AutomationStudioService {
       if (!recordingId) throw new Error("Proposal is not associated with a recording.");
       await this.deletePipelineArtifactDocuments(input.projectId, recordingId, kind, input.proposalId);
       await this.removeRecordingPipelineArtifactId(input.projectId, recordingId, kind, input.proposalId);
-      await new ProgramJsonStore<PipelineIndex>(this.projectFile(input.projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => ({
+      await new ProgramJsonStore<PipelineIndex>(this.projectPaths.projectFile(input.projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => ({
         ...index,
         policyProposals: kind === "policyProposals" ? (index.policyProposals ?? []).filter((item) => item.proposalId !== input.proposalId) : index.policyProposals,
         recordingFlowProposals: kind === "recordingFlowProposals" ? (index.recordingFlowProposals ?? []).filter((item) => item.proposalId !== input.proposalId) : index.recordingFlowProposals
@@ -1890,7 +1806,7 @@ export class AutomationStudioService {
         edges: policyInput.edges
       }
     };
-    const project = await this.findProject(input.projectId);
+    const project = await this.projects.findProject(input.projectId);
     const requestedFlowId = input.targetFlowId?.trim();
     const resolvedFlowId = requestedFlowId ?? `flow.${safeSegment(targetTaskId)}`;
     const existingFlow = await this.repositories.flows.get(resolvedFlowId);
@@ -1924,7 +1840,7 @@ export class AutomationStudioService {
       : mergeProposalPatchIntoPolicy(existingPolicy, proposalForApproval);
     const approvedAt = Date.now();
     await this.repositories.policyGraphs.put(mergedPolicy);
-    await new ProgramJsonStore<JsonObject>(this.projectFile(input.projectId, "policies", `${safeSegment(mergedPolicy.policyId)}.json`), () => ({})).write({ policy: mergedPolicy as unknown as JsonObject });
+    await new ProgramJsonStore<JsonObject>(this.projectPaths.projectFile(input.projectId, "policies", `${safeSegment(mergedPolicy.policyId)}.json`), () => ({})).write({ policy: mergedPolicy as unknown as JsonObject });
     const flowInput: Parameters<typeof policyGraphToAutomationStudioFlow>[1] = {
       flowId: existingFlow?.flowId ?? resolvedFlowId,
       existingFlow: existingFlow ? canonicalFlowDocument(existingFlow) : null,
@@ -2035,7 +1951,7 @@ export class AutomationStudioService {
   }
 
   async listProjectArtifacts(projectId: string): Promise<AutomationStudioProjectArtifacts> {
-    const artifacts = await this.readLegacyProjectArtifacts(projectId);
+    const artifacts = await this.legacy.readLegacyProjectArtifacts(projectId);
     const tasksWithGraphs = await this.embedTaskGraphs(projectId, artifacts.tasks, artifacts.flows);
     return {
       tasks: tasksWithGraphs,
@@ -2046,7 +1962,7 @@ export class AutomationStudioService {
   }
 
   async getProjectWorkspaceSummary(projectId: string): Promise<AutomationStudioWorkspaceSummary> {
-    const project = await this.findProject(projectId);
+    const project = await this.projects.findProject(projectId);
     const [recordingSummaries, proposals, flows, runtime] = await Promise.all([
       this.listAutomationRecordingSummaries(projectId),
       this.listAutomationProposalSummaries(projectId),
@@ -2090,7 +2006,7 @@ export class AutomationStudioService {
   }
 
   private async listAutomationProposalSummaries(projectId: string): Promise<AutomationStudioProposalSummary[]> {
-    const index = await this.readPipelineIndex(projectId);
+    const index = await this.indexes.readPipelineIndex(projectId);
     const policyProposals = (index.policyProposals ?? []).map((item): AutomationStudioProposalSummary => ({
       proposalId: item.proposalId,
       recordingId: item.recordingId ?? "unknown",
@@ -2115,7 +2031,7 @@ export class AutomationStudioService {
   }
 
   async listAutomationFlowSummaries(projectId: string): Promise<AutomationStudioFlowSummary[]> {
-    const index = await this.readFlowIndex(projectId).catch(() => emptyFlowSummaryIndex());
+    const index = await this.indexes.readFlowIndex(projectId).catch(() => emptyFlowSummaryIndex());
     const metadataAwareIndex = index.ownershipMetadataVersion === 1 && index.hierarchyMetadataVersion === 1
       ? index
       : await this.repairFlowSummaryMetadataIndex(projectId, index);
@@ -2123,7 +2039,7 @@ export class AutomationStudioService {
   }
 
   async listFlowMetadataPage(input: { projectId: string; limit?: number; cursor?: string | null; status?: string }): Promise<AutomationStudioFlowResourcePage<AutomationStudioSqlFlowRecord>> {
-    await this.findProject(input.projectId);
+    await this.projects.findProject(input.projectId);
     if (!this.projectDatabasePool) return { items: [], nextCursor: null, hasMore: false, limit: Math.max(1, Math.min(500, Math.trunc(input.limit ?? 50))) };
     const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool: this.projectDatabasePool, projectId: input.projectId });
     try {
@@ -2134,7 +2050,7 @@ export class AutomationStudioService {
   }
 
   async getFlowMetadataDetail(projectId: string, flowId: string): Promise<AutomationStudioSqlFlowDetail | null> {
-    await this.findProject(projectId);
+    await this.projects.findProject(projectId);
     if (!this.projectDatabasePool) return null;
     const canonical = await this.getFlow(projectId, flowId).catch(() => null);
     const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool: this.projectDatabasePool, projectId });
@@ -2148,7 +2064,7 @@ export class AutomationStudioService {
   }
 
   private async listAutomationRuntimeSummaries(projectId: string): Promise<AutomationStudioRuntimeRunSummary[]> {
-    const index = await this.readRuntimeIndex(projectId).catch(() => ({ sessions: [] }));
+    const index = await this.indexes.readRuntimeIndex(projectId).catch(() => ({ sessions: [] }));
     return (index.sessions ?? []).map((session) => ({
       runId: session.runId,
       targetKind: session.targetKind,
@@ -2160,10 +2076,10 @@ export class AutomationStudioService {
 
   /** Lists canonical Flows together with read-only legacy Task/Routine adapters. */
   async listFlows(projectId: string): Promise<AutomationStudioFlowCatalogEntry[]> {
-    const project = await this.findProject(projectId);
+    const project = await this.projects.findProject(projectId);
     const [canonicalFlows, legacyArtifacts] = await Promise.all([
       this.listCanonicalFlowArtifacts(projectId),
-      this.readLegacyProjectArtifacts(projectId)
+      this.legacy.readLegacyProjectArtifacts(projectId)
     ]);
     const catalog = resolveAutomationStudioFlowCatalog({
       projectId,
@@ -2179,7 +2095,7 @@ export class AutomationStudioService {
   }
 
   async createFlow(input: { projectId: string; name?: unknown; description?: unknown; flowId?: string }): Promise<AutomationStudioFlowArtifact> {
-    const project = await this.findProject(input.projectId);
+    const project = await this.projects.findProject(input.projectId);
     const name = typeof input.name === "string" ? input.name.trim() : "";
     if (!name) throw new Error("Flow name is required.");
     const flowId = typeof input.flowId === "string" && input.flowId.trim() ? input.flowId.trim() : `flow.${randomUUID()}`;
@@ -2196,7 +2112,7 @@ export class AutomationStudioService {
   }
 
   async getFlow(projectId: string, flowId: string): Promise<AutomationStudioFlowArtifact> {
-    await this.findProject(projectId);
+    await this.projects.findProject(projectId);
     await this.loadProjectFlow(projectId, flowId);
     const flow = await this.repositories.flows.get(flowId);
     if (!flow || flow.projectId !== projectId) throw new Error(`Unknown Automation Studio Flow: ${flowId}`);
@@ -2256,7 +2172,7 @@ export class AutomationStudioService {
   }
 
   async assertProjectDomainAccess(projectId: string, domainId?: string | null): Promise<void> {
-    const project = await this.findProjectSummary(projectId);
+    const project = await this.projects.findProjectSummary(projectId);
     if ((project.domainId ?? null) !== (domainId ?? null)) throw new Error("Automation Studio project is unavailable in this domain scope.");
   }
 
@@ -2363,7 +2279,7 @@ export class AutomationStudioService {
       this.getLlmExecutionDependencyDigest(projectId, flowId)
     ]);
     let settingsRevision: number;
-    if (this.projectDatabasePool && this.projectRootDir) {
+    if (this.projectDatabasePool && this.projectPaths.root) {
       const repository = await AutomationStudioProjectFlowResourceRepository.open({
         pool: this.projectDatabasePool,
         projectId
@@ -2710,12 +2626,12 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async getFlowBootstrapAdaptation(projectId: string, flowId: string, adaptationId: string): Promise<AutomationStudioBootstrapAdaptation | null> {
-    await this.findProject(projectId);
+    await this.projects.findProject(projectId);
     const key = bootstrapAdaptationMemoryKey(projectId, flowId, adaptationId);
     const memory = this.memoryBootstrapAdaptations.get(key);
     if (memory) return structuredClone(memory);
-    if (!this.projectRootDir) return null;
-    const stored = await new ProgramJsonStore<JsonObject>(this.flowBootstrapAdaptationFile(projectId, flowId, adaptationId), () => ({})).read();
+    if (!this.projectPaths.root) return null;
+    const stored = await new ProgramJsonStore<JsonObject>(this.flowPaths.flowBootstrapAdaptationFile(projectId, flowId, adaptationId), () => ({})).read();
     if (stored.kind !== "flow_bootstrap" || stored.adaptationId !== adaptationId || stored.projectId !== projectId || stored.flowId !== flowId) return null;
     assertAutomationStudioBootstrapHasNoRecordingProvenance(stored);
     const adaptation = stored as unknown as AutomationStudioBootstrapAdaptation;
@@ -2758,7 +2674,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     limit?: number;
     pinnedNodeIds?: string[];
   }): Promise<{ flow: AutomationStudioFlowArtifact; page: AutomationStudioGraphViewportPage }> {
-    await this.findProject(input.projectId);
+    await this.projects.findProject(input.projectId);
     if (!this.projectDatabasePool) throw new Error("Project graph storage is unavailable.");
     const canonical = await this.getFlow(input.projectId, input.flowId);
     const graph = await AutomationStudioProjectGraphRepository.open({
@@ -2802,7 +2718,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     replayed: boolean;
     flow?: AutomationStudioFlowArtifact & { graphRevision: number };
   }> {
-    await this.findProject(input.projectId);
+    await this.projects.findProject(input.projectId);
     if (!this.projectDatabasePool) throw new Error("Project graph storage is unavailable.");
     const canonical = await this.getFlow(input.projectId, input.flowId);
     await this.assertFlowGraphMutationAllowed(input.projectId, canonical);
@@ -2911,7 +2827,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     allowPublicationMutation: boolean,
     representationCreationKind?: AutomationStudioFlowRepresentationKind
   ): Promise<AutomationStudioFlowArtifact> {
-    const project = await this.findProject(input.projectId);
+    const project = await this.projects.findProject(input.projectId);
     if (input.flow.projectId !== project.id) throw new Error("Flow projectId must match the target project.");
     const expectedScope = flowScopeForProject(project);
     if (!sameFlowScope(input.flow.scope, expectedScope)) throw new Error("Flow scope must match the target project scope.");
@@ -3078,14 +2994,14 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     await this.repositories.flows.delete(input.flowId);
     await this.deleteProjectArtifactFile(input.projectId, "config", flowConfigArtifactId(input.flowId));
     await this.deleteFlowSourceFile(input.projectId, flow);
-    await this.writeFlowIndex(input.projectId, (index) => ({
+    await this.indexes.writeFlowIndex(input.projectId, (index) => ({
       schemaVersion: "0.1",
       ...(index.ownershipMetadataVersion === 1 ? { ownershipMetadataVersion: 1 as const } : {}),
       ...(index.hierarchyMetadataVersion === 1 ? { hierarchyMetadataVersion: 1 as const } : {}),
       flows: (index.flows ?? []).filter((item) => item.flowId !== input.flowId)
     }));
-    await ProgramJsonStore.deletePath(this.flowDirectory(input.projectId, input.flowId));
-    await rm(this.flowDirectory(input.projectId, input.flowId), { recursive: true, force: true });
+    await ProgramJsonStore.deletePath(this.flowPaths.flowDirectory(input.projectId, input.flowId));
+    await rm(this.flowPaths.flowDirectory(input.projectId, input.flowId), { recursive: true, force: true });
     await this.appendProjectMutationChangeFeed({
       projectId: input.projectId,
       entityKind: "flow",
@@ -3156,7 +3072,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async listFlowPublications(projectId: string, flowId?: string): Promise<AutomationStudioFlowPublicationRecord[]> {
-    await this.findProject(projectId);
+    await this.projects.findProject(projectId);
     return (await this.listFlowPublicationRecords(projectId)).filter((record) => record.projectId === projectId && (!flowId || record.flowId === flowId)).sort((left, right) => right.createdAt - left.createdAt);
   }
 
@@ -3190,7 +3106,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
 
   /** Public, immutable Flow versions visible as composite-node definitions in this project's scope. */
   async listPublishedFlowNodes(projectId: string) {
-    const project = await this.findProject(projectId);
+    const project = await this.projects.findProject(projectId);
     const scope = flowScopeForProject(project);
     return (await this.listFlowPublicationRecords(projectId))
       .filter((record) => record.status === "published")
@@ -3200,14 +3116,14 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async listNativeNodeDefinitions(projectId: string) {
-    const project = await this.findProject(projectId); const scope = flowScopeForProject(project);
+    const project = await this.projects.findProject(projectId); const scope = flowScopeForProject(project);
     const native = (this.nativeNodeRuntime?.listDefinitions() ?? []).filter((definition) => definition.availability.kind === "both" || (definition.availability.kind === "global" && scope.kind === "global") || (definition.availability.kind === "domain" && scope.kind === "domain" && definition.availability.domainId === scope.domainId));
     return [...native, ...(await this.listRecordingDerivedNodeDefinitions(projectId))];
   }
 
   /** Runs importer-owned semanticizers over immutable recording entries. */
   async createRecordingFlowProposals(input: { projectId: string; recordingId: string; mapperId?: string; force?: boolean }): Promise<CreateRecordingFlowProposalsResult> {
-    const project = await this.findProject(input.projectId);
+    const project = await this.projects.findProject(input.projectId);
     const recording = await this.getRecordingSession(input.recordingId, input.projectId);
     const domainId = recording.environment.domainId ?? project.domainId ?? null;
     if (!domainId) return { proposals: [], issues: ["Recording Flow proposal generation requires a recording or project domainId."] };
@@ -3395,18 +3311,18 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async listRecordingDerivedNodeDefinitions(projectId: string): Promise<AutomationStudioNodeDefinition[]> {
-    const project = await this.findProject(projectId);
-    const state = await this.readProjectIndex();
+    const project = await this.projects.findProject(projectId);
+    const state = await this.projects.readProjectIndex();
     const scopedProjectIds = state.projects.filter((candidate) => (candidate.domainId ?? null) === (project.domainId ?? null)).map((candidate) => candidate.id);
     const proposals = (await Promise.all(scopedProjectIds.map(async (candidateProjectId) => (await this.readRecordingFlowProposals(candidateProjectId, true)).filter((proposal) => candidateProjectId === projectId || (proposal.review?.destination?.kind === "node" && proposal.review.destination.visibility === "public"))))).flat();
     return proposals.filter((proposal) => proposal.status === "approved" && proposal.review?.destination?.kind === "node").flatMap((proposal) => proposal.approvedDefinitions ?? []);
   }
 
   async inspectFlowMigration(projectId: string): Promise<AutomationStudioFlowMigrationInspection> {
-    const project = await this.findProject(projectId);
+    const project = await this.projects.findProject(projectId);
     const [canonicalFlows, legacyArtifacts] = await Promise.all([
       this.listCanonicalFlowArtifacts(projectId),
-      this.readLegacyProjectArtifacts(projectId)
+      this.legacy.readLegacyProjectArtifacts(projectId)
     ]);
     const catalog = resolveAutomationStudioFlowCatalog({
       projectId,
@@ -3442,10 +3358,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async inspectLegacyRetirement(projectId: string): Promise<AutomationStudioLegacyRetirementReport> {
-    await this.findProject(projectId);
+    await this.projects.findProject(projectId);
     const [state, artifacts, canonicalFlows, migration] = await Promise.all([
-      this.readLegacyRetirementState(projectId),
-      this.readLegacyProjectArtifacts(projectId),
+      this.legacy.readLegacyRetirementState(projectId),
+      this.legacy.readLegacyProjectArtifacts(projectId),
       this.listCanonicalFlowArtifacts(projectId),
       this.inspectFlowMigration(projectId)
     ]);
@@ -3474,7 +3390,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async recordLegacyRetirementEvidence(input: { projectId: string; importerEvidence?: AutomationStudioLegacyImporterEvidence[]; intentionallyDeferred?: AutomationStudioLegacyDeferredArtifact[]; importerCoverageAcknowledged?: boolean }): Promise<AutomationStudioLegacyRetirementReport> {
-    const current = await this.readLegacyRetirementState(input.projectId);
+    const current = await this.legacy.readLegacyRetirementState(input.projectId);
     if (current.phase === "write_locked") throw new Error("Legacy retirement evidence is immutable after writes are locked.");
     const next: AutomationStudioLegacyRetirementState = {
       ...current,
@@ -3483,23 +3399,23 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       ...(input.importerCoverageAcknowledged !== undefined ? { importerCoverageAcknowledged: input.importerCoverageAcknowledged } : {}),
       updatedAt: Date.now()
     };
-    await this.writeLegacyRetirementState(next);
-    await this.appendLegacyRetirementAudit(input.projectId, "evidence_updated", { importerCount: next.importerEvidence.length, deferredCount: next.intentionallyDeferred.length, importerCoverageAcknowledged: next.importerCoverageAcknowledged });
+    await this.legacy.writeLegacyRetirementState(next);
+    await this.legacy.appendLegacyRetirementAudit(input.projectId, "evidence_updated", { importerCount: next.importerEvidence.length, deferredCount: next.intentionallyDeferred.length, importerCoverageAcknowledged: next.importerCoverageAcknowledged });
     return await this.inspectLegacyRetirement(input.projectId);
   }
 
   async exportLegacyProject(projectId: string): Promise<AutomationStudioLegacyBackup> {
-    return await this.ensureLegacyBackup(projectId);
+    return await this.legacy.ensureLegacyBackup(projectId);
   }
 
   async verifyLegacyBackup(projectId: string, backupId: string): Promise<AutomationStudioLegacyRetirementReport> {
-    const backup = await this.readLegacyBackup(projectId, backupId);
+    const backup = await this.legacy.readLegacyBackup(projectId, backupId);
     if (!backup) throw new Error(`Unknown legacy backup: ${backupId}`);
     if (legacyArtifactsDigest(backup.artifacts) !== backup.digest) throw new Error(`Legacy backup ${backupId} failed digest verification.`);
-    const current = await this.readLegacyRetirementState(projectId);
+    const current = await this.legacy.readLegacyRetirementState(projectId);
     const next = { ...current, verifiedBackupId: backup.backupId, backupRestoreVerifiedAt: Date.now(), updatedAt: Date.now() };
-    await this.writeLegacyRetirementState(next);
-    await this.appendLegacyRetirementAudit(projectId, "backup_verified", { backupId: backup.backupId, digest: backup.digest });
+    await this.legacy.writeLegacyRetirementState(next);
+    await this.legacy.appendLegacyRetirementAudit(projectId, "backup_verified", { backupId: backup.backupId, digest: backup.digest });
     return await this.inspectLegacyRetirement(projectId);
   }
 
@@ -3509,21 +3425,21 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     if (!report.canLockWrites) throw new Error(`Legacy writes cannot be locked: ${report.criteria.filter((item) => !item.satisfied).map((item) => item.id).join(", ")}.`);
     if (report.state.phase === "write_locked") return report;
     const now = Date.now();
-    await this.writeLegacyRetirementState({ ...report.state, projectSchemaVersion: AUTOMATION_STUDIO_FLOW_FIRST_SCHEMA_VERSION, phase: "write_locked", sealedAt: now, updatedAt: now });
-    await this.appendLegacyRetirementAudit(input.projectId, "writes_locked", { projectSchemaVersion: AUTOMATION_STUDIO_FLOW_FIRST_SCHEMA_VERSION });
+    await this.legacy.writeLegacyRetirementState({ ...report.state, projectSchemaVersion: AUTOMATION_STUDIO_FLOW_FIRST_SCHEMA_VERSION, phase: "write_locked", sealedAt: now, updatedAt: now });
+    await this.legacy.appendLegacyRetirementAudit(input.projectId, "writes_locked", { projectSchemaVersion: AUTOMATION_STUDIO_FLOW_FIRST_SCHEMA_VERSION });
     return await this.inspectLegacyRetirement(input.projectId);
   }
 
   async listLegacyRetirementAudit(projectId: string): Promise<AutomationStudioLegacyRetirementAuditEvent[]> {
-    await this.findProject(projectId);
-    return await this.readLegacyRetirementAudit(projectId);
+    await this.projects.findProject(projectId);
+    return await this.legacy.readLegacyRetirementAudit(projectId);
   }
 
   async planFlowMigrationRollback(projectId: string, migrationId: string): Promise<AutomationStudioFlowMigrationRollbackPlan> {
     const ledger = await this.repositories.flowMigrationLedgers.get(migrationId);
     if (!ledger || ledger.projectId !== projectId) throw new Error(`Unknown Flow migration: ${migrationId}`);
     if (ledger.rolledBackAt) return { schemaVersion: "0.1", projectId, migrationId, backupId: ledger.backupId, status: "applied", flowIds: [], blockers: [], generatedAt: Date.now() };
-    const backup = await this.readLegacyBackup(projectId, ledger.backupId);
+    const backup = await this.legacy.readLegacyBackup(projectId, ledger.backupId);
     const blockers: string[] = [];
     if (!backup || legacyArtifactsDigest(backup.artifacts) !== backup.digest) blockers.push(`Backup ${ledger.backupId} is missing or invalid.`);
     const flowIds: string[] = [];
@@ -3545,12 +3461,12 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     for (const flowId of plan.flowIds) await this.deleteFlow({ projectId, flowId });
     const ledger = await this.repositories.flowMigrationLedgers.get(migrationId);
     if (ledger) await this.repositories.flowMigrationLedgers.put({ ...ledger, rolledBackAt: Date.now(), updatedAt: Date.now() });
-    await this.appendLegacyRetirementAudit(projectId, "rollback_applied", { migrationId, backupId: plan.backupId, flowIds: plan.flowIds });
+    await this.legacy.appendLegacyRetirementAudit(projectId, "rollback_applied", { migrationId, backupId: plan.backupId, flowIds: plan.flowIds });
     return { ...plan, status: "applied", generatedAt: Date.now() };
   }
 
   async migrateFlows(projectId: string): Promise<AutomationStudioFlowMigrationLedger> {
-    const backup = await this.ensureLegacyBackup(projectId);
+    const backup = await this.legacy.ensureLegacyBackup(projectId);
     const inspection = await this.inspectFlowMigration(projectId);
     const entries = await this.listFlows(projectId);
     const entryByLegacyKey = new Map(entries.flatMap((entry) => entry.flow.legacyProvenance
@@ -3586,13 +3502,13 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       updatedAt: now
     };
     const savedLedger = await this.repositories.flowMigrationLedgers.put(ledger);
-    await this.appendLegacyRetirementAudit(projectId, "migration_applied", { migrationId: ledger.migrationId, backupId: ledger.backupId, status: ledger.status, createdFlowIds: outcomes.filter((item) => item.status === "created").map((item) => item.flowId) });
+    await this.legacy.appendLegacyRetirementAudit(projectId, "migration_applied", { migrationId: ledger.migrationId, backupId: ledger.backupId, status: ledger.status, createdFlowIds: outcomes.filter((item) => item.status === "created").map((item) => item.flowId) });
     return savedLedger;
   }
 
   async saveProjectArtifact(input: { projectId: string; kind: AutomationStudioProjectArtifactKind; artifact: unknown }): Promise<unknown> {
-    await this.findProject(input.projectId);
-    if (input.kind !== "config") await this.assertLegacyWriteAllowed(input.projectId);
+    await this.projects.findProject(input.projectId);
+    if (input.kind !== "config") await this.legacy.assertLegacyWriteAllowed(input.projectId);
     if (!input.artifact || typeof input.artifact !== "object" || Array.isArray(input.artifact)) throw new Error("Artifact object is required.");
     const artifact = input.artifact as Record<string, unknown>;
     const id = this.projectArtifactId(input.kind, artifact);
@@ -3603,20 +3519,20 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       createdAt: typeof artifact.createdAt === "number" ? artifact.createdAt : now,
       updatedAt: now
     } as unknown as JsonObject;
-    await new ProgramJsonStore<JsonObject>(this.projectArtifactFile(input.projectId, input.kind, id), () => ({})).write(withTimestamps);
+    await new ProgramJsonStore<JsonObject>(this.projectPaths.projectArtifactFile(input.projectId, input.kind, id), () => ({})).write(withTimestamps);
     return withTimestamps;
   }
 
   async getProjectArtifact(projectId: string, kind: AutomationStudioProjectArtifactKind, artifactId: string): Promise<unknown> {
-    await this.findProject(projectId);
-    const artifact = await new ProgramJsonStore<JsonObject>(this.projectArtifactFile(projectId, kind, artifactId), () => ({})).read();
+    await this.projects.findProject(projectId);
+    const artifact = await new ProgramJsonStore<JsonObject>(this.projectPaths.projectArtifactFile(projectId, kind, artifactId), () => ({})).read();
     if (!Object.keys(artifact).length) throw new Error(`Unknown Automation Studio ${kind}: ${artifactId}`);
     return artifact;
   }
 
   async deleteProjectArtifact(input: { projectId: string; kind: AutomationStudioProjectArtifactKind; artifactId: string; deleteOwnedArtifacts?: boolean }): Promise<{ deleted: boolean; projectId: string; kind: AutomationStudioProjectArtifactKind; artifactId: string; deletedArtifactIds: string[] }> {
-    await this.findProject(input.projectId);
-    if (input.kind !== "config") await this.assertLegacyWriteAllowed(input.projectId);
+    await this.projects.findProject(input.projectId);
+    if (input.kind !== "config") await this.legacy.assertLegacyWriteAllowed(input.projectId);
     const artifactId = input.artifactId.trim();
     if (!artifactId) throw new Error(`${input.kind} ID is required.`);
     const deletedArtifactIds = new Set<string>([`${input.kind}:${artifactId}`]);
@@ -3637,8 +3553,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         const policyId = typeof task.metadata?.policyId === "string" ? task.metadata.policyId : null;
         if (policyId) {
           await this.repositories.policyGraphs.delete(policyId).catch(() => false);
-          if (this.projectRootDir) {
-            const policyPath = this.projectFile(input.projectId, "policies", `${safeSegment(policyId)}.json`);
+          if (this.projectPaths.root) {
+            const policyPath = this.projectPaths.projectFile(input.projectId, "policies", `${safeSegment(policyId)}.json`);
             if (this.objectStore) await ProgramJsonStore.deletePath(policyPath);
             else await rm(policyPath, { force: true });
           }
@@ -3663,7 +3579,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
 
   /** @deprecated Creates an owner-bound compatibility Flow. Use createFlow() for new work. */
   async createDefaultFlow(input: { projectId: string; ownerKind: "task" | "routine"; ownerId: string; name: string; description?: string }): Promise<AutomationStudioFlowDocument> {
-    await this.assertLegacyWriteAllowed(input.projectId);
+    await this.legacy.assertLegacyWriteAllowed(input.projectId);
     const flow = createBlankAutomationStudioFlow({
       flowId: `${input.ownerKind}.${safeSegment(input.ownerId)}.flow`,
       ownerKind: input.ownerKind,
@@ -3679,7 +3595,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     if (this.objectStore) {
       return (await this.repositories.normalizedTimelines.list()).filter((timeline) => timeline.metadata?.projectId === projectId);
     }
-    const index = await this.readRecordingIndex(projectId);
+    const index = await this.indexes.readRecordingIndex(projectId);
     const timelines: NormalizedTimeline[] = [];
     for (const item of index.normalizedTimelines ?? []) {
       const timeline = await this.repositories.normalizedTimelines.get(item.normalizedTimelineId);
@@ -3689,19 +3605,19 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async listProjectNormalizedTimelineSummaries(projectId: string): Promise<RecordingIndex["normalizedTimelines"]> {
-    const index = await this.readRecordingIndex(projectId);
+    const index = await this.indexes.readRecordingIndex(projectId);
     return [...(index.normalizedTimelines ?? [])].sort((left, right) => right.generatedAt - left.generatedAt);
   }
 
   async getProjectNormalizedTimeline(projectId: string, normalizedTimelineId: string): Promise<NormalizedTimeline> {
-    const index = await this.readRecordingIndex(projectId);
+    const index = await this.indexes.readRecordingIndex(projectId);
     const item = (index.normalizedTimelines ?? []).find((candidate) => candidate.normalizedTimelineId === normalizedTimelineId);
     if (!item) throw new Error(`Unknown normalized timeline for project ${projectId}: ${normalizedTimelineId}`);
     const existing = await this.repositories.normalizedTimelines.get(normalizedTimelineId);
     if (existing && existing.recordingId === item.recordingId) return existing;
-    if (!this.projectRootDir) throw new Error(`Normalized timeline is not loaded: ${normalizedTimelineId}`);
+    if (!this.projectPaths.root) throw new Error(`Normalized timeline is not loaded: ${normalizedTimelineId}`);
     const stored = await new ProgramJsonStore<JsonObject>(
-      this.recordingDerivedFile(projectId, item.recordingId, "normalization", "timelines", `${safeSegment(normalizedTimelineId)}.json`),
+      this.recordingPaths.recordingDerivedFile(projectId, item.recordingId, "normalization", "timelines", `${safeSegment(normalizedTimelineId)}.json`),
       () => ({})
     ).read();
     const normalized = stored.normalizedTimeline as unknown as NormalizedTimeline | undefined;
@@ -4545,13 +4461,13 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async getRuntimeSession(projectId: string, runId: string): Promise<AutomationStudioRuntimeSession | null> {
-    await this.findProject(projectId);
-    const stored = await new ProgramJsonStore<JsonObject>(this.projectFile(projectId, "runtime", "sessions", `${safeSegment(runId)}.json`), () => ({})).read();
+    await this.projects.findProject(projectId);
+    const stored = await new ProgramJsonStore<JsonObject>(this.projectPaths.projectFile(projectId, "runtime", "sessions", `${safeSegment(runId)}.json`), () => ({})).read();
     return stored.session as unknown as AutomationStudioRuntimeSession | undefined ?? null;
   }
 
   async listRuntimeSessions(projectId: string): Promise<AutomationStudioRuntimeSession[]> {
-    const index = await this.readRuntimeIndex(projectId);
+    const index = await this.indexes.readRuntimeIndex(projectId);
     const sessions: AutomationStudioRuntimeSession[] = [];
     for (const item of index.sessions ?? []) {
       const session = await this.getRuntimeSession(projectId, item.runId);
@@ -4564,7 +4480,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     await this.ensureRuntimeSummaryIndex(projectId);
     const limit = clampInteger(options.limit, 1, 100, 25);
     const offset = clampInteger(options.offset, 0, 1_000_000, 0);
-    if (!this.projectRootDir) {
+    if (!this.projectPaths.root) {
       const sessions = await this.listRuntimeSessions(projectId);
       const runs = sessions.map((session) => runtimeSummaryFromSession(session)).slice(offset, offset + limit);
       return { runs, total: sessions.length, limit, offset };
@@ -4582,8 +4498,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const limit = clampInteger(input.limit, 1, 100, 25);
     const offset = clampInteger(input.offset, 0, 1_000_000, 0);
     const search = input.search?.trim().toLowerCase();
-    if (!this.projectRootDir) {
-      const index = await this.readFlowSubflowIndex(input.projectId);
+    if (!this.projectPaths.root) {
+      const index = await this.indexes.readFlowSubflowIndex(input.projectId);
       const scoped = (index.subflows ?? []).filter((item) =>
         (!input.flowId || item.flowId === input.flowId)
         && (!input.status || item.status === input.status)
@@ -4651,8 +4567,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const matchesScope = (item: AutomationStudioInstructionSummary) =>
       (!input.flowId || item.flowId === input.flowId || item.scopeKind === "global" || item.scopeKind === "project")
       && (!input.subflowId || item.subflowId === input.subflowId || item.scopeKind === "flow" || item.scopeKind === "project" || item.scopeKind === "global");
-    if (!this.projectRootDir) {
-      const index = await this.readFlowInstructionIndex(input.projectId);
+    if (!this.projectPaths.root) {
+      const index = await this.indexes.readFlowInstructionIndex(input.projectId);
       const scoped = (index.instructions ?? []).filter((item) => matchesScope(item)
         && (!input.status || item.status === input.status)
         && (!input.scopeKind || item.scopeKind === input.scopeKind)
@@ -4705,7 +4621,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   async listFlowChangeProposalSummaries(input: { projectId: string; flowId?: string; subflowId?: string; limit?: unknown; offset?: unknown }): Promise<AutomationStudioChangeProposalSummaryPage> {
     const limit = clampInteger(input.limit, 1, 100, 25);
     const offset = clampInteger(input.offset, 0, 1_000_000, 0);
-    const index = await this.readFlowChangeProposalIndex(input.projectId);
+    const index = await this.indexes.readFlowChangeProposalIndex(input.projectId);
     const scoped = (index.changeProposals ?? []).filter((item) => (!input.flowId || item.flowId === input.flowId) && (!input.subflowId || item.subflowId === input.subflowId));
     return { changeProposals: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
   }
@@ -4716,8 +4632,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const search = input.search?.trim().toLowerCase();
     const direction = input.direction === "asc" ? "asc" : "desc";
     const sort = input.sort ?? "updated";
-    if (!this.projectRootDir) {
-      const index = await this.readFlowRunIndex(input.projectId);
+    if (!this.projectPaths.root) {
+      const index = await this.indexes.readFlowRunIndex(input.projectId);
       const scoped = (index.runs ?? []).filter((item) =>
         (!input.flowId || item.flowId === input.flowId)
         && (!input.status || item.status === input.status)
@@ -4776,7 +4692,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     page: { limit: number; offset: number; search?: string; sort: "updated" | "status" | "risk" | "trigger"; direction: "asc" | "desc" }
   ): Promise<AutomationStudioAdaptationSummaryPage> {
     let typedPage: Awaited<ReturnType<AutomationStudioProjectAdaptationStore["listAdaptationsPage"]>> | null = null;
-    if (this.runtimeProjectDatabasePool && this.projectRootDir) {
+    if (this.runtimeProjectDatabasePool && this.projectPaths.root) {
       const store = await AutomationStudioProjectAdaptationStore.open({ pool: this.runtimeProjectDatabasePool, projectId: input.projectId });
       try {
         typedPage = await store.listAdaptationsPage({
@@ -4804,8 +4720,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       }
     }
     if (typedPage && typedPage.total > 0) return { adaptations: typedPage.adaptations.map(adaptationSummaryFromTypedStore), total: typedPage.total, limit: typedPage.limit, offset: typedPage.offset };
-    if (!this.projectRootDir) {
-      const index = await this.readFlowAdaptationIndex(input.projectId);
+    if (!this.projectPaths.root) {
+      const index = await this.indexes.readFlowAdaptationIndex(input.projectId);
       const scoped = (index.adaptations ?? []).filter((item) =>
         (!input.flowId || item.flowId === input.flowId)
         && (!input.subflowId || item.subflowId === input.subflowId)
@@ -4842,13 +4758,13 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     return result;
   }
   async getFlowRouter(projectId: string, flowId: string): Promise<AutomationStudioFlowRouter | null> {
-    await this.findProject(projectId);
-    const stored = await new ProgramJsonStore<JsonObject>(this.flowRouterFile(projectId, flowId), () => ({})).read();
+    await this.projects.findProject(projectId);
+    const stored = await new ProgramJsonStore<JsonObject>(this.flowPaths.flowRouterFile(projectId, flowId), () => ({})).read();
     return typeof stored.routerId === "string" ? stored as unknown as AutomationStudioFlowRouter : null;
   }
 
   async listProjectProblems(input: { projectId: string; domainId?: string | null; severity?: string; source?: string; status?: string; scopeId?: string; search?: string; limit?: unknown; cursor?: unknown }): Promise<AutomationStudioProblemPage> {
-    await this.findProject(input.projectId);
+    await this.projects.findProject(input.projectId);
     const severity = input.severity?.trim().toLowerCase() || "";
     const source = input.source?.trim().toLowerCase() || "";
     const requestedStatus = input.status?.trim().toLowerCase() || "open";
@@ -4895,7 +4811,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async getFlowRouterSummary(projectId: string, flowId: string): Promise<Omit<AutomationStudioFlowRouter, "rules"> & { rules?: never; ruleCount: number } | null> {
-    await this.findProject(projectId);
+    await this.projects.findProject(projectId);
     await this.ensureSqlFlowRouterProjection(projectId, flowId);
     const projected = await this.tryWithFlowResourceRepository(projectId, async (item) => {
       const summary = await item.getRouterSummaryForFlow(flowId);
@@ -4926,7 +4842,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async listFlowRouterRoutes(input: { projectId: string; flowId: string; groupId?: string | null; status?: "active" | "disabled"; search?: string; limit?: unknown; cursor?: unknown }): Promise<AutomationStudioRouterRoutePage> {
-    await this.findProject(input.projectId);
+    await this.projects.findProject(input.projectId);
     await this.ensureSqlFlowRouterProjection(input.projectId, input.flowId);
     const typed = await this.tryWithFlowResourceRepository(input.projectId, async (repository) => {
       const [page, summary] = await Promise.all([repository.listRouterRoutesPage(input), repository.getRouterSummaryForFlow(input.flowId)]);
@@ -4944,7 +4860,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async listFlowRouterTargetReferences(input: { projectId: string; flowId: string; subflowIds: string[]; perTargetLimit?: unknown }): Promise<AutomationStudioRouterTargetReferenceBatch> {
-    await this.findProject(input.projectId);
+    await this.projects.findProject(input.projectId);
     await this.ensureSqlFlowRouterProjection(input.projectId, input.flowId);
     const projected = await this.tryWithFlowResourceRepository(input.projectId, async (repository) => repository.listRouterTargetReferences(input));
     if (!projected) return { targets: input.subflowIds.map((subflowId) => ({ subflowId, total: 0, hasMore: false, references: [] })), perTargetLimit: automationStudioPageLimit(input.perTargetLimit, 20) };
@@ -4991,17 +4907,17 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async getFlowSubflow(projectId: string, flowId: string, subflowId: string): Promise<AutomationStudioFlowSubflow | null> {
-    await this.findProject(projectId);
-    const stored = await new ProgramJsonStore<JsonObject>(this.flowSubflowFile(projectId, flowId, subflowId), () => ({})).read();
+    await this.projects.findProject(projectId);
+    const stored = await new ProgramJsonStore<JsonObject>(this.flowPaths.flowSubflowFile(projectId, flowId, subflowId), () => ({})).read();
     if (typeof stored.subflowId === "string") return stored as unknown as AutomationStudioFlowSubflow;
     return await this.readSqlFlowSubflow(projectId, flowId, subflowId);
   }
 
   async getFlowInstruction(projectId: string, instructionId: string): Promise<AutomationStudioFlowInstruction | null> {
-    const index = await this.readFlowInstructionIndex(projectId);
+    const index = await this.indexes.readFlowInstructionIndex(projectId);
     const summary = (index.instructions ?? []).find((item) => item.instructionId === instructionId);
     if (!summary) return null;
-    const stored = await new ProgramJsonStore<JsonObject>(summary.flowId ? this.flowInstructionFile(projectId, summary.flowId, instructionId) : this.projectInstructionFile(projectId, instructionId), () => ({})).read();
+    const stored = await new ProgramJsonStore<JsonObject>(summary.flowId ? this.flowPaths.flowInstructionFile(projectId, summary.flowId, instructionId) : this.projectPaths.projectInstructionFile(projectId, instructionId), () => ({})).read();
     return typeof stored.instructionId === "string" ? stored as unknown as AutomationStudioFlowInstruction : null;
   }
 
@@ -5012,16 +4928,16 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async getFlowChangeProposal(projectId: string, flowId: string, proposalId: string): Promise<AutomationStudioFlowChangeProposal | null> {
-    await this.findProject(projectId);
-    const stored = await new ProgramJsonStore<JsonObject>(this.flowChangeProposalFile(projectId, flowId, proposalId), () => ({})).read();
+    await this.projects.findProject(projectId);
+    const stored = await new ProgramJsonStore<JsonObject>(this.flowPaths.flowChangeProposalFile(projectId, flowId, proposalId), () => ({})).read();
     return typeof stored.proposalId === "string" ? stored as unknown as AutomationStudioFlowChangeProposal : null;
   }
 
   async getFlowRunDetail(projectId: string, runId: string, options: { includeCollections?: boolean } = {}): Promise<AutomationStudioFlowRunDetail | null> {
-    await this.findProject(projectId);
+    await this.projects.findProject(projectId);
     const typed = await this.tryWithRuntimeStreamStore(projectId, async (store) => await store.getRunDetail(runId, options));
     if (typed) return typed;
-    const stored = await new ProgramJsonStore<JsonObject>(this.flowRunDetailFile(projectId, runId), () => ({})).read();
+    const stored = await new ProgramJsonStore<JsonObject>(this.flowPaths.flowRunDetailFile(projectId, runId), () => ({})).read();
     if (typeof (stored.summary as { runId?: unknown } | undefined)?.runId === "string") return stored as unknown as AutomationStudioFlowRunDetail;
     const session = await this.getRuntimeSession(projectId, runId);
     if (!session) return null;
@@ -5037,10 +4953,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   async listFlowRunActions(input: { projectId: string; runId: string; limit?: unknown; offset?: unknown; cursor?: unknown }): Promise<AutomationStudioFlowRunActionPage> {
     const limit = clampInteger(input.limit, 1, 100, 50);
     const offset = clampInteger(input.offset, 0, 10_000_000, 0);
-    await this.findProject(input.projectId);
+    await this.projects.findProject(input.projectId);
     const typed = await this.tryWithRuntimeStreamStore(input.projectId, async (store) => await store.listRunActions({ runId: input.runId, limit, offset, cursor: input.cursor }));
     if (typed && (typed.total > 0 || offset === 0)) return typed;
-    if (!this.projectRootDir) {
+    if (!this.projectPaths.root) {
       const detail = await this.getFlowRunDetail(input.projectId, input.runId);
       const actions = detail?.actionAttempts ?? [];
       return { actions: actions.slice(offset, offset + limit), total: actions.length, limit, offset };
@@ -5051,19 +4967,19 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const summary = record.data as unknown as AutomationStudioFlowRunSummary;
     let actions: AutomationStudioFlowRunActionAttemptRecord[];
     try {
-      actions = await readJsonLinePage<AutomationStudioFlowRunActionAttemptRecord>(this.flowRunActionsFile(input.projectId, input.runId), offset, limit);
+      actions = await readJsonLinePage<AutomationStudioFlowRunActionAttemptRecord>(this.flowPaths.flowRunActionsFile(input.projectId, input.runId), offset, limit);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       const detail = await this.getFlowRunDetail(input.projectId, input.runId);
       const recoveredActions = detail?.actionAttempts ?? [];
-      await this.writeJsonLines(this.flowRunActionsFile(input.projectId, input.runId), recoveredActions);
+      await this.writeJsonLines(this.flowPaths.flowRunActionsFile(input.projectId, input.runId), recoveredActions);
       actions = recoveredActions.slice(offset, offset + limit);
     }
     return { actions, total: summary.actionAttemptCount ?? 0, limit, offset };
   }
 
   async getFlowRunActionDetail(input: { projectId: string; runId: string; attemptId: string }): Promise<AutomationStudioFlowRunActionAttemptRecord | null> {
-    await this.findProject(input.projectId);
+    await this.projects.findProject(input.projectId);
     const typed = await this.tryWithRuntimeStreamStore(input.projectId, (store) => store.getRunActionDetail({ runId: input.runId, attemptId: input.attemptId }));
     if (typed) return typed;
     const detail = await this.getFlowRunDetail(input.projectId, input.runId);
@@ -5119,8 +5035,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async getFlowAdaptation(projectId: string, flowId: string, adaptationId: string): Promise<AutomationStudioFlowAdaptation | null> {
-    await this.findProject(projectId);
-    if (this.runtimeProjectDatabasePool && this.projectRootDir) {
+    await this.projects.findProject(projectId);
+    if (this.runtimeProjectDatabasePool && this.projectPaths.root) {
       const store = await AutomationStudioProjectAdaptationStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
       try {
         const detail = await store.getAdaptation(adaptationId);
@@ -5133,7 +5049,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         await store.close();
       }
     }
-    const stored = await new ProgramJsonStore<JsonObject>(this.flowAdaptationFile(projectId, flowId, adaptationId), () => ({})).read();
+    const stored = await new ProgramJsonStore<JsonObject>(this.flowPaths.flowAdaptationFile(projectId, flowId, adaptationId), () => ({})).read();
     if (typeof stored.adaptationId === "string") return stored as unknown as AutomationStudioFlowAdaptation;
     const bootstrap = await this.getFlowBootstrapAdaptation(projectId, flowId, adaptationId);
     if (!bootstrap) return null;
@@ -5145,7 +5061,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     if (this.persistedFlowRepresentation(ownerFlow) === "subflow_graph") {
       throw new Error("Router is only available for a top-level Flow.");
     }
-    const subflowIndex = await this.readFlowSubflowIndex(router.projectId);
+    const subflowIndex = await this.indexes.readFlowSubflowIndex(router.projectId);
     const subflows = (await Promise.all(
       (subflowIndex.subflows ?? [])
         .filter((summary) => summary.flowId === router.flowId)
@@ -5153,12 +5069,12 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     )).filter((subflow): subflow is AutomationStudioFlowSubflow => Boolean(subflow));
     const validation = validateAutomationStudioFlowRouter(router, subflows);
     if (!validation.ok) throw new Error(`Invalid Automation Studio router: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
-    await this.ensureProjectStructure(router.projectId);
-    await new ProgramJsonStore<JsonObject>(this.flowRouterFile(router.projectId, router.flowId), () => ({})).write(router as unknown as JsonObject);
+    await this.projects.ensureProjectStructure(router.projectId);
+    await new ProgramJsonStore<JsonObject>(this.flowPaths.flowRouterFile(router.projectId, router.flowId), () => ({})).write(router as unknown as JsonObject);
     await this.writeSqlFlowRouterProjection(router).catch((error) => {
       if (!String(error).includes("references missing subflows.subflow_id")) throw error;
     });
-    await this.writeFlowRouterIndex(router.projectId, (index) => ({ schemaVersion: "0.1", routers: upsertBy(index.routers ?? [], "routerId", routerSummaryFromRouter(router)) }));
+    await this.indexes.writeFlowRouterIndex(router.projectId, (index) => ({ schemaVersion: "0.1", routers: upsertBy(index.routers ?? [], "routerId", routerSummaryFromRouter(router)) }));
     return router;
   }
 
@@ -5320,10 +5236,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     } else {
       throw new Error("Subflow graph Flow does not exist.");
     }
-    await this.ensureProjectStructure(persistedSubflow.projectId);
+    await this.projects.ensureProjectStructure(persistedSubflow.projectId);
     await this.writeSqlFlowSubflow(persistedSubflow.projectId, persistedSubflow);
-    await new ProgramJsonStore<JsonObject>(this.flowSubflowFile(persistedSubflow.projectId, persistedSubflow.flowId, persistedSubflow.subflowId), () => ({})).write(persistedSubflow as unknown as JsonObject);
-    await this.writeFlowSubflowIndex(persistedSubflow.projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: upsertBy(index.subflows ?? [], "subflowId", subflowSummaryFromSubflow(persistedSubflow)) }));
+    await new ProgramJsonStore<JsonObject>(this.flowPaths.flowSubflowFile(persistedSubflow.projectId, persistedSubflow.flowId, persistedSubflow.subflowId), () => ({})).write(persistedSubflow as unknown as JsonObject);
+    await this.indexes.writeFlowSubflowIndex(persistedSubflow.projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: upsertBy(index.subflows ?? [], "subflowId", subflowSummaryFromSubflow(persistedSubflow)) }));
     await this.writeFlowSubflowSummary(persistedSubflow.projectId, subflowSummaryFromSubflow(persistedSubflow));
     const router = await this.getFlowRouter(persistedSubflow.projectId, persistedSubflow.flowId);
     if (router) await this.writeSqlFlowRouterProjection(router).catch((error) => {
@@ -5375,9 +5291,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     try {
       saved = await this.saveFlowSubflow(subflow);
     } catch (error) {
-      await ProgramJsonStore.deletePath(this.flowSubflowFile(input.projectId, input.flowId, subflowId)).catch(() => undefined);
-      await this.writeFlowSubflowIndex(input.projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: (index.subflows ?? []).filter((item) => item.subflowId !== subflowId) })).catch(() => undefined);
-      if (this.projectRootDir) await this.flowSubflowSummaryRepository(input.projectId).delete(subflowId).catch(() => undefined);
+      await ProgramJsonStore.deletePath(this.flowPaths.flowSubflowFile(input.projectId, input.flowId, subflowId)).catch(() => undefined);
+      await this.indexes.writeFlowSubflowIndex(input.projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: (index.subflows ?? []).filter((item) => item.subflowId !== subflowId) })).catch(() => undefined);
+      if (this.projectPaths.root) await this.flowSubflowSummaryRepository(input.projectId).delete(subflowId).catch(() => undefined);
       await this.markSqlFlowSubflowDeleted(input.projectId, subflow, Date.now()).catch(() => undefined);
       if (createdGraph) await this.deleteFlowArtifact({ projectId: input.projectId, flowId: graphFlowId }, true).catch(() => undefined);
       throw error;
@@ -5661,9 +5577,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const deletedAt = Date.now();
     await this.markSqlFlowSubflowDeleted(input.projectId, existing, deletedAt);
     await this.deleteFlowArtifact({ projectId: input.projectId, flowId: existing.graphFlowId }, true);
-    await ProgramJsonStore.deletePath(this.flowSubflowFile(input.projectId, input.flowId, input.subflowId));
-    await this.writeFlowSubflowIndex(input.projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: (index.subflows ?? []).filter((item) => item.subflowId !== input.subflowId) }));
-    if (this.projectRootDir) await this.flowSubflowSummaryRepository(input.projectId).delete(input.subflowId);
+    await ProgramJsonStore.deletePath(this.flowPaths.flowSubflowFile(input.projectId, input.flowId, input.subflowId));
+    await this.indexes.writeFlowSubflowIndex(input.projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: (index.subflows ?? []).filter((item) => item.subflowId !== input.subflowId) }));
+    if (this.projectPaths.root) await this.flowSubflowSummaryRepository(input.projectId).delete(input.subflowId);
     await this.appendProjectMutationChangeFeed({
       projectId: input.projectId,
       entityKind: "subflow",
@@ -5678,10 +5594,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
   async saveFlowInstruction(projectId: string, instruction: AutomationStudioFlowInstruction): Promise<AutomationStudioFlowInstruction> {
     const summary = instructionSummaryFromInstruction(instruction);
-    const filePath = summary.flowId ? this.flowInstructionFile(projectId, summary.flowId, instruction.instructionId) : this.projectInstructionFile(projectId, instruction.instructionId);
-    await this.ensureProjectStructure(projectId);
+    const filePath = summary.flowId ? this.flowPaths.flowInstructionFile(projectId, summary.flowId, instruction.instructionId) : this.projectPaths.projectInstructionFile(projectId, instruction.instructionId);
+    await this.projects.ensureProjectStructure(projectId);
     await new ProgramJsonStore<JsonObject>(filePath, () => ({})).write(instruction as unknown as JsonObject);
-    await this.writeFlowInstructionIndex(projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, instructions: upsertBy(index.instructions ?? [], "instructionId", { ...summary, projectId }) }));
+    await this.indexes.writeFlowInstructionIndex(projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, instructions: upsertBy(index.instructions ?? [], "instructionId", { ...summary, projectId }) }));
     await this.writeFlowInstructionSummary(projectId, { ...summary, projectId });
     await this.writeSqlFlowInstruction(projectId, instruction).catch(() => undefined);
     return instruction;
@@ -5713,9 +5629,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async saveFlowChangeProposal(proposal: AutomationStudioFlowChangeProposal): Promise<AutomationStudioFlowChangeProposal> {
-    await this.ensureProjectStructure(proposal.projectId);
-    await new ProgramJsonStore<JsonObject>(this.flowChangeProposalFile(proposal.projectId, proposal.flowId, proposal.proposalId), () => ({})).write(proposal as unknown as JsonObject);
-    await this.writeFlowChangeProposalIndex(proposal.projectId, (index) => ({ schemaVersion: "0.1", changeProposals: upsertBy(index.changeProposals ?? [], "proposalId", changeProposalSummaryFromProposal(proposal)) }));
+    await this.projects.ensureProjectStructure(proposal.projectId);
+    await new ProgramJsonStore<JsonObject>(this.flowPaths.flowChangeProposalFile(proposal.projectId, proposal.flowId, proposal.proposalId), () => ({})).write(proposal as unknown as JsonObject);
+    await this.indexes.writeFlowChangeProposalIndex(proposal.projectId, (index) => ({ schemaVersion: "0.1", changeProposals: upsertBy(index.changeProposals ?? [], "proposalId", changeProposalSummaryFromProposal(proposal)) }));
     return proposal;
   }
 
@@ -5729,17 +5645,17 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     };
     const normalizedDetail = { ...detailWithMetrics, summary: flowRunSummaryWithInterventionSummaries(detailWithMetrics) };
     const { projectId, runId } = normalizedDetail.summary;
-    await this.ensureProjectStructure(projectId);
+    await this.projects.ensureProjectStructure(projectId);
     if (await this.tryPersistRuntimeRunDetail(normalizedDetail)) return normalizedDetail;
-    await new ProgramJsonStore<JsonObject>(this.flowRunDetailFile(projectId, runId), () => ({})).write(normalizedDetail as unknown as JsonObject);
+    await new ProgramJsonStore<JsonObject>(this.flowPaths.flowRunDetailFile(projectId, runId), () => ({})).write(normalizedDetail as unknown as JsonObject);
     await Promise.all([
-      this.writeJsonLines(this.flowRunActionsFile(projectId, runId), normalizedDetail.actionAttempts ?? []),
-      this.writeJsonLines(this.flowRunRouteDecisionsFile(projectId, runId), normalizedDetail.routeDecisions),
-      this.writeJsonLines(this.flowRunSubflowsFile(projectId, runId), normalizedDetail.subflows),
-      this.writeJsonLines(this.flowRunInterventionsFile(projectId, runId), normalizedDetail.interventions)
+      this.writeJsonLines(this.flowPaths.flowRunActionsFile(projectId, runId), normalizedDetail.actionAttempts ?? []),
+      this.writeJsonLines(this.flowPaths.flowRunRouteDecisionsFile(projectId, runId), normalizedDetail.routeDecisions),
+      this.writeJsonLines(this.flowPaths.flowRunSubflowsFile(projectId, runId), normalizedDetail.subflows),
+      this.writeJsonLines(this.flowPaths.flowRunInterventionsFile(projectId, runId), normalizedDetail.interventions)
     ]);
-    await this.writeFlowRunIndex(projectId, (index) => ({ schemaVersion: "0.1", runs: upsertBy(index.runs ?? [], "runId", normalizedDetail.summary) }));
-    if (this.projectRootDir) await this.writeFlowRunSummary(projectId, normalizedDetail.summary);
+    await this.indexes.writeFlowRunIndex(projectId, (index) => ({ schemaVersion: "0.1", runs: upsertBy(index.runs ?? [], "runId", normalizedDetail.summary) }));
+    if (this.projectPaths.root) await this.writeFlowRunSummary(projectId, normalizedDetail.summary);
     return normalizedDetail;
   }
 
@@ -5748,10 +5664,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     if (!validation.ok) throw new Error(`Invalid Automation Studio adaptation: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
     const typed = await this.tryWithAdaptationStore(adaptation.projectId, async (store) => await store.putAdaptation({ adaptation, approvalMode: adaptationApprovalModeForStore(adaptation), evidence: adaptationEvidenceForStore(adaptation), changedAt: adaptation.updatedAt }));
     if (typed) return adaptationFromTypedStoreDetail(typed);
-    await this.ensureProjectStructure(adaptation.projectId);
-    await new ProgramJsonStore<JsonObject>(this.flowAdaptationFile(adaptation.projectId, adaptation.flowId, adaptation.adaptationId), () => ({})).write(adaptation as unknown as JsonObject);
-    await this.writeFlowAdaptationIndex(adaptation.projectId, (index) => ({ schemaVersion: "0.1", adaptations: upsertBy(index.adaptations ?? [], "adaptationId", adaptationSummaryFromAdaptation(adaptation)) }));
-    if (this.projectRootDir) await this.writeFlowAdaptationSummary(adaptation.projectId, adaptationSummaryFromAdaptation(adaptation));
+    await this.projects.ensureProjectStructure(adaptation.projectId);
+    await new ProgramJsonStore<JsonObject>(this.flowPaths.flowAdaptationFile(adaptation.projectId, adaptation.flowId, adaptation.adaptationId), () => ({})).write(adaptation as unknown as JsonObject);
+    await this.indexes.writeFlowAdaptationIndex(adaptation.projectId, (index) => ({ schemaVersion: "0.1", adaptations: upsertBy(index.adaptations ?? [], "adaptationId", adaptationSummaryFromAdaptation(adaptation)) }));
+    if (this.projectPaths.root) await this.writeFlowAdaptationSummary(adaptation.projectId, adaptationSummaryFromAdaptation(adaptation));
     return adaptation;
   }
 
@@ -6206,11 +6122,11 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     if (existing) await this.markSqlFlowSubflowDeleted(projectId, existing, deletedAt);
     if (deleteGraphFlow && graphFlowId) await this.deleteFlowArtifact({ projectId, flowId: graphFlowId }, true).catch(() => ({ deletedFlowId: graphFlowId }));
     if (flowId && subflowId) {
-      const subflowFile = this.flowSubflowFile(projectId, flowId, subflowId);
+      const subflowFile = this.flowPaths.flowSubflowFile(projectId, flowId, subflowId);
       await ProgramJsonStore.deletePath(subflowFile);
       await rm(subflowFile, { force: true });
-      await this.writeFlowSubflowIndex(projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: (index.subflows ?? []).filter((item) => item.subflowId !== subflowId) }));
-      if (this.projectRootDir) await this.flowSubflowSummaryRepository(projectId).delete(subflowId);
+      await this.indexes.writeFlowSubflowIndex(projectId, (index) => ({ schemaVersion: "0.1", summaryVersion: 2, subflows: (index.subflows ?? []).filter((item) => item.subflowId !== subflowId) }));
+      if (this.projectPaths.root) await this.flowSubflowSummaryRepository(projectId).delete(subflowId);
     }
     if (existing) await this.appendProjectMutationChangeFeed({
       projectId,
@@ -6259,16 +6175,16 @@ const bootstrapInstructionText = resolvedInstructions.instructions
 
   private async listProjectFlowBootstrapAdaptations(projectId: string, flowId?: string): Promise<AutomationStudioBootstrapAdaptation[]> {
     if (flowId) return await this.listFlowBootstrapAdaptations(projectId, flowId);
-    await this.findProject(projectId);
+    await this.projects.findProject(projectId);
     const byId = new Map<string, AutomationStudioBootstrapAdaptation>();
     for (const adaptation of this.memoryBootstrapAdaptations.values()) {
       if (adaptation.projectId === projectId) byId.set(adaptation.adaptationId, structuredClone(adaptation));
     }
-    if (!this.projectRootDir) return [...byId.values()];
-    const flowEntries = await readdir(this.projectFile(projectId, "flows"), { withFileTypes: true }).catch(() => []);
+    if (!this.projectPaths.root) return [...byId.values()];
+    const flowEntries = await readdir(this.projectPaths.projectFile(projectId, "flows"), { withFileTypes: true }).catch(() => []);
     for (const flowEntry of flowEntries) {
       if (!flowEntry.isDirectory()) continue;
-      const root = path.join(this.projectFile(projectId, "flows"), flowEntry.name, "adaptations");
+      const root = path.join(this.projectPaths.projectFile(projectId, "flows"), flowEntry.name, "adaptations");
       const projected = await ProgramJsonStore.listDirectoryDocuments<JsonObject>(root, "bootstrap.json");
       const storedAdaptations = projected ?? await Promise.all((await readdir(root, { withFileTypes: true }).catch(() => []))
         .filter((entry) => entry.isDirectory())
@@ -6288,8 +6204,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         byId.set(adaptation.adaptationId, structuredClone(adaptation));
       }
     }
-    if (!this.projectRootDir) return [...byId.values()];
-    const root = this.flowAdaptationsDirectory(projectId, flowId);
+    if (!this.projectPaths.root) return [...byId.values()];
+    const root = this.flowPaths.flowAdaptationsDirectory(projectId, flowId);
     const projected = await ProgramJsonStore.listDirectoryDocuments<JsonObject>(root, "bootstrap.json");
     if (projected) {
       for (const stored of projected) {
@@ -6342,10 +6258,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     assertAutomationStudioBootstrapHasNoRecordingProvenance(adaptation);
     const key = bootstrapAdaptationMemoryKey(adaptation.projectId, adaptation.flowId, adaptation.adaptationId);
     this.memoryBootstrapAdaptations.set(key, structuredClone(adaptation));
-    if (this.projectRootDir) {
-      await this.ensureProjectStructure(adaptation.projectId);
+    if (this.projectPaths.root) {
+      await this.projects.ensureProjectStructure(adaptation.projectId);
       await new ProgramJsonStore<JsonObject>(
-        this.flowBootstrapAdaptationFile(adaptation.projectId, adaptation.flowId, adaptation.adaptationId),
+        this.flowPaths.flowBootstrapAdaptationFile(adaptation.projectId, adaptation.flowId, adaptation.adaptationId),
         () => ({})
       ).write(adaptation as unknown as JsonObject);
     }
@@ -6601,10 +6517,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       || current.metadata?.bootstrapAdaptationId !== adaptation.adaptationId) {
       throw new Error("Flow Bootstrap Router ownership changed; mutation refused.");
     }
-    const routerFile = this.flowRouterFile(adaptation.projectId, adaptation.flowId);
+    const routerFile = this.flowPaths.flowRouterFile(adaptation.projectId, adaptation.flowId);
     await ProgramJsonStore.deletePath(routerFile);
     await rm(routerFile, { force: true });
-    await this.writeFlowRouterIndex(adaptation.projectId, (index) => ({
+    await this.indexes.writeFlowRouterIndex(adaptation.projectId, (index) => ({
       schemaVersion: "0.1",
       routers: (index.routers ?? []).filter((item) => item.routerId !== current.routerId)
     }));
@@ -6648,7 +6564,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     });
   }
   private async getFlowSubflowsForValidation(projectId: string, flowId: string): Promise<AutomationStudioFlowSubflow[]> {
-    const index = await this.readFlowSubflowIndex(projectId);
+    const index = await this.indexes.readFlowSubflowIndex(projectId);
     return (await Promise.all(
       (index.subflows ?? [])
         .filter((summary) => summary.flowId === flowId)
@@ -6657,9 +6573,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async saveFlowAdaptationPolicy(projectId: string, policy: AutomationStudioAdaptationPolicy): Promise<AutomationStudioAdaptationPolicy> {
-    await this.ensureProjectStructure(projectId);
-    await new ProgramJsonStore<JsonObject>(this.flowAdaptationPolicyFile(projectId, policy.scope.flowId, policy.policyId), () => ({})).write(policy as unknown as JsonObject);
-    await this.writeFlowAdaptationPolicyIndex(projectId, (index) => ({ schemaVersion: "0.1", policies: upsertBy(index.policies ?? [], "policyId", adaptationPolicySummaryFromPolicy(projectId, policy)) }));
+    await this.projects.ensureProjectStructure(projectId);
+    await new ProgramJsonStore<JsonObject>(this.flowPaths.flowAdaptationPolicyFile(projectId, policy.scope.flowId, policy.policyId), () => ({})).write(policy as unknown as JsonObject);
+    await this.indexes.writeFlowAdaptationPolicyIndex(projectId, (index) => ({ schemaVersion: "0.1", policies: upsertBy(index.policies ?? [], "policyId", adaptationPolicySummaryFromPolicy(projectId, policy)) }));
     return policy;
   }
 
@@ -6700,7 +6616,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async readRecordingFlowProposals(projectId: string, revalidate: boolean): Promise<RecordingFlowProposalArtifact[]> {
-    const index = await this.readPipelineIndex(projectId);
+    const index = await this.indexes.readPipelineIndex(projectId);
     const proposals = await this.readPipelineArtifactList<RecordingFlowProposalArtifact>(projectId, "recordingFlowProposals", (index.recordingFlowProposals ?? []).map((item) => item.proposalId));
     if (!revalidate) return proposals;
     const checked: RecordingFlowProposalArtifact[] = [];
@@ -6756,7 +6672,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async listPipelineArtifacts(projectId: string, options: { revalidateRecordingFlowProposals?: boolean } = {}): Promise<AutomationPipelineArtifacts> {
-    const index = await this.readPipelineIndex(projectId);
+    const index = await this.indexes.readPipelineIndex(projectId);
     const normalizationReviews = await this.readPipelineArtifactList<NormalizationReviewArtifact>(projectId, "normalizationReviews", index.normalizationReviews.map((item) => item.reviewId));
     const miningRuns = await this.readPipelineArtifactList<SignalMiningResult>(projectId, "miningRuns", index.miningRuns.map((item) => item.miningRunId));
     const embeddedFacts = miningRuns.flatMap((run) => run.facts ?? []);
@@ -6775,13 +6691,13 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async listProjects(domainId?: string | null): Promise<{ categories: AutomationStudioProjectCategory[]; projects: AutomationStudioProject[] }> {
-    const state = await this.readProjectIndex();
+    const state = await this.projects.readProjectIndex();
     const inferredScopes = await this.inferLegacyProjectScopes(state.projects);
     const projects = state.projects.map((project) => project.domainId === undefined && inferredScopes.has(project.id)
       ? { ...project, domainId: inferredScopes.get(project.id)! }
       : project);
     return {
-      categories: this.sortCategories((state.categories ?? []).filter((category) => (category.domainId ?? null) === (domainId ?? null))),
+      categories: this.projects.sortCategories((state.categories ?? []).filter((category) => (category.domainId ?? null) === (domainId ?? null))),
       projects: projects
         .filter((project) => (project.domainId ?? null) === (domainId ?? null))
         .sort((left, right) => right.updatedAt - left.updatedAt)
@@ -6818,21 +6734,21 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       createdAt: now,
       updatedAt: now
     };
-    if (this.objectStore && this.projectIndexStore) {
+    if (this.objectStore && this.projects.indexStore) {
       const record: AutomationStudioProjectRecord = { ...project, customHierarchyNodes: [], deletedHierarchyIds: [], workspacePrefs: {} };
-      await ProgramJsonStore.transaction(this.projectIndexStore.filePath, async (transaction) => {
-        const state = await transaction.read(this.projectIndexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
-        await transaction.write(this.projectIndexStore!.filePath, { ...state, projects: [project, ...state.projects] });
+      await ProgramJsonStore.transaction(this.projects.indexStore.filePath, async (transaction) => {
+        const state = await transaction.read(this.projects.indexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
+        await transaction.write(this.projects.indexStore!.filePath, { ...state, projects: [project, ...state.projects] });
         const { customHierarchyNodes, deletedHierarchyIds, workspacePrefs, ...manifest } = record;
-        await transaction.write(this.projectFile(project.id, "manifest.json"), manifest);
-        await transaction.write(this.projectFile(project.id, "hierarchy", "nodes.json"), { customHierarchyNodes });
-        await transaction.write(this.projectFile(project.id, "hierarchy", "deleted.json"), { deletedHierarchyIds });
-        await transaction.write(this.projectFile(project.id, "workspace", "preferences.json"), { workspacePrefs });
+        await transaction.write(this.projectPaths.projectFile(project.id, "manifest.json"), manifest);
+        await transaction.write(this.projectPaths.projectFile(project.id, "hierarchy", "nodes.json"), { customHierarchyNodes });
+        await transaction.write(this.projectPaths.projectFile(project.id, "hierarchy", "deleted.json"), { deletedHierarchyIds });
+        await transaction.write(this.projectPaths.projectFile(project.id, "workspace", "preferences.json"), { workspacePrefs });
       });
       return project;
     }
-    await this.writeProjectIndex((state) => ({ ...state, projects: [project, ...state.projects] }));
-    await this.writeProjectRecord({ ...project, customHierarchyNodes: [], deletedHierarchyIds: [], workspacePrefs: {} });
+    await this.projects.writeProjectIndex((state) => ({ ...state, projects: [project, ...state.projects] }));
+    await this.projects.writeProjectRecord({ ...project, customHierarchyNodes: [], deletedHierarchyIds: [], workspacePrefs: {} });
     return project;
   }
 
@@ -6840,9 +6756,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const projectId = String(input.projectId ?? "");
     const name = typeof input.name === "string" ? input.name.trim() : undefined;
     if (name !== undefined && !name) throw new Error("Project name is required.");
-    if (this.objectStore && this.projectIndexStore) {
-      return await ProgramJsonStore.transaction(this.projectIndexStore.filePath, async (transaction) => {
-        const state = await transaction.read(this.projectIndexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
+    if (this.objectStore && this.projects.indexStore) {
+      return await ProgramJsonStore.transaction(this.projects.indexStore.filePath, async (transaction) => {
+        const state = await transaction.read(this.projects.indexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
         const current = state.projects.find((project) => project.id === projectId);
         if (!current) throw new Error(`Unknown Automation Studio project: ${projectId}`);
         const updated = {
@@ -6852,13 +6768,13 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           ...(input.categoryId !== undefined ? { categoryId: typeof input.categoryId === "string" && input.categoryId.trim() ? input.categoryId.trim() : null } : {}),
           updatedAt: Date.now()
         };
-        await transaction.write(this.projectIndexStore!.filePath, { ...state, projects: state.projects.map((project) => project.id === projectId ? updated : project) });
-        await transaction.write(this.projectFile(projectId, "manifest.json"), updated);
+        await transaction.write(this.projects.indexStore!.filePath, { ...state, projects: state.projects.map((project) => project.id === projectId ? updated : project) });
+        await transaction.write(this.projectPaths.projectFile(projectId, "manifest.json"), updated);
         return updated;
       });
     }
     let updated: AutomationStudioProject | undefined;
-    await this.writeProjectIndex((state) => ({
+    await this.projects.writeProjectIndex((state) => ({
       ...state,
       projects: state.projects.map((project) => {
         if (project.id !== projectId) return project;
@@ -6873,30 +6789,30 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       })
     }));
     if (!updated) throw new Error(`Unknown Automation Studio project: ${projectId}`);
-    const existing = await this.findProject(projectId);
-    await this.writeProjectRecord({ ...existing, ...updated });
+    const existing = await this.projects.findProject(projectId);
+    await this.projects.writeProjectRecord({ ...existing, ...updated });
     return updated;
   }
 
   async deleteProject(projectId: string): Promise<{ deletedProjectId: string }> {
-    if (this.objectStore && this.projectIndexStore) {
-      await ProgramJsonStore.transaction(this.projectIndexStore.filePath, async (transaction) => {
-        const state = await transaction.read(this.projectIndexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
+    if (this.objectStore && this.projects.indexStore) {
+      await ProgramJsonStore.transaction(this.projects.indexStore.filePath, async (transaction) => {
+        const state = await transaction.read(this.projects.indexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
         if (!state.projects.some((project) => project.id === projectId)) throw new Error(`Unknown Automation Studio project: ${projectId}`);
-        await transaction.write(this.projectIndexStore!.filePath, { ...state, projects: state.projects.filter((project) => project.id !== projectId) });
-        await transaction.deletePath(this.projectDirectory(projectId));
+        await transaction.write(this.projects.indexStore!.filePath, { ...state, projects: state.projects.filter((project) => project.id !== projectId) });
+        await transaction.deletePath(this.projectPaths.projectDirectory(projectId));
       });
       await this.uiCacheStore.delete({ projectId }).catch(() => undefined);
       return { deletedProjectId: projectId };
     }
-    await this.findProject(projectId);
-    await this.writeProjectIndex((state) => ({
+    await this.projects.findProject(projectId);
+    await this.projects.writeProjectIndex((state) => ({
       ...state,
       projects: state.projects.filter((project) => project.id !== projectId)
     }));
-    if (this.projectRootDir) {
-      if (this.objectStore) await ProgramJsonStore.deletePath(this.projectDirectory(projectId));
-      else await rm(this.projectDirectory(projectId), { recursive: true, force: true });
+    if (this.projectPaths.root) {
+      if (this.objectStore) await ProgramJsonStore.deletePath(this.projectPaths.projectDirectory(projectId));
+      else await rm(this.projectPaths.projectDirectory(projectId), { recursive: true, force: true });
     }
     await this.uiCacheStore.delete({ projectId }).catch(() => undefined);
     return { deletedProjectId: projectId };
@@ -6906,10 +6822,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const name = typeof input.name === "string" ? input.name.trim() : "";
     if (!name) throw new Error("Category name is required.");
     const now = Date.now();
-    const state = await this.readProjectIndex();
+    const state = await this.projects.readProjectIndex();
     const domainId = typeof input.domainId === "string" && input.domainId.trim() ? input.domainId.trim() : null;
     const category = { id: randomUUID(), name, domainId, order: nextCategoryOrder((state.categories ?? []).filter((item) => (item.domainId ?? null) === domainId)), createdAt: now, updatedAt: now };
-    await this.writeProjectIndex((state) => ({ ...state, categories: [category, ...(state.categories ?? [])] }));
+    await this.projects.writeProjectIndex((state) => ({ ...state, categories: [category, ...(state.categories ?? [])] }));
     return category;
   }
 
@@ -6918,7 +6834,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const name = typeof input.name === "string" ? input.name.trim() : "";
     if (!name) throw new Error("Category name is required.");
     let updated: AutomationStudioProjectCategory | undefined;
-    await this.writeProjectIndex((state) => ({
+    await this.projects.writeProjectIndex((state) => ({
       ...state,
       categories: (state.categories ?? []).map((category) => {
         if (category.id !== categoryId) return category;
@@ -6931,20 +6847,20 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async deleteProjectCategory(categoryId: string): Promise<{ deletedCategoryId: string }> {
-    if (this.objectStore && this.projectIndexStore) {
-      await ProgramJsonStore.transaction(this.projectIndexStore.filePath, async (transaction) => {
-        const state = await transaction.read(this.projectIndexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
+    if (this.objectStore && this.projects.indexStore) {
+      await ProgramJsonStore.transaction(this.projects.indexStore.filePath, async (transaction) => {
+        const state = await transaction.read(this.projects.indexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
         const projects = state.projects.map((project) => project.categoryId === categoryId ? { ...project, categoryId: null, updatedAt: Date.now() } : project);
-        await transaction.write(this.projectIndexStore!.filePath, { categories: state.categories.filter((category) => category.id !== categoryId), projects });
+        await transaction.write(this.projects.indexStore!.filePath, { categories: state.categories.filter((category) => category.id !== categoryId), projects });
         for (const project of projects) {
           if (project.categoryId !== null || state.projects.find((item) => item.id === project.id)?.categoryId !== categoryId) continue;
-          await transaction.write(this.projectFile(project.id, "manifest.json"), project);
+          await transaction.write(this.projectPaths.projectFile(project.id, "manifest.json"), project);
         }
       });
       return { deletedCategoryId: categoryId };
     }
     const affectedProjects: AutomationStudioProject[] = [];
-    await this.writeProjectIndex((state) => ({
+    await this.projects.writeProjectIndex((state) => ({
       ...state,
       categories: (state.categories ?? []).filter((category) => category.id !== categoryId),
       projects: state.projects.map((project) => {
@@ -6955,8 +6871,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       })
     }));
     for (const project of affectedProjects) {
-      const existing = await this.findProject(project.id);
-      await this.writeProjectRecord({ ...existing, ...project });
+      const existing = await this.projects.findProject(project.id);
+      await this.projects.writeProjectRecord({ ...existing, ...project });
     }
     return { deletedCategoryId: categoryId };
   }
@@ -6964,7 +6880,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   async reorderProjectCategories(categoryIds: string[]): Promise<{ categories: AutomationStudioProjectCategory[] }> {
     const requestedIds = categoryIds.filter((id) => typeof id === "string" && id.trim()).map((id) => id.trim());
     let categories: AutomationStudioProjectCategory[] = [];
-    await this.writeProjectIndex((state) => {
+    await this.projects.writeProjectIndex((state) => {
       const requested = new Set(requestedIds);
       const known = new Set((state.categories ?? []).map((category) => category.id));
       if (requestedIds.some((id) => !known.has(id))) throw new Error("Unknown Automation Studio project category in reorder request.");
@@ -6973,11 +6889,11 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       categories = (state.categories ?? []).map((category) => ({ ...category, order: orderById.get(category.id) ?? category.order, updatedAt: Date.now() }));
       return { ...state, categories };
     });
-    return { categories: this.sortCategories(categories) };
+    return { categories: this.projects.sortCategories(categories) };
   }
 
   async getProjectHierarchy(projectId: string): Promise<AutomationStudioProjectHierarchy> {
-    const project = await this.findProject(projectId);
+    const project = await this.projects.findProject(projectId);
     return {
       customHierarchyNodes: project.customHierarchyNodes,
       deletedHierarchyIds: project.deletedHierarchyIds,
@@ -7029,7 +6945,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async listProjectHierarchyChildren(input: { projectId: string; parentId?: unknown; cursor?: unknown; limit?: unknown }): Promise<AutomationStudioHierarchyChildrenPage> {
-    const project = await this.findProjectSummary(input.projectId);
+    const project = await this.projects.findProjectSummary(input.projectId);
     if (!this.projectDatabasePool) return { items: [], nextCursor: null, hasMore: false };
 
     const repository = await AutomationStudioProjectHierarchyRepository.open({
@@ -7045,7 +6961,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       let page = await repository.listChildrenPage({ parentEntryId, cursor, limit });
 
       if (!cursor && page.items.length === 0 && !(await repository.hasEntries())) {
-        const legacyProject = await this.readProjectRecord(project);
+        const legacyProject = await this.projects.readProjectRecord(project);
         if (legacyProject.customHierarchyNodes.length > 0) {
           await repository.importLegacyHierarchy({
             customHierarchyNodes: legacyProject.customHierarchyNodes,
@@ -7062,7 +6978,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async listFlowSubflowTargets(input: { projectId: string; flowId: string; status?: string; role?: string; search?: string; limit?: unknown; cursor?: unknown }): Promise<AutomationStudioSubflowTargetPage> {
-    await this.findProject(input.projectId);
+    await this.projects.findProject(input.projectId);
     const typed = await this.tryWithFlowResourceRepository(input.projectId, async (repository) => repository.listSubflowTargetsPage(input));
     if (typed) return { subflows: typed.items.map((item) => subflowSummaryFromSql(item, input.projectId)), total: typed.total, limit: typed.limit, nextCursor: typed.nextCursor, hasMore: typed.hasMore };
     const status = input.status?.trim() || "active";
@@ -7072,7 +6988,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const owner = `subflow-targets:${input.flowId}`;
     const filterHash = automationStudioFilterHash({ status, role, search });
     const cursor = decodeAutomationStudioPageCursor<{ name: string; subflowId: string }>(input.cursor, { owner, filterHash, validate: (values) => typeof values.name === "string" && typeof values.subflowId === "string" });
-    const index = await this.readFlowSubflowIndex(input.projectId);
+    const index = await this.indexes.readFlowSubflowIndex(input.projectId);
     const all = (index.subflows ?? []).filter((item) => item.flowId === input.flowId && item.status === status && (!role || item.role === role)
       && (!search || item.name.toLowerCase().includes(search) || item.subflowId.toLowerCase().includes(search)))
       .sort((left, right) => left.name.localeCompare(right.name) || left.subflowId.localeCompare(right.subflowId));
@@ -7082,10 +6998,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     return { subflows, total: all.length, limit, hasMore: after.length > limit, nextCursor: after.length > limit && last ? encodeAutomationStudioPageCursor({ owner, filterHash, values: { name: last.name.toLowerCase(), subflowId: last.subflowId } }) : null };
   }
   async listProjectChangeFeed(input: { projectId: string; afterSequence?: unknown; limit?: unknown }): Promise<AutomationStudioProjectChangeFeedPage> {
-    await this.findProject(input.projectId);
+    await this.projects.findProject(input.projectId);
     const afterSequence = Math.max(0, Math.trunc(Number(input.afterSequence ?? 0)) || 0);
     const limit = Math.max(1, Math.min(500, Math.trunc(Number(input.limit ?? 100)) || 100));
-    if (!this.projectRootDir || !this.projectDatabasePool) return { events: [], cursor: afterSequence, hasMore: false, fallback: true };
+    if (!this.projectPaths.root || !this.projectDatabasePool) return { events: [], cursor: afterSequence, hasMore: false, fallback: true };
     const admin = await AutomationStudioProjectAdministration.open({ pool: this.projectDatabasePool, projectId: input.projectId });
     try {
       const events = await admin.changeFeed.listAfter(afterSequence, limit + 1);
@@ -7113,7 +7029,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async getProjectUiCache(input: { projectId: string; userId: string; cacheKeys: unknown }): Promise<{ entries: Array<Omit<AutomationStudioUiCacheEntry, "projectId" | "userId">>; missingKeys: string[] }> {
-    await this.findProject(input.projectId);
+    await this.projects.findProject(input.projectId);
     const userId = normalizeUiCacheUserId(input.userId);
     const cacheKeys = normalizeUiCacheKeyBatch(input.cacheKeys, "cacheKeys");
     const entries = await this.uiCacheStore.get({ projectId: input.projectId, userId, cacheKeys });
@@ -7125,7 +7041,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async saveProjectUiCache(input: { projectId: string; userId: string; entries: unknown }): Promise<{ entries: Array<Omit<AutomationStudioUiCacheEntry, "projectId" | "userId">> }> {
-    await this.findProject(input.projectId);
+    await this.projects.findProject(input.projectId);
     const userId = normalizeUiCacheUserId(input.userId);
     const entries = normalizeUiCachePutEntryBatch(input.entries);
     const saved = await this.uiCacheStore.putBatch({ projectId: input.projectId, userId, entries });
@@ -7133,7 +7049,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async deleteProjectUiCache(input: { projectId: string; userId: string; cacheKeys?: unknown }): Promise<{ deleted: number }> {
-    await this.findProject(input.projectId);
+    await this.projects.findProject(input.projectId);
     const userId = normalizeUiCacheUserId(input.userId);
     const cacheKeys = input.cacheKeys === undefined || input.cacheKeys === null ? undefined : normalizeUiCacheKeyBatch(input.cacheKeys, "cacheKeys");
     return await this.uiCacheStore.delete({ projectId: input.projectId, userId, ...(cacheKeys ? { cacheKeys } : {}) });
@@ -7142,7 +7058,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   async listProjectUiCacheStats(input: { projectId?: unknown; userId: string }): Promise<{ stats: Array<Omit<AutomationStudioUiCacheStats, "userId"> & { entryCount: number; totalBytes: number; updatedAt: number | null }> }> {
     const userId = normalizeUiCacheUserId(input.userId);
     const projectId = typeof input.projectId === "string" && input.projectId.trim() ? input.projectId.trim() : undefined;
-    if (projectId) await this.findProject(projectId);
+    if (projectId) await this.projects.findProject(projectId);
     const stats = await this.uiCacheStore.stats({ userId, ...(projectId ? { projectId } : {}) });
     return {
       stats: stats.map(({ userId: _userId, ...entry }) => ({
@@ -7160,17 +7076,17 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       workspacePrefs: hierarchy.workspacePrefs && typeof hierarchy.workspacePrefs === "object" && !Array.isArray(hierarchy.workspacePrefs) ? hierarchy.workspacePrefs : {}
     };
     const changedAt = Date.now();
-    if (this.objectStore && this.projectIndexStore) {
-      await ProgramJsonStore.transaction(this.projectIndexStore.filePath, async (transaction) => {
-        const state = await transaction.read(this.projectIndexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
+    if (this.objectStore && this.projects.indexStore) {
+      await ProgramJsonStore.transaction(this.projects.indexStore.filePath, async (transaction) => {
+        const state = await transaction.read(this.projects.indexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
         const current = state.projects.find((project) => project.id === projectId);
         if (!current) throw new Error(`Unknown Automation Studio project: ${projectId}`);
         const updated = { ...current, updatedAt: changedAt };
-        await transaction.write(this.projectIndexStore!.filePath, { ...state, projects: state.projects.map((project) => project.id === projectId ? updated : project) });
-        await transaction.write(this.projectFile(projectId, "manifest.json"), updated);
-        await transaction.write(this.projectFile(projectId, "hierarchy", "nodes.json"), { customHierarchyNodes: nextHierarchy.customHierarchyNodes });
-        await transaction.write(this.projectFile(projectId, "hierarchy", "deleted.json"), { deletedHierarchyIds: nextHierarchy.deletedHierarchyIds });
-        await transaction.write(this.projectFile(projectId, "workspace", "preferences.json"), { workspacePrefs: nextHierarchy.workspacePrefs });
+        await transaction.write(this.projects.indexStore!.filePath, { ...state, projects: state.projects.map((project) => project.id === projectId ? updated : project) });
+        await transaction.write(this.projectPaths.projectFile(projectId, "manifest.json"), updated);
+        await transaction.write(this.projectPaths.projectFile(projectId, "hierarchy", "nodes.json"), { customHierarchyNodes: nextHierarchy.customHierarchyNodes });
+        await transaction.write(this.projectPaths.projectFile(projectId, "hierarchy", "deleted.json"), { deletedHierarchyIds: nextHierarchy.deletedHierarchyIds });
+        await transaction.write(this.projectPaths.projectFile(projectId, "workspace", "preferences.json"), { workspacePrefs: nextHierarchy.workspacePrefs });
       });
       await this.appendProjectMutationChangeFeed({
         projectId,
@@ -7184,7 +7100,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       return nextHierarchy;
     }
     let updatedProject: AutomationStudioProject | undefined;
-    await this.writeProjectIndex((state) => ({
+    await this.projects.writeProjectIndex((state) => ({
       ...state,
       projects: state.projects.map((project) => {
         if (project.id !== projectId) return project;
@@ -7193,7 +7109,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       })
     }));
     if (!updatedProject) throw new Error(`Unknown Automation Studio project: ${projectId}`);
-    await this.writeProjectRecord({ ...updatedProject, ...nextHierarchy });
+    await this.projects.writeProjectRecord({ ...updatedProject, ...nextHierarchy });
     await this.appendProjectMutationChangeFeed({
       projectId,
       entityKind: "hierarchy",
@@ -7206,179 +7122,21 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     return nextHierarchy;
   }
 
-  private async readProjectIndex(): Promise<AutomationStudioProjectIndex> {
-    await this.ensureStorageReady();
-    const state = this.projectIndexStore ? await this.projectIndexStore.read() : { categories: [], projects: [] };
-    return { categories: normalizeProjectCategories(state.categories ?? []), projects: state.projects ?? [] };
-  }
-
-  private async writeProjectIndex(mutator: (state: AutomationStudioProjectIndex) => AutomationStudioProjectIndex): Promise<AutomationStudioProjectIndex> {
-    await this.ensureStorageReady();
-    if (!this.projectIndexStore) return mutator({ categories: [], projects: [] });
-    return await this.projectIndexStore.update((state) => mutator({ categories: normalizeProjectCategories(state.categories ?? []), projects: state.projects ?? [] }));
-  }
-
-  private sortCategories(categories: AutomationStudioProjectCategory[]): AutomationStudioProjectCategory[] {
-    return [...normalizeProjectCategories(categories)].sort((left, right) => left.order - right.order || left.name.localeCompare(right.name));
-  }
-
-  private async findProject(projectId: string): Promise<AutomationStudioProjectRecord> {
-    return await this.readProjectRecord(await this.findProjectSummary(projectId));
-  }
-
-  private async findProjectSummary(projectId: string): Promise<AutomationStudioProject> {
-    const state = await this.readProjectIndex();
-    const project = state.projects.find((item) => item.id === projectId);
-    if (!project) throw new Error(`Unknown Automation Studio project: ${projectId}`);
-    return project;
-  }
-
-  private async readProjectRecord(project: AutomationStudioProject): Promise<AutomationStudioProjectRecord> {
-    if (!this.projectRootDir) return { ...project, customHierarchyNodes: [], deletedHierarchyIds: [], workspacePrefs: {} };
-    await this.ensureProjectStructure(project.id);
-    const legacyHierarchy = await new ProgramJsonStore<AutomationStudioProjectHierarchy>(this.projectFile(project.id, "hierarchy", "index.json"), () => ({ customHierarchyNodes: [], deletedHierarchyIds: [], workspacePrefs: {} })).read();
-    const nodes = await new ProgramJsonStore<{ customHierarchyNodes: AutomationStudioProjectHierarchy["customHierarchyNodes"] }>(this.projectFile(project.id, "hierarchy", "nodes.json"), () => ({ customHierarchyNodes: legacyHierarchy.customHierarchyNodes ?? [] })).read();
-    const deleted = await new ProgramJsonStore<{ deletedHierarchyIds: string[] }>(this.projectFile(project.id, "hierarchy", "deleted.json"), () => ({ deletedHierarchyIds: legacyHierarchy.deletedHierarchyIds ?? [] })).read();
-    const workspace = await new ProgramJsonStore<{ workspacePrefs: AutomationStudioProjectHierarchy["workspacePrefs"] }>(this.projectFile(project.id, "workspace", "preferences.json"), () => ({ workspacePrefs: legacyHierarchy.workspacePrefs ?? {} })).read();
-    return {
-      ...project,
-      customHierarchyNodes: Array.isArray(nodes.customHierarchyNodes) ? nodes.customHierarchyNodes : [],
-      deletedHierarchyIds: Array.isArray(deleted.deletedHierarchyIds) ? deleted.deletedHierarchyIds : [],
-      workspacePrefs: workspace.workspacePrefs && typeof workspace.workspacePrefs === "object" && !Array.isArray(workspace.workspacePrefs) ? workspace.workspacePrefs : {}
-    };
-  }
-
-  private async writeProjectRecord(project: AutomationStudioProjectRecord): Promise<void> {
-    if (!this.projectRootDir) return;
-    await this.ensureProjectStructure(project.id);
-    const { customHierarchyNodes, deletedHierarchyIds, workspacePrefs, ...manifest } = project;
-    await new ProgramJsonStore(this.projectFile(project.id, "manifest.json"), () => ({})).write(manifest);
-    await new ProgramJsonStore<{ customHierarchyNodes: AutomationStudioProjectHierarchy["customHierarchyNodes"] }>(this.projectFile(project.id, "hierarchy", "nodes.json"), () => ({ customHierarchyNodes: [] })).write({ customHierarchyNodes });
-    await new ProgramJsonStore<{ deletedHierarchyIds: string[] }>(this.projectFile(project.id, "hierarchy", "deleted.json"), () => ({ deletedHierarchyIds: [] })).write({ deletedHierarchyIds });
-    await new ProgramJsonStore<{ workspacePrefs: AutomationStudioProjectHierarchy["workspacePrefs"] }>(this.projectFile(project.id, "workspace", "preferences.json"), () => ({ workspacePrefs: {} })).write({ workspacePrefs });
-  }
-
-  private async migrateLegacyProjectStore(): Promise<void> {
-    if (!this.projectIndexStore || !this.legacyProjectStore) return;
-    const index = await this.projectIndexStore.read();
-    if (index.projects.length > 0 || index.categories.length > 0) return;
-    const legacy = await this.legacyProjectStore.read();
-    if (!legacy.projects.length && !legacy.categories.length) return;
-    await this.projectIndexStore.write({
-      categories: normalizeProjectCategories(legacy.categories ?? []),
-      projects: legacy.projects.map(({ customHierarchyNodes: _customHierarchyNodes, deletedHierarchyIds: _deletedHierarchyIds, workspacePrefs: _workspacePrefs, ...project }) => project)
-    });
-    for (const project of legacy.projects) await this.writeProjectRecord(project);
-  }
-
-  private async prepareStorage(): Promise<void> {
-    await this.ensureNodeLibraryStructure();
-    await this.migrateLegacyProjectStore();
-  }
-
-  private async ensureStorageReady(): Promise<void> {
-    this.storageReady ??= this.prepareStorage();
-    await this.storageReady;
-  }
-
   async legacyEndpointDiagnostic(projectId: string): Promise<AutomationStudioLegacyRetirementDiagnostic> {
-    return legacyDiagnostic(await this.readLegacyRetirementState(projectId));
-  }
-
-  private async assertLegacyWriteAllowed(projectId: string): Promise<void> {
-    const state = await this.readLegacyRetirementState(projectId);
-    if (state.phase === "write_locked") throw new AutomationStudioLegacyWriteDisabledError(legacyDiagnostic(state));
-  }
-
-  private async readLegacyRetirementState(projectId: string): Promise<AutomationStudioLegacyRetirementState> {
-    await this.findProject(projectId);
-    const fallback = (): AutomationStudioLegacyRetirementState => ({ schemaVersion: "0.1", projectId, projectSchemaVersion: "0.1", phase: "compatibility", importerEvidence: [], intentionallyDeferred: [], importerCoverageAcknowledged: false, updatedAt: Date.now() });
-    if (!this.projectRootDir) return structuredClone(this.memoryLegacyRetirementStates.get(projectId) ?? fallback());
-    return await new ProgramJsonStore<AutomationStudioLegacyRetirementState>(this.projectFile(projectId, "migration", "retirement-state.json"), fallback).read();
-  }
-
-  private async writeLegacyRetirementState(state: AutomationStudioLegacyRetirementState): Promise<void> {
-    if (!this.projectRootDir) { this.memoryLegacyRetirementStates.set(state.projectId, structuredClone(state)); return; }
-    await new ProgramJsonStore<AutomationStudioLegacyRetirementState>(this.projectFile(state.projectId, "migration", "retirement-state.json"), () => state).write(state);
-  }
-
-  private async ensureLegacyBackup(projectId: string): Promise<AutomationStudioLegacyBackup> {
-    const artifacts = await this.readLegacyProjectArtifacts(projectId);
-    const digest = legacyArtifactsDigest(artifacts);
-    const baseBackupId = `legacy-source.${safeSegment(projectId)}`;
-    const baseBackup = await this.readLegacyBackup(projectId, baseBackupId);
-    if (baseBackup?.digest === digest) return baseBackup;
-    const backupId = baseBackup ? `${baseBackupId}.${digest.slice(0, 12)}` : baseBackupId;
-    const existing = await this.readLegacyBackup(projectId, backupId);
-    if (existing?.digest === digest) return existing;
-    const backup: AutomationStudioLegacyBackup = { schemaVersion: "0.1", backupId, projectId, digest, artifacts: structuredClone(artifacts), createdAt: Date.now() };
-    if (!this.projectRootDir) this.memoryLegacyBackups.set(`${projectId}:${backupId}`, structuredClone(backup));
-    else await new ProgramJsonStore<AutomationStudioLegacyBackup>(this.projectFile(projectId, "migration", "backups", `${safeSegment(backupId)}.json`), () => backup).write(backup);
-    await this.appendLegacyRetirementAudit(projectId, "backup_created", { backupId, digest: backup.digest });
-    return backup;
-  }
-
-  private async readLegacyBackup(projectId: string, backupId: string): Promise<AutomationStudioLegacyBackup | null> {
-    if (!this.projectRootDir) return structuredClone(this.memoryLegacyBackups.get(`${projectId}:${backupId}`) ?? null);
-    const value = await new ProgramJsonStore<JsonObject>(this.projectFile(projectId, "migration", "backups", `${safeSegment(backupId)}.json`), () => ({})).read();
-    return Object.keys(value).length ? value as unknown as AutomationStudioLegacyBackup : null;
-  }
-
-  private async readLegacyRetirementAudit(projectId: string): Promise<AutomationStudioLegacyRetirementAuditEvent[]> {
-    if (!this.projectRootDir) return structuredClone(this.memoryLegacyAudit.get(projectId) ?? []);
-    return (await new ProgramJsonStore<{ events: AutomationStudioLegacyRetirementAuditEvent[] }>(this.projectFile(projectId, "migration", "retirement-audit.json"), () => ({ events: [] })).read()).events ?? [];
-  }
-
-  private async appendLegacyRetirementAudit(projectId: string, type: AutomationStudioLegacyRetirementAuditEvent["type"], details: JsonObject): Promise<void> {
-    const event: AutomationStudioLegacyRetirementAuditEvent = { eventId: `legacy-audit.${randomUUID()}`, projectId, type, timestamp: Date.now(), details };
-    if (!this.projectRootDir) { this.memoryLegacyAudit.set(projectId, [...(this.memoryLegacyAudit.get(projectId) ?? []), structuredClone(event)]); return; }
-    await new ProgramJsonStore<{ events: AutomationStudioLegacyRetirementAuditEvent[] }>(this.projectFile(projectId, "migration", "retirement-audit.json"), () => ({ events: [] })).update((value) => ({ events: [...(value.events ?? []), event] }));
-  }
-
-  private async ensureNodeLibraryStructure(): Promise<void> {
-    // Importer-owned custom-node source roots are read lazily. Built-in node
-    // classes are code registrations and do not need placeholder directories.
-  }
-
-  private async ensureProjectStructure(projectId: string): Promise<void> {
-    // ProgramJsonStore creates only the parent needed by an actual write.
-  }
-
-  private projectDirectory(projectId: string): string {
-    if (!this.projectRootDir) return "";
-    return path.join(this.projectRootDir, safeSegment(projectId));
-  }
-
-  private projectFile(projectId: string, ...parts: string[]): string {
-    return path.join(this.projectDirectory(projectId), ...parts);
+    return legacyDiagnostic(await this.legacy.readLegacyRetirementState(projectId));
   }
 
   private async writeFlowSourceFile(projectId: string, flow: AutomationStudioFlowArtifact, sourceText?: string): Promise<void> {
-    if (!this.projectRootDir) return;
+    if (!this.projectPaths.root) return;
     const moduleId = flowSourceModuleId(flow);
-    const filePath = this.projectFile(projectId, "flows", safeSegment(flow.flowId), "source", ...safeRelativePathParts(moduleId));
+    const filePath = this.projectPaths.projectFile(projectId, "flows", safeSegment(flow.flowId), "source", ...safeRelativePathParts(moduleId));
     await mkdir(path.dirname(filePath), { recursive: true });
     await writeFile(filePath, sourceText ?? generateFlowTypeScript(flow), "utf8");
   }
 
   private async deleteFlowSourceFile(projectId: string, flow: AutomationStudioFlowArtifact): Promise<void> {
-    if (!this.projectRootDir) return;
-    await rm(this.projectFile(projectId, "flows", safeSegment(flow.flowId), "source"), { recursive: true, force: true });
-  }
-
-  private async readRecordingIndex(projectId: string): Promise<RecordingIndex> {
-    await this.findProject(projectId);
-    return await new ProgramJsonStore<RecordingIndex>(this.projectFile(projectId, "indexes", "recordings.json"), () => ({ recordings: [], normalizedTimelines: [] })).read();
-  }
-
-  private async readFlowIndex(projectId: string): Promise<AutomationStudioFlowSummaryIndex> {
-    await this.findProject(projectId);
-    return await new ProgramJsonStore<AutomationStudioFlowSummaryIndex>(this.projectFile(projectId, "indexes", "flows.json"), emptyFlowSummaryIndex).read();
-  }
-
-  private async writeFlowIndex(projectId: string, mutator: (index: AutomationStudioFlowSummaryIndex) => AutomationStudioFlowSummaryIndex): Promise<AutomationStudioFlowSummaryIndex> {
-    await this.findProject(projectId);
-    return await new ProgramJsonStore<AutomationStudioFlowSummaryIndex>(this.projectFile(projectId, "indexes", "flows.json"), emptyFlowSummaryIndex).update(mutator);
+    if (!this.projectPaths.root) return;
+    await rm(this.projectPaths.projectFile(projectId, "flows", safeSegment(flow.flowId), "source"), { recursive: true, force: true });
   }
 
   private async repairFlowSummaryMetadataIndex(
@@ -7401,7 +7159,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       }
     }
     if (repairedSubflowPlacement.size) {
-      await this.writeFlowSubflowIndex(projectId, (index) => ({
+      await this.indexes.writeFlowSubflowIndex(projectId, (index) => ({
         schemaVersion: "0.1",
         summaryVersion: 2,
         subflows: (index.subflows ?? []).map((subflow) => {
@@ -7410,7 +7168,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         })
       }));
     }
-    return await this.writeFlowIndex(projectId, (current) => {
+    return await this.indexes.writeFlowIndex(projectId, (current) => {
       if (current.ownershipMetadataVersion === 1 && current.hierarchyMetadataVersion === 1) return current;
       return {
         schemaVersion: "0.1",
@@ -7422,7 +7180,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async withCanonicalFlowHierarchySubflows(projectId: string, flows: AutomationStudioFlowSummary[]): Promise<AutomationStudioFlowSummary[]> {
-    const index = await this.readFlowSubflowIndex(projectId).catch(() => emptyFlowSubflowIndex());
+    const index = await this.indexes.readFlowSubflowIndex(projectId).catch(() => emptyFlowSubflowIndex());
     const byFlowId = new Map<string, AutomationStudioSubflowSummary[]>();
     for (const subflow of index.subflows ?? []) {
       if (!subflow.flowId) continue;
@@ -7448,105 +7206,30 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     });
   }
 
-  private async readFlowRouterIndex(projectId: string): Promise<FlowRouterIndex> {
-    await this.findProject(projectId);
-    return await new ProgramJsonStore<FlowRouterIndex>(this.flowRouterIndexFile(projectId), emptyFlowRouterIndex).read();
-  }
-
-  private async writeFlowRouterIndex(projectId: string, mutator: (index: FlowRouterIndex) => FlowRouterIndex): Promise<FlowRouterIndex> {
-    await this.findProject(projectId);
-    return await new ProgramJsonStore<FlowRouterIndex>(this.flowRouterIndexFile(projectId), emptyFlowRouterIndex).update((index) => sortFlowRouterIndex(mutator(index)));
-  }
-
-  private async readFlowSubflowIndex(projectId: string): Promise<FlowSubflowIndex> {
-    await this.findProject(projectId);
-    return await new ProgramJsonStore<FlowSubflowIndex>(this.flowSubflowIndexFile(projectId), emptyFlowSubflowIndex).read();
-  }
-
-  private async writeFlowSubflowIndex(projectId: string, mutator: (index: FlowSubflowIndex) => FlowSubflowIndex): Promise<FlowSubflowIndex> {
-    await this.findProject(projectId);
-    return await new ProgramJsonStore<FlowSubflowIndex>(this.flowSubflowIndexFile(projectId), emptyFlowSubflowIndex).update((index) => sortFlowSubflowIndex(mutator(index)));
-  }
-
-  private async readFlowInstructionIndex(projectId: string): Promise<FlowInstructionIndex> {
-    await this.findProject(projectId);
-    return await new ProgramJsonStore<FlowInstructionIndex>(this.flowInstructionIndexFile(projectId), emptyFlowInstructionIndex).read();
-  }
-
-  private async writeFlowInstructionIndex(projectId: string, mutator: (index: FlowInstructionIndex) => FlowInstructionIndex): Promise<FlowInstructionIndex> {
-    await this.findProject(projectId);
-    return await new ProgramJsonStore<FlowInstructionIndex>(this.flowInstructionIndexFile(projectId), emptyFlowInstructionIndex).update((index) => sortFlowInstructionIndex(mutator(index)));
-  }
-
-  private async readFlowChangeProposalIndex(projectId: string): Promise<FlowChangeProposalIndex> {
-    await this.findProject(projectId);
-    return await new ProgramJsonStore<FlowChangeProposalIndex>(this.flowChangeProposalIndexFile(projectId), emptyFlowChangeProposalIndex).read();
-  }
-
-  private async writeFlowChangeProposalIndex(projectId: string, mutator: (index: FlowChangeProposalIndex) => FlowChangeProposalIndex): Promise<FlowChangeProposalIndex> {
-    await this.findProject(projectId);
-    return await new ProgramJsonStore<FlowChangeProposalIndex>(this.flowChangeProposalIndexFile(projectId), emptyFlowChangeProposalIndex).update((index) => sortFlowChangeProposalIndex(mutator(index)));
-  }
-
-  private async readFlowRunIndex(projectId: string): Promise<FlowRunIndex> {
-    await this.findProject(projectId);
-    return await new ProgramJsonStore<FlowRunIndex>(this.flowRunIndexFile(projectId), emptyFlowRunIndex).read();
-  }
-
-  private async writeFlowRunIndex(projectId: string, mutator: (index: FlowRunIndex) => FlowRunIndex): Promise<FlowRunIndex> {
-    await this.findProject(projectId);
-    return await new ProgramJsonStore<FlowRunIndex>(this.flowRunIndexFile(projectId), emptyFlowRunIndex).update((index) => sortFlowRunIndex(mutator(index)));
-  }
-
-  private async readFlowAdaptationIndex(projectId: string): Promise<FlowAdaptationIndex> {
-    await this.findProject(projectId);
-    return await new ProgramJsonStore<FlowAdaptationIndex>(this.flowAdaptationIndexFile(projectId), emptyFlowAdaptationIndex).read();
-  }
-
-  private async writeFlowAdaptationIndex(projectId: string, mutator: (index: FlowAdaptationIndex) => FlowAdaptationIndex): Promise<FlowAdaptationIndex> {
-    await this.findProject(projectId);
-    return await new ProgramJsonStore<FlowAdaptationIndex>(this.flowAdaptationIndexFile(projectId), emptyFlowAdaptationIndex).update((index) => sortFlowAdaptationIndex(mutator(index)));
-  }
-
-  private async readFlowAdaptationPolicyIndex(projectId: string): Promise<FlowAdaptationPolicyIndex> {
-    await this.findProject(projectId);
-    return await new ProgramJsonStore<FlowAdaptationPolicyIndex>(this.flowAdaptationPolicyIndexFile(projectId), emptyFlowAdaptationPolicyIndex).read();
-  }
-
-  private async writeFlowAdaptationPolicyIndex(projectId: string, mutator: (index: FlowAdaptationPolicyIndex) => FlowAdaptationPolicyIndex): Promise<FlowAdaptationPolicyIndex> {
-    await this.findProject(projectId);
-    return await new ProgramJsonStore<FlowAdaptationPolicyIndex>(this.flowAdaptationPolicyIndexFile(projectId), emptyFlowAdaptationPolicyIndex).update((index) => sortFlowAdaptationPolicyIndex(mutator(index)));
-  }
-
-  private async readRuntimeIndex(projectId: string): Promise<RuntimeIndex> {
-    await this.findProject(projectId);
-    return await new ProgramJsonStore<RuntimeIndex>(this.projectFile(projectId, "runtime", "indexes", "sessions.json"), () => ({ sessions: [] })).read();
-  }
-
   private runtimeSummaryRepository(projectId: string): SQLiteRepository<JsonObject> {
-    return new SQLiteRepository<JsonObject>({ rootDir: this.projectFile(projectId, "runtime", "sqlite"), kind: "runtime.sessions", layoutVersion: 1 });
+    return new SQLiteRepository<JsonObject>({ rootDir: this.projectPaths.projectFile(projectId, "runtime", "sqlite"), kind: "runtime.sessions", layoutVersion: 1 });
   }
 
   private flowSubflowSummaryRepository(projectId: string): SQLiteRepository<JsonObject> {
-    return new SQLiteRepository<JsonObject>({ rootDir: this.projectFile(projectId, "runtime", "sqlite"), kind: "flow.subflows", layoutVersion: 1 });
+    return new SQLiteRepository<JsonObject>({ rootDir: this.projectPaths.projectFile(projectId, "runtime", "sqlite"), kind: "flow.subflows", layoutVersion: 1 });
   }
 
   private flowInstructionSummaryRepository(projectId: string): SQLiteRepository<JsonObject> {
-    return new SQLiteRepository<JsonObject>({ rootDir: this.projectFile(projectId, "runtime", "sqlite"), kind: "flow.instructions", layoutVersion: 1 });
+    return new SQLiteRepository<JsonObject>({ rootDir: this.projectPaths.projectFile(projectId, "runtime", "sqlite"), kind: "flow.instructions", layoutVersion: 1 });
   }
 
   private flowRunSummaryRepository(projectId: string): SQLiteRepository<JsonObject> {
-    return new SQLiteRepository<JsonObject>({ rootDir: this.projectFile(projectId, "runtime", "sqlite"), kind: "flow.runs", layoutVersion: 1 });
+    return new SQLiteRepository<JsonObject>({ rootDir: this.projectPaths.projectFile(projectId, "runtime", "sqlite"), kind: "flow.runs", layoutVersion: 1 });
   }
 
   private flowAdaptationSummaryRepository(projectId: string): SQLiteRepository<JsonObject> {
-    return new SQLiteRepository<JsonObject>({ rootDir: this.projectFile(projectId, "runtime", "sqlite"), kind: "flow.adaptations", layoutVersion: 1 });
+    return new SQLiteRepository<JsonObject>({ rootDir: this.projectPaths.projectFile(projectId, "runtime", "sqlite"), kind: "flow.adaptations", layoutVersion: 1 });
   }
 
   private async ensureRuntimeSummaryIndex(projectId: string): Promise<void> {
-    await this.findProject(projectId);
-    if (!this.projectRootDir) return;
-    const index = await this.readRuntimeIndex(projectId).catch(() => ({ sessions: [] }));
+    await this.projects.findProject(projectId);
+    if (!this.projectPaths.root) return;
+    const index = await this.indexes.readRuntimeIndex(projectId).catch(() => ({ sessions: [] }));
     if (!(index.sessions ?? []).length) {
       await this.runtimeSummaryRepository(projectId).listPage({}, { limit: 1, offset: 0 }).catch(() => undefined);
       return;
@@ -7561,9 +7244,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async ensureFlowSubflowSummaryIndex(projectId: string): Promise<void> {
-    await this.findProject(projectId);
-    if (!this.projectRootDir) return;
-    let index: FlowSubflowIndex = await this.readFlowSubflowIndex(projectId).catch(() => ({ schemaVersion: "0.1", subflows: [] }));
+    await this.projects.findProject(projectId);
+    if (!this.projectPaths.root) return;
+    let index: FlowSubflowIndex = await this.indexes.readFlowSubflowIndex(projectId).catch(() => ({ schemaVersion: "0.1", subflows: [] }));
     const repository = this.flowSubflowSummaryRepository(projectId);
     const page = await repository.listPage({}, { limit: 1, offset: 0 });
     const legacyRow = await repository.transaction({}, (transaction) => transaction.get<{ total: number }>(
@@ -7576,7 +7259,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         return detail ? subflowSummaryFromSubflow(detail) : summary;
       });
       const fullyMigrated = summaries.every((summary) => summary.summaryVersion === 2);
-      index = await this.writeFlowSubflowIndex(projectId, () => ({
+      index = await this.indexes.writeFlowSubflowIndex(projectId, () => ({
         schemaVersion: "0.1",
         ...(fullyMigrated ? { summaryVersion: 2 as const } : {}),
         subflows: summaries
@@ -7586,13 +7269,13 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async ensureFlowInstructionSummaryIndex(projectId: string): Promise<void> {
-    await this.findProject(projectId);
-    if (!this.projectRootDir) return;
-    let index: FlowInstructionIndex = await this.readFlowInstructionIndex(projectId).catch(() => ({ schemaVersion: "0.1", instructions: [] }));
+    await this.projects.findProject(projectId);
+    if (!this.projectPaths.root) return;
+    let index: FlowInstructionIndex = await this.indexes.readFlowInstructionIndex(projectId).catch(() => ({ schemaVersion: "0.1", instructions: [] }));
     if (index.summaryVersion !== 2 || (index.instructions ?? []).some((summary) => summary.summaryVersion !== 2)) {
       const details = (await Promise.all((index.instructions ?? []).map((summary) => this.getFlowInstruction(projectId, summary.instructionId))))
         .filter((instruction): instruction is AutomationStudioFlowInstruction => Boolean(instruction));
-      index = await this.writeFlowInstructionIndex(projectId, () => ({ schemaVersion: "0.1", summaryVersion: 2, instructions: details.map(instructionSummaryFromInstruction) }));
+      index = await this.indexes.writeFlowInstructionIndex(projectId, () => ({ schemaVersion: "0.1", summaryVersion: 2, instructions: details.map(instructionSummaryFromInstruction) }));
     }
     const repository = this.flowInstructionSummaryRepository(projectId);
     const page = await repository.listPage({}, { limit: 1, offset: 0 });
@@ -7604,19 +7287,19 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async writeFlowInstructionSummary(projectId: string, summary: AutomationStudioInstructionSummary): Promise<void> {
-    if (!this.projectRootDir) return;
+    if (!this.projectPaths.root) return;
     await this.flowInstructionSummaryRepository(projectId).put(createRecord({ id: summary.instructionId, kind: "flow.instructions", data: summary as unknown as JsonObject, nowMs: summary.updatedAt }));
   }
 
   private async writeFlowSubflowSummary(projectId: string, summary: AutomationStudioSubflowSummary): Promise<void> {
-    if (!this.projectRootDir) return;
+    if (!this.projectPaths.root) return;
     await this.flowSubflowSummaryRepository(projectId).put(createRecord({ id: summary.subflowId, kind: "flow.subflows", data: summary as unknown as JsonObject, nowMs: summary.updatedAt }));
   }
 
   private async tryWithRuntimeStreamStore<T>(projectId: string, operation: (store: AutomationStudioProjectRuntimeStreamStore) => Promise<T>): Promise<T | null> {
-    if (!this.runtimeProjectDatabasePool || !this.projectRootDir) return null;
+    if (!this.runtimeProjectDatabasePool || !this.projectPaths.root) return null;
     try {
-      await this.findProject(projectId);
+      await this.projects.findProject(projectId);
       const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
       try {
         return await operation(store);
@@ -7629,9 +7312,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async tryWithFlowResourceRepository<T>(projectId: string, operation: (repository: AutomationStudioProjectFlowResourceRepository) => Promise<T>): Promise<T | null> {
-    if (!this.projectDatabasePool || !this.projectRootDir) return null;
+    if (!this.projectDatabasePool || !this.projectPaths.root) return null;
     try {
-      await this.findProject(projectId);
+      await this.projects.findProject(projectId);
       const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool: this.projectDatabasePool, projectId });
       try {
         return await operation(repository);
@@ -7644,9 +7327,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async tryWithAdaptationStore<T>(projectId: string, operation: (store: AutomationStudioProjectAdaptationStore) => Promise<T>): Promise<T | null> {
-    if (!this.runtimeProjectDatabasePool || !this.projectRootDir) return null;
+    if (!this.runtimeProjectDatabasePool || !this.projectPaths.root) return null;
     try {
-      await this.findProject(projectId);
+      await this.projects.findProject(projectId);
       const store = await AutomationStudioProjectAdaptationStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
       try {
         return await operation(store);
@@ -7659,8 +7342,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async reviewTypedFlowAdaptation(input: ReviewFlowAdaptationInput): Promise<AutomationStudioFlowAdaptation | null> {
-    if (!this.runtimeProjectDatabasePool || !this.projectRootDir) return null;
-    await this.findProject(input.projectId);
+    if (!this.runtimeProjectDatabasePool || !this.projectPaths.root) return null;
+    await this.projects.findProject(input.projectId);
     const store = await AutomationStudioProjectAdaptationStore.open({ pool: this.runtimeProjectDatabasePool, projectId: input.projectId });
     try {
       const detail = await store.getAdaptation(input.adaptationId);
@@ -7725,7 +7408,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async listFlowRunEvents(input: { projectId: string; runId: string; afterSequence?: unknown; cursor?: unknown; limit?: unknown }): Promise<AutomationStudioRuntimeEventPage> {
-    await this.findProject(input.projectId);
+    await this.projects.findProject(input.projectId);
     const owner = `run-events:${input.runId}`;
     const filterHash = automationStudioFilterHash({});
     const cursor = decodeAutomationStudioPageCursor<{ sequence: number }>(input.cursor, { owner, filterHash, validate: (values) => Number.isSafeInteger(values.sequence) && Number(values.sequence) >= 0 });
@@ -7745,22 +7428,17 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   async getFlowRunEventDetail(input: { projectId: string; runId: string; sequence: unknown }): Promise<import("../storage/index.ts").AutomationStudioRuntimeStreamEvent | null> {
-    await this.findProject(input.projectId);
+    await this.projects.findProject(input.projectId);
     const typed = await this.tryWithRuntimeStreamStore(input.projectId, (store) => store.getRuntimeEventDetail({ runId: input.runId, sequence: input.sequence }));
     if (typed) return typed;
     const page = await this.listFlowRunEvents({ projectId: input.projectId, runId: input.runId, afterSequence: Math.max(0, Number(input.sequence) - 1), limit: 1 });
     return page.events[0] ?? null;
   }
 
-  private async readPipelineIndex(projectId: string): Promise<PipelineIndex> {
-    await this.findProject(projectId);
-    return await new ProgramJsonStore<PipelineIndex>(this.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).read();
-  }
-
   private async writeRuntimeSession(projectId: string, session: AutomationStudioRuntimeSession): Promise<void> {
-    await this.ensureProjectStructure(projectId);
-    await new ProgramJsonStore<JsonObject>(this.projectFile(projectId, "runtime", "sessions", `${safeSegment(session.runId)}.json`), () => ({})).write({ session: session as unknown as JsonObject });
-    await new ProgramJsonStore<RuntimeIndex>(this.projectFile(projectId, "runtime", "indexes", "sessions.json"), () => ({ sessions: [] })).update((index) => ({
+    await this.projects.ensureProjectStructure(projectId);
+    await new ProgramJsonStore<JsonObject>(this.projectPaths.projectFile(projectId, "runtime", "sessions", `${safeSegment(session.runId)}.json`), () => ({})).write({ session: session as unknown as JsonObject });
+    await new ProgramJsonStore<RuntimeIndex>(this.projectPaths.projectFile(projectId, "runtime", "indexes", "sessions.json"), () => ({ sessions: [] })).update((index) => ({
       sessions: upsertBy(index.sessions ?? [], "runId", {
         runId: session.runId,
         targetKind: session.targetKind,
@@ -7774,7 +7452,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async writeRuntimeSummary(projectId: string, session: AutomationStudioRuntimeSession): Promise<void> {
-    if (!this.projectRootDir) return;
+    if (!this.projectPaths.root) return;
     const summary = runtimeSummaryFromSession(session);
     await this.runtimeSummaryRepository(projectId).put(createRecord({
       id: session.runId,
@@ -7785,9 +7463,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async ensureFlowRunSummaryIndex(projectId: string): Promise<void> {
-    await this.findProject(projectId);
-    if (!this.projectRootDir) return;
-    const index = await this.readFlowRunIndex(projectId).catch(emptyFlowRunIndex);
+    await this.projects.findProject(projectId);
+    if (!this.projectPaths.root) return;
+    const index = await this.indexes.readFlowRunIndex(projectId).catch(emptyFlowRunIndex);
     if (!(index.runs ?? []).length) {
       const sessions = await this.listRuntimeSessions(projectId).catch(() => []);
       for (const session of sessions) await this.saveFlowRunDetail(runtimeSessionToFlowRunDetail(session, projectId));
@@ -7801,7 +7479,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async writeFlowRunSummary(projectId: string, summary: AutomationStudioFlowRunSummary): Promise<void> {
-    if (!this.projectRootDir) return;
+    if (!this.projectPaths.root) return;
     await this.flowRunSummaryRepository(projectId).put(createRecord({
       id: summary.runId,
       kind: "flow.runs",
@@ -7811,9 +7489,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async ensureFlowAdaptationSummaryIndex(projectId: string): Promise<void> {
-    await this.findProject(projectId);
-    if (!this.projectRootDir) return;
-    const index = await this.readFlowAdaptationIndex(projectId).catch(emptyFlowAdaptationIndex);
+    await this.projects.findProject(projectId);
+    if (!this.projectPaths.root) return;
+    const index = await this.indexes.readFlowAdaptationIndex(projectId).catch(emptyFlowAdaptationIndex);
     if (!(index.adaptations ?? []).length) {
       await this.flowAdaptationSummaryRepository(projectId).listPage({}, { limit: 1, offset: 0 }).catch(() => undefined);
       return;
@@ -7825,7 +7503,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async writeFlowAdaptationSummary(projectId: string, summary: AutomationStudioAdaptationSummary): Promise<void> {
-    if (!this.projectRootDir) return;
+    if (!this.projectPaths.root) return;
     await this.flowAdaptationSummaryRepository(projectId).put(createRecord({
       id: summary.adaptationId,
       kind: "flow.adaptations",
@@ -7973,104 +7651,15 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async writeJsonLines(filePath: string, rows: unknown[]): Promise<void> {
-    if (!this.projectRootDir) return;
+    if (!this.projectPaths.root) return;
     await mkdir(path.dirname(filePath), { recursive: true });
     await writeFile(filePath, rows.map((row) => JSON.stringify(row)).join("\n"), "utf8");
   }
 
-  private pipelineFolder(kind: PipelineArtifactKind): string {
-    if (kind === "normalizationReviews") return path.join("normalization", "reviews");
-    if (kind === "miningRuns") return path.join("evidence", "mining-runs");
-    if (kind === "evidenceFacts") return path.join("evidence", "facts");
-    if (kind === "evidenceObservations") return path.join("evidence", "observations");
-    if (kind === "stateActionCorrelations") return path.join("evidence", "correlations");
-    if (kind === "evidenceClaims") return path.join("evidence", "claims");
-    if (kind === "learnedTaskModels") return path.join("task-models");
-    if (kind === "policyProposals") return "proposal";
-    if (kind === "recordingFlowProposals") return path.join("proposal", "flows");
-    return "replays";
-  }
-
-  private recordingSessionDirectory(projectId: string, recordingId: string): string {
-    return this.projectFile(projectId, "recordings", safeSegment(recordingId));
-  }
-
-  private flowDirectory(projectId: string, flowId: string): string {
-    return this.projectFile(projectId, "flows", safeSegment(flowId));
-  }
-
-  private flowFile(projectId: string, flowId: string): string {
-    return path.join(this.flowDirectory(projectId, flowId), "flow.json");
-  }
-
-  private flowRouterIndexFile(projectId: string): string {
-    return this.projectFile(projectId, "indexes", "routers.json");
-  }
-
-  private flowSubflowIndexFile(projectId: string): string {
-    return this.projectFile(projectId, "indexes", "subflows.json");
-  }
-
-  private flowInstructionIndexFile(projectId: string): string {
-    return this.projectFile(projectId, "indexes", "instructions.json");
-  }
-
-  private flowChangeProposalIndexFile(projectId: string): string {
-    return this.projectFile(projectId, "indexes", "change-proposals.json");
-  }
-
-  private flowRunIndexFile(projectId: string): string {
-    return this.projectFile(projectId, "indexes", "runs.json");
-  }
-
-  private flowAdaptationIndexFile(projectId: string): string {
-    return this.projectFile(projectId, "indexes", "adaptations.json");
-  }
-
-  private flowAdaptationPolicyIndexFile(projectId: string): string {
-    return this.projectFile(projectId, "indexes", "adaptation-policies.json");
-  }
-
-  private flowRouterFile(projectId: string, flowId: string): string {
-    return path.join(this.flowDirectory(projectId, flowId), "router.json");
-  }
-
-  private flowSubflowDirectory(projectId: string, flowId: string, subflowId: string): string {
-    return path.join(this.flowDirectory(projectId, flowId), "subflows", safeSegment(subflowId));
-  }
-
-  private flowSubflowFile(projectId: string, flowId: string, subflowId: string): string {
-    return path.join(this.flowSubflowDirectory(projectId, flowId, subflowId), "subflow.json");
-  }
-
-  private flowInstructionDirectory(projectId: string, flowId: string): string {
-    return path.join(this.flowDirectory(projectId, flowId), "instructions");
-  }
-
-  private flowInstructionFile(projectId: string, flowId: string, instructionId: string): string {
-    return path.join(this.flowInstructionDirectory(projectId, flowId), `${safeSegment(instructionId)}.json`);
-  }
-
-  private projectInstructionFile(projectId: string, instructionId: string): string {
-    return this.projectFile(projectId, "instructions", `${safeSegment(instructionId)}.json`);
-  }
-
-  private flowChangeProposalDirectory(projectId: string, flowId: string, proposalId: string): string {
-    return path.join(this.flowDirectory(projectId, flowId), "change-proposals", safeSegment(proposalId));
-  }
-
-  private flowChangeProposalFile(projectId: string, flowId: string, proposalId: string): string {
-    return path.join(this.flowChangeProposalDirectory(projectId, flowId, proposalId), "proposal.json");
-  }
-
-  private flowAdaptationsDirectory(projectId: string, flowId: string): string {
-    return path.join(this.flowDirectory(projectId, flowId), "adaptations");
-  }
-
   private async withReusableLlmContextStore<T>(projectId: string, operation: (store: AutomationStudioProjectReusableLlmContextStore) => Promise<T>): Promise<T> {
     if (!this.reusableLlmContextEnabled) throw new Error("Reusable LLM context is disabled.");
-    if (!this.runtimeProjectDatabasePool || !this.projectRootDir) throw new Error("Reusable LLM context requires project storage.");
-    await this.findProject(projectId);
+    if (!this.runtimeProjectDatabasePool || !this.projectPaths.root) throw new Error("Reusable LLM context requires project storage.");
+    await this.projects.findProject(projectId);
     const store = await AutomationStudioProjectReusableLlmContextStore.open({ pool: this.runtimeProjectDatabasePool, projectId, enabled: true, ...(this.reusableLlmContextContentProtection ? { contentProtection: this.reusableLlmContextContentProtection } : {}) });
     try { return await operation(store); }
     finally { await store.close(); }
@@ -8138,74 +7727,13 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     await this.writeFlowSourceFile(projectId, synchronized);
     await this.writeGeneratedFlowConfig(projectId, synchronized);
   }
-  private flowAdaptationDirectory(projectId: string, flowId: string, adaptationId: string): string {
-    return path.join(this.flowAdaptationsDirectory(projectId, flowId), safeSegment(adaptationId));
-  }
-
-  private flowAdaptationFile(projectId: string, flowId: string, adaptationId: string): string {
-    return path.join(this.flowAdaptationDirectory(projectId, flowId, adaptationId), "adaptation.json");
-  }
-
-  private flowBootstrapAdaptationFile(projectId: string, flowId: string, adaptationId: string): string {
-    return path.join(this.flowAdaptationDirectory(projectId, flowId, adaptationId), "bootstrap.json");
-  }
-
-  private flowAdaptationPolicyFile(projectId: string, flowId: string, policyId: string): string {
-    return path.join(this.flowDirectory(projectId, flowId), "adaptation-policies", `${safeSegment(policyId)}.json`);
-  }
-
-  private flowRunDirectory(projectId: string, runId: string): string {
-    return this.projectFile(projectId, "runtime", "runs", safeSegment(runId));
-  }
-
-  private flowRunDetailFile(projectId: string, runId: string): string {
-    return path.join(this.flowRunDirectory(projectId, runId), "run.json");
-  }
-
-  private flowRunActionsFile(projectId: string, runId: string): string {
-    return path.join(this.flowRunDirectory(projectId, runId), "actions.jsonl");
-  }
-
-  private flowRunRouteDecisionsFile(projectId: string, runId: string): string {
-    return path.join(this.flowRunDirectory(projectId, runId), "route-decisions.jsonl");
-  }
-
-  private flowRunSubflowsFile(projectId: string, runId: string): string {
-    return path.join(this.flowRunDirectory(projectId, runId), "subflows.jsonl");
-  }
-
-  private flowRunInterventionsFile(projectId: string, runId: string): string {
-    return path.join(this.flowRunDirectory(projectId, runId), "interventions.jsonl");
-  }
-
-  private recordingTimelineFile(projectId: string, recordingId: string): string {
-    return path.join(this.recordingSessionDirectory(projectId, recordingId), "timeline.jsonl");
-  }
-
-  private recordingDerivedDirectory(projectId: string, recordingId: string): string {
-    return path.join(this.recordingSessionDirectory(projectId, recordingId), "derived");
-  }
-
-  private recordingDerivedFile(projectId: string, recordingId: string, ...parts: string[]): string {
-    return path.join(this.recordingDerivedDirectory(projectId, recordingId), ...parts);
-  }
-
-  private recordingPipelineFile(projectId: string, recordingId: string): string {
-    return this.recordingDerivedFile(projectId, recordingId, "index.json");
-  }
-
-  private recordingPipelineArtifactFile(projectId: string, recordingId: string, kind: PipelineArtifactKind, id: string): string {
-    if (kind === "policyProposals" || kind === "recordingFlowProposals") return this.projectFile(projectId, "proposals", safeSegment(recordingId), safeSegment(id), "proposal.json");
-    return this.recordingDerivedFile(projectId, recordingId, this.recordingPipelineArtifactFolder(kind), `${safeSegment(id)}.json`);
-  }
-
   private async writePipelineArtifact(projectId: string, kind: PipelineArtifactKind, id: string, artifact: JsonObject): Promise<void> {
     await this.writePipelineArtifacts(projectId, [{ kind, id, artifact }]);
   }
 
   private async writePipelineArtifacts(projectId: string, artifacts: Array<{ kind: PipelineArtifactKind; id: string; artifact: JsonObject }>): Promise<void> {
     if (!artifacts.length) return;
-    await this.ensureProjectStructure(projectId);
+    await this.projects.ensureProjectStructure(projectId);
     const generatedAt = Date.now();
     const byRecording = new Map<string, Array<{ kind: PipelineArtifactKind; id: string; artifact: JsonObject }>>();
     const indexed: Array<{ kind: PipelineArtifactKind; id: string; artifact: JsonObject; recordingId?: string }> = [];
@@ -8221,20 +7749,20 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       for (const item of indexed) prepared.set(`${item.kind}:${item.id}`, await this.prepareArtifactDocument(projectId, item.artifact));
       const recordings = new Map<string, RecordingSession>();
       for (const recordingId of byRecording.keys()) recordings.set(recordingId, await this.getRecordingSession(recordingId, projectId));
-      const indexPath = this.projectFile(projectId, "indexes", "pipeline.json");
+      const indexPath = this.projectPaths.projectFile(projectId, "indexes", "pipeline.json");
       await ProgramJsonStore.transaction(indexPath, async (transaction) => {
         let index = await transaction.read(indexPath, emptyPipelineIndex);
         for (const item of aggregateArtifacts) {
-          const filePath = this.projectFile(projectId, "pipeline", "shared", this.pipelineFolder(item.kind), `${safeSegment(item.id)}.json`);
+          const filePath = this.projectPaths.projectFile(projectId, "pipeline", "shared", this.recordingPaths.pipelineFolder(item.kind), `${safeSegment(item.id)}.json`);
           await transaction.write(filePath, prepared.get(`${item.kind}:${item.id}`)!);
         }
         for (const [recordingId, items] of byRecording) {
           const recording = recordings.get(recordingId)!;
-          const pipelinePath = this.recordingPipelineFile(projectId, recordingId);
+          const pipelinePath = this.recordingPaths.recordingPipelineFile(projectId, recordingId);
           let pipeline = await transaction.read(pipelinePath, () => createRecordingPipelineDocument(recording));
           for (const item of items) {
             pipeline = addRecordingPipelineArtifactId(pipeline, item.kind, item.id);
-            await transaction.write(this.recordingPipelineArtifactFile(projectId, recordingId, item.kind, item.id), prepared.get(`${item.kind}:${item.id}`)!);
+            await transaction.write(this.recordingPaths.recordingPipelineArtifactFile(projectId, recordingId, item.kind, item.id), prepared.get(`${item.kind}:${item.id}`)!);
           }
           await transaction.write(pipelinePath, pipeline);
           index = {
@@ -8254,21 +7782,21 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     }
     await mapWithConcurrency(aggregateArtifacts, PIPELINE_ARTIFACT_IO_CONCURRENCY, async (item) => this.writeArtifactDocument(
       projectId,
-      this.projectFile(projectId, "pipeline", "shared", this.pipelineFolder(item.kind), `${safeSegment(item.id)}.json`),
+      this.projectPaths.projectFile(projectId, "pipeline", "shared", this.recordingPaths.pipelineFolder(item.kind), `${safeSegment(item.id)}.json`),
       item.artifact
     ));
     for (const [recordingId, items] of byRecording) await this.writeRecordingPipelineArtifacts(projectId, recordingId, items);
-    await new ProgramJsonStore<PipelineIndex>(this.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => indexed.reduce(
+    await new ProgramJsonStore<PipelineIndex>(this.projectPaths.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => indexed.reduce(
       (next, item) => upsertPipelineIndex(next, item.kind, item.id, generatedAt, item.artifact.status, item.recordingId),
       index
     ));
   }
 
   private async ensureProjectRecordingPipeline(projectId: string, recording: RecordingSession): Promise<RecordingPipelineDocument> {
-    await this.ensureProjectStructure(projectId);
+    await this.projects.ensureProjectStructure(projectId);
     const pipelineId = recordingPipelineId(recording.recordingId);
     const store = new ProgramJsonStore<RecordingPipelineDocument>(
-      this.recordingPipelineFile(projectId, recording.recordingId),
+      this.recordingPaths.recordingPipelineFile(projectId, recording.recordingId),
       () => createRecordingPipelineDocument(recording)
     );
     const now = Date.now();
@@ -8286,7 +7814,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       }
     };
     await store.write(next);
-    await new ProgramJsonStore<PipelineIndex>(this.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => ({
+    await new ProgramJsonStore<PipelineIndex>(this.projectPaths.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => ({
       ...emptyPipelineIndex(),
       ...index,
       pipelines: upsertBy(index.pipelines ?? [], "pipelineId", {
@@ -8303,7 +7831,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const recording = await this.repositories.recordingSessions.get(recordingId) ?? await this.getRecordingSession(recordingId, projectId).catch(() => null);
     if (!recording) return;
     await this.ensureProjectRecordingPipeline(projectId, recording);
-    await this.writeArtifactDocument(projectId, this.recordingPipelineArtifactFile(projectId, recordingId, kind, id), artifact);
+    await this.writeArtifactDocument(projectId, this.recordingPaths.recordingPipelineArtifactFile(projectId, recordingId, kind, id), artifact);
     await this.updateRecordingPipeline(projectId, recordingId, (pipeline) => addRecordingPipelineArtifactId(pipeline, kind, id));
   }
 
@@ -8311,7 +7839,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const recording = await this.repositories.recordingSessions.get(recordingId) ?? await this.getRecordingSession(recordingId, projectId).catch(() => null);
     if (!recording || !artifacts.length) return;
     await this.ensureProjectRecordingPipeline(projectId, recording);
-    await mapWithConcurrency(artifacts, PIPELINE_ARTIFACT_IO_CONCURRENCY, async (item) => this.writeArtifactDocument(projectId, this.recordingPipelineArtifactFile(projectId, recordingId, item.kind, item.id), item.artifact));
+    await mapWithConcurrency(artifacts, PIPELINE_ARTIFACT_IO_CONCURRENCY, async (item) => this.writeArtifactDocument(projectId, this.recordingPaths.recordingPipelineArtifactFile(projectId, recordingId, item.kind, item.id), item.artifact));
     await this.updateRecordingPipeline(projectId, recordingId, (pipeline) => artifacts.reduce((next, item) => addRecordingPipelineArtifactId(next, item.kind, item.id), pipeline));
   }
 
@@ -8320,7 +7848,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     if (!recording) return;
     await this.ensureProjectRecordingPipeline(projectId, recording);
     await new ProgramJsonStore<JsonObject>(
-      this.recordingDerivedFile(projectId, normalized.recordingId, "normalization", "timelines", `${safeSegment(normalized.normalizedTimelineId)}.json`),
+      this.recordingPaths.recordingDerivedFile(projectId, normalized.recordingId, "normalization", "timelines", `${safeSegment(normalized.normalizedTimelineId)}.json`),
       () => ({})
     ).write({ normalizedTimeline: normalized as unknown as JsonObject });
     await this.updateRecordingPipeline(projectId, normalized.recordingId, (pipeline) => ({
@@ -8337,12 +7865,12 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const recording = await this.getRecordingSession(recordingId, projectId);
     await this.ensureProjectRecordingPipeline(projectId, recording);
     const store = new ProgramJsonStore<RecordingPipelineDocument>(
-      this.recordingPipelineFile(projectId, recordingId),
+      this.recordingPaths.recordingPipelineFile(projectId, recordingId),
       () => createRecordingPipelineDocument(recording)
     );
     const next = mutator(await store.read());
     await store.write(next);
-    await new ProgramJsonStore<PipelineIndex>(this.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => ({
+    await new ProgramJsonStore<PipelineIndex>(this.projectPaths.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => ({
       ...emptyPipelineIndex(),
       ...index,
       pipelines: upsertBy(index.pipelines ?? [], "pipelineId", {
@@ -8353,10 +7881,6 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       })
     }));
     return next;
-  }
-
-  private recordingPipelineArtifactFolder(kind: PipelineArtifactKind): string {
-    return this.pipelineFolder(kind);
   }
 
   private async pipelineArtifactRecordingId(projectId: string, kind: PipelineArtifactKind, artifact: JsonObject): Promise<string | null> {
@@ -8375,7 +7899,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
 
   private async deleteProjectRecordingPipeline(projectId: string, recordingId: string): Promise<void> {
     const pipeline = await new ProgramJsonStore<RecordingPipelineDocument>(
-      this.recordingPipelineFile(projectId, recordingId),
+      this.recordingPaths.recordingPipelineFile(projectId, recordingId),
       () => createRecordingPipelineDocument({ recordingId, startedAt: Date.now() })
     ).read();
     const artifactIds = await this.collectRecordingPipelineArtifactIds(projectId, recordingId, pipeline);
@@ -8383,12 +7907,12 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       for (const id of artifactIds[kind]) await this.deletePipelineArtifactDocuments(projectId, recordingId, kind, id);
     }
     await this.deletePhysicalSharedPipelineArtifactsForRecording(projectId, recordingId);
-    const recordingProposalRoot = this.projectFile(projectId, "proposals", safeSegment(recordingId));
+    const recordingProposalRoot = this.projectPaths.projectFile(projectId, "proposals", safeSegment(recordingId));
     if (this.objectStore) await ProgramJsonStore.deletePath(recordingProposalRoot);
     await rm(recordingProposalRoot, { recursive: true, force: true });
-    if (this.objectStore) await ProgramJsonStore.deletePath(this.recordingDerivedDirectory(projectId, recordingId));
-    else await rm(this.recordingDerivedDirectory(projectId, recordingId), { recursive: true, force: true });
-    await new ProgramJsonStore<PipelineIndex>(this.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => ({
+    if (this.objectStore) await ProgramJsonStore.deletePath(this.recordingPaths.recordingDerivedDirectory(projectId, recordingId));
+    else await rm(this.recordingPaths.recordingDerivedDirectory(projectId, recordingId), { recursive: true, force: true });
+    await new ProgramJsonStore<PipelineIndex>(this.projectPaths.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => ({
       pipelines: (index.pipelines ?? []).filter((item) => item.recordingId !== recordingId),
       normalizationReviews: (index.normalizationReviews ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.normalizationReviews.has(item.reviewId)),
       miningRuns: (index.miningRuns ?? []).filter((item) => item.recordingId !== recordingId && !artifactIds.miningRuns.has(item.miningRunId)),
@@ -8417,7 +7941,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     for (const id of pipeline.artifacts.recordingFlowProposalIds ?? []) ids.recordingFlowProposals.add(id);
     for (const id of pipeline.artifacts.replayResultIds ?? []) ids.replayResults.add(id);
 
-    const index = pipelineIndex ?? await this.readPipelineIndex(projectId);
+    const index = pipelineIndex ?? await this.indexes.readPipelineIndex(projectId);
     for (const kind of pipelineArtifactKinds()) {
       const key = pipelineIndexKey(kind);
       for (const item of ((index[kind] as Array<Record<string, unknown>>) ?? [])) {
@@ -8454,23 +7978,23 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       recordingFlowProposals: (index.recordingFlowProposals ?? []).filter((item) => withoutDeleted(item, "recordingFlowProposals")),
       replayResults: (index.replayResults ?? []).filter((item) => withoutDeleted(item, "replayResults"))
     });
-    await new ProgramJsonStore<PipelineIndex>(this.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => nextIndex({ ...emptyPipelineIndex(), ...index }));
+    await new ProgramJsonStore<PipelineIndex>(this.projectPaths.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((index) => nextIndex({ ...emptyPipelineIndex(), ...index }));
     await this.prunePhysicalPipelineIndexForRecordings(projectId, recordingIds, artifactIds);
   }
 
   private async deletePipelineArtifactDocuments(projectId: string, recordingId: string, kind: PipelineArtifactKind, id: string): Promise<void> {
     const paths = [
-      this.recordingPipelineArtifactFile(projectId, recordingId, kind, id),
-      this.projectFile(projectId, "pipeline", "shared", this.pipelineFolder(kind), `${safeSegment(id)}.json`)
+      this.recordingPaths.recordingPipelineArtifactFile(projectId, recordingId, kind, id),
+      this.projectPaths.projectFile(projectId, "pipeline", "shared", this.recordingPaths.pipelineFolder(kind), `${safeSegment(id)}.json`)
     ];
-    const legacyPath = this.legacyRecordingPipelineArtifactFile(projectId, recordingId, kind, id);
+    const legacyPath = this.recordingPaths.legacyRecordingPipelineArtifactFile(projectId, recordingId, kind, id);
     if (legacyPath) paths.push(legacyPath);
     for (const filePath of paths) {
       if (this.objectStore) await ProgramJsonStore.deletePath(filePath);
       await rm(filePath, { recursive: true, force: true });
     }
     if (kind === "policyProposals" || kind === "recordingFlowProposals") {
-      const proposalDirectory = path.dirname(this.recordingPipelineArtifactFile(projectId, recordingId, kind, id));
+      const proposalDirectory = path.dirname(this.recordingPaths.recordingPipelineArtifactFile(projectId, recordingId, kind, id));
       if (this.objectStore) await ProgramJsonStore.deletePath(proposalDirectory);
       await rm(proposalDirectory, { recursive: true, force: true });
     }
@@ -8479,7 +8003,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   private async removeRecordingPipelineArtifactId(projectId: string, recordingId: string, kind: "policyProposals" | "recordingFlowProposals", id: string): Promise<void> {
     const key = kind === "policyProposals" ? "policyProposalIds" : "recordingFlowProposalIds";
     const store = new ProgramJsonStore<RecordingPipelineDocument>(
-      this.recordingPipelineFile(projectId, recordingId),
+      this.recordingPaths.recordingPipelineFile(projectId, recordingId),
       () => createRecordingPipelineDocument({ recordingId, startedAt: Date.now() })
     );
     const pipeline = await store.read();
@@ -8494,12 +8018,12 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async deletePhysicalSharedPipelineArtifactsForRecording(projectId: string, recordingId: string): Promise<void> {
-    const root = this.projectFile(projectId, "pipeline", "shared");
+    const root = this.projectPaths.projectFile(projectId, "pipeline", "shared");
     await this.deletePhysicalJsonFilesMatching(root, (document) => documentBelongsToRecording(document, recordingId));
   }
 
   private async deletePhysicalSharedPipelineArtifactsForRecordings(projectId: string, recordingIds: Set<string>): Promise<void> {
-    const root = this.projectFile(projectId, "pipeline", "shared");
+    const root = this.projectPaths.projectFile(projectId, "pipeline", "shared");
     await this.deletePhysicalJsonFilesMatching(root, (document) => {
       for (const recordingId of recordingIds) {
         if (documentBelongsToRecording(document, recordingId)) return true;
@@ -8509,7 +8033,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async prunePhysicalPipelineIndex(projectId: string, recordingId: string, artifactIds: Record<PipelineArtifactKind, Set<string>>): Promise<void> {
-    const filePath = this.projectFile(projectId, "indexes", "pipeline.json");
+    const filePath = this.projectPaths.projectFile(projectId, "indexes", "pipeline.json");
     const parsed = await readJsonFileIfPresent(filePath);
     const document = unwrapProgramJsonDocument(parsed);
     if (!document || typeof document !== "object" || Array.isArray(document)) return;
@@ -8533,7 +8057,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async prunePhysicalPipelineIndexForRecordings(projectId: string, recordingIds: Set<string>, artifactIds: Record<PipelineArtifactKind, Set<string>>): Promise<void> {
-    const filePath = this.projectFile(projectId, "indexes", "pipeline.json");
+    const filePath = this.projectPaths.projectFile(projectId, "indexes", "pipeline.json");
     const parsed = await readJsonFileIfPresent(filePath);
     const document = unwrapProgramJsonDocument(parsed);
     if (!document || typeof document !== "object" || Array.isArray(document)) return;
@@ -8563,15 +8087,15 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async deleteOrphanedPhysicalRecordingSessionDirectories(projectId: string): Promise<void> {
-    if (!this.projectRootDir) return;
-    const sessionsDir = this.projectFile(projectId, "recordings");
+    if (!this.projectPaths.root) return;
+    const sessionsDir = this.projectPaths.projectFile(projectId, "recordings");
     const entries = await readdir(sessionsDir, { withFileTypes: true }).catch(() => []);
     if (!entries.length) return;
     const liveRecordingIds = new Set<string>();
     for (const recording of await this.repositories.recordingSessions.list()) {
       if (recording.metadata?.projectId === projectId) liveRecordingIds.add(safeSegment(recording.recordingId));
     }
-    const index = await this.readRecordingIndex(projectId).catch(() => ({ recordings: [], normalizedTimelines: [] }));
+    const index = await this.indexes.readRecordingIndex(projectId).catch(() => ({ recordings: [], normalizedTimelines: [] }));
     for (const item of index.recordings ?? []) liveRecordingIds.add(safeSegment(item.recordingId));
     await Promise.all(entries
       .filter((entry) => entry.isDirectory() && !liveRecordingIds.has(entry.name))
@@ -8595,18 +8119,18 @@ const bootstrapInstructionText = resolvedInstructions.instructions
 
   private async deleteProjectRecordingPolicyProposals(projectId: string, recordingId: string, keepProposalId?: string): Promise<void> {
     const ids = new Set<string>();
-    const index = await this.readPipelineIndex(projectId);
+    const index = await this.indexes.readPipelineIndex(projectId);
     for (const item of index.policyProposals ?? []) {
       const proposal = await this.readPipelineArtifact<PolicyProposalArtifact>(projectId, "policyProposals", item.proposalId);
       if (proposal?.metadata?.recordingId === recordingId && proposal.proposalId !== keepProposalId) ids.add(proposal.proposalId);
     }
     if (!ids.size) return;
     for (const proposalId of ids) {
-      const proposalDirectory = path.dirname(this.recordingPipelineArtifactFile(projectId, recordingId, "policyProposals", proposalId));
+      const proposalDirectory = path.dirname(this.recordingPaths.recordingPipelineArtifactFile(projectId, recordingId, "policyProposals", proposalId));
       if (this.objectStore) await ProgramJsonStore.deletePath(proposalDirectory);
       await rm(proposalDirectory, { recursive: true, force: true });
     }
-    await new ProgramJsonStore<PipelineIndex>(this.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((current) => ({
+    await new ProgramJsonStore<PipelineIndex>(this.projectPaths.projectFile(projectId, "indexes", "pipeline.json"), () => emptyPipelineIndex()).update((current) => ({
       ...emptyPipelineIndex(),
       ...current,
       policyProposals: (current.policyProposals ?? []).filter((item) => !ids.has(item.proposalId))
@@ -8617,7 +8141,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   private async removeRecordingPipelineArtifactIds(projectId: string, recordingId: string, key: keyof RecordingPipelineDocument["artifacts"], ids: Set<string>): Promise<void> {
     if (!ids.size) return;
     const store = new ProgramJsonStore<RecordingPipelineDocument>(
-      this.recordingPipelineFile(projectId, recordingId),
+      this.recordingPaths.recordingPipelineFile(projectId, recordingId),
       () => createRecordingPipelineDocument({ recordingId, startedAt: Date.now() })
     );
     const pipeline = await store.read();
@@ -8635,21 +8159,17 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async readPipelineArtifact<TArtifact>(projectId: string, kind: PipelineArtifactKind, id: string): Promise<TArtifact | null> {
-    await this.ensureProjectStructure(projectId);
+    await this.projects.ensureProjectStructure(projectId);
     const recordingId = await this.pipelineIndexRecordingId(projectId, kind, id);
     const filePath = recordingId
-      ? this.recordingPipelineArtifactFile(projectId, recordingId, kind, id)
-      : this.projectFile(projectId, "pipeline", "shared", this.pipelineFolder(kind), `${safeSegment(id)}.json`);
+      ? this.recordingPaths.recordingPipelineArtifactFile(projectId, recordingId, kind, id)
+      : this.projectPaths.projectFile(projectId, "pipeline", "shared", this.recordingPaths.pipelineFolder(kind), `${safeSegment(id)}.json`);
     let artifact = await this.readArtifactDocument(filePath);
     if (!Object.keys(artifact).length && recordingId) {
-      const legacyFilePath = this.legacyRecordingPipelineArtifactFile(projectId, recordingId, kind, id);
+      const legacyFilePath = this.recordingPaths.legacyRecordingPipelineArtifactFile(projectId, recordingId, kind, id);
       if (legacyFilePath && legacyFilePath !== filePath) artifact = await this.readArtifactDocument(legacyFilePath);
     }
     return Object.keys(artifact).length ? artifact as unknown as TArtifact : null;
-  }
-
-  private legacyRecordingPipelineArtifactFile(projectId: string, recordingId: string, kind: PipelineArtifactKind, id: string): string | null {
-    return null;
   }
 
   private async writeArtifactDocument(projectId: string, filePath: string, artifact: JsonObject): Promise<void> {
@@ -8772,7 +8292,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   private async collectLiveProjectObjectReferences(projectId: string): Promise<Set<string>> {
     const refs = new Set<string>();
     if (this.recordingStateIndexes) {
-      const recordingIndex = await this.readRecordingIndex(projectId).catch(() => ({ recordings: [], normalizedTimelines: [] }));
+      const recordingIndex = await this.indexes.readRecordingIndex(projectId).catch(() => ({ recordings: [], normalizedTimelines: [] }));
       for (const item of recordingIndex.recordings ?? []) {
         const stateIndex = await this.readRecordingStateIndex(projectId, item.recordingId).catch(() => null);
         if (!stateIndex) continue;
@@ -8797,7 +8317,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async pipelineIndexRecordingId(projectId: string, kind: PipelineArtifactKind, id: string): Promise<string | null> {
-    const index = await this.readPipelineIndex(projectId);
+    const index = await this.indexes.readPipelineIndex(projectId);
     const key = pipelineIndexKey(kind);
     const item = ((index[kind] as any[]) ?? []).find((candidate) => candidate[key] === id);
     return typeof item?.recordingId === "string" ? item.recordingId : null;
@@ -8808,33 +8328,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     return artifacts.filter((artifact): artifact is TArtifact => Boolean(artifact));
   }
 
-  private async readProjectArtifactList<TArtifact>(projectId: string, folder: "tasks" | "routines" | "configs" | "flows"): Promise<TArtifact[]> {
-    await this.ensureProjectStructure(projectId);
-    if (!this.projectRootDir) return [];
-    const dir = path.join(this.projectDirectory(projectId), folder);
-    if (this.objectStore) {
-      const documents = await ProgramJsonStore.listDirectoryDocuments<JsonObject>(dir, projectArtifactDocumentFileName(folder));
-      return (documents ?? []) as unknown as TArtifact[];
-    }
-    let entries: string[] = [];
-    try {
-      entries = await readdir(dir);
-    } catch {
-      return [];
-    }
-    const artifacts: TArtifact[] = [];
-    const fileName = projectArtifactDocumentFileName(folder);
-    for (const entry of entries) {
-      const data = await new ProgramJsonStore<JsonObject>(path.join(dir, entry, fileName), () => ({})).read();
-      if (Object.keys(data).length) artifacts.push(data as unknown as TArtifact);
-    }
-    return artifacts;
-  }
-
   private async writeProjectFlow(projectId: string, flow: AutomationStudioFlowArtifact): Promise<void> {
-    await this.ensureProjectStructure(projectId);
-    await new ProgramJsonStore<JsonObject>(this.flowFile(projectId, flow.flowId), () => ({})).write(flow as unknown as JsonObject);
-    await this.writeFlowIndex(projectId, (index) => ({
+    await this.projects.ensureProjectStructure(projectId);
+    await new ProgramJsonStore<JsonObject>(this.flowPaths.flowFile(projectId, flow.flowId), () => ({})).write(flow as unknown as JsonObject);
+    await this.indexes.writeFlowIndex(projectId, (index) => ({
       schemaVersion: "0.1",
       ...(index.ownershipMetadataVersion === 1 ? { ownershipMetadataVersion: 1 as const } : {}),
       ...(index.hierarchyMetadataVersion === 1 ? { hierarchyMetadataVersion: 1 as const } : {}),
@@ -9076,54 +8573,29 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async loadProjectFlows(projectId: string): Promise<void> {
-    if (!this.projectRootDir) return;
-    const index = await this.readFlowIndex(projectId).catch(() => emptyFlowSummaryIndex());
+    if (!this.projectPaths.root) return;
+    const index = await this.indexes.readFlowIndex(projectId).catch(() => emptyFlowSummaryIndex());
     for (const item of index.flows ?? []) await this.loadProjectFlow(projectId, item.flowId);
   }
 
   private async loadAllProjectFlows(): Promise<void> {
-    if (!this.projectRootDir) return;
+    if (!this.projectPaths.root) return;
     const { projects } = await this.listProjects();
     for (const project of projects) await this.loadProjectFlows(project.id);
   }
 
   private async loadProjectFlow(projectId: string, flowId: string): Promise<void> {
-    if (!this.projectRootDir) return;
+    if (!this.projectPaths.root) return;
     const existing = await this.repositories.flows.get(flowId);
     if (existing?.projectId === projectId) return;
-    const stored = await new ProgramJsonStore<JsonObject>(this.flowFile(projectId, flowId), () => ({})).read();
+    const stored = await new ProgramJsonStore<JsonObject>(this.flowPaths.flowFile(projectId, flowId), () => ({})).read();
     if (typeof stored.flowId === "string") await this.repositories.flows.put(stored as unknown as AutomationStudioFlowArtifact);
   }
 
   /** Reads legacy project documents without the historical task-graph embedding side effect. */
-  private async readLegacyProjectArtifacts(projectId: string): Promise<AutomationStudioProjectArtifacts> {
-    const pending = this.legacyProjectArtifactReads.get(projectId);
-    if (pending) return pending;
-    const read = this.readLegacyProjectArtifactsUncached(projectId);
-    this.legacyProjectArtifactReads.set(projectId, read);
-    try {
-      return await read;
-    } finally {
-      if (this.legacyProjectArtifactReads.get(projectId) === read) this.legacyProjectArtifactReads.delete(projectId);
-    }
-  }
-
-  private async readLegacyProjectArtifactsUncached(projectId: string): Promise<AutomationStudioProjectArtifacts> {
-    await this.findProject(projectId);
-    const [tasks, routines, allConfigs, allFlows] = await Promise.all([
-      this.readProjectArtifactList<AutomationStudioTaskArtifact>(projectId, "tasks"),
-      this.readProjectArtifactList<AutomationStudioRoutineArtifact>(projectId, "routines"),
-      this.readProjectArtifactList<AutomationStudioConfigArtifact>(projectId, "configs"),
-      this.readProjectArtifactList<AutomationStudioFlowDocument>(projectId, "flows")
-    ]);
-    const configs = allConfigs.filter((config) => config.metadata?.generated !== true);
-    const flows = allFlows.filter((flow) => typeof flow.ownerKind === "string");
-    return { tasks, routines, configs, flows };
-  }
-
   private async listCanonicalFlowArtifacts(projectId: string): Promise<AutomationStudioFlowArtifact[]> {
-    if (!this.projectRootDir) return (await this.repositories.flows.list()).filter((flow) => flow.projectId === projectId);
-    const index = await this.readFlowIndex(projectId).catch(() => emptyFlowSummaryIndex());
+    if (!this.projectPaths.root) return (await this.repositories.flows.list()).filter((flow) => flow.projectId === projectId);
+    const index = await this.indexes.readFlowIndex(projectId).catch(() => emptyFlowSummaryIndex());
     const flows: AutomationStudioFlowArtifact[] = [];
     for (const item of index.flows ?? []) {
       await this.loadProjectFlow(projectId, item.flowId);
@@ -9162,7 +8634,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async scopedProjectIdsForProject(projectId: string): Promise<string[]> {
-    const state = await this.readProjectIndex();
+    const state = await this.projects.readProjectIndex();
     const project = state.projects.find((candidate) => candidate.id === projectId);
     const domainId = project?.domainId ?? null;
     return state.projects.filter((candidate) => (candidate.domainId ?? null) === domainId).map((candidate) => candidate.id);
@@ -9236,34 +8708,17 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     return await this.saveProjectArtifact({ projectId, kind: "config", artifact: config }) as AutomationStudioConfigArtifact;
   }
 
-  private projectArtifactFile(projectId: string, kind: AutomationStudioProjectArtifactKind, artifactId: string): string {
-    const folder = this.projectArtifactFolder(kind);
-    return this.projectFile(projectId, folder, safeSegment(artifactId), projectArtifactDocumentFileName(folder));
-  }
-
   private async deleteProjectArtifactFile(projectId: string, kind: AutomationStudioProjectArtifactKind, artifactId: string): Promise<void> {
-    if (!this.projectRootDir) return;
-    const artifactRoot = path.dirname(this.projectArtifactFile(projectId, kind, artifactId));
+    if (!this.projectPaths.root) return;
+    const artifactRoot = path.dirname(this.projectPaths.projectArtifactFile(projectId, kind, artifactId));
     if (this.objectStore) await ProgramJsonStore.deletePath(artifactRoot);
     else await rm(artifactRoot, { recursive: true, force: true });
-  }
-
-  private projectArtifactFolder(kind: AutomationStudioProjectArtifactKind): "tasks" | "routines" | "configs" | "flows" {
-    if (kind === "task") return "tasks";
-    if (kind === "routine") return "routines";
-    if (kind === "config") return "configs";
-    return "flows";
   }
 
   private projectArtifactId(kind: AutomationStudioProjectArtifactKind, artifact: Record<string, unknown>): string {
     const id = kind === "task" ? artifact.taskId : kind === "routine" ? artifact.routineId : kind === "config" ? artifact.configId : artifact.flowId;
     if (typeof id !== "string" || !id.trim()) throw new Error(`${kind} ID is required.`);
     return id;
-  }
-
-  private async writeRecordingIndex(projectId: string, mutator: (index: RecordingIndex) => RecordingIndex): Promise<RecordingIndex> {
-    await this.findProject(projectId);
-    return await new ProgramJsonStore<RecordingIndex>(this.projectFile(projectId, "indexes", "recordings.json"), () => ({ recordings: [], normalizedTimelines: [] })).update(mutator);
   }
 
   private async withRecordingMutationLock<TResult>(projectId: string | null | undefined, recordingId: string, operation: () => Promise<TResult>): Promise<TResult> {
@@ -9285,8 +8740,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async writeProjectRecordingSession(projectId: string, recording: RecordingSession): Promise<void> {
-    await this.ensureProjectStructure(projectId);
-    const sessionDir = this.recordingSessionDirectory(projectId, recording.recordingId);
+    await this.projects.ensureProjectStructure(projectId);
+    const sessionDir = this.recordingPaths.recordingSessionDirectory(projectId, recording.recordingId);
     const recordingDocument = { ...recording, timeline: [] };
     const typedRecording = await this.tryPersistRecordingSession(projectId, recording);
     await new ProgramJsonStore<JsonObject>(path.join(sessionDir, "recording.json"), () => ({ recording: recordingDocument as unknown as JsonObject })).write({ recording: recordingDocument as unknown as JsonObject });
@@ -9294,7 +8749,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     await this.writeRecordingStateIndex(projectId, recording);
     await new ProgramJsonStore<JsonObject>(path.join(sessionDir, "snapshots", "initial-state.json"), () => ({ initialState: recording.initialState as unknown as JsonObject })).write({ initialState: recording.initialState as unknown as JsonObject });
     await this.ensureProjectRecordingPipeline(projectId, recording);
-    await this.writeRecordingIndex(projectId, (index) => ({
+    await this.indexes.writeRecordingIndex(projectId, (index) => ({
       recordings: upsertBy(index.recordings ?? [], "recordingId", {
         recordingId: recording.recordingId,
         ...(recording.taskId !== undefined ? { taskId: recording.taskId } : {}),
@@ -9309,9 +8764,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async writeProjectRecordingIndexSummary(projectId: string, recording: RecordingSession): Promise<void> {
-    await this.ensureProjectStructure(projectId);
+    await this.projects.ensureProjectStructure(projectId);
     await this.ensureProjectRecordingPipeline(projectId, recording);
-    await this.writeRecordingIndex(projectId, (index) => ({
+    await this.indexes.writeRecordingIndex(projectId, (index) => ({
       recordings: upsertBy(index.recordings ?? [], "recordingId", {
         recordingId: recording.recordingId,
         ...(recording.taskId !== undefined ? { taskId: recording.taskId } : {}),
@@ -9326,9 +8781,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async writeProjectNormalizedTimeline(projectId: string, normalized: NormalizedTimeline): Promise<void> {
-    await this.ensureProjectStructure(projectId);
+    await this.projects.ensureProjectStructure(projectId);
     await this.writeRecordingPipelineNormalizedTimeline(projectId, normalized);
-    await this.writeRecordingIndex(projectId, (index) => ({
+    await this.indexes.writeRecordingIndex(projectId, (index) => ({
       recordings: index.recordings ?? [],
       normalizedTimelines: upsertBy(index.normalizedTimelines ?? [], "normalizedTimelineId", {
         normalizedTimelineId: normalized.normalizedTimelineId,
@@ -9339,14 +8794,14 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async loadProjectRecordings(projectId: string): Promise<void> {
-    if (!this.projectRootDir) return;
-    const index = await this.readRecordingIndex(projectId);
+    if (!this.projectPaths.root) return;
+    const index = await this.indexes.readRecordingIndex(projectId);
     for (const item of index.recordings ?? []) {
       await this.loadProjectRecording(projectId, item.recordingId);
     }
     for (const item of index.normalizedTimelines ?? []) {
       const stored = await new ProgramJsonStore<JsonObject>(
-        this.recordingDerivedFile(projectId, item.recordingId, "normalization", "timelines", `${safeSegment(item.normalizedTimelineId)}.json`),
+        this.recordingPaths.recordingDerivedFile(projectId, item.recordingId, "normalization", "timelines", `${safeSegment(item.normalizedTimelineId)}.json`),
         () => ({})
       ).read();
       const normalized = stored.normalizedTimeline as unknown as NormalizedTimeline | undefined;
@@ -9355,11 +8810,11 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async loadProjectRecording(projectId: string, recordingId: string): Promise<void> {
-    if (!this.projectRootDir) return;
+    if (!this.projectPaths.root) return;
     const existing = await this.repositories.recordingSessions.get(recordingId);
     if (existing && existing.metadata?.summaryOnly !== true) return;
     const stored = await new ProgramJsonStore<JsonObject>(
-      path.join(this.recordingSessionDirectory(projectId, recordingId), "recording.json"),
+      path.join(this.recordingPaths.recordingSessionDirectory(projectId, recordingId), "recording.json"),
       () => ({})
     ).read();
     const recording = stored.recording as unknown as RecordingSession | undefined;
@@ -9404,7 +8859,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async readRecordingTimeline(projectId: string, recordingId: string): Promise<RecordingSession["timeline"]> {
-    const filePath = this.recordingTimelineFile(projectId, recordingId);
+    const filePath = this.recordingPaths.recordingTimelineFile(projectId, recordingId);
     const text = await readFile(filePath, "utf8").catch((error: unknown) => {
       if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return "";
       throw error;
@@ -9419,7 +8874,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 
   private async writeRecordingTimeline(projectId: string, recordingId: string, timeline: RecordingSession["timeline"]): Promise<void> {
-    const filePath = this.recordingTimelineFile(projectId, recordingId);
+    const filePath = this.recordingPaths.recordingTimelineFile(projectId, recordingId);
     await mkdir(path.dirname(filePath), { recursive: true });
     const text = timeline.map((entry) => JSON.stringify(entry)).join("\n");
     await writeFile(filePath, text ? `${text}\n` : "", "utf8");
@@ -9435,13 +8890,6 @@ const bootstrapInstructionText = resolvedInstructions.instructions
   }
 }
 
-function normalizeProjectCategories(categories: AutomationStudioProjectCategory[]): AutomationStudioProjectCategory[] {
-  return categories.map((category, index) => ({
-    ...category,
-    order: typeof category.order === "number" && Number.isFinite(category.order) ? category.order : index
-  }));
-}
-
 function nextCategoryOrder(categories: AutomationStudioProjectCategory[]): number {
   if (!categories.length) return 0;
   return Math.max(...normalizeProjectCategories(categories).map((category) => category.order)) + 1;
@@ -9451,74 +8899,6 @@ function upsertBy<TItem, TKey extends keyof TItem>(items: TItem[], key: TKey, it
   const index = items.findIndex((candidate) => candidate[key] === item[key]);
   if (index < 0) return [item, ...items];
   return items.map((candidate, candidateIndex) => candidateIndex === index ? item : candidate);
-}
-
-function emptyFlowRouterIndex(): FlowRouterIndex {
-  return { schemaVersion: "0.1", routers: [] };
-}
-
-function emptyFlowSubflowIndex(): FlowSubflowIndex {
-  return { schemaVersion: "0.1", summaryVersion: 2, subflows: [] };
-}
-
-function emptyFlowInstructionIndex(): FlowInstructionIndex {
-  return { schemaVersion: "0.1", summaryVersion: 2, instructions: [] };
-}
-
-function emptyFlowChangeProposalIndex(): FlowChangeProposalIndex {
-  return { schemaVersion: "0.1", changeProposals: [] };
-}
-
-function emptyFlowRunIndex(): FlowRunIndex {
-  return { schemaVersion: "0.1", runs: [] };
-}
-
-function emptyFlowAdaptationIndex(): FlowAdaptationIndex {
-  return { schemaVersion: "0.1", adaptations: [] };
-}
-
-function emptyFlowAdaptationPolicyIndex(): FlowAdaptationPolicyIndex {
-  return { schemaVersion: "0.1", policies: [] };
-}
-
-function sortFlowRouterIndex(index: FlowRouterIndex): FlowRouterIndex {
-  return { schemaVersion: "0.1", routers: [...(index.routers ?? [])].sort(compareSummaryByUpdatedAtThenId("routerId")) };
-}
-
-function sortFlowSubflowIndex(index: FlowSubflowIndex): FlowSubflowIndex {
-  return {
-    schemaVersion: "0.1",
-    ...(index.summaryVersion === 2 ? { summaryVersion: 2 as const } : {}),
-    subflows: [...(index.subflows ?? [])].sort(compareSummaryByUpdatedAtThenId("subflowId"))
-  };
-}
-
-function sortFlowInstructionIndex(index: FlowInstructionIndex): FlowInstructionIndex {
-  return {
-    schemaVersion: "0.1",
-    ...(index.summaryVersion === 2 ? { summaryVersion: 2 as const } : {}),
-    instructions: [...(index.instructions ?? [])].sort(compareSummaryByUpdatedAtThenId("instructionId"))
-  };
-}
-
-function sortFlowChangeProposalIndex(index: FlowChangeProposalIndex): FlowChangeProposalIndex {
-  return { schemaVersion: "0.1", changeProposals: [...(index.changeProposals ?? [])].sort(compareSummaryByUpdatedAtThenId("proposalId")) };
-}
-
-function sortFlowRunIndex(index: FlowRunIndex): FlowRunIndex {
-  return { schemaVersion: "0.1", runs: [...(index.runs ?? [])].sort(compareSummaryByUpdatedAtThenId("runId")) };
-}
-
-function sortFlowAdaptationIndex(index: FlowAdaptationIndex): FlowAdaptationIndex {
-  return { schemaVersion: "0.1", adaptations: [...(index.adaptations ?? [])].sort(compareSummaryByUpdatedAtThenId("adaptationId")) };
-}
-
-function sortFlowAdaptationPolicyIndex(index: FlowAdaptationPolicyIndex): FlowAdaptationPolicyIndex {
-  return { schemaVersion: "0.1", policies: [...(index.policies ?? [])].sort(compareSummaryByUpdatedAtThenId("policyId")) };
-}
-
-function compareSummaryByUpdatedAtThenId<TItem extends { updatedAt: number }>(idKey: keyof TItem): (left: TItem, right: TItem) => number {
-  return (left, right) => (right.updatedAt - left.updatedAt) || String(left[idKey]).localeCompare(String(right[idKey]));
 }
 
 function routerSummaryFromRouter(router: AutomationStudioFlowRouter): AutomationStudioRouterSummary {
@@ -10142,13 +9522,6 @@ function normalizePositiveInteger(value: unknown, fallback: number, min: number,
   const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(max, Math.max(min, Math.floor(parsed)));
-}
-
-function projectArtifactDocumentFileName(folder: "tasks" | "routines" | "configs" | "flows"): string {
-  if (folder === "tasks") return "task.json";
-  if (folder === "routines") return "routine.json";
-  if (folder === "configs") return "config.json";
-  return "flow.json";
 }
 
 function flowConfigArtifactId(flowId: string): string {
@@ -10883,16 +10256,6 @@ function assertPublicationMutationAllowed(existing: AutomationStudioFlowArtifact
   if (stableJson(existing.publicationHistory ?? []) !== stableJson(incoming.publicationHistory ?? [])) {
     throw new Error("Flow publication history is immutable; use publishFlow() to append a version.");
   }
-}
-
-function legacyDiagnostic(state: AutomationStudioLegacyRetirementState): AutomationStudioLegacyRetirementDiagnostic {
-  return state.phase === "write_locked"
-    ? { code: "legacy.write_locked", deprecated: true, replacement: "canonical-flow-api", projectSchemaVersion: state.projectSchemaVersion, phase: state.phase, message: "Legacy Task/Routine writes are disabled for this Flow-first project. Use canonical Flow APIs." }
-    : { code: "legacy.compatibility_write", deprecated: true, replacement: "canonical-flow-api", projectSchemaVersion: state.projectSchemaVersion, phase: state.phase, message: "Legacy Task/Routine writes are deprecated and available only during the compatibility window." };
-}
-
-function legacyArtifactsDigest(artifacts: AutomationStudioProjectArtifacts): string {
-  return createHash("sha256").update(stableJson(artifacts)).digest("hex");
 }
 
 function canonicalFlowDigest(flow: AutomationStudioFlowArtifact): string {
@@ -11752,12 +11115,6 @@ function bootstrapAdaptationAsFlowAdaptation(
     }
   };
 }
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  if (value && typeof value === "object") return `{${Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`).join(",")}}`;
-  return JSON.stringify(value) ?? "null";
-}
-
 type AutomationStudioRuntimeInterventionMode = "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic";
 
 export function normalizeAutomationStudioRuntimeInterventionMode(mode: AutomationStudioRuntimeInterventionMode | undefined): "fully_adaptive" | "manual_approval" | "no_llm_intervention" {

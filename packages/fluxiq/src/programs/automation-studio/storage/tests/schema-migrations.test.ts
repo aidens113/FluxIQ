@@ -1,7 +1,7 @@
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AutomationStudioProjectDatabasePool } from "../project-database.ts";
+import { AutomationStudioProjectDatabasePool } from "../project/index.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../schema-migrations.ts";
 
 const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-migration-test");

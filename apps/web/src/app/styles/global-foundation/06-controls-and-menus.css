@@ -1,0 +1,277 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  min-height: 44px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-panel);
+  padding: var(--space-sm);
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  min-height: var(--control-height-default);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.button:not(:disabled):active,
+.icon-button:not(:disabled):active {
+  box-shadow: inset 0 1px 2px rgb(0 28 36 / 16%);
+}
+
+.button[aria-busy="true"] {
+  cursor: progress;
+}
+
+.button-primary,
+.button.primary {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+}
+
+.button-primary:hover:not(:disabled),
+.button.primary:hover:not(:disabled) {
+  border-color: var(--color-primary-hover);
+  background: var(--color-primary-hover);
+  color: var(--color-text-inverse);
+}
+
+.button-danger,
+.button.danger,
+.button.danger-action {
+  border-color: var(--color-danger);
+  background: var(--color-danger);
+  color: var(--color-text-inverse);
+}
+
+.button-danger:hover:not(:disabled),
+.button.danger:hover:not(:disabled),
+.button.danger-action:hover:not(:disabled) {
+  border-color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 88%, black);
+  color: var(--color-text-inverse);
+}
+
+.button-ghost {
+  border-color: transparent;
+  background: transparent;
+}
+
+
+.action-link {
+  color: var(--color-primary);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+}
+
+.action-link:hover {
+  color: var(--color-primary-hover);
+  text-decoration-color: currentColor;
+}
+.menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.menu-popover {
+  position: absolute;
+  top: calc(100% + var(--space-xs));
+  right: 0;
+  z-index: var(--layer-dropdown);
+  display: grid;
+  min-width: 190px;
+  max-width: min(320px, calc(100vw - var(--space-xl)));
+  overflow: hidden;
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-panel);
+  background: var(--surface-pane);
+  box-shadow: var(--shadow-popover);
+  padding: var(--space-xs);
+}
+
+.menu-popover-portal {
+  position: fixed;
+  z-index: var(--layer-popover);
+  right: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  contain: layout paint style;
+}
+
+.menu-popover :is(button, a) {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  min-height: var(--control-height-comfortable);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text);
+  padding: var(--space-sm) var(--space-dense);
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-popover :is(button, a):hover,
+.menu-popover :is(button, a):focus-visible {
+  background: var(--surface-selected);
+  color: var(--color-primary);
+}
+
+.menu-popover :is(button, a).danger {
+  color: var(--color-danger);
+}
+
+.menu-popover button:disabled {
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.combobox {
+  position: relative;
+}
+
+.combobox-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.combobox-input-wrap input {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-height-comfortable);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-pane);
+  color: var(--color-text);
+  padding: var(--space-sm) calc(var(--space-xl) + var(--space-xs)) var(--space-sm) var(--space-dense);
+}
+
+.field-error .combobox-input-wrap input {
+  border-color: var(--color-danger);
+}
+
+.combobox-input-wrap svg {
+  position: absolute;
+  right: var(--space-sm);
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+.combobox-listbox {
+  position: absolute;
+  top: calc(var(--font-size-compact) + var(--control-height-comfortable) + var(--space-md));
+  left: 0;
+  right: 0;
+  z-index: var(--layer-dropdown);
+  display: grid;
+  max-height: min(320px, 45vh);
+  overflow-y: auto;
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-panel);
+  background: var(--surface-pane);
+  box-shadow: var(--shadow-popover);
+  padding: var(--space-xs);
+}
+
+.combobox-listbox [role="option"] {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  min-height: var(--control-height-comfortable);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text);
+  padding: var(--space-sm) var(--space-dense);
+  text-align: left;
+  cursor: pointer;
+}
+
+.combobox-listbox [role="option"]:hover,
+.combobox-listbox [role="option"].active,
+.combobox-listbox [role="option"].selected {
+  background: var(--surface-selected);
+  color: var(--color-primary);
+}
+
+.combobox-listbox [role="option"] small,
+.combobox-empty {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+}
+
+.combobox-empty {
+  padding: var(--space-md);
+  text-align: center;
+}
+
+.tooltip-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.tooltip-content {
+  position: absolute;
+  bottom: calc(100% + var(--space-sm));
+  left: 50%;
+  z-index: var(--layer-dropdown);
+  width: max-content;
+  max-width: min(280px, calc(100vw - var(--space-xl)));
+  border-radius: var(--radius-control);
+  background: var(--color-text);
+  color: var(--color-surface);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-compact);
+  opacity: 0;
+  padding: var(--space-sm) var(--space-dense);
+  pointer-events: none;
+  text-align: center;
+  transform: translate(-50%, 2px);
+  visibility: hidden;
+}
+
+.tooltip-anchor:hover > .tooltip-content,
+.tooltip-anchor:focus-within > .tooltip-content {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  visibility: visible;
+}
+.spin {
+  animation: fluxiq-spin var(--motion-activity) linear infinite;
+}
+
+@keyframes fluxiq-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+

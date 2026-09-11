@@ -1,0 +1,129 @@
+.background-task-filters {
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.background-task-filters select,
+.background-run-panel select {
+  min-height: 34px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 5px 8px;
+}
+
+.background-task-list-scroll {
+  display: grid;
+  align-content: start;
+  gap: var(--space-sm);
+  max-height: min(620px, calc(100dvh - 220px));
+  overflow: auto;
+}
+
+.background-task-main {
+  min-width: 0;
+}
+
+.background-run-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-panel);
+}
+
+.background-run-panel > .panel-heading {
+  padding: var(--space-md);
+}
+
+.background-run-table-wrap {
+  position: relative;
+  min-height: 0;
+  overflow: auto;
+}
+
+.background-run-table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+}
+
+.background-run-table th,
+.background-run-table td {
+  max-width: 420px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--color-border);
+  padding: 8px 10px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.background-run-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-tool);
+  font-size: var(--font-size-compact);
+}
+
+.background-run-table tr.selected {
+  background: var(--surface-selected);
+}
+
+.run-row-button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
+.background-run-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  min-height: 48px;
+  border-top: 1px solid var(--color-border);
+  background: var(--surface-tool);
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--font-size-compact);
+}
+
+@media (max-width: 1040px) {
+  .background-task-shell {
+    grid-template-columns: minmax(240px, 0.7fr) minmax(0, 1.3fr);
+  }
+
+  .background-task-detail {
+    grid-column: 1 / -1;
+    min-height: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .background-task-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .background-task-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .background-task-list,
+  .background-task-detail,
+  .background-run-panel {
+    min-height: 0;
+  }
+
+  .background-run-panel { min-height: 0; }
+
+  .background-run-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+

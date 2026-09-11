@@ -12,7 +12,12 @@ describe("Phase 7 responsive certification contracts", () => {
       "../../automation-studio/styles/workspace/02-project-browser.css",
       "../../automation-studio/styles/runtime/01-launch-history.css",
       "../../automation-studio/styles/instructions-settings-adaptations-problems/01-instructions-settings.css",
-      "../../../app/styles/global-programs.css",
+      "../../../app/styles/global-programs/01-identity-and-access.css",
+      "../../../app/styles/global-programs/02-secret-keys.css",
+      "../../../app/styles/global-programs/03-docs-workspace.css",
+      "../../../app/styles/global-programs/04-background-tasks.css",
+      "../../../app/styles/global-programs/05-compute-control.css",
+      "../../../app/styles/global-programs/06-production-and-route-states.css",
     ].map((specifier) => readFileSync(new URL(specifier, import.meta.url), "utf8"));
     for (const owner of owners) {
       expect(owner).not.toMatch(/min-height:\s*(?:520|620|680|700|720)px/u);

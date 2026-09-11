@@ -2,7 +2,7 @@ import { scheduleAutomationStudioAfterPaintIdleWork } from "../sync/background-w
 import { automationStudioViewBaseId, automationStudioViewId } from "./view-registry";
 
 const viewSurfaceLoaders: Readonly<Record<string, () => Promise<unknown>>> = {
-  [automationStudioViewId.flowEditor]: () => import("../flow-editor/FlowGraphCanvas")
+  [automationStudioViewId.flowEditor]: () => import("../flow-editor/components/FlowGraphCanvas")
 };
 
 export function scheduleAutomationViewSurfacePreload(viewIds: readonly string[]): () => void {

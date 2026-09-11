@@ -6,14 +6,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAutomationStudioFlowExpansionFixture, createAutomationStudioLargeProjectFixture, createCallFlowNode, stateValue, type StateSnapshot } from "../../model/index.ts";
 import { generateFlowTypeScript } from "../../dsl/index.ts";
 import { AutomationStudioService } from "../service.ts";
-import { AutomationStudioLlmExecutionGrantService } from "../llm-execution-grants.ts";
+import { AutomationStudioLlmExecutionGrantService } from "../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../native-node-runtime.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioImporterSdkManifest } from "../../nodes/index.ts";
 import { IoRegistry, createEnvelope } from "../../../../io/index.ts";
 import type { JsonObject } from "../../../../core/index.ts";
 import { SQLiteRepository } from "../../../database-manager/storage/sqlite-repository.ts";
-import { AutomationStudioAesGcmProjectContentProtection, AutomationStudioProjectDatabasePool, AutomationStudioProjectFlowResourceRepository } from "../../storage/index.ts";
-import { AutomationStudioProjectGraphRepository } from "../../storage/project-graph-store.ts";
+import { AutomationStudioAesGcmProjectContentProtection, AutomationStudioProjectDatabasePool, AutomationStudioProjectFlowResourceRepository, AutomationStudioProjectGraphRepository } from "../../storage/index.ts";
 
 let tempRoot: string;
 const services = new Set<AutomationStudioService>();

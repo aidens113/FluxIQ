@@ -1,8 +1,7 @@
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AutomationStudioProjectDatabasePool } from "../project-database.ts";
-import { AutomationStudioProjectHierarchyRepository } from "../project-hierarchy-repository.ts";
+import { AutomationStudioProjectDatabasePool, AutomationStudioProjectHierarchyRepository } from "../project/index.ts";
 import { assertNoCriticalFullScan, assertPlanMentions, explainAutomationStudioQueryPlan } from "../query-plan.ts";
 
 const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-project-hierarchy-scale-test");

@@ -29,7 +29,7 @@ warm-view, frame, long-task, and React commit evidence.
 ## Architecture Direction
 
 `AutomationStudioLive.tsx` is a client entry facade. It exports
-`AutomationStudioComposition` from `live/AutomationStudioComposition.tsx` and
+`AutomationStudioComposition` from `live/components/AutomationStudioComposition.tsx` and
 contains no project, view, or interaction implementation.
 `AutomationStudioComposition` creates one stable `AutomationStudioRuntime` for
 the mounted Studio session and passes it to `AutomationStudioSession`. The

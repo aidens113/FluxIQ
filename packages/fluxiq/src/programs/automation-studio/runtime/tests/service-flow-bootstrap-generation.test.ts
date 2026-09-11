@@ -8,7 +8,7 @@ import {
   AutomationStudioNodeRegistry,
   type AutomationStudioNodeDefinition
 } from "../../nodes/index.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../llm-harness.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../llm/index.ts";
 import type {
   AutomationStudioBuildAndAdaptExecutionGrant,
   AutomationStudioLlmProviderResolverInput,
@@ -16,9 +16,9 @@ import type {
 } from "../service.ts";
 import { AutomationStudioService } from "../service.ts";
 import { AutomationStudioNativeNodeRuntime } from "../native-node-runtime.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA } from "../flow-bootstrap.ts";
-import { parseAutomationStudioFlowBootstrapGenerationError } from "../flow-bootstrap-generation-failure.ts";
-import { estimateAutomationStudioDeepSeekInputTokens } from "../llm-deepseek-provider.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA } from "../flow-bootstrap/index.ts";
+import { parseAutomationStudioFlowBootstrapGenerationError } from "../flow-bootstrap/index.ts";
+import { estimateAutomationStudioDeepSeekInputTokens } from "../llm/index.ts";
 import { AutomationStudioAesGcmProjectContentProtection } from "../../storage/index.ts";
 
 let tempRoot: string;

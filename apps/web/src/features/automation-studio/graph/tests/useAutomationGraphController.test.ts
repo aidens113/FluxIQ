@@ -7,10 +7,10 @@ import {
 import { flowEdgeChangesAreDurable, flowNodeChangesAreDurable } from "../../flow-editor/graph-interactions";
 function flowEditorSource(): string {
   return [
-    "../../flow-editor/useFlowEditorController.ts",
-    "../../flow-editor/useFlowEditorGraphDocument.ts",
-    "../../flow-editor/useFlowEditorCanvasInteractions.ts",
-    "../../flow-editor/FlowGraphCanvas.tsx"
+    "../../flow-editor/hooks/useFlowEditorController.ts",
+    "../../flow-editor/hooks/useFlowEditorGraphDocument.ts",
+    "../../flow-editor/hooks/useFlowEditorCanvasInteractions.ts",
+    "../../flow-editor/components/FlowGraphCanvas.tsx"
   ].map((path) => readFileSync(new URL(path, import.meta.url), "utf8").replace(/\r\n/g, "\n")).join("\n");
 }
 
@@ -45,7 +45,7 @@ describe("Automation graph controller", () => {
 
   it("keeps scalable graph ownership out of AutomationStudioLive", () => {
     const rootSource = readFileSync(new URL("../../AutomationStudioLive.tsx", import.meta.url), "utf8");
-    const graphRuntimeSource = readFileSync(new URL("../../live/useAutomationGraphRuntime.ts", import.meta.url), "utf8");
+    const graphRuntimeSource = readFileSync(new URL("../../live/hooks/useAutomationGraphRuntime.ts", import.meta.url), "utf8");
     expect(graphRuntimeSource).toContain("automationGraphDraftIdentity(options.selectedTaskGraph)");
     expect(rootSource).not.toContain("automationGraphDraftIdentity");
     expect(rootSource).not.toContain("function taskGraphDraftKey");
@@ -109,7 +109,7 @@ describe("Automation graph controller", () => {
 
   it("keeps full graph validation and draft publishing out of immediate selection/drag render paths", () => {
     const editorSource = flowEditorSource();
-    const graphDocumentSource = readFileSync(new URL("../../flow-editor/useFlowEditorGraphDocument.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+    const graphDocumentSource = readFileSync(new URL("../../flow-editor/hooks/useFlowEditorGraphDocument.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
     const validationEffectStart = graphDocumentSource.indexOf("useEffect(() => {\n    let cancelled = false;");
     const validationEffectEnd = graphDocumentSource.indexOf("const invalidFlowNodeIds", validationEffectStart);
     const validationEffectSource = graphDocumentSource.slice(validationEffectStart, validationEffectEnd);
@@ -142,7 +142,7 @@ describe("Automation graph controller", () => {
   });
 
   it("does not serialize selected-node parameters in the selection/render effect", () => {
-    const graphDocumentSource = readFileSync(new URL("../../flow-editor/useFlowEditorGraphDocument.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+    const graphDocumentSource = readFileSync(new URL("../../flow-editor/hooks/useFlowEditorGraphDocument.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
     const selectionEffectStart = graphDocumentSource.indexOf("const nodeId = props.selectedNode?.id;");
     const selectionEffectEnd = graphDocumentSource.indexOf("useEffect(() => () =>", selectionEffectStart);
     const selectionEffectSource = graphDocumentSource.slice(selectionEffectStart, selectionEffectEnd);

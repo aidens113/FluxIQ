@@ -5,7 +5,7 @@ import { memo, useRef, useSyncExternalStore } from "react";
 import type { AutomationSelection } from "../shared/selection-contracts";
 import type { AutomationHierarchyAction, AutomationHierarchyKind, AutomationHierarchyNode } from "./contracts";
 import type { AutomationHierarchyPageInfo } from "./paged-cache";
-import { AutomationProjectTree } from "./ProjectTree";
+import { AutomationProjectTree } from "./components";
 import { createAutomationHierarchyProjectionSelector } from "./selectors";
 import type { AutomationHierarchyUiCoordinator } from "./ui-coordinator";
 

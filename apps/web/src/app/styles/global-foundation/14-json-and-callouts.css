@@ -1,0 +1,54 @@
+.json-editor {
+  width: 100%;
+  min-height: 260px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-code);
+  color: var(--content-code);
+  padding: var(--space-md);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-compact);
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.json-editor.compact {
+  min-height: 120px;
+}
+
+.json-details {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-tool);
+  padding: var(--space-dense);
+}
+
+.json-details summary {
+  cursor: pointer;
+  font-weight: var(--font-weight-bold);
+}
+
+.json-details pre {
+  overflow: auto;
+  max-height: 320px;
+  margin: 10px 0 0;
+  white-space: pre-wrap;
+}
+
+.callout {
+  display: grid;
+  gap: var(--space-sm);
+  border: 1px solid var(--color-selected-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-selected);
+  padding: var(--space-md);
+}
+
+.callout code {
+  width: fit-content;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 4px 8px;
+}
+

@@ -6,7 +6,7 @@ import type {
   AutomationStudioFlowDocument
 } from "../model/index.ts";
 import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace, type AutomationStudioTransitionComparison } from "./executor.ts";
-import { isAutomationStudioRuntimeTargetOverrideTarget, type AutomationStudioRuntimePatch, type AutomationStudioRuntimeTargetOverrideTarget } from "./llm-harness.ts";
+import { isAutomationStudioRuntimeTargetOverrideTarget, type AutomationStudioRuntimePatch, type AutomationStudioRuntimeTargetOverrideTarget } from "./llm/index.ts";
 
 export type AutomationStudioRuntimePatchPreflight = {
   ok: boolean;

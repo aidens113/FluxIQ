@@ -64,8 +64,8 @@ describe("Phase 11 shell and connector source contracts", () => {
   });
 
   it("source contract: Session and bootstrap do not subscribe to connector domain stores", () => {
-    const composition = readFileSync(new URL("../../live/AutomationStudioComposition.tsx", import.meta.url), "utf8");
-    const session = readFileSync(new URL("../../live/AutomationStudioSession.tsx", import.meta.url), "utf8");
+    const composition = readFileSync(new URL("../../live/components/AutomationStudioComposition.tsx", import.meta.url), "utf8");
+    const session = readFileSync(new URL("../../live/components/AutomationStudioSession.tsx", import.meta.url), "utf8");
     const runtimeHook = readFileSync(new URL("../../bootstrap/useAutomationStudioRuntime.ts", import.meta.url), "utf8");
 
     expect(composition).toContain("const runtime = useAutomationStudioRuntime()");

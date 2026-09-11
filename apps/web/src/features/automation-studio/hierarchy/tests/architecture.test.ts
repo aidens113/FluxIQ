@@ -3,10 +3,10 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const implementationFiles = [
-  "ProjectTree.tsx",
+  "components/ProjectTree.tsx",
   "bounded-rows.ts",
   "capabilities.ts",
-  "commands.ts",
+  "commands/definitions.ts",
   "contracts.ts",
   "controller.ts",
   "dialog-transaction.ts",
@@ -23,7 +23,7 @@ const implementationFiles = [
   "signature.ts",
   "store.ts",
   "tree-icons.ts",
-  "tree-rows.tsx"
+  "components/TreeRows.tsx"
 ] as const;
 
 describe("hierarchy package architecture", () => {
@@ -38,7 +38,7 @@ describe("hierarchy package architecture", () => {
   });
 
   it("keeps tree timing, dialog state, and routing outside the row renderer", () => {
-    const rows = readFileSync(fileURLToPath(new URL("../tree-rows.tsx", import.meta.url)), "utf8");
+    const rows = readFileSync(fileURLToPath(new URL("../components/TreeRows.tsx", import.meta.url)), "utf8");
     expect(rows).not.toContain("setTimeout");
     expect(rows).not.toContain("useEffect");
     expect(rows).not.toContain("AutomationHierarchyDialogTransaction");

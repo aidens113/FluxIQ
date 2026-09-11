@@ -6,7 +6,7 @@ import {
   bindAutomationActiveFlowView,
   bindAutomationUnboundFlowViews
 } from "../active-workspace-selection";
-import { automationRestoredWorkspaceSelection } from "../useAutomationProjectRuntime";
+import { automationRestoredWorkspaceSelection } from "../hooks";
 
 const editorSelection = {
   kind: "editor-node" as const,

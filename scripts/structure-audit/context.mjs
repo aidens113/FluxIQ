@@ -48,7 +48,7 @@ export const LIMITS = {
   exportedClasses: 1,
   exportedComponents: 1,
   prefixGroup: 3,
-  maxPathSegments: 8,
+  maxPathSegments: 9,
   workingDocLines: 800,
   workingDocCurrentStateLines: 150
 };

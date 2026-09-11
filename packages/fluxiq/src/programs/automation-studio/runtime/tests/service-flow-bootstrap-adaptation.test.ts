@@ -10,7 +10,7 @@ import {
   AutomationStudioNodeRegistry,
   type AutomationStudioNodeDefinition
 } from "../../nodes/index.ts";
-import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan, type AutomationStudioFlowBootstrapPlan } from "../flow-bootstrap.ts";
+import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan, type AutomationStudioFlowBootstrapPlan } from "../flow-bootstrap/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../native-node-runtime.ts";
 import { AutomationStudioService } from "../service.ts";
 

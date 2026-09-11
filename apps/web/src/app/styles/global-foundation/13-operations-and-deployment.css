@@ -1,0 +1,202 @@
+.operator-card {
+  display: grid;
+  gap: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  padding: 14px;
+}
+
+.operator-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.operator-card header div {
+  display: grid;
+  gap: var(--space-xxs);
+  min-width: 0;
+}
+
+.operator-card header strong {
+  overflow-wrap: anywhere;
+}
+
+.operator-card header span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  overflow-wrap: anywhere;
+}
+
+.status-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: fit-content;
+  min-height: 22px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-tool);
+  color: var(--color-text-muted);
+  padding: 2px 7px;
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+  text-transform: none;
+}
+
+.status-badge-pill.tone-info {
+  border-color: var(--color-info-border);
+  background: var(--color-info-surface);
+  color: var(--color-info);
+}
+
+.status-badge-pill.tone-success {
+  border-color: var(--color-success-border);
+  background: var(--color-success-surface);
+  color: var(--color-success);
+}
+
+.status-badge-pill.tone-warning {
+  border-color: var(--color-warning-border);
+  background: var(--color-warning-surface);
+  color: var(--color-warning);
+}
+
+.status-badge-pill.tone-danger {
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-surface);
+  color: var(--color-danger);
+}
+
+.progress-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--surface-tool);
+}
+
+.progress-track span {
+  display: block;
+  height: 100%;
+  background: var(--color-primary);
+}
+
+.spec-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--space-sm);
+}
+
+.spec-datum {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-tool);
+  padding: var(--space-sm);
+}
+
+.spec-datum span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+}
+
+.spec-datum strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-body-small);
+}
+
+.compute-account-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-compact);
+}
+
+.compute-account-strip span {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-tool);
+  color: var(--color-text-muted);
+  padding: 3px 7px;
+  font-size: var(--font-size-compact);
+}
+
+.deployment-options-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-dense);
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-tool);
+  padding: var(--space-dense);
+}
+
+.deployment-options-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-compact);
+  font-weight: var(--font-weight-semibold);
+}
+
+.deployment-options-row select {
+  min-height: var(--control-height-default);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 4px 8px;
+}
+
+.deployment-sync-shell {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.deployment-sync-shell .workspace-panel {
+  grid-column: span 6;
+}
+
+.deployment-sync-shell .workspace-panel:first-child,
+.deployment-sync-shell .workspace-panel:last-child {
+  grid-column: span 12;
+}
+
+.git-state-panel {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.segmented-control {
+  display: inline-flex;
+  width: fit-content;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+
+.segmented-control button {
+  min-height: 32px;
+  border: 0;
+  border-right: 1px solid var(--color-border);
+  border-radius: 0;
+  background: var(--color-surface);
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.segmented-control button:last-child {
+  border-right: 0;
+}
+
+.segmented-control button.selected {
+  background: var(--surface-selected);
+  color: var(--color-primary);
+  font-weight: var(--font-weight-bold);
+}
+

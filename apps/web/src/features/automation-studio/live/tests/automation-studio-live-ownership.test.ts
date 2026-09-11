@@ -3,23 +3,23 @@ import { describe, expect, it } from "vitest";
 
 const read = (relativePath: string) => readFileSync(new URL(relativePath, import.meta.url), "utf8");
 
-const bootstrap = read("../AutomationStudioComposition.tsx");
-const composition = read("../AutomationStudioSession.tsx");
-const workspaceRuntime = read("../useAutomationWorkspaceRuntime.ts");
-const navigation = read("../useAutomationSelectionNavigation.ts");
-const deepLinks = read("../useAutomationDeepLinkRuntime.ts");
-const graphRuntime = read("../useAutomationGraphRuntime.ts");
-const dirtyGuards = read("../useAutomationSessionDirtyGuards.ts");
-const projectRuntime = read("../useAutomationProjectRuntime.ts");
+const bootstrap = read("../components/AutomationStudioComposition.tsx");
+const composition = read("../components/AutomationStudioSession.tsx");
+const workspaceRuntime = read("../hooks/useAutomationWorkspaceRuntime.ts");
+const navigation = read("../hooks/useAutomationSelectionNavigation.ts");
+const deepLinks = read("../hooks/useAutomationDeepLinkRuntime.ts");
+const graphRuntime = read("../hooks/useAutomationGraphRuntime.ts");
+const dirtyGuards = read("../hooks/useAutomationSessionDirtyGuards.ts");
+const projectRuntime = read("../hooks/useAutomationProjectRuntime.ts");
 const activeWorkspaceSelection = read("../active-workspace-selection.ts");
-const hierarchyUi = read("../useAutomationHierarchyUiRuntime.ts");
-const hierarchyBridge = read("../useAutomationHierarchyCommandBridge.ts");
+const hierarchyUi = read("../hooks/useAutomationHierarchyUiRuntime.ts");
+const hierarchyBridge = read("../hooks/useAutomationHierarchyCommandBridge.ts");
 const connectedViews = read("../view-host/canonical-connected-views.tsx");
 const directConnector = read("../view-host/direct-view-connector.tsx");
 const connectedEntryRegistry = read("../view-host/connected-view-entries.tsx");
-const connectedRegions = read("../AutomationStudioConnectedRegions.tsx");
-const workspaceComposition = read("../AutomationStudioWorkspaceComposition.tsx");
-const gatewayBridge = read("../use-gateway-recording-bridge.ts");
+const connectedRegions = read("../components/AutomationStudioConnectedRegions.tsx");
+const workspaceComposition = read("../components/AutomationStudioWorkspaceComposition.tsx");
+const gatewayBridge = read("../hooks/useGatewayRecordingBridge.ts");
 const root = read("../../AutomationStudioLive.tsx");
 
 describe("Automation Studio extracted owner contracts", () => {
@@ -103,7 +103,7 @@ describe("Automation Studio extracted owner contracts", () => {
   });
 
   it("defers graph draft recovery reads behind the command boundary and idle scheduling", () => {
-    const domainCommands = read("../domain-commands.ts");
+    const domainCommands = read("../commands/domain-commands.ts");
     expect(graphRuntime).toContain("scheduleAutomationGraphIdleTask(() =>");
     expect(graphRuntime).toContain("options.liveCommands.loadRecoverableFlowDraft(flowId, baseGraph)");
     expect(graphRuntime).not.toContain("loadAutomationGraphDraft");
@@ -172,7 +172,7 @@ describe("Automation Studio extracted owner contracts", () => {
   });
 
   it("wakes selected view bodies without a second Studio render", () => {
-    const surface = read("../AutomationStudioWorkspaceSurface.tsx");
+    const surface = read("../components/AutomationStudioWorkspaceSurface.tsx");
     const mounted = read("../../workspace/shell/MountedViewStack.tsx");
     expect(composition).not.toContain("activeViewRenderSignature");
     expect(composition).not.toContain("readyActiveViewRenderSignature");
@@ -279,7 +279,7 @@ describe("Automation Studio extracted owner contracts", () => {
   });
 
   it("opens created subflows without eager graph detail hydration", () => {
-    const executor = read("../../hierarchy/create-command-executor.ts");
+    const executor = read("../../hierarchy/commands/create-executor.ts");
     const start = executor.indexOf("async function createSubflow(");
     const block = executor.slice(start, executor.indexOf("async function createSubflowCategory(", start));
     expect(start).toBeGreaterThan(-1);

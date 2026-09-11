@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { automationStudioViewId } from "../../views/view-registry";
-import { useStableAutomationEvent } from "../useStableAutomationEvent";
+import { useStableAutomationEvent } from "../hooks";
 
 type Command = (...args: any[]) => any;
 

@@ -6,7 +6,7 @@ export default defineConfig({
     include: [
       "src/lib/tests/login-attempts.test.ts",
       "src/lib/tests/program-route.test.ts",
-      "src/features/programs/tests/shared-ui.test.tsx",
+      "src/features/programs/tests/component-contracts.test.tsx",
       "src/features/automation-studio/model/tests/project-artifacts.test.ts"
     ],
     coverage: {

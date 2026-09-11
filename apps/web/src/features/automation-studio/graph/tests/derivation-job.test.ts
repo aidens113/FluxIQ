@@ -21,7 +21,7 @@ function request(revision: string, ownerKey = "project:flow", validate = true): 
 
 describe("Automation graph derivation job", () => {
   it("keeps conversion and validation out of the graph runtime render path", () => {
-    const runtimeSource = readFileSync(new URL("../../live/useAutomationGraphRuntime.ts", import.meta.url), "utf8");
+    const runtimeSource = readFileSync(new URL("../../live/hooks/useAutomationGraphRuntime.ts", import.meta.url), "utf8");
     expect(runtimeSource).toContain("createAutomationGraphDerivationJob()");
     expect(runtimeSource).toContain("pane.activeViewId === automationStudioViewId.flowEditor");
     expect(runtimeSource).toContain("pane.activeViewId === automationStudioViewId.problems");

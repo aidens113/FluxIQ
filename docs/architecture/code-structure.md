@@ -196,7 +196,7 @@ The detailed procedure for each, with the current offenders, is in the
   `shared-ui.tsx`. If it cannot be named, it is not one thing.
 - **Pre-emptive sharing.** Moving code to `_shared` or a global area with one
   consumer, on the theory that a second will appear.
-- **Barrel-skipping imports.** `from "../storage/project-hierarchy-feed.ts"`
+- **Barrel-skipping imports.** `from "../storage/project/hierarchy/feed.ts"`
   couples the importer to a file location. Import from `../storage`.
 - **Test files loose in a source directory.** They double its file count and
   mix two kinds of file; `storage/` was 37 source files and 35 tests in one

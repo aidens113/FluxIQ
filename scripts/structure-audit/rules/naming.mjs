@@ -21,9 +21,17 @@ function stemOf(ctx, file) {
 function depthFindings(ctx) {
   const { LIMITS, CONFIG } = ctx;
   const exempt = (CONFIG.depthExemptPrefixes ?? []).map((prefix) => `${prefix}/`);
+  const testRoots = new Set(CONFIG.testRootDirNames ?? []);
   const findings = [];
   for (const file of ctx.sourceFiles) {
     if (ctx.isTestFile(file)) continue;
+    // Support modules beside their tests are test material too. The depth
+    // budget exists to keep production structure navigable; pushing a shared
+    // fixture out of the tests/ folder that owns it buys a smaller number at
+    // the cost of worse placement, and this rule does not ratchet, so the
+    // fixture cannot simply be baselined where it belongs.
+    const dirs = file.split("/").slice(0, -1);
+    if (dirs.some((segment) => testRoots.has(segment))) continue;
     if (exempt.some((prefix) => file.startsWith(prefix))) continue;
     const segments = file.split("/").length;
     if (segments <= LIMITS.maxPathSegments) continue;
@@ -81,6 +89,11 @@ function prefixGroupFindings(ctx) {
       // A sibling named exactly for the prefix belongs to the same group.
       if (stems.has(prefix)) members.add(prefix);
       if (members.size < LIMITS.prefixGroup) continue;
+      // Never demand a directory the depth rule would then reject. Without
+      // this the two rules can deadlock: flat, the prefix rule says to
+      // create <dir>/<prefix>/; nested, the depth rule says the result is
+      // too deep, and it does not ratchet, so neither state can pass.
+      if (dir.split("/").length + 1 >= LIMITS.maxPathSegments) continue;
       findings.push({
         rule: id, key: `${dir}::${prefix}`, value: members.size, limit: LIMITS.prefixGroup, path: dir,
         message: `${dir}/: ${members.size} files share the prefix "${prefix}-". Create ${ctx.basename(dir)}/${prefix}/ and strip the prefix from their names.`,

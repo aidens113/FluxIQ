@@ -33,7 +33,7 @@ const canonicalViewIds = new Set<string>(automationStudioViewIds);
 const canonicalEntryViews = [
   "adaptations/AdaptationsView.tsx",
   "clients/ClientGatewayView.tsx",
-  "flow-editor/FlowEditorView.tsx",
+  "flow-editor/components/FlowEditorView.tsx",
   "inspector/InspectorView.tsx",
   "instructions/InstructionsView.tsx",
   "problems/ProblemsView.tsx",
@@ -108,20 +108,20 @@ const removedAggregateAndPublisherModules = new Set([
 ]);
 
 const synchronousInteractionPaths = [
-  "flow-editor/FlowEditorView.tsx",
-  "flow-editor/FlowGraphCanvas.tsx",
-  "flow-editor/FlowGraphToolbar.tsx",
-  "flow-editor/FlowNode.tsx",
+  "flow-editor/components/FlowEditorView.tsx",
+  "flow-editor/components/FlowGraphCanvas.tsx",
+  "flow-editor/components/FlowGraphToolbar.tsx",
+  "flow-editor/components/FlowNode.tsx",
   "flow-editor/flow-canvas-interaction-controller.ts",
-  "flow-editor/useFlowEditorCanvasInteractions.ts",
-  "flow-editor/useFlowEditorGraphDocument.ts",
-  "hierarchy/ProjectTree.tsx",
+  "flow-editor/hooks/useFlowEditorCanvasInteractions.ts",
+  "flow-editor/hooks/useFlowEditorGraphDocument.ts",
+  "hierarchy/components/ProjectTree.tsx",
   "hierarchy/controller.ts",
-  "hierarchy/tree-rows.tsx",
-  "live/AutomationStudioSession.tsx",
-  "live/useAutomationHierarchyCommandBridge.ts",
-  "live/useAutomationSelectionNavigation.ts",
-  "live/useAutomationWorkspaceRuntime.ts",
+  "hierarchy/components/TreeRows.tsx",
+  "live/components/AutomationStudioSession.tsx",
+  "live/hooks/useAutomationHierarchyCommandBridge.ts",
+  "live/hooks/useAutomationSelectionNavigation.ts",
+  "live/hooks/useAutomationWorkspaceRuntime.ts",
   "presentation/transaction.ts",
   "workspace/commands/port.ts",
   "workspace/commands/warm-activation.ts",
@@ -357,7 +357,7 @@ describe("Automation Studio Phase 10I architecture enforcement", () => {
   });
 
   it("keeps Session off broad live project, entity, resource, and selection subscriptions", () => {
-    const session = architectureSource("live/AutomationStudioSession.tsx");
+    const session = architectureSource("live/components/AutomationStudioSession.tsx");
     const forbiddenBindings = new Set([
       "useAutomationCanonicalViewInputs",
       "useAutomationProjectDataResource",
@@ -379,7 +379,7 @@ describe("Automation Studio Phase 10I architecture enforcement", () => {
   });
 
   it("keeps every canonical connector owned by its destination ViewHost", () => {
-    const session = architectureSource("live/AutomationStudioSession.tsx").source;
+    const session = architectureSource("live/components/AutomationStudioSession.tsx").source;
     const entries = architectureSource("live/view-host/connected-view-entries.tsx").source;
     const connector = architectureSource("live/view-host/direct-view-connector.tsx").source;
     const host = architectureSource("views/ViewHost.tsx").source;
@@ -452,7 +452,7 @@ describe("Automation Studio Phase 10I architecture enforcement", () => {
   });
 
   it("keeps ordinary view state out of browser URLs", () => {
-    const allowed = new Set(["navigation.ts", "live/useAutomationBrowserEntry.ts"]);
+    const allowed = new Set(["navigation.ts", "live/hooks/useAutomationBrowserEntry.ts"]);
     const current = mapCounts(sources
       .filter((source) => !allowed.has(source.path))
       .map((source) => ({

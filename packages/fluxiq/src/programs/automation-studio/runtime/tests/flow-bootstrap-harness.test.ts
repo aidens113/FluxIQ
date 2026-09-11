@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../../nodes/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../model/index.ts";
-import { runAutomationStudioLlmHarness, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../llm-harness.ts";
-import type { AutomationStudioFlowBootstrapPlan } from "../flow-bootstrap.ts";
+import { runAutomationStudioLlmHarness, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../llm/index.ts";
+import type { AutomationStudioFlowBootstrapPlan } from "../flow-bootstrap/index.ts";
 
 const resolution = { scope: { kind: "domain" as const, domainId: "demo" }, runtimeCapabilities: [] as string[], permissions: [] as string[] };
 

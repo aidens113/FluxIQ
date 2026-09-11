@@ -5,7 +5,7 @@ import { AlertTriangle, Bug, FileSearch, GitBranch, ListChecks, Radio, SlidersHo
 import { AdaptationsView } from "../adaptations/AdaptationsView";
 import type { AdaptationsViewHostCommands, AdaptationsViewHostModel } from "../adaptations/adaptation-host";
 import { ClientGatewayView } from "../clients/ClientGatewayView";
-import { FlowEditorView } from "../flow-editor/FlowEditorView";
+import { FlowEditorView } from "../flow-editor/components/FlowEditorView";
 import { InspectorView } from "../inspector/InspectorView";
 import { InstructionsView } from "../instructions/InstructionsView";
 import type { InstructionsViewHostCommands, InstructionsViewHostModel } from "../instructions/instruction-host";

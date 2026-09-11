@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioReusableLlmContextRecord } from "../../storage/project-reusable-llm-context-store.ts";
+import type { AutomationStudioReusableLlmContextRecord } from "../../storage/index.ts";
 import {
   AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_INPUT_SHARE,
   AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_MAX_CANDIDATES,

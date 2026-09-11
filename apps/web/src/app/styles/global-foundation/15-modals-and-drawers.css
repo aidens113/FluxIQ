@@ -1,0 +1,160 @@
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-overlay);
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 35%);
+  padding: var(--space-xl);
+  pointer-events: auto;
+  contain: layout paint style;
+  overscroll-behavior: contain;
+}
+
+.modal-panel {
+  position: relative;
+  z-index: var(--layer-modal);
+  display: grid;
+  gap: 14px;
+  width: min(100%, 520px);
+  max-height: min(720px, calc(100dvh - 48px));
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  box-shadow: 0 16px 36px rgb(0 28 36 / 22%);
+  padding: var(--space-lg);
+  contain: layout paint style;
+  overscroll-behavior: contain;
+}
+
+.modal-operation-boundary {
+  display: contents;
+  border: 0;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.modal-panel label {
+  display: grid;
+  gap: 5px;
+}
+
+.modal-panel label span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+}
+
+.modal-panel input {
+  min-height: 34px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  padding: 5px 9px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+}
+.dialog-heading-copy {
+  display: grid;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.dialog-heading-copy p {
+  max-width: 62ch;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-body-small);
+  line-height: var(--line-height-body);
+}
+
+.dialog-form {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.dialog-object-label {
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-tool);
+  padding: var(--space-md);
+}
+
+.modal-actions {
+  position: sticky;
+  bottom: calc(var(--space-lg) * -1);
+  z-index: var(--layer-raised);
+  margin: 0 calc(var(--space-lg) * -1) calc(var(--space-lg) * -1);
+  border-top: var(--border-width) solid var(--color-border);
+  background: var(--surface-pane);
+  padding: var(--space-md) var(--space-lg);
+}
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-overlay);
+  background: rgb(0 0 0 / 35%);
+  contain: layout paint style;
+  overscroll-behavior: contain;
+}
+
+.drawer-panel {
+  position: absolute;
+  inset-block: 0;
+  width: min(520px, 100vw);
+  max-height: 100dvh;
+  border-radius: 0;
+  padding: var(--space-lg);
+  contain: layout paint style;
+  overscroll-behavior: contain;
+}
+
+.drawer-panel.right {
+  right: 0;
+  border-width: 0 0 0 var(--border-width);
+}
+
+.drawer-panel.left {
+  left: 0;
+  border-width: 0 var(--border-width) 0 0;
+}
+
+.global-client-pairing-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-overlay);
+  display: grid;
+  place-items: center;
+  width: 100vw;
+  height: 100vh;
+  background: rgb(3 8 14 / 68%);
+  padding: var(--space-xl);
+  pointer-events: auto;
+}
+
+.global-client-pairing-panel {
+  position: relative;
+  z-index: var(--layer-modal);
+  display: grid;
+  gap: 14px;
+  width: min(100%, 520px);
+  max-height: min(720px, calc(100dvh - 48px));
+  overflow: auto;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-modal);
+  padding: var(--space-lg);
+}
+
+.global-client-pairing-panel label {
+  display: grid;
+  gap: 5px;
+}
+

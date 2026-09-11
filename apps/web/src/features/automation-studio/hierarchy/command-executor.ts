@@ -1,12 +1,12 @@
 import { automationHierarchyNodeCanDelete } from "./capabilities";
 import {
   type AutomationHierarchyCommandDependencies,
-  type AutomationHierarchyCommandExecutor
-} from "./command-executor-contracts";
-import { hierarchySubflowParent } from "./command-executor-support";
-import { automationHierarchyCreateCommandCanDispatch } from "./commands";
-import { executeHierarchyCreateCommand } from "./create-command-executor";
-import { executeHierarchyDeleteCommand } from "./delete-command-executor";
+  type AutomationHierarchyCommandExecutor,
+  automationHierarchyCreateCommandCanDispatch,
+  executeHierarchyCreateCommand,
+  executeHierarchyDeleteCommand,
+  hierarchySubflowParent
+} from "./commands";
 import type { AutomationHierarchyDialogTransaction } from "./dialog-transaction";
 
 export type {
@@ -15,7 +15,7 @@ export type {
   AutomationHierarchyCommandPort,
   AutomationHierarchyExecutionResult,
   AutomationHierarchyInvalidationScope
-} from "./command-executor-contracts";
+} from "./commands";
 
 export function createAutomationHierarchyCommandExecutor(): AutomationHierarchyCommandExecutor {
   const inFlight = new Set<number>();

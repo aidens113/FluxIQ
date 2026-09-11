@@ -1,0 +1,254 @@
+.list {
+  display: grid;
+  min-width: 0;
+  border-block: var(--border-width) solid var(--color-border);
+}
+
+.list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  min-width: 0;
+  border-bottom: var(--border-width) solid var(--color-border);
+  background: var(--surface-pane);
+}
+
+.list-row:last-child {
+  border-bottom: 0;
+}
+
+.list-row:hover,
+.list-row.selected {
+  background: var(--surface-selected);
+}
+
+.list-row-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+  min-height: var(--control-height-comfortable);
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  padding: var(--space-sm) var(--space-md);
+  text-align: left;
+  cursor: pointer;
+}
+
+.list-row-copy {
+  display: grid;
+  gap: var(--space-xxs);
+  min-width: 0;
+}
+
+.list-row-copy strong,
+.list-row-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-row-copy small,
+.list-row-meta {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+}
+
+.list-row-leading {
+  display: inline-grid;
+  place-items: center;
+  color: var(--color-text-muted);
+}
+
+.list-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding-inline-end: var(--space-sm);
+}
+
+.tree,
+.tree [role="group"] {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tree-item {
+  min-width: 0;
+  color: var(--color-text);
+  outline: 0;
+}
+
+.tree-item-row {
+  display: grid;
+  grid-template-columns: 22px 18px minmax(0, 1fr) auto;
+  align-items: center;
+  min-width: 0;
+  min-height: var(--control-height-default);
+  border-radius: var(--radius-control);
+  padding-block: var(--space-xs);
+  padding-inline-end: var(--space-xs);
+  cursor: pointer;
+}
+
+.tree-item:hover > .tree-item-row,
+.tree-item.selected > .tree-item-row {
+  background: var(--surface-selected);
+  color: var(--color-primary);
+}
+
+.tree-item:focus-visible > .tree-item-row {
+  box-shadow: var(--focus-ring);
+}
+
+.tree-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: currentColor;
+  cursor: pointer;
+}
+
+.tree-toggle svg {
+  transition: transform var(--motion-fast) var(--motion-ease);
+}
+
+.tree-toggle svg.collapsed {
+  transform: rotate(-90deg);
+}
+
+.tree-toggle-spacer {
+  width: 22px;
+}
+
+.tree-icon {
+  display: inline-grid;
+  place-items: center;
+  color: var(--color-text-muted);
+}
+
+.tree-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xxs);
+}
+
+.table-wrap.compact .data-table th,
+.table-wrap.compact .data-table td {
+  padding: var(--space-sm);
+  font-size: var(--font-size-compact);
+}
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 520px;
+}
+
+.data-table th,
+.data-table td {
+  border-bottom: 1px solid var(--color-border);
+  padding: 9px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.data-table th {
+  background: var(--surface-tool);
+  color: var(--color-text);
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+}
+
+.data-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.empty-cell {
+  color: var(--color-text-muted);
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-md);
+}
+
+.field-row label {
+  display: grid;
+  gap: 5px;
+}
+
+.field-row label span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+}
+
+.field-row input,
+.field-row select,
+.field-row textarea {
+  min-height: 34px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 5px 9px;
+}
+
+.dense-fields {
+  align-items: end;
+}
+
+.check-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: 34px;
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+.check-row input {
+  min-height: auto;
+}
+
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  align-items: center;
+}
+
+.role-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-dense);
+}
+
+.role-cell strong {
+  min-width: 72px;
+}
+

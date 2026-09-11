@@ -7,7 +7,7 @@ type DiagnosticsPolicy = { kind: "disclosed" | "user-facing-only"; files: string
 const policies: Record<string, DiagnosticsPolicy> = {
   "client-gateway": { kind: "disclosed", files: ["../../clients/ClientGatewayView.tsx"], evidence: ["<details", "Connection details"] },
   "timeline-recording": { kind: "user-facing-only", files: ["../../recordings/RecordingTimelineView.tsx"] },
-  "flow-nodes": { kind: "user-facing-only", files: ["../../flow-editor/FlowEditorView.tsx"] },
+  "flow-nodes": { kind: "user-facing-only", files: ["../../flow-editor/components/FlowEditorView.tsx"] },
   "flow-router": { kind: "disclosed", files: ["../../router/RouterContentView.tsx"], evidence: ["<details", "Route details"] },
   "flow-subflows": { kind: "user-facing-only", files: ["../../subflows/SubflowsView.tsx"] },
   "flow-instructions": { kind: "disclosed", files: ["../../instructions/InstructionWorkbenchPanels.tsx"], evidence: ["JsonToggle", "Show Instruction JSON"] },
@@ -41,7 +41,7 @@ describe("canonical view diagnostics disclosure", () => {
 
   it("keeps the allowlisted Data Inspector development-only", () => {
     const inspector = readFileSync(new URL("../../development/DataInspector.tsx", import.meta.url), "utf8");
-    const composition = readFileSync(new URL("../../live/AutomationStudioWorkspaceComposition.tsx", import.meta.url), "utf8");
+    const composition = readFileSync(new URL("../../live/components/AutomationStudioWorkspaceComposition.tsx", import.meta.url), "utf8");
     expect(inspector).toContain("Live development telemetry");
     expect(composition).toContain('showDataInspector={process.env.NODE_ENV !== "production"}');
   });

@@ -1,7 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { FlowGraphStatus } from "../../flow-editor/FlowGraphStatus";
+import { FlowGraphStatus } from "../../flow-editor/components/FlowGraphStatus";
 import { applyAutomationGraphDraftRestore, discardAutomationGraphRecovery, reloadSavedAutomationGraph, shouldRestoreAutomationGraphDraft } from "../recovery-actions";
 
 describe("graph recovery actions", () => {

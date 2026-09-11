@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { AutomationStudioProjectDatabase, AutomationStudioSqlExecutor } from "./project-database.ts";
+import type { AutomationStudioProjectDatabase, AutomationStudioSqlExecutor } from "./project/index.ts";
 
 export type AutomationStudioSchemaMigration = {
   id: string;

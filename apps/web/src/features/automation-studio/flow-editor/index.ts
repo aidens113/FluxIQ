@@ -1,4 +1,4 @@
-export { FlowEditorView, type AutomationGraphSaveResult } from "./FlowEditorView";
+export { FlowEditorView, type AutomationGraphSaveResult } from "./components";
 export type { AutomationGraphFocusRequest } from "./flow-editor-types";
 export { automationNodeCompatibilityHint } from "./palette-model";
 export {
@@ -15,8 +15,8 @@ export {
 } from "./graph-interactions";
 export { graphSignature } from "./graph-signatures";
 export { automationFlowGraphProblems, automationPolicyGraphProblems, type AutomationGraphProblem } from "./graph-validation";
-export { NodeSelectionActions } from "./NodeSelectionActions";
+export { NodeSelectionActions } from "./components";
 export * from "./commands";
-export { FlowEditorActionsProvider, useFlowEditorActions, type FlowEditorActions } from "./FlowEditorActionsContext";
+export { FlowEditorActionsProvider, useFlowEditorActions, type FlowEditorActions } from "./components";
 export type { AutomationEditorNodeSpec, AutomationEditorPaletteGroup, AutomationFlowNodeData } from "./node-types";
 export { automationEditorPalette } from "./node-palette";

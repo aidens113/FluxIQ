@@ -1,6 +1,6 @@
 import type { JsonValue } from "../../../core/index.ts";
-import type { AutomationStudioReusableLlmContextRecord } from "../storage/project-reusable-llm-context-store.ts";
-import { automationStudioLlmTokenBudgetBytes, estimateAutomationStudioLlmTokensFromUtf8Bytes } from "./llm-token-estimation.ts";
+import type { AutomationStudioReusableLlmContextRecord } from "../storage/index.ts";
+import { automationStudioLlmTokenBudgetBytes, estimateAutomationStudioLlmTokensFromUtf8Bytes } from "./llm/token-estimation.ts";
 
 export const AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_MAX_CANDIDATES = 5;
 export const AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_PACK_MAX_BYTES = 8_192;

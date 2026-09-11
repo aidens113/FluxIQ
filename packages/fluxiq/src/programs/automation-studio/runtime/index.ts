@@ -4,23 +4,10 @@ export * from "./contracts.ts";
 export * from "./composite-executor.ts";
 export * from "./compiled-plan.ts";
 export * from "./executor.ts";
-export * from "./flow-bootstrap-adaptation.ts";
-export * from "./flow-bootstrap-generation-failure.ts";
-export * from "./flow-bootstrap.ts";
+export * from "./flow-bootstrap/index.ts";
 export * from "./io-bridge.ts";
 export * from "./io-policy.ts";
-export * from "./llm-harness.ts";
-export * from "./llm-provider-contract.ts";
-export * from "./llm-provider-factories.ts";
-export {
-  AUTOMATION_STUDIO_DEEPSEEK_PEAK_CACHE_MISS_INPUT_USD_PER_MILLION_TOKENS,
-  AUTOMATION_STUDIO_DEEPSEEK_PEAK_OUTPUT_USD_PER_MILLION_TOKENS,
-  estimateAutomationStudioDeepSeekCostUsd,
-  estimateAutomationStudioDeepSeekInputTokens
-} from "./llm-deepseek-provider.ts";
-export * from "./llm-execution-grants.ts";
-export * from "./llm-evidence-loop.ts";
-export * from "./llm-run-budget.ts";
+export * from "./llm/index.ts";
 export * from "./live-patch.ts";
 export * from "./native-node-runtime.ts";
 export * from "./recording-controller.ts";

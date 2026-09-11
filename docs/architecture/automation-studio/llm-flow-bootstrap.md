@@ -2,7 +2,7 @@
 
 Automation Studio owns a domain-neutral, instruction-first authoring boundary for
 building a new executable Flow without a recording. The boundary is implemented
-in `runtime/flow-bootstrap.ts` and integrated with the existing LLM harness as
+in `runtime/flow-bootstrap/plan.ts` and integrated with the existing LLM harness as
 the `flow_bootstrap` task. It does not execute a provider request, persist a
 proposal, or mutate a Flow by itself.
 
@@ -128,7 +128,7 @@ therefore cannot reinterpret bootstrap output as a generic change proposal or
 pass recording/timeline-shaped context into this lane.
 ## Bootstrap Adaptation lifecycle
 
-The runtime/flow-bootstrap-adaptation.ts module defines a separate, typed
+The runtime/flow-bootstrap/adaptation.ts module defines a separate, typed
 flow_bootstrap adaptation. It is not a recording proposal and it cannot be
 applied through the arbitrary patch/document-replacement path.
 

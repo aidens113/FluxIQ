@@ -77,7 +77,6 @@ export function run(ctx) {
   const { CONFIG } = ctx;
   const forbidden = CONFIG.forbiddenImports ?? [];
   const boundaries = CONFIG.importBoundaries ?? [];
-  const testRoots = new Set(CONFIG.testRootDirNames ?? []);
   const barrels = barrelDirectories(ctx);
   const directories = trackedDirectories(ctx);
   const findings = [];
@@ -115,13 +114,16 @@ export function run(ctx) {
       if (directories.has(target)) continue;
 
       const targetDir = path.posix.dirname(target);
-      if (targetDir === importerDir) continue;
-      // A test under <dir>/tests/ verifies <dir>'s own modules; it is not a
-      // consumer reaching across a boundary. Relocating tests one level down
-      // turns the same-directory import exempted above into "../x", and
-      // without this the barrel would have to widen its public surface purely
-      // so tests can reach their subject.
-      if (testRoots.has(path.posix.basename(importerDir)) && targetDir === path.posix.dirname(importerDir)) continue;
+      // A module may reach the files of a directory it lives inside. This
+      // rule is about a consumer crossing into a directory it is outside of;
+      // an importer nested within the target directory is already inside it,
+      // so no barrel stands between them. That covers both shapes the
+      // migration phases create by construction rather than by anyone
+      // reaching somewhere new: a test under <dir>/tests/ importing its
+      // subject, and a file in a prefix-derived <dir>/<group>/ importing its
+      // parent's module. A sibling subdirectory is still a crossing and is
+      // still counted.
+      if (importerDir === targetDir || importerDir.startsWith(`${targetDir}/`)) continue;
       if (path.posix.basename(target) === "index") continue;
       if (!barrels.has(targetDir)) continue;
 

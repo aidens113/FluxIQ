@@ -1,0 +1,220 @@
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-xl);
+}
+
+.auth-card {
+  display: grid;
+  gap: 14px;
+  width: min(100%, 420px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-panel);
+  padding: var(--space-xl);
+}
+
+.auth-panel-v1 {
+  box-shadow: 0 14px 34px rgb(24 35 34 / 12%);
+}
+
+.auth-title {
+  margin: 4px 0 18px;
+  font-size: var(--font-size-display);
+  line-height: 1.1;
+}
+
+.field {
+  display: grid;
+  align-content: start;
+  gap: var(--space-compact);
+  min-width: 0;
+}
+
+.field-label {
+  color: var(--color-text);
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-semibold);
+}
+
+.field > input,
+.field > select,
+.field > textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-height-comfortable);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-pane);
+  color: var(--color-text);
+  padding: var(--space-sm) var(--space-dense);
+}
+
+.field > textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.field > input:disabled,
+.field > select:disabled,
+.field > textarea:disabled {
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+.field-error > input,
+.field-error > select,
+.field-error > textarea {
+  border-color: var(--color-danger);
+}
+
+.field-message {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-compact);
+}
+
+.field-message.error {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  color: var(--color-danger);
+}
+.auth-form {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.auth-form label {
+  display: grid;
+  gap: var(--space-compact);
+}
+
+.auth-form label span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+}
+
+.auth-form input {
+  min-height: 34px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  padding: 6px 9px;
+}
+
+.password-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--control-size-icon);
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.password-input input {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-height-comfortable);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-pane);
+  color: var(--color-text);
+  padding: var(--space-sm) var(--space-dense);
+}
+
+.auth-setup-assurance {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-body);
+}
+
+.auth-setup-assurance svg {
+  flex: 0 0 auto;
+  color: var(--color-success);
+}
+
+@media (max-width: 480px) {
+  .auth-status .menu > .button {
+  max-width: min(240px, 34vw);
+}
+
+.auth-status .menu > .button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auth-role {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.global-topbar {
+  position: sticky;
+  top: 0;
+  z-index: var(--layer-sticky);
+}
+
+.global-topbar-context {
+  min-width: 0;
+  margin-right: auto;
+}
+
+.global-topbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.program-topbar-title .breadcrumb {
+  flex: 1;
+}
+
+@media (max-width: 640px) {
+  .directory-topbar,
+  .program-global-topbar {
+    min-height: 52px;
+    padding-inline: var(--space-md);
+  }
+
+  .global-topbar .brand-lockup > span:last-child,
+  .auth-role,
+  .program-domain-label {
+    display: none;
+  }
+
+  .global-topbar-context {
+    flex: 1;
+  }
+
+  .auth-status .menu > .button {
+    width: var(--control-size-icon);
+    padding-inline: 0;
+  }
+
+  .auth-status .menu > .button span,
+  .auth-status .menu > .button svg:last-child {
+    display: none;
+  }
+}
+.auth-page {
+    place-items: stretch;
+    min-height: 100dvh;
+    padding: var(--space-md);
+  }
+
+  .auth-card {
+    align-content: center;
+    width: 100%;
+    border-inline: 0;
+    box-shadow: none;
+    padding: var(--space-lg);
+  }
+}

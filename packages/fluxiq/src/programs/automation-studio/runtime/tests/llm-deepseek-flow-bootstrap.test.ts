@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA,
   type AutomationStudioFlowBootstrapPlan
-} from "../flow-bootstrap.ts";
-import type { AutomationStudioLlmTaskRequest } from "../llm-harness.ts";
-import { createAutomationStudioDeepSeekProvider, estimateAutomationStudioDeepSeekInputTokens } from "../llm-deepseek-provider.ts";
-import { AutomationStudioLlmProviderError } from "../llm-provider-contract.ts";
-import { estimateAutomationStudioLlmTokensFromUtf8Bytes } from "../llm-token-estimation.ts";
+} from "../flow-bootstrap/index.ts";
+import type { AutomationStudioLlmTaskRequest } from "../llm/index.ts";
+import { createAutomationStudioDeepSeekProvider, estimateAutomationStudioDeepSeekInputTokens } from "../llm/index.ts";
+import { AutomationStudioLlmProviderError } from "../llm/index.ts";
+import { estimateAutomationStudioLlmTokensFromUtf8Bytes } from "../llm/token-estimation.ts";
 
 describe("Automation Studio DeepSeek flow_bootstrap transport", () => {
   it("maps the task to flow_bootstrap and sends the exact compact schema without recording context", async () => {

@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_RENDER_BOUNDARIES } from "../../development/render-certification";
 
 const sources = new Map([
-  ["AutomationStudioLive", "../../live/AutomationStudioComposition.tsx"],
+  ["AutomationStudioLive", "../../live/components/AutomationStudioComposition.tsx"],
   ["AutomationStudioWorkspaceBoundary", "../../workspace/render-store.tsx"],
-  ["AutomationStudioHierarchyBoundary", "../../hierarchy/ProjectTree.tsx"],
+  ["AutomationStudioHierarchyBoundary", "../../hierarchy/components/ProjectTree.tsx"],
   ["AutomationStudioPaneBoundary", "../../workspace/components/view-container.tsx"],
   ["AutomationStudioOverlayBoundary", "../../workspace/studio-ui-store.tsx"],
   ["AutomationStudioSelectionBoundary", "../../inspector/InspectorPanel.tsx"],

@@ -1,0 +1,116 @@
+.totp-setup-shell {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.totp-setup-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-dense);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-tool);
+  padding: var(--space-dense);
+}
+
+.totp-setup-summary > div {
+  display: grid;
+  gap: var(--space-xxs);
+  min-width: 0;
+}
+
+.totp-setup-summary strong,
+.totp-setup-summary small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.totp-setup-summary small {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.totp-enrollment {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.totp-qr-card {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-dense);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  padding: 14px;
+  text-align: center;
+}
+
+.totp-qr-card span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+}
+
+.totp-qr-frame {
+  display: grid;
+  place-items: center;
+  width: 220px;
+  height: 220px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: #ffffff;
+}
+
+.totp-qr-frame svg {
+  width: 100%;
+  height: 100%;
+}
+
+.totp-enrollment-steps {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.secret-copy-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-dense);
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-tool);
+  padding: var(--space-dense);
+}
+
+.secret-copy-row span {
+  display: grid;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.secret-copy-row strong {
+  font-size: var(--font-size-compact);
+}
+
+.secret-copy-row code,
+.otpauth-details code {
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+  font-size: var(--font-size-compact);
+}
+
+.otpauth-details {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.otpauth-details summary {
+  cursor: pointer;
+  font-weight: var(--font-weight-bold);
+}
+

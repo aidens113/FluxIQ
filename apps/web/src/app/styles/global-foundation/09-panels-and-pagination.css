@@ -1,0 +1,104 @@
+.program-main-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.program-workspace-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.workspace-panel {
+  display: grid;
+  grid-column: span 6;
+  gap: var(--space-md);
+  min-height: 180px;
+}
+
+.workspace-panel:first-child {
+  grid-column: span 12;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.panel-count {
+  min-width: 28px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-tool);
+  color: var(--color-text-muted);
+  padding: 2px 7px;
+  text-align: center;
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-bold);
+}
+
+.program-secondary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.compact-panel {
+  min-height: 120px;
+  box-shadow: none;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  min-width: 0;
+  border-top: var(--border-width) solid var(--color-border);
+  background: var(--surface-tool);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.pagination-range,
+.pagination-actions > span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pagination-size,
+.pagination-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.pagination-size {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.pagination-size select {
+  min-height: var(--control-height-compact);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-pane);
+  color: var(--color-text);
+  padding-inline: var(--space-sm);
+}
+

@@ -51,7 +51,7 @@ describe("direct view connector readiness", () => {
 
   it("delivers entity updates to the active connector while Session stays unsubscribed and commands read current state", () => {
     const stores = createAutomationStudioStores();
-    const session = readFileSync(new URL("../../AutomationStudioSession.tsx", import.meta.url), "utf8");
+    const session = readFileSync(new URL("../../components/AutomationStudioSession.tsx", import.meta.url), "utf8");
     const scope = {
       projectId: "project-a",
       projectView: { getRevisionKey: () => "test", read: vi.fn() as never },

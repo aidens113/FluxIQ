@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const ownerFiles = {
-  hierarchy: "../../hierarchy/useAutomationHierarchyWorkspaceState.ts",
-  flow: "../../flow-editor/useAutomationFlowProjectState.ts",
+  hierarchy: "../../hierarchy/hooks/useAutomationHierarchyWorkspaceState.ts",
+  flow: "../../flow-editor/hooks/useAutomationFlowProjectState.ts",
   recording: "../../recordings/useAutomationRecordingProjectState.ts",
   runtimeProject: "../../runtime/useAutomationRuntimeProjectState.ts",
   runtimeStatus: "../../runtime/useAutomationRuntimeStatusState.ts",

@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { AutomationStudioProject, AutomationStudioProjectCategory } from "../api/contracts.ts";
-import { AutomationStudioProjectDatabase } from "./project-database.ts";
+import { AutomationStudioProjectDatabase } from "./project/index.ts";
 import { AutomationStudioSchemaMigrationRunner, type AutomationStudioSchemaMigration } from "./schema-migrations.ts";
 
 export type AutomationStudioCatalogProject = AutomationStudioProject & {

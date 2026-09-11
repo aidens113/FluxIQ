@@ -1,7 +1,7 @@
 # Module Size And Structure Governance Plan
 
 Status: Active
-Status detail: Every checkable rule is enforced in both repositories; Phase 1 (tests relocation) is complete in both; Phases 2-8 are sequenced but not started.
+Status detail: Phases 1-8 executed; every oversized file decomposed except runtime/service.ts, which continues incrementally.
 Created: 2026-09-10
 Last updated: 2026-09-10
 Owner: Senior supervisor agent
@@ -17,83 +17,101 @@ this document tracks applying it.
 
 ## Current State
 
-**Phase 1 is complete in both repositories.** Every co-located test now sits
-in a `tests/` subfolder of the directory that owns its subject: 333 files
-here, 74 downstream, moved by seven workers partitioned by file so none could
-collide. The `test-placement` rule reports zero findings in both, down from
-70 directories here and 13 downstream. Core's baseline fell from 402 keys to
-328, downstream's from 53 to 40, and no entry rose in either.
+**Phases 1 through 8 have all been executed. One file remains: `service.ts`.**
+Every other oversized source file in either repository has been decomposed,
+and every directory over the file cap has been split. What follows is the
+settled position; the per-phase detail lives in the ledger.
 
-**Enforcement is complete for every rule a machine can check.**
-`scripts/structure-audit.mjs` loads one module per rule from
-`scripts/structure-audit/rules/` and applies a generic ratchet from
-`baseline.mjs`. Rules: `file-lines`, `directory-files`, `class-methods`,
-`exported-values`, `test-placement`, `naming`, `imports`, and `working-docs`.
-`pnpm check` now runs `pnpm structure:test` first, then the audit, then
-`pnpm -r check` — previously the rule tests existed but gated nothing, so the
-auditor itself was unguarded.
+| Subject | Before | After |
+| --- | --- | --- |
+| `app/styles/global-foundation.css` | 3,396 lines | 18 sections, largest 357 |
+| `api/handlers.ts` | 2,091 lines | 1-line facade + 21 modules |
+| `runtime/llm/harness.ts` | 1,161 lines | 1-line facade + 14 modules |
+| `features/programs/shared-ui.tsx` | 1,087 lines, 37 components | 45 files |
+| `api/contracts.ts` | 977 lines, 112 types | 1-line facade + 16 modules |
+| `runtime/flow-bootstrap/plan.ts` | 958 lines | 31-line facade + 13 modules |
+| `model/validation.ts` | 934 lines | 1-line facade + 11 modules |
+| `storage/project/schema.ts` | 931 lines | 1-line facade + 14 modules |
+| `runtime/executor.ts` | 876 lines | 1-line facade + 15 modules |
+| `model/fixtures.ts` | 823 lines | 1-line facade + 3 modules |
+| `client-gateway/service.ts` | 636 lines, 43 methods | 182 lines, 23 methods, 12 collaborators |
+| `storage/` | 37 files | 14 |
+| `runtime/` | 34 files | 23 |
+| `live/` | 36 files | 6 |
+| `flow-editor/` | 36 files | 13 |
+| `hierarchy/` | 41 files | 30 |
 
-**The `imports` rule was changed, and the reasoning should survive this
-document.** The rule exempts same-directory imports. Moving a test into
-`tests/` converts every `./x` into `../x`, which the rule counted as reaching
-past the directory's barrel — so Phase 1 *manufactured* violations of a rule
-this plan freezes. Four workers hit it independently and reached for two bad
-workarounds: routing tests through barrels (which widens a directory's public
-surface so its own tests can reach it) or accepting a raised baseline (which
-defeats the ratchet). Measured, it would have inflated Core by over 130 and
-downstream from 29 to roughly 80. The rule now additionally exempts a test
-under `<dir>/tests/` importing `<dir>`'s own modules: that test is not a
-consumer crossing a boundary, it is the same-directory import relocated one
-level. `scripts/structure-audit/rules/tests/imports.test.mjs` — the rule's
-first test — pins three widening cases and four skips it must still catch.
+**`runtime/service.ts` is the long tail, by design.** It began at 12,482 lines
+and 422 methods. The plan requires each collaborator extraction to be its own
+commit so a regression bisects to one step, so it lands incrementally rather
+than in one pass. Its public surface is verified identical at every step: 178
+public methods, unchanged.
 
-**Audit, 1,367 tracked files:** 16 source files over 800 lines (largest
-`service.ts`, 12,482); 8 directories over 25 files, down from 11, with the
-per-directory total falling 463 → 279; 2 classes over 40 methods
-(`AutomationStudioService` 422, `ClientGatewayService` 43); 61 files with an
-oversized export surface; **0 co-located tests**, down from 333; 26
-shared-prefix groups; 325 barrel-skipping imports, essentially unchanged from
-326; 16 working documents over 800 lines.
+**Three findings revise the plan's Phase 7 design and should be read before
+continuing it.**
 
-**Decisions taken**
+1. The prefix-derived grouping table covers 68% of methods but only 54% of the
+   code; 135 methods and 3,769 lines fall into no group. It is a starting
+   point, not a partition. Where it does not reach, group by state ownership —
+   that is what worked on the `ClientGatewayService` pilot, whose prefix
+   grouping fragmented completely (37 distinct verbs across 43 methods).
+2. Persistence (108 methods) and retrieval (84) each breach the 40-method and
+   800-line limits as a single class, so each must be a *directory* of
+   collaborators. The plan assumed one file each.
+3. `service/<group>/<file>.ts` sits at exactly the 9-segment depth limit.
+   There is no room for `service/<group>/<sub>/<file>.ts`, and the depth rule
+   does not ratchet.
 
-- Tests move into a `tests/` subfolder of the directory that owns their
-  subject — no separate mirrored tree.
-- `programs/automation-studio/testing/` and `client-gateway/testing/` stay in
-  `src`: both are re-exported from public barrels. Only their `*.test.ts`
-  moved; fixtures stayed.
-- The prefix rule alone brings `storage/`, `runtime/`, and `model/` under the
-  cap. No kind split is needed on the framework side.
-- `service.ts` is decomposed last, behind a facade, because every program
-  imports it.
-- Depth is exempt under `apps/web/src/app/`, where the Next.js router
-  dictates it. Route directories were never renamed.
-- Warnings never ratchet; only fail findings enter the baseline.
+**The enforcement rules changed four times during this work, each because a
+migration phase manufactured violations of a rule this plan freezes.** Each
+change is covered by tests in `scripts/structure-audit/rules/tests/`.
 
-**Three baseline entries are genuinely new, and all three are the same
-thing:** `storage/tests` (35), `runtime/tests` (32), and downstream's
-`test-runner/src/tests` (51) exceed the 25-file directory limit because each
-inherited the tests of an oversized parent. They are frozen and may only
-shrink. Phases 2 and 3 split those parents; the matching tests must move with
-them rather than being treated as separate problems.
+- **`imports`** now exempts a module reaching files of a directory it lives
+  inside. Relocating a test into `tests/`, a file into a prefix-derived
+  subdirectory, or a collaborator into `service/` all turned same-directory
+  imports into "barrel skips". Left alone this would have inflated Core by
+  over 130 entries and the downstream repository from 29 to roughly 80. The
+  alternatives were widening public barrels so internals could reach their own
+  siblings, or freezing counts the phases themselves created. Reaching into a
+  *sibling* subdirectory is still counted.
+- **`naming` depth** now exempts support modules inside a test root, not only
+  test files. A shared fixture forced out of the `tests/` folder that owns it
+  is worse placement bought for a smaller number, and depth does not ratchet,
+  so it could not be baselined where it belonged.
+- **`naming` prefix** no longer demands a directory the depth rule would
+  reject. The two could deadlock: flat, the prefix rule demanded
+  `<dir>/<prefix>/`; nested, depth rejected it, and neither state could pass.
+- **`maxPathSegments` rose from 8 to 9**, because the plan's own Phase 2
+  target sat at 9. Ten directories now sit at exactly 9, so the headroom is
+  fully consumed.
 
-**Next steps:** Phase 2 (`automation-studio/storage/`), then Phase 3
-(`runtime/` and `model/`). Each lowers baseline entries; run
-`pnpm structure:baseline` after each.
+`pnpm check` now runs `pnpm structure:test` before the audit, in both
+repositories — the rule tests existed but gated nothing, so the auditor itself
+was unguarded.
 
-**Known pre-existing defects, surfaced by Phase 1 but not caused by it.**
-Nine genuine test failures: four in `packages/fluxiq` (`service.test.ts`,
-`service-subflow-pagination.test.ts`, `runtime-llm-grants.test.ts`) and five
-in `apps/web` (`derivation-job`, `GraphEditorViews`, `workspace/cache`,
-`phase7-contracts`, `synchronous-interaction-trace`). Each reads its target
-successfully and disagrees on content or behaviour, so none is a
-path-resolution artifact; two workers independently confirmed them on the
-untouched tree. Separately, `router/functionality-contract.ts` claims
-automated evidence in `large-project-behavior.test.ts`, a file that has never
-existed in any commit — nine other views have one. Nothing resolves those
-`automatedEvidence` strings, which is why it drifted unnoticed; making
-`canonical-view-functionality.test.ts` resolve them would turn the contract
-into a real check, at the cost of failing immediately on router.
+**Baseline regeneration was audited key by key, not trusted.** Of the entries
+added, all but two are path re-keys at identical values; nothing rose. The two
+genuinely new entries are `flow-bootstrap/tests/plan.test.ts` and
+`runtime/tests/llm-deepseek-flow-bootstrap.test.ts`, which import
+`llm/token-estimation.ts`. Clearing them would mean exporting that module from
+`runtime/llm/index.ts`, which deliberately withholds it — and because
+`runtime/index.ts` re-exports that barrel wholesale, doing so would widen the
+framework's public API. Two frozen internal imports is the better price, and
+recording that choice is exactly what the ratchet is for.
+
+**Known pre-existing defects, surfaced but not caused by this work.** Nine
+genuine test failures: four in `packages/fluxiq` and five in `apps/web`. Each
+reads its target successfully and disagrees on content or behaviour, so none
+is a path artifact, and they were reproduced on the untouched tree.
+`service-subflow-pagination.test.ts` is additionally flaky. Separately,
+`router/functionality-contract.ts` claims automated evidence in a
+`large-project-behavior.test.ts` that has never existed in any commit; nothing
+resolves those `automatedEvidence` strings, which is why it drifted unnoticed.
+
+**Next steps:** continue `service.ts` two collaborators at a time, taking the
+project-store residue first. Then revisit whether `model/`'s 28 files and 63
+external barrel-skipping importers justify a reorganization — the prefix rule
+alone takes it from 28 to 25, which is at the cap rather than under it.
 
 **Blockers:** none.
 ---
@@ -281,175 +299,28 @@ already links this repository's methodology rather than restating it.
 
 ## Worker Briefs
 
-Dispatched 2026-09-10 to make every mechanically checkable `AGENTS.md` rule
-a failing check in `pnpm check`. Workspace tooling only: no product code is
-moved or split.
+Nineteen briefs were dispatched across five waves during 2026-09-10, in this
+repository and downstream, partitioned by file so no two workers could touch
+the same path. The briefs themselves have been compacted away: each worker's
+report in `docs/working/module-size-governance-plan/reports/` carries its
+task, its evidence and its findings, and the ledger below records what was
+accepted.
 
-**Shared context.** `scripts/structure-audit.mjs` discovers rule modules in
-`scripts/structure-audit/rules/*.mjs` and applies a generic ratchet from
-`scripts/structure-audit/baseline.mjs`. The rule contract, finding shape,
-shared context (tracked files, cached reads, cached TypeScript parses via
-`ctx.parse(file)`), `LIMITS`, and repository `CONFIG` are documented at the
-top of `scripts/structure-audit/context.mjs`. `rules/file-lines.mjs` and
-`rules/directory-files.mjs` are reference implementations. A rule is read
-only; messages must be self-explanatory without opening documentation;
-findings that will have many existing violations must be `ratchet: true`
-so the baseline can absorb them, with a stable `key`. Use the file-write
-tool for your own files only — never a shared scratchpad. Do not commit or
-push. Verify with `node scripts/structure-audit.mjs --rule <id>` and
-`--rule <id> --json`, and report the finding counts plus three sample
-messages.
+Four conventions emerged across the waves and are worth reusing verbatim in
+any future dispatch:
 
-### Brief: rule-classes-exports
-- Repository: this repository
-- Task: `rules/class-methods.mjs` — count methods per class with the
-  TypeScript AST (methods, accessors, and properties initialised to
-  functions), fail above `LIMITS.classMethods` ratcheted per
-  `path::ClassName`, warn above `classMethodsWarn`. `rules/exported-values.mjs`
-  — per script file, count exported value declarations (functions, classes,
-  consts, enums, default exports; types and interfaces excluded); fail when
-  exported classes exceed `exportedClasses` or, in `.tsx`, exported
-  PascalCase components exceed `exportedComponents`; fail above
-  `exportedValues` and warn above `exportedValuesWarn`; all ratcheted per
-  path. Barrel files named `index.*` are exempt from the value count.
-- Required reads: `scripts/structure-audit/context.mjs`, the two reference rules
-- Owns (may edit): `scripts/structure-audit/rules/class-methods.mjs`, `scripts/structure-audit/rules/exported-values.mjs`
-- Must not touch: any other file
-- Definition of done: both rules run clean under `--rule`, `AutomationStudioService` reports a method count within 5 of 419, `shared-ui.tsx` reports 37 components; report written
-- Report to: docs/working/module-size-governance-plan/reports/rule-classes-exports.md
-
-### Brief: rule-tests-naming
-- Repository: this repository
-- Task: `rules/test-placement.mjs` — every test file (`ctx.isTestFile`) must
-  sit directly inside a directory whose basename is in
-  `CONFIG.testRootDirNames`; fail ratcheted per containing directory with
-  the count of misplaced tests as the value. `rules/naming.mjs` — fail when a
-  source path exceeds `LIMITS.maxPathSegments` (not ratcheted); fail when a
-  basename without extension is in `CONFIG.bannedBasenames` or a directory
-  segment is in `CONFIG.bannedDirectoryNames` (ratcheted per path); fail when
-  three or more non-test, non-`index`, non-`types` kebab-case files in one
-  directory share a leading `noun-` prefix (ratcheted per `dir::prefix`,
-  value = group size, message naming the directory to create).
-- Required reads: `scripts/structure-audit/context.mjs`, the two reference rules
-- Owns (may edit): `scripts/structure-audit/rules/test-placement.mjs`, `scripts/structure-audit/rules/naming.mjs`
-- Must not touch: any other file
-- Definition of done: both rules run clean under `--rule`; `storage/` reports a `project-` group of about 26; report written
-- Report to: docs/working/module-size-governance-plan/reports/rule-tests-naming.md
-
-### Brief: rule-imports
-- Repository: this repository
-- Task: `rules/imports.mjs` — parse import and re-export declarations with
-  the TypeScript AST. (1) Forbidden imports: any specifier matching a
-  `CONFIG.forbiddenImports` pattern fails, not ratcheted. (2) Import
-  boundaries: for each `CONFIG.importBoundaries` entry, a file under `from`
-  importing a relative path that resolves under `to` fails, not ratcheted.
-  (3) Barrel skipping: a relative specifier that resolves into a *different*
-  directory than the importer, names a file other than `index`, and that
-  directory contains an `index.ts`/`index.tsx`/`index.mjs`, fails ratcheted
-  per importing path with the count of such imports as the value. Same-
-  directory sibling imports are fine. Resolve `.ts`/`.js` extension rewrites
-  sensibly.
-- Required reads: `scripts/structure-audit/context.mjs`, the two reference rules
-- Owns (may edit): `scripts/structure-audit/rules/imports.mjs`
-- Must not touch: any other file
-- Definition of done: rule runs clean under `--rule`; zero forbidden-import findings in this repository; report includes the total barrel-skip count and three examples; report written
-- Report to: docs/working/module-size-governance-plan/reports/rule-imports.md
-
-### Brief: rule-working-docs
-- Repository: this repository
-- Task: `rules/working-docs.mjs` for `CONFIG.workingDocsDir/*.md` except
-  `README.md`. (1) Header conformance: an H1, a blank line, then exactly the
-  eight fields `Status`, `Status detail`, `Created`, `Last updated`, `Owner`,
-  `Scope`, `Paired document`, `Related` in that order with no blank lines
-  between them; `Status` in the controlled vocabulary; fails, not ratcheted.
-  (2) A document whose `Status` is `Active` must contain a `## Current State`
-  heading within 20 lines of the header; fails, not ratcheted. (3) Document
-  line count above `LIMITS.workingDocLines` fails ratcheted per path. (4)
-  `README.md` freshness: generate the index from the header blocks — grouped
-  by status in the order Active, Blocked, Paused, Complete, Superseded,
-  Archived, Unclassified, one table per group with Document, Owner, Lines,
-  Scope, and Paired columns, the paired cell showing the basename of the
-  `Paired document` path or `none`, an ⚠ after any line count over 800, and
-  a closing note with the count — and fail (not ratcheted) if the tracked
-  `README.md` differs from the generated text; the existing `README.md`
-  shows the exact intro paragraphs and wording to reproduce for
-  `CONFIG.workingDocsIndexKind`. Export `update(ctx)` that writes the
-  generated `README.md`.
-- Required reads: `scripts/structure-audit/context.mjs`, the two reference rules, `docs/working/README.md`, `docs/working/agent-working-doc-protocol.md` sections "Header block" and "Section order"
-- Owns (may edit): `scripts/structure-audit/rules/working-docs.mjs`
-- Must not touch: any other file, including `README.md` itself
-- Definition of done: rule runs under `--rule` with zero header or Current State failures against the current documents, the README freshness check passes against the current `README.md` byte for byte, and `--rule working-docs --update` would rewrite an identical file; report written
-- Report to: docs/working/module-size-governance-plan/reports/rule-working-docs.md
-
----
-
-### Phase 1 dispatch — 2026-09-10
-
-Migration Plan Phase 1, tests relocation. Mechanical; no behaviour change.
-
-**Shared context.** In every directory you own that holds test files
-(`*.test.ts`, `*.test.tsx`, `*.spec.ts`, `*.spec.tsx`), create a `tests/`
-subdirectory and `git mv` the test files into it with filenames unchanged.
-Then repair relative imports inside the moved tests — one extra `../` to
-reach the subject, or import from the directory barrel. Move only test
-files: fixtures, factories, mocks, and other support stay where they are.
-Change nothing inside a test but its import specifiers. Never edit a
-subject module to accommodate a test.
-
-Record how many test files and test cases ran **before** your move and
-again after; the counts must match. A vitest `include` or a `node --test`
-glob can silently stop matching when a file's depth changes, and a suite
-that vanishes looks identical to a suite that passes.
-
-Verify with `node scripts/structure-audit.mjs --rule test-placement --json`:
-every directory you own must appear in `lowerable` or disappear entirely,
-and `failures` must stay empty. Do **not** run `pnpm structure:baseline` —
-the supervisor regenerates both baselines once, after every worker lands.
-
-### Brief: core-fluxiq-studio
-- Repository: FluxIQ Core (`F:\!FluxIQ`)
-- Task: Phase 1 relocation for the framework's Automation Studio program — ~87 test files, densest in `storage` (35), `runtime` (32), `model` (9), `testing` (4), `nodes` (3), and one each in `api`, `client-gateway`, `dsl`, `fingerprinting`. `testing/` is re-exported from a public barrel: move its `*.test.ts` only and leave every fixture in place.
-- Required reads: `Current State` of `docs/working/module-size-governance-plan.md`; the shared context above
-- Owns (may edit): `packages/fluxiq/src/programs/automation-studio/**`
-- Must not touch: `packages/fluxiq/tsconfig.build.json`, `packages/fluxiq/vitest.quality.config.ts`, `.structure-baseline.json`, anything outside your subtree
-- Definition of done: files moved, imports repaired; `pnpm --filter fluxiq test` observed passing with the same test-file and test-case counts as before the move (quote both summary lines); audit shows your directories in `lowerable` with `failures` empty; report written
-- Report to: docs/working/module-size-governance-plan/reports/core-fluxiq-studio.md
-
-### Brief: core-fluxiq-core
-- Repository: FluxIQ Core (`F:\!FluxIQ`)
-- Task: Phase 1 relocation for the rest of the framework package — ~18 test files in `programs/_shared` (4), `programs` (3), `framework` (2), `runtime` (2), and one each in `client-gateway`, `engine`, `io`, `ui`, `programs/background-tasks`, `programs/database-manager`, `programs/secret-keys/runtime`. Then change `packages/fluxiq/tsconfig.build.json` `exclude` from `["src/**/*.test.ts"]` to `["src/**/tests/**"]` so the build skips the folders rather than a filename pattern, and update the three explicit paths in `packages/fluxiq/vitest.quality.config.ts` to their new `tests/` locations.
-- Required reads: `Current State` of `docs/working/module-size-governance-plan.md`; the shared context above
-- Owns (may edit): `packages/fluxiq/src/**` except `src/programs/automation-studio/**`; `packages/fluxiq/tsconfig.build.json`; `packages/fluxiq/vitest.quality.config.ts`
-- Must not touch: `packages/fluxiq/src/programs/automation-studio/**`, `.structure-baseline.json`, anything outside `packages/fluxiq`
-- Definition of done: files moved, imports repaired, both configs updated; `pnpm --filter fluxiq build` produces a `dist` with no `tests/` folder and no `.test.js`; the quality config's suites still run and pass; audit shows your directories in `lowerable` with `failures` empty; report written
-- Report to: docs/working/module-size-governance-plan/reports/core-fluxiq-core.md
-
-### Brief: core-web-studio-a
-- Repository: FluxIQ Core (`F:\!FluxIQ`)
-- Task: Phase 1 relocation for the denser half of the web Automation Studio feature — ~69 test files: the feature root's own 7, plus `testing` (16), `hierarchy` (15), `model` (14), `live` (13), `live/view-host` (4). Per the plan, `testing/` mixes fixtures and tests: its `*.test.ts` move to `testing/tests/` and the fixtures stay.
-- Required reads: `Current State` of `docs/working/module-size-governance-plan.md`; the shared context above
-- Owns (may edit): test files directly in `apps/web/src/features/automation-studio/`, and the subtrees `testing/`, `hierarchy/`, `model/`, `live/`
-- Must not touch: every other `automation-studio/` subdirectory, `apps/web/vitest.quality.config.ts` (the supervisor owns it), `.structure-baseline.json`
-- Definition of done: files moved, imports repaired; `pnpm --filter @fluxiq/web test` observed with the same test-file and test-case counts as before (quote both); audit shows your directories in `lowerable` with `failures` empty; report written
-- Report to: docs/working/module-size-governance-plan/reports/core-web-studio-a.md
-
-### Brief: core-web-studio-b
-- Repository: FluxIQ Core (`F:\!FluxIQ`)
-- Task: Phase 1 relocation for the remaining web Automation Studio subdirectories — ~62 test files across `views` (12), `graph` (9), `workspace` (9) and its `overlays`/`cache`/`commands`/`shell`, `flow-editor` (7) and its `model`/`commands`, `runtime` (7), `problems` (6), `stores` (6), `sync` (6), `inspector` (5), `recordings` (5) and its `commands`, `state` (4) and its `model`/`commands`, `adaptations`, `instructions`, `project`, `settings`, `subflows` (3 each), `bootstrap`, `cache`, `clients`, `development`, `router`, `styles` (2 each), and `authoring`, `parameters`, `shared` (1 each).
-- Required reads: `Current State` of `docs/working/module-size-governance-plan.md`; the shared context above
-- Owns (may edit): every `apps/web/src/features/automation-studio/` subtree **except** `testing/`, `hierarchy/`, `model/`, `live/`, and except test files sitting directly in the feature root
-- Must not touch: `testing/`, `hierarchy/`, `model/`, `live/`, the feature root's own files, `apps/web/vitest.quality.config.ts`, `.structure-baseline.json`
-- Definition of done: files moved, imports repaired; `pnpm --filter @fluxiq/web test` observed with the same test-file and test-case counts as before (quote both); audit shows your directories in `lowerable` with `failures` empty; report written
-- Report to: docs/working/module-size-governance-plan/reports/core-web-studio-b.md
-
-### Brief: core-web-rest
-- Repository: FluxIQ Core (`F:\!FluxIQ`)
-- Task: Phase 1 relocation outside the Automation Studio feature — ~40 test files in `apps/web/src/features/programs` (14), `features/programs/live-views` (8), `src/lib` (6), `src/app` (4) and its four route subdirectories, `src/server` (1), and `packages/client-gateway-websocket/src` (1). Then change that package's `tsconfig.build.json` `exclude` from `["src/**/*.test.ts"]` to `["src/**/tests/**"]`. `src/app/` is the Next.js router: directories with bracketed segments are route names — move the tests, never rename a route directory.
-- Required reads: `Current State` of `docs/working/module-size-governance-plan.md`; the shared context above
-- Owns (may edit): `apps/web/src/features/programs/**`, `apps/web/src/lib/**`, `apps/web/src/app/**`, `apps/web/src/server/**`, `packages/client-gateway-websocket/**`
-- Must not touch: `apps/web/src/features/automation-studio/**`, `apps/web/vitest.quality.config.ts` (the supervisor owns it), `.structure-baseline.json`
-- Definition of done: files moved, imports repaired, the `tsconfig.build.json` exclude changed; `pnpm --filter @fluxiq/web test` and `pnpm --filter @fluxiq/client-gateway-websocket test` observed with unchanged counts (quote them); audit shows your directories in `lowerable` with `failures` empty; report written
-- Report to: docs/working/module-size-governance-plan/reports/core-web-rest.md
+- **Keep the subject's filename as a one-line facade** rather than turning it
+  into a directory. This repository writes explicit `.ts` extensions, so a
+  directory does not satisfy an existing `../subject.ts` import, and the
+  facade keeps a split to zero files outside its own directory.
+- **Prove the public surface with a checker-resolved export diff**, and prove
+  the move with a body-line reassembly diff. Several workers did the second
+  unprompted and it caught more than the test suites did.
+- **The audit enumerates via `git ls-files`**, so untracked files are invisible
+  to every rule. Run `git add -N` on anything created before trusting a result.
+- **Use scratch filenames unique to you.** Two workers collided on a shared
+  scratchpad name and one silently received the other's data; the failure mode
+  was a plausible wrong answer, not an error.
 
 ## Work Ledger
 
@@ -573,6 +444,67 @@ the supervisor regenerates both baselines once, after every worker lands.
   `tests/` folder with it when its parent is split. Decide whether
   `canonical-view-functionality.test.ts` should resolve `automatedEvidence`
   paths, which would fail immediately on `router/`.
+
+### 2026-09-10 — Phases 2 through 8, both repositories
+
+- Agent: supervisor, with sixteen workers dispatched in waves and partitioned
+  by file: `core-storage-split`, `core-runtime-split`, `core-api-contracts`,
+  `core-shared-ui`, `core-web-live`, `core-web-hierarchy`,
+  `core-web-flow-editor`, `core-styles`, `core-model-files`,
+  `core-client-gateway-facade`, `core-automation-studio-facade`,
+  `core-schema-split`, `core-handlers-split`, `core-harness-split`,
+  `core-executor-split`, `core-flow-bootstrap-split`, `core-oversized-tests`
+  here, and `ext-connection`, `ext-content` downstream.
+- Changed: every oversized source file in both repositories except
+  `runtime/service.ts`, plus five directory splits, both global stylesheets,
+  two oversized test files, four enforcement-rule changes with their tests,
+  three authored architecture documents, and the generated framework
+  reference. Downstream: `connection.ts` 1,913 lines and 81 methods to 736 and
+  39; `content/index.ts` 1,188 lines to 25.
+- Why: Migration Plan Phases 2 through 8. Phase 1 had halved the file counts
+  in the dense directories, which is what made the directory splits tractable.
+- Validation: `apps/web` — `tsc --noEmit` exit 0, `next build` exit 0, 1,138
+  tests passing against its 5 pre-existing failures. `packages/fluxiq` — `tsc`
+  clean apart from the in-flight service probe. Downstream — `check`, `build`
+  and smoke all pass, 97 tests green across seven packages, `test-runner`
+  unchanged at its pre-existing 19. `pnpm docs:check` validates 83 markdown
+  files and confirms the regenerated reference is current. Public surfaces
+  verified by AST or checker diff, not by worker report:
+  `AutomationStudioService` 178 public methods unchanged, `FluxIQConnection`
+  16 unchanged, `storage/index.ts` 323 symbols with identical MD5,
+  `runtime/index.ts` 276 unchanged, `client-gateway` barrel 34 unchanged.
+  Stylesheet concatenation reproduces HEAD line for line (2,938 and 653).
+  Baseline regeneration classified key by key: all added entries are path
+  re-keys at identical values except two, both justified above; nothing rose.
+- Outcome: Accepted
+- Follow-up: `runtime/service.ts` continues two collaborators at a time. Add a
+  unit test runner to `apps/extension` — it has none, which is why neither
+  shipped-file split there could add tests. Neither extension split is
+  runtime-verified; manual browser validation is still owed.
+
+### 2026-09-10 — Enforcement rules corrected
+
+- Agent: supervisor
+- Changed: `scripts/structure-audit/rules/imports.mjs`,
+  `rules/naming.mjs`, `context.mjs` (`maxPathSegments` 8 to 9), new
+  `rules/tests/imports.test.mjs` and `rules/tests/naming.test.mjs`, root
+  `package.json` (`check` runs `structure:test` first). All mirrored byte for
+  byte to the downstream repository.
+- Why: four separate migration phases manufactured violations of rules this
+  plan freezes, by construction rather than by anyone reaching anywhere new.
+  Four workers hit the `imports` case independently and each reached for a
+  workaround that was worse than the problem — widening public barrels, or
+  accepting a raised baseline. A rule that penalises the structure the plan
+  prescribes is mis-calibrated, not violated.
+- Validation: `pnpm structure:test` -> 29 tests passing in both repositories,
+  covering five exemptions and five crossings that must still fail for
+  `imports`, and six depth cases plus the prefix/depth deadlock guard for
+  `naming`. `node scripts/structure-audit.mjs --rule imports` -> Core 326
+  frozen barrel skips before, 325 after; downstream 29 before, 26 after, so
+  the exemption did not silently absorb existing debt.
+- Outcome: Accepted
+- Follow-up: ten directories now sit at exactly the 9-segment depth limit. The
+  next phase that needs a level deeper will force the question again.
 
 ## Open Questions
 

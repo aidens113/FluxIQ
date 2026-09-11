@@ -1,8 +1,7 @@
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AutomationStudioProjectAdministration } from "../project-administration.ts";
-import { AutomationStudioProjectDatabasePool } from "../project-database.ts";
+import { AutomationStudioProjectAdministration, AutomationStudioProjectDatabasePool } from "../project/index.ts";
 import { assertNoCriticalFullScan, assertPlanMentions, explainAutomationStudioQueryPlan } from "../query-plan.ts";
 
 const rootDir = path.join(process.cwd(), ".tmp", "automation-studio-query-plan-test");

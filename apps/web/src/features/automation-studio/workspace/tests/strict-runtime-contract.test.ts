@@ -6,8 +6,8 @@ import { normalizeAutomationWorkspacePrefs } from "../layout/persistence";
 describe("strict workspace runtime contract", () => {
   it("does not retain freeform window runtime behavior", () => {
     const live = readFileSync(new URL("../../AutomationStudioLive.tsx", import.meta.url), "utf8");
-    const externalLifecycle = readFileSync(new URL("../../live/useAutomationExternalLifecycle.ts", import.meta.url), "utf8");
-    const hierarchyUi = readFileSync(new URL("../../live/useAutomationHierarchyUiRuntime.ts", import.meta.url), "utf8");
+    const externalLifecycle = readFileSync(new URL("../../live/hooks/useAutomationExternalLifecycle.ts", import.meta.url), "utf8");
+    const hierarchyUi = readFileSync(new URL("../../live/hooks/useAutomationHierarchyUiRuntime.ts", import.meta.url), "utf8");
     const preferencesOverlay = readFileSync(new URL("../overlays/PreferencesOverlaySubscriber.tsx", import.meta.url), "utf8");
     const frame = readFileSync(new URL("../components.tsx", import.meta.url), "utf8");
     const shell = readFileSync(new URL("../shell/WorkspaceShell.tsx", import.meta.url), "utf8");
@@ -54,7 +54,7 @@ describe("strict workspace runtime contract", () => {
 
   it("keeps nested Subflow and folder creation in one typed hierarchy dialog", () => {
     const dialog = readFileSync(new URL("../../hierarchy/AutomationHierarchyDialog.tsx", import.meta.url), "utf8");
-    const executor = readFileSync(new URL("../../hierarchy/create-command-executor.ts", import.meta.url), "utf8");
+    const executor = readFileSync(new URL("../../hierarchy/commands/create-executor.ts", import.meta.url), "utf8");
 
     expect(dialog).toContain('aria-label="Choose item type"');
     expect(dialog).toContain('label: "Subflow"');

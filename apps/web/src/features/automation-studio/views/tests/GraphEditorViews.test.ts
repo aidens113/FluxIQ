@@ -3,23 +3,23 @@ import { describe, expect, it } from "vitest";
 import { automationNodeCompatibilityHint, automationFlowGraphProblems, graphSignature, NODE_PALETTE_FAVORITES_MAX_LOCAL_STORAGE_CHARS, NODE_PALETTE_FAVORITES_STORAGE_KEY, readNodePaletteFavoritesFromLocalStorage } from "../../flow-editor";
 function flowEditorSource(): string {
   return [
-    "../../flow-editor/useFlowEditorController.ts",
-    "../../flow-editor/useFlowEditorGraphDocument.ts",
-    "../../flow-editor/useFlowEditorSelection.ts",
-    "../../flow-editor/useFlowEditorCommands.ts",
-    "../../flow-editor/useFlowEditorCanvasInteractions.ts",
-    "../../flow-editor/useFlowEditorPalette.ts",
-    "../../flow-editor/useFlowEditorSurface.ts",
+    "../../flow-editor/hooks/useFlowEditorController.ts",
+    "../../flow-editor/hooks/useFlowEditorGraphDocument.ts",
+    "../../flow-editor/hooks/useFlowEditorSelection.ts",
+    "../../flow-editor/hooks/useFlowEditorCommands.ts",
+    "../../flow-editor/hooks/useFlowEditorCanvasInteractions.ts",
+    "../../flow-editor/hooks/useFlowEditorPalette.ts",
+    "../../flow-editor/hooks/useFlowEditorSurface.ts",
     "../view-surface-preloader.ts",
-    "../../flow-editor/FlowGraphCanvas.tsx",
-    "../../flow-editor/FlowGraphStatus.tsx",
-    "../../flow-editor/FlowGraphToolbar.tsx",
-    "../../flow-editor/useFlowEditorClipboardCommands.ts",
-    "../../flow-editor/FlowOutline.tsx",
-    "../../flow-editor/FlowNodePalette.tsx",
-    "../../flow-editor/NodePortList.tsx",
-    "../../flow-editor/NodeSelectionActions.tsx",
-    "../../flow-editor/FlowEditorActionsContext.tsx",
+    "../../flow-editor/components/FlowGraphCanvas.tsx",
+    "../../flow-editor/components/FlowGraphStatus.tsx",
+    "../../flow-editor/components/FlowGraphToolbar.tsx",
+    "../../flow-editor/hooks/useFlowEditorClipboardCommands.ts",
+    "../../flow-editor/components/FlowOutline.tsx",
+    "../../flow-editor/components/FlowNodePalette.tsx",
+    "../../flow-editor/components/NodePortList.tsx",
+    "../../flow-editor/components/NodeSelectionActions.tsx",
+    "../../flow-editor/components/FlowEditorActionsContext.tsx",
     "../../flow-editor/graph-signatures.ts",
     "../../flow-editor/graph-validation.ts",
     "../../flow-editor/flow-editor-types.ts",
@@ -119,7 +119,7 @@ describe("Nodes whiteboard toolbar and outline", () => {
   });
   it("renders explicit canvas modes, complete commands, and a semantic graph outline", () => {
     const source = flowEditorSource() + readFileSync(
-      new URL("../../flow-editor/FlowGraphToolsMenu.tsx", import.meta.url),
+      new URL("../../flow-editor/components/FlowGraphToolsMenu.tsx", import.meta.url),
       "utf8"
     ) + readFileSync(new URL("../../workspace/shell/WorkspaceHeader.tsx", import.meta.url), "utf8");
     for (const command of ["Fit graph", "Zoom in", "Zoom out", "Undo action", "Redo action", "Validate graph", "Add node", "More canvas tools", "Save entire project"]) {
@@ -256,36 +256,36 @@ describe("Flow editor decomposition contracts", () => {
     "../../graph/edge-routing.ts",
     "../../graph/interaction-geometry.ts",
     "../../graph/node-parameters.ts",
-    "../../flow-editor/FlowEdge.tsx",
-    "../../flow-editor/FlowEditorView.tsx",
-    "../../flow-editor/FlowGraphCanvas.tsx",
-    "../../flow-editor/FlowGraphStatus.tsx",
-    "../../flow-editor/FlowGraphToolbar.tsx",
-    "../../flow-editor/useFlowEditorClipboardCommands.ts",
+    "../../flow-editor/components/FlowEdge.tsx",
+    "../../flow-editor/components/FlowEditorView.tsx",
+    "../../flow-editor/components/FlowGraphCanvas.tsx",
+    "../../flow-editor/components/FlowGraphStatus.tsx",
+    "../../flow-editor/components/FlowGraphToolbar.tsx",
+    "../../flow-editor/hooks/useFlowEditorClipboardCommands.ts",
     "../../flow-editor/model/flow-graph.ts",
-    "../../flow-editor/FlowNode.tsx",
-    "../../flow-editor/FlowNodePalette.tsx",
-    "../../flow-editor/FlowOutline.tsx",
-    "../../flow-editor/NodePortList.tsx",
-    "../../flow-editor/NodeSelectionActions.tsx",
-    "../../flow-editor/FlowEditorActionsContext.tsx",
+    "../../flow-editor/components/FlowNode.tsx",
+    "../../flow-editor/components/FlowNodePalette.tsx",
+    "../../flow-editor/components/FlowOutline.tsx",
+    "../../flow-editor/components/NodePortList.tsx",
+    "../../flow-editor/components/NodeSelectionActions.tsx",
+    "../../flow-editor/components/FlowEditorActionsContext.tsx",
     "../../flow-editor/graph-interactions.ts",
     "../../flow-editor/graph-signatures.ts",
     "../../flow-editor/graph-validation.ts",
     "../../flow-editor/palette-preferences-repository.ts",
-    "../../flow-editor/useFlowEditorController.ts",
-    "../../flow-editor/useFlowEditorGraphDocument.ts",
-    "../../flow-editor/useFlowEditorSelection.ts",
-    "../../flow-editor/useFlowEditorCommands.ts",
-    "../../flow-editor/useFlowEditorCanvasInteractions.ts",
-    "../../flow-editor/useFlowEditorPalette.ts",
-    "../../flow-editor/useFlowEditorSurface.ts",
+    "../../flow-editor/hooks/useFlowEditorController.ts",
+    "../../flow-editor/hooks/useFlowEditorGraphDocument.ts",
+    "../../flow-editor/hooks/useFlowEditorSelection.ts",
+    "../../flow-editor/hooks/useFlowEditorCommands.ts",
+    "../../flow-editor/hooks/useFlowEditorCanvasInteractions.ts",
+    "../../flow-editor/hooks/useFlowEditorPalette.ts",
+    "../../flow-editor/hooks/useFlowEditorSurface.ts",
   ];
 
   it("exposes truthful expanded state for editor disclosure controls", () => {
-    const toolbar = readFileSync(new URL("../../flow-editor/FlowGraphToolbar.tsx", import.meta.url), "utf8");
-    const toolsMenu = readFileSync(new URL("../../flow-editor/FlowGraphToolsMenu.tsx", import.meta.url), "utf8");
-    const palette = readFileSync(new URL("../../flow-editor/FlowNodePalette.tsx", import.meta.url), "utf8");
+    const toolbar = readFileSync(new URL("../../flow-editor/components/FlowGraphToolbar.tsx", import.meta.url), "utf8");
+    const toolsMenu = readFileSync(new URL("../../flow-editor/components/FlowGraphToolsMenu.tsx", import.meta.url), "utf8");
+    const palette = readFileSync(new URL("../../flow-editor/components/FlowNodePalette.tsx", import.meta.url), "utf8");
 
     expect(toolsMenu).toContain('aria-label={props.flowOutlineOpen ? "Close graph outline" : "Open graph outline"}');
     expect(toolsMenu).toContain("aria-checked={props.flowOutlineOpen}");
@@ -294,10 +294,10 @@ describe("Flow editor decomposition contracts", () => {
   });
 
   it("keeps active-tab changes behind the Flow editor render boundary", () => {
-    const source = readFileSync(new URL("../../flow-editor/FlowEditorView.tsx", import.meta.url), "utf8");
+    const source = readFileSync(new URL("../../flow-editor/components/FlowEditorView.tsx", import.meta.url), "utf8");
     const definitions = readFileSync(new URL("../canonical-view-definitions.tsx", import.meta.url), "utf8");
-    const canvas = readFileSync(new URL("../../flow-editor/FlowGraphCanvas.tsx", import.meta.url), "utf8");
-    const surface = readFileSync(new URL("../../flow-editor/useFlowEditorSurface.ts", import.meta.url), "utf8");
+    const canvas = readFileSync(new URL("../../flow-editor/components/FlowGraphCanvas.tsx", import.meta.url), "utf8");
+    const surface = readFileSync(new URL("../../flow-editor/hooks/useFlowEditorSurface.ts", import.meta.url), "utf8");
     const preloader = readFileSync(new URL("../view-surface-preloader.ts", import.meta.url), "utf8");
 
     expect(source).toContain("memo(function FlowEditorView");
@@ -312,7 +312,7 @@ describe("Flow editor decomposition contracts", () => {
     expect(definitions).not.toContain("({ active: activity.active, activeRef: activity.activeRef })");
     expect(surface).toContain("useState(false)");
     expect(canvas).toContain("{showMiniMap ? <MiniMap");
-    expect(preloader).toContain('"flow-nodes": () => import("../flow-editor/FlowGraphCanvas")');
+    expect(preloader).toContain('"flow-nodes": () => import("../flow-editor/components/FlowGraphCanvas")');
     expect(preloader).toContain("scheduleAutomationStudioAfterPaintIdleWork");
   });
 
@@ -330,12 +330,12 @@ describe("Flow editor decomposition contracts", () => {
 
   it("keeps node and edge commands local to each mounted editor", () => {
     const files = [
-      "../../flow-editor/FlowEdge.tsx",
-      "../../flow-editor/FlowReconnectPerformanceGuard.tsx",
-      "../../flow-editor/NodePortList.tsx",
-      "../../flow-editor/FlowGraphCanvas.tsx",
-      "../../flow-editor/FlowGraphToolsMenu.tsx",
-      "../../flow-editor/useFlowEditorController.ts",
+      "../../flow-editor/components/FlowEdge.tsx",
+      "../../flow-editor/components/FlowReconnectPerformanceGuard.tsx",
+      "../../flow-editor/components/NodePortList.tsx",
+      "../../flow-editor/components/FlowGraphCanvas.tsx",
+      "../../flow-editor/components/FlowGraphToolsMenu.tsx",
+      "../../flow-editor/hooks/useFlowEditorController.ts",
     ].map((path) => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n");
     expect(files).toContain("FlowEditorActionsProvider");
     for (const eventName of ["automation-studio:delete-node", "automation-studio:delete-edge", "automation-studio:select-edge", "automation-studio:update-node-parameters"]) {
@@ -343,8 +343,8 @@ describe("Flow editor decomposition contracts", () => {
     }
   });
   it("preserves the established pointer contract", () => {
-    const canvas = readFileSync(new URL("../../flow-editor/FlowGraphCanvas.tsx", import.meta.url), "utf8");
-    const interactions = readFileSync(new URL("../../flow-editor/useFlowEditorCanvasInteractions.ts", import.meta.url), "utf8");
+    const canvas = readFileSync(new URL("../../flow-editor/components/FlowGraphCanvas.tsx", import.meta.url), "utf8");
+    const interactions = readFileSync(new URL("../../flow-editor/hooks/useFlowEditorCanvasInteractions.ts", import.meta.url), "utf8");
     const controller = readFileSync(new URL("../../flow-editor/flow-canvas-interaction-controller.ts", import.meta.url), "utf8");
     expect(canvas).toContain("panOnDrag={automationGraphMiddleMousePanButtons}");
     expect(canvas).toContain("autoPanOnConnect={false}");
@@ -352,7 +352,7 @@ describe("Flow editor decomposition contracts", () => {
     expect(canvas).toContain("elevateEdgesOnSelect");
     expect(canvas).toContain("onReconnectStart=");
     expect(canvas).toContain("onReconnectEnd=");
-    const reconnectGuard = readFileSync(new URL("../../flow-editor/FlowReconnectPerformanceGuard.tsx", import.meta.url), "utf8");
+    const reconnectGuard = readFileSync(new URL("../../flow-editor/components/FlowReconnectPerformanceGuard.tsx", import.meta.url), "utf8");
     expect(reconnectGuard).toContain("scopeNodeLookupValues");
     expect(reconnectGuard).toContain("window.requestAnimationFrame(flush)");
     expect(reconnectGuard).toContain("event.stopImmediatePropagation()");
@@ -361,8 +361,8 @@ describe("Flow editor decomposition contracts", () => {
     expect(canvas).toContain("onPointerDownCapture={startFlowDragSelect}");
     expect(canvas).toContain("onNodeClick={selectClickedFlowNode}");
     expect(canvas).toContain("onNodeContextMenu={reserveFlowNodeContextMenu}");
-    const toolbar = readFileSync(new URL("../../flow-editor/FlowGraphToolbar.tsx", import.meta.url), "utf8");
-    const toolsMenu = readFileSync(new URL("../../flow-editor/FlowGraphToolsMenu.tsx", import.meta.url), "utf8");
+    const toolbar = readFileSync(new URL("../../flow-editor/components/FlowGraphToolbar.tsx", import.meta.url), "utf8");
+    const toolsMenu = readFileSync(new URL("../../flow-editor/components/FlowGraphToolsMenu.tsx", import.meta.url), "utf8");
     expect(toolbar).toContain("FlowGraphToolsMenu");
     expect(toolbar).toContain("selectedFlowNodeIds.length || selectedFlowEdgeIds.length || connectionSourceNodeId");
     expect(toolsMenu).toContain('aria-label="More canvas tools"');
