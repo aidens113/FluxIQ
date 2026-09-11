@@ -226,6 +226,35 @@ Brief format:
 `Owns` and `Must not touch` are what make parallel work safe. Partition by
 file, never by topic. If two briefs need the same file, the work is serial.
 
+A brief is at most 40 lines. The worker's operating rules — what to read,
+what not to touch, never committing — live in the global `worker` agent
+definition, not in the brief.
+
+Report file format:
+
+```text
+# Report: <agent-label>
+## Outcome
+Done | Partial | Blocked, with one line of context.
+## What changed and why
+## Commands run and observed results
+## Not verified
+## Open questions or contradictions found
+```
+
+Return contract, the worker's final message, at most 12 lines:
+
+```text
+Outcome: Done | Partial | Blocked
+Changed: <files>
+Validation: `<command>` -> <observed result, or "not run" and why>
+Not verified: <what the worker could not or did not check>
+Report: docs/working/<effort-slug>/reports/<agent-label>.md
+Notes: <at most three lines>
+```
+
+Everything beyond those lines belongs in the report file.
+
 ### Cross-repository pairing
 
 An effort spanning this repository and the FluxIQ Web Extension repository

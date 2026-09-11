@@ -22,6 +22,7 @@
     "quality:coverage": "pnpm --filter fluxiq exec vitest run --config vitest.quality.config.ts --coverage && pnpm --filter @fluxiq/web exec vitest run --config vitest.quality.config.ts --coverage",
     "structure:check": "node scripts/structure-audit.mjs",
     "structure:baseline": "node scripts/structure-audit.mjs --update",
+    "structure:test": "node --test \"scripts/structure-audit/rules/tests/*.test.mjs\"",
     "package:lint": "publint packages/contracts --strict && publint packages/fluxiq --strict && publint packages/client-gateway-websocket --strict && attw --pack --profile esm-only packages/contracts && attw --pack --profile esm-only packages/fluxiq && attw --pack --profile esm-only packages/client-gateway-websocket",
     "package:smoke": "node scripts/validate-packages.mjs",
     "package:validate": "pnpm build && pnpm package:lint && pnpm package:smoke"

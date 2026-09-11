@@ -134,6 +134,19 @@ application available for interactive testing.
 If a prompt spans modes, begin with the earliest necessary one and announce
 each transition.
 
+### Delegation
+
+Delegate to a worker when the task needs more than about five files read
+whose content the supervisor will not need afterwards, when a run-fix-rerun
+loop is expected, when edits are bulk and partitionable by file, or when
+independent pieces touch no common file. Keep with the supervisor one- or
+two-file edits it already understands, verification of worker claims,
+integration, conflict resolution, and anything that needs the user's
+conversation context. Dispatch has fixed overhead and a worker's claim still
+needs verifying, so reads are the cost: route discovery through a worker or
+`Explore` and read the conclusion. Briefs follow the protocol format, at most
+40 lines; the worker's final message follows the protocol's return contract.
+
 ## Repository Boundary
 
 FluxIQ is a public, domain-neutral framework. Do not add domain-specific

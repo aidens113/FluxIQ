@@ -1,10 +1,13 @@
 // Working documents in docs/working/ are the repository's durable agent
 // memory, so their headers must be machine-readable: an H1, a blank line, then
 // eight fields in a fixed order, one per line. This rule holds that shape,
-// requires an up-front `## Current State` while a document is Active, flags
-// documents past the compaction threshold, and owns the generated index at
-// docs/working/README.md -- run() proves the checked-in index still matches
-// the documents' headers and update() (called only by --update) rewrites it.
+// requires an up-front `## Current State` while a document is Active, holds
+// that section to a line budget because every agent reads it before every
+// task, holds `## Work Ledger` entries to recording a real validation result
+// rather than a repeated report, flags documents past the compaction
+// threshold, and owns the generated index at docs/working/README.md -- run()
+// proves the checked-in index still matches the documents' headers and
+// update() (called only by --update) rewrites it.
 //
 // The header block and section order this enforces are specified in
 // docs/working/agent-working-doc-protocol.md.
@@ -13,7 +16,7 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 
 export const id = "working-docs";
-export const title = "Working documents carry a conforming header, an up-front Current State, and a current index";
+export const title = "Working documents carry a conforming header, a short up-front Current State, a validated ledger, and a current index";
 
 const FIELDS = ["Status", "Status detail", "Created", "Last updated", "Owner", "Scope", "Paired document", "Related"];
 const STATUSES = ["Active", "Paused", "Blocked", "Complete", "Superseded", "Archived", "Unclassified"];
@@ -27,6 +30,13 @@ const CURRENT_STATE_WINDOW = 20;
 // tolerates a wrapped value that the header check reports separately.
 const META_SCAN_LINES = 13;
 
+// A `## Work Ledger` entry records what it ran on a bullet starting with this.
+const VALIDATION_BULLET = "- Validation:";
+// Phrases that mean an agent took a report at its word. The protocol requires
+// the Validation bullet to name what a command actually printed, because a
+// completion report is not by itself evidence that anything ran.
+const HEARSAY = /reported success|workers? (reported|said|claimed)\b/i;
+
 const FIELD_PATTERN = new RegExp(`^(${FIELDS.join("|")}): ?(.*)$`);
 const KEY_PATTERN = /^[A-Z][A-Za-z ]*: /;
 
@@ -38,6 +48,20 @@ const byName = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 // Split on LF and drop a trailing CR so that CRLF documents parse the same as
 // LF ones. Two working documents in this repository still use CRLF.
 const splitLines = (text) => text.split("\n").map((line) => line.replace(/\r$/, ""));
+
+// `## ` with the trailing space, so an H3 (`### `) is not read as a new section.
+const isSection = (line) => line.startsWith("## ");
+
+// One `## <name>` section: its heading's 0-based index and the lines from that
+// heading up to the next `## ` heading or the end of the document. Null when
+// the document has no such section.
+function section(lines, heading) {
+  const start = lines.indexOf(heading);
+  if (start === -1) return null;
+  const offset = lines.slice(start + 1).findIndex(isSection);
+  const end = offset === -1 ? lines.length : start + 1 + offset;
+  return { start, lines: lines.slice(start, end) };
+}
 
 function workingDocs(ctx) {
   const dir = ctx.CONFIG.workingDocsDir;
@@ -110,6 +134,70 @@ function checkCurrentState(file, lines, status) {
     rule: id, key: file, value: 1, limit: 0, path: file, line: HEADER_LINES + 1,
     message: `${file}: Status is Active but there is no "## Current State" section directly after the header.`,
     severity: "fail", ratchet: false
+  };
+}
+
+// Current State is the one section every agent reads before every task, so its
+// length is paid over and over. Ratcheted: documents keep the size they have
+// today but may not grow past it.
+function checkCurrentStateLength(ctx, file, lines) {
+  const found = section(lines, "## Current State");
+  if (!found) return null;
+  const limit = ctx.LIMITS.workingDocCurrentStateLines;
+  const count = found.lines.length;
+  if (count <= limit) return null;
+  return {
+    rule: id, key: `${file}#current-state`, value: count, limit, path: file, line: found.start + 1,
+    message: `${file}: "## Current State" is ${count} lines, over the ${limit}-line budget. Every agent reads this section before every task, so keep only what the next one needs to act on and push the rest into the body or the archive.`,
+    severity: "fail", ratchet: true
+  };
+}
+
+// Splits a ledger section into its `### ` entries. Lines before the first
+// entry (the heading itself, blank lines) belong to no entry and are dropped.
+function ledgerEntries(sectionLines) {
+  const entries = [];
+  for (const line of sectionLines) {
+    if (line.startsWith("### ")) entries.push({ title: line.slice(4).trim(), lines: [] });
+    else entries.at(-1)?.lines.push(line);
+  }
+  return entries;
+}
+
+// The entry's Validation bullet joined with its wrapped continuation lines, so
+// that a phrase split across a line break is still seen. A continuation is an
+// indented non-blank line; the block ends at the next top-level bullet, a
+// blank line, or the end of the entry. Null when the bullet is missing.
+function validationText(entryLines) {
+  const start = entryLines.findIndex((line) => line.startsWith(VALIDATION_BULLET));
+  if (start === -1) return null;
+  const block = [entryLines[start]];
+  for (const line of entryLines.slice(start + 1)) {
+    if (line.trim() === "" || !/^\s/.test(line)) break;
+    block.push(line.trim());
+  }
+  return block.join(" ");
+}
+
+// One finding per document rather than per entry: the ratchet counts against a
+// single key, so a document may fix its ledger over time but never add drift.
+function checkLedger(file, lines) {
+  const ledger = section(lines, "## Work Ledger");
+  if (!ledger) return null;
+
+  const offenders = [];
+  for (const entry of ledgerEntries(ledger.lines)) {
+    const text = validationText(entry.lines);
+    if (text === null) offenders.push(`"${entry.title}" (no "${VALIDATION_BULLET}" bullet)`);
+    else if (HEARSAY.test(text)) offenders.push(`"${entry.title}" (Validation repeats a report instead of a result)`);
+  }
+  if (offenders.length === 0) return null;
+
+  const subject = offenders.length === 1 ? "1 Work Ledger entry does" : `${offenders.length} Work Ledger entries do`;
+  return {
+    rule: id, key: `${file}#ledger`, value: offenders.length, limit: 0, path: file, line: ledger.start + 1,
+    message: `${file}: ${subject} not record a validation result: ${offenders.join("; ")}. Every entry needs a "${VALIDATION_BULLET}" bullet naming the exact command and what it actually printed; a worker's own report is not a validation result. If nothing ran, write "not validated" and say why.`,
+    severity: "fail", ratchet: true
   };
 }
 
@@ -194,6 +282,10 @@ export function run(ctx) {
     if (header) findings.push(header);
     const currentState = checkCurrentState(file, lines, headerMeta(lines).get("Status"));
     if (currentState) findings.push(currentState);
+    const currentStateLength = checkCurrentStateLength(ctx, file, lines);
+    if (currentStateLength) findings.push(currentStateLength);
+    const ledger = checkLedger(file, lines);
+    if (ledger) findings.push(ledger);
     const size = checkSize(ctx, file);
     if (size) findings.push(size);
   }
