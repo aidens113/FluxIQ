@@ -2,15 +2,22 @@
 
 ## Outcome
 
-Done — **fifteen collaborators** extracted across six dispatches.
+Done — **nineteen collaborators** extracted across seven dispatches.
 
 `packages/fluxiq/src/programs/automation-studio/runtime/service.ts` went from
-**12,482 lines to 8,665** and `AutomationStudioService` from **422 methods to
-232**. The public surface is **178 methods, unchanged at every step**, so the
-private count is the progress measure: **244 private methods at the start, 54
+**12,482 lines to 7,758** and `AutomationStudioService` from **422 methods to
+230**. The public surface is **178 methods, unchanged at every step**, so the
+private count is the progress measure: **244 private methods at the start, 52
 now**. The resolved export set of `runtime/index.ts` is the same 276 names.
-Sixteen differential probes drove the pre-extraction implementation and the
-facade side by side over **896 observations** and found no difference.
+Twenty differential probes drove the pre-extraction implementation and the
+facade side by side over **1,058 observations** and found no difference.
+
+Round 7 changed the operation. Rounds 1-6 moved *methods*; round 7 moved three
+**public method bodies** into collaborators and left pure forwards
+behind, plus the private layer one of them stood on. The method count barely
+moves (232 → 230) and that is expected: the measure this round is **905 lines
+out of the file in four independently revertible steps**, the largest single
+round of the phase.
 
 | Round | Collaborator | Methods relocated | `service.ts` | Class (public / private) |
 | --- | --- | --- | --- | --- |
@@ -29,6 +36,15 @@ facade side by side over **896 observations** and found no difference.
 | 5 | `service/adaptations/` | 10 private | 9,765 → 9,342 | 271 → 261 |
 | **6** | **`service/catalogue.ts`** | **1 public + 7 private** | **9,342 → 9,259** | **261 → 254** |
 | **6** | **`service/summaries/`** | **4 public + 20 private** | **9,259 → 8,665** | **254 → 232 (178 / 54)** |
+| **7** | **`service/evidence/`** | **1 public body + 24 helpers** | **8,663 → 8,135** | **232** |
+| **7** | **`service/proposals/generation.ts`** | **1 public body + 4 types** | **8,135 → 8,009** | **232** |
+| **7** | **`service/flows/subflow-migration.ts`** | **2 private + 1 helper** | **8,009 → 7,865** | **232 → 230** |
+| **7** | **`service/proposals/approval.ts`** | **1 public body + 1 helper** | **7,865 → 7,758** | **230 (178 / 52)** |
+
+The round-6 rows above say 8,665, which is what I wrote last round; `wc -l` and
+the structure audit both read that file as **8,663**, and the recorded ratchet
+entry is `file-lines 8663`. 8,663 is where round 7 starts. The ratchet now reads `file-lines 7758` and
+`class-methods 230` as lowerable; **`pnpm structure:baseline` was not run.**
 
 This round also delivered the two things the dispatch asked for before any
 cutting: the **corrected re-measurement of every cluster**, and — since the
@@ -289,9 +305,126 @@ both sit inside the same envelope.
   Cheap to spot (the generated file fails to parse), cheap to avoid: regenerate
   ranges from the exact input file immediately before the extraction.
 
+### Round 7 — the strategy change, and what it could actually reach
+
+The dispatch asked for the ten largest remaining public bodies, minus the
+runtime/LLM knot. Before cutting I computed, for each candidate, the transitive
+closure of *private* methods it pulls (public callees are excluded: they stay on
+the facade and are reached through the ports factory), the collaborator fields
+it touches, and whether any runtime/LLM field appears anywhere in that closure.
+**Only three of the eight non-knot candidates were movable:**
+
+| Candidate | Lines | Closure | Verdict |
+| --- | --- | --- | --- |
+| `processFinalizedRecording` | 113 | — | runtime/LLM (`ioRuntime`, `nativeNodeRuntime`) |
+| **`approvePolicyProposal`** | **98** | **3 methods, 233 lines** | **movable** |
+| `createRecordingFlowProposals` | 98 | — | runtime/LLM |
+| **`mineRecordingEvidence`** | **97** | **1 method** | **movable** |
+| `proposePolicyFromModel` | 96 | — | runtime/LLM (`ioRuntime`) |
+| **`generateRecordingProposal`** | **88** | **1 method** | **movable** |
+| `reviewRecordingFlowProposal` | 88 | — | runtime/LLM |
+| `createFlowBootstrapAdaptation` | 80 | — | runtime/LLM (`nativeNodeRuntime`) |
+
+Five of the eight reach the knot. That is the same measurement as round 6's
+entanglement graph seen from the other end, and it is why this round produced
+four steps rather than ten.
+
+**All three delegations are pure forwards**, as the dispatch required. Each is
+exactly `return await this.<collaborator>.<name>(input);` under the original
+signature, verbatim.
+
+### Round 7, step 1 — `service/evidence/` (8,663 → 8,135, −528)
+
+`mineRecordingEvidence` (97 lines) moved with the **24 module-level helpers**
+that only it reached — 412 contiguous lines of fact construction, observation
+derivation, state-element descriptors, state/action correlation and claim
+building, plus `uniqueBy` and two window constants. Split by responsibility
+into `text.ts` (23), `state-elements.ts` (119), `facts.ts` (124),
+`correlations.ts` (195) and `mining.ts` (133).
+
+One helper, `readableTokenValue`, is **shared** with
+`recordingActionEntryCandidate`, which stays on the facade. It lives in
+`evidence/text.ts` and the facade imports it back — the alternative, leaving a
+copy behind, is how two implementations of one rule start to drift.
+
+Removing the block left four model type imports (`StateDelta`,
+`StateElementDescriptor`, `StateElementKind`, `StateValue`) with no
+remaining use in `service.ts`; they were dropped.
+
+### Round 7, step 2 — `service/proposals/generation.ts` (8,135 → 8,009, −126)
+
+`generateRecordingProposal` (88 lines) has **no module helpers at all** and
+touches one collaborator field (`recordings`). Everything else it calls is
+public — `createRecordingFlowProposals`, `deleteProposal`,
+`processFinalizedRecording` — so all three went into the ports type.
+
+What made this step bigger than the body: the four result types it needs
+(`ProcessFinalizedRecordingResult`, `GenerateRecordingProposalInput`,
+`GenerateRecordingProposalResult`, `CreateRecordingFlowProposalsResult`) were
+declared in `service.ts`, so a collaborator importing them would have closed a
+cycle. They moved to `proposals/types.ts`, and
+`NormalizationReviewArtifact` — which one of them references — moved to
+`recordings/types.ts`, where the collaborator that owns the recording pipeline
+already lives. `service.ts` re-exports all five under their original names;
+the resolved barrel export set is unchanged at 276.
+
+### Round 7, step 3 — `service/flows/subflow-migration.ts` (8,009 → 7,865, −144)
+
+`approvePolicyProposal` stands on two private methods,
+`ensureProposalPrimarySubflow` (49 lines) and
+`migrateLegacyParentIntoOwnedSubflow` (85). Both are Flow-graph machinery
+driven by `flowWriter`, and both have **other facade callers** —
+`reviewRecordingFlowProposal` (runtime/LLM, stays) and
+`migrateLegacyFlowRepresentation` (public, stays). So they were taken as their
+own step, before the body that needs them, exactly as round 5's brief framed the
+"layer beneath" case.
+
+They are private, so the two remaining facade callers reach them on the
+collaborator directly; the seven **public** methods they call
+(`listFlowSubflowSummaries`, `getFlowRouter`, `getFlowSubflow`,
+`createFlowSubflow`, `getFlow`, `setFlowMapFallback`, `saveFlow`) all go
+through the ports factory. That is the policy from the previous round applied to
+new output rather than retrofitted.
+
+`AutomationStudioSubflowSummaryPage` moved to `summaries/types.ts` so the
+`listFlowSubflowSummaries` port could name its return type.
+
+### Round 7, step 4 — `service/proposals/approval.ts` (7,865 → 7,758, −107)
+
+`approvePolicyProposal` (98 lines) moved last, onto the layer step 3 created.
+It takes five collaborator fields (`projectPaths`, `projects`,
+`recordings`, `repositories`, `flowSubflowMigration`) and two ports
+(`getProjectArtifact`, `saveFlow`).
+
+`canonicalFlowDocument` is shared with `reviewRecordingFlowProposal`,
+`startRuntimeSession` and `runRuntimeSession` — all staying on the facade —
+so it went to `flows/canonical-document.ts` and both sides import it.
+
+### The ports type grew from 6 entries to 13
+
+`listProjectNormalizedTimelines`, `createRecordingFlowProposals`,
+`deleteProposal`, `processFinalizedRecording`, `saveFlow`,
+`setFlowMapFallback`, `listFlowSubflowSummaries` and `getProjectArtifact`
+were added. Every one is a public method a moved body calls, and the alternative
+in each case is the dispatch-identity bug the round-6 regression was.
+
+Two probe steps prove the ports still dispatch through the instance: each
+replaces a public method on the service object with a counting wrapper, runs the
+moved body, and reports whether the wrapper was seen. **`sawOverride: true` on
+both sides**, for `getFlowSubflow` through the migration collaborator and for
+`saveFlow` through the approval collaborator. That is the exact check that
+would have caught round 6's regression on the day.
+
 ### What was deliberately not done
 
-- **The runtime/LLM side.** Measured, not attempted. See Open questions.
+- **The runtime/LLM side.** Measured twice now — once as a field graph in round
+  6, once as a per-candidate closure in round 7 — and not attempted either time.
+  Five of the eight non-knot bodies on this round's list reach it.
+- **The five runtime/LLM bodies on the round-7 list.** `processFinalizedRecording`,
+  `createRecordingFlowProposals`, `proposePolicyFromModel`,
+  `reviewRecordingFlowProposal`, `createFlowBootstrapAdaptation`: left whole,
+  because a half-moved body that keeps a branch on the facade is worse than
+  either end state.
 - **`recordingStateIndexes`, `recordingDomains`, `projectDatabasePool`
   remainder.** All now unblocked by `summaries/` but not attempted this round.
 - **`tests/service.test.ts` was not split.** It names none of the 208 relocated
@@ -373,6 +506,106 @@ class-methods  runtime/service.ts::AutomationStudioService   232  (recorded 261)
 file-lines     runtime/service.ts                           8665  (recorded 9342)
 ```
 
+### Round 7 commands and results
+
+**Scoped tests** — `npx vitest run src/programs/automation-studio/runtime`:
+
+| | Files | Cases | Failures |
+| --- | --- | --- | --- |
+| Round 7 baseline (at 4787780, before any change) | 32 (2 failed) | 400 (3 failed) | `service.test.ts` x2, `service-subflow-pagination.test.ts` x1 |
+| **After all four steps** | **32 (2 failed)** | **400 (3 failed)** | **the same three, same names** |
+
+**The three baseline failures are not all flakes, and that is a finding.** Run
+*alone* against the untouched `4787780` service:
+
+- `service.test.ts -t "approves edited recording Flow proposal graphs into Flows"`
+  → **1 failed**, deterministic.
+- `service.test.ts -t "turns mapped observations into reviewed Flow actions..."`
+  → **1 failed**, deterministic.
+- `service-subflow-pagination.test.ts` alone → **5 passed (5)**; it only fails
+  under suite load. That is the known flake.
+
+So two of the three are **pre-existing deterministic failures at HEAD**, not
+load artifacts. Running the whole `recording persistence` block at the
+untouched baseline produces **three** failures — the two above plus "deletes
+recording batches with one index and pipeline cleanup pass" — and the same block
+with round 7 applied produces **two**, a strict subset, with byte-identical
+assertion messages. Nothing in this round changed either failure's shape.
+
+With round 7 in the tree, `service-subflow-pagination.test.ts` **alone passes
+5 of 5** — the discriminating experiment the round-6 regression taught me to run
+before claiming a failure is the flake. A wider run
+(`src/programs/automation-studio`, 96 files / 671 cases) shows a second
+pagination case failing under that heavier load; alone, both pass, and both are
+timing-bounded cases (18.5s and 10.1s when run alone).
+
+**Type check** — `npx tsc -p tsconfig.json --noEmit` in `packages/fluxiq`:
+**exit 0, no output**, after each of the four steps. No intermediate failures
+this round; the AST-driven slicer (`asfacade-cut.mjs`) takes every line range
+from the TypeScript AST of the exact file being edited, which is what produced
+the off-by-one and overload bugs in earlier rounds.
+
+**Structure audit** — `node scripts/structure-audit.mjs` after `git add -N`
+on every created file: **passed (115 warnings, 256 baselined), 0 failures**,
+after each step. Two intermediate `imports` failures were mine and were fixed
+by importing through the barrel rather than the file — `facade-ports.ts`
+reaching `./proposals/types.ts` and `proposals/types.ts` reaching
+`../recordings/types.ts`. **The rule was obeyed, not worked around.**
+
+**`facade-dispatch` against this round's own output: 0 findings.** The rule is
+part of the audit above, and every port call this round routes through
+`automationStudioFacadePorts(this)` rather than through the collaborator that
+owns the callee.
+
+`node --test scripts/structure-audit/rules/tests/facade-dispatch.test.mjs`:
+**9 pass, 0 fail.**
+
+**Public method surface** — `diff` against the pre-round-7 list is empty after
+step 1, step 2 and step 4. **178 names, same order.**
+
+**Resolved barrel export set** — **276 exports, identical**, checked with the
+type checker after the type moves.
+
+**Round 7 differential probes**, durable and memory mode, each a separate file
+driving the pre-extraction `service.ts` and the facade side by side:
+
+| Step | Probe | Observations |
+| --- | --- | --- |
+| 1 | evidence mining | 42 |
+| 2 | recording proposal generation | 36 |
+| 3 | Subflow migration | 38 |
+| 4 | policy proposal approval | 46 |
+| | **round 7 total** | **162**, every one equal |
+| | **phase total** | **1,058** |
+
+The evidence probe drives a domain-registered recording through normalization
+and mining by recording id and by timeline id, both failure paths, the
+collaborator directly, and then compares every mined fact, observation, claim
+and correlation by title, summary, score and descriptor. The generation probe
+drives the mapper path and the evidence-miner fallback path separately (the
+transcript shows `recording_mapper`, `evidence_miner` and `signal_miner`
+provenance), blank hint trimming, replacement with an existing and a missing
+proposal id, and the unknown-recording error. The migration probe drives the
+legacy mismatch rejection, the successful migration, its idempotent repeat, the
+orchestration path, a fresh Flow with no Subflow, and the Subflow-graph
+rejection. The approval probe drives the full recording → normalize → review →
+mine → learn → propose → approve pipeline, then repeat approval, a policy
+override, both `requireExisting` rejections, a cross-project target Flow and an
+unknown proposal.
+
+Two of them additionally assert **dispatch identity**: the probe replaces a
+public method on the service instance with a counting wrapper and checks the
+wrapper was seen from inside the moved body. `sawOverride: true` on both sides
+for `getFlowSubflow` (step 3) and `saveFlow` (step 4).
+
+Transcripts at `<scratchpad>/asfacade-r7-{evidence,proposals,subflow-migration,approval}-transcript.txt`;
+the probes are kept at `<scratchpad>/asfacade-r7-*-probe.test.ts.kept` and are
+**not** in the tree, nor is the baseline copy of `service.ts` they import.
+
+**Ratchet** — recorded `file-lines 8663` / `class-methods 232`; now 7,758 and
+230, reported by the audit as "2 baseline entries can be lowered".
+**`pnpm structure:baseline` was not run**, per the brief.
+
 ## Not verified
 
 - **`pnpm check`, `pnpm test`, `pnpm build` at repository scope.** Not run.
@@ -382,12 +615,43 @@ file-lines     runtime/service.ts                           8665  (recorded 9342
 - **Live browser behaviour.** Nothing here is browser-side.
 - **`prepareArtifactDocument`'s object-reference branch** (round 3; unchanged).
 - **`pnpm structure:baseline`.** Not run, per the brief.
-- **Separate commits.** `<scratchpad>/asfacade-service-r6-base.ts` (at baeb000),
-  `-step1`, `-step2`. Both extraction scripts are deterministic and take the
-  previous step's file as input; regenerate the type-range JSON from that exact
-  file first.
+- **Separate commits.** Round 7 snapshots are
+  `<scratchpad>/asfacade-service-r7-step0.ts` (at 4787780) through `-step4`,
+  one per step. Each extraction script reads line ranges from the AST of the file
+  it is given and refuses to run if its target directory already exists, so a
+  replay is either clean or refused — it cannot append twice.
+- **`pnpm check`, `pnpm test` at repository scope, round 7.** Only
+  `packages/fluxiq` `tsc` and `scripts/structure-audit.mjs` were run
+  repository-wide; the test scope was `src/programs/automation-studio`.
+- **Whether the two deterministic `service.test.ts` failures are worth fixing.**
+  They pre-date this round and this phase's brief does not cover them. I
+  established only that they are deterministic at HEAD and unchanged by round 7.
 
 ## Open questions or contradictions found
+
+### 0. Probe leakage was committed in round 5 — `ce7e38b` — and should be removed
+
+Running a probe in **memory mode** constructs the service with no `dataDir`, and
+`AutomationStudioProjectPaths(undefined)` then resolves to paths relative to the
+package rather than to a temporary directory. Round 5's probes therefore wrote
+runtime artifacts into `packages/fluxiq`, and `ce7e38b` committed them:
+
+```
+packages/fluxiq/indexes/pipeline.json                                    (+23)
+packages/fluxiq/recordings/recording.probe/recording.json                (+30)
+packages/fluxiq/recordings/recording.probe/derived/index.json            (+25)
+packages/fluxiq/recordings/recording.probe/snapshots/initial-state.json   (+4)
+packages/fluxiq/recordings/recording.probe/timeline.jsonl                 (+0)
+packages/fluxiq/recordings/recording.probe-unavailable/derived/index.json (+24)
+```
+
+That is my defect, from an earlier round, and none of it is source. **Round 7's
+own leakage was cleaned up before reporting**: `packages/fluxiq/indexes/pipeline.json`
+was restored with `git checkout --` and the four `recordings/recording.{approval,
+mapped,mining-probe,unmapped}/` trees were deleted; `git status` is clean apart
+from this round's source changes. The six paths above are *tracked*, so removing
+them is a commit, which is yours to make. They contain only synthetic probe data
+— no recorded page data, no tokens — but they should not be in the repository.
 
 ### 1. The runtime/LLM side is genuinely entangled — measured, with the graph
 
@@ -433,32 +697,70 @@ piece on that side is the **reusable LLM context** trio (6 methods, 74 lines, on
 outward call to `packReusableLlmContexts`), which is small and self-contained and
 would make a fine opener if the plan ever returns to it.
 
-### 2. What is left, and what it is made of
+### 2. What is left, measured as composition rather than as clusters
 
-232 methods: **178 public (3,939 lines of bodies) and 54 private (1,625 lines)**.
-Of the 54 private methods, the runtime/LLM closure claims 28. The remainder are
-the candidates below, all now unblocked by `summaries/`:
+`service.ts` is **7,758 lines**. Measured from the AST:
 
-| Candidate | Methods | Lines | Outward (corrected) |
-| --- | --- | --- | --- |
-| recording state indexes | 9 | 125 | 1 |
-| recording domains | 12 | 186 | 2 |
-| `projectDatabasePool` remainder (graph patch, viewport, LLM bindings) | 13 | 400 | 2 |
-| legacy retirement API | 19 | 342 | 2 (both into the runtime side) |
-| `objectStore` remainder (deletion flows) | 24 | 598 | 3 |
+| Part | Count | Lines |
+| --- | --- | --- |
+| Public methods, thin (≤ 4 lines) | 56 | 169 |
+| Public methods still carrying a body | 122 | 3,496 |
+| Private methods | 52 | 1,490 |
+| Class fields, constructor, wiring | — | 326 |
+| Top-level helper functions still in the file | 119 | 1,493 |
+| Top-level type declarations | — | 307 |
+| Imports, re-exports, blank lines | — | 477 |
 
-None is closed today; each is one or two extractions away, and every one of those
-blockers is now a named method rather than a field.
+The class itself spans lines 670-6,150. The **119 remaining top-level helper
+functions** are the part this phase has not touched at all: they are 1,493 lines,
+nearly a fifth of the file, and each one belongs to whichever body reaches it.
+Round 7's first step moved 24 of them in a single cut because one body owned them
+all; that is the shape to look for next.
 
-### 3. The floor, and what the numbers mean now
+The next movable public bodies, after the five runtime/LLM ones named above:
 
-178 public names is the floor while the API is preserved, and the facade is at
-232. The remaining 54 private methods are 1,625 lines; the file is 8,665. Even
-extracting every remaining private method leaves roughly 4,000 lines of public
-method bodies plus types and imports — **the 800-line limit is unreachable
-without changing the public API or splitting `AutomationStudioService` itself
-into several services**, which is a product decision, not a structural one. The
-plan should record that as the end state of Phase 7: the file goes from 12,482 to
-somewhere near 6,500-7,000, the class from 422 methods to ~180, and the
-`class-methods` and `file-lines` baseline entries stay — much lower, permanently
-ratcheted, but never green.
+| Body | Lines |
+| --- | --- |
+| `deleteRecordings` | 78 |
+| `applyFlowGraphPatch` | 74 |
+| `reviewFlowAdaptation` | 72 |
+| `listFlowSubflowSummaries` | 66 |
+| `listFlowInstructionSummaries` | 58 |
+
+Round 6's cluster table (recording state indexes, recording domains, the
+`projectDatabasePool` remainder, legacy retirement, the `objectStore`
+remainder) was **not re-measured this round** — round 7 worked on bodies, not
+clusters — so those outward counts are as of `baeb000` and three of the five
+groups have had methods change around them since.
+
+### 3. The floor — I had this wrong in round 6, and the arithmetic is now measured
+
+Round 6's version of this section said roughly 4,000 lines of public method
+bodies had to stay, and concluded the 800-line limit was unreachable without
+changing the public API. **The first half of that was wrong**, and the dispatch
+was right to say so: a public body is not pinned to the facade by being public.
+Moving one out and leaving a pure forward is a different operation from moving a
+method, and round 7 did it three times for **905 lines**.
+
+What the corrected arithmetic says:
+
+- 178 public names is still the floor, and it is a floor on *names*, not on code.
+- As a pure forward each costs three lines, so **178 delegations are ~534 lines**
+  of irreducible class body.
+- Add the fields, constructor and collaborator wiring (**326 lines today**) and
+  the import block (**~250 lines**, growing slowly as collaborators multiply).
+- Types and helper functions are not irreducible at all: the 307 type lines and
+  1,493 helper lines can move with the bodies that own them, as rounds 5 and 7
+  both showed.
+
+So the realistic floor for `service.ts` as a facade over collaborators is
+**roughly 1,100-1,400 lines**, not the 6,500-7,000 I projected in round 6. That
+is still above the 800-line limit, and the gap is exactly the 178 delegation
+stubs — so the conclusion that the limit needs either a smaller public API or
+several services survives, but the distance is about **1.5x, not 8x**, and
+everything between here and there is ordinary extraction work rather than a
+product decision.
+
+The honest caveat: the five runtime/LLM bodies are 475 lines and the knot around
+them was measured at 71 methods / 2,834 lines. Getting to the floor above means
+that knot comes apart, and nothing in rounds 6 or 7 found a way to cut it.

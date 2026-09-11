@@ -1,7 +1,7 @@
 # Module Size And Structure Governance Plan
 
 Status: Active
-Status detail: Phases 1-8 complete. service.ts decomposed from 12,482 to 8,663 lines and 422 to 232 methods; the remaining runtime/LLM core is measured as not separable without decomposing runRuntimeSession first.
+Status detail: Phases 1-8 complete. service.ts 12,482 -> 7,758 lines and 422 -> 230 methods; the measured floor is ~1,100-1,400 lines, blocked by the runtime/LLM core.
 Created: 2026-09-10
 Last updated: 2026-09-10
 Owner: Senior supervisor agent
@@ -662,6 +662,49 @@ any future dispatch:
   sharing mutable state through a context object, the shape avoided since the
   second extraction. `reusable-LLM-context` (6 methods) is the one separable
   runtime-side piece left.
+
+### 2026-09-11 — public bodies moved out; probe artifacts removed
+
+- Agent: supervisor, with worker `core-automation-studio-facade` resumed
+- Changed: `runtime/service.ts` 8,663 -> 7,758 lines, class 232 -> 230
+  methods; new `service/evidence/`, `service/proposals/`,
+  `service/flows/subflow-migration.ts`; six probe artifacts deleted from
+  version control and `.gitignore` extended.
+- Why: the previous round's conclusion that the 800-line limit was
+  unreachable was wrong, and the strategy that produced it was too narrow.
+  Every earlier round extracted closed state-ownership clusters, which pulls
+  private helpers and moves a public body only when one happens to sit inside
+  a cluster. Moving a public body out deliberately, leaving a one-line
+  delegation, is a different operation and had never been asked for.
+- Validation: `pnpm check` -> passed. `vitest run .../runtime` -> 32 files /
+  400 cases, identical to the 4787780 baseline. Public surface -> 178
+  identical. Probes -> 162 observations this round, all equal.
+  `facade-dispatch` -> 0 findings against the new collaborators. Baseline ->
+  0 added, 0 raised, 2 lowered.
+- Outcome: Accepted
+- Follow-up: three corrections worth keeping.
+  1. **The 800-line floor is ~1,100-1,400, not 6,500-7,000.** The earlier
+     figure assumed public bodies had to stay because public *names* do. They
+     do not: 53 public methods were already one-line delegations when this
+     round began, and 3 more joined them. The method count is a genuine floor
+     at 178 against the 40-method limit; the line count is not blocked.
+  2. **Only 3 of 8 candidate bodies were movable.** `processFinalizedRecording`,
+     `createRecordingFlowProposals`, `proposePolicyFromModel`,
+     `reviewRecordingFlowProposal` and `createFlowBootstrapAdaptation` all
+     reach `ioRuntime` or `nativeNodeRuntime` in their closure, so they sit
+     inside the runtime/LLM entanglement after all and were left whole.
+  3. **Two of the three "known" baseline failures are deterministic, not
+     flaky.** Run alone against an untouched service, the two `service.test.ts`
+     cases fail every time; only the pagination case is load-dependent. They
+     are genuine pre-existing defects and should be described as such.
+  **Probe artifacts were committed in `ce7e38b` and have been removed.** Six
+  files — `packages/fluxiq/indexes/pipeline.json` and three
+  `recordings/recording.probe*` trees — were written by memory-mode probes
+  constructing the service with no `dataDir`, so paths resolved
+  package-relative instead of into a run directory. `.gitignore` now covers
+  `packages/*/{recordings,indexes,storage}/`. The process failure was mine:
+  an artifact scan ran before the first two commits of this effort and was
+  then dropped from later ones. It is now part of the close-out sequence.
 
 ## Open Questions
 

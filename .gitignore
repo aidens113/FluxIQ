@@ -17,3 +17,10 @@ storage/*
 logs
 tmp
 .tmp/
+
+# Runtime data written by a service constructed without an explicit dataDir.
+# Probe and memory-mode runs resolve these package-relative, so they appear
+# under packages/*/ rather than in a run directory.
+packages/*/recordings/
+packages/*/indexes/
+packages/*/storage/

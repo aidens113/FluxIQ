@@ -1,9 +1,13 @@
 import type {
   AutomationStudioFlowArtifact,
+  AutomationStudioProjectArtifactKind,
   AutomationStudioFlowRouter,
   AutomationStudioFlowSubflow
 } from "../../model/index.ts";
+import type { NormalizedTimeline } from "../../normalization/index.ts";
 import type { CreateFlowSubflowInput } from "./flows/index.ts";
+import type { AutomationStudioSubflowSummaryPage } from "./summaries/index.ts";
+import type { CreateRecordingFlowProposalsResult, ProcessFinalizedRecordingResult } from "./proposals/index.ts";
 
 // The public service methods a collaborator is allowed to call back into.
 //
@@ -24,10 +28,18 @@ export type AutomationStudioFacadePorts = {
   createFlowSubflow(input: CreateFlowSubflowInput): Promise<AutomationStudioFlowSubflow>;
   saveFlowRouter(router: AutomationStudioFlowRouter): Promise<AutomationStudioFlowRouter>;
   saveFlowSubflow(subflow: AutomationStudioFlowSubflow): Promise<AutomationStudioFlowSubflow>;
+  listProjectNormalizedTimelines(projectId: string): Promise<NormalizedTimeline[]>;
+  createRecordingFlowProposals(input: { projectId: string; recordingId: string; mapperId?: string; force?: boolean }): Promise<CreateRecordingFlowProposalsResult>;
+  deleteProposal(input: { projectId: string; proposalId: string; kind?: "policy" | "recording_flow" | "auto" }): Promise<{ deletedProposalId: string; kind: "policy" | "recording_flow"; recordingId?: string }>;
+  processFinalizedRecording(input: { projectId: string; recordingId: string; force?: boolean }): Promise<ProcessFinalizedRecordingResult>;
+  saveFlow(input: { projectId: string; flow: AutomationStudioFlowArtifact; expectedUpdatedAt?: number }): Promise<AutomationStudioFlowArtifact>;
+  setFlowMapFallback(input: { projectId: string; flowId: string; kind: "subflow" | "fail"; targetSubflowId?: string; message?: string }): Promise<AutomationStudioFlowRouter>;
+  getProjectArtifact(projectId: string, kind: AutomationStudioProjectArtifactKind, artifactId: string): Promise<unknown>;
+  listFlowSubflowSummaries(input: { projectId: string; flowId?: string; status?: string; role?: string; search?: string; sort?: "updated" | "name" | "status" | "role"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioSubflowSummaryPage>;
 };
 
 // A fresh port object over the service. Narrowing to the port type alone would
-// leave the whole facade reachable at runtime; this hands a collaborator six
+// leave the whole facade reachable at runtime; this hands a collaborator these
 // closures and nothing else.
 export function automationStudioFacadePorts(service: AutomationStudioFacadePorts): AutomationStudioFacadePorts {
   return {
@@ -36,6 +48,14 @@ export function automationStudioFacadePorts(service: AutomationStudioFacadePorts
     getFlowSubflow: (projectId, flowId, subflowId) => service.getFlowSubflow(projectId, flowId, subflowId),
     createFlowSubflow: (input) => service.createFlowSubflow(input),
     saveFlowRouter: (router) => service.saveFlowRouter(router),
-    saveFlowSubflow: (subflow) => service.saveFlowSubflow(subflow)
+    saveFlowSubflow: (subflow) => service.saveFlowSubflow(subflow),
+    listProjectNormalizedTimelines: (projectId) => service.listProjectNormalizedTimelines(projectId),
+    createRecordingFlowProposals: (input) => service.createRecordingFlowProposals(input),
+    deleteProposal: (input) => service.deleteProposal(input),
+    processFinalizedRecording: (input) => service.processFinalizedRecording(input),
+    saveFlow: (input) => service.saveFlow(input),
+    setFlowMapFallback: (input) => service.setFlowMapFallback(input),
+    getProjectArtifact: (projectId, kind, artifactId) => service.getProjectArtifact(projectId, kind, artifactId),
+    listFlowSubflowSummaries: (input) => service.listFlowSubflowSummaries(input)
   };
 }
