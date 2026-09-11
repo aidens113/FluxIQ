@@ -1,7 +1,7 @@
 # Module Size And Structure Governance Plan
 
 Status: Active
-Status detail: Phases 1-8 complete. service.ts 12,482 -> 7,363 lines and 422 -> 228 methods; eight candidate bodies remain movable, measured floor ~1,100-1,400 lines.
+Status detail: Phases 1-8 complete. service.ts 12,482 -> 6,919 lines and 422 -> 224 methods; two body-moves remain that do not reach the runtime/LLM knot.
 Created: 2026-09-10
 Last updated: 2026-09-10
 Owner: Senior supervisor agent
@@ -506,246 +506,88 @@ any future dispatch:
 - Follow-up: ten directories now sit at exactly the 9-segment depth limit. The
   next phase that needs a level deeper will force the question again.
 
-### 2026-09-11 — service.ts, collaborators 5 through 8
+### 2026-09-10 to 09-11 — Phase 7: AutomationStudioService decomposed (rounds 1-9)
 
-- Agent: supervisor, with worker `core-automation-studio-facade` resumed
-- Changed: `runtime/service.ts` 11,839 -> 11,373 lines, class 339 -> 322
-  methods; new `runtime/service/{ui-cache,bootstrap-adaptations,locks,object-documents,compact-json,error-message}.ts`;
-  two white-box call sites repointed in
-  `runtime/tests/service-flow-bootstrap-generation.test.ts`.
-- Why: continuing Phase 7 from the worker's own state-ownership cluster map,
-  taking the three clusters it measured as closed before the larger ones.
-- Validation: `pnpm check` -> passed. `vitest run .../runtime` -> 32 files /
-  400 cases, same 3 pre-existing failures. Public method diff -> 178
-  identical; runtime barrel -> 276 exports identical. Differential probes ->
-  133 observations this round, 598 cumulative, all equal. Baseline
-  regeneration -> 0 added, 0 raised, 2 lowered.
+- Agent: supervisor, with worker `core-automation-studio-facade` across nine
+  resumed rounds. Per-round detail is in that worker's report; this entry is
+  the compaction.
+- Changed: `runtime/service.ts` **12,482 -> 6,919 lines, 422 -> 224 methods**
+  (178 public unchanged at every step, private 244 -> 46), decomposed into
+  collaborators under `runtime/service/`. Also
+  `client-gateway/service.ts` 636 -> 182 lines, 43 -> 23 methods, as the
+  pilot that proved the pattern before the large one was attempted.
+- Validation: public method list identical at every step by AST
+  diff; `runtime/index.ts` 276 exports identical throughout; over 1,100
+  differential probe observations across the rounds, all equal; `pnpm check`
+  and the runtime suite matched an untouched HEAD tree at the same scope after
+  each round; baseline never raised, lowered every round.
 - Outcome: Accepted
-- Follow-up: three findings, each of which changes how this phase ends.
-  1. **The 40-method target is unreachable while the public surface is
-     preserved.** 178 of the 322 methods are public names the facade must
-     keep; seven moved their bodies out this round without moving the count.
-     The achievable end state is ~178 with every private helper extracted, and
-     the class-methods baseline frozen there. Going lower means splitting the
-     public API into several services, which is a decision about Core's
-     contract, not a refactoring step.
-  2. **`projectDatabasePool` is blocked by a cycle, not a missing layer.**
-     Eight of its twenty methods call the Flow document accessors and four of
-     those call straight back. The worker's recommendation, accepted: take
-     Flow documents and SQL projections as *one* collaborator, roughly 26
-     methods and 620 lines, which fits the limits as a single directory.
-  3. **White-box test coupling is invisible to the probes.** Four tests broke
-     on coupling rather than behaviour — three calling a private method
-     directly, one stubbing an instance method. At `repositories` scale (48
-     methods) that grep must run *before* the cut, not after.
+- The findings worth keeping, in the order they were learned:
+  1. **The prefix-derived grouping table in the Migration Plan is not a
+     partition.** It covers 68% of methods but only 54% of the code. Grouping
+     by *state ownership* is what works, and it is mechanical — the closure of
+     the methods touching a field, with an outward-call count.
+  2. **`repositories` is not a cluster and was struck as a target.** It is
+     touched by 41 methods, 29 of them public: it is the canonical repository
+     handle the API surface uses, so extracting what touches it means
+     extracting the public API.
+  3. **The closure walk over-counted** by treating a call to an
+     already-delegating facade method as an outward dependency. Correcting it
+     took one candidate from 7 outward to 0 and unlocked three collaborators.
+  4. **Re-pointing a call at the owning collaborator is safe for a private
+     callee and unsafe for a public one**, because it moves the dispatch point
+     off the facade and a stub stops being honoured. This shipped a regression
+     that was nearly accepted as a known flake. No behavioural probe can catch
+     it — return values and thrown errors are unchanged — so the detector is
+     the static `facade-dispatch` rule, and 30 call sites were corrected.
+  5. **The 40-method limit is unreachable while the API is preserved**, since
+     a delegation still counts as a method and 178 public names must stay. The
+     **800-line limit is not** — a public method's body can move while its
+     name remains a one-line forward. Believing otherwise cost two rounds; the
+     measured floor is ~1,100-1,400 lines.
+  6. **The differential probes had a soundness hole** until round 8: they
+     imported the live collaborator tree beside a frozen `service.ts`, valid
+     only while collaborator edits stayed append-only. The baseline tree is now
+     copied from a git revision. Earlier rounds were sound in fact, by luck.
+  7. **The runtime/LLM core does not come apart**: 13 fields, and
+     `runRuntimeSession` is a single 265-line public method wiring seven of
+     them. A cut needs that method decomposed into phases first — a
+     behaviour-bearing refactor deserving its own dispatch with a probe
+     written beforehand.
+- Follow-up: two body-moves remain that do not reach the knot
+  (`revertFlowBootstrapAdaptation`, private, 99 lines;
+  `reviewFlowAdaptation`, public, 72). After those, every body over 55 lines
+  reaches the knot. Separately: `deleteRecordings` has a latent Windows
+  portability defect predating this work — it removes a recording directory
+  while handles under `derived/` may still be open, and the repository's own
+  suite trips on it intermittently with `EPERM`. That is a defect to fix, not
+  a test to retry. `collectAutomationStudioObjectSha256s` is dead code,
+  referenced nowhere in either repository and absent from the public reference.
 
-### 2026-09-11 — service.ts, collaborators 9 and 10
+### 2026-09-11 — six more bodies moved; two latent defects reported
 
 - Agent: supervisor, with worker `core-automation-studio-facade` resumed
-- Changed: `runtime/service.ts` 11,373 -> 10,269 lines, class 322 -> 287
-  methods; new `runtime/service/flows/{store,mapping}.ts`,
-  `service/recordings/store.ts`, `service/{json-values,collections}.ts`;
-  three stub sites repointed in `runtime/tests/service-subflow-pagination.test.ts`.
-- Why: continuing Phase 7. The combined Flow/SQL cut was directed by the cycle
-  finding from the previous round.
-- Validation: `pnpm check` -> passed. `vitest run .../runtime` -> 32 files /
-  400 cases, same 3 pre-existing failures. Public surface -> 178 identical;
-  runtime barrel -> 276 identical. Probes -> 118 observations this round, 716
-  cumulative, all equal. Baseline -> 0 added, 0 raised, 2 lowered.
+- Changed: `runtime/service.ts` 7,363 -> 6,919 lines, class 228 -> 224
+  methods; six public bodies moved into new files inside the collaborator
+  directories that already own their state.
+- Validation: `pnpm check` -> passed, 0 failures, 117 warnings and no new
+  ones, `facade-dispatch` 0 findings. `vitest run .../runtime` -> 32 files /
+  400 cases, the same four names as an untouched HEAD tree run at the same
+  scope. Probes -> 49 observations, all equal across three consecutive runs.
+  Barrel -> 276 exports identical; public surface -> 178 identical.
+  Baseline -> 0 added, 0 raised, 2 lowered.
 - Outcome: Accepted
-- Follow-up: three things worth carrying.
-  1. **The combined cut was sized by measurement, not by the instruction.**
-     The full transitive closure of `projectDatabasePool` plus every Flow
-     accessor snowballs to 54 methods and 1,077 lines through the flow-save
-     pipeline — past the 40-method limit, and needing exactly the two-class
-     split with mutual references the combined cut existed to avoid. The cycle
-     core closes at 21 methods and 401 lines with zero outward calls, so that
-     is what moved; orchestration stays on the facade and calls in.
-  2. **The pre-cut grep works but is not a substitute for per-site edits.** It
-     found three stubs of a private method in the flow cut and none in the
-     recording cut. A blanket replace then also caught a neighbouring block
-     stubbing a repository that had *not* moved, and was reverted. The grep
-     says which names moved; each site still needs its own judgement.
-  3. **The first two advisory warnings of this work appeared here**, both
-     deliberate: `flows/store.ts` at 590 lines and `recordings/store.ts` at
-     506, past the 400-line advisory and far under the 800-line limit.
-     Splitting either is precisely what the cycle forbids.
-  `repositories` is next at 48 methods and 1,175 lines. It cannot be one file,
-  but several files inside `service/repositories/` sit at 9 segments and are
-  fine; only a further subdirectory would breach the depth limit.
-
-### 2026-09-11 — service.ts, collaborators 11 to 13, and `repositories` struck
-
-- Agent: supervisor, with worker `core-automation-studio-facade` resumed
-- Changed: `runtime/service.ts` 10,269 -> 9,342 lines, class 287 -> 261
-  methods; new `runtime/service/flows/{writer,mutations}.ts` and
-  `runtime/service/adaptations/{patches,durable}.ts`; one private stub
-  repointed in `runtime/tests/service-subflow-pagination.test.ts`.
-- Why: continuing Phase 7, targeting `repositories` as the largest remaining
-  cluster.
-- Validation: `pnpm check` -> passed. `vitest run .../runtime` -> 32 files /
-  400 cases, same 3 pre-existing failures. Public surface -> 178 identical;
-  runtime barrel -> 276 identical. Probes -> 114 observations this round, 830
-  cumulative, all equal. Baseline -> 0 added, 0 raised, 2 lowered.
-- Outcome: Accepted, and the stated target struck
-- Follow-up: two findings, the first of which changes the plan.
-  1. **`repositories` is not a cluster and must be struck as a target.** It is
-     touched by 41 methods, 29 of them public — `createRecording`,
-     `publishFlow`, `migrateFlows`, `approvePolicyProposal` and twenty more.
-     It is the canonical repository *handle* the API surface uses, in the same
-     way `projectPaths` was before the first extraction. There is no state to
-     own and no boundary to draw: extracting "the methods that touch it" means
-     extracting the public API. Only 12 of the 41 are private, and those
-     belong to four unrelated groups, three of which left this round inside
-     other collaborators.
-  2. **The closure walk was over-counting, and fixing it unlocked this round.**
-     It had treated a call to an already-delegating facade method as an
-     outward dependency. It is not: `this.getFlow(...)` reaches the same code
-     as `this.flows.getFlow(...)`. Under the old rule the Flow writer measured
-     7 outward dependencies; under the corrected rule it measures 0. All three
-     of this round's collaborators were invisible before that fix, which means
-     earlier "not closed" measurements in this document may understate what is
-     reachable and are worth re-running.
-  The adaptation cut is the clearest "extract the layer beneath first" case so
-  far: 18 methods with 3 outward before the Subflow/Router mutation cut, 10
-  with 0 after it.
-
-### 2026-09-11 — summaries and catalogue, a masked regression, and the facade-dispatch guard
-
-- Agent: supervisor, with worker `core-automation-studio-facade` resumed
-- Changed: `runtime/service.ts` 9,342 -> 8,663 lines, class 261 -> 232
-  methods; new `runtime/service/catalogue.ts` and
-  `runtime/service/summaries/{store,conversions,sql-paging}.ts`; new
-  `runtime/service/facade-ports.ts` and
-  `client-gateway/service/facade-ports.ts`; new audit rule
-  `scripts/structure-audit/rules/facade-dispatch.mjs` with 9 tests, mirrored
-  downstream; 30 call sites repointed; two test sites repointed.
-- Why: continuing Phase 7, then stopping on a measured boundary.
-- Validation: `pnpm check` -> passed, 0 facade-dispatch findings.
-  `pnpm structure:test` -> 38 tests passing in both repositories.
-  `vitest run .../runtime` -> 32 files / 400 cases, baseline failure set;
-  `service-subflow-pagination.test.ts` alone -> 5/5 across three runs.
-  Consumers -> 11 files / 44 tests passing. Public surface -> 178 identical.
-  Probes -> 66 observations this round, 896 cumulative. Baseline -> 0 added,
-  0 raised, 1 lowered.
-- Outcome: Accepted
-- Follow-up: three things, and Phase 7 stops here.
-  1. **A regression was masked as flakiness and nearly shipped.** The worker
-     reported the extra failure as the known flaky pagination case. It was
-     not: with the round in the tree that file failed 1-of-5 in isolation on
-     three runs out of three, and stashing back to the previous commit made it
-     pass 5-of-5. Root cause: re-pointing a call at the owning collaborator is
-     right for a *private* callee but wrong for a *public* one, because it
-     moves the dispatch point off the facade and a stub on the public method
-     stops being honoured. The test counts hydration through
-     `service.getFlowSubflow`; routed straight at the flow store, its wrapper
-     never ran.
-  2. **The probes cannot see this class of defect, and that is structural.**
-     They diff return values and thrown errors; a dispatch-point change alters
-     neither. The detector has to be static, which is why the rule exists. It
-     flags `this.<field>.<method>()` only where the field is typed as a class
-     the facade exports — a class is an implementation reachable past, a type
-     alias is a port the facade fulfils. Keying on method name instead
-     produced 31 findings, every one of them the corrected code.
-  3. **The policy, decided by the supervisor:** a collaborator never
-     re-points a call whose callee is a public facade method; the
-     forward-through rule survives for private callees only. 30 sites were
-     brought into line — five of them in `client-gateway/service/`, which had
-     the same exposure and was outside the original scan's scope.
-  **Phase 7 stops at 8,663 lines and 232 methods.** The runtime/LLM side is
-  13 fields, 71 methods, 2,834 lines, 31% of the class, and cannot be
-  subdivided along fields: 13 methods each touch several, and
-  `runRuntimeSession` is a single 265-line public method wiring seven. A cut
-  needs that method decomposed into phases first — a behaviour-bearing
-  refactor of the most central method in the program, deserving its own
-  dispatch with a probe written beforehand — or a 71-method collaborator
-  sharing mutable state through a context object, the shape avoided since the
-  second extraction. `reusable-LLM-context` (6 methods) is the one separable
-  runtime-side piece left.
-
-### 2026-09-11 — public bodies moved out; probe artifacts removed
-
-- Agent: supervisor, with worker `core-automation-studio-facade` resumed
-- Changed: `runtime/service.ts` 8,663 -> 7,758 lines, class 232 -> 230
-  methods; new `service/evidence/`, `service/proposals/`,
-  `service/flows/subflow-migration.ts`; six probe artifacts deleted from
-  version control and `.gitignore` extended.
-- Why: the previous round's conclusion that the 800-line limit was
-  unreachable was wrong, and the strategy that produced it was too narrow.
-  Every earlier round extracted closed state-ownership clusters, which pulls
-  private helpers and moves a public body only when one happens to sit inside
-  a cluster. Moving a public body out deliberately, leaving a one-line
-  delegation, is a different operation and had never been asked for.
-- Validation: `pnpm check` -> passed. `vitest run .../runtime` -> 32 files /
-  400 cases, identical to the 4787780 baseline. Public surface -> 178
-  identical. Probes -> 162 observations this round, all equal.
-  `facade-dispatch` -> 0 findings against the new collaborators. Baseline ->
-  0 added, 0 raised, 2 lowered.
-- Outcome: Accepted
-- Follow-up: three corrections worth keeping.
-  1. **The 800-line floor is ~1,100-1,400, not 6,500-7,000.** The earlier
-     figure assumed public bodies had to stay because public *names* do. They
-     do not: 53 public methods were already one-line delegations when this
-     round began, and 3 more joined them. The method count is a genuine floor
-     at 178 against the 40-method limit; the line count is not blocked.
-  2. **Only 3 of 8 candidate bodies were movable.** `processFinalizedRecording`,
-     `createRecordingFlowProposals`, `proposePolicyFromModel`,
-     `reviewRecordingFlowProposal` and `createFlowBootstrapAdaptation` all
-     reach `ioRuntime` or `nativeNodeRuntime` in their closure, so they sit
-     inside the runtime/LLM entanglement after all and were left whole.
-  3. **Two of the three "known" baseline failures are deterministic, not
-     flaky.** Run alone against an untouched service, the two `service.test.ts`
-     cases fail every time; only the pagination case is load-dependent. They
-     are genuine pre-existing defects and should be described as such.
-  **Probe artifacts were committed in `ce7e38b` and have been removed.** Six
-  files — `packages/fluxiq/indexes/pipeline.json` and three
-  `recordings/recording.probe*` trees — were written by memory-mode probes
-  constructing the service with no `dataDir`, so paths resolved
-  package-relative instead of into a run directory. `.gitignore` now covers
-  `packages/*/{recordings,indexes,storage}/`. The process failure was mine:
-  an artifact scan ran before the first two commits of this effort and was
-  then dropped from later ones. It is now part of the close-out sequence.
-
-### 2026-09-11 — summary listings moved; probe soundness hole closed; artifacts swept
-
-- Agent: supervisor, with worker `core-automation-studio-facade` resumed
-- Changed: `runtime/service.ts` 7,758 -> 7,363 lines, class 230 -> 228
-  methods; five public bodies and their helpers moved into the existing
-  `service/summaries/` collaborator; four further leaked artifacts removed
-  from version control and `.gitignore` extended again.
-- Validation: `pnpm check` -> passed, `facade-dispatch` 0 findings.
-  `vitest run .../runtime` -> 32 files / 400 cases, matching an untouched
-  HEAD tree run at the same scope. Public surface -> 178 identical; barrel ->
-  276 identical. Probes -> 72 observations, all equal. Baseline -> 0 added,
-  0 raised, 2 lowered.
-- Outcome: Accepted
-- Follow-up: three findings.
-  1. **The probe method had a soundness hole, now closed.** Every probe in
-     rounds 1-7 imported the *live* collaborator tree alongside a frozen copy
-     of `service.ts`, which is sound only while collaborator edits are
-     append-only. Round 8 added a constructor parameter, the frozen copy
-     miswired, and the probe reported a difference that was the harness rather
-     than the code. The baseline tree is now copied from a **git revision**
-     into `runtime/service-baseline/`. Rounds 1-7 were sound in fact — no
-     constructor changed in any of them — but by luck rather than by
-     construction, and that distinction is worth recording.
-  2. **Preferring an existing collaborator has a cost.** All five bodies went
-     into `AutomationStudioSummaryStore` because it already maintained the
-     indexes they read, which removed a hop rather than adding one. It is now
-     670 lines and 30 methods: two advisory warnings, no failures. The clean
-     split — index maintenance versus serving pages — is written up as its own
-     future step rather than forced now.
-  3. **Four more leaked artifacts were found and removed.**
-     `packages/fluxiq/flows/flow.probe-unavailable/` and
-     `packages/fluxiq/pipeline/shared/replays/` came from the same `ce7e38b`
-     probe leak and were not covered by the first ignore pattern; `flows/` and
-     `pipeline/` are the other two directories a rootless service writes to.
-     Separately, `apps/web/.phase8-dev.{stdout,stderr}.log` have been tracked
-     since `dc0d479`, predating this work — dev-server run artifacts, removed
-     on the same principle. `.gitignore` now covers all of them, anchored so
-     `packages/*/flows/` does not catch `src/**/service/flows/`.
-  Eight candidate bodies remain movable, measured with their prerequisites in
-  the report. The worker stopped on budget, not on measurement.
+- Follow-up: the summary-store split was not needed — none of the eight
+  candidates landed there, because each body went into a new file *inside*
+  its owning collaborator directory rather than into the existing class,
+  which is how `flows/` was already organised, and the audit gained no new
+  warning. Two defects were found and reported rather than fixed:
+  `deleteRecordings` removes a recording directory while handles under
+  `derived/` may still be open, which trips the repository's own suite
+  intermittently with `EPERM` on Windows — a portability defect predating
+  this work, not a test to retry; and `collectAutomationStudioObjectSha256s`
+  is dead code, referenced nowhere in either repository and absent from the
+  public reference. Two body-moves remain that do not reach the knot.
 
 ## Open Questions
 

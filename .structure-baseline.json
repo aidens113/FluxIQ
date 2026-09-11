@@ -18,7 +18,7 @@
   },
   "rules": {
     "class-methods": {
-      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts::AutomationStudioService": 228
+      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts::AutomationStudioService": 224
     },
     "directory-files": {
       "apps/web/src/features/automation-studio/hierarchy": 30,
@@ -84,7 +84,7 @@
       "packages/fluxiq/src/programs/identity-access/runtime/service.ts::classes": 2
     },
     "file-lines": {
-      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 7363,
+      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 6919,
       "packages/fluxiq/src/programs/automation-studio/runtime/tests/service.test.ts": 4789,
       "packages/fluxiq/src/programs/automation-studio/runtime/tests/service-flow-bootstrap-generation.test.ts": 1004,
       "apps/web/e2e/automation-studio-render-loop.spec.ts": 962

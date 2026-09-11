@@ -2,15 +2,21 @@
 
 ## Outcome
 
-Done — **nineteen collaborators** extracted across eight dispatches.
+Done — **twenty-four collaborators** extracted across nine dispatches.
 
 `packages/fluxiq/src/programs/automation-studio/runtime/service.ts` went from
-**12,482 lines to 7,363** and `AutomationStudioService` from **422 methods to
-228**. The public surface is **178 methods, unchanged at every step**, so the
-private count is the progress measure: **244 private methods at the start, 50
+**12,482 lines to 6,919** and `AutomationStudioService` from **422 methods to
+224**. The public surface is **178 methods, unchanged at every step**, so the
+private count is the progress measure: **244 private methods at the start, 46
 now**. The resolved export set of `runtime/index.ts` is the same 276 names.
-Twenty-two differential probes drove the pre-extraction implementation and the
-facade side by side over **1,130 observations** and found no difference.
+Twenty-five differential probes drove the pre-extraction implementation and the
+facade side by side over **1,179 observations** and found no difference.
+
+Round 9 moved **six more public bodies** in five steps, each onto the
+collaborator directory that already owned the state it reads, and each behind a
+pure forward. Every cut this round used the frozen baseline tree the previous
+round introduced, so the pre-extraction side was pinned at `6432bc7` and could
+not drift underneath the comparison.
 
 Round 8 continued the body strategy and moved **five more public bodies** into
 the collaborator that already owned their state, adding no new collaborator at
@@ -48,6 +54,11 @@ round of the phase.
 | **7** | **`service/proposals/approval.ts`** | **1 public body + 1 helper** | **7,865 → 7,758** | **230 (178 / 52)** |
 | **8** | **`summaries/store.ts`** (Subflow, Instruction listings) | **2 public bodies + 7 helpers** | **7,758 → 7,575** | **230** |
 | **8** | **`summaries/store.ts`** (adaptation, run, session listings) | **3 public bodies + 2 private + 4 helpers** | **7,575 → 7,363** | **230 → 228 (178 / 50)** |
+| **9** | **`flows/graph-patch.ts`** | **1 public body + 1 private** | **7,363 → 7,300** | **228 → 227** |
+| **9** | **`projects/artifacts.ts`** | **2 public bodies + 1 helper** | **7,300 → 7,207** | **227** |
+| **9** | **`recordings/normalization-review.ts`** | **1 public body + 1 shared helper** | **7,207 → 7,150** | **227** |
+| **9** | **`summaries/run-audit.ts`** | **1 public body + 1 helper** | **7,150 → 7,092** | **227** |
+| **9** | **`recordings/deletion.ts`** | **1 public body + 3 private + 4 helpers/types** | **7,092 → 6,919** | **227 → 224 (178 / 46)** |
 
 The round-6 rows above say 8,665, which is what I wrote last round; `wc -l` and
 the structure audit both read that file as **8,663**, and the recorded ratchet
@@ -533,6 +544,58 @@ branch of any listing, and therefore does not exercise the
 by the probe. The pre-existing `createProject`/`findProject` disagreement in a
 rootless configuration is unchanged by this round and out of its scope.
 
+### Round 9 — six bodies, five steps, and a spec-driven mover
+
+Closure ran over the eight candidates carried forward from round 8 before
+anything was cut. All eight are still movable; none reaches the runtime/LLM
+knot. Six public bodies moved:
+
+| Step | Body | Lines | Home | What had to move with it |
+| --- | --- | --- | --- | --- |
+| 1 | `applyFlowGraphPatch` | 74 | `flows/graph-patch.ts` | `assertFlowGraphMutationAllowed` |
+| 2 | `deleteProjectArtifact`, `saveProjectHierarchy` | 46 + 52 | `projects/artifacts.ts` | `hierarchyFeedRevision` |
+| 3 | `createNormalizationReview` | 56 | `recordings/normalization-review.ts` | `recordingTimelineForProposalMapping` (shared with the knot, so it went to `recordings/timeline.ts`) |
+| 4 | `exportFlowRunAudit` | 48 | `summaries/run-audit.ts` | `adaptationMutationEvidence` |
+| 5 | `deleteRecordings` | 78 | `recordings/deletion.ts` | 3 private methods, `mergePipelineArtifactIdSets`, `addAutomationStudioObjectSha256s`, and two types |
+
+Each step is one invocation of `<scratchpad>/asfacade-move-body.mjs` against a
+recorded JSON spec (`asfacade-r9-step{1..5}.json`), so a step is replayable by
+re-running its spec rather than by re-deriving a bespoke script. Every line range
+still comes from the TypeScript AST of the exact file being edited, and the
+script refuses to run if its target file already exists.
+
+**Where the bodies went, and why not into the existing classes.** Round 8 put
+five bodies into `AutomationStudioSummaryStore` and left it at 670 lines and 30
+methods — two advisories. This round put each body in a **new file inside the
+collaborator directory that owns the state** (`flows/`, `projects/`,
+`recordings/`, `summaries/`) rather than inside the existing class. That is
+still "the collaborator that owns the state" at the level the codebase is
+organised — `flows/` already holds store, writer, mutations, subflow-migration,
+mapping and canonical-document — and it avoids repeating the summaries
+trajectory. No file added this round exceeds 140 lines and **the audit gained no
+new warning**: still 117, exactly as round 8 left it.
+
+### Round 9, step 5 — the one that was not mechanical
+
+`deleteRecordings` needed six corrections before it compiled, and two of them
+are worth recording because they were wrong assumptions rather than typos:
+
+- **`repairedRecordingStateIndexReads` is not owned by the body that looked
+  like its owner.** I read the field's only two uses as being inside
+  `readRecordingStateIndex` and wrote the spec to move the field with it. They
+  are inside `ensureRecordingStateIndexCurrent`, which stays on the facade.
+  Moving the field would have split one dedupe set into two — a behaviour change
+  no probe in this round would have caught, because nothing exercises repair
+  twice. The type checker caught it instead, and the fix was to leave the field
+  alone; the moved code never touches it.
+- **`collectAutomationStudioObjectSha256s` is dead code.** It is declared in
+  `service.ts` and referenced from nowhere in either repository — I checked
+  before moving it. It calls `addAutomationStudioObjectSha256s`, which the
+  moved body does need, so the pair moved together to
+  `recordings/object-references.ts` rather than leaving a caller behind for a
+  function that had moved. **It is still dead where it now lives**; deleting it
+  is a separate decision and not mine to make silently.
+
 ### What was deliberately not done
 
 - **The runtime/LLM side.** Measured twice now — once as a field graph in round
@@ -785,6 +848,100 @@ memory section called `saveFlowInstruction` and `saveFlowAdaptation` with no
 repository; those files were removed and the section was rewritten to readers
 only. The tree is clean apart from this round's source changes.
 
+### Round 9 commands and results
+
+**Scoped tests** — `npx vitest run src/programs/automation-studio/runtime`:
+
+| | Files | Cases | Failures |
+| --- | --- | --- | --- |
+| Round 9 baseline (round 8's end state, at 6432bc7) | 32 (2 failed) | 400 (4 failed) | `service.test.ts` x2 (deterministic), `service-subflow-pagination.test.ts` x2 (load-dependent) |
+| **After all five steps** | **32 (2 failed)** | **400 (4 failed)** | **the same four, on the second run; see below**  |
+
+**The first run showed a fifth failure, on the one test that covers the body
+I moved in step 5, and I did not accept it.** The extra name was
+`service.test.ts > deletes recording batches with one index and pipeline
+cleanup pass` — a test about `deleteRecordings`. Four experiments:
+
+1. The failure text is `EPERM: operation not permitted, rmdir
+   '...\\recordings\\recording.batch-b\\derived'` — an OS error, not an
+   assertion.
+2. That test **alone**, with round 9 in the tree: **passes**.
+3. The **untouched HEAD tree**, restored from git and run at the **same**
+   **scope**: 32 files (2 failed), 400 cases (**4** failed) — the extra name
+   absent.
+4. A **second** full-scope run on the round-9 tree: 32 files (2 failed), 400
+   cases (**4** failed), **the same four names as HEAD, and zero occurrences
+   of EPERM in the whole run**.
+
+It is the same Windows handle race the probe hit, in the same code path and on
+the same directory shape, and the probe saw it land on the *baseline* side in
+one run and the *facade* side in the next. Nothing in this round changes when
+a handle is released: the bodies moved verbatim and the only new indirection is
+a method call and a port closure. The four standing failures are unchanged —
+two deterministic in `service.test.ts`, two load-dependent in
+`service-subflow-pagination.test.ts`.
+
+Worth flagging separately: **`deleteRecordings` has a latent Windows
+portability bug** that predates this work. It removes a recording directory
+while handles under `derived/` may still be open, and the repository's own test
+suite trips on it intermittently. That is a defect to fix, not a test to
+retry, and it is outside this phase's brief.
+
+**Type check** — `npx tsc -p tsconfig.json --noEmit` in `packages/fluxiq`:
+**exit 0, no output**, after each step. Every intermediate failure was fixed by
+correcting the step's spec and re-running it from the previous step's snapshot,
+never by hand-patching the output, so all five steps remain replayable from
+`asfacade-service-r9-step0.ts`.
+
+**Structure audit** — `node scripts/structure-audit.mjs` after `git add -N`:
+**passed, 0 failures**, after each step, and **117 warnings — no new ones**.
+`facade-dispatch`: **0 findings**.
+
+**Public method surface** — `diff` against the pre-round-9 list is empty.
+**178 names, same order.**
+
+**Round 9 differential probes**, all against the tree frozen at `6432bc7`,
+every service built with an explicit temp `dataDir`:
+
+| Section | Observations |
+| --- | --- |
+| flow graph patch (steps 1) | 11 |
+| project artifacts and hierarchy (step 2) | 15 |
+| normalization review, run audit, recording deletion (steps 3, 4, 5) | 23 |
+| **round 9 total** | **49**, every one equal |
+| **phase total** | **1,179** |
+
+The graph-patch section drives an unknown project and an unknown Flow, the first
+patch, a replayed mutation id, a stale-base conflict, a second patch with author
+and message, the collaborator directly, and the refusal once the Flow becomes an
+orchestration parent. The project section drives both deletes, the owned-artifact
+cascade, hierarchy save with nodes, with deletions, with garbage input, and
+against an unknown project. The recordings section drives review before and
+after normalization, a repeat review, an unknown recording, the run audit for a
+known and a missing run, and deletion with pipeline artifacts present.
+
+**Two things about that third section are worth stating plainly.**
+
+- `deleteRecordings` on Windows can fail with `EPERM ... rmdir` on the
+  recording's `derived/normalization` directory, because the handles under it
+  are released asynchronously. It hit whichever side lost the race, which made
+  the step a coin flip rather than a comparison — it failed on the baseline side
+  in one run and on the facade side in the next. Both sides now retry the same
+  bounded way, so what is compared is the end state; a delete that is genuinely
+  broken still fails after the last attempt. Three consecutive runs pass.
+- The first version of the dispatch-identity check reported
+  **`sawOverride: false` on both sides** — equal, and therefore green, but
+  proving nothing. `deleteRecordings` only calls the public
+  `deleteRecording` on its **fallback** path, taken when no `projectId` is
+  given; my scenario always passed one. The check now omits `projectId`,
+  reaches that branch, and reports **`sawOverride: true`** on both sides across
+  two runs. An equal-but-vacuous probe step is worth less than no step at all,
+  because it looks like coverage.
+
+**Leak check** — `git status --untracked-files=all` after every probe run:
+clean apart from this round's source changes. Every probe service is built with
+`dataDir` under `os.tmpdir()`; no memory-mode service writes anywhere.
+
 ## Not verified
 
 - **`pnpm check`, `pnpm test`, `pnpm build` at repository scope.** Not run.
@@ -907,35 +1064,39 @@ move; it should be its own step, with its own probe.
 
 ### 2. What is left, measured as composition rather than as clusters
 
-`service.ts` is **7,363 lines**. Measured from the AST after round 8:
+`service.ts` is **6,919 lines**. Measured from the AST after round 9:
 
 | Part | Count | Lines |
 | --- | --- | --- |
-| Public methods, thin (≤ 4 lines) | 61 | 184 |
-| Public methods still carrying a body | 117 | 3,296 |
-| Private methods | 50 | 1,421 |
-| Top-level helper functions still in the file | 107 | 1,367 |
-| Top-level type declarations | — | 301 |
-| Class fields, constructor, wiring, imports | — | 794 |
+| Public methods, thin (≤ 4 lines) | 66 | 199 |
+| Public methods still carrying a body | 112 | 2,957 |
+| Private methods | 46 | 1,376 |
+| Top-level helper functions still in the file | 101 | 1,310 |
+| Top-level type declarations | — | 276 |
+| Class fields, constructor, wiring, imports | — | 801 |
 
-The remaining candidates, all measured against the round-8 file, with the
-prerequisite each one needs:
+**The eight candidates from round 8 are now two**, and neither reaches the knot:
 
 | Body | Lines | Closure | Prerequisite before it can move |
 | --- | --- | --- | --- |
-| `revertFlowBootstrapAdaptation` | 99 | 3 (151L) | 7 ports; `bootstrapAdaptations` gains 4 constructor dependencies |
-| `deleteRecordings` | 78 | 4 (117L) | `recordings` gains `recordingStateIndexes`; 2 ports |
-| `applyFlowGraphPatch` | 74 | 2 (80L) | 1 port; cleanest of the remainder |
-| `reviewFlowAdaptation` | 72 | 3 (127L) | **4 shared helpers** (`adaptationFromTypedStoreDetail`, `adaptationValidationCounts`, `bootstrapAdaptationAsFlowAdaptation` (83L), `sanitizedBootstrapAccounting`) must move to neutral modules first, and `service-adaptation-subflow.test.ts:166` spies on `synchronizeCanonicalFlowGraphProjection` through `service as any`, so that spy needs repointing |
-| `createNormalizationReview` | 56 | 1 | 3 ports |
-| `saveProjectHierarchy` | 52 | 1 | none beyond `projects` gaining `objectStore`/`flowWriter` |
-| `exportFlowRunAudit` | 48 | 1 | 2 ports; **no collaborator fields at all** |
-| `deleteProjectArtifact` | 46 | 1 | 2 ports |
+| `revertFlowBootstrapAdaptation` | 99 | 3 (151L) | **private, not public** — moving it removes lines but no body from the public surface. Needs one new port (`getLlmExecutionDependencyDigest`), `bootstrapAdaptations` gaining five dependencies, and `bootstrapAdaptationAuditEvent` relocating (shared with three facade methods that stay) |
+| `reviewFlowAdaptation` | 72 | 3 (127L) | **four shared helpers must move first** — `adaptationFromTypedStoreDetail`, `adaptationValidationCounts`, `bootstrapAdaptationAsFlowAdaptation` (83L), `sanitizedBootstrapAccounting` — and `service-adaptation-subflow.test.ts:166` spies on `synchronizeCanonicalFlowGraphProjection` through `service as any`, so that spy needs repointing to the collaborator |
 
-The five runtime/LLM bodies from round 7 plus `reviewRecordingFlowProposal` are
-still the only ones blocked by the knot. **I stopped this round on budget, not
-on measurement** — the remaining candidates do not all reach the knot, and the
-list above is what the next round should start from rather than re-deriving.
+I stopped on budget again rather than on the knot, and the honest statement is
+that `reviewFlowAdaptation` is the last public body outside the runtime/LLM
+core that a body-move can reach. After it, the public bodies that remain are:
+
+```
+265 runRuntimeSession          241 generateFlowBootstrapAdaptation
+113 processFinalizedRecording   98 createRecordingFlowProposals
+ 96 proposePolicyFromModel      88 reviewRecordingFlowProposal
+ 80 createFlowBootstrapAdaptation
+```
+
+— all seven of which reach the knot, plus a tail of bodies under 55 lines. That
+is the measured boundary the dispatch asked for: **one more body-move step, and
+then the remainder is `runRuntimeSession` and its neighbours, which need their
+own dispatch.**
 
 ### 3. The floor — I had this wrong in round 6, and the arithmetic is now measured
 
