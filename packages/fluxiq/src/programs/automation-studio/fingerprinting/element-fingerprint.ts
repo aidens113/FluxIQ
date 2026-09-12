@@ -271,10 +271,21 @@ function compareTextSignal(signalPath: "visibleText" | "accessibleName" | "label
   contribute(signalPath, similarity >= 0.35 ? similarity : -0.55, similarity >= 0.92 ? "text matched exactly" : "text compared by normalized overlap", { expected: normalizeText(expected), actual: normalizeText(actual) });
 }
 
+// An identifier a candidate does not carry and one that contradicts the
+// recording are different evidence, and the distance between these two
+// constants is how the scorer says so. An absent id is a host that stopped
+// emitting one, so it is charged like an absent class list; a contradicted id
+// is the host naming a different control, and stays the heaviest penalty here.
+// Charging absence alike let these weights -- the two largest -- decide every
+// candidate on a page whose identifiers were dropped wholesale. Absence stays
+// negative so a candidate without one is still listed in `failedSignals`.
+const MISSING_STABLE_IDENTIFIER_SIMILARITY = -0.1;
+const CONTRADICTED_STABLE_IDENTIFIER_SIMILARITY = -0.8;
+
 function compareExactSignal(signalPath: "id" | "testId" | "automationId" | "entityId" | "statePath", expected: string | undefined, actual: string | undefined, contribute: (signalPath: keyof ElementFingerprintWeights, similarity: number, reason: string, metadata?: JsonObject) => void): void {
   if (!hasText(expected)) return;
-  if (!hasText(actual)) { contribute(signalPath, -0.55, "candidate is missing stable identifier"); return; }
-  contribute(signalPath, normalizeCase(expected) === normalizeCase(actual) ? 1 : -0.8, "stable identifier comparison", { expected, actual });
+  if (!hasText(actual)) { contribute(signalPath, MISSING_STABLE_IDENTIFIER_SIMILARITY, "candidate is missing stable identifier"); return; }
+  contribute(signalPath, normalizeCase(expected) === normalizeCase(actual) ? 1 : CONTRADICTED_STABLE_IDENTIFIER_SIMILARITY, "stable identifier comparison", { expected, actual });
 }
 
 function compareLooseSignal(signalPath: "role" | "tagName" | "entityKind", expected: string | undefined, actual: string | undefined, contribute: (signalPath: keyof ElementFingerprintWeights, similarity: number, reason: string, metadata?: JsonObject) => void): void {

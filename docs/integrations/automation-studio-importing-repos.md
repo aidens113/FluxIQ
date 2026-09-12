@@ -519,6 +519,16 @@ bounds, and non-sensitive attributes when available. FluxIQ's common
 `elementMatcher` gives stronger weight to semantic and stable identity while
 still using structural paths as supporting evidence.
 
+The matcher distinguishes a stable identifier a candidate **does not carry**
+from one that **contradicts** the recording. Absence is charged as lightly as
+a missing class list, because a host that stopped emitting an ID says nothing
+about which control this is; a contradicting ID is the heaviest penalty in the
+scale, because the host is naming a different control. So supply every
+identifier a candidate genuinely has, and leave the field out rather than
+filling it with a placeholder: a wrong value costs a candidate far more than an
+absent one. Either way the signal appears in `failedSignals`, so a diagnostic
+still shows what the candidate could not answer.
+
 Element-targeting outputs should mark their output definition metadata so the
 runtime can reject calls that omit a fingerprint:
 
