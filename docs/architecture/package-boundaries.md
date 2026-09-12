@@ -37,6 +37,21 @@ The runtime keeps its established public subpaths during the 0.1 compatibility
 period. New subpaths should be added only for an independently useful surface;
 internal folders are not automatically public API.
 
+`fluxiq` is a Node.js package, but one of its subpaths is not. The runtime is
+the only place the element matcher lives, and a host that scores element
+candidates does so where the elements are — in a browser. So
+`fluxiq/automation-studio/fingerprinting` publishes the fingerprint contracts
+and `createAutomationStudioElementMatcher` on their own, away from the
+`fluxiq/automation-studio` barrel, which reaches `node:crypto` and
+`node:perf_hooks` through `dsl/` and `testing/` and therefore cannot be
+resolved by a browser bundler at all. The subpath's compiled graph is three
+files with no runtime imports of any kind; that is not a claim about today's
+code but an invariant, checked by
+`src/programs/automation-studio/fingerprinting/tests/index.test.ts`, which
+fails if any module in the closure gains a value import. The alternative — a
+second matcher written in the browser host — would give two different answers
+to the same question within a release.
+
 TypeDoc is an optional runtime peer. Repository development installs it to
 generate API reference, while normal runtime import and setup work without it.
 Native `sqlite3` remains external and is installed for the consumer platform.
@@ -56,7 +71,7 @@ exercises a layout-v1 to layout-v2 migration, type-checks without workspace
 paths, and browser-bundles the WebSocket client while checking its dependency
 graph. CI repeats the checks on Node 22 for Windows and Linux.
 
-`@fluxiq/contracts` and `fluxiq` are at version `0.2.0`;
+`@fluxiq/contracts` is at version `0.2.0` and `fluxiq` at `0.2.1`;
 `@fluxiq/client-gateway-websocket` is at `0.1.0`. Before 1.0, compatible
 changes increment the patch version and intentional API breaks increment the
 minor version with a note under [Migration Notes](#migration-notes). Registry

@@ -170,6 +170,7 @@ async function validateBrowserConsumer(tarballs) {
 function runtimeSmokeSource() {
   const runtimeSubpaths = [
     "api-contracts", "auth", "client-gateway", "automation-studio", "automation-studio/nodes",
+    "automation-studio/fingerprinting",
     "background-tasks", "components", "compute", "compute-control", "core", "data",
     "database-manager", "deployment-sync", "domains", "docs", "engine", "flows", "framework",
     "identity-access", "io", "production-runner", "programs", "ui"

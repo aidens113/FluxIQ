@@ -1,6 +1,6 @@
 {
   "name": "fluxiq",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Domain-neutral FluxIQ framework runtime for Node.js.",
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
@@ -14,6 +14,7 @@
     "./automation-studio/nodes": { "types": "./dist/programs/automation-studio/nodes/index.d.ts", "import": "./dist/programs/automation-studio/nodes/index.js" },
     "./automation-studio/dsl": { "types": "./dist/programs/automation-studio/dsl/index.d.ts", "import": "./dist/programs/automation-studio/dsl/index.js" },
     "./automation-studio/dsl/generator": { "types": "./dist/programs/automation-studio/dsl/generator.d.ts", "import": "./dist/programs/automation-studio/dsl/generator.js" },
+    "./automation-studio/fingerprinting": { "types": "./dist/programs/automation-studio/fingerprinting/index.d.ts", "import": "./dist/programs/automation-studio/fingerprinting/index.js" },
     "./background-tasks": { "types": "./dist/programs/background-tasks/index.d.ts", "import": "./dist/programs/background-tasks/index.js" },
     "./components": { "types": "./dist/components/index.d.ts", "import": "./dist/components/index.js" },
     "./compute": { "types": "./dist/programs/compute-control/index.d.ts", "import": "./dist/programs/compute-control/index.js" },

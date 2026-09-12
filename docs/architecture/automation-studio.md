@@ -624,7 +624,12 @@ The first slice also defines contract-only homes for upcoming stages:
   interface.
 - `fingerprinting` owns node scoring contributions, candidate scores, scoring
   context, the `FingerprintScorer` interface, and common element fingerprint
-  matching used by recording mappers and native runtime output logic.
+  matching used by recording mappers and native runtime output logic. It is the
+  one Automation Studio folder published as its own package subpath,
+  `fluxiq/automation-studio/fingerprinting`, because a host that scores element
+  candidates runs where the elements are and may have no Node runtime at all.
+  The folder therefore holds no runtime imports, and a test inside it fails the
+  build if one appears. See [package boundaries](package-boundaries.md).
 
 ## Validation Boundary
 
