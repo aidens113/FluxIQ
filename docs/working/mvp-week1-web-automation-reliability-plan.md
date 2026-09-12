@@ -238,6 +238,30 @@ heredoc (the Bash tool corrupts `\\`, and commands over about 8 KB fail).
   is loaded; that load is the condition the case must survive. Avoid shell
   heredocs here, they corrupt backslashes; write files with the editing tools.
 - Report to: `docs/working/mvp-week1-web-automation-reliability-plan/reports/core-adaptation-test-cost.md`
+### Brief: core-expectation-evaluator (C3)
+- Repository: FluxIQ Core (`F:!FluxIQ`). Not yet dispatched; written at Wave 3
+  planning so the downstream briefs can code against it.
+- Task: add an optional expectation evaluator so a host can decide whether an
+  expected state actually holds, instead of Core counting keys. Signature:
+  `expectationEvaluator?(conditions, mode, timeoutMs, context)`. The
+  `builtin.policy.expectation` node awaits it, and
+  `compareAutomationStudioTransition` uses it to evaluate `expectedState` against
+  the host current snapshot. A host that binds nothing keeps today behaviour
+  exactly. Bind it beside `bindHostRuntime` in `runtime/service.ts`.
+- Files named by the downstream plan: `programs/automation-studio/nodes/policy/
+  expectation.ts`, `runtime/executor/contracts.ts`,
+  `runtime/executor/transition-comparison.ts`, `runtime/service.ts`.
+- Verified at planning, so do not redo it: C1 and C2 are complete. All seven
+  adaptive failure classes exist, both target comparison statuses exist, and
+  `classifyTransitionComparisonStatus` already classifies structured-first. The
+  timeout-classification defect the downstream plan attributes to this unit is
+  already fixed.
+- Definition of done: a Core test proving an expectation node routes `failed`
+  when a bound evaluator rejects, and that an unbound host is unchanged; Core
+  `pnpm check`, `pnpm test`, `pnpm build`, `pnpm docs:check` and
+  `pnpm package:lint` each exit 0, captured by redirect rather than through a
+  pipe.
+- Report to: `docs/working/mvp-week1-web-automation-reliability-plan/reports/core-expectation-evaluator.md`
 ## Work Ledger
 
 ### 2026-09-11 — Document created; Core unit briefed
