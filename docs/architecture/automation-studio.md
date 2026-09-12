@@ -384,6 +384,18 @@ dispatched output whose bound confirmation input never arrived is
 beside `stateRefs`: the resolution status, the candidate count, the confidence
 threshold, and the best candidate's score and signals.
 
+Whether an expected state actually holds is the host's decision, not Core's. A
+host runtime boundary may bind `expectationEvaluator(conditions, mode,
+timeoutMs, context)` beside `captureStateSnapshot`, `inspectStateDiff`, and
+`rollbackHint`, and `bindHostRuntime` carries it into every graph run. The
+`builtin.policy.expectation` node awaits it and routes `failed` with an
+`expected_state_missing` failure when the host rejects; the transition
+comparison asks it about any other node's `expectedState`, naming the snapshot
+the attempt ended on, and reports the conditions the host checked instead of
+counting expected-state keys. A host that binds no evaluator is unchanged: the
+expectation passes unconditionally and expected state is read from the
+attempt's own route as before.
+
 Subflows are persisted as Flow-owned behavior units with route tags,
 input/output mapping, graph reference, local instruction IDs, proposal-mode
 override, and stability metrics. New subflows receive an isolated graph Flow by

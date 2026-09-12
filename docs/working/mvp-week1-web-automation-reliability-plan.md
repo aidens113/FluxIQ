@@ -25,18 +25,40 @@ members under the minor bump the user approved as downstream decision D9).
 
 **Done:** this document and the five unit briefs; core-structure-baseline,
 core-host-loading, core-failure-taxonomy, core-web-test-health, and
-core-runtime-test-health verified (ledger).
+core-runtime-test-health verified (ledger). **C3, the expectation-evaluator
+seam, is complete and verified** — every Core contract this plan owes the
+downstream plan now exists.
 
-**Not done:** the commit in both repositories and one push of both `dev`
-branches; C3, the expectation-evaluator seam, in downstream Wave 3.
+The seam landed in a different shape than the brief described, and the
+supervisor ratified it: the evaluator is an optional method **on
+`AutomationStudioHostRuntimeBoundary`**, not a separate `bindExpectationEvaluator`
+on the service, so a host that already binds a runtime boundary gets it through
+the same `bindHostRuntime` call and `runtime/service.ts` needed no change.
+Detail and rationale in
+[reports/core-expectation-evaluator.md](./mvp-week1-web-automation-reliability-plan/reports/core-expectation-evaluator.md).
+The downstream consequence is that the binding belongs on the boundary object,
+so it was folded into the downstream `w3-host-runtime` brief instead of being
+briefed on its own.
 
-**Gates:** `pnpm check`, `pnpm docs:check`, `pnpm build`, `pnpm package:lint` and
-`pnpm test` each exit 0, the last verified by the supervisor with the status
-redirected rather than piped: contracts 7 of 7, client-gateway 3 of 3, fluxiq 828
-of 828, web 1146 of 1146, structure audit clean with the new contracts tracked.
+**Gates (2026-09-12, over the seam):** `pnpm check` exit 0, `pnpm docs:check`
+exit 0, `pnpm package:lint` exit 0, `pnpm build` exit 0, each captured by
+redirect rather than through a pipe. `packages/fluxiq` tests: **128 of 128 files
+green** under `npx vitest run --no-file-parallelism`.
 
-**Next steps:** commit both repositories and push both `dev` branches in one work
-unit.
+**Core's parallel test suite is unsound on this machine, and it predates this
+work.** `pnpm test` in parallel loses one or two test files per run to `Error:
+Worker exited unexpectedly`, and once died with a segmentation fault; the file
+lost differs between runs. The cause surfaces as `SQLITE_CORRUPT: malformed
+database schema (fk_subflows_parent_flog_id_insert)` in
+`global-automation-studio-workspaces.test.ts` — Core's suite uses a native
+SQLite module, so the corruption usually kills the worker outright instead of
+failing a test. Verify Core with `--no-file-parallelism` here, and treat a
+parallel worker crash as an environment result rather than a regression. Note
+for anyone bisecting this: a single clean parallel baseline run does not clear a
+change, because the flake is intermittent — the sequential run is the sound
+comparison.
+
+**Next steps:** none in Core for this plan. Downstream Wave 3 binds the seam.
 
 **Blockers:** none.
 

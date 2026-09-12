@@ -1,12 +1,13 @@
 import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../model/index.ts";
-import type { AutomationNodeExecutionResult } from "../../nodes/index.ts";
+import type { AutomationNodeExecutionResult, AutomationNodeExpectationEvaluator } from "../../nodes/index.ts";
 import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues } from "../../nodes/index.ts";
-import { hostRuntimeCapabilityIds } from "../host-runtime.ts";
+import { hostExpectationEvaluator, hostRuntimeCapabilityIds, type AutomationStudioHostStateSnapshotRef } from "../host-runtime.ts";
 import { nodeAttemptFromResult } from "./attempt-trace.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
 import { captureHostState, enrichAttemptWithHostState } from "./host-state.ts";
 import { collectNodeInputs } from "./node-inputs.ts";
+import { attemptWithHostExpectationEvaluation } from "./transition-comparison.ts";
 
 export async function executeAutomationStudioNode(
   flow: AutomationStudioFlowDocument,
@@ -62,11 +63,11 @@ export async function executeAutomationStudioNode(
     });
     if (native) {
       const result = await dispatchAutomationStudioEffects(native.result, options);
-      return await enrichAttemptWithHostState({ ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...(native.logs?.length ? { logs: native.logs } : {}) }, options, beforeAction, hostCapabilities);
+      return await finishAttempt(executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...(native.logs?.length ? { logs: native.logs } : {}) }, options, beforeAction, hostCapabilities);
     }
     const composite = await options.compositeExecutor?.({ node: executionNode, inputs, options });
     if (composite) {
-      return await enrichAttemptWithHostState({ ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, composite.result), ...(composite.childTrace ? { childTrace: composite.childTrace } : {}), ...(composite.compositeTarget ? { compositeTarget: composite.compositeTarget } : {}) }, options, beforeAction, hostCapabilities);
+      return await finishAttempt(executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, composite.result), ...(composite.childTrace ? { childTrace: composite.childTrace } : {}), ...(composite.compositeTarget ? { compositeTarget: composite.compositeTarget } : {}) }, options, beforeAction, hostCapabilities);
     }
     return await enrichAttemptWithHostState({
       attemptId,
@@ -82,6 +83,12 @@ export async function executeAutomationStudioNode(
       message: `Node definition is not executable: ${node.definitionId}.`
     }, options, beforeAction, hostCapabilities);
   }
+  // The node asks the host whether expected state holds; Core names which node
+  // and attempt asked, and which snapshot the question is about.
+  const boundEvaluator = hostExpectationEvaluator(options.hostRuntime);
+  const expectationEvaluator: AutomationNodeExpectationEvaluator | undefined = boundEvaluator
+    ? (conditions, mode, timeoutMs, evaluationContext) => boundEvaluator(conditions, mode, timeoutMs, { ...evaluationContext, nodeId: node.id, attemptId, ...(beforeAction ? { stateRef: beforeAction.stateRef } : {}) })
+    : undefined;
   try {
     const context = {
       inputs,
@@ -89,11 +96,12 @@ export async function executeAutomationStudioNode(
       variables: new Map(Object.entries(options.variables ?? {})),
       ...(options.random ? { random: options.random } : {}),
       ...(options.now ? { now: options.now } : {}),
-      ...(options.signal ? { signal: options.signal } : {})
+      ...(options.signal ? { signal: options.signal } : {}),
+      ...(expectationEvaluator ? { expectationEvaluator } : {})
     };
     let result = await definition.execute(context);
     result = await dispatchAutomationStudioEffects(result, options);
-    return await enrichAttemptWithHostState(nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), options, beforeAction, hostCapabilities);
+    return await finishAttempt(executionNode, nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), options, beforeAction, hostCapabilities);
   } catch (error) {
     return await enrichAttemptWithHostState({
       attemptId,
@@ -109,6 +117,19 @@ export async function executeAutomationStudioNode(
       message: error instanceof Error ? error.message : "Node execution failed."
     }, options, beforeAction, hostCapabilities);
   }
+}
+
+// Host state is captured first, so the expectation evaluator is asked about the
+// snapshot the attempt actually ended on.
+async function finishAttempt(
+  node: AutomationStudioFlowNode,
+  attempt: AutomationStudioNodeAttemptTrace,
+  options: AutomationStudioGraphExecutionOptions,
+  beforeAction: AutomationStudioHostStateSnapshotRef | undefined,
+  hostCapabilities: string[]
+): Promise<AutomationStudioNodeAttemptTrace> {
+  const enriched = await enrichAttemptWithHostState(attempt, options, beforeAction, hostCapabilities);
+  return await attemptWithHostExpectationEvaluation(node, enriched, options);
 }
 
 async function dispatchAutomationStudioEffects(initial: AutomationNodeExecutionResult, options: AutomationStudioGraphExecutionOptions): Promise<AutomationNodeExecutionResult> {

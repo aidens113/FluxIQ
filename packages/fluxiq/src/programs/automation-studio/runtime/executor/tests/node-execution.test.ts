@@ -46,3 +46,93 @@ describe("effect dispatch results in the attempt trace", () => {
     expect(trace.attempts[0]?.transitionComparison?.status).toBe("action_failed");
   });
 });
+
+const conditions = [{ path: "cart.items", operator: "exists" }];
+const expectationFlow: AutomationStudioFlowDocument = {
+  schemaVersion: "0.1",
+  flowId: "flow.expectation",
+  ownerKind: "task",
+  ownerId: "task.expectation",
+  name: "Expectation",
+  createdAt: 1,
+  updatedAt: 1,
+  nodes: [{ id: "check", definitionId: "builtin.policy.expectation", parameterValues: { conditions, mode: "all", timeoutMs: 250 } }],
+  edges: []
+};
+
+describe("the host expectation evaluator", () => {
+  it("routes the expectation node to failed when the bound evaluator rejects", async () => {
+    const asked: unknown[] = [];
+    const trace = await runAutomationStudioGraph(expectationFlow, {
+      hostRuntime: {
+        capabilities: ["expectation-evaluation"],
+        expectationEvaluator: (...args) => {
+          asked.push(args);
+          return { passed: false, message: "The cart stayed empty.", checkedConditionCount: 1 };
+        }
+      }
+    });
+
+    expect(trace.attempts[0]).toMatchObject({
+      status: "failed",
+      route: "failed",
+      outputs: { passed: false, failed: true },
+      message: "The cart stayed empty.",
+      failure: { category: "expected_state_missing", code: "core.policy.expectation_rejected", retryable: true, stage: "verification" }
+    });
+    expect(trace.attempts[0]?.transitionComparison?.status).toBe("missing_expected_state");
+    expect(asked).toEqual([[conditions, "all", 250, { source: "policy_node", nodeId: "check", attemptId: "check.attempt.1" }]]);
+  });
+
+  it("leaves a host that binds no evaluator exactly as it was", async () => {
+    const trace = await runAutomationStudioGraph(expectationFlow, { hostRuntime: { capabilities: ["state-snapshot"] } });
+    const unbound = await runAutomationStudioGraph(expectationFlow, {});
+
+    for (const attempt of [trace.attempts[0], unbound.attempts[0]]) {
+      expect(attempt).toMatchObject({ status: "succeeded", route: "passed", outputs: { passed: true, failed: false } });
+      expect(attempt).not.toHaveProperty("failure");
+      expect(attempt?.transitionComparison?.status).toBe("matched");
+    }
+  });
+
+  it("asks the evaluator once, not again through the transition comparison, when it accepts", async () => {
+    let calls = 0;
+    const trace = await runAutomationStudioGraph(expectationFlow, {
+      hostRuntime: {
+        capabilities: ["expectation-evaluation"],
+        expectationEvaluator: () => {
+          calls += 1;
+          return { passed: true };
+        }
+      }
+    });
+
+    expect(calls).toBe(1);
+    expect(trace.attempts[0]?.transitionComparison?.status).toBe("matched");
+  });
+
+  it("evaluates another node's expected state against the host's current snapshot", async () => {
+    const asked: unknown[] = [];
+    const stateFlow: AutomationStudioFlowDocument = {
+      ...expectationFlow,
+      flowId: "flow.expected-state",
+      nodes: [{ id: "output", definitionId: "builtin.policy.action", parameterValues: { outputId: "activate-element", expectedState: { conditions, mode: "any", timeoutMs: 400 } } }]
+    };
+    const trace = await runAutomationStudioGraph(stateFlow, {
+      effectDispatcher: () => ({ status: "success", route: "success", outputs: { ok: true } }),
+      hostRuntime: {
+        capabilities: ["expectation-evaluation", "state-snapshot"],
+        captureStateSnapshot: () => ({ stateSnapshotId: "snap.1", stateRef: "state://cart/1", capturedAt: 5 }),
+        expectationEvaluator: (...args) => {
+          asked.push(args);
+          return { passed: false, checkedConditionCount: 3 };
+        }
+      }
+    });
+
+    expect(trace.attempts[0]?.status).toBe("succeeded");
+    expect(trace.attempts[0]?.transitionComparison?.status).toBe("missing_expected_state");
+    expect(trace.attempts[0]?.transitionComparison?.diffSummary.stateCheckCount).toBe(3);
+    expect(asked).toEqual([[conditions, "any", 400, { source: "transition_comparison", nodeId: "output", attemptId: "output.attempt.1", stateRef: "state://cart/1" }]]);
+  });
+});

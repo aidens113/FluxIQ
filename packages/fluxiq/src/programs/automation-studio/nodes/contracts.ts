@@ -71,6 +71,36 @@ export type AutomationNodeParameterStateBinding = {
   };
 };
 
+/** A host's verdict on whether an expected state holds. */
+export type AutomationNodeExpectationEvaluation = {
+  passed: boolean;
+  /** How many conditions the host evaluated, reported instead of Core counting expected-state keys. */
+  checkedConditionCount?: number;
+  message?: string;
+  failure?: AutomationStudioFailureRecord;
+};
+
+/** Why Core asked, and which attempt and host snapshot the question is about. */
+export type AutomationNodeExpectationEvaluationContext = {
+  source: "policy_node" | "transition_comparison";
+  nodeId?: string;
+  attemptId?: string;
+  /** The host state snapshot the expectation is evaluated against, when one was captured. */
+  stateRef?: string;
+  signal?: AbortSignal;
+};
+
+/**
+ * Decides whether an expected state holds. Core never evaluates the conditions
+ * itself: with no evaluator bound, an expectation keeps its unconditional pass.
+ */
+export type AutomationNodeExpectationEvaluator = (
+  conditions: JsonValue[],
+  mode: string,
+  timeoutMs: number,
+  context: AutomationNodeExpectationEvaluationContext
+) => AutomationNodeExpectationEvaluation | Promise<AutomationNodeExpectationEvaluation>;
+
 export type AutomationNodeExecutionContext = {
   inputs: Record<string, JsonValue>;
   parameters: Record<string, JsonValue>;
@@ -78,6 +108,8 @@ export type AutomationNodeExecutionContext = {
   random?: () => number;
   now?: () => number;
   signal?: AbortSignal;
+  /** Bound from the host runtime boundary; the expectation node awaits it. */
+  expectationEvaluator?: AutomationNodeExpectationEvaluator;
 };
 
 /** How an output-dispatching node resolved its element target before dispatch. */
