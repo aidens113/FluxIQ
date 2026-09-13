@@ -6,6 +6,8 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import { IoRegistry } from "../../../../../../io/index.ts";
 import type { AppendRecordingEntryInput } from "../../../../model/index.ts";
 import type { AutomationStudioImporterSdkManifest, AutomationStudioRecordingMapperImplementation, AutomationStudioRecordingMapperObservation } from "../../../../nodes/index.ts";
+import { runCanonicalAutomationStudioFlow } from "../../../composite-executor.ts";
+import { chooseAutomationStudioStartNode } from "../../../executor.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
 
@@ -120,6 +122,36 @@ describe("a recording mapper's expected state", () => {
   it("is dropped, and the action still proposed, when it has no keys", async () => {
     // A symbol key is an own key, but it does not survive the clone a proposal holds.
     await expectEveryExpectedStateDropped([{}, Object.create(null), { [Symbol("conditions")]: [{ assert: { kind: "url", expected: "/account" } }] }], "recording.empty-state");
+  });
+});
+
+describe("where a run of an approved recording's Flow begins", () => {
+  it("is the first candidate's node, though the graph index lists a later candidate's node first", async () => {
+    const { service, projectId } = await projectWithMappers({
+      "click-mapper": (observation) => isClick(observation) ? { outputId: "click", parameters: { target: `step-${String((observation.payload.payload as JsonObject).step)}` }, sourceInputIds: ["clicked"], confidence: 0.9 } : null
+    });
+    // Three state snapshots before twelve clicks put the first click at a
+    // single-digit entry and later clicks at two-digit ones, which sort ahead of it.
+    const recording = await service.createRecording({ projectId, recordingId: "recording.start-node", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
+    const entries: AppendRecordingEntryInput[] = [];
+    for (let index = 0; index < 3; index += 1) entries.push({ type: "observation", observationType: "client.state_snapshot", payload: { state: { timestamp: 2 + index, namespaces: {} } } });
+    for (let step = 0; step < 12; step += 1) entries.push({ type: "observation", observationType: "clicked", payload: { inputId: "clicked", step } });
+    await service.appendRecordingEvents({ projectId, recordingId: recording.recordingId, entries });
+    const { proposals: [proposal] } = await service.createRecordingFlowProposals({ projectId, recordingId: recording.recordingId });
+    const candidateIds = (proposal?.candidates ?? []).map((candidate) => candidate.candidateId);
+    expect(candidateIds).toHaveLength(12);
+
+    const graph = await approvedGraph(service, projectId, proposal!.proposalId);
+    const candidateOf = (nodeId: string | undefined) => graph.nodes.find((node) => node.id === nodeId)?.metadata?.recordingCandidateId;
+    const listedIds = graph.nodes.map((node) => node.id);
+    // The precondition: getFlow lists nodes in binary id order, and that order begins at a later candidate.
+    expect(listedIds).toEqual([...listedIds].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0)));
+    expect(candidateOf(listedIds[0])).not.toBe(candidateIds[0]);
+
+    expect(candidateOf(chooseAutomationStudioStartNode(graph).node?.id)).toBe(candidateIds[0]);
+    const trace = await runCanonicalAutomationStudioFlow(graph, [], { effectDispatcher: () => ({ status: "success", route: "success", outputs: {} }) });
+    expect(trace.status).toBe("succeeded");
+    expect(trace.attempts.map((attempt) => candidateOf(attempt.nodeId))).toEqual(candidateIds);
   });
 });
 

@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../model/index.ts";
-import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "./executor.ts";
+import { chooseAutomationStudioStartNode, runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "./executor.ts";
 
 export const AUTOMATION_STUDIO_COMPILED_PLAN_SCHEMA_VERSION = "automation-studio.compiled-plan.v1" as const;
-export const AUTOMATION_STUDIO_COMPILED_PLAN_COMPILER_VERSION = "compiled-plan.v1" as const;
+export const AUTOMATION_STUDIO_COMPILED_PLAN_COMPILER_VERSION = "compiled-plan.v2" as const;
 
 export type AutomationStudioCompiledPlanInstruction = {
   instructionId: string;
@@ -97,7 +97,7 @@ export function compileAutomationStudioPlan(input: CompileAutomationStudioPlanIn
     settingsRevision: positiveInteger(input.settingsRevision, "settings revision"),
     instructionRevision: positiveInteger(input.instructionRevision ?? maxRevision(resolvedInstructions), "instruction revision"),
     compiledAt: Math.max(0, Math.trunc(input.compiledAt ?? Date.now())),
-    startNodeId: nodes.find((node) => node.definitionId === "builtin.control.start")?.id ?? nodes[0]?.id ?? null,
+    startNodeId: chooseAutomationStudioStartNode({ nodes, edges }).node?.id ?? null,
     nodes,
     edges,
     edgesBySource: buildEdgesBySource(edges),

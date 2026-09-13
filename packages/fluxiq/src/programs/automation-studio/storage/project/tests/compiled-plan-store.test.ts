@@ -30,7 +30,7 @@ describe("AutomationStudioProjectCompiledPlanStore", () => {
 
     expect(second).toEqual(first);
     expect(first.status).toBe("ready");
-    expect(first.artifactId).toBe("compiled:flow.main:3:compiled-plan.v1");
+    expect(first.artifactId).toBe("compiled:flow.main:3:compiled-plan.v2");
     const loaded = await store.loadCompiledPlan(first.artifactId);
     expect(loaded.plan).toMatchObject({ schemaVersion: "automation-studio.compiled-plan.v1", flowId: "flow.main", flowRevision: 3, graphRevision: 3, settingsRevision: 5 });
     expect(loaded.plan.nodes.map((node) => node.id)).toEqual(["node.end", "node.start"]);
@@ -47,14 +47,14 @@ describe("AutomationStudioProjectCompiledPlanStore", () => {
     await seedCompiledFlow(pool, "project.jobs", { graphRevision: 1 });
     await store.enqueueCompileJob({ flowId: "flow.main", flowRevision: 1, priority: 10, createdAt: 10 });
     const manifest = await store.processNextCompileJob({ now: 20 });
-    expect(manifest).toMatchObject({ artifactId: "compiled:flow.main:1:compiled-plan.v1", status: "ready" });
+    expect(manifest).toMatchObject({ artifactId: "compiled:flow.main:1:compiled-plan.v2", status: "ready" });
 
     const run = await store.startRunFromArtifact({ artifactId: manifest!.artifactId, runId: "run.1", startedAt: 30, options: { now: deterministicNow(30) } });
     expect(run.trace.status).toBe("succeeded");
     await expect(store.recordSafePointAdoption({ adoptionId: "adoption.1", runId: "run.1", fromArtifactId: manifest!.artifactId, toArtifactId: manifest!.artifactId, safePointSequence: 2, reason: "approved adaptation", adoptedAt: 40 })).resolves.toMatchObject({ runId: "run.1", safePointSequence: 2, reason: "approved adaptation" });
 
     const lease = await pool.acquire("project.jobs");
-    await expect(lease.database.get<{ status: string; output_object_id: string }>("select status, output_object_id from background_jobs where job_id = ?", ["job:compiled:flow.main:1:compiled-plan.v1"])).resolves.toMatchObject({ status: "done", output_object_id: manifest!.objectId });
+    await expect(lease.database.get<{ status: string; output_object_id: string }>("select status, output_object_id from background_jobs where job_id = ?", ["job:compiled:flow.main:1:compiled-plan.v2"])).resolves.toMatchObject({ status: "done", output_object_id: manifest!.objectId });
     await lease.release();
     await store.close();
     await pool.closeAll();

@@ -110,6 +110,7 @@ opt-in. Read the whole entry if a host:
 - reads saved command attempts or run inputs back;
 - runs its own client-gateway client;
 - dispatches runtime or client-gateway commands with a `timeoutMs`;
+- runs a Flow that has no Start node, or stores compiled plans;
 - or writes a recording mapper.
 
 **A rejected expected state fails the attempt.** Some nodes other than
@@ -279,6 +280,24 @@ the answer.** No type or export changes.
   timeout and the margin, and the gateway's names the full wait. A host that
   matched `Runtime command timed out after <timeoutMs>ms.` must match the new
   text.
+
+**A run with no named start begins where its graph says, not at the first
+listed node.** `chooseAutomationStudioStartNode` is a new export, and both a
+graph run and a compiled plan use it.
+- **The rule.** Exactly one `builtin.control.start` node is where a run begins,
+  as before. With no Start node, a run begins at the one node that no edge from
+  another node enters; an End node that no edge enters counts only when no
+  other node does. A run used to begin at the first node listed, and a Flow
+  read back through the project graph index lists its nodes by id, so a
+  recorded Flow of more than ten entries could begin at a later action.
+- **Refusals.** Several Start nodes, several such roots, or no root now fail
+  the run before any node runs, with a message naming the case. Such a run used
+  to begin at the first node listed.
+- **Compiled plans.** `startNodeId` follows the same rule and is `null` where a
+  run would refuse. `AUTOMATION_STUDIO_COMPILED_PLAN_COMPILER_VERSION` is now
+  `compiled-plan.v2`, so a plan compiled for a Flow revision before this change
+  is compiled again instead of being reused with its earlier start, and its
+  artifact id ends in `compiled-plan.v2`. The schema version is unchanged.
 
 ### 0.3.0: a missing stable identifier costs less (`fluxiq`)
 

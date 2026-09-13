@@ -156,6 +156,38 @@ declarative TypeScript, and explicit conversion makes either visual IR or a
 validated constrained module authoritative. Code-owned graphs are read-only
 in the visual editor and retain compiler/source digests.
 
+### Where a run begins
+
+A run begins at the node its caller names. A live-patch rerun, for example,
+names the node that failed. When no node is named, Core chooses the start from
+the graph alone, with `chooseAutomationStudioStartNode`, and never from the
+order the nodes are listed in. That order carries no meaning: the project graph
+index returns a Flow's nodes sorted by id, and a recorded node's id carries an
+unpadded timeline number, so `entry.10` is listed before `entry.2`.
+
+1. **A declared start.** When the graph has exactly one `builtin.control.start`
+   node, the run begins there, whatever else the graph holds.
+2. **The root.** With no Start node, the run begins at the one node that no
+   edge from another node of the graph enters. A node's edge to itself, and an
+   edge from a node the graph does not hold, do not count. An End node that no
+   edge enters is a root only when no other node is, because a run that begins
+   at End finishes there.
+3. **Otherwise the run refuses.** It fails before any node runs, with no
+   attempt, and its message names the case:
+   - several Start nodes;
+   - no Start node and several roots, naming up to five of them;
+   - no Start node and no root, because every node has an edge into it from
+     another node, which only a cycle allows;
+   - no nodes at all: "No start node is available in this flow."
+
+A compiled plan's `startNodeId` is chosen by the same rule, and is `null` where
+a run would refuse.
+
+A chain generated from a recording has exactly one root, its first candidate,
+so a Flow generated into an empty Subflow begins at the first recorded action.
+A chain appended beside other nodes gives the graph a second root. Connect the
+chains, or add a Start node, before running it.
+
 ## LLM-Assisted Deterministic Automation
 
 The next additive Flow expansion treats a Flow as the complete automation

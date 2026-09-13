@@ -2,11 +2,12 @@ import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument } from "../../model/index.ts";
 import { resolveAutomationNodeParameterValues } from "../../nodes/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
-import { chooseAutomationStudioEdge, findStartNode, hasUnvisitedAutomationStudioNodes, missingTargetTrace } from "./graph-navigation.ts";
+import { chooseAutomationStudioEdge, hasUnvisitedAutomationStudioNodes, missingTargetTrace } from "./graph-navigation.ts";
 import { executeAutomationStudioNode } from "./node-execution.ts";
 import { recoveryBudgetState } from "./recovery-budget.ts";
 import { chooseAutomationStudioRecovery, failureMessageForRecoveryStop } from "./recovery-ladder.ts";
 import { executeWithRegionTimeout, policyDecisionForAttempt, recordRegionTransition } from "./region-execution.ts";
+import { chooseAutomationStudioStartNode } from "./start-node.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE, automationStudioTraceWithholding, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
 
@@ -147,7 +148,8 @@ async function executeAutomationStudioGraph(
   const regionStartedAt = new Map<string, number>();
   const capabilities = new Set(options.runtimeCapabilities ?? []);
   const nodesById = new Map(flow.nodes.map((node) => [node.id, node]));
-  let currentNode = options.startNodeId ? nodesById.get(options.startNodeId) : findStartNode(flow);
+  const startChoice = options.startNodeId ? undefined : chooseAutomationStudioStartNode(flow);
+  let currentNode = options.startNodeId ? nodesById.get(options.startNodeId) : startChoice?.node;
   if (!currentNode) {
     return {
       status: "failed",
@@ -156,7 +158,7 @@ async function executeAutomationStudioGraph(
       attempts,
       values,
       effects,
-      message: "No start node is available in this flow."
+      message: startChoice?.message ?? "No start node is available in this flow."
     };
   }
 
