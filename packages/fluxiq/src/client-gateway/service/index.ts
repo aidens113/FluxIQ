@@ -1,5 +1,6 @@
 export * from "./access.ts";
 export * from "./audit-log.ts";
+export * from "./command-answer-margin.ts";
 export * from "./commands.ts";
 export * from "./config.ts";
 export * from "./facade-ports.ts";

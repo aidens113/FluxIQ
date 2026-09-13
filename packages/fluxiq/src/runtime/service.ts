@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { COMMAND_ANSWER_MARGIN_MS } from "../client-gateway/service/index.ts";
 import type { JsonObject } from "../core/index.ts";
 import {
   FLUXIQ_RUNTIME_WITHHELD_VALUE,
@@ -359,16 +360,15 @@ async function withRuntimeBounds(
   let timer: ReturnType<typeof setTimeout> | undefined;
   let abortListener: (() => void) | undefined;
   if (command.timeoutMs !== undefined && command.timeoutMs > 0) {
+    // `timeoutMs` is the time the target is given. A target that honours it
+    // answers with its own timeout when that runs out, so the runtime waits the
+    // answer margin longer before it decides the target never answered.
+    const waitMs = command.timeoutMs + COMMAND_ANSWER_MARGIN_MS;
+    const message = `Runtime command timed out after ${waitMs}ms: no answer within its ${command.timeoutMs}ms timeout and ${COMMAND_ANSWER_MARGIN_MS}ms answer margin.`;
     bounds.push(new Promise((resolve) => {
       timer = setTimeout(() => {
-        resolve({
-          commandId: command.commandId,
-          status: "timed_out",
-          completedAt: now(),
-          message: `Runtime command timed out after ${command.timeoutMs}ms.`,
-          error: `Runtime command timed out after ${command.timeoutMs}ms.`
-        });
-      }, command.timeoutMs);
+        resolve({ commandId: command.commandId, status: "timed_out", completedAt: now(), message, error: message });
+      }, waitMs);
     }));
   }
   if (context.signal) {

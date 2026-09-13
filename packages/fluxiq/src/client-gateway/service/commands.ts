@@ -6,6 +6,7 @@ import type {
 } from "@fluxiq/contracts/client-gateway";
 import type { JsonObject } from "../../core/index.ts";
 import type { ClientGatewayAuditLog } from "./audit-log.ts";
+import { COMMAND_ANSWER_MARGIN_MS } from "./command-answer-margin.ts";
 import type { ClientGatewayConfig } from "./config.ts";
 import type { ClientGatewaySessionRegistry } from "./sessions.ts";
 import type { ClientGatewayTransport } from "./transport.ts";
@@ -62,12 +63,15 @@ export class ClientGatewayCommands {
     const session = this.sessions.requireReady(sessionId);
     const commandId = randomUUID();
     const message = this.transport.message("server.execute_action", { ...command, commandId }, session);
-    const timeoutMs = command.timeoutMs ?? this.config.commandTimeoutMs;
+    // The client is sent the command's own timeout, unchanged, and reports its
+    // own timeout when that runs out; waiting only as long would discard that
+    // answer, so a sent timeout is waited on for the answer margin longer.
+    const waitMs = command.timeoutMs === undefined ? this.config.commandTimeoutMs : command.timeoutMs + COMMAND_ANSWER_MARGIN_MS;
     const result = new Promise<ClientGatewayActionResult>((resolve) => {
       const timeout = setTimeout(() => {
         this.pending.delete(commandId);
-        resolve({ commandId, status: "timed_out", message: `Client action timed out after ${timeoutMs}ms.` });
-      }, timeoutMs);
+        resolve({ commandId, status: "timed_out", message: `Client action timed out after ${waitMs}ms.` });
+      }, waitMs);
       this.pending.set(commandId, { sessionId, resolve, timeout });
     });
     void this.transport.send(sessionId, message);

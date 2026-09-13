@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { CLIENT_GATEWAY_PROTOCOL_VERSION, ClientGatewayService, type ClientGatewayClientMessage, type ClientGatewayTrustedClient, type ClientGatewayTrustedClientStore } from "../index.ts";
+import { COMMAND_ANSWER_MARGIN_MS } from "../service/index.ts";
 
 describe("ClientGatewayService", () => {
   it("returns bounded stable summary pages without exposing full snapshots", async () => {
@@ -125,6 +126,43 @@ describe("ClientGatewayService", () => {
     await expect(response.result).resolves.toMatchObject({ commandId: response.commandId, status: "succeeded" });
   });
 
+  it("sends a command's timeout unchanged, and keeps the client's own answer that arrives after it but within the answer margin", async () => {
+    const gateway = new ClientGatewayService();
+    const client = await pairClient(gateway, "extension.late", "user.late");
+    const failure = { category: "timeout", code: "example.action.timeout", retryable: true } as const;
+
+    const response = gateway.executeAction(client.sessionId, { actionType: "example.wait", timeoutMs: 20 });
+    expect(response.message).toMatchObject({ type: "server.execute_action", payload: { commandId: response.commandId, timeoutMs: 20 } });
+    await new Promise((resolve) => setTimeout(resolve, 20 + 250));
+    await gateway.receive(client.sessionId, clientMessage("client.action_result", { commandId: response.commandId, status: "timed_out", message: "Gave up after its own 20ms.", failure }));
+
+    await expect(response.result).resolves.toMatchObject({ commandId: response.commandId, status: "timed_out", message: "Gave up after its own 20ms.", failure });
+  });
+
+  it("gives a silent client a sent timeout plus the 3,000 ms answer margin, and a command sent without one the configured default", async () => {
+    expect(COMMAND_ANSWER_MARGIN_MS).toBe(3_000);
+    const gateway = new ClientGatewayService({ commandTimeoutMs: 1_000 });
+    const client = await pairClient(gateway, "extension.silent", "user.silent");
+    vi.useFakeTimers();
+    try {
+      const timed = settledValue(gateway.executeAction(client.sessionId, { actionType: "example.wait", timeoutMs: 20 }).result);
+      const untimed = settledValue(gateway.executeAction(client.sessionId, { actionType: "example.wait" }).result);
+
+      await vi.advanceTimersByTimeAsync(999);
+      expect(untimed.value, "a command with no timeout still waits the configured default").toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(untimed.value).toMatchObject({ status: "timed_out", message: "Client action timed out after 1000ms." });
+
+      await vi.advanceTimersByTimeAsync(20 + COMMAND_ANSWER_MARGIN_MS - 1 - 1_000);
+      expect(timed.value, "the gateway is still waiting inside the answer margin").toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(timed.value).toMatchObject({ status: "timed_out", message: `Client action timed out after ${20 + COMMAND_ANSWER_MARGIN_MS}ms.` });
+      expect(timed.value).not.toHaveProperty("failure");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reconnects across transient sessions and rotates one-use credentials", async () => {
     const tokens = ["pair-token", "rotated-token"];
     const gateway = new ClientGatewayService({ createToken: () => tokens.shift() ?? "unexpected-token" });
@@ -215,6 +253,13 @@ describe("ClientGatewayService", () => {
     expect(activeRecordingId()).toBeNull();
   });
 });
+
+/** What a promise has settled to so far, read without awaiting it. */
+function settledValue<T>(promise: Promise<T>): { value: T | undefined } {
+  const tracked: { value: T | undefined } = { value: undefined };
+  void promise.then((value) => { tracked.value = value; });
+  return tracked;
+}
 
 async function pairClient(gateway: ClientGatewayService, clientId: string, approvedByUserId: string) {
   const session = gateway.connect();

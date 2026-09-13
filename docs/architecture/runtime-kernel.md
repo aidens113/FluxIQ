@@ -107,6 +107,28 @@ When a `policy.output.dispatch` effect runs:
 This keeps the framework's output-native policy model intact while allowing
 websocket clients and direct adapters to participate in one dispatch path.
 
+## Command Deadlines
+
+A command's `timeoutMs` is the time its target is given to do the work, and
+`ClientGatewayRuntimeTransport` sends it to the client unchanged. A target that
+honours it answers with its own timeout, and its own failure record, once that
+time runs out, and that answer still has to come back. So both deadlines that
+wait on an answer add `COMMAND_ANSWER_MARGIN_MS`, 3,000 ms, defined once in
+`client-gateway/service/command-answer-margin.ts`:
+
+- **`RuntimeService`** resolves a command with a positive `timeoutMs` as
+  `timed_out` only after `timeoutMs` plus the margin. This holds for every
+  adapter and transport target. An in-process adapter's work is bounded by its
+  timeout anyway, so for one the margin only delays a hung adapter's failure.
+- **The client gateway's pending command** waits `timeoutMs` plus the margin
+  when the command carries a timeout. A command without one waits
+  `commandTimeoutMs`, 30,000 ms by default.
+
+An answer that arrives inside the margin is reported as the target sent it: its
+status, message, and failure record. A `timed_out` result from either deadline
+means the target never answered, and Automation Studio names it
+`output_dispatch.timed_out`.
+
 ## Persistence
 
 Runtime runs and command attempts use `FileRuntimeStore` when host paths are

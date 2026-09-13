@@ -1,13 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { COMMAND_ANSWER_MARGIN_MS } from "../../client-gateway/service/index.ts";
 import {
   FileRuntimeStore,
   FLUXIQ_RUNTIME_WITHHELD_VALUE,
   RuntimeService,
+  type FluxIQRuntimeCapability,
   type FluxIQRuntimeCommand,
   type FluxIQRuntimeCommandAttempt,
+  type FluxIQRuntimeCommandResult,
   type FluxIQRuntimeExecutionContext,
   type FluxIQRuntimeTransport
 } from "../index.ts";
@@ -191,25 +194,44 @@ describe("RuntimeService", () => {
     expect(runtime.commandAttemptsList()).toMatchObject([{ commandId: "command.missing", status: "rejected" }]);
   });
 
-  it("times out commands through slow adapters", async () => {
-    const runtime = new RuntimeService({ now: () => 200 });
-    runtime.registerAdapter({
-      adapterId: "slow",
-      label: "Slow",
-      transport: "direct",
-      capabilities: () => [{ id: "slow.actions", kind: "action", actionTypes: ["slow.run"] }],
-      execute: () => new Promise(() => undefined)
-    });
+  // `timeoutMs` is the time a target is given. A target that honours it answers
+  // with its own timeout, and its own failure record, once that runs out, so the
+  // runtime waits the answer margin longer before deciding it never answered.
+  it.each(["adapter", "transport"] as const)("reports the %s target's own answer that arrives after its timeout but within the answer margin", async (targetKind) => {
+    const runtime = new RuntimeService();
+    const answer: Omit<FluxIQRuntimeCommandResult, "commandId"> = {
+      status: "timed_out",
+      message: "The target gave up after its own 20ms.",
+      failure: { category: "timeout", code: "example.action.timeout", retryable: true }
+    };
+    registerLateTarget(runtime, targetKind, (command) => new Promise((resolve) => {
+      setTimeout(() => resolve({ commandId: command.commandId ?? "command.late", ...answer }), 20 + 250);
+    }));
 
-    await expect(runtime.dispatch({
-      commandId: "command.slow",
-      kind: "execute_action",
-      actionType: "slow.run",
-      timeoutMs: 1
-    })).resolves.toMatchObject({
-      commandId: "command.slow",
-      status: "timed_out"
-    });
+    const result = await runtime.dispatch({ commandId: "command.late", kind: "execute_action", actionType: "late.run", timeoutMs: 20 });
+
+    expect(result).toEqual({ commandId: "command.late", ...answer });
+  });
+
+  it.each(["adapter", "transport"] as const)("times out a silent %s only once its timeout and the answer margin have both passed", async (targetKind) => {
+    vi.useFakeTimers();
+    try {
+      const runtime = new RuntimeService();
+      registerLateTarget(runtime, targetKind, () => new Promise(() => undefined));
+      let settled: FluxIQRuntimeCommandResult | undefined;
+      const pending = runtime.dispatch({ commandId: "command.silent", kind: "execute_action", actionType: "late.run", timeoutMs: 20 })
+        .then((result) => { settled = result; });
+
+      await vi.advanceTimersByTimeAsync(20 + COMMAND_ANSWER_MARGIN_MS - 1);
+      expect(settled, "the runtime is still waiting inside the answer margin").toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      await pending;
+
+      expect(settled).toMatchObject({ commandId: "command.silent", status: "timed_out", message: expect.stringContaining(`after ${20 + COMMAND_ANSWER_MARGIN_MS}ms`) });
+      expect(settled).not.toHaveProperty("failure");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("cancels commands before dispatch work settles", async () => {
@@ -332,3 +354,24 @@ describe("RuntimeService", () => {
     expect(runtime.commandAttemptsList()).toMatchObject([{ command: { parameters: { selector: "#field", text: "hello", retries: 3 } }, message: "Typed hello.", result: { message: "Typed hello." } }]);
   });
 });
+
+/** One target for `late.run`, as a direct adapter or as a ready transport client, answering however `answer` does. */
+function registerLateTarget(
+  runtime: RuntimeService,
+  targetKind: "adapter" | "transport",
+  answer: (command: FluxIQRuntimeCommand) => Promise<FluxIQRuntimeCommandResult>
+): void {
+  const capabilities: FluxIQRuntimeCapability[] = [{ id: "late.actions", kind: "action", actionTypes: ["late.run"] }];
+  if (targetKind === "adapter") {
+    runtime.registerAdapter({ adapterId: "late", label: "Late", transport: "direct", capabilities: () => capabilities, execute: answer });
+    return;
+  }
+  runtime.registerTransport({
+    transportId: "late",
+    label: "Late",
+    kind: "websocket",
+    clients: () => [{ clientId: "late.client", label: "Late client", transport: "websocket", status: "ready", capabilities }],
+    dispatch: answer,
+    onEvent: () => () => undefined
+  });
+}

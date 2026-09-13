@@ -1432,8 +1432,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `RuntimeInputs` | Type | `packages/fluxiq/src/io/index.ts:46` | - |
 | `RuntimeMode` | Type | `packages/fluxiq/src/engine/index.ts:11` | - |
 | `RuntimeOutputs` | Type | `packages/fluxiq/src/io/index.ts:51` | - |
-| `RuntimeService` | Class | `packages/fluxiq/src/runtime/service.ts:28` | - |
-| `RuntimeServiceOptions` | Type | `packages/fluxiq/src/runtime/service.ts:22` | - |
+| `RuntimeService` | Class | `packages/fluxiq/src/runtime/service.ts:29` | - |
+| `RuntimeServiceOptions` | Type | `packages/fluxiq/src/runtime/service.ts:23` | - |
 | `RuntimeSession` | Type | `packages/fluxiq/src/engine/index.ts:13` | - |
 | `RuntimeSessionControlRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/run.ts:22` | - |
 | `RuntimeSessionOptions` | Type | `packages/fluxiq/src/engine/index.ts:22` | - |

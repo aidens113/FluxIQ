@@ -109,6 +109,7 @@ opt-in. Read the whole entry if a host:
 - reads persisted traces or target resolutions;
 - reads saved command attempts or run inputs back;
 - runs its own client-gateway client;
+- dispatches runtime or client-gateway commands with a `timeoutMs`;
 - or writes a recording mapper.
 
 **A rejected expected state fails the attempt.** Some nodes other than
@@ -257,6 +258,27 @@ parameters that carry no explicit target.
 recording appends already did, and the client gateway bridge reports a domain
 event that arrives in that window as `recording.event_discarded` instead of
 writing it into the recording.
+
+**A command's target is given its timeout, and Core waits 3,000 ms longer for
+the answer.** No type or export changes.
+- **The deadlines.** `RuntimeService` resolves a command with a positive
+  `timeoutMs` as `timed_out` after `timeoutMs` plus 3,000 ms, for every adapter
+  and transport target; it used to give up at `timeoutMs`. The client gateway's
+  pending command waits the same when the command carries a `timeoutMs`. A
+  gateway command without one still waits `commandTimeoutMs`, 30,000 ms by
+  default.
+- **Unchanged.** The `timeoutMs` sent to a client, and what a `timed_out`
+  result means: the target never answered, which Automation Studio still names
+  `output_dispatch.timed_out`.
+- **What hosts see.** An answer that arrives after `timeoutMs` but inside the
+  margin is now reported as the target sent it, with its status, message and
+  failure record. It used to be discarded for Core's own `timed_out`. A target
+  that never answers is abandoned 3,000 ms later than before, including an
+  in-process adapter.
+- **Messages.** The runtime's timeout message now names the full wait, its
+  timeout and the margin, and the gateway's names the full wait. A host that
+  matched `Runtime command timed out after <timeoutMs>ms.` must match the new
+  text.
 
 ### 0.3.0: a missing stable identifier costs less (`fluxiq`)
 
