@@ -1,7 +1,7 @@
 # MVP Week 1 — Web Automation Reliability Plan (Core share)
 
 Status: Active
-Status detail: The downstream Week 1 finish made thirteen Core code commits, released as `fluxiq` 0.4.0 with migration notes; the sequential suite, build and package lint passed on `20bb3b4`, and both `dev` branches are pushed together after the downstream root gates.
+Status detail: The downstream Week 1 finish made fifteen Core code commits, released as `fluxiq` 0.4.0 with migration notes; the sequential suite, build and package lint passed on `e5c9828`, and both `dev` branches are pushed together after the downstream root gates.
 Created: 2026-09-11
 Last updated: 2026-09-13
 Owner: Senior supervisor agent
@@ -16,15 +16,15 @@ Related: [package boundaries](../architecture/package-boundaries.md), [code stru
 **Phase: the downstream Week 1 finish, released as `fluxiq` 0.4.0 on
 2026-09-13.** On 2026-09-11 the user directed that changes belonging in Core are
 made in Core, never approximated downstream. The downstream session finishing
-Week 1 made thirteen Core code commits under that rule. The user was alerted before
+Week 1 made fifteen Core code commits under that rule. The user was alerted before
 each area's first edit, and every commit is recorded in the Work Ledger.
 
 **True on 2026-09-13.**
-- **Branch:** `dev`, 16 commits ahead of `origin/dev` with this plan's commit, not
-  pushed. The last code commit is `20bb3b4`; three of the sixteen are plan-only.
+- **Branch:** `dev`, 3 commits ahead of `origin/dev` with this plan's commit, not
+  pushed. The last code commit is `e5c9828`.
 - **Versions:** `fluxiq` is **0.4.0**. `@fluxiq/contracts` (0.2.0) and
   `@fluxiq/client-gateway-websocket` (0.1.0) are unchanged.
-- **The thirteen code commits:**
+- **The fifteen code commits:**
   - `5d495eb`, a value resolved out of state is withheld from the persisted
     trace;
   - `267a2ca`, a recording message arriving after Stop finalized its recording
@@ -48,19 +48,21 @@ each area's first edit, and every commit is recorded in the Work Ledger.
   - `b54df69`, a command's target is given its timeout, and Core waits 3,000 ms
     longer for the answer;
   - `20bb3b4`, a Flow with no Start node begins at its graph's root, and a
-    compiled plan follows the same rule, as compiler version `compiled-plan.v2`.
-- **Migration Notes:** the last four code commits are in the unreleased `0.4.0`
+    compiled plan follows the same rule, as compiler version `compiled-plan.v2`;
+  - `b94eca4`, the after-action state capture and diff get the node that ran;
+  - `e5c9828`, the recovery ladder offers no LLM rung when a run's LLM is off.
+- **Migration Notes:** the last six code commits are in the unreleased `0.4.0`
   entry.
 
 **Gates.**
 - **Per commit:** the downstream supervisor reran each commit's own tests,
   `pnpm check` and `pnpm docs:check` (ledger).
-- **On `20bb3b4`:**
-  - the full suite ran with `--no-file-parallelism`: `fluxiq` 137 files and 955
+- **On `e5c9828`:**
+  - the full suite ran with `--no-file-parallelism`: `fluxiq` 138 files and 965
     tests, and `@fluxiq/web` 228 files and 1,156 tests, with contracts and
     gateway-websocket too;
   - `pnpm check`, `pnpm docs:reference` and `pnpm docs:check` also ran.
-- **Build and package lint on `20bb3b4`:** `pnpm build` exit=0 on its first run,
+- **Build and package lint on `e5c9828`:** `pnpm build` exit=0 on its first run,
   and `pnpm package:lint` exit=0.
 - **Push:** both `dev` branches are pushed together, after the downstream Lab
   rerun and root gates.
@@ -98,7 +100,11 @@ comparison.
     and `indexes/` into the working directory;
   - a recording approved beside a Subflow's existing nodes gives the graph a
     second root, so its run now refuses instead of starting at the smallest id;
-  - among several edges on one route, the smallest edge id wins.
+  - among several edges on one route, the smallest edge id wins;
+  - Core rewrites several documents for every stored recording entry, a cost
+    that grows with the recording (downstream `i-demo-recording-finalize`);
+  - Core exports no constant for `builtin.policy.action`, so the downstream host
+    runtime restates the id.
 
 **Next steps:** push `dev` together with the downstream `dev`, once the downstream
 Lab rerun and root gates pass.
@@ -637,6 +643,54 @@ Settled entries from 2026-09-11 and 2026-09-12 are archived verbatim at
     🟢" and "bundler: 🟢".
 - Not verified: the downstream Lab recheck; a stored artifact recompiling in a
   live host; the web panel showing a refusal message.
+- Outcome: Accepted
+
+### 2026-09-13 — The after-action state capture and diff get the node that ran (`b94eca4`)
+
+- Agent: downstream worker `g-core-host-state-node`; verified by the downstream
+  supervisor. The detail is in the downstream plan's ledger for this date.
+- Changed, in `packages/fluxiq/src/programs/automation-studio/runtime/executor/`:
+  `host-state.ts` and `node-execution.ts`, and `tests/node-execution.test.ts`; the
+  unreleased `0.4.0` Migration Notes.
+- Why: a downstream Lab found that no recorded Flow run had ever produced an evidence
+  packet. The after-action capture got `{ id, definitionId, parameterValues: {} }`, so
+  a host keyed on which action ran could not tell after the action.
+- Compatibility: a host runtime's `after_action` capture and `inspectStateDiff` now
+  receive the node with its resolved parameter values, on every path. No type or
+  export changes.
+- Validation: the supervisor gate recorded for `e5c9828`, which ran on this tree.
+  With the stub node back in the after-action capture, 5 of 19 node-execution tests
+  failed; the file was restored identical.
+- Not verified: the downstream Lab run showing after-action packets and a real
+  `stateDiff`.
+- Outcome: Accepted
+
+### 2026-09-13 — The recovery ladder offers no LLM rung when a run's LLM is off (`e5c9828`)
+
+- Agent: downstream worker `g-core-ladder-llm-off`, blocked once and continued on
+  Route B; verified by the downstream supervisor.
+- Changed:
+  - `runtime/executor/contracts.ts`: an optional `allowLlmDiagnosis`;
+  - `runtime/service.ts`: sets it from `invokeLlm`, with no net line growth;
+  - `runtime/executor/recovery-ladder.ts`: checks it;
+  - `runtime/executor/tests/recovery-ladder.test.ts` (new);
+  - `automation-studio.md` and the unreleased `0.4.0` Migration Notes.
+- Why: with the LLM off, a failed node still recorded an LLM diagnosis intervention, so
+  the downstream bench's harness activation rate could not be 0 with no provider.
+- Compatibility: a run whose LLM is off ends a failed node with no deterministic
+  recovery `exhausted`, with no `diagnosis` intervention. The structured failure is
+  unchanged, and absent the option, behaviour is unchanged.
+- Validation: supervisor, each command alone, on this tree:
+  - `pnpm docs:reference` and `pnpm docs:check` exit=0; `pnpm check` exit=0,
+    "structure-audit: passed (123 warning(s), 256 baselined)";
+  - `packages/fluxiq` `npx vitest run --no-file-parallelism` gave "Test Files 138
+    passed (138)" and "Tests 965 passed (965)"; `@fluxiq/web` gave 228 files and
+    1,156 tests passed; contracts and gateway-websocket 1 file each;
+  - with `allowLlmDiagnosis` ignored, 2 of 5 ladder tests failed; the file was
+    restored identical;
+  - `pnpm build` exit=0, "Compiled successfully", on its first run; `pnpm package:lint`
+    exit=0, with attw "node16 (from ESM): 🟢" and "bundler: 🟢" for every entry.
+- Not verified: the downstream Lab runs showing `harnessActivations` 0 on failed Flows.
 - Outcome: Accepted
 
 ## Open Questions
