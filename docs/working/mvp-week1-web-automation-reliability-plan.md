@@ -610,6 +610,50 @@ heredoc (the Bash tool corrupts `\\`, and commands over about 8 KB fail).
   settles.
 - Outcome: Accepted
 
+### 2026-09-12 — A value resolved out of state is withheld from the persisted trace
+
+- Agent: supervisor (downstream session finishing Week 1). The code was found
+  uncommitted and recorded nowhere, most likely left by session `fluxiq-df` as
+  the Core leg `p-secret-binding` named; no other Claude session was running, so
+  it was verified and taken over rather than discarded.
+- Changed: `runtime/executor/graph-run.ts` (withholding seeded from each node's
+  declared bindings against the run's inputs and variables, applied to the
+  finished trace), `executor/node-execution.ts` (records what resolution
+  supplied before any early return), `executor/index.ts` (exports
+  `AUTOMATION_STUDIO_WITHHELD_VALUE`), `flow-bootstrap/plan/validation.ts`
+  (`allowStateBinding: false` and empty paths enforced at every depth, through
+  the resolver's own predicate), their tests, a new
+  `executor/tests/trace-withholding.test.ts`, and
+  `docs/architecture/automation-studio.md` and
+  `automation-studio-native-nodes.md`. `trace-withholding.ts` itself was already
+  committed in `368b3c9`, unwired.
+- Why: once `368b3c9` resolved bindings below the top level, the resolved
+  answer, not the request, travels into the `policy.output.dispatch` effect,
+  the attempt, and the persisted trace, so a replay credential would be written
+  to disk. Compatibility: a persisted trace now reads `[withheld]` wherever a
+  run resolved a value; a plan nesting a binding inside a literal-only parameter
+  now fails validation with `bootstrap.invalid_state_binding`.
+- Found: the two recording points were each untested. Removing the seed alone,
+  or the per-node record alone, left all 26 executor tests green. Two tests were
+  added: a run that fails before the bound node executes, and a binding answered
+  by an earlier node's output.
+- Validation: `npx vitest run .../runtime/executor .../runtime/flow-bootstrap
+  --no-file-parallelism` -> `Test Files 6 passed (6)`, `Tests 74 passed (74)`.
+  Mutations, each restored byte-identical (`git diff --stat` unchanged at
+  `7 files changed, 238 insertions(+), 16 deletions(-)`): no `apply` -> 4 of 28
+  fail; no seed -> 1 fails, "fails before the bound node ever executes"; no
+  per-node record -> 1 fails, "a binding took from an earlier node's output";
+  neither -> 4 fail; no nested validation -> 2 of 25 fail. `pnpm check` with the
+  change staged -> exit 0, `structure-audit: passed (120 warning(s), 256
+  baselined)`. `pnpm test` -> exit 0. `pnpm docs:check` -> exit 1,
+  `framework-reference.md is stale`; `pnpm docs:reference` regenerated it (the
+  new export and two moved line numbers only), then `pnpm docs:check` -> exit 0,
+  `Deterministic framework reference is current.`
+- Not verified: `pnpm build`, deferred until the downstream workers finish,
+  because the downstream packages import `fluxiq` through `dist`. Committed
+  locally; pushed only after that build passes.
+- Outcome: Accepted
+
 ## Open Questions
 
 - **A client's declared identity is not authenticated, so nothing that gates on

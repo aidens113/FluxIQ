@@ -116,10 +116,53 @@ as one at `text` is. The rules that make this safe:
   or self-referential value costs bounded time. A binding deeper than the
   bound is left as it is rather than resolved.
 
-`allowStateBinding: false` is validated against the top level of a node's
-parameters only. A literal-only parameter whose value is an object is
-therefore not protected from a binding nested inside it; declare literal-only
-fields as scalars where that matters.
+`allowStateBinding: false` is enforced at every depth, not only where the
+parameter value *is* a binding: Flow bootstrap validation walks a literal-only
+parameter's value and raises `bootstrap.invalid_state_binding` at the path of
+the first binding it finds inside it. A binding that names nothing is rejected
+the same way wherever it sits. The walk reaches deeper than resolution does, so
+validation never stops short of what execution will honour, and it uses the
+resolver's own predicate — a value carrying `$state` alongside other keys is a
+binding to both, because it is one to the resolver.
+
+### A resolved value never reaches the persisted trace
+
+A binding is a request for a value the Flow document deliberately does not
+carry, so the resolved value belongs in the executor's memory and on the
+dispatch path, and nowhere else. Resolving below the top level is what made
+that a real risk: `builtin.policy.action` copies its whole payload into a
+`policy.output.dispatch` effect, an attempt copies a result's effects verbatim,
+and the run's trace is persisted whole.
+
+`runAutomationStudioGraph` therefore withholds, from the trace it returns,
+every value the run resolved out of state. It is the one place a run trace is
+produced, and what it returns is what the runtime service persists.
+
+- **Safety is proved, not declared.** A value is treated as authored — and so
+  safe to persist, because the document already holds it — only when it is
+  identical to the value the document carries at the same position. Everything
+  else is withheld: a changed value, a key the document does not have, a
+  subtree that cannot be lined up against the document. Nothing marks a value
+  as sensitive, so nothing can forget to.
+- **Every resolved value, not the ones Core guesses are secret.** Core cannot
+  tell a credential from a cart count, and the namespace that means "secret" is
+  a domain's convention, so a value a binding supplied is withheld whatever it
+  holds.
+- **The run's own inputs are covered before the first node runs.** The
+  withholding is seeded by resolving each node's declared bindings against the
+  run's inputs and variables, so a supplied value is withheld from the trace's
+  `values` and from every attempt's `inputs` even when the run fails before the
+  bound node executes.
+- **The trace keeps its shape.** A withheld value is replaced in place by the
+  `AUTOMATION_STUDIO_WITHHELD_VALUE` constant — `[withheld]` — rather than
+  removed, and inside prose it is replaced where it sits, so
+  `Could not type [withheld] into #password.` still says what failed. Ids,
+  statuses, routes, and timestamps are never rewritten: replacing a `status`
+  that happened to equal a resolved value would corrupt the artifact for every
+  reader while protecting nothing.
+- **Execution is untouched.** The dispatched effect, the live `values` map, and
+  the inputs handed to the host for its state snapshots all carry the real
+  value; a run that resolved nothing gets its own trace back by identity.
 
 ## Output safety
 

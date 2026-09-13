@@ -4,7 +4,7 @@
 // is one connected acyclic graph within the depth limit. The accepted plan is
 // returned laid out and risk-banded.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import { AutomationStudioNodeRegistry, type AutomationNodeParameter, type AutomationNodePort, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
+import { AutomationStudioNodeRegistry, isAutomationNodeParameterStateBinding, type AutomationNodeParameter, type AutomationNodePort, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type {
   AutomationStudioFlowBootstrapIssue,
   AutomationStudioFlowBootstrapNode,
@@ -13,7 +13,6 @@ import type {
   AutomationStudioValidatedFlowBootstrapPlan
 } from "./contracts.ts";
 import { error } from "./issues.ts";
-import { isRecord } from "./json-guards.ts";
 import { layoutNodes } from "./layout.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS } from "./limits.ts";
 import { parseAutomationStudioFlowBootstrapPlan } from "./parsing.ts";
@@ -139,11 +138,14 @@ function validateParameters(values: JsonObject, definitions: AutomationNodeParam
       if (parameter.required && parameter.defaultValue === undefined) issues.push(error("bootstrap.missing_parameter", "Required node parameter is missing.", `${path}.parameters.${parameter.id}`));
       continue;
     }
-    if (isStateBinding(value)) {
-      if (parameter.allowStateBinding === false || !value.$state.path.trim()) issues.push(error("bootstrap.invalid_state_binding", "Parameter does not allow this state binding.", `${path}.parameters.${parameter.id}`));
+    const parameterPath = `${path}.parameters.${parameter.id}`;
+    if (isAutomationNodeParameterStateBinding(value)) {
+      if (parameter.allowStateBinding === false || !value.$state.path.trim()) issues.push(error("bootstrap.invalid_state_binding", "Parameter does not allow this state binding.", parameterPath));
       continue;
     }
-    if (!parameterValueMatches(value, parameter)) issues.push(error("bootstrap.invalid_parameter_value", "Node parameter value does not satisfy its definition.", `${path}.parameters.${parameter.id}`));
+    const nestedBindingPath = invalidStateBindingPath(value, parameter.allowStateBinding !== false, parameterPath, 0);
+    if (nestedBindingPath) issues.push(error("bootstrap.invalid_state_binding", "Parameter does not allow this state binding.", nestedBindingPath));
+    if (!parameterValueMatches(value, parameter)) issues.push(error("bootstrap.invalid_parameter_value", "Node parameter value does not satisfy its definition.", parameterPath));
   }
 }
 
@@ -241,8 +243,40 @@ function parameterValueMatches(value: JsonValue, parameter: AutomationNodeParame
   return true;
 }
 
-function isStateBinding(value: JsonValue): value is { $state: { path: string; fallback?: JsonValue } } {
-  if (!isRecord(value) || Array.isArray(value) || !Object.keys(value).every((key) => key === "$state")) return false;
-  const binding: unknown = (value as unknown as Record<string, unknown>)["$state"];
-  return isRecord(binding) && typeof binding["path"] === "string";
+/**
+ * How deep a parameter value is searched for a state binding. Resolution stops
+ * at 16 (`MAXIMUM_PARAMETER_VALUE_DEPTH`), and this is deliberately deeper, so
+ * validation never stops short of what execution will honour: a binding the
+ * validator cannot see but the resolver would answer is exactly the gap that
+ * made `allowStateBinding: false` mean nothing for an object parameter.
+ */
+const MAXIMUM_NESTED_PARAMETER_DEPTH = 64;
+
+/**
+ * The path of the first state binding inside a parameter value that must not
+ * carry one, or that names nothing.
+ *
+ * `allowStateBinding: false` used to be checked only where the parameter value
+ * *was* a binding, while `resolveAutomationNodeParameterValues` resolves one
+ * wherever it sits, so a literal-only object parameter could carry a binding one
+ * level down and have it honoured at run time. The same predicate the resolver
+ * uses decides here, so there is one notion of what a binding is rather than
+ * two.
+ *
+ * A binding that is allowed and names a path is not descended into: its
+ * `fallback` is handed to the node as it is, never resolved again.
+ */
+function invalidStateBindingPath(value: JsonValue, allowed: boolean, path: string, depth: number): string | undefined {
+  if (!value || typeof value !== "object" || depth >= MAXIMUM_NESTED_PARAMETER_DEPTH) return undefined;
+  const entries: Array<[string, JsonValue]> = Array.isArray(value) ? value.map((item, index) => [String(index), item]) : Object.entries(value);
+  for (const [key, item] of entries) {
+    const itemPath = `${path}.${key}`;
+    if (isAutomationNodeParameterStateBinding(item)) {
+      if (!allowed || !item.$state.path.trim()) return itemPath;
+      continue;
+    }
+    const nested = invalidStateBindingPath(item, allowed, itemPath, depth + 1);
+    if (nested) return nested;
+  }
+  return undefined;
 }

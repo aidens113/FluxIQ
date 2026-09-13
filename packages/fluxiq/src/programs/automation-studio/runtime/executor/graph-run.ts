@@ -1,15 +1,63 @@
 import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument } from "../../model/index.ts";
+import { resolveAutomationNodeParameterValues } from "../../nodes/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
 import { chooseAutomationStudioEdge, findStartNode, hasUnvisitedAutomationStudioNodes, missingTargetTrace } from "./graph-navigation.ts";
 import { executeAutomationStudioNode } from "./node-execution.ts";
 import { recoveryBudgetState } from "./recovery-budget.ts";
 import { chooseAutomationStudioRecovery, failureMessageForRecoveryStop } from "./recovery-ladder.ts";
 import { executeWithRegionTimeout, policyDecisionForAttempt, recordRegionTransition } from "./region-execution.ts";
+import { automationStudioTraceWithholding, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 
+/**
+ * The one place a run trace is produced, and therefore the one place values a
+ * run resolved out of state are withheld from it.
+ *
+ * The withholding is applied to the finished trace on the way out rather than
+ * stamped onto each attempt as it is built. A stage that hands on an
+ * already-clean-looking artifact is what disarms the stage after it, and this
+ * stage is the last one that still owns the artifact: what it returns is what
+ * `runtime/service.ts` persists. Everything the run *executes* with -- the live
+ * `values` map, the effect handed to the dispatcher, the inputs the host is
+ * given for its state snapshots -- keeps the real value, because withholding
+ * there would break the run rather than the leak.
+ */
 export async function runAutomationStudioGraph(
   flow: AutomationStudioFlowDocument,
   options: AutomationStudioGraphExecutionOptions = {}
+): Promise<AutomationStudioGraphExecutionTrace> {
+  const withholding = automationStudioTraceWithholding();
+  recordDeclaredStateBindings(flow, options, withholding);
+  return withholding.apply(await executeAutomationStudioGraph(flow, options, withholding));
+}
+
+/**
+ * Seeds the withholding with whatever the run's own inputs and variables answer
+ * for the bindings the document declares, before the first node executes.
+ *
+ * Without it the trace is protected only from the moment a bound node runs, and
+ * a run that fails before that still persists the supplied value: it arrives in
+ * `options.inputs`, which is what `values` and every attempt's `inputs` are
+ * seeded from. The seed asks the same resolver the executor asks, so what counts
+ * as a binding, and how deep one may sit, is decided in one place rather than
+ * two.
+ */
+function recordDeclaredStateBindings(
+  flow: AutomationStudioFlowDocument,
+  options: AutomationStudioGraphExecutionOptions,
+  withholding: AutomationStudioTraceWithholding
+): void {
+  const state = { ...(options.inputs ?? {}), ...(options.variables ?? {}) };
+  for (const node of flow.nodes) {
+    const authored = node.parameterValues ?? {};
+    withholding.record(authored, resolveAutomationNodeParameterValues(authored, state).values);
+  }
+}
+
+async function executeAutomationStudioGraph(
+  flow: AutomationStudioFlowDocument,
+  options: AutomationStudioGraphExecutionOptions,
+  withholding: AutomationStudioTraceWithholding
 ): Promise<AutomationStudioGraphExecutionTrace> {
   const now = options.now ?? Date.now;
   const startedAt = now();
@@ -47,9 +95,9 @@ export async function runAutomationStudioGraph(
     if (region?.timeoutMs !== undefined && elapsed >= region.timeoutMs) return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: `Region ${regionId} exceeded its ${region.timeoutMs}ms timeout.` };
     const remainingMs = region?.timeoutMs === undefined ? undefined : region.timeoutMs - elapsed;
     const attempt = remainingMs === undefined
-      ? await executeAutomationStudioNode(flow, currentNode, values, options, attempts.length + 1)
+      ? await executeAutomationStudioNode(flow, currentNode, values, options, attempts.length + 1, withholding)
       : await executeWithRegionTimeout(
-        (signal) => executeAutomationStudioNode(flow, currentNode!, values, { ...options, signal }, attempts.length + 1),
+        (signal) => executeAutomationStudioNode(flow, currentNode!, values, { ...options, signal }, attempts.length + 1, withholding),
         remainingMs,
         options.signal,
         () => ({ attemptId: `${currentNode!.id}.attempt.${attempts.length + 1}`, nodeId: currentNode!.id, definitionId: currentNode!.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.` })

@@ -398,6 +398,19 @@ dispatched output whose bound confirmation input never arrived is
 beside `stateRefs`: the resolution status, the candidate count, the confidence
 threshold, and the best candidate's score and signals.
 
+The trace a run persists withholds every value that run resolved out of a
+parameter state binding. `runAutomationStudioGraph` is the one place a run
+trace is produced, and it rewrites the finished trace on the way out: a value
+is kept only when it is identical to the one the Flow document carries at the
+same position, and anything resolution supplied is replaced in place by
+`AUTOMATION_STUDIO_WITHHELD_VALUE` — in effect payloads, outputs, inputs, run
+values, and state diffs, and inside the prose of messages and failure records.
+Ids, statuses, routes, and timestamps are never rewritten, and everything the
+run executes with keeps the real value, so the trace still explains a failure
+without carrying the credential that caused it. The rules and the reasoning are
+in
+[Automation Studio native and importer nodes](automation-studio-native-nodes.md#a-resolved-value-never-reaches-the-persisted-trace).
+
 Whether an expected state actually holds is the host's decision, not Core's. A
 host runtime boundary may bind `expectationEvaluator(conditions, mode,
 timeoutMs, context)` beside `captureStateSnapshot`, `inspectStateDiff`, and

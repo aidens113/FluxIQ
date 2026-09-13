@@ -7,6 +7,7 @@ import { nodeAttemptFromResult } from "./attempt-trace.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
 import { captureHostState, enrichAttemptWithHostState } from "./host-state.ts";
 import { collectNodeInputs } from "./node-inputs.ts";
+import type { AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 import { attemptWithHostExpectationEvaluation } from "./transition-comparison.ts";
 
 export async function executeAutomationStudioNode(
@@ -14,7 +15,8 @@ export async function executeAutomationStudioNode(
   node: AutomationStudioFlowNode,
   values: Record<string, JsonValue>,
   options: AutomationStudioGraphExecutionOptions,
-  attemptNumber: number
+  attemptNumber: number,
+  withholding: AutomationStudioTraceWithholding
 ): Promise<AutomationStudioNodeAttemptTrace> {
   const startedAt = options.now?.() ?? Date.now();
   const attemptId = `${node.id}.attempt.${attemptNumber}`;
@@ -26,6 +28,10 @@ export async function executeAutomationStudioNode(
     ...values,
     ...inputs
   });
+  // Recorded before any branch below can return: what resolution supplied is
+  // withheld from the trace whether or not this node goes on to execute, and
+  // whether or not the rest of its bindings resolved.
+  withholding.record(node.parameterValues ?? {}, resolvedParameters.values);
   const executionNode = resolvedParameters.missingPaths.length
     ? node
     : { ...node, parameterValues: resolvedParameters.values };

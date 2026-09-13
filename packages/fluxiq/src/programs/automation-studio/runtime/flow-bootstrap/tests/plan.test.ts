@@ -419,3 +419,80 @@ describe("Automation Studio Flow bootstrap contract", () => {
     expect(result.validated?.risk).toBe("high");
   });
 });
+
+function sourceDefinition(): AutomationStudioNodeDefinition {
+  return definition({
+    id: "domain.demo.source",
+    version: "1.0.0",
+    label: "Source",
+    description: "Provides a value.",
+    source: { kind: "importer", domainId: "demo", implementationKey: "demo.source" },
+    inputs: [],
+    outputs: [{ id: "value", label: "Value", valueType: "string" }],
+    parameters: [],
+    outputAction: undefined
+  });
+}
+
+function payloadRegistry(allowStateBinding: boolean): AutomationStudioNodeRegistry {
+  return new AutomationStudioNodeRegistry([
+    sourceDefinition(),
+    definition({
+      parameters: [
+        { id: "target", label: "Target", valueType: "string", required: true },
+        { id: "payload", label: "Payload", valueType: "object", allowStateBinding }
+      ]
+    })
+  ]);
+}
+
+function planWithActionParameters(parameters: JsonObject): AutomationStudioFlowBootstrapPlan {
+  const value = plan();
+  value.subflows[0]!.nodes[1]!.parameters = parameters;
+  return value;
+}
+
+describe("state bindings below the top level of a parameter", () => {
+  it("rejects one inside a parameter that does not allow bindings, naming where it sits", () => {
+    const value = planWithActionParameters({ target: "submit", payload: { headers: { authorization: { $state: { path: "run.token" } } } } });
+
+    const result = validateAutomationStudioFlowBootstrapPlan({ plan: value, registry: payloadRegistry(false), resolution });
+
+    expect(result.ok).toBe(false);
+    expect(result.issues).toContainEqual({
+      severity: "error",
+      code: "bootstrap.invalid_state_binding",
+      message: "Parameter does not allow this state binding.",
+      path: "plan.subflows.0.nodes.1.parameters.payload.headers.authorization"
+    });
+  });
+
+  it("accepts the same nested binding when the parameter allows one", () => {
+    const value = planWithActionParameters({ target: "submit", payload: { headers: { authorization: { $state: { path: "run.token" } } } } });
+
+    expect(validateAutomationStudioFlowBootstrapPlan({ plan: value, registry: payloadRegistry(true), resolution })).toMatchObject({ ok: true, issues: [] });
+  });
+
+  it("rejects a nested binding that names nothing, inside an array element", () => {
+    const value = planWithActionParameters({ target: "submit", payload: { headers: [{ value: { $state: { path: "   " } } }] } });
+
+    const result = validateAutomationStudioFlowBootstrapPlan({ plan: value, registry: payloadRegistry(true), resolution });
+
+    expect(result.ok).toBe(false);
+    expect(result.issues.find((issue) => issue.code === "bootstrap.invalid_state_binding")?.path)
+      .toBe("plan.subflows.0.nodes.1.parameters.payload.headers.0.value");
+  });
+
+  it("reads a binding carrying a sibling key as the binding resolution will honour", () => {
+    const registryWithFixedTarget = new AutomationStudioNodeRegistry([
+      sourceDefinition(),
+      definition({ parameters: [{ id: "target", label: "Target", valueType: "string", required: true, allowStateBinding: false }] })
+    ]);
+    const value = planWithActionParameters({ target: { $state: { path: "run.target" }, note: "kept" } });
+
+    const result = validateAutomationStudioFlowBootstrapPlan({ plan: value, registry: registryWithFixedTarget, resolution });
+
+    expect(result.ok).toBe(false);
+    expect(result.issues.map((issue) => issue.code)).toContain("bootstrap.invalid_state_binding");
+  });
+});
