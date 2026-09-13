@@ -183,5 +183,10 @@ export type AutomationStudioGraphExecutionOptions = {
   currentSubflowId?: string;
   approvedRuntimePatchNodeIds?: Iterable<string>;
   recoveryBudget?: AutomationStudioRecoveryBudget;
+  /**
+   * Whether the recovery ladder may offer its `llm_diagnosis` rung. `false` when the
+   * run's LLM setting is off; absent keeps the rung available, subject to the budget.
+   */
+  allowLlmDiagnosis?: boolean;
   hostRuntime?: AutomationStudioHostRuntimeBoundary;
 };

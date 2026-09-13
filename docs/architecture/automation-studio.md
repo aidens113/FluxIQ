@@ -419,7 +419,10 @@ any LLM diagnosis is considered. Each attempt records expected transition
 hints, actual status/route/output/effect data, a normalized comparison status,
 and a compact diff summary. Failed attempts pass through the recovery ladder in
 priority order: configured failed-route path, approved runtime patch, graph
-local recovery reroute, then LLM diagnosis fallback. Recovery budgets can cap
+local recovery reroute, then LLM diagnosis fallback. The LLM diagnosis rung is
+offered only when the run's training behaviour allows the LLM
+(`allowLlmDiagnosis` on the graph options, set from `invokeLlm`); with the LLM
+off, a failed node with no deterministic recovery ends `exhausted`. Recovery budgets can cap
 retries per action, recovery attempts per subflow, reroutes per run, and
 adaptation/LLM attempts per run; exhausted budgets produce terminal failure
 metadata instead of looping.

@@ -3444,7 +3444,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     if (adaptationContext && input.llmExecution?.purpose === "diagnose_and_adapt") {
       adaptationContext = runtimeAdaptationContextForExplicitProposal(adaptationContext);
     }
-    if (adaptationContext) graphOptions.recoveryBudget = recoveryBudgetFromRuntimeAdaptationContext(adaptationContext);
+    if (adaptationContext) { graphOptions.recoveryBudget = recoveryBudgetFromRuntimeAdaptationContext(adaptationContext); graphOptions.allowLlmDiagnosis = adaptationContext.behavior.invokeLlm; }
     if (input.projectId) {
       this.runtimeAbortControllers.set(`${input.projectId}:${session.runId}`, abortController);
       await this.writeRuntimeSession(input.projectId, {

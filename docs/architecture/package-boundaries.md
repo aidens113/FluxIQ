@@ -112,6 +112,7 @@ opt-in. Read the whole entry if a host:
 - dispatches runtime or client-gateway commands with a `timeoutMs`;
 - runs a Flow that has no Start node, or stores compiled plans;
 - binds a host runtime's `captureStateSnapshot` or `inspectStateDiff`;
+- reads a run's recovery attempts or interventions when its LLM is off;
 - or writes a recording mapper.
 
 **A rejected expected state fails the attempt.** Some nodes other than
@@ -311,6 +312,25 @@ Core does not have, and a node that is not executable. A host that keys its
 capture or diff on a node's parameters, such as a policy action's `outputId`,
 now sees them after the action; one that declined such a node there now handles
 it. A node whose state-bound parameters do not resolve is still not captured.
+
+**The recovery ladder honours a disabled LLM.**
+`AutomationStudioGraphExecutionOptions` gains an optional `allowLlmDiagnosis`.
+When it is `false`, the ladder offers no `llm_diagnosis` candidate; omitting it
+keeps the previous behaviour, so callers of `runAutomationStudioGraph` need no
+change.
+- **Who sets it.** The Automation Studio runtime service sets it from the run's
+  training behaviour (`invokeLlm`), after any run override.
+- **What hosts see.** A run whose LLM is off, such as `adaptiveMode:
+  "deterministic"` without `dryRunLlm`, or a project with
+  `allowLlmIntervention: false`, no longer records an LLM diagnosis fallback for
+  a failed node with no deterministic recovery. Its recovery attempt is
+  `exhausted` rather than `diagnosis_only`, no `diagnosis` intervention is
+  written, and the run summary's `interventionCount` counts none. The run fails
+  with the same structured failure record, and its trace message is the failed
+  node's own.
+- **Unchanged.** Deterministic recovery candidates, recovery budgets, and runs
+  that allow the LLM, including `dryRunLlm: true`, `manual_approval` and explicit
+  `diagnose_and_adapt` runs.
 
 ### 0.3.0: a missing stable identifier costs less (`fluxiq`)
 

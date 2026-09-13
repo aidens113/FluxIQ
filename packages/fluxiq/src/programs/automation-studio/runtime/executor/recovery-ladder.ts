@@ -51,7 +51,7 @@ export function chooseAutomationStudioRecovery(
       reason: incoming ? `Recovery node ${recoveryNode.id} is already connected from ${node.id}.` : `Recovery node ${recoveryNode.id} is available in this Flow.`
     });
   }
-  if (!budgetExhausted.llm) {
+  if (options.allowLlmDiagnosis !== false && !budgetExhausted.llm) {
     candidates.push({
       kind: "llm_diagnosis",
       priority: 4,
