@@ -95,6 +95,22 @@ which the Connected Clients view already surfaces:
   `discardedEvents` and `discardedActions` totals ride on the metadata of the
   next entry written for that recording.
 
+The same accounting covers the moment between finalization and the bridge
+closing the recording. Stop finalizes the recording in the service before the
+bridge forgets it, so a message arriving in between still finds the recording
+open and the service refuses its append. That applies to a
+`client.recording_event`, a `client.state_update`, the marker for a
+`client.error`, and a queued `client.recording_entry` or `client.snapshot`
+whose flush lands late, whether a timer or a caller started the flush. The
+service's refusal carries no code, so the bridge recognises it by re-reading the
+recording's `endedAt` and reports the message as discarded, attributed to that
+recording. Letting the refusal escape would fail the gateway receive, and the
+WebSocket host would answer with a `server.error` coded
+`gateway.receive_failed`, which a client is entitled to read as a failed
+connection. Any other append failure still fails the receive. Snapshots and
+state updates that arrive after the recording is closed are dropped without
+being counted.
+
 Both entries carry the recording ID, the project, the event type, the input ID,
 and how long after finalization the message arrived. Nothing is sent back to
 the client. `server.error` is the only wire frame the gateway has for this, and

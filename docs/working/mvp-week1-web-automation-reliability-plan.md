@@ -654,6 +654,43 @@ heredoc (the Bash tool corrupts `\\`, and commands over about 8 KB fail).
   locally; pushed only after that build passes.
 - Outcome: Accepted
 
+### 2026-09-13 — A late recording message is discarded, not a failed connection
+
+- Agent: downstream worker `g-core-late-event`, briefed by the downstream
+  supervisor (its brief and report live in the downstream plan's `briefs/` and
+  `reports/`); verified by that supervisor.
+- Changed: `programs/automation-studio/client-gateway/bridge.ts` (a private
+  `appendOrDiscard` around every append a client message causes: the direct
+  recorded input, the queued entry flush, and the `client.error` marker),
+  `client-gateway/tests/bridge.test.ts` (four rows),
+  `docs/architecture/automation-studio/client-gateway.md`, and the two generated
+  `framework-reference.md` copies.
+- Why: Stop finalizes a recording before the bridge forgets it, so a message
+  arriving in that gap still finds it active and the service throws
+  "Finalized recordings are immutable." (`runtime/service.ts:1017`). On the
+  direct path the throw escaped `gateway.receive`, the WebSocket host answered
+  `server.error` `gateway.receive_failed`, and the extension marked a healthy
+  connection failed; on the 25 ms timer flush it was an unhandled rejection that
+  lost the entry silently. Now a refused append re-reads the recording, and when
+  `endedAt` is set the messages are audited as discarded against that recording;
+  any other failure still propagates. The service refuses with an uncoded
+  `Error`, so the match is the condition the service tests, never its message
+  text. No error frame is sent to the client: that is a Week 2 contract.
+- Validation: supervisor `npx vitest run
+  .../client-gateway/tests/bridge.test.ts --no-file-parallelism` -> `Tests 15
+  passed (15)`; `pnpm check` -> exit 0, `structure-audit: passed (120
+  warning(s), 256 baselined)`; `pnpm docs:reference` -> one line changed in each
+  copy (`AutomationStudioClientGatewayBridge` moved from `bridge.ts:84` to
+  `:91`); `pnpm docs:check` -> exit 0, `Deterministic framework reference is
+  current.` Worker: before the fix `3 failed | 13 passed` with one unhandled
+  rejection; four mutations each failed their rows, restored byte-identical.
+- Found: `appendRecordingDomainEvent` never checks `endedAt`, so a late event
+  with no registered input is written into a finalized recording (a probe, not
+  fixed here); briefed downstream as part of `g-core-target-gate`.
+- Not verified: `pnpm build` and `pnpm test` (the Lab will run against a pinned
+  worktree of this commit); the extension's behaviour after the fix, live.
+- Outcome: Accepted
+
 ## Open Questions
 
 - **A client's declared identity is not authenticated, so nothing that gates on

@@ -45,6 +45,7 @@ type RecordingAppendQueueItem = {
   projectId?: string | null;
   recordingId: string;
   entry: Parameters<AutomationStudioService["appendRecordingEvent"]>[0]["entry"];
+  sender: ClientMessageSender;
 };
 
 type RecordingAppendQueue = {
@@ -70,13 +71,19 @@ type ClosedClientRecording = {
 
 /** What a discarded message was, as far as the bridge can tell without it. */
 type DiscardedClientMessage = {
-  kind: "recording event" | "recording entry";
+  kind: "recording event" | "recording entry" | "snapshot" | "state update" | "error";
   label: string;
   domainId?: string | null;
   inputId?: string | undefined;
   /** Set when the payload itself says this was an action, not evidence. */
   executable?: boolean;
 };
+
+/** A message on its way into a recording, and the session that sent it. */
+type ClientMessageSender = { session: ClientGatewaySession; message: DiscardedClientMessage };
+
+/** The recording a client is writing to, as far as the bridge knows it. */
+type ClientRecordingRef = { projectId?: string | null; recordingId: string; domainId?: string | null };
 
 /** Owner keys remembered after their recording closed. One entry per client. */
 const CLOSED_RECORDING_MEMORY = 32;
@@ -202,19 +209,21 @@ export class AutomationStudioClientGatewayBridge {
     }
     if (event.type === "client.recording_entry") {
       const active = this.activeRecordings.get(this.recordingOwnerKey(event.session));
+      const entry = event.message.payload.entry as { type?: unknown } | undefined;
+      const message: DiscardedClientMessage = {
+        kind: "recording entry",
+        label: typeof entry?.type === "string" ? entry.type : "unknown",
+        executable: entry?.type === "action"
+      };
       if (!active) {
-        const entry = event.message.payload.entry as { type?: unknown } | undefined;
-        this.noteDiscardedClientMessage(event.session, {
-          kind: "recording entry",
-          label: typeof entry?.type === "string" ? entry.type : "unknown",
-          executable: entry?.type === "action"
-        });
+        this.noteDiscardedClientMessage(event.session, message);
         return;
       }
       this.enqueueRecordingEntry(this.recordingOwnerKey(event.session), {
         ...(event.message.payload.projectId !== undefined ? { projectId: event.message.payload.projectId } : active?.projectId !== undefined ? { projectId: active.projectId } : {}),
         recordingId: event.message.payload.recordingId,
-        entry: event.message.payload.entry as unknown as Parameters<AutomationStudioService["appendRecordingEvent"]>[0]["entry"]
+        entry: event.message.payload.entry as unknown as Parameters<AutomationStudioService["appendRecordingEvent"]>[0]["entry"],
+        sender: { session: event.session, message }
       });
       return;
     }
@@ -232,7 +241,7 @@ export class AutomationStudioClientGatewayBridge {
     }
     if (event.type === "client.error") {
       const active = this.activeRecordings.get(this.recordingOwnerKey(event.session));
-      if (active) await this.automationStudio.appendRecordingEvent({
+      if (active) await this.appendOrDiscard(active, [{ session: event.session, message: { kind: "error", label: "marker", executable: false } }], () => this.automationStudio.appendRecordingEvent({
         ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
         recordingId: active.recordingId,
         entry: {
@@ -242,7 +251,7 @@ export class AutomationStudioClientGatewayBridge {
           sourceId: `client.${event.session.clientId}.events`,
           metadata: compactJsonObject({ ...(event.message.payload.code ? { code: event.message.payload.code } : {}), ...(event.message.payload.metadata ?? {}) })
         }
-      });
+      }));
     }
   }
 
@@ -348,7 +357,8 @@ export class AutomationStudioClientGatewayBridge {
       ...(event.timestamp !== undefined ? { timestampMs: event.timestamp } : {}),
       sourceId: event.sourceId ?? `client.${session.clientId}.events`,
       messageId,
-      ...(event.metadata ? { metadata: event.metadata } : {})
+      ...(event.metadata ? { metadata: event.metadata } : {}),
+      sender: { session, message: { kind: "recording event", label: event.eventType, domainId, inputId } }
     })) return;
     if (domainId) {
       const result = await this.automationStudio.appendRecordingDomainEvent({
@@ -403,6 +413,9 @@ export class AutomationStudioClientGatewayBridge {
    * recording it was meant for.
    */
   private rememberClosedRecording(ownerKey: string, closed: { recordingId: string; projectId?: string | null; domainId?: string | null }): void {
+    // A message that lost the race to finalization remembers the recording
+    // first; closing it afterwards must keep that message's count.
+    if (this.closedRecordings.get(ownerKey)?.recordingId === closed.recordingId) return;
     this.closedRecordings.delete(ownerKey);
     while (this.closedRecordings.size >= CLOSED_RECORDING_MEMORY) {
       const oldest = this.closedRecordings.keys().next();
@@ -464,6 +477,42 @@ export class AutomationStudioClientGatewayBridge {
     return (this.io?.getInput(domainId, inputId)?.definition.role ?? "state") === "action";
   }
 
+  /**
+   * Runs an append to a client's recording, and reports the messages it carried
+   * as discarded when the recording turns out to have been finalized while they
+   * were on their way. Returns undefined for a discard.
+   *
+   * Stop finalizes a recording before it closes it here, so for that moment a
+   * late message still finds the recording open and the service refuses its
+   * append. Letting the refusal escape fails the gateway receive; the WebSocket
+   * host then answers `gateway.receive_failed`, which a client reads as a failed
+   * connection. The message merely arrived late, so it is counted exactly like
+   * one arriving a moment later. Any other failure still propagates.
+   *
+   * The service refuses with a plain `Error` carrying no code, so the refusal is
+   * recognised by re-reading `endedAt` — the condition the service tests before
+   * refusing, never cleared once set — rather than by matching the message.
+   */
+  private async appendOrDiscard<T>(recording: ClientRecordingRef, senders: readonly ClientMessageSender[], append: () => Promise<T>): Promise<T | undefined> {
+    try {
+      return await append();
+    } catch (error) {
+      if (!await this.isFinalized(recording)) throw error;
+      for (const { session, message } of senders) {
+        const ownerKey = this.recordingOwnerKey(session);
+        const active = this.activeRecordings.get(ownerKey);
+        this.rememberClosedRecording(ownerKey, active?.recordingId === recording.recordingId ? active : recording);
+        this.noteDiscardedClientMessage(session, message);
+      }
+      return undefined;
+    }
+  }
+
+  private async isFinalized(recording: ClientRecordingRef): Promise<boolean> {
+    const stored = await this.automationStudio.getRecordingSession(recording.recordingId, recording.projectId).catch(() => undefined);
+    return stored?.endedAt !== undefined;
+  }
+
   private async appendSnapshot(session: ClientGatewaySession, snapshot: ClientGatewaySnapshot, messageId: string): Promise<void> {
     const active = this.activeRecordings.get(this.recordingOwnerKey(session));
     if (!active) return;
@@ -478,7 +527,8 @@ export class AutomationStudioClientGatewayBridge {
           sourceId: `client.${session.clientId}.observations`,
           correlationId: snapshot.snapshotId ?? messageId,
           payload: compactJsonObject({ state: snapshot.state, ...(snapshot.metadata !== undefined ? { metadata: snapshot.metadata } : {}) })
-        }
+        },
+        sender: { session, message: { kind: "snapshot", label: "client.state_snapshot", executable: false } }
       });
       return;
     }
@@ -495,7 +545,8 @@ export class AutomationStudioClientGatewayBridge {
           ...(snapshot.payload !== undefined ? { payload: snapshot.payload } : {}),
           ...(snapshot.metadata !== undefined ? { metadata: snapshot.metadata } : {})
         })
-      }
+      },
+      sender: { session, message: { kind: "snapshot", label: `client.${snapshot.kind}_snapshot`, executable: false } }
     });
   }
 
@@ -513,7 +564,8 @@ export class AutomationStudioClientGatewayBridge {
         payload: stateUpdate.state && typeof stateUpdate.state === "object" && !Array.isArray(stateUpdate.state) ? stateUpdate.state as JsonObject : stateUpdate,
         sourceId: `client.${session.clientId}.observations`,
         messageId,
-        ...(stateUpdate.metadata && typeof stateUpdate.metadata === "object" && !Array.isArray(stateUpdate.metadata) ? { metadata: stateUpdate.metadata as JsonObject } : {})
+        ...(stateUpdate.metadata && typeof stateUpdate.metadata === "object" && !Array.isArray(stateUpdate.metadata) ? { metadata: stateUpdate.metadata as JsonObject } : {}),
+        sender: { session, message: { kind: "state update", label: "client.state_update", domainId, inputId } }
       })) return;
     }
     this.enqueueRecordingEntry(this.recordingOwnerKey(session), {
@@ -525,7 +577,8 @@ export class AutomationStudioClientGatewayBridge {
         sourceId: `client.${session.clientId}.observations`,
         correlationId: messageId,
         payload: stateUpdate
-      }
+      },
+      sender: { session, message: { kind: "state update", label: "client.state_update", executable: false } }
     });
   }
 
@@ -538,6 +591,7 @@ export class AutomationStudioClientGatewayBridge {
     sourceId: string;
     messageId: string;
     metadata?: JsonObject;
+    sender: ClientMessageSender;
   }): Promise<boolean> {
     if (!this.io?.hasInput(input.domainId, input.inputId)) return false;
     const recorder = new AutomationStudioIoRecorder({
@@ -546,13 +600,13 @@ export class AutomationStudioClientGatewayBridge {
       domainId: input.domainId,
       ...(input.active.projectId !== undefined ? { projectId: input.active.projectId } : {})
     });
-    await recorder.recordInput(input.active.recordingId, input.inputId, createEnvelope({
+    await this.appendOrDiscard(input.active, [input.sender], () => recorder.recordInput(input.active.recordingId, input.inputId, createEnvelope({
       domainId: input.domainId,
       ioId: input.inputId,
       payload: input.payload,
       ...(input.timestampMs !== undefined ? { timestampMs: input.timestampMs } : {}),
       metadata: compactJsonObject({ sourceId: input.sourceId, clientGatewayMessageId: input.messageId, ...(input.metadata ?? {}) })
-    }));
+    })));
     return true;
   }
 
@@ -587,14 +641,19 @@ export class AutomationStudioClientGatewayBridge {
     queue.flushing = (async () => {
       while (queue.entries.length) {
         const batch = queue.entries.splice(0, 100);
-        const groups = new Map<string, { projectId?: string | null; recordingId: string; entries: RecordingAppendQueueItem["entry"][] }>();
+        const groups = new Map<string, { recording: ClientRecordingRef; entries: RecordingAppendQueueItem["entry"][]; senders: ClientMessageSender[] }>();
         for (const item of batch) {
           const key = `${item.projectId ?? ""}\n${item.recordingId}`;
-          const group = groups.get(key) ?? { ...(item.projectId !== undefined ? { projectId: item.projectId } : {}), recordingId: item.recordingId, entries: [] };
+          const group = groups.get(key) ?? { recording: { ...(item.projectId !== undefined ? { projectId: item.projectId } : {}), recordingId: item.recordingId }, entries: [], senders: [] };
           group.entries.push(item.entry);
+          group.senders.push(item.sender);
           groups.set(key, group);
         }
-        for (const group of groups.values()) await this.automationStudio.appendRecordingEvents(group);
+        // Whether a timer or a caller started this flush, an entry queued while
+        // the recording was open can reach the service after Stop finalized it.
+        for (const { recording, entries, senders } of groups.values()) {
+          await this.appendOrDiscard(recording, senders, () => this.automationStudio.appendRecordingEvents({ ...recording, entries }));
+        }
       }
     })();
     try {

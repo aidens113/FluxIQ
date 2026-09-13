@@ -369,6 +369,77 @@ it("reports a client action that arrives after its recording was finalized", asy
     expect(discarded[1]?.metadata).toMatchObject({ recordingId: "recording.trickle", discardedEvents: 3, discardedActions: 1 });
   });
 
+  it("reports an action that reaches Core while Stop is finalizing, instead of failing the receive", async () => {
+    const race = await recordingHeldAtFinalization("extension.race");
+
+    await expect(race.gateway.receive(race.session.sessionId, lateClick())).resolves.toBeUndefined();
+    race.release();
+    await race.stopping;
+    await race.gateway.receive(race.session.sessionId, lateClick());
+
+    const stored = await race.automationStudio.getRecordingSession(race.recording.recordingId);
+    expect(stored.endedAt).toBeDefined();
+    expect(stored.timeline).toHaveLength(0);
+    expect(serverErrors(race.gateway, race.session.sessionId)).toEqual([]);
+    const discarded = race.gateway.snapshot().auditLog.filter((entry) => entry.type === "recording.action_discarded");
+    expect(discarded).toHaveLength(2);
+    expect(discarded[0]?.message).toContain(race.recording.recordingId);
+    expect(discarded[0]?.metadata).toMatchObject({ recordingId: race.recording.recordingId, inputId: "element-pressed", discardedEvents: 1, discardedActions: 1 });
+    // Stop closing the recording afterwards must not restart the count.
+    expect(discarded[1]?.metadata).toMatchObject({ recordingId: race.recording.recordingId, discardedEvents: 2, discardedActions: 2 });
+  });
+
+  it("discards a queued snapshot whose timer flush lands after finalization", async () => {
+    const race = await recordingHeldAtFinalization("extension.queued");
+
+    await race.gateway.receive(race.session.sessionId, clientMessage("client.snapshot", { kind: "state", timestamp: 2, state: { timestamp: 2, namespaces: {} } }));
+    await vi.waitFor(() => {
+      expect(race.gateway.snapshot().auditLog.map((entry) => entry.type)).toContain("recording.event_discarded");
+    }, { timeout: 2000 });
+    race.release();
+    await race.stopping;
+
+    expect((await race.automationStudio.getRecordingSession(race.recording.recordingId)).timeline).toHaveLength(0);
+    const discarded = race.gateway.snapshot().auditLog.filter((entry) => entry.type === "recording.event_discarded");
+    expect(discarded).toHaveLength(1);
+    expect(discarded[0]?.metadata).toMatchObject({ recordingId: race.recording.recordingId, eventType: "client.state_snapshot", executable: false, discardedEvents: 1 });
+  });
+
+  it("discards evidence a state update flushes and records, and a client error, while Stop is finalizing", async () => {
+    const race = await recordingHeldAtFinalization("extension.evidence");
+    const sessionId = race.session.sessionId;
+
+    await race.gateway.receive(sessionId, clientMessage("client.snapshot", { kind: "state", timestamp: 2, state: { timestamp: 2, namespaces: {} } }));
+    await expect(race.gateway.receive(sessionId, clientMessage("client.state_update", {
+      state: { ready: true },
+      metadata: { domainId: "extension.example", inputId: "page-state" }
+    }))).resolves.toBeUndefined();
+    await expect(race.gateway.receive(sessionId, clientMessage("client.error", { message: "Tab closed" }))).resolves.toBeUndefined();
+    race.release();
+    await race.stopping;
+    await race.gateway.receive(sessionId, lateClick());
+
+    expect((await race.automationStudio.getRecordingSession(race.recording.recordingId)).timeline).toHaveLength(0);
+    expect(serverErrors(race.gateway, sessionId)).toEqual([]);
+    const discarded = race.gateway.snapshot().auditLog.filter((entry) => entry.type.startsWith("recording.") && entry.type.endsWith("_discarded"));
+    expect(discarded.map((entry) => entry.type)).toEqual(["recording.event_discarded", "recording.action_discarded"]);
+    expect(discarded[0]?.metadata).toMatchObject({ recordingId: race.recording.recordingId, eventType: "client.state_snapshot", discardedEvents: 1, discardedActions: 0 });
+    expect(discarded[1]?.metadata).toMatchObject({ recordingId: race.recording.recordingId, discardedEvents: 4, discardedActions: 1 });
+  });
+
+  it("still fails the receive when an append to an open recording fails for any other reason", async () => {
+    const gateway = new ClientGatewayService();
+    const automationStudio = new AutomationStudioService({ seedFixture: false });
+    const bridge = new AutomationStudioClientGatewayBridge({ gateway, automationStudio, io: lateEventIoRegistry(), stopDrainMs: 0 });
+    const session = await pairedSession(gateway, "extension.broken");
+    await bridge.startRecording({ sessionId: session.sessionId, domainId: "extension.example" });
+    vi.spyOn(automationStudio, "appendRecordingEvents").mockRejectedValue(new Error("Recording storage is unavailable."));
+
+    await expect(gateway.receive(session.sessionId, lateClick())).rejects.toThrow("Recording storage is unavailable.");
+    expect(gateway.snapshot().auditLog.some((entry) => entry.type.endsWith("_discarded"))).toBe(false);
+  });
+
+
   it("keeps in-process recording ownership across a trusted-client reconnect", async () => {
     const tokens = ["continuity-token", "continuity-rotated"];
     const gateway = new ClientGatewayService({ commandTimeoutMs: 1000, createToken: () => tokens.shift() ?? "unused" });
@@ -403,6 +474,53 @@ function clientMessage<TType extends ClientGatewayClientMessage["type"]>(
     timestamp: Date.now(),
     payload
   } as Extract<ClientGatewayClientMessage, { type: TType }>;
+}
+
+async function pairedSession(gateway: ClientGatewayService, clientId: string) {
+  const session = gateway.connect();
+  await gateway.receive(session.sessionId, clientMessage("client.hello", { clientId, clientType: "extension", name: clientId }));
+  await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "", { approvedByUserId: "user.test" });
+  return session;
+}
+
+/**
+ * A recording whose client-initiated Stop has finalized it in the service and
+ * is held there, before the bridge closes it: the moment a late message can
+ * still find the recording open. `release` lets Stop finish.
+ */
+async function recordingHeldAtFinalization(clientId: string) {
+  const gateway = new ClientGatewayService();
+  const automationStudio = new AutomationStudioService({ seedFixture: false });
+  const bridge = new AutomationStudioClientGatewayBridge({ gateway, automationStudio, io: lateEventIoRegistry(), stopDrainMs: 0 });
+  const session = await pairedSession(gateway, clientId);
+  const recording = await bridge.startRecording({ sessionId: session.sessionId, domainId: "extension.example" });
+  const finalize = automationStudio.finalizeRecording.bind(automationStudio);
+  let release = () => {};
+  const held = new Promise<void>((resolve) => { release = () => resolve(); });
+  let reach = () => {};
+  const reached = new Promise<void>((resolve) => { reach = () => resolve(); });
+  vi.spyOn(automationStudio, "finalizeRecording").mockImplementation(async (input) => {
+    const result = await finalize(input);
+    reach();
+    await held;
+    return result;
+  });
+  const stopping = gateway.receive(session.sessionId, clientMessage("client.stop_recording", { recordingId: recording.recordingId }));
+  await reached;
+  return { gateway, automationStudio, session, recording, stopping, release: () => release() };
+}
+
+function lateClick() {
+  return clientMessage("client.recording_event", {
+    domainId: "extension.example",
+    eventType: "dom.click",
+    payload: { elementId: "confirm" },
+    metadata: { inputId: "element-pressed" }
+  });
+}
+
+function serverErrors(gateway: ClientGatewayService, sessionId: string) {
+  return gateway.outbound(sessionId).filter((message) => message.type === "server.error");
 }
 
 function lateEventIoRegistry(): IoRegistry {
