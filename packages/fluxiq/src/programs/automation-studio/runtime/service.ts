@@ -62,7 +62,6 @@ import {
   type AutomationStudioRuntimeSession,
   type AutomationStudioTaskArtifact,
   type AppendRecordingEntryInput,
-  normalizeAutomationStudioElementTarget,
   type CreateRecordingSessionInput,
   type PolicyGraph,
   type PolicyNode,
@@ -135,7 +134,7 @@ import {
   type RecordingFlowProposalArtifact,
   type RecordingFlowProposalDestination
 } from "./recording-flow-proposal.ts";
-import { AutomationStudioNodeRegistry, type AutomationStudioRecordingMapperCandidate, type AutomationStudioRecordingMapperObservation } from "../nodes/index.ts";
+import { AutomationStudioNodeRegistry, type AutomationStudioRecordingMapperCandidate } from "../nodes/index.ts";
 import {
   addRecordingPipelineArtifactId,
   createRecordingPipelineDocument,
@@ -222,7 +221,7 @@ import {
   AutomationStudioRecordingDeletion,
   type AutomationPipelineArtifacts,
   type ReplayResultArtifact,
-  recordingTimelineForProposalMapping, openRecordingProposalNotice,
+  recordingTimelineForProposalMapping, openRecordingProposalNotice, recordingMapperCalls, recordingFlowActionCandidate, appendRecordingProposalToFlow, recordingCandidateStateLinkMetadata,
   AutomationStudioProposalApproval,
   clampInteger,
   subflowSummaryFromSql,
@@ -2399,18 +2398,11 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       const candidates: RecordingFlowActionCandidate[] = [];
       let emittedCandidateCount = 0;
       let mappedEntryCount = 0;
-      for (const entry of mapperTimeline) {
-        const observation: AutomationStudioRecordingMapperObservation = {
-          observationId: entry.id,
-          recordingId: recording.recordingId,
-          domainId,
-          type: entry.type,
-          timestamp: entry.timestamp,
-          payload: recordingEntryPayload(entry),
-          metadata: { ...(entry.metadata ?? {}) }
-        };
+      const calls = recordingMapperCalls(mapperTimeline, recording.recordingId, domainId);
+      for (const [index, entry] of mapperTimeline.entries()) {
+        const { observation, following } = calls[index]!;
         try {
-          const mapped = await mapper.implementation(observation, { signal: controller.signal, elementMatcher: this.nativeNodeRuntime.elementMatcher });
+          const mapped = await mapper.implementation(observation, { signal: controller.signal, elementMatcher: this.nativeNodeRuntime.elementMatcher, following });
           const mappedCandidates = !mapped ? [] : "candidates" in mapped ? mapped.candidates : [mapped];
           if (mappedCandidates.length) {
             mappedEntryCount += 1;
@@ -2424,7 +2416,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           for (const candidate of candidateInputs) {
             const actionEntryId = resolveCandidateActionEntryId(recordingStateIndex, entry.id, candidate);
             const stateLink = recordingStateIndex ? proposalNodeStateLinkFromIndex(recordingStateIndex, actionEntryId) : undefined;
-            candidates.push(this.validateRecordingCandidate({
+            candidates.push(recordingFlowActionCandidate(this.ioRuntime.io, {
               candidate,
               actionEntryId,
               sourceEntryId: entry.id,
@@ -4684,42 +4676,6 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     return policy;
   }
 
-  private validateRecordingCandidate(input: { candidate: AutomationStudioRecordingMapperCandidate; actionEntryId: string; sourceEntryId: string; recordingId: string; domainId: string; stateLink?: RecordingFlowActionCandidate["stateLink"]; mapperOutputIds?: string[] }): RecordingFlowActionCandidate {
-    const outputId = input.candidate.outputId?.trim();
-    if (!outputId) throw new Error("Recording mapper candidates must declare an outputId.");
-    if (input.mapperOutputIds?.length && !input.mapperOutputIds.includes(outputId)) throw new Error(`Recording mapper emitted undeclared output ${outputId}.`);
-    if (!this.ioRuntime?.io.hasOutput(input.domainId, outputId)) throw new Error(`Recording mapper emitted unregistered output ${outputId}.`);
-    const sourceInputIds = uniqueStrings(input.candidate.sourceInputIds ?? []);
-    for (const inputId of sourceInputIds) {
-      const adapter = this.ioRuntime.io.getInput(input.domainId, inputId);
-      if (!adapter) throw new Error(`Recording mapper referenced unregistered input ${inputId}.`);
-      if ((adapter.definition.role ?? "state") !== "action") throw new Error(`Recording mapper source input ${inputId} is state-eligible and cannot be reclassified as an action.`);
-    }
-    const confirmation = input.candidate.expectedConfirmation;
-    if (confirmation) {
-      const adapter = this.ioRuntime.io.getInput(input.domainId, confirmation.inputId);
-      if (!adapter) throw new Error(`Recording mapper referenced unregistered confirmation input ${confirmation.inputId}.`);
-      if ((adapter.definition.role ?? "state") !== "action") throw new Error(`Confirmation input ${confirmation.inputId} must be an action-role observation.`);
-    }
-    const sourceObservationIds = uniqueStrings([input.sourceEntryId, input.actionEntryId, ...(input.candidate.sourceObservationIds ?? [])]);
-    const parameters = normalizeRecordingCandidateElementTargetParameters(input.candidate.parameters ?? {});
-    return {
-      candidateId: `candidate.${safeSegment(input.actionEntryId)}.${randomUUID()}`,
-      actionEntryId: input.actionEntryId,
-      sourceObservationIds,
-      sourceInputIds,
-      outputId,
-      parameters,
-      ...(confirmation ? { expectedConfirmation: { ...confirmation } } : {}),
-      confidence: clampConfidence(input.candidate.confidence),
-      evidence: input.candidate.evidence?.length ? structuredClone(input.candidate.evidence) : sourceObservationIds.map((entryId) => ({ layer: "recording" as const, artifactId: input.recordingId, entryId })),
-      ...(input.stateLink ? { stateLink: input.stateLink } : {}),
-      policyStateEligible: false,
-      ...(input.candidate.label ? { label: input.candidate.label } : {}),
-      ...(input.candidate.description ? { description: input.candidate.description } : {})
-    };
-  }
-
   private async readRecordingFlowProposals(projectId: string, revalidate: boolean): Promise<RecordingFlowProposalArtifact[]> {
     const index = await this.indexes.readPipelineIndex(projectId);
     const proposals = await this.readPipelineArtifactList<RecordingFlowProposalArtifact>(projectId, "recordingFlowProposals", (index.recordingFlowProposals ?? []).map((item) => item.proposalId));
@@ -5767,12 +5723,6 @@ function recordingEntryIsActionLike(entry: RecordingSession["timeline"][number])
   return false;
 }
 
-function normalizeRecordingCandidateElementTargetParameters(parameters: JsonObject): JsonObject {
-  const target = normalizeAutomationStudioElementTarget(parameters.element ? parameters : parameters.target, { source: "mapper" }) ?? normalizeAutomationStudioElementTarget(parameters, { source: "mapper" });
-  if (!target) return { ...parameters };
-  return compactJsonObject({ ...parameters, target });
-}
-
 function recordingActionEntryCandidate(entry: RecordingSession["timeline"][number]): AutomationStudioRecordingMapperCandidate | null {
   if (entry.type !== "action") return null;
   const outputId = typeof entry.outputId === "string" && entry.outputId.trim()
@@ -5825,63 +5775,10 @@ function compareSemanticVersions(left: string, right: string): number {
   return 0;
 }
 
-function recordingEntryPayload(entry: RecordingSession["timeline"][number]): JsonObject {
-  const { id: _id, recordingId: _recordingId, timestamp: _timestamp, monotonicOffsetMs: _offset, sequence: _sequence, sourceId: _sourceId, metadata: _metadata, ...payload } = entry;
-  return structuredClone(payload) as unknown as JsonObject;
-}
-
 function countRecordingEntryTypes(entries: RecordingSession["timeline"]): string {
   const counts = new Map<string, number>();
   for (const entry of entries) counts.set(entry.type, (counts.get(entry.type) ?? 0) + 1);
   return [...counts.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([type, count]) => `${type}: ${count}`).join(", ") || "no entries";
-}
-
-function clampConfidence(value: number | undefined): number {
-  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0.5;
-}
-
-function appendRecordingProposalToFlow(flow: AutomationStudioFlowArtifact, proposal: RecordingFlowProposalArtifact): AutomationStudioFlowArtifact {
-  const nodeIds = new Set(flow.nodes.map((node) => node.id));
-  const nodes = proposal.candidates.map((candidate, index) => {
-    let id = `recorded.${safeSegment(candidate.candidateId)}`;
-    let suffix = 2;
-    while (nodeIds.has(id)) id = `recorded.${safeSegment(candidate.candidateId)}.${suffix++}`;
-    nodeIds.add(id);
-    return {
-      id,
-      definitionId: "builtin.policy.action",
-      label: candidate.label ?? candidate.outputId,
-      ...(candidate.description ? { description: candidate.description } : {}),
-      parameterValues: compactJsonObject({
-        outputId: candidate.outputId,
-        parameters: structuredClone(candidate.parameters),
-        ...(candidate.expectedConfirmation ? { confirmationInputId: candidate.expectedConfirmation.inputId, confirmationTimeoutMs: candidate.expectedConfirmation.timeoutMs ?? 5_000 } : {})
-      }),
-      position: { x: 120 + index * 340, y: 240 },
-      metadata: {
-        recordingProposalId: proposal.proposalId,
-        recordingCandidateId: candidate.candidateId,
-        mapperId: proposal.mapper.id,
-        mapperVersion: proposal.mapper.version,
-        actionEntryId: candidate.actionEntryId,
-        timelineEntryId: candidate.actionEntryId,
-        ...recordingCandidateStateLinkMetadata(candidate),
-        sourceObservationIds: candidate.sourceObservationIds,
-        evidence: candidate.evidence,
-        rawEvidenceImmutable: true,
-        manualProvenance: []
-      }
-    };
-  });
-  const edges = nodes.slice(1).map((node, index) => ({
-    id: `recorded-edge.${safeSegment(proposal.proposalId)}.${index + 1}`,
-    sourceNodeId: nodes[index]!.id,
-    targetNodeId: node.id,
-    sourcePortId: "success",
-    targetPortId: "ready",
-    metadata: { recordingProposalId: proposal.proposalId }
-  }));
-  return { ...flow, nodes: [...flow.nodes, ...nodes], edges: [...flow.edges, ...edges], metadata: { ...(flow.metadata ?? {}), recordingProposalIds: uniqueStrings([...(Array.isArray(flow.metadata?.recordingProposalIds) ? flow.metadata.recordingProposalIds.map(String) : []), proposal.proposalId]) } };
 }
 
 function recordingProposalReplacementBase(flow: AutomationStudioFlowArtifact): AutomationStudioFlowArtifact {
@@ -5917,15 +5814,6 @@ function recordingCandidateDefinition(proposal: RecordingFlowProposalArtifact, c
     icon: "wand-sparkles",
     metadata: { visibility, candidateId: candidate.candidateId, outputId: candidate.outputId, parameters: candidate.parameters, ...(candidate.expectedConfirmation ? { expectedConfirmation: candidate.expectedConfirmation } : {}), evidence: candidate.evidence, sourceObservationIds: candidate.sourceObservationIds, ...recordingCandidateStateLinkMetadata(candidate), policyStateEligible: false }
   };
-}
-
-function recordingCandidateStateLinkMetadata(candidate: RecordingFlowActionCandidate): JsonObject {
-  return candidate.stateLink ? compactJsonObject({
-    stateLink: candidate.stateLink as unknown as JsonObject,
-    stateSnapshotId: candidate.stateLink.stateSnapshotId,
-    stateRef: candidate.stateLink.stateRef,
-    screenshotRef: candidate.stateLink.screenshotRef
-  }) : {};
 }
 
 function recordingCandidateParameters(candidate: RecordingFlowActionCandidate): AutomationStudioNodeDefinition["parameters"] {

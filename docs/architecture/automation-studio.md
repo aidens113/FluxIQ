@@ -383,8 +383,10 @@ re-exported by `fluxiq/automation-studio`. A domain decides which member
 applies and reports an `AutomationStudioFailureRecord` (`category`, a
 producer-owned `code`, `retryable`, and optional `stage`, `expected`, `actual`,
 and `evidenceDigest`) on the gateway action result, the runtime command result,
-or the output dispatch result. `parseAutomationStudioFailureRecord` accepts
-only exact, bounded, self-consistent records and drops anything else whole.
+or the output dispatch result. A host may also attach one to an expectation
+verdict that rejects a node's `expectedState`.
+`parseAutomationStudioFailureRecord` accepts only exact, bounded,
+self-consistent records and drops anything else whole.
 The record travels from the dispatch result through the node result to the
 attempt trace and the persisted action record, and the LLM recent-action
 context carries its category but not its code or texts. Transition comparison
@@ -393,8 +395,9 @@ attempt's message remains only for attempts recorded without one. Core also
 names the failures its own structured signals prove: a `timed_out` command is
 `timeout`, a `rejected` command is `blocked_by_capability_or_policy`, a
 dispatched output whose bound confirmation input never arrived is
-`output_not_observed`, and an element target with no confident candidate is
-`target_not_found`. Output-dispatching attempts also record `targetResolution`
+`output_not_observed`, a succeeded attempt whose `expectedState` the host
+rejected without a record that parses is `expected_state_missing`, and an
+element target with no confident candidate is `target_not_found`. Output-dispatching attempts also record `targetResolution`
 beside `stateRefs`: the resolution status, the candidate count, the confidence
 threshold, and the best candidate's score and signals. An attempt dispatched
 without runtime candidates records `unresolved_no_candidates` with a count of
@@ -419,12 +422,24 @@ host runtime boundary may bind `expectationEvaluator(conditions, mode,
 timeoutMs, context)` beside `captureStateSnapshot`, `inspectStateDiff`, and
 `rollbackHint`, and `bindHostRuntime` carries it into every graph run. The
 `builtin.policy.expectation` node awaits it and routes `failed` with an
-`expected_state_missing` failure when the host rejects; the transition
-comparison asks it about any other node's `expectedState`, naming the snapshot
-the attempt ended on, and reports the conditions the host checked instead of
-counting expected-state keys. A host that binds no evaluator is unchanged: the
+`expected_state_missing` failure when the host rejects. For any other node
+whose attempt succeeded and that carries `expectedState`, the transition
+comparison asks the host after the action, naming the snapshot the attempt
+ended on, and reports the conditions the host checked instead of counting
+expected-state keys. A rejection there fails the attempt: its status and route
+become `failed`, its message is the host's, and its `failure` is the host's
+record when that record parses, otherwise Core's `expected_state_missing`
+record with code `core.policy.expectation_rejected`. The comparison keeps the
+host's verdict against the action's own outcome. The run then routes the
+attempt as it routes any failed attempt, so the next node is not dispatched
+unless a failed-route edge or the recovery ladder leads there. Failed, waiting,
+and cancelled attempts are not asked, an evaluator that throws leaves the
+attempt as it was, and a host that binds no evaluator is unchanged: the
 expectation passes unconditionally and expected state is read from the
-attempt's own route as before.
+attempt's own route as before. A recording mapper can propose that
+`expectedState` for a recorded action;
+[Recording-derived nodes](automation-studio-native-nodes.md#recording-derived-nodes)
+describes how it reaches the node.
 
 Subflows are persisted as Flow-owned behavior units with route tags,
 input/output mapping, graph reference, local instruction IDs, proposal-mode

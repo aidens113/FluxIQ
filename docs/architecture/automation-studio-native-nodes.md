@@ -223,6 +223,35 @@ version boundary. Their typed results are persisted as
 the decision, reviewer/notes when supplied, and an explicit Flow or node
 destination.
 
+A mapper is called once for each mapper-visible timeline entry: the recorded
+timeline without state checkpoints or client state snapshots and updates. Its
+`AutomationStudioRecordingMapperContext` carries `signal`, `elementMatcher`, and
+`following`: the mapper-visible entries after this one, in timeline order and at
+most 32, in the same observation shape. `following` is where a mapper reads what
+an action led to, such as the navigation a click caused, without Core knowing
+what either is. Core builds the observations once for each mapper, so one
+mapper's changes to what it was handed never reach another; within one mapper's
+calls, an observation in `following` is the object that mapper is later handed
+for that entry.
+
+A candidate may carry `expectedState`: what should hold after the action, in
+whatever condition shape the host's `expectationEvaluator` reads. Core keeps it
+only when it is a plain object, stores a clone on the proposal's
+`RecordingFlowActionCandidate`, and drops anything else (an array, a primitive,
+a class instance, or a value that cannot be cloned) while still proposing the
+action. Approving the proposal into a Flow writes it into the recorded action
+node's `parameterValues.expectedState`, where the
+[transition comparison](automation-studio.md#llm-assisted-deterministic-automation)
+reads it: once the action succeeds, the host is asked whether the state holds,
+and a rejection fails the attempt. Approving the proposal into a node definition
+does not carry it.
+
+Both fields are additive. A mapper that ignores `following` and proposes no
+`expectedState` gets the proposal it got before, and a candidate without
+`expectedState` becomes the same node as before. A host whose mapper proposes
+`expectedState` and that binds an expectation evaluator should expect those
+recorded actions to fail wherever the evaluator rejects the state.
+
 Approved recording-derived definitions retain a fixed registered output ID and
 are materialized to the built-in policy action at execution. Private definitions
 remain in their project; public definitions are visible to projects in the same

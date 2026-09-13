@@ -585,6 +585,61 @@ The completed Week 1 Core briefs are archived verbatim at
   `pnpm build` and root `pnpm test`.
 - Outcome: Accepted
 
+### 2026-09-13 — A recording mapper can claim the state its action should leave, and sees what followed
+
+- Agent: downstream worker `w19-c2` (`reports/w19-c2.md` in the downstream plan);
+  verified by the downstream supervisor.
+- Changed:
+  - `nodes/importer-sdk.ts`: an optional `expectedState` on
+    `AutomationStudioRecordingMapperCandidate`, and a mapper context `following`,
+    the next 32 timeline observations.
+  - `runtime/recording-flow-proposal.ts`: the candidate's optional `expectedState`.
+  - A new `runtime/service/recordings/proposal-candidates.ts`. It builds the
+    mapper calls, keeps a plain-object `expectedState` as a clone and drops
+    anything else, and writes it into an approved Flow node's
+    `parameterValues.expectedState`.
+  - `runtime/service.ts`, from which that construction moved (6919 to 6807
+    lines); one export line in `runtime/service/recordings/index.ts`; the new test
+    `runtime/service/recordings/tests/proposal-candidates.test.ts`.
+  - `docs/architecture/automation-studio.md`, which also gets `w19-c1`'s
+    paragraphs, and `automation-studio-native-nodes.md`; both generated
+    framework references.
+  - `.structure-baseline.json`: `service.ts` file-lines 6919 to 6807;
+    `AutomationStudioService` class-methods 224 to 223.
+- Why: the downstream W19 fix gives a recorded click a URL claim naming the page
+  it landed on. To find that page the mapper needs the entries after the click,
+  and the claim must reach the node the executor checks since `6f172b9`.
+- Compatibility: additive.
+  - A mapper that ignores `following` still type-checks, but code that calls a
+    mapper directly must pass it.
+  - Stored proposals read as before.
+  - With `6f172b9`, a host binding `expectationEvaluator` fails a recorded action
+    whose claimed state it rejects. Nothing downstream proposes one yet.
+- Decisions:
+  - The barrel line outside the brief stands.
+  - Approving a proposal as a node definition still drops `expectedState`; that
+    is Week 2.
+  - An empty `{}` expectation is still kept. The downstream
+    `g-core-expectation-record` makes it count as none, and exports the shared
+    `expected_state_missing` record.
+- Validation: supervisor, from `packages/fluxiq`:
+  - `npx vitest run .../recordings/tests/proposal-candidates.test.ts
+    --no-file-parallelism` -> `Tests 4 passed (4)`;
+  - `.../runtime/tests/service.test.ts` -> `Tests 108 passed (108)`;
+  - executor `node-execution` and `transition-comparison` -> `Tests 19 passed (19)`;
+  - `pnpm check` -> exit 0, `structure-audit: passed (120 warning(s), 256
+    baselined)`, `2 baseline entries can be lowered`;
+  - with both lowered, `node scripts/structure-audit.mjs` -> `passed`, nothing
+    left to lower;
+  - `pnpm docs:check` -> exit 0.
+  - Worker: deleting the lift failed the expected-state row. Four more mutations
+    (`following`, the plain-object check, the copy, per-mapper construction)
+    each failed their row, and all were restored byte-identical.
+- Not verified: `pnpm build`; root `pnpm test`; the other proposal-generating
+  suites (`service-flow-bootstrap-*`, `apps/web`); the downstream domain compiled
+  against these types.
+- Outcome: Accepted
+
 ## Open Questions
 
 - **A client's declared identity is not authenticated, so nothing that gates on

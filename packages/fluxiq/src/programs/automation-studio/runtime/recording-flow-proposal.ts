@@ -17,6 +17,8 @@ export type RecordingFlowActionCandidate = {
   outputId: string;
   parameters: JsonObject;
   expectedConfirmation?: { inputId: string; timeoutMs?: number; description?: string };
+  /** What the host should find true after the action, as the mapper proposed it: a plain object Core owns a clone of and never reads. */
+  expectedState?: JsonObject;
   confidence: number;
   evidence: RecordingProposalEvidenceReference[];
   stateLink?: ProposalNodeStateLink;

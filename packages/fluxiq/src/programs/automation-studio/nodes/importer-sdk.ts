@@ -22,6 +22,8 @@ export type AutomationStudioRecordingMapperCandidate = {
   sourceObservationIds?: string[];
   sourceInputIds?: string[];
   expectedConfirmation?: { inputId: string; timeoutMs?: number; description?: string };
+  /** What should hold after the action, in the condition shape the host's expectation evaluator reads. Kept only when it is a plain object. */
+  expectedState?: JsonObject;
   confidence?: number;
   evidence?: Array<{ layer: "recording" | "normalized_timeline" | "evidence"; artifactId: string; entryId?: string; observationId?: string }>;
   label?: string;
@@ -75,7 +77,13 @@ export type AutomationStudioNativeNodeContext = {
   log(entry: AutomationStudioNativeLogEntry): void;
 };
 export type AutomationStudioNativeNodeImplementation = (context: AutomationStudioNativeNodeContext) => AutomationNodeExecutionResult | Promise<AutomationNodeExecutionResult>;
-export type AutomationStudioRecordingMapperImplementation = (observation: AutomationStudioRecordingMapperObservation, context: { signal: AbortSignal; elementMatcher: AutomationStudioElementMatcher }) => AutomationStudioRecordingMapperResult | Promise<AutomationStudioRecordingMapperResult>;
+export type AutomationStudioRecordingMapperContext = {
+  signal: AbortSignal;
+  elementMatcher: AutomationStudioElementMatcher;
+  /** The mapper-visible entries after this observation, in timeline order, at most 32: where a mapper reads what an action led to. */
+  following: readonly AutomationStudioRecordingMapperObservation[];
+};
+export type AutomationStudioRecordingMapperImplementation = (observation: AutomationStudioRecordingMapperObservation, context: AutomationStudioRecordingMapperContext) => AutomationStudioRecordingMapperResult | Promise<AutomationStudioRecordingMapperResult>;
 export type AutomationStudioTargetResolverImplementation = (target: JsonObject, context: { signal: AbortSignal; elementMatcher: AutomationStudioElementMatcher }) => JsonObject | null | Promise<JsonObject | null>;
 export type AutomationStudioComparatorImplementation = (left: JsonValue, right: JsonValue) => { equal: boolean; score?: number };
 
