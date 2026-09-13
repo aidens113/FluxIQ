@@ -55,9 +55,8 @@ type RecordingAppendQueue = {
 };
 
 /**
- * What became of the recording a client was last writing to, kept so a message
- * that arrives after it closed can be attributed to it instead of vanishing.
- * `recordingId` is absent when the client never had a recording here at all.
+ * What became of the recording a client last wrote to — finalized here, or refused at
+ * its start and so never given `finalizedAt` — kept so a message meant for it is named.
  */
 type ClosedClientRecording = {
   recordingId?: string;
@@ -75,6 +74,7 @@ type DiscardedClientMessage = {
   label: string;
   domainId?: string | null;
   inputId?: string | undefined;
+  recordingId?: string | undefined;
   /** Set when the payload itself says this was an action, not evidence. */
   executable?: boolean;
 };
@@ -95,6 +95,7 @@ export class AutomationStudioClientGatewayBridge {
   private readonly activeRecordings = new Map<string, { projectId?: string | null; recordingId: string; domainId?: string | null }>();
   private readonly appendQueues = new Map<string, RecordingAppendQueue>();
   private readonly closedRecordings = new Map<string, ClosedClientRecording>();
+  private readonly pendingStarts = new Map<string, PendingClientStart>();
   private clientRecordingContextProvider: ClientRecordingContextProvider | undefined;
   private io: IoRegistry | undefined;
 
@@ -203,6 +204,8 @@ export class AutomationStudioClientGatewayBridge {
       await this.startRecordingFromClient(event.session, event.message.payload);
       return;
     }
+    if (event.type === "session.ready" || event.type === "session.disconnected" || event.type === "client.action_result") return;
+    await this.awaitClientStart(event.session, event.type === "client.stop_recording" ? event.message.payload.recordingId : undefined);
     if (event.type === "client.stop_recording") {
       await this.stopRecordingFromClient(event.session, event.message.payload);
       return;
@@ -213,6 +216,7 @@ export class AutomationStudioClientGatewayBridge {
       const message: DiscardedClientMessage = {
         kind: "recording entry",
         label: typeof entry?.type === "string" ? entry.type : "unknown",
+        recordingId: event.message.payload.recordingId,
         executable: entry?.type === "action"
       };
       if (!active) {
@@ -255,7 +259,39 @@ export class AutomationStudioClientGatewayBridge {
     }
   }
 
+  /**
+   * Registered before its first await, so later messages from the client wait for it; a
+   * start refused or thrown is remembered, so what waited is discarded under its id.
+   */
   private async startRecordingFromClient(session: ClientGatewaySession, input: ClientGatewayStartRecordingRequest) {
+    const ownerKey = this.recordingOwnerKey(session);
+    const previous = this.pendingStarts.get(ownerKey);
+    let settle = () => {};
+    const pending: PendingClientStart = { recordingId: input.recordingId, stopRequested: false, settled: new Promise<void>((resolve) => { settle = resolve; }) };
+    this.pendingStarts.set(ownerKey, pending);
+    try {
+      await previous?.settled;
+      return await this.openClientRecording(session, input, pending);
+    } finally {
+      if (this.activeRecordings.get(ownerKey)?.recordingId !== input.recordingId) this.rememberClosedRecording(ownerKey, { recordingId: input.recordingId, ...(input.projectId !== undefined ? { projectId: input.projectId } : {}) }, false);
+      if (this.pendingStarts.get(ownerKey) === pending) this.pendingStarts.delete(ownerKey);
+      settle();
+    }
+  }
+
+  /**
+   * Holds a message until its client's start settles, so it meets the recording that start
+   * opens or its refusal: the WebSocket host handles one socket's messages concurrently.
+   * A Stop for that recording also withdraws the start's acknowledgement.
+   */
+  private async awaitClientStart(session: ClientGatewaySession, stoppingRecordingId: string | undefined): Promise<void> {
+    const pending = this.pendingStarts.get(this.recordingOwnerKey(session));
+    if (!pending) return;
+    if (stoppingRecordingId === pending.recordingId) pending.stopRequested = true;
+    await pending.settled;
+  }
+
+  private async openClientRecording(session: ClientGatewaySession, input: ClientGatewayStartRecordingRequest, pending: PendingClientStart) {
     const context = await this.resolveClientRecordingContext(session, input);
     if (!context.ok) {
       await this.gateway.sendError(session.sessionId, {
@@ -303,7 +339,10 @@ export class AutomationStudioClientGatewayBridge {
     });
     this.activeRecordings.set(this.recordingOwnerKey(session), { projectId, recordingId: recording.recordingId, domainId });
     this.closedRecordings.delete(this.recordingOwnerKey(session));
-    this.gateway.markActiveRecording(session.sessionId, { recordingId: recording.recordingId, projectId });
+    // Acknowledged only once open, and never to a client that has already sent Stop.
+    const accepted = { recordingId: recording.recordingId, projectId, ...(taskId !== undefined ? { taskId } : {}), ...(domainId ? { domainId } : {}) };
+    if (pending.stopRequested) this.gateway.markActiveRecording(session.sessionId, accepted);
+    else await this.gateway.startRecording(session.sessionId, accepted);
     return recording;
   }
 
@@ -335,13 +374,14 @@ export class AutomationStudioClientGatewayBridge {
 
   private async appendRecordingEvent(session: ClientGatewaySession, event: ClientGatewayRecordingEvent, messageId: string): Promise<void> {
     const active = this.activeRecordings.get(this.recordingOwnerKey(session));
-    // The recording this event belongs to has already been finalized, and a
-    // finalized recording is immutable. The event cannot be kept; the one thing
+    // The recording this event belongs to is not open here: finalized, which is
+    // immutable, or its start was refused. The event cannot be kept; the one thing
     // that must not happen is for it to disappear without anyone being told.
     if (!active) {
       this.noteDiscardedClientMessage(session, {
         kind: "recording event",
         label: event.eventType,
+        recordingId: event.recordingId,
         ...(event.domainId !== undefined ? { domainId: event.domainId } : {}),
         inputId: stringMetadataValue(event.metadata, "inputId")
       });
@@ -408,11 +448,11 @@ export class AutomationStudioClientGatewayBridge {
   }
 
   /**
-   * Remembers a recording the bridge has just finalized. Only the last one per
-   * client is kept, and only so a message arriving moments later can name the
-   * recording it was meant for.
+   * Remembers a recording the bridge has just finalized, or a client start it did
+   * not open (`finalized` false). Only the last one per client is kept, and only
+   * so a message arriving moments later can name the recording it was meant for.
    */
-  private rememberClosedRecording(ownerKey: string, closed: { recordingId: string; projectId?: string | null; domainId?: string | null }): void {
+  private rememberClosedRecording(ownerKey: string, closed: { recordingId: string; projectId?: string | null; domainId?: string | null }, finalized = true): void {
     // A message that lost the race to finalization remembers the recording
     // first; closing it afterwards must keep that message's count.
     if (this.closedRecordings.get(ownerKey)?.recordingId === closed.recordingId) return;
@@ -422,7 +462,7 @@ export class AutomationStudioClientGatewayBridge {
       if (oldest.done) break;
       this.closedRecordings.delete(oldest.value);
     }
-    this.closedRecordings.set(ownerKey, { ...closed, finalizedAt: Date.now(), discardedEvents: 0, discardedActions: 0, reported: false });
+    this.closedRecordings.set(ownerKey, { ...closed, ...(finalized ? { finalizedAt: Date.now() } : {}), discardedEvents: 0, discardedActions: 0, reported: false });
   }
 
   /**
@@ -445,17 +485,19 @@ export class AutomationStudioClientGatewayBridge {
     if (executable) closed.discardedActions += 1;
     if (closed.reported && !executable) return;
     closed.reported = true;
-    const sinceFinalizedMs = closed.finalizedAt === undefined ? undefined : Math.max(0, Date.now() - closed.finalizedAt);
+    const recordingId = discarded.recordingId ?? closed.recordingId;
+    const remembered = recordingId === closed.recordingId;
+    const sinceFinalizedMs = !remembered || closed.finalizedAt === undefined ? undefined : Math.max(0, Date.now() - closed.finalizedAt);
     this.gateway.recordAuditEvent({
       type: executable ? "recording.action_discarded" : "recording.event_discarded",
-      message: discardedClientMessageSummary(discarded, closed, executable, sinceFinalizedMs),
+      message: discardedClientMessageSummary(discarded, recordingId, executable, sinceFinalizedMs),
       sessionId: session.sessionId,
       metadata: compactJsonObject({
         source: "automation-studio",
         clientId: session.clientId,
         clientName: session.name,
-        recordingId: closed.recordingId,
-        projectId: closed.projectId,
+        recordingId,
+        projectId: remembered ? closed.projectId : undefined,
         eventType: discarded.label,
         inputId: discarded.inputId,
         domainId: discarded.domainId ?? closed.domainId ?? undefined,
@@ -515,7 +557,7 @@ export class AutomationStudioClientGatewayBridge {
 
   private async appendSnapshot(session: ClientGatewaySession, snapshot: ClientGatewaySnapshot, messageId: string): Promise<void> {
     const active = this.activeRecordings.get(this.recordingOwnerKey(session));
-    if (!active) return;
+    if (!active) return this.noteDiscardedClientMessage(session, { kind: "snapshot", label: `client.${snapshot.kind}_snapshot`, executable: false });
     if (snapshot.kind === "state" && snapshot.state) {
       this.enqueueRecordingEntry(this.recordingOwnerKey(session), {
         ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
@@ -552,7 +594,11 @@ export class AutomationStudioClientGatewayBridge {
 
   private async appendStateUpdate(session: ClientGatewaySession, stateUpdate: JsonObject, messageId: string): Promise<void> {
     const active = this.activeRecordings.get(this.recordingOwnerKey(session));
-    if (!active) return;
+    if (!active) {
+      // One that says its client is not recording is page state, not lost evidence.
+      if (stateUpdate.recording !== false) this.noteDiscardedClientMessage(session, { kind: "state update", label: "client.state_update", domainId: stringMetadataValue(stateUpdate.metadata as JsonObject | undefined, "domainId") ?? null, inputId: stringMetadataValue(stateUpdate.metadata as JsonObject | undefined, "inputId") });
+      return;
+    }
     const domainId = active.domainId ?? stringMetadataValue(stateUpdate.metadata as JsonObject | undefined, "domainId");
     const inputId = stringMetadataValue(stateUpdate.metadata as JsonObject | undefined, "inputId");
     if (domainId && inputId) {
@@ -701,6 +747,9 @@ export class AutomationStudioClientGatewayBridge {
   }
 }
 
+/** A client's `client.start_recording` still being handled; its later messages wait on `settled`. */
+type PendingClientStart = { recordingId: string; settled: Promise<void>; stopRequested: boolean };
+
 function emptyClientStateSnapshot(session: ClientGatewaySession): StateSnapshot {
   return {
     timestamp: Date.now(),
@@ -719,14 +768,15 @@ function emptyClientStateSnapshot(session: ClientGatewaySession): StateSnapshot 
 
 function discardedClientMessageSummary(
   discarded: DiscardedClientMessage,
-  closed: ClosedClientRecording,
+  recordingId: string | undefined,
   executable: boolean,
   sinceFinalizedMs: number | undefined
 ): string {
   const what = executable ? `an executable action (${discarded.label})` : `a client ${discarded.kind} (${discarded.label})`;
-  if (!closed.recordingId) return `Discarded ${what} that arrived while this client had no recording open.`;
-  const when = sinceFinalizedMs === undefined ? "after" : `${sinceFinalizedMs} ms after`;
-  const lost = `Discarded ${what} that arrived ${when} recording ${closed.recordingId} was finalized.`;
+  if (!recordingId) return `Discarded ${what} that arrived while this client had no recording open.`;
+  const lost = sinceFinalizedMs === undefined
+    ? `Discarded ${what} for recording ${recordingId}, which this client did not have open.`
+    : `Discarded ${what} that arrived ${sinceFinalizedMs} ms after recording ${recordingId} was finalized.`;
   return executable ? `${lost} The client believes it was recorded; the recording does not contain it.` : lost;
 }
 

@@ -342,6 +342,12 @@ Recording over WebSocket is project-bound.
    that operator's default project. It cannot use another operator's context.
    FluxIQ creates the recording there, marks the client session as recording,
    and the web panel opens the recording timeline in the main workspace area.
+   Once the recording is open, FluxIQ acknowledges the start by sending the
+   client `server.start_recording` with its `recordingId`, unless a
+   `client.stop_recording` for that recording has already arrived. Messages the
+   client sends while the start is still being handled wait for it, so they
+   reach the recording that start opens. A message that arrives when no
+   recording is open is discarded and audited under the recording id it names.
 5. If Automation Studio has no open project, FluxIQ rejects the request,
    sends `server.error` with code `recording.project_required`, and the web
    panel shows a modal telling the user to open a project first.

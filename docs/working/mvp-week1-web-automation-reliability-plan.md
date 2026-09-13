@@ -320,155 +320,6 @@ The completed Week 1 Core briefs are archived verbatim at
   one case, does not exist as an API; that class opens and closes per operation.
 - Outcome: Accepted
 
-### 2026-09-12 — The element matcher published for a browser bundle
-
-- Agent: supervisor (commit `fafe7c7`); recorded here afterwards by
-  worker p-core-docs.
-- Changed: `packages/fluxiq/package.json` (version 0.2.0 -> 0.2.1 and the
-  `./automation-studio/fingerprinting` exports entry), a new
-  `programs/automation-studio/fingerprinting/tests/index.test.ts`,
-  `scripts/validate-packages.mjs`, `docs/architecture/automation-studio.md`,
-  `docs/architecture/package-boundaries.md`, `docs/working/README.md`.
-- Why: downstream D1 assumed the matcher was already importable from a browser
-  bundle. It was not — not because the code is Node-bound, but because the only
-  published path to it was the `automation-studio` barrel, which re-exports
-  `dsl/` and `testing/` and so reaches `node:crypto` and `node:perf_hooks`. A
-  packaging change, not a restructure: `fingerprinting/` already had a barrel.
-- Validation: the commit records `check`, `docs:check`, `package:lint` and
-  `build` each exiting 0, with `packages/fluxiq` at 129 of 129 test files green
-  under `--no-file-parallelism`. Re-checked against the tree by p-core-docs
-  rather than taken from that text: `packages/fluxiq/package.json` is at
-  `0.2.1` and carries the subpath exactly as the new test asserts it
-  (`node -e` over the manifest printed both), and the test walks the barrel's
-  import closure so a runtime import added anywhere in it fails.
-- Outcome: Accepted
-
-### 2026-09-12 — A missing stable identifier charged less than a contradicted one
-
-- Agent: supervisor (commit `a575df2`); recorded here afterwards by
-  worker p-core-docs.
-- Changed: `programs/automation-studio/fingerprinting/element-fingerprint.ts`
-  (the two named constants replacing one −0.55 branch) and a paragraph in
-  `docs/integrations/automation-studio-importing-repos.md` telling importers to
-  omit an identifier a candidate lacks rather than fill it with a placeholder.
-- Why: downstream D13. Level 2 target scoring downstream could not succeed,
-  because reaching it requires the recorded identifiers to be absent and absence
-  was charged nearly as heavily as a contradiction.
-- Validation: the commit records `check`, `docs:check`, `package:lint` and
-  `build` each exiting 0, with `packages/fluxiq` at 129 of 129 test files green
-  under `--no-file-parallelism`. Independently recomputed from the current
-  source by p-core-docs, not read out of the commit message: with
-  `MISSING_STABLE_IDENTIFIER_SIMILARITY` at −0.1, a candidate matching visible
-  text and accessible name exactly and carrying no `id` scores
-  (24 + 24 − 2.6) / 74 = 0.614 normalized and 0.614 × 0.94 = **0.577**
-  confidence, against 33.7 / 74 = 0.455 and **0.428** at the old −0.55 — the
-  same two figures the commit claims. Read back from
-  `runtime/io-policy.ts`, the ladder it crosses is destructive 0.9, privileged
-  0.82, review 0.68, safe 0.45, default 0.5.
-- Found: the version bump to 0.2.1 belongs to `fafe7c7` earlier the same day,
-  not to this commit; this behaviour change to a published seam carries no
-  version increment and no entry under Migration Notes in
-  `docs/architecture/package-boundaries.md`. Raised under Open Questions.
-- Outcome: Accepted
-
-### 2026-09-12 — Core's document brought current with both changes
-
-- Agent: worker p-core-docs.
-- Changed: this document (header, Current State, Decisions, this ledger, Open
-  Questions) and `docs/working/README.md`.
-- Why: Core's `Current State` still ended at the expectation-evaluator seam, so
-  the moved confidence seam, the constant a downstream spec is now calibrated
-  against, and the client-identity question raised downstream on 2026-09-12
-  existed only in the downstream repository.
-- Validation: `pnpm check` -> exit 0 and `pnpm docs:check` -> exit 0, each run
-  with output redirected to a file and the exit status echoed, never through a
-  pipe. Every claim written into Current State was checked against Core source
-  first: `element-fingerprint.ts:282-288` for the two constants,
-  `io-policy.ts:291-300` for the ladder, `client-gateway/service/lifecycle.ts:70-90`
-  for the hello ordering, and `packages/fluxiq/package.json` for the subpath.
-- Outcome: Accepted
-
-### 2026-09-12 — The matcher behaviour change given a version and a note
-
-- Agent: worker p-core-version.
-- Changed: `packages/fluxiq/package.json` (0.2.1 -> **0.3.0**),
-  `docs/architecture/package-boundaries.md` (version line; "compatible" judged
-  on what a consumer observes, not the type surface; the cross-repository
-  coupling of the two matcher constants; a `0.3.0` Migration Notes entry), this
-  document, `docs/working/README.md`.
-- Why: `a575df2` changed a published matcher's behaviour under the `0.2.1`
-  `fafe7c7` had already published for an unrelated additive export, with no
-  migration note, so `fluxiq@0.2.1` names two different behaviours.
-- Validation: `pnpm check` (exit 0, `structure-audit: passed`, four packages
-  `check: Done`), `pnpm package:lint` (exit 0, reading `fluxiq v0.3.0`) and
-  `pnpm build` (exit 0) on the final tree; `pnpm docs:check` exit 0 twice over
-  these edits (`Validated local links in 99 ... files.`, `Deterministic
-  framework reference is current.`) and red on a third run only after another
-  worker edited `nodes/parameter-bindings.ts` at 18:28, which staled the
-  generated `docs/reference/framework-reference.md`; that file carries no
-  version string and no source here was touched, so it is not this change's.
-  Everything captured by redirect, never a pipe. The figures were re-measured
-  against the compiled matcher rather than copied: 0.428 -> 0.577 exactly.
-- Found: three things the commit did not claim, measured here and now in the
-  note. `matchedSignals`/`failedSignals` are unchanged, so a diagnostic sees
-  nothing move; two candidates can swap rank (18.3 -> 42.6 against a flat 27.6),
-  so the *selected* element can change; and a candidate agreeing exactly on
-  every other recorded signal crosses `destructive` too (0.883 -> 0.917) — the
-  commit's "review, privileged and destructive still refuse it" is true of one
-  candidate, not of every candidate.
-- Not verified: `pnpm test` is not green, and every red belongs to another
-  worker's in-flight source rather than to this change. `packages/fluxiq` ran
-  128/129 files with the recorded TypeDoc-budget case (which passes alone at
-  12.30 s), then 129/130 with six cases in `nodes/parameter-bindings.test.ts`,
-  whose subject and test are both modified in the tree; `apps/web` ran 227/228
-  and then 228/228 once the worker editing it moved on. Re-run once the tree
-  settles.
-- Outcome: Accepted
-
-### 2026-09-12 — A value resolved out of state is withheld from the persisted trace
-
-- Agent: supervisor (downstream session finishing Week 1). The code was found
-  uncommitted and recorded nowhere, most likely left by session `fluxiq-df` as
-  the Core leg `p-secret-binding` named; no other Claude session was running, so
-  it was verified and taken over rather than discarded.
-- Changed: `runtime/executor/graph-run.ts` (withholding seeded from each node's
-  declared bindings against the run's inputs and variables, applied to the
-  finished trace), `executor/node-execution.ts` (records what resolution
-  supplied before any early return), `executor/index.ts` (exports
-  `AUTOMATION_STUDIO_WITHHELD_VALUE`), `flow-bootstrap/plan/validation.ts`
-  (`allowStateBinding: false` and empty paths enforced at every depth, through
-  the resolver's own predicate), their tests, a new
-  `executor/tests/trace-withholding.test.ts`, and
-  `docs/architecture/automation-studio.md` and
-  `automation-studio-native-nodes.md`. `trace-withholding.ts` itself was already
-  committed in `368b3c9`, unwired.
-- Why: once `368b3c9` resolved bindings below the top level, the resolved
-  answer, not the request, travels into the `policy.output.dispatch` effect,
-  the attempt, and the persisted trace, so a replay credential would be written
-  to disk. Compatibility: a persisted trace now reads `[withheld]` wherever a
-  run resolved a value; a plan nesting a binding inside a literal-only parameter
-  now fails validation with `bootstrap.invalid_state_binding`.
-- Found: the two recording points were each untested. Removing the seed alone,
-  or the per-node record alone, left all 26 executor tests green. Two tests were
-  added: a run that fails before the bound node executes, and a binding answered
-  by an earlier node's output.
-- Validation: `npx vitest run .../runtime/executor .../runtime/flow-bootstrap
-  --no-file-parallelism` -> `Test Files 6 passed (6)`, `Tests 74 passed (74)`.
-  Mutations, each restored byte-identical (`git diff --stat` unchanged at
-  `7 files changed, 238 insertions(+), 16 deletions(-)`): no `apply` -> 4 of 28
-  fail; no seed -> 1 fails, "fails before the bound node ever executes"; no
-  per-node record -> 1 fails, "a binding took from an earlier node's output";
-  neither -> 4 fail; no nested validation -> 2 of 25 fail. `pnpm check` with the
-  change staged -> exit 0, `structure-audit: passed (120 warning(s), 256
-  baselined)`. `pnpm test` -> exit 0. `pnpm docs:check` -> exit 1,
-  `framework-reference.md is stale`; `pnpm docs:reference` regenerated it (the
-  new export and two moved line numbers only), then `pnpm docs:check` -> exit 0,
-  `Deterministic framework reference is current.`
-- Not verified: `pnpm build`, deferred until the downstream workers finish,
-  because the downstream packages import `fluxiq` through `dist`. Committed
-  locally; pushed only after that build passes.
-- Outcome: Accepted
-
 ### 2026-09-13 — A late recording message is discarded, not a failed connection
 
 - Agent: downstream worker `g-core-late-event`, briefed by the downstream
@@ -638,6 +489,95 @@ The completed Week 1 Core briefs are archived verbatim at
 - Not verified: `pnpm build`; root `pnpm test`; the other proposal-generating
   suites (`service-flow-bootstrap-*`, `apps/web`); the downstream domain compiled
   against these types.
+- Outcome: Accepted
+
+### 2026-09-13 — One expectation-rejected record, and an empty expectation counts as none
+
+- Agent: downstream worker `g-core-expectation-record`
+  (`reports/g-core-expectation-record.md` in the downstream plan); verified by the
+  downstream supervisor, who also brought two architecture sentences up to date.
+- Changed:
+  - `nodes/policy/expectation.ts` exports `EXPECTATION_REJECTED_FAILURE`, and
+    `nodes/policy/index.ts` re-exports it;
+  - `runtime/executor/transition-comparison.ts` imports it, and its copy is gone;
+  - an `expectedState` with no own keys is not sent to the host
+    (`transition-comparison.ts`), and is dropped when a mapper candidate is lifted
+    (`runtime/service/recordings/proposal-candidates.ts`);
+  - their tests;
+  - `docs/architecture/automation-studio.md` and
+    `automation-studio-native-nodes.md`;
+  - both generated framework references, one citation line
+    (`transition-comparison.ts:37` to `:38`).
+- Why: `c0e0ce9` kept an empty `{}` expectation, so a host would have been asked
+  about the conditions `[{}]` and could fail a recorded action for no reason.
+  `6f172b9` had also copied the record.
+- Found: importing the policy barrel into the executor creates no cycle, since
+  nothing under `nodes/` imports `runtime/`. `{ conditions: [] }` still reaches
+  the host, and `expected-transition.ts:8` still records `{}` in the trace.
+  Neither changes a verdict.
+- Validation: supervisor, from `packages/fluxiq`:
+  - `npx vitest run` on `nodes/policy/tests/expectation.test.ts`, the executor's
+    `node-execution` and `transition-comparison` tests, and
+    `recordings/tests/proposal-candidates.test.ts`, with `--no-file-parallelism` ->
+    `Test Files 4 passed (4)`, `Tests 29 passed (29)`;
+  - `runtime/tests/service.test.ts` -> `Tests 108 passed (108)`;
+  - `pnpm check` -> exit 0, `structure-audit: passed (121 warning(s), 256
+    baselined)`;
+  - `pnpm docs:check` -> exit 0;
+  - the tree also held `g-core-start-order`'s bridge edits.
+  - Worker: four mutations each failed their rows and were restored identical:
+    the executor's empty check, the lift keeping `{}`, counting keys before the
+    clone, and a changed shared record.
+- Not verified: `pnpm build`; root `pnpm test`.
+- Outcome: Accepted
+
+### 2026-09-13 — A client's recording start is ordered with what follows it, and acknowledged
+
+- Agent: downstream worker `g-core-start-order` (`reports/g-core-start-order.md` in
+  the downstream plan); verified by the downstream supervisor, who also updated
+  `docs/integrations/client-gateway-websocket.md`.
+- Changed: `programs/automation-studio/client-gateway/bridge.ts` and its test;
+  `docs/architecture/automation-studio/client-gateway.md`;
+  `docs/integrations/client-gateway-websocket.md`.
+  - **Pending start.** A `client.start_recording` registers a pending start
+    before its first await. Every later message from that client waits for it:
+    entries, events, snapshots, state updates, errors and Stop. A second start
+    waits for the first.
+  - **Acknowledgement.** Once the recording is open, the bridge sends
+    `server.start_recording` through `gateway.startRecording`, unless a Stop for
+    that recording has already arrived.
+  - **Refused starts.** A start that is refused or throws is remembered, so what
+    waited is discarded and audited under its recording id.
+  - **Audits.** A discard audit carries the message's own `recordingId`. Dropped
+    snapshots and state updates are audited, except a state update saying its
+    client is not recording.
+- Why: the downstream `i-recording-loss` investigation found that the bridge
+  opened a client-started recording only after `createRecording` returned, while
+  the WebSocket host handles one socket's messages concurrently. Everything
+  arriving in between was dropped, some of it with no audit, and Core never
+  acknowledged a client start. A probe with the pinned bridge kept 8, 3 and 0 of
+  8 entries at start delays of 50, 450 and 1000 ms.
+- Compatibility: a behaviour change on the wire.
+  - Every gateway client that starts its own recording now receives
+    `server.start_recording` for it. A client that reads that message as a new
+    start must ignore one for a recording it already has; the downstream
+    extension's guard is `f-recording-start-guard`.
+  - Messages sent during a start are held until it settles, not dropped.
+  - It ships in the same minor release as `6f172b9` and `0e6d3ac`.
+- Found: `bridge.ts` is 796 of 800 lines, and the class has 26 methods against an
+  advisory of 25.
+- Validation: supervisor read the diff. From `packages/fluxiq`:
+  - `npx vitest run .../client-gateway/tests/bridge.test.ts --no-file-parallelism`
+    -> `Tests 20 passed (20)`;
+  - then, with this change and the expectation-record change both in the tree,
+    `pnpm check` -> exit 0, `structure-audit: passed (121 warning(s), 256
+    baselined)`, all four packages `check: Done`;
+  - `pnpm docs:check` -> exit 0, "Deterministic framework reference is current."
+  - Worker: seven mutations each failed their target tests, and all were restored
+    byte-identical.
+- Not verified: the WebSocket host itself, since the tests call
+  `gateway.receive`; two starts in flight; a throw after opening; a Stop crossing
+  the acknowledgement; `pnpm build`; root `pnpm test`; the Lab.
 - Outcome: Accepted
 
 ## Open Questions

@@ -458,6 +458,97 @@ it("reports a client action that arrives after its recording was finalized", asy
     expect(gateway.snapshot().auditLog.some((entry) => entry.type.endsWith("_discarded"))).toBe(false);
   });
 
+  it("keeps what a client sends while Core is still opening its recording, and acknowledges the start once it is open", async () => {
+    const start = await clientStartInFlight("extension.slow-start");
+    const sessionId = start.session.sessionId;
+
+    const waiting = [
+      start.gateway.receive(sessionId, clickFor(start.recordingId)),
+      start.gateway.receive(sessionId, clientMessage("client.snapshot", { kind: "state", timestamp: 2, state: { timestamp: 2, namespaces: {} } })),
+      start.gateway.receive(sessionId, clientMessage("client.state_update", { recording: true, state: { ready: true }, metadata: { domainId: "extension.example", inputId: "page-state" } }))
+    ];
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(start.gateway.outbound(sessionId).map((message) => message.type)).not.toContain("server.start_recording");
+    start.release();
+    await start.starting;
+    await Promise.all(waiting);
+    await start.gateway.receive(sessionId, clientMessage("client.stop_recording", { recordingId: start.recordingId }));
+
+    const stored = await start.automationStudio.getRecordingSession(start.recordingId, start.projectId);
+    expect(stored.endedAt).toBeDefined();
+    expect(stored.timeline.map((entry) => entry.type === "observation" ? entry.observationType : entry.type).sort()).toEqual(["action", "client.state_snapshot", "input.state"]);
+    expect(discardAudit(start.gateway)).toEqual([]);
+    const acknowledgements = start.gateway.outbound(sessionId).filter((message) => message.type === "server.start_recording");
+    expect(acknowledgements).toHaveLength(1);
+    expect(acknowledgements[0]?.payload).toMatchObject({ recordingId: start.recordingId, projectId: start.projectId, domainId: "extension.example" });
+  });
+
+  it("discards what waited on a client start that Core refused, under the refused recording's id", async () => {
+    const start = await clientStartInFlight("extension.refused", { refuse: true });
+    const sessionId = start.session.sessionId;
+
+    const waiting = [
+      start.gateway.receive(sessionId, clientMessage("client.state_update", { recording: true, state: { ready: true }, metadata: { domainId: "extension.example", inputId: "page-state" } })),
+      start.gateway.receive(sessionId, clientMessage("client.snapshot", { kind: "state", timestamp: 2, state: { timestamp: 2, namespaces: {} } })),
+      start.gateway.receive(sessionId, clickFor(start.recordingId))
+    ];
+    start.release();
+    await start.starting;
+    await Promise.all(waiting);
+    await start.gateway.receive(sessionId, lateClick());
+
+    expect(serverErrors(start.gateway, sessionId).map((message) => (message.payload as { code?: string }).code)).toEqual(["recording.project_required"]);
+    await expect(start.automationStudio.getRecordingSession(start.recordingId)).rejects.toThrow("Unknown Automation Studio recording");
+    const discarded = discardAudit(start.gateway);
+    expect(discarded.map((entry) => entry.type)).toEqual(["recording.event_discarded", "recording.action_discarded", "recording.action_discarded"]);
+    expect(discarded[0]?.message).toContain(`recording ${start.recordingId}, which this client did not have open`);
+    expect(discarded[0]?.metadata).toMatchObject({ recordingId: start.recordingId, eventType: "client.state_update", inputId: "page-state", executable: false, discardedEvents: 1, discardedActions: 0 });
+    // The snapshot is counted rather than reported again: evidence is reported once per recording.
+    expect(discarded[1]?.metadata).toMatchObject({ recordingId: start.recordingId, eventType: "dom.click", discardedEvents: 3, discardedActions: 1 });
+    // A click that names no recording is still attributed to the refused one.
+    expect(discarded[2]?.metadata).toMatchObject({ recordingId: start.recordingId, discardedEvents: 4, discardedActions: 2 });
+  });
+
+  it("finalizes a start the client stopped while Core was still opening it, without telling the client to start", async () => {
+    const start = await clientStartInFlight("extension.quick-stop");
+    const sessionId = start.session.sessionId;
+
+    const stopping = start.gateway.receive(sessionId, clientMessage("client.stop_recording", { recordingId: start.recordingId }));
+    // Long enough for a Stop that did not wait to try finalizing a recording that does not exist yet.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    start.release();
+    await start.starting;
+    await expect(stopping).resolves.toBeUndefined();
+
+    expect((await start.automationStudio.getRecordingSession(start.recordingId, start.projectId)).endedAt).toBeDefined();
+    expect(start.gateway.outbound(sessionId).map((message) => message.type)).not.toContain("server.start_recording");
+    expect(serverErrors(start.gateway, sessionId)).toEqual([]);
+  });
+
+  it("audits a snapshot and a state update that arrive after their recording closed, and names a message's own recording", async () => {
+    const gateway = new ClientGatewayService();
+    const automationStudio = new AutomationStudioService({ seedFixture: false });
+    const bridge = new AutomationStudioClientGatewayBridge({ gateway, automationStudio, io: lateEventIoRegistry(), stopDrainMs: 0 });
+    const session = await pairedSession(gateway, "extension.after-close");
+    const recording = await bridge.startRecording({ sessionId: session.sessionId, domainId: "extension.example" });
+    await bridge.stopRecording(session.sessionId);
+
+    // Page state from a client that says it is not recording was never meant for a recording.
+    await gateway.receive(session.sessionId, clientMessage("client.state_update", { recording: false, state: { ready: true } }));
+    expect(discardAudit(gateway)).toEqual([]);
+    await gateway.receive(session.sessionId, clientMessage("client.snapshot", { kind: "state", timestamp: 2, state: { timestamp: 2, namespaces: {} } }));
+    await gateway.receive(session.sessionId, clientMessage("client.state_update", { recording: true, state: { ready: true } }));
+    await gateway.receive(session.sessionId, clickFor("recording.elsewhere"));
+
+    const discarded = discardAudit(gateway);
+    expect(discarded.map((entry) => entry.type)).toEqual(["recording.event_discarded", "recording.action_discarded"]);
+    expect(discarded[0]?.message).toContain(`after recording ${recording.recordingId} was finalized`);
+    expect(discarded[0]?.metadata).toMatchObject({ recordingId: recording.recordingId, eventType: "client.state_snapshot", discardedEvents: 1 });
+    expect(discarded[1]?.message).toContain("recording recording.elsewhere, which this client did not have open");
+    expect(discarded[1]?.metadata).toMatchObject({ recordingId: "recording.elsewhere", discardedEvents: 3, discardedActions: 1 });
+    expect(discarded[1]?.metadata).not.toHaveProperty("sinceFinalizedMs");
+  });
+
 
   it("keeps in-process recording ownership across a trusted-client reconnect", async () => {
     const tokens = ["continuity-token", "continuity-rotated"];
@@ -536,6 +627,62 @@ function lateClick() {
     payload: { elementId: "confirm" },
     metadata: { inputId: "element-pressed" }
   });
+}
+
+function clickFor(recordingId: string) {
+  return clientMessage("client.recording_event", {
+    recordingId,
+    domainId: "extension.example",
+    eventType: "dom.click",
+    payload: { elementId: "confirm" },
+    metadata: { inputId: "element-pressed" }
+  });
+}
+
+function discardAudit(gateway: ClientGatewayService) {
+  return gateway.snapshot().auditLog.filter((entry) => entry.type.startsWith("recording.") && entry.type.endsWith("_discarded"));
+}
+
+/**
+ * A client-initiated start Core is still handling: held inside the project lookup,
+ * which then refuses it, when `refuse` is set; otherwise held inside
+ * `createRecording` before the recording exists. Messages received now reach the
+ * bridge ahead of the open recording, as the WebSocket host lets them. `release`
+ * lets the start finish.
+ */
+async function clientStartInFlight(clientId: string, options: { refuse?: boolean } = {}) {
+  const gateway = new ClientGatewayService();
+  const automationStudio = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+  const project = await automationStudio.createProject({ name: "Slow start" });
+  let release = () => {};
+  const held = new Promise<void>((resolve) => { release = () => resolve(); });
+  let reach = () => {};
+  const reached = new Promise<void>((resolve) => { reach = () => resolve(); });
+  new AutomationStudioClientGatewayBridge({
+    gateway,
+    automationStudio,
+    io: lateEventIoRegistry(),
+    stopDrainMs: 0,
+    clientRecordingContextProvider: async () => {
+      if (!options.refuse) return { ok: true, projectId: project.id };
+      reach();
+      await held;
+      return { ok: false, message: "Recording cannot start because no project is open.", code: "recording.project_required" };
+    }
+  });
+  if (!options.refuse) {
+    const create = automationStudio.createRecording.bind(automationStudio);
+    vi.spyOn(automationStudio, "createRecording").mockImplementation(async (input) => {
+      reach();
+      await held;
+      return create(input);
+    });
+  }
+  const session = await pairedSession(gateway, clientId);
+  const recordingId = `recording.${clientId}`;
+  const starting = gateway.receive(session.sessionId, clientMessage("client.start_recording", { recordingId, domainId: "extension.example", initialState: { timestamp: 1, namespaces: {} } }));
+  await reached;
+  return { gateway, automationStudio, session, projectId: project.id, recordingId, starting, release: () => release() };
 }
 
 function serverErrors(gateway: ClientGatewayService, sessionId: string) {

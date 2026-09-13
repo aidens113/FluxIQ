@@ -59,6 +59,36 @@ The bridge converts client messages into canonical Studio artifacts:
   event only when `parseAutomationStudioFailureRecord` accepts it.
 - `server.start_recording` and `server.stop_recording` are mirrored to the
   client while the canonical `RecordingSession` remains owned by FluxIQ.
+  `server.start_recording` also acknowledges a start the client asked for, as
+  described below.
+
+A client's start is ordered with the messages that follow it, and the bridge
+does that ordering rather than the host. The WebSocket host handles one
+socket's frames concurrently. Opening a recording takes two awaits: the
+operator's project context, then `createRecording`, which writes the session
+to the store and the project. Under load, a recording event sent right after
+`client.start_recording` could otherwise reach the bridge before the recording
+exists and be discarded, taking the earliest actions of the recording with it.
+So the bridge registers a pending start for that client before its first
+await. Every `client.recording_entry`, `client.recording_event`,
+`client.snapshot`, `client.state_update`, `client.error` and
+`client.stop_recording` from the same client waits for that start to settle
+before it looks for an open recording:
+
+- **The start opens the recording.** Core acknowledges it with
+  `server.start_recording`, carrying the recording ID, project, task and
+  domain, so a client can hold its first messages until Core can take them.
+  The acknowledgement is sent only after the recording is open. It is not sent
+  to a client that has already sent `client.stop_recording` for that
+  recording, because telling it to start would restart a recording it has
+  ended.
+- **The start is refused or throws.** What waited is discarded and audited like
+  any other discard, under the refused recording's ID. The refusal itself still
+  reaches the client as `server.error`.
+
+Serializing the host instead would hold every message behind slow appends and
+leave other hosts and in-process callers racing, so the rule lives beside the
+"open before append" rule it protects.
 
 The bridge buffers high-frequency recording timeline writes before persisting
 them. State snapshots captured at screenshot cadence are flushed in bounded
@@ -81,9 +111,14 @@ the user later opens the Proposal Generator.
 
 Once a recording is finalized it is immutable, so a message that arrives after
 that cannot be kept. The bridge does not discard one in silence. Every
-discarded `client.recording_event` and `client.recording_entry` is counted
-against the recording it was meant for and written to the gateway audit log,
-which the Connected Clients view already surfaces:
+discarded `client.recording_event`, `client.recording_entry`,
+`client.snapshot` and `client.state_update` is counted against the recording
+it was meant for and written to the gateway audit log, which the Connected
+Clients view already surfaces. A message that names its own recording, as a
+recording event or entry can, is attributed to that recording. Otherwise it is
+attributed to the last recording the client had closed or had refused. A
+`client.state_update` that says `recording: false` is page state from a client
+that is not recording, so dropping it loses nothing and is not counted:
 
 - `recording.action_discarded` is recorded for *every* discarded message that
   would have become an executable action entry. Each one is a piece of the
@@ -107,12 +142,11 @@ recording's `endedAt` and reports the message as discarded, attributed to that
 recording. Letting the refusal escape would fail the gateway receive, and the
 WebSocket host would answer with a `server.error` coded
 `gateway.receive_failed`, which a client is entitled to read as a failed
-connection. Any other append failure still fails the receive. Snapshots and
-state updates that arrive after the recording is closed are dropped without
-being counted.
+connection. Any other append failure still fails the receive.
 
-Both entries carry the recording ID, the project, the event type, the input ID,
-and how long after finalization the message arrived. Nothing is sent back to
+Both entries carry the recording ID, the event type and the input ID. When the
+recording is the one the client last closed, they also carry the project and
+how long after finalization the message arrived. Nothing is sent back to
 the client. `server.error` is the only wire frame the gateway has for this, and
 a client is entitled to read one as a failed connection, so telling a recorder
 that its action was lost needs a protocol addition rather than a reused error
