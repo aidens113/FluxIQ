@@ -1,7 +1,7 @@
 # MVP Week 1 — Web Automation Reliability Plan (Core share)
 
 Status: Active
-Status detail: The downstream Week 1 finish made nine Core commits, released as `fluxiq` 0.4.0 with a migration note; package lint, build and the sequential suite run at the downstream integration step, before both `dev` branches are pushed together.
+Status detail: The downstream Week 1 finish made thirteen Core code commits, released as `fluxiq` 0.4.0 with migration notes; the sequential suite, build and package lint passed on `20bb3b4`, and both `dev` branches are pushed together after the downstream root gates.
 Created: 2026-09-11
 Last updated: 2026-09-13
 Owner: Senior supervisor agent
@@ -16,15 +16,15 @@ Related: [package boundaries](../architecture/package-boundaries.md), [code stru
 **Phase: the downstream Week 1 finish, released as `fluxiq` 0.4.0 on
 2026-09-13.** On 2026-09-11 the user directed that changes belonging in Core are
 made in Core, never approximated downstream. The downstream session finishing
-Week 1 made eleven Core code commits under that rule. The user was alerted before
+Week 1 made thirteen Core code commits under that rule. The user was alerted before
 each area's first edit, and every commit is recorded in the Work Ledger.
 
 **True on 2026-09-13.**
-- **Branch:** `dev` at `6621d66`, 12 commits ahead of `origin/dev`, not pushed.
-  One of the twelve is a plan-only commit.
+- **Branch:** `dev`, 16 commits ahead of `origin/dev` with this plan's commit, not
+  pushed. The last code commit is `20bb3b4`; three of the sixteen are plan-only.
 - **Versions:** `fluxiq` is **0.4.0**. `@fluxiq/contracts` (0.2.0) and
   `@fluxiq/client-gateway-websocket` (0.1.0) are unchanged.
-- **The eleven code commits:**
+- **The thirteen code commits:**
   - `5d495eb`, a value resolved out of state is withheld from the persisted
     trace;
   - `267a2ca`, a recording message arriving after Stop finalized its recording
@@ -44,19 +44,24 @@ each area's first edit, and every commit is recorded in the Work Ledger.
   - `949fbb4`, a client's recording messages are stored in the order the gateway
     received them, and a Stop never touches a recording opened during it;
   - `6621d66`, run inputs and resolved values withheld at rest, without changing
-    what a run executes. Both are in the unreleased `0.4.0` Migration Notes.
+    what a run executes;
+  - `b54df69`, a command's target is given its timeout, and Core waits 3,000 ms
+    longer for the answer;
+  - `20bb3b4`, a Flow with no Start node begins at its graph's root, and a
+    compiled plan follows the same rule, as compiler version `compiled-plan.v2`.
+- **Migration Notes:** the last four code commits are in the unreleased `0.4.0`
+  entry.
 
 **Gates.**
 - **Per commit:** the downstream supervisor reran each commit's own tests,
   `pnpm check` and `pnpm docs:check` (ledger).
-- **On `6621d66`:**
-  - the full suite ran with `--no-file-parallelism`: `fluxiq` 136 files and
-    `@fluxiq/web` 228 files, with contracts and gateway-websocket too;
+- **On `20bb3b4`:**
+  - the full suite ran with `--no-file-parallelism`: `fluxiq` 137 files and 955
+    tests, and `@fluxiq/web` 228 files and 1,156 tests, with contracts and
+    gateway-websocket too;
   - `pnpm check`, `pnpm docs:reference` and `pnpm docs:check` also ran.
-- **Build and package lint on `6621d66`:**
-  - `pnpm build` exit=0 on a rerun. The first run died in `next build` with this
-    machine's segmentation fault.
-  - `pnpm package:lint` exit=0.
+- **Build and package lint on `20bb3b4`:** `pnpm build` exit=0 on its first run,
+  and `pnpm package:lint` exit=0.
 - **Push:** both `dev` branches are pushed together, after the downstream Lab
   rerun and root gates.
 
@@ -90,7 +95,10 @@ comparison.
   - the discard audit calls a runtime confirmation that reached no open
     recording a lost recorded action;
   - an `AutomationStudioService` built without `dataDir` writes `recordings/`
-    and `indexes/` into the working directory.
+    and `indexes/` into the working directory;
+  - a recording approved beside a Subflow's existing nodes gives the graph a
+    second root, so its run now refuses instead of starting at the smallest id;
+  - among several edges on one route, the smallest edge id wins.
 
 **Next steps:** push `dev` together with the downstream `dev`, once the downstream
 Lab rerun and root gates pass.
@@ -166,135 +174,8 @@ The completed Week 1 Core briefs are archived verbatim at
 
 ## Work Ledger
 
-### 2026-09-11 — Document created; Core unit briefed
-- Agent: supervisor
-- Changed: this document.
-- Why: the user directed that Core-owned changes go in Core; the downstream
-  plan's C1 and C2 move ahead of its Wave 2, joined by the host-loading and
-  baseline fixes.
-- Validation: not validated — documentation only.
-- Outcome: Accepted
-- Follow-up: dispatch the three workers.
-
-### 2026-09-11 — Structure baseline ratchet fixed
-- Agent: supervisor, with core-structure-baseline
-- Changed: `scripts/structure-audit/baseline.mjs`, `scripts/structure-audit.mjs`,
-  new `scripts/structure-audit/tests/baseline.test.mjs`; the root
-  `structure:test` script covers the new tests folder (supervisor). Also:
-  core-failure-taxonomy was granted `runtime/executor/node-execution.ts` and
-  the gateway transport on its request.
-- Validation: `pnpm structure:test` -> `# tests 48 # pass 48 # fail 0`;
-  `pnpm structure:check` -> `passed (117 warning(s), 256 baselined)`; the
-  worker's scratch-clone demonstration: a planted new violation and a grown
-  entry each make `--update` exit 1 with the baseline byte-identical, and a
-  `--rule` update keeps other rules' entries.
-- Decisions: a grown entry blocks `--update` like a new one; a full update
-  drops entries for rules that no longer report anything.
-- Outcome: Accepted
-- Follow-up: mirrored downstream in the same work unit.
-
-### 2026-09-11 — Domain hosts load through native import()
-- Agent: supervisor, with core-host-loading
-- Changed: `apps/web/src/lib/fluxiq.ts` loads `FLUXIQ_HOST_MODULE` with a native
-  `import()` (`loadFluxIQHostModule`), awaited once at server start by the new
-  `apps/web/src/instrumentation.ts`; `packages/fluxiq/package.json` unchanged.
-  Supervisor: `docs/operations/data-and-state.md` and
-  `docs/integrations/automation-studio-importing-repos.md` now say the host is an
-  ES module that imports public entry points.
-- Decision: dynamic `import()`, not a CommonJS entry — the packages are ESM-only
-  by policy, `package:lint` checks them with attw's `esm-only` profile, and Node
-  22.11 lacks `require(esm)`.
-- Contract: an entry point other than Next that builds the web runtime with
-  `FLUXIQ_HOST_MODULE` set must first `await loadFluxIQHostModule()`; none exists.
-- Validation: loader tests -> `13 passed (13)`; `pnpm package:lint` -> exit 0;
-  worker: `pnpm check` exit 0, web build exit 0, and a copy of the downstream host
-  using the public `fluxiq/automation-studio` import loads through the new loader
-  with the native runtime bound (`"definitionCount":11`). The web suite has five
-  failing Automation Studio tests that do not reference the loader.
-- Outcome: Accepted
-- Follow-up: the downstream host becomes an ES module with the public import.
-
-### 2026-09-11 — Failure taxonomy and carriers
-- Agent: supervisor, with core-failure-taxonomy
-- Changed: `packages/contracts/src/failure/` (the category list, the failure record,
-  its parser); the `failure` carriers on the gateway, runtime, dispatch, node,
-  attempt, run-record, and LLM-context types; structured-first classification; the
-  `target_not_found` and `target_ambiguous` comparison statuses; `@fluxiq/contracts`
-  and `fluxiq` at 0.2.0 with a migration note; four architecture pages.
-- Validation: `pnpm check` -> exit 0, `structure-audit: passed (117 warning(s),
-  256 baselined)` (supervisor); worker: `pnpm build` -> exit 0; `pnpm test` ->
-  fluxiq `Tests 5 failed | 817 passed (822)`: three fail identically on a clean
-  `git archive` of `HEAD`, two pagination tests time out only under full-suite
-  load. The five Automation Studio web tests still fail after both workers
-  finished (supervisor rerun).
-- Outcome: Accepted
-- Follow-up: core-runtime-test-health and core-web-test-health; `pnpm
-  docs:reference`; the downstream adoption.
-
-### 2026-09-11 — Five stale Automation Studio tests brought current
-- Agent: supervisor, with core-web-test-health
-- Changed: five test files under `apps/web/src/features/automation-studio/`; no
-  source. The tests expected plain view IDs, but commit `2a6b8a5` gave Flow- and
-  subflow-scoped views object-qualified IDs (documented in
-  `docs/architecture/automation-studio/workspace.md`), and `5361951` turned a
-  preloader key into a constant with the same value. No assertion was loosened;
-  two were added. Supervisor: the framework reference was regenerated (`pnpm
-  docs:reference`; `pnpm docs:check` -> "Deterministic framework reference is
-  current.").
-- Validation: `pnpm --filter @fluxiq/web test` -> `Test Files 227 passed (227)`,
-  `Tests 1146 passed (1146)` (supervisor); worker: the same five fail on a clean
-  `git archive` of `HEAD` (`e522f17`).
-- Outcome: Accepted
-
-### 2026-09-11 — Runtime test health: three lost writes fixed
-- Agent: supervisor, with core-runtime-test-health
-- Changed: `runtime/service.ts`, `runtime/service/flows/` (`mapping`, `store`,
-  `writer`, `graph-patch`), and two test files. Three of the five failures were
-  defects, not stale tests. The `build_and_adapt` grant test had never passed:
-  the gate and the test arrived together in `5361951`, and the composition the
-  test used binds no native node runtime, so the refusal was correct; the test
-  now binds a host-style runtime. The two service cases were source defects from
-  `0271d60`, which made `getFlow` return the canonical SQL graph without routing
-  writes to match, losing a write three ways: an unpinned graph version came back
-  as the sentinel `legacy` and failed the next save (now `flowNodeFromGraphRecord`,
-  one conversion shared with `graph-patch.ts`, which carried the same fault with
-  no test over it); a proposal approval reconciled from the graph it was
-  replacing (now the saved document); and a plain `saveFlow` never reached the
-  canonical graph (now `reconcileCanonicalGraphFromDocument`, which skips when
-  there are no revisions and when the graph is unchanged, so a metadata-only save
-  cannot invalidate an editor base revision). The pagination cases were test
-  design: each test has its own database, and the timeout came from about 300 ms
-  of per-subflow setup in the test bodies, so inventories are now seeded once and
-  copied, and the raised budget was removed rather than kept. Supervisor: the
-  million-event stream case writes about 158 MB, and its scratch root moved to
-  the OS temp directory.
-- Validation: `pnpm --filter fluxiq test` -> 827 passed of 828, twice (worker),
-  the single failure being the million-event case. Supervisor, before and after
-  the scratch-root move: `pnpm --filter fluxiq test runtime-stream-store` ->
-  `Tests 6 passed (6)`, that case 49819 ms then 17072 ms against its 60 s budget.
-  The rewritten pagination tests still discriminate: raising the bound to 64
-  fails one, and breaking both hydration guards fails the other.
-- Outcome: Accepted
-
-### 2026-09-11 — Adaptation Audit case under budget; Core suite green
-- Agent: supervisor, with core-adaptation-test-cost
-- Changed: `runtime/tests/service-flow-bootstrap-adaptation.test.ts`, and the
-  teardown of `runtime/tests/service.test.ts`. The cost was fixture rebuilding,
-  not the endpoints the case asserts: seeding once and copying per case took it
-  from 14685 ms to 12110 ms under full-suite load against the unchanged 15 s gate,
-  and from 4869 ms to 3247 ms solo. Both teardowns now retry the directory
-  removal so an EBUSY cannot replace the failure a run is reporting. Supervisor:
-  the worker explanatory comments were removed, because they grew a baselined file
-  past its 4789-line entry and the ratchet refuses growth; the reasoning is kept
-  here and in the report instead.
-- Validation: supervisor, `node scripts/structure-audit.mjs` -> passed, 0
-  violations; `pnpm test` at the Core root, redirected with the exit status echoed
-  rather than piped -> exit 0, contracts 7 of 7, client-gateway 3 of 3, fluxiq 828
-  of 828, web 1146 of 1146. An earlier supervisor run failed at 827 of 828 on an
-  unrelated documentation case, recorded under Open Questions.
-- Found: the worker suggested follow-up, closing a repository opened directly in
-  one case, does not exist as an API; that class opens and closes per operation.
-- Outcome: Accepted
+Settled entries from 2026-09-11 and 2026-09-12 are archived verbatim at
+[archive/2026-09-13-core-ledger.md](./mvp-week1-web-automation-reliability-plan/archive/2026-09-13-core-ledger.md).
 
 ### 2026-09-13 — A late recording message is discarded, not a failed connection
 
@@ -692,6 +573,70 @@ The completed Week 1 Core briefs are archived verbatim at
   - All of this is in the unreleased `0.4.0` Migration Notes.
 - Validation: the supervisor gate recorded for `949fbb4`, which ran on this tree.
 - Not verified: the downstream Lab auth-gate leak check against this build.
+- Outcome: Accepted
+
+### 2026-09-13 — A command's target is given its timeout, and Core waits 3,000 ms longer for the answer (`b54df69`)
+
+- Agent: downstream worker `g-web-timeout-forwarding`; verified by the downstream
+  supervisor. The detail is in the downstream plan's ledger for this date.
+- Changed, in `packages/fluxiq/src/`:
+  - the new `client-gateway/service/command-answer-margin.ts`
+    (`COMMAND_ANSWER_MARGIN_MS = 3_000`), through the service barrel;
+  - `runtime/service.ts` and `client-gateway/service/commands.ts`;
+  - tests: `runtime/tests/service.test.ts` and `client-gateway/tests/service.test.ts`;
+  - `runtime-kernel.md`, `package-boundaries.md`, and both framework references.
+- Why: downstream W25 `too-slow` reported Core's `output_dispatch.timed_out`,
+  because Core gave up at the node's timeout, the moment the extension did, and
+  discarded the extension's `web.action.timeout` answer.
+- Compatibility:
+  - a command with a positive `timeoutMs` is abandoned 3,000 ms later;
+  - an answer inside the margin is reported as the target sent it;
+  - both timeout messages name the full wait;
+  - all three are in the unreleased `0.4.0` Migration Notes.
+- Validation: the supervisor gate recorded for `20bb3b4`, which ran on this tree.
+- Not verified: downstream W25 `too-slow` in the Lab.
+- Outcome: Accepted
+
+### 2026-09-13 — A Flow with no Start node begins at its graph's root, and a compiled plan follows the same rule (`20bb3b4`)
+
+- Agent: downstream worker `g-core-start-node`; the compiler version bump and the
+  verification by the downstream supervisor.
+- Changed, in `packages/fluxiq/src/programs/automation-studio/`:
+  - the new `runtime/executor/start-node.ts`, exported through
+    `runtime/executor/index.ts`, used by `graph-run.ts`; `findStartNode` is removed
+    from `graph-navigation.ts`;
+  - `runtime/compiled-plan.ts`: the same rule, and `compiled-plan.v2`;
+  - tests: the new `runtime/executor/tests/start-node.test.ts`, and rows in
+    `runtime/tests/executor.test.ts`,
+    `runtime/service/recordings/tests/proposal-candidates.test.ts` and
+    `storage/project/tests/compiled-plan-store.test.ts`;
+  - `automation-studio.md`, `package-boundaries.md`, and both framework references.
+- Why: the project graph index lists a Flow's nodes by id, and a recorded node's
+  id carries an unpadded timeline number. A run with no Start node therefore began
+  at `entry.10` before `entry.2`. Downstream W15 began at its tab close in 7 of 7
+  runs.
+- Compatibility:
+  - `chooseAutomationStudioStartNode` is a new export;
+  - several Start nodes, several roots or no root now refuse before running;
+  - a recompiled plan can change `startNodeId` and `planDigest`, and a stored
+    plan compiles again under `compiled-plan.v2`;
+  - all of this is in the unreleased `0.4.0` Migration Notes.
+- Validation: supervisor, each command run alone:
+  - mutations: the root rule back to first-by-id failed 11 of 38 tests; a refusal
+    falling back to the first listed node failed 4 of 38; an unwired End node
+    counted as a root failed 3 of 38; the compiler version back to v1 failed 2 of
+    4. Each file was restored identical.
+  - `pnpm docs:reference` and `pnpm docs:check` exit=0;
+  - `pnpm check` exit=0, "structure-audit: passed (123 warning(s), 256
+    baselined)";
+  - `packages/fluxiq` `npx vitest run --no-file-parallelism` gave "Test Files 137
+    passed (137)" and "Tests 955 passed (955)"; `@fluxiq/web` gave 228 files
+    passed, and contracts and gateway-websocket 1 file each;
+  - `pnpm build` exit=0, "Compiled successfully", on its first run;
+    `pnpm package:lint` exit=0, with attw's esm-only profile "node16 (from ESM):
+    🟢" and "bundler: 🟢".
+- Not verified: the downstream Lab recheck; a stored artifact recompiling in a
+  live host; the web panel showing a refusal message.
 - Outcome: Accepted
 
 ## Open Questions

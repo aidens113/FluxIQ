@@ -2,7 +2,8 @@
 
 Settled Work Ledger entries moved verbatim from
 [the plan](../../mvp-week1-web-automation-reliability-plan.md) to keep it under
-its line limit. Part one, archived 2026-09-13: the five 2026-09-12 entries.
+its line limit. Part one, archived 2026-09-13: the five 2026-09-12 entries. Part
+two, archived 2026-09-13: the seven 2026-09-11 entries.
 
 ### 2026-09-12 — The element matcher published for a browser bundle
 
@@ -153,3 +154,136 @@ its line limit. Part one, archived 2026-09-13: the five 2026-09-12 entries.
   locally; pushed only after that build passes.
 - Outcome: Accepted
 
+## Part two, archived 2026-09-13
+
+The seven 2026-09-11 entries, archived when the timeout margin and start-node commits were recorded.
+
+### 2026-09-11 — Document created; Core unit briefed
+- Agent: supervisor
+- Changed: this document.
+- Why: the user directed that Core-owned changes go in Core; the downstream
+  plan's C1 and C2 move ahead of its Wave 2, joined by the host-loading and
+  baseline fixes.
+- Validation: not validated — documentation only.
+- Outcome: Accepted
+- Follow-up: dispatch the three workers.
+
+### 2026-09-11 — Structure baseline ratchet fixed
+- Agent: supervisor, with core-structure-baseline
+- Changed: `scripts/structure-audit/baseline.mjs`, `scripts/structure-audit.mjs`,
+  new `scripts/structure-audit/tests/baseline.test.mjs`; the root
+  `structure:test` script covers the new tests folder (supervisor). Also:
+  core-failure-taxonomy was granted `runtime/executor/node-execution.ts` and
+  the gateway transport on its request.
+- Validation: `pnpm structure:test` -> `# tests 48 # pass 48 # fail 0`;
+  `pnpm structure:check` -> `passed (117 warning(s), 256 baselined)`; the
+  worker's scratch-clone demonstration: a planted new violation and a grown
+  entry each make `--update` exit 1 with the baseline byte-identical, and a
+  `--rule` update keeps other rules' entries.
+- Decisions: a grown entry blocks `--update` like a new one; a full update
+  drops entries for rules that no longer report anything.
+- Outcome: Accepted
+- Follow-up: mirrored downstream in the same work unit.
+
+### 2026-09-11 — Domain hosts load through native import()
+- Agent: supervisor, with core-host-loading
+- Changed: `apps/web/src/lib/fluxiq.ts` loads `FLUXIQ_HOST_MODULE` with a native
+  `import()` (`loadFluxIQHostModule`), awaited once at server start by the new
+  `apps/web/src/instrumentation.ts`; `packages/fluxiq/package.json` unchanged.
+  Supervisor: `docs/operations/data-and-state.md` and
+  `docs/integrations/automation-studio-importing-repos.md` now say the host is an
+  ES module that imports public entry points.
+- Decision: dynamic `import()`, not a CommonJS entry — the packages are ESM-only
+  by policy, `package:lint` checks them with attw's `esm-only` profile, and Node
+  22.11 lacks `require(esm)`.
+- Contract: an entry point other than Next that builds the web runtime with
+  `FLUXIQ_HOST_MODULE` set must first `await loadFluxIQHostModule()`; none exists.
+- Validation: loader tests -> `13 passed (13)`; `pnpm package:lint` -> exit 0;
+  worker: `pnpm check` exit 0, web build exit 0, and a copy of the downstream host
+  using the public `fluxiq/automation-studio` import loads through the new loader
+  with the native runtime bound (`"definitionCount":11`). The web suite has five
+  failing Automation Studio tests that do not reference the loader.
+- Outcome: Accepted
+- Follow-up: the downstream host becomes an ES module with the public import.
+
+### 2026-09-11 — Failure taxonomy and carriers
+- Agent: supervisor, with core-failure-taxonomy
+- Changed: `packages/contracts/src/failure/` (the category list, the failure record,
+  its parser); the `failure` carriers on the gateway, runtime, dispatch, node,
+  attempt, run-record, and LLM-context types; structured-first classification; the
+  `target_not_found` and `target_ambiguous` comparison statuses; `@fluxiq/contracts`
+  and `fluxiq` at 0.2.0 with a migration note; four architecture pages.
+- Validation: `pnpm check` -> exit 0, `structure-audit: passed (117 warning(s),
+  256 baselined)` (supervisor); worker: `pnpm build` -> exit 0; `pnpm test` ->
+  fluxiq `Tests 5 failed | 817 passed (822)`: three fail identically on a clean
+  `git archive` of `HEAD`, two pagination tests time out only under full-suite
+  load. The five Automation Studio web tests still fail after both workers
+  finished (supervisor rerun).
+- Outcome: Accepted
+- Follow-up: core-runtime-test-health and core-web-test-health; `pnpm
+  docs:reference`; the downstream adoption.
+
+### 2026-09-11 — Five stale Automation Studio tests brought current
+- Agent: supervisor, with core-web-test-health
+- Changed: five test files under `apps/web/src/features/automation-studio/`; no
+  source. The tests expected plain view IDs, but commit `2a6b8a5` gave Flow- and
+  subflow-scoped views object-qualified IDs (documented in
+  `docs/architecture/automation-studio/workspace.md`), and `5361951` turned a
+  preloader key into a constant with the same value. No assertion was loosened;
+  two were added. Supervisor: the framework reference was regenerated (`pnpm
+  docs:reference`; `pnpm docs:check` -> "Deterministic framework reference is
+  current.").
+- Validation: `pnpm --filter @fluxiq/web test` -> `Test Files 227 passed (227)`,
+  `Tests 1146 passed (1146)` (supervisor); worker: the same five fail on a clean
+  `git archive` of `HEAD` (`e522f17`).
+- Outcome: Accepted
+
+### 2026-09-11 — Runtime test health: three lost writes fixed
+- Agent: supervisor, with core-runtime-test-health
+- Changed: `runtime/service.ts`, `runtime/service/flows/` (`mapping`, `store`,
+  `writer`, `graph-patch`), and two test files. Three of the five failures were
+  defects, not stale tests. The `build_and_adapt` grant test had never passed:
+  the gate and the test arrived together in `5361951`, and the composition the
+  test used binds no native node runtime, so the refusal was correct; the test
+  now binds a host-style runtime. The two service cases were source defects from
+  `0271d60`, which made `getFlow` return the canonical SQL graph without routing
+  writes to match, losing a write three ways: an unpinned graph version came back
+  as the sentinel `legacy` and failed the next save (now `flowNodeFromGraphRecord`,
+  one conversion shared with `graph-patch.ts`, which carried the same fault with
+  no test over it); a proposal approval reconciled from the graph it was
+  replacing (now the saved document); and a plain `saveFlow` never reached the
+  canonical graph (now `reconcileCanonicalGraphFromDocument`, which skips when
+  there are no revisions and when the graph is unchanged, so a metadata-only save
+  cannot invalidate an editor base revision). The pagination cases were test
+  design: each test has its own database, and the timeout came from about 300 ms
+  of per-subflow setup in the test bodies, so inventories are now seeded once and
+  copied, and the raised budget was removed rather than kept. Supervisor: the
+  million-event stream case writes about 158 MB, and its scratch root moved to
+  the OS temp directory.
+- Validation: `pnpm --filter fluxiq test` -> 827 passed of 828, twice (worker),
+  the single failure being the million-event case. Supervisor, before and after
+  the scratch-root move: `pnpm --filter fluxiq test runtime-stream-store` ->
+  `Tests 6 passed (6)`, that case 49819 ms then 17072 ms against its 60 s budget.
+  The rewritten pagination tests still discriminate: raising the bound to 64
+  fails one, and breaking both hydration guards fails the other.
+- Outcome: Accepted
+
+### 2026-09-11 — Adaptation Audit case under budget; Core suite green
+- Agent: supervisor, with core-adaptation-test-cost
+- Changed: `runtime/tests/service-flow-bootstrap-adaptation.test.ts`, and the
+  teardown of `runtime/tests/service.test.ts`. The cost was fixture rebuilding,
+  not the endpoints the case asserts: seeding once and copying per case took it
+  from 14685 ms to 12110 ms under full-suite load against the unchanged 15 s gate,
+  and from 4869 ms to 3247 ms solo. Both teardowns now retry the directory
+  removal so an EBUSY cannot replace the failure a run is reporting. Supervisor:
+  the worker explanatory comments were removed, because they grew a baselined file
+  past its 4789-line entry and the ratchet refuses growth; the reasoning is kept
+  here and in the report instead.
+- Validation: supervisor, `node scripts/structure-audit.mjs` -> passed, 0
+  violations; `pnpm test` at the Core root, redirected with the exit status echoed
+  rather than piped -> exit 0, contracts 7 of 7, client-gateway 3 of 3, fluxiq 828
+  of 828, web 1146 of 1146. An earlier supervisor run failed at 827 of 828 on an
+  unrelated documentation case, recorded under Open Questions.
+- Found: the worker suggested follow-up, closing a repository opened directly in
+  one case, does not exist as an API; that class opens and closes per operation.
+- Outcome: Accepted
