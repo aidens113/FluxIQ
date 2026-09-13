@@ -14,6 +14,7 @@ import { createEnvelope, IoRegistry } from "../../../io/index.ts";
 import type { ActionChannelDescriptor, EnvironmentDescriptor, SourceDescriptor, StateSnapshot } from "../model/index.ts";
 import { AutomationStudioIoRecorder } from "../runtime/io-bridge.ts";
 import type { AutomationStudioService } from "../runtime/service.ts";
+import { ClientRecordingWriteOrder } from "./client-recording-write-order.ts";
 
 export type AutomationStudioClientGatewayBridgeOptions = {
   gateway: ClientGatewayService;
@@ -46,12 +47,6 @@ type RecordingAppendQueueItem = {
   recordingId: string;
   entry: Parameters<AutomationStudioService["appendRecordingEvent"]>[0]["entry"];
   sender: ClientMessageSender;
-};
-
-type RecordingAppendQueue = {
-  entries: RecordingAppendQueueItem[];
-  timer?: ReturnType<typeof setTimeout> | undefined;
-  flushing?: Promise<void> | undefined;
 };
 
 /**
@@ -93,7 +88,9 @@ export class AutomationStudioClientGatewayBridge {
   private readonly automationStudio: AutomationStudioService;
   private readonly stopDrainMs: number;
   private readonly activeRecordings = new Map<string, { projectId?: string | null; recordingId: string; domainId?: string | null }>();
-  private readonly appendQueues = new Map<string, RecordingAppendQueue>();
+  // An entry queued while its recording was open can reach the service after Stop
+  // finalized it, whether a timer or a caller started the write.
+  private readonly writeOrder = new ClientRecordingWriteOrder<RecordingAppendQueueItem>((recording, items) => this.appendOrDiscard(recording, items.map((item) => item.sender), () => this.automationStudio.appendRecordingEvents({ ...recording, entries: items.map((item) => item.entry) })));
   private readonly closedRecordings = new Map<string, ClosedClientRecording>();
   private readonly pendingStarts = new Map<string, PendingClientStart>();
   private clientRecordingContextProvider: ClientRecordingContextProvider | undefined;
@@ -120,10 +117,13 @@ export class AutomationStudioClientGatewayBridge {
 
   async startRecording(input: StartClientRecordingInput) {
     const session = this.session(input.sessionId);
+    // Taken before the first await: what the client sent before this start never lands in its recording.
+    const received = this.writeOrder.settled(this.recordingOwnerKey(session));
     const recordingId = input.recordingId ?? `client.${session.clientId}.${Date.now()}`;
     const projectId = input.projectId ?? session.projectId;
     const domainId = input.domainId ?? stringMetadataValue(session.metadata, "domainId") ?? null;
     const actionTypes = session.capabilities.flatMap((capability) => capability.actionTypes ?? []);
+    await received;
     const recording = await this.automationStudio.createRecording({
       ...(projectId !== undefined ? { projectId } : {}),
       recordingId,
@@ -180,9 +180,11 @@ export class AutomationStudioClientGatewayBridge {
     await this.gateway.stopRecording(sessionId, active?.recordingId);
     if (!active) return null;
     await delay(this.stopDrainMs);
-    await this.flushRecordingEntries(ownerKey);
+    await this.writeOrder.settled(ownerKey);
+    await this.writeOrder.flush(ownerKey);
     const recording = await this.automationStudio.finalizeRecording({ ...(active.projectId !== undefined ? { projectId: active.projectId } : {}), recordingId: active.recordingId });
-    this.activeRecordings.delete(ownerKey);
+    // Only the recording this Stop stopped: one started while it drained stays open.
+    if (this.activeRecordings.get(ownerKey)?.recordingId === active.recordingId) this.activeRecordings.delete(ownerKey);
     this.rememberClosedRecording(ownerKey, {
       recordingId: active.recordingId,
       ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
@@ -205,11 +207,22 @@ export class AutomationStudioClientGatewayBridge {
       return;
     }
     if (event.type === "session.ready" || event.type === "session.disconnected" || event.type === "client.action_result") return;
-    await this.awaitClientStart(event.session, event.type === "client.stop_recording" ? event.message.payload.recordingId : undefined);
+    // Read as the message arrives: only a start received before it holds it.
+    const started = this.awaitClientStart(event.session, event.type === "client.stop_recording" ? event.message.payload.recordingId : undefined);
     if (event.type === "client.stop_recording") {
+      await started;
       await this.stopRecordingFromClient(event.session, event.message.payload);
       return;
     }
+    // Queued before the first await, so the client's messages are stored in the order they arrived.
+    const message: ClientRecordingMessageEvent = event;
+    await this.writeOrder.run(this.recordingOwnerKey(event.session), async () => {
+      await started;
+      await this.storeClientMessage(message);
+    });
+  }
+
+  private async storeClientMessage(event: ClientRecordingMessageEvent): Promise<void> {
     if (event.type === "client.recording_entry") {
       const active = this.activeRecordings.get(this.recordingOwnerKey(event.session));
       const entry = event.message.payload.entry as { type?: unknown } | undefined;
@@ -223,7 +236,7 @@ export class AutomationStudioClientGatewayBridge {
         this.noteDiscardedClientMessage(event.session, message);
         return;
       }
-      this.enqueueRecordingEntry(this.recordingOwnerKey(event.session), {
+      this.writeOrder.enqueue(this.recordingOwnerKey(event.session), {
         ...(event.message.payload.projectId !== undefined ? { projectId: event.message.payload.projectId } : active?.projectId !== undefined ? { projectId: active.projectId } : {}),
         recordingId: event.message.payload.recordingId,
         entry: event.message.payload.entry as unknown as Parameters<AutomationStudioService["appendRecordingEvent"]>[0]["entry"],
@@ -245,7 +258,9 @@ export class AutomationStudioClientGatewayBridge {
     }
     if (event.type === "client.error") {
       const active = this.activeRecordings.get(this.recordingOwnerKey(event.session));
-      if (active) await this.appendOrDiscard(active, [{ session: event.session, message: { kind: "error", label: "marker", executable: false } }], () => this.automationStudio.appendRecordingEvent({
+      if (!active) return;
+      await this.writeOrder.flush(this.recordingOwnerKey(event.session));
+      await this.appendOrDiscard(active, [{ session: event.session, message: { kind: "error", label: "marker", executable: false } }], () => this.automationStudio.appendRecordingEvent({
         ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
         recordingId: active.recordingId,
         entry: {
@@ -269,8 +284,11 @@ export class AutomationStudioClientGatewayBridge {
     let settle = () => {};
     const pending: PendingClientStart = { recordingId: input.recordingId, stopRequested: false, settled: new Promise<void>((resolve) => { settle = resolve; }) };
     this.pendingStarts.set(ownerKey, pending);
+    // Taken before the first await: what the client sent before this start never lands in its recording.
+    const received = this.writeOrder.settled(ownerKey);
     try {
       await previous?.settled;
+      await received;
       return await this.openClientRecording(session, input, pending);
     } finally {
       if (this.activeRecordings.get(ownerKey)?.recordingId !== input.recordingId) this.rememberClosedRecording(ownerKey, { recordingId: input.recordingId, ...(input.projectId !== undefined ? { projectId: input.projectId } : {}) }, false);
@@ -354,16 +372,20 @@ export class AutomationStudioClientGatewayBridge {
 
   private async stopRecordingFromClient(session: ClientGatewaySession, input: ClientGatewayStopRecordingRequest) {
     const ownerKey = this.recordingOwnerKey(session);
-    const active = this.activeRecordings.get(ownerKey);
+    const open = this.activeRecordings.get(ownerKey);
+    const active = open?.recordingId === input.recordingId ? open : undefined;
     const projectId = input.projectId ?? active?.projectId;
     await delay(this.stopDrainMs);
-    await this.flushRecordingEntries(ownerKey);
+    // A message received before the drain ended is stored, not discarded.
+    await this.writeOrder.settled(ownerKey);
+    await this.writeOrder.flush(ownerKey);
     const recording = await this.automationStudio.finalizeRecording({
       ...(projectId !== undefined ? { projectId } : {}),
       recordingId: input.recordingId,
       ...(input.endedAt !== undefined ? { endedAt: input.endedAt } : {})
     });
-    this.activeRecordings.delete(ownerKey);
+    // Only the recording this Stop names: one started while it drained stays open.
+    if (this.activeRecordings.get(ownerKey)?.recordingId === input.recordingId) this.activeRecordings.delete(ownerKey);
     this.rememberClosedRecording(ownerKey, {
       recordingId: input.recordingId,
       ...(projectId !== undefined ? { projectId } : {}),
@@ -387,6 +409,7 @@ export class AutomationStudioClientGatewayBridge {
       });
       return;
     }
+    await this.writeOrder.flush(this.recordingOwnerKey(session));
     const domainId = event.domainId ?? active.domainId ?? stringMetadataValue(event.metadata, "domainId");
     const inputId = stringMetadataValue(event.metadata, "inputId");
     if (domainId && inputId && await this.recordGatewayInput({
@@ -559,7 +582,7 @@ export class AutomationStudioClientGatewayBridge {
     const active = this.activeRecordings.get(this.recordingOwnerKey(session));
     if (!active) return this.noteDiscardedClientMessage(session, { kind: "snapshot", label: `client.${snapshot.kind}_snapshot`, executable: false });
     if (snapshot.kind === "state" && snapshot.state) {
-      this.enqueueRecordingEntry(this.recordingOwnerKey(session), {
+      this.writeOrder.enqueue(this.recordingOwnerKey(session), {
         ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
         recordingId: active.recordingId,
         entry: {
@@ -574,7 +597,7 @@ export class AutomationStudioClientGatewayBridge {
       });
       return;
     }
-    this.enqueueRecordingEntry(this.recordingOwnerKey(session), {
+    this.writeOrder.enqueue(this.recordingOwnerKey(session), {
       ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
       recordingId: active.recordingId,
       entry: {
@@ -602,7 +625,7 @@ export class AutomationStudioClientGatewayBridge {
     const domainId = active.domainId ?? stringMetadataValue(stateUpdate.metadata as JsonObject | undefined, "domainId");
     const inputId = stringMetadataValue(stateUpdate.metadata as JsonObject | undefined, "inputId");
     if (domainId && inputId) {
-      await this.flushRecordingEntries(this.recordingOwnerKey(session));
+      await this.writeOrder.flush(this.recordingOwnerKey(session));
       if (await this.recordGatewayInput({
         active,
         domainId,
@@ -614,7 +637,7 @@ export class AutomationStudioClientGatewayBridge {
         sender: { session, message: { kind: "state update", label: "client.state_update", domainId, inputId } }
       })) return;
     }
-    this.enqueueRecordingEntry(this.recordingOwnerKey(session), {
+    this.writeOrder.enqueue(this.recordingOwnerKey(session), {
       ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
       recordingId: active.recordingId,
       entry: {
@@ -656,64 +679,11 @@ export class AutomationStudioClientGatewayBridge {
     return true;
   }
 
-  private enqueueRecordingEntry(ownerKey: string, item: RecordingAppendQueueItem): void {
-    const queue = this.appendQueues.get(ownerKey) ?? { entries: [] };
-    queue.entries.push(item);
-    this.appendQueues.set(ownerKey, queue);
-    if (queue.entries.length >= 50) {
-      void this.flushRecordingEntries(ownerKey);
-      return;
-    }
-    if (!queue.timer) {
-      queue.timer = setTimeout(() => {
-        queue.timer = undefined;
-        void this.flushRecordingEntries(ownerKey);
-      }, 25);
-    }
-  }
-
-  private async flushRecordingEntries(ownerKey: string): Promise<void> {
-    const queue = this.appendQueues.get(ownerKey);
-    if (!queue) return;
-    if (queue.timer) {
-      clearTimeout(queue.timer);
-      queue.timer = undefined;
-    }
-    if (queue.flushing) {
-      await queue.flushing;
-      if (queue.entries.length) await this.flushRecordingEntries(ownerKey);
-      return;
-    }
-    queue.flushing = (async () => {
-      while (queue.entries.length) {
-        const batch = queue.entries.splice(0, 100);
-        const groups = new Map<string, { recording: ClientRecordingRef; entries: RecordingAppendQueueItem["entry"][]; senders: ClientMessageSender[] }>();
-        for (const item of batch) {
-          const key = `${item.projectId ?? ""}\n${item.recordingId}`;
-          const group = groups.get(key) ?? { recording: { ...(item.projectId !== undefined ? { projectId: item.projectId } : {}), recordingId: item.recordingId }, entries: [], senders: [] };
-          group.entries.push(item.entry);
-          group.senders.push(item.sender);
-          groups.set(key, group);
-        }
-        // Whether a timer or a caller started this flush, an entry queued while
-        // the recording was open can reach the service after Stop finalized it.
-        for (const { recording, entries, senders } of groups.values()) {
-          await this.appendOrDiscard(recording, senders, () => this.automationStudio.appendRecordingEvents({ ...recording, entries }));
-        }
-      }
-    })();
-    try {
-      await queue.flushing;
-    } finally {
-      queue.flushing = undefined;
-      if (!queue.entries.length && !queue.timer) this.appendQueues.delete(ownerKey);
-    }
-  }
-
   private async appendActionResult(sessionId: string, command: ClientGatewayActionCommand, result: ClientGatewayActionResult): Promise<void> {
     const session = this.session(sessionId);
     const active = this.activeRecordings.get(this.recordingOwnerKey(session));
     if (!active) return;
+    await this.writeOrder.flush(this.recordingOwnerKey(session));
     await this.automationStudio.appendRecordingEvent({
       ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
       recordingId: active.recordingId,
@@ -749,6 +719,9 @@ export class AutomationStudioClientGatewayBridge {
 
 /** A client's `client.start_recording` still being handled; its later messages wait on `settled`. */
 type PendingClientStart = { recordingId: string; settled: Promise<void>; stopRequested: boolean };
+
+/** A client message that writes to its recording, and so is stored in the order it arrived. */
+type ClientRecordingMessageEvent = Extract<ClientGatewayEvent, { type: "client.recording_entry" | "client.recording_event" | "client.snapshot" | "client.state_update" | "client.error" }>;
 
 function emptyClientStateSnapshot(session: ClientGatewaySession): StateSnapshot {
   return {

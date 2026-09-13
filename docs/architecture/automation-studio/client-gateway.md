@@ -107,13 +107,34 @@ Serializing the host instead would hold every message behind slow appends and
 leave other hosts and in-process callers racing, so the rule lives beside the
 "open before append" rule it protects.
 
+A client's recording messages are stored in the order the gateway received
+them from that client, and the bridge keeps that order for the same reason.
+Every `client.recording_entry`, `client.recording_event`, `client.snapshot`,
+`client.state_update` and `client.error` joins one chain per client before the
+bridge's first await. It is stored only once every message that client sent
+before it has been handled:
+
+- **A failed append** fails that message's own receive. The next message is
+  still stored.
+- **Different clients** do not wait for one another.
+- **A start**, from the client or from the web panel, opens its recording only
+  once every message that client sent before it has been handled. A message
+  received before a start is never stored in the recording that start opens.
+- **Stop**, from the client or from the web panel, waits for the chain as it
+  stands when the post-stop drain ends. A message received before then is stored,
+  not discarded. One received later still races finalization, and is counted as
+  discarded if it loses. Stop closes only the recording it stopped: one started
+  while it drains or finalizes stays open.
+
 The bridge buffers high-frequency recording timeline writes before persisting
 them. State snapshots captured at screenshot cadence are flushed in bounded
 batches and are synchronously drained before recording finalization, so Stop
-Recording does not wait on one read/append/write cycle per frame. The bridge
-does not drain the snapshot queue before ingesting a `client.recording_event`;
-actions and domain events are accepted immediately, while adjacent state remains
-correlated by timestamp, sequence, snapshot ID, or correlation ID.
+Recording does not wait on one read/append/write cycle per frame. The queue is
+written before anything is appended directly: a `client.recording_event`, a
+`client.state_update` naming a registered input, the marker for a
+`client.error`, or a resolved action result. A snapshot is therefore never
+stored after an entry that arrived after it, and the timeline's order is the
+order of arrival.
 
 Raw recording data remains complete, but full `client.state_snapshot` payloads
 are stored as recording-owned project objects when object storage is enabled.
@@ -220,7 +241,8 @@ ws://127.0.0.1:4777/client
 `apps/web/src/server/client-gateway-websocket.ts` owns the dependency-free Node
 WebSocket adapter. It accepts upgrade requests, validates configured origins,
 attaches sockets to `ClientGatewayService.connect()`, forwards incoming text
-frames to `receiveRaw()`, and relies on the service to serialize outbound
+frames to `receiveRaw()` without waiting for one frame to be handled before the
+next, and relies on the service to serialize outbound
 messages through the provided socket. Startup is intentionally bound to
 `getFluxIQ()` rather than an independent instrumentation runtime so app API
 routes and the WebSocket listener share the same in-memory gateway sessions.

@@ -72,7 +72,8 @@ export class ClientGatewayInbound {
     }
     if (message.type === "client.stop_recording") {
       await this.events.emit({ type: "client.stop_recording", session: this.sessions.toPublic(session), message });
-      session.activeRecordingId = null;
+      // Only the recording this Stop stopped: a start acknowledged while it was handled keeps its id.
+      if (session.activeRecordingId === message.payload.recordingId) session.activeRecordingId = null;
       return;
     }
     if (message.type === "client.recording_entry") {

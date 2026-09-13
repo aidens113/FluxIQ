@@ -65,11 +65,7 @@ describe("AutomationStudioClientGatewayBridge", () => {
   });
 
   it("keeps a recorded click's event id and source on its action entry, and gives it no event id the event did not carry", async () => {
-    const gateway = new ClientGatewayService();
-    const automationStudio = new AutomationStudioService({ seedFixture: false });
-    const bridge = new AutomationStudioClientGatewayBridge({ gateway, automationStudio, io: lateEventIoRegistry() });
-    const session = await pairedSession(gateway, "extension.identity");
-    const recording = await bridge.startRecording({ sessionId: session.sessionId, domainId: "extension.example" });
+    const { gateway, automationStudio, session, recording } = await recordingClient("extension.identity");
     const click = { domainId: "extension.example", eventType: "dom.click", payload: { elementId: "confirm" } };
 
     await gateway.receive(session.sessionId, clientMessage("client.recording_event", { ...click, eventId: "web.7.1007", sourceId: "tab:7:frame:0", metadata: { inputId: "element-pressed" } }));
@@ -193,42 +189,42 @@ describe("AutomationStudioClientGatewayBridge", () => {
     expect(stored.timeline.map((entry) => entry.type)).toEqual(["domain_event", "state_delta", "state_checkpoint"]);
   });
 
-  it("does not flush queued snapshots before ingesting a recording action", async () => {
+  it("stores a recorded event, a domain event and a client error received after a queued state snapshot after that snapshot", async () => {
     vi.useFakeTimers();
     try {
-      const gateway = new ClientGatewayService();
+      const { gateway, automationStudio, session, recording } = await recordingClient("extension.snapshot-first");
+      automationStudio.registerRecordingDomain({ domainId: "extension.example", label: "Example", schemaVersion: "0.1", events: [{ eventType: "dom.scrolled", label: "Scrolled" }] });
+
+      // Each is received in order and awaited. The 25 ms timer never fires, so only a flush writes a snapshot.
+      await gateway.receive(session.sessionId, stateSnapshot(2));
+      await gateway.receive(session.sessionId, lateClick());
+      await gateway.receive(session.sessionId, stateSnapshot(3));
+      await gateway.receive(session.sessionId, clientMessage("client.recording_event", { domainId: "extension.example", eventType: "dom.scrolled", payload: { top: 120 } }));
+      await gateway.receive(session.sessionId, stateSnapshot(4));
+      await gateway.receive(session.sessionId, clientMessage("client.error", { message: "Tab closed" }));
+
+      expect(timelineKinds(await automationStudio.getRecordingSession(recording.recordingId))).toEqual(["client.state_snapshot", "action", "client.state_snapshot", "domain_event", "client.state_snapshot", "marker"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stores an action result after the state snapshots queued before it", async () => {
+    vi.useFakeTimers();
+    try {
+      const gateway = new ClientGatewayService({ commandTimeoutMs: 1000 });
       const automationStudio = new AutomationStudioService({ seedFixture: false });
-      const appendBatchSpy = vi.spyOn(automationStudio, "appendRecordingEvents");
-      automationStudio.registerRecordingDomain({
-        domainId: "example.remote",
-        label: "Example remote domain",
-        schemaVersion: "0.1",
-        events: [{ eventType: "clicked", label: "Clicked" }]
-      });
       const bridge = new AutomationStudioClientGatewayBridge({ gateway, automationStudio });
-      const session = gateway.connect();
-      await gateway.receive(session.sessionId, clientMessage("client.hello", { clientId: "extension.domain", clientType: "extension", name: "Domain extension" }));
-      await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "", { approvedByUserId: "user.test" });
+      const session = await pairedSession(gateway, "worker.snapshot-first");
       const recording = await bridge.startRecording({ sessionId: session.sessionId });
 
-      await gateway.receive(session.sessionId, clientMessage("client.snapshot", {
-        kind: "state",
-        timestamp: 2,
-        state: { timestamp: 2, namespaces: { web: { schemaId: "web", schemaVersion: "0.1", values: { ready: { type: "boolean", value: true, observedAt: 2 } } } } }
-      }));
-      await gateway.receive(session.sessionId, clientMessage("client.recording_event", {
-        domainId: "example.remote",
-        eventType: "clicked",
-        timestamp: 3,
-        payload: { target: "button.save" }
-      }));
+      await gateway.receive(session.sessionId, stateSnapshot(2));
+      const result = bridge.executeAction(session.sessionId, { actionType: "sample.action" });
+      const command = gateway.outbound(session.sessionId).find((message) => message.type === "server.execute_action");
+      await gateway.receive(session.sessionId, clientMessage("client.action_result", { commandId: command?.payload.commandId ?? "", status: "succeeded" }));
+      await result;
 
-      expect(appendBatchSpy).not.toHaveBeenCalled();
-      expect((await automationStudio.getRecordingSession(recording.recordingId)).timeline.map((entry) => entry.type)).toEqual(["domain_event"]);
-
-      await vi.advanceTimersByTimeAsync(25);
-      expect(appendBatchSpy).toHaveBeenCalledTimes(1);
-      expect((await automationStudio.getRecordingSession(recording.recordingId)).timeline.map((entry) => entry.type)).toEqual(["domain_event", "observation"]);
+      expect(timelineKinds(await automationStudio.getRecordingSession(recording.recordingId))).toEqual(["client.state_snapshot", "action"]);
     } finally {
       vi.useRealTimers();
     }
@@ -469,11 +465,7 @@ it("reports a client action that arrives after its recording was finalized", asy
   });
 
   it("still fails the receive when an append to an open recording fails for any other reason", async () => {
-    const gateway = new ClientGatewayService();
-    const automationStudio = new AutomationStudioService({ seedFixture: false });
-    const bridge = new AutomationStudioClientGatewayBridge({ gateway, automationStudio, io: lateEventIoRegistry(), stopDrainMs: 0 });
-    const session = await pairedSession(gateway, "extension.broken");
-    await bridge.startRecording({ sessionId: session.sessionId, domainId: "extension.example" });
+    const { gateway, automationStudio, session } = await recordingClient("extension.broken");
     vi.spyOn(automationStudio, "appendRecordingEvents").mockRejectedValue(new Error("Recording storage is unavailable."));
 
     await expect(gateway.receive(session.sessionId, lateClick())).rejects.toThrow("Recording storage is unavailable.");
@@ -548,11 +540,7 @@ it("reports a client action that arrives after its recording was finalized", asy
   });
 
   it("audits a snapshot and a state update that arrive after their recording closed, and names a message's own recording", async () => {
-    const gateway = new ClientGatewayService();
-    const automationStudio = new AutomationStudioService({ seedFixture: false });
-    const bridge = new AutomationStudioClientGatewayBridge({ gateway, automationStudio, io: lateEventIoRegistry(), stopDrainMs: 0 });
-    const session = await pairedSession(gateway, "extension.after-close");
-    const recording = await bridge.startRecording({ sessionId: session.sessionId, domainId: "extension.example" });
+    const { gateway, bridge, session, recording } = await recordingClient("extension.after-close");
     await bridge.stopRecording(session.sessionId);
 
     // Page state from a client that says it is not recording was never meant for a recording.
@@ -569,6 +557,50 @@ it("reports a client action that arrives after its recording was finalized", asy
     expect(discarded[1]?.message).toContain("recording recording.elsewhere, which this client did not have open");
     expect(discarded[1]?.metadata).toMatchObject({ recordingId: "recording.elsewhere", discardedEvents: 3, discardedActions: 1 });
     expect(discarded[1]?.metadata).not.toHaveProperty("sinceFinalizedMs");
+  });
+
+  it("stores a client's messages in the order they were received when the host delivers them concurrently", async () => {
+    const { gateway, automationStudio, session, recording } = await recordingClient("extension.arrival");
+    const evidence = (inputId: string) => clientMessage("client.state_update", { recording: true, state: { ready: true }, metadata: { domainId: "extension.example", inputId } });
+    const messages = [evidence("page-state"), evidence("page-changed"), stateSnapshot(2), lateClick(), stateSnapshot(3), evidence("page-changed"), lateClick(), stateSnapshot(4)];
+
+    // Started back to back with none awaited, as the WebSocket host hands over one socket's frames.
+    await Promise.all(messages.map((message) => gateway.receive(session.sessionId, message)));
+    await gateway.receive(session.sessionId, clientMessage("client.stop_recording", { recordingId: recording.recordingId }));
+
+    expect(timelineKinds(await automationStudio.getRecordingSession(recording.recordingId))).toEqual([
+      "input.state", "input.event", "client.state_snapshot", "action", "client.state_snapshot", "input.event", "action", "client.state_snapshot"
+    ]);
+    expect(discardAudit(gateway)).toEqual([]);
+  });
+
+  it.each(["client", "web panel"] as const)("stores a message received before a %s Stop's drain ends", async (stopper) => {
+    const { gateway, automationStudio, bridge, session, recording } = await recordingClient(`extension.drain-${stopper.replace(" ", "-")}`);
+    const append = automationStudio.appendRecordingEvents.bind(automationStudio);
+    let release = () => {};
+    const held = new Promise<void>((resolve) => { release = () => resolve(); });
+    let reach = () => {};
+    const reached = new Promise<void>((resolve) => { reach = () => resolve(); });
+    // Held before the service takes its lock, so a Stop that did not wait would finalize first.
+    vi.spyOn(automationStudio, "appendRecordingEvents").mockImplementation(async (input) => {
+      reach();
+      await held;
+      return append(input);
+    });
+
+    const receiving = gateway.receive(session.sessionId, lateClick());
+    await reached;
+    const stopping = stopper === "client"
+      ? gateway.receive(session.sessionId, clientMessage("client.stop_recording", { recordingId: recording.recordingId }))
+      : bridge.stopRecording(session.sessionId);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    release();
+    await Promise.all([receiving, stopping]);
+
+    const stored = await automationStudio.getRecordingSession(recording.recordingId);
+    expect(stored.endedAt).toBeDefined();
+    expect(stored.timeline.map((entry) => entry.type)).toEqual(["action"]);
+    expect(discardAudit(gateway)).toEqual([]);
   });
 
 
@@ -615,17 +647,23 @@ async function pairedSession(gateway: ClientGatewayService, clientId: string) {
   return session;
 }
 
+/** A paired client whose recording the web panel has opened, on a bridge that reads the late-event IO registry. */
+async function recordingClient(clientId: string, stopDrainMs = 0) {
+  const gateway = new ClientGatewayService();
+  const automationStudio = new AutomationStudioService({ seedFixture: false });
+  const bridge = new AutomationStudioClientGatewayBridge({ gateway, automationStudio, io: lateEventIoRegistry(), stopDrainMs });
+  const session = await pairedSession(gateway, clientId);
+  const recording = await bridge.startRecording({ sessionId: session.sessionId, domainId: "extension.example" });
+  return { gateway, automationStudio, bridge, session, recording };
+}
+
 /**
  * A recording whose client-initiated Stop has finalized it in the service and
  * is held there, before the bridge closes it: the moment a late message can
  * still find the recording open. `release` lets Stop finish.
  */
 async function recordingHeldAtFinalization(clientId: string) {
-  const gateway = new ClientGatewayService();
-  const automationStudio = new AutomationStudioService({ seedFixture: false });
-  const bridge = new AutomationStudioClientGatewayBridge({ gateway, automationStudio, io: lateEventIoRegistry(), stopDrainMs: 0 });
-  const session = await pairedSession(gateway, clientId);
-  const recording = await bridge.startRecording({ sessionId: session.sessionId, domainId: "extension.example" });
+  const { gateway, automationStudio, session, recording } = await recordingClient(clientId);
   const finalize = automationStudio.finalizeRecording.bind(automationStudio);
   let release = () => {};
   const held = new Promise<void>((resolve) => { release = () => resolve(); });
@@ -663,6 +701,15 @@ function clickFor(recordingId: string) {
 
 function discardAudit(gateway: ClientGatewayService) {
   return gateway.snapshot().auditLog.filter((entry) => entry.type.startsWith("recording.") && entry.type.endsWith("_discarded"));
+}
+
+function stateSnapshot(timestamp: number) {
+  return clientMessage("client.snapshot", { kind: "state", timestamp, state: { timestamp, namespaces: {} } });
+}
+
+/** A stored timeline in order: an observation by its observation type, any other entry by its type. */
+function timelineKinds(recording: Awaited<ReturnType<AutomationStudioService["getRecordingSession"]>>) {
+  return recording.timeline.map((entry) => entry.type === "observation" ? entry.observationType : entry.type);
 }
 
 /**
@@ -721,6 +768,9 @@ function lateEventIoRegistry(): IoRegistry {
       outputBinding: { outputId: "ui.activate", toPayload: (event) => ({ elementId: String((event.payload as { elementId: string }).elementId) }) }
     }), defineInput({
       definition: { id: "page-state", title: "Page state", role: "state" },
+      mode: "stream"
+    }), defineInput({
+      definition: { id: "page-changed", title: "Page changed", role: "event" },
       mode: "stream"
     })],
     outputs: [defineOutput({

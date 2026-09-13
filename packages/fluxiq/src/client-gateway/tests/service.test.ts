@@ -194,6 +194,26 @@ describe("ClientGatewayService", () => {
     await gateway.receive(revokedReconnect.sessionId, clientMessage("client.hello", { clientId: "extension.revoked", clientType: "extension", token: revoked.token }));
     expect(gateway.snapshot().sessions.find((session) => session.sessionId === revokedReconnect.sessionId)?.status).toBe("pairing_required");
   });
+
+  it("keeps the recording a start opened while a client Stop was being handled as the session's active recording", async () => {
+    const gateway = new ClientGatewayService();
+    const client = await pairClient(gateway, "extension.restart", "user.restart");
+    const activeRecordingId = () => gateway.snapshot().sessions.find((session) => session.sessionId === client.sessionId)?.activeRecordingId;
+    await gateway.startRecording(client.sessionId, { recordingId: "recording.first" });
+    // A host that opens the next recording while it is still closing this one, as the Automation Studio bridge can.
+    let restart = true;
+    gateway.onEvent(async (event) => {
+      if (event.type !== "client.stop_recording" || !restart) return;
+      restart = false;
+      await gateway.startRecording(client.sessionId, { recordingId: "recording.next" });
+    });
+
+    await gateway.receive(client.sessionId, clientMessage("client.stop_recording", { recordingId: "recording.first" }));
+    expect(activeRecordingId()).toBe("recording.next");
+
+    await gateway.receive(client.sessionId, clientMessage("client.stop_recording", { recordingId: "recording.next" }));
+    expect(activeRecordingId()).toBeNull();
+  });
 });
 
 async function pairClient(gateway: ClientGatewayService, clientId: string, approvedByUserId: string) {
