@@ -16,14 +16,15 @@ Related: [package boundaries](../architecture/package-boundaries.md), [code stru
 **Phase: the downstream Week 1 finish, released as `fluxiq` 0.4.0 on
 2026-09-13.** On 2026-09-11 the user directed that changes belonging in Core are
 made in Core, never approximated downstream. The downstream session finishing
-Week 1 made nine Core commits under that rule. The user was alerted before each
-area's first edit, and every commit is recorded in the Work Ledger.
+Week 1 made eleven Core code commits under that rule. The user was alerted before
+each area's first edit, and every commit is recorded in the Work Ledger.
 
 **True on 2026-09-13.**
-- **Branch:** `dev` at `5845f5d`, 9 commits ahead of `origin/dev`, not pushed.
+- **Branch:** `dev` at `6621d66`, 12 commits ahead of `origin/dev`, not pushed.
+  One of the twelve is a plan-only commit.
 - **Versions:** `fluxiq` is **0.4.0**. `@fluxiq/contracts` (0.2.0) and
   `@fluxiq/client-gateway-websocket` (0.1.0) are unchanged.
-- **The nine commits:**
+- **The eleven code commits:**
   - `5d495eb`, a value resolved out of state is withheld from the persisted
     trace;
   - `267a2ca`, a recording message arriving after Stop finalized its recording
@@ -39,13 +40,25 @@ area's first edit, and every commit is recorded in the Work Ledger.
     acknowledged;
   - `187f40d`, a recorded entry keeps its source event's id and source;
   - `5845f5d`, the `0.4.0` release, with a Migration Notes entry covering every
-    change above.
+    change above;
+  - `949fbb4`, a client's recording messages are stored in the order the gateway
+    received them, and a Stop never touches a recording opened during it;
+  - `6621d66`, run inputs and resolved values withheld at rest, without changing
+    what a run executes. Both are in the unreleased `0.4.0` Migration Notes.
 
-**Gates.** The downstream supervisor reran each commit's own tests,
-`pnpm check` and `pnpm docs:check` (ledger). Three gates have not run on the
-release tree: `pnpm package:lint`, `pnpm build`, and the full suite with
-`--no-file-parallelism`. They run at the downstream integration step, after its
-Lab Stage 2, and both `dev` branches are pushed together after them.
+**Gates.**
+- **Per commit:** the downstream supervisor reran each commit's own tests,
+  `pnpm check` and `pnpm docs:check` (ledger).
+- **On `6621d66`:**
+  - the full suite ran with `--no-file-parallelism`: `fluxiq` 136 files and
+    `@fluxiq/web` 228 files, with contracts and gateway-websocket too;
+  - `pnpm check`, `pnpm docs:reference` and `pnpm docs:check` also ran.
+- **Build and package lint on `6621d66`:**
+  - `pnpm build` exit=0 on a rerun. The first run died in `next build` with this
+    machine's segmentation fault.
+  - `pnpm package:lint` exit=0.
+- **Push:** both `dev` branches are pushed together, after the downstream Lab
+  rerun and root gates.
 
 **The matcher constant is still coupled downstream.** Flipping
 `MISSING_STABLE_IDENTIFIER_SIMILARITY` (−0.1) back to −0.55 turns the downstream
@@ -77,12 +90,10 @@ comparison.
   - the discard audit calls a runtime confirmation that reached no open
     recording a lost recorded action;
   - an `AutomationStudioService` built without `dataDir` writes `recordings/`
-    and `indexes/` into the working directory;
-  - `client-gateway/bridge.ts` is 796 of its 800 lines.
+    and `indexes/` into the working directory.
 
-**Next steps:** run `pnpm package:lint`, `pnpm build` and the sequential suite on
-the release tree at the downstream integration step. Then push `dev` with the
-downstream `dev`.
+**Next steps:** push `dev` together with the downstream `dev`, once the downstream
+Lab rerun and root gates pass.
 
 **Blockers:** none.
 
@@ -612,6 +623,75 @@ The completed Week 1 Core briefs are archived verbatim at
     until downstream Lab Stage 2 finishes, because the lint packs tarballs and
     installs clean consumers, which would load a machine running a load test.
   - Root `pnpm test`.
+- Outcome: Accepted
+
+### 2026-09-13 — A client's recording messages are stored in arrival order, and a Stop never touches a recording opened during it (`949fbb4`)
+
+- Agent: downstream worker `g-core-bridge-order`, with two amendments; verified by
+  the downstream supervisor. The detail is in the downstream plan's ledger for
+  this date.
+- Changed:
+  - `programs/automation-studio/client-gateway/bridge.ts` and the new
+    `client-recording-write-order.ts`;
+  - `client-gateway/service/inbound.ts`;
+  - tests: `bridge.test.ts`, the new `bridge-restart.test.ts` and
+    `client-recording-write-order.test.ts`, and `client-gateway/tests/service.test.ts`;
+  - `docs/architecture/automation-studio/client-gateway.md`.
+- Why: the WebSocket host handles one client's messages concurrently. So a late
+  recorded click was stored before the evidence that revealed its target, and
+  downstream W25's wait was never proposed.
+- Compatibility:
+  - a recorded event now waits for queued snapshots to be written, which reverses
+    `0e4edea`;
+  - a recording stores its entries in arrival order;
+  - a start waits for that client's earlier messages;
+  - all three are in the unreleased `0.4.0` Migration Notes.
+- Validation: supervisor, on `6621d66`, each command run alone:
+  - `pnpm check` exit=0, "structure-audit: passed (122 warning(s), 256
+    baselined)";
+  - `packages/fluxiq` `npx vitest run --no-file-parallelism` gave "Test Files 136
+    passed (136)", and `@fluxiq/web` gave 228 files passed;
+  - `pnpm docs:check` exit=0.
+  - `pnpm build`: the first run died with a segmentation fault (exit 139) in
+    `next build`. That is this machine's faulty-RAM signature. The rerun, alone,
+    gave exit=0, "Compiled successfully".
+  - `pnpm package:lint` exit=0. For all three packages, publint strict is clean,
+    and attw's esm-only profile shows "node16 (from ESM): 🟢" and "bundler: 🟢".
+  - Downstream, the W25 Core-order row fails against the old build and passes
+    against this one.
+- Not verified: a live WebSocket host overlapping a Stop and a start.
+- Outcome: Accepted
+
+### 2026-09-13 — Run inputs and resolved values are withheld at rest, and what a run executes is unchanged (`6621d66`)
+
+- Agents: downstream workers `g-core-input-withholding`,
+  `g-core-attempt-withholding` and `g-core-withholding-execution`; verified by the
+  downstream supervisor. The detail is in the downstream plan's ledger for this
+  date.
+- Changed, in `packages/fluxiq/src/`:
+  - `programs/automation-studio/runtime/service.ts` and
+    `storage/project/runtime-stream-store.ts`;
+  - `runtime/executor/graph-run.ts`, `node-execution.ts`, `trace-withholding.ts`
+    and `contracts.ts`;
+  - `runtime/io-policy.ts`, `live-patch.ts` and `composite-executor.ts`;
+  - `runtime/contracts.ts`, `service.ts` and `index.ts`, and the new
+    `runtime/text-withholding.ts`;
+  - tests;
+  - `runtime-kernel.md`, `automation-studio.md`, `automation-studio-native-nodes.md`
+    and `package-boundaries.md`, and both framework references.
+- Why: a downstream Lab run found a declared replay secret in Core's workspace,
+  in persisted run inputs and in saved command attempts.
+- Compatibility:
+  - **Additive types:** `withheldValues`, `FLUXIQ_RUNTIME_WITHHELD_VALUE` and
+    `fluxiqRuntimeTextWithholding`.
+  - **What readers see:** readers of persisted run inputs, command attempts and a
+    trace's input entries see `[withheld]`.
+  - **Queued sessions:** a queued session run by `runId` without inputs runs with
+    none.
+  - **Execution** is unchanged.
+  - All of this is in the unreleased `0.4.0` Migration Notes.
+- Validation: the supervisor gate recorded for `949fbb4`, which ran on this tree.
+- Not verified: the downstream Lab auth-gate leak check against this build.
 - Outcome: Accepted
 
 ## Open Questions
