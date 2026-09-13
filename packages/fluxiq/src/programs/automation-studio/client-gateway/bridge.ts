@@ -397,7 +397,7 @@ export class AutomationStudioClientGatewayBridge {
       ...(event.timestamp !== undefined ? { timestampMs: event.timestamp } : {}),
       sourceId: event.sourceId ?? `client.${session.clientId}.events`,
       messageId,
-      ...(event.metadata ? { metadata: event.metadata } : {}),
+      metadata: compactJsonObject({ ...(event.metadata ?? {}), eventId: event.eventId }),
       sender: { session, message: { kind: "recording event", label: event.eventType, domainId, inputId } }
     })) return;
     if (domainId) {

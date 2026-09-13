@@ -38,6 +38,23 @@ The bridge converts client messages into canonical Studio artifacts:
   match a registered `RecordingDomainDefinition`; accepted events become
   `domain_event` timeline entries and may derive observations, state deltas,
   and state checkpoints.
+- A `client.recording_event` or `client.state_update` whose metadata names an
+  `inputId` registered for the domain goes through `AutomationStudioIoRecorder`
+  instead. An action input with an output binding becomes an `action` entry;
+  any other input becomes an `input.<role>` observation. The entry's metadata
+  is `domainId`, `inputId`, `inputRole`, `envelopeId` and `policyEligible`,
+  plus two keys naming the event it came from. `eventId` is the recording
+  event's own top-level `eventId`; an event without one gives the entry none,
+  even when the client's metadata names an `eventId`. A state update has no
+  `eventId` of its own, so its entry has one only when its metadata names one.
+  `sourceId` is the event's
+  `sourceId`, or `client.<clientId>.events` (`.observations` for a state
+  update); a `sourceId` in the client's own metadata takes precedence. Each is
+  kept verbatim and only as a non-blank string, and nothing else from the
+  client's metadata reaches the entry. The entry's top-level `sourceId` stays
+  `input.<inputId>`, and a recording mapper is not shown top-level fields, so
+  a mapper that links an entry to a later event reads `metadata.eventId` and
+  `metadata.sourceId`.
 - `client.state_update` and `client.snapshot` become `observation`
   timeline entries.
 - `client.start_recording` is accepted only when the approving operator has an

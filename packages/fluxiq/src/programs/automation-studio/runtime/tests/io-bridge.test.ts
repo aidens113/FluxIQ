@@ -57,6 +57,57 @@ describe("Automation Studio IO bridge", () => {
     expect(updated.timeline.map((entry) => entry.metadata?.policyEligible)).toEqual([false, false]);
   });
 
+  it("keeps the recorded event's id and source on action and observation entries alike, and nothing else of the envelope's metadata", async () => {
+    const { recorder, recordingId } = await identityRecorder("recording.identity");
+
+    await recorder.recordInput(recordingId, "primary-pressed", createEnvelope({
+      ioId: "primary-pressed",
+      payload: { elementId: "confirm" },
+      metadata: { eventId: "web.7.1007", sourceId: "tab:7:frame:0", clientGatewayMessageId: "message.1", note: "not identity" }
+    }));
+    const updated = await recorder.recordInput(recordingId, "current-state", createEnvelope({ ioId: "current-state", payload: { ready: true }, metadata: { eventId: "state.1", sourceId: "tab:7" } }));
+
+    const [action, observation] = updated.timeline;
+    expect(action?.type).toBe("action");
+    expect(action?.metadata).toEqual({
+      domainId: "example",
+      inputId: "primary-pressed",
+      inputRole: "action",
+      envelopeId: expect.any(String),
+      eventId: "web.7.1007",
+      sourceId: "tab:7:frame:0",
+      policyEligible: true
+    });
+    expect(observation?.type).toBe("observation");
+    expect(observation?.metadata).toMatchObject({ eventId: "state.1", sourceId: "tab:7" });
+  });
+
+  it("gives an entry no event id when its envelope carries none", async () => {
+    const { recorder, recordingId } = await identityRecorder("recording.no-event-id");
+
+    await recorder.recordInput(recordingId, "primary-pressed", createEnvelope({ ioId: "primary-pressed", payload: { elementId: "confirm" }, metadata: { sourceId: "tab:7:frame:0" } }));
+    const updated = await recorder.recordInput(recordingId, "current-state", createEnvelope({ ioId: "current-state", payload: { ready: true } }));
+
+    const [action, observation] = updated.timeline;
+    expect(action?.metadata).toMatchObject({ sourceId: "tab:7:frame:0" });
+    expect(action?.metadata).not.toHaveProperty("eventId");
+    expect(observation?.metadata).not.toHaveProperty("eventId");
+    expect(observation?.metadata).not.toHaveProperty("sourceId");
+  });
+
+  it("copies an envelope's event id and source only as non-blank strings", async () => {
+    const { recorder, recordingId } = await identityRecorder("recording.non-string-identity");
+
+    await recorder.recordInput(recordingId, "primary-pressed", createEnvelope({ ioId: "primary-pressed", payload: { elementId: "confirm" }, metadata: { eventId: 1007, sourceId: { tabId: 7 } } }));
+    const updated = await recorder.recordInput(recordingId, "current-state", createEnvelope({ ioId: "current-state", payload: { ready: true }, metadata: { eventId: " ", sourceId: null } }));
+
+    for (const entry of updated.timeline) {
+      expect(entry.metadata).not.toHaveProperty("eventId");
+      expect(entry.metadata).not.toHaveProperty("sourceId");
+    }
+    expect(updated.timeline.map((entry) => entry.type)).toEqual(["action", "observation"]);
+  });
+
   it("dispatches only registered output nodes during policy runtime", async () => {
     const io = configuredIo();
     const flow = {
@@ -252,6 +303,14 @@ describe("Automation Studio IO bridge", () => {
     }
   });
 });
+
+async function identityRecorder(recordingId: string) {
+  const io = configuredIo();
+  io.registerInput("example", defineInput({ definition: { id: "current-state", title: "Current state", role: "state" }, mode: "stream" }));
+  const service = new AutomationStudioService({ seedFixture: false });
+  await service.createRecording({ recordingId, initialState: { timestamp: 1, namespaces: {} } });
+  return { recorder: new AutomationStudioIoRecorder({ automationStudio: service, io, domainId: "example" }), recordingId };
+}
 
 function configuredIo(): IoRegistry {
   const io = new IoRegistry();

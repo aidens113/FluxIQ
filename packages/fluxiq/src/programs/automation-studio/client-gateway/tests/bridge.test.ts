@@ -64,6 +64,28 @@ describe("AutomationStudioClientGatewayBridge", () => {
     }]);
   });
 
+  it("keeps a recorded click's event id and source on its action entry, and gives it no event id the event did not carry", async () => {
+    const gateway = new ClientGatewayService();
+    const automationStudio = new AutomationStudioService({ seedFixture: false });
+    const bridge = new AutomationStudioClientGatewayBridge({ gateway, automationStudio, io: lateEventIoRegistry() });
+    const session = await pairedSession(gateway, "extension.identity");
+    const recording = await bridge.startRecording({ sessionId: session.sessionId, domainId: "extension.example" });
+    const click = { domainId: "extension.example", eventType: "dom.click", payload: { elementId: "confirm" } };
+
+    await gateway.receive(session.sessionId, clientMessage("client.recording_event", { ...click, eventId: "web.7.1007", sourceId: "tab:7:frame:0", metadata: { inputId: "element-pressed" } }));
+    await gateway.receive(session.sessionId, clientMessage("client.recording_event", { ...click, sourceId: "tab:7:frame:0", metadata: { inputId: "element-pressed" } }));
+    // An id only in the client's own metadata is not the event's id.
+    await gateway.receive(session.sessionId, clientMessage("client.recording_event", { ...click, metadata: { inputId: "element-pressed", eventId: "web.1.1" } }));
+
+    const actions = (await automationStudio.getRecordingSession(recording.recordingId)).timeline.filter((entry) => entry.type === "action");
+    expect(actions).toHaveLength(3);
+    expect(actions[0]?.metadata).toMatchObject({ eventId: "web.7.1007", sourceId: "tab:7:frame:0" });
+    expect(actions[1]?.metadata).toMatchObject({ sourceId: "tab:7:frame:0" });
+    expect(actions[1]?.metadata).not.toHaveProperty("eventId");
+    expect(actions[2]?.metadata).toMatchObject({ sourceId: "client.extension.identity.events" });
+    expect(actions[2]?.metadata).not.toHaveProperty("eventId");
+  });
+
   it("stores remote client evidence in Automation Studio recordings", async () => {
     const gateway = new ClientGatewayService();
     const automationStudio = new AutomationStudioService({ seedFixture: false });

@@ -25,7 +25,8 @@ export class AutomationStudioIoRecorder {
       domainId: this.options.domainId,
       inputId: input.definition.id,
       inputRole: role,
-      envelopeId: event.id
+      envelopeId: event.id,
+      ...recordedEventIdentity(event.metadata)
     };
 
     if (role === "action") {
@@ -62,6 +63,18 @@ export class AutomationStudioIoRecorder {
       }
     });
   }
+}
+
+// Which recorded event an entry came from, so a recording mapper can tell one
+// event from another: the envelope's `eventId` and `sourceId`, each kept verbatim
+// and only as a non-blank string. Nothing else in the envelope's metadata is copied.
+function recordedEventIdentity(metadata: JsonObject | undefined): JsonObject {
+  const identity: JsonObject = {};
+  for (const key of ["eventId", "sourceId"]) {
+    const value = metadata?.[key];
+    if (typeof value === "string" && value.trim()) identity[key] = value;
+  }
+  return identity;
 }
 
 function asJsonObject(value: unknown): JsonObject {

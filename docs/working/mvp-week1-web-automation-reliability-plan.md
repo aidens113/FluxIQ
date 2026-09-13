@@ -580,6 +580,41 @@ The completed Week 1 Core briefs are archived verbatim at
   the acknowledgement; `pnpm build`; root `pnpm test`; the Lab.
 - Outcome: Accepted
 
+### 2026-09-13 — A recorded entry keeps the event it came from
+
+- Agent: downstream worker `g-core-action-entry-identity`
+  (`reports/g-core-action-entry-identity.md` in the downstream plan); verified by
+  the downstream supervisor.
+- Changed:
+  - `client-gateway/bridge.ts`, one line (still 796 lines): a recording event that
+    becomes a recorded input passes its own top-level `eventId` in the envelope
+    metadata, in place of any `eventId` in the client's metadata.
+  - `runtime/io-bridge.ts`: an action entry and an `input.<role>` observation copy
+    the envelope's `eventId` and `sourceId` onto their metadata, each only as a
+    non-blank string, and nothing else.
+  - Their tests, and `docs/architecture/automation-studio/client-gateway.md`.
+- Why: the downstream W19 fix links a recorded click to the page it landed on by
+  the click's event id. A click recorded through an IO input became an `action`
+  entry with no event id, sequence or source, so no mapper could tell which click
+  a landing named.
+- Compatibility: additive entry metadata keys, with no contract or wire change. A
+  `sourceId` in the client's own metadata takes precedence over the bridge's and
+  is now stored on the entry, so it is client-declared, not verified.
+- Found: a landing's own `sourceId` stays a top-level entry field that mappers
+  are not shown, so a tab-based match without an event id still cannot work.
+- Validation: supervisor read the diff. From `packages/fluxiq`:
+  - `npx vitest run .../runtime/tests/io-bridge.test.ts
+    .../client-gateway/tests/bridge.test.ts --no-file-parallelism` ->
+    `Test Files 2 passed (2)`, `Tests 33 passed (33)`;
+  - `bridge.ts` is still 796 lines;
+  - `pnpm check` -> exit 0, `structure-audit: passed (121 warning(s), 256
+    baselined)`, all four packages `check: Done`;
+  - `pnpm docs:check` -> exit 0.
+  - Worker: seven mutations each failed named rows; restored with identical
+    SHA-256.
+- Not verified: `pnpm build`; root `pnpm test`; the Lab.
+- Outcome: Accepted
+
 ## Open Questions
 
 - **A client's declared identity is not authenticated, so nothing that gates on
