@@ -83,7 +83,7 @@ exercises a layout-v1 to layout-v2 migration, type-checks without workspace
 paths, and browser-bundles the WebSocket client while checking its dependency
 graph. CI repeats the checks on Node 22 for Windows and Linux.
 
-`@fluxiq/contracts` is at version `0.2.0` and `fluxiq` at `0.3.0`;
+`@fluxiq/contracts` is at version `0.2.0` and `fluxiq` at `0.4.0`;
 `@fluxiq/client-gateway-websocket` is at `0.1.0`. Before 1.0, compatible
 changes increment the patch version and intentional API breaks increment the
 minor version with a note under [Migration Notes](#migration-notes).
@@ -101,8 +101,60 @@ commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
 
-### Unreleased: the element-target trace claims only what Core applied (`fluxiq`)
+### 0.4.0: failed expectations fail, client recordings start in order, and traces claim only what Core applied (`fluxiq`)
 
+No type or export was removed, but several behaviours change without any host
+opt-in. Read the whole entry if a host:
+- binds an expectation evaluator;
+- reads persisted traces or target resolutions;
+- runs its own client-gateway client;
+- or writes a recording mapper.
+
+**A rejected expected state fails the attempt.** Some nodes other than
+`builtin.policy.expectation` succeed while carrying an `expectedState` with at
+least one key. For those, the transition comparison asks a bound
+`expectationEvaluator`, and a rejection now fails the attempt:
+- its status and route become `failed`, and its message is the host's;
+- its failure record is the host's when that record parses, and otherwise
+  `expected_state_missing` with code `core.policy.expectation_rejected`.
+
+So the next node is not dispatched unless a failed-route edge or the recovery
+ladder leads there. Some cases are unchanged: a host that binds no evaluator, an
+evaluator that throws, and an empty `expectedState`. Nothing in Core honours a
+node's `failureRoute` yet.
+
+**Recording mappers see what followed, and can claim a state.** Both additions
+are additive.
+- A mapper's context gains `following`, the next 32 timeline observations. Code
+  that calls a mapper implementation directly must pass it.
+- A candidate may carry `expectedState`. Core keeps it only as a plain object
+  with at least one key, and writes it into the approved Flow node's
+  `parameterValues.expectedState`. Approving a proposal into a node definition
+  does not carry it.
+
+**A client-started recording is ordered with what follows it, and
+acknowledged.**
+- **Ordering.** The client-gateway bridge holds every later message from a
+  client until that client's `client.start_recording` has been handled.
+- **Acknowledgement.** Once the recording is open, the bridge sends the client
+  `server.start_recording` for it, unless a `client.stop_recording` for that
+  recording has already arrived. A client that treats `server.start_recording`
+  only as a start FluxIQ requested must now ignore one for a recording it
+  already has.
+- **Late messages.** A message arriving after Stop finalized its recording no
+  longer fails the connection. It is discarded with a
+  `recording.action_discarded` or `recording.event_discarded` audit entry naming
+  the recording id the message carries. Dropped snapshots and state updates are
+  audited too.
+- **Entry metadata.** A recorded input's entry metadata gains `eventId` and
+  `sourceId`.
+
+**A value resolved out of state is withheld from the persisted trace.** A
+persisted trace reads `[withheld]` wherever a run resolved a value from state.
+A plan that nests a binding inside a literal-only parameter now fails validation
+with `bootstrap.invalid_state_binding`.
+
+**The element-target trace claims only what Core applied.**
 `AutomationNodeTargetResolution` is now a union discriminated by `status`. Its
 `unresolved_no_candidates` member carries `candidateCount: 0` and no
 `minimumConfidence`: with no runtime candidates Core scores nothing and enforces

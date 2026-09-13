@@ -615,6 +615,40 @@ The completed Week 1 Core briefs are archived verbatim at
 - Not verified: `pnpm build`; root `pnpm test`; the Lab.
 - Outcome: Accepted
 
+### 2026-09-13 — The session's behaviour changes released as fluxiq 0.4.0
+
+- Agent: downstream supervisor.
+- Changed: `packages/fluxiq/package.json` (0.3.0 -> **0.4.0**), and
+  `docs/architecture/package-boundaries.md`.
+  - The page's version line now reads `0.4.0`.
+  - Its "Unreleased" Migration Notes entry is retitled `0.4.0` and gains a
+    paragraph for each other behaviour change since `0.3.0`:
+    - a rejected expected state fails the attempt (`6f172b9`);
+    - a mapper's `following` and a candidate's `expectedState` (`c0e0ce9`,
+      `5ca9981`);
+    - a client-started recording ordered with what follows it and acknowledged,
+      late messages discarded and audited, and entry `eventId` and `sourceId`
+      (`267a2ca`, `73a81e9`, `187f40d`);
+    - a value resolved out of state withheld from the persisted trace
+      (`5d495eb`).
+  - The target-gate paragraphs (`0e6d3ac`) stay verbatim under their own
+    lead-in.
+- Why: `6f172b9` and `73a81e9` change what a host observes with no opt-in, and
+  `0e6d3ac` narrows a published type. That makes this a minor increment with a
+  migration note, as the version rule on that page requires.
+  `@fluxiq/contracts` and `@fluxiq/client-gateway-websocket` keep their versions:
+  `git diff --stat origin/dev..HEAD` over both is empty.
+- Validation: supervisor ran `pnpm docs:check` -> exit 0, "Validated local links in
+  101 authored/reference Markdown files.", "Deterministic framework reference is
+  current."; `node scripts/structure-audit.mjs` -> `passed (121 warning(s), 256
+  baselined)`.
+- Not verified:
+  - `pnpm package:lint` and `pnpm build` on the release tree. Both are deferred
+    until downstream Lab Stage 2 finishes, because the lint packs tarballs and
+    installs clean consumers, which would load a machine running a load test.
+  - Root `pnpm test`.
+- Outcome: Accepted
+
 ## Open Questions
 
 - **A client's declared identity is not authenticated, so nothing that gates on
