@@ -41,7 +41,8 @@ export function recordingMapperCalls(timeline: RecordingSession["timeline"], rec
 /**
  * Checks one mapper candidate against the bound IO registry and gives it the
  * shape a proposal stores. Its `expectedState` is kept, as a clone, only when it
- * is a plain object; anything else is dropped and the action is still proposed.
+ * is a plain object with at least one key; anything else is dropped and the
+ * action is still proposed.
  */
 export function recordingFlowActionCandidate(io: IoRegistry, input: { candidate: AutomationStudioRecordingMapperCandidate; actionEntryId: string; sourceEntryId: string; recordingId: string; domainId: string; stateLink?: RecordingFlowActionCandidate["stateLink"]; mapperOutputIds?: string[] }): RecordingFlowActionCandidate {
   const outputId = input.candidate.outputId?.trim();
@@ -144,15 +145,19 @@ export function recordingCandidateStateLinkMetadata(candidate: RecordingFlowActi
 // A mapper runs in-process and can hand Core anything. Only a plain object is an
 // expected state. It is cloned, so the proposal holds nothing the mapper can
 // still change, and one that cannot be cloned is dropped like any other value.
+// A clone with no keys names nothing for the host to check, so it counts as none;
+// the keys are counted on the clone, because the clone is what would be stored.
 function liftedExpectedState(value: unknown): JsonObject | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const prototype: unknown = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) return undefined;
+  let lifted: JsonObject;
   try {
-    return structuredClone(value) as JsonObject;
+    lifted = structuredClone(value) as JsonObject;
   } catch {
     return undefined;
   }
+  return Object.keys(lifted).length > 0 ? lifted : undefined;
 }
 
 function normalizeRecordingCandidateElementTargetParameters(parameters: JsonObject): JsonObject {

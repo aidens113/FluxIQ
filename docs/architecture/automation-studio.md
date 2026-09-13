@@ -423,8 +423,9 @@ timeoutMs, context)` beside `captureStateSnapshot`, `inspectStateDiff`, and
 `rollbackHint`, and `bindHostRuntime` carries it into every graph run. The
 `builtin.policy.expectation` node awaits it and routes `failed` with an
 `expected_state_missing` failure when the host rejects. For any other node
-whose attempt succeeded and that carries `expectedState`, the transition
-comparison asks the host after the action, naming the snapshot the attempt
+whose attempt succeeded and that carries an `expectedState` with at least one
+key, the transition comparison asks the host after the action (an empty
+`expectedState` names nothing to check and counts as none), naming the snapshot the attempt
 ended on, and reports the conditions the host checked instead of counting
 expected-state keys. A rejection there fails the attempt: its status and route
 become `failed`, its message is the host's, and its `failure` is the host's

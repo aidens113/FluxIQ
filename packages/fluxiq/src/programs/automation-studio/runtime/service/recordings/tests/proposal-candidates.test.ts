@@ -75,6 +75,25 @@ function isClick(observation: AutomationStudioRecordingMapperObservation): boole
   return observation.payload.observationType === "clicked";
 }
 
+// Proposes one click for each value, handing that value as its expected state,
+// and approves the proposal into a Flow: every click is still proposed, and no
+// candidate and no node carries an expected state.
+async function expectEveryExpectedStateDropped(values: readonly unknown[], recordingId: string): Promise<void> {
+  let call = 0;
+  const { service, projectId } = await projectWithMappers({
+    "click-mapper": (observation) => isClick(observation) ? { outputId: "click", parameters: { target: `step-${call}` }, sourceInputIds: ["clicked"], confidence: 0.9, expectedState: values[call++] as JsonObject } : null
+  });
+  const recorded = await recordClicks(service, projectId, recordingId, values.length);
+  const { proposals: [proposal], issues } = await service.createRecordingFlowProposals({ projectId, recordingId: recorded });
+  expect(call).toBe(values.length);
+  expect(issues.filter((issue) => issue.includes("could not map"))).toEqual([]);
+  expect(proposal?.candidates).toHaveLength(values.length);
+  for (const candidate of proposal?.candidates ?? []) expect(candidate).not.toHaveProperty("expectedState");
+  const graph = await approvedGraph(service, projectId, proposal!.proposalId);
+  expect(graph.nodes).toHaveLength(values.length);
+  for (const node of graph.nodes) expect(node.parameterValues).not.toHaveProperty("expectedState");
+}
+
 describe("a recording mapper's expected state", () => {
   it("reaches the approved node's parameterValues as a clone of what the mapper proposed", async () => {
     const proposed: JsonObject = { conditions: [{ assert: { kind: "url", expected: "/account" } }], mode: "all", timeoutMs: 5000 };
@@ -95,20 +114,12 @@ describe("a recording mapper's expected state", () => {
   });
 
   it("is dropped, and the action still proposed, when it is not a plain object", async () => {
-    const values: unknown[] = [["not", "an", "object"], "url:/account", 42, true, null, new Date(0), new Map([["mode", "all"]]), { check: () => true }, undefined];
-    let call = 0;
-    const { service, projectId } = await projectWithMappers({
-      "click-mapper": (observation) => isClick(observation) ? { outputId: "click", parameters: { target: `step-${call}` }, sourceInputIds: ["clicked"], confidence: 0.9, expectedState: values[call++] as JsonObject } : null
-    });
-    const recordingId = await recordClicks(service, projectId, "recording.dropped-state", values.length);
-    const { proposals: [proposal], issues } = await service.createRecordingFlowProposals({ projectId, recordingId });
-    expect(call).toBe(values.length);
-    expect(issues.filter((issue) => issue.includes("could not map"))).toEqual([]);
-    expect(proposal?.candidates).toHaveLength(values.length);
-    for (const candidate of proposal?.candidates ?? []) expect(candidate).not.toHaveProperty("expectedState");
-    const graph = await approvedGraph(service, projectId, proposal!.proposalId);
-    expect(graph.nodes).toHaveLength(values.length);
-    for (const node of graph.nodes) expect(node.parameterValues).not.toHaveProperty("expectedState");
+    await expectEveryExpectedStateDropped([["not", "an", "object"], "url:/account", 42, true, null, new Date(0), new Map([["mode", "all"]]), { check: () => true }, undefined], "recording.dropped-state");
+  });
+
+  it("is dropped, and the action still proposed, when it has no keys", async () => {
+    // A symbol key is an own key, but it does not survive the clone a proposal holds.
+    await expectEveryExpectedStateDropped([{}, Object.create(null), { [Symbol("conditions")]: [{ assert: { kind: "url", expected: "/account" } }] }], "recording.empty-state");
   });
 });
 

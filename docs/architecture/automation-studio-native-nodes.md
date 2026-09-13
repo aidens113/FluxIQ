@@ -236,10 +236,10 @@ for that entry.
 
 A candidate may carry `expectedState`: what should hold after the action, in
 whatever condition shape the host's `expectationEvaluator` reads. Core keeps it
-only when it is a plain object, stores a clone on the proposal's
-`RecordingFlowActionCandidate`, and drops anything else (an array, a primitive,
-a class instance, or a value that cannot be cloned) while still proposing the
-action. Approving the proposal into a Flow writes it into the recorded action
+only when it is a plain object with at least one key, stores a clone on the
+proposal's `RecordingFlowActionCandidate`, and drops anything else (an array, a
+primitive, a class instance, an empty object, or a value that cannot be cloned)
+while still proposing the action. Approving the proposal into a Flow writes it into the recorded action
 node's `parameterValues.expectedState`, where the
 [transition comparison](automation-studio.md#llm-assisted-deterministic-automation)
 reads it: once the action succeeds, the host is asked whether the state holds,

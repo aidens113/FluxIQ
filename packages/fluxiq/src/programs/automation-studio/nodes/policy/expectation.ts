@@ -5,7 +5,13 @@ import { defineBuiltinNode } from "../shared/definition.ts";
 
 // Core cannot decide whether an expected state holds: only the host can see the
 // state. Without a bound evaluator the node keeps its unconditional pass.
-const EXPECTATION_REJECTED_FAILURE = Object.freeze({
+
+/**
+ * The failure record a rejected expected state carries when the host gave none
+ * of its own. The transition comparison fails an attempt with this same record,
+ * so a rejection reads the same whichever of the two asked the host.
+ */
+export const EXPECTATION_REJECTED_FAILURE = Object.freeze({
   category: "expected_state_missing",
   code: "core.policy.expectation_rejected",
   retryable: true,

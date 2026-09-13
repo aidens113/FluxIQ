@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES, type AutomationStudioAdaptiveFailureClass } from "@fluxiq/contracts/automation-studio";
-import type { AutomationStudioFlowNode } from "../../../model/index.ts";
-import { compareAutomationStudioTransition, type AutomationStudioNodeAttemptTrace, type AutomationStudioTransitionComparisonStatus } from "../index.ts";
+import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
+import { compareAutomationStudioTransition, runAutomationStudioGraph, type AutomationStudioNodeAttemptTrace, type AutomationStudioTransitionComparisonStatus } from "../index.ts";
 
 const node: AutomationStudioFlowNode = { id: "click", definitionId: "builtin.policy.action", parameterValues: {} };
 
@@ -76,6 +77,59 @@ describe("compareAutomationStudioTransition", () => {
     expect(compareAutomationStudioTransition(node, failedAttempt({ failure: failure("target_not_found"), message: "No element matched #save." })).message).toBe("No element matched #save.");
   });
 });
+
+describe("the host check after a succeeded action", () => {
+  it("does not ask the host about an expected state with no keys, and the run goes on", async () => {
+    // The host rejects whatever it is asked. A one-key state shows it is bound
+    // and asked, so the empty state going unasked is not a vacuous pass.
+    const keyed = await runWithRejectingHost({ conditions: [{ path: "cart.items" }] });
+    expect(keyed.asked).toHaveLength(1);
+    expect(keyed.trace.attempts[0]?.status).toBe("failed");
+
+    const empty = await runWithRejectingHost({});
+    expect(empty.asked).toEqual([]);
+    expect(empty.trace.status).toBe("succeeded");
+    expect(empty.trace.attempts[0]).toMatchObject({ status: "succeeded", route: "success" });
+    expect(empty.trace.attempts[0]).not.toHaveProperty("failure");
+    expect(empty.trace.attempts[0]?.transitionComparison).toMatchObject({ status: "matched", diffSummary: { stateCheckCount: 0 } });
+    expect(empty.dispatched).toEqual(["activate-element", "read-cart"]);
+  });
+});
+
+// A click carrying `expectedState`, then a second output on `success`, run
+// against a host whose evaluator rejects whatever it is asked.
+async function runWithRejectingHost(expectedState: JsonObject) {
+  const asked: unknown[] = [];
+  const dispatched: unknown[] = [];
+  const flow: AutomationStudioFlowDocument = {
+    schemaVersion: "0.1",
+    flowId: "flow.host-check",
+    ownerKind: "task",
+    ownerId: "task.host-check",
+    name: "Host check",
+    createdAt: 1,
+    updatedAt: 1,
+    nodes: [
+      { id: "click", definitionId: "builtin.policy.action", parameterValues: { outputId: "activate-element", expectedState } },
+      { id: "after", definitionId: "builtin.policy.action", parameterValues: { outputId: "read-cart" } }
+    ],
+    edges: [{ id: "edge.click.after", sourceNodeId: "click", targetNodeId: "after", sourcePortId: "success" }]
+  };
+  const trace = await runAutomationStudioGraph(flow, {
+    effectDispatcher: (effect) => {
+      dispatched.push((effect.payload as { outputId?: unknown } | undefined)?.outputId);
+      return { status: "success", route: "success", outputs: { ok: true } };
+    },
+    hostRuntime: {
+      capabilities: ["expectation-evaluation"],
+      expectationEvaluator: (...args) => {
+        asked.push(args);
+        return { passed: false, message: "The host rejected the state." };
+      }
+    }
+  });
+  return { trace, asked, dispatched };
+}
 
 function compare(attempt: AutomationStudioNodeAttemptTrace): AutomationStudioTransitionComparisonStatus {
   return compareAutomationStudioTransition(node, attempt).status;
