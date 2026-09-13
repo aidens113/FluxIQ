@@ -90,6 +90,37 @@ State mode the same field is represented as
 implementation still receives only the resolved string at
 `context.parameters.message`.
 
+### Bindings below the top level
+
+A binding is resolved wherever it sits in a parameter value, not only at the
+top of `parameterValues`. A node that carries a payload puts every one of its
+real values one level down — `builtin.policy.action` holds the selected
+output's arguments in its `parameters` object, and a recording-derived node is
+materialized that way — so a binding at `parameters.text` is resolved exactly
+as one at `text` is. The rules that make this safe:
+
+- **The fail-closed rule holds at depth.** An unresolved path with no fallback
+  is reported in `missingPaths` and the key is left out of the object that
+  held it, so the node fails naming the path instead of dispatching with a
+  value it never obtained. Every unresolved binding is reported, so a path
+  bound twice appears twice.
+- **Positions in an array are preserved.** Bindings inside array elements are
+  resolved, but an unresolved element keeps its place rather than renumbering
+  the elements after it; the node fails on the reported path regardless.
+- **A resolved value is never walked again.** What state supplies is a value,
+  so data that happens to be binding-shaped cannot name a further path to
+  read.
+- **A subtree that resolved nothing is handed back unchanged**, by identity,
+  so resolution never rewrites a payload it did not change.
+- **Descent is bounded** at 16 levels, with a cycle guard, so a pathological
+  or self-referential value costs bounded time. A binding deeper than the
+  bound is left as it is rather than resolved.
+
+`allowStateBinding: false` is validated against the top level of a node's
+parameters only. A literal-only parameter whose value is an object is
+therefore not protected from a binding nested inside it; declare literal-only
+fields as scalars where that matters.
+
 ## Output safety
 
 Importer action nodes must declare a fixed or enumerated `outputAction`

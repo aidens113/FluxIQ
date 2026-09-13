@@ -189,9 +189,15 @@ values), test placement (a test file must sit directly in a `tests/` or
 `e2e/` directory), path depth (8 segments), banned names, shared-prefix
 groups of three or more files, imports that reach past a directory's barrel,
 imports that cross a declared boundary, and the working-document header,
-`Current State`, size, and index rules. Existing violations are frozen per
-rule in `.structure-baseline.json`; an entry may shrink but never grow, and
-a new violation fails outright. Run `pnpm structure:baseline` after removing
+`Current State`, size, and index rules. Beyond placement it also holds
+`contract-spread`: in a path configured as building values for an external
+wire contract, no property may arrive through a spread, because TypeScript
+runs no excess-property check on one and a renamed contract field then leaves
+the wire with every gate green. The configured paths are
+`contractSpreadPaths` in `scripts/structure-audit/config.mjs` — empty here,
+populated in the downstream web-extension repository. Existing violations are
+frozen per rule in `.structure-baseline.json`; an entry may shrink but never
+grow, and a new violation fails outright. Run `pnpm structure:baseline` after removing
 one, and `pnpm structure:check --rule <id>` to run a single rule (`--list`
 names them). What the audit cannot check — placement judgement,
 extract-and-drop, whether a split was the right cut — remains a review

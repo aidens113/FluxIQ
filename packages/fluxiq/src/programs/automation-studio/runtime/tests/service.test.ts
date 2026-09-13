@@ -247,7 +247,7 @@ describe("AutomationStudioService recording persistence", () => {
     const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.mapped", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
     await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: { inputId: "clicked" } } });
     const { proposals: [proposal], issues } = await service.createRecordingFlowProposals({ projectId: project.id, recordingId: recording.recordingId });
-    expect(issues).toEqual([]);
+    expect(issues).toEqual([expect.stringContaining("recording.mapped has not been finalized")]);
     expect(mapperSawElementMatcher).toBe(true);
     expect(proposal?.candidates[0]).toMatchObject({ actionEntryId: proposal?.candidates[0]?.sourceObservationIds[0], outputId: "click", sourceInputIds: ["clicked"], policyStateEligible: false, expectedConfirmation: { inputId: "clicked" } });
     expect(proposal?.candidates[0]?.evidence).toEqual([{ layer: "recording", artifactId: recording.recordingId, entryId: proposal?.candidates[0]?.sourceObservationIds[0] }]);
@@ -2111,7 +2111,7 @@ describe("AutomationStudioService recording persistence", () => {
     const result = await service.createRecordingFlowProposals({ projectId: project.id, recordingId: recording.recordingId });
 
     expect(result.proposals).toEqual([]);
-    expect(result.issues[0]).toContain("saw 1 entries (observation: 1), matched 0, emitted 0 raw candidates");
+    expect(result.issues.join(" ")).toContain("saw 1 entries (observation: 1), matched 0, emitted 0 raw candidates");
   });
 
   it("stores project recordings and normalized timelines in project folders", async () => {

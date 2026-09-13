@@ -35,6 +35,20 @@ context. Generated policy nodes then surface pre-action evidence as
 eligibility/readiness signals and post-action evidence as success expectations.
 Recording mapper action inputs are preserved as action evidence and are not
 promoted into policy state.
+
+A recording is complete only once it is finalized: until `endedAt` is stamped
+the timeline can still grow, and appends are refused afterwards.
+`process-finalized-recording` refuses an open recording outright.
+`create-recording-flow-proposals` still accepts one, because a caller may
+legitimately want a preview of a recording in progress, but it no longer
+returns silently. The result carries an issue naming the recording and the
+number of entries it was built from, and the stored proposal is stamped with
+`metadata.recordingOpenAtGeneration` and
+`metadata.recordingEntryCountAtGeneration`, so the caveat outlives the
+response. A proposal built this way is not merely short — it looks finished, so
+a reviewer can approve a Flow missing whatever the recorder had not yet
+delivered. Neither field appears for a finalized recording.
+
 ### Deterministic recording-derived Subflows
 
 The Recording Timeline exposes a direct **Generate Subflow** operation for a

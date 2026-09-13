@@ -43,9 +43,15 @@ The bridge converts client messages into canonical Studio artifacts:
 - `client.start_recording` is accepted only when the approving operator has an
   active Automation Studio project context. Context is isolated by operator
   and can be overridden for a specific client. The web runtime publishes that
-  context while a project is open. If no matching project is open, the gateway sends
+  context while a project is open — on load, on a project or flow change, on
+  focus, and on every visibility change, never on a timer — and clears it when
+  the page closes. If no matching project is open, the gateway sends
   `server.error` with `recording.project_required` and the web panel surfaces a
-  modal instead of silently dropping the client request.
+  modal instead of silently dropping the client request. The same code answers a
+  context older than `AUTOMATION_STUDIO_CONTEXT_LEASE_MS`, which bounds a Studio
+  page that vanished without clearing its context rather than expiring the
+  operator's decision; `activeProjectId` in the refusal metadata separates a
+  lapsed context from no project at all.
 - `server.execute_action` waits for `client.action_result`; resolved action
   results are appended as `action` timeline entries when a client recording is
   active. A result may carry a structured `failure` record. The runtime
@@ -72,6 +78,36 @@ drain window before finalization. This gives websocket clients time to send
 their final action-adjacent screenshots or state observations after receiving
 `server.stop_recording`, so the finalized recording timeline is complete when
 the user later opens the Proposal Generator.
+
+Once a recording is finalized it is immutable, so a message that arrives after
+that cannot be kept. The bridge does not discard one in silence. Every
+discarded `client.recording_event` and `client.recording_entry` is counted
+against the recording it was meant for and written to the gateway audit log,
+which the Connected Clients view already surfaces:
+
+- `recording.action_discarded` is recorded for *every* discarded message that
+  would have become an executable action entry. Each one is a piece of the
+  user's work the client believes it recorded and Core does not have.
+- `recording.event_discarded` is recorded *once* per closed recording for
+  discarded evidence. A page unloading after Stop legitimately emits a trail of
+  observations, and an entry per event would teach the reader to ignore all of
+  them. Later evidence discards are counted instead, and the running
+  `discardedEvents` and `discardedActions` totals ride on the metadata of the
+  next entry written for that recording.
+
+Both entries carry the recording ID, the project, the event type, the input ID,
+and how long after finalization the message arrived. Nothing is sent back to
+the client. `server.error` is the only wire frame the gateway has for this, and
+a client is entitled to read one as a failed connection, so telling a recorder
+that its action was lost needs a protocol addition rather than a reused error
+code.
+
+There is no push notification that a recording has been finalized. A consumer
+that must not read a recording before it is closed polls `get-recording` or
+`list-recordings` for `endedAt`. Finalization is the last write the bridge
+makes — it runs after the post-stop drain and after the queued appends are
+flushed — and appends are refused once it has happened, so a recording that
+reports `endedAt` is complete and will not change.
 
 While a recording is active, Core updates in-memory state and cheap recording
 index counts instead of rewriting the full screenshot-heavy recording document

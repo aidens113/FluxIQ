@@ -57,6 +57,7 @@ export class ClientGatewayService {
   private readonly lifecycle: ClientGatewayLifecycle;
   private readonly inbound: ClientGatewayInbound;
   private readonly commands: ClientGatewayCommands;
+  private readonly audit: ClientGatewayAuditLog;
 
   constructor(options: ClientGatewayServiceOptions = {}) {
     const config = resolveClientGatewayConfig(options);
@@ -78,6 +79,7 @@ export class ClientGatewayService {
     const commands = new ClientGatewayCommands({ config, sessions, transport, audit });
 
     this.trustedClients = trustedClients;
+    this.audit = audit;
     this.transport = transport;
     this.events = events;
     this.pairingFlow = pairingFlow;
@@ -177,6 +179,21 @@ export class ClientGatewayService {
 
   markActiveRecording(sessionId: string, input: { recordingId: string; projectId?: string | null }): void {
     this.commands.markActiveRecording(sessionId, input);
+  }
+
+  /**
+   * Records an operational gateway event for the operator without telling the
+   * client anything. `sendError` is the only other way into the audit log, and
+   * it also puts `server.error` on the wire, which a client is entitled to read
+   * as a failed connection. Use this for something the operator has to be able
+   * to see and the client can do nothing about — a message that arrived too
+   * late to be kept, for instance.
+   */
+  recordAuditEvent(input: { type: string; message: string; sessionId?: string; metadata?: JsonObject }): void {
+    this.audit.record(input.type, input.message, {
+      ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
+      ...(input.metadata ?? {})
+    });
   }
 
   outbound(sessionId: string): ClientGatewayServerMessage[] {

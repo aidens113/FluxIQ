@@ -9,6 +9,18 @@ import {
 } from "../../recordings/commands";
 import { registerAutomationStudioDevelopmentSubscription } from "../../development/telemetry";
 import type { AutomationLiveCommandScopeController } from "../command-scope";
+import { observeAutomationStudioGatewayContext } from "../gateway-context-publication";
+
+const AUTOMATION_STUDIO_CONTEXT_ENDPOINT = "/api/client-gateway/automation-studio-context";
+
+function sendAutomationStudioContextBeacon(payload: string): boolean {
+  if (typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") return false;
+  try {
+    return navigator.sendBeacon(AUTOMATION_STUDIO_CONTEXT_ENDPOINT, new Blob([payload], { type: "application/json" }));
+  } catch {
+    return false;
+  }
+}
 
 export function useAutomationGatewayRecordingBridge(input: {
   projectId: string | null;
@@ -27,24 +39,33 @@ export function useAutomationGatewayRecordingBridge(input: {
 
   useEffect(() => {
     const unregister = registerAutomationStudioDevelopmentSubscription({ id: "project-context", kind: "event" });
-    const publishContext = async (activeProjectId: string | null, activeFlowId: string | null) => {
-      await fetch("/api/client-gateway/automation-studio-context", {
+    const body = (activeProjectId: string | null, activeFlowId: string | null) => JSON.stringify({ activeProjectId, activeFlowId });
+    const post = (payload: string) => {
+      void fetch(AUTOMATION_STUDIO_CONTEXT_ENDPOINT, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ activeProjectId, activeFlowId })
+        body: payload
       }).catch(() => undefined);
     };
-    const publishVisibleContext = () => {
-      if (document.visibilityState === "visible") void publishContext(callbacksRef.current.projectId, callbacksRef.current.flowId);
-    };
-    void publishContext(input.projectId, input.flowId);
-    window.addEventListener("focus", publishVisibleContext);
-    document.addEventListener("visibilitychange", publishVisibleContext);
+    const stopObserving = observeAutomationStudioGatewayContext({
+      window,
+      document,
+      publisher: {
+        publish: () => post(body(callbacksRef.current.projectId, callbacksRef.current.flowId)),
+        revoke: (mode) => {
+          const payload = body(null, null);
+          // A page being torn down can lose a fetch before it leaves; a beacon
+          // is handed to the browser to deliver on its own. Without it the
+          // clean-close path would rely on the lease expiring, and the lease is
+          // long precisely because a clean close revokes.
+          if (mode === "beacon" && sendAutomationStudioContextBeacon(payload)) return;
+          post(payload);
+        }
+      }
+    });
     return () => {
       unregister();
-      window.removeEventListener("focus", publishVisibleContext);
-      document.removeEventListener("visibilitychange", publishVisibleContext);
-      void publishContext(null, null);
+      stopObserving();
     };
   }, [input.projectId, input.flowId]);
 

@@ -331,8 +331,11 @@ reducers.
 Recording over WebSocket is project-bound.
 
 1. The user opens Automation Studio in the web panel.
-2. If a project is open, the web panel heartbeats that active project to the
-   shared gateway runtime under the signed-in operator's identity.
+2. If a project is open, the web panel publishes that active project to the
+   shared gateway runtime under the signed-in operator's identity. It publishes
+   on load, on a project or flow change, on window focus, and on every
+   visibility change — including the change to hidden, which is the user
+   switching to the tab they mean to record. It does not publish on a timer.
 3. A paired client calls `createRecording(...)` on
    `FluxIQAutomationStudioWebSocketClient`, which sends `client.start_recording`.
 4. FluxIQ resolves an optional operator+client project override first and then
@@ -342,6 +345,21 @@ Recording over WebSocket is project-bound.
 5. If Automation Studio has no open project, FluxIQ rejects the request,
    sends `server.error` with code `recording.project_required`, and the web
    panel shows a modal telling the user to open a project first.
+
+A published context also carries a lease, `AUTOMATION_STUDIO_CONTEXT_LEASE_MS`
+in `apps/web/src/lib/automation-studio-context.ts`, currently five minutes. A
+request that arrives after it expires is refused with the same
+`recording.project_required` code. The lease bounds how long a Studio page that
+vanished without warning can keep directing recordings into the project it last
+held; it is not a limit on how long the operator's decision stays usable. A page
+that closes normally clears its context immediately, through
+`navigator.sendBeacon` so the clearing survives the teardown, so a lease only
+ever runs out for a browser that crashed, was killed, or lost its machine.
+
+The refusal separates the two cases in its metadata. `activeProjectId` is null
+when nobody has a project open, which no retry can fix. It names the project
+when the context merely lapsed, which the next publication does fix — returning
+to the Studio tab republishes on focus.
 
 ## Web Panel APIs
 

@@ -53,12 +53,41 @@ type RecordingAppendQueue = {
   flushing?: Promise<void> | undefined;
 };
 
+/**
+ * What became of the recording a client was last writing to, kept so a message
+ * that arrives after it closed can be attributed to it instead of vanishing.
+ * `recordingId` is absent when the client never had a recording here at all.
+ */
+type ClosedClientRecording = {
+  recordingId?: string;
+  projectId?: string | null;
+  domainId?: string | null;
+  finalizedAt?: number;
+  discardedEvents: number;
+  discardedActions: number;
+  reported: boolean;
+};
+
+/** What a discarded message was, as far as the bridge can tell without it. */
+type DiscardedClientMessage = {
+  kind: "recording event" | "recording entry";
+  label: string;
+  domainId?: string | null;
+  inputId?: string | undefined;
+  /** Set when the payload itself says this was an action, not evidence. */
+  executable?: boolean;
+};
+
+/** Owner keys remembered after their recording closed. One entry per client. */
+const CLOSED_RECORDING_MEMORY = 32;
+
 export class AutomationStudioClientGatewayBridge {
   private readonly gateway: ClientGatewayService;
   private readonly automationStudio: AutomationStudioService;
   private readonly stopDrainMs: number;
   private readonly activeRecordings = new Map<string, { projectId?: string | null; recordingId: string; domainId?: string | null }>();
   private readonly appendQueues = new Map<string, RecordingAppendQueue>();
+  private readonly closedRecordings = new Map<string, ClosedClientRecording>();
   private clientRecordingContextProvider: ClientRecordingContextProvider | undefined;
   private io: IoRegistry | undefined;
 
@@ -126,6 +155,7 @@ export class AutomationStudioClientGatewayBridge {
       metadata: { createdFrom: "client-gateway", sessionId: session.sessionId, clientId: session.clientId, clientName: session.name, ...(input.metadata ?? {}) }
     });
     this.activeRecordings.set(this.recordingOwnerKey(session), { ...(projectId !== undefined ? { projectId } : {}), recordingId, domainId });
+    this.closedRecordings.delete(this.recordingOwnerKey(session));
     await this.gateway.startRecording(session.sessionId, {
       recordingId,
       ...(projectId !== undefined ? { projectId } : {}),
@@ -145,6 +175,11 @@ export class AutomationStudioClientGatewayBridge {
     await this.flushRecordingEntries(ownerKey);
     const recording = await this.automationStudio.finalizeRecording({ ...(active.projectId !== undefined ? { projectId: active.projectId } : {}), recordingId: active.recordingId });
     this.activeRecordings.delete(ownerKey);
+    this.rememberClosedRecording(ownerKey, {
+      recordingId: active.recordingId,
+      ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
+      ...(active.domainId !== undefined ? { domainId: active.domainId } : {})
+    });
 
     return recording;
   }
@@ -167,7 +202,15 @@ export class AutomationStudioClientGatewayBridge {
     }
     if (event.type === "client.recording_entry") {
       const active = this.activeRecordings.get(this.recordingOwnerKey(event.session));
-      if (!active) return;
+      if (!active) {
+        const entry = event.message.payload.entry as { type?: unknown } | undefined;
+        this.noteDiscardedClientMessage(event.session, {
+          kind: "recording entry",
+          label: typeof entry?.type === "string" ? entry.type : "unknown",
+          executable: entry?.type === "action"
+        });
+        return;
+      }
       this.enqueueRecordingEntry(this.recordingOwnerKey(event.session), {
         ...(event.message.payload.projectId !== undefined ? { projectId: event.message.payload.projectId } : active?.projectId !== undefined ? { projectId: active.projectId } : {}),
         recordingId: event.message.payload.recordingId,
@@ -250,6 +293,7 @@ export class AutomationStudioClientGatewayBridge {
       metadata: compactJsonObject({ createdFrom: "client-gateway", sessionId: session.sessionId, clientId: session.clientId, clientName: session.name, ...(input.metadata ?? {}) })
     });
     this.activeRecordings.set(this.recordingOwnerKey(session), { projectId, recordingId: recording.recordingId, domainId });
+    this.closedRecordings.delete(this.recordingOwnerKey(session));
     this.gateway.markActiveRecording(session.sessionId, { recordingId: recording.recordingId, projectId });
     return recording;
   }
@@ -272,12 +316,28 @@ export class AutomationStudioClientGatewayBridge {
       ...(input.endedAt !== undefined ? { endedAt: input.endedAt } : {})
     });
     this.activeRecordings.delete(ownerKey);
+    this.rememberClosedRecording(ownerKey, {
+      recordingId: input.recordingId,
+      ...(projectId !== undefined ? { projectId } : {}),
+      ...(active?.domainId !== undefined ? { domainId: active.domainId } : {})
+    });
     return recording;
   }
 
   private async appendRecordingEvent(session: ClientGatewaySession, event: ClientGatewayRecordingEvent, messageId: string): Promise<void> {
     const active = this.activeRecordings.get(this.recordingOwnerKey(session));
-    if (!active) return;
+    // The recording this event belongs to has already been finalized, and a
+    // finalized recording is immutable. The event cannot be kept; the one thing
+    // that must not happen is for it to disappear without anyone being told.
+    if (!active) {
+      this.noteDiscardedClientMessage(session, {
+        kind: "recording event",
+        label: event.eventType,
+        ...(event.domainId !== undefined ? { domainId: event.domainId } : {}),
+        inputId: stringMetadataValue(event.metadata, "inputId")
+      });
+      return;
+    }
     const domainId = event.domainId ?? active.domainId ?? stringMetadataValue(event.metadata, "domainId");
     const inputId = stringMetadataValue(event.metadata, "inputId");
     if (domainId && inputId && await this.recordGatewayInput({
@@ -335,6 +395,73 @@ export class AutomationStudioClientGatewayBridge {
         ...(event.metadata !== undefined ? { clientMetadata: event.metadata } : {})
       })
     });
+  }
+
+  /**
+   * Remembers a recording the bridge has just finalized. Only the last one per
+   * client is kept, and only so a message arriving moments later can name the
+   * recording it was meant for.
+   */
+  private rememberClosedRecording(ownerKey: string, closed: { recordingId: string; projectId?: string | null; domainId?: string | null }): void {
+    this.closedRecordings.delete(ownerKey);
+    while (this.closedRecordings.size >= CLOSED_RECORDING_MEMORY) {
+      const oldest = this.closedRecordings.keys().next();
+      if (oldest.done) break;
+      this.closedRecordings.delete(oldest.value);
+    }
+    this.closedRecordings.set(ownerKey, { ...closed, finalizedAt: Date.now(), discardedEvents: 0, discardedActions: 0, reported: false });
+  }
+
+  /**
+   * Counts a client message the bridge had to throw away, and puts it in the
+   * gateway audit log where an operator can see it.
+   *
+   * Every discarded executable action is reported, because each one is a piece
+   * of the user's work that the client thinks was recorded and Core does not
+   * have. Evidence — snapshots, state, observations — is reported once per
+   * closed recording and counted thereafter: a page unloading after Stop
+   * legitimately emits a trail of it, and an entry per event would train the
+   * reader to ignore all of them.
+   */
+  private noteDiscardedClientMessage(session: ClientGatewaySession, discarded: DiscardedClientMessage): void {
+    const ownerKey = this.recordingOwnerKey(session);
+    const closed = this.closedRecordings.get(ownerKey) ?? { discardedEvents: 0, discardedActions: 0, reported: false };
+    this.closedRecordings.set(ownerKey, closed);
+    const executable = discarded.executable ?? this.isExecutableActionInput(discarded.domainId ?? closed.domainId, discarded.inputId);
+    closed.discardedEvents += 1;
+    if (executable) closed.discardedActions += 1;
+    if (closed.reported && !executable) return;
+    closed.reported = true;
+    const sinceFinalizedMs = closed.finalizedAt === undefined ? undefined : Math.max(0, Date.now() - closed.finalizedAt);
+    this.gateway.recordAuditEvent({
+      type: executable ? "recording.action_discarded" : "recording.event_discarded",
+      message: discardedClientMessageSummary(discarded, closed, executable, sinceFinalizedMs),
+      sessionId: session.sessionId,
+      metadata: compactJsonObject({
+        source: "automation-studio",
+        clientId: session.clientId,
+        clientName: session.name,
+        recordingId: closed.recordingId,
+        projectId: closed.projectId,
+        eventType: discarded.label,
+        inputId: discarded.inputId,
+        domainId: discarded.domainId ?? closed.domainId ?? undefined,
+        executable,
+        discardedEvents: closed.discardedEvents,
+        discardedActions: closed.discardedActions,
+        sinceFinalizedMs
+      })
+    });
+  }
+
+  /**
+   * Whether the discarded message would have become an executable action entry
+   * rather than evidence. An unregistered or unmapped input reads as evidence,
+   * so an unknown message is reported quietly rather than as lost work.
+   */
+  private isExecutableActionInput(domainId: string | null | undefined, inputId: string | undefined): boolean {
+    if (!domainId || !inputId) return false;
+    return (this.io?.getInput(domainId, inputId)?.definition.role ?? "state") === "action";
   }
 
   private async appendSnapshot(session: ClientGatewaySession, snapshot: ClientGatewaySnapshot, messageId: string): Promise<void> {
@@ -529,6 +656,19 @@ function emptyClientStateSnapshot(session: ClientGatewaySession): StateSnapshot 
       }
     }
   };
+}
+
+function discardedClientMessageSummary(
+  discarded: DiscardedClientMessage,
+  closed: ClosedClientRecording,
+  executable: boolean,
+  sinceFinalizedMs: number | undefined
+): string {
+  const what = executable ? `an executable action (${discarded.label})` : `a client ${discarded.kind} (${discarded.label})`;
+  if (!closed.recordingId) return `Discarded ${what} that arrived while this client had no recording open.`;
+  const when = sinceFinalizedMs === undefined ? "after" : `${sinceFinalizedMs} ms after`;
+  const lost = `Discarded ${what} that arrived ${when} recording ${closed.recordingId} was finalized.`;
+  return executable ? `${lost} The client believes it was recorded; the recording does not contain it.` : lost;
 }
 
 function compactJsonObject(value: Record<string, unknown>): JsonObject {

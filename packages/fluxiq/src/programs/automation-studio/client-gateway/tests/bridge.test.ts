@@ -307,6 +307,68 @@ describe("AutomationStudioClientGatewayBridge", () => {
     await expect(automationStudio.getRecordingSession("recording.blocked")).rejects.toThrow("Unknown Automation Studio recording");
   });
 
+it("reports a client action that arrives after its recording was finalized", async () => {
+    const gateway = new ClientGatewayService();
+    const automationStudio = new AutomationStudioService({ seedFixture: false });
+    const bridge = new AutomationStudioClientGatewayBridge({ gateway, automationStudio, io: lateEventIoRegistry(), stopDrainMs: 0 });
+    const session = gateway.connect();
+    await gateway.receive(session.sessionId, clientMessage("client.hello", { clientId: "extension.late", clientType: "extension", name: "Late extension" }));
+    await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "", { approvedByUserId: "user.test" });
+    const recording = await bridge.startRecording({ sessionId: session.sessionId, domainId: "extension.example" });
+    await bridge.stopRecording(session.sessionId);
+
+    await gateway.receive(session.sessionId, clientMessage("client.recording_event", {
+      domainId: "extension.example",
+      eventType: "dom.click",
+      payload: { elementId: "confirm" },
+      metadata: { inputId: "element-pressed" }
+    }));
+
+    expect((await automationStudio.getRecordingSession(recording.recordingId)).timeline).toHaveLength(0);
+    const discarded = gateway.snapshot().auditLog.filter((entry) => entry.type === "recording.action_discarded");
+    expect(discarded).toHaveLength(1);
+    expect(discarded[0]?.message).toContain(recording.recordingId);
+    expect(discarded[0]?.metadata).toMatchObject({
+      sessionId: session.sessionId,
+      recordingId: recording.recordingId,
+      eventType: "dom.click",
+      inputId: "element-pressed",
+      discardedEvents: 1,
+      discardedActions: 1
+    });
+  });
+
+  it("reports discarded evidence once but every discarded action", async () => {
+    const gateway = new ClientGatewayService();
+    const automationStudio = new AutomationStudioService({ seedFixture: false });
+    const bridge = new AutomationStudioClientGatewayBridge({ gateway, automationStudio, io: lateEventIoRegistry(), stopDrainMs: 0 });
+    const session = gateway.connect();
+    await gateway.receive(session.sessionId, clientMessage("client.hello", { clientId: "extension.trickle", clientType: "extension", name: "Trickle extension" }));
+    await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "", { approvedByUserId: "user.test" });
+    await bridge.startRecording({ sessionId: session.sessionId, recordingId: "recording.trickle", domainId: "extension.example" });
+    await bridge.stopRecording(session.sessionId);
+
+    for (let index = 0; index < 2; index += 1) {
+      await gateway.receive(session.sessionId, clientMessage("client.recording_event", {
+        domainId: "extension.example",
+        eventType: "dom.state",
+        payload: { ready: true },
+        metadata: { inputId: "page-state" }
+      }));
+    }
+    await gateway.receive(session.sessionId, clientMessage("client.recording_event", {
+      domainId: "extension.example",
+      eventType: "dom.click",
+      payload: { elementId: "confirm" },
+      metadata: { inputId: "element-pressed" }
+    }));
+
+    const discarded = gateway.snapshot().auditLog.filter((entry) => entry.type.startsWith("recording.") && entry.type.endsWith("_discarded"));
+    expect(discarded.map((entry) => entry.type)).toEqual(["recording.event_discarded", "recording.action_discarded"]);
+    expect(discarded[0]?.metadata).toMatchObject({ recordingId: "recording.trickle", discardedEvents: 1, discardedActions: 0 });
+    expect(discarded[1]?.metadata).toMatchObject({ recordingId: "recording.trickle", discardedEvents: 3, discardedActions: 1 });
+  });
+
   it("keeps in-process recording ownership across a trusted-client reconnect", async () => {
     const tokens = ["continuity-token", "continuity-rotated"];
     const gateway = new ClientGatewayService({ commandTimeoutMs: 1000, createToken: () => tokens.shift() ?? "unused" });
@@ -341,4 +403,25 @@ function clientMessage<TType extends ClientGatewayClientMessage["type"]>(
     timestamp: Date.now(),
     payload
   } as Extract<ClientGatewayClientMessage, { type: TType }>;
+}
+
+function lateEventIoRegistry(): IoRegistry {
+  const io = new IoRegistry();
+  io.register({
+    domainId: "extension.example",
+    inputs: [defineInput({
+      definition: { id: "element-pressed", title: "Element pressed", role: "action", outputId: "ui.activate" },
+      mode: "stream",
+      outputBinding: { outputId: "ui.activate", toPayload: (event) => ({ elementId: String((event.payload as { elementId: string }).elementId) }) }
+    }), defineInput({
+      definition: { id: "page-state", title: "Page state", role: "state" },
+      mode: "stream"
+    })],
+    outputs: [defineOutput({
+      definition: { id: "ui.activate", title: "Activate" },
+      mode: "request",
+      dispatch: (request) => ({ ok: true, outputId: request.outputId })
+    })]
+  });
+  return io;
 }

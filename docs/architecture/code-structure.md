@@ -203,6 +203,16 @@ The detailed procedure for each, with the current offenders, is in the
   folder. Tests go in the directory's `tests/` subfolder.
 - **Raising a baseline entry.** The baseline is a ratchet. If a baselined
   file must grow, split it instead.
+- **Spreading properties into a contract value.** `{ selector, ...(label ? {
+  label } : {}) }` compiles clean forever: TypeScript's excess-property check
+  runs on the keys a literal writes out, never on the keys a spread brings in,
+  so a renamed or deleted contract field silently stops arriving. Write every
+  field by name. Spreading a *named* value of the same type
+  (`{ ...snapshot, one: change }`) is copy-with-override and stays checked;
+  spreading a conditional, a call, or an inline literal is not. The
+  `contract-spread` rule enforces this in the paths a repository lists under
+  `contractSpreadPaths`, which is how a rule this local stays off the 1,400
+  ordinary spreads elsewhere.
 
 ## Worked Example — `automation-studio/storage/`
 

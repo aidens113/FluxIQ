@@ -222,7 +222,7 @@ import {
   AutomationStudioRecordingDeletion,
   type AutomationPipelineArtifacts,
   type ReplayResultArtifact,
-  recordingTimelineForProposalMapping,
+  recordingTimelineForProposalMapping, openRecordingProposalNotice,
   AutomationStudioProposalApproval,
   clampInteger,
   subflowSummaryFromSql,
@@ -2369,21 +2369,21 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const project = await this.projects.findProject(input.projectId);
     const recording = await this.getRecordingSession(input.recordingId, input.projectId);
     const domainId = recording.environment.domainId ?? project.domainId ?? null;
-    if (!domainId) return { proposals: [], issues: ["Recording Flow proposal generation requires a recording or project domainId."] };
+    if (!domainId) return { proposals: [], issues: [...openRecordingProposalNotice(recording).issues, "Recording Flow proposal generation requires a recording or project domainId."] };
     if (!this.nativeNodeRuntime) throw new Error("Recording proposal generation requires a bound importer runtime.");
     if (!this.ioRuntime) throw new Error("Recording proposal generation requires a bound IO registry.");
     const mappers = this.nativeNodeRuntime.listRecordingMappers(domainId).filter((item) => !input.mapperId || item.definition.id === input.mapperId);
     if (input.mapperId && !mappers.length) throw new Error(`Unknown recording mapper for ${domainId}: ${input.mapperId}`);
-    if (!mappers.length) return { proposals: [], issues: [`No recording mappers are registered for domain ${domainId}.`] };
+    if (!mappers.length) return { proposals: [], issues: [...openRecordingProposalNotice(recording).issues, `No recording mappers are registered for domain ${domainId}.`] };
     if (!input.force) {
       const mapperIds = new Set(mappers.map((mapper) => mapper.definition.id));
       const existing = (await this.readRecordingFlowProposals(project.id, false))
         .filter((proposal) => proposal.recordingId === recording.recordingId && proposal.status !== "invalidated" && mapperIds.has(proposal.mapper.id));
       const current = latestByGeneratedAt(existing);
-      if (current && recordingUpdatedAt(recording) <= current.generatedAt) return { proposals: existing, issues: [] };
+      if (current && recordingUpdatedAt(recording) <= current.generatedAt) return { proposals: existing, issues: openRecordingProposalNotice(recording).issues };
     }
     const proposals: RecordingFlowProposalArtifact[] = [];
-    const issues: string[] = [];
+    const issues: string[] = openRecordingProposalNotice(recording).issues;
     const entryCounts = countRecordingEntryTypes(recording.timeline);
     const mapperTimeline = recordingTimelineForProposalMapping(recording.timeline);
     const recordingStateIndex = await this.recordingDeletion.readRecordingStateIndex(project.id, recording.recordingId);
@@ -2456,7 +2456,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         candidates,
         generatedAt: now,
         updatedAt: now,
-        metadata: { rawEvidenceImmutable: true }
+        metadata: { rawEvidenceImmutable: true, ...openRecordingProposalNotice(recording).metadata }
       };
       await this.recordings.writePipelineArtifact(project.id, "recordingFlowProposals", proposal.proposalId, proposal as unknown as JsonObject);
       proposals.push(proposal);

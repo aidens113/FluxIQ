@@ -20,6 +20,7 @@ const connectedEntryRegistry = read("../view-host/connected-view-entries.tsx");
 const connectedRegions = read("../components/AutomationStudioConnectedRegions.tsx");
 const workspaceComposition = read("../components/AutomationStudioWorkspaceComposition.tsx");
 const gatewayBridge = read("../hooks/useGatewayRecordingBridge.ts");
+const contextPublication = read("../gateway-context-publication.ts");
 const root = read("../../AutomationStudioLive.tsx");
 
 describe("Automation Studio extracted owner contracts", () => {
@@ -53,11 +54,17 @@ describe("Automation Studio extracted owner contracts", () => {
     expect(persistence).not.toContain("JSON.stringify(left.viewStates");
   });
 
-  it("publishes gateway context only on project, focus, and visibility changes", () => {
-    expect(gatewayBridge).toContain('window.addEventListener("focus", publishVisibleContext)');
-    expect(gatewayBridge).toContain('document.addEventListener("visibilitychange", publishVisibleContext)');
-    expect(gatewayBridge).not.toContain('addEventListener("pointerdown"');
-    expect(gatewayBridge).not.toContain('addEventListener("keydown"');
+  it("publishes gateway context only on project, focus, visibility, and page lifecycle", () => {
+    expect(gatewayBridge).toContain("observeAutomationStudioGatewayContext({");
+    expect(contextPublication).toContain('view.addEventListener("focus", onFocus)');
+    expect(contextPublication).toContain('page.addEventListener("visibilitychange", onVisibilityChange)');
+    expect(contextPublication).toContain('view.addEventListener("pagehide", onPageHide)');
+    expect(contextPublication).toContain('view.addEventListener("pageshow", onPageShow)');
+    for (const source of [gatewayBridge, contextPublication]) {
+      expect(source).not.toContain('addEventListener("pointerdown"');
+      expect(source).not.toContain('addEventListener("keydown"');
+      expect(source).not.toContain("setInterval");
+    }
   });
 
   it("hydrates known subflow graph IDs before opening their strict owned Nodes view", () => {
