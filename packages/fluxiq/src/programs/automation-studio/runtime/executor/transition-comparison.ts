@@ -1,4 +1,4 @@
-import type { AutomationStudioAdaptiveFailureClass, AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+import { parseAutomationStudioFailureRecord, type AutomationStudioAdaptiveFailureClass, type AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../model/index.ts";
 import type { AutomationNodeExpectationEvaluation } from "../../nodes/index.ts";
@@ -85,10 +85,24 @@ export function compareAutomationStudioTransition(node: AutomationStudioFlowNode
   };
 }
 
+// What a rejected expected state fails with when the host gave no record of its
+// own. It is the expectation node's record, so a rejection reads the same
+// whichever of the two asked the host.
+const EXPECTED_STATE_REJECTED_FAILURE = Object.freeze({
+  category: "expected_state_missing",
+  code: "core.policy.expectation_rejected",
+  retryable: true,
+  stage: "verification"
+} as const);
+
 /**
  * Asks the bound host to evaluate the attempt's `expectedState` against its
- * current snapshot, then recompares with that verdict. Returns the attempt
- * untouched when no evaluator is bound, so an unbound host is unchanged.
+ * current snapshot, then recompares with that verdict. A rejection fails the
+ * attempt: `failed` status and route, a message, and the host's failure record
+ * or Core's `expected_state_missing` one, so the run routes it as it routes any
+ * failed attempt. Returns the attempt untouched when no evaluator is bound or
+ * the evaluator throws, and with only its comparison replaced when the host
+ * accepts.
  */
 export async function attemptWithHostExpectationEvaluation(
   node: AutomationStudioFlowNode,
@@ -114,7 +128,19 @@ export async function attemptWithHostExpectationEvaluation(
   } catch {
     return attempt;
   }
-  return { ...attempt, transitionComparison: compareAutomationStudioTransition(node, attempt, evaluation) };
+  if (evaluation.passed) return { ...attempt, transitionComparison: compareAutomationStudioTransition(node, attempt, evaluation) };
+  // The host's record is parsed where it becomes the attempt's, as a node
+  // result's is, and one that does not parse gives way to Core's own. The
+  // comparison reads the same record, so its status never disagrees with it.
+  const failure: AutomationStudioFailureRecord = parseAutomationStudioFailureRecord(evaluation.failure) ?? { ...EXPECTED_STATE_REJECTED_FAILURE };
+  return {
+    ...attempt,
+    status: "failed",
+    route: "failed",
+    message: evaluation.message ?? "The host reported that the expected state does not hold.",
+    failure,
+    transitionComparison: compareAutomationStudioTransition(node, attempt, { ...evaluation, failure })
+  };
 }
 
 // An expected state is either a list of conditions the host understands or one

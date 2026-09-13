@@ -691,6 +691,40 @@ heredoc (the Bash tool corrupts `\\`, and commands over about 8 KB fail).
   worktree of this commit); the extension's behaviour after the fix, live.
 - Outcome: Accepted
 
+### 2026-09-13 — A rejected expected state fails its action attempt
+
+- Agent: downstream worker `w19-c1`, briefed by the downstream supervisor
+  (`briefs/finish-week1.md`, `reports/w19-c1.md` in the downstream plan);
+  verified by that supervisor.
+- Changed: `programs/automation-studio/runtime/executor/transition-comparison.ts`
+  and `executor/tests/node-execution.test.ts`.
+- Why: a probe of this executor gave a click whose expected state the host
+  rejected as `auth_required` -> `"runStatus": "succeeded"`, the attempt
+  `"failure": null`, the comparison only `"blocked"`, and the next node
+  dispatched, so an expectation could never fail a run. Now a rejection returns
+  the attempt as `status: "failed"`, `route: "failed"`, with a `message` and
+  `failure` set to the host's record when it parses and Core's
+  `expected_state_missing` record otherwise, keeping `transitionComparison`.
+  Non-succeeded attempts and `builtin.policy.expectation` are untouched.
+- Compatibility: this is a behaviour change for every host that binds
+  `expectationEvaluator` on a node carrying `expectedState`; the downstream web
+  domain declares the parameter but nothing writes it yet. It ships in the same
+  minor release as the target-gate change.
+- Found: nothing in Core honours a node's `failureRoute`, even for a failed
+  dispatch (a probe routed a `failureRoute: "success"` failure as `failed`), so a
+  rejection routes exactly as a failed dispatch does; that gap is a Week 2 item.
+  The `expected_state_missing` record is copied from an unexported constant in
+  `nodes/policy/expectation.ts`; the downstream `w19-c2` brief exports it once
+  and deletes the copy.
+- Validation: supervisor, `npx vitest run .../executor/tests/node-execution.test.ts
+  .../transition-comparison.test.ts .../trace-withholding.test.ts
+  --no-file-parallelism` -> `Test Files 3 passed (3)`, `Tests 28 passed (28)`.
+  Worker: removing the transform -> `4 failed | 7 passed`; removing the record
+  parse -> `1 failed | 10 passed`; both restored byte-identical; `pnpm check` ->
+  exit 0; `pnpm docs:check` -> exit 0.
+- Not verified: `pnpm build`, root `pnpm test`, and the Lab.
+- Outcome: Accepted
+
 ## Open Questions
 
 - **A client's declared identity is not authenticated, so nothing that gates on
