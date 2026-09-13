@@ -1,7 +1,7 @@
 # MVP Week 1 — Web Automation Reliability Plan (Core share)
 
 Status: Active
-Status detail: The downstream Week 1 finish made fifteen Core code commits, released as `fluxiq` 0.4.0 with migration notes; the sequential suite, build and package lint passed on `e5c9828`, and both `dev` branches are pushed together after the downstream root gates.
+Status detail: Core's Week 1 code remains unchanged and validated at `e5c9828`; this paired documentation update records the downstream audit remediation and the pending Stage 4 campaign.
 Created: 2026-09-11
 Last updated: 2026-09-13
 Owner: Senior supervisor agent
@@ -19,12 +19,12 @@ made in Core, never approximated downstream. The downstream session finishing
 Week 1 made fifteen Core code commits under that rule. The user was alerted before
 each area's first edit, and every commit is recorded in the Work Ledger.
 
-**True on 2026-09-13.**
-- **Branch:** `dev`, 3 commits ahead of `origin/dev` with this plan's commit, not
-  pushed. The last code commit is `e5c9828`.
+**Repository state at remediation intake on 2026-09-13.**
+- **Branch:** `dev` at `3d1a4a`, equal to `origin/dev`. The last Core code
+  commit remains `e5c9828`; later commits record working-document state.
 - **Versions:** `fluxiq` is **0.4.0**. `@fluxiq/contracts` (0.2.0) and
   `@fluxiq/client-gateway-websocket` (0.1.0) are unchanged.
-- **The fifteen code commits:**
+- **The fifteen Week 1 code commits, ending at `e5c9828`:**
   - `5d495eb`, a value resolved out of state is withheld from the persisted
     trace;
   - `267a2ca`, a recording message arriving after Stop finalized its recording
@@ -106,8 +106,13 @@ comparison.
   - Core exports no constant for `builtin.policy.action`, so the downstream host
     runtime restates the id.
 
-**Next steps:** push `dev` together with the downstream `dev`, once the downstream
-Lab rerun and root gates pass.
+**Next steps:** Core has no pre-Stage-4 code remediation assigned in this work
+unit. Pair this documentation-only Core commit with the verified downstream
+remediation pin, preserve the documented Core defects for later
+ranking/hardening, and run any newly required Core validation sequentially
+because parallel native-SQLite workers are unsound on this machine. The
+downstream sequence is: `l-final-proofs` alone at the pushed pins, the two
+complete repeat-three benches, then tracked comparison and ranking.
 
 **Blockers:** none.
 
