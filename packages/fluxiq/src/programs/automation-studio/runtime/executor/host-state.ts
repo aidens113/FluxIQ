@@ -16,13 +16,16 @@ export async function captureHostState(
   }
 }
 
+// The host is told about the node that ran, parameters resolved, after the
+// action as before it, so a capture or diff keyed on which action ran sees the
+// same node on both sides.
 export async function enrichAttemptWithHostState(
+  node: AutomationStudioFlowNode,
   attempt: AutomationStudioNodeAttemptTrace,
   options: AutomationStudioGraphExecutionOptions,
   beforeAction: AutomationStudioHostStateSnapshotRef | undefined,
   hostCapabilities: string[]
 ): Promise<AutomationStudioNodeAttemptTrace> {
-  const node = { id: attempt.nodeId, definitionId: attempt.definitionId, parameterValues: {} };
   const afterAction = await captureHostState(options, { node, attemptId: attempt.attemptId, inputs: attempt.inputs, point: "after_action" });
   const inspectStateDiff = options.hostRuntime?.inspectStateDiff;
   let stateDiff: JsonObject | undefined;

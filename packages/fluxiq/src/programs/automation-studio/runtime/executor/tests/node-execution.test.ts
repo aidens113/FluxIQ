@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioFlowDocument } from "../../../model/index.ts";
+import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationNodeExpectationEvaluation } from "../../../nodes/index.ts";
-import { runAutomationStudioGraph } from "../index.ts";
+import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions } from "../index.ts";
 
 const flow: AutomationStudioFlowDocument = {
   schemaVersion: "0.1",
@@ -279,5 +279,62 @@ describe("a rejected expected state fails the attempt", () => {
 
     expect(rejected.trace.attempts[0]?.status).toBe("failed");
     expect(routing(rejected)).toEqual(routing(dispatchFailed));
+  });
+});
+
+// A host keys its after-action capture and its diff on which action ran, so it
+// must be told the node that ran, with the parameters the run resolved.
+const boundNode: AutomationStudioFlowNode = { id: "output", definitionId: "builtin.policy.action", parameterValues: { outputId: "activate-element", parameters: { selector: { $state: { path: "run.supplied.selector" } } } } };
+const resolvedParameterValues = { outputId: "activate-element", parameters: { selector: "#confirm" } };
+
+async function runWithRecordingHost(node: AutomationStudioFlowNode, options: Omit<AutomationStudioGraphExecutionOptions, "inputs" | "hostRuntime">) {
+  // Cloned at the call, so each record is what the host was handed then.
+  const captures: Array<{ point: string; node: AutomationStudioFlowNode }> = [];
+  const diffs: AutomationStudioFlowNode[] = [];
+  const trace = await runAutomationStudioGraph({ ...flow, flowId: "flow.host-state-node", nodes: [node] }, {
+    ...options,
+    inputs: { "run.supplied.selector": "#confirm" },
+    hostRuntime: {
+      capabilities: ["state-snapshot", "state-diff"],
+      captureStateSnapshot: ({ node: captured, attemptId, point }) => {
+        captures.push({ point, node: structuredClone(captured) });
+        return { stateSnapshotId: `${attemptId}.${point}`, stateRef: `state://${attemptId}/${point}`, capturedAt: 1 };
+      },
+      inspectStateDiff: ({ node: inspected }) => {
+        diffs.push(structuredClone(inspected));
+        return { changed: true };
+      }
+    }
+  });
+  const afterAction = captures.filter(({ point }) => point === "after_action").map(({ node: captured }) => captured);
+  return { trace, captures, afterAction, diffs };
+}
+
+describe("what the host is told after the action", () => {
+  it("hands the after-action capture and the diff the node that ran, with its resolved parameters, as before it", async () => {
+    const { trace, captures, diffs } = await runWithRecordingHost(boundNode, { effectDispatcher: () => succeeded });
+    const executed = { ...boundNode, parameterValues: resolvedParameterValues };
+
+    expect(trace.status).toBe("succeeded");
+    expect(captures).toEqual([{ point: "before_action", node: executed }, { point: "after_action", node: executed }]);
+    expect(diffs).toEqual([executed]);
+    expect(diffs[0]?.parameterValues?.outputId).toBe("activate-element");
+    expect(trace.attempts[0]).toMatchObject({ stateRefs: { afterAction: { stateRef: "state://output.attempt.1/after_action" }, stateDiff: { changed: true } } });
+  });
+
+  it.each([
+    { branch: "the dispatch fails", node: boundNode, options: { effectDispatcher: () => ({ status: "failed", route: "failed", outputs: { ok: false }, message: "The click failed." }) }, message: "The click failed." },
+    { branch: "the dispatch throws", node: boundNode, options: { effectDispatcher: () => { throw new Error("The transport closed."); } }, message: "The transport closed." },
+    { branch: "the node pins a version Core does not have", node: { ...boundNode, definitionVersion: "2.0.0" }, options: {}, message: "Node builtin.policy.action pins 2.0.0, but built-in version 1.0.0 is available." },
+    { branch: "the node is not executable", node: { ...boundNode, definitionId: "importer.example.unregistered" }, options: {}, message: "Node definition is not executable: importer.example.unregistered." }
+  ] satisfies Array<{ branch: string; node: AutomationStudioFlowNode; options: Omit<AutomationStudioGraphExecutionOptions, "inputs" | "hostRuntime">; message: string }>)("hands them the node that ran when $branch", async ({ node, options, message }) => {
+    const { trace, afterAction, diffs } = await runWithRecordingHost(node, options);
+    const executed = { ...node, parameterValues: resolvedParameterValues };
+
+    expect(trace.attempts[0]).toMatchObject({ status: "failed", message, stateRefs: { afterAction: { stateRef: "state://output.attempt.1/after_action" }, stateDiff: { changed: true } } });
+    expect(afterAction.length).toBeGreaterThan(0);
+    expect(afterAction).toEqual(afterAction.map(() => executed));
+    expect(diffs.length).toBeGreaterThan(0);
+    expect(diffs).toEqual(diffs.map(() => executed));
   });
 });

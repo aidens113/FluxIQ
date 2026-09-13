@@ -53,7 +53,7 @@ export async function executeAutomationStudioNode(
   }
   const beforeAction = await captureHostState(options, { node: executionNode, attemptId, inputs, point: "before_action" });
   if (definition && node.definitionVersion && node.definitionVersion !== "1.0.0") {
-    return await enrichAttemptWithHostState({ attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: options.now?.() ?? Date.now(), status: "failed", route: "failed", inputs, outputs: {}, effects: [], message: `Node ${node.definitionId} pins ${node.definitionVersion}, but built-in version 1.0.0 is available.` }, options, beforeAction, hostCapabilities);
+    return await enrichAttemptWithHostState(executionNode, { attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: options.now?.() ?? Date.now(), status: "failed", route: "failed", inputs, outputs: {}, effects: [], message: `Node ${node.definitionId} pins ${node.definitionVersion}, but built-in version 1.0.0 is available.` }, options, beforeAction, hostCapabilities);
   }
   if (!definition?.execute) {
     const native = await options.nativeNodeExecutor?.({
@@ -75,7 +75,7 @@ export async function executeAutomationStudioNode(
     if (composite) {
       return await finishAttempt(executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, composite.result), ...(composite.childTrace ? { childTrace: composite.childTrace } : {}), ...(composite.compositeTarget ? { compositeTarget: composite.compositeTarget } : {}) }, options, beforeAction, hostCapabilities);
     }
-    return await enrichAttemptWithHostState({
+    return await enrichAttemptWithHostState(executionNode, {
       attemptId,
       nodeId: node.id,
       definitionId: node.definitionId,
@@ -109,7 +109,7 @@ export async function executeAutomationStudioNode(
     result = await dispatchAutomationStudioEffects(result, options, withholding);
     return await finishAttempt(executionNode, nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), options, beforeAction, hostCapabilities);
   } catch (error) {
-    return await enrichAttemptWithHostState({
+    return await enrichAttemptWithHostState(executionNode, {
       attemptId,
       nodeId: node.id,
       definitionId: node.definitionId,
@@ -134,7 +134,7 @@ async function finishAttempt(
   beforeAction: AutomationStudioHostStateSnapshotRef | undefined,
   hostCapabilities: string[]
 ): Promise<AutomationStudioNodeAttemptTrace> {
-  const enriched = await enrichAttemptWithHostState(attempt, options, beforeAction, hostCapabilities);
+  const enriched = await enrichAttemptWithHostState(node, attempt, options, beforeAction, hostCapabilities);
   return await attemptWithHostExpectationEvaluation(node, enriched, options);
 }
 

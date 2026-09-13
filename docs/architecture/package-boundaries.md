@@ -111,6 +111,7 @@ opt-in. Read the whole entry if a host:
 - runs its own client-gateway client;
 - dispatches runtime or client-gateway commands with a `timeoutMs`;
 - runs a Flow that has no Start node, or stores compiled plans;
+- binds a host runtime's `captureStateSnapshot` or `inspectStateDiff`;
 - or writes a recording mapper.
 
 **A rejected expected state fails the attempt.** Some nodes other than
@@ -298,6 +299,18 @@ graph run and a compiled plan use it.
   `compiled-plan.v2`, so a plan compiled for a Flow revision before this change
   is compiled again instead of being reused with its earlier start, and its
   artifact id ends in `compiled-plan.v2`. The schema version is unchanged.
+
+**A host runtime is told which node ran after the action, as it is before it.**
+No type or export changes. A host runtime's `captureStateSnapshot` at
+`after_action`, and its `inspectStateDiff`, now receive the node that ran with
+its parameter values resolved, the same node the `before_action` capture
+receives. They used to receive only its `id` and `definitionId`, with empty
+`parameterValues`. This holds on every path that captures after the action: a
+succeeded or failed dispatch, a dispatch or node that throws, a pinned version
+Core does not have, and a node that is not executable. A host that keys its
+capture or diff on a node's parameters, such as a policy action's `outputId`,
+now sees them after the action; one that declined such a node there now handles
+it. A node whose state-bound parameters do not resolve is still not captured.
 
 ### 0.3.0: a missing stable identifier costs less (`fluxiq`)
 
