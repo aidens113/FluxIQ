@@ -1,9 +1,9 @@
 # MVP Week 1 — Web Automation Reliability Plan (Core share)
 
 Status: Active
-Status detail: Every Core contract this plan owes downstream exists and is verified; the two published-surface changes of 2026-09-12 — the `fluxiq/automation-studio/fingerprinting` exports subpath and the element matcher's missing-versus-contradicted identifier weights — are recorded here, and the matcher weight is now coupled to a downstream spec that must ship with it.
+Status detail: The downstream Week 1 finish made nine Core commits, released as `fluxiq` 0.4.0 with a migration note; package lint, build and the sequential suite run at the downstream integration step, before both `dev` branches are pushed together.
 Created: 2026-09-11
-Last updated: 2026-09-12
+Last updated: 2026-09-13
 Owner: Senior supervisor agent
 Scope: Core's share of the downstream web extension's MVP Week 1 plan: the failure-category enum, record, parser, and carriers on the gateway, runtime, dispatch, node, attempt, and LLM-context types; structured-first failure classification; the target-resolution outcome on the attempt trace; loading a domain's panel host through Core's public exports; the structure-audit baseline ratchet; the expectation-evaluator seam (C3, Wave 3); and the two 2026-09-12 element-matcher changes — publishing the matcher for a browser bundle, and charging a missing stable identifier less than a contradicted one.
 Paired document: `F:\!FluxIQWebExtension\docs\working\mvp-week1-web-automation-reliability-plan.md`
@@ -13,93 +13,47 @@ Related: [package boundaries](../architecture/package-boundaries.md), [code stru
 
 ## Current State
 
-**Phase: Core work unit in progress.** On 2026-09-11 the user directed that
-changes belonging in Core are made in Core, never approximated downstream.
-This unit replaces three downstream stand-ins and one planned one: a failure
-code carried in a gateway result's `metadata`, a domain-local failure-category
-list, a downstream host deep-importing Core's `dist`, and a baseline command
-that grandfathers new violations. The user was alerted before the first Core
-edit (areas: `packages/contracts`, `packages/fluxiq`, the web app's domain-host
-loader, `scripts/structure-audit/`; impact: additive optional fields, new enum
-members under the minor bump the user approved as downstream decision D9).
+**Phase: the downstream Week 1 finish, released as `fluxiq` 0.4.0 on
+2026-09-13.** On 2026-09-11 the user directed that changes belonging in Core are
+made in Core, never approximated downstream. The downstream session finishing
+Week 1 made nine Core commits under that rule. The user was alerted before each
+area's first edit, and every commit is recorded in the Work Ledger.
 
-**Done:** this document and the five unit briefs; core-structure-baseline,
-core-host-loading, core-failure-taxonomy, core-web-test-health, and
-core-runtime-test-health verified (ledger). **C3, the expectation-evaluator
-seam, is complete and verified** — every Core contract this plan owes the
-downstream plan now exists.
+**True on 2026-09-13.**
+- **Branch:** `dev` at `5845f5d`, 9 commits ahead of `origin/dev`, not pushed.
+- **Versions:** `fluxiq` is **0.4.0**. `@fluxiq/contracts` (0.2.0) and
+  `@fluxiq/client-gateway-websocket` (0.1.0) are unchanged.
+- **The nine commits:**
+  - `5d495eb`, a value resolved out of state is withheld from the persisted
+    trace;
+  - `267a2ca`, a recording message arriving after Stop finalized its recording
+    is discarded and audited, not a failed connection;
+  - `6f172b9`, a rejected expected state fails its action attempt;
+  - `0e6d3ac`, an honest element-target trace, the recorded element's identity,
+    and no late domain events;
+  - `c0e0ce9`, a recording mapper candidate's `expectedState` and the mapper
+    context `following`;
+  - `5ca9981`, one expectation-rejected record, and an empty expectation counts
+    as none;
+  - `73a81e9`, a client's recording start ordered with what follows it, and
+    acknowledged;
+  - `187f40d`, a recorded entry keeps its source event's id and source;
+  - `5845f5d`, the `0.4.0` release, with a Migration Notes entry covering every
+    change above.
 
-The seam landed in a different shape than the brief described, and the
-supervisor ratified it: the evaluator is an optional method **on
-`AutomationStudioHostRuntimeBoundary`**, not a separate `bindExpectationEvaluator`
-on the service, so a host that already binds a runtime boundary gets it through
-the same `bindHostRuntime` call and `runtime/service.ts` needed no change.
-Detail and rationale in
-[reports/core-expectation-evaluator.md](./mvp-week1-web-automation-reliability-plan/reports/core-expectation-evaluator.md).
-The downstream consequence is that the binding belongs on the boundary object,
-so it was folded into the downstream `w3-host-runtime` brief instead of being
-briefed on its own.
+**Gates.** The downstream supervisor reran each commit's own tests,
+`pnpm check` and `pnpm docs:check` (ledger). Three gates have not run on the
+release tree: `pnpm package:lint`, `pnpm build`, and the full suite with
+`--no-file-parallelism`. They run at the downstream integration step, after its
+Lab Stage 2, and both `dev` branches are pushed together after them.
 
-**Two further Core changes landed for this plan on 2026-09-12, both on published
-surfaces.** First, `fafe7c7` added the `fluxiq/automation-studio/fingerprinting`
-exports subpath, so a browser build can use Core's element matcher without
-resolving `node:crypto` and `node:perf_hooks` — which the neighbouring
-`automation-studio` barrel reaches through `dsl/` and `testing/`. `fluxiq` went
-to **0.2.1** in that commit, an additive export, and
-`fingerprinting/tests/index.test.ts` walks the barrel's import closure so the
-browser-safety claim fails a test rather than resting on a comment. Second,
-`a575df2` split `compareExactSignal`'s single −0.55 penalty in
-`fingerprinting/element-fingerprint.ts` into
-`MISSING_STABLE_IDENTIFIER_SIMILARITY` (−0.1: the candidate carries no such
-identifier) and `CONTRADICTED_STABLE_IDENTIFIER_SIMILARITY` (−0.8: it carries a
-different one). That is downstream decision **D13**; its exhaustive 9,720-profile
-proof, the before-and-after figures, and the two alternatives rejected by
-measurement live downstream, in the paired plan and in `reports/v-core-scoring.md`.
-
-**The published seam moved, and an integrator needs the figure from Core, not
-only from downstream.** A candidate matching visible text and accessible name
-exactly but carrying no `id` rises from confidence **0.428 to 0.577**. Core's
-element-target ladder in `runtime/io-policy.ts` is destructive 0.9, privileged
-0.82, review 0.68, safe 0.45, default 0.5 — so that candidate now clears **`safe`
-and the default rung**, where it cleared neither before, while `review`,
-`privileged` and `destructive` still refuse it. Recomputed here from the current
-source rather than copied from the commit message: 24 + 24 − 2.6 over a possible
-74 is 0.614 normalized, times the two-strong-match multiplier 0.94, is 0.577; at
-the old −0.55 it was 33.7 / 74 = 0.455 × 0.94 = 0.428. Which rungs refuse is a
-fact about *that* candidate, not about every candidate — measured while writing
-the migration note, one agreeing exactly on every other recorded signal and
-missing a single identifier crosses `destructive` as well (missing `statePath`
-0.883 → 0.917). No rung is categorically out of reach; what protects the high
-ones is how much else a candidate must answer to get near them.
-
-**Core cannot change that constant on its own any more.** Flipping
-`MISSING_STABLE_IDENTIFIER_SIMILARITY` back to −0.55 was measured downstream to
-turn the `reworded-aria` case in
-`apps/extension/e2e/content/tests/identity-resolution.spec.ts` red. The Core
-constant and that downstream spec are one unit: changing the weight breaks the
-downstream repository, and the two `dev` branches must be pushed together.
-
-**The behaviour change now has a version and a note.** `fluxiq` is at **0.3.0**,
-and `docs/architecture/package-boundaries.md` carries a `0.3.0` Migration Notes
-entry with the measured figures, the rungs crossed and refused, the ranking
-inversion, and what an integrator should check; the coupling above is recorded
-in that document too, not only here. Minor rather than patch, and why is under
-Decisions. `0.2.1` stays ambiguous by construction — two builds shipped under
-it — and the note says so rather than pretending otherwise.
-
-**One question is open for Core, raised downstream on 2026-09-12:** a client's
-`clientType` and `capabilities` are taken straight from its `hello` frame, so
-nothing that gates on either is an authentication. Detail under Open Questions;
-do not treat a downstream gate on those values as a security boundary until it
-is answered.
-
-**Gates (2026-09-12, over the seam):** `pnpm check` exit 0, `pnpm docs:check`
-exit 0, `pnpm package:lint` exit 0, `pnpm build` exit 0, each captured by
-redirect rather than through a pipe. `packages/fluxiq` tests: **128 of 128 files
-green** under `npx vitest run --no-file-parallelism`. The two later commits each
-recorded the same four gates at exit 0 with 129 of 129 files green, the extra
-file being the fingerprinting subpath test; the documentation change on top of
-them re-ran `pnpm check` and `pnpm docs:check` only, both exit 0.
+**The matcher constant is still coupled downstream.** Flipping
+`MISSING_STABLE_IDENTIFIER_SIMILARITY` (−0.1) back to −0.55 turns the downstream
+`reworded-aria` case in
+`apps/extension/e2e/content/tests/identity-resolution.spec.ts` red. The constant
+and that spec are one unit, so the two `dev` branches are pushed together. The
+figures and the rungs crossed are in `package-boundaries.md`'s `0.3.0` Migration
+Notes entry.
 
 **Core's parallel test suite is unsound on this machine, and it predates this
 work.** `pnpm test` in parallel loses one or two test files per run to `Error:
@@ -114,10 +68,21 @@ for anyone bisecting this: a single clean parallel baseline run does not clear a
 change, because the flake is intermittent — the sequential run is the sound
 comparison.
 
-**Next steps:** no further Core contract is owed to this plan; downstream Wave 3
-binds the seam. The version question is answered and closed. What is left in
-Core is one decision, not an implementation: whether a client's declared
-identity should be bound at pairing time (Open Questions).
+**Open for Core.**
+- A client's `clientType` and `capabilities` come straight from its `hello`
+  frame, so nothing that gates on them is an authentication (Open Questions).
+- These are recorded for the downstream Phase 1.6b ranking, not Week 1:
+  - nothing in Core honours a node's `failureRoute`;
+  - approving a recording proposal into a node definition drops `expectedState`;
+  - the discard audit calls a runtime confirmation that reached no open
+    recording a lost recorded action;
+  - an `AutomationStudioService` built without `dataDir` writes `recordings/`
+    and `indexes/` into the working directory;
+  - `client-gateway/bridge.ts` is 796 of its 800 lines.
+
+**Next steps:** run `pnpm package:lint`, `pnpm build` and the sequential suite on
+the release tree at the downstream integration step. Then push `dev` with the
+downstream `dev`.
 
 **Blockers:** none.
 
