@@ -85,7 +85,7 @@
     },
     "file-lines": {
       "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 6919,
-      "packages/fluxiq/src/programs/automation-studio/runtime/tests/service.test.ts": 4789,
+      "packages/fluxiq/src/programs/automation-studio/runtime/tests/service.test.ts": 4787,
       "packages/fluxiq/src/programs/automation-studio/runtime/tests/service-flow-bootstrap-generation.test.ts": 1004,
       "apps/web/e2e/automation-studio-render-loop.spec.ts": 962
     },

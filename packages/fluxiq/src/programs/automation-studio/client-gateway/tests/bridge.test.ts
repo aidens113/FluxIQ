@@ -427,6 +427,25 @@ it("reports a client action that arrives after its recording was finalized", asy
     expect(discarded[1]?.metadata).toMatchObject({ recordingId: race.recording.recordingId, discardedEvents: 4, discardedActions: 1 });
   });
 
+  it("discards a domain event that reaches Core while Stop is finalizing, instead of writing it into the finalized recording", async () => {
+    const race = await recordingHeldAtFinalization("extension.domain-event");
+    race.automationStudio.registerRecordingDomain({ domainId: "extension.example", label: "Example", schemaVersion: "0.1", events: [{ eventType: "dom.scrolled", label: "Scrolled" }] });
+
+    await expect(race.gateway.receive(race.session.sessionId, clientMessage("client.recording_event", {
+      domainId: "extension.example",
+      eventType: "dom.scrolled",
+      payload: { top: 120 }
+    }))).resolves.toBeUndefined();
+    race.release();
+    await race.stopping;
+
+    expect((await race.automationStudio.getRecordingSession(race.recording.recordingId)).timeline).toHaveLength(0);
+    expect(serverErrors(race.gateway, race.session.sessionId)).toEqual([]);
+    const discarded = race.gateway.snapshot().auditLog.filter((entry) => entry.type.startsWith("recording.") && entry.type.endsWith("_discarded"));
+    expect(discarded.map((entry) => entry.type)).toEqual(["recording.event_discarded"]);
+    expect(discarded[0]?.metadata).toMatchObject({ recordingId: race.recording.recordingId, eventType: "dom.scrolled", domainId: "extension.example", executable: false, discardedEvents: 1, discardedActions: 0 });
+  });
+
   it("still fails the receive when an append to an open recording fails for any other reason", async () => {
     const gateway = new ClientGatewayService();
     const automationStudio = new AutomationStudioService({ seedFixture: false });

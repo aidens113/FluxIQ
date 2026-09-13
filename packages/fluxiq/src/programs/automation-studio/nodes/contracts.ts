@@ -112,17 +112,26 @@ export type AutomationNodeExecutionContext = {
   expectationEvaluator?: AutomationNodeExpectationEvaluator;
 };
 
-/** How an output-dispatching node resolved its element target before dispatch. */
-export type AutomationNodeTargetResolution = {
-  status: "matched" | "unresolved_no_candidates" | "no_match" | "below_confidence";
-  candidateCount: number;
-  minimumConfidence: number;
-  candidateId?: string;
-  confidence?: number;
-  normalizedScore?: number;
-  matchedSignals?: string[];
-  failedSignals?: string[];
-};
+/**
+ * How an output-dispatching node resolved its element target before dispatch.
+ *
+ * `unresolved_no_candidates` means Core was given nothing to score the target
+ * against: it resolved nothing, applied no confidence floor, and left resolving
+ * the element to the output's adapter. That status carries no
+ * `minimumConfidence`, because a number there reads as a floor that was enforced.
+ */
+export type AutomationNodeTargetResolution =
+  | { status: "unresolved_no_candidates"; candidateCount: 0 }
+  | {
+    status: "matched" | "no_match" | "below_confidence";
+    candidateCount: number;
+    minimumConfidence: number;
+    candidateId?: string;
+    confidence?: number;
+    normalizedScore?: number;
+    matchedSignals?: string[];
+    failedSignals?: string[];
+  };
 
 export type AutomationNodeExecutionResult = {
   outputs?: Record<string, JsonValue>;

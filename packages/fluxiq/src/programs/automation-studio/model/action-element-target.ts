@@ -77,7 +77,7 @@ export function normalizeAutomationStudioElementTarget(value: unknown, options: 
   const input = value as Record<string, unknown>;
   const target = isObject(input.target) ? input.target : input;
   if (isAutomationStudioElementTarget(target)) return sanitizeElementTarget(target, options.source);
-  const fingerprint = normalizeFingerprint(target);
+  const fingerprint = isObject(input.element) ? actionParametersFingerprint(target, input.element) : normalizeFingerprint(target);
   if (!hasFingerprintSignal(fingerprint)) return null;
   return compactElementTarget({
     kind: "element",
@@ -115,12 +115,23 @@ function sanitizeElementTarget(target: AutomationStudioElementTarget, source: Au
   });
 }
 
-function normalizeFingerprint(value: unknown): AutomationStudioElementTargetFingerprint {
+/**
+ * Parameters that name the element an action acts on in `element` carry that
+ * element's recorded identity there. The parameters' own signals keep precedence
+ * where both name one, so normalizing never moves the locator an action was
+ * recorded with. Their `text` is never read: beside an element it is the
+ * action's argument, typed text for instance, and not the element's identity.
+ */
+function actionParametersFingerprint(parameters: Record<string, unknown>, element: Record<string, unknown>): AutomationStudioElementTargetFingerprint {
+  return { ...normalizeFingerprint(element), ...normalizeFingerprint(parameters, false) };
+}
+
+function normalizeFingerprint(value: unknown, readsText = true): AutomationStudioElementTargetFingerprint {
   if (!isObject(value)) return {};
   const metadata = isObject(value.metadata) ? value.metadata : {};
   const visualTarget = isObject(value.visualTarget) ? value.visualTarget : {};
   return compactFingerprint({
-    visibleText: safeString(value.visibleText) ?? safeString(metadata.visibleText) ?? safeString(value.text),
+    visibleText: safeString(value.visibleText) ?? safeString(metadata.visibleText) ?? (readsText ? safeString(value.text) : undefined),
     accessibleName: safeString(value.accessibleName) ?? safeString(metadata.accessibleName) ?? safeString(metadata.ariaLabel),
     label: safeString(value.label) ?? safeString(metadata.label),
     id: safeString(value.id) ?? safeString(value.elementId) ?? safeString(metadata.id),
@@ -129,7 +140,7 @@ function normalizeFingerprint(value: unknown): AutomationStudioElementTargetFing
     entityId: safeString(value.entityId) ?? safeString(metadata.entityId) ?? safeString(visualTarget.entityId),
     entityKind: safeString(value.entityKind) ?? safeString(metadata.entityKind) ?? safeString(visualTarget.entityKind),
     tagName: safeString(value.tagName) ?? safeString(metadata.tagName),
-    role: safeString(value.role) ?? safeString(metadata.role),
+    role: safeString(value.role) ?? safeString(metadata.role) ?? safeString(value.implicitRole),
     selector: safeString(value.selector) ?? safeString(metadata.selector),
     xpath: safeString(value.xpath) ?? safeString(metadata.xpath),
     queryPath: safeString(value.queryPath) ?? safeString(metadata.queryPath),

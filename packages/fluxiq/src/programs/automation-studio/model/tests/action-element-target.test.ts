@@ -86,6 +86,50 @@ describe("automation studio element targets", () => {
       statePath: { namespace: "app", path: "checkout.submit" }
     });
   });
+
+  it("takes a type action's target identity from its element and never from the typed text", () => {
+    const target = normalizeAutomationStudioElementTarget({
+      selector: "#display-name",
+      statePath: "web.elements.display.name",
+      text: "Ada Lovelace",
+      element: { selector: "input#display-name", tagName: "input", implicitRole: "textbox", accessibleName: "Display name", id: "display-name", attributes: { name: "displayName" } }
+    }, { source: "mapper" });
+
+    expect(target?.fingerprint).toEqual({
+      selector: "#display-name",
+      statePath: "web.elements.display.name",
+      tagName: "input",
+      role: "textbox",
+      accessibleName: "Display name",
+      id: "display-name",
+      attributes: { name: "displayName" }
+    });
+    expect(JSON.stringify(target)).not.toContain("Ada Lovelace");
+  });
+
+  it("carries a clicked element's own text, identifiers and implied role onto the target", () => {
+    const target = normalizeAutomationStudioElementTarget({
+      selector: "#save-settings",
+      statePath: "web.elements.save.changes",
+      element: { text: "Save changes", tagName: "button", implicitRole: "button", testId: "save-settings", id: "save-settings", classNames: ["btn", "primary"] }
+    }, { source: "mapper" });
+
+    expect(target?.fingerprint).toEqual({
+      selector: "#save-settings",
+      statePath: "web.elements.save.changes",
+      visibleText: "Save changes",
+      tagName: "button",
+      role: "button",
+      testId: "save-settings",
+      id: "save-settings",
+      classNames: ["btn", "primary"]
+    });
+  });
+
+  it("keeps an authored role over the implied one, and reads parameters without an element as before", () => {
+    expect(normalizeAutomationStudioElementTarget({ selector: "#tab", element: { role: "tab", implicitRole: "button", tagName: "button" } })?.fingerprint.role).toBe("tab");
+    expect(normalizeAutomationStudioElementTarget({ selector: "#search", text: "Search" })?.fingerprint).toEqual({ selector: "#search", visibleText: "Search" });
+  });
 });
 
 function actionFixture(overrides: Partial<ActionEntry> = {}): ActionEntry {

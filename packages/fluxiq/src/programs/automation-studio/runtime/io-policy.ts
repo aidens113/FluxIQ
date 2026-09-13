@@ -228,11 +228,12 @@ function resolveElementTarget(
   minimumConfidence: number
 ): { ok: true; target: AutomationStudioElementTarget; diagnostics: JsonObject; resolution: AutomationNodeTargetResolution } | ElementTargetRejection {
   if (!target.candidates?.length) {
+    // Nothing to score against, so no floor was applied, and the trace must not name one as if it had been.
     return {
       ok: true,
       target,
-      diagnostics: { status: "unresolved_no_candidates", reason: "No runtime element candidates were supplied with the target." },
-      resolution: { status: "unresolved_no_candidates", candidateCount: 0, minimumConfidence }
+      diagnostics: { status: "unresolved_no_candidates", reason: "No runtime element candidates were supplied, so Core applied no confidence floor and left resolving the element to the output adapter." },
+      resolution: { status: "unresolved_no_candidates", candidateCount: 0 }
     };
   }
   const candidateCount = target.candidates.length;

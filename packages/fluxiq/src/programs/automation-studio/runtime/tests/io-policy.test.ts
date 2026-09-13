@@ -156,6 +156,19 @@ describe("failure propagation from dispatch to diagnosis", () => {
     const detail = runtimeSessionToFlowRunDetail(session(flow, trace), "project.failure");
     expect(detail.actionAttempts?.[0]?.metadata).toMatchObject({ targetResolution: { status: "no_match" } });
   });
+
+  it("claims no confidence floor on the trace or the run record when no candidates were supplied for one to apply to", async () => {
+    const flow = actionFlow({ selector: "#save-settings", target: { kind: "element", fingerprint: { visibleText: "Save changes", testId: "save-settings" } } });
+    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: createIoPolicyEffectDispatcher(ioWith(undefined, { elementTarget: true, elementTargetMinConfidence: 0.68 }), "example") });
+    const attempt = trace.attempts[0]!;
+
+    expect(attempt.status).toBe("succeeded");
+    expect(attempt.targetResolution).toEqual({ status: "unresolved_no_candidates", candidateCount: 0 });
+    expect(attempt.outputs?.elementTargetResolution).toMatchObject({ status: "unresolved_no_candidates" });
+    expect(attempt.outputs?.elementTargetResolution).not.toHaveProperty("minimumConfidence");
+    const detail = runtimeSessionToFlowRunDetail(session(flow, trace), "project.failure");
+    expect(detail.actionAttempts?.[0]?.metadata?.targetResolution).toEqual({ status: "unresolved_no_candidates", candidateCount: 0 });
+  });
 });
 
 function ioWith(dispatch?: () => OutputDispatchResult, metadata?: JsonObject): IoRegistry {

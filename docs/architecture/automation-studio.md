@@ -396,7 +396,10 @@ dispatched output whose bound confirmation input never arrived is
 `output_not_observed`, and an element target with no confident candidate is
 `target_not_found`. Output-dispatching attempts also record `targetResolution`
 beside `stateRefs`: the resolution status, the candidate count, the confidence
-threshold, and the best candidate's score and signals.
+threshold, and the best candidate's score and signals. An attempt dispatched
+without runtime candidates records `unresolved_no_candidates` with a count of
+zero and no threshold: Core scored nothing and enforced no floor, and resolving
+the element was left to the output's adapter.
 
 The trace a run persists withholds every value that run resolved out of a
 parameter state binding. `runAutomationStudioGraph` is the one place a run

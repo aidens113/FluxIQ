@@ -101,6 +101,29 @@ commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
 
+### Unreleased: the element-target trace claims only what Core applied (`fluxiq`)
+
+`AutomationNodeTargetResolution` is now a union discriminated by `status`. Its
+`unresolved_no_candidates` member carries `candidateCount: 0` and no
+`minimumConfidence`: with no runtime candidates Core scores nothing and enforces
+no floor, so the number it used to write there named a threshold nothing was
+compared against. The dispatch diagnostics' `reason` now says so. The other
+three statuses keep `minimumConfidence`. A host that reads `minimumConfidence`
+from every resolution must narrow on `status` first, and a parser that treats a
+resolution without it as malformed must accept this member.
+
+Recording-mapped element targets change without any host opt-in. When a mapped
+action's parameters carry `element`, the node's `parameters.target.fingerprint`
+now holds that element's identity, with `implicitRole` read as `role`, beside
+the parameters' own locator signals; the parameters' own `text` is no longer
+copied into `visibleText`. The same normalization applies at dispatch to
+parameters that carry no explicit target.
+
+`appendRecordingDomainEvent` now refuses a finalized recording, as the other
+recording appends already did, and the client gateway bridge reports a domain
+event that arrives in that window as `recording.event_discarded` instead of
+writing it into the recording.
+
 ### 0.3.0: a missing stable identifier costs less (`fluxiq`)
 
 No type or export changed. One published number moves. An element candidate

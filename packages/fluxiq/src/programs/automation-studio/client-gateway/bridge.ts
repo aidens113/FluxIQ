@@ -361,7 +361,7 @@ export class AutomationStudioClientGatewayBridge {
       sender: { session, message: { kind: "recording event", label: event.eventType, domainId, inputId } }
     })) return;
     if (domainId) {
-      const result = await this.automationStudio.appendRecordingDomainEvent({
+      const result = await this.appendOrDiscard(active, [{ session, message: { kind: "recording event", label: event.eventType, domainId, inputId } }], () => this.automationStudio.appendRecordingDomainEvent({
         ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
         recordingId: active.recordingId,
         domainId,
@@ -376,8 +376,8 @@ export class AutomationStudioClientGatewayBridge {
           clientId: session.clientId,
           ...(event.metadata ?? {})
         })
-      });
-      if (!result.accepted) {
+      }));
+      if (result && !result.accepted) {
         const message = result.issues.map((issue) => issue.path ? `${issue.path}: ${issue.message}` : issue.message).join("; ");
         await this.reportRejectedRecordingEvent(session, event, messageId, message || `Recording event ${domainId}.${event.eventType} was rejected.`);
       }

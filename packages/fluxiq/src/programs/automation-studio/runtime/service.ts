@@ -1477,6 +1477,7 @@ export class AutomationStudioService {
   async appendRecordingDomainEvent(input: RecordingDomainEventInput): Promise<RecordingDomainEventProcessingResult> {
     return await this.locks.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
       const recording = await this.getRecordingSession(input.recordingId, input.projectId);
+      if (recording.endedAt !== undefined) throw new Error("Finalized recordings are immutable.");
       const result = await processRecordingDomainEvent(this.recordingDomains, recording, input);
       if (result.accepted) {
         await this.repositories.recordingSessions.put(result.recording);
@@ -5767,10 +5768,9 @@ function recordingEntryIsActionLike(entry: RecordingSession["timeline"][number])
 }
 
 function normalizeRecordingCandidateElementTargetParameters(parameters: JsonObject): JsonObject {
-  const explicitTarget = normalizeAutomationStudioElementTarget(parameters.target, { source: "mapper" });
-  const topLevelTarget = explicitTarget ?? normalizeAutomationStudioElementTarget(parameters, { source: "mapper" });
-  if (!topLevelTarget) return { ...parameters };
-  return compactJsonObject({ ...parameters, target: topLevelTarget });
+  const target = normalizeAutomationStudioElementTarget(parameters.element ? parameters : parameters.target, { source: "mapper" }) ?? normalizeAutomationStudioElementTarget(parameters, { source: "mapper" });
+  if (!target) return { ...parameters };
+  return compactJsonObject({ ...parameters, target });
 }
 
 function recordingActionEntryCandidate(entry: RecordingSession["timeline"][number]): AutomationStudioRecordingMapperCandidate | null {

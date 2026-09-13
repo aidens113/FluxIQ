@@ -178,7 +178,10 @@ require an element fingerprint; dispatch fails visibly when such an output is
 called without one. If runtime candidates are supplied, the best candidate and
 match diagnostics are written to dispatch metadata and node outputs. Match
 confidence thresholds default from output safety level and may be overridden by
-`metadata.elementTargetMinConfidence`.
+`metadata.elementTargetMinConfidence`. Without candidates Core resolves nothing:
+it dispatches the fingerprint unscored, applies no threshold, and records
+`unresolved_no_candidates` with no `minimumConfidence`, leaving the element to
+the output's adapter.
 
 Trusted Code Nodes cannot emit importer output actions. Action-bound input
 events remain confirmation observations and never become policy state through
@@ -200,7 +203,13 @@ positive and negative contributions so a failed click or generated proposal can
 explain which signals matched and which ones drifted. Custom output nodes
 should use this matcher before dispatching extension actions that target
 elements, and recording mappers should store the strongest fingerprint
-available rather than persisting only a selector or XPath.
+available rather than persisting only a selector or XPath. When a recorded
+action's parameters name its element in `element`, Core builds the mapped node's
+target fingerprint from that element's identity and keeps the parameters' own
+locator signals, such as `selector` and `statePath`, where both name one. An
+element's `implicitRole` counts as its `role`, and the parameters' own `text` —
+the action's argument, typed text for instance — never becomes the target's
+`visibleText`.
 
 Recording proposal review surfaces this identity as a compact element target
 summary. The summary favors visible text, accessible name, label, ID/test ID,
