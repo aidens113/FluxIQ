@@ -308,11 +308,27 @@ idempotency, adaptation-mode, dry-run, and external-side-effect flags.
 Authoring grants require an exact project/Flow dependency digest plus the
 canonical persisted Flow settings revision, bind the enabled key revision, and
 become invalid when any of those revisions or the authorized user session
-changes. The purpose is runtime-enum validated. Production resolution currently
-permits `build_and_adapt` only for the initial `flow_bootstrap` task/output;
-the module's bounded diagnosis, patch, proposal, and instruction task pairs
-remain unreachable until the live adaptation phase explicitly enables them. Calls
-are sequential and atomically claimed; each call consumes a separate opaque,
+changes. The purpose is runtime-enum validated.
+
+The grant module's own request check lets a `build_and_adapt` grant match flow
+bootstrap, evidence tool decision, runtime diagnosis, runtime patch,
+instruction suggestion, and change proposal requests. The production provider
+resolver, bound in `createGlobalProgramRuntime` (`programs/_shared/runtime.ts`),
+gives each purpose a task-kind list, and a call whose task kind is outside that
+list is refused and its grant revoked:
+- `build_and_adapt` resolves `flow_bootstrap` and `evidence_tool_decision`, the
+  two task kinds Flow bootstrap generation sends; the second is sent only when
+  generation is evidence-guided.
+- `diagnose_and_adapt` resolves `runtime_diagnosis` and `runtime_patch`.
+- `diagnosis_only` resolves `runtime_diagnosis`.
+
+A request that carries no execution grant resolves no provider.
+`runRuntimeSession` accepts only `diagnosis_only` and `diagnose_and_adapt`
+grants, so a build grant never reaches runtime diagnosis, patch, or proposal
+tasks. [What the shipped app reaches](#what-the-shipped-app-reaches) lists which
+runtime paths each purpose gives a provider.
+
+Calls are sequential and atomically claimed; each call consumes a separate opaque,
 one-use Secret Keys authorization and receives a grant-owned abort signal. A
 grant allows at most eight explicitly configured calls, no provider retries,
 at most 50,000 total tokens per request, a finite per-call timeout and cost
@@ -503,7 +519,10 @@ are Core-generated, must resolve to a graph with matching ownership, and cannot
 be reassigned. Public graph deletion rejects owned Subflow graphs; the owning
 Subflow deletion path performs the guarded cascade. Routed adaptive retries
 revalidate the exact parent/Subflow pair and preserve Router decisions and
-Subflow-entry evidence in run detail.
+Subflow-entry evidence in run detail. A routed retry reruns the selected
+Subflow's graph from that graph's start;
+[What the shipped app reaches](#what-the-shipped-app-reaches) says when the
+shipped app retries at all.
 
 Legacy Subflow documents that predate `graphFlowId` remain compatible. SQL
 projection derives the deterministic backing Flow ID and, when no graph exists,
@@ -556,7 +575,9 @@ checks adaptation policy and side-effect approval before execution. A
 successful patch can mark the original action retryable and produce a candidate
 adaptation; structural fixes are reviewed through the same adaptation surface
 according to approval mode. Failed patches remain run evidence and rejected
-adaptation candidates.
+adaptation candidates. The clone starts at the failed node, or at the node a
+reroute or node-targeted patch names. The shipped app gives live patch testing
+no provider; see [What the shipped app reaches](#what-the-shipped-app-reaches).
 
 Adaptations are reviewable change evidence. The Adaptations workspace groups
 them by status, shows trigger/diagnosis/failed action/patch/validation/risk
@@ -564,7 +585,9 @@ detail, and routes review actions through privileged service mutations.
 Promotion is gated by successful validation, risk, structural review links,
 target presence, and disabled/rejected state. Applying an adaptation records a
 reversible application record instead of silently editing Flow JSON; structural
-changes continue through adaptation review.
+changes continue through adaptation review. In the shipped app, automatic
+promotion never applies an adaptation; see
+[What the shipped app reaches](#what-the-shipped-app-reaches).
 
 Training modes make adaptation temporary and explainable. Normal mode keeps
 LLM intervention and adaptation creation off by default. Train-for-N-runs and
@@ -574,6 +597,54 @@ deterministic successful runs, LLM interventions per run, unresolved failures,
 repeated triggers, accepted/rejected adaptations, and time since structural
 change. Budgets cap interventions, tokens, and cost, and frozen Flow/route/
 subflow scopes can collect evidence without auto-applying structural changes.
+In the shipped app, no training window reaches a provider; see
+[What the shipped app reaches](#what-the-shipped-app-reaches).
+
+### What the shipped app reaches
+
+The service can run every path above for a host whose provider resolver returns
+a provider. The shipped app's framework host builds its programs with
+`createGlobalProgramRuntime`. That resolver returns a provider only for a request
+that carries an explicit execution grant, and only for that grant purpose's task
+kinds. Each path reaches a model as follows:
+
+- **Flow bootstrap generation:** a `build_and_adapt` grant.
+- **Runtime diagnosis:** a `diagnosis_only` or `diagnose_and_adapt` grant. A run
+  without a grant gets no provider in any training mode. When a training window
+  lets such a run ask, the harness records `llm.provider_missing` and calls no
+  model.
+- **Runtime patch requests:** a `diagnose_and_adapt` grant only. That lane saves
+  its one target override as a high-risk proposal and never executes it. A
+  `diagnosis_only` run sends no patch request, because its lane turns adaptation
+  creation off.
+- **Live patch testing:** no grant purpose. It executes a patch only outside the
+  `diagnose_and_adapt` lane. A `diagnosis_only` run sends no patch request, a
+  run without a grant has no provider, and `runRuntimeSession` refuses a
+  `build_and_adapt` grant.
+- **Automatic promotion:** no grant purpose. Core attempts it for each adaptation
+  a runtime patch saves, which in the shipped app is only a `diagnose_and_adapt`
+  proposal. That proposal is high-risk, and the promotion gate sends high-risk
+  adaptations to manual review. The proposal is applied only through the
+  PIN-authorized review endpoint.
+- **The retry after an applied patch:** no grant purpose. The retry runs only
+  when a runtime patch was applied automatically and marked the original action
+  retryable, which the shipped app never produces. A run with an explicit grant
+  skips the retry at both of its call sites in `runRuntimeSession`.
+- **Training modes:** every canonical run in a project still computes its
+  training-mode behavior, records it in run detail, and takes its recovery
+  budget from the Flow's settings and policy. The LLM intervention, adaptation
+  creation, and promotion a training window turns on still need a provider,
+  which a run without a grant does not get. A run with an explicit grant
+  replaces the window's behavior with its lane's. `diagnosis_only` turns
+  recovery, adaptation creation, and promotion off. `diagnose_and_adapt` turns
+  recovery off and allows only its one manual-review proposal. An exhausted
+  training budget stops neither explicit lane.
+
+In a host whose resolver lets a run reach the retry, the retry reruns the updated
+Flow, or a routed run's selected Subflow graph, in the same run session. It
+starts from that graph's start, not from the failed node. The retry passes the run's
+graph options, which set no `startNodeId`, so the executor chooses the start
+node as it does for a new run.
 
 ## Canonical Node Definition Foundation
 
