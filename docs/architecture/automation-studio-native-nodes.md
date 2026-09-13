@@ -135,8 +135,9 @@ that a real risk: `builtin.policy.action` copies its whole payload into a
 and the run's trace is persisted whole.
 
 `runAutomationStudioGraph` therefore withholds, from the trace it returns,
-every value the run resolved out of state. It is the one place a run trace is
-produced, and what it returns is what the runtime service persists.
+every value the run resolved out of state and every input the run was given. It
+is the one place a run trace is produced, and what it returns is what the
+runtime service persists.
 
 - **Safety is proved, not declared.** A value is treated as authored — and so
   safe to persist, because the document already holds it — only when it is
@@ -153,6 +154,14 @@ produced, and what it returns is what the runtime service persists.
   run's inputs and variables, so a supplied value is withheld from the trace's
   `values` and from every attempt's `inputs` even when the run fails before the
   bound node executes.
+- **Every run input is withheld where the trace saves it, read or not.** The
+  trace's `values` and each attempt's `inputs` are seeded from the run's inputs,
+  so an entry that still holds the value the caller supplied reads `[withheld]`
+  under its key; strings and numbers become the marker, and booleans and null
+  stay. This is by position, not by value: a value the run computed that equals
+  an input, such as `5 + 0`, is kept. The cost is a known gap: an input no
+  binding reads, copied by a node into an output under another key, is not
+  withheld at that copy.
 - **The trace keeps its shape.** A withheld value is replaced in place by the
   `AUTOMATION_STUDIO_WITHHELD_VALUE` constant — `[withheld]` — rather than
   removed, and inside prose it is replaced where it sits, so
@@ -160,9 +169,24 @@ produced, and what it returns is what the runtime service persists.
   statuses, routes, and timestamps are never rewritten: replacing a `status`
   that happened to equal a resolved value would corrupt the artifact for every
   reader while protecting nothing.
+- **One text rule.** Inside prose, the framework runtime's
+  `fluxiqRuntimeTextWithholding` does the replacing, as it does for the command
+  attempt saved for the same dispatch. Every stretch a withheld text covers
+  becomes one marker, so a value that contains or overlaps another is replaced
+  whole and leaves no fragment, and a marker already written is never rewritten.
+- **A Call Flow child's withheld values stay withheld in its parent.** The Call
+  Flow attempt keeps the child's saved trace. The parent executes with the
+  child's real outputs, so the parent's saved trace also withholds every value
+  the child withheld by value, wherever one reaches it: an output, or a bound
+  failure message.
 - **Execution is untouched.** The dispatched effect, the live `values` map, and
   the inputs handed to the host for its state snapshots all carry the real
-  value; a run that resolved nothing gets its own trace back by identity.
+  value; a run that resolved nothing and was given no inputs gets its own trace
+  back by identity. Execution that goes on from a finished run reads real values
+  too: a Call Flow parent builds its outputs from the trace its child executed,
+  and a live-patch rerun is seeded from the failed attempt as the run executed
+  it. `runAutomationStudioGraph`'s optional `onExecutedTrace` hands such a caller
+  that trace beside the saved one, for executing with only.
 
 ## Output safety
 

@@ -17,6 +17,7 @@ import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatab
 import { AutomationStudioProjectContentStore } from "./content-store.ts";
 import { AutomationStudioProjectEventChunkStore, type AutomationStudioChunkEvent } from "./event-chunk-store.ts";
 import { automationStudioFilterHash, automationStudioPageLimit, decodeAutomationStudioPageCursor, encodeAutomationStudioPageCursor } from "../paging.ts";
+import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../runtime/executor/index.ts";
 
 export type AutomationStudioRuntimeEventKind =
   | "run_summary"
@@ -510,13 +511,21 @@ function runDetailEnvelope(detail: AutomationStudioFlowRunDetail): JsonObject {
   return compactJsonObject({
     schemaVersion: detail.schemaVersion,
     summary: detail.summary,
-    inputs: detail.inputs,
+    inputs: withheldRunInputs(detail.inputs),
     startingStateRefs: detail.startingStateRefs,
     adaptationIds: detail.adaptationIds,
     changeProposalIds: detail.changeProposalIds,
     evidence: detail.evidence,
     metadata: detail.metadata
   });
+}
+
+// A run's supplied inputs are run-time data of unknown sensitivity -- a replay
+// credential arrives this way -- so the envelope every run-summary event carries
+// keeps each input's key and withholds its value. The run executed with the real
+// inputs in memory; nothing read back from this stream is run with.
+function withheldRunInputs(inputs: JsonObject | undefined): JsonObject | undefined {
+  return inputs && Object.fromEntries(Object.keys(inputs).map((key) => [key, AUTOMATION_STUDIO_WITHHELD_VALUE]));
 }
 
 function normalizeRuntimeEvents(events: Array<Omit<AutomationStudioRuntimeStreamEvent, "sequence"> & { sequence?: number }>, firstSequence: number): AutomationStudioRuntimeStreamEvent[] {

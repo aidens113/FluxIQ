@@ -1,19 +1,23 @@
 import { randomUUID } from "node:crypto";
-import type {
-  FluxIQRuntimeAdapter,
-  FluxIQRuntimeCapability,
-  FluxIQRuntimeClient,
-  FluxIQRuntimeCommand,
-  FluxIQRuntimeCommandAttempt,
-  FluxIQRuntimeCommandResult,
-  FluxIQRuntimeDispatchContext,
-  FluxIQRuntimeEvent,
-  FluxIQRuntimeEventHandler,
-  FluxIQRuntimeRun,
-  FluxIQRuntimeSnapshot,
-  FluxIQRuntimeTransport
+import type { JsonObject } from "../core/index.ts";
+import {
+  FLUXIQ_RUNTIME_WITHHELD_VALUE,
+  type FluxIQRuntimeAdapter,
+  type FluxIQRuntimeCapability,
+  type FluxIQRuntimeClient,
+  type FluxIQRuntimeCommand,
+  type FluxIQRuntimeCommandAttempt,
+  type FluxIQRuntimeCommandResult,
+  type FluxIQRuntimeDispatchContext,
+  type FluxIQRuntimeEvent,
+  type FluxIQRuntimeEventHandler,
+  type FluxIQRuntimeRun,
+  type FluxIQRuntimeSnapshot,
+  type FluxIQRuntimeTransport,
+  type FluxIQRuntimeWithheldValues
 } from "./contracts.ts";
 import type { RuntimeStore } from "./storage.ts";
+import { fluxiqRuntimeTextWithholding } from "./text-withholding.ts";
 
 export type RuntimeServiceOptions = {
   runtimeId?: string;
@@ -180,6 +184,10 @@ export class RuntimeService {
 
   async dispatch(command: FluxIQRuntimeCommand, context: FluxIQRuntimeDispatchContext = {}): Promise<FluxIQRuntimeCommandResult> {
     await this.readyPromise;
+    // Withheld values shape only the attempt the runtime keeps. They are not
+    // handed on, and the command the target executes keeps every real value.
+    const { withheldValues, ...dispatchContext } = context;
+    const withheld = withheldLookup(withheldValues);
     const commandId = command.commandId ?? `command.${randomUUID()}`;
     const normalizedCommand = { ...command, commandId };
     const run = context.runId ? this.runs.get(context.runId) : undefined;
@@ -190,11 +198,11 @@ export class RuntimeService {
       this.persistRun(run);
       await this.emit({ type: "run.started", run: { ...run, commandIds: [...run.commandIds] } });
     }
-    const target = await this.selectTarget(normalizedCommand, context);
+    const target = await this.selectTarget(normalizedCommand, dispatchContext);
     const attempt: FluxIQRuntimeCommandAttempt = {
       attemptId: `attempt.${randomUUID()}`,
       commandId,
-      command: normalizedCommand,
+      command: withheldCommand(normalizedCommand, withheld),
       status: "dispatched",
       dispatchedAt: this.now()
     };
@@ -214,9 +222,9 @@ export class RuntimeService {
     await this.emit({ type: "command.dispatched", ...(context.runId ? { runId: context.runId } : {}), command: normalizedCommand });
 
     const result = target
-      ? await this.dispatchToTarget(target, normalizedCommand, context)
+      ? await this.dispatchToTarget(target, normalizedCommand, dispatchContext)
       : rejectedResult(commandId, "No runtime adapter or transport client matches the requested command.", this.now());
-    const settled = this.settleAttempt(attempt.attemptId, result);
+    const settled = this.settleAttempt(attempt.attemptId, result, withheld);
     await this.emit({ type: "command.result", ...(context.runId ? { runId: context.runId } : {}), result });
     if (run) {
       if (settled?.clientId !== undefined) run.selectedClientId = settled.clientId;
@@ -266,13 +274,13 @@ export class RuntimeService {
     return await withRuntimeBounds(run, command, context, this.now);
   }
 
-  private settleAttempt(attemptId: string, result: FluxIQRuntimeCommandResult): FluxIQRuntimeCommandAttempt | undefined {
+  private settleAttempt(attemptId: string, result: FluxIQRuntimeCommandResult, withheld: WithheldLookup | null): FluxIQRuntimeCommandAttempt | undefined {
     const attempt = this.commandAttempts.get(attemptId);
     if (!attempt) return undefined;
     attempt.status = result.status;
     attempt.settledAt = this.now();
-    attempt.result = result;
-    if (result.message !== undefined) attempt.message = result.message;
+    attempt.result = withheldResult(result, withheld);
+    if (attempt.result.message !== undefined) attempt.message = attempt.result.message;
     this.persistCommandAttempt(attempt);
     return cloneCommandAttempt(attempt);
   }
@@ -386,6 +394,55 @@ function rejectedResult(commandId: string, message: string, completedAt: number)
 
 function cancelledResult(commandId: string, completedAt: number): FluxIQRuntimeCommandResult {
   return { commandId, status: "cancelled", completedAt, message: "Runtime command cancelled.", error: "Runtime command cancelled." };
+}
+
+/**
+ * How deep the parameter walk descends before it withholds a subtree whole. The
+ * only caller that withholds resolves bindings no deeper than 16 levels, so this
+ * is headroom; a command that reached it would be pathological.
+ */
+const MAXIMUM_WITHHOLDING_DEPTH = 64;
+
+type WithheldLookup = { text: (text: string) => string; numbers: Set<number> };
+
+/**
+ * A caller's withheld values, ready to look up, or `null` when there is nothing
+ * to withhold. Texts follow the one rule `fluxiqRuntimeTextWithholding` holds,
+ * which Automation Studio's run traces share.
+ */
+function withheldLookup(values: FluxIQRuntimeWithheldValues | undefined): WithheldLookup | null {
+  const texts = (values?.texts ?? []).filter((text) => text.length > 0);
+  const numbers = new Set((values?.numbers ?? []).filter((value) => Number.isFinite(value)));
+  return texts.length || numbers.size ? { text: fluxiqRuntimeTextWithholding(texts), numbers } : null;
+}
+
+/**
+ * The attempt's copy of a command. Every withheld value in its parameters is
+ * replaced in place, keeping every key and every other value; the command's own
+ * structure -- kind, ids, timeout -- is not a value a caller supplied.
+ */
+function withheldCommand(command: FluxIQRuntimeCommand & { commandId: string }, withheld: WithheldLookup | null): FluxIQRuntimeCommand & { commandId: string } {
+  if (!withheld || !command.parameters) return command;
+  return { ...command, parameters: withheldJson(command.parameters, withheld, 0) as JsonObject };
+}
+
+/** The attempt's copy of a result, with every withheld text replaced inside the prose an adapter or client wrote. */
+function withheldResult(result: FluxIQRuntimeCommandResult, withheld: WithheldLookup | null): FluxIQRuntimeCommandResult {
+  if (!withheld) return result;
+  return {
+    ...result,
+    ...(result.message !== undefined ? { message: withheld.text(result.message) } : {}),
+    ...(result.error !== undefined ? { error: withheld.text(result.error) } : {})
+  };
+}
+
+function withheldJson(value: unknown, withheld: WithheldLookup, depth: number): unknown {
+  if (typeof value === "string") return withheld.text(value);
+  if (typeof value === "number") return withheld.numbers.has(value) ? FLUXIQ_RUNTIME_WITHHELD_VALUE : value;
+  if (!value || typeof value !== "object") return value;
+  if (depth >= MAXIMUM_WITHHOLDING_DEPTH) return FLUXIQ_RUNTIME_WITHHELD_VALUE;
+  if (Array.isArray(value)) return value.map((item) => withheldJson(item, withheld, depth + 1));
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, withheldJson(item, withheld, depth + 1)]));
 }
 
 function cloneCommandAttempt(attempt: FluxIQRuntimeCommandAttempt): FluxIQRuntimeCommandAttempt {

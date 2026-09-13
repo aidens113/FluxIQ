@@ -142,9 +142,34 @@ export type FluxIQRuntimeExecutionContext = {
   now?: () => number;
 };
 
+/**
+ * What a withheld value reads as in a command attempt the runtime keeps. A
+ * constant rather than a removed field, so a reader can tell a value that was
+ * withheld from one that was never there.
+ */
+export const FLUXIQ_RUNTIME_WITHHELD_VALUE = "[withheld]";
+
+/**
+ * Values a command carries that its caller supplied from run-time data of
+ * unknown sensitivity. The runtime is told that they are withheld, never why.
+ */
+export type FluxIQRuntimeWithheldValues = {
+  /** Each is replaced wherever it appears inside a string. */
+  texts: string[];
+  /** Each is replaced where a number equals it. */
+  numbers: number[];
+};
+
 export type FluxIQRuntimeDispatchContext = FluxIQRuntimeExecutionContext & {
   preferredClientId?: string;
   preferredSessionId?: string;
+  /**
+   * Withheld from the command attempt the runtime keeps and saves: from the
+   * command's `parameters`, and from the result's `message` and `error`. The
+   * adapter or transport still executes the command as given, and is never
+   * handed this list.
+   */
+  withheldValues?: FluxIQRuntimeWithheldValues;
 };
 
 export type FluxIQRuntimeAdapter = {

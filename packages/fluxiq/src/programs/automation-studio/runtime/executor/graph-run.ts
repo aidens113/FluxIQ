@@ -7,7 +7,17 @@ import { executeAutomationStudioNode } from "./node-execution.ts";
 import { recoveryBudgetState } from "./recovery-budget.ts";
 import { chooseAutomationStudioRecovery, failureMessageForRecoveryStop } from "./recovery-ladder.ts";
 import { executeWithRegionTimeout, policyDecisionForAttempt, recordRegionTransition } from "./region-execution.ts";
-import { automationStudioTraceWithholding, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
+import { AUTOMATION_STUDIO_WITHHELD_VALUE, automationStudioTraceWithholding, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
+import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
+
+/**
+ * What each saved trace this module returned withheld by value, keyed by that
+ * trace. A Call Flow attempt keeps its child's saved trace while the parent
+ * executes with the child's real outputs, so a value the child withheld can
+ * reach the parent's own trace -- in an output, or in a failure message the
+ * parent binds -- and the parent withholds it as well.
+ */
+const withheldBySavedTrace = new WeakMap<AutomationStudioGraphExecutionTrace, FluxIQRuntimeWithheldValues>();
 
 /**
  * The one place a run trace is produced, and therefore the one place values a
@@ -21,14 +31,30 @@ import { automationStudioTraceWithholding, type AutomationStudioTraceWithholding
  * `values` map, the effect handed to the dispatcher, the inputs the host is
  * given for its state snapshots -- keeps the real value, because withholding
  * there would break the run rather than the leak.
+ *
+ * Execution that goes on from a finished run reads real values as well. A caller
+ * that does -- a Call Flow parent building its outputs from its child, a
+ * live-patch rerun seeded from the attempt that failed -- passes
+ * `onExecutedTrace`, which is handed the trace as the run executed it beside the
+ * saved trace this returns. The executed trace is for executing with only, and
+ * is never to be persisted or published; the saved trace is the one to keep.
  */
 export async function runAutomationStudioGraph(
   flow: AutomationStudioFlowDocument,
-  options: AutomationStudioGraphExecutionOptions = {}
+  options: AutomationStudioGraphExecutionOptions = {},
+  onExecutedTrace?: (executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace) => void
 ): Promise<AutomationStudioGraphExecutionTrace> {
   const withholding = automationStudioTraceWithholding();
   recordDeclaredStateBindings(flow, options, withholding);
-  return withholding.apply(await executeAutomationStudioGraph(flow, options, withholding));
+  const executed = await executeAutomationStudioGraph(flow, options, withholding);
+  for (const attempt of executed.attempts) {
+    const childWithheld = attempt.childTrace ? withheldBySavedTrace.get(attempt.childTrace) : undefined;
+    if (childWithheld) withholding.include(childWithheld);
+  }
+  const saved = withholding.apply(withholdRunInputs(executed, options.inputs ?? {}));
+  withheldBySavedTrace.set(saved, withholding.values());
+  onExecutedTrace?.(executed, saved);
+  return saved;
 }
 
 /**
@@ -52,6 +78,59 @@ function recordDeclaredStateBindings(
     const authored = node.parameterValues ?? {};
     withholding.record(authored, resolveAutomationNodeParameterValues(authored, state).values);
   }
+}
+
+/** How deep a withheld input is walked before it is withheld whole: the bound the value-based rewrite uses. */
+const MAXIMUM_INPUT_DEPTH = 64;
+
+/**
+ * The trace with every run input withheld where this module saved it: in
+ * `values`, and in each attempt's `inputs`, both seeded from `options.inputs`.
+ *
+ * A run input is run-time data of unknown sensitivity whether or not a node reads
+ * it, but only an input a binding resolved is recorded for the value-based
+ * rewrite, so one no binding reads was saved here in clear. It is found by
+ * position and proved by identity: the entry still holds the value the caller
+ * supplied, not a node output written over the same key.
+ *
+ * Not by value. A value the run computed can equal an input (5 + 0), and
+ * withholding every equal value would make the saved trace misreport what the
+ * run computed. The cost is a known gap: an input no binding reads, copied by a
+ * node into an output under another key, stays in clear at that copy. Nothing
+ * executes from this copy -- a Call Flow parent and a live-patch rerun are handed
+ * the executed trace -- so the choice shapes only what is kept. A withheld input
+ * keeps its shape, as everything else the trace withholds does.
+ */
+function withholdRunInputs(trace: AutomationStudioGraphExecutionTrace, inputs: Record<string, JsonValue>): AutomationStudioGraphExecutionTrace {
+  if (!Object.keys(inputs).length) return trace;
+  return {
+    ...trace,
+    values: withheldInputEntries(trace.values, inputs),
+    attempts: trace.attempts.map((attempt) => {
+      const attemptInputs = withheldInputEntries(attempt.inputs, inputs);
+      return attemptInputs === attempt.inputs ? attempt : { ...attempt, inputs: attemptInputs };
+    })
+  };
+}
+
+function withheldInputEntries(entries: Record<string, JsonValue>, inputs: Record<string, JsonValue>): Record<string, JsonValue> {
+  let withheld: Record<string, JsonValue> | undefined;
+  for (const [key, supplied] of Object.entries(inputs)) {
+    if (entries[key] !== supplied) continue;
+    withheld ??= { ...entries };
+    withheld[key] = withheldInputValue(supplied, 0);
+  }
+  return withheld ?? entries;
+}
+
+/** Every string and number in a supplied value, replaced in place. Booleans and null carry no credential and stay, as in the value-based rewrite. */
+function withheldInputValue(value: JsonValue, depth: number): JsonValue {
+  if (typeof value === "string") return value ? AUTOMATION_STUDIO_WITHHELD_VALUE : value;
+  if (typeof value === "number") return AUTOMATION_STUDIO_WITHHELD_VALUE;
+  if (!value || typeof value !== "object") return value;
+  if (depth >= MAXIMUM_INPUT_DEPTH) return AUTOMATION_STUDIO_WITHHELD_VALUE;
+  if (Array.isArray(value)) return value.map((item) => withheldInputValue(item, depth + 1));
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, withheldInputValue(item, depth + 1)]));
 }
 
 async function executeAutomationStudioGraph(

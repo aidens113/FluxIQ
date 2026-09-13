@@ -1,8 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { FileRuntimeStore, RuntimeService, type FluxIQRuntimeTransport } from "../index.ts";
+import {
+  FileRuntimeStore,
+  FLUXIQ_RUNTIME_WITHHELD_VALUE,
+  RuntimeService,
+  type FluxIQRuntimeCommand,
+  type FluxIQRuntimeCommandAttempt,
+  type FluxIQRuntimeExecutionContext,
+  type FluxIQRuntimeTransport
+} from "../index.ts";
+
+// Obviously synthetic: every assertion about these is where they must not appear.
+const SUPPLIED = "synthetic-runtime-value-that-must-never-be-persisted";
+const SUPPLIED_NUMBER = 7310452;
 
 describe("RuntimeService", () => {
   it("registers direct adapters and exposes their capabilities", async () => {
@@ -247,5 +259,76 @@ describe("RuntimeService", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  it("withholds a caller's withheld values from the attempt it keeps and saves, while the adapter executes the real ones", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-runtime-withheld-"));
+    try {
+      const runtime = new RuntimeService({ store: new FileRuntimeStore({ rootDir: root }) });
+      const received: Array<{ command: FluxIQRuntimeCommand; context: FluxIQRuntimeExecutionContext }> = [];
+      runtime.registerAdapter({
+        adapterId: "typing",
+        label: "Typing",
+        transport: "direct",
+        capabilities: () => [{ id: "typing.actions", kind: "action", actionTypes: ["typing.type"] }],
+        execute: (command, context) => {
+          received.push({ command, context });
+          return { commandId: command.commandId ?? "command.typing", status: "failed", message: `Could not type ${SUPPLIED} into #field.`, error: `The page refused ${SUPPLIED}.` };
+        }
+      });
+      const parameters = { selector: "#field", text: SUPPLIED, pin: SUPPLIED_NUMBER, retries: 3, notes: [{ sent: `typed ${SUPPLIED}` }] };
+
+      const result = await runtime.dispatch(
+        { commandId: "command.typing", kind: "execute_action", actionType: "typing.type", parameters },
+        { withheldValues: { texts: [SUPPLIED], numbers: [SUPPLIED_NUMBER] } }
+      );
+      await runtime.ready();
+
+      // What executes is unchanged: the adapter gets the real values and never the list, and so does the caller.
+      expect(received).toHaveLength(1);
+      expect(received[0]?.command.parameters).toEqual(parameters);
+      expect(received[0]?.context).not.toHaveProperty("withheldValues");
+      expect(result.message).toBe(`Could not type ${SUPPLIED} into #field.`);
+
+      const [kept] = runtime.commandAttemptsList();
+      const saved = await readFile(path.join(root, "command-attempts", kept!.attemptId, "attempt.json"), "utf8");
+      expect(saved).not.toContain(SUPPLIED);
+      const savedAttempt = (JSON.parse(saved) as { attempt: FluxIQRuntimeCommandAttempt }).attempt;
+      expect(savedAttempt.command.parameters).toEqual({
+        selector: "#field",
+        text: FLUXIQ_RUNTIME_WITHHELD_VALUE,
+        pin: FLUXIQ_RUNTIME_WITHHELD_VALUE,
+        retries: 3,
+        notes: [{ sent: `typed ${FLUXIQ_RUNTIME_WITHHELD_VALUE}` }]
+      });
+      expect(savedAttempt).toMatchObject({
+        status: "failed",
+        message: `Could not type ${FLUXIQ_RUNTIME_WITHHELD_VALUE} into #field.`,
+        result: { message: `Could not type ${FLUXIQ_RUNTIME_WITHHELD_VALUE} into #field.`, error: `The page refused ${FLUXIQ_RUNTIME_WITHHELD_VALUE}.` }
+      });
+      // Withheld when built, so memory, snapshots, and disk hold the same attempt.
+      expect(runtime.commandAttemptsList()).toEqual([savedAttempt]);
+      expect((await runtime.snapshot()).commandAttempts).toEqual([savedAttempt]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps an attempt as dispatched when nothing usable is withheld", async () => {
+    const runtime = new RuntimeService();
+    runtime.registerAdapter({
+      adapterId: "typing",
+      label: "Typing",
+      transport: "direct",
+      capabilities: () => [{ id: "typing.actions", kind: "action", actionTypes: ["typing.type"] }],
+      execute: (command) => ({ commandId: command.commandId ?? "command.typing", status: "succeeded", message: "Typed hello." })
+    });
+
+    await runtime.dispatch(
+      { kind: "execute_action", actionType: "typing.type", parameters: { selector: "#field", text: "hello", retries: 3 } },
+      { withheldValues: { texts: [""], numbers: [Number.NaN] } }
+    );
+
+    expect(runtime.commandAttemptsList()).toMatchObject([{ command: { parameters: { selector: "#field", text: "hello", retries: 3 } }, message: "Typed hello.", result: { message: "Typed hello." } }]);
   });
 });

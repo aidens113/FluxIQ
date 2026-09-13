@@ -38,18 +38,22 @@
 // withheld value is replaced in place by `AUTOMATION_STUDIO_WITHHELD_VALUE` and
 // every key, position, and sibling stays. Inside prose a withheld value is
 // replaced where it sits, so "Could not type <value> into #password." still says
-// what failed. The trace's own structure -- ids, statuses, routes, timestamps --
-// is not rewritten: replacing a `status` that happened to equal a resolved value
-// would corrupt the artifact for every reader while protecting nothing, because
-// a credential is not a node id.
+// what failed; the framework runtime's `fluxiqRuntimeTextWithholding` is that
+// rule, and the command attempt saved for the same dispatch uses it too. The
+// trace's own structure -- ids, statuses, routes, timestamps -- is not
+// rewritten: replacing a `status` that happened to equal a resolved value would
+// corrupt the artifact for every reader while protecting nothing, because a
+// credential is not a node id.
 import type { JsonValue } from "../../../../core/index.ts";
+import { FLUXIQ_RUNTIME_WITHHELD_VALUE, fluxiqRuntimeTextWithholding, type FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
 
 /**
  * What a withheld value reads as in a persisted trace. A constant rather than a
  * removed field, so a reader can tell a value that was withheld from one that
- * was never there.
+ * was never there. It is the framework runtime's marker, so a trace and the
+ * command attempts saved for its dispatches withhold alike.
  */
-export const AUTOMATION_STUDIO_WITHHELD_VALUE = "[withheld]";
+export const AUTOMATION_STUDIO_WITHHELD_VALUE = FLUXIQ_RUNTIME_WITHHELD_VALUE;
 
 /**
  * Keys below which a trace carries data a producer supplied rather than
@@ -82,10 +86,22 @@ export type AutomationStudioTraceWithholding = {
    */
   record(authored: Record<string, JsonValue>, resolved: Record<string, JsonValue>): void;
   /**
+   * Records values another run has already withheld from its own trace -- a
+   * Call Flow child's -- so this trace withholds them wherever they reach it.
+   * The parent executes with its child's real outputs, so they can.
+   */
+  include(values: FluxIQRuntimeWithheldValues): void;
+  /**
    * The trace with every recorded value withheld. A run that resolved nothing
    * gets its own trace back by identity, so a Flow without bindings pays nothing.
    */
   apply<TTrace>(trace: TTrace): TTrace;
+  /**
+   * Copies of every value recorded so far, for a dispatcher to hand the
+   * framework runtime, so the command attempt it saves withholds the resolved
+   * values this trace withholds.
+   */
+  values(): FluxIQRuntimeWithheldValues;
 };
 
 export function automationStudioTraceWithholding(): AutomationStudioTraceWithholding {
@@ -94,12 +110,19 @@ export function automationStudioTraceWithholding(): AutomationStudioTraceWithhol
     record(authored, resolved) {
       recordSuppliedValue(authored, resolved, withheld, 0);
     },
+    include(values) {
+      for (const text of values.texts) if (text) withheld.texts.add(text);
+      for (const value of values.numbers) if (Number.isFinite(value)) withheld.numbers.add(value);
+    },
     apply<TTrace>(trace: TTrace): TTrace {
       if (!withheld.texts.size && !withheld.numbers.size) return trace;
       // The walk preserves every key and every value it does not withhold, and a
       // withheld leaf becomes a string, so the result has the shape of what it
       // was given. That is what the cast asserts and what the tests hold it to.
-      return withheldTraceValue(trace, withheld, false, 0) as TTrace;
+      return withheldTraceValue(trace, { text: fluxiqRuntimeTextWithholding(withheld.texts), numbers: withheld.numbers }, false, 0) as TTrace;
+    },
+    values() {
+      return { texts: [...withheld.texts], numbers: [...withheld.numbers] };
     }
   };
 }
@@ -143,15 +166,18 @@ function recordWithheldScalars(value: JsonValue, withheld: WithheldValues, depth
   for (const item of Array.isArray(value) ? value : Object.values(value)) recordWithheldScalars(item, withheld, depth + 1);
 }
 
-function withheldTraceValue(value: unknown, withheld: WithheldValues, data: boolean, depth: number): unknown {
-  if (typeof value === "string") return data ? withheldText(value, withheld) : value;
-  if (typeof value === "number") return data && withheld.numbers.has(value) ? AUTOMATION_STUDIO_WITHHELD_VALUE : value;
+/** One `apply`'s rewrite: the shared text rule, built once for the recorded texts, and the recorded numbers. */
+type TraceRewrite = { text: (text: string) => string; numbers: Set<number> };
+
+function withheldTraceValue(value: unknown, rewrite: TraceRewrite, data: boolean, depth: number): unknown {
+  if (typeof value === "string") return data ? rewrite.text(value) : value;
+  if (typeof value === "number") return data && rewrite.numbers.has(value) ? AUTOMATION_STUDIO_WITHHELD_VALUE : value;
   if (!value || typeof value !== "object") return value;
   if (depth >= MAXIMUM_WITHHOLDING_DEPTH) return AUTOMATION_STUDIO_WITHHELD_VALUE;
   if (Array.isArray(value)) {
     let changed = false;
     const items = value.map((item) => {
-      const withheldItem = withheldTraceValue(item, withheld, data, depth + 1);
+      const withheldItem = withheldTraceValue(item, rewrite, data, depth + 1);
       if (withheldItem !== item) changed = true;
       return withheldItem;
     });
@@ -160,19 +186,13 @@ function withheldTraceValue(value: unknown, withheld: WithheldValues, data: bool
   let changed = false;
   const record: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    const withheldItem = withheldTraceValue(item, withheld, data || TRACE_DATA_KEYS.has(key) || TRACE_PROSE_KEYS.has(key), depth + 1);
+    const withheldItem = withheldTraceValue(item, rewrite, data || TRACE_DATA_KEYS.has(key) || TRACE_PROSE_KEYS.has(key), depth + 1);
     if (withheldItem !== item) changed = true;
     record[key] = withheldItem;
   }
   // A subtree with nothing withheld is handed back as it arrived, so the rewrite
   // never allocates a copy of a trace it did not change.
   return changed ? record : value;
-}
-
-function withheldText(text: string, withheld: WithheldValues): string {
-  let result = text;
-  for (const value of withheld.texts) if (result.includes(value)) result = result.split(value).join(AUTOMATION_STUDIO_WITHHELD_VALUE);
-  return result;
 }
 
 function isPlainRecord(value: JsonValue | undefined): value is Record<string, JsonValue> {

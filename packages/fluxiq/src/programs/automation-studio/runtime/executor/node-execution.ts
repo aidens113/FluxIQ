@@ -68,7 +68,7 @@ export async function executeAutomationStudioNode(
       }
     });
     if (native) {
-      const result = await dispatchAutomationStudioEffects(native.result, options);
+      const result = await dispatchAutomationStudioEffects(native.result, options, withholding);
       return await finishAttempt(executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...(native.logs?.length ? { logs: native.logs } : {}) }, options, beforeAction, hostCapabilities);
     }
     const composite = await options.compositeExecutor?.({ node: executionNode, inputs, options });
@@ -106,7 +106,7 @@ export async function executeAutomationStudioNode(
       ...(expectationEvaluator ? { expectationEvaluator } : {})
     };
     let result = await definition.execute(context);
-    result = await dispatchAutomationStudioEffects(result, options);
+    result = await dispatchAutomationStudioEffects(result, options, withholding);
     return await finishAttempt(executionNode, nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), options, beforeAction, hostCapabilities);
   } catch (error) {
     return await enrichAttemptWithHostState({
@@ -138,10 +138,10 @@ async function finishAttempt(
   return await attemptWithHostExpectationEvaluation(node, enriched, options);
 }
 
-async function dispatchAutomationStudioEffects(initial: AutomationNodeExecutionResult, options: AutomationStudioGraphExecutionOptions): Promise<AutomationNodeExecutionResult> {
+async function dispatchAutomationStudioEffects(initial: AutomationNodeExecutionResult, options: AutomationStudioGraphExecutionOptions, withholding: AutomationStudioTraceWithholding): Promise<AutomationNodeExecutionResult> {
   let result = initial; if (!options.effectDispatcher) return result;
   for (const effect of result.effects ?? []) {
-    const dispatched = await options.effectDispatcher(effect, options.signal ? { signal: options.signal } : undefined); if (!dispatched) continue;
+    const dispatched = await options.effectDispatcher(effect, effectDispatchContext(options, withholding)); if (!dispatched) continue;
     const outputs = { ...(result.outputs ?? {}), ...(dispatched.outputs ?? {}) };
     // The attempt trace classifies from the dispatcher's target resolution,
     // failure record, and message, so they survive the merge.
@@ -161,6 +161,19 @@ async function dispatchAutomationStudioEffects(initial: AutomationNodeExecutionR
     result = { ...result, outputs, ...targetResolution };
   }
   return result;
+}
+
+type EffectDispatchContext = Parameters<NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]>>[1];
+
+// What the run has resolved out of state travels with each dispatch, so a
+// dispatcher that saves its own record of the command -- the framework
+// runtime's command attempt -- withholds the values the trace withholds. A dispatch with
+// neither a signal nor a withheld value gets no context, as before.
+function effectDispatchContext(options: AutomationStudioGraphExecutionOptions, withholding: AutomationStudioTraceWithholding): EffectDispatchContext {
+  const withheldValues = withholding.values();
+  const withholds = withheldValues.texts.length > 0 || withheldValues.numbers.length > 0;
+  if (!options.signal && !withholds) return undefined;
+  return { ...(options.signal ? { signal: options.signal } : {}), ...(withholds ? { withheldValues } : {}) };
 }
 
 function sideEffectClassForNode(node: AutomationStudioFlowNode): "none" | "internal" | "external" | "destructive" {

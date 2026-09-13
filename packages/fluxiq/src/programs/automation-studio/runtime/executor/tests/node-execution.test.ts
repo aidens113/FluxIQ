@@ -48,6 +48,68 @@ describe("effect dispatch results in the attempt trace", () => {
   });
 });
 
+// Obviously synthetic: every assertion about it is where it must or must not travel.
+const SUPPLIED = "synthetic-dispatch-value-that-must-never-be-persisted";
+type DispatchContext = { withheldValues?: { texts: string[]; numbers: number[] } } | undefined;
+const succeeded = { status: "success", route: "success", outputs: { ok: true } } as const;
+
+describe("what an effect dispatcher is told to withhold", () => {
+  it("hands the dispatcher the value the run resolved out of state, and not what the Flow authored, while the effect carries the real value", async () => {
+    const calls: Array<{ payload: unknown; context: DispatchContext }> = [];
+    const trace = await runAutomationStudioGraph({
+      ...flow,
+      flowId: "flow.bound-dispatch",
+      nodes: [{ id: "type", definitionId: "builtin.policy.action", parameterValues: { outputId: "type-text", parameters: { selector: "#field", text: { $state: { path: "run.supplied.text" } } } } }]
+    }, {
+      inputs: { "run.supplied.text": SUPPLIED },
+      effectDispatcher: (effect, context) => {
+        calls.push({ payload: effect.payload, context });
+        return succeeded;
+      }
+    });
+
+    expect(trace.status).toBe("succeeded");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.payload).toMatchObject({ outputId: "type-text", parameters: { selector: "#field", text: SUPPLIED } });
+    expect(calls[0]?.context?.withheldValues?.texts).toContain(SUPPLIED);
+    expect(calls[0]?.context?.withheldValues?.texts).not.toContain("#field");
+    expect(calls[0]?.context?.withheldValues?.texts).not.toContain("type-text");
+  });
+
+  it("tells a native node's dispatcher the same", async () => {
+    const contexts: DispatchContext[] = [];
+    await runAutomationStudioGraph({
+      ...flow,
+      flowId: "flow.native-bound-dispatch",
+      nodes: [{ id: "native", definitionId: "importer.example.type", parameterValues: { selector: "#field", text: { $state: { path: "run.supplied.text" } } } }]
+    }, {
+      inputs: { "run.supplied.text": SUPPLIED },
+      nativeNodeExecutor: ({ node }) => Promise.resolve({
+        result: { status: "success", route: "success", outputs: {}, effects: [{ type: "policy.output.dispatch", payload: { outputId: "type-text", parameters: node.parameterValues ?? {} } }] }
+      }),
+      effectDispatcher: (_effect, context) => {
+        contexts.push(context);
+        return succeeded;
+      }
+    });
+
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0]?.withheldValues?.texts).toContain(SUPPLIED);
+  });
+
+  it("gives a dispatcher no context when the run withholds nothing and has no signal", async () => {
+    const contexts: DispatchContext[] = [];
+    await runAutomationStudioGraph(flow, {
+      effectDispatcher: (_effect, context) => {
+        contexts.push(context);
+        return succeeded;
+      }
+    });
+
+    expect(contexts).toEqual([undefined]);
+  });
+});
+
 const conditions = [{ path: "cart.items", operator: "exists" }];
 const expectationFlow: AutomationStudioFlowDocument = {
   schemaVersion: "0.1",

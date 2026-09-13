@@ -2,6 +2,7 @@ import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../model/index.ts";
 import type { AutomationNodeExecutionResult, AutomationNodeTargetResolution, AutomationStudioNativeLogEntry } from "../../nodes/index.ts";
+import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
 import type { AutomationStudioHostRuntimeBoundary, AutomationStudioHostStateSnapshotRef } from "../host-runtime.ts";
 
 export type AutomationStudioGraphRunStatus = "running" | "succeeded" | "failed" | "waiting" | "cancelled";
@@ -159,8 +160,13 @@ export type AutomationStudioGraphExecutionOptions = {
   signal?: AbortSignal;
   /** Absolute parent deadline inherited by nested Call Flow executions. */
   deadlineAt?: number;
-  /** Resolves runtime effects such as importer-owned policy outputs. */
-  effectDispatcher?: (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal }) => Promise<AutomationNodeExecutionResult | undefined> | AutomationNodeExecutionResult | undefined;
+  /**
+   * Resolves runtime effects such as importer-owned policy outputs. The context's
+   * `withheldValues` holds every value the run has resolved out of state so far,
+   * for a dispatcher that keeps its own record of the command; the effect itself
+   * carries the real value.
+   */
+  effectDispatcher?: (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal; withheldValues?: FluxIQRuntimeWithheldValues }) => Promise<AutomationNodeExecutionResult | undefined> | AutomationNodeExecutionResult | undefined;
   /** Executes a pinned composite Flow when no built-in implementation exists. */
   compositeExecutor?: (request: { node: AutomationStudioFlowNode; inputs: Record<string, JsonValue>; options: AutomationStudioGraphExecutionOptions }) => Promise<{ result: AutomationNodeExecutionResult; childTrace?: AutomationStudioGraphExecutionTrace; compositeTarget?: { flowId: string; version: string; flowDigest: string } } | undefined>;
   /** Executes explicitly bound importer or trusted-local Code Node implementations. */

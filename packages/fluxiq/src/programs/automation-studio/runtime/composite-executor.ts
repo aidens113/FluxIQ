@@ -3,8 +3,18 @@ import { getCallFlowConfiguration, validateFlowComposition, type AutomationStudi
 import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "./executor.ts";
 import { compileAutomationStudioRegions } from "./region-compiler.ts";
 
-/** Executes only immutable, version-pinned published snapshots. */
-export async function runCanonicalAutomationStudioFlow(flow: AutomationStudioFlowArtifact, snapshots: AutomationStudioPublishedFlowSnapshot[], options: AutomationStudioGraphExecutionOptions = {}, deprecatedPublicationIds: Iterable<string> = []): Promise<AutomationStudioGraphExecutionTrace> {
+/**
+ * Executes only immutable, version-pinned published snapshots.
+ *
+ * The trace this returns, and the child trace each Call Flow attempt keeps, are
+ * the saved traces `runAutomationStudioGraph` withholds. Execution reads real
+ * values: a Call Flow parent builds its outputs from the trace its child
+ * executed. `onExecutedTrace` hands a caller that goes on executing the root
+ * trace as executed, beside the saved trace returned, as
+ * `runAutomationStudioGraph`'s does; it is called once the root run returns, and
+ * not when the Flow's composition or regions are invalid.
+ */
+export async function runCanonicalAutomationStudioFlow(flow: AutomationStudioFlowArtifact, snapshots: AutomationStudioPublishedFlowSnapshot[], options: AutomationStudioGraphExecutionOptions = {}, deprecatedPublicationIds: Iterable<string> = [], onExecutedTrace?: (executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace) => void): Promise<AutomationStudioGraphExecutionTrace> {
   const boundDomains = new Set(options.authorizedDomainIds ?? []);
   const authorizedDomainIds = (flow.executionDefaults?.authorizedDomainIds ?? []).filter((domainId) => boundDomains.has(domainId));
   const composition = validateFlowComposition({ flow, publishedSnapshots: snapshots, deprecatedPublicationIds, authorizedDomainIds, ...(options.runtimeCapabilities ? { runtimeCapabilities: options.runtimeCapabilities } : {}) });
@@ -12,6 +22,11 @@ export async function runCanonicalAutomationStudioFlow(flow: AutomationStudioFlo
   const compiledRegions = compileAutomationStudioRegions(flow);
   if (!compiledRegions.ok) return { status: "failed", startedAt: Date.now(), finishedAt: Date.now(), attempts: [], values: {}, effects: [], message: `Invalid Flow regions: ${compiledRegions.issues.map((issue) => issue.code).join(", ")}` };
   const byId = new Map(snapshots.map((snapshot) => [`${snapshot.flowId}@${snapshot.version}`, snapshot]));
+  // The trace each graph run executed, by the saved trace it returned. A trace
+  // no graph run returned -- a deadline, a cancellation, a cycle -- has no entry
+  // and is read as it is.
+  const executedTraces = new WeakMap<AutomationStudioGraphExecutionTrace, AutomationStudioGraphExecutionTrace>();
+  const executedTrace = (saved: AutomationStudioGraphExecutionTrace) => executedTraces.get(saved) ?? saved;
   const runSnapshot = async (snapshot: AutomationStudioPublishedFlowSnapshot, inputs: Record<string, JsonValue>, stack: string[], executionOptions: AutomationStudioGraphExecutionOptions): Promise<AutomationStudioGraphExecutionTrace> => {
     const key = `${snapshot.flowId}@${snapshot.version}`;
     if (stack.includes(key)) return { status: "failed", startedAt: Date.now(), finishedAt: Date.now(), attempts: [], values: {}, effects: [], message: `Composite Flow cycle detected at ${key}.` };
@@ -46,21 +61,25 @@ export async function runCanonicalAutomationStudioFlow(flow: AutomationStudioFlo
         childTrace = await runChildWithBounds((signal) => runSnapshot(snapshot, childInputs, stack, { ...childOptions, signal }), boundedDeadline, parentOptions.signal, parentOptions.now);
         if (childTrace.status === "succeeded" || childTrace.status === "waiting" || childTrace.status === "cancelled") break;
       }
+      // The parent executes with what its child executed with. The attempt keeps
+      // the child's saved trace.
+      const executedChild = executedTrace(childTrace);
       const outputs: Record<string, JsonValue> = {};
-      for (const port of snapshot.interface.outputs) outputs[port.id] = childTrace.values[port.id] ?? null;
-      for (const binding of call.outputBindings ?? []) outputs[binding.valueKey] = childTrace.values[binding.targetPortId] ?? null;
+      for (const port of snapshot.interface.outputs) outputs[port.id] = executedChild.values[port.id] ?? null;
+      for (const binding of call.outputBindings ?? []) outputs[binding.valueKey] = executedChild.values[binding.targetPortId] ?? null;
       const errorBinding = childTrace.status === "failed" ? call.errorBindings?.find((binding) => snapshot.errors.some((error) => error.id === binding.targetPortId)) : undefined;
-      if (errorBinding) outputs[errorBinding.valueKey] = childTrace.message ?? `Child Flow ${snapshot.flowId}@${snapshot.version} failed.`;
+      if (errorBinding) outputs[errorBinding.valueKey] = executedChild.message ?? `Child Flow ${snapshot.flowId}@${snapshot.version} failed.`;
       return { result: { status: childTrace.status === "succeeded" ? "success" : childTrace.status === "waiting" ? "waiting" : "failed", route: childTrace.status === "succeeded" ? "success" : errorBinding ? `error.${errorBinding.targetPortId}` : "failed", outputs }, childTrace, compositeTarget: { flowId: snapshot.flowId, version: snapshot.version, flowDigest: snapshot.flowDigest } };
     },
     regionRuntime: compiled.plan
-  });
+  }, (executed, saved) => { executedTraces.set(saved, executed); });
   };
   const startedAt = options.now?.() ?? Date.now();
   const ownDeadline = flow.executionDefaults?.timeoutMs ? startedAt + flow.executionDefaults.timeoutMs : undefined;
   const deadlineAt = Math.min(options.deadlineAt ?? Number.POSITIVE_INFINITY, ownDeadline ?? Number.POSITIVE_INFINITY);
   const rootOptions: AutomationStudioGraphExecutionOptions = { ...options, ...(Number.isFinite(deadlineAt) ? { deadlineAt } : {}) };
   const trace = await runChildWithBounds((signal) => runDocument(flow, options.inputs ?? {}, [`${flow.flowId}@draft`], { ...rootOptions, signal }), Number.isFinite(deadlineAt) ? deadlineAt : undefined, options.signal, options.now);
+  onExecutedTrace?.(executedTrace(trace), trace);
   return trace;
 }
 

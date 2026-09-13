@@ -6,7 +6,7 @@ import {
 } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import { IoRegistry } from "../../../io/index.ts";
-import type { FluxIQRuntimeCommandStatus, RuntimeService } from "../../../runtime/index.ts";
+import type { FluxIQRuntimeCommandStatus, FluxIQRuntimeWithheldValues, RuntimeService } from "../../../runtime/index.ts";
 import { normalizeAutomationStudioElementTarget, type AutomationStudioElementTarget, type PolicyAction } from "../model/index.ts";
 import { createAutomationStudioElementMatcher } from "../fingerprinting/index.ts";
 import type { AutomationNodeExecutionResult, AutomationNodeTargetResolution } from "../nodes/contracts.ts";
@@ -73,7 +73,7 @@ export function createIoPolicyEffectDispatcher(io: IoRegistry, domainId: string 
 }
 
 export function createRuntimePolicyEffectDispatcher(io: IoRegistry, domainId: string | null | undefined, runtime: RuntimeService) {
-  return async (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal }): Promise<AutomationNodeExecutionResult | undefined> => {
+  return async (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal; withheldValues?: FluxIQRuntimeWithheldValues }): Promise<AutomationNodeExecutionResult | undefined> => {
     if (effect.type !== "policy.output.dispatch" || !effect.payload || typeof effect.payload !== "object" || Array.isArray(effect.payload)) return undefined;
     const payload = effect.payload as JsonObject;
     let action = policyActionFromPayload(payload);
@@ -95,6 +95,8 @@ export function createRuntimePolicyEffectDispatcher(io: IoRegistry, domainId: st
       metadata: compactJsonObject({ ...(action.metadata ?? {}), ...(prepared.diagnostics ? { elementTargetResolution: prepared.diagnostics } : {}) })
     }, {
       ...(context?.signal ? { signal: context.signal } : {}),
+      // The runtime withholds these from the command attempt it saves; the command still carries them.
+      ...(context?.withheldValues ? { withheldValues: context.withheldValues } : {}),
       ...(typeof action.metadata?.clientId === "string" ? { preferredClientId: action.metadata.clientId } : {}),
       ...(typeof action.metadata?.sessionId === "string" ? { preferredSessionId: action.metadata.sessionId } : {})
     });

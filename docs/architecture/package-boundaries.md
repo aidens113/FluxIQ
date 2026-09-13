@@ -107,6 +107,7 @@ No type or export was removed, but several behaviours change without any host
 opt-in. Read the whole entry if a host:
 - binds an expectation evaluator;
 - reads persisted traces or target resolutions;
+- reads saved command attempts or run inputs back;
 - runs its own client-gateway client;
 - or writes a recording mapper.
 
@@ -136,6 +137,14 @@ are additive.
 acknowledged.**
 - **Ordering.** The client-gateway bridge holds every later message from a
   client until that client's `client.start_recording` has been handled.
+- **Arrival order.** A client's `client.recording_entry`,
+  `client.recording_event`, `client.snapshot`, `client.state_update` and
+  `client.error` messages are stored in the order the gateway received them.
+  Queued state snapshots are written before any later directly appended entry,
+  action results included, and Stop waits for messages received before its
+  drain ends. Stored timelines, entry sequences and the mapper's `following`
+  lists can differ from earlier releases, and a receive now resolves only after
+  that client's earlier messages are stored.
 - **Acknowledgement.** Once the recording is open, the bridge sends the client
   `server.start_recording` for it, unless a `client.stop_recording` for that
   recording has already arrived. A client that treats `server.start_recording`
@@ -153,6 +162,79 @@ acknowledged.**
 persisted trace reads `[withheld]` wherever a run resolved a value from state.
 A plan that nests a binding inside a literal-only parameter now fails validation
 with `bootstrap.invalid_state_binding`.
+
+**A run's supplied inputs are withheld at rest.** Two persisted copies keep each
+input's key and read `[withheld]` for its value:
+- a runtime session record's `metadata.inputs`;
+- the `inputs` of the run-summary envelope in a run's runtime event stream.
+
+The run itself executes with the inputs its request supplied, held in memory. So
+a run detail read back through `get-flow-run-detail`, the run event APIs, or
+`getRuntimeSession` carries input keys but not values. This affects hosts in two
+ways:
+- **Running a queued session by `runId`** no longer falls back to the inputs
+  recorded when it was started. A run request without `inputs` now runs with
+  none, so send them again with `run-runtime-session`. The web panel already
+  does.
+- **A host that read input values back** from a session record or run detail,
+  to show or replay them, must keep its own copy.
+
+Records persisted before this release are not rewritten.
+
+**Runtime command attempts withhold values their caller marks as withheld, and a
+run trace withholds its run inputs where it saves them.**
+- **The contract.** `FluxIQRuntimeDispatchContext` gains an optional
+  `withheldValues` field (`FluxIQRuntimeWithheldValues`, `{ texts, numbers }`).
+  The runtime exports its marker as `FLUXIQ_RUNTIME_WITHHELD_VALUE`
+  (`"[withheld]"`), and `AUTOMATION_STUDIO_WITHHELD_VALUE` is now that constant.
+- **The attempt.** `RuntimeService` builds a command attempt with the marker in
+  place of each withheld text inside `command.parameters`, and of each parameter
+  number equal to a withheld number. When the attempt settles, it does the same
+  inside `result.message`, `result.error` and the attempt's `message`.
+- **What stays.** Every key and every other value stays, so the attempt in
+  memory, in `snapshot()` and in `attempt.json` is the same. The adapter or
+  transport is not handed the list.
+- **Automation Studio.** Its runtime dispatcher fills `withheldValues` with every
+  value its run resolved out of a parameter state binding, and the executor's
+  `effectDispatcher` context gains the same optional field.
+- **Run inputs.** A run trace now also withholds each run input, in `values` and
+  in every attempt's `inputs`, while that entry still holds the supplied value,
+  whether or not a node reads it. An input no binding reads, which a node copies
+  into an output under another key, is not withheld at that copy.
+- **Call Flow.** A parent's saved trace also withholds every value a Call Flow
+  child withheld by value, and the attempt keeps the child's saved trace.
+- **What a reader sees.** A reader of `commandAttemptsList()`, of
+  `command-attempts/<attemptId>/attempt.json`, or of a trace's input entries that
+  expected a clear value now sees the marker. Callers that pass no
+  `withheldValues`, and runs without inputs, see no change.
+- **Not withheld:** `command.metadata`, `result.payload`, `result.failure` and
+  `result.metadata`.
+- **Old attempts.** Attempts saved by earlier versions are not rewritten. Remove
+  `.fluxiq/artifacts/runtime/command-attempts/` if they may hold run-time secrets.
+
+**Execution is unchanged; only saved copies are withheld.** Everything a run
+executes with keeps the real value:
+- the adapter or transport executes the unwithheld command, and the caller of
+  `dispatch` gets the unwithheld result;
+- a Call Flow parent builds its outputs, and a bound error message, from the
+  trace its child executed;
+- a live-patch rerun is seeded from the failed attempt as the run executed it.
+
+Two additive parameters hand that executed trace to a caller that goes on
+executing: an optional third argument to `runAutomationStudioGraph` and an
+optional fifth to `runCanonicalAutomationStudioFlow`, each
+`onExecutedTrace(executed, saved)`. The executed trace is for executing with
+only; persist the returned one.
+
+**One text rule withholds inside strings.** `fluxiqRuntimeTextWithholding(texts)`
+is a new export, and both a saved attempt and a persisted trace use it:
+- every stretch of a string covered by a withheld text becomes one `[withheld]`,
+  so a text that contains or overlaps another is replaced whole and leaves no
+  fragment;
+- a `[withheld]` already in the string is never rewritten.
+
+A trace used to replace texts in the order its run resolved them, and could keep
+fragments of a longer value around a shorter one inside it.
 
 **The element-target trace claims only what Core applied.**
 `AutomationNodeTargetResolution` is now a union discriminated by `status`. Its

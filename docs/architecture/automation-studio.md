@@ -405,16 +405,32 @@ zero and no threshold: Core scored nothing and enforced no floor, and resolving
 the element was left to the output's adapter.
 
 The trace a run persists withholds every value that run resolved out of a
-parameter state binding. `runAutomationStudioGraph` is the one place a run
-trace is produced, and it rewrites the finished trace on the way out: a value
-is kept only when it is identical to the one the Flow document carries at the
-same position, and anything resolution supplied is replaced in place by
-`AUTOMATION_STUDIO_WITHHELD_VALUE` — in effect payloads, outputs, inputs, run
-values, and state diffs, and inside the prose of messages and failure records.
-Ids, statuses, routes, and timestamps are never rewritten, and everything the
-run executes with keeps the real value, so the trace still explains a failure
-without carrying the credential that caused it. The rules and the reasoning are
-in
+parameter state binding, and every input the run was given. `runAutomationStudioGraph`
+is the one place a run trace is produced, and it rewrites the finished trace on
+the way out:
+- **A resolved value** is kept only when it is identical to the one the Flow
+  document carries at the same position. Anything resolution supplied is
+  replaced in place by `AUTOMATION_STUDIO_WITHHELD_VALUE` (`[withheld]`): in
+  effect payloads, outputs, inputs, run values, and state diffs, and inside the
+  prose of messages and failure records.
+- **A run input** is withheld by position: in the trace's `values` and in each
+  attempt's `inputs`, wherever the entry still holds the value the caller
+  supplied, whether or not a node reads it. A value the run computed that equals
+  an input is kept. An input no binding reads, copied by a node into an output
+  under another key, is not withheld at that copy.
+- **A Call Flow child's withheld values** are withheld from its parent's saved
+  trace as well, and the attempt keeps the child's saved trace.
+
+A run's supplied inputs are withheld at rest outside the trace too: the runtime
+session record's `metadata.inputs` and the run-summary envelope keep each key
+and read `[withheld]`. Ids, statuses, routes, and timestamps are never
+rewritten.
+
+Execution reads real values; only the saved copies are withheld. The run executes
+with the real value, a Call Flow parent builds its outputs from the trace its
+child executed, and a live-patch rerun is seeded from the failed attempt as the
+run executed it. So the trace still explains a failure without carrying the
+credential that caused it. The rules and the reasoning are in
 [Automation Studio native and importer nodes](automation-studio-native-nodes.md#a-resolved-value-never-reaches-the-persisted-trace).
 
 Whether an expected state actually holds is the host's decision, not Core's. A

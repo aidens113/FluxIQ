@@ -122,6 +122,21 @@ available. The default global location is:
 Runtime memory is a cache. A new `RuntimeService` with the same store reloads
 known runs and command attempts before serving snapshots.
 
+A command attempt withholds the values its caller marks as withheld. The
+dispatch context's optional `withheldValues` (`{ texts, numbers }`) tells the
+runtime that a value is withheld, never why. When the attempt is built, each
+withheld text is replaced by `FLUXIQ_RUNTIME_WITHHELD_VALUE` (`[withheld]`)
+wherever it appears in `command.parameters`, and a parameter number equal to a
+withheld number becomes the marker. When the attempt settles, the same text rule
+applies to `result.message`, `result.error`, and the attempt's `message`. Every
+key and every other value stays, so the attempt in memory, in snapshots, and in
+`attempt.json` is the same. The adapter or transport executes the command as
+given and is never handed the list. Automation Studio's runtime dispatcher
+passes every value its run has resolved out of a parameter state binding, which
+the run trace also withholds. `command.metadata`,
+`result.payload`, `result.failure`, and `result.metadata` are kept as built or
+returned. Attempts saved before this rule are not rewritten.
+
 ## Program APIs
 
 The `runtime` global program currently exposes:

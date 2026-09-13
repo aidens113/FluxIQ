@@ -1,7 +1,10 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import { defineDomainIo, defineInput, defineOutput, IoRegistry, type OutputDispatchResult } from "../../../../io/index.ts";
-import { RuntimeService, type FluxIQRuntimeCommandResult } from "../../../../runtime/index.ts";
+import { FileRuntimeStore, FLUXIQ_RUNTIME_WITHHELD_VALUE, RuntimeService, type FluxIQRuntimeCommandAttempt, type FluxIQRuntimeCommandResult } from "../../../../runtime/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioRuntimeSession } from "../../model/index.ts";
 import { classifyAutomationStudioAdaptiveFailure } from "../adaptive-orchestrator.ts";
 import { runAutomationStudioGraph } from "../executor.ts";
@@ -168,6 +171,48 @@ describe("failure propagation from dispatch to diagnosis", () => {
     expect(attempt.outputs?.elementTargetResolution).not.toHaveProperty("minimumConfidence");
     const detail = runtimeSessionToFlowRunDetail(session(flow, trace), "project.failure");
     expect(detail.actionAttempts?.[0]?.metadata?.targetResolution).toEqual({ status: "unresolved_no_candidates", candidateCount: 0 });
+  });
+});
+
+describe("a runtime-dispatched output's saved command attempt", () => {
+  // Obviously synthetic: every assertion about it is where it must not appear.
+  const SUPPLIED = "synthetic-policy-value-that-must-never-be-persisted";
+
+  it("withholds a value the run resolved out of state, while the adapter executes the real one", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-io-policy-withheld-"));
+    try {
+      const runtime = new RuntimeService({ store: new FileRuntimeStore({ rootDir: root }) });
+      const executed: JsonObject[] = [];
+      runtime.registerAdapter({
+        adapterId: "example.runtime",
+        label: "Example Runtime",
+        transport: "direct",
+        domainId: "example",
+        capabilities: () => [{ id: "example.outputs", kind: "action", domainId: "example", outputIds: ["activate-element"] }],
+        execute: (command) => {
+          executed.push(command.parameters ?? {});
+          return { commandId: command.commandId ?? "command.runtime", status: "succeeded" };
+        }
+      });
+
+      const trace = await runAutomationStudioGraph(actionFlow({ selector: "#field", text: { $state: { path: "run.supplied.text" } } }), {
+        inputs: { "run.supplied.text": SUPPLIED },
+        effectDispatcher: createRuntimePolicyEffectDispatcher(ioWith(), "example", runtime)
+      });
+      await runtime.ready();
+
+      expect(trace.status).toBe("succeeded");
+      expect(executed).toHaveLength(1);
+      expect(executed[0]).toMatchObject({ selector: "#field", text: SUPPLIED });
+      const [attempt] = runtime.commandAttemptsList();
+      const saved = await readFile(path.join(root, "command-attempts", attempt!.attemptId, "attempt.json"), "utf8");
+      // The element-target normalizer also reads `text` into the command's target
+      // fingerprint, so the value travels twice; neither copy may be saved.
+      expect(saved).not.toContain(SUPPLIED);
+      expect((JSON.parse(saved) as { attempt: FluxIQRuntimeCommandAttempt }).attempt.command.parameters).toMatchObject({ selector: "#field", text: FLUXIQ_RUNTIME_WITHHELD_VALUE });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
 

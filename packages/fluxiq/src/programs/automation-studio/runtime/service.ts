@@ -85,7 +85,7 @@ import type { LearnedTaskModel } from "../learning/index.ts";
 import { compileFlowSource, convertCodeOwnedFlowToVisual, generateFlowTypeScript, verifyCodeOwnedFlowCompilation, type AutomationStudioFlowCompilation } from "../dsl/index.ts";
 import type { EvidenceClaim, EvidenceFact, EvidenceObservation, SignalMiningResult, StateActionCorrelation } from "../mining/index.ts";
 import { normalizeRecordingTimeline, selectActionContextStateEntryIds, type NormalizationOptions, type NormalizedTimeline } from "../normalization/index.ts";
-import { runAutomationStudioGraph, type AutomationStudioRecoveryBudget } from "./executor.ts";
+import { AUTOMATION_STUDIO_WITHHELD_VALUE, runAutomationStudioGraph, type AutomationStudioNodeAttemptTrace, type AutomationStudioRecoveryBudget } from "./executor.ts";
 import { runCanonicalAutomationStudioFlow } from "./composite-executor.ts";
 import { runAutomationStudioRouter } from "./router-runtime.ts";
 import { classifyAutomationStudioAdaptiveFailure, compactAutomationStudioAdaptiveFailure } from "./adaptive-orchestrator.ts";
@@ -2829,7 +2829,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       status: "queued",
       queuedAt: now,
       flow,
-      metadata: { ...(input.metadata ?? {}), inputs: input.inputs ?? {}, authorizedDomainIds: uniqueStrings(input.authorizedDomainIds ?? []), ...(canonical ? { canonicalFlow: true } : {}) }
+      metadata: { ...(input.metadata ?? {}), inputs: Object.fromEntries(Object.keys(input.inputs ?? {}).map((key) => [key, AUTOMATION_STUDIO_WITHHELD_VALUE])), authorizedDomainIds: uniqueStrings(input.authorizedDomainIds ?? []), ...(canonical ? { canonicalFlow: true } : {}) }
     };
     if (input.projectId) await this.writeRuntimeSession(input.projectId, session);
     return session;
@@ -3419,7 +3419,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const startedAt = Date.now();
     const abortController = new AbortController();
     const graphOptions: Parameters<typeof runAutomationStudioGraph>[1] = {
-      inputs: (input.inputs ?? session.metadata?.inputs ?? {}) as Record<string, any>,
+      inputs: (input.inputs ?? {}) as Record<string, any>,
       signal: abortController.signal
     };
     if (this.ioRuntime) {
@@ -3485,8 +3485,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           && selectedFlow.metadata?.subflowGraph === true
           && selectedFlow.metadata?.parentFlowId === runtimeCanonical.flowId
           && selectedFlow.metadata?.parentSubflowId === route.selectedSubflow.subflowId);
+        let routedFailedTraceAttempt: AutomationStudioNodeAttemptTrace | undefined;
         const trace = route.selectedSubflow && selectedFlow && selectedFlowIsOwned
-          ? await runCanonicalAutomationStudioFlow(selectedFlow, await this.catalogue.listPublishedFlowSnapshots(), graphOptions, (await this.catalogue.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`))
+          ? await runCanonicalAutomationStudioFlow(selectedFlow, await this.catalogue.listPublishedFlowSnapshots(), graphOptions, (await this.catalogue.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`), (executed) => { routedFailedTraceAttempt = [...executed.attempts].reverse().find((attempt) => attempt.status === "failed"); })
           : {
             status: "failed" as const,
             startedAt,
@@ -3525,7 +3526,6 @@ const bootstrapInstructionText = resolvedInstructions.instructions
             }
           }] : []
         }, adaptationContext);
-        const routedFailedTraceAttempt = [...trace.attempts].reverse().find((attempt) => attempt.status === "failed");
         const annotatedDetail = await this.maybeAnnotateRunDetailWithRuntimeLlm({
           detail: routedRunDetail,
           context: adaptationContext,
@@ -3554,6 +3554,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const representationDiagnostic = runtimeCanonical && directRepresentation === "legacy_single_graph"
       ? { code: "flow.legacy_single_graph_execution", message: "Executed through bounded legacy single-graph compatibility. Migrate this Flow to a Router and Subflow graph." }
       : undefined;
+    let failedTraceAttempt: AutomationStudioNodeAttemptTrace | undefined;
     const trace = runtimeCanonical && directRepresentation !== "legacy_single_graph"
       ? {
         status: "failed" as const,
@@ -3567,7 +3568,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           : "Top-level orchestration Flow has no Router-selected Subflow execution path."
       }
       : runtimeCanonical
-      ? await runCanonicalAutomationStudioFlow(runtimeCanonical, await this.catalogue.listPublishedFlowSnapshots(), graphOptions, (await this.catalogue.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`))
+      ? await runCanonicalAutomationStudioFlow(runtimeCanonical, await this.catalogue.listPublishedFlowSnapshots(), graphOptions, (await this.catalogue.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`), (executed) => { failedTraceAttempt = [...executed.attempts].reverse().find((attempt) => attempt.status === "failed"); })
       : await runAutomationStudioGraph(runtimeFlow, graphOptions);
     const next: AutomationStudioRuntimeSession = {
       ...session,
@@ -3580,7 +3581,6 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     if (input.projectId) await this.writeRuntimeSession(input.projectId, next);
     if (input.projectId && adaptationContext) {
       const runDetail = runtimeRunDetailWithAdaptationContext(runtimeSessionToFlowRunDetail(next, input.projectId), adaptationContext);
-      const failedTraceAttempt = [...trace.attempts].reverse().find((attempt) => attempt.status === "failed");
       const annotatedDetail = await this.maybeAnnotateRunDetailWithRuntimeLlm({
         detail: runDetail,
         context: adaptationContext,

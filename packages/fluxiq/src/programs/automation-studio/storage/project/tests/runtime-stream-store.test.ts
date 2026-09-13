@@ -1,8 +1,9 @@
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { StateSnapshot } from "../../../model/index.ts";
+import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../../runtime/executor/index.ts";
 import { AutomationStudioProjectAdministration } from "../administration.ts";
 import { AutomationStudioProjectDatabasePool } from "../database.ts";
 import { AutomationStudioProjectRuntimeStreamStore, type AutomationStudioRuntimeStreamEvent } from "../runtime-stream-store.ts";
@@ -177,7 +178,57 @@ describe("AutomationStudioProjectRuntimeStreamStore", () => {
     await store.close();
     await pool.closeAll();
   });
+
+  it("keeps each run input's key and withholds its value in the envelope a run-summary event persists", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    await seedFlow(pool, "project.runtime", "flow.checkout");
+    const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: "project.runtime" });
+    const withheldInputs = { "web.secret.password": AUTOMATION_STUDIO_WITHHELD_VALUE, retries: AUTOMATION_STUDIO_WITHHELD_VALUE };
+    await store.putRunDetail({
+      schemaVersion: "0.1",
+      summary: runSummary({ actionAttemptCount: 0 }),
+      inputs: { "web.secret.password": SUPPLIED_RUN_INPUT, retries: 3 },
+      routeDecisions: [],
+      subflows: [],
+      actionAttempts: [],
+      recoveryAttempts: [],
+      interventions: [],
+      adaptationIds: [],
+      changeProposalIds: []
+    });
+
+    const page = await store.listRuntimeEvents({ runId: "run.checkout", afterSequence: 0, limit: 10, includePayload: true });
+    expect(page.events.find((event) => event.eventKind === "run_summary")?.payload?.inputs).toEqual(withheldInputs);
+    await expect(store.getRunDetail("run.checkout")).resolves.toMatchObject({ inputs: withheldInputs });
+    await store.close();
+    await pool.closeAll();
+    expect(await filesHolding(rootDir, SUPPLIED_RUN_INPUT)).toEqual([]);
+  });
 });
+
+// Obviously synthetic: the assertion is that this string is absent from every
+// byte the store wrote, so a realistic credential would itself be the leak.
+const SUPPLIED_RUN_INPUT = "synthetic-run-input-that-must-never-be-persisted";
+
+async function filesHolding(root: string, literal: string): Promise<string[]> {
+  const needles = [Buffer.from(literal, "utf8"), Buffer.from(literal, "utf16le")];
+  const holding: string[] = [];
+  for (const file of await filesUnder(root)) {
+    const bytes = await readFile(file);
+    if (needles.some((needle) => bytes.includes(needle))) holding.push(path.relative(root, file));
+  }
+  return holding;
+}
+
+async function filesUnder(directory: string): Promise<string[]> {
+  const files: string[] = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...await filesUnder(entryPath));
+    else if (entry.isFile()) files.push(entryPath);
+  }
+  return files;
+}
 
 async function seedProject(pool: AutomationStudioProjectDatabasePool, projectId: string): Promise<void> {
   const admin = await AutomationStudioProjectAdministration.open({ pool, projectId });

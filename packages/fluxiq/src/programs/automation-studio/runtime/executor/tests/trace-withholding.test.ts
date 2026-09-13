@@ -160,6 +160,26 @@ describe("a value resolved out of state and the persisted trace", () => {
     const typeEffect = trace.effects.find((effect) => effect.nodeId === "type");
     expect(dispatchPayload(typeEffect).parameters).toEqual({ selector: "#password", text: AUTOMATION_STUDIO_WITHHELD_VALUE });
   });
+
+  it("leaves no fragment of a withheld text that contains another, even when the shorter was resolved first", async () => {
+    const inner = "synthetic-inner-state-value";
+    const outer = `synthetic-outer-state-value-around-${inner}`;
+    // `hint` resolves before `text`, so a rule that replaced texts in the order
+    // they were recorded would cut the outer value around the inner one.
+    const flow: AutomationStudioFlowDocument = {
+      ...boundParameterFlow,
+      nodes: [{ id: "type", definitionId: "builtin.policy.action", parameterValues: { outputId: "web.dom.type", parameters: { selector: "#password", hint: { $state: { path: "run.inner" } }, text: { $state: { path: "run.outer" } } } } }]
+    };
+    const trace = await runAutomationStudioGraph(flow, {
+      inputs: { "run.inner": inner, "run.outer": outer },
+      effectDispatcher: () => ({ status: "failed", route: "failed", outputs: { ok: false }, message: `Could not type ${outer} into #password.` })
+    });
+
+    const saved = JSON.stringify(trace);
+    expect(saved).not.toContain("synthetic-outer");
+    expect(saved).not.toContain("synthetic-inner");
+    expect(trace.attempts[0]?.message).toBe(`Could not type ${AUTOMATION_STUDIO_WITHHELD_VALUE} into #password.`);
+  });
 });
 
 describe("what the withholding treats as safe", () => {

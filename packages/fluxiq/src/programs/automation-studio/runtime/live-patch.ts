@@ -43,6 +43,11 @@ export type AutomationStudioRuntimePatchExecutionInput = {
   runId: string;
   flow: AutomationStudioFlowDocument;
   patch: AutomationStudioRuntimePatch;
+  /**
+   * The attempt that failed, as the run executed it: a rerun is seeded from its
+   * `inputs`. A saved trace's copy reads `[withheld]` wherever the run withheld a
+   * value, so a rerun seeded from it would execute with the marker.
+   */
   failedAttempt: AutomationStudioNodeAttemptTrace;
   expectedComparison?: AutomationStudioTransitionComparison;
   policy?: AutomationStudioAdaptationPolicy;
