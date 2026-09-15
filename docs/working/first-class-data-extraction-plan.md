@@ -67,7 +67,8 @@ target resolution, expected transitions, and adaptation.
 In `@fluxiq/contracts/automation-studio`, new `packages/contracts/src/record-sets/`:
 - `AutomationStudioRecordSchema`: `schemaVersion`,
   `fields[{ id, label, valueType: string|number|boolean|url|datetime|json,
-  required? }]`, `primaryKey?`.
+  required?, sensitive? }]`, `primaryKey?`. A `sensitive` field's values are
+  never stored, previewed, or exported (downstream D12).
 - `AutomationStudioRecordOutput`: `{ datasetId, label?, recordsPath, schema,
   writeMode: append|replace, maxRecords? }`.
 - `AutomationStudioRunDatasetSummary`: `{ runId, datasetId, nodeIds,
@@ -82,8 +83,9 @@ In `@fluxiq/contracts/automation-studio`, new `packages/contracts/src/record-set
   declared `records` data port; `io-policy.ts` reads `result.payload` at
   `recordsPath`, validates rows, and emits `outputs.records`.
 - An executor hook `onRecordBatch` on `AutomationStudioGraphExecutionOptions`
-  persists each batch from the executed result, before trace withholding; the
-  saved trace keeps `{ datasetId, recordCount, schemaDigest }` only.
+  persists each batch from the executed result, before trace withholding, with
+  `sensitive` columns replaced by a withheld marker; the saved trace keeps
+  `{ datasetId, recordCount, schemaDigest }` only.
 - Migration `AS/storage/project/schema/run-datasets.ts`: `run_datasets` and
   `run_dataset_rows`, with bodies over 256 KiB as run-owned content objects and a
   `runtime/runs/{runId}/datasets/` JSONL fallback without a project database.
@@ -155,6 +157,14 @@ Briefs section.
 
 ## Work Ledger
 
+### 2026-09-15 — Sensitive record fields added (downstream D12)
+- Agent: downstream supervisor
+- Changed: this document (record schema `sensitive`, capture, open question 1)
+- Why: the downstream plan decided E53 for datasets
+- Validation: not validated; planning document only, no Core code changed
+- Outcome: Accepted
+- Follow-up: K1 carries the field
+
 ### 2026-09-15 — Core design recorded from ex-b-core
 - Agent: downstream supervisor; worker `ex-b-core`
 - Changed: this document
@@ -177,8 +187,8 @@ Briefs section.
 1. **Dataset-row withholding.** Store rows raw but protected and retention-bound,
    strip run-withheld text before storage, or a new explicit policy. Owner:
    senior supervisor agent; recommendation, raw rows protected and
-   retention-bound with the domain's sensitivity rules applied at capture, never
-   copied into the saved trace. Ties to the user's E53 decision downstream.
+   retention-bound, never copied into the saved trace, with `sensitive` columns
+   withheld at capture (downstream D12).
 2. **Output references and withholding.** Whether `$output` references to
    already-persisted rows are exempt from trace withholding. Owner: senior
    supervisor agent; recommendation, resolve from the dataset store and record
