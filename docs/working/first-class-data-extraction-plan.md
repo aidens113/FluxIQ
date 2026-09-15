@@ -67,8 +67,10 @@ target resolution, expected transitions, and adaptation.
 In `@fluxiq/contracts/automation-studio`, new `packages/contracts/src/record-sets/`:
 - `AutomationStudioRecordSchema`: `schemaVersion`,
   `fields[{ id, label, valueType: string|number|boolean|url|datetime|json,
-  required?, sensitive? }]`, `primaryKey?`. A `sensitive` field's values are
-  never stored, previewed, or exported (downstream D12).
+  required?, excluded? }]`, `primaryKey?`. An `excluded` field is absent from
+  node outputs, stored rows, the stored schema, previews, and exports; the domain
+  does not read it, and Core drops it anyway if a payload carries it
+  (downstream D12).
 - `AutomationStudioRecordOutput`: `{ datasetId, label?, recordsPath, schema,
   writeMode: append|replace, maxRecords? }`.
 - `AutomationStudioRunDatasetSummary`: `{ runId, datasetId, nodeIds,
@@ -81,11 +83,11 @@ In `@fluxiq/contracts/automation-studio`, new `packages/contracts/src/record-set
 
 - `builtin.policy.action` gains an optional `recordOutput` parameter and a
   declared `records` data port; `io-policy.ts` reads `result.payload` at
-  `recordsPath`, validates rows, and emits `outputs.records`.
+  `recordsPath`, validates rows, drops `excluded` fields, and emits
+  `outputs.records`.
 - An executor hook `onRecordBatch` on `AutomationStudioGraphExecutionOptions`
-  persists each batch from the executed result, before trace withholding, with
-  `sensitive` columns replaced by a withheld marker; the saved trace keeps
-  `{ datasetId, recordCount, schemaDigest }` only.
+  persists each batch from the executed result, before trace withholding; the
+  saved trace keeps `{ datasetId, recordCount, schemaDigest }` only.
 - Migration `AS/storage/project/schema/run-datasets.ts`: `run_datasets` and
   `run_dataset_rows`, with bodies over 256 KiB as run-owned content objects and a
   `runtime/runs/{runId}/datasets/` JSONL fallback without a project database.
@@ -157,6 +159,15 @@ Briefs section.
 
 ## Work Ledger
 
+### 2026-09-15 — Excluded record fields replace sensitive fields (downstream D12)
+- Agent: downstream supervisor
+- Changed: this document (record schema `excluded`, capture, open question 1)
+- Why: the user chose leaving a column out of the output entirely over masking
+  its values
+- Validation: not validated; planning document only, no Core code changed
+- Outcome: Accepted
+- Follow-up: K1 carries the field
+
 ### 2026-09-15 — Sensitive record fields added (downstream D12)
 - Agent: downstream supervisor
 - Changed: this document (record schema `sensitive`, capture, open question 1)
@@ -187,8 +198,8 @@ Briefs section.
 1. **Dataset-row withholding.** Store rows raw but protected and retention-bound,
    strip run-withheld text before storage, or a new explicit policy. Owner:
    senior supervisor agent; recommendation, raw rows protected and
-   retention-bound, never copied into the saved trace, with `sensitive` columns
-   withheld at capture (downstream D12).
+   retention-bound, never copied into the saved trace, with `excluded` columns
+   dropped at capture (downstream D12).
 2. **Output references and withholding.** Whether `$output` references to
    already-persisted rows are exempt from trace withholding. Owner: senior
    supervisor agent; recommendation, resolve from the dataset store and record
