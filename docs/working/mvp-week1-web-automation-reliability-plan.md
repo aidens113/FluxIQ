@@ -1,9 +1,9 @@
 # MVP Week 1 — Web Automation Reliability Plan (Core share)
 
 Status: Active
-Status detail: Core's Week 1 code remains unchanged and validated at `e5c9828`; this paired documentation update records the downstream audit remediation and the pending Stage 4 campaign.
+Status detail: Core's Week 1 code remains unchanged and validated at `e5c9828`; downstream closed Week 1 on 2026-09-15 with two disclosed startup exceptions and a production-Core confirmation pair pending.
 Created: 2026-09-11
-Last updated: 2026-09-13
+Last updated: 2026-09-15
 Owner: Senior supervisor agent
 Scope: Core's share of the downstream web extension's MVP Week 1 plan: the failure-category enum, record, parser, and carriers on the gateway, runtime, dispatch, node, attempt, and LLM-context types; structured-first failure classification; the target-resolution outcome on the attempt trace; loading a domain's panel host through Core's public exports; the structure-audit baseline ratchet; the expectation-evaluator seam (C3, Wave 3); and the two 2026-09-12 element-matcher changes — publishing the matcher for a browser bundle, and charging a missing stable identifier less than a contradicted one.
 Paired document: `F:\!FluxIQWebExtension\docs\working\mvp-week1-web-automation-reliability-plan.md`
@@ -106,13 +106,22 @@ comparison.
   - Core exports no constant for `builtin.policy.action`, so the downstream host
     runtime restates the id.
 
-**Next steps:** Core has no pre-Stage-4 code remediation assigned in this work
-unit. Pair this documentation-only Core commit with the verified downstream
-remediation pin, preserve the documented Core defects for later
-ranking/hardening, and run any newly required Core validation sequentially
-because parallel native-SQLite workers are unsound on this machine. The
-downstream sequence is: `l-final-proofs` alone at the pushed pins, the two
-complete repeat-three benches, then tracked comparison and ranking.
+**Downstream Week 1 closeout, 2026-09-15.** The downstream acceptance pair ran
+at downstream `3d6ecd6` and Core `19468b7` (`bench-mu202a52-127f75c3`,
+`bench-mu202snn-ec661de2`): 189 evaluated runs plus 12 skips each, all 23
+tolerance-bearing metrics equivalent, and exactly two differing runs. The user
+accepted both as disclosed exceptions: each run failed while the Lab started its
+per-run Core with `next dev`, before any browser, and each passed 3/3 in
+isolation. The fix is downstream only: the Lab now serves Core from a cached
+production build (`next build` once, `next start` per run) using Core's own
+`build` and `start` scripts, which Core's performance documentation already
+requires for accepted measurements. No Core code changed. A production-Core
+confirmation pair supersedes the exceptions.
+
+**Next steps:** none assigned to Core. Keep the documented Core defects for later
+ranking. A future Core change that adds revalidated pages, cached `fetch`, or
+`next/image` must account for several Lab servers sharing one production build
+directory.
 
 **Blockers:** none.
 
