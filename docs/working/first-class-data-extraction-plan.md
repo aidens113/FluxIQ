@@ -160,6 +160,15 @@ Briefs section.
 
 ## Work Ledger
 
+### 2026-09-15 — Encrypted field requirements; Secret Keys cost noted
+- Agent: downstream supervisor
+- Changed: this document (open questions 5 and 6)
+- Why: the user asked whether a lookup table could reverse an encrypted column;
+  reading Secret Keys' sealing code showed Node's default scrypt cost
+- Validation: not validated; planning document only, no Core code changed
+- Outcome: Accepted
+- Follow-up: settle open question 6 separately from the extraction phases
+
 ### 2026-09-15 — Encrypted record fields reserved (downstream D13)
 - Agent: downstream supervisor
 - Changed: this document (record schema `handling`, open question 5)
@@ -227,4 +236,16 @@ Briefs section.
    recommendation, a per-project key pair whose private key is sealed with the
    account password in Secret Keys' pattern (scrypt-derived key, AES-256-GCM,
    session unlock at login) and stored outside project content; runs seal
-   values with the public key and never need the password.
+   values with the public key and never need the password. Required: a fresh
+   random key and IV per value; no stored hash or deterministic token of a
+   value; a random salt and scrypt at N=2^17, r=8, p=1 or stronger, with the
+   parameters recorded in the sealed key.
+6. **Secret Keys' password derivation cost.** `deriveSecretKey` calls
+   `scryptSync(password, salt, 32)` with Node's defaults (N=2^14, r=8, p=1;
+   `packages/fluxiq/src/programs/secret-keys/runtime/service.ts:456-460`), below
+   OWASP's scrypt minimum of N=2^17, and the sealed record stores
+   `kdf: "scrypt"` without its parameters (`service.ts:471-479`). Owner: senior
+   supervisor agent; recommendation, record the parameters in the sealed record,
+   raise new seals to N=2^17 with `maxmem` sized to fit, and re-seal existing
+   keys at their next successful unlock. Found while designing downstream D13;
+   outside this plan's phases.
