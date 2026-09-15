@@ -1463,3 +1463,54 @@ results are folded into that document's Decisions and Design sections.
 This file is the archive; nothing is earlier than what is here. The live
 document is the
 [first-class data extraction plan](../../first-class-data-extraction-plan.md).
+
+## 2026-09-15 second compaction: settled verification entries
+
+### 2026-09-15 — Core's gates are all green; a compaction bug caught by docs:check
+- Agent: supervisor
+- Changed: the regenerated `docs/reference/framework-reference.md` and its
+  package copy, `.structure-baseline.json`, `docs/working/README.md`, and one
+  corrected link in the archive
+- Why: the finishing sequence, in order — the full suite, the regenerated
+  framework reference K6 had made stale, the build, and the baseline last
+- Why (the bug, mine): compacting this document moved a ledger tail into the
+  archive, carrying a relative link that resolved from the document's directory
+  but not from the archive's. `docs:check` caught it, which is the gate doing
+  exactly its job. The line was also self-referential once moved — it told a
+  reader of the archive that earlier entries were in the archive — so it now
+  points back to the live document instead. The same fault and fix applied
+  downstream
+- Validation: in `F:\!FluxIQ`, `pnpm --filter fluxiq exec vitest run --no-file-parallelism`
+  → **Test Files 172 passed, Tests 1381 passed**, exit 0, one file at a time for
+  this machine's RAM fault; `pnpm docs:reference` → wrote both copies, 1,619
+  public declarations; `pnpm --filter fluxiq build` → exit 0;
+  `pnpm structure:baseline` → written, 256 entries across 7 rules, and it
+  **lowered** `AS/runtime/service.ts` from 6759 to 6758, so K4c's offset is
+  ratcheted in rather than merely tolerated; `pnpm docs:check` → exit 0,
+  "Validated local links in 134 authored/reference Markdown files" and
+  "Deterministic framework reference is current"; `node scripts/structure-audit.mjs`
+  → **passed**, 0 violations, 127 advisory warnings all pre-existing
+- Outcome: Accepted
+- Follow-up: Core is ready to commit. The push waits for the downstream side,
+  because this change spans both repositories and `AGENTS.md` requires both
+  `dev` branches to move in the same work unit or they drift
+
+### 2026-09-15 — This document compacted to fit its own budget
+- Agent: supervisor
+- Changed: this document and
+  [the archive](./2026-09-15-planning-briefs-and-ledger.md)
+- Why: the document had reached 1,337 lines against the 800-line budget its own
+  `working-docs` audit rule enforces, which fails the structure gate and so
+  would have blocked the Core commit. All ten completed worker briefs and
+  thirteen settled ledger entries moved to the archive; the entries covering
+  still-open findings and the verified results of this session's work stayed
+- Validation: the move was scripted rather than hand-edited, and the script
+  reported `23/23` sections matched with none unmatched — so no heading was
+  silently missed. 1,337 → 729 lines, and the archive grew from 53,262 to
+  94,682 bytes, which accounts for the removed text. `node scripts/structure-audit.mjs`
+  → 1 violation, down from 2: only `docs/working/README.md` being out of date
+  remains, and `pnpm structure:baseline` regenerates that at commit time. One
+  advisory warning is unrelated and pre-existing
+  (`flow-bootstrap/generation-failure.ts` at 502 lines)
+- Outcome: Accepted
+- Follow-up: none; the archived entries stay in git and are linked from here

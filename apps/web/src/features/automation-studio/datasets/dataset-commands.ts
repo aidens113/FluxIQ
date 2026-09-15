@@ -4,7 +4,7 @@
 // and passes them in, so a test injects stubs instead of mocking the network.
 
 import type { ProgramCommandTransport } from "../data/program-transport";
-import { commitAutomationStudioMutation } from "../stores/mutation-transaction-store";
+import { commitAutomationStudioMutation } from "../stores";
 import type { exportRunDataset, getRunDatasetPage, listRunDatasets } from "./dataset-queries";
 import type { RunDatasetDownloadHrefInput } from "./download-href";
 

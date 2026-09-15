@@ -508,54 +508,68 @@ Briefs below were recorded at dispatch on 2026-09-15.
 
 ## Work Ledger
 
-### 2026-09-15 — Core's gates are all green; a compaction bug caught by docs:check
+### 2026-09-15 — A violation the pre-commit audit could not see
 - Agent: supervisor
-- Changed: the regenerated `docs/reference/framework-reference.md` and its
-  package copy, `.structure-baseline.json`, `docs/working/README.md`, and one
-  corrected link in the archive
-- Why: the finishing sequence, in order — the full suite, the regenerated
-  framework reference K6 had made stale, the build, and the baseline last
-- Why (the bug, mine): compacting this document moved a ledger tail into the
-  archive, carrying a relative link that resolved from the document's directory
-  but not from the archive's. `docs:check` caught it, which is the gate doing
-  exactly its job. The line was also self-referential once moved — it told a
-  reader of the archive that earlier entries were in the archive — so it now
-  points back to the live document instead. The same fault and fix applied
-  downstream
-- Validation: in `F:\!FluxIQ`, `pnpm --filter fluxiq exec vitest run --no-file-parallelism`
-  → **Test Files 172 passed, Tests 1381 passed**, exit 0, one file at a time for
-  this machine's RAM fault; `pnpm docs:reference` → wrote both copies, 1,619
-  public declarations; `pnpm --filter fluxiq build` → exit 0;
-  `pnpm structure:baseline` → written, 256 entries across 7 rules, and it
-  **lowered** `AS/runtime/service.ts` from 6759 to 6758, so K4c's offset is
-  ratcheted in rather than merely tolerated; `pnpm docs:check` → exit 0,
-  "Validated local links in 134 authored/reference Markdown files" and
-  "Deterministic framework reference is current"; `node scripts/structure-audit.mjs`
-  → **passed**, 0 violations, 127 advisory warnings all pre-existing
+- Changed: `WEB/features/automation-studio/stores/index.ts` (one export line) and
+  `WEB/features/automation-studio/datasets/dataset-commands.ts` (one import)
+- Why (**the trap, worth remembering**): `scripts/structure-audit.mjs` takes its
+  file list from `git ls-files`, so it cannot see untracked files at all. Every
+  new directory in this change — K9's `datasets/`, K8's handlers, the whole of
+  K0's new modules — was untracked when the pre-commit audit ran, so that audit
+  passed while saying nothing about them. The violation appeared only **after**
+  `0e5c447` made those files tracked. `k4b-datasets-collaborator` reported this
+  exact hazard early and the supervisor did not act on it; a clean audit before
+  a commit that adds new files is close to meaningless
+- Why (the fix, not the shortcut): the flagged import reached
+  `../stores/mutation-transaction-store` directly instead of the directory's
+  barrel. **Fourteen existing files do exactly the same thing**, so K9 followed
+  the established convention — they are simply grandfathered into
+  `.structure-baseline.json` from when the rule was introduced. The violation
+  could therefore have been baselined away in one line. It was not: the barrel
+  now exports the store and the new file imports from the directory, because
+  relaxing a ratchet to make a gate pass is the one move this repository does
+  not allow. The barrel omission turned out not to be deliberate — there is no
+  import cycle, which the type check confirms
+- Validation: `pnpm --filter @fluxiq/web check` → exit 0, so no cycle;
+  `pnpm --filter @fluxiq/web exec vitest run .../datasets .../runtime/tests/runtime-views.test.tsx .../tests/architecture-contract.test.ts --no-file-parallelism`
+  → Test Files 5 passed, Tests 55 passed, exit 0;
+  `node scripts/structure-audit.mjs` → the `[imports]` FAIL is gone, leaving only
+  the stale working-doc index
 - Outcome: Accepted
-- Follow-up: Core is ready to commit. The push waits for the downstream side,
-  because this change spans both repositories and `AGENTS.md` requires both
-  `dev` branches to move in the same work unit or they drift
+- Follow-up: **apply the same lesson downstream.** Its new extension, domain and
+  scenario-lab files are still untracked, so its audit is equally blind right
+  now. Stage that repository before believing its structure result, not after
 
-### 2026-09-15 — This document compacted to fit its own budget
+### 2026-09-15 — Core committed as `0e5c447`; the push waits for downstream
 - Agent: supervisor
-- Changed: this document and
-  [the archive](./first-class-data-extraction-plan/archive/2026-09-15-planning-briefs-and-ledger.md)
-- Why: the document had reached 1,337 lines against the 800-line budget its own
-  `working-docs` audit rule enforces, which fails the structure gate and so
-  would have blocked the Core commit. All ten completed worker briefs and
-  thirteen settled ledger entries moved to the archive; the entries covering
-  still-open findings and the verified results of this session's work stayed
-- Validation: the move was scripted rather than hand-edited, and the script
-  reported `23/23` sections matched with none unmatched — so no heading was
-  silently missed. 1,337 → 729 lines, and the archive grew from 53,262 to
-  94,682 bytes, which accounts for the removed text. `node scripts/structure-audit.mjs`
-  → 1 violation, down from 2: only `docs/working/README.md` being out of date
-  remains, and `pnpm structure:baseline` regenerates that at commit time. One
-  advisory warning is unrelated and pre-existing
-  (`flow-bootstrap/generation-failure.ts` at 502 lines)
+- Changed: 201 files committed on `dev` — K0's credential and key hardening,
+  K1-K9's datasets, iteration, recording lift, endpoints, download route and web
+  panel, K12d's editor, both defect fixes, the regenerated reference and
+  baseline, and this document with its archive
+- Why (the pre-commit review, done rather than assumed): the staged set was read
+  before committing, not after. No file under an ignored path was staged, no
+  private key block and no GitHub, Slack or JWT token shape appears anywhere in
+  the diff, and `git diff --cached --numstat` lists **no** binary file — grep's
+  "Binary file matches" came from a long encoded line in the diff stream, not a
+  blob. The single secret-shaped literal is
+  `GUESSED_PASSWORD = "dummy-password-guess"` in
+  `apps/web/src/app/api/auth/login/tests/route.test.ts`, the dummy guess the
+  login timing-oracle test needs. The scratchpad `secret-scan.cjs` from an
+  earlier session failed with `ENOENT` on a downstream path baked into it, so
+  the staged diff was scanned directly instead, which is stronger evidence than
+  that script would have given
+- Validation: `pnpm --filter fluxiq check` → exit 0;
+  `pnpm --filter @fluxiq/web check` → exit 0;
+  `pnpm --filter fluxiq exec vitest run --no-file-parallelism` → Test Files 172
+  passed, Tests 1381 passed; `pnpm --filter fluxiq build` → exit 0;
+  `pnpm docs:check` → exit 0; `node scripts/structure-audit.mjs` → passed, 0
+  violations. `git commit` → exit 0 at `0e5c447`, and the working tree is clean
 - Outcome: Accepted
-- Follow-up: none; the archived entries stay in git and are linked from here
+- Follow-up: **not pushed yet.** `AGENTS.md` requires both `dev` branches to
+  move in the same work unit when a change spans this repository and the
+  downstream one, and downstream is still finishing `x5k-test-runner-fallout`
+  and its gates. This ledger entry itself is a further small change to commit
+  alongside that push
 
 ### 2026-09-15 — Core's full type check is green with every K worker's output
 - Agent: supervisor

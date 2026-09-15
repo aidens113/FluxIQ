@@ -5,6 +5,7 @@ export * from "./project-query-store";
 export * from "./selection-store";
 export * from "./runtime-status-store";
 export * from "./studio-stores";
+export * from "./mutation-transaction-store";
 export * from "./use-store-selector";
 export * from "./use-studio-store-owners";
 export * from "./use-project-shell-store";
