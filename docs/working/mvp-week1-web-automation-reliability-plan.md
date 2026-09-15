@@ -1,7 +1,7 @@
 # MVP Week 1 — Web Automation Reliability Plan (Core share)
 
 Status: Active
-Status detail: Core's Week 1 code remains unchanged and validated at `e5c9828`; downstream closed Week 1 on 2026-09-15 with two disclosed startup exceptions and a production-Core confirmation pair pending.
+Status detail: Core's Week 1 code remains unchanged and validated at `e5c9828`; downstream Week 1 is complete as of 2026-09-15, confirmed by a production-Core pair with no differing run that superseded two disclosed startup exceptions.
 Created: 2026-09-11
 Last updated: 2026-09-15
 Owner: Senior supervisor agent
@@ -115,8 +115,14 @@ per-run Core with `next dev`, before any browser, and each passed 3/3 in
 isolation. The fix is downstream only: the Lab now serves Core from a cached
 production build (`next build` once, `next start` per run) using Core's own
 `build` and `start` scripts, which Core's performance documentation already
-requires for accepted measurements. No Core code changed. A production-Core
-confirmation pair supersedes the exceptions.
+requires for accepted measurements. No Core code changed. The production-Core
+confirmation pair then ran at downstream `118aeb7` and Core `54ae663`
+(`bench-mu2i36f9-ea262b66`, `bench-mu2i36jy-ddf2e39f`) and passed the official
+comparison: `comparisonPassed: true`, 0 differing runs, 23/23 tolerance metrics
+equivalent, 180 of 189 passed on each side with only the nine ruled-out variant
+failures, and no startup or facility failure. It supersedes both exceptions.
+Each Lab Core served in-process at about 160 MB with `next start`, and run
+duration p95 fell from about 113 s to about 36 s.
 
 **Next steps:** none assigned to Core. Keep the documented Core defects for later
 ranking. A future Core change that adds revalidated pages, cached `fetch`, or
