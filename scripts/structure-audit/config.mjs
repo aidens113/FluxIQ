@@ -31,12 +31,21 @@ export const CONFIG = {
   // Configure a path only once it is clean -- the finding is ratcheted and
   // `--update` never adds an entry, so a dirty path stays red until it is fixed.
   //
-  // None here. Core's own contracts are declared and checked inside
-  // `packages/contracts`, and no code here assembles another repository's
-  // evidence shape by hand; an object spread in this repository is ordinary
-  // copy-with-override, and banning it repository-wide would be wrong. The
-  // downstream web-extension repository configures its page-evidence producers.
-  contractSpreadPaths: [],
+  // Core's own contracts are declared and checked inside `packages/contracts`,
+  // and an object spread elsewhere in this repository is ordinary
+  // copy-with-override, so banning it repository-wide would be wrong. The run
+  // datasets collaborator is configured because it builds the store batches,
+  // audit events, and export answers that dataset endpoints put on the wire.
+  // The downstream web-extension repository configures its page-evidence
+  // producers. An entry's path has no trailing slash: the rule matches
+  // `<path>/` itself.
+  contractSpreadPaths: [
+    {
+      path: "packages/fluxiq/src/programs/automation-studio/runtime/service/datasets",
+      reason: "the run datasets collaborator builds the store batches, audit events, and export answers that dataset endpoints return",
+      remedy: "Write each field by name, passing an absent optional field as `undefined`."
+    }
+  ],
 
   // Path prefixes exempt from the depth limit because a framework dictates
   // their layout. The Next.js app router encodes routes as directories.

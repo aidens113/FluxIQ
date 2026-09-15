@@ -5,6 +5,7 @@ import { useProgramTransport } from "../data/use-program-transport";
 import { cancelRuntimeSession, executeRuntimeSession, exportRuntimeRunAudit, issueLlmExecutionGrant, preflightLlmExecution, startRuntimeSession } from "./run-commands";
 import { getRuntimeFlowReadiness, getRuntimeRunActionDetail, getRuntimeRunDetail, getRuntimeRunEventDetail, listRuntimeRunActions, listRuntimeRunEvents, listRuntimeRuns } from "./run-queries";
 import { generateFlowBootstrapAdaptation, generateFlowFromWebsiteExplorationAdaptation, saveFlowGenerationInstruction } from "../authoring/authoring-commands";
+import { currentProgramDomainId, deleteRunDatasets, exportRunDataset, getRunDatasetPage, listRunDatasets, runDatasetDownloadHref, type RunDatasetCommands } from "../datasets";
 export type RuntimeViewHostModel = {
   projectId: string | null;
   flow?: any;
@@ -38,6 +39,12 @@ export type RuntimeDetailCommands = {
   listEvents(payload: { projectId: string; runId: string; afterSequence?: number; cursor?: string | null; limit: number }, signal?: AbortSignal): ReturnType<typeof listRuntimeRunEvents>;
   loadEventDetail?(payload: { projectId: string; runId: string; sequence: number }, signal?: AbortSignal): ReturnType<typeof getRuntimeRunEventDetail>;
   exportAudit(payload: { projectId: string; runId: string }): ReturnType<typeof exportRuntimeRunAudit>;
+  /**
+   * Reads, exports, and deletes the datasets the run stored (K9). Optional
+   * because several suites build this command set as a literal; the host hook
+   * always binds it, and the panel is mounted only when it is present.
+   */
+  datasets?: RunDatasetCommands;
 };
 
 export type RuntimeExecutionCommands = {
@@ -65,7 +72,20 @@ export function useRuntimeDetailCommands(): RuntimeDetailCommands {
     loadActionDetail: (payload, signal) => getRuntimeRunActionDetail(transport, payload, signal),
     listEvents: (payload, signal) => listRuntimeRunEvents(transport, payload, signal),
     loadEventDetail: (payload, signal) => getRuntimeRunEventDetail(transport, payload, signal),
-    exportAudit: (payload) => exportRuntimeRunAudit(transport, payload)
+    exportAudit: (payload) => exportRuntimeRunAudit(transport, payload),
+    datasets: {
+      list: (payload, signal) => listRunDatasets(transport, payload, signal),
+      page: (payload, signal) => getRunDatasetPage(transport, payload, signal),
+      export: (payload) => exportRunDataset(transport, payload),
+      remove: (payload) => deleteRunDatasets(transport, payload),
+      downloadHref: (input) => runDatasetDownloadHref({
+        projectId: input.projectId,
+        runId: input.runId,
+        datasetId: input.datasetId,
+        format: input.format,
+        domainId: currentProgramDomainId()
+      })
+    }
   }), [transport]);
 }
 

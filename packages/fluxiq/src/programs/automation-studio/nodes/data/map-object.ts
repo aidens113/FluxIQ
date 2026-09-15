@@ -1,4 +1,5 @@
-import { defineBuiltinNode, emptyResult, getPathValue, objectValue, setPathValue } from "../shared/definition.ts";
+import { setKeptPathValue } from "./shared.ts";
+import { defineBuiltinNode, emptyResult, getPathValue, objectValue } from "../shared/definition.ts";
 
 export const mapObjectNode = defineBuiltinNode({
   id: "builtin.data.map-object",
@@ -32,7 +33,9 @@ export const mapObjectNode = defineBuiltinNode({
     }
     if (context.parameters.mode === "rename") {
       let next = { ...source };
-      for (const [target, path] of Object.entries(mapping)) next = setPathValue(next, target, getPathValue(source, path));
+      // The copied value is kept by reference, so a renamed captured row is
+      // still the row the saved trace marks (see `setKeptPathValue`).
+      for (const [target, path] of Object.entries(mapping)) next = setKeptPathValue(next, target, getPathValue(source, path));
       return emptyResult({ object: next });
     }
     return emptyResult({ object: { ...source, ...mapping } });

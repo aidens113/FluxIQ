@@ -46,6 +46,7 @@
 // credential is not a node id.
 import type { JsonValue } from "../../../../core/index.ts";
 import { FLUXIQ_RUNTIME_WITHHELD_VALUE, fluxiqRuntimeTextWithholding, type FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
+import { isAutomationStudioRecordTraceMarker } from "./record-summary.ts";
 
 /**
  * What a withheld value reads as in a persisted trace. A constant rather than a
@@ -173,6 +174,11 @@ function withheldTraceValue(value: unknown, rewrite: TraceRewrite, data: boolean
   if (typeof value === "string") return data ? rewrite.text(value) : value;
   if (typeof value === "number") return data && rewrite.numbers.has(value) ? AUTOMATION_STUDIO_WITHHELD_VALUE : value;
   if (!value || typeof value !== "object") return value;
+  // A dataset marker stands in for rows the run captured, and holds only the
+  // dataset id, a count or ordinal, and a digest. A count that equals a withheld
+  // number is still a count. Only markers the record summary issued are passed:
+  // an object a producer returned in the same shape is withheld like any data.
+  if (isAutomationStudioRecordTraceMarker(value)) return value;
   if (depth >= MAXIMUM_WITHHOLDING_DEPTH) return AUTOMATION_STUDIO_WITHHELD_VALUE;
   if (Array.isArray(value)) {
     let changed = false;

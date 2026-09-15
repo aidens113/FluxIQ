@@ -1,25 +1,22 @@
-import { createCipheriv, createDecipheriv, randomBytes, randomUUID, scryptSync } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { JsonObject } from "../../../core/index.ts";
-import { createRecord, type RecordEnvelope, type Repository } from "../../database-manager/index.ts";
+import type { PasswordKdfOptions } from "../../_shared/password-kdf/index.ts";
+import type { Repository } from "../../database-manager/index.ts";
 import type {
-  EncryptedSecretValueRecord,
   SecretKeyKind,
   SecretKeyRecord,
   SecretKeyScope,
   SecretKeySummary,
   SecretKeysSnapshot
 } from "../types.ts";
+import { CredentialChanges, type OpenedRecordSeal, type SecretKeyCredentialChange, type SecretKeyCredentialChangeInput } from "./credential-changes.ts";
+import { HeldKeys, type HeldRevealAuthorization, type HeldSessionUnlock, type SecretRevealAuthorizationMetadata } from "./held-keys.ts";
+import { SecretKeyStore } from "./key-store.ts";
+import { SealUpgrades } from "./seal-upgrades.ts";
+import { SecretValueSealer } from "./value-sealer.ts";
 
-type SecretKeyValue = {
-  id: string;
-  value: string;
-  updatedAtMs: number;
-};
-
-type SecretKeyCryptoKey = {
-  salt: string;
-  key: Buffer;
-};
+export type { SecretKeyCredentialChange, SecretKeyCredentialChangeInput } from "./credential-changes.ts";
+export type { SecretRevealAuthorizationMetadata } from "./held-keys.ts";
 
 type CreateSecretKeyInput = {
   name: string;
@@ -32,7 +29,8 @@ type CreateSecretKeyInput = {
   description?: string;
   enabled?: boolean;
   metadata?: JsonObject;
-  createdBy?: string;
+  /** The creating user; also stamped on the seal as `sealedByUserId`. */
+  createdBy?: string | undefined;
   nowMs?: number;
 };
 
@@ -53,100 +51,94 @@ type RotateSecretKeyInput = {
   id: string;
   value: string;
   authorizationPassword?: string;
+  /** The user whose password seals the new value, stamped as `sealedByUserId`. */
+  actorUserId?: string | undefined;
   nowMs?: number;
 };
 
 type RevealSecretKeyInput = {
   id: string;
   authorizationPassword?: string;
+  /** The user whose password opens the key, stamped if the reveal upgrades its seal. */
+  actorUserId?: string | undefined;
   nowMs?: number;
-};
-
-export type SecretRevealAuthorizationMetadata = {
-  authorizationId: string;
-  keyId: string;
-  keyUpdatedAtMs: number;
-  expiresAtMs: number;
-  remainingUses: 1;
-};
-
-type StoredSecretRevealAuthorization = SecretRevealAuthorizationMetadata & {
-  decryptionKey: Buffer;
-  sessionId?: string;
-  state: "available" | "claimed";
-  expiryTimer: ReturnType<typeof setTimeout>;
-};
-
-type StoredSecretSessionUnlock = {
-  sessionId: string;
-  userId: string;
-  expiresAtMs: number;
-  decryptionKeys: Map<string, { keyUpdatedAtMs: number; decryptionKey: Buffer }>;
-  expiryTimer: ReturnType<typeof setTimeout>;
 };
 
 const MAX_SECRET_REVEAL_AUTHORIZATION_TTL_MS = 300_000;
 
+/**
+ * Secret Keys: values sealed under account passwords. This class is the public
+ * surface; records and their writes live in `SecretKeyStore`, held derived keys
+ * in `HeldKeys`, seal upgrades in `SealUpgrades`, and credential changes,
+ * including pending seals, in `CredentialChanges`.
+ */
 export class SecretKeysService {
   static readonly storeKind = "secret.keys";
 
-  private readonly records = new Map<string, SecretKeyRecord>();
-  private readonly repository: Repository | undefined;
-  private readonly revealAuthorizations = new Map<string, StoredSecretRevealAuthorization>();
-  private readonly sessionUnlocks = new Map<string, StoredSecretSessionUnlock>();
+  private readonly heldKeys = new HeldKeys();
+  private readonly sealer: SecretValueSealer;
+  private readonly store: SecretKeyStore;
+  private readonly upgrades: SealUpgrades;
+  private readonly credentialChanges: CredentialChanges;
   private readonly now: () => number;
-  private loaded = false;
 
-  constructor(options: { repository?: Repository; now?: () => number } = {}) {
-    this.repository = options.repository;
+  constructor(options: { repository?: Repository; now?: () => number; passwordKdf?: PasswordKdfOptions } = {}) {
     this.now = options.now ?? Date.now;
+    this.sealer = new SecretValueSealer(options.passwordKdf);
+    this.store = new SecretKeyStore({ repository: options.repository, kind: SecretKeysService.storeKind, sealer: this.sealer });
+    this.upgrades = new SealUpgrades({ store: this.store, sealer: this.sealer, heldKeys: this.heldKeys });
+    this.credentialChanges = new CredentialChanges({ store: this.store, sealer: this.sealer, heldKeys: this.heldKeys, upgrades: this.upgrades });
   }
 
   async snapshot(): Promise<SecretKeysSnapshot> {
-    await this.load();
+    await this.store.load();
     return {
-      keys: [...this.records.values()]
+      keys: this.store.list()
         .map(toSummary)
         .sort((left, right) => right.updatedAtMs - left.updatedAtMs || left.name.localeCompare(right.name))
     };
   }
 
   async getKeySummary(id: string): Promise<SecretKeySummary | null> {
-    await this.load();
-    const record = this.records.get(id);
+    await this.store.load();
+    const record = this.store.get(id);
     return record ? toSummary(record) : null;
   }
 
   async createKey(input: CreateSecretKeyInput): Promise<SecretKeySummary> {
-    await this.load();
+    await this.store.load();
     const now = input.nowMs ?? Date.now();
     const id = `secret:${randomUUID()}`;
+    const name = cleanRequired(input.name, "name");
+    const createdBy = cleanOptional(input.createdBy);
+    const { sealed, key } = await this.sealer.seal({ id, value: input.value, updatedAtMs: now }, requirePassword(input.authorizationPassword), createdBy);
+    key.fill(0);
     const record: SecretKeyRecord = {
       id,
-      name: cleanRequired(input.name, "name"),
+      name,
       kind: normalizeKind(input.kind),
       ...(cleanOptional(input.provider) ? { provider: cleanOptional(input.provider) } : {}),
       scope: normalizeScope(input.scope),
       ...(cleanOptional(input.scopeRef) ? { scopeRef: cleanOptional(input.scopeRef) } : {}),
       ...(cleanOptional(input.description) ? { description: cleanOptional(input.description) } : {}),
       enabled: input.enabled ?? true,
-      ...(cleanOptional(input.createdBy) ? { createdBy: cleanOptional(input.createdBy) } : {}),
+      ...(createdBy ? { createdBy } : {}),
       createdAtMs: now,
       updatedAtMs: now,
       lastRotatedAtMs: now,
       ...(input.metadata ? { metadata: input.metadata } : {}),
       recordType: "secret-key",
       encrypted: true,
-      sealed: encryptSecretValue({ id, value: input.value, updatedAtMs: now }, requirePassword(input.authorizationPassword))
+      sealed
     };
-    this.records.set(id, record);
-    await this.persistRecord(record);
+    this.store.set(record);
+    await this.store.persist(id);
     return toSummary(record);
   }
 
   async updateKey(input: UpdateSecretKeyInput): Promise<SecretKeySummary> {
-    await this.load();
-    const existing = this.requireRecord(input.id);
+    await this.store.load();
+    const existing = this.store.require(input.id);
     const updatedAtMs = Math.max(input.nowMs ?? Date.now(), existing.updatedAtMs + 1);
     const next: SecretKeyRecord = {
       ...existing,
@@ -160,48 +152,61 @@ export class SecretKeysService {
       ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
       updatedAtMs
     };
-    this.records.set(existing.id, next);
-    this.revokeRevealAuthorizationsForKey(existing.id);
-    await this.persistRecord(next);
+    this.store.set(next);
+    this.heldKeys.revokeKey(existing.id);
+    await this.store.persist(existing.id);
     return toSummary(next);
   }
 
+  /** Seals a new value. A pending seal from a credential change holds the old value, so the rotation drops it. */
   async rotateKey(input: RotateSecretKeyInput): Promise<SecretKeySummary> {
-    await this.load();
-    const existing = this.requireRecord(input.id);
+    await this.store.load();
+    const existing = this.store.require(input.id);
+    const password = requirePassword(input.authorizationPassword);
     const now = Math.max(input.nowMs ?? Date.now(), existing.updatedAtMs + 1);
+    const { sealed, key } = await this.sealer.seal({ id: existing.id, value: input.value, updatedAtMs: now }, password, cleanOptional(input.actorUserId));
+    key.fill(0);
+    const current = this.store.require(existing.id);
     const next: SecretKeyRecord = {
-      ...existing,
-      updatedAtMs: now,
+      ...current,
+      updatedAtMs: Math.max(now, current.updatedAtMs + 1),
       lastRotatedAtMs: now,
-      sealed: encryptSecretValue({ id: existing.id, value: input.value, updatedAtMs: now }, requirePassword(input.authorizationPassword))
+      sealed,
+      pendingSealed: undefined
     };
-    this.records.set(existing.id, next);
-    this.revokeRevealAuthorizationsForKey(existing.id);
-    await this.persistRecord(next);
+    this.store.set(next);
+    this.heldKeys.revokeKey(current.id);
+    await this.store.persist(current.id);
     return toSummary(next);
   }
 
   async revealKey(input: RevealSecretKeyInput): Promise<{ key: SecretKeySummary; value: string }> {
-    await this.load();
-    const existing = this.requireRecord(input.id);
-    const secret = decryptSecretValue(existing.sealed, requirePassword(input.authorizationPassword));
-    if (secret.id !== existing.id) throw new Error("Invalid secret key payload");
-    const next: SecretKeyRecord = {
-      ...existing,
-      lastRevealedAtMs: input.nowMs ?? Date.now()
-    };
-    this.records.set(existing.id, next);
-    await this.persistRecord(next);
+    await this.store.load();
+    const record = this.store.require(input.id);
+    const password = requirePassword(input.authorizationPassword);
+    const opened = await this.credentialChanges.openCurrentOrPending(record, password);
+    if (!opened) throw new Error("Secret key could not be opened");
+    opened.key.fill(0);
+    const { secret } = opened;
+    const unchanged = this.store.get(record.id);
+    // A failed write leaves the settled record in memory; after a restart the stored pending seal is settled again.
+    if (sameSeals(unchanged, record)) await this.credentialChanges.settle(unchanged, opened.sealed).catch(() => undefined);
+    await this.upgrades.upgrade(record.id, opened.sealed, secret, password, cleanOptional(input.actorUserId));
+    const current = this.store.get(record.id);
+    if (!current || current.lastRotatedAtMs !== record.lastRotatedAtMs) {
+      secret.value = "";
+      throw new Error("Secret key changed during reveal");
+    }
+    const next: SecretKeyRecord = { ...current, lastRevealedAtMs: input.nowMs ?? Date.now() };
+    this.store.set(next);
+    await this.store.persist(current.id);
     return { key: toSummary(next), value: secret.value };
   }
 
   async deleteKey(id: string): Promise<boolean> {
-    await this.load();
-    this.revokeRevealAuthorizationsForKey(id);
-    const deleted = this.records.delete(id);
-    if (this.repository) return this.repository.delete(id, {});
-    return deleted;
+    await this.store.load();
+    this.heldKeys.revokeKey(id);
+    return this.store.delete(id);
   }
 
   async resolveSecretValue(input: RevealSecretKeyInput): Promise<string> {
@@ -209,69 +214,71 @@ export class SecretKeysService {
   }
 
   async createRevealAuthorization(input: { id: string; authorizationPassword?: string; ttlMs?: number; nowMs?: number }): Promise<SecretRevealAuthorizationMetadata> {
-    await this.load();
-    const existing = this.requireRecord(input.id);
+    await this.store.load();
+    const record = this.store.require(input.id);
     const ttlMs = input.ttlMs ?? 60_000;
     if (!Number.isInteger(ttlMs) || ttlMs < 1000 || ttlMs > MAX_SECRET_REVEAL_AUTHORIZATION_TTL_MS) throw new Error("Secret reveal authorization TTL is invalid");
+    const opened = await this.credentialChanges.openCurrentOrPending(record, requirePassword(input.authorizationPassword));
+    if (!opened) throw new Error("Secret reveal authorization was refused");
+    opened.secret.value = "";
+    const current = this.store.get(record.id);
+    if (!sameSeals(current, record)) {
+      opened.key.fill(0);
+      throw new Error("Secret key changed during authorization");
+    }
+    // Settling may promote the pending seal, which revokes the old key's holders, so the key is held after it.
+    const settling = this.credentialChanges.settle(current, opened.sealed);
     const authorizationId = `secret-reveal:${randomUUID()}`;
-    const decryptionKey = deriveSecretKey(requirePassword(input.authorizationPassword), existing.sealed.salt).key;
-    const expiryTimer = setTimeout(() => this.revokeRevealAuthorization(authorizationId), ttlMs);
+    const expiryTimer = setTimeout(() => this.heldKeys.revokeAuthorization(authorizationId), ttlMs);
     expiryTimer.unref?.();
-    const authorization: StoredSecretRevealAuthorization = {
+    const authorization: HeldRevealAuthorization = {
       authorizationId,
-      keyId: existing.id,
-      keyUpdatedAtMs: existing.updatedAtMs,
+      keyId: current.id,
+      keyUpdatedAtMs: current.updatedAtMs,
       expiresAtMs: (input.nowMs ?? this.now()) + ttlMs,
       remainingUses: 1,
-      decryptionKey,
+      decryptionKey: opened.key,
       state: "available",
       expiryTimer
     };
-    this.revealAuthorizations.set(authorizationId, authorization);
+    this.heldKeys.holdAuthorization(authorization);
+    await settling.catch(() => undefined);
     return publicRevealAuthorization(authorization);
   }
 
   async unlockSession(input: { sessionId: string; userId: string; authorizationPassword: string; expiresAtMs: number; nowMs?: number }): Promise<{ sessionId: string; expiresAtMs: number; unlockedKeyCount: number }> {
-    await this.load();
+    await this.store.load();
     const nowMs = input.nowMs ?? this.now();
     if (!input.sessionId || !input.userId || !input.authorizationPassword || !Number.isFinite(input.expiresAtMs) || input.expiresAtMs <= nowMs) {
       throw new Error("Secret key session unlock is invalid");
     }
-    this.revokeSessionUnlock(input.sessionId);
-    const decryptionKeys = new Map<string, { keyUpdatedAtMs: number; decryptionKey: Buffer }>();
-    for (const record of this.records.values()) {
-      const decryptionKey = deriveSecretKey(input.authorizationPassword, record.sealed.salt).key;
-      try {
-        const secret = decryptSecretValueWithKey(record.sealed, decryptionKey);
-        if (secret.id !== record.id || secret.updatedAtMs !== record.updatedAtMs) throw new Error("Invalid secret key payload");
-        secret.value = "";
-        decryptionKeys.set(record.id, { keyUpdatedAtMs: record.updatedAtMs, decryptionKey });
-      } catch {
-        decryptionKey.fill(0);
-      }
-    }
-    const ttlMs = input.expiresAtMs - nowMs;
-    const expiryTimer = setTimeout(() => this.revokeSessionUnlock(input.sessionId), ttlMs);
+    this.heldKeys.revokeSession(input.sessionId);
+    const expiryTimer = setTimeout(() => this.heldKeys.revokeSession(input.sessionId), input.expiresAtMs - nowMs);
     expiryTimer.unref?.();
-    this.sessionUnlocks.set(input.sessionId, {
+    // Held before any derivation: each key joins the session as soon as it is
+    // verified, so a concurrent upgrade replaces it along with every other holder.
+    const unlock: HeldSessionUnlock = {
       sessionId: input.sessionId,
       userId: input.userId,
       expiresAtMs: input.expiresAtMs,
-      decryptionKeys,
+      decryptionKeys: new Map(),
       expiryTimer
-    });
-    return { sessionId: input.sessionId, expiresAtMs: input.expiresAtMs, unlockedKeyCount: decryptionKeys.size };
+    };
+    this.heldKeys.holdSession(unlock);
+    await Promise.all(this.store.sealedFor(input.userId).map((record) => this.unlockRecord(unlock, record.id, input.authorizationPassword)));
+    if (this.heldKeys.session(input.sessionId) !== unlock) throw new Error("Secret key session unlock is unavailable");
+    return { sessionId: input.sessionId, expiresAtMs: input.expiresAtMs, unlockedKeyCount: unlock.decryptionKeys.size };
   }
 
   async createSessionRevealAuthorization(input: { sessionId: string; userId: string; id: string; ttlMs?: number; nowMs?: number }): Promise<SecretRevealAuthorizationMetadata> {
-    await this.load();
+    await this.store.load();
     const nowMs = input.nowMs ?? this.now();
-    const unlock = this.sessionUnlocks.get(input.sessionId);
+    const unlock = this.heldKeys.session(input.sessionId);
     if (!unlock || unlock.userId !== input.userId || unlock.expiresAtMs <= nowMs) {
-      this.revokeSessionUnlock(input.sessionId);
+      this.heldKeys.revokeSession(input.sessionId);
       throw new Error("Secret key session unlock is unavailable");
     }
-    const existing = this.requireRecord(input.id);
+    const existing = this.store.require(input.id);
     const unlockedKey = unlock.decryptionKeys.get(existing.id);
     if (!unlockedKey || unlockedKey.keyUpdatedAtMs !== existing.updatedAtMs) throw new Error("Secret key session unlock is unavailable");
     const requestedTtlMs = input.ttlMs ?? 60_000;
@@ -280,9 +287,9 @@ export class SecretKeysService {
       throw new Error("Secret reveal authorization TTL is invalid");
     }
     const authorizationId = `secret-reveal:${randomUUID()}`;
-    const expiryTimer = setTimeout(() => this.revokeRevealAuthorization(authorizationId), ttlMs);
+    const expiryTimer = setTimeout(() => this.heldKeys.revokeAuthorization(authorizationId), ttlMs);
     expiryTimer.unref?.();
-    const authorization: StoredSecretRevealAuthorization = {
+    const authorization: HeldRevealAuthorization = {
       authorizationId,
       keyId: existing.id,
       keyUpdatedAtMs: existing.updatedAtMs,
@@ -293,116 +300,122 @@ export class SecretKeysService {
       state: "available",
       expiryTimer
     };
-    this.revealAuthorizations.set(authorizationId, authorization);
+    this.heldKeys.holdAuthorization(authorization);
     return publicRevealAuthorization(authorization);
   }
 
   async revealKeyWithAuthorization(input: { authorizationId: string; id: string; nowMs?: number }): Promise<{ key: SecretKeySummary; value: string }> {
-    const authorization = this.revealAuthorizations.get(input.authorizationId);
+    const authorization = this.heldKeys.authorization(input.authorizationId);
     const nowMs = input.nowMs ?? this.now();
     if (!authorization || authorization.state !== "available" || authorization.keyId !== input.id) throw new Error("Secret reveal authorization is unavailable");
     if (authorization.expiresAtMs <= nowMs) {
-      this.revokeRevealAuthorization(input.authorizationId);
+      this.heldKeys.revokeAuthorization(input.authorizationId);
       throw new Error("Secret reveal authorization is unavailable");
     }
     authorization.state = "claimed";
     try {
-      await this.load();
-      const existing = this.requireRecord(input.id);
+      await this.store.load();
+      const existing = this.store.require(input.id);
       if (existing.updatedAtMs !== authorization.keyUpdatedAtMs) throw new Error("Secret reveal authorization is no longer valid");
-      const secret = decryptSecretValueWithKey(existing.sealed, authorization.decryptionKey);
-      if (secret.id !== existing.id || secret.updatedAtMs !== existing.updatedAtMs) throw new Error("Invalid secret key payload");
+      const secret = this.sealer.openRecordWithKey(existing, authorization.decryptionKey);
+      if (!secret) throw new Error("Invalid secret key payload");
       const next: SecretKeyRecord = { ...existing, lastRevealedAtMs: nowMs };
-      this.records.set(existing.id, next);
-      await this.persistRecord(next);
-      const active = this.revealAuthorizations.get(input.authorizationId);
+      this.store.set(next);
+      await this.store.persist(existing.id);
+      const active = this.heldKeys.authorization(input.authorizationId);
       if (active !== authorization || authorization.state !== "claimed" || authorization.expiresAtMs <= this.now()) {
         secret.value = "";
         throw new Error("Secret reveal authorization is unavailable");
       }
       const value = secret.value;
-      this.revokeRevealAuthorization(input.authorizationId);
+      this.heldKeys.revokeAuthorization(input.authorizationId);
       return { key: toSummary(next), value };
     } catch (error) {
-      this.revokeRevealAuthorization(input.authorizationId);
+      this.heldKeys.revokeAuthorization(input.authorizationId);
       throw error;
     }
   }
 
+  /**
+   * Re-seals the user's own keys under their next password and writes each
+   * beside its current seal, for an Identity Access credential change: call
+   * before the credential write, then `commitCredentialChange` after it or
+   * `abortCredentialChange` if it fails. A rejection means the change must be
+   * refused.
+   */
+  prepareCredentialChange(input: SecretKeyCredentialChangeInput): Promise<SecretKeyCredentialChange> {
+    return this.credentialChanges.prepare(input);
+  }
+
+  commitCredentialChange(changeId: string): Promise<SecretKeyCredentialChange> {
+    return this.credentialChanges.commit(changeId);
+  }
+
+  abortCredentialChange(changeId: string): void {
+    this.credentialChanges.abort(changeId);
+  }
+
   revokeRevealAuthorization(authorizationId: string): void {
-    const authorization = this.revealAuthorizations.get(authorizationId);
-    if (!authorization) return;
-    clearTimeout(authorization.expiryTimer);
-    authorization.decryptionKey.fill(0);
-    this.revealAuthorizations.delete(authorizationId);
+    this.heldKeys.revokeAuthorization(authorizationId);
   }
 
   activeRevealAuthorizationCount(): number {
-    return this.revealAuthorizations.size;
+    return this.heldKeys.authorizationCount();
   }
 
   activeSessionUnlockCount(): number {
-    return this.sessionUnlocks.size;
+    return this.heldKeys.sessionCount();
   }
 
   revokeSessionUnlock(sessionId: string): void {
-    const unlock = this.sessionUnlocks.get(sessionId);
-    if (unlock) {
-      clearTimeout(unlock.expiryTimer);
-      for (const entry of unlock.decryptionKeys.values()) entry.decryptionKey.fill(0);
-      unlock.decryptionKeys.clear();
-      this.sessionUnlocks.delete(sessionId);
-    }
-    for (const authorization of [...this.revealAuthorizations.values()]) {
-      if (authorization.sessionId === sessionId) this.revokeRevealAuthorization(authorization.authorizationId);
-    }
+    this.heldKeys.revokeSession(sessionId);
   }
 
+  /** Revokes every held key and forgets in-flight credential changes; their stored pending seals are settled at the next unlock or reveal. */
   close(): void {
-    for (const authorizationId of [...this.revealAuthorizations.keys()]) this.revokeRevealAuthorization(authorizationId);
-    for (const sessionId of [...this.sessionUnlocks.keys()]) this.revokeSessionUnlock(sessionId);
+    this.heldKeys.revokeAll();
+    this.credentialChanges.forgetAll();
   }
 
-  private revokeRevealAuthorizationsForKey(keyId: string): void {
-    for (const authorization of [...this.revealAuthorizations.values()]) {
-      if (authorization.keyId === keyId) this.revokeRevealAuthorization(authorization.authorizationId);
+  /**
+   * Unlocks one record into a session: its current seal, or else its pending
+   * seal, which is then promoted; then upgrades an older seal. A record whose
+   * seals were replaced while its key was derived is retried once.
+   */
+  private async unlockRecord(unlock: HeldSessionUnlock, recordId: string, password: string): Promise<void> {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const record = this.store.get(recordId);
+      if (!record) return;
+      let opened: OpenedRecordSeal | null;
+      try {
+        opened = await this.credentialChanges.openCurrentOrPending(record, password);
+      } catch {
+        return;
+      }
+      if (!opened) return;
+      const current = this.store.get(recordId);
+      const active = this.heldKeys.session(unlock.sessionId) === unlock;
+      if (!active || !sameSeals(current, record)) {
+        opened.key.fill(0);
+        opened.secret.value = "";
+        if (!active) return;
+        continue;
+      }
+      // Settling may promote the pending seal, which revokes the old key's holders, so the key is held after it.
+      const settling = this.credentialChanges.settle(current, opened.sealed);
+      unlock.decryptionKeys.set(recordId, { keyUpdatedAtMs: current.updatedAtMs, decryptionKey: opened.key });
+      // A failed write leaves the settled record in memory; after a restart the stored pending seal is settled again.
+      await settling.catch(() => undefined);
+      await this.upgrades.upgrade(recordId, opened.sealed, opened.secret, password, unlock.userId);
+      opened.secret.value = "";
+      return;
     }
-    for (const unlock of this.sessionUnlocks.values()) {
-      const entry = unlock.decryptionKeys.get(keyId);
-      if (!entry) continue;
-      entry.decryptionKey.fill(0);
-      unlock.decryptionKeys.delete(keyId);
-    }
-  }
-  private requireRecord(id: string): SecretKeyRecord {
-    const record = this.records.get(id);
-    if (!record) throw new Error(`Unknown secret key: ${id}`);
-    return record;
-  }
-
-  private async load(): Promise<void> {
-    if (this.loaded) return;
-    this.loaded = true;
-    if (!this.repository) return;
-    const records = await this.repository.list({});
-    this.records.clear();
-    for (const item of records) {
-      if (isSecretKeyRecord(item.data)) this.records.set(item.id, item.data);
-    }
-  }
-
-  private async persistRecord(record: SecretKeyRecord): Promise<void> {
-    if (!this.repository) return;
-    await this.repository.put(secretRecord(record));
   }
 }
 
-function secretRecord(record: SecretKeyRecord): RecordEnvelope {
-  return createRecord({
-    id: record.id,
-    kind: SecretKeysService.storeKind,
-    data: record as unknown as JsonObject
-  });
+/** True when the store still holds `record`'s current and pending seals. */
+function sameSeals(current: SecretKeyRecord | undefined, record: SecretKeyRecord): current is SecretKeyRecord {
+  return current !== undefined && current.sealed === record.sealed && current.pendingSealed === record.pendingSealed;
 }
 
 function toSummary(record: SecretKeyRecord): SecretKeySummary {
@@ -453,56 +466,7 @@ function normalizeScope(value: SecretKeyScope | undefined): SecretKeyScope {
   return value === "domain" || value === "flow" || value === "custom" ? value : "global";
 }
 
-function deriveSecretKey(password: string, salt = randomBytes(16).toString("base64url")): SecretKeyCryptoKey {
-  return {
-    salt,
-    key: scryptSync(password, salt, 32)
-  };
-}
-
-function encryptSecretValue(secret: SecretKeyValue, password: string): EncryptedSecretValueRecord {
-  const secretKey = deriveSecretKey(password);
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", secretKey.key, iv);
-  const ciphertext = Buffer.concat([
-    cipher.update(JSON.stringify(secret), "utf8"),
-    cipher.final()
-  ]);
-  return {
-    version: 1,
-    algorithm: "aes-256-gcm",
-    kdf: "scrypt",
-    salt: secretKey.salt,
-    iv: iv.toString("base64url"),
-    tag: cipher.getAuthTag().toString("base64url"),
-    ciphertext: ciphertext.toString("base64url")
-  };
-}
-
-function decryptSecretValue(sealed: EncryptedSecretValueRecord, password: string): SecretKeyValue {
-  const secretKey = deriveSecretKey(password, sealed.salt);
-  try {
-    return decryptSecretValueWithKey(sealed, secretKey.key);
-  } finally {
-    secretKey.key.fill(0);
-  }
-}
-
-function decryptSecretValueWithKey(sealed: EncryptedSecretValueRecord, key: Buffer): SecretKeyValue {
-  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(sealed.iv, "base64url"));
-  decipher.setAuthTag(Buffer.from(sealed.tag, "base64url"));
-  const plaintext = Buffer.concat([
-    decipher.update(Buffer.from(sealed.ciphertext, "base64url")),
-    decipher.final()
-  ]).toString("utf8");
-  const parsed = JSON.parse(plaintext) as unknown;
-  if (!isObject(parsed) || typeof parsed.id !== "string" || typeof parsed.value !== "string" || typeof parsed.updatedAtMs !== "number") {
-    throw new Error("Invalid encrypted secret key payload");
-  }
-  return parsed as SecretKeyValue;
-}
-
-function publicRevealAuthorization(authorization: StoredSecretRevealAuthorization): SecretRevealAuthorizationMetadata {
+function publicRevealAuthorization(authorization: HeldRevealAuthorization): SecretRevealAuthorizationMetadata {
   return {
     authorizationId: authorization.authorizationId,
     keyId: authorization.keyId,
@@ -510,34 +474,4 @@ function publicRevealAuthorization(authorization: StoredSecretRevealAuthorizatio
     expiresAtMs: authorization.expiresAtMs,
     remainingUses: 1
   };
-}
-
-function isSecretKeyRecord(value: unknown): value is SecretKeyRecord {
-  if (!isObject(value)) return false;
-  return value.recordType === "secret-key"
-    && value.encrypted === true
-    && typeof value.id === "string"
-    && typeof value.name === "string"
-    && (value.kind === "llm" || value.kind === "custom")
-    && (value.scope === "global" || value.scope === "domain" || value.scope === "flow" || value.scope === "custom")
-    && typeof value.enabled === "boolean"
-    && typeof value.createdAtMs === "number"
-    && typeof value.updatedAtMs === "number"
-    && typeof value.lastRotatedAtMs === "number"
-    && isEncryptedSecretValueRecord(value.sealed);
-}
-
-function isEncryptedSecretValueRecord(value: unknown): value is EncryptedSecretValueRecord {
-  if (!isObject(value)) return false;
-  return value.version === 1
-    && value.algorithm === "aes-256-gcm"
-    && value.kdf === "scrypt"
-    && typeof value.salt === "string"
-    && typeof value.iv === "string"
-    && typeof value.tag === "string"
-    && typeof value.ciphertext === "string";
-}
-
-function isObject(value: unknown): value is JsonObject {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

@@ -115,12 +115,31 @@ function readAutomationStatePath(state: Record<string, JsonValue>, path: string)
   return { found: false };
 }
 
+/**
+ * A key the path names exactly wins. Otherwise the path starts at an own key
+ * of the record, tried from its longest dotted prefix down to its first
+ * segment, and walks the rest. Node outputs are kept under
+ * `${nodeId}.${outputId}`, and a recorded node's id holds dots of its own, so
+ * the key a path starts with can hold dots too. A shorter prefix is tried only
+ * when the rest of the path is not under a longer one.
+ */
 function readRecordPath(value: unknown, path: string): { found: true; value: JsonValue } | { found: false } {
   if (!value || typeof value !== "object" || Array.isArray(value)) return { found: false };
   const record = value as Record<string, unknown>;
   if (Object.prototype.hasOwnProperty.call(record, path)) return jsonValueResult(record[path]);
-  let current: unknown = record;
-  for (const segment of path.split(".")) {
+  const segments = path.split(".");
+  for (let length = segments.length - 1; length >= 1; length -= 1) {
+    const key = segments.slice(0, length).join(".");
+    if (!Object.prototype.hasOwnProperty.call(record, key)) continue;
+    const found = readSegments(record[key], segments.slice(length));
+    if (found.found) return found;
+  }
+  return { found: false };
+}
+
+function readSegments(root: unknown, segments: readonly string[]): { found: true; value: JsonValue } | { found: false } {
+  let current = root;
+  for (const segment of segments) {
     if (!current || typeof current !== "object" || Array.isArray(current) || !Object.prototype.hasOwnProperty.call(current, segment)) return { found: false };
     current = (current as Record<string, unknown>)[segment];
   }

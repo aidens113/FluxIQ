@@ -98,6 +98,44 @@ describe("Automation Studio node parameter state bindings", () => {
     expect(resolved.missingPaths).toEqual([]);
   });
 
+  it("reaches a recorded node's output under its dotted id", () => {
+    expect(resolveAutomationNodeParameterValues({
+      text: automationNodeStateBinding("recorded.candidate.x.result.extracted")
+    }, { "recorded.candidate.x.result": { extracted: "synthetic-extracted" } })).toEqual({ values: { text: "synthetic-extracted" }, missingPaths: [] });
+  });
+
+  it("starts at the longest own key a path begins with, and at a shorter one only when the rest is not under the longer", () => {
+    const state: Record<string, JsonValue> = {
+      "recorded.candidate.x.result": { extracted: "synthetic-longest" },
+      "recorded.candidate": { x: { result: { extracted: "synthetic-shorter" } } },
+      recorded: { candidate: { x: { result: { extracted: "synthetic-first-segment" } } } },
+      "a.b": { c: 1 },
+      a: { b: { d: 2 } }
+    };
+
+    expect(resolveAutomationNodeParameterValues({
+      longest: automationNodeStateBinding("recorded.candidate.x.result.extracted"),
+      underLonger: automationNodeStateBinding("a.b.c"),
+      underShorter: automationNodeStateBinding("a.b.d")
+    }, state)).toEqual({ values: { longest: "synthetic-longest", underLonger: 1, underShorter: 2 }, missingPaths: [] });
+  });
+
+  it("keeps an exact dotted key, a plain walk, and a state snapshot path as they were", () => {
+    expect(resolveAutomationNodeParameterValues({
+      exact: automationNodeStateBinding("app.inventory.count"),
+      walked: automationNodeStateBinding("session.player.name"),
+      missing: automationNodeStateBinding("session.player.age")
+    }, {
+      "app.inventory.count": "synthetic-exact",
+      app: { inventory: { count: "synthetic-walked" } },
+      session: { player: { name: "Ada" } }
+    })).toEqual({ values: { exact: "synthetic-exact", walked: "Ada" }, missingPaths: ["session.player.age"] });
+
+    expect(resolveAutomationNodeParameterValues({ snapshot: automationNodeStateBinding("app.inventory.count") }, {
+      state: { timestamp: 1, namespaces: { app: { schemaId: "app", schemaVersion: "1", values: { "inventory.count": { type: "integer", value: 12, observedAt: 1 } } } } }
+    })).toEqual({ values: { snapshot: 12 }, missingPaths: [] });
+  });
+
   it("stops descending at the depth bound and leaves a deeper binding untouched", () => {
     let deep: JsonValue = automationNodeStateBinding("run.value");
     for (let level = 0; level < 20; level += 1) deep = { down: deep };

@@ -1,4 +1,9 @@
-import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+import type {
+  AutomationStudioFailureRecord,
+  AutomationStudioRecordSchema,
+  AutomationStudioRecordWriteMode,
+  AutomationStudioRunDatasetSummary
+} from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../model/index.ts";
 import type { AutomationNodeExecutionResult, AutomationNodeTargetResolution, AutomationStudioNativeLogEntry } from "../../nodes/index.ts";
@@ -150,6 +155,36 @@ export type AutomationStudioGraphExecutionTrace = {
   message?: string;
 };
 
+/**
+ * The rows one record output captured from one successful dispatch, handed to
+ * `onRecordBatch`. `rows` is the array the node's `records` output holds and the
+ * one put back at `recordsPath` inside its `result`: validated by allowlist
+ * copy, so it holds `include` fields only, in schema order.
+ */
+export type AutomationStudioRecordBatch = {
+  nodeId: string;
+  attemptId: string;
+  /**
+   * Names this capture uniquely within the run, and identically when the run is
+   * run again: the attempt ids of the Call Flow attempts enclosing the capturing
+   * run, outermost first, then `attemptId`, joined with `/`. Each id has `%` and
+   * `/` escaped as `%25` and `%2F`, so `/` occurs only between ids. `attemptId`
+   * alone repeats inside a Call Flow child, whose attempts are numbered from 1.
+   */
+  batchKey: string;
+  datasetId: string;
+  label?: string;
+  writeMode: AutomationStudioRecordWriteMode;
+  /** The stored schema (`storedAutomationStudioRecordSchema`): no `exclude` field. */
+  schema: AutomationStudioRecordSchema;
+  schemaDigest?: string;
+  rows: JsonObject[];
+  /** Rows the schema refused. */
+  invalidCount: number;
+  /** True when the output returned more rows than the record output keeps. */
+  truncated: boolean;
+};
+
 export type AutomationStudioGraphExecutionOptions = {
   startNodeId?: string;
   inputs?: Record<string, JsonValue>;
@@ -167,6 +202,21 @@ export type AutomationStudioGraphExecutionOptions = {
    * carries the real value.
    */
   effectDispatcher?: (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal; withheldValues?: FluxIQRuntimeWithheldValues }) => Promise<AutomationNodeExecutionResult | undefined> | AutomationNodeExecutionResult | undefined;
+  /**
+   * Stores the rows a record output captured. Called once per capture, after
+   * the dispatch succeeded and before the attempt is returned. A throw fails the
+   * attempt with `record_output.persist_failed`. With or without a hook, the
+   * node still emits `records`, and the saved trace holds markers, not rows.
+   */
+  onRecordBatch?: (batch: AutomationStudioRecordBatch) => Promise<AutomationStudioRunDatasetSummary> | AutomationStudioRunDatasetSummary;
+  /**
+   * Attempt ids of the Call Flow attempts enclosing this run, outermost first,
+   * for `AutomationStudioRecordBatch.batchKey`. The executor extends it on the
+   * options it hands `compositeExecutor`, which passes them on to the child run,
+   * as the canonical composite executor does by spreading them. A host starting
+   * a run leaves it unset.
+   */
+  callFlowAttemptPath?: string[];
   /** Executes a pinned composite Flow when no built-in implementation exists. */
   compositeExecutor?: (request: { node: AutomationStudioFlowNode; inputs: Record<string, JsonValue>; options: AutomationStudioGraphExecutionOptions }) => Promise<{ result: AutomationNodeExecutionResult; childTrace?: AutomationStudioGraphExecutionTrace; compositeTarget?: { flowId: string; version: string; flowDigest: string } } | undefined>;
   /** Executes explicitly bound importer or trusted-local Code Node implementations. */

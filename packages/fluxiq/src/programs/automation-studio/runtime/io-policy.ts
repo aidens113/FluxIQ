@@ -97,6 +97,10 @@ export function createRuntimePolicyEffectDispatcher(io: IoRegistry, domainId: st
       ...(context?.signal ? { signal: context.signal } : {}),
       // The runtime withholds these from the command attempt it saves; the command still carries them.
       ...(context?.withheldValues ? { withheldValues: context.withheldValues } : {}),
+      // A dispatch that carries `recordOutput` returns records, which are stored only
+      // as their dataset allows, so the saved attempt holds the withheld marker in
+      // place of the payload. The result returned here still carries them.
+      ...(payload.recordOutput !== undefined && payload.recordOutput !== null ? { withheldResultPayload: true } : {}),
       ...(typeof action.metadata?.clientId === "string" ? { preferredClientId: action.metadata.clientId } : {}),
       ...(typeof action.metadata?.sessionId === "string" ? { preferredSessionId: action.metadata.sessionId } : {})
     });

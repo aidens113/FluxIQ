@@ -83,7 +83,7 @@ exercises a layout-v1 to layout-v2 migration, type-checks without workspace
 paths, and browser-bundles the WebSocket client while checking its dependency
 graph. CI repeats the checks on Node 22 for Windows and Linux.
 
-`@fluxiq/contracts` is at version `0.2.0` and `fluxiq` at `0.4.0`;
+`@fluxiq/contracts` is at version `0.2.0` and `fluxiq` at `0.5.0`;
 `@fluxiq/client-gateway-websocket` is at `0.1.0`. Before 1.0, compatible
 changes increment the patch version and intentional API breaks increment the
 minor version with a note under [Migration Notes](#migration-notes).
@@ -100,6 +100,93 @@ publication, tags, signing, provenance, the final legal licensor identity, and
 commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
+
+### 0.5.0: stronger password derivation, hashed session ids, and credential hardening (`fluxiq`)
+
+Stored credentials and Secret Keys move to a format that 0.4.x cannot read, and
+several credential behaviours change without any host opt-in. Read the whole
+entry if a host:
+- may roll back to 0.4.x after upgrading;
+- expects sessions to survive the upgrade, or PIN-gated actions to survive a
+  restart;
+- constructs `IdentityAccessService` or `SecretKeysService` itself, or reads
+  `EncryptedSecretValueRecord`;
+- calls `upsertUser` with the id of an existing account;
+- matches on Secret Keys error text;
+- or reads `result.payload` from saved command attempts.
+
+**Records upgrade forward only.** Password-derived keys and hashes use `scrypt`
+at N=2^17, r=8, p=1. 0.4.x used Node's default N=2^14 and recorded nothing.
+- Credential envelopes and Secret Keys seals are written as `version: 2` with
+  `kdfParams`. Password and PIN hashes are written as
+  `$scrypt$ln=17,r=8,p=1$<salt>$<hash>`.
+- Version 1 records and older hashes are still read. Each upgrades after its
+  next successful login, Secret Keys unlock or reveal, or PIN check, with no
+  user step. A record is never rewritten at a lower cost.
+- 0.4.x skips version 2 records: a user whose credential 0.5.0 re-sealed cannot
+  log in to 0.4.x, and upgraded Secret Keys disappear from it.
+- **Rollback** means rolling forward again, or restoring a `global.sqlite`
+  backup taken before the upgrade. Take that backup before upgrading.
+- `EncryptedSecretValueRecord` is now a union of `EncryptedSecretValueRecordV1`
+  and `EncryptedSecretValueRecordV2`.
+
+**Existing sessions are signed out.** Sessions are stored under the SHA-256
+digest of their id, never the id, which is the cookie's bearer value. The first
+load deletes session records stored under a raw id, so every signed-in user
+signs in again after the upgrade. `snapshot().sessions[].id` is now the digest.
+
+**A PIN gate after a restart needs a new sign-in.** No PIN verifier is stored
+outside the credential seal, and a stored `pinVerifierHash` is removed at the
+first load. A PIN verifies only against a credential unlocked in the current
+process. After a restart, a PIN-gated action fails with "PIN verifier upgrade
+required. Sign out and sign back in, then try again." until the user signs in.
+
+**A login costs more, and the same for any username.** A login spends one
+derivation, observed once at about 350 ms on a development machine. Derivations
+run off the event loop, at most two at a time in the process. An unknown,
+disabled, or password-less username runs a dummy derivation.
+
+**A password change re-seals Secret Keys.**
+- `IdentityAccessServiceOptions` gains `credentialChangeSubscribers`, a list of
+  `IdentityCredentialChangeSubscriber` (`prepare`, `commit`, `abort`).
+  `SecretKeysService` gains `prepareCredentialChange`,
+  `commitCredentialChange`, and `abortCredentialChange`. Both services gain a
+  test-only `passwordKdf` option.
+- `createGlobalProgramRuntime` subscribes Secret Keys. A user's own password
+  change re-seals that user's keys under the new password, and a failure to
+  prepare that re-seal refuses the change. Once the credential is written the
+  change stands: a subscriber whose `commit` throws is logged with the change
+  id, user id, and failure count only, and the password change still succeeds.
+  It used to rethrow the first commit error. A host that constructs both services itself
+  must subscribe Secret Keys the same way, or a password change leaves that
+  user's keys unreadable.
+- An administrator's reset of another account cannot re-seal that account's
+  keys. They stay sealed under the old password.
+- `upsertUser` now throws when given a password or PIN for an existing account.
+  Change credentials with `setPassword`, `setPasswordAuthorized`, `setPin`, or
+  `setPinAuthorized`.
+
+**Other credential checks tighten.**
+- `createRevealAuthorization` refuses a password that does not open the key,
+  with "Secret reveal authorization was refused". It used to succeed.
+- A reveal with the wrong password fails with "Secret key could not be opened"
+  instead of Node's decryption error.
+- A Secret Keys metadata edit no longer stops that key unlocking at login.
+- Secret Keys API handlers take `createdBy` from the acting user and ignore one
+  in the payload.
+- Database Manager `put-record` and `delete-record` on `identity.users` and
+  `secret.keys` require the same credential recheck as reading them.
+
+**A saved command attempt can withhold its result payload.**
+`FluxIQRuntimeDispatchContext` gains `withheldResultPayload?: boolean`.
+- When it is `true` and a payload comes back, the attempt in memory, in
+  `snapshot()`, and in `attempt.json` holds `FLUXIQ_RUNTIME_WITHHELD_VALUE` in
+  place of `result.payload`. The caller of `dispatch` still receives the
+  payload, and the flag is never handed to the adapter or transport.
+- `FluxIQRuntimeCommandAttempt.result` is now
+  `FluxIQRuntimeCommandAttemptResult`, whose `payload` may be that marker.
+- Automation Studio sets the flag for every dispatch whose effect payload
+  carries a `recordOutput`.
 
 ### 0.4.0: failed expectations fail, client recordings start in order, and traces claim only what Core applied (`fluxiq`)
 
@@ -211,8 +298,10 @@ run trace withholds its run inputs where it saves them.**
   `command-attempts/<attemptId>/attempt.json`, or of a trace's input entries that
   expected a clear value now sees the marker. Callers that pass no
   `withheldValues`, and runs without inputs, see no change.
-- **Not withheld:** `command.metadata`, `result.payload`, `result.failure` and
-  `result.metadata`.
+- **Not withheld:** `command.metadata`, `result.failure` and `result.metadata`.
+  `result.payload` was not withheld in this release either. From 0.5.0 a caller
+  withholds it with `withheldResultPayload`, and Automation Studio does so for
+  every dispatch that carries a `recordOutput` (see 0.5.0 above).
 - **Old attempts.** Attempts saved by earlier versions are not rewritten. Remove
   `.fluxiq/artifacts/runtime/command-attempts/` if they may hold run-time secrets.
 

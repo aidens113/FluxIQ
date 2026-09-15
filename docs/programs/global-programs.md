@@ -18,7 +18,15 @@ Current behavior:
   by the shared API registry before its handler runs;
 - the viewer role is read-only and cannot invoke identity, data, compute,
   runtime, deployment, secrets, or authoring mutations;
-- login sessions last 12 hours;
+- login sessions last 12 hours; sessions are stored under the SHA-256 digest of
+  their id, never the id itself;
+- failed web logins are bounded per username, per client address when a trusted
+  proxy forwards one, and across the whole panel;
+- a PIN is checked only against the credential unlocked by a sign-in in the
+  current process, so after a restart a PIN-gated action asks the user to sign
+  in again;
+- an existing account's password or PIN changes only through a password or PIN
+  change, never by re-creating the user;
 - first-run credentials default to `admin` / `admin`;
 - no default PIN is created;
 - PIN can be configured after login;
@@ -52,7 +60,13 @@ Current behavior:
 
 - secrets are stored in the `secret.keys` table inside `global.sqlite`;
 - secret values are AES-256-GCM encrypted at rest with `scrypt` password-derived
-  keys, matching the identity credential sealing model;
+  keys (N=2^17, r=8, p=1), matching the identity credential sealing model; each
+  seal records its parameters, and an older seal is re-sealed at the current
+  cost after its next successful unlock or reveal;
+- a user's own password change re-seals that user's keys under the new
+  password; an administrator's reset of another account cannot, so that
+  account's keys stay sealed under its old password and cannot be read with the
+  new one;
 - snapshots return only redacted metadata: name, type, provider, scope, enabled
   state, and rotation/reveal timestamps;
 - create, update, rotate, reveal, and delete operations require the

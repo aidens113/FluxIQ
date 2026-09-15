@@ -228,3 +228,36 @@ describe("what the withholding treats as safe", () => {
     expect(withholding.apply(trace)).toBe(trace);
   });
 });
+
+describe("dataset markers and the withholding", () => {
+  it("keeps a $dataset recordCount equal to a withheld number, and withholds that number in a look-alike a producer returned", async () => {
+    const flow: AutomationStudioFlowDocument = {
+      ...boundParameterFlow,
+      flowId: "flow.marker-withholding",
+      nodes: [{
+        id: "extract",
+        definitionId: "builtin.policy.action",
+        parameterValues: {
+          outputId: "extract-list",
+          parameters: { limit: { $state: { path: "run.limit" } } },
+          recordOutput: { datasetId: "products", recordsPath: "items", writeMode: "append", schema: { schemaVersion: "0.1", fields: [{ id: "name", label: "Name", valueType: "string" }] } }
+        }
+      }]
+    };
+    const trace = await runAutomationStudioGraph(flow, {
+      inputs: { "run.limit": 2 },
+      effectDispatcher: () => ({
+        status: "success",
+        route: "success",
+        outputs: { ok: true, result: { items: [{ name: "synthetic-row-one" }, { name: "synthetic-row-two" }] }, lookalike: { $dataset: { datasetId: "products", recordCount: 2 } } }
+      })
+    });
+
+    expect(trace.status).toBe("succeeded");
+    // The binding resolved 2, so 2 is withheld wherever the trace carries it as data.
+    expect(dispatchPayload(trace.effects[0]).parameters).toEqual({ limit: AUTOMATION_STUDIO_WITHHELD_VALUE });
+    expect(trace.attempts[0]?.outputs.records).toEqual({ $dataset: { datasetId: "products", recordCount: 2 } });
+    expect(trace.values["extract.records"]).toEqual({ $dataset: { datasetId: "products", recordCount: 2 } });
+    expect(trace.attempts[0]?.outputs.lookalike).toEqual({ $dataset: { datasetId: "products", recordCount: AUTOMATION_STUDIO_WITHHELD_VALUE } });
+  });
+});

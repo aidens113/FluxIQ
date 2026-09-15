@@ -353,6 +353,84 @@ describe("RuntimeService", () => {
 
     expect(runtime.commandAttemptsList()).toMatchObject([{ command: { parameters: { selector: "#field", text: "hello", retries: 3 } }, message: "Typed hello.", result: { message: "Typed hello." } }]);
   });
+
+  it("withholds the result payload from the attempt it keeps and saves when asked, while the caller receives it", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-runtime-withheld-payload-"));
+    try {
+      const runtime = new RuntimeService({ store: new FileRuntimeStore({ rootDir: root }) });
+      const contexts: FluxIQRuntimeExecutionContext[] = [];
+      const payload = { rows: [{ name: SUPPLIED, price: SUPPLIED_NUMBER }] };
+      runtime.registerAdapter({
+        adapterId: "extracting",
+        label: "Extracting",
+        transport: "direct",
+        capabilities: () => [{ id: "extracting.actions", kind: "action", actionTypes: ["extracting.extract"] }],
+        execute: (command, context) => {
+          contexts.push(context);
+          return { commandId: command.commandId ?? "command.extracting", status: "succeeded", message: "Extracted 1 row.", payload };
+        }
+      });
+
+      const result = await runtime.dispatch(
+        { commandId: "command.extracting", kind: "execute_action", actionType: "extracting.extract", parameters: { selector: "#list" } },
+        { withheldResultPayload: true }
+      );
+      await runtime.ready();
+
+      // The caller receives the payload, and the adapter is never handed the flag.
+      expect(result.payload).toEqual(payload);
+      expect(contexts).toHaveLength(1);
+      expect(contexts[0]).not.toHaveProperty("withheldResultPayload");
+
+      const [kept] = runtime.commandAttemptsList();
+      const saved = await readFile(path.join(root, "command-attempts", kept!.attemptId, "attempt.json"), "utf8");
+      expect(saved).not.toContain(SUPPLIED);
+      const savedAttempt = (JSON.parse(saved) as { attempt: FluxIQRuntimeCommandAttempt }).attempt;
+      // Only the payload is replaced; the command and the rest of the result are kept as given.
+      expect(savedAttempt).toMatchObject({
+        status: "succeeded",
+        message: "Extracted 1 row.",
+        command: { parameters: { selector: "#list" } },
+        result: { commandId: "command.extracting", status: "succeeded", message: "Extracted 1 row.", payload: FLUXIQ_RUNTIME_WITHHELD_VALUE }
+      });
+      // Withheld when settled, so memory, snapshots, and disk hold the same attempt.
+      expect(runtime.commandAttemptsList()).toEqual([savedAttempt]);
+      expect((await runtime.snapshot()).commandAttempts).toEqual([savedAttempt]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("withholds a payload beside withheld values, keeps one it was not asked to withhold, and adds none where none came back", async () => {
+    const runtime = new RuntimeService();
+    const answers: Record<string, Omit<FluxIQRuntimeCommandResult, "commandId">> = {
+      "command.both": { status: "failed", error: `Stopped at ${SUPPLIED}.`, payload: { rows: [{ name: SUPPLIED }] } },
+      "command.unasked": { status: "succeeded", payload: { rows: [{ name: "Synthetic kept row" }] } },
+      "command.empty": { status: "succeeded", message: "Nothing to extract." }
+    };
+    runtime.registerAdapter({
+      adapterId: "extracting",
+      label: "Extracting",
+      transport: "direct",
+      capabilities: () => [{ id: "extracting.actions", kind: "action", actionTypes: ["extracting.extract"] }],
+      execute: (command) => ({ commandId: command.commandId ?? "command.extracting", ...(answers[command.commandId ?? ""] ?? { status: "rejected" }) })
+    });
+
+    await runtime.dispatch(
+      { commandId: "command.both", kind: "execute_action", actionType: "extracting.extract", parameters: { text: SUPPLIED } },
+      { withheldValues: { texts: [SUPPLIED], numbers: [] }, withheldResultPayload: true }
+    );
+    await runtime.dispatch({ commandId: "command.unasked", kind: "execute_action", actionType: "extracting.extract" });
+    await runtime.dispatch({ commandId: "command.empty", kind: "execute_action", actionType: "extracting.extract" }, { withheldResultPayload: true });
+
+    const attempts = runtime.commandAttemptsList();
+    expect(attempts.map((attempt) => attempt.result)).toEqual([
+      { commandId: "command.both", status: "failed", error: `Stopped at ${FLUXIQ_RUNTIME_WITHHELD_VALUE}.`, payload: FLUXIQ_RUNTIME_WITHHELD_VALUE },
+      { commandId: "command.unasked", status: "succeeded", payload: { rows: [{ name: "Synthetic kept row" }] } },
+      { commandId: "command.empty", status: "succeeded", message: "Nothing to extract." }
+    ]);
+    expect(attempts[2]?.result).not.toHaveProperty("payload");
+  });
 });
 
 /** One target for `late.run`, as a direct adapter or as a ready transport client, answering however `answer` does. */

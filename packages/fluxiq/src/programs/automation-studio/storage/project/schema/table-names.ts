@@ -42,7 +42,12 @@ export const AUTOMATION_STUDIO_PROJECT_DOMAIN_TABLES = [
   "objects",
   "object_references",
   "reusable_llm_contexts",
-  "reusable_llm_context_audit_events"
+  "reusable_llm_context_audit_events",
+  "run_datasets",
+  "run_dataset_rows",
+  "run_dataset_audit_events",
+  "run_dataset_catalog",
+  "run_dataset_batches"
 ] as const;
 
 export const AUTOMATION_STUDIO_PROJECT_SEARCH_TABLES = ["hierarchy_entries_fts", "graph_nodes_fts", "instructions_fts", "graph_node_bounds", "graph_node_bounds_map"] as const;

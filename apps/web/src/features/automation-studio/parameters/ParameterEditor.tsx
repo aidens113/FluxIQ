@@ -7,6 +7,7 @@ import {
 } from "fluxiq/automation-studio/nodes";
 import type { JsonValue } from "fluxiq/core";
 import type { JsonObject } from "../../programs/program-api";
+import { RecordOutputEditor, recordOutputParameterError } from "./record-output";
 
 export type AutomationReferenceType = "action" | "task" | "policy" | "routine" | "database-collection" | "variable" | "state";
 export type AutomationReferenceOption = { id: string; label: string; detail?: string };
@@ -58,12 +59,16 @@ export function AutomationNodeParameterEditor(props: {
 
 function AutomationNodeParameterField(props: { parameter: AutomationNodeParameter; value: unknown; referenceOptions?: AutomationReferenceOptions; onChange(value: unknown): void }) {
   const error = automationParameterError(props.parameter, props.value, props.referenceOptions);
-  const stateBinding = isAutomationNodeParameterStateBinding(props.value) ? props.value : null;
+  // A record output is never state-bound: a binding could swap its schema, and
+  // with it the excluded fields, at run time. A stored binding is shown as the
+  // invalid record output it is.
+  const recordOutput = props.parameter.ui?.control === "record-output";
+  const stateBinding = !recordOutput && isAutomationNodeParameterStateBinding(props.value) ? props.value : null;
   const literalValue = stateBinding?.$state.fallback ?? props.parameter.defaultValue;
   const stateOptions = props.referenceOptions?.state ?? [];
   return (
     <div className={error ? "automation-parameter-field-shell invalid" : "automation-parameter-field-shell"}>
-      {props.parameter.allowStateBinding !== false ? (
+      {props.parameter.allowStateBinding !== false && !recordOutput ? (
         <label className="automation-parameter-field automation-parameter-source">
           <span>{props.parameter.label} source</span>
           <select
@@ -115,6 +120,11 @@ function AutomationStateParameterField(props: { parameter: AutomationNodeParamet
 function AutomationNodeParameterControl(props: { parameter: AutomationNodeParameter; value: unknown; referenceOptions?: AutomationReferenceOptions; onChange(value: unknown): void }) {
   const parameter = props.parameter;
   const value = props.value;
+  // Checked before the object/json branch: the generic key/value editor would
+  // flatten a record output's schema into text on the first keystroke.
+  if (parameter.ui?.control === "record-output") {
+    return <RecordOutputEditor parameter={parameter} value={value} onChange={props.onChange} />;
+  }
   if (parameter.ui?.control === "reference" && parameter.ui.referenceType) {
     return <AutomationReferenceParameterField parameter={parameter} value={String(value ?? "")} options={props.referenceOptions?.[parameter.ui.referenceType] ?? []} onChange={props.onChange} />;
   }
@@ -369,6 +379,11 @@ function AutomationArrayParameterEditor(props: { value: unknown; onChange(value:
 }
 
 export function automationParameterError(parameter: AutomationNodeParameter, value: unknown, referenceOptions?: AutomationReferenceOptions): string | null {
+  // Before the binding and empty checks: the policy action refuses a bound or
+  // blank record output, and only absent or `null` means saving is off.
+  if (parameter.ui?.control === "record-output") {
+    return parameter.required && (value === undefined || value === null) ? parameter.label + " is required." : recordOutputParameterError(value);
+  }
   if (isAutomationNodeParameterStateBinding(value)) return value.$state.path.trim() ? null : "Choose or enter a state path.";
   const empty = value === undefined || value === null || (typeof value === "string" && !value.trim());
   if (parameter.required && empty) return parameter.label + " is required.";

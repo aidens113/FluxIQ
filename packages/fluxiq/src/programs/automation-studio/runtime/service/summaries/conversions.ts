@@ -147,6 +147,7 @@ function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSessio
         attempt
       }))
       : undefined;
+    const recordCount = datasetMarkerRecordCount(attempt.outputs);
     return {
       attemptId: attempt.attemptId,
       nodeId: attempt.nodeId,
@@ -167,10 +168,21 @@ function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSessio
         ...(attempt.hostCapabilities?.length ? { hostCapabilities: attempt.hostCapabilities } : {}),
         ...(attempt.stateRefs ? { stateRefs: attempt.stateRefs } : {}),
         ...(attempt.targetResolution ? { targetResolution: attempt.targetResolution } : {}),
-        ...(adaptiveFailure ? { adaptiveFailure } : {})
+        ...(adaptiveFailure ? { adaptiveFailure } : {}),
+        ...(recordCount !== undefined ? { recordCount } : {})
       }
     };
   });
+}
+
+// A saved trace holds a `$dataset` marker where an attempt's captured rows were
+// (CD14), so the run record says how many rows the attempt captured without
+// holding any of them. Session traces are read back from storage, so the
+// marker's shape is checked rather than assumed.
+function datasetMarkerRecordCount(outputs: unknown): number | undefined {
+  if (!isJsonRecord(outputs) || !isJsonRecord(outputs.records) || !isJsonRecord(outputs.records.$dataset)) return undefined;
+  const recordCount = outputs.records.$dataset.recordCount;
+  return typeof recordCount === "number" && Number.isFinite(recordCount) ? recordCount : undefined;
 }
 
 function runtimeFlowRunSummaryFromSession(session: AutomationStudioRuntimeSession, projectId: string): AutomationStudioFlowRunSummary {

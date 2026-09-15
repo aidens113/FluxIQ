@@ -196,25 +196,85 @@ Users, roles, credentials, sessions, and identity vault status are stored in
 the `identity.users` table inside `global.sqlite`.
 
 Credential records are encrypted at rest. The credential payload is sealed with
-AES-256-GCM using a key derived from the user's password with `scrypt`; inside
-that encrypted payload, passwords and PINs are still stored only as salted
-`scrypt` hashes. Raw passwords and raw PINs must never be stored in JSON files,
-SQLite records, logs, generated docs, or UI state beyond the active form
-submission.
+AES-256-GCM under a key derived from the user's password with `scrypt` at
+N=2^17, r=8, p=1. The envelope is `version: 2`, records those parameters in
+`kdfParams`, and derives its key from the decoded salt bytes. Inside the
+encrypted payload, passwords and PINs are stored only as salted `scrypt` hashes
+in PHC form, `$scrypt$ln=17,r=8,p=1$<salt>$<hash>`. Raw passwords and raw PINs
+must never be stored in JSON files, SQLite records, logs, generated docs, or UI
+state beyond the active form submission.
+
+Derivations run off the event loop, at most two at a time in the process. A
+login spends one derivation. An unknown or disabled username runs a dummy
+derivation, so the response time does not reveal whether the account exists.
+
+Older records upgrade themselves with no user step. A `version: 1` envelope,
+derived at Node's default N=2^14 from the salt text, and `scrypt:` hashes are
+still read. After that user's next successful login, the credential is
+re-sealed as version 2 and its password hash rehashed. A PIN hash is rehashed
+the next time the PIN is checked while the credential is unlocked. A record at
+or above the current cost is not rewritten, and a failed attempt changes
+nothing.
+
+No PIN verifier is stored outside the seal. A PIN is checked only against the
+credential unlocked in this process, so after a restart a PIN-gated action asks
+the user to sign out and sign back in. The first load removes a
+`pinVerifierHash` that an older build stored.
+
+Sessions are stored under the SHA-256 digest of the session id, as client
+gateway tokens are. The id itself is the cookie's bearer value and is never
+stored. The first load deletes session records an older build stored under a
+raw id, so those users sign in again. Identity Access snapshots list sessions by
+digest.
+
+An existing account's credentials change only through a password change
+(`setPassword`, `setPasswordAuthorized`) or a PIN change (`setPin`,
+`setPinAuthorized`); `upsertUser` refuses a password or PIN for an existing
+account. A password change runs through the Identity Access credential-change
+port: subscribers prepare, the credential is written, then they commit. A
+subscriber that fails to prepare refuses the change. Once the credential is
+written the change stands: a subscriber that fails to commit is logged with the
+change id, user id, and failure count only, never an error text, and the
+password change still succeeds. The global runtime
+subscribes Secret Keys, so a user who changes their own password can still read
+their Secret Keys with the new one. An administrator's reset of another account
+has no current password to open that account's keys with, so those keys stay
+sealed under the old password and cannot be read with the new one.
 
 Database Manager treats the `identity.users` store as sensitive because it can
 contain encrypted credential records. It also treats `secret.keys` as sensitive
 because it contains encrypted LLM and custom key payloads. Viewing that store opens a modal
 credential recheck using the current user's configured factors: password
-always, PIN only when configured, and 2FA only when enabled. Non-secret identity
+always, PIN only when configured, and 2FA only when enabled. `put-record` and
+`delete-record` on either store require the same recheck. Non-secret identity
 metadata remains readable so login, session routing, and status displays can
 work without decrypting credential payloads.
 
 Existing plaintext credential records from pre-encryption development builds
 are migrated opportunistically. A user's legacy `credential:<userId>` record is
-sealed after that user successfully logs in, because the framework needs the
-user's password to derive the encryption key. Admin password resets can also
-replace a legacy credential bundle under the new password.
+sealed as version 2 after that user successfully logs in, because the framework
+needs the user's password to derive the encryption key. Admin password resets
+can also replace a legacy credential bundle under the new password.
+
+Upgraded records move forward only. A build older than `fluxiq` 0.5.0 skips
+version 2 records: a user whose credential was re-sealed cannot log in to it,
+and upgraded Secret Keys disappear from it. Rolling back means rolling forward
+again or restoring a `global.sqlite` backup taken before the upgrade.
+
+The web login counts failed attempts in three files under `.fluxiq/security/`,
+each over a ten-minute window with a one-minute lockout:
+- `login-attempts.json` counts per username, keyed together with the client
+  address when a trusted proxy forwards one: five failures lock that username
+  out.
+- `login-address-attempts.json` counts per client address whatever the
+  username: twenty failures lock that address out. It applies only when
+  `FLUXIQ_TRUST_PROXY=true` and the proxy forwards an address, so clients never
+  share one address bucket.
+- `login-panel-attempts.json` counts every failed login on the panel: one
+  hundred failures lock out every login.
+
+A successful login clears only the username count. An authenticator-code prompt
+after a correct password counts only against the username.
 
 Record ids follow this shape:
 
@@ -222,7 +282,7 @@ Record ids follow this shape:
 user:<userId>
 role:<roleId>
 credential:<userId>
-session:<sessionId>
+session:<SHA-256 hex digest of the session id>
 vault
 ```
 
@@ -236,15 +296,39 @@ LLM provider keys and custom framework secrets are stored in the `secret.keys`
 table inside `global.sqlite`.
 
 Each secret key record stores redacted metadata next to a sealed value payload.
-The value payload is encrypted with AES-256-GCM using a key derived from the
-current user's authorization password with `scrypt`, the same at-rest sealing
-model used by identity credential records. Snapshots and list responses do not
-include raw secret values. The only operation that decrypts a value is an
-explicit reveal or runtime resolver call with a fresh credential recheck.
+The value payload is encrypted with AES-256-GCM under a key derived with
+`scrypt`, at the same cost as identity credential records, from the password of
+the user who created or last rotated the key. A version 2 seal records
+`kdfParams` and, when it was sealed for a user, that user's id in
+`sealedByUserId`. Snapshots and list responses do not include raw secret values.
+
+A value is decrypted only with a password or a key derived from one. An explicit
+reveal and a runtime resolver's reveal authorization each take a fresh
+credential recheck, and creating an authorization checks that the password opens
+the key. Login also opens values: `unlockSession` tries every key sealed for
+that user, plus keys with no `sealedByUserId` and version 1 keys, and holds the
+derived keys of those that open for that session. A key keeps unlocking after a
+metadata edit, because its seal is matched to its `lastRotatedAtMs`.
+
+An older seal upgrades itself after a successful unlock or reveal. A version 1
+seal (`scrypt` at N=2^14, keyed from the salt text) or one below the current
+cost is re-sealed as version 2, once per record, stamped for the user whose
+password opened it, keeping `updatedAtMs` and `lastRotatedAtMs`. The new derived
+key replaces the old one for every holder, and the old key buffers are zeroed. A
+seal is never rewritten at a lower cost.
+
+When a user changes their own password, their keys are re-sealed under the new
+password: prepared before the credential is written, applied after it. If they
+cannot be prepared, the password change is refused. The user's sessions keep the
+key; every other holder, such as an outstanding reveal authorization, is
+revoked. A key rotated or deleted in between keeps its newer state. An
+administrator's reset of another account cannot re-seal that account's keys,
+which stay sealed under the old password.
 
 Database Manager treats `secret.keys` as sensitive. Viewing that store opens the
 same modal credential recheck used for `identity.users`: password always, PIN
-only when configured, and 2FA only when enabled.
+only when configured, and 2FA only when enabled. `put-record` and
+`delete-record` on it require the same recheck.
 
 Record ids follow this shape:
 
@@ -254,8 +338,9 @@ secret:<uuid>
 
 Secret records include `recordType: "secret-key"`, `encrypted: true`, metadata
 such as `kind`, `provider`, `scope`, and `enabled`, plus a `sealed` envelope
-containing the encryption algorithm, KDF, salt, IV, tag, and ciphertext. Raw LLM
-keys and custom token values must never be written to logs, generated docs,
+containing `version`, the encryption algorithm, KDF, `kdfParams` (version 2),
+salt, IV, tag, ciphertext, and for version 2 an optional `sealedByUserId`. Raw
+LLM keys and custom token values must never be written to logs, generated docs,
 runtime debug payloads, or non-secret UI state.
 
 ## Background Tasks State

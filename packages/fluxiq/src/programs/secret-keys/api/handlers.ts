@@ -12,6 +12,8 @@ import {
 } from "./contracts.ts";
 import type { SecretKeysService } from "../runtime/service.ts";
 
+// The acting user's id, never the payload, names whose password seals a value:
+// it becomes the seal's `sealedByUserId` on create, rotate, and an upgrading reveal.
 export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, service: SecretKeysService, identityAccess?: IdentityAccessService): void {
   registry.register({
     programId: "secret-keys",
@@ -29,7 +31,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
       if (payload.metadata !== undefined && !isJsonObject(payload.metadata)) return { ok: false, error: "metadata must be a JSON object" };
       const authorization = await authorizeSecretMutation(identityAccess, payload, { requireTotp: false });
       if (!authorization.ok) return authorization;
-      return { ok: true, payload: await service.createKey({ ...payload, ...(request.actor?.userId ? { createdBy: request.actor.userId } : {}) }) };
+      return { ok: true, payload: await service.createKey({ ...payload, createdBy: request.actor?.userId }) };
     }
   });
   registry.register({
@@ -54,7 +56,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
       if (!payload?.id || !payload.value) return { ok: false, error: "id and value are required" };
       const authorization = await authorizeSecretMutation(identityAccess, payload);
       if (!authorization.ok) return authorization;
-      return { ok: true, payload: await service.rotateKey(payload) };
+      return { ok: true, payload: await service.rotateKey({ ...payload, actorUserId: request.actor?.userId }) };
     }
   });
   registry.register({
@@ -66,7 +68,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
       if (!payload?.id) return { ok: false, error: "id is required" };
       const authorization = await authorizeSecretMutation(identityAccess, payload);
       if (!authorization.ok) return authorization;
-      return { ok: true, payload: await service.revealKey(payload) };
+      return { ok: true, payload: await service.revealKey({ ...payload, actorUserId: request.actor?.userId }) };
     }
   });
   registry.register({

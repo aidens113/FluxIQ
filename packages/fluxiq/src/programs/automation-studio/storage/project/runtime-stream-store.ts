@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../core/index.ts";
 import type {
   AutomationStudioFlowRunActionAttemptRecord,
@@ -16,6 +17,7 @@ import type {
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "./database.ts";
 import { AutomationStudioProjectContentStore } from "./content-store.ts";
 import { AutomationStudioProjectEventChunkStore, type AutomationStudioChunkEvent } from "./event-chunk-store.ts";
+import { runDatasetSummariesForRun } from "./run-dataset-store.ts";
 import { automationStudioFilterHash, automationStudioPageLimit, decodeAutomationStudioPageCursor, encodeAutomationStudioPageCursor } from "../paging.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../runtime/executor/index.ts";
 
@@ -234,10 +236,13 @@ export class AutomationStudioProjectRuntimeStreamStore {
     if (!summary) return null;
     const events = await this.readAllRuntimeEvents(runId, 5_000);
     if (!events.some((event) => event.eventKind === "run_summary")) return null;
+    // Datasets live in the run dataset tables, never in the event stream, so both
+    // the compact detail the web reads and the full detail join them from there.
+    const datasets = await runDatasetSummariesForRun(this.lease.database, summary.runId);
     if (options.includeCollections === false) {
       const envelopeEvent = [...events].reverse().find((event) => event.eventKind === "run_summary");
       const envelope = compactJsonObject(envelopeEvent?.payload) as Partial<AutomationStudioFlowRunDetail>;
-      return {
+      return withRunDatasets({
         schemaVersion: "0.1",
         ...envelope,
         summary,
@@ -249,9 +254,9 @@ export class AutomationStudioProjectRuntimeStreamStore {
         adaptationIds: Array.isArray(envelope.adaptationIds) ? envelope.adaptationIds : [],
         changeProposalIds: Array.isArray(envelope.changeProposalIds) ? envelope.changeProposalIds : [],
         metadata: { ...compactJsonObject(envelope.metadata), collectionsPaged: true, eventStream: { lastSequence: Number(summary.metadata?.lastEventSequence ?? 0) } }
-      };
+      }, datasets);
     }
-    return runDetailFromEvents(summary, events);
+    return withRunDatasets(runDetailFromEvents(summary, events), datasets);
   }
 
   async listRunActions(input: { runId: string; limit?: unknown; offset?: unknown; cursor?: unknown }): Promise<AutomationStudioProjectFlowRunActionPage> {
@@ -505,6 +510,14 @@ function runDetailFromEvents(summary: AutomationStudioFlowRunSummary, events: Au
     changeProposalIds: Array.isArray(envelope.changeProposalIds) ? envelope.changeProposalIds : [],
     metadata: { ...(compactJsonObject(envelope.metadata)), eventStream: { lastSequence: events.at(-1)?.sequence ?? 0, eventCount: events.length } }
   };
+}
+
+// A run's datasets come from the run dataset store alone: a `datasets` key that
+// arrived through an envelope is dropped, and the key is written only when the
+// run stored at least one dataset.
+function withRunDatasets(detail: AutomationStudioFlowRunDetail, datasets: AutomationStudioRunDatasetSummary[]): AutomationStudioFlowRunDetail {
+  const { datasets: _envelopeDatasets, ...rest } = detail;
+  return datasets.length ? { ...rest, datasets } : rest;
 }
 
 function runDetailEnvelope(detail: AutomationStudioFlowRunDetail): JsonObject {

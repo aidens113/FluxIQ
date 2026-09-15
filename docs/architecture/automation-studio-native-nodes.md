@@ -268,13 +268,45 @@ node's `parameterValues.expectedState`, where the
 [transition comparison](automation-studio.md#llm-assisted-deterministic-automation)
 reads it: once the action succeeds, the host is asked whether the state holds,
 and a rejection fails the attempt. Approving the proposal into a node definition
-does not carry it.
+does not carry `expectedState`.
 
-Both fields are additive. A mapper that ignores `following` and proposes no
-`expectedState` gets the proposal it got before, and a candidate without
-`expectedState` becomes the same node as before. A host whose mapper proposes
-`expectedState` and that binds an expectation evaluator should expect those
-recorded actions to fail wherever the evaluator rejects the state.
+A candidate may also carry `recordOutput`, the records its output returns to
+save as a dataset, and `timeoutMs`, the time the recorded action is given.
+`recordOutput` has the `AutomationStudioRecordOutput` shape, except that
+`recordsPath` may be left out; Core then takes the domain output definition's
+`metadata.recordsPath`, and never assumes a path of its own. Core clones the
+value, parses it with `parseAutomationStudioRecordOutput`, and stores the parsed
+result, its path resolved, on the proposal's `RecordingFlowActionCandidate`.
+`null` means no record output. Any other value that does not parse rejects the
+candidate, and the proposal run reports the reason as a mapping issue. That
+includes a record output with no `recordsPath` either way, and one with a field
+whose `handling` is `encrypt`. Unlike `expectedState`, nothing is dropped
+quietly: a recorded action that ran without its record output would hand the
+fields its schema excludes to the node's outputs. `timeoutMs` must be a whole
+number of milliseconds above zero, or the candidate is rejected; without it a
+recorded action keeps the policy action's 5,000 ms default, which is sent as the
+runtime command's timeout.
+
+Approving the proposal into a Flow writes both into the recorded action node's
+`parameterValues.recordOutput` and `parameterValues.timeoutMs`. Approving it
+into a node definition carries both as well, in the definition's metadata, and a
+Flow node naming that definition is materialized with them — except that a value
+the node itself holds wins over the definition's.
+
+That order exists for privacy. The record-output editor writes a user's choices
+into the node's own `parameterValues`, including marking a column excluded so
+its values are never saved to a dataset or exported. Were the definition's
+values to replace them, every such edit would be discarded silently when the
+node is materialized, which is the failure the record-output contract exists to
+prevent. This is safe because nothing seeds `parameterValues` from a parameter's
+`defaultValue`, so a node holds a value only where something deliberately wrote
+one.
+
+These fields are additive. A mapper that ignores `following` and proposes no
+`expectedState`, `recordOutput`, or `timeoutMs` gets the proposal it got before,
+and such a candidate becomes the same node as before. A host whose mapper
+proposes `expectedState` and that binds an expectation evaluator should expect
+those recorded actions to fail wherever the evaluator rejects the state.
 
 Approved recording-derived definitions retain a fixed registered output ID and
 are materialized to the built-in policy action at execution. Private definitions

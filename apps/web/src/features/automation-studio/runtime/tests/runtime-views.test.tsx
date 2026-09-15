@@ -34,7 +34,14 @@ const detailCommands = {
   loadDetail: async () => ({ ok: true as const, payload: {} }),
   listActions: async () => ({ ok: true as const, payload: {} }),
   listEvents: async () => ({ ok: true as const, payload: {} }),
-  exportAudit: async () => ({ ok: true as const, payload: {} })
+  exportAudit: async () => ({ ok: true as const, payload: {} }),
+  datasets: {
+    list: async () => ({ ok: true as const, payload: {} }),
+    page: async () => ({ ok: true as const, payload: {} }),
+    export: async () => ({ ok: true as const, payload: {} }),
+    remove: async () => ({ ok: true as const, payload: {} }),
+    downloadHref: () => "/api/programs/automation-studio/run-datasets/p/r/d?format=csv"
+  }
 } as any;
 
 describe("Automation Runs workspace", () => {
@@ -208,6 +215,29 @@ describe("Automation Runtime workspace", () => {
     expect(source).toContain("commands.listEvents");
     expect(source).toContain("RUNTIME_ACTION_PAGE_SIZE");
     expect(source).toContain("Load Event Stream");
+  });
+
+  it("mounts the run datasets panel beside Export Audit", () => {
+    const html = renderToStaticMarkup(createElement(RunActionLogViewContent, {
+      commands: detailCommands,
+      projectId: "project.debug",
+      runId: "run.debug.1",
+      loading: false,
+      error: "",
+      onBack: () => undefined,
+      runDetail: {
+        summary: { runId: "run.debug.1", flowId: "flow.checkout", status: "succeeded", actionAttemptCount: 0 },
+        actionAttempts: [],
+        datasets: [{ runId: "run.debug.1", datasetId: "orders", label: "Orders", recordCount: 3, truncated: false }],
+        trace: { effects: [], values: {} }
+      }
+    }));
+
+    expect(html).toContain("Export Audit");
+    expect(html).toContain('aria-label="Run datasets"');
+    expect(html).toContain("Orders");
+    expect(html).toContain("3");
+    expect(RunActionLogViewContent.toString()).toContain("commands.datasets");
   });
 
   it("opens the log shell before detail and keeps events opt in", () => {

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { parseAutomationStudioRecordOutput, type AutomationStudioRecordOutput } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { IoRegistry } from "../../../../../io/index.ts";
 import { safeSegment } from "../../../../_shared/storage.ts";
@@ -42,7 +43,8 @@ export function recordingMapperCalls(timeline: RecordingSession["timeline"], rec
  * Checks one mapper candidate against the bound IO registry and gives it the
  * shape a proposal stores. Its `expectedState` is kept, as a clone, only when it
  * is a plain object with at least one key; anything else is dropped and the
- * action is still proposed.
+ * action is still proposed. Its `recordOutput` and `timeoutMs` are kept when
+ * valid and reject the candidate, by throwing, when present and invalid.
  */
 export function recordingFlowActionCandidate(io: IoRegistry, input: { candidate: AutomationStudioRecordingMapperCandidate; actionEntryId: string; sourceEntryId: string; recordingId: string; domainId: string; stateLink?: RecordingFlowActionCandidate["stateLink"]; mapperOutputIds?: string[] }): RecordingFlowActionCandidate {
   const outputId = input.candidate.outputId?.trim();
@@ -64,6 +66,8 @@ export function recordingFlowActionCandidate(io: IoRegistry, input: { candidate:
   const sourceObservationIds = uniqueStrings([input.sourceEntryId, input.actionEntryId, ...(input.candidate.sourceObservationIds ?? [])]);
   const parameters = normalizeRecordingCandidateElementTargetParameters(input.candidate.parameters ?? {});
   const expectedState = liftedExpectedState(input.candidate.expectedState);
+  const recordOutput = liftedRecordOutput(io, input.domainId, outputId, input.candidate.recordOutput);
+  const timeoutMs = liftedTimeoutMs(outputId, input.candidate.timeoutMs);
   return {
     candidateId: `candidate.${safeSegment(input.actionEntryId)}.${randomUUID()}`,
     actionEntryId: input.actionEntryId,
@@ -73,6 +77,8 @@ export function recordingFlowActionCandidate(io: IoRegistry, input: { candidate:
     parameters,
     ...(confirmation ? { expectedConfirmation: { ...confirmation } } : {}),
     ...(expectedState ? { expectedState } : {}),
+    ...(recordOutput ? { recordOutput } : {}),
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     confidence: clampConfidence(input.candidate.confidence),
     evidence: input.candidate.evidence?.length ? structuredClone(input.candidate.evidence) : sourceObservationIds.map((entryId) => ({ layer: "recording" as const, artifactId: input.recordingId, entryId })),
     ...(input.stateLink ? { stateLink: input.stateLink } : {}),
@@ -85,7 +91,9 @@ export function recordingFlowActionCandidate(io: IoRegistry, input: { candidate:
 /**
  * Appends an approved proposal's candidates to a Flow as recorded action nodes
  * joined by success edges. A candidate's `expectedState` becomes the node's
- * `parameterValues.expectedState`, where the transition comparison reads it.
+ * `parameterValues.expectedState`, where the transition comparison reads it;
+ * its `recordOutput` and `timeoutMs` become `parameterValues.recordOutput` and
+ * `parameterValues.timeoutMs`, which the policy action reads.
  */
 export function appendRecordingProposalToFlow(flow: AutomationStudioFlowArtifact, proposal: RecordingFlowProposalArtifact): AutomationStudioFlowArtifact {
   const nodeIds = new Set(flow.nodes.map((node) => node.id));
@@ -103,7 +111,9 @@ export function appendRecordingProposalToFlow(flow: AutomationStudioFlowArtifact
         outputId: candidate.outputId,
         parameters: structuredClone(candidate.parameters),
         ...(candidate.expectedConfirmation ? { confirmationInputId: candidate.expectedConfirmation.inputId, confirmationTimeoutMs: candidate.expectedConfirmation.timeoutMs ?? 5_000 } : {}),
-        expectedState: candidate.expectedState ? structuredClone(candidate.expectedState) : undefined
+        expectedState: candidate.expectedState ? structuredClone(candidate.expectedState) : undefined,
+        recordOutput: candidate.recordOutput ? structuredClone(candidate.recordOutput) : undefined,
+        timeoutMs: candidate.timeoutMs
       }),
       position: { x: 120 + index * 340, y: 240 },
       metadata: {
@@ -158,6 +168,51 @@ function liftedExpectedState(value: unknown): JsonObject | undefined {
     return undefined;
   }
   return Object.keys(lifted).length > 0 ? lifted : undefined;
+}
+
+// A record output decides which fields a run keeps. So, unlike an expected
+// state, one that is present and wrong rejects the candidate instead of being
+// dropped: dropped, the action would still run, and hand every field to the
+// node's outputs. `null` means none, the policy action's rule. The value is
+// cloned first, so the parser reads a value the mapper can no longer change, and
+// the parser returns fresh objects. Encrypted fields are refused, because
+// nothing can seal a record field yet.
+function liftedRecordOutput(io: IoRegistry, domainId: string, outputId: string, value: unknown): AutomationStudioRecordOutput | undefined {
+  if (value === undefined || value === null) return undefined;
+  let declared: unknown;
+  try {
+    declared = structuredClone(value);
+  } catch {
+    throw invalidRecordOutput(outputId, ["record_output.invalid"]);
+  }
+  const parsed = parseAutomationStudioRecordOutput(withOutputRecordsPath(io, domainId, outputId, declared));
+  if (!parsed.ok) throw invalidRecordOutput(outputId, parsed.issues);
+  return parsed.output;
+}
+
+// A candidate may leave `recordsPath` out when its output declares one in
+// `metadata.recordsPath`; Core never assumes a path of its own. Only a plain
+// object naming no path takes the output's, so any other value still fails as
+// what it is.
+function withOutputRecordsPath(io: IoRegistry, domainId: string, outputId: string, declared: unknown): unknown {
+  if (!declared || typeof declared !== "object" || Object.getPrototypeOf(declared) !== Object.prototype) return declared;
+  const record = declared as Record<string, unknown>;
+  if (record.recordsPath !== undefined) return declared;
+  const outputRecordsPath = io.getOutput(domainId, outputId)?.definition.metadata?.recordsPath;
+  return typeof outputRecordsPath === "string" ? { ...record, recordsPath: outputRecordsPath } : declared;
+}
+
+function invalidRecordOutput(outputId: string, issues: readonly string[]): Error {
+  return new Error(`Recording mapper candidate for ${outputId} has an invalid recordOutput: ${issues.join(", ")}`);
+}
+
+// A timeout is a whole number of milliseconds above zero. Any other value rejects
+// the candidate: dropped, the recorded action would quietly keep the policy
+// action's 5,000 ms default the mapper asked to replace.
+function liftedTimeoutMs(outputId: string, value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) throw new Error(`Recording mapper candidate for ${outputId} has an invalid timeoutMs: it must be a whole number of milliseconds above zero.`);
+  return value;
 }
 
 function normalizeRecordingCandidateElementTargetParameters(parameters: JsonObject): JsonObject {

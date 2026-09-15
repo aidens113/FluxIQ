@@ -1,12 +1,15 @@
+import type { AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../model/index.ts";
-import type { AutomationNodeExecutionResult, AutomationNodeExpectationEvaluator } from "../../nodes/index.ts";
+import type { AutomationNodeExecutionContext, AutomationNodeExecutionResult, AutomationNodeExpectationEvaluator } from "../../nodes/index.ts";
 import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues } from "../../nodes/index.ts";
 import { hostExpectationEvaluator, hostRuntimeCapabilityIds, type AutomationStudioHostStateSnapshotRef } from "../host-runtime.ts";
 import { nodeAttemptFromResult } from "./attempt-trace.ts";
-import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
+import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioRecordBatch } from "./contracts.ts";
 import { captureHostState, enrichAttemptWithHostState } from "./host-state.ts";
 import { collectNodeInputs } from "./node-inputs.ts";
+import { captureAutomationStudioRecordBatch, captureAutomationStudioWrittenRecords } from "./record-capture.ts";
+import type { AutomationStudioRunState } from "./run-state.ts";
 import type { AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 import { attemptWithHostExpectationEvaluation } from "./transition-comparison.ts";
 
@@ -16,7 +19,8 @@ export async function executeAutomationStudioNode(
   values: Record<string, JsonValue>,
   options: AutomationStudioGraphExecutionOptions,
   attemptNumber: number,
-  withholding: AutomationStudioTraceWithholding
+  withholding: AutomationStudioTraceWithholding,
+  runState: AutomationStudioRunState
 ): Promise<AutomationStudioNodeAttemptTrace> {
   const startedAt = options.now?.() ?? Date.now();
   const attemptId = `${node.id}.attempt.${attemptNumber}`;
@@ -24,7 +28,11 @@ export async function executeAutomationStudioNode(
   const inputs = collectNodeInputs(flow, node, values);
   const resolvedParameters = resolveAutomationNodeParameterValues(node.parameterValues ?? {}, {
     ...(options.inputs ?? {}),
-    ...(options.variables ?? {}),
+    // The run's live variables, not the seed it started from: a variable written
+    // during the run -- inside a For Each body, say -- is what a later node's
+    // binding has to read. `runState.variables` is seeded from
+    // `options.variables`, so a run that writes none resolves exactly as before.
+    ...Object.fromEntries(runState.variables),
     ...values,
     ...inputs
   });
@@ -68,10 +76,10 @@ export async function executeAutomationStudioNode(
       }
     });
     if (native) {
-      const result = await dispatchAutomationStudioEffects(native.result, options, withholding);
+      const result = await dispatchAutomationStudioEffects(native.result, options, withholding, { runState, nodeId: node.id, attemptId });
       return await finishAttempt(executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...(native.logs?.length ? { logs: native.logs } : {}) }, options, beforeAction, hostCapabilities);
     }
-    const composite = await options.compositeExecutor?.({ node: executionNode, inputs, options });
+    const composite = await options.compositeExecutor?.({ node: executionNode, inputs, options: callFlowChildOptions(options, attemptId) });
     if (composite) {
       return await finishAttempt(executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, composite.result), ...(composite.childTrace ? { childTrace: composite.childTrace } : {}), ...(composite.compositeTarget ? { compositeTarget: composite.compositeTarget } : {}) }, options, beforeAction, hostCapabilities);
     }
@@ -99,14 +107,16 @@ export async function executeAutomationStudioNode(
     const context = {
       inputs,
       parameters: resolvedParameters.values,
-      variables: new Map(Object.entries(options.variables ?? {})),
+      // Run-scoped: one map for the whole run, so a write reaches the nodes after it.
+      variables: runState.variables,
+      iteration: iterationFor(runState, node.id),
       ...(options.random ? { random: options.random } : {}),
       ...(options.now ? { now: options.now } : {}),
       ...(options.signal ? { signal: options.signal } : {}),
       ...(expectationEvaluator ? { expectationEvaluator } : {})
     };
     let result = await definition.execute(context);
-    result = await dispatchAutomationStudioEffects(result, options, withholding);
+    result = await dispatchAutomationStudioEffects(result, options, withholding, { runState, nodeId: node.id, attemptId });
     return await finishAttempt(executionNode, nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), options, beforeAction, hostCapabilities);
   } catch (error) {
     return await enrichAttemptWithHostState(executionNode, {
@@ -138,10 +148,29 @@ async function finishAttempt(
   return await attemptWithHostExpectationEvaluation(node, enriched, options);
 }
 
-async function dispatchAutomationStudioEffects(initial: AutomationNodeExecutionResult, options: AutomationStudioGraphExecutionOptions, withholding: AutomationStudioTraceWithholding): Promise<AutomationNodeExecutionResult> {
-  let result = initial; if (!options.effectDispatcher) return result;
-  for (const effect of result.effects ?? []) {
-    const dispatched = await options.effectDispatcher(effect, effectDispatchContext(options, withholding)); if (!dispatched) continue;
+/** The attempt a dispatch belongs to, and the run state its captured rows are recorded in. */
+type RecordCaptureTarget = { runState: AutomationStudioRunState; nodeId: string; attemptId: string };
+
+/** The effect Write Records emits. It carries its rows, so no dispatcher is asked to handle it. */
+const RECORDS_WRITE_EFFECT = "records.write";
+
+// The three dispatch paths -- the IO runtime, the framework runtime, and a
+// host's own dispatcher -- meet only here, so rows are captured here. A
+// `records.write` effect is captured here too, from the effect itself, with or
+// without a dispatcher.
+async function dispatchAutomationStudioEffects(initial: AutomationNodeExecutionResult, options: AutomationStudioGraphExecutionOptions, withholding: AutomationStudioTraceWithholding, target: RecordCaptureTarget): Promise<AutomationNodeExecutionResult> {
+  let result = initial;
+  for (const [index, effect] of (initial.effects ?? []).entries()) {
+    let dispatched: AutomationNodeExecutionResult;
+    if (effect.type === RECORDS_WRITE_EFFECT) {
+      const written = await withWrittenRecords(effect, options, target);
+      result = { ...result, effects: (result.effects ?? []).map((kept, position) => position === index ? written.effect : kept) };
+      dispatched = written.result;
+    } else {
+      if (!options.effectDispatcher) continue;
+      const answer = await options.effectDispatcher(effect, effectDispatchContext(options, withholding)); if (!answer) continue;
+      dispatched = await withCapturedRecords(effect, answer, options, target);
+    }
     const outputs = { ...(result.outputs ?? {}), ...(dispatched.outputs ?? {}) };
     // The attempt trace classifies from the dispatcher's target resolution,
     // failure record, and message, so they survive the merge.
@@ -161,6 +190,81 @@ async function dispatchAutomationStudioEffects(initial: AutomationNodeExecutionR
     result = { ...result, outputs, ...targetResolution };
   }
   return result;
+}
+
+const PERSIST_FAILED_MESSAGE = "The output ran, but the records it returned could not be saved.";
+const WRITE_PERSIST_FAILED_MESSAGE = "The records could not be saved.";
+
+async function withCapturedRecords(
+  effect: { type: string; payload?: JsonValue },
+  answer: AutomationNodeExecutionResult,
+  options: AutomationStudioGraphExecutionOptions,
+  target: RecordCaptureTarget
+): Promise<AutomationNodeExecutionResult> {
+  const { result, batch } = captureAutomationStudioRecordBatch({
+    effect,
+    dispatched: answer,
+    nodeId: target.nodeId,
+    attemptId: target.attemptId,
+    callFlowAttemptPath: options.callFlowAttemptPath ?? []
+  });
+  return await withStoredBatch(result, batch, options, target, PERSIST_FAILED_MESSAGE);
+}
+
+async function withWrittenRecords(
+  effect: { type: string; payload?: JsonValue },
+  options: AutomationStudioGraphExecutionOptions,
+  target: RecordCaptureTarget
+): Promise<{ result: AutomationNodeExecutionResult; effect: { type: string; payload?: JsonValue } }> {
+  const written = captureAutomationStudioWrittenRecords({
+    effect,
+    nodeId: target.nodeId,
+    attemptId: target.attemptId,
+    callFlowAttemptPath: options.callFlowAttemptPath ?? []
+  });
+  return { result: await withStoredBatch(written.result, written.batch, options, target, WRITE_PERSIST_FAILED_MESSAGE), effect: written.effect };
+}
+
+// The rows are recorded in the run state whether or not the hook stores them,
+// so the saved trace holds markers for them either way. A hook that throws
+// fails the attempt: rows the Flow declared must be saved are not dropped
+// silently. Its error text is not copied into the trace, which keeps no row.
+async function withStoredBatch(
+  result: AutomationNodeExecutionResult,
+  batch: AutomationStudioRecordBatch | undefined,
+  options: AutomationStudioGraphExecutionOptions,
+  target: RecordCaptureTarget,
+  persistFailedMessage: string
+): Promise<AutomationNodeExecutionResult> {
+  if (!batch) return result;
+  let stored: AutomationStudioRunDatasetSummary | undefined;
+  try {
+    stored = await options.onRecordBatch?.(batch);
+  } catch {
+    target.runState.records.record(batch);
+    return { ...result, status: "failed", route: "failed", message: persistFailedMessage, failure: { category: "action_failed", code: "record_output.persist_failed", retryable: false } };
+  }
+  target.runState.records.record(batch, stored);
+  return result;
+}
+
+// A node keeps its place between passes under its own id, for as long as this
+// run executes.
+function iterationFor(runState: AutomationStudioRunState, nodeId: string): NonNullable<AutomationNodeExecutionContext["iteration"]> {
+  return {
+    get: () => runState.loops.get(nodeId),
+    set: (state) => {
+      if (state) runState.loops.set(nodeId, state);
+      else runState.loops.delete(nodeId);
+    }
+  };
+}
+
+// The child run a Call Flow attempt starts keys its record batches under this
+// attempt, so they never share a key with the parent's or with another
+// invocation's.
+function callFlowChildOptions(options: AutomationStudioGraphExecutionOptions, attemptId: string): AutomationStudioGraphExecutionOptions {
+  return { ...options, callFlowAttemptPath: [...(options.callFlowAttemptPath ?? []), attemptId] };
 }
 
 type EffectDispatchContext = Parameters<NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]>>[1];

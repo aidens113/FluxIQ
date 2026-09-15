@@ -8,14 +8,41 @@ import { DurableLoginAttemptTracker, loginClientAddress } from "../../../../lib/
 const ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const LOCKOUT_MS = 60 * 1000;
 const MAX_ATTEMPTS = 5;
+// Failed logins from one trusted client address, whichever usernames they name.
+// Applied only when a trusted proxy forwards the address: without one there is
+// no per-client address, and a shared placeholder would let any client lock out
+// every other.
+const ADDRESS_MAX_ATTEMPTS = 20;
+// Failed logins across the whole panel, whatever the address or username.
+const PANEL_MAX_ATTEMPTS = 100;
+const PANEL_KEY = "panel";
+// loginClientAddress's placeholder for a proxied request that forwards no address.
+const UNKNOWN_PROXIED_ADDRESS = "proxy-unknown";
 
-let attempts: DurableLoginAttemptTracker | null = null;
+const trackers = new Map<string, DurableLoginAttemptTracker>();
 
-function loginAttempts(): DurableLoginAttemptTracker {
-  return attempts ??= new DurableLoginAttemptTracker(
-    path.join(getFluxIQ().paths.fluxiq, "security", "login-attempts.json"),
-    { windowMs: ATTEMPT_WINDOW_MS, lockoutMs: LOCKOUT_MS, maxAttempts: MAX_ATTEMPTS, maxEntries: 10_000 }
-  );
+function attemptTracker(fileName: string, maxAttempts: number): DurableLoginAttemptTracker {
+  let tracker = trackers.get(fileName);
+  if (!tracker) {
+    tracker = new DurableLoginAttemptTracker(
+      path.join(getFluxIQ().paths.fluxiq, "security", fileName),
+      { windowMs: ATTEMPT_WINDOW_MS, lockoutMs: LOCKOUT_MS, maxAttempts, maxEntries: 10_000 },
+    );
+    trackers.set(fileName, tracker);
+  }
+  return tracker;
+}
+
+function usernameAttempts(): DurableLoginAttemptTracker {
+  return attemptTracker("login-attempts.json", MAX_ATTEMPTS);
+}
+
+function addressAttempts(): DurableLoginAttemptTracker {
+  return attemptTracker("login-address-attempts.json", ADDRESS_MAX_ATTEMPTS);
+}
+
+function panelAttempts(): DurableLoginAttemptTracker {
+  return attemptTracker("login-panel-attempts.json", PANEL_MAX_ATTEMPTS);
 }
 
 export async function POST(request: Request) {
@@ -36,7 +63,12 @@ export async function POST(request: Request) {
   }
 
   const attemptKey = rateLimitKey(request, payload.username);
-  const locked = await loginAttempts().remainingLockout(attemptKey);
+  const addressKey = trustedClientAddress(request);
+  const locked = Math.max(
+    await panelAttempts().remainingLockout(PANEL_KEY),
+    addressKey ? await addressAttempts().remainingLockout(addressKey) : 0,
+    await usernameAttempts().remainingLockout(attemptKey),
+  );
   if (locked > 0) {
     return NextResponse.json(
       {
@@ -70,7 +102,9 @@ export async function POST(request: Request) {
       await fluxiq.programs.identityAccess.revokeSession(result.session.id);
       throw error;
     }
-    await loginAttempts().clear(attemptKey);
+    // Only the username's count clears: a successful login must not reset the
+    // address or panel bound, or one valid account would reopen a spray between rounds.
+    await usernameAttempts().clear(attemptKey);
     const response = NextResponse.json({
       ok: true,
       payload: {
@@ -89,16 +123,27 @@ export async function POST(request: Request) {
     });
     return response;
   } catch (error) {
-    const failed = await loginAttempts().registerFailure(attemptKey);
-    const status = failed.lockedUntilMs > Date.now() ? 429 : 401;
-    const retryAfterMs = Math.max(0, failed.lockedUntilMs - Date.now());
+    const failed = await usernameAttempts().registerFailure(attemptKey);
+    // An authenticator prompt answers a correct password rather than a guess, so
+    // the staged login of an account with 2FA counts only against its username.
+    const guess = !(error instanceof TotpRequiredError && !payload.totp);
+    const addressFailed = guess && addressKey ? await addressAttempts().registerFailure(addressKey) : null;
+    const panelFailed = guess ? await panelAttempts().registerFailure(PANEL_KEY) : null;
+    const lockedUntilMs = Math.max(failed.lockedUntilMs, addressFailed?.lockedUntilMs ?? 0, panelFailed?.lockedUntilMs ?? 0);
+    const status = lockedUntilMs > Date.now() ? 429 : 401;
+    const retryAfterMs = Math.max(0, lockedUntilMs - Date.now());
+    const attemptsRemaining = Math.max(0, Math.min(
+      MAX_ATTEMPTS - failed.count,
+      addressFailed ? ADDRESS_MAX_ATTEMPTS - addressFailed.count : MAX_ATTEMPTS,
+      panelFailed ? PANEL_MAX_ATTEMPTS - panelFailed.count : MAX_ATTEMPTS,
+    ));
     if (error instanceof TotpRequiredError) {
       return NextResponse.json(
         {
           ok: false,
           requiresTotp: true,
           error: error.message,
-          attemptsRemaining: Math.max(0, MAX_ATTEMPTS - failed.count),
+          attemptsRemaining,
           retryAfterMs,
         },
         { status },
@@ -108,12 +153,19 @@ export async function POST(request: Request) {
       {
         ok: false,
         error: error instanceof Error ? error.message : String(error),
-        attemptsRemaining: Math.max(0, MAX_ATTEMPTS - failed.count),
+        attemptsRemaining,
         retryAfterMs,
       },
       { status },
     );
   }
+}
+
+/** The client address a trusted proxy forwarded, or null when no per-client address exists to bound. */
+function trustedClientAddress(request: Request): string | null {
+  if (process.env.FLUXIQ_TRUST_PROXY !== "true") return null;
+  const address = loginClientAddress(request, true);
+  return address === UNKNOWN_PROXIED_ADDRESS ? null : address;
 }
 
 export function rateLimitKey(request: Request, username: string): string {

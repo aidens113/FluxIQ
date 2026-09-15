@@ -39,6 +39,7 @@ describe("global runtime LLM execution-grant composition", () => {
         name: "DeepSeek",
         value: "test-provider-secret",
         authorizationPassword: "admin",
+        createdBy: login.user.id,
         kind: "llm",
         provider: "deepseek",
         scope: "flow",

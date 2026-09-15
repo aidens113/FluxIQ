@@ -1,3 +1,6 @@
+import type { PasswordKdfOptions } from "../_shared/password-kdf/index.ts";
+import type { Repository } from "../database-manager/index.ts";
+
 export type Permission =
   | "programs.read"
   | "programs.write"
@@ -61,4 +64,39 @@ export type VaultRecord = {
   label: string;
   encryptedValue: string;
   updatedAtMs: number;
+};
+
+/**
+ * A password change announced to credential-change subscribers, such as a
+ * program that re-seals data under the new password. `currentPassword` is set
+ * only for a self-service change, where the account's own current password was
+ * proven for it; an administrator's reset of another account carries none, so
+ * data sealed under the old password cannot be recovered.
+ */
+export type IdentityCredentialChange = {
+  readonly changeId: string;
+  readonly userId: string;
+  readonly actorUserId: string | undefined;
+  readonly currentPassword: string | undefined;
+  readonly newPassword: string;
+};
+
+/**
+ * The credential-change port. Every subscriber `prepare`s before the
+ * credential is written, and a `prepare` that throws refuses the change. After
+ * the write each subscriber is sent `commit`; when a `prepare` or the write
+ * fails, each subscriber asked to prepare is sent `abort` instead.
+ */
+export type IdentityCredentialChangeSubscriber = {
+  prepare(change: IdentityCredentialChange): Promise<void>;
+  commit(change: IdentityCredentialChange): Promise<void>;
+  abort(change: IdentityCredentialChange): Promise<void>;
+};
+
+export type IdentityAccessServiceOptions = {
+  repository?: Repository | undefined;
+  roles?: Role[] | undefined;
+  /** Test-only KDF injection; `createGlobalProgramRuntime` passes none. */
+  passwordKdf?: PasswordKdfOptions | undefined;
+  credentialChangeSubscribers?: readonly IdentityCredentialChangeSubscriber[] | undefined;
 };

@@ -24,6 +24,7 @@ import {
   runtimeAttemptKey,
 } from "./run-format";
 import { RUNTIME_ACTION_PAGE_SIZE, RUNTIME_EVENT_PAGE_SIZE } from "./run-queries";
+import { RunDatasetsPanel } from "../datasets";
 import { useRuntimeDetailCommands, type RuntimeDetailCommands } from "./runtime-host";
 export type RunActionLogViewProps = { projectId?: string | null; runId: string | null; runDetail: any | null; loading: boolean; error: string; onBack(): void };
 
@@ -268,6 +269,7 @@ export function RunActionLogViewContent(props: RunActionLogViewProps & { command
         </div>
       </header>
       {exportMessage ? <p className="automation-runtime-message">{exportMessage}</p> : null}
+      {props.commands.datasets ? <RunDatasetsPanel commands={props.commands.datasets} datasets={runDetail?.datasets ?? []} projectId={props.projectId} runId={props.runId} /> : null}
       {detailError || props.error ? <div className="automation-runtime-inline-error" role="alert"><span>{detailError || props.error}</span><button className="button" disabled={loadingDetail} onClick={() => void loadRunDetail()} type="button">Retry</button></div> : null}
       {runDetail?.metadata?.terminalFailureReason ? <p className="automation-runtime-message">{runDetail.metadata.terminalFailureReason}</p> : null}
       {runDetail?.metadata?.message ? <p className="automation-runtime-message">{runDetail.metadata.message}</p> : null}

@@ -122,7 +122,12 @@ an authorized caller, but login credentials, password-derived reveal keys,
 and resolved provider secrets are never written to Flow/run/cache/database
 storage. The LLM grant stores only the opaque Secret Keys authorization ID;
 Secret Keys owns and zeroes the derived key on one-use consumption, failure,
-key update/rotation/delete, active expiry, or shutdown. The production web
+key update/rotation/delete, active expiry, or shutdown. When Secret Keys
+re-seals a key, it swaps the held derived keys and zeroes the old buffers. A
+re-seal that upgrades an older seal replaces the key for every holder. A re-seal
+after the key owner's own password change replaces it only in that user's
+sessions and revokes every other holder, including an outstanding reveal
+authorization and so any LLM grant built on one. The production web
 owner closes the old framework instance on reload and closes the active
 instance on SIGINT/SIGTERM, which drains Automation Studio grants and Secret
 Keys authorizations. A process restart therefore invalidates every outstanding

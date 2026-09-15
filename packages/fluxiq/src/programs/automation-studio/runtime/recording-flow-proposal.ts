@@ -1,3 +1,4 @@
+import type { AutomationStudioRecordOutput } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioNodeDefinition } from "../nodes/index.ts";
 import type { ProposalNodeStateLink } from "../storage/state-index.ts";
@@ -19,6 +20,14 @@ export type RecordingFlowActionCandidate = {
   expectedConfirmation?: { inputId: string; timeoutMs?: number; description?: string };
   /** What the host should find true after the action, as the mapper proposed it: a plain object Core owns a clone of and never reads. */
   expectedState?: JsonObject;
+  /**
+   * The parsed record output, its `recordsPath` resolved. Carried into node
+   * definitions, unlike `expectedState`: without it a definition's run would
+   * hand the fields the schema excludes to the node's outputs.
+   */
+  recordOutput?: AutomationStudioRecordOutput;
+  /** The recorded action's timeout in milliseconds, written to `parameterValues.timeoutMs`. Carried into node definitions. */
+  timeoutMs?: number;
   confidence: number;
   evidence: RecordingProposalEvidenceReference[];
   stateLink?: ProposalNodeStateLink;

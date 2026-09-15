@@ -13,9 +13,15 @@ import { createGlobalProgramRuntime } from "../index.ts";
 import { actorFor } from "./login-actor.ts";
 import { testTotpCode } from "./totp-code.ts";
 
+// Test-only low-cost derivation for suites that are not about derivation cost.
+// Suites built through createGlobalProgramRuntime, or asserting the recorded
+// cost, run at the production parameters.
+const lowCost = { passwordKdf: { testOnlyWeakParameters: { N: 2 ** 10, r: 8, p: 1, keyLength: 32 } } } as const;
+const PIN_SIGN_IN_AGAIN = "PIN verifier upgrade required. Sign out and sign back in, then try again.";
+
 describe("global program services", () => {
   it("manages identity users and sessions", async () => {
-    const service = new IdentityAccessService();
+    const service = new IdentityAccessService(lowCost);
     const user = (await service.snapshot(1000)).users.find((item) => item.id === "admin");
 
     expect(user?.username).toBe("admin");
@@ -26,7 +32,7 @@ describe("global program services", () => {
   });
 
   it("protects the final enabled administrator", async () => {
-    const service = new IdentityAccessService();
+    const service = new IdentityAccessService(lowCost);
 
     await expect(service.updateUser({ id: "admin", enabled: false })).rejects.toThrow("At least one enabled administrator is required");
     await expect(service.updateUser({ id: "admin", roleId: "viewer" })).rejects.toThrow("At least one enabled administrator is required");
@@ -36,7 +42,7 @@ describe("global program services", () => {
   });
 
   it("authenticates the default admin and verifies privileged credentials", async () => {
-    const service = new IdentityAccessService();
+    const service = new IdentityAccessService(lowCost);
     const login = await service.authenticate({ username: "admin", password: "admin" });
 
     expect(login.user.roleId).toBe("admin");
@@ -56,7 +62,7 @@ describe("global program services", () => {
   });
 
   it("requires PIN for credential rotation only after a PIN is configured", async () => {
-    const service = new IdentityAccessService();
+    const service = new IdentityAccessService(lowCost);
     const login = await service.authenticate({ username: "admin", password: "admin" });
 
     await expect(service.setPasswordAuthorized({
@@ -95,27 +101,7 @@ describe("global program services", () => {
   it("requires the global user PIN for Automation Studio project organization changes", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-automation-pin-"));
     try {
-      const paths = {
-        root,
-        fluxiq: path.join(root, ".fluxiq"),
-        config: path.join(root, ".fluxiq", "config"),
-        data: path.join(root, ".fluxiq", "data"),
-        databases: path.join(root, ".fluxiq", "databases"),
-        inputs: path.join(root, ".fluxiq", "inputs"),
-        outputs: path.join(root, ".fluxiq", "outputs"),
-        streams: path.join(root, ".fluxiq", "streams"),
-        domains: path.join(root, ".fluxiq", "domains"),
-        domainPrograms: path.join(root, ".fluxiq", "domains", "programs"),
-        domainInputs: path.join(root, ".fluxiq", "domains", "inputs"),
-        domainOutputs: path.join(root, ".fluxiq", "domains", "outputs"),
-        domainConfigs: path.join(root, ".fluxiq", "domains", "configs"),
-        domainData: path.join(root, ".fluxiq", "domains", "data"),
-        domainDatabases: path.join(root, ".fluxiq", "domains", "databases"),
-        recordings: path.join(root, ".fluxiq", "recordings"),
-        policies: path.join(root, ".fluxiq", "policies"),
-        logs: path.join(root, ".fluxiq", "logs"),
-        temp: path.join(root, ".fluxiq", "tmp")
-      };
+      const paths = runtimePaths(root);
       const runtime = createGlobalProgramRuntime(paths);
       const login = await runtime.identityAccess.authenticate({ username: "admin", password: "admin" });
       await runtime.identityAccess.setPinAuthorized({
@@ -128,27 +114,37 @@ describe("global program services", () => {
       });
       const reloadedRuntime = createGlobalProgramRuntime(paths);
 
+      // No PIN verifier is stored outside the seal, so a restarted runtime asks the session to sign in again.
       await expect(reloadedRuntime.api.call({
         programId: "automation-studio",
         endpoint: "create-project-category",
         scope: {},
         actor: actorFor(login),
-        payload: { name: "Blocked", authSessionId: login.session.id, authorizationPin: "0000" }
+        payload: { name: "Before sign-in", authSessionId: login.session.id, authorizationPin: "1234" }
+      })).resolves.toMatchObject({ ok: false, error: PIN_SIGN_IN_AGAIN });
+
+      const relogin = await reloadedRuntime.identityAccess.authenticate({ username: "admin", password: "admin" });
+      await expect(reloadedRuntime.api.call({
+        programId: "automation-studio",
+        endpoint: "create-project-category",
+        scope: {},
+        actor: actorFor(relogin),
+        payload: { name: "Blocked", authSessionId: relogin.session.id, authorizationPin: "0000" }
       })).resolves.toMatchObject({ ok: false, error: "Invalid PIN" });
 
       const first = await reloadedRuntime.api.call<{ name: string; authSessionId: string; authorizationPin: string }, { category: { id: string; name: string; order: number } }>({
         programId: "automation-studio",
         endpoint: "create-project-category",
         scope: {},
-        actor: actorFor(login),
-        payload: { name: "First", authSessionId: login.session.id, authorizationPin: "1234" }
+        actor: actorFor(relogin),
+        payload: { name: "First", authSessionId: relogin.session.id, authorizationPin: "1234" }
       });
       const second = await reloadedRuntime.api.call<{ name: string; authSessionId: string; authorizationPin: string }, { category: { id: string; name: string; order: number } }>({
         programId: "automation-studio",
         endpoint: "create-project-category",
         scope: {},
-        actor: actorFor(login),
-        payload: { name: "Second", authSessionId: login.session.id, authorizationPin: "1234" }
+        actor: actorFor(relogin),
+        payload: { name: "Second", authSessionId: relogin.session.id, authorizationPin: "1234" }
       });
 
       const firstId = first.payload?.category.id ?? "";
@@ -157,38 +153,18 @@ describe("global program services", () => {
         programId: "automation-studio",
         endpoint: "reorder-project-categories",
         scope: {},
-        actor: actorFor(login),
-        payload: { categoryIds: [secondId, firstId], authSessionId: login.session.id, authorizationPin: "1234" }
+        actor: actorFor(relogin),
+        payload: { categoryIds: [secondId, firstId], authSessionId: relogin.session.id, authorizationPin: "1234" }
       })).resolves.toMatchObject({ ok: true, payload: { categories: [{ id: secondId }, { id: firstId }] } });
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
-  it("upgrades legacy PIN metadata on login before program PIN authorization", async () => {
+  it("stores no PIN verifier, removes one an older build stored, and asks for sign-in before PIN authorization after a restart", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-automation-pin-legacy-"));
     try {
-      const paths = {
-        root,
-        fluxiq: path.join(root, ".fluxiq"),
-        config: path.join(root, ".fluxiq", "config"),
-        data: path.join(root, ".fluxiq", "data"),
-        databases: path.join(root, ".fluxiq", "databases"),
-        inputs: path.join(root, ".fluxiq", "inputs"),
-        outputs: path.join(root, ".fluxiq", "outputs"),
-        streams: path.join(root, ".fluxiq", "streams"),
-        domains: path.join(root, ".fluxiq", "domains"),
-        domainPrograms: path.join(root, ".fluxiq", "domains", "programs"),
-        domainInputs: path.join(root, ".fluxiq", "domains", "inputs"),
-        domainOutputs: path.join(root, ".fluxiq", "domains", "outputs"),
-        domainConfigs: path.join(root, ".fluxiq", "domains", "configs"),
-        domainData: path.join(root, ".fluxiq", "domains", "data"),
-        domainDatabases: path.join(root, ".fluxiq", "domains", "databases"),
-        recordings: path.join(root, ".fluxiq", "recordings"),
-        policies: path.join(root, ".fluxiq", "policies"),
-        logs: path.join(root, ".fluxiq", "logs"),
-        temp: path.join(root, ".fluxiq", "tmp")
-      };
+      const paths = runtimePaths(root);
       const runtime = createGlobalProgramRuntime(paths);
       const firstLogin = await runtime.identityAccess.authenticate({ username: "admin", password: "admin" });
       await runtime.identityAccess.setPinAuthorized({
@@ -203,11 +179,20 @@ describe("global program services", () => {
       const repository = new SQLiteRepository({ rootDir: paths.databases, kind: "identity.users" });
       const credentialRecord = await repository.get("credential:admin", {});
       const metadata = credentialRecord?.data.metadata as Record<string, unknown> | undefined;
-      expect(metadata?.pinVerifierHash).toBeTruthy();
-      delete metadata!.pinVerifierHash;
-      await repository.put({ ...credentialRecord!, data: { ...credentialRecord!.data, metadata: metadata as any } });
+      expect(metadata).toMatchObject({ pinConfigured: true });
+      expect(metadata).not.toHaveProperty("pinVerifierHash");
+      await repository.put({ ...credentialRecord!, data: { ...credentialRecord!.data, metadata: { ...metadata, pinVerifierHash: legacyTestHashSecret("1234") } as any } });
 
       const reloadedRuntime = createGlobalProgramRuntime(paths);
+      await expect(reloadedRuntime.api.call({
+        programId: "automation-studio",
+        endpoint: "create-project-category",
+        scope: {},
+        actor: actorFor(firstLogin),
+        payload: { name: "Before sign-in", authSessionId: firstLogin.session.id, authorizationPin: "1234" }
+      })).resolves.toMatchObject({ ok: false, error: PIN_SIGN_IN_AGAIN });
+      expect((await repository.get("credential:admin", {}))?.data.metadata).not.toHaveProperty("pinVerifierHash");
+
       const login = await reloadedRuntime.identityAccess.authenticate({ username: "admin", password: "admin" });
       await expect(reloadedRuntime.api.call({
         programId: "automation-studio",
@@ -242,14 +227,20 @@ describe("global program services", () => {
       expect(JSON.stringify(credentialRecord?.data.sealed)).not.toContain("passwordHash");
       expect(JSON.stringify(credentialRecord?.data.sealed)).not.toContain("admin");
       expect(credentialRecord?.data.sealed).toMatchObject({
+        version: 2,
         algorithm: "aes-256-gcm",
-        kdf: "scrypt"
+        kdf: "scrypt",
+        kdfParams: { N: 131072, r: 8, p: 1, keyLength: 32 }
       });
       expect(credentialRecord?.data.metadata).toMatchObject({
         userId: "admin",
         passwordConfigured: true,
         pinConfigured: false
       });
+
+      const digest = crypto.createHash("sha256").update(login.session.id, "utf8").digest("hex");
+      expect((await repository.get(`session:${digest}`, {}))?.data).toMatchObject({ recordType: "session", sessionDigest: { digest, userId: "admin" } });
+      expect(JSON.stringify(await repository.list({}))).not.toContain(login.session.id);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -291,7 +282,7 @@ describe("global program services", () => {
             recordType: "credential",
             credential: {
               userId: user.id,
-              passwordHash: testHashSecret(user.password),
+              passwordHash: legacyTestHashSecret(user.password),
               updatedAtMs: nowMs
             }
           },
@@ -308,6 +299,7 @@ describe("global program services", () => {
       const waiting = await repository.get("credential:waiting", {});
       expect(migrated?.data.encrypted).toBe(true);
       expect(migrated?.data.credential).toBeUndefined();
+      expect(migrated?.data.sealed).toMatchObject({ version: 2, kdfParams: { N: 131072, r: 8, p: 1, keyLength: 32 } });
       expect(JSON.stringify(migrated?.data.sealed)).not.toContain("passwordHash");
       expect(waiting?.data.credential).toBeDefined();
     } finally {
@@ -316,7 +308,7 @@ describe("global program services", () => {
   });
 
   it("requires an authenticator code after password passes for 2FA users", async () => {
-    const service = new IdentityAccessService();
+    const service = new IdentityAccessService(lowCost);
     const setup = await service.beginTotp("admin");
     const code = testTotpCode(setup.secret);
     expect(setup.qrSvg).toContain("<svg");
@@ -357,7 +349,32 @@ describe("global program services", () => {
 
 });
 
-function testHashSecret(value: string): string {
+function runtimePaths(root: string) {
+  return {
+    root,
+    fluxiq: path.join(root, ".fluxiq"),
+    config: path.join(root, ".fluxiq", "config"),
+    data: path.join(root, ".fluxiq", "data"),
+    databases: path.join(root, ".fluxiq", "databases"),
+    inputs: path.join(root, ".fluxiq", "inputs"),
+    outputs: path.join(root, ".fluxiq", "outputs"),
+    streams: path.join(root, ".fluxiq", "streams"),
+    domains: path.join(root, ".fluxiq", "domains"),
+    domainPrograms: path.join(root, ".fluxiq", "domains", "programs"),
+    domainInputs: path.join(root, ".fluxiq", "domains", "inputs"),
+    domainOutputs: path.join(root, ".fluxiq", "domains", "outputs"),
+    domainConfigs: path.join(root, ".fluxiq", "domains", "configs"),
+    domainData: path.join(root, ".fluxiq", "domains", "data"),
+    domainDatabases: path.join(root, ".fluxiq", "domains", "databases"),
+    recordings: path.join(root, ".fluxiq", "recordings"),
+    policies: path.join(root, ".fluxiq", "policies"),
+    logs: path.join(root, ".fluxiq", "logs"),
+    temp: path.join(root, ".fluxiq", "tmp")
+  };
+}
+
+/** A password or PIN hash in the legacy `scrypt:<salt>:<hash>` form older builds wrote (N=2^14 over the salt text). */
+function legacyTestHashSecret(value: string): string {
   const salt = crypto.randomBytes(16).toString("base64url");
   const hash = crypto.scryptSync(value, salt, 32).toString("base64url");
   return `scrypt:${salt}:${hash}`;

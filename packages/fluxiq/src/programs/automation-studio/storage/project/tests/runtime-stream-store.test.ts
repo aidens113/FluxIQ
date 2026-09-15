@@ -1,11 +1,13 @@
 import { mkdir, readFile, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { StateSnapshot } from "../../../model/index.ts";
+import type { AutomationStudioFlowRunDetail, StateSnapshot } from "../../../model/index.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../../runtime/executor/index.ts";
 import { AutomationStudioProjectAdministration } from "../administration.ts";
 import { AutomationStudioProjectDatabasePool } from "../database.ts";
+import { AutomationStudioProjectRunDatasetStore, type AutomationStudioRunDatasetBatch } from "../run-dataset-store.ts";
 import { AutomationStudioProjectRuntimeStreamStore, type AutomationStudioRuntimeStreamEvent } from "../runtime-stream-store.ts";
 
 // Sibling storage tests keep their scratch root under the working directory.
@@ -204,6 +206,39 @@ describe("AutomationStudioProjectRuntimeStreamStore", () => {
     await pool.closeAll();
     expect(await filesHolding(rootDir, SUPPLIED_RUN_INPUT)).toEqual([]);
   });
+
+  it("joins the run's dataset summaries into compact and full run detail, and writes no datasets for a run that stored none", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    await seedFlow(pool, "project.runtime", "flow.checkout");
+    const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: "project.runtime" });
+    await store.putRunDetail(emptyRunDetail("run.checkout"));
+    // A detail handed to `putRunDetail` cannot plant datasets: they come from the dataset store alone.
+    await store.putRunDetail({ ...emptyRunDetail("run.empty"), datasets: [datasetSummary({ runId: "run.empty", datasetId: "planted" })] });
+    // Nor can a later run-summary event whose envelope carries a `datasets` key.
+    await store.appendRuntimeEvents({ runId: "run.empty", events: [{ eventId: "run_summary:run.empty:planted", eventKind: "run_summary", timestampMs: 200, title: "Run summary", payload: { schemaVersion: "0.1", datasets: [{ runId: "run.empty", datasetId: "enveloped", nodeIds: ["planted"], schemaDigest: "sha256:planted", recordCount: 9, truncated: false, invalidCount: 0, updatedAt: 9 }] } }] });
+    await expect(store.listRuntimeEvents({ runId: "run.empty", afterSequence: 0, limit: 10 })).resolves.toMatchObject({ events: [{ eventKind: "run_summary" }, { eventKind: "run_summary", payload: { datasets: [{ datasetId: "enveloped" }] } }] });
+    const datasets = await AutomationStudioProjectRunDatasetStore.open({ pool, projectId: "project.runtime" });
+    await datasets.appendBatch(datasetBatch({ datasetId: "listings", label: "Listings", nodeId: "extract", rows: [{ title: "First" }, { title: "Second" }], invalidCount: 1, now: 1_000 }));
+    await datasets.appendBatch(datasetBatch({ datasetId: "prices", nodeId: "prices", rows: [{ title: "Only" }], invalidCount: 0, now: 2_000 }));
+
+    // Most recently written first, every field named.
+    const expected: AutomationStudioRunDatasetSummary[] = [
+      { runId: "run.checkout", datasetId: "prices", nodeIds: ["prices"], schemaDigest: "sha256:listing-schema", recordCount: 1, truncated: false, invalidCount: 0, updatedAt: 2_000 },
+      { runId: "run.checkout", datasetId: "listings", label: "Listings", nodeIds: ["extract"], schemaDigest: "sha256:listing-schema", recordCount: 2, truncated: false, invalidCount: 1, updatedAt: 1_000 }
+    ];
+    const compact = await store.getRunDetail("run.checkout", { includeCollections: false });
+    expect(compact?.metadata).toMatchObject({ collectionsPaged: true });
+    expect(compact?.datasets).toEqual(expected);
+    const full = await store.getRunDetail("run.checkout");
+    expect(full?.metadata).not.toHaveProperty("collectionsPaged");
+    expect(full?.datasets).toEqual(expected);
+
+    await expect(store.getRunDetail("run.empty", { includeCollections: false })).resolves.not.toHaveProperty("datasets");
+    await expect(store.getRunDetail("run.empty")).resolves.not.toHaveProperty("datasets");
+    await datasets.close();
+    await store.close();
+    await pool.closeAll();
+  });
 });
 
 // Obviously synthetic: the assertion is that this string is absent from every
@@ -249,6 +284,23 @@ function runSummary(input: { runId?: string; actionAttemptCount: number; updated
 
 function action(attemptId: string, order: number, startedAt: number): any {
   return { attemptId, nodeId: `node.${order}`, definitionId: "action.click", order, status: "succeeded", startedAt, finishedAt: startedAt + 5, durationMs: 5 };
+}
+
+const LISTING_SCHEMA: AutomationStudioRecordSchema = { schemaVersion: "0.1", fields: [{ id: "title", label: "Title", valueType: "string", required: true }] };
+
+function emptyRunDetail(runId: string): AutomationStudioFlowRunDetail {
+  return { schemaVersion: "0.1", summary: runSummary({ runId, actionAttemptCount: 0 }), routeDecisions: [], subflows: [], actionAttempts: [], recoveryAttempts: [], interventions: [], adaptationIds: [], changeProposalIds: [] };
+}
+
+function datasetSummary(input: { runId: string; datasetId: string }): AutomationStudioRunDatasetSummary {
+  return { runId: input.runId, datasetId: input.datasetId, nodeIds: ["planted"], schemaDigest: "sha256:planted", recordCount: 9, truncated: false, invalidCount: 0, updatedAt: 9 };
+}
+
+function datasetBatch(input: { datasetId: string; nodeId: string; label?: string; rows: Array<{ title: string }>; invalidCount: number; now: number }): AutomationStudioRunDatasetBatch {
+  const attemptId = `${input.nodeId}.attempt.1`;
+  // `batchKey` is being added to the store's batch type in a concurrent amendment;
+  // the assertion keeps this literal valid on either side of that change.
+  return { runId: "run.checkout", datasetId: input.datasetId, ...(input.label ? { label: input.label } : {}), nodeId: input.nodeId, attemptId, batchKey: attemptId, schema: LISTING_SCHEMA, schemaDigest: "sha256:listing-schema", writeMode: "append", rows: input.rows, invalidCount: input.invalidCount, truncated: false, now: input.now } as AutomationStudioRunDatasetBatch;
 }
 
 function event(index: number): Omit<AutomationStudioRuntimeStreamEvent, "sequence"> {

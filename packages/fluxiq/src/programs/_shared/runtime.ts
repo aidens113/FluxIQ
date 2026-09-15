@@ -9,7 +9,7 @@ import { ComputeControlService, registerComputeControlApi } from "../compute-con
 import { DatabaseManagerService, registerDatabaseManagerApi, SQLiteRepository } from "../database-manager/index.ts";
 import { DeploymentSyncService, registerDeploymentSyncApi } from "../deployment-sync/index.ts";
 import { DocsService, registerDocsApi } from "../docs/index.ts";
-import { IdentityAccessService, registerIdentityAccessApi } from "../identity-access/index.ts";
+import { IdentityAccessService, registerIdentityAccessApi, type IdentityCredentialChangeSubscriber } from "../identity-access/index.ts";
 import { ProductionRunnerService, registerProductionRunnerApi } from "../production-runner/index.ts";
 import { registerRuntimeApi } from "../runtime-control/index.ts";
 import { registerSecretKeysApi, SecretKeysService } from "../secret-keys/index.ts";
@@ -67,8 +67,12 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
     generatedRootDir: runtimeDocsRootDir!,
     allowedSourceRootDirs: [docsRootDir!, runtimeDocsRootDir!]
   } : storageOptions);
-  const identityAccess = new IdentityAccessService(identityUsersRepository ? { repository: identityUsersRepository } : {});
   const secretKeys = new SecretKeysService(secretKeysRepository ? { repository: secretKeysRepository } : {});
+  // Identity Access takes its credential-change subscribers only at construction, so Secret Keys is built first.
+  const identityAccess = new IdentityAccessService({
+    repository: identityUsersRepository,
+    credentialChangeSubscribers: [secretKeysCredentialChangeSubscriber(secretKeys)]
+  });
   const llmExecutionGrants = new AutomationStudioLlmExecutionGrantService({ identityAccess, secretKeys, resolveExecutionDigest: async (projectId, flowId) => automationStudio.getLlmExecutionBinding(projectId, flowId) });
   automationStudio.bindLlmExecutionProvider(
     (input) => input.executionGrant
@@ -164,6 +168,42 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
     runtime,
     secretKeys
     , llmExecutionGrants
+  };
+}
+
+/**
+ * Re-seals a user's Secret Keys under the new password when that user changes
+ * their own password: prepared before Identity Access writes the credential,
+ * committed after it, discarded if the change is refused. An administrator's
+ * reset of another account carries no current password, so keys sealed under
+ * the old one cannot be opened; they are left as they are and stay unreadable
+ * with the new password.
+ */
+function secretKeysCredentialChangeSubscriber(secretKeys: SecretKeysService): IdentityCredentialChangeSubscriber {
+  const prepared = new Map<string, string>();
+  const take = (identityChangeId: string): string | undefined => {
+    const secretChangeId = prepared.get(identityChangeId);
+    prepared.delete(identityChangeId);
+    return secretChangeId;
+  };
+  return {
+    async prepare(change) {
+      if (!change.currentPassword) return;
+      const { changeId } = await secretKeys.prepareCredentialChange({
+        userId: change.userId,
+        currentPassword: change.currentPassword,
+        nextPassword: change.newPassword
+      });
+      prepared.set(change.changeId, changeId);
+    },
+    async commit(change) {
+      const secretChangeId = take(change.changeId);
+      if (secretChangeId) await secretKeys.commitCredentialChange(secretChangeId);
+    },
+    async abort(change) {
+      const secretChangeId = take(change.changeId);
+      if (secretChangeId) secretKeys.abortCredentialChange(secretChangeId);
+    }
   };
 }
 

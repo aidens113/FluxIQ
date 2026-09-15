@@ -1,4 +1,4 @@
-import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+import type { AutomationStudioFailureRecord, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationConditionExpression } from "./conditions.ts";
 import type { EvidenceReference, StateFactReference } from "./evidence.ts";
@@ -318,6 +318,8 @@ export type AutomationStudioFlowRunDetail = {
   adaptationIds: string[];
   changeProposalIds: string[];
   evidence?: EvidenceReference[];
+  /** The datasets the run stored, read from the run dataset store. Absent when the run stored none. */
+  datasets?: AutomationStudioRunDatasetSummary[];
   metadata?: JsonObject;
 };
 

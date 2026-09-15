@@ -132,7 +132,7 @@ export type FluxIQRuntimeCommandAttempt = {
   sessionId?: string;
   dispatchedAt: number;
   settledAt?: number;
-  result?: FluxIQRuntimeCommandResult;
+  result?: FluxIQRuntimeCommandAttemptResult;
   message?: string;
 };
 
@@ -148,6 +148,14 @@ export type FluxIQRuntimeExecutionContext = {
  * withheld from one that was never there.
  */
 export const FLUXIQ_RUNTIME_WITHHELD_VALUE = "[withheld]";
+
+/**
+ * The result a command attempt keeps: the command's result, except that a
+ * payload its caller withheld reads as `FLUXIQ_RUNTIME_WITHHELD_VALUE`.
+ */
+export type FluxIQRuntimeCommandAttemptResult = Omit<FluxIQRuntimeCommandResult, "payload"> & {
+  payload?: JsonObject | typeof FLUXIQ_RUNTIME_WITHHELD_VALUE;
+};
 
 /**
  * Values a command carries that its caller supplied from run-time data of
@@ -170,6 +178,13 @@ export type FluxIQRuntimeDispatchContext = FluxIQRuntimeExecutionContext & {
    * handed this list.
    */
   withheldValues?: FluxIQRuntimeWithheldValues;
+  /**
+   * The attempt the runtime keeps and saves holds `FLUXIQ_RUNTIME_WITHHELD_VALUE`
+   * in place of `result.payload`; the caller still receives it. A result with no
+   * payload gains none. Like `withheldValues`, never handed to the adapter or
+   * transport.
+   */
+  withheldResultPayload?: boolean;
 };
 
 export type FluxIQRuntimeAdapter = {

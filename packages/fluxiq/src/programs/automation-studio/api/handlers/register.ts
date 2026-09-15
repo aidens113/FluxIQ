@@ -19,6 +19,7 @@ import { registerRuntimeSessionEndpoints } from "./runtime-sessions.ts";
 import { registerSubflowEndpoints } from "./subflows.ts";
 import { registerInstructionEndpoints } from "./instructions.ts";
 import { registerRunEndpoints } from "./runs.ts";
+import { registerRunDatasetEndpoints } from "./datasets.ts";
 import { registerRouterEndpoints } from "./router.ts";
 import { registerLlmGenerationEndpoints } from "./llm-generation.ts";
 import { registerRuntimeExecutionEndpoints } from "./runtime-execution.ts";
@@ -37,6 +38,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registerSubflowEndpoints(dependencies);
   registerInstructionEndpoints(dependencies);
   registerRunEndpoints(dependencies);
+  registerRunDatasetEndpoints(dependencies);
   registerRouterEndpoints(dependencies);
   registerLlmGenerationEndpoints(dependencies);
   registerRuntimeExecutionEndpoints(dependencies);

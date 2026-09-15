@@ -3,6 +3,7 @@ export * from "./bootstrap-adaptations.ts";
 export * from "./catalogue.ts";
 export * from "./collections.ts";
 export * from "./compact-json.ts";
+export * from "./datasets/index.ts";
 export * from "./error-message.ts";
 export * from "./evidence/index.ts";
 export * from "./facade-ports.ts";

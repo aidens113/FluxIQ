@@ -95,3 +95,63 @@ describe("AutomationNodeParameterEditor reference picker", () => {
     expect(html).not.toContain("Routine picker");
   });
 });
+
+describe("record-output parameter", () => {
+  const recordOutputParameter = {
+    id: "recordOutput",
+    label: "Save extracted records",
+    valueType: "json",
+    defaultValue: null,
+    allowStateBinding: false,
+    ui: { control: "record-output" as const }
+  } as const;
+  const storedRecordOutput = {
+    datasetId: "products",
+    recordsPath: "items",
+    schema: { schemaVersion: "0.1", fields: [{ id: "name", label: "Name", valueType: "string" }] },
+    writeMode: "append"
+  };
+
+  it("routes the record-output control to the record output editor, with no source selector", () => {
+    const html = renderToStaticMarkup(
+      <AutomationNodeParameterEditor
+        node={{ parameters: [recordOutputParameter], parameterValues: { recordOutput: storedRecordOutput } }}
+        referenceOptions={{ state: [{ id: "app.schema", label: "Schema" }] }}
+        onChange={() => undefined}
+        onDescriptionChange={() => undefined}
+      />
+    );
+    expect(html).toContain('role="switch"');
+    expect(html).toContain('aria-label="Table id"');
+    expect(html).toContain('aria-label="Field 1 name"');
+    expect(html).not.toContain('aria-label="Field value"');
+    expect(html).not.toContain("Save extracted records source");
+    expect(html).not.toContain("State value");
+  });
+
+  it("never offers a state source for a record output, even when the parameter does not refuse bindings", () => {
+    const { allowStateBinding: _refused, ...bindable } = recordOutputParameter;
+    const html = renderToStaticMarkup(
+      <AutomationNodeParameterEditor
+        node={{ parameters: [bindable], parameterValues: { recordOutput: { $state: { path: "app.schema" } } } }}
+        referenceOptions={{ state: [{ id: "app.schema", label: "Schema" }] }}
+        onChange={() => undefined}
+        onDescriptionChange={() => undefined}
+      />
+    );
+    expect(html).not.toContain("Save extracted records source");
+    expect(html).not.toContain("state path");
+    expect(html).toContain('aria-label="Table id"');
+  });
+
+  it("returns the record output message from automationParameterError", () => {
+    expect(automationParameterError(recordOutputParameter, null)).toBeNull();
+    expect(automationParameterError(recordOutputParameter, storedRecordOutput)).toBeNull();
+    expect(automationParameterError(recordOutputParameter, {
+      ...storedRecordOutput,
+      schema: { schemaVersion: "0.1", fields: [{ id: "card", label: "Card", valueType: "string", handling: "encrypt" }] }
+    })).toBe("Encrypt column is not available yet: it arrives with project record keys. Choose Include or Exclude column.");
+    expect(automationParameterError(recordOutputParameter, "")).toContain("cannot be read");
+    expect(automationParameterError(recordOutputParameter, { $state: { path: "app.schema" } })).not.toBeNull();
+  });
+});

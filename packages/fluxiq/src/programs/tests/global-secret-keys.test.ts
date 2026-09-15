@@ -23,6 +23,13 @@ describe("global program services", () => {
     }) as { ok: boolean; payload?: { id: string }; error?: string };
 
     expect(created.ok, created.error).toBe(true);
+    // Real cost: the composed runtime seals at scrypt N=2^17, stamped for the acting user.
+    const store = (runtime.secretKeys as unknown as { store: { get(id: string): { sealed: unknown } | undefined } }).store;
+    expect(store.get(created.payload?.id ?? "")?.sealed).toMatchObject({
+      version: 2,
+      kdfParams: { N: 131072, r: 8, p: 1, keyLength: 32 },
+      sealedByUserId: login.user.id
+    });
     await expect(runtime.api.call({
       programId: "secret-keys",
       endpoint: "reveal-key",

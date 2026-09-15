@@ -34,6 +34,18 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
       return { ok: true, payload: { runDetail } };
     }
   });
+  // Runtime Debug's Export Audit button reads `payload.audit`; an unknown run
+  // answers `{ audit: null }` rather than an error, as run detail does.
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.exportFlowRunAudit,
+    permission: "programs.read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowRunDetailRequest : {} as FlowRunDetailRequest;
+      const audit = await service.exportFlowRunAudit(String(payload.projectId ?? ""), String(payload.runId ?? ""));
+      return { ok: true, payload: { audit } };
+    }
+  });
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowRunActions,

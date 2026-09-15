@@ -105,4 +105,45 @@ describe("canonical composite Flow executor", () => {
     expect(trace.values.echoed).toBe(AUTOMATION_STUDIO_WITHHELD_VALUE);
     expect(trace.attempts.find((attempt) => attempt.nodeId === "call")?.childTrace?.values.value).toBe(AUTOMATION_STUDIO_WITHHELD_VALUE);
   });
+
+  it("keeps a Call Flow child's variables apart from its parent's, in both directions", async () => {
+    const append = { id: "remember", definitionId: "builtin.data.set-variable", parameterValues: { name: "log", writeMode: "append-list" } };
+    const child = {
+      ...createBlankAutomationStudioFlowArtifact({ flowId: "flow.child.variables", projectId: "project", name: "Child variables", now: 1 }),
+      nodes: [
+        { id: "start", definitionId: "builtin.control.start" },
+        { id: "mark", definitionId: "builtin.data.constant", parameterValues: { value: "synthetic-child" } },
+        append
+      ],
+      edges: [
+        { id: "start.mark", sourceNodeId: "start", targetNodeId: "mark", sourcePortId: "success", targetPortId: "in" },
+        { id: "mark.remember", sourceNodeId: "mark", targetNodeId: "remember", sourcePortId: "success", targetPortId: "in" }
+      ]
+    };
+    const snapshot = createPublishedFlowSnapshot(child, "1.0.0", 2);
+    const parent = {
+      ...createBlankAutomationStudioFlowArtifact({ flowId: "flow.parent.variables", projectId: "project", name: "Parent", now: 1 }),
+      nodes: [
+        { id: "start", definitionId: "builtin.control.start" },
+        { id: "mark", definitionId: "builtin.data.constant", parameterValues: { value: "synthetic-parent" } },
+        append,
+        createCallFlowNode({ id: "call", target: { flowId: child.flowId, version: "1.0.0", scope: { kind: "global" } } }),
+        { id: "recall", definitionId: "builtin.data.get-variable", parameterValues: { name: "log" } }
+      ],
+      edges: [
+        { id: "start.mark", sourceNodeId: "start", targetNodeId: "mark", sourcePortId: "success", targetPortId: "in" },
+        { id: "mark.remember", sourceNodeId: "mark", targetNodeId: "remember", sourcePortId: "success", targetPortId: "in" },
+        { id: "remember.call", sourceNodeId: "remember", targetNodeId: "call", sourcePortId: "success", targetPortId: "in" },
+        { id: "call.recall", sourceNodeId: "call", targetNodeId: "recall", sourcePortId: "success", targetPortId: "in" }
+      ]
+    };
+
+    const trace = await runCanonicalAutomationStudioFlow(parent, [snapshot], { variables: { log: ["synthetic-seed"] } });
+
+    expect(trace.status).toBe("succeeded");
+    // The child starts from the run's seed, not from what its parent wrote.
+    expect(trace.attempts.find((attempt) => attempt.nodeId === "call")?.childTrace?.values["remember.next"]).toEqual(["synthetic-seed", "synthetic-child"]);
+    // The parent reads back only what it wrote itself.
+    expect(trace.values["recall.value"]).toEqual(["synthetic-seed", "synthetic-parent"]);
+  });
 });

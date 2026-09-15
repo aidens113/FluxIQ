@@ -11,6 +11,7 @@ export * from "./flow-map.ts";
 export * from "./instruction.ts";
 export * from "./adaptation.ts";
 export * from "./run.ts";
+export * from "./dataset.ts";
 export * from "./recording.ts";
 export * from "./policy.ts";
 export * from "./client.ts";

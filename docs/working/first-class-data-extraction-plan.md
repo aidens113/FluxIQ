@@ -1,7 +1,7 @@
 # First-Class Data Extraction Plan (Core share)
 
 Status: Active
-Status detail: Plan firm 2026-09-15; K0-K11 are decided and executable from their investigations, and K0 execution has started.
+Status detail: Executing 2026-09-15; K0-K9 and K12d are complete and verified in the working tree, K10 and K12c are deliberately held for the user's plan review, and K11 stays in Week 3.
 Created: 2026-09-15
 Last updated: 2026-09-15
 Owner: Senior supervisor agent
@@ -13,7 +13,8 @@ Related: [package boundaries](../architecture/package-boundaries.md), [code stru
 
 ## Current State
 
-**Phase, as of 2026-09-15: plan firm; K0 execution started.** The
+**Phase, as of 2026-09-15: K0-K9 and K12d are complete and verified; the work
+now waits on the user's plan review.** The
 downstream user decided that structured data extraction is a fundamental FluxIQ
 capability, Core included, then ruled Secret Keys' password-derivation cost
 unacceptable and added an Encrypt column. The downstream document owns the
@@ -22,78 +23,74 @@ domain-neutral dataset contracts, Core's phases K0-K11, and decisions CD1-CD20.
 Path prefixes: `FX/` is `packages/fluxiq/src/`, `AS/` is
 `FX/programs/automation-studio/`, `WEB/` is `apps/web/src/`.
 
-**What is true in Core today: datasets** (`ex-b-core`, file:line in its report):
-- A domain output's payload becomes node output `result`
-  (`AS/runtime/io-policy.ts:113`) and is saved only in the runtime session trace
-  (`projects/{id}/runtime/sessions/{runId}.json`), read with
-  `get-runtime-session`. Run-detail attempt records carry no inputs or outputs
-  (`AS/runtime/service/summaries/conversions.ts:137-174`).
-- The saved trace withholds every `$state`-resolved value and run input,
-  substring-wide, so extracted text containing a run input reads `[withheld]`
-  (`AS/runtime/executor/trace-withholding.ts:1-46`).
-- No dataset concept exists. `builtin.control.loop` keeps no counter or item;
-  runtime variables are rebuilt per node, so `set-variable` writes are lost
-  (`AS/runtime/executor/node-execution.ts:102`); `$state` paths cannot reach
-  recorded nodes' outputs because their ids contain dots
-  (`AS/nodes/parameter-bindings.ts:118-128`).
-- A domain mapper can already propose `web.dom.extract_list`; approval writes it
-  as `builtin.policy.action` with `expectedState`
-  (`AS/runtime/service/recordings/proposal-candidates.ts:90-133`).
-- The program API returns JSON only; domains cannot contribute web views or
-  commands; Runtime Debug has an Export Audit precedent and a generic
-  `DataTable`.
-- Runtime command attempts save a domain's `result.payload` in clear
-  (`FX/runtime/storage.ts:51-57`; `FX/runtime/service.ts:429-437` withholds only
-  `message` and `error`), before Automation Studio sees the result.
-- `export-flow-run-audit` has no registered handler, so Runtime Debug's Export
-  Audit button gets a 404 (`AS/api/contracts/endpoints.ts:147`; nothing under
-  `AS/api/handlers/` registers it). Nothing purges runs, sessions, or content
-  objects (`AS/storage/project/retention-store.ts:35-58` has no production
-  caller). The baselined `AutomationStudioService` is frozen at 6,807 lines and
-  223 members (`k-datasets-execution` §1.2).
-
-**What is true in Core today: credentials and keys** (`k0-secret-keys-kdf`,
-`k11-encrypted-fields`):
-- Four password sites (the Secret Keys value seal; Identity Access's credential
-  seal, password hash, and PIN hash) call `scryptSync(value, salt, 32)` at
-  Node's default cost, N=2^14, and record no parameters
-  (`FX/programs/secret-keys/runtime/service.ts:456-461`;
-  `FX/programs/identity-access/runtime/service.ts:631-663`).
-- Defects found by reading, all taken into K0 (CD5):
-  - a Secret Keys metadata edit stops that key unlocking at login;
-  - a password change leaves the user's Secret Keys unreadable;
-  - the PIN verifier hash is persisted outside the seal, so a 4-12 digit PIN
-    is guessable offline at any cost;
-  - session ids, the cookie bearer values, are stored raw;
-  - `createRevealAuthorization` derives a key without checking it opens;
-  - unknown usernames return before any derivation, a timing oracle;
-  - Database Manager `put-record` and `delete-record` on `identity.users` and
-    `secret.keys` skip the credential recheck that reads require
-    (`FX/programs/database-manager/api/handlers.ts:64-84` against `:97-124`).
-- Core has no project membership, no API tokens, and no Flow scheduler; an
-  ordinary run carries no identity; `Repository` has no compare-and-set.
+Planning-time findings about Core, superseded by the decisions below and by the
+work recorded in the ledger, are in the
+[planning archive](./first-class-data-extraction-plan/archive/2026-09-15-planning-briefs-and-ledger.md).
 
 **Done:** investigations `ex-b-core`, `k0-secret-keys-kdf`,
 `k11-encrypted-fields`, and `k-datasets-execution`; decisions CD1-CD20;
 execution detail for K0, K1-K10, and K11.
 
-**In progress:** K0.2 (`k0-2-secret-keys`) and K2 (`k2-run-dataset-store`),
-beside downstream `x0-9` and `x1-domain-contracts`. At most four code workers
-run at once on this machine.
-**Verified, uncommitted:** K0.1, K0.3, K0.4, K3, K4c.0, K4d, and K8.0; the guard
-mutation proofs for K0.1 and K0.4 still run on scratch copies, because the
-permission classifier refuses weakening real source. **Landed:** K1 (`33f0b4a`).
-**Briefed, waiting for a slot:** K4a and K12d.
+**All of K0 is complete and verified.** Every security fix the user called
+unacceptable is now proven by a test run the supervisor made itself, not by a
+worker's claim.
 
-**Not done:** K0.2-K0.6 and K1-K11.
+**In progress:** nothing in Core. Every K worker has reported and each was
+verified by the supervisor's own run rather than accepted on its report.
+
+**Verified by the supervisor, uncommitted:** K0.1-K0.5 in full (K0.3 and K0.4
+also with scratch-copy mutation proofs), K2 with batch-key replacement,
+per-batch counts, and its registered table name, K3, K4a with `batchKey`,
+K4c.0, K4c.1-2 (30 tests, with the line ratchet held and the offsetting diff
+reviewed), K4d, K5, K6 (193 tests), K6b (206 tests, plus 308 across the broader
+runtime suites to prove the live-binding change regressed nothing), K7 (39
+tests), K7b (44 tests), K8.0, K8 (50 Core tests and 10 route tests), K9 (64 web
+tests), and K12d against a rebuilt Core (34 tests). **Both type checks are green
+with every K worker's output in the tree at once:** `pnpm --filter fluxiq check`
+and `pnpm --filter @fluxiq/web check` each exit 0.
+**Landed:** K1 (`33f0b4a`). **Worker-reported, not yet reverified:** K4b.
+
+**Not done:** the Core commit; K10 and K12c, which are deliberately not started;
+K11 stays in Week 3.
+
+**Not proven at runtime, and worth saying plainly:** nothing has yet run against
+a real SQLite project end to end through these endpoints. K8's handler tests
+stub the collaborator, its route is tested with `lib/fluxiq` mocked, K9 had no
+authorized browser pass and its test environment skips the Blob path by its own
+`typeof window` guard, and K4c's retry and live-patch conclusion was read from
+the code rather than executed. So the streaming path, the 256 MiB cap, the
+lease, a retry's batch keys, and the download are all unexercised. Nothing here
+should be called working end to end until a real run proves it.
+
+**Three defects found by workers and fixed rather than parked:** row text
+reaching the saved trace through variables (a privacy leak that would have
+survived a user excluding a column), bindings reading the run's seed instead of
+the live variable map, and a recorded extraction's records having no port a
+later node could wire to. Both `k6b` defects were **reproduced red before being
+fixed**, and `k7b` confirmed its gap by watching a For Each wired to the missing
+port run "failed".
+
+**Three findings still open, each needing an owner:**
+1. A value **lifted out of** a dataset row still writes its text to the saved
+   trace. Identity markers protect a row passed along whole; they cannot protect
+   one taken apart. This needs a decision beside CD14 about what "excluded"
+   promises, so it goes to the user's review rather than being settled here.
+2. The JSON walk is duplicated: the real cause sat in `AS/nodes/shared/`, which
+   `k6b`'s brief did not own, so it added a parallel copy. Two copies will
+   drift, and the next node to copy a row will reintroduce the leak.
+3. No public `fluxiq` subpath exports the run-dataset contract types, so
+   `apps/web` mirrors three shapes by hand — the same trap K1 fixed for record
+   output. K10 owns the re-export.
 
 **Next steps:**
-1. Verify K0.2, K0.3, and K4d; run the outstanding guard mutation proofs on
-   scratch copies; run `pnpm --filter fluxiq check`; commit K0.
-2. As worker slots free: K2 and K4a; K12d after K3.
-3. Follow the dataset order under "Dataset execution (K1-K10)", then K12, and
-   stop for the user's plan review (downstream D15); K11 stays in Week 3 with
-   downstream Phase 3.7.
+1. The full `vitest run --no-file-parallelism` suite is running, one file at a
+   time for this machine's RAM fault.
+2. Then `pnpm docs:reference` (K6 made the generated framework reference stale),
+   the build, and `pnpm structure:baseline` **last**, once no worker holds a
+   file, to regenerate the working-doc index.
+3. Then the Core commit, and stop for the user's plan review (downstream D15).
+   K10 and K12c are new work, and the user asked to review the plan before more
+   of it is built. K11 stays in Week 3 with downstream Phase 3.7.
 
 **Blockers:** none.
 
@@ -306,8 +303,11 @@ In `@fluxiq/contracts/automation-studio`, new `packages/contracts/src/record-set
 - Store `AS/storage/project/run-dataset-store.ts`: a transactional
   `appendBatch` that rejects a changed schema digest or a key outside the
   stored schema, paging, row reads for streaming, audit, and
-  `deleteRunDatasets`. If retries reuse a `runId`, a batch with the same
-  `attempt_id` replaces the earlier one.
+  `deleteRunDatasets`. A batch replaces an earlier batch with the same batch
+  key, the capturing attempt's nested Call Flow path joined with its attempt id,
+  so a rerun replaces its own batches while a Call Flow child never overwrites
+  its parent's or another invocation's; invalid counts are stored per batch and
+  replaced with it.
 - Collaborator `AS/runtime/service/datasets/`, reached through a `readonly
   runDatasets` field so the frozen service gains no members; a pure move of the
   recording candidate helpers out of `service.ts` first frees the lines the
@@ -500,182 +500,268 @@ Worker Briefs section. Completed briefs (`k0-secret-keys-kdf`, `k11-encrypted-fi
 `k-datasets-execution`, `k0-1-password-kdf`, `k0-4-database-manager-recheck`,
 `k1-record-set-contracts`, `k12-data-view`, `k4d-withheld-result-payload`,
 `k8-0-export-audit-handler`, `k4c0-candidate-helpers-move`, `k0-3-identity-access`,
-and `k3-policy-action-record-output`) are in the
+`k3-policy-action-record-output`, `k0-2-secret-keys`, `k2-run-dataset-store`,
+`k4a-executor-record-capture`, `k0-mutation-proofs`, and `k5-run-detail-datasets`)
+are in the
 [planning archive](./first-class-data-extraction-plan/archive/2026-09-15-planning-briefs-and-ledger.md).
 Briefs below were recorded at dispatch on 2026-09-15.
 
-### Brief: k0-2-secret-keys
-- Repository: FluxIQ Core (`F:\!FluxIQ`)
-- Task: implement K0.2 per `reports/k0-secret-keys-kdf.md` §4.3-4.6, §5 step
-  2, §6 (Secret Keys cases 1-14), and §7, amended by CD3-CD5, on K0.1's
-  `password-kdf` module. Also add `prepareCredentialChange` (re-seal the user's
-  own keys under the new password without writing), `commitCredentialChange`,
-  and `abortCredentialChange`, tested with a fake caller, for K0.5 to wire to
-  the Identity Access port. Per CD3 and K0.1's report: re-seal only when
-  `version === 1` or `isBelowScryptWriteCost(record.kdfParams, writeParameters)`,
-  and derive v2 seals from `decodeKdfSalt(record.salt)` (v1 keeps the salt text).
-- Required reads: `AGENTS.md`; `docs/architecture/code-structure.md`; CD3-CD5;
-  the k0 report sections named; `reports/k0-1-password-kdf.md`
-- Owns (may edit): `FX/programs/secret-keys/types.ts`, `runtime/service.ts`,
-  `api/handlers.ts`, their tests, new modules under `secret-keys/runtime/`,
-  `FX/programs/tests/global-secret-keys.test.ts`,
-  `FX/programs/_shared/tests/runtime-llm-grants.test.ts`
-- Must not touch: Identity Access, `password-kdf/`, `_shared/runtime.ts`, every
-  other file, `.fluxiq` data; dummy passwords only
-- Validation, run alone: targeted vitest; `pnpm --filter fluxiq check` (same
-  rule for other workers' files); structure audit; §7 mutations 4-9 and 15
-  observed red and reverted
-- Report to: `F:\!FluxIQ\docs\working\first-class-data-extraction-plan\reports\k0-2-secret-keys.md`
-
-### Brief: k2-run-dataset-store
-- Repository: FluxIQ Core (`F:\!FluxIQ`)
-- Task: implement K2 per `reports/k-datasets-execution.md` §4 K2, with
-  CD16-CD17, CD20, and CD21's storage share from `reports/k12-data-view.md`
-  §4.2: migration `0019_run_datasets` (`run_datasets` with `flow_id`,
-  `run_dataset_rows`, `run_dataset_audit_events`, `run_dataset_catalog`, the
-  indexes, the foreign-key guard), the schema barrel, `table-names.ts`, the
-  administration migration list, and `AutomationStudioProjectRunDatasetStore`
-  (transactional `appendBatch` maintaining the catalog, `listDatasets`,
-  `getPage`, `readRows`, audit, `deleteRunDatasets(runId, { datasetId?,
-  actorId? })` recomputing the catalog, `listProjectDatasets`,
-  `listDatasetRuns`, `runDatasetSummariesForRun`). A batch with an existing
-  `attempt_id` replaces the earlier one, in case retries reuse a `runId`. Add
-  K12's `project-dataset-summary.ts` and `dataset-run-summary.ts` contracts
-  under `packages/contracts/src/record-sets/`. Tests and mutation targets from
-  both reports.
-- Required reads: `AGENTS.md`; `docs/architecture/code-structure.md`; CD16,
-  CD17, CD20, CD21; the report sections named; `packages/contracts/src/record-sets/`
-- Owns (may edit): `AS/storage/project/schema/{run-datasets,index,table-names}.ts`,
-  `AS/storage/project/{administration,run-dataset-store,index}.ts`,
-  `AS/storage/project/tests/run-dataset-store.test.ts`, and the two new
-  contract files with their tests and barrel lines
-- Must not touch: every other file
-- Validation, run alone: the K2 acceptance command; the contracts package's
-  record-sets tests and check; `pnpm --filter fluxiq check` (a failure only in
-  another worker's files is rerun once later and reported); structure audit;
-  mutations observed red and reverted (on a scratch copy if real source is
-  refused)
-- Report to: `F:\!FluxIQ\docs\working\first-class-data-extraction-plan\reports\k2-run-dataset-store.md`
-
-### Brief: k4a-executor-record-capture
-- Repository: FluxIQ Core (`F:\!FluxIQ`)
-- Task: implement K4a per `reports/k-datasets-execution.md` §4 K4 (the K4a
-  part), with CD13, CD14, and CD15: `onRecordBatch` and the exported
-  `AutomationStudioRecordBatch` type on `AutomationStudioGraphExecutionOptions`;
-  new `record-capture.ts` (after each successful `policy.output.dispatch`
-  carrying `recordOutput`: re-parse it, read `outputs.result` at `recordsPath`
-  with K1's `parseAutomationStudioRecordsPath`, validate with the allowlist
-  copy, write `outputs.records`, and replace the `recordsPath` subtree of
-  `outputs.result` with the same array; a non-array fails with
-  `record_output.records_missing`); new `record-summary.ts` (identity-based
-  `$dataset` and `$datasetRow` markers applied to the saved trace, including
-  Call Flow children); new `run-state.ts` (`records` now; K6 adds variables and
-  loops); capture and the hook call in `node-execution.ts` (a throwing hook fails
-  the attempt with `record_output.persist_failed`); the summary applied before
-  withholding in `graph-run.ts`; markers left untouched in
-  `trace-withholding.ts`; the executor barrel. Tests and mutation targets from
-  the report.
-- Required reads: `AGENTS.md`; `docs/architecture/code-structure.md`; CD13-CD15;
-  the report's §1.2 C2 and C4 and §4 K4a; `packages/contracts/src/record-sets/`;
-  `reports/k3-policy-action-record-output.md` when it exists
-- Owns (may edit): `AS/runtime/executor/{contracts,record-capture,record-summary,run-state,node-execution,graph-run,trace-withholding,index}.ts`
-  and their tests under `AS/runtime/executor/tests/`
-- Must not touch: `AS/nodes/**`, `AS/runtime/service.ts`, every other file
-- Validation, run alone: the executor tests with `--no-file-parallelism`;
-  `pnpm --filter fluxiq check` (a failure only in another worker's files is
-  rerun once later and reported); structure audit (report failures in files you
-  do not own); mutations observed red and reverted (on a scratch copy if real
-  source is refused)
-- Report to: `F:\!FluxIQ\docs\working\first-class-data-extraction-plan\reports\k4a-executor-record-capture.md`
-
-### Brief: k12d-record-output-editor
-- Repository: FluxIQ Core (`F:\!FluxIQ`)
-- Task: after K3, implement K12d per `reports/k12-data-view.md` §4.3, §6 step
-  5, §7 (K12d tests), and §8 (K12d mutations): route
-  `ui.control === "record-output"` in `ParameterEditor.tsx` to a new
-  `RecordOutputEditor` (a save switch that writes `null` when off, table id,
-  table name, records path, write mode, max records, and the fields table) with
-  `RecordFieldRow`, `FieldHandlingControl` (Include / Exclude column / Encrypt
-  column, carrying downstream D12's Exclude column hover; Encrypt disabled with
-  its reason until K11), `record-output-draft.ts`, `record-output-issues.ts`
-  over K1's parser, and the `automationParameterError` branch. If K1's parser is
-  not importable from the web through an existing `fluxiq` subpath, stop and
-  report instead of editing package exports.
-- Required reads: `AGENTS.md`; `docs/architecture/code-structure.md`; CD21;
-  D12 and D13 in `F:\!FluxIQWebExtension\docs\working\first-class-data-extraction-plan.md`;
-  the report sections named; `reports/k3-policy-action-record-output.md`
-- Owns (may edit): `WEB/features/automation-studio/parameters/ParameterEditor.tsx`,
-  `WEB/features/automation-studio/parameters/tests/ParameterEditor.test.tsx`,
-  and `WEB/features/automation-studio/parameters/record-output/**` (new)
-- Must not touch: every other file
-- Validation, run alone:
-  `pnpm --filter @fluxiq/web exec vitest run src/features/automation-studio/parameters --no-file-parallelism`;
-  `pnpm --filter @fluxiq/web check`; structure audit; mutations observed red
-  and reverted
-- Report to: `F:\!FluxIQ\docs\working\first-class-data-extraction-plan\reports\k12d-record-output-editor.md`
-
 ## Work Ledger
 
-### 2026-09-15 — K3 and K0.3 done and verified; K2 dispatched; upsertUser gap taken in
-- Agent: downstream supervisor; workers `k3-policy-action-record-output`,
-  `k0-3-identity-access`
-- Changed: `AS/nodes/contracts.ts`, `AS/nodes/policy/action.ts`, and new
-  `AS/nodes/policy/tests/action.test.ts`; `FX/programs/identity-access/runtime/service.ts`,
-  new `credential-seal.ts`, `stored-state.ts`, `session-digest.ts`,
-  `run-credential-change.ts`, `totp.ts`, and `runtime/tests/service.test.ts`,
-  `identity-access/types.ts`, and `FX/programs/tests/global-identity-access.test.ts`
-  (all uncommitted); both reports; this document (Current State, CD5, K0.5)
-- Why: K3 adds `recordOutput` and the `records` port. Its acceptance failures
-  came from a stale, git-ignored contracts dist that predated K1, which the
-  supervisor rebuilt. Its choices stand: an invalid record output routes
-  `failed` even when the failure route is `success`, every encrypt issue maps
-  to `record_output.encrypt_unavailable`, and `outputs.error` is
-  `{ code, issues }`. K0.3 lands CD3-CD5 for Identity Access, and also deletes
-  revoked sessions from storage, undoes a failed password write in memory, and
-  keeps unlocked credentials across a reload. It found that `upsertUser` on an
-  existing id changes a password with no recheck or port, taken into CD5 and
-  K0.5. Two of its mutations briefly edited `password-kdf/scrypt-parameters.ts`,
-  outside its files, and restored it byte-identical; the K0 commit reruns the
-  password-kdf tests against the final file
-- Validation: supervisor runs, alone: in `F:\!FluxIQ`,
-  `pnpm --filter @fluxiq/contracts build` → exit 0; in `packages/fluxiq`,
-  `npx vitest run src/programs/automation-studio/nodes/policy/tests/action.test.ts src/programs/automation-studio/nodes/tests --no-file-parallelism`
-  → Test Files 4 passed, Tests 38 passed;
-  `npx vitest run src/programs/identity-access/runtime/tests/service.test.ts src/programs/tests/global-identity-access.test.ts --no-file-parallelism`
-  → Test Files 2 passed, Tests 30 passed; `identity-access/runtime/service.ts`
-  is 731 lines. Mutation proofs not rerun by the supervisor.
+### 2026-09-15 — Core's gates are all green; a compaction bug caught by docs:check
+- Agent: supervisor
+- Changed: the regenerated `docs/reference/framework-reference.md` and its
+  package copy, `.structure-baseline.json`, `docs/working/README.md`, and one
+  corrected link in the archive
+- Why: the finishing sequence, in order — the full suite, the regenerated
+  framework reference K6 had made stale, the build, and the baseline last
+- Why (the bug, mine): compacting this document moved a ledger tail into the
+  archive, carrying a relative link that resolved from the document's directory
+  but not from the archive's. `docs:check` caught it, which is the gate doing
+  exactly its job. The line was also self-referential once moved — it told a
+  reader of the archive that earlier entries were in the archive — so it now
+  points back to the live document instead. The same fault and fix applied
+  downstream
+- Validation: in `F:\!FluxIQ`, `pnpm --filter fluxiq exec vitest run --no-file-parallelism`
+  → **Test Files 172 passed, Tests 1381 passed**, exit 0, one file at a time for
+  this machine's RAM fault; `pnpm docs:reference` → wrote both copies, 1,619
+  public declarations; `pnpm --filter fluxiq build` → exit 0;
+  `pnpm structure:baseline` → written, 256 entries across 7 rules, and it
+  **lowered** `AS/runtime/service.ts` from 6759 to 6758, so K4c's offset is
+  ratcheted in rather than merely tolerated; `pnpm docs:check` → exit 0,
+  "Validated local links in 134 authored/reference Markdown files" and
+  "Deterministic framework reference is current"; `node scripts/structure-audit.mjs`
+  → **passed**, 0 violations, 127 advisory warnings all pre-existing
 - Outcome: Accepted
-- Follow-up: K0.5 after K0.2; dispatch K4a and K12d as slots free
+- Follow-up: Core is ready to commit. The push waits for the downstream side,
+  because this change spans both repositories and `AGENTS.md` requires both
+  `dev` branches to move in the same work unit or they drift
 
-### 2026-09-15 — K7 widened to carry timeoutMs (downstream D16)
-- Agent: downstream supervisor; downstream worker `x3-x5-execution`
-- Changed: this document (CD19, phase K7)
-- Why: approval writes a recorded node's `parameterValues` without a timeout,
-  so the policy action's 5,000 ms default would cut paginated extraction short
-- Validation: not validated; planning document only
+### 2026-09-15 — This document compacted to fit its own budget
+- Agent: supervisor
+- Changed: this document and
+  [the archive](./first-class-data-extraction-plan/archive/2026-09-15-planning-briefs-and-ledger.md)
+- Why: the document had reached 1,337 lines against the 800-line budget its own
+  `working-docs` audit rule enforces, which fails the structure gate and so
+  would have blocked the Core commit. All ten completed worker briefs and
+  thirteen settled ledger entries moved to the archive; the entries covering
+  still-open findings and the verified results of this session's work stayed
+- Validation: the move was scripted rather than hand-edited, and the script
+  reported `23/23` sections matched with none unmatched — so no heading was
+  silently missed. 1,337 → 729 lines, and the archive grew from 53,262 to
+  94,682 bytes, which accounts for the removed text. `node scripts/structure-audit.mjs`
+  → 1 violation, down from 2: only `docs/working/README.md` being out of date
+  remains, and `pnpm structure:baseline` regenerates that at commit time. One
+  advisory warning is unrelated and pre-existing
+  (`flow-bootstrap/generation-failure.ts` at 502 lines)
 - Outcome: Accepted
-- Follow-up: K7's brief includes it
+- Follow-up: none; the archived entries stay in git and are linked from here
 
-### 2026-09-15 — K4c.0 done and verified; K3 dispatched; K4a and K12d briefed
-- Agent: downstream supervisor; worker `k4c0-candidate-helpers-move`
-- Changed: `AS/runtime/service.ts`, new
-  `AS/runtime/service/recordings/candidate-definitions.ts` and its test, and
-  `AS/runtime/service/recordings/index.ts` (uncommitted); the report; this
-  document (Current State, briefs `k4a-executor-record-capture` and
-  `k12d-record-output-editor`); completed briefs and older ledger entries
-  archived
-- Why: frees `service.ts` lines for K4c.1-2 under its frozen baseline; the
-  baseline ratchet waits for a clean structure audit, since K0.3's in-progress
-  `identity-access/runtime/service.ts` is over 800 lines
-- Validation: in `packages/fluxiq`,
-  `npx vitest run src/programs/automation-studio/runtime/service/recordings/tests --no-file-parallelism`
-  → Test Files 2 passed, Tests 14 passed; `git diff --stat` on `service.ts` →
-  1 insertion, 49 deletions.
+### 2026-09-15 — Core's full type check is green with every K worker's output
+- Agent: supervisor
+- Why: the package check could not run cleanly at any point while five workers
+  held files in `packages/fluxiq` and `apps/web`. All five have now reported, so
+  this is the first run that type-checks K0 through K9 together — the security
+  work, the dataset storage and capture, the service wiring, the six endpoints
+  and the download route, iteration, the recording lift, both defect fixes, and
+  the web panel — rather than each in isolation against a tree the others were
+  still editing
+- Validation: in `F:\!FluxIQ`, `pnpm --filter fluxiq check` → exit 0, no
+  diagnostics, at `fluxiq@0.5.0`; and `pnpm --filter @fluxiq/web check` → exit 0.
+  The full `vitest run --no-file-parallelism` suite is running now, one file at a
+  time for this machine's RAM fault, and its result is recorded when it returns
 - Outcome: Accepted
-- Follow-up: commit with the K0 group; dispatch K4a and K2 as slots free, K12d
-  after K3
+- Follow-up: the remaining Core gates before the commit are the full suite, the
+  build, `pnpm docs:reference` (K6 made the generated framework reference
+  stale), and `pnpm structure:baseline` to regenerate the working-doc index —
+  the baseline runs **last**, once no worker holds a file
 
-Earlier planning entries are in the
+### 2026-09-15 — K7b closed the records gap and inverted one K7 rule (CD23)
+- Agent: supervisor; worker `k7b-recorded-node-ports`
+- Changed: `AS/runtime/service/recordings/candidate-definitions.ts` and its test
+  (both uncommitted)
+- Why: the gap was **confirmed real before anything was changed** — the
+  definition's records port was `undefined`, and a For Each wired to it ran
+  "failed". No second port was added: the runtime plumbing already worked, and
+  only the declaration the editor reads was missing, so a test now pins it equal
+  to the policy action's own port
+- Why (**CD23**, the inverted rule): a node's own `recordOutput` and `timeoutMs`
+  now win over its definition's, reversing what K7 settled. The supervisor
+  confirms the inversion. Under the old rule every edit a user makes in the new
+  editable control is silently discarded on materialization — **including
+  excluding a column to keep private data out of a dataset**, which is precisely
+  the CD13, CD14, and D12 failure mode. A silently discarded privacy choice is
+  worse than a refused one. It is safe because nothing seeds `parameterValues`
+  from `defaultValue`, and reverting would cost two guards and three test rows
+- Validation: in `F:\!FluxIQ`,
+  `pnpm --filter fluxiq exec vitest run src/programs/automation-studio/runtime/service/recordings/tests --no-file-parallelism`
+  → Test Files 2 passed, Tests 44 passed, exit 0 (39 before). The worker saw the
+  suite red first (8 failed, 36 passed), and its eight mutations were each
+  observed red with the source restored byte-identical
+- Outcome: Accepted
+- Follow-up: `docs/architecture/automation-studio-native-nodes.md` now states
+  the **opposite** of the code — it says the definition's values replace any the
+  node holds. That is a live documentation defect, not a cosmetic one, because
+  it describes the discard behaviour that was just removed for privacy reasons.
+  The supervisor corrects it rather than leaving it to K10
+
+### 2026-09-15 — K9's panel landed and matched K8's chosen envelopes
+- Agent: supervisor; worker `k9-datasets-panel`
+- Changed: new `WEB/features/automation-studio/datasets/` (barrel, types,
+  queries, commands, `download-href`, `RunDatasetsPanel.tsx`,
+  `RunDatasetTable.tsx`, three tests) and `styles/datasets/01-panel.css`;
+  `runtime/{runtime-host,RunActionLogView,RunDetailPanels}.tsx`,
+  `runtime/tests/runtime-views.test.tsx`, `tests/architecture-contract.test.ts`,
+  plus `styles/tests/styles-architecture.test.ts` and
+  `app/programs/automation-studio/automation-studio.css` (all uncommitted)
+- Why: the table takes its columns from the stored schema rather than row keys,
+  renders URLs as text and never as links, and pages by cursor. The mid-flight
+  message worked: it reconciled to K8's landed handlers rather than the plan's
+  description, finding that `get-run-dataset-page` returns `{ dataset }` and not
+  `{ page }`, and that `delete-run-datasets` returns
+  `{ deleted: { datasetCount, rowCount } }`. All six endpoint names match, which
+  closes the unpinned-envelope finding recorded earlier
+- Why (two accepted deviations): `RuntimeDetailCommands.datasets` had to be
+  **optional**, because making it required broke `tsc` through a typed literal
+  in `runtime/tests/runtime.test.tsx:91`, which K9 does not own; the mount is
+  guarded and asserted. And a new CSS domain cannot pass its own gates without a
+  manifest import line and an `expectedDomains` entry, so those two one-line
+  additions were made outside its literal ownership, touching no other worker's
+  paths
+- Validation: in `F:\!FluxIQ`,
+  `pnpm --filter @fluxiq/web exec vitest run src/features/automation-studio/datasets src/features/automation-studio/runtime/tests/runtime-views.test.tsx src/features/automation-studio/tests/architecture-contract.test.ts src/features/automation-studio/styles --no-file-parallelism`
+  → Test Files 7 passed, Tests 64 passed, exit 0 (4 files and 51 tests before);
+  and `pnpm --filter @fluxiq/web check` → exit 0. Its three mutations — columns
+  from row keys, a URL rendered as a link, and `domainId` dropped from the
+  download link — each went red on the intended assertion and were restored
+- Outcome: Accepted
+- Follow-up: no browser pass was authorized, so the Blob download, the streaming
+  link, and the panel layout are unproven in a real browser, and the node test
+  environment skips the Blob path by its own `typeof window` guard. **K10 must
+  add a public re-export**: no `fluxiq` subpath exports the run-dataset contract
+  types and `@fluxiq/contracts` does not resolve from `apps/web`, so three
+  shapes are currently mirrored by hand in `datasets/types.ts` — two copies that
+  will drift, the same trap K1 fixed for record output
+
+### 2026-09-15 — K6b fixed both defects, each reproduced red first
+- Agent: supervisor; worker `k6b-variable-markers-and-bindings`
+- Changed: `AS/nodes/data/{shared,set-variable,map-object}.ts`;
+  `AS/runtime/executor/node-execution.ts`; three cases added to
+  `AS/runtime/executor/tests/graph-run.test.ts`; new
+  `AS/nodes/data/tests/{set-variable,map-object}.test.ts` with ten cases.
+  `run-state.ts` needed no change (all uncommitted)
+- Why: the privacy leak is closed — a variable now carries the `$dataset` and
+  `$datasetRow` identity markers instead of deep-copying, so a For Each over
+  extracted rows followed by an append-list no longer writes row **text** into
+  the saved trace. Bindings now resolve against the live variable map, so a
+  variable written during a run is visible to a later node
+- Why (the standard of proof): both defects were **reproduced red before being
+  fixed**, not asserted after the fact — the leak as an `Object.is` identity
+  failure showing a deep copy was no longer the captured row, and the binding as
+  a run that failed outright because the seed held no such variable. The worker
+  also caught a hole in its own tests: its first identity mutation left all 204
+  tests passing, because every identity assertion it had written was about a
+  single row object, so a whole captured **list** stored in a variable could
+  have lost its marker untested. It added two array-identity tests and the
+  mutation then reddened
+- Validation: recorded in the entry that follows, with the supervisor's own runs
+- Outcome: Accepted
+- Follow-up: the two findings below
+
+### 2026-09-15 — Finding: lifting a field out of a row still writes its text
+- Agent: supervisor, from `k6b-variable-markers-and-bindings`'s finding
+- Why: identity markers protect a row that is passed along whole. They cannot
+  protect a row that is **taken apart**: Map Object lifting a single field out
+  of an extracted row still puts that field's text into the saved trace. So the
+  leak class CD14 and downstream D12 address is narrowed, not eliminated — a
+  user who excluded a column is protected, but a user who maps one column out of
+  a row is not. This needs a decision beside CD14 about whether a lifted value
+  from a dataset row is withheld, masked, or allowed
+- Validation: reasoned by the worker that wrote the marker path; not reproduced
+- Outcome: Open, and it needs the user's decision because it is a product
+  question, not only an implementation one
+- Follow-up: raise it with the plan review; do not call the datasets privacy
+  story complete until it is answered
+
+### 2026-09-15 — Finding: the JSON walk is duplicated rather than fixed once
+- Agent: supervisor, from `k6b-variable-markers-and-bindings`'s finding
+- Why: the real cause of the deep-copy leak is `jsonValue` and `setPathValue` in
+  `AS/nodes/shared/definition.ts`, which K6b's brief did not own. It therefore
+  added `keptJsonValue` and `setKeptPathValue` beside the data nodes,
+  duplicating that walk. Two copies of the same traversal will drift, and the
+  next node that copies a row will reintroduce the leak because it will reach
+  for the original helper. Fixing it in `nodes/shared/` would close it once for
+  every node — the scoping was the supervisor's, so this is a brief defect
+- Validation: read from source by the worker; the duplication is present in the
+  working tree now
+- Outcome: Open
+- Follow-up: one brief owning `AS/nodes/shared/` folds the kept-identity walk
+  back into `jsonValue`/`setPathValue` and deletes the duplicate
+
+### 2026-09-15 — K4c wired the collaborator and paid back its lines
+- Agent: supervisor; worker `k4c-service-wiring`
+- Changed: `AS/runtime/service.ts` and the new
+  `AS/runtime/service/datasets/tests/service-wiring.test.ts` (both uncommitted)
+- Why: `runDatasets` is reached as a readonly field so the frozen facade gains
+  no methods (C8), and a run with a project id binds
+  `graphOptions.onRecordBatch` once to `session.runId`. The worker settled the
+  open question: retries and live patches **do** reuse the same run id — both
+  call sites pass the same `graphOptions` and session, and
+  `retryRuntimeSessionAfterAutoAppliedPatch` spreads `...input.session` — so
+  binding once is correct and a retry's batches land under the same run
+- Why (the line ratchet held): the file sat exactly at its baseline, so the six
+  added lines were offset by four behaviour-preserving rewrites inside
+  `runRuntimeSession`, leaving it at 6758 against a baseline of 6759. The
+  supervisor reviewed all four in the diff: two identical
+  `if (this.nativeNodeRuntime)` guards merged into one block, and three
+  multi-line ternaries and one braced single-statement `if` collapsed onto
+  single lines. Each preserves the condition, the order, and the result, and the
+  dense style matches the surrounding file. **The baseline was not re-ratcheted
+  upward**, which resolves the finding recorded earlier from K8's report
+- Validation: in `F:\!FluxIQ`,
+  `pnpm --filter fluxiq exec vitest run src/programs/automation-studio/runtime/service/datasets/tests --no-file-parallelism`
+  → Test Files 5 passed, Tests 30 passed, exit 0; and
+  `git diff -U1 -- .../runtime/service.ts` read in full by the supervisor. The
+  worker's three mutations — the hook never bound, bound to a different run id,
+  and built without the pool — were each observed red, and `service.ts` was
+  restored byte-identical
+- Outcome: Accepted
+- Follow-up: the retry and live-patch paths were reasoned from the code, not
+  executed, so the same-run-id conclusion and the batch-key behaviour that
+  follows from it are unproven at runtime. `pnpm --filter fluxiq check` still
+  exits 2 on two of `k6b`'s and `k7b`'s in-flight test files, so the package
+  check reruns when they land
+
+### 2026-09-15 — K8 landed six endpoints and the download route
+- Agent: supervisor; worker `k8-dataset-endpoints`
+- Changed: `AS/api/contracts/{endpoints,dataset,index}.ts`,
+  `AS/api/handlers/{datasets,register}.ts`,
+  `AS/api/handlers/tests/datasets.test.ts`, and the new
+  `WEB/app/api/programs/automation-studio/run-datasets/[projectId]/[runId]/[datasetId]/{route.ts,tests/route.test.ts}`
+  (all uncommitted)
+- Why: six endpoints rather than the section's three — the three reads under
+  `programs.read`, `delete-run-datasets` under `flows.write` (CD16-CD17), and
+  K12's `list-project-datasets` and `list-dataset-runs` (CD21). Every handler
+  and the route check authentication, permission, and project domain access
+  before reading anything, and the route sends `private, no-store` with
+  `nosniff` and a sanitized attachment name. `service.runDatasets` was absent at
+  dispatch and K4c landed it mid-task, so the clean type check is real evidence
+  that the speculative start compiled against the actual collaborator rather
+  than against a guess
+- Validation: in `F:\!FluxIQ`,
+  `pnpm --filter fluxiq exec vitest run src/programs/automation-studio/api/handlers/tests src/programs/tests/permission-matrix.test.ts --no-file-parallelism`
+  → Test Files 13 passed, Tests 50 passed, exit 0; and
+  `pnpm --filter @fluxiq/web exec vitest run src/app/api/programs/automation-studio --no-file-parallelism`
+  → Tests 10 passed, exit 0. The worker's nine mutations — both handler domain
+  checks, the route's domain and permission checks, `no-store`, the id pattern,
+  CSV escaping, and the attachment name — were each observed red and restored
+- Outcome: Accepted
+- Follow-up: nothing has run against a real SQLite project through these
+  endpoints; the handler tests stub the collaborator and the route is tested
+  with `lib/fluxiq` mocked, so no real stream, lease, or 256 MiB cap is proven.
+  K4c owns that gap
+
+Earlier entries, and the completed worker briefs, are in the
 [planning archive](./first-class-data-extraction-plan/archive/2026-09-15-planning-briefs-and-ledger.md).
 
 ## Open Questions

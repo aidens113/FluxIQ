@@ -1,5 +1,5 @@
-import { variableName, writeVariable } from "./shared.ts";
-import { defineBuiltinNode, emptyResult, jsonValue } from "../shared/definition.ts";
+import { keptJsonValue, variableName, writeVariable } from "./shared.ts";
+import { defineBuiltinNode, emptyResult } from "../shared/definition.ts";
 
 export const setVariableNode = defineBuiltinNode({
   id: "builtin.data.set-variable",
@@ -28,7 +28,9 @@ export const setVariableNode = defineBuiltinNode({
   execute: (context) => {
     const name = variableName(context.parameters.name);
     const current = context.variables?.get(name);
-    const incoming = jsonValue(context.inputs.value);
+    // Kept by reference where it can be: a captured row a loop remembers here
+    // must still be the row the saved trace marks (see `keptJsonValue`).
+    const incoming = keptJsonValue(context.inputs.value);
     let value = incoming;
     if (context.parameters.writeMode === "merge-object") value = { ...(typeof current === "object" && current && !Array.isArray(current) ? current : {}), ...(typeof incoming === "object" && incoming && !Array.isArray(incoming) ? incoming : {}) };
     if (context.parameters.writeMode === "append-list") value = [...(Array.isArray(current) ? current : []), incoming];

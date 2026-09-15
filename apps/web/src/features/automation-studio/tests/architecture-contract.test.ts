@@ -72,7 +72,7 @@ const productDomains = new Set([
 ]);
 
 const approvedTopLevelDirectories = [
-  "adaptations", "authoring", "bootstrap", "cache", "clients", "data", "development", "flow-editor", "graph",
+  "adaptations", "authoring", "bootstrap", "cache", "clients", "data", "datasets", "development", "flow-editor", "graph",
   "hierarchy", "inspector", "instructions", "live", "model", "parameters", "problems",
   "presentation", "project", "recordings", "router", "runtime", "settings", "shared", "state", "stores", "styles",
   "subflows", "sync", "testing", "tests", "views", "workspace"

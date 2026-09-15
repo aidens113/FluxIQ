@@ -1,22 +1,23 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { parseAutomationStudioRecordOutput, type AutomationStudioRecordOutput, type AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { JsonObject } from "../../../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import { IoRegistry } from "../../../../../../io/index.ts";
 import type { AppendRecordingEntryInput } from "../../../../model/index.ts";
-import type { AutomationStudioImporterSdkManifest, AutomationStudioRecordingMapperImplementation, AutomationStudioRecordingMapperObservation } from "../../../../nodes/index.ts";
+import type { AutomationStudioImporterSdkManifest, AutomationStudioRecordingMapperCandidate, AutomationStudioRecordingMapperImplementation, AutomationStudioRecordingMapperObservation } from "../../../../nodes/index.ts";
 import { runCanonicalAutomationStudioFlow } from "../../../composite-executor.ts";
-import { chooseAutomationStudioStartNode } from "../../../executor.ts";
+import { chooseAutomationStudioStartNode, type AutomationStudioRecordBatch } from "../../../executor.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
 
 // `proposal-candidates.ts` as the service uses it: a recording mapper's expected
-// state through proposal generation and approval into a Flow, and the entries a
-// mapper is shown after each observation. The rows run through
-// `AutomationStudioService`, because the service is what calls the mappers and
-// hands their candidates on; a row that called the module alone could pass while
-// nothing invoked it.
+// state, record output, and timeout through proposal generation and approval
+// into a Flow, and the entries a mapper is shown after each observation. The
+// rows run through `AutomationStudioService`, because the service is what calls
+// the mappers and hands their candidates on; a row that called the module alone
+// could pass while nothing invoked it.
 
 let tempRoot: string;
 const services = new Set<AutomationStudioService>();
@@ -31,11 +32,13 @@ afterEach(async () => {
   await rm(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
 });
 
-// One action input, one output, and the mappers a row supplies, in that order.
+// One action input; two outputs, `click` and `extract`, of which only `extract`
+// declares where its records are; and the mappers a row supplies, in that order.
 async function projectWithMappers(mappers: Record<string, AutomationStudioRecordingMapperImplementation>): Promise<{ service: AutomationStudioService; projectId: string }> {
   const io = new IoRegistry();
   io.registerInput("example", { definition: { id: "clicked", title: "Clicked", role: "action", outputId: "click" }, mode: "stream", subscribe: () => () => undefined });
   io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId, payload: {} }) });
+  io.registerOutput("example", { definition: { id: "extract", title: "Extract", metadata: { recordsPath: "extracted" } }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId, payload: {} }) });
   const manifest: AutomationStudioImporterSdkManifest = {
     schemaVersion: "0.1",
     sdkVersion: "0.1",
@@ -43,7 +46,7 @@ async function projectWithMappers(mappers: Record<string, AutomationStudioRecord
     packageVersion: "1.0.0",
     domainId: "example",
     nodes: [],
-    recordingMappers: Object.keys(mappers).map((id) => ({ id, version: "1.0.0", description: `Mapper ${id}`, outputIds: ["click"] }))
+    recordingMappers: Object.keys(mappers).map((id) => ({ id, version: "1.0.0", description: `Mapper ${id}`, outputIds: ["click", "extract"] }))
   };
   const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingMappers: mappers });
   const service = new AutomationStudioService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
@@ -122,6 +125,152 @@ describe("a recording mapper's expected state", () => {
   it("is dropped, and the action still proposed, when it has no keys", async () => {
     // A symbol key is an own key, but it does not survive the clone a proposal holds.
     await expectEveryExpectedStateDropped([{}, Object.create(null), { [Symbol("conditions")]: [{ assert: { kind: "url", expected: "/account" } }] }], "recording.empty-state");
+  });
+});
+
+// A record output as a mapper proposes it, with no recordsPath: one field kept,
+// and one the schema excludes.
+function proposedRecordOutput(): JsonObject {
+  return {
+    datasetId: "products",
+    label: "Products",
+    schema: { schemaVersion: "0.1", fields: [{ id: "name", label: "Name", valueType: "string", required: true }, { id: "email", label: "Email", valueType: "string", handling: "exclude" }] },
+    writeMode: "append",
+    maxRecords: 50
+  };
+}
+
+// The record output a proposal should hold for `proposedRecordOutput()` at `recordsPath`.
+function parsedRecordOutput(recordsPath: string): AutomationStudioRecordOutput {
+  const parsed = parseAutomationStudioRecordOutput({ ...proposedRecordOutput(), recordsPath });
+  if (!parsed.ok) throw new Error(`The fixture record output is invalid: ${parsed.issues.join(", ")}`);
+  return parsed.output;
+}
+
+// One recorded click, which the mapper proposes as an `extract` action carrying
+// whatever `extra` adds or overrides.
+async function proposeExtraction(recordingId: string, extra: Record<string, unknown>) {
+  const { service, projectId } = await projectWithMappers({
+    "extract-mapper": (observation) => isClick(observation) ? { outputId: "extract", parameters: { list: "products" }, confidence: 0.9, ...extra } as AutomationStudioRecordingMapperCandidate : null
+  });
+  const recorded = await recordClicks(service, projectId, recordingId, 1);
+  const { proposals, issues } = await service.createRecordingFlowProposals({ projectId, recordingId: recorded });
+  return { service, projectId, proposals, issues };
+}
+
+// The mapper's only candidate is rejected, so no proposal is made, and the
+// reason ends the issue the service reports for it.
+async function expectRejected(recordingId: string, extra: Record<string, unknown>, reason: string): Promise<void> {
+  const { proposals, issues } = await proposeExtraction(recordingId, extra);
+  expect(proposals).toEqual([]);
+  expect(issues).toContainEqual(expect.stringMatching(new RegExp(`${reason.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`)));
+}
+
+function datasetSummary(batch: AutomationStudioRecordBatch): AutomationStudioRunDatasetSummary {
+  return { runId: "run.recording-candidates", datasetId: batch.datasetId, nodeIds: [batch.nodeId], schemaDigest: "digest", recordCount: batch.rows.length, truncated: batch.truncated, invalidCount: batch.invalidCount, updatedAt: 1 };
+}
+
+describe("a recording mapper's record output", () => {
+  it("keeps the recordsPath the candidate names, over the one its output declares", async () => {
+    const { proposals: [proposal] } = await proposeExtraction("recording.explicit-path", { recordOutput: { ...proposedRecordOutput(), recordsPath: "page.rows" } });
+    expect(proposal?.candidates).toHaveLength(1);
+    expect(proposal?.candidates[0]?.recordOutput).toEqual(parsedRecordOutput("page.rows"));
+  });
+
+  it("takes the recordsPath its output declares in metadata when the candidate names none", async () => {
+    const { proposals: [proposal] } = await proposeExtraction("recording.default-path", { recordOutput: proposedRecordOutput() });
+    expect(proposal?.candidates).toHaveLength(1);
+    expect(proposal?.candidates[0]?.recordOutput).toEqual(parsedRecordOutput("extracted"));
+  });
+
+  it("rejects the candidate when neither it nor its output names a recordsPath", async () => {
+    await expectRejected("recording.no-path", { outputId: "click", recordOutput: proposedRecordOutput() }, "Recording mapper candidate for click has an invalid recordOutput: record_output.missing_records_path");
+  });
+
+  it("rejects the candidate when a field asks to be encrypted", async () => {
+    const recordOutput = proposedRecordOutput();
+    ((recordOutput.schema as JsonObject).fields as JsonObject[])[1]!.handling = "encrypt";
+    await expectRejected("recording.encrypt", { recordOutput }, "Recording mapper candidate for extract has an invalid recordOutput: record_schema.encrypt_unavailable");
+  });
+
+  it.each([
+    ["an array", [proposedRecordOutput()], "record_output.not_object"],
+    ["a string", "products", "record_output.not_object"],
+    ["false", false, "record_output.not_object"],
+    ["carrying an unknown key", { ...proposedRecordOutput(), samples: [{ name: "planted" }] }, "record_output.unknown_key"],
+    ["naming an invalid dataset id", { ...proposedRecordOutput(), datasetId: "has space" }, "record_output.invalid_dataset_id"],
+    ["holding a value that cannot be cloned", { ...proposedRecordOutput(), toJSON: () => ({}) }, "record_output.invalid"]
+  ] as const)("rejects the candidate when it is %s", async (_name, recordOutput, issue) => {
+    await expectRejected("recording.invalid-record-output", { recordOutput }, `Recording mapper candidate for extract has an invalid recordOutput: ${issue}`);
+  });
+
+  it.each([
+    ["gives none", {}],
+    ["gives null", { recordOutput: null }]
+  ] as const)("is not proposed, and the approved node carries none, when the candidate %s", async (_name, extra) => {
+    const { service, projectId, proposals: [proposal] } = await proposeExtraction("recording.no-record-output", extra);
+    expect(proposal?.candidates).toHaveLength(1);
+    expect(proposal?.candidates[0]).not.toHaveProperty("recordOutput");
+    expect(proposal?.candidates[0]).not.toHaveProperty("timeoutMs");
+    const graph = await approvedGraph(service, projectId, proposal!.proposalId);
+    expect(graph.nodes.map((node) => node.parameterValues)).toEqual([{ outputId: "extract", parameters: { list: "products" } }]);
+  });
+
+  it("is copied from each candidate, so a mapper changing its object later never reaches an earlier candidate", async () => {
+    const shared = proposedRecordOutput();
+    const { service, projectId } = await projectWithMappers({
+      "extract-mapper": (observation) => {
+        if (!isClick(observation)) return null;
+        shared.datasetId = `products-${String((observation.payload.payload as JsonObject).step)}`;
+        return { outputId: "extract", parameters: { list: "products" }, confidence: 0.9, recordOutput: shared as NonNullable<AutomationStudioRecordingMapperCandidate["recordOutput"]> };
+      }
+    });
+    const recordingId = await recordClicks(service, projectId, "recording.record-output-copy", 2);
+    const { proposals: [proposal] } = await service.createRecordingFlowProposals({ projectId, recordingId });
+    shared.datasetId = "changed";
+    ((shared.schema as JsonObject).fields as JsonObject[])[1]!.handling = "include";
+    expect(proposal?.candidates.map((candidate) => candidate.recordOutput)).toEqual([
+      { ...parsedRecordOutput("extracted"), datasetId: "products-0" },
+      { ...parsedRecordOutput("extracted"), datasetId: "products-1" }
+    ]);
+  });
+
+  it("is written, with the timeout, into the approved node, whose run hands the record hook its rows without the excluded field", async () => {
+    const { service, projectId, proposals: [proposal] } = await proposeExtraction("recording.approved-record-output", { recordOutput: proposedRecordOutput(), timeoutMs: 30_000 });
+    expect(proposal?.candidates).toHaveLength(1);
+    expect(proposal?.candidates[0]).toMatchObject({ recordOutput: parsedRecordOutput("extracted"), timeoutMs: 30_000 });
+    const graph = await approvedGraph(service, projectId, proposal!.proposalId);
+    expect(graph.nodes.map((node) => node.parameterValues)).toEqual([{ outputId: "extract", parameters: { list: "products" }, recordOutput: parsedRecordOutput("extracted"), timeoutMs: 30_000 }]);
+
+    const dispatched: JsonValue[] = [];
+    const batches: AutomationStudioRecordBatch[] = [];
+    const trace = await runCanonicalAutomationStudioFlow(graph, [], {
+      effectDispatcher: (effect) => {
+        dispatched.push(structuredClone(effect.payload ?? null));
+        return { status: "success", route: "success", outputs: { result: { extracted: [{ name: "Desk lamp", email: "buyer@example.test" }] } } };
+      },
+      onRecordBatch: (batch) => {
+        batches.push(batch);
+        return datasetSummary(batch);
+      }
+    });
+    expect(trace.status).toBe("succeeded");
+    expect(dispatched).toEqual([expect.objectContaining({ outputId: "extract", recordOutput: parsedRecordOutput("extracted"), timeoutMs: 30_000 })]);
+    expect(batches.map((batch) => ({ datasetId: batch.datasetId, rows: batch.rows }))).toEqual([{ datasetId: "products", rows: [{ name: "Desk lamp" }] }]);
+  });
+});
+
+describe("a recording mapper's timeout", () => {
+  it.each([
+    ["zero", 0],
+    ["negative", -1],
+    ["fractional", 1.5],
+    ["not a number", Number.NaN],
+    ["infinite", Number.POSITIVE_INFINITY],
+    ["a string", "30000"],
+    ["null", null]
+  ] as const)("rejects the candidate when it is %s", async (_name, timeoutMs) => {
+    await expectRejected("recording.invalid-timeout", { timeoutMs }, "Recording mapper candidate for extract has an invalid timeoutMs: it must be a whole number of milliseconds above zero.");
   });
 });
 

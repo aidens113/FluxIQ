@@ -45,7 +45,7 @@ export type AutomationNodeParameter = {
   defaultValue?: JsonValue;
   options?: Array<{ label: string; value: string }>;
   ui?: {
-    control: "text" | "textarea" | "identifier" | "path" | "field" | "reference" | "value";
+    control: "text" | "textarea" | "identifier" | "path" | "field" | "reference" | "value" | "record-output";
     referenceType?: "action" | "task" | "policy" | "routine" | "database-collection" | "variable";
     placeholder?: string;
   };
@@ -101,15 +101,33 @@ export type AutomationNodeExpectationEvaluator = (
   context: AutomationNodeExpectationEvaluationContext
 ) => AutomationNodeExpectationEvaluation | Promise<AutomationNodeExpectationEvaluation>;
 
+/** Where a node that runs once per pass, such as For Each, keeps its place between passes. */
+export type AutomationNodeIterationState = {
+  /** The list being iterated, as it was read on the first pass. */
+  items: JsonValue[];
+  /** The position of the next item to hand out, from 0. */
+  index: number;
+};
+
 export type AutomationNodeExecutionContext = {
   inputs: Record<string, JsonValue>;
   parameters: Record<string, JsonValue>;
+  /** The run's variables: one map shared by every node of a graph run, and not by a Call Flow child's run. */
   variables?: Map<string, JsonValue>;
   random?: () => number;
   now?: () => number;
   signal?: AbortSignal;
   /** Bound from the host runtime boundary; the expectation node awaits it. */
   expectationEvaluator?: AutomationNodeExpectationEvaluator;
+  /**
+   * This node's iteration state, kept under its id for as long as the run
+   * executes. Absent when the node is executed outside a graph run.
+   */
+  iteration?: {
+    get(): AutomationNodeIterationState | undefined;
+    /** Stores the state, or clears it when called with none. */
+    set(state?: AutomationNodeIterationState): void;
+  };
 };
 
 /**

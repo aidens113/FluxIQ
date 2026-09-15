@@ -129,7 +129,6 @@ import type { AutomationStudioHostRuntimeBoundary } from "./host-runtime.ts";
 import type { AutomationStudioNativeNodeRuntime } from "./native-node-runtime.ts";
 import { finalizeRecordingStateLinks } from "./state-linker.ts";
 import {
-  recordingProposalDefinitionId,
   type RecordingFlowActionCandidate,
   type RecordingFlowProposalArtifact,
   type RecordingFlowProposalDestination
@@ -221,7 +220,7 @@ import {
   AutomationStudioRecordingDeletion,
   type AutomationPipelineArtifacts,
   type ReplayResultArtifact,
-  recordingTimelineForProposalMapping, openRecordingProposalNotice, recordingMapperCalls, recordingFlowActionCandidate, appendRecordingProposalToFlow, recordingCandidateStateLinkMetadata,
+  recordingTimelineForProposalMapping, openRecordingProposalNotice, recordingMapperCalls, recordingFlowActionCandidate, appendRecordingProposalToFlow, recordingCandidateDefinition, materializeRecordingNode,
   AutomationStudioProposalApproval,
   clampInteger,
   subflowSummaryFromSql,
@@ -245,6 +244,7 @@ import {
   stableJson,
   normalizeProjectCategories,
   AutomationStudioRecordingPaths,
+  AutomationStudioRunDatasets,
   AutomationStudioServiceIndexes,
   emptyFlowAdaptationIndex,
   emptyFlowRunIndex,
@@ -679,6 +679,8 @@ export class AutomationStudioService {
   private readonly normalizationReview: AutomationStudioNormalizationReview;
   private readonly flowRunAudit: AutomationStudioFlowRunAudit;
   private readonly recordingDeletion: AutomationStudioRecordingDeletion;
+  /** Run datasets (CD16, CD17), reached as a field so the frozen facade gains no methods (C8). */
+  readonly runDatasets: AutomationStudioRunDatasets;
   private readonly proposalApproval: AutomationStudioProposalApproval;
   private readonly locks = new AutomationStudioServiceLocks();
   private readonly repairedRecordingStateIndexReads = new Set<string>();
@@ -744,6 +746,7 @@ export class AutomationStudioService {
     this.projectArtifacts = new AutomationStudioProjectArtifactStore(this.projectPaths, this.projects, this.legacy, this.objectDocuments, this.repositories, this.flowWriter, automationStudioFacadePorts(this), this.objectStore);
     this.normalizationReview = new AutomationStudioNormalizationReview(this.recordings, automationStudioFacadePorts(this));
     this.flowRunAudit = new AutomationStudioFlowRunAudit(automationStudioFacadePorts(this));
+    this.runDatasets = new AutomationStudioRunDatasets(this.projects, this.runtimeProjectDatabasePool);
     this.recordingDeletion = new AutomationStudioRecordingDeletion(this.projectPaths, this.recordingPaths, this.indexes, this.objectDocuments, this.recordings, this.repositories, automationStudioFacadePorts(this), this.objectStore, this.recordingStateIndexes);
     this.proposalApproval = new AutomationStudioProposalApproval(this.projectPaths, this.projects, this.recordings, this.repositories, this.flowSubflowMigration, automationStudioFacadePorts(this));
     this.proposalGeneration = new AutomationStudioProposalGeneration(this.recordings, automationStudioFacadePorts(this));
@@ -3430,20 +3433,15 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       const requestedDomainIds = input.llmExecution ? [] : uniqueStrings(input.authorizedDomainIds ?? asStringArray(session.metadata?.authorizedDomainIds));
       if (this.ioRuntime.domainId) graphOptions.authorizedDomainIds = requestedDomainIds.filter((domainId) => domainId === this.ioRuntime!.domainId);
     }
-    if (this.nativeNodeRuntime) graphOptions.runtimeCapabilities = [...new Set([...(graphOptions.runtimeCapabilities ?? []), ...this.nativeNodeRuntime.getRuntimeCapabilities()])];
-    if (this.nativeNodeRuntime) graphOptions.nativeNodeExecutor = ({ node, inputs, signal, hostContext }) => this.nativeNodeRuntime!.execute(node, inputs, signal, hostContext);
+    if (this.nativeNodeRuntime) { graphOptions.runtimeCapabilities = [...new Set([...(graphOptions.runtimeCapabilities ?? []), ...this.nativeNodeRuntime.getRuntimeCapabilities()])]; graphOptions.nativeNodeExecutor = ({ node, inputs, signal, hostContext }) => this.nativeNodeRuntime!.execute(node, inputs, signal, hostContext); }
     if (this.hostRuntime) graphOptions.hostRuntime = this.hostRuntime;
     if (input.maxSteps !== undefined) graphOptions.maxSteps = input.maxSteps;
-    const canonical = input.projectId && session.metadata?.canonicalFlow === true
-      ? await this.getFlow(input.projectId, session.flowId).catch(() => undefined)
-      : undefined;
+    // The run's captured rows reach the project's store under this run id. A retry or live patch reuses these options and this session, so its batches land under the same run (K4c).
+    if (input.projectId && this.runDatasets.available) graphOptions.onRecordBatch = this.runDatasets.recordBatchHandler(input.projectId, session.runId);
+    const canonical = input.projectId && session.metadata?.canonicalFlow === true ? await this.getFlow(input.projectId, session.flowId).catch(() => undefined) : undefined;
     if (canonical?.source.mode === "code" && !verifyCodeOwnedFlowCompilation(canonical)) throw new Error("Code-owned Flow compilation is stale or invalid; execution refused.");
-    let adaptationContext = input.projectId && canonical
-      ? runtimeAdaptationContextWithRunOverride(await this.resolveRuntimeAdaptationContext({ projectId: input.projectId, flow: canonical, currentRunId: session.runId }), input)
-      : null;
-    if (adaptationContext && input.llmExecution?.purpose === "diagnose_and_adapt") {
-      adaptationContext = runtimeAdaptationContextForExplicitProposal(adaptationContext);
-    }
+    let adaptationContext = input.projectId && canonical ? runtimeAdaptationContextWithRunOverride(await this.resolveRuntimeAdaptationContext({ projectId: input.projectId, flow: canonical, currentRunId: session.runId }), input) : null;
+    if (adaptationContext && input.llmExecution?.purpose === "diagnose_and_adapt") adaptationContext = runtimeAdaptationContextForExplicitProposal(adaptationContext);
     if (adaptationContext) { graphOptions.recoveryBudget = recoveryBudgetFromRuntimeAdaptationContext(adaptationContext); graphOptions.allowLlmDiagnosis = adaptationContext.behavior.invokeLlm; }
     if (input.projectId) {
       this.runtimeAbortControllers.set(`${input.projectId}:${session.runId}`, abortController);
@@ -5793,53 +5791,6 @@ function recordingProposalReplacementBase(flow: AutomationStudioFlowArtifact): A
     nodes: [],
     edges: [],
     metadata: { ...(flow.metadata ?? {}), recordingProposalIds: [] }
-  };
-}
-
-function recordingCandidateDefinition(proposal: RecordingFlowProposalArtifact, candidate: RecordingFlowActionCandidate, visibility: "private" | "public"): AutomationStudioNodeDefinition {
-  return {
-    schemaVersion: "0.1",
-    id: recordingProposalDefinitionId(proposal.proposalId, candidate.candidateId),
-    version: "1.0.0",
-    label: candidate.label ?? candidate.outputId,
-    description: candidate.description ?? `Reviewed recording-derived action for ${candidate.outputId}.`,
-    category: "recording-derived",
-    source: { kind: "recording", proposalId: proposal.proposalId, mapperId: proposal.mapper.id },
-    availability: proposal.domainId ? { kind: "domain", domainId: proposal.domainId } : { kind: "global" },
-    capabilities: { executable: true, recordable: true, retryable: true },
-    outputAction: { fixedOutputId: candidate.outputId },
-    inputs: [{ id: "ready", label: "Ready", valueType: "any", role: "control" }],
-    outputs: [{ id: "success", label: "Success", valueType: "any", role: "success" }, { id: "failed", label: "Failed", valueType: "any", role: "failure" }],
-    parameters: recordingCandidateParameters(candidate),
-    icon: "wand-sparkles",
-    metadata: { visibility, candidateId: candidate.candidateId, outputId: candidate.outputId, parameters: candidate.parameters, ...(candidate.expectedConfirmation ? { expectedConfirmation: candidate.expectedConfirmation } : {}), evidence: candidate.evidence, sourceObservationIds: candidate.sourceObservationIds, ...recordingCandidateStateLinkMetadata(candidate), policyStateEligible: false }
-  };
-}
-
-function recordingCandidateParameters(candidate: RecordingFlowActionCandidate): AutomationStudioNodeDefinition["parameters"] {
-  const payload = candidate.parameters && typeof candidate.parameters === "object" && !Array.isArray(candidate.parameters) ? candidate.parameters as JsonObject : {};
-  return [
-    { id: "parameters", label: "Output payload", description: "Values passed to this recorded output action.", valueType: "object" as const, defaultValue: payload },
-    ...(candidate.expectedConfirmation ? [
-      { id: "confirmationInputId", label: "Confirmation input", description: "Action input stream that confirms the output occurred.", valueType: "string" as const, defaultValue: candidate.expectedConfirmation.inputId ?? "", ui: { control: "identifier" as const, placeholder: "Registered action input ID" } },
-      { id: "confirmationTimeoutMs", label: "Confirmation timeout", description: "How long to wait for confirmation.", valueType: "number" as const, defaultValue: candidate.expectedConfirmation.timeoutMs ?? 5_000 }
-    ] : [])
-  ];
-}
-
-function materializeRecordingNode<T extends { definitionId: string; parameterValues?: JsonObject; metadata?: JsonObject }>(node: T, definition: AutomationStudioNodeDefinition | undefined): T {
-  if (!definition || definition.source.kind !== "recording") return node;
-  const confirmation = definition.metadata?.expectedConfirmation && typeof definition.metadata.expectedConfirmation === "object" && !Array.isArray(definition.metadata.expectedConfirmation) ? definition.metadata.expectedConfirmation as JsonObject : undefined;
-  return {
-    ...node,
-    definitionId: "builtin.policy.action",
-    parameterValues: compactJsonObject({
-      ...(node.parameterValues ?? {}),
-      outputId: definition.metadata?.outputId,
-      parameters: definition.metadata?.parameters ?? {},
-      ...(typeof confirmation?.inputId === "string" ? { confirmationInputId: confirmation.inputId, confirmationTimeoutMs: typeof confirmation.timeoutMs === "number" ? confirmation.timeoutMs : 5_000 } : {})
-    }),
-    metadata: { ...(node.metadata ?? {}), recordingDefinitionId: definition.id, recordingProposalId: definition.source.proposalId }
   };
 }
 

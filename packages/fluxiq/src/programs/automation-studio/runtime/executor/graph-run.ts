@@ -1,12 +1,14 @@
 import type { JsonValue } from "../../../../core/index.ts";
-import type { AutomationStudioFlowDocument } from "../../model/index.ts";
-import { resolveAutomationNodeParameterValues } from "../../nodes/index.ts";
+import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../model/index.ts";
+import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues } from "../../nodes/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
 import { chooseAutomationStudioEdge, hasUnvisitedAutomationStudioNodes, missingTargetTrace } from "./graph-navigation.ts";
 import { executeAutomationStudioNode } from "./node-execution.ts";
 import { recoveryBudgetState } from "./recovery-budget.ts";
 import { chooseAutomationStudioRecovery, failureMessageForRecoveryStop } from "./recovery-ladder.ts";
+import type { AutomationStudioCapturedRecords } from "./record-summary.ts";
 import { executeWithRegionTimeout, policyDecisionForAttempt, recordRegionTransition } from "./region-execution.ts";
+import { automationStudioRunState, type AutomationStudioRunState } from "./run-state.ts";
 import { chooseAutomationStudioStartNode } from "./start-node.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE, automationStudioTraceWithholding, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
@@ -19,6 +21,13 @@ import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
  * parent binds -- and the parent withholds it as well.
  */
 const withheldBySavedTrace = new WeakMap<AutomationStudioGraphExecutionTrace, FluxIQRuntimeWithheldValues>();
+
+/**
+ * What each saved trace this module returned captured, keyed by that trace. A
+ * Call Flow parent's outputs are its child's real rows, the same arrays and
+ * objects, so the parent replaces them with markers as well.
+ */
+const capturedBySavedTrace = new WeakMap<AutomationStudioGraphExecutionTrace, AutomationStudioCapturedRecords>();
 
 /**
  * The one place a run trace is produced, and therefore the one place values a
@@ -46,14 +55,21 @@ export async function runAutomationStudioGraph(
   onExecutedTrace?: (executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace) => void
 ): Promise<AutomationStudioGraphExecutionTrace> {
   const withholding = automationStudioTraceWithholding();
+  const runState = automationStudioRunState(options);
   recordDeclaredStateBindings(flow, options, withholding);
-  const executed = await executeAutomationStudioGraph(flow, options, withholding);
+  const executed = await executeAutomationStudioGraph(flow, options, withholding, runState);
   for (const attempt of executed.attempts) {
     const childWithheld = attempt.childTrace ? withheldBySavedTrace.get(attempt.childTrace) : undefined;
     if (childWithheld) withholding.include(childWithheld);
+    const childCaptured = attempt.childTrace ? capturedBySavedTrace.get(attempt.childTrace) : undefined;
+    if (childCaptured) runState.records.include(childCaptured);
   }
-  const saved = withholding.apply(withholdRunInputs(executed, options.inputs ?? {}));
+  // Rows are replaced first, while the trace still holds the very arrays and
+  // objects capture produced: the rewrites after this one copy what they change,
+  // and a copy can no longer be found by identity.
+  const saved = withholding.apply(withholdRunInputs(runState.records.apply(executed), options.inputs ?? {}));
   withheldBySavedTrace.set(saved, withholding.values());
+  capturedBySavedTrace.set(saved, runState.records.captured());
   onExecutedTrace?.(executed, saved);
   return saved;
 }
@@ -79,6 +95,33 @@ function recordDeclaredStateBindings(
     const authored = node.parameterValues ?? {};
     withholding.record(authored, resolveAutomationNodeParameterValues(authored, state).values);
   }
+}
+
+/** The most steps one graph run takes, whatever its caller asks and however many steps its For Each nodes grant. */
+const AUTOMATION_STUDIO_MAX_RUN_STEPS = 100_000;
+
+/** The node whose body passes are granted steps of their own; keyed by definition id, as `graph-navigation.ts` keys Start. */
+const FOR_EACH_DEFINITION_ID = "builtin.control.for-each";
+
+/**
+ * Each For Each pass that routes into its body grants the body
+ * `maxStepsPerIteration` more steps, up to the whole-run ceiling, so how long a
+ * list may run is bounded per item rather than by the run's own limit. Without
+ * the allowance, 100 items through a three-node body need 400 steps, past the
+ * default 250.
+ */
+function withIterationAllowance(maxSteps: number, node: AutomationStudioFlowNode, attempt: AutomationStudioNodeAttemptTrace): number {
+  if (node.definitionId !== FOR_EACH_DEFINITION_ID || attempt.status !== "succeeded" || attempt.route !== "body") return maxSteps;
+  return Math.min(AUTOMATION_STUDIO_MAX_RUN_STEPS, maxSteps + stepsPerIteration(node));
+}
+
+/** The authored allowance, which cannot be state-bound, or else the definition's default. */
+function stepsPerIteration(node: AutomationStudioFlowNode): number {
+  const declared = getAutomationNodeDefinition(node.definitionId)?.parameters.find((parameter) => parameter.id === "maxStepsPerIteration")?.defaultValue;
+  for (const candidate of [node.parameterValues?.maxStepsPerIteration, declared]) {
+    if (typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 1) return Math.floor(candidate);
+  }
+  return 1;
 }
 
 /** How deep a withheld input is walked before it is withheld whole: the bound the value-based rewrite uses. */
@@ -137,7 +180,8 @@ function withheldInputValue(value: JsonValue, depth: number): JsonValue {
 async function executeAutomationStudioGraph(
   flow: AutomationStudioFlowDocument,
   options: AutomationStudioGraphExecutionOptions,
-  withholding: AutomationStudioTraceWithholding
+  withholding: AutomationStudioTraceWithholding,
+  runState: AutomationStudioRunState
 ): Promise<AutomationStudioGraphExecutionTrace> {
   const now = options.now ?? Date.now;
   const startedAt = now();
@@ -162,7 +206,7 @@ async function executeAutomationStudioGraph(
     };
   }
 
-  const maxSteps = Math.max(1, options.maxSteps ?? 250);
+  let maxSteps = Math.min(AUTOMATION_STUDIO_MAX_RUN_STEPS, Math.max(1, options.maxSteps ?? 250));
   for (let step = 0; step < maxSteps; step += 1) {
     if (options.signal?.aborted) {
       return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
@@ -176,9 +220,9 @@ async function executeAutomationStudioGraph(
     if (region?.timeoutMs !== undefined && elapsed >= region.timeoutMs) return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: `Region ${regionId} exceeded its ${region.timeoutMs}ms timeout.` };
     const remainingMs = region?.timeoutMs === undefined ? undefined : region.timeoutMs - elapsed;
     const attempt = remainingMs === undefined
-      ? await executeAutomationStudioNode(flow, currentNode, values, options, attempts.length + 1, withholding)
+      ? await executeAutomationStudioNode(flow, currentNode, values, options, attempts.length + 1, withholding, runState)
       : await executeWithRegionTimeout(
-        (signal) => executeAutomationStudioNode(flow, currentNode!, values, { ...options, signal }, attempts.length + 1, withholding),
+        (signal) => executeAutomationStudioNode(flow, currentNode!, values, { ...options, signal }, attempts.length + 1, withholding, runState),
         remainingMs,
         options.signal,
         () => ({ attemptId: `${currentNode!.id}.attempt.${attempts.length + 1}`, nodeId: currentNode!.id, definitionId: currentNode!.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.` })
@@ -186,6 +230,7 @@ async function executeAutomationStudioGraph(
     const tracedAttempt = region?.kind === "policy" ? { ...attempt, policyDecision: policyDecisionForAttempt(currentNode, attempt) } : attempt;
     const attemptIndex = attempts.length;
     attempts.push(regionId ? { ...tracedAttempt, regionId } : tracedAttempt);
+    maxSteps = withIterationAllowance(maxSteps, currentNode, attempt);
     for (const [key, value] of Object.entries(attempt.outputs)) {
       values[`${currentNode.id}.${key}`] = value;
       values[key] = value;

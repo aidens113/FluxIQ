@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
+import type { AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationNodeExpectationEvaluation } from "../../../nodes/index.ts";
-import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions } from "../index.ts";
+import {
+  runAutomationStudioGraph,
+  type AutomationStudioGraphExecutionOptions,
+  type AutomationStudioGraphExecutionTrace,
+  type AutomationStudioRecordBatch
+} from "../index.ts";
 
 const flow: AutomationStudioFlowDocument = {
   schemaVersion: "0.1",
@@ -336,5 +342,169 @@ describe("what the host is told after the action", () => {
     expect(afterAction).toEqual(afterAction.map(() => executed));
     expect(diffs.length).toBeGreaterThan(0);
     expect(diffs).toEqual(diffs.map(() => executed));
+  });
+});
+
+// Obviously synthetic: every assertion about these is where they must or must not travel.
+const ROW_TEXT = "synthetic-extracted-row-that-must-never-be-persisted";
+const EXCLUDED_NOTE = "synthetic-excluded-note";
+const recordOutput = {
+  datasetId: "products",
+  recordsPath: "items",
+  writeMode: "append",
+  schema: { schemaVersion: "0.1", fields: [{ id: "name", label: "Name", valueType: "string", required: true }, { id: "note", label: "Note", valueType: "string", handling: "exclude" }] }
+};
+const extractNode: AutomationStudioFlowNode = { id: "extract", definitionId: "builtin.policy.action", parameterValues: { outputId: "extract-list", parameters: {}, recordOutput } };
+const recordFlow: AutomationStudioFlowDocument = {
+  ...flow,
+  flowId: "flow.record-capture",
+  nodes: [extractNode, { id: "after", definitionId: "builtin.policy.action", parameterValues: { outputId: "after-extract" } }],
+  edges: [{ id: "extract.after", sourceNodeId: "extract", targetNodeId: "after", sourcePortId: "success" }]
+};
+const savedDigest = "a".repeat(64);
+
+function extractingDispatcher(events: string[], extractedResult: boolean = true): NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]> {
+  return (effect) => {
+    const outputId = String((effect.payload as { outputId?: unknown } | undefined)?.outputId);
+    events.push(`dispatch:${outputId}`);
+    if (outputId !== "extract-list") return succeeded;
+    return extractedResult
+      ? { status: "success", route: "success", outputs: { ok: true, result: { items: [{ name: ROW_TEXT, note: EXCLUDED_NOTE }, { note: EXCLUDED_NOTE }] } } }
+      : { status: "success", route: "success", outputs: { ok: true } };
+  };
+}
+
+function storedSummary(batch: AutomationStudioRecordBatch): AutomationStudioRunDatasetSummary {
+  return { runId: "run.synthetic", datasetId: batch.datasetId, nodeIds: [batch.nodeId], schemaDigest: savedDigest, recordCount: batch.rows.length, truncated: batch.truncated, invalidCount: batch.invalidCount, updatedAt: 1 };
+}
+
+describe("capturing records where dispatches meet", () => {
+  it("calls the record-batch hook once, with the validated rows, and waits for it before the attempt is returned", async () => {
+    const events: string[] = [];
+    const batches: AutomationStudioRecordBatch[] = [];
+    const executed: AutomationStudioGraphExecutionTrace[] = [];
+    const trace = await runAutomationStudioGraph(recordFlow, {
+      effectDispatcher: extractingDispatcher(events),
+      onRecordBatch: async (batch) => {
+        batches.push(batch);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        events.push("hook:stored");
+        return storedSummary(batch);
+      }
+    }, (run) => { executed.push(run); });
+
+    expect(trace.status).toBe("succeeded");
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toMatchObject({ nodeId: "extract", attemptId: "extract.attempt.1", batchKey: "extract.attempt.1", datasetId: "products", writeMode: "append", rows: [{ name: ROW_TEXT }], invalidCount: 1, truncated: false });
+    expect(events).toEqual(["dispatch:extract-list", "hook:stored", "dispatch:after-extract"]);
+    expect(executed[0]?.attempts[0]?.outputs.records).toBe(batches[0]?.rows);
+    expect(trace.attempts[0]?.outputs.records).toEqual({ $dataset: { datasetId: "products", recordCount: 1, schemaDigest: savedDigest } });
+    expect(JSON.stringify(trace)).not.toContain(ROW_TEXT);
+  });
+
+  it.each([
+    { case: "throws", onRecordBatch: (): AutomationStudioRunDatasetSummary => { throw new Error(`The store refused ${ROW_TEXT}.`); } },
+    { case: "rejects", onRecordBatch: (): Promise<AutomationStudioRunDatasetSummary> => Promise.reject(new Error(`The store refused ${ROW_TEXT}.`)) }
+  ])("fails the attempt with record_output.persist_failed when the hook $case, and keeps the rows out of the saved trace", async ({ onRecordBatch }) => {
+    const events: string[] = [];
+    const trace = await runAutomationStudioGraph(recordFlow, { effectDispatcher: extractingDispatcher(events), onRecordBatch });
+
+    expect(trace.status).toBe("failed");
+    expect(trace.attempts).toHaveLength(1);
+    expect(trace.attempts[0]).toMatchObject({ status: "failed", route: "failed", message: "The output ran, but the records it returned could not be saved." });
+    expect(trace.attempts[0]?.failure).toEqual({ category: "action_failed", code: "record_output.persist_failed", retryable: false });
+    expect(events).toEqual(["dispatch:extract-list"]);
+    expect(trace.attempts[0]?.outputs.records).toEqual({ $dataset: { datasetId: "products", recordCount: 1 } });
+    expect(JSON.stringify(trace)).not.toContain(ROW_TEXT);
+  });
+
+  it("still emits records with no hook bound, and the saved trace holds a marker for them", async () => {
+    const executed: AutomationStudioGraphExecutionTrace[] = [];
+    const trace = await runAutomationStudioGraph(recordFlow, { effectDispatcher: extractingDispatcher([]) }, (run) => { executed.push(run); });
+
+    expect(trace.status).toBe("succeeded");
+    expect(executed[0]?.attempts[0]?.outputs.records).toEqual([{ name: ROW_TEXT }]);
+    expect(JSON.stringify(executed[0])).not.toContain(EXCLUDED_NOTE);
+    expect(trace.attempts[0]?.outputs.records).toEqual({ $dataset: { datasetId: "products", recordCount: 1 } });
+    expect(JSON.stringify(trace)).not.toContain(ROW_TEXT);
+  });
+
+  it("captures a native node's record output the same way", async () => {
+    const batches: AutomationStudioRecordBatch[] = [];
+    const trace = await runAutomationStudioGraph({ ...flow, flowId: "flow.native-record-capture", nodes: [{ id: "native", definitionId: "importer.example.extract" }] }, {
+      nativeNodeExecutor: () => Promise.resolve({ result: { status: "success", route: "success", outputs: {}, effects: [{ type: "policy.output.dispatch", payload: { outputId: "extract-list", parameters: {}, recordOutput } }] } }),
+      effectDispatcher: extractingDispatcher([]),
+      onRecordBatch: (batch) => { batches.push(batch); return storedSummary(batch); }
+    });
+
+    expect(trace.status).toBe("succeeded");
+    expect(batches.map((batch) => [batch.nodeId, batch.attemptId, batch.rows])).toEqual([["native", "native.attempt.1", [{ name: ROW_TEXT }]]]);
+    expect(JSON.stringify(trace)).not.toContain(ROW_TEXT);
+  });
+
+  it("calls no hook and fails with record_output.records_missing when the output returns no rows", async () => {
+    const batches: AutomationStudioRecordBatch[] = [];
+    const trace = await runAutomationStudioGraph(recordFlow, {
+      effectDispatcher: extractingDispatcher([], false),
+      onRecordBatch: (batch) => { batches.push(batch); return storedSummary(batch); }
+    });
+
+    expect(batches).toEqual([]);
+    expect(trace.status).toBe("failed");
+    expect(trace.attempts[0]?.failure).toEqual({ category: "output_not_observed", code: "record_output.records_missing", retryable: true });
+  });
+});
+
+describe("writing records, which no dispatcher handles", () => {
+  // The rows arrive as a run input, which the saved trace withholds wherever it was supplied.
+  const writeFlow: AutomationStudioFlowDocument = { ...flow, flowId: "flow.write-records", nodes: [{ id: "write", definitionId: "builtin.data.write-records", parameterValues: { recordOutput } }] };
+  const supplied = () => ({ records: [{ name: ROW_TEXT, note: EXCLUDED_NOTE }, { note: EXCLUDED_NOTE }] });
+
+  it("persists records.write through the record-batch hook with no dispatcher bound, and the saved trace holds markers", async () => {
+    const batches: AutomationStudioRecordBatch[] = [];
+    const executed: AutomationStudioGraphExecutionTrace[] = [];
+    const trace = await runAutomationStudioGraph(writeFlow, {
+      inputs: supplied(),
+      onRecordBatch: (batch) => { batches.push(batch); return storedSummary(batch); }
+    }, (run) => { executed.push(run); });
+    const marker = { $dataset: { datasetId: "products", recordCount: 1, schemaDigest: savedDigest } };
+
+    expect(trace.status).toBe("succeeded");
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toMatchObject({ nodeId: "write", attemptId: "write.attempt.1", batchKey: "write.attempt.1", datasetId: "products", writeMode: "append", rows: [{ name: ROW_TEXT }], invalidCount: 1, truncated: false });
+    expect(executed[0]?.attempts[0]?.outputs.records).toBe(batches[0]?.rows);
+    expect((executed[0]?.attempts[0]?.effects[0]?.payload as { records?: unknown } | undefined)?.records).toBe(batches[0]?.rows);
+    expect(trace.attempts[0]?.outputs.records).toEqual(marker);
+    expect(trace.attempts[0]?.effects[0]).toMatchObject({ type: "records.write", payload: { records: marker } });
+    expect(trace.effects[0]).toMatchObject({ type: "records.write", nodeId: "write", payload: { records: marker } });
+    expect(JSON.stringify(trace)).not.toContain(ROW_TEXT);
+    expect(JSON.stringify(trace)).not.toContain(EXCLUDED_NOTE);
+  });
+
+  it("fails with record_output.persist_failed when the hook throws, and keeps the rows out of the saved trace", async () => {
+    const trace = await runAutomationStudioGraph(writeFlow, {
+      inputs: supplied(),
+      onRecordBatch: () => { throw new Error(`The store refused ${ROW_TEXT}.`); }
+    });
+
+    expect(trace.status).toBe("failed");
+    expect(trace.attempts[0]).toMatchObject({ status: "failed", route: "failed", message: "The records could not be saved." });
+    expect(trace.attempts[0]?.failure).toEqual({ category: "action_failed", code: "record_output.persist_failed", retryable: false });
+    expect(trace.attempts[0]?.outputs.records).toEqual({ $dataset: { datasetId: "products", recordCount: 1 } });
+    expect(JSON.stringify(trace)).not.toContain(ROW_TEXT);
+  });
+
+  it("does not hand records.write to a dispatcher that is bound", async () => {
+    const dispatched: string[] = [];
+    const batches: AutomationStudioRecordBatch[] = [];
+    const trace = await runAutomationStudioGraph(writeFlow, {
+      inputs: supplied(),
+      effectDispatcher: (effect) => { dispatched.push(effect.type); return succeeded; },
+      onRecordBatch: (batch) => { batches.push(batch); return storedSummary(batch); }
+    });
+
+    expect(trace.status).toBe("succeeded");
+    expect(dispatched).toEqual([]);
+    expect(batches).toHaveLength(1);
   });
 });
