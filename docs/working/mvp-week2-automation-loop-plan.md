@@ -1,0 +1,102 @@
+# MVP Week 2 Automation Loop Plan (Core share)
+
+Status: Active
+Status detail: Plan written 2026-09-15 from the downstream scoping reports; nothing is built, and the user reviews the plan before any loop phase starts.
+Created: 2026-09-15
+Last updated: 2026-09-15
+Owner: Senior supervisor agent
+Scope: Core's share of the downstream MVP Week 2 automation loop (Phases 2.1-2.9): the runtime recovery coordinator, recovery context, deterministic diagnosis gate, recovery plan and trace, bounded runtime exploration, the recovery verdict, adaptation reduction, confidence tiers, persistence, resume, per-attempt adaptation provenance, and a test-only scripted provider for the Testing Lab.
+Paired document: `F:\!FluxIQWebExtension\docs\working\mvp-week2-automation-loop-plan.md`
+Related: [automation studio](../architecture/automation-studio.md), [code structure](../architecture/code-structure.md), [package boundaries](../architecture/package-boundaries.md), [data extraction plan](./first-class-data-extraction-plan.md)
+
+---
+
+## Current State
+
+**Phase, as of 2026-09-15: plan written; waiting for the user's review; no
+Core code changed for the loop.** The downstream document owns the plan,
+decisions L1-L11, phases, and sequencing; the file:line evidence is in its two
+scoping reports (`w2-scope-context-recovery`, `w2-scope-repair-reuse`). Most
+Week 2 loop work is Core's. Path prefix: `AS/` is
+`packages/fluxiq/src/programs/automation-studio/`.
+
+**What is true in Core today:**
+- The one runtime LLM caller, `maybeAnnotateRunDetailWithRuntimeLlm`
+  (`AS/runtime/service.ts:2865-3169`), sends instructions, recent actions, a
+  3,000-byte failure snapshot, and policy; the harness packet's other slots are
+  never filled.
+- `classifyAutomationStudioAdaptiveFailure` (`AS/runtime/adaptive-orchestrator.ts:65-212`)
+  decides AI eligibility but only decorates run summaries.
+- There is no runtime exploration loop; the bounded evidence loop serves Flow
+  creation only (`AS/runtime/llm/evidence-loop.ts`).
+- `runtimePatchRestoredExpectedState` (`AS/runtime/live-patch.ts:324-330`)
+  treats a succeeded patched run as recovered when there is nothing to compare.
+- Never-executed proposals count as succeeded validations
+  (`live-patch.ts:285-290`); `edit_recovery` action sequences have no reader
+  (`AS/runtime/service/adaptations/patches.ts:52-55`); `failureSignature` is
+  never written.
+- The retry after an auto-applied patch reruns from the graph's start
+  (`service.ts:3260-3343`) and is unreachable in the shipped app.
+- Attempts carry no adaptation id; no scripted provider exists for the Lab.
+
+**Done:** this document, from the downstream scoping.
+
+**Not done:** every Core step below.
+
+**Next steps:** the user's review; then phase D and R0, after the extraction
+plan's K4c.1-2, which also edits `service.ts`.
+
+**Blockers:** the user's review.
+
+---
+
+## Core steps by phase
+
+Decisions are the downstream document's L1-L11. Files and tests are in the
+downstream scoping reports.
+
+| Phase | Core work | Key files |
+| --- | --- | --- |
+| D | Recovery verdict replacing `runtimePatchRestoredExpectedState`, with a node-definition expected transition; structural validation not counted as success; the apply gate refuses inert `edit_recovery`; each with a failing test first | `AS/runtime/recovery/recovery-verdict.ts` (new), `live-patch.ts`, `executor/expected-transition.ts`, `service.ts:5632-5654`, `storage/project/adaptation-store.ts:161` |
+| R0 | Move the runtime LLM annotation into `AS/runtime/recovery/runtime-recovery-coordinator.ts`, no behaviour change | `service.ts:2865-3169` |
+| 2.1 | `recoveryContext` builder and packet slot with counts-only `contextSummary` | `recovery/recovery-context.ts` (new), `llm/harness/context-packet.ts`, `task-request.ts`, `intervention.ts` |
+| 2.2 | Deterministic diagnosis gate; structured diagnosis; recovery plan; `recoveryTrace`; run detail stages in the web UI | `recovery/{diagnosis,recovery-plan,recovery-trace}.ts` (new), `llm/harness/structured-response.ts`, `provider-result.ts`, `deepseek-provider.ts`, `apps/web/src/features/automation-studio/runtime/run-detail-model.ts` |
+| 2.3 | Closed exploration outcomes; exploration budget with wall clock and domain-enforced scope policy; runtime exploration loop; task kind; recovery grant purpose | `recovery/{exploration-outcome,exploration-budget,runtime-exploration}.ts` (new), `llm/harness/task-kind.ts`, `llm/execution-grants.ts`, `docs/architecture/automation-studio.md` |
+| 2.4 | The full verdict with records completeness, required evidence, and continuation | `recovery/recovery-verdict.ts` |
+| 2.5 | `observedState`, `expectedState`, `failureSignature` on adaptations; exploration reduction; durable deterministic-path patch; opaque domain-owned target (L2) | `live-patch.ts`, `runtime/exploration-reduction/` (new), `model/flow-adaptation.ts`, `service/adaptations/patches.ts`, `storage/project/adaptation-store.ts`, `model/validation/adaptation.ts`, `llm/harness/structured-response.ts` |
+| 2.6 | Validation kinds and confidence tier; provisional replay promotion | `runtime/adaptation-confidence.ts` (new), `service/adaptations/provisional.ts` (new), a new migration |
+| 2.7 | Persisted confidence, signature, and evidence columns | `storage/project/adaptation-store.ts`, a new migration |
+| 2.8 | Resume from the failed node with an input-state check; in-run use on the explicit-grant lane (L9) | `service/adaptations/resume.ts` (new), `service.ts` call sites `:3540-3547,3594-3600` |
+| 2.9 | Test-only scripted provider for Lab hosts; per-attempt adaptation provenance | a `testing/` directory beside `runtime/llm/`, `executor/attempt-trace.ts`, `service/summaries/conversions.ts` |
+
+Serial files: `service.ts` (extraction K4c.1-2, R0, 2.1, 2.2-2.4 integration,
+2.8); the LLM harness contract files (2.1, 2.2, 2.3, 2.5); `model/flow-adaptation.ts`
+and `adaptation-store.ts` (2.5, 2.6, 2.7, 2.9); `live-patch.ts` (D, 2.5, 2.6).
+
+## Validation
+
+Each step's tests and mutation targets as the downstream reports name them,
+run with `--no-file-parallelism`; `pnpm check`, `pnpm test`, `pnpm docs:check`,
+`pnpm build`, `pnpm package:validate` one at a time; Lab proofs downstream.
+Authorization changes (L6, L9) update `docs/architecture/automation-studio.md`
+in the same work, and observable behaviour changes carry a Migration Notes
+entry.
+
+## Worker Briefs
+
+None yet; downstream scoping briefs are in the paired document.
+
+## Work Ledger
+
+### 2026-09-15 — Core share of the loop plan recorded
+- Agent: downstream supervisor; downstream workers `w2-scope-context-recovery`,
+  `w2-scope-repair-reuse`
+- Changed: this document
+- Why: most Week 2 loop work is Core's, and cross-repository plans are paired
+- Validation: not validated; planning document only
+- Outcome: Accepted
+- Follow-up: the user's review of the downstream plan
+
+## Open Questions
+
+None beyond the downstream document's.
