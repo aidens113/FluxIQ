@@ -5,6 +5,9 @@ import type { JsonObject, JsonValue } from "./core.js";
 // `.ts` specifier so bundlers compiling this source through tsconfig paths can
 // resolve them; the package build rewrites them to `.js`.
 export * from "./failure/index.ts";
+// Record sets: the dataset schema, record output, run dataset summary and page,
+// their parsers, row validation, and CSV encoding.
+export * from "./record-sets/index.ts";
 
 export type AutomationStudioSchemaVersion = "0.1";
 export type StateValueType = "string" | "number" | "integer" | "boolean" | "point" | "rectangle" | "entity_ref" | "entity_ref_list" | "hash" | "json" | "unknown";

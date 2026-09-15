@@ -1,8 +1,8 @@
 # First-Class Data Extraction Plan (Core share): planning archive
 
 Superseded detail moved from [the plan](../../first-class-data-extraction-plan.md)
-on 2026-09-15 to keep it under the 800-line compaction threshold: the three
-completed investigation briefs and the planning-phase ledger entries. Their
+on 2026-09-15 to keep it under the 800-line compaction threshold: completed
+worker briefs and the planning-phase ledger entries. Their
 results are folded into that document's Decisions and Design sections.
 
 ## Worker Briefs
@@ -83,6 +83,79 @@ results are folded into that document's Decisions and Design sections.
 - Definition of done: K1-K10 each executable without rediscovery; open
   questions 1-4 answered with evidence
 - Report to: docs/working/first-class-data-extraction-plan/reports/k-datasets-execution.md
+
+### Brief: k0-1-password-kdf
+- Repository: FluxIQ Core (`F:\!FluxIQ`)
+- Task: implement step K0.1 per CD2 and `reports/k0-secret-keys-kdf.md`
+  §4.1-4.2 and §6: a shared async scrypt module with parameter constants
+  (current N=2^17, r=8, p=1, keyLength 32; legacy v1 N=2^14), an exact read
+  allowlist (v2 N of 2^17 or 2^18) checked before any derivation, `maxmem`
+  256·N·r, a promise-only process-wide limiter of concurrency 2 (no timers),
+  a password hash writing `$scrypt$ln=17,r=8,p=1$<salt>$<hash>` and a verify
+  accepting that form and legacy `scrypt:<salt>:<hash>` that returns
+  `{ ok, needsRehash }` and never throws, and the test-only injection types.
+  Confirm placement against `docs/architecture/code-structure.md` first
+  (proposed `packages/fluxiq/src/programs/_shared/password-kdf/`): one
+  exported thing per file, a barrel, tests in `tests/`.
+- Required reads: `AGENTS.md`; `docs/architecture/code-structure.md`; this
+  document's CD2 and "Credential and key hardening (K0)"; the k0 report §4.1,
+  §4.2, §6 (password-kdf tests), and §7 mutations 3, 10, and 14
+- Owns (may edit): the new `password-kdf/` directory and its `tests/`, and the
+  parent barrel only if one must export it
+- Must not touch: Secret Keys, Identity Access, every other file, and `.fluxiq`
+  data; use only obviously dummy passwords
+- Validation: `npx vitest run <new test files> --no-file-parallelism` and
+  `node scripts/structure-audit.mjs`, run alone; no full suite or build (the
+  supervisor runs those one at a time); apply mutations 3, 10, and 14, observe
+  each test fail, and revert
+- Definition of done: new tests pass; each mutation observed red and reverted;
+  structure audit passes
+- Report to: docs/working/first-class-data-extraction-plan/reports/k0-1-password-kdf.md
+
+### Brief: k0-4-database-manager-recheck
+- Repository: FluxIQ Core (`F:\!FluxIQ`)
+- Task: implement step K0.4 per CD5: `put-record` and `delete-record` on the
+  sensitive `identity.users` and `secret.keys` stores require the same
+  credential recheck that reading them already requires
+  (`packages/fluxiq/src/programs/database-manager/api/handlers.ts:64-84`
+  against `:97-124`), with the same refusal shape; other stores are unchanged.
+  Tests: put and delete on each sensitive store are refused without
+  credentials and with wrong credentials and allowed with correct ones; a
+  non-sensitive put is unchanged. Keep the file within structure budgets,
+  extracting a focused helper module if needed.
+- Required reads: `AGENTS.md`; `docs/architecture/code-structure.md`; this
+  document's CD5; the handlers file, its existing tests, and the credential
+  gate it calls
+- Owns (may edit): `database-manager/api/handlers.ts`, any new helper module
+  beside it, and the database-manager handler tests
+- Must not touch: Identity Access, Secret Keys,
+  `programs/tests/global-identity-access.test.ts`, every other file, and
+  `.fluxiq` data
+- Validation: targeted `npx vitest run <files> --no-file-parallelism` and
+  `node scripts/structure-audit.mjs`, run alone; remove the recheck from
+  `put-record`, observe a test fail, and revert
+- Definition of done: tests pass; the mutation observed red and reverted;
+  structure audit passes
+- Report to: docs/working/first-class-data-extraction-plan/reports/k0-4-database-manager-recheck.md
+
+### Brief: k1-record-set-contracts
+- Repository: FluxIQ Core (`F:\!FluxIQ`)
+- Task: implement K1 per `reports/k-datasets-execution.md` §4 K1, with §2.4's
+  caps, §2.7's handling rules, and CD19-CD20: `packages/contracts/src/record-sets/`
+  (schema, output, dataset, parsers, stored schema, record validation, CSV
+  encoders, barrel), exported from `packages/contracts/src/automation-studio.ts`.
+  Also report, changing nothing, whether Core's node parameter-schema dialect
+  accepts `oneOf`, with file:line (a downstream open question).
+- Required reads: `AGENTS.md`; `docs/architecture/code-structure.md`; this
+  document's Contracts section and CD19-CD20; the report sections named
+- Owns (may edit): `packages/contracts/src/record-sets/**`,
+  `packages/contracts/src/automation-studio.ts`
+- Must not touch: every other file, including package versions (K10)
+- Validation, run alone: the report's K1 acceptance commands and
+  `node scripts/structure-audit.mjs`; its five mutation targets observed red
+  and reverted
+- Definition of done: tests and check pass; mutations observed; audit passes
+- Report to: `F:\!FluxIQ\docs\working\first-class-data-extraction-plan\reports\k1-record-set-contracts.md`
 
 ## Work Ledger
 

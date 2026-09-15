@@ -77,15 +77,20 @@ Path prefixes: `FX/` is `packages/fluxiq/src/`, `AS/` is
 `k11-encrypted-fields`, and `k-datasets-execution`; decisions CD1-CD20;
 execution detail for K0, K1-K10, and K11.
 
-**In progress:** K0.1 (`k0-1-password-kdf`) and K0.4
-(`k0-4-database-manager-recheck`), beside downstream `x0-domain` and
-`x1-test-contracts`; at most four code workers run at once on this machine.
+**In progress:** K0.2 (`k0-2-secret-keys`), K0.3 (`k0-3-identity-access`),
+and K4d (`k4d-withheld-result-payload`), beside downstream `x0-page`; read-only
+`k12-data-view`. At most four code workers run at once on this machine.
+**Verified, uncommitted:** K0.1 and K0.4; their guard mutation proofs run on
+scratch copies, because the permission classifier refuses weakening real
+source. **Landed:** K1.
 
 **Not done:** K0.2-K0.6 and K1-K11.
 
 **Next steps:**
-1. Verify K0.1 and K0.4, then dispatch K0.2 and K0.3.
-2. Dispatch K1, K4d, K4c.0, and K8.0 as worker slots free.
+1. Verify K0.2, K0.3, and K4d; run the outstanding guard mutation proofs on
+   scratch copies; run `pnpm --filter fluxiq check`; commit K0.
+2. As worker slots free: K4c.0 and K8.0, then K2, K3, and K4a (K1 has landed);
+   fold `k12-data-view` into Design and phases.
 3. Follow the dataset order under "Dataset execution (K1-K10)"; K11 follows K0
    and K1-K9, built with downstream Phase 3.7.
 
@@ -108,11 +113,15 @@ execution detail for K0, K1-K10, and K11.
   observation on this machine.
 - **CD3. Records state their parameters and upgrade themselves.** Secret Keys
   and credential envelopes become version 2 with `kdfParams`; hashes become
-  `$scrypt$ln=17,r=8,p=1$<salt>$<hash>`. Readers accept v1 and v2. After a
+  `$scrypt$ln=17,r=8,p=1$<salt>$<hash>`. Readers accept v1 and v2; v2 seals and
+  PHC hashes derive from the decoded salt bytes (standard PHC), v1 from the
+  salt text as today. After a
   successful unlock, login, reveal, or PIN check, an older record is re-sealed
   with no user step: once per record, compare-and-swap in memory, held keys
   swapped and their old buffers zeroed, `updatedAtMs` and `lastRotatedAtMs`
-  unchanged. A failed attempt changes nothing.
+  unchanged. A record is upgraded only when its recorded cost is below the
+  build's write cost and is never rewritten weaker, so rolling back from a
+  raised cost cannot downgrade records. A failed attempt changes nothing.
 - **CD4. Login costs one identity derivation, off the event loop,** and the
   Secret Keys unlock tries only keys sealed for that user (`sealedByUserId`)
   plus not-yet-upgraded v1 keys. Projected cold login with three keys: about
@@ -250,7 +259,10 @@ In `@fluxiq/contracts/automation-studio`, new `packages/contracts/src/record-set
   which drops `exclude` fields and is what gets stored and hashed;
   `validateAutomationStudioRecords` (allowlist copy, CD20 caps); CSV header and
   row encoders (RFC 4180, with formula-injection escaping of string, url, and
-  json cells). Execution detail: `reports/k-datasets-execution.md` §4 K1.
+  json cells, and of datetime cells too, since `Date.parse` accepts
+  `@SUM(1) 2020`). Execution detail: `reports/k-datasets-execution.md` §4 K1.
+  K1 also exports `parseAutomationStudioRecordsPath` for K4 and K7, and K3 maps
+  `record_schema.encrypt_unavailable` to `record_output.encrypt_unavailable`.
 - K11 adds `encrypted-cell.ts`, `record-encryption-status.ts`, and
   `reveal-cells.ts`.
 
@@ -435,6 +447,7 @@ Ordered steps:
 | K9 | Web datasets panel and export | X2 |
 | K10 | Docs (`persistence.md`, native nodes, versions, Migration Notes) and gates | X2, X4 |
 | K11 | Encrypted record fields (CD7-CD12): revision-checked put, record keys, sealing at capture, Reveal, export, decryption grants, UI | Phase 3.7 (Week 3) |
+| K12 | First-class Data window in Core's web panel (datasets across Flows and runs, preview, export, delete) and a record-schema field editor for extraction nodes; design pending `k12-data-view` | with K8-K9 and X4 |
 
 ## Validation
 
@@ -451,83 +464,11 @@ Ordered steps:
 ## Worker Briefs
 
 The first Core brief, `ex-b-core`, is recorded in the downstream document's
-Worker Briefs section. The completed investigation briefs `k0-secret-keys-kdf`,
-`k11-encrypted-fields`, and `k-datasets-execution` are in the
+Worker Briefs section. Completed briefs (`k0-secret-keys-kdf`, `k11-encrypted-fields`,
+`k-datasets-execution`, `k0-1-password-kdf`, `k0-4-database-manager-recheck`,
+and `k1-record-set-contracts`) are in the
 [planning archive](./first-class-data-extraction-plan/archive/2026-09-15-planning-briefs-and-ledger.md).
 Briefs below were recorded at dispatch on 2026-09-15.
-
-### Brief: k0-1-password-kdf
-- Repository: FluxIQ Core (`F:\!FluxIQ`)
-- Task: implement step K0.1 per CD2 and `reports/k0-secret-keys-kdf.md`
-  §4.1-4.2 and §6: a shared async scrypt module with parameter constants
-  (current N=2^17, r=8, p=1, keyLength 32; legacy v1 N=2^14), an exact read
-  allowlist (v2 N of 2^17 or 2^18) checked before any derivation, `maxmem`
-  256·N·r, a promise-only process-wide limiter of concurrency 2 (no timers),
-  a password hash writing `$scrypt$ln=17,r=8,p=1$<salt>$<hash>` and a verify
-  accepting that form and legacy `scrypt:<salt>:<hash>` that returns
-  `{ ok, needsRehash }` and never throws, and the test-only injection types.
-  Confirm placement against `docs/architecture/code-structure.md` first
-  (proposed `packages/fluxiq/src/programs/_shared/password-kdf/`): one
-  exported thing per file, a barrel, tests in `tests/`.
-- Required reads: `AGENTS.md`; `docs/architecture/code-structure.md`; this
-  document's CD2 and "Credential and key hardening (K0)"; the k0 report §4.1,
-  §4.2, §6 (password-kdf tests), and §7 mutations 3, 10, and 14
-- Owns (may edit): the new `password-kdf/` directory and its `tests/`, and the
-  parent barrel only if one must export it
-- Must not touch: Secret Keys, Identity Access, every other file, and `.fluxiq`
-  data; use only obviously dummy passwords
-- Validation: `npx vitest run <new test files> --no-file-parallelism` and
-  `node scripts/structure-audit.mjs`, run alone; no full suite or build (the
-  supervisor runs those one at a time); apply mutations 3, 10, and 14, observe
-  each test fail, and revert
-- Definition of done: new tests pass; each mutation observed red and reverted;
-  structure audit passes
-- Report to: docs/working/first-class-data-extraction-plan/reports/k0-1-password-kdf.md
-
-### Brief: k0-4-database-manager-recheck
-- Repository: FluxIQ Core (`F:\!FluxIQ`)
-- Task: implement step K0.4 per CD5: `put-record` and `delete-record` on the
-  sensitive `identity.users` and `secret.keys` stores require the same
-  credential recheck that reading them already requires
-  (`packages/fluxiq/src/programs/database-manager/api/handlers.ts:64-84`
-  against `:97-124`), with the same refusal shape; other stores are unchanged.
-  Tests: put and delete on each sensitive store are refused without
-  credentials and with wrong credentials and allowed with correct ones; a
-  non-sensitive put is unchanged. Keep the file within structure budgets,
-  extracting a focused helper module if needed.
-- Required reads: `AGENTS.md`; `docs/architecture/code-structure.md`; this
-  document's CD5; the handlers file, its existing tests, and the credential
-  gate it calls
-- Owns (may edit): `database-manager/api/handlers.ts`, any new helper module
-  beside it, and the database-manager handler tests
-- Must not touch: Identity Access, Secret Keys,
-  `programs/tests/global-identity-access.test.ts`, every other file, and
-  `.fluxiq` data
-- Validation: targeted `npx vitest run <files> --no-file-parallelism` and
-  `node scripts/structure-audit.mjs`, run alone; remove the recheck from
-  `put-record`, observe a test fail, and revert
-- Definition of done: tests pass; the mutation observed red and reverted;
-  structure audit passes
-- Report to: docs/working/first-class-data-extraction-plan/reports/k0-4-database-manager-recheck.md
-
-### Brief: k1-record-set-contracts
-- Repository: FluxIQ Core (`F:\!FluxIQ`)
-- Task: implement K1 per `reports/k-datasets-execution.md` §4 K1, with §2.4's
-  caps, §2.7's handling rules, and CD19-CD20: `packages/contracts/src/record-sets/`
-  (schema, output, dataset, parsers, stored schema, record validation, CSV
-  encoders, barrel), exported from `packages/contracts/src/automation-studio.ts`.
-  Also report, changing nothing, whether Core's node parameter-schema dialect
-  accepts `oneOf`, with file:line (a downstream open question).
-- Required reads: `AGENTS.md`; `docs/architecture/code-structure.md`; this
-  document's Contracts section and CD19-CD20; the report sections named
-- Owns (may edit): `packages/contracts/src/record-sets/**`,
-  `packages/contracts/src/automation-studio.ts`
-- Must not touch: every other file, including package versions (K10)
-- Validation, run alone: the report's K1 acceptance commands and
-  `node scripts/structure-audit.mjs`; its five mutation targets observed red
-  and reverted
-- Definition of done: tests and check pass; mutations observed; audit passes
-- Report to: `F:\!FluxIQ\docs\working\first-class-data-extraction-plan\reports\k1-record-set-contracts.md`
 
 ### Brief: k4d-withheld-result-payload
 - Repository: FluxIQ Core (`F:\!FluxIQ`)
@@ -597,7 +538,9 @@ Briefs below were recorded at dispatch on 2026-09-15.
   `password-kdf` module. Also add `prepareCredentialChange` (re-seal the user's
   own keys under the new password without writing), `commitCredentialChange`,
   and `abortCredentialChange`, tested with a fake caller, for K0.5 to wire to
-  the Identity Access port.
+  the Identity Access port. Per CD3 and K0.1's report: re-seal only when
+  `version === 1` or `isBelowScryptWriteCost(record.kdfParams, writeParameters)`,
+  and derive v2 seals from `decodeKdfSalt(record.salt)` (v1 keeps the salt text).
 - Required reads: `AGENTS.md`; `docs/architecture/code-structure.md`; CD3-CD5;
   the k0 report sections named; `reports/k0-1-password-kdf.md`
 - Owns (may edit): `FX/programs/secret-keys/types.ts`, `runtime/service.ts`,
@@ -623,7 +566,9 @@ Briefs below were recorded at dispatch on 2026-09-15.
   disabled usernames through the limiter; and a credential-change port whose
   subscribers `prepare` before the credential write and `commit` after it, or
   `abort` on failure, where a failed `prepare` refuses the change, called from
-  `setPassword` and `setPasswordAuthorized`.
+  `setPassword` and `setPasswordAuthorized`. Per CD3 and K0.1's report: re-seal
+  and rehash only for v1 or legacy records or when `isBelowScryptWriteCost`
+  holds, and derive v2 seals from `decodeKdfSalt(record.salt)`.
 - Required reads: `AGENTS.md`; `docs/architecture/code-structure.md`; CD4-CD5;
   the k0 report sections named; `reports/k0-1-password-kdf.md`
 - Owns (may edit): `FX/programs/identity-access/runtime/service.ts`,
@@ -637,7 +582,104 @@ Briefs below were recorded at dispatch on 2026-09-15.
   session id, and skipping the dummy derivation, each observed red and reverted
 - Report to: `F:\!FluxIQ\docs\working\first-class-data-extraction-plan\reports\k0-3-identity-access.md`
 
+### Brief: k12-data-view
+- Repository: FluxIQ Core (`F:\!FluxIQ`), read-only
+- Task: design a first-class Data window in Core's web panel for extracted
+  datasets, beyond K9's panel inside one run's Runtime Debug detail. Document
+  how the web panel organizes windows and views today (Automation Studio inner
+  views such as Runtime Debug, global program live views, navigation, how a
+  view is registered, routed, and loaded with bounded queries), whether a
+  domain can contribute a view, and how `json` node parameters are edited today
+  (`ParameterEditor.tsx`). Recommend: a project-level Data window (datasets
+  across Flows and runs, filtering by Flow and run, paged table preview,
+  CSV/JSON export, delete, and a slot for K11's encryption status); a
+  record-schema field editor for `recordOutput` (field names, value types, and
+  Include/Exclude/Encrypt with downstream D12's Exclude column info hover);
+  endpoint additions such as listing datasets across runs; placement, files,
+  ordered steps, tests, and mutation targets; and sequencing with K8, K9,
+  downstream X4, and Phase 3.7.
+- Required reads: `AGENTS.md`; `docs/architecture/code-structure.md`; this
+  document's Current State, CD13-CD20, and "Recording proposal, API, and UI";
+  `reports/k-datasets-execution.md` §4 K8-K9; `apps/web/src/features/automation-studio/`
+  and its architecture contract test; downstream D12 and D13 in
+  `F:\!FluxIQWebExtension\docs\working\first-class-data-extraction-plan.md`
+- Owns (may edit): its report only
+- Must not touch: all source and documents; do not start the web panel
+- Definition of done: every question answered with file:line; one recommended
+  design with files, steps, and tests
+- Report to: `F:\!FluxIQ\docs\working\first-class-data-extraction-plan\reports\k12-data-view.md`
+
 ## Work Ledger
+
+### 2026-09-15 — K1 landed; K0.1 amendments verified; K0.2, K0.3, K4d dispatched
+- Agent: downstream supervisor; workers `k1-record-set-contracts`,
+  `k0-1-password-kdf`
+- Changed: `packages/contracts/src/record-sets/` (11 modules, 6 test files) and
+  `packages/contracts/src/automation-studio.ts`; the amended `password-kdf/`
+  module (uncommitted); both reports; this document (Current State, Contracts
+  note, K0.2 and K0.3 briefs)
+- Why: K1 unblocks K2, K3, and K4a; K0.1's amendments apply CD3. The K1 worker
+  proved its mutations on scratch copies after the classifier refused weakening
+  real source, and that method is now used for every guard proof
+- Validation: supervisor runs, alone: in `F:\!FluxIQ`,
+  `pnpm --filter @fluxiq/contracts exec vitest run src/record-sets/tests --no-file-parallelism`
+  → Test Files 6 passed, Tests 41 passed; `pnpm --filter @fluxiq/contracts check`
+  → exit 0; in `packages/fluxiq`, `npx vitest run` over the seven `password-kdf`
+  test files with `--no-file-parallelism` → Test Files 7 passed, Tests 99
+  passed; `node scripts/structure-audit.mjs` → passed (123 warnings, 256
+  baselined). K1's mutations were not rerun by the supervisor.
+- Outcome: Accepted
+- Follow-up: commit K1 now; K0.1 and K0.4 commit with K0.2 and K0.3
+
+### 2026-09-15 — K12 Data window added; design investigation dispatched
+- Agent: downstream supervisor; worker `k12-data-view`
+- Changed: this document (phase K12, Worker Briefs)
+- Why: the user pointed out that Core has no window for data extraction; the
+  plan's only Core dataset UI was a panel inside one run's Runtime Debug detail,
+  and extraction columns would have been edited as raw JSON
+- Validation: not validated; planning document only
+- Outcome: Partial
+- Follow-up: fold the `k12-data-view` design into Design, phases, and order
+
+### 2026-09-15 — K0.1 built; rehash and salt rules decided; amendments sent
+- Agent: downstream supervisor; worker `k0-1-password-kdf`
+- Changed: new `packages/fluxiq/src/programs/_shared/password-kdf/` (eight
+  modules, six test files) and its report, uncommitted; this document (CD3)
+- Why: the worker raised that a rollback from a raised cost would rewrite
+  records weaker and that its hashes used the salt text rather than decoded
+  bytes; CD3 now forbids downgrades and requires standard PHC salt bytes for v2
+  seals and hashes, and the worker was sent back to apply both and correct a
+  memory figure in a comment
+- Validation: not yet verified by the supervisor. Guard-removal mutations 10
+  and 14 were refused by the permission classifier for the worker, as K0.4's
+  was for the supervisor.
+- Outcome: Partial
+- Follow-up: verify the amended module; run or waive the refused mutations with
+  the user; then dispatch K0.2 and K0.3
+
+### 2026-09-15 — K0.4 implemented and tested; mutation proof blocked; K1 dispatched
+- Agent: downstream supervisor; workers `k0-4-database-manager-recheck`,
+  `k1-record-set-contracts`
+- Changed: `packages/fluxiq/src/programs/database-manager/api/handlers.ts` and
+  new `database-manager/api/tests/handlers.test.ts` (both uncommitted); the
+  K0.4 report; this document (Current State)
+- Why: CD5's last bullet. The worker also made `authorize-store` issue a grant
+  only against a fresh credential recheck, so a grant cannot renew itself, and
+  checked grants against the scope the operation acts on; both are tested and
+  kept. A five-minute store grant covers writes as well as reads, matching
+  CD5's "same credential recheck as reading them"
+- Validation: in `packages/fluxiq`,
+  `npx vitest run src/programs/database-manager/api/tests/handlers.test.ts src/programs/database-manager/tests/index.test.ts --no-file-parallelism`
+  → Test Files 2 passed, Tests 27 passed; `node scripts/structure-audit.mjs`
+  → passed (123 warnings, 256 baselined); `pnpm docs:reference` changed only
+  `registerDatabaseManagerApi`'s line (`handlers.ts:14` → `:18`), then restored.
+  The mutation proof (removing the `put-record` gate) was refused by the Claude
+  Code permission classifier as a security weakening, for worker and supervisor
+  alike; not run. `pnpm --filter fluxiq check` not run while other workers edit
+  the package.
+- Outcome: Partial
+- Follow-up: the user decides whether to allow the mutation run; then the type
+  check and a commit with K0.1
 
 ### 2026-09-15 — K1-K10 made executable; CD13-CD20 decided; next briefs recorded
 - Agent: downstream supervisor; worker `k-datasets-execution`
