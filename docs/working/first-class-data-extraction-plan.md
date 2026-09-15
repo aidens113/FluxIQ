@@ -67,10 +67,11 @@ target resolution, expected transitions, and adaptation.
 In `@fluxiq/contracts/automation-studio`, new `packages/contracts/src/record-sets/`:
 - `AutomationStudioRecordSchema`: `schemaVersion`,
   `fields[{ id, label, valueType: string|number|boolean|url|datetime|json,
-  required?, excluded? }]`, `primaryKey?`. An `excluded` field is absent from
-  node outputs, stored rows, the stored schema, previews, and exports; the domain
-  does not read it, and Core drops it anyway if a payload carries it
-  (downstream D12).
+  required?, handling?: include|exclude|encrypt }]`, `primaryKey?`. A field
+  with `handling: exclude` is absent from node outputs, stored rows, the stored
+  schema, previews, and exports; the domain does not read it, and Core drops it
+  anyway if a payload carries it (downstream D12). `encrypt` is reserved in K1
+  and refused until built (downstream D13, open question 5).
 - `AutomationStudioRecordOutput`: `{ datasetId, label?, recordsPath, schema,
   writeMode: append|replace, maxRecords? }`.
 - `AutomationStudioRunDatasetSummary`: `{ runId, datasetId, nodeIds,
@@ -83,7 +84,7 @@ In `@fluxiq/contracts/automation-studio`, new `packages/contracts/src/record-set
 
 - `builtin.policy.action` gains an optional `recordOutput` parameter and a
   declared `records` data port; `io-policy.ts` reads `result.payload` at
-  `recordsPath`, validates rows, drops `excluded` fields, and emits
+  `recordsPath`, validates rows, drops `exclude` fields, and emits
   `outputs.records`.
 - An executor hook `onRecordBatch` on `AutomationStudioGraphExecutionOptions`
   persists each batch from the executed result, before trace withholding; the
@@ -159,6 +160,14 @@ Briefs section.
 
 ## Work Ledger
 
+### 2026-09-15 — Encrypted record fields reserved (downstream D13)
+- Agent: downstream supervisor
+- Changed: this document (record schema `handling`, open question 5)
+- Why: the downstream plan adds an Encrypt column option for Week 3
+- Validation: not validated; planning document only, no Core code changed
+- Outcome: Accepted
+- Follow-up: K1 reserves `encrypt`; settle open question 5 before building it
+
 ### 2026-09-15 — Excluded record fields replace sensitive fields (downstream D12)
 - Agent: downstream supervisor
 - Changed: this document (record schema `excluded`, capture, open question 1)
@@ -198,7 +207,7 @@ Briefs section.
 1. **Dataset-row withholding.** Store rows raw but protected and retention-bound,
    strip run-withheld text before storage, or a new explicit policy. Owner:
    senior supervisor agent; recommendation, raw rows protected and
-   retention-bound, never copied into the saved trace, with `excluded` columns
+   retention-bound, never copied into the saved trace, with `exclude` columns
    dropped at capture (downstream D12).
 2. **Output references and withholding.** Whether `$output` references to
    already-persisted rows are exempt from trace withholding. Owner: senior
@@ -210,3 +219,12 @@ Briefs section.
 4. **Default `recordsPath`.** Node parameter only, or also from domain output
    metadata. Owner: senior supervisor agent; recommendation, the domain output
    declares a default (`extracted`) and the node parameter overrides it.
+5. **Encrypt column key custody (downstream D13).** Where the key pair for
+   `handling: encrypt` fields lives. Secret Keys' encryption is purpose-specific
+   and not reused as project-content crypto, and
+   `AutomationStudioProjectContentProtection` leaves key custody to the host
+   (`automation-studio/persistence.md:180-198`). Owner: senior supervisor agent;
+   recommendation, a per-project key pair whose private key is sealed with the
+   account password in Secret Keys' pattern (scrypt-derived key, AES-256-GCM,
+   session unlock at login) and stored outside project content; runs seal
+   values with the public key and never need the password.
