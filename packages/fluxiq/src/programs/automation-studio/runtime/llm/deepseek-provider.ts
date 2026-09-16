@@ -330,12 +330,7 @@ function parseDeepSeekEnvelope(value: unknown, request: AutomationStudioLlmTaskR
     throw new AutomationStudioLlmProviderError("llm.provider_output_truncated", "DeepSeek stopped at the configured output-token limit.");
   }
   if (choice.finish_reason !== "stop") malformed();
-  let structured: unknown;
-  try {
-    structured = JSON.parse(choice.message.content) as unknown;
-  } catch {
-    malformed();
-  }
+  const structured = parseDeepSeekJsonContent(choice.message.content);
   const usage = value.usage;
   if (!isRecord(usage)) usageInvalid();
   const inputTokens = nonNegativeInteger(usage.prompt_tokens);
@@ -677,6 +672,59 @@ function containsForbiddenBootstrapKey(root: unknown): boolean {
 }
 
 type JsonObjectLike = Record<string, unknown>;
+/**
+ * The JSON value in a DeepSeek reply's content.
+ *
+ * DeepSeek in JSON mode has been observed, live and on every call of a run, to
+ * return one complete object followed by a single surplus `}`. Parsing the whole
+ * string failed at its last character, so the reply counted as malformed and an
+ * exploration ended after its first call. Only that shape is repaired: after
+ * the first complete top-level object, nothing but closing brackets and
+ * whitespace may follow. Trailing text, a second value, or an object that does
+ * not itself parse is still malformed, and the value is fully validated by the
+ * caller either way.
+ */
+function parseDeepSeekJsonContent(content: string): unknown {
+  try {
+    return JSON.parse(content) as unknown;
+  } catch {
+    const end = firstTopLevelJsonObjectEnd(content);
+    if (end === undefined || !/^[\s}\]]*$/u.test(content.slice(end))) malformed();
+    try {
+      return JSON.parse(content.slice(0, end)) as unknown;
+    } catch {
+      malformed();
+    }
+  }
+}
+
+/** The index just past the first complete top-level object in `content`, or `undefined` when there is none. */
+function firstTopLevelJsonObjectEnd(content: string): number | undefined {
+  let index = 0;
+  while (index < content.length && /\s/u.test(content.charAt(index))) index += 1;
+  if (content.charAt(index) !== "{") return undefined;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (; index < content.length; index += 1) {
+    const char = content.charAt(index);
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') inString = true;
+    else if (char === "{" || char === "[") depth += 1;
+    else if (char === "}" || char === "]") {
+      depth -= 1;
+      if (depth === 0) return index + 1;
+      if (depth < 0) return undefined;
+    }
+  }
+  return undefined;
+}
+
 function malformed(): never {
   throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "DeepSeek returned an invalid response envelope.");
 }
