@@ -110,9 +110,11 @@ import {
   sanitizeAutomationStudioLlmFailureEvidence,
   type AutomationStudioLlmFailureEvidenceCaptureInput,
   type AutomationStudioLlmProvider,
-  type AutomationStudioLlmTokenLimits
+  type AutomationStudioLlmTokenLimits,
+  type AutomationStudioRuntimeTargetOverrideTarget
 } from "./llm/index.ts";
 import { AutomationStudioLlmRunBudgetLedger } from "./llm/index.ts";
+import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT, adaptationConfidenceScore, adaptationValidationCounts, decideAutomationStudioRuntimeLlmInvocation, decideAutomationStudioRuntimePatchRequest, evaluateFlowAdaptationPromotionGates } from "./recovery/index.ts";
 import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapEvidenceCompletionFailure, flowBootstrapEvidenceLoopFailure, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapCatalogByteBudget, buildAutomationStudioFlowBootstrapContext, isAutomationStudioEvidenceFlowBootstrapResultWithinLimits, parseAutomationStudioFlowBootstrapPlan, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap/index.ts";
@@ -353,7 +355,7 @@ export type AutomationStudioServiceOptions = {
     tools: AutomationStudioLlmEvidenceTool[];
     executeTool(input: { projectId: string; flowId: string; callId: string; toolId: string; value: JsonObject; maxEvidenceBytes: number; signal?: AbortSignal }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
     captureSanitizedFailureEvidence?(input: AutomationStudioLlmFailureEvidenceCaptureInput): Promise<JsonObject | undefined>;
-    validateTargetOverrideEvidence?(evidence: JsonObject, target: { selector: string }, failedAction: AutomationStudioRuntimeTargetOverrideFailedAction): AutomationStudioRuntimeTargetOverrideEvidenceValidation;
+    validateTargetOverrideEvidence?(evidence: JsonObject, target: AutomationStudioRuntimeTargetOverrideTarget, failedAction: AutomationStudioRuntimeTargetOverrideFailedAction): AutomationStudioRuntimeTargetOverrideEvidenceValidation;
   };
   revokeLlmExecutionGrant?: (grantId: string) => void;
   closeLlmExecutionGrants?: () => void;
@@ -555,6 +557,8 @@ export type AutomationStudioRuntimeAdaptationContext = {
   runsCompleted: number;
   recentRunCount: number;
   recentAdaptationCount: number;
+  /** The Flow's known adaptations, which a failure is matched against. */
+  recentAdaptations: AutomationStudioFlowAdaptation[];
   diagnostics: string[];
 };
 
@@ -2849,6 +2853,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const behavior = behaviorForAutomationStudioTrainingMode(settings, recentRuns.length, metrics.stabilityScore);
     const budgetDecision = decideAutomationStudioTrainingBudget(settings, budgetState);
     const diagnostics = runtimeAdaptationContextDiagnostics(settings, policy, behavior, budgetDecision);
+    // Summaries carry no failed action, so the records themselves are loaded: a
+    // classifier given no adaptations can never match one.
+    const knownAdaptations = (await Promise.all(recentAdaptations.slice(0, AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT).map((summary) => this.getFlowAdaptation(input.projectId, summary.flowId, summary.adaptationId).catch(() => null)))).filter((adaptation): adaptation is AutomationStudioFlowAdaptation => Boolean(adaptation));
     return {
       projectId: input.projectId,
       flowId: input.flow.flowId,
@@ -2861,6 +2868,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       runsCompleted: recentRuns.length,
       recentRunCount: recentRuns.length,
       recentAdaptationCount: recentAdaptations.length,
+      recentAdaptations: knownAdaptations,
       diagnostics
     };
   }
@@ -2891,6 +2899,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         }
       };
     }
+    const invocation = decideAutomationStudioRuntimeLlmInvocation({ projectId: input.context.projectId, flowId: input.context.flowId, runId: input.detail.summary.runId, ...(input.subflowId ? { subflowId: input.subflowId } : {}), settings: input.context.settings, policy: input.context.policy, runsCompleted: input.context.runsCompleted, stabilityScore: input.context.metrics.stabilityScore, budgetState: input.context.budgetState, ...(input.failedTraceAttempt ? { failedAttempt: input.failedTraceAttempt } : {}), adaptations: input.context.recentAdaptations });
+    // Deterministic-first: a known recovery or a reroute must run before the model is asked, and the provider is not even resolved when one is available.
+    if (!invocation.invoke) return { ...input.detail, metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, reason: invocation.reason, requiredPriorAction: invocation.requiredPriorAction } } };
     const failedAttempt = [...(input.detail.actionAttempts ?? [])].reverse().find((attempt) => attempt.status === "failed" || attempt.status === "unknown");
     const providerId = stringSetting(input.context.policy.metadata?.llmProvider, stringSetting(input.context.policy.policyId, "host"));
     let provider: AutomationStudioLlmProvider | undefined;
@@ -3039,7 +3050,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         ...(input.executionGrant?.purpose === "diagnose_and_adapt" ? { executionPurpose: "diagnose_and_adapt" } : {})
       }
     });
-    const patchResult = provider && input.runtimeFlow && input.failedTraceAttempt && input.context.behavior.createAdaptations
+    // The patch is a continuation of the diagnosis, not a second independent call that bills whatever the first one did.
+    const patchRequest = decideAutomationStudioRuntimePatchRequest(result);
+    const patchResult = patchRequest.request && provider && input.runtimeFlow && input.failedTraceAttempt && input.context.behavior.createAdaptations
       ? await runAutomationStudioLlmHarness({
         taskKind: "runtime_patch",
         projectId: input.context.projectId,
@@ -3102,7 +3115,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           policy: input.context.policy,
           proposalMode: input.context.policy.proposalMode,
           ...(failureEvidence && this.llmEvidenceRuntime?.validateTargetOverrideEvidence ? {
-            validateTargetOverrideEvidence: (target: { selector: string }, failedAction: AutomationStudioRuntimeTargetOverrideFailedAction) => {
+            validateTargetOverrideEvidence: (target: AutomationStudioRuntimeTargetOverrideTarget, failedAction: AutomationStudioRuntimeTargetOverrideFailedAction) => {
               try { return this.llmEvidenceRuntime!.validateTargetOverrideEvidence!(failureEvidence!, target, failedAction); }
               catch { return { status: "absent" as const }; }
             }
@@ -3121,6 +3134,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           targetResolution: tested.metadata?.targetResolution,
           targetNodeResolution: tested.metadata?.targetNodeResolution,
           preflightOk: tested.preflight.ok,
+          verification: tested.verification,
           restoredExpectedState: tested.restoredExpectedState,
           retryOriginalAction: tested.retryOriginalAction,
           issues: tested.preflight.issues,
@@ -3158,6 +3172,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           providerConfigured: Boolean(provider),
           ok: result.ok && (patchResult?.ok ?? true),
           costAccounting: runBudget.snapshot(input.detail.summary.runId),
+          ...(patchRequest.request ? {} : { patchSkipped: patchRequest.reason }),
           ...(failureEvidence && result.intervention.contextSummary?.failureEvidence ? { failureEvidence: result.intervention.contextSummary.failureEvidence } : {}),
           diagnostics: [...result.diagnostics, ...(patchResult?.diagnostics ?? [])].map((diagnostic) => ({ code: diagnostic.code, severity: diagnostic.severity, message: diagnostic.message })),
           ...(reusableContextResult ? { reusableContext: reusableContextResult.metadata } : {})
@@ -3506,7 +3521,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         };
         await this.writeRuntimeSession(input.projectId, next);
         const routedRunDetail = runtimeRunDetailWithAdaptationContext({
-          ...runtimeSessionToFlowRunDetail(next, input.projectId),
+          ...runtimeSessionToFlowRunDetail(next, input.projectId, adaptationContext?.recentAdaptations),
           routeDecisions: [route.decision],
           subflows: route.selectedSubflow ? [{
             entryId: `subflow-entry.${next.runId}.${route.selectedSubflow.subflowId}`,
@@ -4299,6 +4314,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         lastAction: input.action,
         reviewedAt: now,
         ...(input.actorId ? { actorId: input.actorId } : {}),
+        // A named person approving is its own evidence, and it has to outlive
+        // the next review action: `lastAction` is overwritten by the apply that
+        // follows, so the approval is recorded separately.
+        ...(input.action === "approve" && input.actorId && input.actorId !== "runtime" ? { approvedBy: input.actorId, approvedAt: now } : {}),
         ...(input.reason ? { reason: input.reason } : {})
       },
       validationCounts: adaptationValidationCounts(adaptation),
@@ -5120,7 +5139,18 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         return adaptationFromTypedStoreDetail(await store.supersedeAdaptation({ adaptationId: input.adaptationId, supersededByAdaptationId: input.supersededByAdaptationId, actorId, ...(input.reason ? { reason: input.reason } : {}) }));
       }
       if (input.action === "request_validation") return adaptationFromTypedStoreDetail(await store.setAdaptationStatus({ adaptationId: input.adaptationId, status: "testing", actorId, ...(input.reason ? { reason: input.reason } : {}) }));
-      if (input.action === "approve") return adaptationFromTypedStoreDetail(await store.setAdaptationStatus({ adaptationId: input.adaptationId, status: "validated", actorId, ...(input.reason ? { reason: input.reason } : {}) }));
+      if (input.action === "approve") {
+        const approvedAt = Date.now();
+        return adaptationFromTypedStoreDetail(await store.setAdaptationStatus({
+          adaptationId: input.adaptationId,
+          status: "validated",
+          actorId,
+          // Recorded on the adaptation, not inferred from its status, so the
+          // apply gate can tell an approval apart from a bare claim.
+          ...(actorId !== "runtime" ? { metadata: { review: { lastAction: "approve", reviewedAt: approvedAt, actorId, approvedBy: actorId, approvedAt } } } : {}),
+          ...(input.reason ? { reason: input.reason } : {})
+        }));
+      }
       if (input.action === "reject") return adaptationFromTypedStoreDetail(await store.setAdaptationStatus({ adaptationId: input.adaptationId, status: "rejected", actorId, ...(input.reason ? { reason: input.reason } : {}) }));
       if (input.action === "disable") return adaptationFromTypedStoreDetail(await store.setAdaptationStatus({ adaptationId: input.adaptationId, status: "disabled", approvalMode: "disabled", actorId, ...(input.reason ? { reason: input.reason } : {}) }));
       if (input.action === "switch_manual") return adaptationFromTypedStoreDetail(await store.setAdaptationStatus({ adaptationId: input.adaptationId, status: "proposed", approvalMode: "manual_approval", actorId, ...(input.reason ? { reason: input.reason } : {}) }));
@@ -5625,37 +5655,6 @@ function adaptationEvidenceForStore(adaptation: AutomationStudioFlowAdaptation):
 function approvalDecisionHistory(metadata: JsonObject | undefined): JsonObject[] {
   const history = metadata?.approvalDecisions;
   return Array.isArray(history) ? history.filter(isJsonRecord).slice(-20) : [];
-}
-
-function evaluateFlowAdaptationPromotionGates(adaptation: AutomationStudioFlowAdaptation): { ok: boolean; issues: string[] } {
-  const counts = adaptationValidationCounts(adaptation);
-  const issues: string[] = [];
-  if (counts.succeeded < 1) issues.push("at least one successful validation is required");
-  if (counts.failed > 0 && counts.succeeded === 0) issues.push("recent failures exist without a successful validation");
-  if (adaptation.riskLevel === "destructive") issues.push("destructive adaptations require manual proposal review");
-  if (adaptation.status === "disabled") issues.push("disabled adaptations cannot be applied");
-  if (adaptation.status === "rejected") issues.push("rejected adaptations cannot be applied");
-  if (adaptationRequiresChangeProposal(adaptation) && !adaptation.proposalId) issues.push("structural adaptations require a linked change proposal");
-  for (const patch of adaptation.patch) {
-    if (patch.kind !== "create_subflow" && !patch.targetId?.trim()) issues.push(`patch ${patch.kind} is missing a target`);
-  }
-  return { ok: issues.length === 0, issues };
-}
-
-function adaptationValidationCounts(adaptation: AutomationStudioFlowAdaptation): { succeeded: number; failed: number; total: number } {
-  const results = adaptation.validationResults ?? [];
-  return {
-    succeeded: results.filter((result) => result.status === "succeeded").length,
-    failed: results.filter((result) => result.status === "failed").length,
-    total: results.length
-  };
-}
-
-function adaptationConfidenceScore(adaptation: AutomationStudioFlowAdaptation): number {
-  const counts = adaptationValidationCounts(adaptation);
-  if (!counts.total) return 0;
-  const riskPenalty = adaptation.riskLevel === "low" ? 0 : adaptation.riskLevel === "medium" ? 0.1 : adaptation.riskLevel === "high" ? 0.25 : 0.5;
-  return Math.max(0, Math.min(1, counts.succeeded / counts.total - riskPenalty));
 }
 
 function adaptationPolicySummaryFromPolicy(projectId: string, policy: AutomationStudioAdaptationPolicy): AutomationStudioAdaptationPolicySummary {

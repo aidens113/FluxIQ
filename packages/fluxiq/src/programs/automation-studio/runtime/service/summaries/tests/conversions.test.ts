@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { JsonValue } from "../../../../../../core/index.ts";
-import type { AutomationStudioFlowDocument, AutomationStudioRuntimeSession } from "../../../../model/index.ts";
+import type { AutomationStudioFlowAdaptation, AutomationStudioFlowDocument, AutomationStudioRuntimeSession } from "../../../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../executor/index.ts";
 import { runtimeSessionToFlowRunDetail } from "../index.ts";
 
@@ -32,6 +32,50 @@ describe("runtimeSessionToFlowRunDetail attempt recordCount", () => {
     for (const record of detail.actionAttempts ?? []) expect(record.metadata).not.toHaveProperty("recordCount");
   });
 });
+
+// Fix 5: the only production call site passed no adaptations at all, so
+// `knownAdaptationMatches` was always empty no matter what any adaptation
+// recorded. The list has to reach the classifier for matching to exist.
+describe("runtimeSessionToFlowRunDetail known adaptation matching", () => {
+  it("matches a failed attempt against the adaptations it is given", () => {
+    const detail = runtimeSessionToFlowRunDetail(session([failedAttempt()]), "project.conversions", [adaptationFor("node.action")]);
+    const adaptiveFailure = detail.actionAttempts?.[0]?.metadata?.adaptiveFailure as { knownAdaptationIds?: string[] } | undefined;
+
+    expect(adaptiveFailure?.knownAdaptationIds).toEqual(["adaptation.known"]);
+  });
+
+  it("matches nothing when no adaptation is given, and nothing when none applies to the failed node", () => {
+    const withoutAdaptations = runtimeSessionToFlowRunDetail(session([failedAttempt()]), "project.conversions");
+    const otherNode = runtimeSessionToFlowRunDetail(session([failedAttempt()]), "project.conversions", [adaptationFor("node.elsewhere")]);
+
+    for (const detail of [withoutAdaptations, otherNode]) {
+      const adaptiveFailure = detail.actionAttempts?.[0]?.metadata?.adaptiveFailure as { knownAdaptationIds?: string[] } | undefined;
+      expect(adaptiveFailure?.knownAdaptationIds).toEqual([]);
+    }
+  });
+});
+
+function failedAttempt(): AutomationStudioNodeAttemptTrace {
+  return { attemptId: "node.action.attempt.1", nodeId: "node.action", definitionId: "builtin.policy.action", startedAt: 10, finishedAt: 15, status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [] };
+}
+
+function adaptationFor(nodeId: string): AutomationStudioFlowAdaptation {
+  return {
+    schemaVersion: "0.1",
+    adaptationId: "adaptation.known",
+    flowId: "flow.conversions",
+    projectId: "project.conversions",
+    trigger: "A known repair for this action.",
+    failedAction: { nodeId, definitionId: "builtin.policy.action" },
+    patch: [{ kind: "edit_expectation", targetId: nodeId, summary: "Wait longer." }],
+    validationResults: [{ runId: "run.earlier", status: "succeeded", checkedAt: 5 }],
+    status: "applied",
+    author: "runtime",
+    riskLevel: "low",
+    createdAt: 1,
+    updatedAt: 2
+  };
+}
 
 function attempt(attemptId: string, outputs: Record<string, JsonValue> | undefined): AutomationStudioNodeAttemptTrace {
   // `outputs` is left out entirely for the undefined case: a session read back from storage may lack it.

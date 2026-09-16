@@ -206,6 +206,48 @@ describe("Automation Studio LLM execution grants", () => {
     await expect(forbiddenResolved.provider.runTask({ ...request(), taskKind: "flow_bootstrap", expectedOutput: "flow_bootstrap" })).rejects.toThrow("request mismatch");
   });
 
+  it("opens the exploration loop to a failure or edge case without widening the two-call adapt grant", async () => {
+    const fixture = setup();
+    fixture.exactBinding = true;
+
+    const exploreProvider = async () => {
+      const grant = await fixture.service.issue({ ...issueInput(), purpose: "explore_and_adapt" });
+      const resolved = await fixture.service.resolve({ ...resolveInput(grant.grantId), purpose: "explore_and_adapt" });
+      return { grant, provider: resolved.provider };
+    };
+
+    // The entry point that did not exist: a run that failed, or an existing
+    // Flow that met a case it was not built for, reaching the same loop.
+    const diagnosis = await exploreProvider();
+    expect(diagnosis.grant).toMatchObject({ purpose: "explore_and_adapt", settingsRevision: 7, maxCalls: 6, remainingUses: 6 });
+    await expect(diagnosis.provider.runTask(request())).resolves.toBeDefined();
+
+    // The loop's own task kind is no longer forbidden to this entry point. It
+    // still fails here, on the evidence-loop context this bare request has
+    // not got, which is the provider's check and not the grant table's.
+    const loop = await exploreProvider();
+    const loopOutcome = await loop.provider.runTask(evidenceRequest()).then(() => "allowed").catch((error: Error) => error.message);
+    expect(loopOutcome).not.toContain("request mismatch");
+
+    // Building a Flow from nothing is still build_and_adapt's alone.
+    const bootstrap = await exploreProvider();
+    await expect(bootstrap.provider.runTask({ ...request(), taskKind: "flow_bootstrap", expectedOutput: "flow_bootstrap" })).rejects.toThrow("request mismatch");
+
+    // The grant a person may already hold keeps exactly the meaning they gave
+    // it: two calls, and no exploration.
+    const narrow = await fixture.service.issue({ ...issueInput(), purpose: "diagnose_and_adapt" });
+    expect(narrow).toMatchObject({ maxCalls: 2 });
+    const narrowResolved = await fixture.service.resolve({ ...resolveInput(narrow.grantId), purpose: "diagnose_and_adapt" });
+    await expect(narrowResolved.provider.runTask(evidenceRequest())).rejects.toThrow("request mismatch");
+
+    // An exploration grant is bound to an exact Flow settings revision and to
+    // the same absolute call ceiling as every other grant.
+    fixture.exactBinding = false;
+    await expect(fixture.service.preflight({ ...issueInput(), purpose: "explore_and_adapt" })).rejects.toThrow("settings revision");
+    fixture.exactBinding = true;
+    await expect(fixture.service.preflight({ ...issueInput(), purpose: "explore_and_adapt", maxCalls: 9 })).rejects.toThrow("call limit");
+  });
+
   it("inspects an available revision-bound build grant without claiming or revealing it", async () => {
     const fixture = setup();
     fixture.exactBinding = true;
@@ -492,6 +534,17 @@ function setup() {
 
 function issueInput() {
   return { actorUserId: "user.one", actorSessionId: "session.one", keyId: "secret:key", projectId: "project.one", flowId: "flow.one", provider: "deepseek", model: "deepseek-chat" };
+}
+function evidenceRequest(): AutomationStudioLlmTaskRequest {
+  const base = request();
+  return {
+    ...base,
+    requestId: "request.evidence",
+    idempotencyKey: "request.evidence",
+    taskKind: "evidence_tool_decision",
+    expectedOutput: "evidence_tool_decision",
+    context: { ...base.context, taskKind: "evidence_tool_decision" }
+  };
 }
 function resolveInput(grantId: string) {
   return { grantId, actorUserId: "user.one", actorSessionId: "session.one", projectId: "project.one", flowId: "flow.one", purpose: "diagnosis_only" as const };

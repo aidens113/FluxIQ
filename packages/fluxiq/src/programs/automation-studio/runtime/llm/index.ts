@@ -13,4 +13,5 @@ export {
 } from "./deepseek-provider.ts";
 export * from "./execution-grants.ts";
 export * from "./evidence-loop.ts";
+export * from "./harness-options/index.ts";
 export * from "./run-budget.ts";

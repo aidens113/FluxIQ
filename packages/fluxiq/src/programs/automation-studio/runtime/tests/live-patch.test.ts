@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowDocument } from "../../model/index.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../executor.ts";
+import type { AutomationStudioNodeAttemptTrace, AutomationStudioTransitionComparison } from "../executor.ts";
 import { executeAutomationStudioRuntimePatch, preflightAutomationStudioRuntimePatch, proposeAutomationStudioRuntimeTargetOverride } from "../live-patch.ts";
 
 describe("Automation Studio live patch testing", () => {
@@ -61,7 +61,7 @@ describe("Automation Studio live patch testing", () => {
       runId: "run.failed",
       flow: flowFixture(),
       failedAttempt: failedAttempt(),
-      patch: { kind: "temporary_target_override", targetNodeId: "constant", target: { selector: "#submit" }, reason: "Use visible button." },
+      patch: { kind: "temporary_target_override", targetNodeId: "constant", target: { handles: { control: "submit" } }, reason: "Use visible button." },
       policy: repairPolicy({ requireApprovalForExternalSideEffects: true, allowExternalSideEffects: true })
     });
 
@@ -77,7 +77,7 @@ describe("Automation Studio live patch testing", () => {
       runId: "run.failed",
       flow: flowFixture(),
       failedAttempt: failedAttempt(),
-      patch: { kind: "temporary_target_override", targetNodeId: "constant", target: { selector: "#submit-current" }, reason: "Use the current target." },
+      patch: { kind: "temporary_target_override", targetNodeId: "constant", target: { handles: { control: "submit-current" } }, reason: "Use the current target." },
       policy: repairPolicy({ allowExternalSideEffects: false, requireApprovalForExternalSideEffects: true }),
       proposalMode: "manual",
       authorizedExternalSideEffects: false,
@@ -93,13 +93,19 @@ describe("Automation Studio live patch testing", () => {
       adaptation: {
         status: "proposed",
         riskLevel: "high",
-        patch: [{ kind: "edit_action_target", targetId: "constant", after: { selector: "#submit-current" }, metadata: { externalSideEffect: true } }],
+        patch: [{ kind: "edit_action_target", targetId: "constant", after: { handles: { control: "submit-current" } }, metadata: { externalSideEffect: true } }],
         metadata: { proposalOnly: true, executed: false, traceStatus: "not-run", retryOriginalAction: false }
       },
       changeProposal: { status: "pending", mode: "manual", riskLevel: "high" }
     });
     expect(result).not.toHaveProperty("trace");
     expect(nativeNodeExecutor).not.toHaveBeenCalled();
+    // Fix 2: the proposal declares itself not to have run, so it must carry no
+    // validation at all. The structural check it did perform is recorded
+    // separately, where nothing mistakes it for an executed validation.
+    expect(result.adaptation).not.toHaveProperty("validationResults");
+    expect(result.adaptation?.metadata).toMatchObject({ structuralChecks: [{ check: "target_resolution", status: "passed" }] });
+    expect(result.verification).toEqual({ status: "not_executed", reason: "proposal_only" });
   });
 
   it.each(["absent", "ambiguous"] as const)("rejects a target proposal that is %s in sanitized domain evidence", (status) => {
@@ -110,7 +116,7 @@ describe("Automation Studio live patch testing", () => {
       runId: "run.failed",
       flow: flowFixture(),
       failedAttempt: failedAttempt(),
-      patch: { kind: "temporary_target_override", targetNodeId: "constant", target: { selector: "#candidate" }, reason: "Use the observed target." },
+      patch: { kind: "temporary_target_override", targetNodeId: "constant", target: { handles: { control: "candidate" } }, reason: "Use the observed target." },
       policy: repairPolicy(),
       proposalMode: "manual",
       validateTargetOverrideEvidence: (target, failedAction) => {
@@ -128,7 +134,7 @@ describe("Automation Studio live patch testing", () => {
     expect(result).not.toHaveProperty("changeProposal");
     expect(result).not.toHaveProperty("trace");
     expect(validations).toEqual([{
-      target: { selector: "#candidate" },
+      target: { handles: { control: "candidate" } },
       failedAction: { nodeId: "constant", definitionId: "builtin.data.constant" }
     }]);
   });
@@ -140,22 +146,22 @@ describe("Automation Studio live patch testing", () => {
       runId: "run.failed",
       flow: flowFixture(),
       failedAttempt: failedAttempt(),
-      patch: { kind: "temporary_target_override", targetNodeId: "constant", target: { selector: "#wrong-control" }, reason: "Use compatible evidence." },
+      patch: { kind: "temporary_target_override", targetNodeId: "constant", target: { handles: { control: "wrong-control" } }, reason: "Use compatible evidence." },
       policy: repairPolicy(),
       proposalMode: "manual",
-      validateTargetOverrideEvidence: () => ({ status: "resolved", target: { selector: "#compatible-control" } }),
+      validateTargetOverrideEvidence: () => ({ status: "resolved", target: { handles: { control: "compatible-control" } } }),
       now: () => 14
     });
 
     expect(result).toMatchObject({
-      patch: { target: { selector: "#compatible-control" } },
+      patch: { target: { handles: { control: "compatible-control" } } },
       preflight: { ok: true },
       metadata: { targetResolution: "resolved" },
       adaptation: {
-        patch: [{ kind: "edit_action_target", after: { selector: "#compatible-control" } }],
+        patch: [{ kind: "edit_action_target", after: { handles: { control: "compatible-control" } } }],
         metadata: { targetResolution: "resolved" }
       },
-      changeProposal: { patches: [{ after: { selector: "#compatible-control" } }] }
+      changeProposal: { patches: [{ after: { handles: { control: "compatible-control" } } }] }
     });
     expect(result.adaptation?.metadata).not.toHaveProperty("resolvedTarget");
     expect(result.changeProposal?.metadata).not.toHaveProperty("resolvedTarget");
@@ -168,7 +174,7 @@ describe("Automation Studio live patch testing", () => {
       runId: "run.failed",
       flow: flowFixture(),
       failedAttempt: failedAttempt(),
-      patch: { kind: "temporary_target_override", targetNodeId: "end", target: { selector: "#compatible-control" }, reason: "Repair the failed action." },
+      patch: { kind: "temporary_target_override", targetNodeId: "end", target: { handles: { control: "compatible-control" } }, reason: "Repair the failed action." },
       policy: repairPolicy(),
       proposalMode: "manual",
       validateTargetOverrideEvidence: () => ({ status: "matched" }),
@@ -180,7 +186,7 @@ describe("Automation Studio live patch testing", () => {
       preflight: { ok: true },
       metadata: { targetNodeResolution: "resolved" },
       adaptation: {
-        patch: [{ kind: "edit_action_target", targetId: "constant", after: { selector: "#compatible-control" } }],
+        patch: [{ kind: "edit_action_target", targetId: "constant", after: { handles: { control: "compatible-control" } } }],
         metadata: { targetNodeResolution: "resolved" }
       },
       changeProposal: { patches: [{ targetId: "constant" }] }
@@ -188,29 +194,29 @@ describe("Automation Studio live patch testing", () => {
     expect(result.adaptation?.metadata).not.toHaveProperty("resolvedTargetNodeId");
   });
 
-  it("composes authoritative failed-node and domain selector resolution", () => {
+  it("composes authoritative failed-node and domain target resolution", () => {
     const result = proposeAutomationStudioRuntimeTargetOverride({
       projectId: "project.patch",
       flowId: "flow.patch",
       runId: "run.failed",
       flow: flowFixture(),
       failedAttempt: failedAttempt(),
-      patch: { kind: "temporary_target_override", targetNodeId: "end", target: { selector: "#wrong-control" }, reason: "Repair the failed action." },
+      patch: { kind: "temporary_target_override", targetNodeId: "end", target: { handles: { control: "wrong-control" } }, reason: "Repair the failed action." },
       policy: repairPolicy(),
       proposalMode: "manual",
-      validateTargetOverrideEvidence: () => ({ status: "resolved", target: { selector: "#compatible-control" } }),
+      validateTargetOverrideEvidence: () => ({ status: "resolved", target: { handles: { control: "compatible-control" } } }),
       now: () => 16
     });
 
     expect(result).toMatchObject({
-      patch: { targetNodeId: "constant", target: { selector: "#compatible-control" } },
+      patch: { targetNodeId: "constant", target: { handles: { control: "compatible-control" } } },
       preflight: { ok: true },
       metadata: { targetNodeResolution: "resolved", targetResolution: "resolved" },
       adaptation: {
-        patch: [{ kind: "edit_action_target", targetId: "constant", after: { selector: "#compatible-control" } }],
+        patch: [{ kind: "edit_action_target", targetId: "constant", after: { handles: { control: "compatible-control" } } }],
         metadata: { targetNodeResolution: "resolved", targetResolution: "resolved" }
       },
-      changeProposal: { patches: [{ targetId: "constant", after: { selector: "#compatible-control" } }] }
+      changeProposal: { patches: [{ targetId: "constant", after: { handles: { control: "compatible-control" } } }] }
     });
   });
 
@@ -221,7 +227,7 @@ describe("Automation Studio live patch testing", () => {
       runId: "run.failed",
       flow: flowFixture(),
       failedAttempt: { ...failedAttempt(), nodeId: "missing" },
-      patch: { kind: "temporary_target_override", targetNodeId: "end", target: { selector: "#candidate" }, reason: "Repair the failed action." },
+      patch: { kind: "temporary_target_override", targetNodeId: "end", target: { handles: { control: "candidate" } }, reason: "Repair the failed action." },
       policy: repairPolicy(),
       proposalMode: "manual",
       validateTargetOverrideEvidence: () => ({ status: "matched" })
@@ -239,10 +245,10 @@ describe("Automation Studio live patch testing", () => {
       runId: "run.failed",
       flow: flowFixture(),
       failedAttempt: failedAttempt(),
-      patch: { kind: "temporary_target_override", targetNodeId: "constant", target: { selector: "#candidate" }, reason: "Use compatible evidence." },
+      patch: { kind: "temporary_target_override", targetNodeId: "constant", target: { handles: { control: "candidate" } }, reason: "Use compatible evidence." },
       policy: repairPolicy(),
       proposalMode: "manual",
-      validateTargetOverrideEvidence: () => ({ status: "resolved", target: { selector: "" } } as any)
+      validateTargetOverrideEvidence: () => ({ status: "resolved", target: { handles: {} } } as any)
     });
 
     expect(result.preflight).toMatchObject({ ok: false, issues: ["Resolved target override is invalid."] });
@@ -257,7 +263,7 @@ describe("Automation Studio live patch testing", () => {
       runId: "run.failed",
       flow: flowFixture(),
       failedAttempt: failedAttempt(),
-      patch: { kind: "temporary_target_override", targetNodeId: "constant", target: { selector: "#submit" }, reason: "Use the current target." },
+      patch: { kind: "temporary_target_override", targetNodeId: "constant", target: { handles: { control: "submit" } }, reason: "Use the current target." },
       policy: repairPolicy({ allowModifyActionTargets: false }),
       proposalMode: "manual"
     });
@@ -303,7 +309,29 @@ describe("Automation Studio live patch testing", () => {
     expect(preflight.issues).toContain("Temporary reroutes are disabled by adaptation policy.");
   });
 
-  it("turns successful structural patches into adaptation and change proposal candidates", async () => {
+  // A declared expectation is now required before a rerun may be called a
+  // success: this case used to assert `validated` with nothing to compare.
+  it("turns structural patches whose declared route is observed into adaptation and change proposal candidates", async () => {
+    const result = await executeAutomationStudioRuntimePatch({
+      projectId: "project.patch",
+      flowId: "flow.patch",
+      runId: "run.failed",
+      flow: flowFixture(),
+      failedAttempt: failedAttempt(),
+      patch: { kind: "temporary_reroute", fromNodeId: "constant", toNodeId: "end", reason: "Route around broken confirmation." },
+      expectedComparison: { ...emptyComparison(), expected: { transitionId: "expected", nodeId: "end", definitionId: "builtin.control.end", expectedRoute: "end" } },
+      policy: repairPolicy({ allowModifyRouter: true }),
+      proposalMode: "manual",
+      now: () => 12
+    });
+
+    expect(result.verification).toEqual({ status: "verified", basis: "expected_route" });
+    expect(result.restoredExpectedState).toBe(true);
+    expect(result.adaptation).toMatchObject({ status: "validated", patch: [{ kind: "edit_router", targetId: "constant" }] });
+    expect(result.changeProposal).toMatchObject({ status: "pending", mode: "manual", patches: [{ kind: "edit_router" }] });
+  });
+
+  it("creates no change proposal for a structural patch whose rerun proved nothing", async () => {
     const result = await executeAutomationStudioRuntimePatch({
       projectId: "project.patch",
       flowId: "flow.patch",
@@ -313,12 +341,179 @@ describe("Automation Studio live patch testing", () => {
       patch: { kind: "temporary_reroute", fromNodeId: "constant", toNodeId: "end", reason: "Route around broken confirmation." },
       policy: repairPolicy({ allowModifyRouter: true }),
       proposalMode: "manual",
-      now: () => 12
+      now: () => 13
     });
 
+    expect(result.verification).toEqual({ status: "unverifiable", reason: "no_expectation_declared" });
+    expect(result.restoredExpectedState).toBe(false);
+    expect(result.adaptation?.status).toBe("testing");
+    expect(result.adaptation).not.toHaveProperty("validationResults");
+    expect(result).not.toHaveProperty("changeProposal");
+  });
+
+  // Fix 1: success was inferred from the absence of an expectation. Both vacuous
+  // paths are covered here — no comparison at all, and a comparison that
+  // declares nothing to compare — because closing only one leaves the defect.
+  it("records no validation when the failed attempt declared no expected state", async () => {
+    const result = await executeAutomationStudioRuntimePatch({
+      projectId: "project.patch",
+      flowId: "flow.patch",
+      runId: "run.failed",
+      flow: flowFixture(),
+      failedAttempt: failedAttempt(),
+      patch: { kind: "temporary_wait_retry", targetNodeId: "constant", retryCount: 1, reason: "Retry after state settles." },
+      policy: repairPolicy(),
+      now: () => 20
+    });
+
+    expect(result.trace?.status).toBe("succeeded");
+    expect(result.verification).toEqual({ status: "unverifiable", reason: "no_expectation_declared" });
+    expect(result.restoredExpectedState).toBe(false);
+    expect(result.retryOriginalAction).toBe(false);
+    expect(result.adaptation?.status).toBe("testing");
+    expect(result.adaptation).not.toHaveProperty("validationResults");
+    expect(result.adaptation?.metadata).toMatchObject({ verification: { status: "unverifiable", reason: "no_expectation_declared" } });
+  });
+
+  it("records no validation when the declared expectation contains nothing to compare", async () => {
+    const result = await executeAutomationStudioRuntimePatch({
+      projectId: "project.patch",
+      flowId: "flow.patch",
+      runId: "run.failed",
+      flow: flowFixture(),
+      failedAttempt: failedAttempt(),
+      patch: { kind: "temporary_wait_retry", targetNodeId: "constant", retryCount: 1, reason: "Retry after state settles." },
+      expectedComparison: emptyComparison(),
+      policy: repairPolicy(),
+      now: () => 21
+    });
+
+    expect(result.trace?.status).toBe("succeeded");
+    expect(result.verification).toEqual({ status: "unverifiable", reason: "expectation_empty" });
+    expect(result.restoredExpectedState).toBe(false);
+    expect(result.adaptation?.status).toBe("testing");
+    expect(result.adaptation).not.toHaveProperty("validationResults");
+  });
+
+  it("contradicts a rerun that succeeded without producing the declared expected route", async () => {
+    const result = await executeAutomationStudioRuntimePatch({
+      projectId: "project.patch",
+      flowId: "flow.patch",
+      runId: "run.failed",
+      flow: flowFixture(),
+      failedAttempt: failedAttempt(),
+      patch: { kind: "temporary_wait_retry", targetNodeId: "constant", retryCount: 1, reason: "Retry after state settles." },
+      expectedComparison: { ...emptyComparison(), expected: { transitionId: "expected", nodeId: "constant", definitionId: "builtin.data.constant", expectedRoute: "never-taken" } },
+      policy: repairPolicy(),
+      now: () => 22
+    });
+
+    expect(result.trace?.status).toBe("succeeded");
+    expect(result.verification?.status).toBe("contradicted");
+    expect(result.restoredExpectedState).toBe(false);
+    expect(result.adaptation).toMatchObject({ status: "rejected", validationResults: [{ status: "failed" }] });
+  });
+
+  it("verifies a rerun that produced the declared expected outputs", async () => {
+    const result = await executeAutomationStudioRuntimePatch({
+      projectId: "project.patch",
+      flowId: "flow.patch",
+      runId: "run.failed",
+      flow: flowFixture(),
+      failedAttempt: failedAttempt(),
+      patch: { kind: "temporary_wait_retry", targetNodeId: "constant", retryCount: 1, reason: "Retry after state settles." },
+      expectedComparison: { ...emptyComparison(), expected: { transitionId: "expected", nodeId: "constant", definitionId: "builtin.data.constant", expectedOutputs: { value: "ok" } } },
+      policy: repairPolicy(),
+      now: () => 23
+    });
+
+    expect(result.verification).toEqual({ status: "verified", basis: "expected_outputs" });
     expect(result.restoredExpectedState).toBe(true);
-    expect(result.adaptation).toMatchObject({ status: "validated", patch: [{ kind: "edit_router", targetId: "constant" }] });
-    expect(result.changeProposal).toMatchObject({ status: "pending", mode: "manual", patches: [{ kind: "edit_router" }] });
+    expect(result.adaptation).toMatchObject({ status: "validated", validationResults: [{ status: "succeeded" }] });
+  });
+
+  // Fix 5: the signature was read by `adaptationMatchesFailure` and written by
+  // nothing, so cross-node matching on failure class could never happen.
+  it("records the failure signature the adaptation was made for", async () => {
+    const executed = await executeAutomationStudioRuntimePatch({
+      projectId: "project.patch",
+      flowId: "flow.patch",
+      runId: "run.failed",
+      flow: flowFixture(),
+      failedAttempt: failedAttempt(),
+      patch: { kind: "temporary_wait_retry", targetNodeId: "constant", retryCount: 1, reason: "Retry after state settles." },
+      policy: repairPolicy(),
+      now: () => 26
+    });
+    const proposed = proposeAutomationStudioRuntimeTargetOverride({
+      projectId: "project.patch",
+      flowId: "flow.patch",
+      runId: "run.failed",
+      flow: flowFixture(),
+      failedAttempt: failedAttempt(),
+      patch: { kind: "temporary_target_override", targetNodeId: "constant", target: { handles: { control: "submit" } }, reason: "Use the current target." },
+      policy: repairPolicy(),
+      proposalMode: "manual",
+      now: () => 27
+    });
+
+    expect(executed.adaptation?.metadata?.failureSignature).toMatch(/^[0-9a-f]{24}$/);
+    // Same failure, so the same signature: that is what makes a later failure
+    // of this class find either adaptation.
+    expect(proposed.adaptation?.metadata?.failureSignature).toBe(executed.adaptation?.metadata?.failureSignature);
+  });
+
+  // Fix 3: these two kinds had no application branch, so the rerun executed the
+  // ORIGINAL flow and its success was recorded against a patch that was never
+  // applied. An unapplied kind must now never reach the graph at all.
+  it("never runs the graph for a temporary action sequence, which has no application branch", async () => {
+    const nativeNodeExecutor = vi.fn();
+    const flow = flowFixture();
+    const result = await executeAutomationStudioRuntimePatch({
+      projectId: "project.patch",
+      flowId: "flow.patch",
+      runId: "run.failed",
+      flow,
+      failedAttempt: failedAttempt(),
+      patch: { kind: "temporary_action_sequence", targetNodeId: "constant", actionDefinitionIds: ["builtin.action.click"], reason: "Insert the missing confirmation click." },
+      expectedComparison: { ...emptyComparison(), expected: { transitionId: "expected", nodeId: "constant", definitionId: "builtin.data.constant", expectedOutputs: { value: "ok" } } },
+      policy: repairPolicy({ allowExternalSideEffects: true, requireApprovalForExternalSideEffects: false }),
+      options: { nativeNodeExecutor },
+      now: () => 24
+    });
+
+    expect(result.preflight.ok).toBe(true);
+    expect(result.verification).toEqual({ status: "not_executed", reason: "unapplied_patch_kind:temporary_action_sequence" });
+    expect(result.restoredExpectedState).toBe(false);
+    expect(result.retryOriginalAction).toBe(false);
+    expect(result).not.toHaveProperty("trace");
+    expect(result).not.toHaveProperty("adaptation");
+    expect(result).not.toHaveProperty("changeProposal");
+    expect(nativeNodeExecutor).not.toHaveBeenCalled();
+  });
+
+  it("never runs the graph for a temporary recovery subflow call, which has no application branch", async () => {
+    const nativeNodeExecutor = vi.fn();
+    const result = await executeAutomationStudioRuntimePatch({
+      projectId: "project.patch",
+      flowId: "flow.patch",
+      runId: "run.failed",
+      flow: flowFixture(),
+      failedAttempt: failedAttempt(),
+      patch: { kind: "temporary_recovery_subflow_call", subflowId: "subflow.recovery", reason: "Hand the failure to the recovery subflow." },
+      expectedComparison: { ...emptyComparison(), expected: { transitionId: "expected", nodeId: "constant", definitionId: "builtin.data.constant", expectedOutputs: { value: "ok" } } },
+      policy: repairPolicy(),
+      options: { nativeNodeExecutor },
+      now: () => 25
+    });
+
+    expect(result.preflight.ok).toBe(true);
+    expect(result.verification).toEqual({ status: "not_executed", reason: "unapplied_patch_kind:temporary_recovery_subflow_call" });
+    expect(result.restoredExpectedState).toBe(false);
+    expect(result).not.toHaveProperty("trace");
+    expect(result).not.toHaveProperty("adaptation");
+    expect(result).not.toHaveProperty("changeProposal");
+    expect(nativeNodeExecutor).not.toHaveBeenCalled();
   });
 });
 
@@ -378,5 +573,19 @@ function repairPolicy(overrides: Partial<AutomationStudioAdaptationPolicy> = {})
     createdAt: 1,
     updatedAt: 1,
     ...overrides
+  };
+}
+
+// A comparison that declares neither an expected route nor expected outputs:
+// the second vacuous-true path, where `[].every()` reported success.
+function emptyComparison(): AutomationStudioTransitionComparison {
+  return {
+    comparisonId: "comparison.failed",
+    nodeId: "constant",
+    attemptId: "constant.attempt.1",
+    status: "missing_expected_state",
+    expected: { transitionId: "expected", nodeId: "constant", definitionId: "builtin.data.constant" },
+    actual: { transitionId: "actual", nodeId: "constant", definitionId: "builtin.data.constant", status: "failed", outputs: {}, effects: [], startedAt: 1 },
+    diffSummary: { missingOutputIds: [], unexpectedOutputIds: [], missingEffectTypes: [], unexpectedEffectTypes: [], routeMatched: false, statusMatched: false, stateCheckCount: 0 }
   };
 }

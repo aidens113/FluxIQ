@@ -725,7 +725,7 @@ describe("AutomationStudioService recording persistence", () => {
           runTask: async (request) => {
             requests.push(request);
             return { response: request.taskKind === "runtime_patch"
-              ? { kind: "runtime_patch", summary: "Use the observed replacement.", riskLevel: "high", patches: [{ kind: "temporary_target_override", targetNodeId: "divide", target: { selector: "#replacement" }, reason: "The target changed." }] }
+              ? { kind: "runtime_patch", summary: "Use the observed replacement.", riskLevel: "high", patches: [{ kind: "temporary_target_override", targetNodeId: "divide", target: { handles: { control: "replacement" } }, reason: "The target changed." }] }
               : { kind: "diagnosis", summary: "The target changed." }, usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12 } };
           }
         },
@@ -738,7 +738,7 @@ describe("AutomationStudioService recording persistence", () => {
         captureSanitizedFailureEvidence: async (input) => { captures.push(input); return evidence; },
         validateTargetOverrideEvidence: (captured, target, failedAction) => {
           targetValidations.push({ captured, target, failedAction });
-          return { status: "resolved", target: { selector: "#replacement-resolved" } };
+          return { status: "resolved", target: { handles: { control: "replacement-resolved" } } };
         }
       },
       reusableLlmContext: {
@@ -777,7 +777,7 @@ describe("AutomationStudioService recording persistence", () => {
     expect(requests[1].context.reusableContext).toEqual(requests[0].context.reusableContext);
     expect(targetValidations).toEqual([{
       captured: evidence,
-      target: { selector: "#replacement" },
+      target: { handles: { control: "replacement" } },
       failedAction: { nodeId: "divide", definitionId: "builtin.math.divide" }
     }]);
     expect(JSON.stringify(requests)).not.toContain("denominator");
@@ -793,7 +793,7 @@ describe("AutomationStudioService recording persistence", () => {
     const persistedSummary = (await service.listFlowRunSummaries({ projectId: project.id, flowId: flow.flowId, limit: 10, offset: 0 })).runs.find((summary) => summary.runId === run.runId);
     expect(persistedSummary?.adaptationCount).toBe(1);
     await expect(service.getFlowAdaptation(project.id, flow.flowId, detail!.adaptationIds[0]!)).resolves.toMatchObject({
-      patch: [{ kind: "edit_action_target", after: { selector: "#replacement-resolved" } }],
+      patch: [{ kind: "edit_action_target", after: { handles: { control: "replacement-resolved" } } }],
       metadata: { targetResolution: "resolved", reusableContext: { status: "hit", sourceRecordIds: ["context.runtime"] } }
     });
   });
@@ -855,7 +855,7 @@ describe("AutomationStudioService recording persistence", () => {
       llmProviderResolver: () => ({
         provider: { metadata: { provider: "mock", model: "absent-target" }, runTask: async (request) => ({
           response: request.taskKind === "runtime_patch"
-            ? { kind: "runtime_patch", summary: "Candidate.", riskLevel: "high", patches: [{ kind: "temporary_target_override", targetNodeId: "divide", target: { selector: "#missing" }, reason: "Try another target." }] }
+            ? { kind: "runtime_patch", summary: "Candidate.", riskLevel: "high", patches: [{ kind: "temporary_target_override", targetNodeId: "divide", target: { handles: { control: "missing" } }, reason: "Try another target." }] }
             : { kind: "diagnosis", summary: "Target drift." },
           usage: { inputTokens: 5, outputTokens: 3, totalTokens: 8 }
         }) },
@@ -1279,7 +1279,7 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   it("persists a canonical target override for manual review without executing it", async () => {
-    const target = { selector: "#submit-order" };
+    const target = { handles: { control: "submit-order" } };
     const taskKinds: string[] = [];
     const service = createService({
       dataDir: tempRoot,
@@ -1394,8 +1394,8 @@ describe("AutomationStudioService recording persistence", () => {
                 summary: "Two competing target proposals.",
                 riskLevel: "high",
                 patches: [
-                  { kind: "temporary_target_override", targetNodeId: "divide", target: { selector: "#first" }, reason: "First candidate." },
-                  { kind: "temporary_target_override", targetNodeId: "divide", target: { selector: "#second" }, reason: "Second candidate." }
+                  { kind: "temporary_target_override", targetNodeId: "divide", target: { handles: { control: "first" } }, reason: "First candidate." },
+                  { kind: "temporary_target_override", targetNodeId: "divide", target: { handles: { control: "second" } }, reason: "Second candidate." }
                 ]
               },
               usage: { inputTokens: 20, outputTokens: 10, totalTokens: 30, estimatedCostUsd: 0.004 }
@@ -1463,7 +1463,7 @@ describe("AutomationStudioService recording persistence", () => {
     await installPrimaryRouter(service, project.id, flow.flowId, {
         nodes: [
           { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
-          { id: "divide", definitionId: "builtin.math.divide", parameterValues: {} },
+          { id: "divide", definitionId: "builtin.math.divide", parameterValues: { expectedOutputs: { value: "ok" } } }, // The failed node declares what it was expected to produce; without that the rerun proves nothing and nothing is auto-applied.
           { id: "constant", definitionId: "builtin.data.constant", parameterValues: { value: "ok" } },
           { id: "end", definitionId: "builtin.control.end", parameterValues: { status: "success" } }
         ],
@@ -1561,7 +1561,7 @@ describe("AutomationStudioService recording persistence", () => {
     await installPrimaryRouter(service, project.id, flow.flowId, {
         nodes: [
           { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
-          { id: "drift", definitionId: "example.drift-action", parameterValues: {} },
+          { id: "drift", definitionId: "example.drift-action", parameterValues: { expectedOutputs: { done: true } } }, // The first attempt emits `error`; the patched rerun emits the declared `done`.
           { id: "end", definitionId: "builtin.control.end", parameterValues: { status: "success" } }
         ],
         edges: [

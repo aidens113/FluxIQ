@@ -158,7 +158,11 @@ export class AutomationStudioProjectAdaptationStore {
 
   async applyApprovedAdaptation(input: { adaptationId: string; actorId?: string; mutationId?: string; changedAt?: number; compile?: boolean }): Promise<AutomationStudioAppliedAdaptationResult> {
     const detail = await this.mustGetAdaptation(input.adaptationId);
-    const validated = (detail.adaptation.validationResults ?? []).some((result) => result.status === "succeeded") || detail.status === "validated";
+    // Only an executed validation or a named reviewer's approval counts. A
+    // `validated` status is a claim about the adaptation, not evidence that
+    // anything ran and was compared, or that anybody looked.
+    const validated = (detail.adaptation.validationResults ?? []).some((result) => result.status === "succeeded")
+      || await this.hasReviewerApproval(detail.adaptationId);
     const policy = this.decidePolicy({ approvalMode: detail.approvalMode, validated, action: input.actorId === "runtime" ? "auto_apply" : "apply" });
     if (!policy.ok) {
       await this.appendAuditEvent({ adaptationId: detail.adaptationId, eventType: "policy_blocked", actorId: input.actorId ?? null, fromStatus: detail.status, toStatus: detail.status, reason: policy.reason, detail: { policy }, createdAt: input.changedAt ?? Date.now() });
@@ -240,17 +244,31 @@ export class AutomationStudioProjectAdaptationStore {
     }
   }
 
-  async setAdaptationStatus(input: { adaptationId: string; status: AutomationStudioStoredAdaptationStatus; approvalMode?: AutomationStudioAdaptationApprovalMode; actorId?: string; reason?: string; changedAt?: number }): Promise<AutomationStudioStoredAdaptationDetail> {
+  async setAdaptationStatus(input: { adaptationId: string; status: AutomationStudioStoredAdaptationStatus; approvalMode?: AutomationStudioAdaptationApprovalMode; actorId?: string; reason?: string; metadata?: JsonObject; changedAt?: number }): Promise<AutomationStudioStoredAdaptationDetail> {
     const current = await this.mustGetAdaptation(input.adaptationId);
     const now = input.changedAt ?? Date.now();
     const status = normalizeAdaptationStatus(input.status);
-    const detail = adaptationStatusDetail(current.adaptation, status);
+    // A status change may carry durable evidence of who made it, so that later
+    // gates read a record rather than inferring one from the status.
+    const adaptation = input.metadata
+      ? { ...current.adaptation, metadata: { ...(current.adaptation.metadata ?? {}), ...input.metadata } }
+      : current.adaptation;
+    const detail = adaptationStatusDetail(adaptation, status);
     await this.lease.database.run(
       "update adaptations set status = ?, approval_mode = ?, status_detail_json = ?, status_reason = ?, reviewed_at_ms = ?, updated_at_ms = ? where adaptation_id = ?",
       [dbStatus(status), input.approvalMode ?? current.approvalMode, JSON.stringify(detail), input.reason ?? statusReasonFor(status), reviewedAtFor(status, now), now, input.adaptationId]
     );
     await this.appendAuditEvent({ adaptationId: input.adaptationId, eventType: auditEventForStatus(status), actorId: input.actorId ?? null, fromStatus: current.status, toStatus: status, reason: input.reason ?? statusReasonFor(status), detail: { approvalMode: input.approvalMode ?? current.approvalMode }, createdAt: now });
     return this.mustGetAdaptation(input.adaptationId);
+  }
+
+  /** Whether a named person, not the runtime, approved this adaptation. */
+  private async hasReviewerApproval(adaptationId: string): Promise<boolean> {
+    const row = await this.lease.database.get<{ event_id: string }>(
+      "select event_id from adaptation_audit_events where adaptation_id = ? and event_type = 'approved' and actor_id is not null and actor_id <> 'runtime' limit 1",
+      [requiredId(adaptationId, "adaptation")]
+    );
+    return row !== undefined;
   }
 
   async appendAuditEvent(input: { adaptationId: string; eventType: AutomationStudioAdaptationAuditEventType; actorId?: string | null; fromStatus?: AutomationStudioStoredAdaptationStatus | null; toStatus?: AutomationStudioStoredAdaptationStatus | null; reason?: string; detail?: JsonObject; createdAt?: number }): Promise<AutomationStudioAdaptationAuditEvent> {

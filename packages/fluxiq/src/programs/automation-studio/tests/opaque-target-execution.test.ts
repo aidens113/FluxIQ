@@ -24,13 +24,13 @@
 // test a contract it deliberately knows nothing about.
 
 import { describe, expect, it } from "vitest";
-import { executeAutomationStudioRuntimePatch } from "../runtime/live-patch.ts";
+import { executeAutomationStudioRuntimePatch } from "../runtime/index.ts";
 import { isAutomationStudioRuntimeTargetOverrideTarget } from "../runtime/llm/index.ts";
 import { normalizeAutomationStudioElementTarget, validateAutomationStudioElementTarget } from "../model/index.ts";
 import { createAutomationStudioElementMatcher } from "../fingerprinting/index.ts";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../model/index.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../runtime/executor.ts";
-import type { AutomationStudioHostRuntimeBoundary } from "../runtime/host-runtime.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../runtime/index.ts";
+import type { AutomationStudioHostRuntimeBoundary } from "../runtime/index.ts";
 
 /** What the web domain resolves a one-element repair to, verbatim. */
 const DOMAIN_RESOLVED_TARGET = {

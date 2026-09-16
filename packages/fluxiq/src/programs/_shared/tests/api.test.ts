@@ -5,7 +5,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { GlobalProgramApiRegistry } from "../api.ts";
 import type { IdentityAccessService } from "../../identity-access/index.ts";
-import type { Permission } from "../../identity-access/types.ts";
+import type { Permission } from "../../identity-access/index.ts";
 
 const actor = {
   sessionId: "session.one",

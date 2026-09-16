@@ -3,6 +3,7 @@ import type { AutomationStudioBootstrapAdaptation } from "../../flow-bootstrap/i
 import type { AutomationStudioAdaptationSummary } from "../indexes/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type {
+  AutomationStudioFlowAdaptation,
   AutomationStudioFlowInstruction,
   AutomationStudioFlowIntervention,
   AutomationStudioFlowRunActionAttemptRecord,
@@ -83,8 +84,13 @@ export function instructionSummaryFromInstruction(instruction: AutomationStudioF
   };
 }
 
-export function runtimeSessionToFlowRunDetail(session: AutomationStudioRuntimeSession, projectId: string): AutomationStudioFlowRunDetail {
-  const actionAttempts = runtimeActionAttemptsFromSession(session);
+/**
+ * `adaptations` are the Flow's known adaptations, which the classifier matches
+ * a failure against. Without them every match set is empty, so a repair the
+ * Flow already learned cannot be recognised on the next failure.
+ */
+export function runtimeSessionToFlowRunDetail(session: AutomationStudioRuntimeSession, projectId: string, adaptations?: AutomationStudioFlowAdaptation[]): AutomationStudioFlowRunDetail {
+  const actionAttempts = runtimeActionAttemptsFromSession(session, adaptations);
   const recoveryAttempts = runtimeRecoveryAttemptsFromSession(session);
   const interventions = runtimeInterventionsFromRecoveryAttempts(session, recoveryAttempts);
   const terminalFailureReason = runtimeTerminalFailureReason(session, recoveryAttempts);
@@ -134,7 +140,7 @@ function graphStatusToFlowRunStatus(status: string): AutomationStudioFlowRunActi
   return "unknown";
 }
 
-function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSession): AutomationStudioFlowRunActionAttemptRecord[] {
+function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSession, adaptations?: AutomationStudioFlowAdaptation[]): AutomationStudioFlowRunActionAttemptRecord[] {
   return (session.trace?.attempts ?? []).map((attempt, index) => {
     const durationMs = attempt.finishedAt === undefined ? undefined : Math.max(0, attempt.finishedAt - attempt.startedAt);
     // Session traces are read back from storage, so the record is parsed again.
@@ -144,7 +150,8 @@ function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSessio
         projectId: session.projectId ?? "",
         flowId: session.flowId,
         runId: session.runId,
-        attempt
+        attempt,
+        ...(adaptations?.length ? { adaptations } : {})
       }))
       : undefined;
     const recordCount = datasetMarkerRecordCount(attempt.outputs);

@@ -385,7 +385,16 @@ describe("Automation Studio live-patch reruns and run inputs", () => {
       // The rerun starts at `divide`, which divides the run's inputs: 6 / 3
       // succeeds, while `[withheld]` reads as 0 and fails the division.
       const detail = await service.getFlowRunDetail(project.id, run.runId);
-      expect(detail?.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({ kind: "temporary_wait_retry", traceStatus: "succeeded", restoredExpectedState: true })]);
+      // `traceStatus: "succeeded"` is what proves the rerun ran on the run's own
+      // inputs rather than on `[withheld]`. The rerun restores nothing here,
+      // because the failed attempt declared no expected state to compare it
+      // against, and that is now recorded instead of being read as success.
+      expect(detail?.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({
+        kind: "temporary_wait_retry",
+        traceStatus: "succeeded",
+        restoredExpectedState: false,
+        verification: { status: "unverifiable", reason: "no_expectation_declared" }
+      })]);
       const saved = await service.getRuntimeSession(project.id, run.runId);
       expect(saved?.trace?.attempts.find((attempt) => attempt.nodeId === "gate")).toMatchObject({ status: "failed", inputs: { left: AUTOMATION_STUDIO_WITHHELD_VALUE, right: AUTOMATION_STUDIO_WITHHELD_VALUE, note: AUTOMATION_STUDIO_WITHHELD_VALUE } });
       expect(await filesHolding(dataDir, LIVE_PATCH_NOTE)).toEqual([]);

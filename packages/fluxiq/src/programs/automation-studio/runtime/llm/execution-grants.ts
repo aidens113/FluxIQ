@@ -20,7 +20,23 @@ export const AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS = 8;
 const MAX_TOTAL_COST_USD = 2;
 export const AUTOMATION_STUDIO_LLM_HIGH_TOKEN_CONFIRMATION_THRESHOLD = 100_000;
 
-export type AutomationStudioLlmExecutionGrantPurpose = "diagnosis_only" | "diagnose_and_adapt" | "build_and_adapt";
+/**
+ * What a grant authorizes. These are entry points into one improvement loop,
+ * not separate systems: `build_and_adapt` is a person asking for a new Flow,
+ * `explore_and_adapt` is a run that failed or an existing Flow that met an edge
+ * case, and `diagnosis_only` and `diagnose_and_adapt` remain the narrower
+ * answers for a caller that wants a diagnosis and at most one patch.
+ *
+ * `explore_and_adapt` exists rather than `diagnose_and_adapt` being widened,
+ * because a person granting that one consented to exactly two provider calls
+ * and no exploration. Exploring is a larger thing to agree to, so it is a
+ * different thing to grant, and every grant already issued keeps its meaning.
+ */
+export type AutomationStudioLlmExecutionGrantPurpose = "diagnosis_only" | "diagnose_and_adapt" | "explore_and_adapt" | "build_and_adapt";
+
+/** Default provider calls for an exploration grant: enough iterations for the
+ * loop to gather evidence and propose, inside the absolute ceiling above. */
+const EXPLORE_DEFAULT_MAX_CALLS = 6;
 
 export type AutomationStudioLlmExecutionGrantResolvePolicy = {
   allowedTaskKinds?: readonly AutomationStudioLlmTaskKind[];
@@ -102,7 +118,7 @@ export class AutomationStudioLlmExecutionGrantService {
     const flowId = required(input.flowId);
     const purpose = executionGrantPurpose(input.purpose);
     const binding = executionBinding(await this.options.resolveExecutionDigest(projectId, flowId), purpose);
-    const maxCalls = input.maxCalls ?? (purpose === "diagnosis_only" ? 1 : purpose === "diagnose_and_adapt" ? 2 : 4);
+    const maxCalls = input.maxCalls ?? defaultMaxCalls(purpose);
     if (!Number.isInteger(maxCalls) || maxCalls <= 0 || maxCalls > AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_CALLS) throw new Error("LLM execution call limit is invalid.");
     if (purpose === "diagnosis_only" && maxCalls !== 1) throw new Error("diagnosis_only permits exactly one LLM call.");
     if (purpose === "diagnose_and_adapt" && maxCalls !== 2) throw new Error("diagnose_and_adapt permits exactly two LLM calls.");
@@ -476,8 +492,16 @@ function publicGrant(grant: StoredGrant): AutomationStudioLlmExecutionGrantMetad
 function executionGrantPurpose(value: unknown): AutomationStudioLlmExecutionGrantPurpose {
   if (value === undefined || value === "diagnosis_only") return "diagnosis_only";
   if (value === "diagnose_and_adapt") return "diagnose_and_adapt";
+  if (value === "explore_and_adapt") return "explore_and_adapt";
   if (value === "build_and_adapt") return "build_and_adapt";
   throw new Error("LLM execution grant purpose is unsupported.");
+}
+
+function defaultMaxCalls(purpose: AutomationStudioLlmExecutionGrantPurpose): number {
+  if (purpose === "diagnosis_only") return 1;
+  if (purpose === "diagnose_and_adapt") return 2;
+  if (purpose === "explore_and_adapt") return EXPLORE_DEFAULT_MAX_CALLS;
+  return 4;
 }
 
 function executionBinding(value: string | AutomationStudioLlmExecutionBinding, purpose: AutomationStudioLlmExecutionGrantPurpose): { executionDigest: string; settingsRevision?: number } {
@@ -500,6 +524,17 @@ function requestMatchesGrant(request: AutomationStudioLlmTaskRequest, grant: Sto
     case "diagnose_and_adapt":
       taskAllowed = (request.taskKind === "runtime_diagnosis" && request.expectedOutput === "diagnosis")
         || (request.taskKind === "runtime_patch" && request.expectedOutput === "runtime_patch");
+      break;
+    // The failure and edge-case entry points. Everything build_and_adapt may
+    // do except create a Flow from nothing: the same exploration loop, the
+    // same diagnosis, patch and proposal kinds, reached from a run that failed
+    // or a Flow that met a case it was not built for.
+    case "explore_and_adapt":
+      taskAllowed = (request.taskKind === "evidence_tool_decision" && request.expectedOutput === "evidence_tool_decision")
+        || (request.taskKind === "runtime_diagnosis" && request.expectedOutput === "diagnosis")
+        || (request.taskKind === "runtime_patch" && request.expectedOutput === "runtime_patch")
+        || (request.taskKind === "instruction_suggestion" && request.expectedOutput === "instruction_suggestion")
+        || (["router_patch", "subflow_patch", "expectation_action_target_patch", "change_proposal_generation"].includes(request.taskKind) && request.expectedOutput === "change_proposal");
       break;
     case "build_and_adapt":
       taskAllowed = (request.taskKind === "flow_bootstrap" && request.expectedOutput === "flow_bootstrap")

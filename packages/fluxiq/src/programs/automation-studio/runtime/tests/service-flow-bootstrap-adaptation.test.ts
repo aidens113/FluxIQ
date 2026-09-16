@@ -293,7 +293,7 @@ describe("AutomationStudioService Flow Bootstrap adaptations", () => {
       .resolves.toMatchObject({ total: 1, adaptations: [{ adaptationId: adaptation.adaptationId, status: "applied" }] });
   });
 
-  it("bridges a generated proposal ID through standard PIN-gated Adaptation Audit get, approve, and apply endpoints", async () => {
+  it("bridges a generated proposal ID through the standard Adaptation Audit get, approve, and apply endpoints", async () => {
     const provider = {
       metadata: { provider: "deepseek", model: "deepseek-chat" },
       runTask: vi.fn(async () => ({
@@ -380,7 +380,8 @@ describe("AutomationStudioService Flow Bootstrap adaptations", () => {
     expect(applied.payload.adaptation.metadata.bootstrap.currentExecutionDigest).toBe(applied.payload.adaptation.metadata.bootstrap.application.appliedExecutionDigest);
     expect(applied.payload.adaptation.metadata.phase9.auditEvents.map((event: any) => event.eventType)).toEqual(["created", "approved", "applied"]);
     expect(applied.payload.adaptation.metadata.bootstrap.currentExecutionDigest).not.toBe(binding.executionDigest);
-    expect(identityAccess.authorizeSessionPin).toHaveBeenCalledTimes(2);
+    // Reviewing an adaptation is authorship, not destruction, so no PIN is required (L16).
+    expect(identityAccess.authorizeSessionPin).not.toHaveBeenCalled();
     await expect(instance.getFlowRouter(project.id, flow.flowId)).resolves.toMatchObject({ fallback: { kind: "subflow" } });
     await expect(instance.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId, limit: 10, offset: 0 })).resolves.toMatchObject({ total: 1 });
     const runtime = await instance.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, adaptiveMode: "no_llm_intervention" });
@@ -411,7 +412,7 @@ describe("AutomationStudioService Flow Bootstrap adaptations", () => {
     expect(rejected.payload.adaptation.metadata.phase9.auditEvents.map((event: any) => event.eventType)).toEqual(["created", "rejected"]);
     expect(JSON.stringify(rejected.payload.adaptation.metadata.phase9)).not.toMatch(/secret|keyId|grant|session\./i);
     await expect(instance.getFlowRouter(project.id, rejectedFlow.flowId)).resolves.toBeNull();
-    expect(identityAccess.authorizeSessionPin).toHaveBeenCalledTimes(4);
+    expect(identityAccess.authorizeSessionPin).not.toHaveBeenCalled();
   });
   it("merges bootstrap and ordinary adaptations without duplicate Inbox persistence", async () => {
     const { instance, project, flow, adaptation } = await proposal();

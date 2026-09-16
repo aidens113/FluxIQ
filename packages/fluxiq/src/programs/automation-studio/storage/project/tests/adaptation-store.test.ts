@@ -213,6 +213,23 @@ describe("AutomationStudioProjectAdaptationStore", () => {
     await store.close();
   });
 
+  // Fix 2: a `validated` status is a claim; only an executed validation is
+  // evidence. The store used to accept the claim on its own.
+  it("refuses to apply an adaptation whose validated status rests on no executed validation", async () => {
+    const pool = createPool();
+    await seedFlow(pool, "project.adaptations", "flow.main");
+    const store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId: "project.adaptations" });
+    const claimed = adaptationFixture({ adaptationId: "adaptation.claimed", status: "validated", updatedAt: 20 });
+    delete claimed.validationResults;
+    await store.putAdaptation({ adaptation: claimed, changedAt: 20 });
+
+    await expect(store.applyApprovedAdaptation({ adaptationId: "adaptation.claimed", actorId: "reviewer", changedAt: 21, compile: false }))
+      .rejects.toThrow(/must pass validation/);
+    await expect(store.listAuditEvents({ adaptationId: "adaptation.claimed", limit: 10 }))
+      .resolves.toMatchObject({ events: expect.arrayContaining([expect.objectContaining({ eventType: "policy_blocked" })]) });
+    await store.close();
+  });
+
   function createPool(): AutomationStudioProjectDatabasePool {
     const pool = new AutomationStudioProjectDatabasePool({ rootDir });
     pools.push(pool);
