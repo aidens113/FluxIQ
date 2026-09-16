@@ -4,6 +4,7 @@ import type { AutomationStudioLlmTaskResult } from "../../llm/index.ts";
 import type { AutomationStudioRuntimeDeterministicDiagnosis } from "../deterministic-diagnosis.ts";
 import type { AutomationStudioRuntimeLlmInvocationDecision } from "../llm-invocation.ts";
 import { planAutomationStudioRuntimeRecovery } from "../plan.ts";
+import type { AutomationStudioRuntimeExploration } from "../runtime-exploration.ts";
 import { automationStudioRuntimeRecoveryTrace } from "../stages.ts";
 
 // The four stages as one run's outcome writes them. `providerCalled` is the
@@ -79,11 +80,36 @@ describe("automationStudioRuntimeRecoveryTrace", () => {
     expect(trace.stages[0]).toMatchObject({ stage: "diagnosis", status: "failed", providerCalled: false, reason: "LLM provider resolution failed." });
   });
 
-  it("says the exploration stage was asked for even though nothing runs it yet", () => {
+  it("says the exploration stage was asked for and nothing ran it", () => {
     const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult({ explorationNeeded: true }), policy: policy() });
     const trace = automationStudioRuntimeRecoveryTrace({ invocation: invocation({}), policy: policy(), plan, diagnosisOk: true, patchRequested: true });
 
-    expect(trace.stages[2]).toMatchObject({ stage: "exploration", status: "skipped", detail: { requested: true }, reason: expect.stringContaining("not built yet") });
+    expect(trace.stages[2]).toMatchObject({ stage: "exploration", status: "skipped", detail: { requested: true }, reason: expect.stringContaining("none was run") });
+    expect(trace.stages[2]?.loopStage).toBeUndefined();
+  });
+
+  // An exploration that ran and was stopped is not the same stage record as one
+  // that never ran, and both are different again from one that found something.
+  // A reader who cannot tell them apart is exactly the reader Phase 2.3 exists
+  // to stop producing.
+  it.each([
+    ["found something", "evidence_gathered", "exploration.completed", "completed"],
+    ["ran out of budget", "budget_exhausted", "action_limit", "failed"],
+    ["was refused", "unsafe_action_blocked", "destructive_action_refused", "refused"],
+    ["found nothing", "no_evidence_found", "exploration.completed", "completed"]
+  ])("records an exploration that %s as its own stage record", (_label, outcome, endedBy, status) => {
+    const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult({ explorationNeeded: true }), policy: policy() });
+    const trace = automationStudioRuntimeRecoveryTrace({
+      invocation: invocation({}),
+      policy: policy(),
+      plan,
+      diagnosisOk: true,
+      patchRequested: true,
+      exploration: exploration({ outcome, endedBy } as Partial<AutomationStudioRuntimeExploration>)
+    });
+
+    expect(trace.stages[2]).toMatchObject({ stage: "exploration", status, loopStage: "gather", detail: { requested: true, outcome, endedBy } });
+    expect(trace.refused).toEqual([]);
   });
 
   it("carries no model prose into the trace", () => {
@@ -112,6 +138,22 @@ describe("automationStudioRuntimeRecoveryTrace", () => {
     expect(automationStudioRuntimeRecoveryTrace({ policy: policy() }).refused).toEqual([]);
   });
 });
+
+function exploration(overrides: Partial<AutomationStudioRuntimeExploration>): AutomationStudioRuntimeExploration {
+  return {
+    schemaVersion: "automation-studio.exploration.v1",
+    outcome: "no_evidence_found",
+    reason: "The exploration finished without gathering any evidence it could answer from.",
+    endedBy: "exploration.completed",
+    actions: 1,
+    observedActions: 0,
+    refusedActions: 0,
+    accounting: { iterations: 2, toolCalls: 1, evidenceBytes: 40, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },
+    trace: [],
+    durationMs: 12,
+    ...overrides
+  };
+}
 
 function invocation(overrides: Partial<AutomationStudioRuntimeLlmInvocationDecision>): AutomationStudioRuntimeLlmInvocationDecision {
   return {

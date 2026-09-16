@@ -6,29 +6,24 @@
 // annotated from the deterministic early return and a run annotated after a
 // full patch attempt cannot describe themselves in two different ways.
 //
-// Only two of the four stages carry a Core loop stage today, and that is a
-// statement rather than an omission. `diagnosis` drives `gather` and
-// `recovery_plan` drives `plan`; `exploration` has no runtime loop to drive yet
-// (Phase 2.3) and `resolution` drives `implement` only when a patch call was
-// actually made. Naming a protocol stage for work that did not happen would put
-// a claim in the record that no call backs up.
+// Three of the four stages carry a Core loop stage, and which three is a
+// statement rather than an omission. `diagnosis` drives `gather`,
+// `recovery_plan` drives `plan`, and `exploration` drives `gather` again but
+// only when an exploration actually ran; `resolution` drives `implement` only
+// when a patch call was actually made. Naming a protocol stage for work that
+// did not happen would put a claim in the record that no call backs up.
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioAdaptationPolicy } from "../../model/index.ts";
 import type { AutomationStudioRuntimeLlmInvocationDecision } from "./llm-invocation.ts";
 import { planAutomationStudioRuntimeRecovery, type AutomationStudioRuntimeRecoveryPlan } from "./plan.ts";
+import { automationStudioExplorationTraceEvent, type AutomationStudioRuntimeExploration } from "./runtime-exploration.ts";
 import {
+  AUTOMATION_STUDIO_RECOVERY_LOOP_STAGES,
   buildAutomationStudioRecoveryTrace,
   type AutomationStudioRecoveryTrace,
   type AutomationStudioRecoveryTraceEvent
 } from "./trace.ts";
-
-/** Which loop-protocol stage each recovery stage drives, where one is driven. */
-export const AUTOMATION_STUDIO_RECOVERY_LOOP_STAGES = Object.freeze({
-  diagnosis: "gather",
-  recovery_plan: "plan",
-  resolution: "implement"
-} as const);
 
 export type AutomationStudioRuntimeRecoveryTraceInput = {
   /** The gate's decision, carrying Stage A's diagnosis. Absent before the gate ran. */
@@ -40,6 +35,8 @@ export type AutomationStudioRuntimeRecoveryTraceInput = {
   diagnosisFailure?: string;
   /** Whether the diagnosis call returned a usable diagnosis. Absent means no call. */
   diagnosisOk?: boolean;
+  /** The exploration that ran, when one did. Absent means none was run. */
+  exploration?: AutomationStudioRuntimeExploration;
   /** Whether a patch call was made. The receipt for the `implement` stage. */
   patchRequested?: boolean;
   patchAttemptCount?: number;
@@ -54,7 +51,7 @@ export function automationStudioRuntimeRecoveryTrace(input: AutomationStudioRunt
   return buildAutomationStudioRecoveryTrace([
     diagnosisEvent(input, plan),
     recoveryPlanEvent(plan),
-    explorationEvent(plan),
+    automationStudioExplorationTraceEvent({ requested: plan.explorationRequested, ...(input.exploration ? { exploration: input.exploration } : {}) }),
     resolutionEvent(input, plan)
   ]);
 }
@@ -111,18 +108,6 @@ function recoveryPlanEvent(plan: AutomationStudioRuntimeRecoveryPlan): Automatio
       patchRequested: plan.patchRequest.request,
       ...(plan.patchRequest.request ? {} : { patchSkipped: plan.patchRequest.reason })
     }
-  };
-}
-
-function explorationEvent(plan: AutomationStudioRuntimeRecoveryPlan): AutomationStudioRecoveryTraceEvent {
-  return {
-    stage: "exploration",
-    status: "skipped",
-    providerCalled: false,
-    reason: plan.explorationRequested
-      ? "The plan asked for exploration; the runtime exploration loop is not built yet."
-      : "The plan did not call for exploration.",
-    detail: { requested: plan.explorationRequested }
   };
 }
 

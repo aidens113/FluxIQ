@@ -47,6 +47,21 @@ export const AUTOMATION_STUDIO_RECOVERY_TRACE_STAGES = Object.freeze([
 export type AutomationStudioRecoveryTraceStage = (typeof AUTOMATION_STUDIO_RECOVERY_TRACE_STAGES)[number];
 
 /**
+ * Which loop-protocol stage each recovery stage drives, where one is driven.
+ *
+ * It lives beside the vocabulary rather than beside the assembler because two
+ * files now write the mapping -- the stage assembler and the exploration runner
+ * -- and a second copy is how a run comes to claim it drove `gather` from one
+ * place and `plan` from another for the same work.
+ */
+export const AUTOMATION_STUDIO_RECOVERY_LOOP_STAGES = Object.freeze({
+  diagnosis: "gather",
+  recovery_plan: "plan",
+  exploration: "gather",
+  resolution: "implement"
+} as const satisfies Partial<Record<AutomationStudioRecoveryTraceStage, AutomationStudioLoopStage>>);
+
+/**
  * How a stage ended.
  *
  * `completed` means the stage ran and produced its answer, not that the answer
