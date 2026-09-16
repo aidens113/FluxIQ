@@ -76,11 +76,16 @@ later node could wire to. Both `k6b` defects were **reproduced red before being
 fixed**, and `k7b` confirmed its gap by watching a For Each wired to the missing
 port run "failed".
 
-**Three findings still open, each needing an owner:**
-1. A value **lifted out of** a dataset row still writes its text to the saved
-   trace. Identity markers protect a row passed along whole; they cannot protect
-   one taken apart. This needs a decision beside CD14 about what "excluded"
-   promises, so it goes to the user's review rather than being settled here.
+**Three findings: one now decided, two still needing an owner:**
+1. **Decided by the user on 2026-09-15 — no longer a question, now a defect to
+   fix.** A value **lifted out of** a dataset row still writes its text to the
+   saved trace. The user's rule is *"absent means absent — not recorded at
+   all"*: an excluded column must appear in **no durable record FluxIQ writes**,
+   the saved run trace included, whether the row is passed along whole or taken
+   apart. Identity markers cover only the whole-row case, so the lifted-value
+   path must be closed rather than documented as a limit. A value may still be
+   used in memory during a run; it may not be persisted. This sits beside CD14,
+   and the downstream plan's D12 carries the full wording.
 2. The JSON walk is duplicated: the real cause sat in `AS/nodes/shared/`, which
    `k6b`'s brief did not own, so it added a parallel copy. Two copies will
    drift, and the next node to copy a row will reintroduce the leak.
