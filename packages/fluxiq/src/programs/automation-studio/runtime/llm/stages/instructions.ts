@@ -61,12 +61,17 @@ export function automationStudioLoopProtocolInstruction(stage: AutomationStudioL
  * stage genuinely means something else, and adds beside them when it means the
  * same thing with more detail.
  *
- * "gather" reuses the evidence loop's own decision policy verbatim rather than
- * paraphrasing it, so there is exactly one copy of that text in the codebase
- * and a provider and a stage can never drift apart on what exploration means.
+ * "gather" used to be the evidence loop's decision policy verbatim. That text
+ * is about choosing between offered tools -- which one to call, when not to
+ * call one, when to stop -- and the first production caller of the protocol is
+ * a runtime diagnosis, which is offered no tools at all. So every diagnosis was
+ * told how to use tools it did not have, and referred to a decision schema that
+ * was not in its request. The stage's own meaning is what stays here; the tool
+ * policy moved to AUTOMATION_STUDIO_CORE_LOOP_EVIDENCE_TOOL_POLICY_INSTRUCTION
+ * below, which is added only to a request that actually carries tools.
  */
 export const AUTOMATION_STUDIO_CORE_LOOP_STAGE_INSTRUCTIONS: Readonly<Record<AutomationStudioLoopStage, AutomationStudioResolvedInstruction>> = Object.freeze({
-  gather: coreStageInstruction("gather", "Gather information and explore", AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION),
+  gather: coreStageInstruction("gather", "Gather what is known before deciding", "Find out what is actually true before deciding anything. Prefer observing over changing. Gather only what the result you were asked for depends on, and stop as soon as what you have is enough to produce it. Where something could not be found out, say so and say what would settle it, rather than assuming a value and carrying it forward. An assumption reported as a finding is worse than a gap reported as a gap."),
   plan: coreStageInstruction("plan", "Plan before changing anything", "State what you intend to change and why, as an ordered list of steps. For each step name the change and the gathered evidence that says it will have the intended effect. Change nothing at this stage. Where the evidence does not support a step, say so and plan to gather more rather than guessing. Where it supports no step at all, say that plainly instead of proposing one."),
   implement: coreStageInstruction("implement", "Implement the plan you stated", "Carry out the plan you just stated, in the order you stated it, and produce only the structured result the schema asks for. Make the smallest change that achieves the step. Use only capabilities that were offered to you; never assume one that was not. Do not repair something the plan did not name, and do not carry out a later step early."),
   iterate: coreStageInstruction("iterate", "Iterate on what the evidence shows", "Compare what happened with what the plan expected. Where they differ, revise the plan or the step rather than repeating the same attempt unchanged, and say what the difference taught you. Where they agree, move on. Stop iterating when further attempts stop changing the evidence, and report that you stopped and why rather than continuing to try."),
@@ -84,3 +89,28 @@ function coreStageInstruction(stage: AutomationStudioLoopStage, title: string, b
     tags: ["generation"]
   };
 }
+
+/**
+ * How to use tools, for a request that was offered some.
+ *
+ * This is Core's own evidence loop being described -- its decision schema, its
+ * completion variant, its {ok:false,code} result shape -- so it is mechanism
+ * rather than stage meaning, and it carries a reserved `core.loop-stage.` id
+ * that no registration can address. A domain that replaces "gather" replaces
+ * what gathering means for its medium; it does not get to rewrite how Core's
+ * loop is answered.
+ *
+ * It sits between the ordering statement and the stage's own instructions, and
+ * carries the text by reference rather than by copy, so there is exactly one
+ * copy of it in the codebase and the provider and the protocol cannot drift
+ * apart on what exploration means.
+ */
+export const AUTOMATION_STUDIO_CORE_LOOP_EVIDENCE_TOOL_POLICY_INSTRUCTION: Readonly<AutomationStudioResolvedInstruction> = Object.freeze({
+  instructionId: `${AUTOMATION_STUDIO_CORE_LOOP_STAGE_INSTRUCTION_ID_PREFIX}gather.tool-policy`,
+  scopeKind: AUTOMATION_STUDIO_LOOP_STAGE_SCOPE_KIND,
+  title: "Using the tools you were offered",
+  body: AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION,
+  priority: 950,
+  requirement: "required",
+  tags: ["safety"]
+});

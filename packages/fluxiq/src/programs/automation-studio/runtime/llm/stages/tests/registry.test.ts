@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { createAutomationStudioDeepSeekProvider } from "../../deepseek-provider.ts";
-import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../../evidence-loop.ts";
+import {
+  AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION,
+  buildAutomationStudioLlmEvidenceLoopDecisionSchema
+} from "../../evidence-loop.ts";
 import { runAutomationStudioLlmHarness } from "../../harness.ts";
 import {
+  AUTOMATION_STUDIO_CORE_LOOP_EVIDENCE_TOOL_POLICY_INSTRUCTION,
   AUTOMATION_STUDIO_CORE_LOOP_STAGE_INSTRUCTIONS,
   AUTOMATION_STUDIO_LOOP_PROTOCOL_INSTRUCTION_ID
 } from "../instructions.ts";
@@ -103,6 +107,12 @@ describe("Automation Studio loop stage instructions", () => {
 
     const resolved = automationStudioLoopStageInstructions("gather", registry);
     expect(resolved.map((instruction) => instruction.instructionId)).toEqual([AUTOMATION_STUDIO_LOOP_PROTOCOL_INSTRUCTION_ID, "erp.gather"]);
+    // With tools in the request the resolution also carries Core's tool policy,
+    // and a replacement does not remove it: that text describes how Core's own
+    // evidence loop is answered, which is mechanism rather than what gathering
+    // means for a medium, and it carries a reserved id for exactly that reason.
+    expect(automationStudioLoopStageInstructions("gather", registry, { toolsOffered: true }).map((instruction) => instruction.instructionId))
+      .toEqual([AUTOMATION_STUDIO_LOOP_PROTOCOL_INSTRUCTION_ID, "core.loop-stage.gather.tool-policy", "erp.gather"]);
     expect(registry.replacementFor("gather")).toBe("erp.gather");
     // Wholly: none of Core's words for this stage survive the replacement.
     expect(resolved.map((instruction) => instruction.body).join(" ")).not.toContain(AUTOMATION_STUDIO_CORE_LOOP_STAGE_INSTRUCTIONS.gather.body);
@@ -114,7 +124,7 @@ describe("Automation Studio loop stage instructions", () => {
     const instructions = (user.context as { instructions: { instructions: Array<{ instructionId: string; body: string }> } }).instructions.instructions;
     expect(instructions[0]?.instructionId).toBe(AUTOMATION_STUDIO_LOOP_PROTOCOL_INSTRUCTION_ID);
     expect(instructions[0]?.body).toContain("1. gather 2. plan 3. implement 4. iterate 5. verify");
-    expect(instructions.map((instruction) => instruction.instructionId)).toEqual([AUTOMATION_STUDIO_LOOP_PROTOCOL_INSTRUCTION_ID, "erp.gather"]);
+    expect(instructions.map((instruction) => instruction.instructionId)).toEqual([AUTOMATION_STUDIO_LOOP_PROTOCOL_INSTRUCTION_ID, "core.loop-stage.gather.tool-policy", "erp.gather"]);
     expect((user.context as { stage?: string }).stage).toBe("gather");
 
     // The whole point of replacing: Core's exploration prose is gone. It used
@@ -147,7 +157,49 @@ describe("Automation Studio loop stage instructions", () => {
     expect(unstaged.request.promptVersion).toBe("automation-studio.evidence-tool-decision.v1");
     await provider.runTask(unstaged.request);
     const system = (JSON.parse(outbound) as { messages: Array<{ role: string; content: string }> }).messages.find((message) => message.role === "system")!.content;
-    expect(system).toContain(AUTOMATION_STUDIO_CORE_LOOP_STAGE_INSTRUCTIONS.gather.body);
+    // The policy, not the stage. Core's "gather" instruction says what gathering
+    // is; the exploration policy the provider adds to an unstaged call says how
+    // to use the tools. They were one string until a runtime diagnosis -- which
+    // is offered no tools at all -- started being staged as "gather".
+    expect(system).toContain(AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION);
+  });
+
+  it("tells a gathering call how to use tools only when it was offered some", async () => {
+    // The defect this closes: Core's "gather" instruction was the evidence
+    // loop's tool policy verbatim, and Phase 2.2 made every runtime diagnosis a
+    // staged "gather". A runtime diagnosis carries no tools, so every one of
+    // them was told which tool to choose, not to repeat a toolId, and to
+    // evaluate the decision schema's complete variant -- against a request with
+    // no tools and no decision schema in it.
+    const withTools = await gatherRequest();
+    expect(withTools.context.instructions.instructionIds).toEqual([
+      AUTOMATION_STUDIO_LOOP_PROTOCOL_INSTRUCTION_ID,
+      "core.loop-stage.gather.tool-policy",
+      "core.loop-stage.gather"
+    ]);
+    expect(withTools.context.instructions.instructions[1]?.body).toBe(AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION);
+
+    const diagnosis = await runAutomationStudioLlmHarness({
+      taskKind: "runtime_diagnosis",
+      stage: "gather",
+      projectId: "project.one",
+      flowId: "flow.one",
+      instructions: [],
+      provider: {
+        metadata: { provider: "mock", model: "stage" },
+        runTask: async () => ({ response: { kind: "diagnosis" as const, summary: "The expected result never arrived." } })
+      }
+    });
+    expect(diagnosis.ok).toBe(true);
+    expect(diagnosis.request.context.instructions.instructionIds).toEqual([
+      AUTOMATION_STUDIO_LOOP_PROTOCOL_INSTRUCTION_ID,
+      "core.loop-stage.gather"
+    ]);
+    // And Core's own gather text no longer describes tools at all, so nothing
+    // puts the policy back in through the stage instruction.
+    const gatherText = `${AUTOMATION_STUDIO_CORE_LOOP_STAGE_INSTRUCTIONS.gather.title} ${AUTOMATION_STUDIO_CORE_LOOP_STAGE_INSTRUCTIONS.gather.body}`.toLowerCase();
+    for (const word of ["tool", "schema", "toolid", "complete variant", "mutating"]) expect(gatherText).not.toContain(word);
+    expect(gatherText.length).toBeGreaterThan(200);
   });
 
   it("refuses every attempt to state an order of its own, by name", () => {
@@ -202,6 +254,7 @@ describe("Automation Studio loop stage instructions", () => {
     // the same loop for a domain with no page in it.
     const core = [
       ...Object.values(AUTOMATION_STUDIO_CORE_LOOP_STAGE_INSTRUCTIONS).map((instruction) => `${instruction.title} ${instruction.body}`),
+      `${AUTOMATION_STUDIO_CORE_LOOP_EVIDENCE_TOOL_POLICY_INSTRUCTION.title} ${AUTOMATION_STUDIO_CORE_LOOP_EVIDENCE_TOOL_POLICY_INSTRUCTION.body}`,
       ...AUTOMATION_STUDIO_LOOP_STAGES.map((stage) => automationStudioLoopStageInstructions(stage)[0]!.body)
     ].join("\n").toLowerCase();
     for (const noun of ["selector", "xpath", "dom", "browser", "page", "tab", "url", "html", "css", "click", "viewport", "cookie"]) {

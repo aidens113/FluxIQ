@@ -6,6 +6,7 @@ import type {
   AutomationStudioFlowRunDetail,
   AutomationStudioFlowSubflow
 } from "../../../model/index.ts";
+import type { AutomationStudioRuntimeRecoveryContext } from "../../recovery/index.ts";
 import type { AutomationStudioReusableLlmContextPacket } from "../../reusable-llm-context.ts";
 import type { AutomationStudioLlmRunBudgetLedger } from "../run-budget.ts";
 import type { AutomationStudioLoopStage, AutomationStudioLoopStageInstructionRegistry } from "../stages/index.ts";
@@ -64,6 +65,9 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
   runId?: string;
   runDetail?: AutomationStudioFlowRunDetail;
   failureEvidence?: JsonObject;
+  /** The standardized recovery context for this failure, already built and
+   * budgeted by the caller. It reaches the packet only for a runtime task. */
+  recoveryContext?: AutomationStudioRuntimeRecoveryContext;
   stateDiffs?: JsonValue[];
   routeHistory?: JsonValue[];
   relevantRuns?: JsonObject[];

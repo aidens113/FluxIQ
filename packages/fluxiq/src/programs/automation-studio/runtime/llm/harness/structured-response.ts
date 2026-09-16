@@ -6,10 +6,52 @@ import { isJsonValue, isRecord } from "./json-bounds.ts";
 export type AutomationStudioLlmStructuredResponse =
   | { kind: "flow_bootstrap"; summary: string; plan: AutomationStudioFlowBootstrapPlan; metadata?: JsonObject }
   | { kind: "evidence_tool_decision"; summary: string; decision: { kind: "tool_call"; callId: string; toolId: string; input: JsonObject } | { kind: "complete"; result: JsonObject }; metadata?: JsonObject }
-  | { kind: "diagnosis"; summary: string; confidence?: number; metadata?: JsonObject }
+  | { kind: "diagnosis"; summary: string; confidence?: number; diagnosis?: AutomationStudioLlmDiagnosisFields; metadata?: JsonObject }
   | { kind: "runtime_patch"; summary: string; patches: AutomationStudioRuntimePatch[]; riskLevel: "low" | "medium" | "high" | "destructive"; metadata?: JsonObject }
   | { kind: "change_proposal"; summary: string; patches: AutomationStudioChangeProposalPatch[]; riskLevel: "low" | "medium" | "high" | "destructive"; metadata?: JsonObject }
   | { kind: "instruction_suggestion"; summary: string; instructions: Array<{ title: string; body: string; scope?: JsonObject; tags?: string[] }>; metadata?: JsonObject };
+
+/**
+ * The one channel through which a model may contribute to a diagnosis.
+ *
+ * Every response's `metadata` is stripped on the way in, deliberately: it is an
+ * open field and an open field is a way to smuggle arbitrary JSON past the
+ * recognized-field allowlist. That left no channel at all, so the structured
+ * diagnosis the runtime builds was entirely Core's own verdicts and the model's
+ * answer was a sentence of prose nobody could act on.
+ *
+ * This is the narrow replacement: a named field, with a fixed set of keys, each
+ * bounded to a value Core can check without knowing anything about the medium
+ * the failure happened in. It is a channel, not an opening -- `metadata` is
+ * still stripped, and an unrecognized key inside `diagnosis` is still refused.
+ */
+export type AutomationStudioLlmDiagnosisFields = {
+  /** What the run was supposed to achieve, in the model's words. */
+  expected?: string;
+  /** What it observed instead. */
+  observed?: string;
+  /** What the model thinks changed between the two. */
+  changed?: string;
+  /** Whether the goal is still reachable. Core refuses an answer here that would talk it past a control a person must clear. */
+  stillAchievable?: "yes" | "no" | "unknown";
+  /** Whether a deterministic recovery Core already holds would serve. */
+  deterministicRecoveryPossible?: "yes" | "no" | "unknown";
+  /** Whether more evidence is needed before anything is changed. */
+  explorationNeeded?: boolean;
+  /** Whether a change to the Flow is needed at all. The one field that can stop the patch call. */
+  patchNeeded?: boolean;
+};
+
+/**
+ * The bound on each description the model may supply.
+ *
+ * It is the same 500 characters the runtime's reader holds the field to, stated
+ * here as well because the two checks answer different questions: this one
+ * refuses the response at the boundary, and the reader's records a refusal on
+ * the run. A reader that is the only bound would accept an oversized field into
+ * the process first.
+ */
+export const AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH = 500;
 
 /**
  * The vocabulary an opaque handle may use, and nothing wider.
@@ -102,7 +144,10 @@ function serializedLength(value: unknown): number {
 export function stripAutomationStudioLlmResponseMetadata(response: AutomationStudioLlmStructuredResponse): AutomationStudioLlmStructuredResponse {
   if (response.kind === "flow_bootstrap") return { kind: response.kind, summary: response.summary, plan: response.plan };
   if (response.kind === "evidence_tool_decision") return { kind: response.kind, summary: response.summary, decision: response.decision };
-  if (response.kind === "diagnosis") return { kind: response.kind, summary: response.summary, ...(response.confidence !== undefined ? { confidence: response.confidence } : {}) };
+  // `diagnosis` is carried and `metadata` is not. The strip stays a named-field
+  // allowlist rather than becoming "keep what the model sent": every key inside
+  // `diagnosis` was checked by name at the boundary, and `metadata` was not.
+  if (response.kind === "diagnosis") return { kind: response.kind, summary: response.summary, ...(response.confidence !== undefined ? { confidence: response.confidence } : {}), ...(response.diagnosis !== undefined ? { diagnosis: response.diagnosis } : {}) };
   if (response.kind === "runtime_patch") {
     return {
       kind: response.kind,

@@ -4,6 +4,7 @@ import { isBoundedString, isFiniteNumber, isJsonObject, isJsonValue, isRecord, v
 import { validateAutomationStudioLlmOutput } from "./output-validation.ts";
 import type { AutomationStudioLlmUsageSummary } from "./provider.ts";
 import {
+  AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH,
   isAutomationStudioModelAuthoredTargetOverrideTarget,
   stripAutomationStudioLlmResponseMetadata,
   type AutomationStudioLlmStructuredResponse
@@ -56,7 +57,7 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
     : kind === "evidence_tool_decision"
       ? [...commonFields, "decision"]
     : kind === "diagnosis"
-      ? [...commonFields, "confidence"]
+      ? [...commonFields, "confidence", "diagnosis"]
     : kind === "instruction_suggestion"
       ? [...commonFields, "instructions"]
       : [...commonFields, "patches", "riskLevel"], "response", diagnostics);
@@ -69,6 +70,7 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
     validateUnknownEvidenceToolDecision(value.decision, diagnostics);
   } else if (kind === "diagnosis") {
     if (value.confidence !== undefined && (!isFiniteNumber(value.confidence) || value.confidence < 0 || value.confidence > 1)) diagnostics.push({ severity: "error", code: "llm_output.invalid_confidence", message: "Diagnosis confidence must be between 0 and 1.", path: "response.confidence" });
+    validateUnknownDiagnosisFields(value.diagnosis, diagnostics);
   } else if (kind === "runtime_patch") {
     if (!Array.isArray(value.patches)) diagnostics.push({ severity: "error", code: "llm_output.invalid_patches", message: "Runtime patches must be an array.", path: "response.patches" });
     else {
@@ -91,6 +93,40 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
     }
   }
   return diagnostics.some((diagnostic) => diagnostic.severity === "error") ? undefined : value as unknown as AutomationStudioLlmStructuredResponse;
+}
+
+/**
+ * The model's contribution to a diagnosis, checked key by key.
+ *
+ * Every key is named, every description is bounded, and every verdict is one of
+ * three words. That is what makes this a channel rather than the `metadata`
+ * opening it replaces: a field Core cannot check is not carried, so nothing
+ * arbitrary can ride in beside the answer.
+ */
+function validateUnknownDiagnosisFields(value: unknown, diagnostics: AutomationStudioLlmDiagnostic[]): void {
+  if (value === undefined) return;
+  const path = "response.diagnosis";
+  if (!isRecord(value)) {
+    diagnostics.push({ severity: "error", code: "llm_output.invalid_diagnosis_fields", message: "Diagnosis fields must be an object.", path });
+    return;
+  }
+  rejectUnexpectedFields(value, ["expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "explorationNeeded", "patchNeeded"], path, diagnostics);
+  for (const field of ["expected", "observed", "changed"] as const) {
+    if (value[field] === undefined) continue;
+    if (typeof value[field] !== "string" || !(value[field] as string).length || (value[field] as string).length > AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH) {
+      diagnostics.push({ severity: "error", code: "llm_output.invalid_diagnosis_text", message: `Diagnosis ${field} must be a string of at most ${AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH} characters.`, path: `${path}.${field}` });
+    }
+  }
+  for (const field of ["stillAchievable", "deterministicRecoveryPossible"] as const) {
+    if (value[field] !== undefined && value[field] !== "yes" && value[field] !== "no" && value[field] !== "unknown") {
+      diagnostics.push({ severity: "error", code: "llm_output.invalid_diagnosis_verdict", message: `Diagnosis ${field} must be "yes", "no", or "unknown".`, path: `${path}.${field}` });
+    }
+  }
+  for (const field of ["explorationNeeded", "patchNeeded"] as const) {
+    if (value[field] !== undefined && typeof value[field] !== "boolean") {
+      diagnostics.push({ severity: "error", code: "llm_output.invalid_diagnosis_flag", message: `Diagnosis ${field} must be a boolean.`, path: `${path}.${field}` });
+    }
+  }
 }
 
 function validateUnknownEvidenceToolDecision(value: unknown, diagnostics: AutomationStudioLlmDiagnostic[]): void {

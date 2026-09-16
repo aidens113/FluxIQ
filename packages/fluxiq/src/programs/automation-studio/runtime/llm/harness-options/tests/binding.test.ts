@@ -12,6 +12,10 @@ const SCOPE: AutomationStudioHarnessOptionResolution = { scope: { kind: "domain"
 function slot(executeTool = vi.fn(async () => ({ observed: true }))): AutomationStudioLlmEvidenceRuntimeBinding {
   return {
     domainId: DOMAIN_ID,
+    // Declared rather than omitted, because an omitted declaration is a domain
+    // silently denying nothing. This is the shape the field is about to become
+    // required in; the fixtures under runtime/tests are the rest of that change.
+    deniedEvidenceKeys: ["ledgerExport"],
     tools: [
       { toolId: "erp.inspect", description: "Read the ledger records in view.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } },
       { toolId: "erp.advance", description: "Advance to the next accounting period.", inputSchema: { type: "object" }, effect: "mutate" }

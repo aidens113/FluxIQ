@@ -34,6 +34,16 @@ export function interventionFromLlmResult(
       recentActionCount: request.context.recentActions?.length ?? 0,
       subflowCount: request.context.subflows?.length ?? 0,
       dryRun: request.dryRun === true,
+      // The recovery context is deliberately not summarized onto the
+      // intervention. The coordinator already records
+      // `summarizeAutomationStudioRuntimeRecoveryContext(...)` on the run's
+      // `llmGate` metadata, so the counts-only account exists exactly once, and
+      // calling the summarizer from here would be a value import from the
+      // harness into runtime/recovery. That directory imports the evidence loop
+      // back out of runtime/llm, so the import closes a module cycle: the
+      // provider's own schema constants evaluate before runtime/llm has
+      // finished initializing and arrive undefined, which quietly drops the
+      // opaque-handle pattern and length bound from the outbound schema.
       ...(request.context.failureEvidence ? { failureEvidence: failureEvidenceProvenance(request.context.failureEvidence) } : {})
     },
     ...(response ? { structuredResult: summarizeAutomationStudioLlmResponse(response) } : {}),

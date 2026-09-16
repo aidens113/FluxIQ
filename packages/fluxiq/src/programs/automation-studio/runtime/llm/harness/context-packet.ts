@@ -10,6 +10,7 @@ import {
   automationStudioFlowBootstrapCatalogByteBudget,
   buildAutomationStudioFlowBootstrapContext
 } from "../../flow-bootstrap/index.ts";
+import type { AutomationStudioRuntimeRecoveryContext } from "../../recovery/index.ts";
 import type { AutomationStudioReusableLlmContextPacket } from "../../reusable-llm-context.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../evidence-loop.ts";
 import { automationStudioLoopStageInstructions, type AutomationStudioLoopStage } from "../stages/index.ts";
@@ -35,6 +36,10 @@ export type AutomationStudioLlmContextPacket = {
   routeHistory?: JsonValue[];
   recentActions?: AutomationStudioLlmRecentActionContext[];
   failureEvidence?: JsonObject;
+  /** The standardized account of what went wrong: sections in a fixed priority
+   * order, a byte budget, and a record of what was withheld and why. Runtime
+   * tasks only, like `failureEvidence`. */
+  recoveryContext?: AutomationStudioRuntimeRecoveryContext;
   relevantRuns?: JsonObject[];
   relevantAdaptations?: JsonObject[];
   reusableContext?: AutomationStudioReusableLlmContextPacket;
@@ -74,9 +79,15 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
   // Composed here rather than accepted from the caller, so a staged request
   // always carries Core's ordering statement. There is no argument by which a
   // caller, or a domain that replaced every stage, can omit it.
+  //
+  // Whether the request carries tools is read off the packet this call is
+  // building, not asserted by the caller, so the tool policy is attached to a
+  // request that really has tools rather than to every call that happens to be
+  // gathering. A runtime diagnosis gathers with nothing to call.
+  const toolsOffered = input.taskKind === "evidence_tool_decision" && (input.evidenceLoop?.tools.length ?? 0) > 0;
   const instructions = resolveAutomationStudioLlmInstructions(
     input,
-    stage ? automationStudioLoopStageInstructions(stage, input.stageInstructions) : []
+    stage ? automationStudioLoopStageInstructions(stage, input.stageInstructions, { toolsOffered }) : []
   );
   const deniedEvidenceKeys = input.deniedEvidenceKeys ?? [];
   const flowBootstrap = (input.taskKind === "flow_bootstrap" || input.taskKind === "evidence_tool_decision") && input.flowBootstrap
@@ -105,6 +116,10 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     ...(input.routeHistory?.length ? { routeHistory: input.routeHistory.slice(-25) } : {}),
     ...(input.runDetail?.actionAttempts?.length ? { recentActions: input.runDetail.actionAttempts.slice(-AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS).map(compactRecentActionForLlm) } : {}),
     ...(input.failureEvidence ? { failureEvidence: sanitizeAutomationStudioLlmFailureEvidence(input.taskKind, input.failureEvidence, deniedEvidenceKeys) } : {}),
+    // Held to the same task-kind rule as the failure evidence it sits beside: a
+    // flow-bootstrap packet describes a Flow that has never run, so a record of
+    // how a run failed has no place in it.
+    ...(input.recoveryContext && (input.taskKind === "runtime_diagnosis" || input.taskKind === "runtime_patch") ? { recoveryContext: input.recoveryContext } : {}),
     ...(input.relevantRuns?.length ? { relevantRuns: input.relevantRuns.slice(0, 25) } : {}),
     ...(input.relevantAdaptations?.length ? { relevantAdaptations: input.relevantAdaptations.slice(0, 25) } : {}),
     ...(input.reusableContext ? { reusableContext: sanitizeReusableLlmContextPacket(input.reusableContext, deniedEvidenceKeys) } : {}),

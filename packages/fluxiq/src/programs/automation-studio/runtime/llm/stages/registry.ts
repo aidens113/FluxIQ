@@ -17,6 +17,7 @@
 
 import type { AutomationStudioResolvedInstruction } from "../harness/index.ts";
 import {
+  AUTOMATION_STUDIO_CORE_LOOP_EVIDENCE_TOOL_POLICY_INSTRUCTION,
   AUTOMATION_STUDIO_CORE_LOOP_STAGE_INSTRUCTIONS,
   AUTOMATION_STUDIO_CORE_LOOP_STAGE_INSTRUCTION_ID_PREFIX,
   AUTOMATION_STUDIO_LOOP_PROTOCOL_INSTRUCTION_ID,
@@ -120,20 +121,30 @@ export class AutomationStudioLoopStageInstructionRegistry {
 
 /**
  * Everything the model is told about the protocol for one staged request: the
- * ordering statement first, then that stage's instructions.
+ * ordering statement first, then Core's tool policy where the request carries
+ * tools, then that stage's instructions.
  *
  * The ordering statement is produced here rather than stored anywhere, so it
  * exists for a caller that registered nothing, for a caller whose domain
  * replaced every stage, and for a caller that has no registry at all. That is
  * the mechanical form of "the ordering itself is Core's": there is no state a
  * domain can reach that would make this function return without it.
+ *
+ * `toolsOffered` is why the tool policy is a separate instruction rather than
+ * part of "gather". A runtime diagnosis gathers with no tools at all, and until
+ * this existed it was handed the evidence loop's tool policy anyway -- told how
+ * to choose between offered tools, and referred to a decision schema its
+ * request did not contain. The policy is now attached to the condition that
+ * makes it true rather than to the stage that usually implies it.
  */
 export function automationStudioLoopStageInstructions(
   stage: AutomationStudioLoopStage,
-  registry?: AutomationStudioLoopStageInstructionRegistry
+  registry?: AutomationStudioLoopStageInstructionRegistry,
+  options?: { toolsOffered?: boolean }
 ): AutomationStudioResolvedInstruction[] {
   return [
     automationStudioLoopProtocolInstruction(stage),
+    ...(stage === "gather" && options?.toolsOffered === true ? [AUTOMATION_STUDIO_CORE_LOOP_EVIDENCE_TOOL_POLICY_INSTRUCTION] : []),
     ...(registry ? registry.stageInstructions(stage) : [AUTOMATION_STUDIO_CORE_LOOP_STAGE_INSTRUCTIONS[stage]])
   ];
 }
