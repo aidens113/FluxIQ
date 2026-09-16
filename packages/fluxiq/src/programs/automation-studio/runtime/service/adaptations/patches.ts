@@ -35,6 +35,12 @@ export class AutomationStudioAdaptationPatches {
     patch: AutomationStudioFlowAdaptation["patch"][number],
     now: number
   ): Promise<JsonObject> {
+    // Only the two patch kinds that write a parameter the executor actually
+    // reads may be applied to a node. Anything else is refused here rather than
+    // written and reported as applied. See `durable.ts` for `edit_recovery`.
+    if (patch.kind !== "edit_expectation" && patch.kind !== "edit_action_target") {
+      throw new Error(`Adaptation patch ${patch.kind} has no Flow node application; ${adaptation.adaptationId} refused.`);
+    }
     if (!patch.targetId) throw new Error(`Patch ${patch.kind} is missing a target node.`);
     const target = await this.resolveFlowNodeAdaptationTarget(adaptation);
     const before = target.graphFlow;
@@ -46,12 +52,9 @@ export class AutomationStudioAdaptationPatches {
     if (patch.kind === "edit_expectation") {
       if (!isJsonRecord(patch.after)) throw new Error("Expectation adaptation patches must provide an object after value.");
       node.parameterValues = compactJsonObject({ ...parameterValues, ...patch.after });
-    } else if (patch.kind === "edit_action_target") {
+    } else {
       if (patch.after === undefined) throw new Error("Action target adaptation patches must provide an after value.");
       node.parameterValues = compactJsonObject({ ...parameterValues, target: structuredClone(patch.after) });
-    } else {
-      if (!isJsonRecord(patch.after)) throw new Error("Recovery adaptation patches must provide an object after value.");
-      node.parameterValues = compactJsonObject({ ...parameterValues, recovery: { ...(isJsonRecord(parameterValues.recovery) ? parameterValues.recovery : {}), ...patch.after } });
     }
     const after = {
       ...before,
@@ -64,7 +67,7 @@ export class AutomationStudioAdaptationPatches {
       patchKind: patch.kind,
       artifactKind: "flow",
       artifactId: saved.flowId,
-      targetKind: appliedTargetKindForPatch(patch.kind),
+      targetKind: patch.kind === "edit_expectation" ? "expectation" : "action_target",
       targetId: patch.targetId,
       before,
       after: saved,
@@ -280,15 +283,6 @@ export function durableAdaptationMutationRecord(input: {
       artifactId: input.artifactId
     })
   });
-}
-
-function appliedTargetKindForPatch(kind: AutomationStudioFlowAdaptation["patch"][number]["kind"]): NonNullable<AutomationStudioFlowAdaptation["appliedTo"]>[number]["kind"] {
-  if (kind === "edit_router") return "router";
-  if (kind === "create_subflow" || kind === "edit_subflow") return "subflow";
-  if (kind === "edit_expectation") return "expectation";
-  if (kind === "edit_action_target") return "action_target";
-  if (kind === "edit_instruction") return "instruction";
-  return "instruction";
 }
 
 function assertRouterValidationOk(router: AutomationStudioFlowRouter, subflows: AutomationStudioFlowSubflow[], context: string): void {

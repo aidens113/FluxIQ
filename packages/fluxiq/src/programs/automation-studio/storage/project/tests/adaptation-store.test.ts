@@ -230,6 +230,27 @@ describe("AutomationStudioProjectAdaptationStore", () => {
     await store.close();
   });
 
+  // An `edit_recovery` patch used to be applied by writing a `recovery` key into
+  // the target node's parameters. No node definition declares that parameter and
+  // nothing in the executor reads it, so the Flow ran exactly as before while the
+  // adaptation was recorded as `applied` — a repair that never happened, and
+  // indistinguishable from one that did.
+  it("refuses to apply an edit_recovery adaptation rather than writing a parameter nothing reads", async () => {
+    const pool = createPool();
+    await seedFlow(pool, "project.recovery", "flow.main");
+    const store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId: "project.recovery" });
+    await store.putAdaptation({ adaptation: recoveryAdaptationFixture(), changedAt: 20 });
+
+    await expect(store.applyApprovedAdaptation({ adaptationId: "adaptation.recovery", actorId: "reviewer", changedAt: 21, compile: false }))
+      .rejects.toThrow(/edit_recovery/);
+    await expect(readNodeParameters(pool, "project.recovery", "node.action")).resolves.toEqual({ target: "#old" });
+    await expect(readFlowRevision(pool, "project.recovery", "flow.main")).resolves.toBe(1);
+    await expect(store.mustGetAdaptation("adaptation.recovery")).resolves.toMatchObject({ status: "validated", appliedRevision: null });
+    await expect(store.listAuditEvents({ adaptationId: "adaptation.recovery", limit: 10 }))
+      .resolves.toMatchObject({ events: expect.arrayContaining([expect.objectContaining({ eventType: "apply_failed" })]) });
+    await store.close();
+  });
+
   function createPool(): AutomationStudioProjectDatabasePool {
     const pool = new AutomationStudioProjectDatabasePool({ rootDir });
     pools.push(pool);
@@ -273,6 +294,24 @@ function adaptationFixture(input: { adaptationId: string; status?: AutomationStu
     riskLevel: "low",
     createdAt: 10,
     updatedAt: input.updatedAt ?? 10,
+    metadata: { baseRevision: 1, proposalModeOverride: "auto" }
+  };
+}
+
+function recoveryAdaptationFixture(): AutomationStudioFlowAdaptation {
+  return {
+    schemaVersion: "0.1",
+    adaptationId: "adaptation.recovery",
+    flowId: "flow.main",
+    projectId: "project.recovery",
+    trigger: "Action failed; run a confirmation sequence before retrying.",
+    patch: [{ kind: "edit_recovery", targetId: "node.action", summary: "Recover by clicking the confirmation control.", after: { actionDefinitionIds: ["builtin.action.click"] } }],
+    validationResults: [{ runId: "run.validation.recovery", status: "succeeded", checkedAt: 20 }],
+    status: "validated",
+    author: "llm",
+    riskLevel: "medium",
+    createdAt: 10,
+    updatedAt: 20,
     metadata: { baseRevision: 1, proposalModeOverride: "auto" }
   };
 }

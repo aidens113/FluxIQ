@@ -94,7 +94,16 @@ export class AutomationStudioDurableAdaptations {
     patch: AutomationStudioFlowAdaptation["patch"][number],
     now: number
   ): Promise<JsonObject> {
-    if (patch.kind === "edit_expectation" || patch.kind === "edit_action_target" || patch.kind === "edit_recovery") {
+    // `edit_recovery` has no durable form, so it is refused before anything is
+    // written. It used to reach the Flow node applier, which wrote a `recovery`
+    // key into the target node's parameters; no node definition declares that
+    // parameter and nothing in the executor reads it, so the Flow behaved
+    // exactly as before while the adaptation was recorded as applied. A durable
+    // recovery path needs a node to insert and edges to wire it, neither of
+    // which this patch shape carries — and its `targetId` is a node id from one
+    // producer and a Subflow id from the other.
+    if (patch.kind === "edit_recovery") throw new Error(`Adaptation patch edit_recovery has no durable application; ${adaptation.adaptationId} refused.`);
+    if (patch.kind === "edit_expectation" || patch.kind === "edit_action_target") {
       return await this.patches.applyFlowNodeAdaptationPatch(adaptation, patch, now);
     }
     if (patch.kind === "edit_router") return await this.patches.applyRouterAdaptationPatch(adaptation, patch, now);

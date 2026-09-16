@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowDocument } from "../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace, AutomationStudioTransitionComparison } from "../executor.ts";
-import { executeAutomationStudioRuntimePatch, preflightAutomationStudioRuntimePatch, proposeAutomationStudioRuntimeTargetOverride } from "../live-patch.ts";
+import type { AutomationStudioRuntimePatch } from "../llm/index.ts";
+import { adaptationFromRuntimePatch, executeAutomationStudioRuntimePatch, preflightAutomationStudioRuntimePatch, proposeAutomationStudioRuntimeTargetOverride } from "../live-patch.ts";
 
 describe("Automation Studio live patch testing", () => {
   it("executes a successful temporary wait/retry patch without mutating the canonical Flow", async () => {
@@ -514,6 +515,39 @@ describe("Automation Studio live patch testing", () => {
     expect(result).not.toHaveProperty("adaptation");
     expect(result).not.toHaveProperty("changeProposal");
     expect(nativeNodeExecutor).not.toHaveBeenCalled();
+  });
+
+  // The two runtime patch kinds refused above are exactly the two that become an
+  // `edit_recovery` change patch, and `edit_recovery` has no durable application
+  // either: both durable appliers now refuse it (runtime/service/adaptations and
+  // storage/project/adaptation-store). This pins the pair together, so giving one
+  // of them an application branch here without also giving `edit_recovery` a
+  // durable form — which would mint adaptations that can never be applied — fails.
+  it("mints no executed adaptation for a patch kind whose change patch cannot be applied durably", async () => {
+    const patches: AutomationStudioRuntimePatch[] = [
+      { kind: "temporary_action_sequence", targetNodeId: "constant", actionDefinitionIds: ["builtin.action.click"], reason: "Insert the missing confirmation click." },
+      { kind: "temporary_recovery_subflow_call", subflowId: "subflow.recovery", reason: "Hand the failure to the recovery subflow." }
+    ];
+
+    for (const patch of patches) {
+      const input = {
+        projectId: "project.patch",
+        flowId: "flow.patch",
+        runId: "run.failed",
+        flow: flowFixture(),
+        failedAttempt: failedAttempt(),
+        patch,
+        policy: repairPolicy({ allowExternalSideEffects: true, requireApprovalForExternalSideEffects: false }),
+        now: () => 26
+      };
+
+      expect(adaptationFromRuntimePatch(input, undefined, { status: "not_executed", reason: "contract_probe" }).patch).toEqual([
+        expect.objectContaining({ kind: "edit_recovery" })
+      ]);
+      const result = await executeAutomationStudioRuntimePatch(input);
+      expect(result.verification).toEqual({ status: "not_executed", reason: `unapplied_patch_kind:${patch.kind}` });
+      expect(result).not.toHaveProperty("adaptation");
+    }
   });
 });
 

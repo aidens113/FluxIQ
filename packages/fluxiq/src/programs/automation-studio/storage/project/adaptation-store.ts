@@ -390,14 +390,19 @@ export class AutomationStudioProjectAdaptationStore {
 async function graphPatchOperationsForAdaptation(graph: AutomationStudioProjectGraphRepository, adaptation: AutomationStudioFlowAdaptation, targetFlowId: string): Promise<AutomationStudioGraphPatchOperation[]> {
   const operations: AutomationStudioGraphPatchOperation[] = [];
   for (const patch of adaptation.patch) {
-    if (patch.kind === "edit_expectation" || patch.kind === "edit_action_target" || patch.kind === "edit_recovery") {
+    // `edit_recovery` has no durable form. It used to be applied here by writing
+    // a `recovery` key into the target node's parameters, but no node definition
+    // declares that parameter and nothing in the executor reads it: the Flow ran
+    // exactly as before while the adaptation was recorded as applied. Refusing it
+    // is what stops a repair that never happened from reading as a success.
+    if (patch.kind === "edit_recovery") throw new Error(`Adaptation patch edit_recovery has no durable application; ${adaptation.adaptationId} refused.`);
+    if (patch.kind === "edit_expectation" || patch.kind === "edit_action_target") {
       if (!patch.targetId) throw new Error(`Patch ${patch.kind} requires a target node.`);
       const node = await graph.getNode(patch.targetId);
       if (!node || node.flowId !== targetFlowId || node.deletedAt !== null) throw new Error(`Unknown node: ${patch.targetId}`);
       const values = { ...node.parameterValues };
       if (patch.kind === "edit_expectation") Object.assign(values, objectValue(patch.after));
-      else if (patch.kind === "edit_action_target") values.target = patch.after as JsonValue;
-      else values.recovery = { ...objectValue(values.recovery), ...objectValue(patch.after) };
+      else values.target = patch.after as JsonValue;
       operations.push({ op: "set_node_parameters", nodeId: patch.targetId, values });
       continue;
     }
@@ -412,6 +417,11 @@ async function graphPatchOperationsForAdaptation(graph: AutomationStudioProjectG
   return operations;
 }
 
+// `edit_recovery` stays claimed by the graph transaction even though
+// `graphPatchOperationsForAdaptation` refuses it. Handing it back would route it
+// to the file-based durable applier instead, which cannot apply it either — and
+// that path records no audit event, so the refusal would be silent. Refusing it
+// inside the transaction writes an `apply_failed` event a reviewer can read.
 function isGraphTransactionCompatibleAdaptation(adaptation: AutomationStudioFlowAdaptation): boolean {
   return adaptation.patch.every((patch) => {
     if (patch.kind === "edit_expectation" || patch.kind === "edit_action_target" || patch.kind === "edit_recovery") return Boolean(patch.targetId);
