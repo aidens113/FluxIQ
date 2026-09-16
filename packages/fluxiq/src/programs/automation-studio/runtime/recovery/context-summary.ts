@@ -24,7 +24,7 @@ import type {
   AutomationStudioRecoveryContextOmission,
   AutomationStudioRecoveryContextSection,
   AutomationStudioRuntimeRecoveryContext
-} from "./recovery-context.ts";
+} from "./context.ts";
 
 export type AutomationStudioRecoveryContextSummary = {
   schemaVersion: "automation-studio.recovery-context-summary.v1";

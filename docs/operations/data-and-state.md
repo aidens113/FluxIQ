@@ -227,6 +227,59 @@ stored. The first load deletes session records an older build stored under a
 raw id, so those users sign in again. Identity Access snapshots list sessions by
 digest.
 
+### Which Identity Access endpoints require a credential recheck
+
+An endpoint that hands out authority refuses to act until the calling session
+re-proves its own credentials, through `authorizeSessionCredentials`: the
+password always, the PIN when the acting user has one configured, and the
+authenticator code when the acting user has two-factor authentication enabled.
+The `identity.manage` permission is not enough on its own, because it says what
+the role may do, not that the person at the keyboard is still the account
+holder. A failed recheck answers `{ ok: false, requiresRecheck: true }`, which
+tells the client to collect the factors again rather than to report a
+permission failure.
+
+These endpoints require the recheck:
+
+- `create-user` — a new account is durable authority. The caller chooses its
+  role and its initial password, and the account outlives the session that
+  made it.
+- `update-user`, when it changes `roleId` or `enabled` — a promotion is the
+  same authority arriving at an existing account, enabling an account hands
+  access back, and disabling one takes it from whoever was relying on it. A
+  disabled administrator that could be switched on again with nothing proved
+  would be a dormant escalation. The gate is on those two fields rather than on
+  the endpoint: a rename or display-name edit carries no authority and stays
+  open, so routine profile maintenance does not ask for a password.
+- `set-password`, `set-pin` — credential rotation, through
+  `setPasswordAuthorized` and `setPinAuthorized`.
+- `begin-totp`, `confirm-totp` — enrollment issues the authenticator secret for
+  an account and replaces any secret already set up for it, so an ungated
+  enrollment achieves what an ungated disable would, and more.
+- `disable-totp` — removes authenticator protection.
+- `create-session` — a minted session is a bearer credential for the named
+  user, so it lets one account act as another.
+- `unlock-vault` — the vault credentials travel with a `userId` the caller
+  chooses, and the recheck binds the unlock to the calling session.
+
+These endpoints deliberately do not, and the omission is a decision rather than
+a gap: `revoke-session` and `lock-vault` only take authority away. Revocation
+is the action an operator reaches for when a session is already compromised, so
+putting a credential prompt in front of it would keep the stolen session alive
+for exactly as long as the prompt takes to answer, and a lock must never be the
+step that fails when someone is trying to shut the vault. `snapshot` persists
+nothing and lists sessions by digest only.
+
+A vault unlock decides what must be proved from what the account has
+configured, never from what the caller chose to send: an omitted password or
+PIN is an unproved one, and an account holding no password verifier can prove
+nothing and so unlocks nothing. Such an account cannot sign in either.
+
+The web panel collects the factors in a modal on each of these actions, and
+`withProgramAuthSession` overwrites `authSessionId` on every `identity-access`
+call with the session id the server trusts, so a client cannot name someone
+else's session as the one being re-proved.
+
 An existing account's credentials change only through a password change
 (`setPassword`, `setPasswordAuthorized`) or a PIN change (`setPin`,
 `setPinAuthorized`); `upsertUser` refuses a password or PIN for an existing

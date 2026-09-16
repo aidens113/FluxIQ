@@ -69,7 +69,12 @@ describe("AutomationStudioService recording persistence", () => {
         nodes: [
           { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
           { id: "constant", definitionId: "builtin.data.constant", parameterValues: { value: "ok" } },
-          { id: "broken", definitionId: "unknown.confirmation", parameterValues: {} },
+          // Was `unknown.confirmation`, which L5 now classifies as a graph
+          // failure and refuses to ask a model about at all -- so this test,
+          // whose subject is the explicit grant's proposal path, never reached
+          // a provider. A node that exists and fails at run time keeps the
+          // subject and leaves the graph refusal to its own test.
+          { id: "broken", definitionId: "builtin.math.divide", parameterValues: {} },
           { id: "end", definitionId: "builtin.control.end", parameterValues: { status: "success" } }
         ],
         edges: [

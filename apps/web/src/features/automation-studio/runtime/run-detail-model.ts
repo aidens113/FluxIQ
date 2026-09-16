@@ -105,7 +105,59 @@ export function runtimeRecoveryRoutingEvents(routeDecisions: any[], recoveryAtte
   return [...routes, ...recovery].sort((left, right) => left.timestamp - right.timestamp || left.id.localeCompare(right.id));
 }
 
-export function runtimeLlmAdaptationEvents(runDetail: any): Array<{ id: string; stage: string; title: string; status: string; summary: string; provider?: string; model?: string; usage?: string; evidenceProvenance?: string; adaptationId?: string; detail: any }> {
+/**
+ * The loop's own four stages, as the run recorded them.
+ *
+ * "LLM", "Patch Test", "Adaptation" and "Retry" name the mechanics: which call
+ * was made, which array it landed in. They do not say what the loop was trying
+ * to do, so a person reading a failed run could not tell a run where the model
+ * was deliberately not asked from one where nothing happened. These four say
+ * it: what was wrong, what was planned, what was explored, what came of it --
+ * and, for each, whether a model was called at all.
+ */
+export const RUNTIME_RECOVERY_STAGE_LABELS: Record<string, string> = {
+  diagnosis: "Diagnosis",
+  recovery_plan: "Recovery Plan",
+  exploration: "Exploration",
+  resolution: "Resolution"
+};
+
+export function runtimeRecoveryStageEvents(runDetail: any): Array<{ id: string; stage: string; title: string; status: string; summary: string; note?: string; detail: any }> {
+  const trace = isRuntimeJsonRecord(runDetail?.metadata?.recoveryTrace) ? runDetail.metadata.recoveryTrace : null;
+  const stages = Array.isArray(trace?.stages) ? trace.stages.filter(isRuntimeJsonRecord) : [];
+  return stages.map((stage: any, index: number) => ({
+    id: `recovery-stage.${String(stage.stage ?? index)}`,
+    stage: RUNTIME_RECOVERY_STAGE_LABELS[String(stage.stage)] ?? String(stage.stage ?? "Recovery"),
+    title: runtimeRecoveryStageTitle(stage),
+    status: String(stage.status ?? "recorded"),
+    summary: String(stage.reason ?? "No explanation was recorded for this stage."),
+    // The deterministic-first receipt, in the one place a person looks.
+    note: stage.providerCalled === true
+      ? `Model called${stage.loopStage ? ` for the "${String(stage.loopStage)}" step of the loop` : ""}`
+      : "No model call",
+    detail: stage
+  }));
+}
+
+function runtimeRecoveryStageTitle(stage: any): string {
+  const detail = isRuntimeJsonRecord(stage?.detail) ? stage.detail : {};
+  if (stage?.stage === "diagnosis") return runtimeRecoveryStagePhrase(detail.failureClass) ?? "Failure diagnosed";
+  if (stage?.stage === "recovery_plan") {
+    const steps = Array.isArray(detail.steps) ? detail.steps.map((step: unknown) => runtimeRecoveryStagePhrase(step)).filter(Boolean) : [];
+    return steps.length ? steps.join(", then ") : "Plan recorded";
+  }
+  if (stage?.stage === "exploration") return detail.requested === true ? "Exploration requested" : "No exploration needed";
+  if (stage?.stage === "resolution") return runtimeRecoveryStagePhrase(detail.outcome) ?? "Outcome recorded";
+  return "Stage recorded";
+}
+
+function runtimeRecoveryStagePhrase(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const words = value.replace(/_/g, " ");
+  return `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
+}
+
+export function runtimeLlmAdaptationEvents(runDetail: any): Array<{ id: string; stage: string; title: string; status: string; summary: string; note?: string; provider?: string; model?: string; usage?: string; evidenceProvenance?: string; adaptationId?: string; detail: any }> {
   const interventions = Array.isArray(runDetail?.interventions) ? runDetail.interventions : [];
   const patchAttempts = Array.isArray(runDetail?.metadata?.runtimePatchAttempts) ? runDetail.metadata.runtimePatchAttempts : [];
   const adaptationIds = Array.isArray(runDetail?.adaptationIds) ? runDetail.adaptationIds : [];
@@ -147,7 +199,9 @@ export function runtimeLlmAdaptationEvents(runDetail: any): Array<{ id: string; 
     summary: String(retry.reason ?? retry.message ?? `${retry.attemptCount ?? 0} retry actions completed with status ${retry.status ?? "attempted"}.`),
     detail: retry
   }] : [];
-  return [...interventionEvents, ...patchEvents, ...adaptationEvents, ...retryEvents];
+  // The loop stages lead, because they are what the loop was doing; the call
+  // and patch mechanics follow as the detail underneath them.
+  return [...runtimeRecoveryStageEvents(runDetail), ...interventionEvents, ...patchEvents, ...adaptationEvents, ...retryEvents];
 }
 
 function runtimeFailureEvidenceProvenance(intervention: any): string | undefined {

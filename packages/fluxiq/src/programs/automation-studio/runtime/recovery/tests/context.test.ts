@@ -6,8 +6,8 @@ import {
   AUTOMATION_STUDIO_RECOVERY_CONTEXT_SECTIONS,
   buildAutomationStudioRuntimeRecoveryContext,
   type AutomationStudioRecoveryContextSection
-} from "../recovery-context.ts";
-import { summarizeAutomationStudioRuntimeRecoveryContext } from "../recovery-context-summary.ts";
+} from "../context.ts";
+import { summarizeAutomationStudioRuntimeRecoveryContext } from "../context-summary.ts";
 
 describe("buildAutomationStudioRuntimeRecoveryContext", () => {
   it("names every section exactly once, as included or as omitted with a reason", () => {

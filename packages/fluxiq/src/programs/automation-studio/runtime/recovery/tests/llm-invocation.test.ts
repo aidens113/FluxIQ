@@ -59,7 +59,10 @@ describe("decideAutomationStudioRuntimeLlmInvocation", () => {
     expect(decision.invoke).toBe(true);
   });
 
-  it("reports a known adaptation match when the adaptations it is given cover the failure", () => {
+  // L5's remaining clauses, which this seam did not act on before: a validated
+  // adaptation that already matched, and the failure classes whose next move
+  // belongs to a person or to an edit of the Flow.
+  it("refuses the model when a validated adaptation already matches this failure", () => {
     const decision = decideAutomationStudioRuntimeLlmInvocation({
       ...runIdentity(),
       settings: settings(),
@@ -68,7 +71,31 @@ describe("decideAutomationStudioRuntimeLlmInvocation", () => {
       adaptations: [knownAdaptation()]
     });
 
-    expect(decision.knownAdaptationAvailable).toBe(true);
+    expect(decision).toMatchObject({ invoke: false, knownAdaptationAvailable: true, requiredPriorAction: "known_adaptation" });
+    expect(decision.diagnosis?.resolution).toBe("known_adaptation");
+  });
+
+  it.each(["blocked_by_capability_or_policy", "auth_required", "user_intervention_required", "graph_validation_or_unknown_node", "external_side_effect_denied"] as const)(
+    "refuses the model for a %s failure, which no model resolves",
+    (category) => {
+      const decision = decideAutomationStudioRuntimeLlmInvocation({
+        ...runIdentity(),
+        settings: settings(),
+        policy: policy(),
+        failedAttempt: { ...failedAttempt([]), failure: { category, code: "test.failure", retryable: false } }
+      });
+
+      expect(decision).toMatchObject({ invoke: false, requiredPriorAction: "manual_intervention" });
+      expect(decision.diagnosis).toMatchObject({ failureClass: category, resolution: "manual_intervention" });
+    }
+  );
+
+  it("carries the diagnosis onward whenever there was a failed attempt to classify", () => {
+    const allowed = decideAutomationStudioRuntimeLlmInvocation({ ...runIdentity(), settings: settings(), policy: policy(), failedAttempt: failedAttempt([]) });
+
+    expect(allowed.invoke).toBe(true);
+    expect(allowed.diagnosis).toMatchObject({ schemaVersion: "automation-studio.deterministic-diagnosis.v1", modelNeeded: true });
+    expect(decideAutomationStudioRuntimeLlmInvocation({ ...runIdentity(), settings: settings(), policy: policy() }).diagnosis).toBeUndefined();
   });
 });
 

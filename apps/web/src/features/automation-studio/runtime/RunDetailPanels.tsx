@@ -64,6 +64,7 @@ export function RuntimeLlmAdaptationPanel(props: { flowId?: string; runDetail: a
             <div className="automation-runtime-decision-title"><strong>{event.title}</strong><StatusBadge value={event.status} /></div>
             <p>{event.summary}</p>
             <div className="automation-runtime-decision-meta">
+              {event.note ? <span className="automation-runtime-adaptation-note">{event.note}</span> : null}
               {event.provider ? <span>Provider: {event.provider}</span> : null}
               {event.model ? <span>Model: {event.model}</span> : null}
               {event.usage ? <span>{event.usage}</span> : null}

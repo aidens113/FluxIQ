@@ -129,6 +129,45 @@ describe("Automation Runtime workspace", () => {
     expect(runtimeRunStateEvidence({ startingStateRefs: [{ stateRef: "state://start" }] }, attempts).map((item) => item.phase)).toEqual(["Starting state", "Before action", "After action", "State diff"]);
   });
 
+  // The four stages the loop actually works in, ahead of the call mechanics.
+  // `note` is the deterministic-first receipt: a reader can tell from the panel
+  // alone whether the model was asked, and for which step.
+  it("leads with the loop's four recovery stages, and says which of them called a model", () => {
+    const events = runtimeLlmAdaptationEvents({
+      interventions: [],
+      adaptationIds: [],
+      metadata: {
+        recoveryTrace: {
+          schemaVersion: "automation-studio.recovery-trace.v1",
+          stages: [
+            { stage: "diagnosis", status: "completed", providerCalled: false, reason: "A deterministic recovery path is available and must run before LLM intervention.", detail: { failureClass: "target_not_found", resolution: "deterministic_recovery" } },
+            { stage: "recovery_plan", status: "completed", providerCalled: false, loopStage: "plan", reason: "Apply the known recovery.", detail: { steps: ["apply_known_recovery"] } },
+            { stage: "exploration", status: "skipped", providerCalled: false, reason: "The plan did not call for exploration.", detail: { requested: false } },
+            { stage: "resolution", status: "skipped", providerCalled: false, reason: "A deterministic recovery is available and is what should run next.", detail: { outcome: "deterministic_recovery_required" } }
+          ],
+          refused: []
+        }
+      }
+    });
+
+    expect(events.map((event) => event.stage)).toEqual(["Diagnosis", "Recovery Plan", "Exploration", "Resolution"]);
+    expect(events.map((event) => event.title)).toEqual(["Target not found", "Apply known recovery", "No exploration needed", "Deterministic recovery required"]);
+    expect(events.map((event) => event.note)).toEqual(["No model call", "No model call", "No model call", "No model call"]);
+    expect(events[0]?.status).toBe("completed");
+  });
+
+  it("marks the stages a model was called for, and names the loop step", () => {
+    const events = runtimeLlmAdaptationEvents({
+      metadata: { recoveryTrace: { stages: [{ stage: "diagnosis", status: "completed", providerCalled: true, loopStage: "gather", reason: "The model was asked." }] } }
+    });
+
+    expect(events[0]).toMatchObject({ stage: "Diagnosis", note: "Model called for the \"gather\" step of the loop" });
+  });
+
+  it("shows no recovery stages at all when the run recorded no trace", () => {
+    expect(runtimeLlmAdaptationEvents({ interventions: [], adaptationIds: [] })).toEqual([]);
+  });
+
   it("orders LLM, patch, adaptation, and retry stages", () => {
     const events = runtimeLlmAdaptationEvents({
       interventions: [{ interventionId: "llm.1", kind: "diagnosis", provider: "deepseek", model: "deepseek-chat", reason: "Diagnose mismatch.", tokenUsage: { totalTokens: 30 }, contextSummary: { failureEvidence: { schemaVersion: "web-llm-evidence.v1", byteCount: 1842, truncated: false, digest: "private-digest", selector: "#private-target" } } }],

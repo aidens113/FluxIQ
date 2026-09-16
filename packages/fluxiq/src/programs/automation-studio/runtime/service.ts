@@ -114,7 +114,7 @@ import {
   type AutomationStudioRuntimeTargetOverrideTarget
 } from "./llm/index.ts";
 import { AutomationStudioLlmRunBudgetLedger } from "./llm/index.ts";
-import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT, adaptationConfidenceScore, adaptationValidationCounts, buildAutomationStudioRuntimeRecoveryContext, decideAutomationStudioRuntimeLlmInvocation, decideAutomationStudioRuntimePatchRequest, evaluateFlowAdaptationPromotionGates, summarizeAutomationStudioRuntimeRecoveryContext } from "./recovery/index.ts";
+import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT, adaptationConfidenceScore, adaptationValidationCounts, automationStudioRuntimeRecoveryTrace, buildAutomationStudioRuntimeRecoveryContext, decideAutomationStudioRuntimeLlmInvocation, evaluateFlowAdaptationPromotionGates, planAutomationStudioRuntimeRecovery, summarizeAutomationStudioRuntimeRecoveryContext, summarizeAutomationStudioRuntimeStructuredDiagnosis } from "./recovery/index.ts";
 import { automationStudioHarnessOptionRegistry, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapEvidenceCompletionFailure, flowBootstrapEvidenceLoopFailure, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapCatalogByteBudget, buildAutomationStudioFlowBootstrapContext, isAutomationStudioEvidenceFlowBootstrapResultWithinLimits, parseAutomationStudioFlowBootstrapPlan, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap/index.ts";
@@ -2897,7 +2897,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     }
     const invocation = decideAutomationStudioRuntimeLlmInvocation({ projectId: input.context.projectId, flowId: input.context.flowId, runId: input.detail.summary.runId, ...(input.subflowId ? { subflowId: input.subflowId } : {}), settings: input.context.settings, policy: input.context.policy, runsCompleted: input.context.runsCompleted, stabilityScore: input.context.metrics.stabilityScore, budgetState: input.context.budgetState, ...(input.failedTraceAttempt ? { failedAttempt: input.failedTraceAttempt } : {}), adaptations: input.context.recentAdaptations });
     // Deterministic-first: a known recovery or a reroute must run before the model is asked, and the provider is not even resolved when one is available.
-    if (!invocation.invoke) return { ...input.detail, metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, reason: invocation.reason, requiredPriorAction: invocation.requiredPriorAction } } };
+    if (!invocation.invoke) return { ...input.detail, metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, reason: invocation.reason, requiredPriorAction: invocation.requiredPriorAction }, recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy }) as unknown as JsonObject } };
     const failedAttempt = [...(input.detail.actionAttempts ?? [])].reverse().find((attempt) => attempt.status === "failed" || attempt.status === "unknown");
     const providerId = stringSetting(input.context.policy.metadata?.llmProvider, stringSetting(input.context.policy.policyId, "host"));
     let provider: AutomationStudioLlmProvider | undefined;
@@ -2930,7 +2930,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           validation: { ok: false, issues: ["llm.provider_resolution_failed: LLM provider resolution failed."] },
           createdAt: input.detail.summary.updatedAt || Date.now()
         }],
-        metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, reason: "LLM provider resolution failed.", code: "llm.provider_resolution_failed" } }
+        metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, reason: "LLM provider resolution failed.", code: "llm.provider_resolution_failed" }, recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, diagnosisFailure: "LLM provider resolution failed." }) as unknown as JsonObject }
       };
     }
     const instructions = await this.getFlowInstructionSet({
@@ -2989,7 +2989,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
             validation: { ok: false, issues: ["llm.failure_evidence_invalid: Sanitized runtime failure evidence was unavailable."] },
             createdAt: input.detail.summary.updatedAt || Date.now()
           }],
-          metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, providerConfigured: true, code: "llm.failure_evidence_invalid" } }
+          metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, providerConfigured: true, code: "llm.failure_evidence_invalid" }, recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, diagnosisFailure: "Sanitized runtime failure evidence was unavailable." }) as unknown as JsonObject }
         };
       }
     }
@@ -3024,7 +3024,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         : undefined;
     const recoveryContext = buildAutomationStudioRuntimeRecoveryContext({ detail: input.detail, ...(input.failedTraceAttempt ? { failedAttempt: input.failedTraceAttempt } : {}), ...(input.subflowId ? { subflowId: input.subflowId } : {}), adaptations: input.context.recentAdaptations });
     const result = await runAutomationStudioLlmHarness({
-      taskKind: "runtime_diagnosis",
+      taskKind: "runtime_diagnosis", stage: "gather",
       projectId: input.context.projectId,
       flowId: input.context.flowId,
       runId: input.detail.summary.runId,
@@ -3048,11 +3048,11 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         ...(input.executionGrant?.purpose === "diagnose_and_adapt" ? { executionPurpose: "diagnose_and_adapt" } : {})
       }
     });
-    // The patch is a continuation of the diagnosis, not a second independent call that bills whatever the first one did.
-    const patchRequest = decideAutomationStudioRuntimePatchRequest(result);
-    const patchResult = patchRequest.request && provider && input.runtimeFlow && input.failedTraceAttempt && input.context.behavior.createAdaptations
+    // Stage B: the plan decides whether a patch is asked for at all, from the structured diagnosis and the policy, with no provider call.
+    const plan = planAutomationStudioRuntimeRecovery({ ...(invocation.diagnosis ? { deterministic: invocation.diagnosis } : {}), result, policy: input.context.policy });
+    const patchResult = plan.patchRequest.request && provider && input.runtimeFlow && input.failedTraceAttempt && input.context.behavior.createAdaptations
       ? await runAutomationStudioLlmHarness({
-        taskKind: "runtime_patch",
+        taskKind: "runtime_patch", stage: "implement", previousStage: "plan",
         projectId: input.context.projectId,
         flowId: input.context.flowId,
         runId: input.detail.summary.runId,
@@ -3171,13 +3171,13 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           providerConfigured: Boolean(provider),
           ok: result.ok && (patchResult?.ok ?? true),
           costAccounting: runBudget.snapshot(input.detail.summary.runId),
-          ...(patchRequest.request ? {} : { patchSkipped: patchRequest.reason }),
+          ...(plan.patchRequest.request ? {} : { patchSkipped: plan.patchRequest.reason }),
           ...(failureEvidence && result.intervention.contextSummary?.failureEvidence ? { failureEvidence: result.intervention.contextSummary.failureEvidence } : {}),
-          recoveryContext: summarizeAutomationStudioRuntimeRecoveryContext(recoveryContext),
+          recoveryContext: summarizeAutomationStudioRuntimeRecoveryContext(recoveryContext), structuredDiagnosis: summarizeAutomationStudioRuntimeStructuredDiagnosis(plan.diagnosis) as unknown as JsonObject,
           diagnostics: [...result.diagnostics, ...(patchResult?.diagnostics ?? [])].map((diagnostic) => ({ code: diagnostic.code, severity: diagnostic.severity, message: diagnostic.message })),
           ...(reusableContextResult ? { reusableContext: reusableContextResult.metadata } : {})
         },
-        ...(runtimePatchAttempts.length ? { runtimePatchAttempts: runtimePatchAttempts as unknown as JsonObject[] } : {})
+        ...(runtimePatchAttempts.length ? { runtimePatchAttempts: runtimePatchAttempts as unknown as JsonObject[] } : {}), recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, plan, diagnosisOk: result.ok, patchRequested: Boolean(patchResult), patchAttemptCount: runtimePatchAttempts.length, adaptationIds, changeProposalIds }) as unknown as JsonObject
       }
     };
     return {

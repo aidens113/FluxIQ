@@ -34,7 +34,10 @@ describe("AutomationStudioService recording persistence", () => {
 
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
     const detail = await service.getFlowRunDetail(project.id, run.runId);
-    const harnessIntervention = detail?.interventions.find((intervention) => intervention.promptVersion === "automation-studio.runtime-diagnosis.v1");
+    // The runtime diagnosis is the loop protocol's "gather" stage, so its prompt
+    // is versioned by stage as well as by task kind. A caller matching the bare
+    // task-kind version no longer matches a staged call, by design.
+    const harnessIntervention = detail?.interventions.find((intervention) => intervention.promptVersion === "automation-studio.runtime-diagnosis.v1+stage.gather");
 
     expect(run.status).toBe("failed");
     expect(harnessIntervention).toMatchObject({
