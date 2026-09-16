@@ -805,7 +805,7 @@ describe("AutomationStudioService recording persistence", () => {
       seedFixture: false,
       llmProviderResolver: () => ({ metadata: { provider: "mock", model: "unused" }, runTask: async () => { providerCalls += 1; return { response: { kind: "diagnosis", summary: "unused" } }; } }),
       llmEvidenceRuntime: {
-        domainId: "test.domain", tools: [],
+        domainId: "test.domain", deniedEvidenceKeys: ["html", "innerHtml", "outerHtml", "pageSource", "cookies", "headers", "selector"], tools: [],
         executeTool: async () => ({}),
         captureSanitizedFailureEvidence: async () => ({ schemaVersion: "web-llm-evidence.v1", snapshot: { html: "PRIVATE_RAW_HTML" } })
       }

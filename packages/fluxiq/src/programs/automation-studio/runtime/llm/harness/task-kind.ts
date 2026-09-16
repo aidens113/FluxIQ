@@ -11,7 +11,17 @@ export type AutomationStudioLlmTaskKind =
   | "expectation_action_target_patch"
   | "instruction_suggestion"
   | "change_proposal_generation"
-  | "diagnosis_only_report";
+  | "diagnosis_only_report"
+  // The two stages of the loop protocol that no existing kind could express.
+  // Gathering is `evidence_tool_decision`, implementing is a patch or a
+  // proposal, and iterating repeats one of those with what the last attempt
+  // taught -- but nothing here could ask for a plan or for a verdict on whether
+  // a change worked, so the protocol could not be run end to end. Neither adds
+  // an output shape: both produce the structured summary-and-confidence
+  // envelope `diagnosis_only_report` already uses, which is why the stage is a
+  // dimension of a request rather than a multiplication of these ten.
+  | "loop_plan"
+  | "loop_verification";
 
 export const AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS: Record<AutomationStudioLlmTaskKind, string> = {
   flow_bootstrap: "automation-studio.flow-bootstrap.v1",
@@ -23,8 +33,19 @@ export const AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS: Record<AutomationStudioLlmTa
   expectation_action_target_patch: "automation-studio.expectation-action-target-patch.v1",
   instruction_suggestion: "automation-studio.instruction-suggestion.v1",
   change_proposal_generation: "automation-studio.change-proposal-generation.v1",
-  diagnosis_only_report: "automation-studio.diagnosis-only-report.v1"
+  diagnosis_only_report: "automation-studio.diagnosis-only-report.v1",
+  loop_plan: "automation-studio.loop-plan.v1",
+  loop_verification: "automation-studio.loop-verification.v1"
 };
+
+/**
+ * The kinds whose structured output is the diagnosis envelope. One list, used
+ * by the task mappers here and by every provider adapter, so adding a kind that
+ * reports rather than changes is one edit instead of four that can disagree.
+ */
+export function automationStudioLlmTaskExpectsDiagnosis(taskKind: AutomationStudioLlmTaskKind): boolean {
+  return taskKind === "runtime_diagnosis" || taskKind === "diagnosis_only_report" || taskKind === "loop_plan" || taskKind === "loop_verification";
+}
 
 export function expectedOutputForTask(taskKind: AutomationStudioLlmTaskKind): AutomationStudioLlmTaskRequest["expectedOutput"] {
   if (taskKind === "flow_bootstrap") return "flow_bootstrap";

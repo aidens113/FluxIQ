@@ -514,6 +514,12 @@ function executionBinding(value: string | AutomationStudioLlmExecutionBinding, p
   return { executionDigest, settingsRevision: value.settingsRevision };
 }
 
+// The two stages that ask the model for a judgement rather than for a change.
+// Deliberately not extended to `diagnosis_only`, whose one call is a diagnosis,
+// or to `diagnose_and_adapt`, which is pinned at exactly two calls: a person who
+// granted two calls did not grant a five-stage protocol.
+const LOOP_PROTOCOL_TASK_KINDS: readonly AutomationStudioLlmTaskKind[] = ["loop_plan", "loop_verification"];
+
 function requestMatchesGrant(request: AutomationStudioLlmTaskRequest, grant: StoredGrant, policy: AutomationStudioLlmExecutionGrantResolvePolicy): boolean {
   if (policy.allowedTaskKinds && !policy.allowedTaskKinds.includes(request.taskKind)) return false;
   let taskAllowed: boolean;
@@ -534,6 +540,11 @@ function requestMatchesGrant(request: AutomationStudioLlmTaskRequest, grant: Sto
         || (request.taskKind === "runtime_diagnosis" && request.expectedOutput === "diagnosis")
         || (request.taskKind === "runtime_patch" && request.expectedOutput === "runtime_patch")
         || (request.taskKind === "instruction_suggestion" && request.expectedOutput === "instruction_suggestion")
+        // The stages of the protocol that report rather than change. A grant
+        // that may explore and adapt must be able to plan before it changes
+        // anything and to verify afterwards, or the order it is held to is one
+        // it is not authorized to follow.
+        || (LOOP_PROTOCOL_TASK_KINDS.includes(request.taskKind) && request.expectedOutput === "diagnosis")
         || (["router_patch", "subflow_patch", "expectation_action_target_patch", "change_proposal_generation"].includes(request.taskKind) && request.expectedOutput === "change_proposal");
       break;
     case "build_and_adapt":
@@ -542,6 +553,7 @@ function requestMatchesGrant(request: AutomationStudioLlmTaskRequest, grant: Sto
         || (request.taskKind === "runtime_diagnosis" && request.expectedOutput === "diagnosis")
         || (request.taskKind === "runtime_patch" && request.expectedOutput === "runtime_patch")
         || (request.taskKind === "instruction_suggestion" && request.expectedOutput === "instruction_suggestion")
+        || (LOOP_PROTOCOL_TASK_KINDS.includes(request.taskKind) && request.expectedOutput === "diagnosis")
         || (["router_patch", "subflow_patch", "expectation_action_target_patch", "change_proposal_generation"].includes(request.taskKind) && request.expectedOutput === "change_proposal");
       break;
     default: {

@@ -78,7 +78,11 @@ describe("Automation Studio DeepSeek provider", () => {
     expect(outboundBody).not.toMatch(/innerHTML|PRIVATE_RAW_SNAPSHOT/);
 
     await expectProviderError(provider.runTask(request({ context: { ...context, recentActions: [{ ...context.recentActions[0], metadata: { snapshot: "PRIVATE_RAW_SNAPSHOT" } }] as any } })), "llm.provider_configuration_invalid");
-    await expectProviderError(provider.runTask(request({ context: { ...context, failureEvidence: { schemaVersion: "web-llm-evidence.v1", innerHTML: "PRIVATE_RAW_SNAPSHOT" } } })), "llm.provider_configuration_invalid");
+    // The provider re-checks that the evidence in the request it was handed is
+    // already sanitized, using Core's structural bounds -- which are all it can
+    // apply, because the domain's declared keys are enforced where the domain
+    // hands Core its evidence and are not part of an outbound request.
+    await expectProviderError(provider.runTask(request({ context: { ...context, failureEvidence: { schemaVersion: "web-llm-evidence.v1", note: "P".repeat(2_001) } } })), "llm.provider_configuration_invalid");
   });
 
   it("normalizes unexpected local request-boundary failures before they reach the harness", async () => {

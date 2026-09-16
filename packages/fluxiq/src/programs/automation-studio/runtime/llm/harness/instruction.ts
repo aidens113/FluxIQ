@@ -33,7 +33,26 @@ export type AutomationStudioInstructionResolutionInput = {
   tokenBudget?: number;
 };
 
-export function resolveAutomationStudioLlmInstructions(input: AutomationStudioInstructionResolutionInput): AutomationStudioInstructionResolution {
+/**
+ * The effective instructions for one call.
+ *
+ * `stageInstructions` are the loop's stage protocol: Core's ordering statement
+ * and the current stage's instructions, already composed by
+ * `automationStudioLoopStageInstructions`. They arrive as a separate parameter
+ * rather than as a field of the input so that nothing can put stage prose into
+ * a request without going through the composer that always emits the ordering
+ * statement first.
+ *
+ * They are budgeted ahead of the Flow's own instructions. A Flow carrying more
+ * instruction text than the budget allows therefore loses its own tail rather
+ * than the protocol -- the failure mode worth designing against, where the
+ * stage a request is for is quietly truncated away and the model is left
+ * choosing its own order after all.
+ */
+export function resolveAutomationStudioLlmInstructions(
+  input: AutomationStudioInstructionResolutionInput,
+  stageInstructions: readonly AutomationStudioResolvedInstruction[] = []
+): AutomationStudioInstructionResolution {
   const tokenBudget = Math.max(128, Math.trunc(input.tokenBudget ?? 2_000));
   const diagnostics: AutomationStudioLlmDiagnostic[] = [];
   const scoped = input.instructions
@@ -50,25 +69,28 @@ export function resolveAutomationStudioLlmInstructions(input: AutomationStudioIn
     const never = items.filter((item) => /\bnever\b/i.test(item.body));
     if (always.length && never.length) diagnostics.push({ severity: "error", code: "instruction.conflict", message: `Required ${scopeKind} instructions contain both always and never directives.`, path: scopeKind });
   }
+  const candidates: AutomationStudioResolvedInstruction[] = [
+    ...stageInstructions,
+    ...scoped.map((instruction) => ({
+      instructionId: instruction.instructionId,
+      scopeKind: instruction.scope.kind,
+      title: instruction.title,
+      body: instruction.body,
+      priority: instruction.priority,
+      requirement: instruction.requirement,
+      tags: instruction.tags ?? []
+    }))
+  ];
   const resolved: AutomationStudioResolvedInstruction[] = [];
   let estimatedTokens = 0;
-  for (const instruction of scoped) {
+  for (const instruction of candidates) {
     const baseTokens = estimateTokens(instruction.body) + estimateTokens(instruction.title);
     const remaining = tokenBudget - estimatedTokens;
     if (remaining <= 0) break;
     const truncated = baseTokens > remaining;
     const body = truncated ? truncateToEstimatedTokens(instruction.body, Math.max(24, remaining - estimateTokens(instruction.title))) : instruction.body;
     estimatedTokens += Math.min(baseTokens, remaining);
-    resolved.push({
-      instructionId: instruction.instructionId,
-      scopeKind: instruction.scope.kind,
-      title: instruction.title,
-      body,
-      priority: instruction.priority,
-      requirement: instruction.requirement,
-      tags: instruction.tags ?? [],
-      ...(truncated ? { truncated: true } : {})
-    });
+    resolved.push({ ...instruction, body, ...(truncated ? { truncated: true } : {}) });
     if (truncated) diagnostics.push({ severity: "warning", code: "instruction.truncated", message: `Instruction ${instruction.instructionId} was truncated to fit context budget.`, path: instruction.instructionId });
   }
   return {

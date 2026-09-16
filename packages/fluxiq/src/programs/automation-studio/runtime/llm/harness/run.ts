@@ -7,6 +7,7 @@ import {
   AutomationStudioLlmProviderError,
   normalizedAutomationStudioLlmProviderFailure
 } from "../provider-contract.ts";
+import { automationStudioLoopStageTransition } from "../stages/index.ts";
 import { packAutomationStudioLlmContext } from "./context-packet.ts";
 import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
 import { interventionFromLlmResult } from "./intervention.ts";
@@ -67,6 +68,16 @@ export async function runAutomationStudioLlmHarness(input: AutomationStudioLlmHa
   const estimatedInputTokens = estimateTokens(JSON.stringify(request));
   request = { ...request, estimatedInputTokens };
   const budgetDiagnostics = [...tokenLimitResolution.diagnostics, ...timeoutDiagnostics];
+  // The stage protocol is enforced here, before a provider is resolved or a
+  // budget reserved, so a call that breaks Core's order costs nothing and
+  // returns the rule it broke. Enforcing it anywhere later would make the order
+  // advisory: the request would already have been sent.
+  if (input.stage) {
+    const transition = automationStudioLoopStageTransition(input.previousStage, input.stage);
+    if (!transition.ok) budgetDiagnostics.push({ severity: "error", code: transition.code, message: transition.message, path: "stage" });
+  } else if (input.previousStage) {
+    budgetDiagnostics.push({ severity: "error", code: "loop_stage.unknown_stage", message: "A call that follows a stage must name the stage it is in. Leaving a run's stage unset part-way through abandons the fixed order.", path: "stage" });
+  }
   if (input.taskKind === "flow_bootstrap" && !input.flowBootstrap) budgetDiagnostics.push({ severity: "error", code: "bootstrap.registry_context_missing", message: "Flow bootstrap requires a scope-aware node registry context.", path: "flowBootstrap" });
   if (input.taskKind === "evidence_tool_decision" && !input.evidenceLoop) budgetDiagnostics.push({ severity: "error", code: "evidence_loop.context_missing", message: "Evidence tool decisions require bounded tool and evidence context.", path: "evidenceLoop" });
 if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.length === 0) budgetDiagnostics.push({ severity: "error", code: "bootstrap.instructions_missing", message: "Flow bootstrap requires at least one effective active instruction.", path: "instructions" });

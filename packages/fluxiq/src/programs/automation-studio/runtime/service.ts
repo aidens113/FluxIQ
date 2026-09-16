@@ -2969,7 +2969,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           ...(input.graphOptions?.signal ? { signal: input.graphOptions.signal } : {})
         });
         if (captured !== undefined) {
-          const sanitized = sanitizeAutomationStudioLlmFailureEvidence("runtime_diagnosis", captured);
+          const sanitized = sanitizeAutomationStudioLlmFailureEvidence("runtime_diagnosis", captured, this.llmEvidenceRuntime?.deniedEvidenceKeys);
           if (Buffer.byteLength(JSON.stringify(sanitized), "utf8") > maxEvidenceBytes) {
             throw new Error("Sanitized failure evidence exceeds the dynamic request allowance.");
           }
@@ -3032,7 +3032,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       ...(failedAttempt?.nodeId ? { nodeId: failedAttempt.nodeId } : {}),
       instructions,
       runDetail: input.detail,
-      ...(failureEvidence ? { failureEvidence } : {}),
+      ...(failureEvidence ? { failureEvidence } : {}), ...(this.llmEvidenceRuntime?.deniedEvidenceKeys ? { deniedEvidenceKeys: this.llmEvidenceRuntime.deniedEvidenceKeys } : {}),
       ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
       policy: input.context.policy,
       ...(provider ? { provider } : {}),
@@ -3060,7 +3060,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         ...(failedAttempt?.nodeId ? { nodeId: failedAttempt.nodeId } : {}),
         instructions,
         runDetail: input.detail,
-        ...(failureEvidence ? { failureEvidence } : {}),
+        ...(failureEvidence ? { failureEvidence } : {}), ...(this.llmEvidenceRuntime?.deniedEvidenceKeys ? { deniedEvidenceKeys: this.llmEvidenceRuntime.deniedEvidenceKeys } : {}),
         ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
         policy: input.context.policy,
         provider,

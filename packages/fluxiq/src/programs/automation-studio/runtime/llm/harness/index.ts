@@ -4,7 +4,11 @@
 // here (json-bounds, provider-result, intervention, task-kind's task mappers)
 // are harness internals and stay unexported.
 export type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
-export { AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS, type AutomationStudioLlmTaskKind } from "./task-kind.ts";
+export {
+  AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS,
+  automationStudioLlmTaskExpectsDiagnosis,
+  type AutomationStudioLlmTaskKind
+} from "./task-kind.ts";
 export type {
   AutomationStudioLlmProvider,
   AutomationStudioLlmProviderMetadata,

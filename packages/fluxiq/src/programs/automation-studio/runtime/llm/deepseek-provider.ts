@@ -4,6 +4,7 @@ import {
   AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_MAX_LENGTH,
   AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN,
   AUTOMATION_STUDIO_RUNTIME_TARGET_MAX_HANDLES,
+  automationStudioLlmTaskExpectsDiagnosis,
   isAutomationStudioModelAuthoredTargetOverrideTarget,
   sanitizeAutomationStudioLlmFailureEvidence,
   type AutomationStudioLlmProvider,
@@ -398,7 +399,7 @@ function boundedJson(root: unknown): boolean {
 function expectedOutput(kind: AutomationStudioLlmTaskRequest["taskKind"]): AutomationStudioLlmTaskRequest["expectedOutput"] {
   if (kind === "flow_bootstrap") return "flow_bootstrap";
   if (kind === "evidence_tool_decision") return "evidence_tool_decision";
-  if (kind === "runtime_diagnosis" || kind === "diagnosis_only_report") return "diagnosis";
+  if (automationStudioLlmTaskExpectsDiagnosis(kind)) return "diagnosis";
   if (kind === "runtime_patch") return "runtime_patch";
   if (kind === "instruction_suggestion") return "instruction_suggestion";
   return "change_proposal";
@@ -419,10 +420,22 @@ function buildDeepSeekRequestBody(
   });
 }
 function buildDeepSeekMessages(request: AutomationStudioLlmTaskRequest): Array<{ role: "system" | "user"; content: string }> {
+  // A staged request carries the exploration policy as its "gather" stage
+  // instruction, where a domain can add to it or replace it outright. Repeating
+  // it here as a provider constant would put Core's own words back into the
+  // system message underneath a domain's replacement, and the override would
+  // not be an override. The schema and injection-defence constants stay: those
+  // are not stage prose and are not a domain's to replace.
+  const staged = request.context.stage !== undefined;
   const systemPromptBase = request.taskKind === "flow_bootstrap"
     ? `${AUTOMATION_STUDIO_DEEPSEEK_SYSTEM_PROMPT} ${AUTOMATION_STUDIO_FLOW_BOOTSTRAP_SCHEMA_INSTRUCTION} ${AUTOMATION_STUDIO_FLOW_BOOTSTRAP_COMPACT_OUTPUT_INSTRUCTION}`
     : request.taskKind === "evidence_tool_decision"
-      ? `${AUTOMATION_STUDIO_DEEPSEEK_SYSTEM_PROMPT} ${AUTOMATION_STUDIO_STRUCTURED_OUTPUT_SCHEMA_INSTRUCTION} ${AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION} ${AUTOMATION_STUDIO_EVIDENCE_DECISION_COMPACT_OUTPUT_INSTRUCTION}`
+      ? [
+        AUTOMATION_STUDIO_DEEPSEEK_SYSTEM_PROMPT,
+        AUTOMATION_STUDIO_STRUCTURED_OUTPUT_SCHEMA_INSTRUCTION,
+        ...(staged ? [] : [AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION]),
+        AUTOMATION_STUDIO_EVIDENCE_DECISION_COMPACT_OUTPUT_INSTRUCTION
+      ].join(" ")
     : outputSchemaForRequest(request)
       ? `${AUTOMATION_STUDIO_DEEPSEEK_SYSTEM_PROMPT} ${AUTOMATION_STUDIO_STRUCTURED_OUTPUT_SCHEMA_INSTRUCTION}${request.taskKind === "runtime_patch" ? ` ${AUTOMATION_STUDIO_RUNTIME_TARGET_OVERRIDE_INSTRUCTION}` : ""}`
     : AUTOMATION_STUDIO_DEEPSEEK_SYSTEM_PROMPT;
@@ -436,6 +449,7 @@ function providerUserPayload(request: AutomationStudioLlmTaskRequest): JsonObjec
   const context = request.taskKind === "flow_bootstrap" && request.context.flowBootstrap
     ? {
       schemaVersion: request.context.schemaVersion,
+      ...(request.context.stage ? { stage: request.context.stage } : {}),
       projectId: request.context.projectId,
       flowId: request.context.flowId,
       instructions: request.context.instructions,
@@ -449,6 +463,7 @@ function providerUserPayload(request: AutomationStudioLlmTaskRequest): JsonObjec
     : request.taskKind === "evidence_tool_decision" && request.context.evidenceLoop
       ? {
         schemaVersion: request.context.schemaVersion,
+        ...(request.context.stage ? { stage: request.context.stage } : {}),
         projectId: request.context.projectId,
         flowId: request.context.flowId,
         instructions: request.context.instructions,
@@ -480,7 +495,7 @@ function providerUserPayload(request: AutomationStudioLlmTaskRequest): JsonObjec
 }
 
 function outputSchemaForRequest(request: AutomationStudioLlmTaskRequest): JsonObjectLike | undefined {
-  if (request.taskKind === "runtime_diagnosis" || request.taskKind === "diagnosis_only_report") return DIAGNOSIS_OUTPUT_SCHEMA;
+  if (automationStudioLlmTaskExpectsDiagnosis(request.taskKind)) return DIAGNOSIS_OUTPUT_SCHEMA;
   if (request.taskKind === "evidence_tool_decision" && request.context.evidenceLoop) return {
     type: "object",
     additionalProperties: false,
@@ -577,7 +592,7 @@ function validEvidenceLoopContext(context: AutomationStudioLlmTaskRequest["conte
 }
 
 function parseDeepSeekStructuredResponse(structured: unknown, request: AutomationStudioLlmTaskRequest): AutomationStudioLlmStructuredResponse {
-  if (request.taskKind === "runtime_diagnosis" || request.taskKind === "diagnosis_only_report") {
+  if (automationStudioLlmTaskExpectsDiagnosis(request.taskKind)) {
     if (!isRecord(structured) || structured.kind !== "diagnosis") outputInvalid();
     return structured as AutomationStudioLlmStructuredResponse;
   }

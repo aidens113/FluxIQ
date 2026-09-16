@@ -12,7 +12,8 @@ import {
 } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioReusableLlmContextPacket } from "../../reusable-llm-context.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../evidence-loop.ts";
-import { sanitizeAutomationStudioLlmFailureEvidence } from "./failure-evidence.ts";
+import { automationStudioLoopStageInstructions, type AutomationStudioLoopStage } from "../stages/index.ts";
+import { automationStudioEvidenceKey, sanitizeAutomationStudioLlmFailureEvidence } from "./failure-evidence.ts";
 import { resolveAutomationStudioLlmInstructions, type AutomationStudioInstructionResolution } from "./instruction.ts";
 import { AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS, type AutomationStudioLlmTaskKind } from "./task-kind.ts";
 import type { AutomationStudioLlmHarnessInput } from "./task-request.ts";
@@ -20,6 +21,9 @@ import type { AutomationStudioLlmHarnessInput } from "./task-request.ts";
 export type AutomationStudioLlmContextPacket = {
   schemaVersion: "0.1";
   taskKind: AutomationStudioLlmTaskKind;
+  /** Where this call sits in the loop's fixed order of work, when it is part of
+   * one. Absent for a call made outside the protocol. */
+  stage?: AutomationStudioLoopStage;
   promptVersion: string;
   projectId: string;
   flowId: string;
@@ -62,8 +66,19 @@ export type AutomationStudioLlmRecentActionContext = Pick<AutomationStudioFlowRu
 };
 
 export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarnessInput): AutomationStudioLlmContextPacket {
-  const promptVersion = AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS[input.taskKind];
-  const instructions = resolveAutomationStudioLlmInstructions(input);
+  const stage = input.stage;
+  // The prompt is versioned by stage as well as by task kind: the same kind
+  // asked at "implement" and at "iterate" is a different prompt, and a recorded
+  // intervention has to say which one it was.
+  const promptVersion = stage ? `${AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS[input.taskKind]}+stage.${stage}` : AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS[input.taskKind];
+  // Composed here rather than accepted from the caller, so a staged request
+  // always carries Core's ordering statement. There is no argument by which a
+  // caller, or a domain that replaced every stage, can omit it.
+  const instructions = resolveAutomationStudioLlmInstructions(
+    input,
+    stage ? automationStudioLoopStageInstructions(stage, input.stageInstructions) : []
+  );
+  const deniedEvidenceKeys = input.deniedEvidenceKeys ?? [];
   const flowBootstrap = (input.taskKind === "flow_bootstrap" || input.taskKind === "evidence_tool_decision") && input.flowBootstrap
     ? buildAutomationStudioFlowBootstrapContext({
       ...(input.flowBootstrap.registry ? { registry: input.flowBootstrap.registry } : {}),
@@ -78,6 +93,7 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
   return {
     schemaVersion: "0.1",
     taskKind: input.taskKind,
+    ...(stage ? { stage } : {}),
     promptVersion,
     projectId: input.projectId,
     flowId: input.flowId,
@@ -88,10 +104,10 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     ...(input.stateDiffs?.length ? { stateDiffs: input.stateDiffs.slice(0, 50) } : {}),
     ...(input.routeHistory?.length ? { routeHistory: input.routeHistory.slice(-25) } : {}),
     ...(input.runDetail?.actionAttempts?.length ? { recentActions: input.runDetail.actionAttempts.slice(-AUTOMATION_STUDIO_LLM_MAX_RECENT_ACTIONS).map(compactRecentActionForLlm) } : {}),
-    ...(input.failureEvidence ? { failureEvidence: sanitizeAutomationStudioLlmFailureEvidence(input.taskKind, input.failureEvidence) } : {}),
+    ...(input.failureEvidence ? { failureEvidence: sanitizeAutomationStudioLlmFailureEvidence(input.taskKind, input.failureEvidence, deniedEvidenceKeys) } : {}),
     ...(input.relevantRuns?.length ? { relevantRuns: input.relevantRuns.slice(0, 25) } : {}),
     ...(input.relevantAdaptations?.length ? { relevantAdaptations: input.relevantAdaptations.slice(0, 25) } : {}),
-    ...(input.reusableContext ? { reusableContext: sanitizeReusableLlmContextPacket(input.reusableContext) } : {}),
+    ...(input.reusableContext ? { reusableContext: sanitizeReusableLlmContextPacket(input.reusableContext, deniedEvidenceKeys) } : {}),
     ...(input.subflows?.length ? { subflows: input.subflows.slice(0, 100).map(compactSubflowForLlm) } : {}),
     ...(input.availableActions?.length ? { availableActions: input.availableActions.slice(0, 100) } : {}),
     ...(flowBootstrap ? { flowBootstrap } : {}),
@@ -101,7 +117,8 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
   };
 }
 
-function sanitizeReusableLlmContextPacket(packet: AutomationStudioReusableLlmContextPacket): AutomationStudioReusableLlmContextPacket {
+function sanitizeReusableLlmContextPacket(packet: AutomationStudioReusableLlmContextPacket, deniedKeys: readonly string[]): AutomationStudioReusableLlmContextPacket {
+  const denied = new Set(deniedKeys.map(automationStudioEvidenceKey));
   if (packet.schemaVersion !== "automation-studio.reusable-llm-context-packet.v1" || !Array.isArray(packet.items) || packet.items.length > 5) throw new Error("Reusable LLM context packet is invalid.");
   const ids = new Set<string>();
   const items = packet.items.map((item) => {
@@ -111,7 +128,7 @@ function sanitizeReusableLlmContextPacket(packet: AutomationStudioReusableLlmCon
       || !["succeeded", "failed", "unknown"].includes(item.outcome) || !["unreviewed", "approved"].includes(item.reviewerState)
       || !["unknown", "validated", "applied"].includes(item.validationState)
       || !safeReusableSourceIds(item.sourceRunIds) || !safeReusableSourceIds(item.sourceAdaptationIds)
-      || containsReusableExecutableTarget(item.promptProjection)) throw new Error("Reusable LLM context packet is invalid.");
+      || containsReusableExecutableTarget(item.promptProjection, denied)) throw new Error("Reusable LLM context packet is invalid.");
     ids.add(item.recordId);
     return structuredClone(item);
   });
@@ -124,15 +141,26 @@ function safeReusableSourceIds(value: unknown): value is string[] {
   return Array.isArray(value) && value.length <= 25 && value.every((item) => typeof item === "string" && /^[A-Za-z0-9._:-]{1,200}$/u.test(item));
 }
 
-function containsReusableExecutableTarget(value: JsonValue, seen = new Set<object>()): boolean {
+/**
+ * Historical context may describe what was done; it may never carry something
+ * the model could execute or address directly.
+ *
+ * Core denies its own vocabulary for that -- the `target` family, which is what
+ * a repair addresses in every domain. `selector` and `selectors` used to be in
+ * this list too. They are a browser's word for a target and had no business in
+ * a framework with no page in it, so they moved to the web domain's declared
+ * keys, which arrive as `deniedKeys` and are checked here beside Core's own.
+ */
+function containsReusableExecutableTarget(value: JsonValue, deniedKeys: ReadonlySet<string>, seen = new Set<object>()): boolean {
   if (!value || typeof value !== "object") return false;
   if (seen.has(value)) return true;
   seen.add(value);
-  if (Array.isArray(value)) return value.some((item) => containsReusableExecutableTarget(item, seen));
+  if (Array.isArray(value)) return value.some((item) => containsReusableExecutableTarget(item, deniedKeys, seen));
   return Object.entries(value).some(([key, item]) => {
     const normalized = key.toLowerCase().replace(/[^a-z0-9]/gu, "");
-    return /^(?:selector|selectors|target|targets|targetid|targetids|targetnodeid|targetnodeids|actiontarget|actiontargets)$/u.test(normalized)
-      || containsReusableExecutableTarget(item as JsonValue, seen);
+    return /^(?:target|targets|targetid|targetids|targetnodeid|targetnodeids|actiontarget|actiontargets)$/u.test(normalized)
+      || deniedKeys.has(normalized)
+      || containsReusableExecutableTarget(item as JsonValue, deniedKeys, seen);
   });
 }
 

@@ -174,10 +174,32 @@ describe("Automation Studio LLM harness", () => {
       taskKind: "runtime_diagnosis",
       failureEvidence: { schemaVersion: "web-llm-evidence.v1", left: "x".repeat(AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES / 2), right: "y".repeat(AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES / 2) }
     })).toThrow(/byte limit/);
+    // Core's bounds are structural and name no medium. A string past the limit
+    // is refused whatever it is called and whoever sent it.
     expect(() => packAutomationStudioLlmContext({
       ...base,
       taskKind: "runtime_patch",
+      failureEvidence: { schemaVersion: "web-llm-evidence.v1", note: "x".repeat(2_001) }
+    })).toThrow(/unsafe or unbounded/);
+    // `snapshot` used to be one of seven keys Core denied by name. Denying it
+    // was wrong twice over: the other six are a browser's and an HTTP client's
+    // vocabulary inside a framework that has neither, and `snapshot` is Core's
+    // own word -- Core's own state-snapshot harness option produces one. Core
+    // now carries it.
+    expect(packAutomationStudioLlmContext({
+      ...base,
+      taskKind: "runtime_patch",
       failureEvidence: { schemaVersion: "web-llm-evidence.v1", snapshot: { location: "private" } }
+    }).failureEvidence).toEqual({ schemaVersion: "web-llm-evidence.v1", snapshot: { location: "private" } });
+    // The protection is kept without the nouns: the domain that knows what raw
+    // payload looks like for its medium declares the keys, and Core enforces
+    // the declaration at any depth, normalizing case and separators so
+    // `innerHTML` and `inner_html` are the same claim.
+    expect(() => packAutomationStudioLlmContext({
+      ...base,
+      taskKind: "runtime_patch",
+      deniedEvidenceKeys: ["innerHTML", "pageSource"],
+      failureEvidence: { schemaVersion: "web-llm-evidence.v1", elements: [{ inner_html: "PRIVATE_RAW_HTML" }] }
     })).toThrow(/unsafe or unbounded/);
     expect(() => packAutomationStudioLlmContext({
       ...base,
@@ -190,7 +212,13 @@ describe("Automation Studio LLM harness", () => {
     const base = { taskKind: "runtime_diagnosis" as const, projectId: "project.llm", flowId: "flow.checkout", instructions: [] as AutomationStudioFlowInstruction[] };
     const reusableContext = { schemaVersion: "automation-studio.reusable-llm-context-packet.v1" as const, items: [{ advisory: true as const, recordId: "context.one", contentDigest: "a".repeat(64), outcome: "succeeded" as const, reviewerState: "approved" as const, validationState: "validated" as const, sourceRunIds: ["run.one"], sourceAdaptationIds: [], promptProjection: { facts: [{ kind: "element", role: "button" }] } }] };
     expect(packAutomationStudioLlmContext({ ...base, reusableContext }).reusableContext).toEqual(reusableContext);
-    expect(() => packAutomationStudioLlmContext({ ...base, reusableContext: { ...reusableContext, items: [{ ...reusableContext.items[0]!, promptProjection: { selector: "#cached-target" } }] } })).toThrow("packet is invalid");
+    // Core denies its own vocabulary: the `target` family is what a repair
+    // addresses in every domain, so historical context may never carry one.
+    expect(() => packAutomationStudioLlmContext({ ...base, reusableContext: { ...reusableContext, items: [{ ...reusableContext.items[0]!, promptProjection: { targetNodeId: "node.submit" } }] } })).toThrow("packet is invalid");
+    // `selector` is a browser's word for a target and is no longer Core's to
+    // deny. The domain declares it, and the same declaration that bounds
+    // failure evidence bounds reusable context, so the two cannot drift.
+    expect(() => packAutomationStudioLlmContext({ ...base, deniedEvidenceKeys: ["selector"], reusableContext: { ...reusableContext, items: [{ ...reusableContext.items[0]!, promptProjection: { selector: "#cached-target" } }] } })).toThrow("packet is invalid");
   });
 
   it("validates structured responses and rejects executable code", () => {

@@ -8,6 +8,7 @@ import type {
 } from "../../../model/index.ts";
 import type { AutomationStudioReusableLlmContextPacket } from "../../reusable-llm-context.ts";
 import type { AutomationStudioLlmRunBudgetLedger } from "../run-budget.ts";
+import type { AutomationStudioLoopStage, AutomationStudioLoopStageInstructionRegistry } from "../stages/index.ts";
 import type { AutomationStudioLlmContextPacket } from "./context-packet.ts";
 import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
 import type { AutomationStudioInstructionResolutionInput } from "./instruction.ts";
@@ -43,6 +44,23 @@ export type AutomationStudioLlmTaskResult = {
 
 export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolutionInput & {
   taskKind: AutomationStudioLlmTaskKind;
+  /** Which stage of the loop's fixed order this call belongs to. Naming one
+   * puts the request under the protocol: Core's ordering statement and that
+   * stage's instructions are added, the prompt is versioned by stage, and the
+   * move from `previousStage` is checked before any provider is called. */
+  stage?: AutomationStudioLoopStage;
+  /** The stage the loop was in before this call, so the move can be refused
+   * when it breaks the order. Absent means this is the first call of a run,
+   * which must therefore be the first stage. */
+  previousStage?: AutomationStudioLoopStage;
+  /** The domains' contributions to the stage instructions. Absent means Core's
+   * defaults, which is also what an empty registry produces. */
+  stageInstructions?: AutomationStudioLoopStageInstructionRegistry;
+  /** Keys the active domain has declared may never appear in evidence or in
+   * reusable context, because for its medium they carry raw payload or
+   * something directly executable. Core holds no such list of its own: it
+   * enforces the domain's, and bounds shape and size regardless. */
+  deniedEvidenceKeys?: readonly string[];
   runId?: string;
   runDetail?: AutomationStudioFlowRunDetail;
   failureEvidence?: JsonObject;
