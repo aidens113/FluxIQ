@@ -1,7 +1,6 @@
 // Flow instructions, their instruction sets, and the change proposals raised
 // against them.
 
-import { authorizeProgramPin } from "../../../_shared/authorization.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type FlowChangeProposalRequest, type FlowExpansionSummaryRequest, type FlowInstructionRequest, type FlowInstructionSetRequest, type SaveFlowInstructionRequest } from "../contracts.ts";
 import type { AutomationStudioFlowInstruction, AutomationStudioInstructionTag } from "../../model/index.ts";
 import type { AutomationStudioService } from "../../runtime/index.ts";
@@ -9,11 +8,12 @@ import { flowInstructionScopeFromPayload } from "./instruction-scope.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
 export function registerInstructionEndpoints(dependencies: AutomationStudioApiDependencies): void {
-  const { registry, service, identityAccess } = dependencies;
+  const { registry, service } = dependencies;
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowInstructions,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowExpansionSummaryRequest : {} as FlowExpansionSummaryRequest;
       const input: Parameters<AutomationStudioService["listFlowInstructionSummaries"]>[0] = { projectId: String(payload.projectId ?? ""), limit: payload.limit, offset: payload.offset };
@@ -33,6 +33,7 @@ export function registerInstructionEndpoints(dependencies: AutomationStudioApiDe
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowInstruction,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowInstructionRequest : {} as FlowInstructionRequest;
       return { ok: true, payload: { instruction: await service.getFlowInstruction(String(payload.projectId ?? ""), String(payload.instructionId ?? "")) } };
@@ -42,6 +43,7 @@ export function registerInstructionEndpoints(dependencies: AutomationStudioApiDe
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowInstructionSet,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowInstructionSetRequest : {} as FlowInstructionSetRequest;
       const input: Parameters<AutomationStudioService["getFlowInstructionSet"]>[0] = { projectId: String(payload.projectId ?? "") };
@@ -54,9 +56,9 @@ export function registerInstructionEndpoints(dependencies: AutomationStudioApiDe
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowInstruction,
     permission: "flows.write",
+    classification: "authoring",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as SaveFlowInstructionRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as SaveFlowInstructionRequest;
-      await authorizeProgramPin(identityAccess, payload as any);
       const projectId = String(payload.projectId ?? "");
       const flowId = String(payload.flowId ?? "");
       const now = Date.now();
@@ -93,6 +95,7 @@ export function registerInstructionEndpoints(dependencies: AutomationStudioApiDe
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowChangeProposals,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowExpansionSummaryRequest : {} as FlowExpansionSummaryRequest;
       const input: Parameters<AutomationStudioService["listFlowChangeProposalSummaries"]>[0] = { projectId: String(payload.projectId ?? ""), limit: payload.limit, offset: payload.offset };
@@ -106,6 +109,7 @@ export function registerInstructionEndpoints(dependencies: AutomationStudioApiDe
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowChangeProposal,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowChangeProposalRequest : {} as FlowChangeProposalRequest;
       return { ok: true, payload: { changeProposal: await service.getFlowChangeProposal(String(payload.projectId ?? ""), String(payload.flowId ?? ""), String(payload.proposalId ?? "")) } };

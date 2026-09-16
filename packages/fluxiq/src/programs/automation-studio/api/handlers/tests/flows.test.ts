@@ -19,18 +19,22 @@ describe("Automation Studio graph patch API", () => {
       const subflow = await service.createFlowSubflow({ projectId: project.id, flowId: flow.flowId, name: "Primary", role: "primary" });
       if (!subflow.graphFlowId) throw new Error("Expected the primary Subflow to own a graph Flow.");
       const graphFlowId = subflow.graphFlowId;
-      const registry = new GlobalProgramApiRegistry();
+      // The registry holds Identity Access, so a PIN *could* be taken here.
+      // Graph editing is authoring, so it must not be.
       const authorizeSessionPin = vi.fn().mockResolvedValue({ authorized: true });
-      registerAutomationStudioApi(registry, service, { authorizeSessionPin } as any);
+      const registry = new GlobalProgramApiRegistry({ identityAccess: { authorizeSessionPin } as any });
+      registerAutomationStudioApi(registry, service);
       expect(registry.endpoints()).toContainEqual({
         programId: "automation-studio",
         endpoint: AUTOMATION_STUDIO_ENDPOINTS.applyGraphPatch,
-        permission: "flows.write"
+        permission: "flows.write",
+        classification: "authoring"
       });
       expect(registry.endpoints()).toContainEqual({
         programId: "automation-studio",
         endpoint: AUTOMATION_STUDIO_ENDPOINTS.getGraphViewport,
-        permission: "programs.read"
+        permission: "programs.read",
+        classification: "read"
       });
 
       const response = await registry.call({
@@ -42,7 +46,6 @@ describe("Automation Studio graph patch API", () => {
           projectId: project.id,
           flowId: graphFlowId,
           authSessionId: "session.user.graph",
-          authorizationPin: "123456",
           baseRevision: 1,
           mutationId: "graph-api.initial",
           operations: [
@@ -110,7 +113,7 @@ describe("Automation Studio graph patch API", () => {
           flow: { flowId: graphFlowId, graphRevision: 2 }
         }
       });
-      expect(authorizeSessionPin).toHaveBeenCalledWith({ sessionId: "session.user.graph", pin: "123456" });
+      expect(authorizeSessionPin).not.toHaveBeenCalled();
       const saved = await service.getFlow(project.id, graphFlowId);
       expect(saved.nodes.map((node) => node.id).sort()).toEqual(["node.end", "node.start"]);
       expect(saved.edges.map((edge) => edge.id)).toEqual(["edge.start.end"]);

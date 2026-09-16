@@ -24,6 +24,10 @@ export type CreateIdentityUserRequest = {
   enabled?: boolean;
   password?: string;
   pin?: string;
+  authSessionId?: string;
+  authorizationPassword?: string;
+  authorizationPin?: string;
+  authorizationTotp?: string;
 };
 
 export type UpdateIdentityUserRequest = {
@@ -50,11 +54,19 @@ export type SetIdentitySecretRequest = {
 export type TotpConfirmRequest = {
   userId: string;
   code: string;
+  authSessionId?: string;
+  authorizationPassword?: string;
+  authorizationPin?: string;
+  authorizationTotp?: string;
 };
 
 export type SessionRequest = {
   userId: string;
   ttlMs?: number;
+  authSessionId?: string;
+  authorizationPassword?: string;
+  authorizationPin?: string;
+  authorizationTotp?: string;
 };
 
 export type RevokeSessionRequest = {
@@ -66,4 +78,8 @@ export type VaultUnlockRequest = {
   password?: string;
   pin?: string;
   totp?: string;
+  authSessionId?: string;
+  authorizationPassword?: string;
+  authorizationPin?: string;
+  authorizationTotp?: string;
 };

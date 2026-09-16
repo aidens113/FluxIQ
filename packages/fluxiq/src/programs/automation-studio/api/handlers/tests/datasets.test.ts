@@ -28,9 +28,12 @@ function datasetService(overrides: Record<string, unknown> = {}) {
     ...overrides
   };
   const assertProjectDomainAccess = vi.fn().mockResolvedValue(undefined);
-  const registry = new GlobalProgramApiRegistry();
+  // Deleting a run's captured rows is destructive, so the registry takes the
+  // operator's PIN before the handler runs. Every other dataset endpoint reads.
+  const authorizeSessionPin = vi.fn().mockResolvedValue({ authorized: true });
+  const registry = new GlobalProgramApiRegistry({ identityAccess: { authorizeSessionPin } as never });
   registerAutomationStudioApi(registry, { assertProjectDomainAccess, runDatasets } as unknown as AutomationStudioService);
-  return { registry, runDatasets, assertProjectDomainAccess };
+  return { registry, runDatasets, assertProjectDomainAccess, authorizeSessionPin };
 }
 
 const readActor = { ...cacheActor("user.reader"), permissions: ["programs.read" as const] };
@@ -38,19 +41,19 @@ const writeActor = { ...cacheActor("user.writer"), permissions: ["flows.write" a
 
 // One representative call per endpoint, with the collaborator method it must reach.
 const DATASET_ENDPOINTS = [
-  { endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRunDatasets, method: "listRunDatasets", permission: "programs.read", actor: readActor, payload: { projectId: "project.one", runId: "run.one" } },
-  { endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRunDatasetPage, method: "getRunDatasetPage", permission: "programs.read", actor: readActor, payload: { projectId: "project.one", runId: "run.one", datasetId: "listings" } },
-  { endpoint: AUTOMATION_STUDIO_ENDPOINTS.exportRunDataset, method: "exportRunDataset", permission: "programs.read", actor: readActor, payload: { projectId: "project.one", runId: "run.one", datasetId: "listings", format: "csv" } },
-  { endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteRunDatasets, method: "deleteRunDatasets", permission: "flows.write", actor: writeActor, payload: { projectId: "project.one", runId: "run.one" } },
-  { endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectDatasets, method: "listProjectDatasets", permission: "programs.read", actor: readActor, payload: { projectId: "project.one" } },
-  { endpoint: AUTOMATION_STUDIO_ENDPOINTS.listDatasetRuns, method: "listDatasetRuns", permission: "programs.read", actor: readActor, payload: { projectId: "project.one", flowId: "flow.listings", datasetId: "listings" } }
+  { endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRunDatasets, method: "listRunDatasets", permission: "programs.read", classification: "read", actor: readActor, payload: { projectId: "project.one", runId: "run.one" } },
+  { endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRunDatasetPage, method: "getRunDatasetPage", permission: "programs.read", classification: "read", actor: readActor, payload: { projectId: "project.one", runId: "run.one", datasetId: "listings" } },
+  { endpoint: AUTOMATION_STUDIO_ENDPOINTS.exportRunDataset, method: "exportRunDataset", permission: "programs.read", classification: "read", actor: readActor, payload: { projectId: "project.one", runId: "run.one", datasetId: "listings", format: "csv" } },
+  { endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteRunDatasets, method: "deleteRunDatasets", permission: "flows.write", classification: "destructive", actor: writeActor, payload: { projectId: "project.one", runId: "run.one", authSessionId: "session.user.writer", authorizationPin: "123456" } },
+  { endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectDatasets, method: "listProjectDatasets", permission: "programs.read", classification: "read", actor: readActor, payload: { projectId: "project.one" } },
+  { endpoint: AUTOMATION_STUDIO_ENDPOINTS.listDatasetRuns, method: "listDatasetRuns", permission: "programs.read", classification: "read", actor: readActor, payload: { projectId: "project.one", flowId: "flow.listings", datasetId: "listings" } }
 ] as const;
 
 describe("Automation Studio run dataset API", () => {
-  it("registers every dataset endpoint under its permission", () => {
+  it("registers every dataset endpoint under its permission and classification", () => {
     const { registry } = datasetService();
-    for (const { endpoint, permission } of DATASET_ENDPOINTS) {
-      expect(registry.endpoints()).toContainEqual({ programId: "automation-studio", endpoint, permission });
+    for (const { endpoint, permission, classification } of DATASET_ENDPOINTS) {
+      expect(registry.endpoints()).toContainEqual({ programId: "automation-studio", endpoint, permission, classification });
     }
   });
 
@@ -168,9 +171,10 @@ describe("Automation Studio run dataset API", () => {
       endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteRunDatasets,
       scope: {},
       actor: writeActor,
-      payload: { projectId: "project.one", runId: "run.one", datasetId: "listings" }
+      payload: { projectId: "project.one", runId: "run.one", datasetId: "listings", authSessionId: "session.user.writer", authorizationPin: "123456" }
     });
     expect(single).toEqual({ ok: true, payload: { deleted: { datasetCount: 1, rowCount: 12 } } });
+    expect(one.authorizeSessionPin).toHaveBeenCalledWith({ sessionId: "session.user.writer", pin: "123456" });
     expect(one.runDatasets.deleteRunDatasets).toHaveBeenCalledWith({ projectId: "project.one", runId: "run.one", datasetId: "listings", actorId: "user.writer" });
 
     const all = datasetService();
@@ -179,9 +183,20 @@ describe("Automation Studio run dataset API", () => {
       endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteRunDatasets,
       scope: {},
       actor: writeActor,
-      payload: { projectId: "project.one", runId: "run.one" }
+      payload: { projectId: "project.one", runId: "run.one", authSessionId: "session.user.writer", authorizationPin: "123456" }
     });
     expect(all.runDatasets.deleteRunDatasets).toHaveBeenCalledWith({ projectId: "project.one", runId: "run.one", datasetId: undefined, actorId: "user.writer" });
+
+    const unauthorized = datasetService();
+    const refused = await unauthorized.registry.call({
+      programId: "automation-studio",
+      endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteRunDatasets,
+      scope: {},
+      actor: writeActor,
+      payload: { projectId: "project.one", runId: "run.one" }
+    });
+    expect(refused).toMatchObject({ ok: false, error: "PIN is required for this action" });
+    expect(unauthorized.runDatasets.deleteRunDatasets).not.toHaveBeenCalled();
   });
 
   it("forwards the Data window's table-run filters", async () => {

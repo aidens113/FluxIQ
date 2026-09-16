@@ -7,30 +7,35 @@ export function registerRuntimeApi(registry: GlobalProgramApiRegistry, service: 
     programId: "runtime",
     endpoint: RUNTIME_ENDPOINTS.snapshot,
     permission: "programs.read",
+    classification: "read",
     handler: async () => ({ ok: true, payload: await service.snapshot() })
   });
   registry.register({
     programId: "runtime",
     endpoint: RUNTIME_ENDPOINTS.listClients,
     permission: "programs.read",
+    classification: "read",
     handler: () => ({ ok: true, payload: service.clients() })
   });
   registry.register({
     programId: "runtime",
     endpoint: RUNTIME_ENDPOINTS.listCapabilities,
     permission: "programs.read",
+    classification: "read",
     handler: async () => ({ ok: true, payload: await service.capabilities() })
   });
   registry.register({
     programId: "runtime",
     endpoint: RUNTIME_ENDPOINTS.listRuns,
     permission: "programs.read",
+    classification: "read",
     handler: async () => ({ ok: true, payload: (await service.snapshot()).runs })
   });
   registry.register({
     programId: "runtime",
     endpoint: RUNTIME_ENDPOINTS.getRun,
     permission: "programs.read",
+    classification: "read",
     handler: (request) => {
       const payload = request.payload as GetRuntimeRunRequest | undefined;
       if (!payload?.runId) return { ok: false, error: "runId is required" };

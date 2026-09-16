@@ -40,7 +40,8 @@ describe("Automation Studio run audit export API", () => {
     expect(registry.endpoints()).toContainEqual({
       programId: "automation-studio",
       endpoint: AUTOMATION_STUDIO_ENDPOINTS.exportFlowRunAudit,
-      permission: "programs.read"
+      permission: "programs.read",
+      classification: "read"
     });
   });
 

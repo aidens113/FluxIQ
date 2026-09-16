@@ -9,6 +9,7 @@ export function registerRuntimeSessionEndpoints(dependencies: AutomationStudioAp
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRuntimeSessions,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; summaries?: unknown; limit?: unknown; offset?: unknown } : {};
       const projectId = String(payload.projectId ?? "");
@@ -23,6 +24,7 @@ export function registerRuntimeSessionEndpoints(dependencies: AutomationStudioAp
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRuntimeSession,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; runId?: unknown } : {};
       return { ok: true, payload: { runtimeSession: await service.getRuntimeSession(String(payload.projectId ?? ""), String(payload.runId ?? "")) } };

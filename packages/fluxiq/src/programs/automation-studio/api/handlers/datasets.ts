@@ -21,6 +21,7 @@ export function registerRunDatasetEndpoints(dependencies: AutomationStudioApiDep
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRunDatasets,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => {
       const payload = datasetPayload<RunDatasetListRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
@@ -34,6 +35,7 @@ export function registerRunDatasetEndpoints(dependencies: AutomationStudioApiDep
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRunDatasetPage,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => {
       const payload = datasetPayload<RunDatasetPageRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
@@ -53,6 +55,7 @@ export function registerRunDatasetEndpoints(dependencies: AutomationStudioApiDep
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.exportRunDataset,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => {
       const payload = datasetPayload<RunDatasetExportRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
@@ -72,6 +75,7 @@ export function registerRunDatasetEndpoints(dependencies: AutomationStudioApiDep
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteRunDatasets,
     permission: "flows.write",
+    classification: "destructive",
     handler: async (request) => {
       const payload = datasetPayload<RunDatasetDeleteRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
@@ -90,6 +94,7 @@ export function registerRunDatasetEndpoints(dependencies: AutomationStudioApiDep
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectDatasets,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => {
       const payload = datasetPayload<ProjectDatasetListRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
@@ -110,6 +115,7 @@ export function registerRunDatasetEndpoints(dependencies: AutomationStudioApiDep
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listDatasetRuns,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => {
       const payload = datasetPayload<DatasetRunListRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");

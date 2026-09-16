@@ -19,12 +19,14 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     programId: "secret-keys",
     endpoint: SECRET_KEYS_ENDPOINTS.snapshot,
     permission: "programs.read",
+    classification: "read",
     handler: async () => ({ ok: true, payload: await service.snapshot() })
   });
   registry.register({
     programId: "secret-keys",
     endpoint: SECRET_KEYS_ENDPOINTS.createKey,
     permission: "secrets.manage",
+    classification: "program-gated",
     handler: async (request) => {
       const payload = request.payload as CreateSecretKeyRequest | undefined;
       if (!payload?.name || !payload.value) return { ok: false, error: "name and value are required" };
@@ -38,6 +40,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     programId: "secret-keys",
     endpoint: SECRET_KEYS_ENDPOINTS.updateKey,
     permission: "secrets.manage",
+    classification: "program-gated",
     handler: async (request) => {
       const payload = request.payload as UpdateSecretKeyRequest | undefined;
       if (!payload?.id) return { ok: false, error: "id is required" };
@@ -51,6 +54,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     programId: "secret-keys",
     endpoint: SECRET_KEYS_ENDPOINTS.rotateKey,
     permission: "secrets.manage",
+    classification: "program-gated",
     handler: async (request) => {
       const payload = request.payload as RotateSecretKeyRequest | undefined;
       if (!payload?.id || !payload.value) return { ok: false, error: "id and value are required" };
@@ -63,6 +67,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     programId: "secret-keys",
     endpoint: SECRET_KEYS_ENDPOINTS.revealKey,
     permission: "secrets.manage",
+    classification: "program-gated",
     handler: async (request) => {
       const payload = request.payload as RevealSecretKeyRequest | undefined;
       if (!payload?.id) return { ok: false, error: "id is required" };
@@ -75,6 +80,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     programId: "secret-keys",
     endpoint: SECRET_KEYS_ENDPOINTS.deleteKey,
     permission: "secrets.manage",
+    classification: "program-gated",
     handler: async (request) => {
       const payload = request.payload as DeleteSecretKeyRequest | undefined;
       if (!payload?.id) return { ok: false, error: "id is required" };

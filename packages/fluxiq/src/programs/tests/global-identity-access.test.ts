@@ -98,7 +98,7 @@ describe("global program services", () => {
     });
   });
 
-  it("requires the global user PIN for Automation Studio project organization changes", async () => {
+  it("requires the global user PIN to remove Automation Studio project organization, but not to create it", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-automation-pin-"));
     try {
       const paths = runtimePaths(root);
@@ -114,48 +114,67 @@ describe("global program services", () => {
       });
       const reloadedRuntime = createGlobalProgramRuntime(paths);
 
-      // No PIN verifier is stored outside the seal, so a restarted runtime asks the session to sign in again.
-      await expect(reloadedRuntime.api.call({
+      // Creating and reordering categories is authoring, so it goes through on
+      // the restarted runtime with no PIN in the payload at all.
+      const first = await reloadedRuntime.api.call<{ name: string; authSessionId: string }, { category: { id: string; name: string; order: number } }>({
         programId: "automation-studio",
         endpoint: "create-project-category",
         scope: {},
         actor: actorFor(login),
-        payload: { name: "Before sign-in", authSessionId: login.session.id, authorizationPin: "1234" }
-      })).resolves.toMatchObject({ ok: false, error: PIN_SIGN_IN_AGAIN });
-
-      const relogin = await reloadedRuntime.identityAccess.authenticate({ username: "admin", password: "admin" });
-      await expect(reloadedRuntime.api.call({
-        programId: "automation-studio",
-        endpoint: "create-project-category",
-        scope: {},
-        actor: actorFor(relogin),
-        payload: { name: "Blocked", authSessionId: relogin.session.id, authorizationPin: "0000" }
-      })).resolves.toMatchObject({ ok: false, error: "Invalid PIN" });
-
-      const first = await reloadedRuntime.api.call<{ name: string; authSessionId: string; authorizationPin: string }, { category: { id: string; name: string; order: number } }>({
-        programId: "automation-studio",
-        endpoint: "create-project-category",
-        scope: {},
-        actor: actorFor(relogin),
-        payload: { name: "First", authSessionId: relogin.session.id, authorizationPin: "1234" }
+        payload: { name: "First", authSessionId: login.session.id }
       });
-      const second = await reloadedRuntime.api.call<{ name: string; authSessionId: string; authorizationPin: string }, { category: { id: string; name: string; order: number } }>({
+      const second = await reloadedRuntime.api.call<{ name: string; authSessionId: string }, { category: { id: string; name: string; order: number } }>({
         programId: "automation-studio",
         endpoint: "create-project-category",
         scope: {},
-        actor: actorFor(relogin),
-        payload: { name: "Second", authSessionId: relogin.session.id, authorizationPin: "1234" }
+        actor: actorFor(login),
+        payload: { name: "Second", authSessionId: login.session.id }
       });
-
+      expect(first.ok, first.error).toBe(true);
       const firstId = first.payload?.category.id ?? "";
       const secondId = second.payload?.category.id ?? "";
       await expect(reloadedRuntime.api.call({
         programId: "automation-studio",
         endpoint: "reorder-project-categories",
         scope: {},
-        actor: actorFor(relogin),
-        payload: { categoryIds: [secondId, firstId], authSessionId: relogin.session.id, authorizationPin: "1234" }
+        actor: actorFor(login),
+        payload: { categoryIds: [secondId, firstId], authSessionId: login.session.id }
       })).resolves.toMatchObject({ ok: true, payload: { categories: [{ id: secondId }, { id: firstId }] } });
+
+      // Removing one is destructive. No PIN verifier is stored outside the seal,
+      // so a restarted runtime asks the session to sign in again.
+      await expect(reloadedRuntime.api.call({
+        programId: "automation-studio",
+        endpoint: "delete-project-category",
+        scope: {},
+        actor: actorFor(login),
+        payload: { categoryId: firstId, authSessionId: login.session.id, authorizationPin: "1234" }
+      })).resolves.toMatchObject({ ok: false, error: PIN_SIGN_IN_AGAIN });
+
+      const relogin = await reloadedRuntime.identityAccess.authenticate({ username: "admin", password: "admin" });
+      await expect(reloadedRuntime.api.call({
+        programId: "automation-studio",
+        endpoint: "delete-project-category",
+        scope: {},
+        actor: actorFor(relogin),
+        payload: { categoryId: firstId, authSessionId: relogin.session.id, authorizationPin: "0000" }
+      })).resolves.toMatchObject({ ok: false, error: "Invalid PIN" });
+
+      await expect(reloadedRuntime.api.call({
+        programId: "automation-studio",
+        endpoint: "delete-project-category",
+        scope: {},
+        actor: actorFor(relogin),
+        payload: { categoryId: firstId, authSessionId: relogin.session.id }
+      })).resolves.toMatchObject({ ok: false, error: "PIN is required for this action" });
+
+      await expect(reloadedRuntime.api.call({
+        programId: "automation-studio",
+        endpoint: "delete-project-category",
+        scope: {},
+        actor: actorFor(relogin),
+        payload: { categoryId: firstId, authSessionId: relogin.session.id, authorizationPin: "1234" }
+      })).resolves.toMatchObject({ ok: true });
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -184,23 +203,33 @@ describe("global program services", () => {
       await repository.put({ ...credentialRecord!, data: { ...credentialRecord!.data, metadata: { ...metadata, pinVerifierHash: legacyTestHashSecret("1234") } as any } });
 
       const reloadedRuntime = createGlobalProgramRuntime(paths);
-      await expect(reloadedRuntime.api.call({
+      // Creating the category needs no PIN; removing it does, so the removal is
+      // what proves the legacy verifier is gone and a sign-in is required.
+      const created = await reloadedRuntime.api.call<{ name: string; authSessionId: string }, { category: { id: string } }>({
         programId: "automation-studio",
         endpoint: "create-project-category",
         scope: {},
         actor: actorFor(firstLogin),
-        payload: { name: "Before sign-in", authSessionId: firstLogin.session.id, authorizationPin: "1234" }
+        payload: { name: "Removable", authSessionId: firstLogin.session.id }
+      });
+      const categoryId = created.payload?.category.id ?? "";
+      await expect(reloadedRuntime.api.call({
+        programId: "automation-studio",
+        endpoint: "delete-project-category",
+        scope: {},
+        actor: actorFor(firstLogin),
+        payload: { categoryId, authSessionId: firstLogin.session.id, authorizationPin: "1234" }
       })).resolves.toMatchObject({ ok: false, error: PIN_SIGN_IN_AGAIN });
       expect((await repository.get("credential:admin", {}))?.data.metadata).not.toHaveProperty("pinVerifierHash");
 
       const login = await reloadedRuntime.identityAccess.authenticate({ username: "admin", password: "admin" });
       await expect(reloadedRuntime.api.call({
         programId: "automation-studio",
-        endpoint: "create-project-category",
+        endpoint: "delete-project-category",
         scope: {},
         actor: actorFor(login),
-        payload: { name: "Recovered", authSessionId: login.session.id, authorizationPin: "1234" }
-      })).resolves.toMatchObject({ ok: true, payload: { category: { name: "Recovered" } } });
+        payload: { categoryId, authSessionId: login.session.id, authorizationPin: "1234" }
+      })).resolves.toMatchObject({ ok: true });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

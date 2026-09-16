@@ -101,11 +101,11 @@ export function registerGlobalDocumentationGenerators(params: {
           "",
           "This page is generated from the global program API registry.",
           "",
-          "| Program | Endpoint | Permission |",
-          "| --- | --- | --- |",
+          "| Program | Endpoint | Permission | Classification |",
+          "| --- | --- | --- | --- |",
           ...api.endpoints()
             .sort((left, right) => `${left.programId}/${left.endpoint}`.localeCompare(`${right.programId}/${right.endpoint}`))
-            .map((endpoint) => `| \`${escapeTable(endpoint.programId)}\` | \`${escapeTable(endpoint.endpoint)}\` | \`${escapeTable(endpoint.permission)}\` |`)
+            .map((endpoint) => `| \`${escapeTable(endpoint.programId)}\` | \`${escapeTable(endpoint.endpoint)}\` | \`${escapeTable(endpoint.permission)}\` | \`${escapeTable(endpoint.classification)}\` |`)
         ].join("\n")
       }]
     })

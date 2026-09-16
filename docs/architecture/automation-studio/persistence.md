@@ -512,13 +512,96 @@ Instruction summaries are synchronized to flow.instructions SQLite records with 
 Canonical Flow publication is exposed through `publish-flow`,
 `list-flow-publications`, `deprecate-flow-publication`, and
 `inspect-flow-dependencies`. Compatibility endpoints for learned task models
-and replay results remain available for non-UI/runtime work. Mutating endpoints
-that apply, execute, publish, delete, or edit user-authored state are
-privileged and should use the same shared PIN authorization path as project and
-category edits. Proposal-generation endpoints such as normalization, evidence
-mining, policy proposal creation, and recording Flow proposal creation write
-derived inert artifacts and require the caller's `flows.write` permission, but
-do not require a PIN recheck.
+and replay results remain available for non-UI/runtime work.
+
+### Which endpoints ask for the operator's PIN
+
+The operator's PIN guards **destruction, not authorship**. Creating or editing
+user content is authorized by the caller's permission alone, so an unattended
+loop can build and edit Flows with nobody at the keyboard; removing persisted
+user data, or taking an irreversible action outside FluxIQ, additionally
+requires the PIN of a signed-in operator session.
+
+The rule is declared, not remembered. Every registration passes a required
+`classification` to `GlobalProgramApiRegistry.register()`
+(`packages/fluxiq/src/programs/_shared/api.ts`), so a new endpoint cannot reach
+the wire unclassified — omitting the field is a compile error. `registry.call()`
+enforces it in one place, immediately after the permission check and before the
+handler runs; no handler takes a PIN of its own.
+
+| Classification | What it means | What the registry adds |
+| --- | --- | --- |
+| `read` | Persists nothing. | Nothing. |
+| `authoring` | Creates or edits user content, or withdraws access without removing persisted data. | Nothing. |
+| `destructive` | Removes persisted user data, or acts irreversibly outside FluxIQ. | The operator's session PIN. |
+| `program-gated` | The owning program runs its own, stronger check inside the handler — password, PIN and authenticator code, or a time-boxed grant. | Nothing, so that one regime stays the single rule. |
+| `destructive-ungated` | Destructive, and nothing checks a credential. A declared gap, listed below. | Nothing. |
+
+The fifteen `destructive` endpoints are `delete-flow`, `delete-flow-subflow`,
+`delete-flow-map-route-group`, `delete-project`, `delete-project-category`,
+`delete-project-artifact`, `delete-project-hierarchy-node`,
+`save-project-hierarchy` (which honours a `deletedHierarchyIds` array),
+`delete-proposal`, `delete-recording`, `delete-recordings`,
+`delete-run-datasets`, `rollback-flow-migration`, `seal-legacy-writes`, and
+`execute-client-action`. The last two are the irreversible cases rather than
+deletions: sealing legacy writes removes a capability permanently, and executing
+a client action clicks, types, or submits in the operator's real browser.
+
+Three deletions are deliberately **not** gated, because they are how a Flow is
+edited rather than removed: `delete-flow-map-route` and the delete action of
+`mutate-flow-map-route` remove one routing rule inside a Flow, and
+`delete-reusable-llm-context` / `clear-reusable-llm-context-scope` remove
+derived, regenerable cache records. `archive-flow-subflow` remains the soft
+alternative a loop should prefer to `delete-flow-subflow`.
+
+Revocation is authoring, not destruction. `revoke-session`, `lock-vault`, and
+`revoke-client-trust` withdraw access without removing persisted data, and
+putting a prompt in front of them would slow the one action that cuts off a
+compromised session or a compromised paired browser.
+
+Proposal-generation endpoints — normalization, evidence mining, policy proposal
+creation, and recording Flow proposal creation — write derived inert artifacts.
+They require the caller's `flows.write` permission and are `authoring`.
+
+### Declared gaps
+
+These destructive operations check no credential at all. They are recorded
+rather than gated, because no operator auth session reaches them:
+`withProgramAuthSession` (`apps/web/src/lib/program-route.ts`) stamps the
+trusted session id onto payloads for `automation-studio`, `identity-access`,
+`database-manager`, and `secret-keys` only, so a PIN could not be supplied to
+the others even if the registry demanded one.
+
+- `database-manager/run-migration` — runs or reverses a storage migration.
+  Its neighbours `put-record` and `delete-record` are `program-gated`, but only
+  the two sensitive stores (`identity.users`, `secret.keys`) actually trigger
+  that gate; every other store is writable on `data.manage` alone.
+- `deployment-sync/sync` and `deployment-sync/rollback` — perform and reverse a
+  deployment.
+
+Seven write paths sit outside the program API entirely and are therefore
+outside `registry.call()`, so no classification covers them. They need a gate of
+their own:
+
+| Route | Guard today | Writes |
+| --- | --- | --- |
+| `POST /api/framework/setup` (`migrate`) | permission only | Migrates the whole storage backend and reloads the instance |
+| `POST /api/framework/setup` (`rollback-migration`) | permission only | Reverses that migration |
+| `POST /api/framework/setup` (`setup`) | permission only | Initializes storage |
+| `POST /api/client-gateway/approve-pairing` | `runtime.control` | Grants a browser client trust — the granting direction of `revoke-client-trust` |
+| `POST /api/client-gateway/dismiss-pairing` | `runtime.control` | Dismisses a pairing request |
+| `PUT .../state-assets/[projectId]/[sha256]` | `programs.write` **or** a gateway bearer token | Uploads a binary state asset with no operator session |
+| `POST /api/auth/login` | rate limiting | Session and attempt trackers (by design) |
+
+The recommendation is to route the three `framework/setup` actions and
+`approve-pairing` through the same PIN check the registry applies, or to move
+them behind the program API so the classification covers them. Until then they
+remain the widest ungated write surface in the product.
+
+A PIN cannot be produced by a cold process: `authorizeSessionPin` verifies
+against a credential unlocked in the current process by a password sign-in, and
+no PIN verifier is persisted. That is the mechanical reason `destructive` is the
+boundary an unattended loop cannot cross on its own.
 
 Publication snapshots are stored with the Flow document and project Flow files.
 Each snapshot holds the immutable interface, dependency digests,

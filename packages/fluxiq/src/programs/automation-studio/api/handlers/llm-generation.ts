@@ -12,6 +12,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowBootstrapGenerationReadiness,
     permission: "programs.read",
+    classification: "read",
     handler: (request) => {
       const payload = request.payload;
       if (payload !== undefined && (!payload || typeof payload !== "object" || Array.isArray(payload) || Object.keys(payload).length !== 0)) {
@@ -24,6 +25,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.preflightLlmExecution,
     permission: "runtime.control",
+    classification: "read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<AutomationStudioLlmExecutionPreflightRequest> & Record<string, unknown> : {};
       if (payload.purpose === "build_and_adapt") {
@@ -39,6 +41,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.issueLlmExecutionGrant,
     permission: "runtime.control",
+    classification: "authoring",
     handler: async (request) => {
       if (!request.actor) return { ok: false, error: "LLM execution is unavailable." };
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<AutomationStudioLlmExecutionGrantRequest> & Record<string, unknown> : {};
@@ -56,6 +59,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowGenerationInstruction,
     permission: "flows.write",
+    classification: "authoring",
     handler: async (request) => {
       if (!request.actor) return { ok: false, error: "Flow generation instruction is unavailable." };
       const payload = request.payload && typeof request.payload === "object" && !Array.isArray(request.payload)
@@ -72,6 +76,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation,
     permission: "flows.write",
+    classification: "authoring",
     handler: async (request) => {
       if (!request.actor) return { ok: false, error: "Flow bootstrap generation is unavailable." };
       const payload = request.payload && typeof request.payload === "object" && !Array.isArray(request.payload)

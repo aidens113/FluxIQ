@@ -27,14 +27,16 @@ describe("Automation Studio hierarchy page API", () => {
         deletedHierarchyIds: ["folder.previously-deleted"],
         workspacePrefs: { mainLayoutPreset: "single" }
       });
-      const registry = new GlobalProgramApiRegistry();
+      // Writing a node is authoring; removing one takes the operator's PIN.
+      const authorizeSessionPin = vi.fn().mockResolvedValue({ authorized: true });
+      const registry = new GlobalProgramApiRegistry({ identityAccess: { authorizeSessionPin } as never });
       registerAutomationStudioApi(registry, service);
 
       expect(AUTOMATION_STUDIO_ENDPOINTS.putProjectHierarchyNode).toBe("put-project-hierarchy-node");
       expect(AUTOMATION_STUDIO_ENDPOINTS.deleteProjectHierarchyNode).toBe("delete-project-hierarchy-node");
       expect(registry.endpoints()).toEqual(expect.arrayContaining([
-        { programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.putProjectHierarchyNode, permission: "programs.write" },
-        { programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectHierarchyNode, permission: "programs.write" }
+        { programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.putProjectHierarchyNode, permission: "programs.write", classification: "authoring" },
+        { programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectHierarchyNode, permission: "programs.write", classification: "destructive" }
       ]));
 
       const put = await registry.call({
@@ -49,6 +51,7 @@ describe("Automation Studio hierarchy page API", () => {
         }
       });
       expect(put).toMatchObject({ ok: true, payload: { nodeId: "folder.root" } });
+      expect(authorizeSessionPin).not.toHaveBeenCalled();
       expect(await service.getProjectHierarchy(project.id)).toEqual({
         customHierarchyNodes: [
           { id: "folder.root", label: "Root renamed", kind: "folder", category: "flow", parentId: null },
@@ -64,9 +67,10 @@ describe("Automation Studio hierarchy page API", () => {
         endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectHierarchyNode,
         scope: {},
         actor: cacheActor("user.hierarchy"),
-        payload: { projectId: project.id, nodeId: "folder.root", mutationId: "hierarchy.delete.root" }
+        payload: { projectId: project.id, nodeId: "folder.root", mutationId: "hierarchy.delete.root", authSessionId: "session.user.hierarchy", authorizationPin: "123456" }
       });
       expect(deleted).toMatchObject({ ok: true, payload: { nodeId: "folder.root", deletedCount: 2 } });
+      expect(authorizeSessionPin).toHaveBeenCalledWith({ sessionId: "session.user.hierarchy", pin: "123456" });
       expect(await service.getProjectHierarchy(project.id)).toEqual({
         customHierarchyNodes: [
           { id: "folder.sibling", label: "Sibling", kind: "folder", category: "flow", parentId: null }

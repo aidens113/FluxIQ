@@ -11,6 +11,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.startRuntimeSession,
     permission: "runtime.control",
+    classification: "authoring",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; flow?: AutomationStudioFlowDocument; flowId?: string; targetKind?: any; targetId?: string; inputs?: any; authorizedDomainIds?: string[] } : {};
       return { ok: true, payload: { runtimeSession: await service.startRuntimeSession(payload) } };
@@ -20,6 +21,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession,
     permission: "runtime.control",
+    classification: "authoring",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[]; adaptiveMode?: "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic"; dryRunLlm?: boolean; authorizedExternalSideEffects?: boolean; subflowId?: string; idempotencyKey?: string; llmExecutionGrantId?: string; runIntent?: string; useReusableContext?: true } : {};
       if ((payload as Record<string, unknown>).useReusableContext !== undefined && payload.useReusableContext !== true) return { ok: false, error: "Runtime reusable-context flag is invalid." };
@@ -57,6 +59,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.inspectStateDiff,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as InspectStateDiffRequest;
       return { ok: true, payload: await service.inspectStateDiff(payload) };
@@ -66,6 +69,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listSignalRegistries,
     permission: "programs.read",
+    classification: "read",
     handler: async () => ({
       ok: true,
       payload: { signalRegistries: await service.listSignalRegistries() }
@@ -75,6 +79,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRecordingDomains,
     permission: "programs.read",
+    classification: "read",
     handler: async () => ({
       ok: true,
       payload: { domains: service.listRecordingDomains() }
@@ -84,6 +89,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.validateRecordingDomainEvent,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ValidateRecordingDomainEventRequest;
       return { ok: true, payload: service.validateRecordingDomainEvent(payload) };
@@ -93,6 +99,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendRecordingDomainEvent,
     permission: "runtime.control",
+    classification: "authoring",
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as AppendRecordingDomainEventRequest;
       const result = await service.appendRecordingDomainEvent(payload);

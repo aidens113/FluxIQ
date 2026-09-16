@@ -56,6 +56,7 @@ describe("global programs", () => {
         programId: "automation-studio",
         endpoint: "snapshot",
         permission: "programs.read",
+        classification: "read",
       handler: (request) => ({
         ok: true,
         payload: { domainId: request.scope.domainId ?? null }
@@ -82,6 +83,7 @@ describe("global programs", () => {
         programId: "domain-only-program",
         endpoint: "snapshot",
         permission: "programs.read",
+        classification: "read",
         handler: () => ({ ok: true })
       });
     }).toThrow("Unknown global program id");
@@ -94,6 +96,7 @@ describe("global programs", () => {
       programId: "database-manager",
       endpoint: "put-record",
       permission: "data.manage",
+      classification: "program-gated",
       handler: () => {
         called = true;
         return { ok: true };

@@ -21,6 +21,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     programId: "database-manager",
     endpoint: DATABASE_MANAGER_ENDPOINTS.snapshot,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => ({
       ok: true,
       payload: await service.snapshot(request.scope)
@@ -30,6 +31,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     programId: "database-manager",
     endpoint: DATABASE_MANAGER_ENDPOINTS.authorizeStore,
     permission: "programs.read",
+    classification: "program-gated",
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerStoreRequest | undefined;
       if (!payload?.kind || !isSensitiveStore(payload.kind)) return { ok: false, error: "A sensitive store kind is required" };
@@ -48,6 +50,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     programId: "database-manager",
     endpoint: DATABASE_MANAGER_ENDPOINTS.listRecords,
     permission: "programs.read",
+    classification: "program-gated",
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerStoreRequest | undefined;
       if (!payload?.kind) return { ok: false, error: "kind is required" };
@@ -61,6 +64,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     programId: "database-manager",
     endpoint: DATABASE_MANAGER_ENDPOINTS.getRecord,
     permission: "programs.read",
+    classification: "program-gated",
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerRecordRequest | undefined;
       if (!payload?.kind || !payload.id) return { ok: false, error: "kind and id are required" };
@@ -74,6 +78,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     programId: "database-manager",
     endpoint: DATABASE_MANAGER_ENDPOINTS.putRecord,
     permission: "data.manage",
+    classification: "program-gated",
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerPutRecordRequest | undefined;
       if (!payload?.kind || !payload.id) return { ok: false, error: "kind and id are required" };
@@ -88,6 +93,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     programId: "database-manager",
     endpoint: DATABASE_MANAGER_ENDPOINTS.deleteRecord,
     permission: "data.manage",
+    classification: "program-gated",
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerRecordRequest | undefined;
       if (!payload?.kind || !payload.id) return { ok: false, error: "kind and id are required" };
@@ -101,6 +107,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     programId: "database-manager",
     endpoint: DATABASE_MANAGER_ENDPOINTS.runMigration,
     permission: "data.manage",
+    classification: "destructive-ungated",
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerRunMigrationRequest | undefined;
       if (!payload?.id) return { ok: false, error: "id is required" };

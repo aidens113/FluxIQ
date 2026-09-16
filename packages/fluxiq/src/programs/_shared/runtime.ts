@@ -35,7 +35,6 @@ export type GlobalProgramRuntime = {
 };
 
 export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgramRuntime {
-  const api = new GlobalProgramApiRegistry();
   const storageLayoutVersion = paths && path.basename(paths.config) === "config.json" ? 2 : 1;
   const storageOptions = paths ? { dataDir: paths.data } : {};
   const automationStudio = new AutomationStudioService(paths && storageLayoutVersion === 2
@@ -73,6 +72,9 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
     repository: identityUsersRepository,
     credentialChangeSubscribers: [secretKeysCredentialChangeSubscriber(secretKeys)]
   });
+  // The registry, not each handler, asks for the operator's PIN before a
+  // `destructive` endpoint runs, so it is built once Identity Access exists.
+  const api = new GlobalProgramApiRegistry({ identityAccess });
   const llmExecutionGrants = new AutomationStudioLlmExecutionGrantService({ identityAccess, secretKeys, resolveExecutionDigest: async (projectId, flowId) => automationStudio.getLlmExecutionBinding(projectId, flowId) });
   automationStudio.bindLlmExecutionProvider(
     (input) => input.executionGrant

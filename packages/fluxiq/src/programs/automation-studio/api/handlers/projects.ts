@@ -1,18 +1,18 @@
 // Program snapshot and performance metrics, project problems, projects,
 // project categories, and the project hierarchy and change feed.
 
-import { authorizeProgramPin } from "../../../_shared/authorization.ts";
 import { fluxiqPerformanceMetricsSnapshot } from "../../../_shared/performance-metrics.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type AutomationStudioListHierarchyChildrenRequest, type AutomationStudioProjectChangeFeedRequest } from "../contracts.ts";
 import type { AutomationStudioService } from "../../runtime/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
 export function registerProjectEndpoints(dependencies: AutomationStudioApiDependencies): void {
-  const { registry, service, identityAccess } = dependencies;
+  const { registry, service } = dependencies;
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.performanceMetrics,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object"
         ? request.payload as { limit?: unknown }
@@ -25,6 +25,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.snapshot,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => ({
       ok: true,
       payload: await service.snapshot(request.scope.domainId, { includeCanonical: false })
@@ -34,6 +35,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectProblems,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {};
       const page = await service.listProjectProblems({
@@ -54,6 +56,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.projects,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => ({
       ok: true,
       payload: await service.listProjects(request.scope.domainId)
@@ -63,9 +66,9 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.createProject,
     permission: "programs.write",
+    classification: "authoring",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { name?: unknown; description?: unknown; categoryId?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
-      await authorizeProgramPin(identityAccess, payload);
       return { ok: true, payload: { project: await service.createProject({ ...payload, domainId: request.scope.domainId ?? null }) } };
     }
   });
@@ -73,9 +76,9 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateProject,
     permission: "programs.write",
+    classification: "authoring",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; name?: unknown; description?: unknown; categoryId?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
-      await authorizeProgramPin(identityAccess, payload);
       return { ok: true, payload: { project: await service.updateProject(payload) } };
     }
   });
@@ -83,9 +86,9 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProject,
     permission: "programs.write",
+    classification: "destructive",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
-      await authorizeProgramPin(identityAccess, payload);
       return { ok: true, payload: await service.deleteProject(String(payload.projectId ?? "")) };
     }
   });
@@ -93,9 +96,9 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.createProjectCategory,
     permission: "programs.write",
+    classification: "authoring",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { name?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
-      await authorizeProgramPin(identityAccess, payload);
       return { ok: true, payload: { category: await service.createProjectCategory({ ...payload, domainId: request.scope.domainId ?? null }) } };
     }
   });
@@ -103,9 +106,9 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateProjectCategory,
     permission: "programs.write",
+    classification: "authoring",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { categoryId?: unknown; name?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
-      await authorizeProgramPin(identityAccess, payload);
       return { ok: true, payload: { category: await service.updateProjectCategory(payload) } };
     }
   });
@@ -113,9 +116,9 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectCategory,
     permission: "programs.write",
+    classification: "destructive",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { categoryId?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
-      await authorizeProgramPin(identityAccess, payload);
       return { ok: true, payload: await service.deleteProjectCategory(String(payload.categoryId ?? "")) };
     }
   });
@@ -123,9 +126,9 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.reorderProjectCategories,
     permission: "programs.write",
+    classification: "authoring",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { categoryIds?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
-      await authorizeProgramPin(identityAccess, payload);
       return { ok: true, payload: await service.reorderProjectCategories(Array.isArray(payload.categoryIds) ? payload.categoryIds.map(String) : []) };
     }
   });
@@ -133,6 +136,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProjectHierarchy,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown } : {};
       return {
@@ -145,6 +149,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectHierarchyChildren,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object"
         ? request.payload as Partial<AutomationStudioListHierarchyChildrenRequest>
@@ -166,6 +171,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectChangeFeed,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<AutomationStudioProjectChangeFeedRequest> : {};
       return { ok: true, payload: await service.listProjectChangeFeed({ projectId: String(payload.projectId ?? ""), afterSequence: payload.afterSequence, limit: payload.limit }) };
@@ -175,6 +181,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveProjectHierarchy,
     permission: "programs.write",
+    classification: "destructive",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object"
         ? request.payload as { projectId?: unknown; hierarchy?: unknown }
@@ -193,6 +200,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.putProjectHierarchyNode,
     permission: "programs.write",
+    classification: "authoring",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object"
         ? request.payload as { projectId?: unknown; node?: unknown }
@@ -210,6 +218,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectHierarchyNode,
     permission: "programs.write",
+    classification: "destructive",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object"
         ? request.payload as { projectId?: unknown; nodeId?: unknown }

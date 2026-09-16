@@ -1,17 +1,17 @@
 // Everything routed through a paired client: its snapshot and item listings,
 // trust revocation, recording control, snapshots and action execution.
 
-import { authorizeProgramPin } from "../../../_shared/authorization.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type CaptureClientSnapshotRequest, type ExecuteClientActionRequest, type RevokeClientTrustRequest, type StartClientRecordingRequest, type StopClientRecordingRequest } from "../contracts.ts";
 import { automationStudioFilterHash, automationStudioPageLimit, decodeAutomationStudioPageCursor, encodeAutomationStudioPageCursor } from "../../storage/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
 export function registerClientGatewayEndpoints(dependencies: AutomationStudioApiDependencies): void {
-  const { registry, service, identityAccess, clientGatewayBridge, clientGateway } = dependencies;
+  const { registry, service, clientGatewayBridge, clientGateway } = dependencies;
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.clientGatewaySnapshot,
     permission: "programs.read",
+    classification: "read",
     handler: async () => {
       await clientGateway?.ready();
       const summary = clientGateway?.summary() ?? { enabled: false, counts: { sessions: 0, pairings: 0, trustedClients: 0 } };
@@ -25,6 +25,7 @@ export function registerClientGatewayEndpoints(dependencies: AutomationStudioApi
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listClientGatewayItems,
     permission: "programs.read",
+    classification: "read",
     handler: async (request) => {
       await clientGateway?.ready();
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {};
@@ -43,10 +44,10 @@ export function registerClientGatewayEndpoints(dependencies: AutomationStudioApi
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.revokeClientTrust,
     permission: "runtime.control",
+    classification: "authoring",
     handler: async (request) => {
       if (!clientGateway) return { ok: false, error: "Client gateway is not available." };
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as RevokeClientTrustRequest & { authSessionId?: unknown; authorizationPin?: unknown };
-      await authorizeProgramPin(identityAccess, payload);
       const revoked = await clientGateway.revokeTrustedClient(String(payload.trustedClientId ?? ""), payload.reason?.trim() || "revoked by operator");
       return revoked ? { ok: true, payload: { revoked: true } } : { ok: false, error: "Trusted client was not found or was already revoked." };
     }
@@ -55,10 +56,10 @@ export function registerClientGatewayEndpoints(dependencies: AutomationStudioApi
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.startClientRecording,
     permission: "runtime.control",
+    classification: "authoring",
     handler: async (request) => {
       if (!clientGatewayBridge) return { ok: false, error: "Client gateway bridge is not available." };
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as StartClientRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
-      await authorizeProgramPin(identityAccess, payload);
       return { ok: true, payload: { recording: await clientGatewayBridge.startRecording(payload) } };
     }
   });
@@ -66,10 +67,10 @@ export function registerClientGatewayEndpoints(dependencies: AutomationStudioApi
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.stopClientRecording,
     permission: "runtime.control",
+    classification: "authoring",
     handler: async (request) => {
       if (!clientGatewayBridge) return { ok: false, error: "Client gateway bridge is not available." };
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as StopClientRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
-      await authorizeProgramPin(identityAccess, payload);
       const recording = await clientGatewayBridge.stopRecording(String(payload.sessionId ?? ""));
       return { ok: true, payload: { recording: recording ? service.summarizeRecordingSession(recording) : null } };
     }
@@ -78,6 +79,7 @@ export function registerClientGatewayEndpoints(dependencies: AutomationStudioApi
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.captureClientSnapshot,
     permission: "runtime.control",
+    classification: "authoring",
     handler: async (request) => {
       if (!clientGateway) return { ok: false, error: "Client gateway is not available." };
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as CaptureClientSnapshotRequest;
@@ -92,10 +94,10 @@ export function registerClientGatewayEndpoints(dependencies: AutomationStudioApi
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.executeClientAction,
     permission: "runtime.control",
+    classification: "destructive",
     handler: async (request) => {
       if (!clientGatewayBridge) return { ok: false, error: "Client gateway bridge is not available." };
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ExecuteClientActionRequest & { authSessionId?: unknown; authorizationPin?: unknown };
-      await authorizeProgramPin(identityAccess, payload);
       return { ok: true, payload: { result: await clientGatewayBridge.executeAction(String(payload.sessionId ?? ""), payload.command) } };
     }
   });
