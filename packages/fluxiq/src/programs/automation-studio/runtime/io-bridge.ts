@@ -45,7 +45,12 @@ export class AutomationStudioIoRecorder {
             startedAt: event.timestampMs,
             completedAt: event.timestampMs,
             sourceId: `input.${input.definition.id}`,
-            metadata: { ...commonMetadata, policyEligible: true, ...(binding.metadata ?? {}) }
+            // `inputPayload` is the event the binding projected into
+            // `parameters`, kept only when the binding asks for it
+            // (`InputOutputBinding.recordInputPayload`). A binding whose command
+            // is a lossy projection of what was recorded would otherwise leave a
+            // recording mapper nothing but the command to propose from.
+            metadata: { ...commonMetadata, policyEligible: true, ...(binding.recordInputPayload ? { inputPayload: asJsonObject(event.payload) } : {}), ...(binding.metadata ?? {}) }
           }
         });
       }

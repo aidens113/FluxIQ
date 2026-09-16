@@ -35,6 +35,37 @@ describe("Automation Studio IO bridge", () => {
     }]);
   });
 
+  it("keeps the input event on the action entry when the binding asks, and not otherwise", async () => {
+    // A bound command is usually everything its event carried. Where it is a
+    // projection -- a declaration whose runnable part alone is dispatched -- a
+    // recording mapper proposing a Flow node from the entry needs the rest, and
+    // without it Core's own fallback proposes the command alone.
+    const io = configuredIo();
+    io.registerInput("example", defineInput({
+      definition: { id: "declaration-made", title: "Declaration made", role: "action", outputId: "activate-element" },
+      mode: "stream",
+      outputBinding: {
+        outputId: "activate-element",
+        toPayload: (event) => ({ elementId: String((event.payload as { declaration: { elementId: string } }).declaration.elementId) }),
+        recordInputPayload: true
+      }
+    }));
+    const service = new AutomationStudioService({ seedFixture: false });
+    const recording = await service.createRecording({ recordingId: "recording.input-payload", initialState: { timestamp: 1, namespaces: {} } });
+    const recorder = new AutomationStudioIoRecorder({ automationStudio: service, io, domainId: "example" });
+
+    await recorder.recordInput(recording.recordingId, "primary-pressed", createEnvelope({ ioId: "primary-pressed", payload: { elementId: "confirm", label: "Confirm" } }));
+    const updated = await recorder.recordInput(recording.recordingId, "declaration-made", createEnvelope({ ioId: "declaration-made", payload: { declaration: { elementId: "confirm", name: "The user's own name for it" } } }));
+
+    const [plain, declared] = updated.timeline;
+    expect(plain?.metadata).not.toHaveProperty("inputPayload");
+    expect(declared).toMatchObject({
+      type: "action",
+      parameters: { elementId: "confirm" },
+      metadata: { inputPayload: { declaration: { elementId: "confirm", name: "The user's own name for it" } } }
+    });
+  });
+
   it("keeps state and unmapped action inputs out of executable actions", async () => {
     const io = configuredIo();
     io.registerInput("example", defineInput({

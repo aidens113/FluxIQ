@@ -81,6 +81,20 @@ export type InputOutputBinding<TPayload = unknown> = {
    * outputs, or configure the confirmation timeout.
    */
   confirmation?: false | { timeoutMs?: number };
+  /**
+   * Keeps the input event's own payload on the recorded action entry, under
+   * `metadata.inputPayload`.
+   *
+   * An action entry otherwise stores only `toPayload`'s result, which is the
+   * command the binding derived. That is what the entry would execute, and for
+   * most bindings it is also everything the event carried. Where it is a lossy
+   * projection -- a declaration the command keeps only the runnable part of --
+   * a recording mapper proposing a Flow node from that entry cannot recover
+   * what the user declared, and Core's own fallback candidate then proposes the
+   * command alone. Set this on such a binding, and only on one whose events
+   * carry no page values: the payload is stored verbatim.
+   */
+  recordInputPayload?: boolean;
   metadata?: JsonObject;
 };
 
@@ -284,7 +298,7 @@ export class IoRegistry {
     domainId: string | null | undefined,
     inputId: string,
     event: IoEnvelope<TPayload>
-  ): { outputId: string; payload: JsonObject; confirmationInputId?: string; confirmationTimeoutMs?: number; metadata?: JsonObject } | null {
+  ): { outputId: string; payload: JsonObject; confirmationInputId?: string; confirmationTimeoutMs?: number; recordInputPayload?: boolean; metadata?: JsonObject } | null {
     const input = this.getInput(domainId, inputId) as InputAdapter<TPayload> | undefined;
     if (!input) throw new Error(`Input adapter not found: ${ioKey(domainId, inputId)}`);
     if ((input.definition.role ?? "state") !== "action") return null;
@@ -299,6 +313,7 @@ export class IoRegistry {
       outputId: normalizeIoId(outputId),
       payload: binding.toPayload(event),
       ...(confirmation !== false ? { confirmationInputId: normalizeIoId(input.definition.id), confirmationTimeoutMs: confirmation?.timeoutMs ?? 5_000 } : {}),
+      ...(binding.recordInputPayload ? { recordInputPayload: true } : {}),
       ...(binding.metadata ? { metadata: binding.metadata } : {})
     };
   }
