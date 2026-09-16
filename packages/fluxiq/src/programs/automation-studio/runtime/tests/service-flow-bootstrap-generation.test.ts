@@ -355,10 +355,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const instance = createService({
       provider,
       resolver: () => ({ provider, maxCallsPerRun: 3 }),
-      // The domain of the bound evidence runtime is the domain this test's
-      // project is created in, below. They are the same host: a runtime bound
-      // for one domain has no tools to offer a Flow authored in another.
-      evidenceRuntime: { domainId: "domain.test", tools: [{ toolId: "inspect", description: "Inspect bounded domain evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }], executeTool: async () => ({ schemaVersion: "evidence.v1", facts: [{ role: "button" }] }) },
+      evidenceRuntime: { domainId: "domain.test", tools: [{ toolId: "inspect", description: "Inspect bounded domain evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }], executeTool: async () => ({ schemaVersion: "evidence.v1", facts: [{ role: "button" }] }) }, // Same domain as the project below: a runtime bound for one domain offers a Flow in another nothing.
       reusableLlmContext: {
         enabled: true,
         contentProtection,
