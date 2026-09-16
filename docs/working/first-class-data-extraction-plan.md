@@ -50,8 +50,14 @@ with every K worker's output in the tree at once:** `pnpm --filter fluxiq check`
 and `pnpm --filter @fluxiq/web check` each exit 0.
 **Landed:** K1 (`33f0b4a`). **Worker-reported, not yet reverified:** K4b.
 
-**Not done:** the Core commit; K10 and K12c, which are deliberately not started;
-K11 stays in Week 3.
+**Committed** on `dev` as `0e5c447`, with `870643c` on top fixing an import the
+audit could not see until committing made the files tracked. **Not pushed:**
+`AGENTS.md` requires both `dev` branches to move in the same work unit when a
+change spans the two repositories, so the pair pushes together once the
+downstream side reaches its commit.
+
+**Not done:** K10 and K12c, which are deliberately not started; K11 stays in
+Week 3.
 
 **Not proven at runtime, and worth saying plainly:** nothing has yet run against
 a real SQLite project end to end through these endpoints. K8's handler tests
@@ -82,15 +88,20 @@ port run "failed".
    `apps/web` mirrors three shapes by hand — the same trap K1 fixed for record
    output. K10 owns the re-export.
 
+**All Core gates are green and were run after every worker had reported:**
+`pnpm --filter fluxiq check` and `pnpm --filter @fluxiq/web check` exit 0;
+`vitest run --no-file-parallelism` gives **172 test files and 1,381 tests
+passing**, one file at a time for this machine's RAM fault; the build exits 0;
+`pnpm docs:check` validates 134 files and finds the regenerated framework
+reference current; and `node scripts/structure-audit.mjs` **passes with zero
+violations**, its baseline having tightened by one line rather than being
+relaxed.
+
 **Next steps:**
-1. The full `vitest run --no-file-parallelism` suite is running, one file at a
-   time for this machine's RAM fault.
-2. Then `pnpm docs:reference` (K6 made the generated framework reference stale),
-   the build, and `pnpm structure:baseline` **last**, once no worker holds a
-   file, to regenerate the working-doc index.
-3. Then the Core commit, and stop for the user's plan review (downstream D15).
-   K10 and K12c are new work, and the user asked to review the plan before more
-   of it is built. K11 stays in Week 3 with downstream Phase 3.7.
+1. This document's compaction is uncommitted and rides with the paired push.
+2. Then stop for the user's plan review (downstream D15). K10 and K12c are new
+   work, and the user asked to review the plan before more of it is built. K11
+   stays in Week 3 with downstream Phase 3.7.
 
 **Blockers:** none.
 
@@ -508,38 +519,6 @@ Briefs below were recorded at dispatch on 2026-09-15.
 
 ## Work Ledger
 
-### 2026-09-15 — A violation the pre-commit audit could not see
-- Agent: supervisor
-- Changed: `WEB/features/automation-studio/stores/index.ts` (one export line) and
-  `WEB/features/automation-studio/datasets/dataset-commands.ts` (one import)
-- Why (**the trap, worth remembering**): `scripts/structure-audit.mjs` takes its
-  file list from `git ls-files`, so it cannot see untracked files at all. Every
-  new directory in this change — K9's `datasets/`, K8's handlers, the whole of
-  K0's new modules — was untracked when the pre-commit audit ran, so that audit
-  passed while saying nothing about them. The violation appeared only **after**
-  `0e5c447` made those files tracked. `k4b-datasets-collaborator` reported this
-  exact hazard early and the supervisor did not act on it; a clean audit before
-  a commit that adds new files is close to meaningless
-- Why (the fix, not the shortcut): the flagged import reached
-  `../stores/mutation-transaction-store` directly instead of the directory's
-  barrel. **Fourteen existing files do exactly the same thing**, so K9 followed
-  the established convention — they are simply grandfathered into
-  `.structure-baseline.json` from when the rule was introduced. The violation
-  could therefore have been baselined away in one line. It was not: the barrel
-  now exports the store and the new file imports from the directory, because
-  relaxing a ratchet to make a gate pass is the one move this repository does
-  not allow. The barrel omission turned out not to be deliberate — there is no
-  import cycle, which the type check confirms
-- Validation: `pnpm --filter @fluxiq/web check` → exit 0, so no cycle;
-  `pnpm --filter @fluxiq/web exec vitest run .../datasets .../runtime/tests/runtime-views.test.tsx .../tests/architecture-contract.test.ts --no-file-parallelism`
-  → Test Files 5 passed, Tests 55 passed, exit 0;
-  `node scripts/structure-audit.mjs` → the `[imports]` FAIL is gone, leaving only
-  the stale working-doc index
-- Outcome: Accepted
-- Follow-up: **apply the same lesson downstream.** Its new extension, domain and
-  scenario-lab files are still untracked, so its audit is equally blind right
-  now. Stage that repository before believing its structure result, not after
-
 ### 2026-09-15 — Core committed as `0e5c447`; the push waits for downstream
 - Agent: supervisor
 - Changed: 201 files committed on `dev` — K0's credential and key hardening,
@@ -590,98 +569,6 @@ Briefs below were recorded at dispatch on 2026-09-15.
   stale), and `pnpm structure:baseline` to regenerate the working-doc index —
   the baseline runs **last**, once no worker holds a file
 
-### 2026-09-15 — K7b closed the records gap and inverted one K7 rule (CD23)
-- Agent: supervisor; worker `k7b-recorded-node-ports`
-- Changed: `AS/runtime/service/recordings/candidate-definitions.ts` and its test
-  (both uncommitted)
-- Why: the gap was **confirmed real before anything was changed** — the
-  definition's records port was `undefined`, and a For Each wired to it ran
-  "failed". No second port was added: the runtime plumbing already worked, and
-  only the declaration the editor reads was missing, so a test now pins it equal
-  to the policy action's own port
-- Why (**CD23**, the inverted rule): a node's own `recordOutput` and `timeoutMs`
-  now win over its definition's, reversing what K7 settled. The supervisor
-  confirms the inversion. Under the old rule every edit a user makes in the new
-  editable control is silently discarded on materialization — **including
-  excluding a column to keep private data out of a dataset**, which is precisely
-  the CD13, CD14, and D12 failure mode. A silently discarded privacy choice is
-  worse than a refused one. It is safe because nothing seeds `parameterValues`
-  from `defaultValue`, and reverting would cost two guards and three test rows
-- Validation: in `F:\!FluxIQ`,
-  `pnpm --filter fluxiq exec vitest run src/programs/automation-studio/runtime/service/recordings/tests --no-file-parallelism`
-  → Test Files 2 passed, Tests 44 passed, exit 0 (39 before). The worker saw the
-  suite red first (8 failed, 36 passed), and its eight mutations were each
-  observed red with the source restored byte-identical
-- Outcome: Accepted
-- Follow-up: `docs/architecture/automation-studio-native-nodes.md` now states
-  the **opposite** of the code — it says the definition's values replace any the
-  node holds. That is a live documentation defect, not a cosmetic one, because
-  it describes the discard behaviour that was just removed for privacy reasons.
-  The supervisor corrects it rather than leaving it to K10
-
-### 2026-09-15 — K9's panel landed and matched K8's chosen envelopes
-- Agent: supervisor; worker `k9-datasets-panel`
-- Changed: new `WEB/features/automation-studio/datasets/` (barrel, types,
-  queries, commands, `download-href`, `RunDatasetsPanel.tsx`,
-  `RunDatasetTable.tsx`, three tests) and `styles/datasets/01-panel.css`;
-  `runtime/{runtime-host,RunActionLogView,RunDetailPanels}.tsx`,
-  `runtime/tests/runtime-views.test.tsx`, `tests/architecture-contract.test.ts`,
-  plus `styles/tests/styles-architecture.test.ts` and
-  `app/programs/automation-studio/automation-studio.css` (all uncommitted)
-- Why: the table takes its columns from the stored schema rather than row keys,
-  renders URLs as text and never as links, and pages by cursor. The mid-flight
-  message worked: it reconciled to K8's landed handlers rather than the plan's
-  description, finding that `get-run-dataset-page` returns `{ dataset }` and not
-  `{ page }`, and that `delete-run-datasets` returns
-  `{ deleted: { datasetCount, rowCount } }`. All six endpoint names match, which
-  closes the unpinned-envelope finding recorded earlier
-- Why (two accepted deviations): `RuntimeDetailCommands.datasets` had to be
-  **optional**, because making it required broke `tsc` through a typed literal
-  in `runtime/tests/runtime.test.tsx:91`, which K9 does not own; the mount is
-  guarded and asserted. And a new CSS domain cannot pass its own gates without a
-  manifest import line and an `expectedDomains` entry, so those two one-line
-  additions were made outside its literal ownership, touching no other worker's
-  paths
-- Validation: in `F:\!FluxIQ`,
-  `pnpm --filter @fluxiq/web exec vitest run src/features/automation-studio/datasets src/features/automation-studio/runtime/tests/runtime-views.test.tsx src/features/automation-studio/tests/architecture-contract.test.ts src/features/automation-studio/styles --no-file-parallelism`
-  → Test Files 7 passed, Tests 64 passed, exit 0 (4 files and 51 tests before);
-  and `pnpm --filter @fluxiq/web check` → exit 0. Its three mutations — columns
-  from row keys, a URL rendered as a link, and `domainId` dropped from the
-  download link — each went red on the intended assertion and were restored
-- Outcome: Accepted
-- Follow-up: no browser pass was authorized, so the Blob download, the streaming
-  link, and the panel layout are unproven in a real browser, and the node test
-  environment skips the Blob path by its own `typeof window` guard. **K10 must
-  add a public re-export**: no `fluxiq` subpath exports the run-dataset contract
-  types and `@fluxiq/contracts` does not resolve from `apps/web`, so three
-  shapes are currently mirrored by hand in `datasets/types.ts` — two copies that
-  will drift, the same trap K1 fixed for record output
-
-### 2026-09-15 — K6b fixed both defects, each reproduced red first
-- Agent: supervisor; worker `k6b-variable-markers-and-bindings`
-- Changed: `AS/nodes/data/{shared,set-variable,map-object}.ts`;
-  `AS/runtime/executor/node-execution.ts`; three cases added to
-  `AS/runtime/executor/tests/graph-run.test.ts`; new
-  `AS/nodes/data/tests/{set-variable,map-object}.test.ts` with ten cases.
-  `run-state.ts` needed no change (all uncommitted)
-- Why: the privacy leak is closed — a variable now carries the `$dataset` and
-  `$datasetRow` identity markers instead of deep-copying, so a For Each over
-  extracted rows followed by an append-list no longer writes row **text** into
-  the saved trace. Bindings now resolve against the live variable map, so a
-  variable written during a run is visible to a later node
-- Why (the standard of proof): both defects were **reproduced red before being
-  fixed**, not asserted after the fact — the leak as an `Object.is` identity
-  failure showing a deep copy was no longer the captured row, and the binding as
-  a run that failed outright because the seed held no such variable. The worker
-  also caught a hole in its own tests: its first identity mutation left all 204
-  tests passing, because every identity assertion it had written was about a
-  single row object, so a whole captured **list** stored in a variable could
-  have lost its marker untested. It added two array-identity tests and the
-  mutation then reddened
-- Validation: recorded in the entry that follows, with the supervisor's own runs
-- Outcome: Accepted
-- Follow-up: the two findings below
-
 ### 2026-09-15 — Finding: lifting a field out of a row still writes its text
 - Agent: supervisor, from `k6b-variable-markers-and-bindings`'s finding
 - Why: identity markers protect a row that is passed along whole. They cannot
@@ -711,72 +598,6 @@ Briefs below were recorded at dispatch on 2026-09-15.
 - Outcome: Open
 - Follow-up: one brief owning `AS/nodes/shared/` folds the kept-identity walk
   back into `jsonValue`/`setPathValue` and deletes the duplicate
-
-### 2026-09-15 — K4c wired the collaborator and paid back its lines
-- Agent: supervisor; worker `k4c-service-wiring`
-- Changed: `AS/runtime/service.ts` and the new
-  `AS/runtime/service/datasets/tests/service-wiring.test.ts` (both uncommitted)
-- Why: `runDatasets` is reached as a readonly field so the frozen facade gains
-  no methods (C8), and a run with a project id binds
-  `graphOptions.onRecordBatch` once to `session.runId`. The worker settled the
-  open question: retries and live patches **do** reuse the same run id — both
-  call sites pass the same `graphOptions` and session, and
-  `retryRuntimeSessionAfterAutoAppliedPatch` spreads `...input.session` — so
-  binding once is correct and a retry's batches land under the same run
-- Why (the line ratchet held): the file sat exactly at its baseline, so the six
-  added lines were offset by four behaviour-preserving rewrites inside
-  `runRuntimeSession`, leaving it at 6758 against a baseline of 6759. The
-  supervisor reviewed all four in the diff: two identical
-  `if (this.nativeNodeRuntime)` guards merged into one block, and three
-  multi-line ternaries and one braced single-statement `if` collapsed onto
-  single lines. Each preserves the condition, the order, and the result, and the
-  dense style matches the surrounding file. **The baseline was not re-ratcheted
-  upward**, which resolves the finding recorded earlier from K8's report
-- Validation: in `F:\!FluxIQ`,
-  `pnpm --filter fluxiq exec vitest run src/programs/automation-studio/runtime/service/datasets/tests --no-file-parallelism`
-  → Test Files 5 passed, Tests 30 passed, exit 0; and
-  `git diff -U1 -- .../runtime/service.ts` read in full by the supervisor. The
-  worker's three mutations — the hook never bound, bound to a different run id,
-  and built without the pool — were each observed red, and `service.ts` was
-  restored byte-identical
-- Outcome: Accepted
-- Follow-up: the retry and live-patch paths were reasoned from the code, not
-  executed, so the same-run-id conclusion and the batch-key behaviour that
-  follows from it are unproven at runtime. `pnpm --filter fluxiq check` still
-  exits 2 on two of `k6b`'s and `k7b`'s in-flight test files, so the package
-  check reruns when they land
-
-### 2026-09-15 — K8 landed six endpoints and the download route
-- Agent: supervisor; worker `k8-dataset-endpoints`
-- Changed: `AS/api/contracts/{endpoints,dataset,index}.ts`,
-  `AS/api/handlers/{datasets,register}.ts`,
-  `AS/api/handlers/tests/datasets.test.ts`, and the new
-  `WEB/app/api/programs/automation-studio/run-datasets/[projectId]/[runId]/[datasetId]/{route.ts,tests/route.test.ts}`
-  (all uncommitted)
-- Why: six endpoints rather than the section's three — the three reads under
-  `programs.read`, `delete-run-datasets` under `flows.write` (CD16-CD17), and
-  K12's `list-project-datasets` and `list-dataset-runs` (CD21). Every handler
-  and the route check authentication, permission, and project domain access
-  before reading anything, and the route sends `private, no-store` with
-  `nosniff` and a sanitized attachment name. `service.runDatasets` was absent at
-  dispatch and K4c landed it mid-task, so the clean type check is real evidence
-  that the speculative start compiled against the actual collaborator rather
-  than against a guess
-- Validation: in `F:\!FluxIQ`,
-  `pnpm --filter fluxiq exec vitest run src/programs/automation-studio/api/handlers/tests src/programs/tests/permission-matrix.test.ts --no-file-parallelism`
-  → Test Files 13 passed, Tests 50 passed, exit 0; and
-  `pnpm --filter @fluxiq/web exec vitest run src/app/api/programs/automation-studio --no-file-parallelism`
-  → Tests 10 passed, exit 0. The worker's nine mutations — both handler domain
-  checks, the route's domain and permission checks, `no-store`, the id pattern,
-  CSV escaping, and the attachment name — were each observed red and restored
-- Outcome: Accepted
-- Follow-up: nothing has run against a real SQLite project through these
-  endpoints; the handler tests stub the collaborator and the route is tested
-  with `lib/fluxiq` mocked, so no real stream, lease, or 256 MiB cap is proven.
-  K4c owns that gap
-
-Earlier entries, and the completed worker briefs, are in the
-[planning archive](./first-class-data-extraction-plan/archive/2026-09-15-planning-briefs-and-ledger.md).
 
 ## Open Questions
 
