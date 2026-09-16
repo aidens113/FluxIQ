@@ -16,12 +16,12 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import { AutomationStudioLlmExecutionGrantService } from "../../../llm/execution-grants.ts";
-import type { AutomationStudioLlmRunCallRecord } from "../../../llm/run-call-record.ts";
 import {
+  AutomationStudioLlmExecutionGrantService,
   automationStudioRuntimeSessionGrantTaskKinds,
+  type AutomationStudioLlmRunCallRecord,
   type AutomationStudioRuntimeSessionGrantPurpose
-} from "../../../llm/runtime-session-grant.ts";
+} from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { adaptiveTrainingMetadata, createFailingCanonicalFlow } from "../../service-fixtures.ts";
 
