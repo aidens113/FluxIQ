@@ -733,7 +733,7 @@ describe("AutomationStudioService recording persistence", () => {
         maxCallsPerRun: 2
       }),
       llmEvidenceRuntime: {
-        tools: [],
+        domainId: "test.domain", tools: [],
         executeTool: async () => ({}),
         captureSanitizedFailureEvidence: async (input) => { captures.push(input); return evidence; },
         validateTargetOverrideEvidence: (captured, target, failedAction) => {
@@ -770,7 +770,7 @@ describe("AutomationStudioService recording persistence", () => {
       maxEvidenceBytes: 2_400
     });
     expect(Object.keys(captures[0].failedAction).sort()).toEqual(["attemptId", "definitionId", "nodeId", "route", "status"]);
-    expect(requests.map((request) => request.taskKind)).toEqual(["runtime_diagnosis", "runtime_patch"]);
+    expect(requests.map((request) => request.taskKind)).toEqual(["runtime_diagnosis", "runtime_patch"]); expect(requests.map((request) => request.context.subflowId)).toEqual([runtimeSubflowId, runtimeSubflowId]);
     expect(requests[0].context.failureEvidence).toEqual(evidence);
     expect(requests[1].context.failureEvidence).toEqual(evidence);
     expect(requests[0].context.reusableContext).toMatchObject({ items: [{ advisory: true, recordId: "context.runtime", sourceRunIds: ["run.prior"], sourceAdaptationIds: ["adaptation.prior"] }] });
@@ -785,8 +785,8 @@ describe("AutomationStudioService recording persistence", () => {
       expect.objectContaining({ contextSummary: expect.objectContaining({ failureEvidence: expect.objectContaining({ schemaVersion: "web-llm-evidence.v1", byteCount: expect.any(Number), truncated: false, digest: expect.stringMatching(/^[a-f0-9]{64}$/) }) }) })
     ]));
     expect(detail?.metadata).toMatchObject({ llmGate: { failureEvidence: { schemaVersion: "web-llm-evidence.v1", truncated: false, digest: expect.stringMatching(/^[a-f0-9]{64}$/) }, reusableContext: { status: "hit", freshContributionCount: 1, reusedContributionCount: 1, sourceRunIds: ["run.prior"], sourceAdaptationIds: ["adaptation.prior"] } } });
-    expect(JSON.stringify(detail)).not.toContain("SAFE_EVIDENCE_LABEL");
-    expect(JSON.stringify(detail)).not.toContain("#replacement");
+    expect(JSON.stringify(detail)).not.toContain("SAFE_EVIDENCE_LABEL"); const recoveryContext = (detail?.metadata?.llmGate as any).recoveryContext; expect(recoveryContext).toMatchObject({ schemaVersion: "automation-studio.recovery-context-summary.v1", contextSchemaVersion: "automation-studio.recovery-context.v1", byteBudget: 4_000, budgetTruncated: false });
+    expect(JSON.stringify(detail)).not.toContain("#replacement"); expect(recoveryContext.included.map((entry: any) => entry.section)).toContain("failure"); expect(recoveryContext.omitted).toEqual(expect.arrayContaining([{ section: "state_diff", reason: "absent", byteCount: 0 }]));
     expect(detail?.adaptationIds).toHaveLength(1);
     expect(detail?.changeProposalIds).toHaveLength(1);
     expect(detail?.summary.adaptationCount).toBe(1);
@@ -805,7 +805,7 @@ describe("AutomationStudioService recording persistence", () => {
       seedFixture: false,
       llmProviderResolver: () => ({ metadata: { provider: "mock", model: "unused" }, runTask: async () => { providerCalls += 1; return { response: { kind: "diagnosis", summary: "unused" } }; } }),
       llmEvidenceRuntime: {
-        tools: [],
+        domainId: "test.domain", tools: [],
         executeTool: async () => ({}),
         captureSanitizedFailureEvidence: async () => ({ schemaVersion: "web-llm-evidence.v1", snapshot: { html: "PRIVATE_RAW_HTML" } })
       }
@@ -832,7 +832,7 @@ describe("AutomationStudioService recording persistence", () => {
         tokenLimits: { maxInputTokens: 1_000, maxOutputTokens: 500, maxTotalTokens: 1_500 }
       }),
       llmEvidenceRuntime: {
-        tools: [],
+        domainId: "test.domain", tools: [],
         executeTool: async () => ({}),
         captureSanitizedFailureEvidence: async () => ({ schemaVersion: "web-llm-evidence.v1", summary: "x".repeat(700) })
       }
@@ -863,7 +863,7 @@ describe("AutomationStudioService recording persistence", () => {
         maxCallsPerRun: 2
       }),
       llmEvidenceRuntime: {
-        tools: [],
+        domainId: "test.domain", tools: [],
         executeTool: async () => ({}),
         captureSanitizedFailureEvidence: async () => ({ schemaVersion: "web-llm-evidence.v1", elements: [], truncated: false }),
         validateTargetOverrideEvidence: () => ({ status: "absent" })

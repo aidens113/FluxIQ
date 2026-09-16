@@ -1,6 +1,5 @@
 import type { AutomationStudioFlowAdaptation } from "../../model/index.ts";
-import { adaptationRequiresChangeProposal } from "../service/adaptations/index.ts";
-import { isJsonRecord } from "../service/json-values.ts";
+import { adaptationRequiresChangeProposal, isJsonRecord } from "../service/index.ts";
 
 /**
  * Whether an adaptation may be promoted, and why not when it may not.

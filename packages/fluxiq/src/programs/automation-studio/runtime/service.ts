@@ -114,8 +114,8 @@ import {
   type AutomationStudioRuntimeTargetOverrideTarget
 } from "./llm/index.ts";
 import { AutomationStudioLlmRunBudgetLedger } from "./llm/index.ts";
-import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT, adaptationConfidenceScore, adaptationValidationCounts, decideAutomationStudioRuntimeLlmInvocation, decideAutomationStudioRuntimePatchRequest, evaluateFlowAdaptationPromotionGates } from "./recovery/index.ts";
-import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
+import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT, adaptationConfidenceScore, adaptationValidationCounts, buildAutomationStudioRuntimeRecoveryContext, decideAutomationStudioRuntimeLlmInvocation, decideAutomationStudioRuntimePatchRequest, evaluateFlowAdaptationPromotionGates, summarizeAutomationStudioRuntimeRecoveryContext } from "./recovery/index.ts";
+import { automationStudioHarnessOptionRegistry, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapEvidenceCompletionFailure, flowBootstrapEvidenceLoopFailure, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapCatalogByteBudget, buildAutomationStudioFlowBootstrapContext, isAutomationStudioEvidenceFlowBootstrapResultWithinLimits, parseAutomationStudioFlowBootstrapPlan, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap/index.ts";
 import {
@@ -351,12 +351,7 @@ export type AutomationStudioServiceOptions = {
   customNodeRootDir?: string;
   repositories?: CanonicalAutomationStudioRepositories;
   llmProviderResolver?: (input: AutomationStudioLlmProviderResolverInput) => AutomationStudioLlmProviderResolution | AutomationStudioLlmProvider | undefined | Promise<AutomationStudioLlmProviderResolution | AutomationStudioLlmProvider | undefined>;
-  llmEvidenceRuntime?: {
-    tools: AutomationStudioLlmEvidenceTool[];
-    executeTool(input: { projectId: string; flowId: string; callId: string; toolId: string; value: JsonObject; maxEvidenceBytes: number; signal?: AbortSignal }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
-    captureSanitizedFailureEvidence?(input: AutomationStudioLlmFailureEvidenceCaptureInput): Promise<JsonObject | undefined>;
-    validateTargetOverrideEvidence?(evidence: JsonObject, target: AutomationStudioRuntimeTargetOverrideTarget, failedAction: AutomationStudioRuntimeTargetOverrideFailedAction): AutomationStudioRuntimeTargetOverrideEvidenceValidation;
-  };
+  llmEvidenceRuntime?: AutomationStudioLlmEvidenceRuntimeBinding;
   revokeLlmExecutionGrant?: (grantId: string) => void;
   closeLlmExecutionGrants?: () => void;
   hostRuntime?: AutomationStudioHostRuntimeBoundary;
@@ -1918,8 +1913,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           if (!this.llmEvidenceRuntime?.tools.length) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.pre_provider_validation_failed");
           let estimatedInputTokens = 0;
           const completionSchema = AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA;
+          const harnessOptions = automationStudioHarnessOptionRegistry({ binding: this.llmEvidenceRuntime }).evidenceLoopBinding({ projectId, flowId }, { ...resolution, allowSideEffectsWithoutPolicy: true });
           const loop = await runAutomationStudioLlmEvidenceLoop({
-            tools: this.llmEvidenceRuntime.tools,
+            tools: harnessOptions.tools,
             minToolCalls: 1,
             propagateDecisionErrors: true,
             maxEvidenceBytes: 64_000,
@@ -1953,7 +1949,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
               if (!decision.ok || decision.response?.kind !== "evidence_tool_decision") throw flowBootstrapHarnessFailure(decision);
               return { ...decision.response.decision, ...(decision.usage ? { usage: decision.usage } : {}) };
             },
-            executeTool: ({ callId, toolId, value, maxEvidenceBytes, signal }) => this.llmEvidenceRuntime!.executeTool({ projectId, flowId, callId, toolId, value, maxEvidenceBytes, ...(signal ? { signal } : {}) })
+            executeTool: harnessOptions.executeTool
           });
           if (!loop.ok) throw flowBootstrapEvidenceLoopFailure(loop);
           evidenceLoopResult = loop;
@@ -3026,11 +3022,13 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       : input.useReusableContext === true && this.reusableLlmContextEnabled
         ? { metadata: { status: "miss", reason: "fresh_evidence_required", freshContributionCount: 0, reusedContributionCount: 0, sourceRecordIds: [], sourceRunIds: [], sourceAdaptationIds: [] } as JsonObject }
         : undefined;
+    const recoveryContext = buildAutomationStudioRuntimeRecoveryContext({ detail: input.detail, ...(input.failedTraceAttempt ? { failedAttempt: input.failedTraceAttempt } : {}), ...(input.subflowId ? { subflowId: input.subflowId } : {}), adaptations: input.context.recentAdaptations });
     const result = await runAutomationStudioLlmHarness({
       taskKind: "runtime_diagnosis",
       projectId: input.context.projectId,
       flowId: input.context.flowId,
       runId: input.detail.summary.runId,
+      ...(input.subflowId ? { subflowId: input.subflowId } : {}),
       ...(failedAttempt?.nodeId ? { nodeId: failedAttempt.nodeId } : {}),
       instructions,
       runDetail: input.detail,
@@ -3058,6 +3056,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         projectId: input.context.projectId,
         flowId: input.context.flowId,
         runId: input.detail.summary.runId,
+        ...(input.subflowId ? { subflowId: input.subflowId } : {}),
         ...(failedAttempt?.nodeId ? { nodeId: failedAttempt.nodeId } : {}),
         instructions,
         runDetail: input.detail,
@@ -3174,6 +3173,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           costAccounting: runBudget.snapshot(input.detail.summary.runId),
           ...(patchRequest.request ? {} : { patchSkipped: patchRequest.reason }),
           ...(failureEvidence && result.intervention.contextSummary?.failureEvidence ? { failureEvidence: result.intervention.contextSummary.failureEvidence } : {}),
+          recoveryContext: summarizeAutomationStudioRuntimeRecoveryContext(recoveryContext),
           diagnostics: [...result.diagnostics, ...(patchResult?.diagnostics ?? [])].map((diagnostic) => ({ code: diagnostic.code, severity: diagnostic.severity, message: diagnostic.message })),
           ...(reusableContextResult ? { reusableContext: reusableContextResult.metadata } : {})
         },
