@@ -12,9 +12,9 @@ const SCOPE: AutomationStudioHarnessOptionResolution = { scope: { kind: "domain"
 function slot(executeTool = vi.fn(async () => ({ observed: true }))): AutomationStudioLlmEvidenceRuntimeBinding {
   return {
     domainId: DOMAIN_ID,
-    // Declared rather than omitted, because an omitted declaration is a domain
-    // silently denying nothing. This is the shape the field is about to become
-    // required in; the fixtures under runtime/tests are the rest of that change.
+    // Declared rather than omitted, because an omitted declaration was a domain
+    // silently denying nothing. The field is now required, and the assertion
+    // below is what holds it required.
     deniedEvidenceKeys: ["ledgerExport"],
     tools: [
       { toolId: "erp.inspect", description: "Read the ledger records in view.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } },
@@ -25,6 +25,18 @@ function slot(executeTool = vi.fn(async () => ({ observed: true }))): Automation
 }
 
 const host: AutomationStudioHarnessOptionHost = { describeFlowGraph: async () => ({ nodes: [] }) };
+
+// A binding that declares no denied keys does not compile. This is the half of
+// the protection that cannot be argued with at run time: a domain which forgets
+// the field never reaches a packet, because it never builds. The run-time half,
+// for a harness input assembled by hand, is in llm/tests/harness.test.ts.
+// @ts-expect-error -- deniedEvidenceKeys is required on the binding.
+const UNDECLARED_BINDING: AutomationStudioLlmEvidenceRuntimeBinding = {
+  domainId: DOMAIN_ID,
+  tools: [],
+  executeTool: async () => ({})
+};
+void UNDECLARED_BINDING;
 
 describe("Automation Studio harness option binding", () => {
   it("keeps a host's existing slot working and puts Core's options beside it", async () => {

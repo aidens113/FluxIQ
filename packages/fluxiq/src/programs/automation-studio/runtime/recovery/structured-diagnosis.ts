@@ -26,23 +26,30 @@
 // This is the same rule `context-summary.ts` follows, for the same
 // reason.
 //
-// **Known limitation, stated rather than hidden, and stronger than it looks.**
-// The model cannot supply any of these fields today, and not merely because no
-// prompt asks for one. `parseAutomationStudioLlmProviderResult` calls
-// `stripAutomationStudioLlmResponseMetadata` on every structured response, so a
-// `diagnosis` reaches this module as `summary` and `confidence` and nothing
-// else -- the `metadata` channel is closed on purpose, to stop a model
-// smuggling arbitrary JSON past the recognized-field allowlist. Reading it here
-// is therefore the forward-compatible half of a contract whose other half is a
-// diff to `AS/runtime/llm/**`, which this phase does not own: the four verdict
-// fields have to become recognized fields of the `diagnosis` variant. Until
-// that lands, `modelFields` is empty in the shipped app and every verdict below
-// is the deterministic answer. A test pins that, so the day the diff lands the
-// pin fails and somebody updates it deliberately. The exact diff is in this
-// phase's report.
+// **The model answers through one named channel, and only that one.** The
+// fields below are read from `response.diagnosis`
+// (`AutomationStudioLlmDiagnosisFields`): a fixed set of keys, each declared in
+// the provider's response schema with `additionalProperties: false`, each
+// checked by name in `parseAutomationStudioLlmProviderResult` before the
+// response enters the process, and each carried through
+// `stripAutomationStudioLlmResponseMetadata` because it was checked.
+//
+// `response.metadata` is not that channel and is never read here. It is an open
+// field, so a value arriving in it was checked by nothing; the strip removes it
+// from every response, and a diagnosis that reached this module only through it
+// would be an unvalidated value wearing the name of a validated one. A metadata
+// key that matches a field name is therefore refused rather than ignored -- the
+// refusal is recorded, so the run says the answer was discarded instead of the
+// answer quietly becoming a verdict. Note what this closes: `patchNeeded` is
+// the one field that can stop the billed patch call, so the old route was a way
+// to change what Core does with a value nothing validated.
+//
+// **What is recorded is still not what is carried.** The channel bounds each
+// description to 500 characters; it does not make the prose storable. The
+// summary written onto a run is verdicts and counts, as below.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import type { AutomationStudioLlmTaskResult } from "../llm/index.ts";
+import type { AutomationStudioLlmDiagnosisFields, AutomationStudioLlmTaskResult } from "../llm/index.ts";
 import type {
   AutomationStudioRuntimeDeterministicDiagnosis,
   AutomationStudioRuntimeDiagnosisAchievability
@@ -72,7 +79,8 @@ export type AutomationStudioRuntimeStructuredDiagnosis = {
   /**
    * `model` means a diagnosis call succeeded and its answer was read; it does
    * not mean the model changed any verdict. `modelFields` says what it actually
-   * supplied, and is empty until Core stops stripping response metadata.
+   * supplied through the diagnosis channel, and is empty when it supplied
+   * nothing Core could use.
    */
   source: "deterministic" | "model";
   /** What the run expected, as the model described it. Never recorded on a run. */
@@ -128,8 +136,9 @@ export function buildAutomationStudioRuntimeStructuredDiagnosis(
   };
   const response = input.result?.ok === true && input.result.response?.kind === "diagnosis" ? input.result.response : undefined;
   if (!response) return base;
-  const reported = isRecord(response.metadata) ? response.metadata : {};
+  const reported: AutomationStudioLlmDiagnosisFields = response.diagnosis ?? {};
   const refusals: string[] = [];
+  refuseDiagnosisFieldsSentAsMetadata(response.metadata, refusals);
   const modelFields: AutomationStudioStructuredDiagnosisModelField[] = [];
   const text = (field: "expected" | "observed" | "changed"): string | undefined => {
     const value = boundedText(reported[field], field, refusals);
@@ -195,6 +204,28 @@ export function summarizeAutomationStudioRuntimeStructuredDiagnosis(
  */
 function deterministicPatchNeeded(diagnosis: AutomationStudioRuntimeDeterministicDiagnosis): boolean {
   return diagnosis.candidateKind !== "diagnosis_only" && diagnosis.candidateKind !== "instruction_suggestion";
+}
+
+/**
+ * The old, unnamed route, refused out loud.
+ *
+ * `response.metadata` once carried these fields and this module once read them.
+ * It is an open field: nothing at the boundary checks what is in it, and the
+ * parser strips it from every response for exactly that reason. So a field
+ * arriving here through `metadata` is not a diagnosis Core validated, and
+ * treating it as one would let an unchecked `patchNeeded` decide whether the
+ * billed patch call happens.
+ *
+ * It is refused rather than ignored because a silent drop and a field the model
+ * never sent look identical on the run record. Only the field *names* are
+ * recorded -- Core's own vocabulary -- never a value, which would be the
+ * model's reading of a page this record does not store.
+ */
+function refuseDiagnosisFieldsSentAsMetadata(metadata: JsonObject | undefined, refusals: string[]): void {
+  if (!isRecord(metadata)) return;
+  const misrouted = AUTOMATION_STUDIO_STRUCTURED_DIAGNOSIS_MODEL_FIELDS.filter((field) => metadata[field] !== undefined);
+  if (!misrouted.length) return;
+  refusals.push(`metadata: ${misrouted.join(", ")} arrived in response.metadata, which is not the diagnosis channel and is checked by nothing, so ${misrouted.length === 1 ? "it was" : "they were"} not read.`);
 }
 
 function boundedText(value: JsonValue | undefined, field: string, refusals: string[]): string | undefined {

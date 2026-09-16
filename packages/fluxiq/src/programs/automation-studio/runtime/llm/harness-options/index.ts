@@ -23,6 +23,7 @@ export {
   type AutomationStudioHarnessOptionResolution
 } from "./registry.ts";
 export {
+  automationStudioHarnessInputWithDeniedEvidenceKeys,
   automationStudioHarnessOptionBundleFromBinding,
   automationStudioHarnessOptionRegistry,
   type AutomationStudioLlmEvidenceRuntimeBinding

@@ -89,7 +89,7 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     input,
     stage ? automationStudioLoopStageInstructions(stage, input.stageInstructions, { toolsOffered }) : []
   );
-  const deniedEvidenceKeys = input.deniedEvidenceKeys ?? [];
+  const deniedEvidenceKeys = declaredDeniedEvidenceKeys(input);
   const flowBootstrap = (input.taskKind === "flow_bootstrap" || input.taskKind === "evidence_tool_decision") && input.flowBootstrap
     ? buildAutomationStudioFlowBootstrapContext({
       ...(input.flowBootstrap.registry ? { registry: input.flowBootstrap.registry } : {}),
@@ -130,6 +130,29 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     ...(input.policy ? { policyGates: adaptationPolicyGates(input.policy) } : {}),
     ...(input.metadata ? { metadata: input.metadata } : {})
   };
+}
+
+/**
+ * The domain's declaration, or a refusal.
+ *
+ * Evidence and reusable context are the two places a domain's raw payload can
+ * reach the model, and Core cannot name the keys that carry it for a medium it
+ * knows nothing about. An absent declaration therefore does not mean "deny
+ * nothing"; it means nobody said, and the packet would carry whatever the
+ * domain happened to capture. So the packet is refused instead of built.
+ *
+ * `AutomationStudioLlmEvidenceRuntimeBinding.deniedEvidenceKeys` is required,
+ * so a bound domain cannot arrive here by omission. This closes the same hole
+ * for a caller that assembles a harness input by hand. A domain with nothing
+ * to deny declares `[]`, which arrives as an empty list and passes: a claim a
+ * reviewer can see, where an absent field is not.
+ */
+function declaredDeniedEvidenceKeys(input: AutomationStudioLlmHarnessInput): readonly string[] {
+  if (input.deniedEvidenceKeys !== undefined) return input.deniedEvidenceKeys;
+  if (input.failureEvidence !== undefined || input.reusableContext !== undefined) {
+    throw new Error("Automation Studio LLM context carrying failure evidence or reusable context requires the domain's declared deniedEvidenceKeys; declare [] to deny nothing.");
+  }
+  return [];
 }
 
 function sanitizeReusableLlmContextPacket(packet: AutomationStudioReusableLlmContextPacket, deniedKeys: readonly string[]): AutomationStudioReusableLlmContextPacket {

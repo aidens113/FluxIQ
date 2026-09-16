@@ -188,11 +188,11 @@ function deterministic(overrides: Partial<AutomationStudioRuntimeDeterministicDi
 }
 
 /** Only `ok` and `response` are read; the rest of the result is not consulted. */
-function diagnosisResult(metadata: Record<string, unknown> = {}): AutomationStudioLlmTaskResult {
+function diagnosisResult(diagnosis: Record<string, unknown> = {}): AutomationStudioLlmTaskResult {
   return {
     ok: true,
     diagnostics: [],
-    response: { kind: "diagnosis", summary: "The action could not find its control.", metadata }
+    response: { kind: "diagnosis", summary: "The action could not find its control.", diagnosis }
   } as unknown as AutomationStudioLlmTaskResult;
 }
 

@@ -54,6 +54,9 @@ describe("Automation Studio LLM harness", () => {
       flowId: "flow.checkout",
       runId: "run.failed",
       instructions: [],
+      // This fixture's domain denies nothing, and says so. An absent field is
+      // refused outright once the packet carries evidence.
+      deniedEvidenceKeys: [],
       runDetail: {
         schemaVersion: "0.1",
         summary: {
@@ -168,7 +171,7 @@ describe("Automation Studio LLM harness", () => {
   });
 
   it("bounds ephemeral failure evidence and exposes it only to runtime diagnosis or patch tasks", () => {
-    const base = { projectId: "project.llm", flowId: "flow.checkout", instructions: [] as AutomationStudioFlowInstruction[] };
+    const base = { projectId: "project.llm", flowId: "flow.checkout", instructions: [] as AutomationStudioFlowInstruction[], deniedEvidenceKeys: [] as readonly string[] };
     expect(() => packAutomationStudioLlmContext({
       ...base,
       taskKind: "runtime_diagnosis",
@@ -209,7 +212,7 @@ describe("Automation Studio LLM harness", () => {
   });
 
   it("accepts bounded advisory reusable context and rejects executable cached targets", () => {
-    const base = { taskKind: "runtime_diagnosis" as const, projectId: "project.llm", flowId: "flow.checkout", instructions: [] as AutomationStudioFlowInstruction[] };
+    const base = { taskKind: "runtime_diagnosis" as const, projectId: "project.llm", flowId: "flow.checkout", instructions: [] as AutomationStudioFlowInstruction[], deniedEvidenceKeys: [] as readonly string[] };
     const reusableContext = { schemaVersion: "automation-studio.reusable-llm-context-packet.v1" as const, items: [{ advisory: true as const, recordId: "context.one", contentDigest: "a".repeat(64), outcome: "succeeded" as const, reviewerState: "approved" as const, validationState: "validated" as const, sourceRunIds: ["run.one"], sourceAdaptationIds: [], promptProjection: { facts: [{ kind: "element", role: "button" }] } }] };
     expect(packAutomationStudioLlmContext({ ...base, reusableContext }).reusableContext).toEqual(reusableContext);
     // Core denies its own vocabulary: the `target` family is what a repair
@@ -219,6 +222,26 @@ describe("Automation Studio LLM harness", () => {
     // deny. The domain declares it, and the same declaration that bounds
     // failure evidence bounds reusable context, so the two cannot drift.
     expect(() => packAutomationStudioLlmContext({ ...base, deniedEvidenceKeys: ["selector"], reusableContext: { ...reusableContext, items: [{ ...reusableContext.items[0]!, promptProjection: { selector: "#cached-target" } }] } })).toThrow("packet is invalid");
+  });
+
+  it("refuses a packet carrying evidence that arrives with no declaration at all", () => {
+    const base = { taskKind: "runtime_diagnosis" as const, projectId: "project.llm", flowId: "flow.checkout", instructions: [] as AutomationStudioFlowInstruction[] };
+    const failureEvidence = { schemaVersion: "web-llm-evidence.v1", elements: [{ tag: "button", name: "Submit" }], truncated: false };
+    const reusableContext = { schemaVersion: "automation-studio.reusable-llm-context-packet.v1" as const, items: [{ advisory: true as const, recordId: "context.one", contentDigest: "a".repeat(64), outcome: "succeeded" as const, reviewerState: "approved" as const, validationState: "validated" as const, sourceRunIds: ["run.one"], sourceAdaptationIds: [], promptProjection: { facts: [{ kind: "element", role: "button" }] } }] };
+    // An absent declaration used to mean "deny nothing", so a domain that
+    // simply forgot the field had its raw payload bounded for shape and size
+    // and for nothing else, and nothing anywhere said so. Absent now means
+    // nobody said, and a packet built from nobody-said is refused. The two
+    // places a domain's raw payload can reach the model are both covered.
+    expect(() => packAutomationStudioLlmContext({ ...base, failureEvidence })).toThrow(/declared deniedEvidenceKeys/);
+    expect(() => packAutomationStudioLlmContext({ ...base, reusableContext })).toThrow(/declared deniedEvidenceKeys/);
+    // `[]` is a domain stating it has nothing of the sort: a claim a reviewer
+    // can see and argue with, where an absent field is not. It passes.
+    expect(packAutomationStudioLlmContext({ ...base, deniedEvidenceKeys: [], failureEvidence }).failureEvidence).toEqual(failureEvidence);
+    expect(packAutomationStudioLlmContext({ ...base, deniedEvidenceKeys: [], reusableContext }).reusableContext).toEqual(reusableContext);
+    // A packet that carries neither has nothing of the domain's in it, so it
+    // needs no declaration and is left alone.
+    expect(packAutomationStudioLlmContext({ ...base, taskKind: "flow_bootstrap" }).failureEvidence).toBeUndefined();
   });
 
   it("validates structured responses and rejects executable code", () => {

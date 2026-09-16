@@ -77,7 +77,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       provider,
       resolver: () => ({ provider, maxCallsPerRun: 3 }),
       evidenceRuntime: {
-        domainId: "test.domain", tools: [{ toolId: "inspect", description: "Inspect bounded evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
+        domainId: "test.domain", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect bounded evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
         executeTool: vi.fn().mockResolvedValue({ factCount: 1 })
       }
     });

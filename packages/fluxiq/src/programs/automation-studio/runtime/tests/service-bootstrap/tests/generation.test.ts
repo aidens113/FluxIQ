@@ -165,7 +165,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const instance = createService({
       provider,
       resolver: () => ({ provider, maxCallsPerRun: 3 }),
-      evidenceRuntime: { domainId: "test.domain", tools: [{ toolId: "inspect", description: "Inspect bounded domain evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: { scope: "current" } } }], executeTool }
+      evidenceRuntime: { domainId: "test.domain", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect bounded domain evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: { scope: "current" } } }], executeTool }
     });
     const { project, flow } = await blankFixture(instance);
     const result = await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, executionGrant: await grant(instance, project.id, flow.flowId), evidenceGuided: true });
@@ -201,7 +201,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const instance = createService({
       provider,
       resolver: () => ({ provider, maxCallsPerRun: 3 }),
-      evidenceRuntime: { domainId: "domain.test", tools: [{ toolId: "inspect", description: "Inspect bounded domain evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }], executeTool: async () => ({ schemaVersion: "evidence.v1", facts: [{ role: "button" }] }) }, // Same domain as the project below: a runtime bound for one domain offers a Flow in another nothing.
+      evidenceRuntime: { domainId: "domain.test", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect bounded domain evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }], executeTool: async () => ({ schemaVersion: "evidence.v1", facts: [{ role: "button" }] }) }, // Same domain as the project below: a runtime bound for one domain offers a Flow in another nothing.
       reusableLlmContext: {
         enabled: true,
         contentProtection,
@@ -234,7 +234,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const instance = createService({
       provider,
       resolver: () => ({ provider, maxCallsPerRun: 3 }),
-      evidenceRuntime: { domainId: "test.domain", tools: [{ toolId: "inspect", description: "Inspect bounded evidence.", inputSchema: { type: "object" } }], executeTool: vi.fn() }
+      evidenceRuntime: { domainId: "test.domain", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect bounded evidence.", inputSchema: { type: "object" } }], executeTool: vi.fn() }
     });
     const { project, flow } = await blankFixture(instance);
     const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({

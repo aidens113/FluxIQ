@@ -107,7 +107,11 @@ describe("AutomationStudioService recording persistence", () => {
         maxCallsPerRun: 2
       }),
       llmEvidenceRuntime: {
-        domainId: "test.domain", tools: [],
+        // The web domain's raw-payload keys apart from `selector`: this
+        // fixture's evidence carries one deliberately, to prove a target
+        // override resolves from it. The sibling test below declares the full
+        // list and is the one that proves a declared key is refused.
+        domainId: "test.domain", deniedEvidenceKeys: ["html", "innerHtml", "outerHtml", "pageSource", "cookies", "headers"], tools: [],
         executeTool: async () => ({}),
         captureSanitizedFailureEvidence: async (input) => { captures.push(input); return evidence; },
         validateTargetOverrideEvidence: (captured, target, failedAction) => {
@@ -206,7 +210,7 @@ describe("AutomationStudioService recording persistence", () => {
         tokenLimits: { maxInputTokens: 1_000, maxOutputTokens: 500, maxTotalTokens: 1_500 }
       }),
       llmEvidenceRuntime: {
-        domainId: "test.domain", tools: [],
+        domainId: "test.domain", deniedEvidenceKeys: ["html", "innerHtml", "outerHtml", "pageSource", "cookies", "headers", "selector"], tools: [],
         executeTool: async () => ({}),
         captureSanitizedFailureEvidence: async () => ({ schemaVersion: "web-llm-evidence.v1", summary: "x".repeat(700) })
       }
@@ -237,7 +241,7 @@ describe("AutomationStudioService recording persistence", () => {
         maxCallsPerRun: 2
       }),
       llmEvidenceRuntime: {
-        domainId: "test.domain", tools: [],
+        domainId: "test.domain", deniedEvidenceKeys: ["html", "innerHtml", "outerHtml", "pageSource", "cookies", "headers", "selector"], tools: [],
         executeTool: async () => ({}),
         captureSanitizedFailureEvidence: async () => ({ schemaVersion: "web-llm-evidence.v1", elements: [], truncated: false }),
         validateTargetOverrideEvidence: () => ({ status: "absent" })

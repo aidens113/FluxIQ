@@ -27,11 +27,11 @@ const CONFIG = { testRootDirNames: ["tests", "e2e"], forbiddenImports: [], impor
 
 // Only the members imports.mjs touches, with the shapes documented in
 // scripts/structure-audit/context.mjs.
-function makeCtx(files) {
+function makeCtx(files, config = CONFIG) {
   const read = (file) => files[file];
   const astCache = new Map();
   return {
-    CONFIG,
+    CONFIG: config,
     ts,
     trackedFiles: Object.keys(files),
     scriptFiles: Object.keys(files),
@@ -107,4 +107,56 @@ test("a parent reaching down into its own child's files is still counted", () =>
 
 test("a test reaching into a sibling subdirectory is still counted", () => {
   assert.equal(skipsFor("src/feature/tests/host.test.ts", 'import { widget } from "../components/widget";'), 1);
+});
+
+// --- Import boundaries: a directory edge that must not be crossed. ---
+// `valueOnly` exists for a boundary configured against a module cycle. A cycle
+// is a run-time fault, a type is erased before run time, and the harness still
+// has to read the other side's contracts -- so the ban has to distinguish the
+// two. The pairs below are what stop that distinction from becoming a hole:
+// every exempted form is matched by one that must still fail.
+
+const BOUNDARY_CONFIG = (valueOnly) => ({
+  testRootDirNames: ["tests", "e2e"],
+  forbiddenImports: [],
+  importBoundaries: [{ from: "src/feature", to: "src/other", valueOnly, reason: "Reason." }]
+});
+
+const crossings = (source, valueOnly) =>
+  run(makeCtx({ ...BASE, "src/feature/crosser.ts": source }, BOUNDARY_CONFIG(valueOnly)))
+    .filter((finding) => finding.message.includes("resolves under")).length;
+
+test("a value import across a boundary fails", () => {
+  assert.equal(crossings('import { thing } from "../other/index.ts";', true), 1);
+});
+
+test("an import type across a value-only boundary is allowed", () => {
+  assert.equal(crossings('import type { Thing } from "../other/index.ts";', true), 0);
+});
+
+test("an export type across a value-only boundary is allowed", () => {
+  assert.equal(crossings('export type { Thing } from "../other/index.ts";', true), 0);
+});
+
+// Under verbatimModuleSyntax this emits `import {} from "../other/index.ts"`,
+// which is a real edge in the emitted graph and can close a cycle.
+test("an inline type specifier is not treated as a type-only import", () => {
+  assert.equal(crossings('import { type Thing } from "../other/index.ts";', true), 1);
+});
+
+test("a bare side-effect import across a value-only boundary fails", () => {
+  assert.equal(crossings('import "../other/index.ts";', true), 1);
+});
+
+test("a dynamic import across a value-only boundary fails", () => {
+  assert.equal(crossings('export const load = () => import("../other/index.ts");', true), 1);
+});
+
+test("a boundary without valueOnly still bans type-only imports", () => {
+  assert.equal(crossings('import type { Thing } from "../other/index.ts";', undefined), 1);
+});
+
+test("a boundary does not touch an importer outside its from directory", () => {
+  const ctx = makeCtx({ ...BASE, "src/consumer/crosser.ts": 'import { thing } from "../other/index.ts";' }, BOUNDARY_CONFIG(true));
+  assert.equal(run(ctx).filter((finding) => finding.message.includes("resolves under")).length, 0);
 });

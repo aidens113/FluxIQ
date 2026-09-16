@@ -19,8 +19,32 @@ export const CONFIG = {
   ],
 
   // Directory-scoped import boundaries: files under `from` must not import
-  // anything resolving under `to`.
-  importBoundaries: [],
+  // anything resolving under `to`. `valueOnly: true` narrows the ban to the
+  // imports that survive into the emitted module graph, leaving `import type`
+  // and `export type` alone.
+  //
+  // The automation-studio runtime entry is a cycle guard, and the direction is
+  // the one that must never exist. `runtime/recovery/` legitimately imports
+  // values out of `runtime/llm/`: it drives the evidence loop, so the loop has
+  // to evaluate first. That makes the return edge a cycle, and a cycle here is
+  // not a style problem -- twice in one day a `runtime/recovery/` module read a
+  // `runtime/llm/` constant during module evaluation and got `undefined` with a
+  // completely clean type check, once silently emptying an opaque handle's
+  // `pattern`, `maxLength` and `maxProperties` out of the JSON schema actually
+  // sent to the provider. A single failing test caught both; nothing else did.
+  //
+  // A type is erased before any of that can happen, so type-only imports across
+  // the edge stay allowed and the harness keeps reading recovery's contracts.
+  // What is banned is a value: a constant, a function, a class, a bare
+  // `import "..."` for effect, or a dynamic `import()`.
+  importBoundaries: [
+    {
+      from: "packages/fluxiq/src/programs/automation-studio/runtime/llm",
+      to: "packages/fluxiq/src/programs/automation-studio/runtime/recovery",
+      valueOnly: true,
+      reason: "runtime/llm must not import a value out of runtime/recovery: recovery drives the evidence loop out of runtime/llm, so the return edge closes a module cycle and a constant read at module-evaluation time arrives undefined with a clean type check. Import the type if that is what you need, call the value from the coordinator that already owns both sides, or move the shared value into runtime/loop-limits/, which neither directory owns."
+    }
+  ],
 
   // Paths whose files build values that must satisfy an external wire
   // contract, where no property may arrive through a spread. TypeScript runs

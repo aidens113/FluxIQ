@@ -15,6 +15,7 @@ import type {
   AutomationStudioRuntimeTargetOverrideEvidenceValidation,
   AutomationStudioRuntimeTargetOverrideFailedAction
 } from "../../live-patch.ts";
+import type { AutomationStudioExplorationRefusalClassifier } from "../../recovery/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
 import type { AutomationStudioLlmFailureEvidenceCaptureInput, AutomationStudioRuntimeTargetOverrideTarget } from "../harness.ts";
 import type { AutomationStudioHarnessOptionHost } from "./host.ts";
@@ -41,14 +42,27 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
    * looks like is the domain, so the domain declares it. Core still bounds
    * depth, size and shape whatever is declared.
    *
-   * Optional only because making it required would stop Core compiling until
-   * every existing binding, including test fixtures in files this change does
-   * not own, declared one. It should become required in the same work unit that
-   * updates them; declaring `[]` would then be a domain saying it has nothing of
-   * the sort, which is a claim a reviewer can see, where an absent field is not.
+   * Required, and deliberately so. An absent field used to mean "deny nothing",
+   * so a domain that simply forgot got no protection at all and nothing said
+   * so. Declaring `[]` is a domain stating it has nothing of the sort, which a
+   * reviewer can see and argue with; an absent field is not. Core's packet
+   * builder refuses to carry evidence or reusable context that arrives with no
+   * declaration at all, so the compile-time rule and the run-time rule agree.
    */
-  deniedEvidenceKeys?: readonly string[];
+  deniedEvidenceKeys: readonly string[];
   tools: AutomationStudioLlmEvidenceTool[];
+  /**
+   * Options the domain declares in full, rather than as bare tools. Unlike
+   * `tools`, these carry their own availability, safety and stages, so a
+   * runtime-only option never reaches Flow authoring.
+   */
+  harnessOptions?: AutomationStudioHarnessOptionBundle;
+  /**
+   * How this domain reads a tool result code that means "the harness declined
+   * to act", so the exploration runner can stop on a refusal without Core
+   * knowing any of the domain's result codes.
+   */
+  classifyRefusal?: AutomationStudioExplorationRefusalClassifier;
   executeTool(input: {
     projectId: string;
     flowId: string;
@@ -78,8 +92,28 @@ export function automationStudioHarnessOptionRegistry(input: {
   binding?: AutomationStudioLlmEvidenceRuntimeBinding | undefined;
 }): AutomationStudioHarnessOptionRegistry {
   const registry = new AutomationStudioHarnessOptionRegistry(input.host ? { host: input.host } : {});
-  if (input.binding?.tools.length) registry.register(automationStudioHarnessOptionBundleFromBinding(input.binding));
+  if (input.binding && (input.binding.tools.length || input.binding.harnessOptions?.options.length)) {
+    registry.register(automationStudioHarnessOptionBundleFromBinding(input.binding));
+  }
   return registry;
+}
+
+/**
+ * A harness input carrying the bound domain's declared denied keys.
+ *
+ * Flow Bootstrap assembles its own harness input and never forwarded them, so
+ * its reusable context reached the model with only Core's own `target` family
+ * denied and none of the domain's raw-payload nouns -- silently, because an
+ * absent declaration used to mean "deny nothing". Forwarded, never defaulted:
+ * a `?? []` in this position would restore exactly the default-open that
+ * making the declaration required exists to close.
+ */
+export function automationStudioHarnessInputWithDeniedEvidenceKeys<Input extends { deniedEvidenceKeys?: readonly string[] }>(
+  input: Input,
+  binding: AutomationStudioLlmEvidenceRuntimeBinding | undefined
+): Input {
+  if (!binding) return input;
+  return { ...input, deniedEvidenceKeys: binding.deniedEvidenceKeys };
 }
 
 /** One domain's bound tools as a bundle the registry can hold. */
@@ -89,6 +123,18 @@ export function automationStudioHarnessOptionBundleFromBinding(binding: Automati
     implementations[tool.toolId] = executionFor(binding, tool.toolId);
     return scopedOption(tool, binding.domainId);
   });
+  const declared = binding.harnessOptions;
+  if (declared) {
+    if (declared.domainId !== binding.domainId) {
+      throw new Error(`Automation Studio harness options declare domain "${declared.domainId}" on a runtime bound for "${binding.domainId}".`);
+    }
+    for (const option of declared.options) {
+      const implementation = declared.implementations[option.toolId];
+      if (!implementation) throw new Error(`Automation Studio harness option "${option.toolId}" has no implementation.`);
+      options.push(option);
+      implementations[option.toolId] = implementation;
+    }
+  }
   return { schemaVersion: "0.1", domainId: binding.domainId, options, implementations };
 }
 

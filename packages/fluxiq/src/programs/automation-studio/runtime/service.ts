@@ -101,21 +101,15 @@ import {
   type AutomationStudioTrainingModeSettings
 } from "./training-modes.ts";
 import {
-  AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_ESTIMATED_COST_USD,
-  AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST,
-  AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES,
   resolveAutomationStudioLlmInstructions,
   resolveAutomationStudioLlmTokenLimits,
   runAutomationStudioLlmHarness,
-  sanitizeAutomationStudioLlmFailureEvidence,
   type AutomationStudioLlmFailureEvidenceCaptureInput,
   type AutomationStudioLlmProvider,
-  type AutomationStudioLlmTokenLimits,
-  type AutomationStudioRuntimeTargetOverrideTarget
+  type AutomationStudioLlmTokenLimits
 } from "./llm/index.ts";
-import { AutomationStudioLlmRunBudgetLedger } from "./llm/index.ts";
-import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT, adaptationConfidenceScore, adaptationValidationCounts, automationStudioRuntimeRecoveryTrace, buildAutomationStudioRuntimeRecoveryContext, decideAutomationStudioRuntimeLlmInvocation, evaluateFlowAdaptationPromotionGates, planAutomationStudioRuntimeRecovery, summarizeAutomationStudioRuntimeRecoveryContext, summarizeAutomationStudioRuntimeStructuredDiagnosis } from "./recovery/index.ts";
-import { automationStudioHarnessOptionRegistry, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
+import { AUTOMATION_STUDIO_KNOWN_ADAPTATION_LOAD_LIMIT, adaptationConfidenceScore, adaptationValidationCounts, annotateAutomationStudioRunDetailWithRuntimeLlm, evaluateFlowAdaptationPromotionGates } from "./recovery/index.ts";
+import { automationStudioHarnessInputWithDeniedEvidenceKeys, automationStudioHarnessOptionRegistry, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapEvidenceCompletionFailure, flowBootstrapEvidenceLoopFailure, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode } from "./flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapCatalogByteBudget, buildAutomationStudioFlowBootstrapContext, isAutomationStudioEvidenceFlowBootstrapResultWithinLimits, parseAutomationStudioFlowBootstrapPlan, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap/index.ts";
 import {
@@ -125,7 +119,7 @@ import {
   type AutomationStudioBootstrapAdaptation,
   type AutomationStudioBootstrapAuditEvent
 } from "./flow-bootstrap/index.ts";
-import { executeAutomationStudioRuntimePatch, proposeAutomationStudioRuntimeTargetOverride, type AutomationStudioRuntimeTargetOverrideEvidenceValidation, type AutomationStudioRuntimeTargetOverrideFailedAction } from "./live-patch.ts";
+import type { executeAutomationStudioRuntimePatch } from "./live-patch.ts";
 import { packAutomationStudioReusableLlmContext, type AutomationStudioReusableLlmContextPacket, type AutomationStudioReusableLlmContextPackingResult } from "./reusable-llm-context.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "./host-runtime.ts";
 import type { AutomationStudioNativeNodeRuntime } from "./native-node-runtime.ts";
@@ -176,7 +170,6 @@ import {
   AutomationStudioSummaryStore,
   SUBFLOW_SUMMARY_MIGRATION_IO_CONCURRENCY,
   adaptiveRuntimeMetricsFromRunDetail,
-  flowRunSummaryWithInterventionSummaries,
   instructionSummaryFromInstruction,
   runtimeSessionToFlowRunDetail,
   runtimeSummaryFromSession,
@@ -1804,7 +1797,7 @@ export class AutomationStudioService {
   private async runFlowBootstrapLlmHarness(
     input: Parameters<typeof runAutomationStudioLlmHarness>[0]
   ): ReturnType<typeof runAutomationStudioLlmHarness> {
-    return await runAutomationStudioLlmHarness(input);
+    return await runAutomationStudioLlmHarness(automationStudioHarnessInputWithDeniedEvidenceKeys(input, this.llmEvidenceRuntime));
   }
 
   async generateFlowBootstrapAdaptation(
@@ -2869,6 +2862,11 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     };
   }
 
+  /**
+   * Stage A through stage D for a failed run. The path itself lives in
+   * `recovery/annotation/`, where it can be driven without a service; what
+   * stays here is the binding of the eight things it reaches this service for.
+   */
   private async maybeAnnotateRunDetailWithRuntimeLlm(input: {
     detail: AutomationStudioFlowRunDetail;
     context: AutomationStudioRuntimeAdaptationContext | null;
@@ -2880,310 +2878,23 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     executionGrant?: AutomationStudioLlmProviderResolverInput["executionGrant"];
     useReusableContext?: true;
   }): Promise<AutomationStudioFlowRunDetail> {
-    if (!input.context) return input.detail;
-    if (input.detail.summary.status !== "failed") return input.detail;
-    const explicitGrantBudget = input.executionGrant?.purpose === "diagnose_and_adapt" || input.executionGrant?.purpose === "diagnosis_only";
-    if (!input.context.behavior.invokeLlm || (!explicitGrantBudget && !input.context.budgetDecision.ok)) {
-      return {
-        ...input.detail,
-        metadata: {
-          ...(input.detail.metadata ?? {}),
-          llmGate: {
-            invoked: false,
-            reason: !input.context.behavior.invokeLlm ? "Current training mode or settings do not allow LLM intervention." : `Training budget exhausted: ${input.context.budgetDecision.exhausted.join(", ")}.`
-          }
-        }
-      };
-    }
-    const invocation = decideAutomationStudioRuntimeLlmInvocation({ projectId: input.context.projectId, flowId: input.context.flowId, runId: input.detail.summary.runId, ...(input.subflowId ? { subflowId: input.subflowId } : {}), settings: input.context.settings, policy: input.context.policy, runsCompleted: input.context.runsCompleted, stabilityScore: input.context.metrics.stabilityScore, budgetState: input.context.budgetState, ...(input.failedTraceAttempt ? { failedAttempt: input.failedTraceAttempt } : {}), adaptations: input.context.recentAdaptations });
-    // Deterministic-first: a known recovery or a reroute must run before the model is asked, and the provider is not even resolved when one is available.
-    if (!invocation.invoke) return { ...input.detail, metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, reason: invocation.reason, requiredPriorAction: invocation.requiredPriorAction }, recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy }) as unknown as JsonObject } };
-    const failedAttempt = [...(input.detail.actionAttempts ?? [])].reverse().find((attempt) => attempt.status === "failed" || attempt.status === "unknown");
-    const providerId = stringSetting(input.context.policy.metadata?.llmProvider, stringSetting(input.context.policy.policyId, "host"));
-    let provider: AutomationStudioLlmProvider | undefined;
-    let providerResolution: AutomationStudioLlmProviderResolution | undefined;
-    try {
-      const resolvedProvider = await this.llmProviderResolver?.({
-        projectId: input.context.projectId,
-        flowId: input.context.flowId,
-      providerId,
-      ...(input.executionGrant ? { executionGrant: input.executionGrant } : {}),
-        ...(input.context.policy.metadata ? { metadata: input.context.policy.metadata } : {})
-      });
-      if (resolvedProvider && "provider" in resolvedProvider) {
-        providerResolution = resolvedProvider;
-        provider = resolvedProvider.provider;
-      } else {
-        provider = resolvedProvider;
-      }
-    } catch {
-      return {
-        ...input.detail,
-        interventions: [...(input.detail.interventions ?? []), {
-          schemaVersion: "0.1",
-          interventionId: `llm.provider-resolution.${input.detail.summary.runId}`,
-          runId: input.detail.summary.runId,
-          flowId: input.context.flowId,
-          projectId: input.context.projectId,
-          kind: "diagnosis",
-          reason: "LLM provider resolution failed.",
-          validation: { ok: false, issues: ["llm.provider_resolution_failed: LLM provider resolution failed."] },
-          createdAt: input.detail.summary.updatedAt || Date.now()
-        }],
-        metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, reason: "LLM provider resolution failed.", code: "llm.provider_resolution_failed" }, recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, diagnosisFailure: "LLM provider resolution failed." }) as unknown as JsonObject }
-      };
-    }
-    const instructions = await this.getFlowInstructionSet({
-      projectId: input.context.projectId,
-      flowId: input.context.flowId
-    }).catch(() => []);
-    const explicitCallLimit = input.executionGrant?.purpose === "diagnose_and_adapt"
-      ? 2
-      : input.executionGrant?.purpose === "diagnosis_only"
-        ? 1
-        : undefined;
-    const configuredCallLimits = [input.context.policy.maxInterventionsPerRun, input.context.settings.budgets?.maxInterventionsPerRun, providerResolution?.maxCallsPerRun]
-      .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
-    const maxCallsPerRun = explicitCallLimit ?? Math.max(1, Math.trunc(configuredCallLimits.length ? Math.min(...configuredCallLimits) : 2));
-    const requestedTokenLimits = providerResolution?.tokenLimits;
-    let failureEvidence: JsonObject | undefined;
-    if (provider && failedAttempt && this.llmEvidenceRuntime?.captureSanitizedFailureEvidence) {
-      const resolvedTokenLimits = resolveAutomationStudioLlmTokenLimits(requestedTokenLimits).limits;
-      const maxEvidenceBytes = Math.max(1, Math.min(
-        AUTOMATION_STUDIO_LLM_MAX_FAILURE_EVIDENCE_BYTES,
-        Math.floor(resolvedTokenLimits.maxInputTokens * 3 * 0.2)
-      ));
-      try {
-        const captured = await this.llmEvidenceRuntime.captureSanitizedFailureEvidence({
-          projectId: input.context.projectId,
-          flowId: input.context.flowId,
-          runId: input.detail.summary.runId,
-          failedAction: {
-            attemptId: failedAttempt.attemptId,
-            nodeId: failedAttempt.nodeId,
-            definitionId: failedAttempt.definitionId,
-            status: failedAttempt.status,
-            ...(failedAttempt.route ? { route: failedAttempt.route } : {})
-          },
-          maxEvidenceBytes,
-          ...(input.graphOptions?.signal ? { signal: input.graphOptions.signal } : {})
-        });
-        if (captured !== undefined) {
-          const sanitized = sanitizeAutomationStudioLlmFailureEvidence("runtime_diagnosis", captured, this.llmEvidenceRuntime?.deniedEvidenceKeys);
-          if (Buffer.byteLength(JSON.stringify(sanitized), "utf8") > maxEvidenceBytes) {
-            throw new Error("Sanitized failure evidence exceeds the dynamic request allowance.");
-          }
-          failureEvidence = sanitized;
-        }
-      } catch {
-        return {
-          ...input.detail,
-          interventions: [...input.detail.interventions, {
-            schemaVersion: "0.1",
-            interventionId: `llm.failure-evidence.${input.detail.summary.runId}`,
-            runId: input.detail.summary.runId,
-            flowId: input.context.flowId,
-            projectId: input.context.projectId,
-            kind: "diagnosis",
-            reason: "Sanitized runtime failure evidence was unavailable.",
-            validation: { ok: false, issues: ["llm.failure_evidence_invalid: Sanitized runtime failure evidence was unavailable."] },
-            createdAt: input.detail.summary.updatedAt || Date.now()
-          }],
-          metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, providerConfigured: true, code: "llm.failure_evidence_invalid" }, recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, diagnosisFailure: "Sanitized runtime failure evidence was unavailable." }) as unknown as JsonObject }
-        };
-      }
-    }
-    const requestedTotalTokensPerRun = (requestedTokenLimits?.maxTotalTokens ?? 10_000) * maxCallsPerRun;
-    const maxTotalTokensPerRun = Math.max(1, Math.trunc(Math.min(
-      AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST * maxCallsPerRun,
-      explicitGrantBudget
-        ? requestedTotalTokensPerRun
-        : Math.min(input.context.settings.budgets?.maxTokensPerRun ?? 12_000, requestedTotalTokensPerRun)
-    )));
-    const maxOutputTokensPerRun = Math.max(1, Math.trunc(Math.min(maxTotalTokensPerRun, (requestedTokenLimits?.maxOutputTokens ?? maxTotalTokensPerRun) * maxCallsPerRun)));
-    const requestedEstimatedCostUsdPerRun = providerResolution?.maxTotalEstimatedCostUsd ?? (providerResolution?.maxEstimatedCostUsd ?? 0.25) * maxCallsPerRun;
-    const maxEstimatedCostUsdPerRun = explicitGrantBudget
-      ? Math.min(AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_ESTIMATED_COST_USD, requestedEstimatedCostUsdPerRun)
-      : Math.min(0.25, input.context.policy.maxEstimatedCostUsdPerRun ?? 0.25, requestedEstimatedCostUsdPerRun);
-    const maxEstimatedCostUsdPerCall = maxEstimatedCostUsdPerRun / maxCallsPerRun;
-    const runBudget = new AutomationStudioLlmRunBudgetLedger({
-      maxCallsPerRun,
-      maxTotalTokensPerRun,
-      maxOutputTokensPerRun,
-      maxEstimatedCostUsdPerRun
-    });
-    const reusableContextResult = input.useReusableContext === true && failureEvidence
-      ? await this.reusableLlmContextForFreshEvidence({
-        optedIn: true, taskKind: "runtime_diagnosis", projectId: input.context.projectId, flowId: input.context.flowId,
-        ...(input.subflowId ? { subflowId: input.subflowId } : {}), freshEvidence: failureEvidence, freshEvidenceCount: 1,
-        maxInputTokens: resolveAutomationStudioLlmTokenLimits(requestedTokenLimits).limits.maxInputTokens,
-        ...(input.executionGrant?.actorUserId ? { actorId: input.executionGrant.actorUserId } : {}), now: input.detail.summary.updatedAt || Date.now()
-      })
-      : input.useReusableContext === true && this.reusableLlmContextEnabled
-        ? { metadata: { status: "miss", reason: "fresh_evidence_required", freshContributionCount: 0, reusedContributionCount: 0, sourceRecordIds: [], sourceRunIds: [], sourceAdaptationIds: [] } as JsonObject }
-        : undefined;
-    const recoveryContext = buildAutomationStudioRuntimeRecoveryContext({ detail: input.detail, ...(input.failedTraceAttempt ? { failedAttempt: input.failedTraceAttempt } : {}), ...(input.subflowId ? { subflowId: input.subflowId } : {}), adaptations: input.context.recentAdaptations });
-    const result = await runAutomationStudioLlmHarness({
-      taskKind: "runtime_diagnosis", stage: "gather",
-      projectId: input.context.projectId,
-      flowId: input.context.flowId,
-      runId: input.detail.summary.runId,
-      ...(input.subflowId ? { subflowId: input.subflowId } : {}),
-      ...(failedAttempt?.nodeId ? { nodeId: failedAttempt.nodeId } : {}),
-      instructions,
-      runDetail: input.detail,
-      ...(failureEvidence ? { failureEvidence } : {}), ...(this.llmEvidenceRuntime?.deniedEvidenceKeys ? { deniedEvidenceKeys: this.llmEvidenceRuntime.deniedEvidenceKeys } : {}), recoveryContext,
-      ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
-      policy: input.context.policy,
-      ...(provider ? { provider } : {}),
-      runBudget,
-      ...(requestedTokenLimits ? { tokenLimits: requestedTokenLimits } : {}),
-      ...(providerResolution?.timeoutMs !== undefined ? { timeoutMs: providerResolution.timeoutMs } : {}),
-      maxEstimatedCostUsd: maxEstimatedCostUsdPerCall,
-      ...(input.graphOptions?.signal ? { signal: input.graphOptions.signal } : {}),
-      now: () => input.detail.summary.updatedAt || Date.now(),
-      metadata: {
-        source: "runRuntimeSession",
-        expectedOutput: "diagnosis",
-        ...(input.executionGrant?.purpose === "diagnose_and_adapt" ? { executionPurpose: "diagnose_and_adapt" } : {})
+    return await annotateAutomationStudioRunDetailWithRuntimeLlm({
+      ...input,
+      ports: {
+        ...(this.llmProviderResolver ? { resolveLlmProvider: this.llmProviderResolver } : {}),
+        ...(this.llmEvidenceRuntime ? { llmEvidenceRuntime: this.llmEvidenceRuntime } : {}),
+        reusableLlmContextEnabled: this.reusableLlmContextEnabled,
+        flowInstructionSet: (request) => this.getFlowInstructionSet(request),
+        reusableLlmContextForFreshEvidence: (request) => this.reusableLlmContextForFreshEvidence(request),
+        // An unreadable Flow answers with no scope rather than with "anywhere":
+        // the exploration is then not run, and the trace says the plan asked for
+        // one and none happened.
+        flowScope: async (projectId, flowId) => await this.getFlow(projectId, flowId).then((flow) => flow.scope).catch(() => undefined),
+        saveFlowChangeProposal: (proposal) => this.saveFlowChangeProposal(proposal),
+        saveFlowAdaptation: (adaptation) => this.saveFlowAdaptation(adaptation),
+        promoteRuntimeAdaptation: (request) => this.maybePromoteRuntimeAdaptation(request)
       }
     });
-    // Stage B: the plan decides whether a patch is asked for at all, from the structured diagnosis and the policy, with no provider call.
-    const plan = planAutomationStudioRuntimeRecovery({ ...(invocation.diagnosis ? { deterministic: invocation.diagnosis } : {}), result, policy: input.context.policy });
-    const patchResult = plan.patchRequest.request && provider && input.runtimeFlow && input.failedTraceAttempt && input.context.behavior.createAdaptations
-      ? await runAutomationStudioLlmHarness({
-        taskKind: "runtime_patch", stage: "implement", previousStage: "plan",
-        projectId: input.context.projectId,
-        flowId: input.context.flowId,
-        runId: input.detail.summary.runId,
-        ...(input.subflowId ? { subflowId: input.subflowId } : {}),
-        ...(failedAttempt?.nodeId ? { nodeId: failedAttempt.nodeId } : {}),
-        instructions,
-        runDetail: input.detail,
-        ...(failureEvidence ? { failureEvidence } : {}), ...(this.llmEvidenceRuntime?.deniedEvidenceKeys ? { deniedEvidenceKeys: this.llmEvidenceRuntime.deniedEvidenceKeys } : {}), recoveryContext,
-        ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
-        policy: input.context.policy,
-        provider,
-        runBudget,
-        ...(requestedTokenLimits ? { tokenLimits: requestedTokenLimits } : {}),
-        ...(providerResolution?.timeoutMs !== undefined ? { timeoutMs: providerResolution.timeoutMs } : {}),
-        maxEstimatedCostUsd: maxEstimatedCostUsdPerCall,
-        ...(input.graphOptions?.signal ? { signal: input.graphOptions.signal } : {}),
-        expectedOutput: "runtime_patch",
-        now: () => input.detail.summary.updatedAt || Date.now(),
-        metadata: {
-          source: "runRuntimeSession",
-          expectedOutput: "runtime_patch",
-          ...(input.executionGrant?.purpose === "diagnose_and_adapt" ? { executionPurpose: "diagnose_and_adapt" } : {})
-        }
-      })
-      : null;
-    const runtimePatchAttempts = [];
-    const adaptationIds: string[] = [];
-    const changeProposalIds: string[] = [];
-    if (patchResult?.response?.kind === "runtime_patch" && input.runtimeFlow && input.failedTraceAttempt) {
-      const explicitProposalIssue = input.executionGrant?.purpose === "diagnose_and_adapt"
-        ? patchResult.response.patches.length !== 1
-          ? "diagnose_and_adapt requires exactly one runtime patch."
-          : patchResult.response.patches[0]?.kind !== "temporary_target_override"
-            ? "diagnose_and_adapt supports temporary_target_override proposals only."
-            : undefined
-        : undefined;
-      if (explicitProposalIssue) {
-        runtimePatchAttempts.push(compactJsonObject({
-          kind: patchResult.response.patches.length === 1 ? patchResult.response.patches[0]?.kind : "runtime_patch_response",
-          proposalOnly: true,
-          executed: false,
-          preflightOk: false,
-          restoredExpectedState: false,
-          retryOriginalAction: false,
-          issues: [explicitProposalIssue],
-          traceStatus: "not-run"
-        }));
-      }
-      for (const patch of explicitProposalIssue ? [] : patchResult.response.patches) {
-        const patchInput = {
-          projectId: input.context.projectId,
-          flowId: input.context.flowId,
-          ...(input.subflowId ? { subflowId: input.subflowId } : {}),
-          runId: input.detail.summary.runId,
-          flow: input.runtimeFlow,
-          patch,
-          failedAttempt: input.failedTraceAttempt,
-          ...(input.failedTraceAttempt.transitionComparison ? { expectedComparison: input.failedTraceAttempt.transitionComparison } : {}),
-          policy: input.context.policy,
-          proposalMode: input.context.policy.proposalMode,
-          ...(failureEvidence && this.llmEvidenceRuntime?.validateTargetOverrideEvidence ? {
-            validateTargetOverrideEvidence: (target: AutomationStudioRuntimeTargetOverrideTarget, failedAction: AutomationStudioRuntimeTargetOverrideFailedAction) => {
-              try { return this.llmEvidenceRuntime!.validateTargetOverrideEvidence!(failureEvidence!, target, failedAction); }
-              catch { return { status: "absent" as const }; }
-            }
-          } : {}),
-          ...(input.authorizedExternalSideEffects !== undefined ? { authorizedExternalSideEffects: input.authorizedExternalSideEffects } : {}),
-          ...(input.graphOptions ? { options: input.graphOptions } : {})
-        };
-        const proposalOnlyTargetOverride = input.executionGrant?.purpose === "diagnose_and_adapt" && patch.kind === "temporary_target_override";
-        const tested = proposalOnlyTargetOverride
-          ? proposeAutomationStudioRuntimeTargetOverride(patchInput)
-          : await executeAutomationStudioRuntimePatch(patchInput);
-        runtimePatchAttempts.push(compactJsonObject({
-          kind: patch.kind,
-          proposalOnly: tested.metadata?.proposalOnly,
-          executed: tested.metadata?.executed,
-          targetResolution: tested.metadata?.targetResolution,
-          targetNodeResolution: tested.metadata?.targetNodeResolution,
-          preflightOk: tested.preflight.ok,
-          verification: tested.verification,
-          restoredExpectedState: tested.restoredExpectedState,
-          retryOriginalAction: tested.retryOriginalAction,
-          issues: tested.preflight.issues,
-          traceStatus: tested.trace?.status ?? "not-run",
-          adaptationId: tested.adaptation?.adaptationId,
-          changeProposalId: tested.changeProposal?.proposalId
-        }));
-        if (tested.changeProposal) {
-          await this.saveFlowChangeProposal(tested.changeProposal);
-          changeProposalIds.push(tested.changeProposal.proposalId);
-        }
-        if (tested.adaptation) {
-          const adaptationBase = tested.changeProposal ? { ...tested.adaptation, proposalId: tested.changeProposal.proposalId } : tested.adaptation;
-          const adaptation = reusableContextResult ? { ...adaptationBase, metadata: { ...(adaptationBase.metadata ?? {}), reusableContext: reusableContextResult.metadata } } : adaptationBase;
-          const savedAdaptation = await this.saveFlowAdaptation(adaptation);
-          const promoted = await this.maybePromoteRuntimeAdaptation({
-            adaptation: savedAdaptation,
-            context: input.context
-          });
-          const approvalDecision = isJsonRecord(promoted.metadata?.approvalDecision) ? promoted.metadata.approvalDecision : undefined;
-          if (approvalDecision) runtimePatchAttempts[runtimePatchAttempts.length - 1] = compactJsonObject({ ...runtimePatchAttempts[runtimePatchAttempts.length - 1], approvalDecision });
-          adaptationIds.push(promoted.adaptationId);
-        }
-      }
-    }
-    const withIntervention: AutomationStudioFlowRunDetail = {
-      ...input.detail,
-      interventions: [...input.detail.interventions, result.intervention, ...(patchResult ? [patchResult.intervention] : [])],
-      adaptationIds: [...new Set([...input.detail.adaptationIds, ...adaptationIds])],
-      changeProposalIds: [...new Set([...input.detail.changeProposalIds, ...changeProposalIds])],
-      metadata: {
-        ...(input.detail.metadata ?? {}),
-        llmGate: {
-          invoked: Boolean(provider),
-          providerConfigured: Boolean(provider),
-          ok: result.ok && (patchResult?.ok ?? true),
-          costAccounting: runBudget.snapshot(input.detail.summary.runId),
-          ...(plan.patchRequest.request ? {} : { patchSkipped: plan.patchRequest.reason }),
-          ...(failureEvidence && result.intervention.contextSummary?.failureEvidence ? { failureEvidence: result.intervention.contextSummary.failureEvidence } : {}),
-          recoveryContext: summarizeAutomationStudioRuntimeRecoveryContext(recoveryContext), structuredDiagnosis: summarizeAutomationStudioRuntimeStructuredDiagnosis(plan.diagnosis) as unknown as JsonObject,
-          diagnostics: [...result.diagnostics, ...(patchResult?.diagnostics ?? [])].map((diagnostic) => ({ code: diagnostic.code, severity: diagnostic.severity, message: diagnostic.message })),
-          ...(reusableContextResult ? { reusableContext: reusableContextResult.metadata } : {})
-        },
-        ...(runtimePatchAttempts.length ? { runtimePatchAttempts: runtimePatchAttempts as unknown as JsonObject[] } : {}), recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy, plan, diagnosisOk: result.ok, patchRequested: Boolean(patchResult), patchAttemptCount: runtimePatchAttempts.length, adaptationIds, changeProposalIds }) as unknown as JsonObject
-      }
-    };
-    return {
-      ...withIntervention,
-      summary: flowRunSummaryWithInterventionSummaries(withIntervention)
-    };
   }
 
   private async maybePromoteRuntimeAdaptation(input: {

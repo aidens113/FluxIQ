@@ -123,6 +123,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
       estimatedInputTokens: request.tokenLimits.maxInputTokens,
       maxOutputTokens: request.tokenLimits.maxOutputTokens
       , maxEstimatedCostUsd: request.maxEstimatedCostUsd
+      , ...(input.runBudgetAllowance ? { allowance: input.runBudgetAllowance } : {})
     })
     : null;
   if (reservation && !reservation.ok) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioLlmTaskResult } from "../../llm/index.ts";
+import type { AutomationStudioLlmDiagnosisFields, AutomationStudioLlmTaskResult } from "../../llm/index.ts";
 import type { AutomationStudioRuntimeDeterministicDiagnosis } from "../deterministic-diagnosis.ts";
 import {
   AUTOMATION_STUDIO_STRUCTURED_DIAGNOSIS_TEXT_MAX_LENGTH,
@@ -83,7 +83,7 @@ describe("buildAutomationStudioRuntimeStructuredDiagnosis", () => {
       deterministic: deterministic(),
       result: diagnosisResult({
         expected: "x".repeat(AUTOMATION_STUDIO_STRUCTURED_DIAGNOSIS_TEXT_MAX_LENGTH + 1),
-        explorationNeeded: "probably" as unknown as boolean,
+        explorationNeeded: "probably",
         stillAchievable: "maybe"
       })
     });
@@ -96,6 +96,79 @@ describe("buildAutomationStudioRuntimeStructuredDiagnosis", () => {
       expect.stringContaining("stillAchievable: expected yes, no or unknown"),
       expect.stringContaining("explorationNeeded: expected a boolean")
     ]);
+  });
+
+  // The old route, and the reason it is a route and not a detail. `metadata` is
+  // an open field: the provider schema lets anything through it and the parser
+  // checks nothing in it, which is why the parser strips it. Reading it here
+  // would have let an unchecked `patchNeeded: false` cancel the billed patch
+  // call -- a value nothing validated deciding what Core does.
+  it("does not accept a diagnosis that arrived only through response.metadata", () => {
+    const diagnosis = buildAutomationStudioRuntimeStructuredDiagnosis({
+      deterministic: deterministic(),
+      result: metadataOnlyDiagnosisResult({
+        expected: "The confirmation control is present.",
+        observed: "A consent banner is over the page.",
+        stillAchievable: "yes",
+        explorationNeeded: true,
+        patchNeeded: false
+      })
+    });
+
+    expect(diagnosis.modelFields).toEqual([]);
+    expect(diagnosis.expected).toBeUndefined();
+    expect(diagnosis.observed).toBeUndefined();
+    expect(diagnosis.stillAchievable).toBe("unknown");
+    expect(diagnosis.explorationNeeded).toBe(false);
+    // The one that matters: the patch call is still asked for, because nothing
+    // Core validated said it should not be.
+    expect(diagnosis.patchNeeded).toBe(true);
+  });
+
+  // Refused, not ignored. A silent drop and a field the model never sent read
+  // identically on a run record, so the discard is stated -- by field name
+  // only, never a value.
+  it("records the misrouted field names, and none of their values, as a refusal", () => {
+    const diagnosis = buildAutomationStudioRuntimeStructuredDiagnosis({
+      deterministic: deterministic(),
+      result: metadataOnlyDiagnosisResult({ observed: "PRIVATE_PAGE_TEXT", patchNeeded: false, unrelated: "ignored" })
+    });
+
+    expect(diagnosis.refusals).toEqual([expect.stringContaining("observed, patchNeeded arrived in response.metadata")]);
+    expect(JSON.stringify(diagnosis)).not.toContain("PRIVATE_PAGE_TEXT");
+    expect(summarizeAutomationStudioRuntimeStructuredDiagnosis(diagnosis).refusals).toHaveLength(1);
+  });
+
+  it("says nothing about a metadata that carries no diagnosis field", () => {
+    const diagnosis = buildAutomationStudioRuntimeStructuredDiagnosis({
+      deterministic: deterministic(),
+      result: metadataOnlyDiagnosisResult({ provider: "mock", latencyMs: 12 })
+    });
+
+    expect(diagnosis.refusals).toEqual([]);
+  });
+
+  // Both routes at once: the channel is the answer and metadata is still
+  // refused, so the precedence cannot be read as "whichever arrived".
+  it("reads the channel and refuses the metadata when a response carries both", () => {
+    const diagnosis = buildAutomationStudioRuntimeStructuredDiagnosis({
+      deterministic: deterministic(),
+      result: {
+        ok: true,
+        diagnostics: [],
+        response: {
+          kind: "diagnosis",
+          summary: "The action could not find its control.",
+          diagnosis: { patchNeeded: false },
+          metadata: { patchNeeded: true, explorationNeeded: true }
+        }
+      } as unknown as AutomationStudioLlmTaskResult
+    });
+
+    expect(diagnosis.patchNeeded).toBe(false);
+    expect(diagnosis.explorationNeeded).toBe(false);
+    expect(diagnosis.modelFields).toEqual(["patchNeeded"]);
+    expect(diagnosis.refusals).toEqual([expect.stringContaining("explorationNeeded, patchNeeded arrived in response.metadata")]);
   });
 
   it("ignores a diagnosis response the call did not actually succeed with", () => {
@@ -148,11 +221,28 @@ function deterministic(overrides: Partial<AutomationStudioRuntimeDeterministicDi
   };
 }
 
-/** Only `ok` and `response` are read; the rest of the result is not consulted. */
-function diagnosisResult(metadata: JsonObject, confidence?: number): AutomationStudioLlmTaskResult {
+/**
+ * A diagnosis answered through the named channel: `response.diagnosis`.
+ *
+ * The cast is deliberate and is what the shape refusals above are for. The
+ * provider boundary checks every key, so a well-behaved response cannot carry a
+ * malformed one -- but this module is also reachable from a host-supplied task
+ * result that never went through that parser, so it re-checks rather than
+ * trusting the type.
+ */
+function diagnosisResult(diagnosis: Partial<Record<keyof AutomationStudioLlmDiagnosisFields, unknown>>, confidence?: number): AutomationStudioLlmTaskResult {
   return {
     ok: true,
     diagnostics: [],
-    response: { kind: "diagnosis", summary: "The action could not find its control.", ...(confidence === undefined ? {} : { confidence }), metadata }
+    response: { kind: "diagnosis", summary: "The action could not find its control.", ...(confidence === undefined ? {} : { confidence }), diagnosis }
+  } as unknown as AutomationStudioLlmTaskResult;
+}
+
+/** The route this module used to read: an open field nothing at the boundary checks. */
+function metadataOnlyDiagnosisResult(metadata: JsonObject): AutomationStudioLlmTaskResult {
+  return {
+    ok: true,
+    diagnostics: [],
+    response: { kind: "diagnosis", summary: "The action could not find its control.", metadata }
   } as unknown as AutomationStudioLlmTaskResult;
 }

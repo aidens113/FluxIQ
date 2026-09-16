@@ -37,13 +37,19 @@ export function interventionFromLlmResult(
       // The recovery context is deliberately not summarized onto the
       // intervention. The coordinator already records
       // `summarizeAutomationStudioRuntimeRecoveryContext(...)` on the run's
-      // `llmGate` metadata, so the counts-only account exists exactly once, and
-      // calling the summarizer from here would be a value import from the
-      // harness into runtime/recovery. That directory imports the evidence loop
-      // back out of runtime/llm, so the import closes a module cycle: the
-      // provider's own schema constants evaluate before runtime/llm has
-      // finished initializing and arrive undefined, which quietly drops the
-      // opaque-handle pattern and length bound from the outbound schema.
+      // `llmGate` metadata, so the counts-only account exists exactly once.
+      //
+      // Calling the summarizer from here is also no longer possible to do by
+      // accident: it would be a value import from the harness into
+      // runtime/recovery, which imports the evidence loop back out of
+      // runtime/llm, and the resulting cycle left the provider's own schema
+      // constants evaluating before runtime/llm had finished initializing --
+      // undefined at run time, clean at type-check time, and the opaque
+      // handle's pattern and length bounds quietly gone from the outbound
+      // schema. The structure audit's `imports` rule now fails the build on a
+      // value import in this direction (type-only imports are untouched; they
+      // are erased). A value both sides need goes in runtime/loop-limits/,
+      // which neither directory owns.
       ...(request.context.failureEvidence ? { failureEvidence: failureEvidenceProvenance(request.context.failureEvidence) } : {})
     },
     ...(response ? { structuredResult: summarizeAutomationStudioLlmResponse(response) } : {}),

@@ -234,6 +234,7 @@ async function explore(scenario: Scenario): Promise<AutomationStudioRuntimeExplo
   const registry = automationStudioHarnessOptionRegistry({
     binding: {
       domainId: "test.domain",
+      deniedEvidenceKeys: [],
       tools: TOOLS,
       executeTool: async (input) => {
         const result = await execute(input);

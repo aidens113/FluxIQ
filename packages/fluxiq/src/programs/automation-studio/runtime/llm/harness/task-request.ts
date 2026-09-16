@@ -8,7 +8,7 @@ import type {
 } from "../../../model/index.ts";
 import type { AutomationStudioRuntimeRecoveryContext } from "../../recovery/index.ts";
 import type { AutomationStudioReusableLlmContextPacket } from "../../reusable-llm-context.ts";
-import type { AutomationStudioLlmRunBudgetLedger } from "../run-budget.ts";
+import type { AutomationStudioLlmRunBudgetAllowance, AutomationStudioLlmRunBudgetLedger } from "../run-budget.ts";
 import type { AutomationStudioLoopStage, AutomationStudioLoopStageInstructionRegistry } from "../stages/index.ts";
 import type { AutomationStudioLlmContextPacket } from "./context-packet.ts";
 import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
@@ -60,7 +60,12 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
   /** Keys the active domain has declared may never appear in evidence or in
    * reusable context, because for its medium they carry raw payload or
    * something directly executable. Core holds no such list of its own: it
-   * enforces the domain's, and bounds shape and size regardless. */
+   * enforces the domain's, and bounds shape and size regardless.
+   *
+   * Optional only for a request that carries neither `failureEvidence` nor
+   * `reusableContext`, which is most of them. Omitting it on a request that
+   * carries either is refused when the packet is built: absent means nobody
+   * said, not "deny nothing". A domain with nothing to deny declares `[]`. */
   deniedEvidenceKeys?: readonly string[];
   runId?: string;
   runDetail?: AutomationStudioFlowRunDetail;
@@ -88,6 +93,12 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
   timeoutMs?: number;
   signal?: AbortSignal;
   runBudget?: AutomationStudioLlmRunBudgetLedger;
+  /** Which of the run's two call allowances this call draws on. Absent means
+   * the ordinary run budget, so a bounded exploration has to say that it is
+   * one: a call that declares nothing can never reach the exploration's
+   * allowance, which is what keeps that allowance a separate, visible number
+   * rather than a wider `maxCallsPerRun` in disguise. */
+  runBudgetAllowance?: AutomationStudioLlmRunBudgetAllowance;
   now?: () => number;
   metadata?: JsonObject;
 };

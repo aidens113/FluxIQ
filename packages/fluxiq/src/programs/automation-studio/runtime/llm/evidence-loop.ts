@@ -1,11 +1,13 @@
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 
-export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS = {
-  maxIterations: 16,
-  maxToolCalls: 16,
-  maxEvidenceBytes: 1_048_576
-} as const;
+// The ceilings are held in runtime/loop-limits/ because runtime/recovery/ is
+// bounded by the same three numbers, and a constant both directories read is
+// how an import edge grows between them. Re-exported here so the loop's public
+// surface is unchanged: every existing consumer still reads it from
+// runtime/llm/.
+export { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS };
 
 /** Provider-neutral decision policy for bounded evidence loops. Provider adapters
  * should include this policy in their structured-decision instruction. */

@@ -4,6 +4,16 @@
 // edge are banned outright; and relative specifiers that reach past another
 // directory's index barrel into one of its files are counted per importer and
 // ratcheted.
+//
+// A boundary may set `valueOnly: true` to ban only the imports that survive
+// into the emitted module graph. That is the setting for a boundary configured
+// against a module cycle rather than against a dependency: a cycle is a
+// run-time fault -- a constant read during module evaluation arrives
+// `undefined` -- and a type the compiler erases cannot cause one. Only a
+// declaration written `import type ... from` or `export type ... from` counts
+// as erased. `import { type A, B }` still binds a value, and under
+// `verbatimModuleSyntax` even `import { type A }` emits `import {} from "..."`,
+// which is a real edge in the emitted graph, so neither is exempt.
 
 import path from "node:path";
 
@@ -24,17 +34,19 @@ function collectSpecifiers(ctx, file) {
   const sourceFile = ctx.parse(file);
   const specifiers = [];
 
-  const record = (node) => {
+  const record = (node, typeOnly) => {
     if (!node || !ts.isStringLiteralLike(node)) return;
     const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
-    specifiers.push({ text: node.text, line });
+    specifiers.push({ text: node.text, line, typeOnly });
   };
 
   const visit = (node) => {
-    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
-      record(node.moduleSpecifier);
+    if (ts.isImportDeclaration(node)) {
+      record(node.moduleSpecifier, node.importClause?.isTypeOnly === true);
+    } else if (ts.isExportDeclaration(node)) {
+      record(node.moduleSpecifier, node.isTypeOnly === true);
     } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
-      record(node.arguments[0]);
+      record(node.arguments[0], false);
     }
     ts.forEachChild(node, visit);
   };
@@ -86,7 +98,7 @@ export function run(ctx) {
     let skips = 0;
     let firstSkip = null;
 
-    for (const { text, line } of collectSpecifiers(ctx, file)) {
+    for (const { text, line, typeOnly } of collectSpecifiers(ctx, file)) {
       const rule = forbidden.find((entry) => entry.pattern.test(text));
       if (rule) {
         findings.push({
@@ -102,6 +114,7 @@ export function run(ctx) {
       for (const boundary of boundaries) {
         if (!file.startsWith(`${boundary.from}/`)) continue;
         if (!resolved.startsWith(`${boundary.to}/`)) continue;
+        if (boundary.valueOnly === true && typeOnly) continue;
         findings.push({
           rule: id, key: `${file}:${line}`, value: 1, limit: 0, path: file, line,
           message: `${file}:${line}: imports "${text}", which resolves under ${boundary.to}/. ${boundary.reason}`,

@@ -1,4 +1,5 @@
 export * from "./adaptation-promotion.ts";
+export * from "./annotation/index.ts";
 export * from "./deterministic-diagnosis.ts";
 export * from "./diagnosis-chain.ts";
 export * from "./exploration-budget.ts";

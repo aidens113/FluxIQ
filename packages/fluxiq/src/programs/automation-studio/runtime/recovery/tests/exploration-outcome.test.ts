@@ -51,6 +51,7 @@ describe("exploration outcomes", () => {
     ]],
     ["run-budget diagnostics", AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_RUN_BUDGET, [
       "llm_budget.run_call_limit",
+      "llm_budget.run_exploration_call_limit",
       "llm_budget.run_total_limit",
       "llm_budget.run_output_limit",
       "llm_budget.run_cost_limit",
@@ -84,6 +85,7 @@ describe("exploration outcomes", () => {
 
   it.each([
     ["llm_budget.run_call_limit", "budget_exhausted"],
+    ["llm_budget.run_exploration_call_limit", "budget_exhausted"],
     ["llm_budget.run_total_limit", "budget_exhausted"],
     ["llm_budget.run_output_limit", "budget_exhausted"],
     ["llm_budget.run_cost_limit", "budget_exhausted"],
