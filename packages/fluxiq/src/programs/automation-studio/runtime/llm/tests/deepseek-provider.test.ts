@@ -67,7 +67,7 @@ describe("Automation Studio DeepSeek provider", () => {
     const context = {
       ...request().context,
       recentActions: [{ attemptId: "attempt.one", nodeId: "submit", definitionId: "web.output.dom-click", order: 2, status: "failed" as const, route: "failed", comparisonStatus: "action_failed" }],
-      failureEvidence: { schemaVersion: "web-llm-evidence.v1", trust: "untrusted-page-evidence", location: "https://example.test/form", elements: [{ target: "target.1", tag: "button", selector: "#submit-new", name: "Submit" }], truncated: false }
+      failureEvidence: { schemaVersion: "web-llm-evidence.v2", trust: "untrusted-page-evidence", location: "https://example.test/form", elements: [{ target: "target.1", tag: "button", name: "Submit" }], truncated: false }
     };
 
     await provider.runTask(request({ context }));

@@ -77,7 +77,7 @@ describe("Automation Studio LLM harness", () => {
         adaptationIds: [],
         changeProposalIds: []
       },
-      failureEvidence: { schemaVersion: "web-llm-evidence.v1", trust: "untrusted-page-evidence", location: "https://example.test/form", elements: [{ target: "target.1", tag: "button", selector: "#submit-new", name: "Submit" }], truncated: false },
+      failureEvidence: { schemaVersion: "web-llm-evidence.v2", trust: "untrusted-page-evidence", location: "https://example.test/form", elements: [{ target: "target.1", tag: "button", name: "Submit" }], truncated: false },
       subflows: [{
         schemaVersion: "0.1",
         subflowId: "subflow.checkout",
@@ -115,7 +115,7 @@ describe("Automation Studio LLM harness", () => {
     expect(context.promptVersion).toBe(AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS.runtime_diagnosis);
     expect(context.recentActions?.[0]).toMatchObject({ attemptId: "submit.1", comparisonStatus: "action_failed" });
     expect(context.recentActions?.[0]).toEqual({ attemptId: "submit.1", nodeId: "submit", definitionId: "builtin.policy.action", order: 1, status: "failed", route: "failed", durationMs: 12, comparisonStatus: "action_failed" });
-    expect(context.failureEvidence).toMatchObject({ schemaVersion: "web-llm-evidence.v1", elements: [{ selector: "#submit-new" }] });
+    expect(context.failureEvidence).toMatchObject({ schemaVersion: "web-llm-evidence.v2", elements: [{ target: "target.1", tag: "button" }] });
     expect(JSON.stringify(context)).not.toMatch(/PRIVATE_PAGE_MESSAGE|PRIVATE_RAW_HTML|stateRefs/);
     expect(context.subflows?.[0]).toMatchObject({ subflowId: "subflow.checkout", routeTags: ["checkout"] });
     expect(context.policyGates).toMatchObject({ allowRuntimeRecovery: true, allowExternalSideEffects: false });

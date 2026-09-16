@@ -96,6 +96,43 @@ describe("Automation Studio opaque repair target", () => {
     expect(Object.keys(targetSchema.properties)).toEqual(["handles"]);
   });
 
+  it("sends a realistic page to the provider with no way of addressing it anywhere in the body", async () => {
+    // The transport half of the leak proof. The producer half is
+    // `domain/src/runtime/llm-evidence/tests/packet-carries-no-selector.test.ts`,
+    // which drives the real sanitizer over a realistic capture; the packet below
+    // is that sanitizer's actual output, pasted rather than imagined, so this row
+    // and that one cannot drift into agreeing about a packet nobody produces.
+    //
+    // Asserted against the serialized request body rather than against any
+    // object on the way to it, because the thing worth catching is a field
+    // somebody adds later: to the packet, to the context, to the schema, or to
+    // the prompt. All four end up in these bytes.
+    let outboundBody = "";
+    const provider = createAutomationStudioDeepSeekProvider({
+      secretReference: { kind: "secret_reference", id: "secret:deepseek" },
+      resolveSecret: async (input) => { outboundBody = input.outboundBody; return "test-secret"; },
+      fetchImpl: (async () => responseEnvelope({ kind: "runtime_patch", summary: "Re-point the failed action.", riskLevel: "high", patches: [{ kind: "temporary_target_override", targetNodeId: "submit", target: { handles: { element: "target.1" } }, reason: "The control moved." }] })) as typeof fetch
+    });
+
+    const request = patchRequest();
+    await provider.runTask({ ...request, context: { ...request.context, failureEvidence: REALISTIC_WEB_PACKET } });
+
+    // The page's own selectors, which the capture really contained.
+    for (const selector of ["#place-order", "input#coupon", "form.checkout", "data-testid", "frame[3]", "#confirm-dialog", "#cookie-wall", "#spinner", "#card-number"]) {
+      expect(outboundBody).not.toContain(selector);
+    }
+    // And no field by any name a locator has travelled under.
+    expect(outboundBody).not.toMatch(/"(?:selector|selectors|xpath|queryPath|css|locator|cssSelector)"/u);
+    expect(outboundBody.toLowerCase()).not.toContain("selector");
+
+    // The request is still worth sending: the model was told where it is, what
+    // is on the page, what is covering it, and what each element is called.
+    const user = JSON.parse((JSON.parse(outboundBody) as { messages: Array<{ role: string; content: string }> }).messages.find((message) => message.role === "user")!.content) as { context: { failureEvidence: typeof REALISTIC_WEB_PACKET } };
+    expect(user.context.failureEvidence.elements).toHaveLength(6);
+    expect(user.context.failureEvidence.elements[0]).toEqual({ target: "target.1", tag: "button", text: "Place order", controlType: "submit" });
+    expect(user.context.failureEvidence.blockedBy).toEqual({ role: "dialog", name: "We use cookies", blocks: 2 });
+  });
+
   it("refuses a locator wherever a model could put one", () => {
     for (const locator of LOCATORS) {
       // As a handle value, as a parameter name, and as the whole target.
@@ -145,6 +182,41 @@ describe("Automation Studio opaque repair target", () => {
     expect(isAutomationStudioRuntimeTargetOverrideTarget(cyclic)).toBe(false);
   });
 });
+
+/**
+ * `sanitizeWebLlmSnapshot`'s own output for a realistic checkout page whose
+ * every wire field carried a selector: elements, the focused element, a child
+ * frame, two dialogs, two overlay blockers, a loading indicator and a busy
+ * region. Copied from the domain's test run, not written by hand.
+ */
+const REALISTIC_WEB_PACKET = {
+  schemaVersion: "web-llm-evidence.v2",
+  trust: "untrusted-page-evidence",
+  location: "https://shop.example.test/checkout",
+  title: "Checkout",
+  frame: { isTop: true, childFrameIds: [3] },
+  loading: { readyState: "interactive", busy: true, spinner: true },
+  dialogs: [{ role: "dialog", name: "Confirm your order", modal: true }, { role: "alertdialog", name: "Session expiring" }],
+  blockedBy: { role: "dialog", name: "We use cookies", blocks: 2 },
+  elementTotal: 7,
+  elements: [
+    { target: "target.1", tag: "button", text: "Place order", controlType: "submit" },
+    { target: "target.2", tag: "input", name: "Coupon code", focused: true, form: "discount", heading: "Have a code?" },
+    { target: "target.3", tag: "input", name: "Postcode" },
+    { target: "target.4", tag: "input", name: "Quantity", inputType: "number", item: { index: 2, total: 6 } },
+    { target: "target.5", tag: "input", frameId: 3, name: "Name on card" },
+    { target: "target.6", tag: "a", text: "Legacy checkout", href: "https://shop.example.test/legacy" }
+  ],
+  truncated: false
+};
+
+function responseEnvelope(structured: unknown): Response {
+  return new Response(JSON.stringify({
+    id: "chat.one",
+    choices: [{ message: { content: JSON.stringify(structured) }, finish_reason: "stop" }],
+    usage: { prompt_tokens: 20, completion_tokens: 15, total_tokens: 35 }
+  }), { status: 200, headers: { "content-type": "application/json" } });
+}
 
 function patchRequest(): AutomationStudioLlmTaskRequest {
   return {
