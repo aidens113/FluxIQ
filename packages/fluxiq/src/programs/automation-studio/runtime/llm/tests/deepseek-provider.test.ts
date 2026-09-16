@@ -151,7 +151,7 @@ describe("Automation Studio DeepSeek provider", () => {
         kind: "runtime_patch",
         summary: "Update the changed target.",
         riskLevel: "high",
-        patches: [{ kind: "temporary_target_override", targetNodeId: "submit", target: { selector: "#submit-new" }, reason: "The target changed." }]
+        patches: [{ kind: "temporary_target_override", targetNodeId: "submit", target: { handles: { element: "target.1" } }, reason: "The target changed." }]
       }, { prompt_tokens: 20, completion_tokens: 15, total_tokens: 35 })) as typeof fetch
     });
     const patchRequest = request({
@@ -172,9 +172,9 @@ describe("Automation Studio DeepSeek provider", () => {
     const outbound = JSON.parse(outboundBody) as { messages: Array<{ role: string; content: string }> };
     const system = outbound.messages.find((message) => message.role === "system")!.content;
     const user = JSON.parse(outbound.messages.find((message) => message.role === "user")!.content) as any;
-    expect(system).toContain("copy selector exactly from failureEvidence");
+    expect(system).toContain("fill target.handles with opaque handles copied exactly as failureEvidence names them");
     expect(system).toContain("semantically compatible with the failed nodeId and definitionId");
-    expect(system).toContain("never select a control for another action");
+    expect(system).toContain("never write a locator, path, query, or expression of your own");
     expect(user.context).toMatchObject({
       nodeId: "submit",
       recentActions: [expect.objectContaining({ nodeId: "submit", definitionId: "example.form.submit", status: "failed" })],
@@ -189,7 +189,11 @@ describe("Automation Studio DeepSeek provider", () => {
           items: {
             properties: {
               kind: { const: "temporary_target_override" },
-              target: { additionalProperties: false, required: ["selector"], properties: { selector: { maxLength: 1_000, pattern: "\\S" } } }
+              target: {
+                additionalProperties: false,
+                required: ["handles"],
+                properties: { handles: { type: "object", minProperties: 1, maxProperties: 16, additionalProperties: { type: "string", maxLength: 64 } } }
+              }
             }
           }
         }
@@ -210,7 +214,7 @@ describe("Automation Studio DeepSeek provider", () => {
         kind: "runtime_patch",
         summary: "Update the changed target.",
         riskLevel: "high",
-        patches: [{ kind: "temporary_target_override", targetNodeId: "submit", target: { type: "css", value: "#private-target" }, reason: "The target changed." }]
+        patches: [{ kind: "temporary_target_override", targetNodeId: "submit", target: { handles: { element: "target.1" }, selector: "#private-target" }, reason: "The target changed." }]
       }, { prompt_tokens: 20, completion_tokens: 15, total_tokens: 35 })) as typeof fetch
     });
     await expectProviderError(malformedTarget.runTask(patchRequest), "llm.provider_output_invalid");

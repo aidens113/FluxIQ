@@ -35,6 +35,11 @@ export {
   type AutomationStudioLlmFailureEvidenceCaptureInput
 } from "./failure-evidence.ts";
 export {
+  AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_MAX_LENGTH,
+  AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN,
+  AUTOMATION_STUDIO_RUNTIME_TARGET_MAX_HANDLES,
+  AUTOMATION_STUDIO_RUNTIME_TARGET_MAX_SERIALIZED_LENGTH,
+  isAutomationStudioModelAuthoredTargetOverrideTarget,
   isAutomationStudioRuntimeTargetOverrideTarget,
   type AutomationStudioLlmStructuredResponse,
   type AutomationStudioRuntimePatch,

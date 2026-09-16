@@ -464,7 +464,7 @@ function setup() {
       const userMessage = body.messages?.find((message) => message.role === "user")?.content;
       const task = userMessage ? JSON.parse(userMessage) as { taskKind?: string } : {};
       const content = task.taskKind === "runtime_patch"
-        ? { kind: "runtime_patch", summary: "safe", riskLevel: "high", patches: [{ kind: "temporary_target_override", targetNodeId: "node.one", target: { selector: "#current" }, reason: "Use observed target." }] }
+        ? { kind: "runtime_patch", summary: "safe", riskLevel: "high", patches: [{ kind: "temporary_target_override", targetNodeId: "node.one", target: { handles: { element: "target.1" } }, reason: "Use observed target." }] }
         : { kind: "diagnosis", summary: "safe" };
       return new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } }), { status: 200, headers: { "content-type": "application/json" } });
     }) as typeof fetch

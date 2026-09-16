@@ -4,7 +4,7 @@ import { isBoundedString, isFiniteNumber, isJsonObject, isJsonValue, isRecord, v
 import { validateAutomationStudioLlmOutput } from "./output-validation.ts";
 import type { AutomationStudioLlmUsageSummary } from "./provider.ts";
 import {
-  isAutomationStudioRuntimeTargetOverrideTarget,
+  isAutomationStudioModelAuthoredTargetOverrideTarget,
   stripAutomationStudioLlmResponseMetadata,
   type AutomationStudioLlmStructuredResponse
 } from "./structured-response.ts";
@@ -137,7 +137,7 @@ function validateUnknownRuntimePatch(value: unknown, index: number, diagnostics:
   } else if (kind === "temporary_wait_retry") {
     if (!isBoundedString(value.targetNodeId) || !isOptionalNonNegativeInteger(value.timeoutMs) || !isOptionalNonNegativeInteger(value.retryCount)) diagnostics.push({ severity: "error", code: "llm_output.invalid_wait_retry", message: "Temporary wait/retry fields are invalid.", path });
   } else if (kind === "temporary_target_override") {
-    if (!isBoundedString(value.targetNodeId) || !isAutomationStudioRuntimeTargetOverrideTarget(value.target)) diagnostics.push({ severity: "error", code: "llm_output.invalid_target_override", message: "Temporary target override requires a target node and canonical target.", path });
+    if (!isBoundedString(value.targetNodeId) || !isAutomationStudioModelAuthoredTargetOverrideTarget(value.target)) diagnostics.push({ severity: "error", code: "llm_output.invalid_target_override", message: "Temporary target override requires a target node and a target naming only opaque evidence handles.", path });
   } else if (kind === "temporary_recovery_subflow_call" && !isBoundedString(value.subflowId)) diagnostics.push({ severity: "error", code: "llm_output.invalid_recovery_subflow", message: "Recovery Subflow call requires a bounded subflowId.", path });
   else if (kind === "temporary_reroute" && (!isBoundedString(value.fromNodeId) || !isBoundedString(value.toNodeId))) diagnostics.push({ severity: "error", code: "llm_output.invalid_reroute", message: "Temporary reroute requires bounded from/to node IDs.", path });
 }

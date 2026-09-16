@@ -291,7 +291,7 @@ describe("Automation Studio LLM harness", () => {
       projectId: "project.llm",
       flowId: "flow.checkout",
       instructions: [],
-      provider: { metadata: { provider: "mock", model: "schema" }, runTask: async () => ({ response: { kind: "runtime_patch", summary: "Use the current target.", riskLevel: "high", patches: [{ kind: "temporary_target_override", targetNodeId: "submit", target: { selector: "#submit-new" }, reason: "The selector changed." }] } }) }
+      provider: { metadata: { provider: "mock", model: "schema" }, runTask: async () => ({ response: { kind: "runtime_patch", summary: "Use the current target.", riskLevel: "high", patches: [{ kind: "temporary_target_override", targetNodeId: "submit", target: { handles: { element: "target.1" } }, reason: "The target moved." }] } }) }
     });
     expect(patch.ok).toBe(true);
     expect(patch.response).toMatchObject({ kind: "runtime_patch", patches: [{ kind: "temporary_target_override" }] });
@@ -309,12 +309,25 @@ describe("Automation Studio LLM harness", () => {
 
   it.each([
     {},
-    { selector: "" },
-    { selector: "   " },
-    { selector: "#submit", unknown: true },
+    { handles: {} },
+    { handles: { element: "" } },
+    { handles: { element: "   " } },
+    // A domain resolution is not something a model may author, so a target that
+    // carries one alongside its handles is refused whatever the extra key is.
+    { handles: { element: "target.1" }, selector: "#private-target" },
+    { handles: { element: "target.1" }, unknown: true },
+    // Nor may a handle be a locator: the handle vocabulary has no room for
+    // whitespace, brackets, quotes, combinators, or a leading punctuation mark.
+    { handles: { element: "#private-target" } },
+    { handles: { element: "input[name=\"q\"]" } },
+    { handles: { element: "div > .item" } },
+    { handles: { element: ".row:nth-child(1)" } },
+    { handles: { element: "//button[@id='go']" } },
+    { handles: { element: "target.1 target.2" } },
+    { handles: { "element name": "target.1" } },
     { type: "css", value: "#private-target" },
     { locator: { role: "button", name: "Submit" } }
-  ])("rejects a noncanonical runtime target override without reflecting its content (%j)", async (target) => {
+  ])("rejects a target override that is not a bare handle map, without reflecting its content (%j)", async (target) => {
     const result = await runAutomationStudioLlmHarness({
       taskKind: "runtime_patch",
       expectedOutput: "runtime_patch",
